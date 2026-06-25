@@ -72,35 +72,50 @@ function teamStatBars(rows, teamStats) {
   const empty = { gp: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fg3m: 0, fgm: 0, fga: 0, fg3a: 0, ftm: 0, ft_miss: 0, turnover: 0, pf: 0 };
   const statsMap = Object.fromEntries(teamStats.map(t => [t.team_id, t]));
 
-  const cats = [
-    { label: 'PPG', title: 'Points',        fn: t => t.gp > 0 ? t.pts  / t.gp : 0,    fmt: v => v.toFixed(1) },
-    { label: 'RPG', title: 'Rebounds',      fn: t => t.gp > 0 ? t.reb  / t.gp : 0,    fmt: v => v.toFixed(1) },
-    { label: 'APG', title: 'Assists',       fn: t => t.gp > 0 ? t.ast  / t.gp : 0,    fmt: v => v.toFixed(1) },
-    { label: 'SPG', title: 'Steals',        fn: t => t.gp > 0 ? t.stl  / t.gp : 0,    fmt: v => v.toFixed(1) },
-    { label: 'BPG', title: 'Blocks',        fn: t => t.gp > 0 ? t.blk  / t.gp : 0,    fmt: v => v.toFixed(1) },
-    { label: '3PM', title: '3-Pointers',    fn: t => t.gp > 0 ? t.fg3m / t.gp : 0,    fmt: v => v.toFixed(1) },
-    { label: 'FG%', title: 'FG Efficiency', fn: t => t.fga > 0 ? t.fgm / t.fga : 0,   fmt: v => (v * 100).toFixed(1) + '%' },
-    { label: '3P%', title: '3PT Efficiency',fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0,fmt: v => (v * 100).toFixed(1) + '%' },
-    { label: 'FT%', title: 'Free Throws',   fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: v => (v * 100).toFixed(1) + '%' },
-    { label: 'FTM', title: 'FT Made',       fn: t => t.gp > 0 ? t.ftm  / t.gp : 0,    fmt: v => v.toFixed(1) },
-    { label: 'TO',  title: 'Turnovers',     fn: t => t.gp > 0 ? t.turnover / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'PF',  title: 'Fouls',         fn: t => t.gp > 0 ? t.pf   / t.gp : 0,    fmt: v => v.toFixed(1) },
+  const pct  = fn => v => (fn(v) * 100).toFixed(1) + '%';
+  const PER_GAME = [
+    { label: 'PPG', title: 'Points',         fn: t => t.gp > 0 ? t.pts      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'RPG', title: 'Rebounds',       fn: t => t.gp > 0 ? t.reb      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'APG', title: 'Assists',        fn: t => t.gp > 0 ? t.ast      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'SPG', title: 'Steals',         fn: t => t.gp > 0 ? t.stl      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'BPG', title: 'Blocks',         fn: t => t.gp > 0 ? t.blk      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: '3PM', title: '3-Pointers',     fn: t => t.gp > 0 ? t.fg3m     / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'FG%', title: 'FG Efficiency',  fn: t => t.fga > 0 ? t.fgm / t.fga : 0,    fmt: pct(v => v) },
+    { label: '3P%', title: '3PT Efficiency', fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
+    { label: 'FT%', title: 'Free Throws',    fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
+    { label: 'FTM', title: 'FT Made',        fn: t => t.gp > 0 ? t.ftm      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'TO',  title: 'Turnovers',      fn: t => t.gp > 0 ? t.turnover / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'PF',  title: 'Fouls',          fn: t => t.gp > 0 ? t.pf       / t.gp : 0, fmt: v => v.toFixed(1) },
+  ];
+  const TOTALS = [
+    { label: 'PTS', title: 'Points',         fn: t => t.pts,      fmt: v => String(Math.round(v)) },
+    { label: 'REB', title: 'Rebounds',       fn: t => t.reb,      fmt: v => String(Math.round(v)) },
+    { label: 'AST', title: 'Assists',        fn: t => t.ast,      fmt: v => String(Math.round(v)) },
+    { label: 'STL', title: 'Steals',         fn: t => t.stl,      fmt: v => String(Math.round(v)) },
+    { label: 'BLK', title: 'Blocks',         fn: t => t.blk,      fmt: v => String(Math.round(v)) },
+    { label: '3PM', title: '3-Pointers',     fn: t => t.fg3m,     fmt: v => String(Math.round(v)) },
+    { label: 'FG%', title: 'FG Efficiency',  fn: t => t.fga > 0 ? t.fgm / t.fga : 0,    fmt: pct(v => v) },
+    { label: '3P%', title: '3PT Efficiency', fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
+    { label: 'FT%', title: 'Free Throws',    fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
+    { label: 'FTM', title: 'FT Made',        fn: t => t.ftm,      fmt: v => String(Math.round(v)) },
+    { label: 'TO',  title: 'Turnovers',      fn: t => t.turnover, fmt: v => String(Math.round(v)) },
+    { label: 'PF',  title: 'Fouls',          fn: t => t.pf,       fmt: v => String(Math.round(v)) },
   ];
 
-  const cards = cats.map(cat => {
-    const ranked = rows
-      .map(r => ({ r, v: cat.fn(statsMap[r.team.id] || empty) }))
-      .sort((a, b) => b.v - a.v);
+  function renderCards(cats) {
+    return cats.map(cat => {
+      const ranked = rows
+        .map(r => ({ r, v: cat.fn(statsMap[r.team.id] || empty) }))
+        .sort((a, b) => b.v - a.v);
 
-    const best = ranked[0];
-    const maxV = best?.v || 1;
-    const color = teamColor(best.r.team.name.toUpperCase());
-    const isLight = best.r.team.name.toUpperCase() === 'WHITE';
+      const best = ranked[0];
+      const maxV = best?.v || 1;
+      const color = teamColor(best.r.team.name.toUpperCase());
 
-    const restRows = ranked.slice(1).map((item, i) => {
-      const tc = teamColor(item.r.team.name.toUpperCase());
-      const barW = maxV > 0 ? Math.round(item.v / maxV * 100) : 0;
-      return `<div class="leader-panel__row">
+      const restRows = ranked.slice(1).map((item, i) => {
+        const tc = teamColor(item.r.team.name.toUpperCase());
+        const barW = maxV > 0 ? Math.round(item.v / maxV * 100) : 0;
+        return `<div class="leader-panel__row">
   <span class="leader-panel__rank">${i + 2}</span>
   <span class="team-dot" style="background:${tc}"></span>
   <span class="leader-panel__row-name">${escHtml(item.r.team.name.toUpperCase())}</span>
@@ -109,9 +124,9 @@ function teamStatBars(rows, teamStats) {
   </div>
   <span class="leader-panel__row-stat">${escHtml(cat.fmt(item.v))}</span>
 </div>`;
-    }).join('');
+      }).join('');
 
-    return `<div class="card leader-panel">
+      return `<div class="card leader-panel">
   <div class="leader-panel__head">
     <span class="leader-panel__cat">${cat.label}</span>
     <span class="leader-panel__title">${escHtml(cat.title)}</span>
@@ -125,13 +140,27 @@ function teamStatBars(rows, teamStats) {
   </div>
   <div class="leader-panel__list">${restRows}</div>
 </div>`;
-  }).join('\n');
+    }).join('\n');
+  }
 
   return `<div class="section-divider" style="margin:28px 0 16px">
   <span class="section-divider__label">TEAM STATS</span>
   <span class="section-divider__line"></span>
+  <div class="leaders-toggle">
+    <button class="leaders-toggle__btn leaders-toggle__btn--active" id="tstat-btn-pg" onclick="tstatSwitch('pg')">Per Game</button>
+    <button class="leaders-toggle__btn" id="tstat-btn-tot" onclick="tstatSwitch('tot')">Totals</button>
+  </div>
 </div>
-<div class="tstat-grid">${cards}</div>`;
+<div class="tstat-grid" id="tstat-grid-pg">${renderCards(PER_GAME)}</div>
+<div class="tstat-grid" id="tstat-grid-tot" style="display:none">${renderCards(TOTALS)}</div>
+<script>
+function tstatSwitch(mode) {
+  document.getElementById('tstat-grid-pg').style.display  = mode === 'pg'  ? '' : 'none';
+  document.getElementById('tstat-grid-tot').style.display = mode === 'tot' ? '' : 'none';
+  document.getElementById('tstat-btn-pg').classList.toggle('leaders-toggle__btn--active',  mode === 'pg');
+  document.getElementById('tstat-btn-tot').classList.toggle('leaders-toggle__btn--active', mode === 'tot');
+}
+</script>`;
 }
 
 
