@@ -52,7 +52,7 @@ function heroCarousel(games) {
     const body = excerpt(game.game_writeup);
 
     const bg = game.has_cover
-      ? `<div class="hero-bg"><img src="/api/cover/${encodeURIComponent(game.id)}" alt=""></div>`
+      ? `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt=""></div>`
       : `<div class="hero-bg"></div>`;
     const flareOpacity = game.has_cover ? '44' : 'cc';
 

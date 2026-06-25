@@ -392,6 +392,22 @@ async function serveCover(req, res) {
 app.get('/api/cover/:gameId.png', serveCover);
 app.get('/api/cover/:gameId',     serveCover);
 
+app.get('/api/photo/:gameId', async (req, res) => {
+  try {
+    const upstream = await fetch(
+      `${ADMIN_URL}/api/social-cover/${encodeURIComponent(req.params.gameId)}/photo.jpg`,
+      { headers: { 'User-Agent': 'wknd-portal/photo-proxy' }, signal: AbortSignal.timeout(10000) }
+    );
+    if (!upstream.ok) return res.status(upstream.status).end();
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(buf);
+  } catch {
+    res.status(502).end();
+  }
+});
+
 app.get('/history/game/:id', (req, res) => {
   res.redirect(301, `/games/${req.params.id}`);
 });

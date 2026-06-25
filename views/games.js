@@ -18,7 +18,7 @@ function gameRow(game) {
 
   const flareOpacity = game.has_cover ? '55' : 'bb';
   const thumb = `${game.has_cover
-    ? `<img src="/api/cover/${encodeURIComponent(game.id)}" alt="" class="game-row__thumb-img">`
+    ? `<img src="/api/photo/${encodeURIComponent(game.id)}" alt="" class="game-row__thumb-img">`
     : `<div class="game-row__thumb-placeholder"><span class="game-row__thumb-vs">VS</span></div>`}
   <div class="game-row__thumb-flare" style="background:linear-gradient(135deg,${colorA}${flareOpacity} 0%,transparent 55%,${colorB}${flareOpacity} 100%)"></div>`;
 

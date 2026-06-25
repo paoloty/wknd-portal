@@ -17,7 +17,7 @@ function leftMedia(game, colorA, colorB) {
   }
   if (game.has_cover) {
     return `<div class="sidebar-hero">
-  <div class="sidebar-hero__bg"><img src="/api/cover/${encodeURIComponent(game.id)}" alt=""></div>
+  <div class="sidebar-hero__bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt=""></div>
   <div class="sidebar-hero__flare" style="background:linear-gradient(135deg,${colorA}44 0%,transparent 50%,${colorB}44 100%)"></div>
 </div>`;
   }
