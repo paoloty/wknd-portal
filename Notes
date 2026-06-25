@@ -1,0 +1,65 @@
+Page	Route	Key data
+Homepage	/	Latest result, standings snapshot, top performers
+Standings	/standings	W-L, win%, streak — already has OG image in admin
+Games	/games	Full game list, filterable by season/type
+Game Detail	/games/:id	Box score, POTG, recap writeup, YouTube embed
+Teams	/teams	4 team cards with record
+Team Detail	/teams/:id	Roster + team stat averages
+Player Profile	/players/:id	Bio, career totals, per-game averages
+League Leaders	/leaders	Top 5 per category (PPG, RPG, APG, STL, BLK)
+
+
+Now lets update the nav to this (reorder if you think needed)
+
+Home
+Games
+    - Game Detail
+    - Schedules (will implement in the admin app so we can query)
+Standings
+Teams
+Players
+League Leaders
+
+Feature feature
+Join (Will be added to player pool)
+Events (Pickup games, upcoming new season)
+
+
+Now lets build the games page
+- Lets try to retain the scores above
+- and proabably the player highlights on the left
+- Then the main section will be list of games
+- Will have the title and short recap of the list of games
+- Can we add the graphic at the left most
+- I want it to look like an article list or a blog post
+- Then the scores should be on the right most
+
+
+Game detail
+Right
+- POTG with player card and writeup
+- List of the other top performers
+
+Left
+- First Row (Hero image, social cover if available)
+- Second row will be a container for multiple tabs (will get detail after this task)
+
+Remove "Final - Date"
+Team name seems to be block instead of inline-block
+Remove stats that are 0 on POTG
+Remove the stat above the POTG writeup
+
+Can we be standard on the title bar and the borders?
+POTG has no title bar border
+Also top peformer has full width borders
+Remove team name from top performers as they already have bullet (team color)
+
+
+Lets use real world stats implementation
+- We will be creating new season after this season (Season 3)
+- Current season is double round robin
+- Then we are going to have a playoffs (1 vs 4, 2 vs 3)
+- 1 and 2 is twice to beat
+
+Based on that info how can we adjust the leaders?
+Also if there is a tie can we implement GP and win over loss for leaders
