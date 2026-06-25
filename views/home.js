@@ -105,6 +105,18 @@ function heroCarousel(games) {
   var n = slides.length;
   if (n < 2) return;
   var cur = 0;
+  var AUTO_MS = 5000;
+  var MANUAL_MS = 8000;
+  var timer;
+
+  function resetKenBurns(slide) {
+    var img = slide.querySelector('.hero-bg img');
+    if (!img) return;
+    img.style.animation = 'none';
+    img.offsetHeight;
+    img.style.animation = '';
+  }
+
   function go(next) {
     slides[cur].classList.remove('hero-slide--active');
     dots[cur].style.width = '8px';
@@ -113,10 +125,24 @@ function heroCarousel(games) {
     slides[cur].classList.add('hero-slide--active');
     dots[cur].style.width = '22px';
     dots[cur].style.background = '#f59332';
+    resetKenBurns(slides[cur]);
   }
-  document.getElementById('hero-prev').onclick = function(){ go(cur - 1); };
-  document.getElementById('hero-next').onclick = function(){ go(cur + 1); };
-  dots.forEach(function(d, i){ d.onclick = function(){ go(i); }; });
+
+  function schedule(delay) {
+    clearTimeout(timer);
+    timer = setTimeout(function(){ go(cur + 1); schedule(AUTO_MS); }, delay);
+  }
+
+  function manual(next) {
+    go(next);
+    schedule(MANUAL_MS);
+  }
+
+  document.getElementById('hero-prev').onclick = function(){ manual(cur - 1); };
+  document.getElementById('hero-next').onclick = function(){ manual(cur + 1); };
+  dots.forEach(function(d, i){ d.onclick = function(){ manual(i); }; });
+
+  schedule(AUTO_MS);
 })();
 </script>`;
 }
