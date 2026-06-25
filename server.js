@@ -412,6 +412,14 @@ app.get('/history/game/:id', (req, res) => {
   res.redirect(301, `/games/${req.params.id}`);
 });
 
+app.get('*', (req, res, next) => {
+  const gameId = req.query.gameId;
+  if (req.query.view === 'game' && gameId) {
+    return res.redirect(301, `/games/${encodeURIComponent(gameId)}`);
+  }
+  next();
+});
+
 app.get('/', (req, res) => {
   const teams = selectTeamsStmt.all();
   const players = selectPlayersStmt.all();
