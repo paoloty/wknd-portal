@@ -196,9 +196,9 @@ function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
       </thead>
       <tbody>
         ${sorted.map(playerRow).join('')}
-        ${dnpPlayers.map(name => `<tr class="bs-dnp">
+        ${dnpPlayers.map(p => `<tr class="bs-dnp">
           <td class="bs-dnp__cell" colspan="17">
-            ${escHtml(name)} <span class="dnp-pill">DNP</span>
+            ${playerLink(p.id, p.name)} <span class="dnp-pill">DNP</span>
           </td>
         </tr>`).join('')}
         <tr class="bs-totals">
@@ -247,7 +247,7 @@ function buildBoxScoreData(game, stats, playerMap, teamMap) {
     const t = teamMap[p.team_id];
     const teamName = String(t?.name || '').toUpperCase();
     if (!dnpByTeam[teamName]) dnpByTeam[teamName] = [];
-    dnpByTeam[teamName].push(displayPlayerName(p.name || ''));
+    dnpByTeam[teamName].push({ id: p.id, name: displayPlayerName(p.name || '') });
   }
 
   const winner = winnerName.toUpperCase();
