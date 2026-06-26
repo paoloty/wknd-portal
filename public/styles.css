@@ -542,7 +542,7 @@ body {
   flex-shrink: 0;
 }
 .standings-main { min-width: 0; }
-.standings-table { padding: 0; }
+.standings-table { padding: 0; overflow: hidden; }
 .standings-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .standings-scroll::-webkit-scrollbar { display: none; }
 .standings-scroll > * { min-width: 780px; }
@@ -551,12 +551,16 @@ body {
   grid-template-columns: 44px minmax(80px,1fr) 44px 44px 64px 52px 44px 52px 52px 56px 64px repeat(4, 48px);
   align-items: stretch;
   border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
 }
+.standings-row:not(.standings-row--head):hover { background: rgba(255,255,255,0.025); }
 .standings-row:last-child { border-bottom: none; }
 .standings-row--head {
   background: rgba(255,255,255,0.02);
   border-bottom: 1px solid var(--border);
 }
+/* First place highlight */
+.standings-row--first { background: rgba(245,147,50,0.03); }
 .standings-row--divider { border-bottom: 2px solid var(--amber); }
 .standings-cell {
   display: flex;
@@ -564,18 +568,19 @@ body {
   font-size: 12px;
   color: var(--text-muted);
   padding: 0 8px;
-  min-height: 44px;
+  min-height: 48px;
 }
 .standings-row--head .standings-cell { min-height: 36px; }
 .standings-cell--seed {
-  padding: 0 4px 0 12px;
+  padding: 0 4px 0 10px;
   justify-content: flex-start;
   position: sticky;
   left: 0;
   z-index: 2;
-  background: var(--surface);
+  background: inherit;
+  border-left: 3px solid var(--tc-color, var(--border));
 }
-.standings-row--head .standings-cell--seed { background: color-mix(in srgb, var(--surface) 100%, white 2%); }
+.standings-row--head .standings-cell--seed { border-left-color: transparent; background: rgba(255,255,255,0.02); }
 .standings-cell--team {
   gap: 8px;
   font-size: 13px;
@@ -587,7 +592,15 @@ body {
   left: 44px;
   z-index: 2;
   background: var(--surface);
-  box-shadow: 4px 0 8px rgba(0,0,0,0.3);
+}
+/* Sticky shadow via gradient (consistent with other tables) */
+.standings-cell--team::after {
+  content: '';
+  position: absolute;
+  top: 0; right: -14px; bottom: 0;
+  width: 14px;
+  background: linear-gradient(to right, rgba(0,0,0,0.2), transparent);
+  pointer-events: none;
 }
 .standings-row--head .standings-cell--team {
   background: color-mix(in srgb, var(--surface) 100%, white 2%);
@@ -599,6 +612,19 @@ body {
   border-left: 1px solid var(--border);
   padding: 0 6px;
 }
+/* PCT visual fill bar */
+.standings-cell--pct {
+  position: relative;
+}
+.standings-cell--pct::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: var(--pct-w, 0%);
+  background: var(--pct-color, var(--border));
+  opacity: 0.12;
+  pointer-events: none;
+}
 .standings-row--head .standings-cell {
   font-size: 10px;
   font-weight: 700;
@@ -606,7 +632,7 @@ body {
   color: var(--text-subtle);
 }
 .standings-row--head .standings-cell--team { justify-content: flex-start; }
-.standings-cell--w { color: #4ade80; }
+.standings-cell--w { color: #4ade80; font-weight: 700; }
 .standings-cell--l { color: #f87171; }
 .standings-cell--quo { color: var(--amber); }
 .standings-cell--h2h { justify-content: center; padding: 0 4px; border-left: 1px solid rgba(255,255,255,0.04); }
@@ -617,8 +643,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   font-size: 11px;
   font-weight: 700;
@@ -636,6 +662,11 @@ body {
   padding: 1px 5px;
 }
 .standings-team-name { min-width: 0; }
+/* Team badge for stat panels (no player avatar) */
+.st-team-badge {
+  width: 36px; height: 36px; border-radius: 50%;
+  flex-shrink: 0; opacity: 0.85;
+}
 
 /* ── Head-to-head matrix ────────────────────────────────────────────────── */
 .h2h-table { overflow: hidden; padding: 0; }

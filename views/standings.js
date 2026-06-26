@@ -115,24 +115,21 @@ function teamStatBars(rows, teamStats) {
       const restRows = ranked.slice(1).map((item, i) => {
         const tc = teamColor(item.r.team.name.toUpperCase());
         const barW = maxV > 0 ? Math.round(item.v / maxV * 100) : 0;
-        return `<div class="leader-panel__row">
+        return `<div class="leader-panel__row" style="--bar-w:${barW}%;--bar-color:${tc}">
   <span class="leader-panel__rank">${i + 2}</span>
   <span class="team-dot" style="background:${tc}"></span>
   <span class="leader-panel__row-name">${escHtml(item.r.team.name.toUpperCase())}</span>
-  <div class="leader-panel__bar-wrap">
-    <div class="leader-panel__bar" style="width:${barW}%;background:${tc}33;border-right:2px solid ${tc}"></div>
-  </div>
-  <span class="leader-panel__row-stat">${escHtml(cat.fmt(item.v))}</span>
+  <span class="leader-panel__row-stat font-condensed">${escHtml(cat.fmt(item.v))}</span>
 </div>`;
       }).join('');
 
-      return `<div class="card leader-panel">
+      return `<div class="card leader-panel" style="--lp-color:${color}">
   <div class="leader-panel__head">
     <span class="leader-panel__cat">${cat.label}</span>
     <span class="leader-panel__title">${escHtml(cat.title)}</span>
   </div>
-  <div class="leader-panel__top">
-    <span class="team-dot" style="background:${color}"></span>
+  <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
+    <span class="st-team-badge" style="background:${color}"></span>
     <div class="leader-panel__info">
       <div class="leader-panel__name">${escHtml(best.r.team.name.toUpperCase())}</div>
     </div>
@@ -187,7 +184,8 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
       return `<div class="standings-cell standings-cell--num standings-cell--h2h${cls}">${rec.w}–${rec.l}</div>`;
     }).join('');
 
-    return `<div class="standings-row">
+    const pctBarW = Math.round(r.pct * 100);
+    return `<div class="standings-row${i === 0 ? ' standings-row--first' : ''}" style="--tc-color:${color}">
   <div class="standings-cell standings-cell--seed">
     <span class="standings-seed ${seedClass}">${seed}</span>
   </div>
@@ -198,7 +196,7 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
   </div>
   <div class="standings-cell standings-cell--num standings-cell--w">${r.w}</div>
   <div class="standings-cell standings-cell--num standings-cell--l">${r.l}</div>
-  <div class="standings-cell standings-cell--num">${r.pct.toFixed(3).replace(/^0/, '')}</div>
+  <div class="standings-cell standings-cell--num standings-cell--pct" style="--pct-w:${pctBarW}%;--pct-color:${color}">${r.pct.toFixed(3).replace(/^0/, '')}</div>
   <div class="standings-cell standings-cell--num">${r.gb === 0 ? '—' : r.gb % 1 === 0 ? r.gb : r.gb.toFixed(1)}</div>
   <div class="standings-cell standings-cell--num">${r.gp}</div>
   <div class="standings-cell standings-cell--num">${r.pf}</div>
