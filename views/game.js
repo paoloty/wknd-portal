@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, formatPlayerName, initials, boldTitle } from './utils.js';
+import { teamColor, displayPlayerName, initials, boldTitle, playerAvatar, playerLink } from './utils.js';
 import { scoreTicker } from './home.js';
 
 function youtubeEmbedUrl(url) {
@@ -31,7 +31,7 @@ function scoreCard(game, colorA, colorB) {
   const winA = scoreA > scoreB;
   const winB = scoreB > scoreA;
 
-  return `<div class="game-score-card" style="background:linear-gradient(135deg,${colorA}55 0%,var(--surface) 50%,${colorB}55 100%)">
+  return `<div class="game-score-card" id="potg-anchor" style="background:linear-gradient(135deg,${colorA}55 0%,var(--surface) 50%,${colorB}55 100%)">
   <div class="game-score-card__board">
     <div class="game-score-card__team">
       <div class="game-score-card__team-name${winA ? ' game-score-card__team-name--winner' : ''}">${escHtml(game.team_a_name)}</div>
@@ -69,8 +69,12 @@ function minToSecs(m) {
   return Number(p[0]) * 60 + Number(p[1] || 0);
 }
 
-function fgStr(made, miss) { return made + miss === 0 ? '-' : `${made}/${made + miss}`; }
-function statOrDash(val) { return Number(val) > 0 ? val : '-'; }
+function statOrDash(val) { return Number(val) > 0 ? val : '–'; }
+function shotPct(made, miss) {
+  const att = made + miss;
+  if (!att) return '–';
+  return Math.round(made / att * 100) + '%';
+}
 function calcPer(p) {
   const fgm = Number(p.fg2m) + Number(p.fg3m);
   const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss);
@@ -117,7 +121,7 @@ function lineScore(game, quarterScores = []) {
 
 function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
   const color = teamColor(teamName);
-  const sorted = [...players].sort((a, b) => minToSecs(b.minutes) - minToSecs(a.minutes));
+  const sorted = [...players].sort((a, b) => Number(calcPer(b)) - Number(calcPer(a)));
 
   const sum = (key) => sorted.reduce((s, p) => s + Number(p[key] || 0), 0);
   const tot = {
@@ -129,66 +133,92 @@ function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
   };
 
   const playerRow = (p) => {
-    const fgm = Number(p.fg2m) + Number(p.fg3m);
-    const fgMiss = Number(p.fg2m_miss) + Number(p.fg3m_miss);
+    const fgm  = Number(p.fg2m) + Number(p.fg3m);
+    const fgMs = Number(p.fg2m_miss) + Number(p.fg3m_miss);
+    const tpm  = Number(p.fg3m);
+    const tpMs = Number(p.fg3m_miss);
+    const ftm  = Number(p.ftm);
+    const ftMs = Number(p.ft_miss);
     return `<tr>
-      <td class="bs-name">${escHtml(formatPlayerName(p.name || ''))}</td>
-      <td>${fgStr(fgm, fgMiss)}</td>
-      <td>${fgStr(Number(p.fg3m), Number(p.fg3m_miss))}</td>
-      <td>${fgStr(Number(p.ftm), Number(p.ft_miss))}</td>
-      <td>${statOrDash(p.reb)}</td>
-      <td>${statOrDash(p.ast)}</td>
-      <td>${statOrDash(p.stl)}</td>
-      <td>${statOrDash(p.blk)}</td>
-      <td>${statOrDash(p.turnover)}</td>
-      <td class="bs-pts">${statOrDash(p.pts)}</td>
-      <td class="bs-per">${calcPer(p)}</td>
+      <td class="bs-name">${playerLink(p.player_id, p.name || '')}</td>
+      <td class="bs-stat">${fgm + fgMs ? fgm : '–'}</td>
+      <td class="bs-stat">${fgm + fgMs ? fgm + fgMs : '–'}</td>
+      <td class="bs-stat bs-pct">${shotPct(fgm, fgMs)}</td>
+      <td class="bs-stat">${tpm + tpMs ? tpm : '–'}</td>
+      <td class="bs-stat">${tpm + tpMs ? tpm + tpMs : '–'}</td>
+      <td class="bs-stat bs-pct">${shotPct(tpm, tpMs)}</td>
+      <td class="bs-stat">${ftm + ftMs ? ftm : '–'}</td>
+      <td class="bs-stat">${ftm + ftMs ? ftm + ftMs : '–'}</td>
+      <td class="bs-stat bs-pct">${shotPct(ftm, ftMs)}</td>
+      <td class="bs-stat">${Number(p.reb) || 0}</td>
+      <td class="bs-stat">${Number(p.ast) || 0}</td>
+      <td class="bs-stat">${Number(p.stl) || 0}</td>
+      <td class="bs-stat">${Number(p.blk) || 0}</td>
+      <td class="bs-stat">${Number(p.turnover) || 0}</td>
+      <td class="bs-stat bs-pts">${Number(p.pts) || 0}</td>
+      <td class="bs-stat bs-per">${calcPer(p)}</td>
     </tr>`;
   };
 
-  const totFgm = tot.fg2m + tot.fg3m;
-  const totFgMiss = tot.fg2m_miss + tot.fg3m_miss;
+  const totFgm  = tot.fg2m + tot.fg3m;
+  const totFgMs = tot.fg2m_miss + tot.fg3m_miss;
+  const totTpMs = tot.fg3m_miss;
+  const totFtMs = tot.ft_miss;
 
   return `<div class="bs-block">
-  <div class="bs-team-header" style="border-left-color:${color}">
-    ${escHtml(teamName)}${isWinner ? ' <span class="bs-win-badge">W</span>' : ''}
-  </div>
   <div class="bs-scroll">
     <table class="bs-table">
       <thead>
         <tr>
-          <th class="bs-name">PLAYER</th>
-          <th>FG</th>
-          <th>3PT</th>
-          <th>FT</th>
-          <th>REB</th>
-          <th>AST</th>
-          <th>STL</th>
-          <th>BLK</th>
-          <th>TO</th>
-          <th class="bs-pts">PTS</th>
-          <th class="bs-per">PER</th>
+          <th class="bs-name" rowspan="2">PLAYER</th>
+          <th colspan="3" class="bs-group">FIELD GOALS</th>
+          <th colspan="3" class="bs-group">3-POINTERS</th>
+          <th colspan="3" class="bs-group">FREE THROWS</th>
+          <th class="bs-stat" rowspan="2">REB</th>
+          <th class="bs-stat" rowspan="2">AST</th>
+          <th class="bs-stat" rowspan="2">STL</th>
+          <th class="bs-stat" rowspan="2">BLK</th>
+          <th class="bs-stat" rowspan="2">TO</th>
+          <th class="bs-stat bs-pts" rowspan="2">PTS</th>
+          <th class="bs-stat bs-per" rowspan="2">PER</th>
+        </tr>
+        <tr class="bs-subhead">
+          <th class="bs-stat">M</th>
+          <th class="bs-stat">A</th>
+          <th class="bs-stat bs-pct">%</th>
+          <th class="bs-stat">M</th>
+          <th class="bs-stat">A</th>
+          <th class="bs-stat bs-pct">%</th>
+          <th class="bs-stat">M</th>
+          <th class="bs-stat">A</th>
+          <th class="bs-stat bs-pct">%</th>
         </tr>
       </thead>
       <tbody>
         ${sorted.map(playerRow).join('')}
         ${dnpPlayers.map(name => `<tr class="bs-dnp">
-          <td class="bs-dnp__cell" colspan="11">
+          <td class="bs-dnp__cell" colspan="17">
             ${escHtml(name)} <span class="dnp-pill">DNP</span>
           </td>
         </tr>`).join('')}
         <tr class="bs-totals">
           <td class="bs-name">TEAM</td>
-          <td>${fgStr(totFgm, totFgMiss)}</td>
-          <td>${fgStr(tot.fg3m, tot.fg3m_miss)}</td>
-          <td>${fgStr(tot.ftm, tot.ft_miss)}</td>
-          <td>${tot.reb}</td>
-          <td>${tot.ast}</td>
-          <td>${tot.stl}</td>
-          <td>${tot.blk}</td>
-          <td>${tot.turnover}</td>
-          <td class="bs-pts">${tot.pts}</td>
-          <td class="bs-per">-</td>
+          <td class="bs-stat">${totFgm}</td>
+          <td class="bs-stat">${totFgm + totFgMs}</td>
+          <td class="bs-stat bs-pct">${shotPct(totFgm, totFgMs)}</td>
+          <td class="bs-stat">${tot.fg3m}</td>
+          <td class="bs-stat">${tot.fg3m + totTpMs}</td>
+          <td class="bs-stat bs-pct">${shotPct(tot.fg3m, totTpMs)}</td>
+          <td class="bs-stat">${tot.ftm}</td>
+          <td class="bs-stat">${tot.ftm + totFtMs}</td>
+          <td class="bs-stat bs-pct">${shotPct(tot.ftm, totFtMs)}</td>
+          <td class="bs-stat">${tot.reb}</td>
+          <td class="bs-stat">${tot.ast}</td>
+          <td class="bs-stat">${tot.stl}</td>
+          <td class="bs-stat">${tot.blk}</td>
+          <td class="bs-stat">${tot.turnover}</td>
+          <td class="bs-stat bs-pts">${tot.pts}</td>
+          <td class="bs-stat bs-per">–</td>
         </tr>
       </tbody>
     </table>
@@ -217,7 +247,7 @@ function buildBoxScoreData(game, stats, playerMap, teamMap) {
     const t = teamMap[p.team_id];
     const teamName = String(t?.name || '').toUpperCase();
     if (!dnpByTeam[teamName]) dnpByTeam[teamName] = [];
-    dnpByTeam[teamName].push(formatPlayerName(p.name || ''));
+    dnpByTeam[teamName].push(displayPlayerName(p.name || ''));
   }
 
   const winner = winnerName.toUpperCase();
@@ -260,14 +290,12 @@ function gameLeadersTab(game, stats) {
     return { value: maxVal, players: tied };
   };
 
-  const avatar = (p, color) =>
-    `<div class="ldr-avatar" style="border-color:${color}"><span>${escHtml(initials(p.name || ''))}</span></div>`;
+  const avatar = (p, color) => playerAvatar(p.player_id, p.name, color, { className: 'ldr-avatar', link: true });
 
   const playerGroup = (leader, color, isA) => {
     if (!leader.players.length) return '';
     const avGroup = `<div class="ldr-avatars">${leader.players.map(p => avatar(p, color)).join('')}</div>`;
-    const joined = leader.players.map(p => formatPlayerName(p.name || '').toUpperCase()).join(', ');
-    const nameEl = `<span class="ldr-name">${escHtml(joined)}</span>`;
+    const nameEl = `<span class="ldr-name">${leader.players.map(p => playerLink(p.player_id, p.name || '', { upper: true })).join(', ')}</span>`;
     return `<div class="ldr-player">${isA ? nameEl + avGroup : avGroup + nameEl}</div>`;
   };
 
@@ -443,7 +471,7 @@ function potgCard(stat, writeup) {
   const teamName = String(stat.team_name || '').toUpperCase();
   const color = teamColor(teamName);
   const isLight = teamName === 'WHITE';
-  const displayName = formatPlayerName(stat.name || '').toUpperCase();
+  const displayName = displayPlayerName(stat.name || '').toUpperCase();
   const cleanWriteup = String(writeup || '').replace(/\*\*/g, '').trim();
 
   const statDefs = [
@@ -462,11 +490,9 @@ function potgCard(stat, writeup) {
   return `<div class="card potg-card">
   <div class="potg-card__label">PLAYER OF THE GAME</div>
   <div class="potg-card__player">
-    <div class="potg-card__avatar" style="border-color:${color}">
-      <span class="font-condensed">${escHtml(initials(stat.name))}</span>
-    </div>
+    ${playerAvatar(stat.player_id, stat.name, color, { className: 'potg-card__avatar', link: true })}
     <div class="potg-card__info">
-      <div class="potg-card__name">${escHtml(displayName)}</div>
+      <div class="potg-card__name">${playerLink(stat.player_id, stat.name, { upper: true })}</div>
       <span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
     </div>
   </div>
@@ -496,7 +522,7 @@ function topPerformers(stats, potgPlayerId) {
     return `<div class="performer-row">
   <div class="performer-row__left">
     <span class="team-dot" style="background:${color}"></span>
-    <span class="performer-row__name">${escHtml(formatPlayerName(s.name || '').toUpperCase())}</span>
+    <span class="performer-row__name">${playerLink(s.player_id, s.name || '', { upper: true })}</span>
   </div>
   <span class="performer-row__line">${escHtml(statLine)}</span>
 </div>`;

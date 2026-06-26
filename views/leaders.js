@@ -1,7 +1,7 @@
 import { escHtml } from './layout.js';
-import { teamColor, formatPlayerName, initials } from './utils.js';
+import { teamColor, displayPlayerName, initials, playerAvatar, playerLink } from './utils.js';
 
-const PER_GAME = [
+export const PER_GAME = [
   { id: 'pts',      label: 'PPG', title: 'Scoring',        fn: p => p.pts      / p.games_played },
   { id: 'reb',      label: 'RPG', title: 'Rebounds',       fn: p => p.reb      / p.games_played },
   { id: 'ast',      label: 'APG', title: 'Assists',        fn: p => p.ast      / p.games_played },
@@ -28,7 +28,7 @@ const PER_GAME = [
   { id: 'pf',       label: 'PF',  title: 'Fouls',          fn: p => p.pf       / p.games_played },
 ];
 
-const TOTALS = [
+export const TOTALS = [
   { id: 'pts',      label: 'PTS', title: 'Points',         fn: p => p.pts },
   { id: 'reb',      label: 'REB', title: 'Rebounds',       fn: p => p.reb },
   { id: 'ast',      label: 'AST', title: 'Assists',        fn: p => p.ast },
@@ -55,10 +55,26 @@ const TOTALS = [
   { id: 'pf',       label: 'PF',  title: 'Fouls',          fn: p => p.pf },
 ];
 
-function fmtPerGame(v) { return v.toFixed(1); }
-function fmtTotals(v)  { return String(Math.round(v)); }
+export function fmtPerGame(v) { return v.toFixed(1); }
+export function fmtTotals(v)  { return String(Math.round(v)); }
 
-function leaderPanel(cat, players, defaultFmt) {
+function shareBtn(cat, mode, season, best, color, fmt) {
+  return `<button class="leader-panel__share" onclick="shareLeader(this)" title="Share"
+    data-season="${escHtml(String(season))}"
+    data-cat-id="${escHtml(cat.id)}"
+    data-mode="${escHtml(mode)}"
+    data-player-id="${escHtml(best.p.id)}"
+    data-player-name="${escHtml(best.p.name)}"
+    data-team-id="${escHtml(best.p.team_id)}"
+    data-team-name="${escHtml(String(best.p.team_name || ''))}"
+    data-team-color="${escHtml(color)}"
+    data-stat-label="${escHtml(cat.label)}"
+    data-stat-title="${escHtml(cat.title)}"
+    data-stat-value="${best.v}"
+    data-stat-fmt="${escHtml(fmt(best.v))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>`;
+}
+
+function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}) {
   const scored = players
     .map(p => ({ p, v: cat.fn(p) }))
     .filter(x => x.v > 0)
@@ -80,13 +96,12 @@ function leaderPanel(cat, players, defaultFmt) {
     <span class="leader-panel__cat">${escHtml(cat.label)}</span>
     <span class="leader-panel__title">${escHtml(cat.title)}</span>
     ${cat.min ? `<span class="leader-panel__min">${escHtml(cat.min)}</span>` : ''}
+    ${shareBtn(cat, mode, season, best, color, fmt)}
   </div>
   <div class="leader-panel__top">
-    <div class="leader-avatar" style="border-color:${color}">
-      <span class="font-condensed">${escHtml(initials(best.p.name))}</span>
-    </div>
+    ${playerAvatar(best.p.id, best.p.name, color, { className: 'leader-avatar', link: true })}
     <div class="leader-panel__info">
-      <div class="leader-panel__name">${escHtml(formatPlayerName(best.p.name).toUpperCase())}</div>
+      <div class="leader-panel__name">${playerLink(best.p.id, best.p.name, { upper: true })}</div>
       <span class="team-chip" style="background:${color};color:${isLight?'#10141d':'#fff'}">${escHtml(teamName)}</span>
     </div>
     <div class="leader-panel__stat font-condensed">${escHtml(fmt(best.v))}</div>
@@ -98,7 +113,7 @@ function leaderPanel(cat, players, defaultFmt) {
       return `<div class="leader-panel__row">
       <span class="leader-panel__rank">${i + 2}</span>
       <span class="team-dot" style="background:${tc}"></span>
-      <span class="leader-panel__row-name">${escHtml(formatPlayerName(x.p.name).toUpperCase())}</span>
+      <span class="leader-panel__row-name">${playerLink(x.p.id, x.p.name, { upper: true })}</span>
       <div class="leader-panel__bar-wrap">
         <div class="leader-panel__bar" style="width:${barW}%;background:${tc}33;border-right:2px solid ${tc}"></div>
       </div>
@@ -109,9 +124,10 @@ function leaderPanel(cat, players, defaultFmt) {
 </div>`;
 }
 
-export function leadersPage({ players }) {
-  const pgPanels  = PER_GAME.map(cat => leaderPanel(cat, players, fmtPerGame)).filter(Boolean).join('\n');
-  const totPanels = TOTALS.map(cat => leaderPanel(cat, players, fmtTotals)).filter(Boolean).join('\n');
+export function leadersPage({ players, season = '' }) {
+  const opts = s => ({ mode: s, season });
+  const pgPanels  = PER_GAME.map(cat => leaderPanel(cat, players, fmtPerGame, opts('pg'))).filter(Boolean).join('\n');
+  const totPanels = TOTALS.map(cat => leaderPanel(cat, players, fmtTotals, opts('tot'))).filter(Boolean).join('\n');
 
   return `<div class="page-content">
     <div class="section-divider">
@@ -130,6 +146,44 @@ export function leadersPage({ players }) {
       document.getElementById('leaders-grid-tot').style.display = mode === 'tot' ? '' : 'none';
       document.getElementById('leaders-btn-pg').classList.toggle('leaders-toggle__btn--active',  mode === 'pg');
       document.getElementById('leaders-btn-tot').classList.toggle('leaders-toggle__btn--active', mode === 'tot');
+    }
+    async function shareLeader(btn) {
+      if (btn._busy) return;
+      btn._busy = true;
+      const icon = btn.innerHTML;
+      btn.innerHTML = '&hellip;';
+      try {
+        const r = await fetch('/api/leaders/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            season:      btn.dataset.season,
+            category_id: btn.dataset.catId,
+            mode:        btn.dataset.mode,
+            player_id:   btn.dataset.playerId,
+            player_name: btn.dataset.playerName,
+            team_id:     btn.dataset.teamId,
+            team_name:   btn.dataset.teamName,
+            team_color:  btn.dataset.teamColor,
+            stat_label:  btn.dataset.statLabel,
+            stat_title:  btn.dataset.statTitle,
+            stat_value:  parseFloat(btn.dataset.statValue),
+            stat_fmt:    btn.dataset.statFmt,
+          })
+        });
+        const { url } = await r.json();
+        await navigator.clipboard.writeText(url);
+        btn.innerHTML = '&#10003; Copied';
+        btn.classList.add('leader-panel__share--copied');
+        setTimeout(() => {
+          btn.innerHTML = icon;
+          btn.classList.remove('leader-panel__share--copied');
+          btn._busy = false;
+        }, 2000);
+      } catch {
+        btn.innerHTML = icon;
+        btn._busy = false;
+      }
     }
     </script>
   </div>`;

@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, formatPlayerName, formatDate, initials, boldTitle, excerpt } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, playerAvatar, playerLink } from './utils.js';
 
 // ── Score Ticker ─────────────────────────────────────────────────────────────
 export function scoreTicker(games) {
@@ -155,26 +155,28 @@ export function highlightsSidebar(highlights) {
     <span class="section-divider__label">PLAYER HIGHLIGHTS</span>
     <span class="section-divider__line"></span>
   </div>
-  <div class="card highlight-card highlight-card--empty">No games yet.</div>
+  <div class="card highlight-card highlight-card--empty">
+    <p style="margin:0;font-size:13px;color:var(--text-muted)">No player highlights yet. Check back after the next game!</p>
+  </div>
 </div>`;
   }
 
   const cards = highlights.map(({ game, stat, player, team }) => {
-    const displayName = String(player?.name || '').toUpperCase();
+    const displayName = displayPlayerName(player?.name || '').toUpperCase();
     const teamName = String(team?.name || '').toUpperCase();
     const color = teamColor(teamName);
     const isLight = teamName === 'WHITE';
     const statLine = `${stat.pts} PTS · ${stat.reb} REB · ${stat.ast} AST`;
     const writeup = String(game.potg_writeup || '').replace(/\*\*/g, '').trim();
 
-    return `<div class="card highlight-card">
+    return `<a href="/games/${escHtml(game.id)}#potg-anchor" class="card highlight-card">
   <div class="highlight-header">
     <span class="highlight-name">${escHtml(displayName)}</span>
     <span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
   </div>
   <div class="highlight-stat">${escHtml(statLine)}</div>
   <p class="highlight-body">${escHtml(writeup || `${stat.fg2m + stat.fg3m}/${stat.fg2m + stat.fg3m + stat.fg2m_miss + stat.fg3m_miss} FG · ${stat.fg3m} 3PM · ${stat.ftm} FTM`)}</p>
-</div>`;
+</a>`;
   });
 
   return `<div class="highlights-sidebar">
@@ -237,10 +239,8 @@ function leagueLeaders(players) {
     return `<div class="card leader-card">
   <span class="leader-cat">${cat.label}</span>
   ${cat.title ? `<span class="leader-title">${escHtml(cat.title)}</span>` : ''}
-  <div class="leader-avatar" style="border-color:${color}">
-    <span class="font-condensed">${escHtml(initials(leader.name))}</span>
-  </div>
-  <span class="leader-name">${escHtml(formatPlayerName(leader.name).toUpperCase())}</span>
+  ${playerAvatar(leader.id, leader.name, color, { className: 'leader-avatar', link: true })}
+  <span class="leader-name">${playerLink(leader.id, leader.name, { upper: true })}</span>
   <span class="team-chip leader-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
   <span class="font-condensed leader-stat">${escHtml(cat.fn(leader))}</span>
 </div>`;
