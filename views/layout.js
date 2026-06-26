@@ -70,12 +70,20 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     </div>
   </div>
   <footer class="site-footer">
-    <div class="container site-footer__inner">
-      <a href="/" class="site-footer__logo">WKND Basketball</a>
-      <nav class="site-footer__nav">
-        ${navLinks.map(({ href, label }) => `<a href="${href}">${escHtml(label)}</a>`).join('')}
-      </nav>
-      <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
+    <div class="container">
+      <div class="site-footer__inner">
+        <a href="/" class="site-footer__logo">WKND Basketball</a>
+        <nav class="site-footer__nav">
+          ${navLinks.map(({ href, label }) => `<a href="${href}">${escHtml(label)}</a>`).join('')}
+        </nav>
+      </div>
+      <div class="site-footer__bottom">
+        <nav class="site-footer__legal">
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+        </nav>
+        <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
+      </div>
     </div>
   </footer>
 </body>

@@ -216,17 +216,54 @@ body {
   transition: color 0.15s;
 }
 .site-footer__nav a:hover { color: var(--text-muted); }
+.site-footer__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.site-footer__legal {
+  display: flex;
+  gap: 20px;
+}
+.site-footer__legal a {
+  font-size: 12px;
+  color: var(--text-subtle);
+  transition: color 0.15s;
+}
+.site-footer__legal a:hover { color: var(--text-muted); }
 .site-footer__copy {
   font-size: 12px;
   color: var(--text-subtle);
-  margin-left: auto;
 }
 
 @media (max-width: 640px) {
   .site-footer__inner { flex-direction: column; align-items: flex-start; gap: 20px; }
   .site-footer__nav { flex-wrap: wrap; gap: 14px 20px; }
-  .site-footer__copy { margin-left: 0; }
+  .site-footer__bottom { flex-direction: column; align-items: flex-start; }
 }
+
+/* ── Legal pages ─────────────────────────────────────────────────────────── */
+.legal-page { max-width: 760px; margin: 0 auto; }
+.legal-header { margin-bottom: 24px; }
+.legal-title { font-size: 1.75rem; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em; }
+.legal-updated { font-size: 13px; color: var(--text-subtle); margin: 0; }
+.legal-card { padding: 32px; }
+.legal-section { padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px solid var(--border); }
+.legal-section:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
+.legal-section__heading { font-size: 14px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--amber); margin: 0 0 12px; }
+.legal-section__body p { font-size: 14px; color: var(--text-muted); line-height: 1.7; margin: 0 0 10px; }
+.legal-section__body p:last-child { margin-bottom: 0; }
+.legal-section__body ul { font-size: 14px; color: var(--text-muted); line-height: 1.7; margin: 0 0 10px; padding-left: 20px; }
+.legal-section__body li { margin-bottom: 6px; }
+.legal-section__body a { color: var(--amber); text-decoration: underline; text-underline-offset: 3px; }
+.legal-section__body a:hover { color: var(--text); }
+.legal-section__body strong { color: var(--text); font-weight: 600; }
+@media (max-width: 640px) { .legal-card { padding: 20px; } }
 
 /* ── Score ticker ───────────────────────────────────────────────────────── */
 .score-ticker {
@@ -577,10 +614,11 @@ body {
   position: sticky;
   left: 0;
   z-index: 2;
-  background: inherit;
+  background: var(--surface);
   border-left: 3px solid var(--tc-color, var(--border));
 }
-.standings-row--head .standings-cell--seed { border-left-color: transparent; background: rgba(255,255,255,0.02); }
+.standings-row--first .standings-cell--seed { background: #0d1520; }
+.standings-row--head .standings-cell--seed { border-left-color: transparent; background: #0e1526; }
 .standings-cell--team {
   gap: 8px;
   font-size: 13px;
@@ -711,19 +749,25 @@ body {
 .h2h-loss { color: #f87171; }
 
 @media (max-width: 640px) {
-  .standings-cell--num { font-size: 11px; }
-  .standings-cell--num { font-size: 11px; }
+  .standings-cell { font-size: 11px; min-height: 42px; padding: 0 4px; }
+  .standings-cell--seed { padding: 0 2px 0 8px; }
+  .standings-cell--num { font-size: 11px; padding: 0 4px; }
+  .standings-cell--team { font-size: 12px; gap: 6px; }
+  .standings-seed { width: 18px; height: 18px; font-size: 10px; }
+  .standings-row--head .standings-cell { min-height: 32px; }
   .h2h-cell { padding: 8px 10px; font-size: 11px; }
+  .tstat-grid { grid-template-columns: 1fr; }
+  .leaders-page-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Team Stat Bars ─────────────────────────────────────────────────────── */
 .tstat-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 @media (max-width: 900px) { .tstat-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 500px) { .tstat-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .tstat-grid { grid-template-columns: 1fr; } }
 .tstat-card { padding: 14px 16px; }
 .tstat-head {
   display: flex;

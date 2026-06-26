@@ -14,6 +14,7 @@ import { standingsPage } from './views/standings.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
+import { privacyPage, termsPage } from './views/legal.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
 import { upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
@@ -74,7 +75,7 @@ function buildGameOgTags(req, game) {
   const isCompleted = scoreA + scoreB > 0;
   const recapTitle = writeupTitle(game.game_writeup);
   const title      = recapTitle || `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name} · Game Recap`;
-  const url        = `${origin}/games/${encodeURIComponent(game.id)}`;
+  const url        = `${origin}/games/${encodeURIComponent(gameSlug(game))}`;
   const desc       = writeupDescription(game.game_writeup) || 'Game recap, box score, and player stats from WKND Basketball League.';
   const scoreLabel = `${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}`;
   const img        = isCompleted ? `${origin}/api/cover/${encodeURIComponent(game.id)}.png` : null;
@@ -127,6 +128,90 @@ function buildGameOgTags(req, game) {
       `<meta name="twitter:image:alt" content="${escAttr(scoreLabel)}">`,
     );
   }
+
+  return tags.join('\n  ');
+}
+
+function buildPlayerOgTags(req, player, totals) {
+  const origin  = getRequestOrigin(req);
+  const name    = displayPlayerName(player.name);
+  const team    = String(player.team_name || '').toUpperCase();
+  const url     = `${origin}/players/${encodeURIComponent(playerSlug(player))}`;
+  const hasPhoto = !!player.picture_url;
+  const img     = hasPhoto ? `${origin}/api/player/${encodeURIComponent(player.id)}/photo` : null;
+
+  let positions = [];
+  try { positions = JSON.parse(player.positions || '[]'); } catch {}
+  const posStr = positions.join(' / ');
+
+  let desc = `${name}`;
+  if (posStr)  desc += ` · ${posStr}`;
+  if (team)    desc += ` · ${team}`;
+  if (totals?.games_played) {
+    const gp = totals.games_played;
+    const ppg = (totals.pts / gp).toFixed(1);
+    const rpg = (totals.reb / gp).toFixed(1);
+    const apg = (totals.ast / gp).toFixed(1);
+    desc += ` · ${ppg} PPG, ${rpg} RPG, ${apg} APG`;
+  }
+  desc += ' · WKND Basketball League';
+
+  const nameParts = String(player.name || '').split(',');
+  const lastName  = nameParts[0]?.trim() || '';
+  const firstName = nameParts[1]?.trim() || '';
+
+  const tags = [
+    `<meta name="description" content="${escAttr(desc)}">`,
+    `<link rel="canonical" href="${escAttr(url)}">`,
+    `<meta property="og:type" content="profile">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="${escAttr(name + ' — WKND Basketball')}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:url" content="${escAttr(url)}">`,
+    `<meta property="profile:first_name" content="${escAttr(firstName)}">`,
+    `<meta property="profile:last_name" content="${escAttr(lastName)}">`,
+  ];
+
+  if (img) {
+    tags.push(
+      `<meta property="og:image" content="${escAttr(img)}">`,
+      `<meta property="og:image:secure_url" content="${escAttr(img)}">`,
+      `<meta property="og:image:alt" content="${escAttr(name)}">`,
+    );
+  }
+
+  tags.push(
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="${escAttr(name + ' — WKND Basketball')}">`,
+    `<meta name="twitter:description" content="${escAttr(desc)}">`,
+  );
+
+  if (img) tags.push(`<meta name="twitter:image" content="${escAttr(img)}">`);
+
+  return tags.join('\n  ');
+}
+
+function buildTeamOgTags(req, team) {
+  const origin   = getRequestOrigin(req);
+  const teamName = String(team.name || '').toUpperCase();
+  const url      = `${origin}/teams/${encodeURIComponent(teamSlug(team))}`;
+  const title    = `${teamName} — WKND Basketball`;
+  const desc     = `${teamName} team — roster, stats, and standings on WKND Basketball League.`;
+
+  const tags = [
+    `<meta name="description" content="${escAttr(desc)}">`,
+    `<link rel="canonical" href="${escAttr(url)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:url" content="${escAttr(url)}">`,
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="${escAttr(title)}">`,
+    `<meta name="twitter:description" content="${escAttr(desc)}">`,
+  ];
 
   return tags.join('\n  ');
 }
@@ -952,8 +1037,9 @@ app.get('/teams/:ref', (req, res) => {
 
   const team = db.prepare('SELECT * FROM teams WHERE id = ?').get(resolved.id);
   res.send(renderPage(req, {
-    title: `${team.name} — WKND Basketball League`,
+    title: `${String(team.name).toUpperCase()} — WKND Basketball`,
     currentPath: '/teams',
+    metaTags: buildTeamOgTags(req, team),
     body: comingSoonPage({ label: team.name, description: 'Team rosters, stats, and season averages are on their way.' })
   }));
 });
@@ -996,9 +1082,26 @@ app.get('/players/:ref', (req, res) => {
   const displayName = displayPlayerName(player.name);
 
   res.send(renderPage(req, {
-    title: `${displayName} — WKND Basketball League`,
+    title: `${displayName} — WKND Basketball`,
     currentPath: '/players',
+    metaTags: buildPlayerOgTags(req, player, totals),
     body: playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, dnpGames })
+  }));
+});
+
+app.get('/privacy', (req, res) => {
+  res.send(renderPage(req, {
+    title: 'Privacy Policy — WKND Basketball',
+    currentPath: '/privacy',
+    body: privacyPage(),
+  }));
+});
+
+app.get('/terms', (req, res) => {
+  res.send(renderPage(req, {
+    title: 'Terms of Service — WKND Basketball',
+    currentPath: '/terms',
+    body: termsPage(),
   }));
 });
 
