@@ -91,14 +91,14 @@ function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}
   const color = teamColor(teamName);
   const isLight = teamName === 'WHITE';
 
-  return `<div class="card leader-panel">
+  return `<div class="card leader-panel" style="--lp-color:${color}">
   <div class="leader-panel__head">
     <span class="leader-panel__cat">${escHtml(cat.label)}</span>
     <span class="leader-panel__title">${escHtml(cat.title)}</span>
     ${cat.min ? `<span class="leader-panel__min">${escHtml(cat.min)}</span>` : ''}
     ${shareBtn(cat, mode, season, best, color, fmt)}
   </div>
-  <div class="leader-panel__top">
+  <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
     ${playerAvatar(best.p.id, best.p.name, color, { className: 'leader-avatar', link: true })}
     <div class="leader-panel__info">
       <div class="leader-panel__name">${playerLink(best.p.id, best.p.name, { upper: true })}</div>
@@ -110,14 +110,11 @@ function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}
     ${top10.slice(1).map((x, i) => {
       const tc = teamColor(String(x.p.team_name || '').toUpperCase());
       const barW = maxV > 0 ? Math.round(x.v / maxV * 100) : 0;
-      return `<div class="leader-panel__row">
+      return `<div class="leader-panel__row" style="--bar-w:${barW}%;--bar-color:${tc}">
       <span class="leader-panel__rank">${i + 2}</span>
       <span class="team-dot" style="background:${tc}"></span>
       <span class="leader-panel__row-name">${playerLink(x.p.id, x.p.name, { upper: true })}</span>
-      <div class="leader-panel__bar-wrap">
-        <div class="leader-panel__bar" style="width:${barW}%;background:${tc}33;border-right:2px solid ${tc}"></div>
-      </div>
-      <span class="leader-panel__row-stat">${escHtml(fmt(x.v))}</span>
+      <span class="leader-panel__row-stat font-condensed">${escHtml(fmt(x.v))}</span>
     </div>`;
     }).join('')}
   </div>

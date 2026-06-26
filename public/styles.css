@@ -767,7 +767,20 @@ body {
   gap: 16px;
   margin-top: 16px;
 }
-.leader-panel { padding: 0; }
+.leader-panel {
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+}
+/* Team color top strip */
+.leader-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(to right, var(--lp-color, var(--amber)), transparent 70%);
+  z-index: 1;
+}
 .leader-panel__head {
   display: flex;
   align-items: center;
@@ -801,30 +814,52 @@ body {
 .leader-panel__top {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px 12px;
+  gap: 14px;
+  padding: 20px 16px 18px;
   border-bottom: 1px solid var(--border);
 }
-.leader-panel__top .leader-avatar { width: 44px; height: 44px; flex-shrink: 0; margin-bottom: 0; }
-.leader-panel__top .leader-avatar .font-condensed { font-size: 18px; }
+.leader-panel__top .leader-avatar { width: 56px; height: 56px; flex-shrink: 0; margin-bottom: 0; }
+.leader-panel__top .leader-avatar .font-condensed { font-size: 22px; }
 .leader-panel__info { flex: 1; min-width: 0; }
-.leader-panel__name { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; }
-.leader-panel__stat { font-size: 28px; font-weight: 800; color: var(--amber); line-height: 1; flex-shrink: 0; }
+.leader-panel__name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
+.leader-panel__stat { font-size: 38px; font-weight: 800; color: var(--amber); line-height: 1; flex-shrink: 0; }
 .leader-panel__list { padding: 4px 0; }
 .leader-panel__row {
+  position: relative;
   display: grid;
-  grid-template-columns: 12px 8px 1fr auto auto;
+  grid-template-columns: 18px 8px 1fr auto;
   align-items: center;
-  gap: 0 6px;
-  padding: 6px 12px 6px 6px;
+  gap: 0 8px;
+  padding: 8px 14px 8px 10px;
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+/* Full-height background bar */
+.leader-panel__row::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: var(--bar-w, 0%);
+  background: var(--bar-color, var(--border));
+  opacity: 0.1;
+  pointer-events: none;
+  transition: width 0.4s ease;
 }
 .leader-panel__row:last-child { border-bottom: none; }
-.leader-panel__rank { font-size: 9.5px; font-weight: 700; color: var(--text-subtle); text-align: right; }
-.leader-panel__row-name { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.leader-panel__bar-wrap { position: relative; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-.leader-panel__bar { height: 4px; border-radius: 2px; }
-.leader-panel__row-stat { font-size: 12px; font-weight: 700; color: var(--text); flex-shrink: 0; font-family: 'Saira Condensed', sans-serif; }
+.leader-panel__rank {
+  font-size: 10px; font-weight: 700; color: var(--text-subtle);
+  text-align: right; font-family: 'Saira Condensed', sans-serif;
+  position: relative; z-index: 1;
+}
+.leader-panel__row-name {
+  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  position: relative; z-index: 1;
+}
+.leader-panel__row-stat {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  flex-shrink: 0; position: relative; z-index: 1;
+}
 
 /* ── Leaders toggle ─────────────────────────────────────────────────────── */
 .leaders-toggle {
@@ -1791,6 +1826,7 @@ a.player-link:hover { color: var(--amber); }
 @media (max-width: 1100px) {
   .leaders-grid { grid-template-columns: repeat(3, 1fr); }
   .leaders-page-grid { grid-template-columns: repeat(2, 1fr); }
+  .leader-panel__stat { font-size: 32px; }
 }
 
 @media (max-width: 900px) {
@@ -1811,6 +1847,8 @@ a.player-link:hover { color: var(--amber); }
 @media (max-width: 640px) {
   .leaders-grid { grid-template-columns: repeat(2, 1fr); }
   .leaders-page-grid { grid-template-columns: 1fr; }
+  .leader-panel__stat { font-size: 28px; }
+  .leader-panel__top .leader-avatar { width: 48px; height: 48px; }
   .score-ticker__card { min-width: 160px; }
   .player-hero__avatar { width: 80px; height: 80px; font-size: 26px; }
   .player-hero__name { font-size: 1.4rem; }
