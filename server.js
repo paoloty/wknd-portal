@@ -428,7 +428,7 @@ const selectGamesStmt = db.prepare(`
          playoff_round, series_id, youtube_url,
          (COALESCE(LENGTH(social_cover_data_url), 0) > 0) AS has_cover
   FROM games
-  ORDER BY id DESC
+  ORDER BY date DESC, id DESC
 `);
 
 const selectGameCoverStmt = db.prepare('SELECT social_cover_data_url FROM games WHERE id = ?');

@@ -11,19 +11,18 @@ export function scoreTicker(games) {
     const colorB    = teamColor(g.team_b_name);
 
     if (!hasScores) {
-      // Upcoming game — no scores, natural team order
-      return `<a href="/games/${encodeURIComponent(g.id)}" class="card score-ticker__card ticker-card--upcoming" style="--tc-a:${colorA};--tc-b:${colorB}">
+      const row = (name, color) => `<div class="ticker-team-row">
+    <div class="ticker-team"><span class="team-dot" style="background:${color}"></span><span class="ticker-team-name">${escHtml(name)}</span></div>
+    <span class="font-condensed ticker-score ticker-score--tbd">–</span>
+  </div>`;
+      return `<div class="card score-ticker__card ticker-card--upcoming" style="--tc-a:${colorA};--tc-b:${colorB}">
   <div class="ticker-header">
     <span class="ticker-date">${escHtml(formatDate(g.date))}</span>
     <span class="ticker-status ticker-status--upcoming">UPCOMING</span>
   </div>
-  <div class="ticker-team-row">
-    <div class="ticker-team"><span class="team-dot" style="background:${colorA}"></span><span class="ticker-team-name">${escHtml(g.team_a_name)}</span></div>
-  </div>
-  <div class="ticker-team-row">
-    <div class="ticker-team"><span class="team-dot" style="background:${colorB}"></span><span class="ticker-team-name">${escHtml(g.team_b_name)}</span></div>
-  </div>
-</a>`;
+  ${row(g.team_a_name, colorA)}
+  ${row(g.team_b_name, colorB)}
+</div>`;
     }
 
     // Completed game — winner on top

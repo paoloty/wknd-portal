@@ -294,6 +294,9 @@ body {
   background: linear-gradient(to right, var(--tc-a) 50%, var(--tc-b) 50%);
 }
 .score-ticker__card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+.ticker-card--upcoming { opacity: 0.5; cursor: default; }
+.ticker-card--upcoming:hover { box-shadow: none; }
+.ticker-score--tbd { color: var(--text-muted); }
 .ticker-header {
   display: flex;
   align-items: center;
