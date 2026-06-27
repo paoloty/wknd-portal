@@ -66,6 +66,12 @@ export function boldTitle(writeup) {
   return m ? m[1].trim() : '';
 }
 
+export function truncate(str, max = 90) {
+  const s = String(str || '').trim();
+  if (s.length <= max) return s;
+  return s.slice(0, max).replace(/\s\S*$/, '') + '…';
+}
+
 export function excerpt(writeup) {
   const stripped = String(writeup || '').replace(/\*\*(.+?)\*\*/g, '$1').trim();
   const paras = stripped.split(/\n{2,}/);

@@ -488,7 +488,7 @@ function potgCard(stat, writeup) {
     </div>`).join('');
 
   return `<div class="card potg-card">
-  <div class="potg-card__label">PLAYER OF THE GAME</div>
+  <div class="card-label card-label--accent">PLAYER OF THE GAME</div>
   <div class="potg-card__player">
     ${playerAvatar(stat.player_id, stat.name, color, { className: 'potg-card__avatar', link: true })}
     <div class="potg-card__info">
@@ -503,7 +503,7 @@ function potgCard(stat, writeup) {
 
 // ── Top performers ────────────────────────────────────────────────────────────
 function topPerformers(stats, potgPlayerId) {
-  const others = stats.filter(s => s.player_id !== potgPlayerId).slice(0, 6);
+  const others = stats.filter(s => s.player_id !== potgPlayerId && Number(calcPer(s)) >= 10);
   if (!others.length) return '';
 
   const rows = others.map(s => {
@@ -529,7 +529,7 @@ function topPerformers(stats, potgPlayerId) {
   });
 
   return `<div class="card top-performers">
-  <div class="top-performers__header">TOP PERFORMERS</div>
+  <div class="card-label">TOP PERFORMERS</div>
   <div class="top-performers__list">
     ${rows.join('\n    ')}
   </div>

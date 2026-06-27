@@ -60,14 +60,11 @@ export function gamesPage({ games, highlights = [] }) {
 
 <div class="games-layout">
   <div class="games-main">
-    <div class="section-divider">
-      <span class="section-divider__label">GAME LOG</span>
-      <span class="section-divider__line"></span>
-    </div>
-    <div class="game-list">
-    ${rows}
+    <div class="card game-list">
+      <div class="card-label">GAME LOG</div>
+      ${rows}
     </div>
   </div>
-  ${highlightsSidebar(highlights)}
+  ${highlightsSidebar(highlights, { limit: 10, seeAllLink: false })}
 </div>`;
 }

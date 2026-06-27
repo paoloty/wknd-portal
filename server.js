@@ -876,7 +876,7 @@ app.get('/games', (req, res) => {
     !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
 
-  const highlights = buildHighlights(completedGames, playerMap, teamMap);
+  const highlights = buildHighlights(completedGames, playerMap, teamMap, 10);
 
   res.send(renderPage(req, {
     title: 'Games — WKND Basketball League',

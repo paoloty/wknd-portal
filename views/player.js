@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, playerAvatar } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, truncate, playerAvatar } from './utils.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -42,22 +42,25 @@ function heroSection(player, totals) {
 
   // ── Right column: career averages ──────────────────────────────────────────
   const gp = totals?.games_played || 0;
+  const fga  = (totals.fg2m || 0) + (totals.fg3m || 0) + (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0);
+  const tpa  = (totals.fg3m || 0) + (totals.fg3m_miss || 0);
+  const fta  = (totals.ftm || 0) + (totals.ft_miss || 0);
   const caStats = gp ? [
     { lbl: 'PPG', val: avg(totals.pts, gp) },
     { lbl: 'RPG', val: avg(totals.reb, gp) },
     { lbl: 'APG', val: avg(totals.ast, gp) },
     { lbl: 'SPG', val: avg(totals.stl, gp) },
     { lbl: 'BPG', val: avg(totals.blk, gp) },
-    { lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0)) },
-    { lbl: '3P%', val: pct(totals.fg3m, totals.fg3m_miss) },
-    { lbl: 'FT%', val: pct(totals.ftm, totals.ft_miss) },
-  ].filter(s => s.val !== '0.0' && s.val !== '0%' && s.val !== '—') : [];
+    ...(fga  >= 10 ? [{ lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0)) }] : []),
+    ...(tpa  >= 5  ? [{ lbl: '3P%', val: pct(totals.fg3m, totals.fg3m_miss) }] : []),
+    ...(fta  >= 5  ? [{ lbl: 'FT%', val: pct(totals.ftm, totals.ft_miss) }] : []),
+  ].filter(s => s.val !== '0.0' && s.val !== '0%' && s.val !== '—').slice(0, 8) : [];
 
   const rightCol = `<div class="player-hero__right">
     ${player.number ? `<span class="player-hero__num-bg" aria-hidden="true">${escHtml(String(player.number))}</span>` : ''}
     <div class="ca-label">CAREER AVERAGES</div>
     ${caStats.length
-      ? `<div class="ca-grid">
+      ? `<div class="ca-grid" style="--ca-count:${caStats.length}">
           ${caStats.map(s => `<div class="ca-item">
             <span class="font-condensed ca-item__val">${escHtml(String(s.val))}</span>
             <span class="ca-item__lbl">${s.lbl}</span>
@@ -78,8 +81,8 @@ function heroSection(player, totals) {
 function gameLog(allRows, player, potgGameIds) {
   if (!allRows.length) {
     return `<div class="card game-log-card">
-  <div class="section-header"><h2>GAME LOG</h2></div>
-  <p style="padding:20px 24px;color:var(--text-muted);font-size:14px">No games recorded yet.</p>
+  <div class="card-label">GAME LOG</div>
+  <p style="padding:16px 18px;color:var(--text-muted);font-size:13px">No games recorded yet.</p>
 </div>`;
   }
 
@@ -203,7 +206,7 @@ function gameLog(allRows, player, potgGameIds) {
   ).join('\n      ');
 
   return `<div class="card game-log-card">
-  <div class="section-header"><h2>GAME LOG</h2></div>
+  <div class="card-label">GAME LOG</div>
   <div class="gl-wrap">
     <table class="gl-table">
       <thead>
@@ -243,7 +246,7 @@ function gameLog(allRows, player, potgGameIds) {
 </div>`;
 }
 
-// ── POTG writeups ─────────────────────────────────────────────────────────────
+// ── Player highlights (POTG games) ────────────────────────────────────────────
 function potgWriteups(potgGames, player) {
   if (!potgGames.length) return '';
 
@@ -253,22 +256,21 @@ function potgWriteups(potgGames, player) {
     const oppColor = teamColor(oppName);
     const isLight  = oppName === 'WHITE';
     const writeup  = String(g.potg_writeup || '').replace(/\*\*/g, '').trim();
-    const statLine = `${g.pts} PTS · ${g.reb} REB · ${g.ast} AST`;
 
-    return `<a href="/games/${encodeURIComponent(g.id)}#potg-anchor" class="potg-row">
-  <div class="highlight-header">
-    <span class="highlight-name">${escHtml(formatDate(g.date))}</span>
+    return `<a href="/games/${encodeURIComponent(g.id)}#potg-anchor" class="highlight-card">
+  <div class="hc-top">
+    <div class="hc-info">
+      <span class="hc-name">${escHtml(formatDate(g.date))}</span>
+      <div class="hc-stat-line">${g.pts} PTS · ${g.reb} REB · ${g.ast} AST</div>
+    </div>
     <span class="team-chip" style="background:${oppColor};color:${isLight ? '#10141d' : '#fff'}">vs ${escHtml(oppName)}</span>
   </div>
-  <div class="highlight-stat">${escHtml(statLine)}</div>
-  ${writeup ? `<p class="highlight-body">${escHtml(writeup)}</p>` : ''}
+  ${writeup ? `<p class="hc-body">${escHtml(truncate(writeup, 150))}</p>` : ''}
 </a>`;
   });
 
-  return `<div class="card potg-container">
-  <div class="section-header potg-container__header">
-    <h2>PLAYER OF THE GAME</h2>
-  </div>
+  return `<div class="card sidebar">
+  <div class="card-label">PLAYER HIGHLIGHTS</div>
   ${rows.join('\n  ')}
 </div>`;
 }

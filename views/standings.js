@@ -183,15 +183,13 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
   // Team stat charts (standalone section)
   const charts = teamStats.length ? teamStatCharts(rows, teamStats) : null;
   const teamStatsSection = charts ? `
-  <div class="section-divider" style="margin:28px 0 16px">
-    <span class="section-divider__label">TEAM STATS</span>
-    <span class="section-divider__line"></span>
-    <div class="leaders-toggle">
-      <button class="leaders-toggle__btn leaders-toggle__btn--active" id="sc-btn-pg"  onclick="scSwitch('pg')">Per Game</button>
-      <button class="leaders-toggle__btn"                             id="sc-btn-tot" onclick="scSwitch('tot')">Totals</button>
+  <div class="card" style="padding:0;overflow:hidden;margin-top:20px">
+    <div class="card-label">TEAM STATS
+      <div class="leaders-toggle">
+        <button class="leaders-toggle__btn leaders-toggle__btn--active" id="sc-btn-pg"  onclick="scSwitch('pg')">Per Game</button>
+        <button class="leaders-toggle__btn"                             id="sc-btn-tot" onclick="scSwitch('tot')">Totals</button>
+      </div>
     </div>
-  </div>
-  <div class="card" style="padding:0;overflow:hidden">
     <div id="sc-pg">${charts.pg}</div>
     <div id="sc-tot" style="display:none">${charts.tot}</div>
   </div>
@@ -214,11 +212,6 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
   const tickerGames = [...upcomingGames, ...completedGames];
 
   const mainContent = `<div class="standings-main">
-    <div class="section-divider" style="margin-bottom:16px">
-      <span class="section-divider__label">STANDINGS</span>
-      <span class="section-divider__line"></span>
-      <span class="standings-season">SEASON ${escHtml(String(currentSeason ?? ''))}</span>
-    </div>
     <div class="card standings-table">
       <div class="h2h-tabs-bar">
         <nav class="h2h-tabs">

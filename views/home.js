@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, playerAvatar, playerLink } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink } from './utils.js';
 
 // ── Score Ticker ─────────────────────────────────────────────────────────────
 export function scoreTicker(games) {
@@ -179,43 +179,36 @@ function heroCarousel(games) {
 }
 
 // ── Player Highlights Sidebar ─────────────────────────────────────────────────
-export function highlightsSidebar(highlights) {
+export function highlightsSidebar(highlights, { limit = 4, seeAllLink = true } = {}) {
   if (!highlights.length) {
-    return `<div class="highlights-sidebar">
-  <div class="section-divider">
-    <span class="section-divider__label">PLAYER HIGHLIGHTS</span>
-    <span class="section-divider__line"></span>
-  </div>
-  <div class="card highlight-card highlight-card--empty">
-    <p style="margin:0;font-size:13px;color:var(--text-muted)">No player highlights yet. Check back after the next game!</p>
-  </div>
+    return `<div class="card sidebar">
+  <div class="card-label">PLAYER HIGHLIGHTS</div>
+  <p class="hc-empty">No player highlights yet. Check back after the next game!</p>
 </div>`;
   }
 
-  const cards = highlights.map(({ game, stat, player, team }) => {
+  const rows = highlights.slice(0, limit).map(({ game, stat, player, team }) => {
     const displayName = displayPlayerName(player?.name || '').toUpperCase();
     const teamName = String(team?.name || '').toUpperCase();
     const color = teamColor(teamName);
     const isLight = teamName === 'WHITE';
-    const statLine = `${stat.pts} PTS · ${stat.reb} REB · ${stat.ast} AST`;
     const writeup = String(game.potg_writeup || '').replace(/\*\*/g, '').trim();
 
-    return `<a href="/games/${escHtml(game.id)}#potg-anchor" class="card highlight-card">
-  <div class="highlight-header">
-    <span class="highlight-name">${escHtml(displayName)}</span>
+    return `<a href="/games/${escHtml(game.id)}#potg-anchor" class="highlight-card">
+  <div class="hc-top">
+    <div class="hc-info">
+      <span class="hc-name">${escHtml(displayName)}</span>
+      <div class="hc-stat-line">${stat.pts} PTS · ${stat.reb} REB · ${stat.ast} AST</div>
+    </div>
     <span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
   </div>
-  <div class="highlight-stat">${escHtml(statLine)}</div>
-  <p class="highlight-body">${escHtml(writeup || `${stat.fg2m + stat.fg3m}/${stat.fg2m + stat.fg3m + stat.fg2m_miss + stat.fg3m_miss} FG · ${stat.fg3m} 3PM · ${stat.ftm} FTM`)}</p>
+  ${writeup ? `<p class="hc-body">${escHtml(truncate(writeup, 150))}</p>` : ''}
 </a>`;
   });
 
-  return `<div class="highlights-sidebar">
-  <div class="section-divider">
-    <span class="section-divider__label">PLAYER HIGHLIGHTS</span>
-    <span class="section-divider__line"></span>
-  </div>
-  ${cards.join('\n  ')}
+  return `<div class="card sidebar">
+  <div class="card-label">PLAYER HIGHLIGHTS${seeAllLink && highlights.length > limit ? ' <a href="/games" class="card-label__more">See all</a>' : ''}</div>
+  ${rows.join('\n  ')}
 </div>`;
 }
 
@@ -225,36 +218,11 @@ function leagueLeaders(players) {
   if (!active.length) return '';
 
   const categories = [
-    { label: 'PPG', title: 'Points',        sort: a => a.pts / a.games_played, fn: p => (p.pts / p.games_played).toFixed(1) },
-    { label: 'RPG', title: 'Rebounds',      sort: a => a.reb / a.games_played, fn: p => (p.reb / p.games_played).toFixed(1) },
-    { label: 'APG', title: 'Assists',       sort: a => a.ast / a.games_played, fn: p => (p.ast / p.games_played).toFixed(1) },
-    { label: 'SPG', title: 'Steals',        sort: a => a.stl / a.games_played, fn: p => (p.stl / p.games_played).toFixed(1) },
-    { label: 'BPG', title: 'Blocks',        sort: a => a.blk / a.games_played, fn: p => (p.blk / p.games_played).toFixed(1) },
-    { label: '3PM', title: '3-Pointers',    sort: a => a.fg3m / a.games_played, fn: p => (p.fg3m / p.games_played).toFixed(1) },
-    { label: 'FG%', title: 'FG Efficiency', sort: a => {
-      const att = a.fg2m + a.fg3m + a.fg2m_miss + a.fg3m_miss;
-      return att >= 10 ? (a.fg2m + a.fg3m) / att : -1;
-    }, fn: p => {
-      const made = p.fg2m + p.fg3m, att = made + p.fg2m_miss + p.fg3m_miss;
-      return att > 0 ? Math.round(made / att * 100) + '%' : '—';
-    }, minFilter: p => (p.fg2m + p.fg3m + p.fg2m_miss + p.fg3m_miss) >= 10 },
-    { label: '3P%', title: '3PT Efficiency', sort: a => {
-      const att = a.fg3m + a.fg3m_miss;
-      return att >= 5 ? a.fg3m / att : -1;
-    }, fn: p => {
-      const att = p.fg3m + p.fg3m_miss;
-      return att > 0 ? Math.round(p.fg3m / att * 100) + '%' : '—';
-    }, minFilter: p => (p.fg3m + p.fg3m_miss) >= 5 },
-    { label: 'FT%', title: 'Free Throws', sort: a => {
-      const att = a.ftm + a.ft_miss;
-      return att >= 5 ? a.ftm / att : -1;
-    }, fn: p => {
-      const att = p.ftm + p.ft_miss;
-      return att > 0 ? Math.round(p.ftm / att * 100) + '%' : '—';
-    }, minFilter: p => (p.ftm + p.ft_miss) >= 5 },
-    { label: 'FTM', title: 'FT Made',   sort: a => a.ftm / a.games_played, fn: p => (p.ftm / p.games_played).toFixed(1) },
-    { label: 'TO',  title: 'Turnovers', sort: a => a.turnover / a.games_played, fn: p => (p.turnover / p.games_played).toFixed(1) },
-    { label: 'PF',  title: 'Fouls',     sort: a => a.pf / a.games_played, fn: p => (p.pf / p.games_played).toFixed(1) },
+    { label: 'PPG', title: 'Points',    sort: a => a.pts / a.games_played, fn: p => (p.pts / p.games_played).toFixed(1) },
+    { label: 'RPG', title: 'Rebounds',  sort: a => a.reb / a.games_played, fn: p => (p.reb / p.games_played).toFixed(1) },
+    { label: 'APG', title: 'Assists',   sort: a => a.ast / a.games_played, fn: p => (p.ast / p.games_played).toFixed(1) },
+    { label: 'SPG', title: 'Steals',    sort: a => a.stl / a.games_played, fn: p => (p.stl / p.games_played).toFixed(1) },
+    { label: 'BPG', title: 'Blocks',    sort: a => a.blk / a.games_played, fn: p => (p.blk / p.games_played).toFixed(1) },
   ];
 
   const cards = categories.map(cat => {
