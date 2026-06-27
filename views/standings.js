@@ -164,9 +164,10 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
   </div>
   <div class="standings-cell standings-cell--num standings-cell--w st-std">${r.w}</div>
   <div class="standings-cell standings-cell--num standings-cell--l st-std">${r.l}</div>
-  <div class="standings-cell standings-cell--num standings-cell--pct st-std" style="--pct-w:${pctBarW}%;--pct-color:${color}">${r.pct.toFixed(3).replace(/^0/, '')}</div>
+  <div class="standings-cell standings-cell--num standings-cell--pct st-std">${r.pct.toFixed(3).replace(/^0/, '')}</div>
   <div class="standings-cell standings-cell--num standings-cell--gb st-std">${r.gb === 0 ? '—' : r.gb % 1 === 0 ? r.gb : r.gb.toFixed(1)}</div>
   <div class="standings-cell standings-cell--num standings-cell--diff${r.diff > 0 ? ' diff--pos' : r.diff < 0 ? ' diff--neg' : ''} st-std">${diffStr}</div>
+  <div class="standings-cell standings-cell--num standings-cell--quo st-std">${r.quo.toFixed(3)}</div>
   ${h2hCells}
 </div>`;
   }).join('');
@@ -233,6 +234,7 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
           <div class="standings-cell standings-cell--num st-std">PCT</div>
           <div class="standings-cell standings-cell--num standings-cell--gb st-std">GB</div>
           <div class="standings-cell standings-cell--num st-std">DIFF</div>
+          <div class="standings-cell standings-cell--num standings-cell--quo st-std">QUO</div>
           ${h2hHeadCells}
         </div>
         ${tableRows}
