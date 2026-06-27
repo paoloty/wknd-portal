@@ -65,99 +65,69 @@ function h2hMatrix(teams, games, currentSeason) {
   return matrix;
 }
 
-// ── 1. Team Stat Bars ────────────────────────────────────────────────────────
-function teamStatBars(rows, teamStats) {
-  if (!teamStats.length) return '';
-
-  const empty = { gp: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fg3m: 0, fgm: 0, fga: 0, fg3a: 0, ftm: 0, ft_miss: 0, turnover: 0, pf: 0 };
+// ── 1. Team Stat Charts (returns two grid HTML strings for pg/tot) ───────────
+function teamStatCharts(rows, teamStats) {
+  const empty    = { gp: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fg3m: 0, fgm: 0, fga: 0, fg3a: 0, ftm: 0, ft_miss: 0, turnover: 0, pf: 0 };
   const statsMap = Object.fromEntries(teamStats.map(t => [t.team_id, t]));
+  const pct      = fn => v => (fn(v) * 100).toFixed(1) + '%';
 
-  const pct  = fn => v => (fn(v) * 100).toFixed(1) + '%';
   const PER_GAME = [
-    { label: 'PPG', title: 'Points',         fn: t => t.gp > 0 ? t.pts      / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'RPG', title: 'Rebounds',       fn: t => t.gp > 0 ? t.reb      / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'APG', title: 'Assists',        fn: t => t.gp > 0 ? t.ast      / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'SPG', title: 'Steals',         fn: t => t.gp > 0 ? t.stl      / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'BPG', title: 'Blocks',         fn: t => t.gp > 0 ? t.blk      / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: '3PM', title: '3-Pointers',     fn: t => t.gp > 0 ? t.fg3m     / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'FG%', title: 'FG Efficiency',  fn: t => t.fga > 0 ? t.fgm / t.fga : 0,    fmt: pct(v => v) },
-    { label: '3P%', title: '3PT Efficiency', fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
-    { label: 'FT%', title: 'Free Throws',    fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
-    { label: 'FTM', title: 'FT Made',        fn: t => t.gp > 0 ? t.ftm      / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'TO',  title: 'Turnovers',      fn: t => t.gp > 0 ? t.turnover / t.gp : 0, fmt: v => v.toFixed(1) },
-    { label: 'PF',  title: 'Fouls',          fn: t => t.gp > 0 ? t.pf       / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'PPG', title: 'Points Per Game',       fn: t => t.gp > 0 ? t.pts      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'RPG', title: 'Rebounds Per Game',     fn: t => t.gp > 0 ? t.reb      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'APG', title: 'Assists Per Game',      fn: t => t.gp > 0 ? t.ast      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'SPG', title: 'Steals Per Game',       fn: t => t.gp > 0 ? t.stl      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'BPG', title: 'Blocks Per Game',       fn: t => t.gp > 0 ? t.blk      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: '3PM', title: '3-Pointers Per Game',   fn: t => t.gp > 0 ? t.fg3m     / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'FG%', title: 'Field Goal %',          fn: t => t.fga  > 0 ? t.fgm  / t.fga  : 0, fmt: pct(v => v) },
+    { label: '3P%', title: '3-Point %',             fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
+    { label: 'FT%', title: 'Free Throw %',          fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
+    { label: 'FTM', title: 'FT Made Per Game',      fn: t => t.gp > 0 ? t.ftm      / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'TO',  title: 'Turnovers Per Game',    fn: t => t.gp > 0 ? t.turnover / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: 'PF',  title: 'Fouls Per Game',        fn: t => t.gp > 0 ? t.pf       / t.gp : 0, fmt: v => v.toFixed(1) },
   ];
   const TOTALS = [
-    { label: 'PTS', title: 'Points',         fn: t => t.pts,      fmt: v => String(Math.round(v)) },
-    { label: 'REB', title: 'Rebounds',       fn: t => t.reb,      fmt: v => String(Math.round(v)) },
-    { label: 'AST', title: 'Assists',        fn: t => t.ast,      fmt: v => String(Math.round(v)) },
-    { label: 'STL', title: 'Steals',         fn: t => t.stl,      fmt: v => String(Math.round(v)) },
-    { label: 'BLK', title: 'Blocks',         fn: t => t.blk,      fmt: v => String(Math.round(v)) },
-    { label: '3PM', title: '3-Pointers',     fn: t => t.fg3m,     fmt: v => String(Math.round(v)) },
-    { label: 'FG%', title: 'FG Efficiency',  fn: t => t.fga > 0 ? t.fgm / t.fga : 0,    fmt: pct(v => v) },
-    { label: '3P%', title: '3PT Efficiency', fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
-    { label: 'FT%', title: 'Free Throws',    fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
-    { label: 'FTM', title: 'FT Made',        fn: t => t.ftm,      fmt: v => String(Math.round(v)) },
-    { label: 'TO',  title: 'Turnovers',      fn: t => t.turnover, fmt: v => String(Math.round(v)) },
-    { label: 'PF',  title: 'Fouls',          fn: t => t.pf,       fmt: v => String(Math.round(v)) },
+    { label: 'PTS', title: 'Points',          fn: t => t.pts,      fmt: v => String(Math.round(v)) },
+    { label: 'REB', title: 'Rebounds',        fn: t => t.reb,      fmt: v => String(Math.round(v)) },
+    { label: 'AST', title: 'Assists',         fn: t => t.ast,      fmt: v => String(Math.round(v)) },
+    { label: 'STL', title: 'Steals',          fn: t => t.stl,      fmt: v => String(Math.round(v)) },
+    { label: 'BLK', title: 'Blocks',          fn: t => t.blk,      fmt: v => String(Math.round(v)) },
+    { label: '3PM', title: '3-Pointers',      fn: t => t.fg3m,     fmt: v => String(Math.round(v)) },
+    { label: 'FG%', title: 'Field Goal %',    fn: t => t.fga  > 0 ? t.fgm  / t.fga  : 0, fmt: pct(v => v) },
+    { label: '3P%', title: '3-Point %',       fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
+    { label: 'FT%', title: 'Free Throw %',    fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
+    { label: 'FTM', title: 'FT Made',         fn: t => t.ftm,      fmt: v => String(Math.round(v)) },
+    { label: 'TO',  title: 'Turnovers',       fn: t => t.turnover, fmt: v => String(Math.round(v)) },
+    { label: 'PF',  title: 'Fouls',           fn: t => t.pf,       fmt: v => String(Math.round(v)) },
   ];
 
-  function renderCards(cats) {
-    return cats.map(cat => {
+  function renderGrid(cats) {
+    return `<div class="sc-grid">` + cats.map(cat => {
       const ranked = rows
         .map(r => ({ r, v: cat.fn(statsMap[r.team.id] || empty) }))
         .sort((a, b) => b.v - a.v);
+      const maxV = ranked[0]?.v || 1;
 
-      const best = ranked[0];
-      const maxV = best?.v || 1;
-      const color = teamColor(best.r.team.name.toUpperCase());
-
-      const restRows = ranked.slice(1).map((item, i) => {
-        const tc = teamColor(item.r.team.name.toUpperCase());
-        const barW = maxV > 0 ? Math.round(item.v / maxV * 100) : 0;
-        return `<div class="leader-panel__row" style="--bar-w:${barW}%;--bar-color:${tc}">
-  <span class="leader-panel__rank">${i + 2}</span>
-  <span class="team-dot" style="background:${tc}"></span>
-  <span class="leader-panel__row-name">${escHtml(item.r.team.name.toUpperCase())}</span>
-  <span class="leader-panel__row-stat font-condensed">${escHtml(cat.fmt(item.v))}</span>
-</div>`;
+      const bars = ranked.map(({ r, v }) => {
+        const tc = teamColor(r.team.name.toUpperCase());
+        const w  = maxV > 0 ? Math.round(v / maxV * 100) : 0;
+        return `<div class="sc-row">
+          <span class="sc-dot" style="background:${tc}"></span>
+          <div class="sc-track"><div class="sc-fill" style="width:${w}%;background:${tc}"></div></div>
+          <span class="sc-val">${escHtml(cat.fmt(v))}</span>
+        </div>`;
       }).join('');
 
-      return `<div class="card leader-panel" style="--lp-color:${color}">
-  <div class="leader-panel__head">
-    <span class="leader-panel__cat">${cat.label}</span>
-    <span class="leader-panel__title">${escHtml(cat.title)}</span>
-  </div>
-  <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
-    <span class="st-team-badge" style="background:${color}"></span>
-    <div class="leader-panel__info">
-      <div class="leader-panel__name">${escHtml(best.r.team.name.toUpperCase())}</div>
-    </div>
-    <div class="leader-panel__stat font-condensed">${escHtml(cat.fmt(best.v))}</div>
-  </div>
-  <div class="leader-panel__list">${restRows}</div>
-</div>`;
-    }).join('\n');
+      return `<div class="sc-card">
+        <div class="sc-head">
+          <span class="sc-label">${escHtml(cat.label)}</span>
+          <span class="sc-title">${escHtml(cat.title)}</span>
+        </div>
+        ${bars}
+      </div>`;
+    }).join('') + `</div>`;
   }
 
-  return `<div class="section-divider" style="margin:28px 0 16px">
-  <span class="section-divider__label">TEAM STATS</span>
-  <span class="section-divider__line"></span>
-  <div class="leaders-toggle">
-    <button class="leaders-toggle__btn leaders-toggle__btn--active" id="tstat-btn-pg" onclick="tstatSwitch('pg')">Per Game</button>
-    <button class="leaders-toggle__btn" id="tstat-btn-tot" onclick="tstatSwitch('tot')">Totals</button>
-  </div>
-</div>
-<div class="tstat-grid" id="tstat-grid-pg">${renderCards(PER_GAME)}</div>
-<div class="tstat-grid" id="tstat-grid-tot" style="display:none">${renderCards(TOTALS)}</div>
-<script>
-function tstatSwitch(mode) {
-  document.getElementById('tstat-grid-pg').style.display  = mode === 'pg'  ? '' : 'none';
-  document.getElementById('tstat-grid-tot').style.display = mode === 'tot' ? '' : 'none';
-  document.getElementById('tstat-btn-pg').classList.toggle('leaders-toggle__btn--active',  mode === 'pg');
-  document.getElementById('tstat-btn-tot').classList.toggle('leaders-toggle__btn--active', mode === 'tot');
-}
-</script>`;
+  return { pg: renderGrid(PER_GAME), tot: renderGrid(TOTALS) };
 }
 
 
@@ -166,25 +136,23 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
   const { rows, currentSeason } = buildStandings(teams, games);
   const matrix = h2hMatrix(teams, games, currentSeason);
 
-  const h2hHeadCells = rows.map(r =>
-    `<div class="standings-cell standings-cell--num standings-cell--h2h">
-      <span class="team-dot" style="background:${teamColor(r.team.name.toUpperCase())}"></span>
-    </div>`
-  ).join('');
-
   const tableRows = rows.map((r, i) => {
-    const color = teamColor(r.team.name.toUpperCase());
-    const seed = i + 1;
+    const color     = teamColor(r.team.name.toUpperCase());
+    const seed      = i + 1;
     const seedClass = seed <= 2 ? 'seed--top' : 'seed--mid';
+    const pctBarW   = Math.round(r.pct * 100);
+    const diffStr   = r.diff === 0 ? '0' : (r.diff > 0 ? '+' : '') + r.diff;
 
     const h2hCells = rows.map(o => {
-      if (r.team.id === o.team.id) return `<div class="standings-cell standings-cell--num standings-cell--h2h standings-cell--self">—</div>`;
+      if (r.team.id === o.team.id)
+        return `<div class="standings-cell standings-cell--num st-h2h st-h2h--self">—</div>`;
       const rec = matrix[r.team.id][o.team.id];
-      const cls = rec.w > rec.l ? ' standings-cell--h2h-win' : rec.l > rec.w ? ' standings-cell--h2h-loss' : '';
-      return `<div class="standings-cell standings-cell--num standings-cell--h2h${cls}">${rec.w}–${rec.l}</div>`;
+      if (rec.w === 0 && rec.l === 0)
+        return `<div class="standings-cell standings-cell--num st-h2h st-h2h--none">–</div>`;
+      const cls = rec.w > rec.l ? ' st-h2h--win' : rec.l > rec.w ? ' st-h2h--loss' : '';
+      return `<div class="standings-cell standings-cell--num st-h2h${cls}">${rec.w}–${rec.l}</div>`;
     }).join('');
 
-    const pctBarW = Math.round(r.pct * 100);
     return `<div class="standings-row${i === 0 ? ' standings-row--first' : ''}" style="--tc-color:${color}">
   <div class="standings-cell standings-cell--seed">
     <span class="standings-seed ${seedClass}">${seed}</span>
@@ -194,18 +162,46 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
     <span class="standings-team-name">${escHtml(r.team.name.toUpperCase())}</span>
     ${seed <= 2 ? '<span class="standings-badge">2×</span>' : ''}
   </div>
-  <div class="standings-cell standings-cell--num standings-cell--w">${r.w}</div>
-  <div class="standings-cell standings-cell--num standings-cell--l">${r.l}</div>
-  <div class="standings-cell standings-cell--num standings-cell--pct" style="--pct-w:${pctBarW}%;--pct-color:${color}">${r.pct.toFixed(3).replace(/^0/, '')}</div>
-  <div class="standings-cell standings-cell--num">${r.gb === 0 ? '—' : r.gb % 1 === 0 ? r.gb : r.gb.toFixed(1)}</div>
-  <div class="standings-cell standings-cell--num">${r.gp}</div>
-  <div class="standings-cell standings-cell--num">${r.pf}</div>
-  <div class="standings-cell standings-cell--num">${r.pa}</div>
-  <div class="standings-cell standings-cell--num">${r.diff > 0 ? '+' : ''}${r.diff}</div>
-  <div class="standings-cell standings-cell--num standings-cell--quo">${r.quo.toFixed(3)}</div>
+  <div class="standings-cell standings-cell--num standings-cell--w st-std">${r.w}</div>
+  <div class="standings-cell standings-cell--num standings-cell--l st-std">${r.l}</div>
+  <div class="standings-cell standings-cell--num standings-cell--pct st-std" style="--pct-w:${pctBarW}%;--pct-color:${color}">${r.pct.toFixed(3).replace(/^0/, '')}</div>
+  <div class="standings-cell standings-cell--num standings-cell--gb st-std">${r.gb === 0 ? '—' : r.gb % 1 === 0 ? r.gb : r.gb.toFixed(1)}</div>
+  <div class="standings-cell standings-cell--num standings-cell--diff${r.diff > 0 ? ' diff--pos' : r.diff < 0 ? ' diff--neg' : ''} st-std">${diffStr}</div>
   ${h2hCells}
 </div>`;
   }).join('');
+
+  // H2H header cells (opponent dots shown in h2h mode)
+  const h2hHeadCells = rows.map(o => {
+    const c = teamColor(o.team.name.toUpperCase());
+    return `<div class="standings-cell standings-cell--num st-h2h st-h2h--head" title="${escHtml(o.team.name)}">
+      <span class="team-dot" style="background:${c}"></span>
+    </div>`;
+  }).join('');
+
+  // Team stat charts (standalone section)
+  const charts = teamStats.length ? teamStatCharts(rows, teamStats) : null;
+  const teamStatsSection = charts ? `
+  <div class="section-divider" style="margin:28px 0 16px">
+    <span class="section-divider__label">TEAM STATS</span>
+    <span class="section-divider__line"></span>
+    <div class="leaders-toggle">
+      <button class="leaders-toggle__btn leaders-toggle__btn--active" id="sc-btn-pg"  onclick="scSwitch('pg')">Per Game</button>
+      <button class="leaders-toggle__btn"                             id="sc-btn-tot" onclick="scSwitch('tot')">Totals</button>
+    </div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div id="sc-pg">${charts.pg}</div>
+    <div id="sc-tot" style="display:none">${charts.tot}</div>
+  </div>
+  <script>
+  window.scSwitch=function(mode){
+    document.getElementById('sc-pg').style.display=mode==='pg'?'':'none';
+    document.getElementById('sc-tot').style.display=mode==='tot'?'':'none';
+    document.getElementById('sc-btn-pg').classList.toggle('leaders-toggle__btn--active',mode==='pg');
+    document.getElementById('sc-btn-tot').classList.toggle('leaders-toggle__btn--active',mode==='tot');
+  };
+  </script>` : '';
 
   const completedGames = games.filter(g =>
     !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
@@ -218,30 +214,48 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
       <span class="standings-season">SEASON ${escHtml(String(currentSeason ?? ''))}</span>
     </div>
     <div class="card standings-table">
-      <div class="standings-scroll">
+      <div class="h2h-tabs-bar">
+        <nav class="h2h-tabs">
+          <button class="h2h-tab h2h-tab--active" id="stab-standings" onclick="stabSwitch('standings')">Standings</button>
+          <button class="h2h-tab" id="stab-h2h" onclick="stabSwitch('h2h')">Head to Head</button>
+        </nav>
+        <div id="stab-legend" class="h2h-legend" style="display:none">
+          <span class="h2h-legend__item h2h-legend__win">W</span>
+          <span class="h2h-legend__item h2h-legend__loss">L</span>
+        </div>
+      </div>
+      <div class="standings-scroll" id="standings-scroll" style="--st-h2h-count:${rows.length}">
         <div class="standings-row standings-row--head">
           <div class="standings-cell standings-cell--seed"></div>
           <div class="standings-cell standings-cell--team">TEAM</div>
-          <div class="standings-cell standings-cell--num standings-cell--w">W</div>
-          <div class="standings-cell standings-cell--num standings-cell--l">L</div>
-          <div class="standings-cell standings-cell--num">PCT</div>
-          <div class="standings-cell standings-cell--num">GB</div>
-          <div class="standings-cell standings-cell--num">GP</div>
-          <div class="standings-cell standings-cell--num">PF</div>
-          <div class="standings-cell standings-cell--num">PA</div>
-          <div class="standings-cell standings-cell--num">DIFF</div>
-          <div class="standings-cell standings-cell--num standings-cell--quo">QUO</div>
+          <div class="standings-cell standings-cell--num standings-cell--w st-std">W</div>
+          <div class="standings-cell standings-cell--num standings-cell--l st-std">L</div>
+          <div class="standings-cell standings-cell--num st-std">PCT</div>
+          <div class="standings-cell standings-cell--num standings-cell--gb st-std">GB</div>
+          <div class="standings-cell standings-cell--num st-std">DIFF</div>
           ${h2hHeadCells}
         </div>
         ${tableRows}
       </div>
     </div>
-
+    <script>
+    (function(){
+      var el=document.getElementById('standings-scroll');
+      el.addEventListener('scroll',function(){el.classList.toggle('is-scrolled',el.scrollLeft>4);},{passive:true});
+      window.stabSwitch=function(tab){
+        var isS=tab==='standings';
+        el.classList.toggle('mode-h2h',!isS);
+        document.getElementById('stab-standings').classList.toggle('h2h-tab--active',isS);
+        document.getElementById('stab-h2h').classList.toggle('h2h-tab--active',!isS);
+        document.getElementById('stab-legend').style.display=isS?'none':'';
+      };
+    })();
+    </script>
+    ${teamStatsSection}
   </div>`;
 
   return `${scoreTicker(completedGames)}
   <div class="page-content">
     ${mainContent}
-    ${teamStatBars(rows, teamStats)}
-</div>`;
+  </div>`;
 }
