@@ -397,6 +397,24 @@ body {
   letter-spacing: 0.06em;
   color: rgba(255,255,255,0.55);
 }
+.hero-progress {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: rgba(255,255,255,0.08);
+  z-index: 5;
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+}
+.hero-progress__bar {
+  height: 100%;
+  width: 0%;
+  background: var(--amber);
+}
+@keyframes hero-progress-fill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
 .hero-dots {
   position: absolute;
   top: 18px;

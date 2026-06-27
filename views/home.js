@@ -118,18 +118,26 @@ function heroCarousel(games) {
   ${slides.join('\n  ')}
   <div class="hero-dots">${dots}</div>
   ${arrows}
+  <div class="hero-progress"><div class="hero-progress__bar" id="hero-progress-bar"></div></div>
 </div>
 <script>
 (function(){
   var wrap = document.getElementById('hero-carousel');
   var slides = Array.from(wrap.querySelectorAll('.hero-slide'));
   var dots = Array.from(wrap.querySelectorAll('.hero-dot'));
+  var bar = document.getElementById('hero-progress-bar');
   var n = slides.length;
   if (n < 2) return;
   var cur = 0;
   var AUTO_MS = 5000;
   var MANUAL_MS = 8000;
   var timer;
+
+  function startProgress(ms) {
+    bar.style.animation = 'none';
+    bar.offsetHeight;
+    bar.style.animation = 'hero-progress-fill ' + ms + 'ms linear forwards';
+  }
 
   function resetKenBurns(slide) {
     var img = slide.querySelector('.hero-bg img');
@@ -152,6 +160,7 @@ function heroCarousel(games) {
 
   function schedule(delay) {
     clearTimeout(timer);
+    startProgress(delay);
     timer = setTimeout(function(){ go(cur + 1); schedule(AUTO_MS); }, delay);
   }
 
