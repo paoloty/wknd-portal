@@ -217,43 +217,85 @@ function leagueLeaders(players) {
   const active = players.filter(p => p.games_played > 0);
   if (!active.length) return '';
 
+  const fga = p => (p.fg2m||0)+(p.fg3m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0);
+  const tpa = p => (p.fg3m||0)+(p.fg3m_miss||0);
+  const fta = p => (p.ftm||0)+(p.ft_miss||0);
+
+  const eff = p => ((p.pts||0)+(p.reb||0)+(p.ast||0)+(p.stl||0)+(p.blk||0)-(p.turnover||0)-((p.fg2m_miss||0)+(p.fg3m_miss||0))-(p.ft_miss||0)) / p.games_played;
+
   const categories = [
-    { label: 'PPG', title: 'Points',    sort: a => a.pts / a.games_played, fn: p => (p.pts / p.games_played).toFixed(1) },
-    { label: 'RPG', title: 'Rebounds',  sort: a => a.reb / a.games_played, fn: p => (p.reb / p.games_played).toFixed(1) },
-    { label: 'APG', title: 'Assists',   sort: a => a.ast / a.games_played, fn: p => (p.ast / p.games_played).toFixed(1) },
-    { label: 'SPG', title: 'Steals',    sort: a => a.stl / a.games_played, fn: p => (p.stl / p.games_played).toFixed(1) },
-    { label: 'BPG', title: 'Blocks',    sort: a => a.blk / a.games_played, fn: p => (p.blk / p.games_played).toFixed(1) },
+    { label: 'PPG', title: 'Points',       sort: p => p.pts / p.games_played,                      fn: p => (p.pts / p.games_played).toFixed(1) },
+    { label: 'RPG', title: 'Rebounds',     sort: p => p.reb / p.games_played,                      fn: p => (p.reb / p.games_played).toFixed(1) },
+    { label: 'APG', title: 'Assists',      sort: p => p.ast / p.games_played,                      fn: p => (p.ast / p.games_played).toFixed(1) },
+    { label: 'SPG', title: 'Steals',       sort: p => p.stl / p.games_played,                      fn: p => (p.stl / p.games_played).toFixed(1) },
+    { label: 'BPG', title: 'Blocks',       sort: p => p.blk / p.games_played,                      fn: p => (p.blk / p.games_played).toFixed(1) },
+    { label: 'FG%', title: 'Field Goal %', sort: p => fga(p) >= 10 ? (p.fg2m+p.fg3m)/fga(p) : -1, fn: p => Math.round((p.fg2m+p.fg3m)/fga(p)*100)+'%', minFilter: p => fga(p) >= 10 },
+    { label: '3P%', title: '3-Point %',    sort: p => tpa(p) >= 5  ? p.fg3m/tpa(p) : -1,          fn: p => Math.round(p.fg3m/tpa(p)*100)+'%',           minFilter: p => tpa(p) >= 5 },
+    { label: 'FT%', title: 'Free Throw %', sort: p => fta(p) >= 5  ? p.ftm/fta(p) : -1,           fn: p => Math.round(p.ftm/fta(p)*100)+'%',            minFilter: p => fta(p) >= 5 },
+    { label: '3PM', title: '3-Pointers',   sort: p => p.fg3m / p.games_played,                     fn: p => (p.fg3m / p.games_played).toFixed(1) },
+    { label: 'FTM', title: 'Free Throws',  sort: p => p.ftm  / p.games_played,                     fn: p => (p.ftm  / p.games_played).toFixed(1) },
+    { label: 'TO',  title: 'Turnovers',    sort: p => p.turnover / p.games_played,                 fn: p => (p.turnover / p.games_played).toFixed(1) },
+    { label: 'EFF', title: 'Efficiency',   sort: p => eff(p),                                      fn: p => eff(p).toFixed(1) },
   ];
 
-  const cards = categories.map(cat => {
+  const cards = categories.map((cat, i) => {
     const pool = cat.minFilter ? active.filter(cat.minFilter) : active;
     const leader = pool.filter(p => cat.sort(p) > 0)
-      .sort((a, b) => cat.sort(b) - cat.sort(a) || b.games_played - a.games_played || (b.team_wins || 0) - (a.team_wins || 0))[0];
-    if (!leader) return '';
+      .sort((a, b) => cat.sort(b) - cat.sort(a) || b.games_played - a.games_played)[0];
+    if (!leader) return null;
 
     const teamName = String(leader.team_name || '').toUpperCase();
     const color = teamColor(teamName);
     const isLight = teamName === 'WHITE';
 
-    return `<div class="card leader-card">
+    return `<div class="card leader-card" data-index="${i}">
   <span class="leader-cat">${cat.label}</span>
-  ${cat.title ? `<span class="leader-title">${escHtml(cat.title)}</span>` : ''}
+  <span class="leader-title">${escHtml(cat.title)}</span>
   ${playerAvatar(leader.id, leader.name, color, { className: 'leader-avatar', link: true })}
   <span class="leader-name">${playerLink(leader.id, leader.name, { upper: true })}</span>
   <span class="team-chip leader-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
   <span class="font-condensed leader-stat">${escHtml(cat.fn(leader))}</span>
 </div>`;
-  });
+  }).filter(Boolean);
 
-  return `<div>
-  <div class="section-divider">
-    <span class="section-divider__label">LEAGUE LEADERS</span>
-    <span class="section-divider__line"></span>
-  </div>
-  <div class="leaders-grid">
+  return `<div class="leaders-carousel">
+  <div class="lc-track" id="lc-track">
     ${cards.join('\n    ')}
   </div>
-</div>`;
+</div>
+<script>
+(function(){
+  var track = document.getElementById('lc-track');
+  var origCards = Array.from(track.querySelectorAll('.leader-card'));
+  var n = origCards.length;
+
+  // Clone cards for seamless loop
+  origCards.forEach(function(c){ track.appendChild(c.cloneNode(true)); });
+
+  var current = 0;
+
+  function cardW() {
+    return origCards[0] ? origCards[0].offsetWidth + 14 : 204;
+  }
+
+  function advance() {
+    current++;
+    if (current >= n) {
+      // Scroll to clone of card 0 (visually same as card 0)
+      track.scrollTo({ left: cardW() * n, behavior: 'smooth' });
+      // After animation settles, silently reset to real card 0
+      setTimeout(function(){
+        track.scrollTo({ left: 0, behavior: 'instant' });
+        current = 0;
+      }, 450);
+    } else {
+      track.scrollTo({ left: cardW() * current, behavior: 'smooth' });
+    }
+  }
+
+  setInterval(advance, 3000);
+})();
+</script>`;
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────

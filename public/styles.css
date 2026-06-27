@@ -598,13 +598,20 @@ body {
 }
 
 /* ── League leaders grid ────────────────────────────────────────────────── */
-.leaders-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+.leaders-carousel { position: relative; }
+.lc-track {
+  display: flex;
   gap: 14px;
-  margin-top: 14px
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
 }
+.lc-track::-webkit-scrollbar { display: none; }
 .leader-card {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+  width: calc((100% - 5 * 14px) / 6);
   padding: 20px 16px;
   display: flex;
   flex-direction: column;
@@ -638,7 +645,7 @@ body {
   overflow: hidden;
 }
 .leader-avatar .font-condensed { font-size: 26px; color: #cdd3de; }
-.leader-name { font-size: 13px; font-weight: 700; color: #f4f6fa; margin-bottom: 7px; }
+.leader-name { font-size: 13px; font-weight: 700; color: #f4f6fa; margin-bottom: 7px; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .leader-chip { margin-bottom: 14px; margin-left: auto; margin-right: auto; }
 .leader-stat { font-size: 42px; font-weight: 800; line-height: 1; color: var(--amber); }
 
@@ -2121,7 +2128,7 @@ a.player-link:hover { color: var(--amber); }
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
-  .leaders-grid { grid-template-columns: repeat(5, 1fr); }
+  .leader-card { width: calc((100% - 3 * 14px) / 4); }
   .leaders-page-grid { grid-template-columns: repeat(2, 1fr); }
   .leader-panel__stat { font-size: 32px; }
 }
@@ -2142,7 +2149,7 @@ a.player-link:hover { color: var(--amber); }
 }
 
 @media (max-width: 640px) {
-  .leaders-grid { grid-template-columns: repeat(3, 1fr); }
+  .leader-card { width: calc((100% - 2 * 14px) / 3); }
   .leaders-page-grid { grid-template-columns: 1fr; }
   .leader-panel__stat { font-size: 28px; }
   .leader-panel__top .leader-avatar { width: 48px; height: 48px; }
