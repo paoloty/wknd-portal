@@ -277,41 +277,54 @@ body {
   margin-bottom: 26px;
 }
 .score-ticker::-webkit-scrollbar { display: none; }
-.score-ticker__card:hover { border-color: rgba(255,255,255,0.14); }
 .score-ticker__card {
-  min-width: 180px;
+  min-width: 160px;
   flex-shrink: 0;
   scroll-snap-align: start;
-  padding: 10px 14px;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
 }
+.score-ticker__card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(to right, var(--tc-a) 50%, var(--tc-b) 50%);
+}
+.score-ticker__card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
 .ticker-date {
-  font-size: 10.5px;
+  display: block;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
   color: var(--text-subtle);
-  margin-bottom: 7px;
+  padding: 10px 12px 5px 12px;
 }
 .ticker-team-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 5px;
+  padding: 5px 12px;
+  border-top: 1px solid var(--border);
 }
-.ticker-team-row:last-child { margin-bottom: 0; }
-.ticker-team { display: flex; align-items: center; gap: 9px; }
+.ticker-team { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ticker-team-name {
-  font-size: 13px;
-  letter-spacing: 0.03em;
+  font-size: 11px;
+  letter-spacing: 0.04em;
   font-weight: 600;
-  color: #737c8d;
+  color: var(--text-subtle);
+  white-space: nowrap;
 }
-.ticker-team-name--winner { font-weight: 700; color: var(--text); }
 .ticker-score {
-  font-size: 21px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--text-subtle);
+  flex-shrink: 0;
 }
-.ticker-score--winner { color: #fff; font-weight: 800; }
+.ticker-row--win .ticker-team-name { color: var(--text); font-weight: 700; }
+.ticker-row--win .ticker-score     { color: #fff; font-size: 23px; font-weight: 800; }
 
 /* ── Home main grid (hero + sidebar) ────────────────────────────────────── */
 .home-grid {
@@ -2069,7 +2082,7 @@ a.player-link:hover { color: var(--amber); }
   .leaders-page-grid { grid-template-columns: 1fr; }
   .leader-panel__stat { font-size: 28px; }
   .leader-panel__top .leader-avatar { width: 48px; height: 48px; }
-  .score-ticker__card { min-width: 160px; }
+  .score-ticker__card { min-width: 148px; }
   .player-hero__avatar { width: 80px; height: 80px; font-size: 26px; }
   .player-hero__name { font-size: 1.4rem; }
   .player-hero__left { padding: 22px 20px; gap: 16px; }
