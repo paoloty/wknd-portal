@@ -1,4 +1,4 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, gaSnippet = '', metaTags = '' }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, gaSnippet = '', metaTags = '', cssVer = '' }) {
   const navLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
@@ -23,7 +23,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Saira+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css${cssVer ? `?v=${cssVer}` : ''}">
   ${gaSnippet}
 </head>
 <body>

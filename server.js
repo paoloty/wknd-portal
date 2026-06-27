@@ -2,6 +2,7 @@ import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes } from 'crypto';
+import { statSync } from 'fs';
 import express from 'express';
 import Database from 'better-sqlite3';
 import sharp from 'sharp';
@@ -20,6 +21,8 @@ import { upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug } f
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const CSS_VER = (() => { try { return statSync(path.join(__dirname, 'public/styles.css')).mtimeMs | 0; } catch { return Date.now(); } })();
 
 const PORT = process.env.PORT || 4000;
 const DB_PATH = path.resolve(__dirname, process.env.DB_PATH || '../wknd-stats/data/wknd-stats.db');
@@ -217,7 +220,7 @@ function buildTeamOgTags(req, team) {
 }
 
 function renderPage(req, opts) {
-  return layout({ ...opts, gaSnippet: buildGaSnippet(req) });
+  return layout({ ...opts, gaSnippet: buildGaSnippet(req), cssVer: CSS_VER });
 }
 
 function formatName(raw) {
