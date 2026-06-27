@@ -207,6 +207,11 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
   const completedGames = games.filter(g =>
     !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
+  const upcomingGames = games
+    .filter(g => !g.under_review && Number(g.team_a_score) + Number(g.team_b_score) === 0)
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 5);
+  const tickerGames = [...upcomingGames, ...completedGames];
 
   const mainContent = `<div class="standings-main">
     <div class="section-divider" style="margin-bottom:16px">
@@ -256,7 +261,7 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
     ${teamStatsSection}
   </div>`;
 
-  return `${scoreTicker(completedGames)}
+  return `${scoreTicker(tickerGames)}
   <div class="page-content">
     ${mainContent}
   </div>`;

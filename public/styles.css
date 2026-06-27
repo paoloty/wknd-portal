@@ -294,13 +294,29 @@ body {
   background: linear-gradient(to right, var(--tc-a) 50%, var(--tc-b) 50%);
 }
 .score-ticker__card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+.ticker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 5px;
+}
 .ticker-date {
-  display: block;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
   color: var(--text-subtle);
-  padding: 10px 12px 5px 12px;
+}
+.ticker-status {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+.ticker-status--final { color: var(--text-subtle); }
+.ticker-status--upcoming {
+  color: var(--amber);
+  background: rgba(245,147,50,0.1);
+  padding: 2px 5px;
+  border-radius: 3px;
 }
 .ticker-team-row {
   display: flex;
