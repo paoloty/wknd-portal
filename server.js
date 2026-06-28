@@ -1,9 +1,10 @@
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomBytes } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import { statSync } from 'fs';
 import express from 'express';
+import session from 'express-session';
 import Database from 'better-sqlite3';
 import sharp from 'sharp';
 import { layout } from './views/layout.js';
@@ -19,6 +20,7 @@ import { privacyPage, termsPage } from './views/legal.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
 import { upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
+import { adminLoginBody } from './views/admin/login.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +30,17 @@ const PORT = process.env.PORT || 4000;
 const DB_PATH = path.resolve(__dirname, process.env.DB_PATH || '../wknd-stats/data/wknd-stats.db');
 const GA_MEASUREMENT_ID = String(process.env.GA_MEASUREMENT_ID || '').trim();
 const ADMIN_URL = String(process.env.ADMIN_URL || 'http://localhost:3000').replace(/\/$/, '');
+const PORTAL_ADMIN_USER = process.env.PORTAL_ADMIN_USER || 'admin';
+const PORTAL_ADMIN_PASS = process.env.PORTAL_ADMIN_PASS || '';
+const SESSION_SECRET    = process.env.SESSION_SECRET || randomBytes(32).toString('hex');
+
+function checkCredentials(user, pass) {
+  try {
+    const uOk = timingSafeEqual(Buffer.from(user), Buffer.from(PORTAL_ADMIN_USER));
+    const pOk = timingSafeEqual(Buffer.from(pass), Buffer.from(PORTAL_ADMIN_PASS));
+    return uOk && pOk;
+  } catch { return false; }
+}
 
 function buildGaSnippet(req) {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0].toLowerCase();
@@ -220,7 +233,7 @@ function buildTeamOgTags(req, team) {
 }
 
 function renderPage(req, opts) {
-  return layout({ ...opts, gaSnippet: buildGaSnippet(req), cssVer: CSS_VER });
+  return layout({ ...opts, gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin });
 }
 
 function formatName(raw) {
@@ -425,7 +438,7 @@ const selectGamesStmt = db.prepare(`
   SELECT id, date, team_a_id, team_b_id, team_a_name, team_b_name,
          team_a_score, team_b_score, game_writeup, potg_writeup,
          manual_potg_player_id, under_review, season, game_type,
-         playoff_round, series_id, youtube_url,
+         playoff_round, series_id, youtube_url, scheduled,
          (COALESCE(LENGTH(social_cover_data_url), 0) > 0) AS has_cover
   FROM games
   ORDER BY date DESC, id DESC
@@ -727,7 +740,19 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
 
 const app = express();
 
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000 }
+}));
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+function requireAuth(req, res, next) {
+  if (req.session?.isAdmin) return next();
+  res.redirect('/login');
+}
 
 async function serveCover(req, res) {
   const gameId = req.params.gameId;
@@ -805,6 +830,26 @@ app.get('*', (req, res, next) => {
   next();
 });
 
+// ── Admin routes ──────────────────────────────────────────────────────────────
+app.get('/login', (req, res) => {
+  if (req.session?.isAdmin) return res.redirect('/');
+  res.send(renderPage(req, { title: 'Sign In — WKND Portal', currentPath: '/login', body: adminLoginBody() }));
+});
+
+app.post('/login', (req, res) => {
+  const { username = '', password = '' } = req.body;
+  if (checkCredentials(username, password)) {
+    req.session.isAdmin = true;
+    return res.redirect('/');
+  }
+  res.send(renderPage(req, { title: 'Sign In — WKND Portal', currentPath: '/login', body: adminLoginBody({ error: 'Invalid username or password.' }) }));
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/login'));
+});
+
+// ── Public routes ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   const teams = selectTeamsStmt.all();
   const players = selectPlayersStmt.all();
@@ -814,7 +859,7 @@ app.get('/', (req, res) => {
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
 
   const completedGames = games.filter(g =>
-    !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
+    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
 
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
@@ -851,9 +896,6 @@ app.get('/games/:ref', (req, res) => {
   const allGames = selectGamesStmt.all();
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
-  const completedGames = allGames.filter(g =>
-    !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
 
   const scoreA = Number(game.team_a_score);
   const scoreB = Number(game.team_b_score);
@@ -863,7 +905,7 @@ app.get('/games/:ref', (req, res) => {
     title: `${title} — WKND Basketball League`,
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
-    body: gamePage({ game, stats, potgPlayerId, quarterScores, completedGames, playerMap, teamMap })
+    body: gamePage({ game, stats, potgPlayerId, quarterScores, allGames, playerMap, teamMap })
   }));
 });
 
@@ -876,7 +918,7 @@ app.get('/games', (req, res) => {
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
 
   const completedGames = games.filter(g =>
-    !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
+    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
 
   const highlights = buildHighlights(completedGames, playerMap, teamMap, 10);
@@ -895,7 +937,7 @@ app.get('/standings', (req, res) => {
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
   const completedGames = games.filter(g =>
-    !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
+    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
   const teamStats = selectTeamSeasonStatsStmt.all();

@@ -1,6 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
-import { scoreTicker } from './home.js';
+import { scoreTicker } from './ticker.js';
 
 function buildStandings(teams, games) {
   const currentSeason = games
@@ -202,12 +202,12 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
   };
   </script>` : '';
 
-  const completedGames = games.filter(g =>
-    !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
+  const completedGames = games
+    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
   const upcomingGames = games
-    .filter(g => !g.under_review && Number(g.team_a_score) + Number(g.team_b_score) === 0)
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 5);
   const tickerGames = [...upcomingGames, ...completedGames];
 

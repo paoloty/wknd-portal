@@ -1,6 +1,7 @@
 import { escHtml } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt } from './utils.js';
-import { scoreTicker, highlightsSidebar } from './home.js';
+import { scoreTicker } from './ticker.js';
+import { highlightsSidebar } from './home.js';
 
 // ── Game row (article-list style) ─────────────────────────────────────────────
 function gameRow(game) {
@@ -48,15 +49,20 @@ function gameRow(game) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export function gamesPage({ games, highlights = [] }) {
-  const completedGames = games.filter(g =>
-    !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
+  const completedGames = games
+    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const upcomingGames = games
+    .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 5);
+  const tickerGames = [...upcomingGames, ...completedGames];
 
   const rows = completedGames.length
     ? completedGames.map(gameRow).join('\n    ')
     : `<div class="card game-list__empty">No games yet.</div>`;
 
-  return `${scoreTicker(completedGames)}
+  return `${scoreTicker(tickerGames)}
 
 <div class="games-layout">
   <div class="games-main">

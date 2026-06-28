@@ -1,4 +1,4 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, gaSnippet = '', metaTags = '', cssVer = '' }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false }) {
   const navLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
@@ -12,6 +12,10 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     const active = href === '/' ? currentPath === '/' : currentPath.startsWith(href);
     return `<a href="${href}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
   }).join('');
+
+  const authLink = isAdmin
+    ? `<a href="/logout" class="site-nav__login">Sign out</a>`
+    : `<a href="/login" class="site-nav__login">Login</a>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -34,7 +38,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
           <a href="/" class="site-header__logo-text">WKND Basketball</a>
           <nav class="site-nav" id="site-nav">
             ${nav}
-            <a href="/login" class="site-nav__login">Login</a>
+            ${authLink}
           </nav>
           <button class="site-nav__hamburger" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
             <span class="site-nav__hamburger-line"></span>

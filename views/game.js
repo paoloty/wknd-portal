@@ -1,6 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, boldTitle, playerAvatar, playerLink } from './utils.js';
-import { scoreTicker } from './home.js';
+import { scoreTicker } from './ticker.js';
 
 function youtubeEmbedUrl(url) {
   const m = String(url || '').match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
@@ -537,12 +537,21 @@ function topPerformers(stats, potgPlayerId) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function gamePage({ game, stats, potgPlayerId, quarterScores = [], completedGames = [], playerMap = {}, teamMap = {} }) {
+export function gamePage({ game, stats, potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {} }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
 
-  return `${scoreTicker(completedGames)}
+  const completedGames = allGames
+    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const upcomingGames = allGames
+    .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 5);
+  const tickerGames = [...upcomingGames, ...completedGames];
+
+  return `${scoreTicker(tickerGames)}
 <div class="game-detail-layout">
   <div class="game-detail-left">
     ${leftMedia(game, colorA, colorB)}

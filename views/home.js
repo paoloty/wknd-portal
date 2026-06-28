@@ -1,58 +1,8 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink } from './utils.js';
+export { scoreTicker } from './ticker.js';
+import { scoreTicker } from './ticker.js';
 
-// ── Score Ticker ─────────────────────────────────────────────────────────────
-export function scoreTicker(games) {
-  const cards = games.map(g => {
-    const scoreA    = Number(g.team_a_score);
-    const scoreB    = Number(g.team_b_score);
-    const hasScores = scoreA + scoreB > 0;
-    const colorA    = teamColor(g.team_a_name);
-    const colorB    = teamColor(g.team_b_name);
-
-    if (!hasScores) {
-      const row = (name, color) => `<div class="ticker-team-row">
-    <div class="ticker-team"><span class="team-dot" style="background:${color}"></span><span class="ticker-team-name">${escHtml(name)}</span></div>
-    <span class="font-condensed ticker-score ticker-score--tbd">–</span>
-  </div>`;
-      return `<div class="card score-ticker__card ticker-card--upcoming" style="--tc-a:${colorA};--tc-b:${colorB}">
-  <div class="ticker-header">
-    <span class="ticker-date">${escHtml(formatDate(g.date))}</span>
-    <span class="ticker-status ticker-status--upcoming">UPCOMING</span>
-  </div>
-  ${row(g.team_a_name, colorA)}
-  ${row(g.team_b_name, colorB)}
-</div>`;
-    }
-
-    // Completed game — winner on top
-    const winA = scoreA > scoreB;
-    const top  = winA
-      ? { name: g.team_a_name, score: scoreA, color: colorA, win: true }
-      : { name: g.team_b_name, score: scoreB, color: colorB, win: scoreB > scoreA };
-    const bot  = winA
-      ? { name: g.team_b_name, score: scoreB, color: colorB, win: false }
-      : { name: g.team_a_name, score: scoreA, color: colorA, win: false };
-
-    const row = t => `<div class="ticker-team-row${t.win ? ' ticker-row--win' : ''}">
-    <div class="ticker-team"><span class="team-dot" style="background:${t.color}"></span><span class="ticker-team-name">${escHtml(t.name)}</span></div>
-    <span class="font-condensed ticker-score">${t.score}</span>
-  </div>`;
-
-    return `<a href="/games/${encodeURIComponent(g.id)}" class="card score-ticker__card" style="--tc-a:${top.color};--tc-b:${bot.color}">
-  <div class="ticker-header">
-    <span class="ticker-date">${escHtml(formatDate(g.date))}</span>
-    <span class="ticker-status ticker-status--final">FINAL</span>
-  </div>
-  ${row(top)}
-  ${row(bot)}
-</a>`;
-  });
-
-  return `<div class="score-ticker">
-  ${cards.join('\n  ')}
-</div>`;
-}
 
 // ── Hero Carousel ─────────────────────────────────────────────────────────────
 function heroCarousel(games) {
@@ -299,12 +249,12 @@ function leagueLeaders(players) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export function homePage({ teams, players, games, highlights = [], leaderPlayers = [] }) {
-  const completedGames = games.filter(g =>
-    !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
+  const completedGames = games
+    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
   const upcomingGames = games
-    .filter(g => !g.under_review && Number(g.team_a_score) + Number(g.team_b_score) === 0)
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 5);
   const tickerGames = [...upcomingGames, ...completedGames];
 
