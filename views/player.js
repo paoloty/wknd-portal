@@ -276,7 +276,7 @@ function potgWriteups(potgGames, player) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, dnpGames = [] }) {
+export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, dnpGames = [], financialSection = '' }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
 
   // Merge played games + DNPs and sort by actual date DESC
@@ -289,6 +289,7 @@ export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, a
 <div class="game-detail-layout">
   <div class="game-detail-left">
     ${gameLog(allRows, player, potgGameIds)}
+    ${financialSection}
   </div>
   <div class="game-detail-right">
     ${potgWriteups(potgGames, player)}

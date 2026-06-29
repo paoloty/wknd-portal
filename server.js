@@ -18,9 +18,10 @@ import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
 import { privacyPage, termsPage } from './views/legal.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
-import { upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug } from './lib/portal-db.js';
+import { upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug, getAllFinancials, getAllTransactions, recordTransaction, getPlayerFinancials, getPlayerTransactions, confirmTransaction } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { adminLoginBody } from './views/admin/login.js';
+import { adminLedgerBody, playerFinancialSection } from './views/admin/ledger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -849,6 +850,47 @@ app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
+app.get('/admin/ledger', requireAuth, (req, res) => {
+  const players = selectPlayersStmt.all();
+  const financials = getAllFinancials();
+  const allTx = getAllTransactions();
+  const txByPlayer = {};
+  for (const tx of allTx) {
+    (txByPlayer[tx.player_id] ??= []).push(tx);
+  }
+  res.send(renderPage(req, {
+    title: 'Player Ledger — WKND Admin',
+    currentPath: '/admin/ledger',
+    body: adminLedgerBody({ players, financials, txByPlayer }),
+  }));
+});
+
+app.post('/admin/ledger/transaction', requireAuth, express.json(), (req, res) => {
+  const { player_id, amount, type, payment_method, date, status, notes, reference_no } = req.body;
+  if (!player_id || !amount || !date) {
+    return res.status(400).json({ error: 'player_id, amount, and date are required.' });
+  }
+  const parsed = parseFloat(amount);
+  if (isNaN(parsed) || parsed <= 0) {
+    return res.status(400).json({ error: 'Amount must be a positive number.' });
+  }
+  if (!['payment', 'charge'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid transaction type.' });
+  }
+  if (!['confirmed', 'pending'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status.' });
+  }
+  const id = randomBytes(6).toString('hex');
+  recordTransaction({ id, player_id, amount: parsed, type, payment_method: payment_method || '', date, status, notes: notes || '', reference_no: reference_no || '' });
+  res.json({ ok: true, id });
+});
+
+app.post('/admin/ledger/transaction/:id/confirm', requireAuth, (req, res) => {
+  const ok = confirmTransaction(req.params.id);
+  if (!ok) return res.status(400).json({ error: 'Transaction not found or not pending.' });
+  res.json({ ok: true });
+});
+
 // ── Public routes ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   const teams = selectTeamsStmt.all();
@@ -1126,11 +1168,22 @@ app.get('/players/:ref', (req, res) => {
   const dnpGames    = byDate(selectPlayerDnpGamesStmt.all({ teamId: player.team_id, playerId: resolved.id }));
   const displayName = displayPlayerName(player.name);
 
+  let financialSection = '';
+  if (req.session?.isAdmin) {
+    const fin = getPlayerFinancials(resolved.id);
+    const txs = getPlayerTransactions(resolved.id);
+    const allPlayers = selectPlayersStmt.all();
+    const allPlayerOptions = allPlayers.map(p =>
+      `<option value="${p.id}"${p.id === resolved.id ? ' selected' : ''}>${displayPlayerName(p.name)} — ${p.team_name || ''}</option>`
+    ).join('');
+    financialSection = playerFinancialSection(fin, txs, displayName, resolved.id, allPlayerOptions);
+  }
+
   res.send(renderPage(req, {
     title: `${displayName} — WKND Basketball`,
     currentPath: '/players',
     metaTags: buildPlayerOgTags(req, player, totals),
-    body: playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, dnpGames })
+    body: playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, dnpGames, financialSection })
   }));
 });
 

@@ -13,8 +13,9 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     return `<a href="${href}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
   }).join('');
 
+  const adminActive = currentPath.startsWith('/admin');
   const authLink = isAdmin
-    ? `<a href="/logout" class="site-nav__login">Sign out</a>`
+    ? `<a href="/admin/ledger"${adminActive ? ' aria-current="page"' : ''} class="site-nav__admin">Admin</a><a href="/logout" class="site-nav__login">Sign out</a>`
     : `<a href="/login" class="site-nav__login">Login</a>`;
 
   return `<!DOCTYPE html>
