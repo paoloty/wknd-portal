@@ -306,138 +306,210 @@ async function resolveAvatar(pictureUrl) {
 }
 
 async function generateLeaderSvg(share) {
-  const displayName  = formatName(share.player_name).toUpperCase();
-  const teamName     = String(share.team_name || '').toUpperCase();
-  const color        = share.team_color || '#f59332';
-  const isLight      = teamName === 'WHITE';
-  const chipTextCol  = isLight ? '#10141d' : '#fff';
-  const statStr      = String(share.stat_fmt);
-  const season       = escXml(String(share.season || ''));
-  const modeLabel    = share.mode === 'pg' ? 'PER GAME' : share.mode === 'rec' ? 'SINGLE GAME' : 'TOTALS';
+  const W = 1200, H = 630;
+  const displayName = formatName(share.player_name).toUpperCase();
+  const teamName    = String(share.team_name || '').toUpperCase();
+  const color       = share.team_color || '#f59332';
+  const statStr     = String(share.stat_fmt);
+  const isRec       = share.mode === 'rec';
+  const modeLabel   = share.mode === 'pg' ? 'PER GAME' : isRec ? 'SINGLE GAME' : 'TOTALS';
+  const scopeLabel  = (isRec && share.season === 'alltime') ? 'ALL TIME' : `SEASON ${share.season}`;
+  const chipTextColor = teamName === 'WHITE' ? '#10141d' : '#fff';
 
-  const livePlayer = getPlayerPhoto(share.player_id);
-  const photoUrl = await resolveAvatar(livePlayer?.picture_url);
+  // Parse top5
+  let top5 = [];
+  try { top5 = JSON.parse(share.top10_json || '[]'); } catch {}
+  top5 = top5.slice(0, 5);
+  const maxVal = top5[0]?.stat_value || 1;
 
-  // ── Left pane: photo or stylized bg ───────────────────────────────────────
-  const leftContent = photoUrl
-    ? `<image x="0" y="0" width="600" height="630" href="${photoUrl}" clip-path="url(#lClip)" preserveAspectRatio="xMidYMid slice"/>
-  <rect x="0" y="0" width="600" height="630" fill="${color}" opacity="0.05"/>
-  <rect x="0" y="0" width="600" height="630" fill="url(#fadeR)"/>
-  <rect x="0" y="0" width="600" height="630" fill="url(#fadeB)"/>`
-    : `<rect x="0" y="0" width="600" height="630" fill="${color}" opacity="0.07"/>
-  <circle cx="300" cy="295" r="270" fill="${color}" opacity="0.06"/>
-  <circle cx="300" cy="295" r="180" fill="${color}" opacity="0.06"/>
-  <text x="300" y="400" font-family="Arial,sans-serif" font-size="200" font-weight="800" fill="${color}" opacity="0.1" text-anchor="middle">${escXml(svgInitials(share.player_name))}</text>
-  <rect x="0" y="0" width="600" height="630" fill="url(#fadeR)"/>
-  <rect x="0" y="0" width="600" height="630" fill="url(#fadeB)"/>`;
+  // ── Card geometry — mirrors .leader-panel structure ───────────────────────
+  const CX = 32, CY = 32, CW = W - 64, CH = H - 64;  // 1136 × 566
+  const HEAD_H   = 72;
+  const HEAD_BOT = CY + HEAD_H;                        // 104
+  const TOP_H    = 148;
+  const TOP_BOT  = HEAD_BOT + TOP_H;                   // 252
+  const FOOTER_H = 26;
+  const ROW_H    = Math.floor((CY + CH - TOP_BOT - FOOTER_H) / 4); // (598-252-26)/4 = 80
 
-  // ── Player name sizing ─────────────────────────────────────────────────────
-  const nameFontSz = displayName.length > 20 ? 28 : displayName.length > 14 ? 34 : 40;
-  const chipW      = Math.max(70, teamName.length * 9 + 36);
-  const chipCx     = 40 + chipW / 2;
+  // ── Avatar — larger for visual prominence ────────────────────────────────
+  const AV_R  = 64;
+  const AV_CX = CX + 22 + AV_R;                       // 118
+  const AV_CY = HEAD_BOT + Math.round(TOP_H / 2);     // 178
 
-  // ── Stat sizing & dynamic Y positions ─────────────────────────────────────
-  const statFontSz = statStr.length <= 4 ? 168 : statStr.length <= 6 ? 128 : 100;
-  const statY      = 108 + Math.round(statFontSz * 0.82) + 22;
-  const subtitleY  = statY + 22;
-  const dividerY   = statY + 40;
-  const top10LabelY = dividerY + 22;
-  const rowStartY  = top10LabelY + 22;
-  const ROW_H      = 26;
+  // ── Info column (right of avatar) ────────────────────────────────────────
+  const INFO_X     = AV_CX + AV_R + 18;               // 200
+  const nameFontSz = displayName.length > 22 ? 20 : displayName.length > 16 ? 24 : 28;
+  const chipW      = Math.max(70, teamName.length * 10 + 32);
+  const NAME_Y     = HEAD_BOT + Math.round(TOP_H * 0.47); // 173 — vertically centred with avatar
+  const CHIP_TOP   = NAME_Y + 14;                      // 187 — more breathing room below name
+  const CHIP_TEXT  = CHIP_TOP + 15;                    // 202 — properly centred in 22px chip height
 
-  // ── Top 10 rows ────────────────────────────────────────────────────────────
-  let top10 = [];
-  try { top10 = JSON.parse(share.top10_json || '[]'); } catch {}
-  const maxVal  = top10[0]?.stat_value || 1;
-  const BAR_X   = 888;
-  const BAR_MAX = 248;
-  const VAL_X   = 1162;
+  // ── Stat — amber, right-anchored ─────────────────────────────────────────
+  const STAT_X     = CX + CW - 20;                    // 1148
+  const statFontSz = statStr.length <= 2 ? 80 : statStr.length <= 4 ? 70 : statStr.length <= 6 ? 58 : 48;
+  const STAT_Y     = HEAD_BOT + Math.round(TOP_H * 0.60); // 193
 
-  const rowSvg = top10.map((p, i) => {
-    const ry      = rowStartY + i * ROW_H;
-    const isFirst = i === 0;
-    const tc      = p.team_color || '#64748b';
-    const barW    = maxVal > 0 ? Math.round(p.stat_value / maxVal * BAR_MAX) : 0;
-    return `
-  <text x="650" y="${ry}" font-family="Arial,sans-serif" font-size="10" font-weight="700" fill="${isFirst ? color : '#334155'}" text-anchor="end">${i + 1}</text>
-  <circle cx="661" cy="${ry - 4}" r="4" fill="${tc}"/>
-  <text x="674" y="${ry}" font-family="Arial,sans-serif" font-size="11" font-weight="${isFirst ? '700' : '400'}" fill="${isFirst ? '#e2e8f0' : '#64748b'}">${escXml(shortName(p.player_name).toUpperCase())}</text>
-  <rect x="${BAR_X}" y="${ry - 9}" width="${barW}" height="5" rx="2" fill="${tc}" opacity="0.28"/>
-  ${barW > 2 ? `<rect x="${BAR_X + barW - 2}" y="${ry - 9}" width="2" height="5" rx="1" fill="${tc}"/>` : ''}
-  <text x="${VAL_X}" y="${ry}" font-family="Arial,sans-serif" font-size="${isFirst ? 12 : 11}" font-weight="${isFirst ? '700' : '400'}" fill="${isFirst ? '#e2e8f0' : '#475569'}" text-anchor="end">${escXml(p.stat_fmt)}</text>`;
-  }).join('');
+  // ── Avatar circular crop ──────────────────────────────────────────────────
+  let avatarBuf = null;
+  {
+    const livePlayer = getPlayerPhoto(share.player_id);
+    const photoUrl   = await resolveAvatar(livePlayer?.picture_url);
+    if (photoUrl) {
+      try {
+        const src  = await fetchCoverImageBuffer(photoUrl);
+        const size = AV_R * 2;
+        if (src) {
+          const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${AV_R}" cy="${AV_R}" r="${AV_R}" fill="#fff"/></svg>`);
+          avatarBuf = await sharp(src)
+            .rotate()
+            .resize(size, size, { fit: 'cover', position: 'top' })
+            .composite([{ input: mask, blend: 'dest-in' }])
+            .png()
+            .toBuffer();
+        }
+      } catch {}
+    }
+  }
 
-  return `<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  // ── Records hero context ──────────────────────────────────────────────────
+  let heroCtxSvg = '';
+  if (isRec && top5[0]) {
+    const f        = top5[0];
+    const dateStr  = f.game_date ? new Date(f.game_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    const resColor = String(f.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
+    const isPO     = f.is_playoff === true || f.is_playoff === 1 || f.is_playoff === '1';
+    heroCtxSvg = `<text x="${INFO_X}" y="${CHIP_TEXT + 22}" font-family="${COVER_SVG_FONT}" font-size="12" fill="#475569">${escXml(dateStr)} · VS ${escXml(String(f.game_opp || '').toUpperCase())} · <tspan font-weight="700" fill="${resColor}">${escXml(String(f.game_result || ''))}</tspan>${isPO ? ` <tspan font-weight="700" fill="#f59332">PO</tspan>` : ''}</text>`;
+  }
+
+  // ── Row builder — mirrors .leader-panel__row ──────────────────────────────
+  const ROW_STAT_X = CX + CW - 20;
+
+  function makeRow(p, i) {
+    const rank = i + 2;
+    const rowY = TOP_BOT + i * ROW_H;
+    const midY = rowY + Math.round(ROW_H / 2);
+    const tc   = escXml(p.team_color || '#64748b');
+    const nm   = escXml(shortName(p.player_name).toUpperCase());
+    const val  = escXml(p.stat_fmt);
+
+    // Full-width bar bg (mirrors ::before at opacity 0.015 in CSS)
+    const barW   = maxVal > 0 ? Math.round(p.stat_value / maxVal * CW) : 0;
+    const barBg  = `<rect x="${CX}" y="${rowY + 1}" width="${barW}" height="${ROW_H - 2}" fill="${tc}" opacity="0.025"/>`;
+    const divider = i < 3 ? `<line x1="${CX}" y1="${rowY + ROW_H}" x2="${CX + CW}" y2="${rowY + ROW_H}" stroke="#1e293b" stroke-width="1"/>` : '';
+
+    if (isRec) {
+      // Two-line rec row: centre the two-line block vertically in ROW_H
+      const nameY  = midY - 7;  // name baseline (upper line)
+      const ctxY   = midY + 11; // ctx baseline (lower line)
+      const dotCY  = midY - 11; // dot at name's visual centre
+      const dateStr  = escXml(p.game_date ? new Date(p.game_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+      const oppStr   = escXml(String(p.game_opp || '').toUpperCase());
+      const resStr   = escXml(String(p.game_result || ''));
+      const resColor = String(p.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
+      return `${barBg}
+  <text x="${CX + 30}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
+  <circle cx="${CX + 42}" cy="${dotCY}" r="5" fill="${tc}"/>
+  <text x="${CX + 56}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="13" font-weight="600" fill="#64748b">${nm}</text>
+  <text x="${CX + 56}" y="${ctxY}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155">${dateStr} · VS ${oppStr} · <tspan font-weight="700" fill="${resColor}">${resStr}</tspan></text>
+  <text x="${ROW_STAT_X}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
+  ${divider}`;
+    }
+
+    // Single-line pg/tot row: text baseline at midY + half cap-height ≈ midY + 5
+    return `${barBg}
+  <text x="${CX + 30}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
+  <circle cx="${CX + 42}" cy="${midY}" r="5" fill="${tc}"/>
+  <text x="${CX + 56}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="13" font-weight="600" fill="#64748b">${nm}</text>
+  <text x="${ROW_STAT_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
+  ${divider}`;
+  }
+
+  const rowEntries = top5.slice(1);
+  const rowsSvg   = rowEntries.map((p, i) => makeRow(p, i)).join('\n');
+
+  // ── SVG ───────────────────────────────────────────────────────────────────
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>
-    ${photoUrl ? `<clipPath id="lClip"><rect width="600" height="630"/></clipPath>` : ''}
-    <linearGradient id="fadeR" x1="1" y1="0" x2="0" y2="0">
-      <stop offset="0%"   stop-color="#020817" stop-opacity="1"/>
-      <stop offset="25%"  stop-color="#020817" stop-opacity="0.92"/>
-      <stop offset="55%"  stop-color="#020817" stop-opacity="0.4"/>
-      <stop offset="100%" stop-color="#020817" stop-opacity="0"/>
+    <clipPath id="card-clip">
+      <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16"/>
+    </clipPath>
+    <linearGradient id="topGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="${escXml(color)}" stop-opacity="0.10"/>
+      <stop offset="65%" stop-color="${escXml(color)}" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="fadeB" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%"   stop-color="#020817" stop-opacity="0.96"/>
-      <stop offset="35%"  stop-color="#020817" stop-opacity="0.55"/>
-      <stop offset="65%"  stop-color="#020817" stop-opacity="0"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="40%" r="55%">
-      <stop offset="0%"   stop-color="${color}" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="rBg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="#0d1424"/>
-      <stop offset="100%" stop-color="#020817"/>
+    <linearGradient id="stripGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="${escXml(color)}"/>
+      <stop offset="70%" stop-color="${escXml(color)}" stop-opacity="0"/>
     </linearGradient>
   </defs>
 
-  <!-- BG -->
-  <rect width="1200" height="630" fill="#020817"/>
+  <!-- Outer bg -->
+  <rect width="${W}" height="${H}" fill="#020817"/>
 
-  <!-- LEFT SECTION -->
-  ${leftContent}
-  <rect x="0" y="0" width="5" height="630" fill="${color}"/>
+  <!-- Card base (#0d1424 surface, rx=16, 1px border) -->
+  <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16" fill="#0d1424"/>
 
-  <!-- Player name + chip (bottom-left) -->
-  <text x="36" y="566" font-family="Arial,sans-serif" font-size="${nameFontSz}" font-weight="800" fill="#ffffff">${escXml(displayName)}</text>
-  <rect x="36" y="580" width="${chipW}" height="26" rx="13" fill="${color}" opacity="0.22"/>
-  <rect x="36" y="580" width="${chipW}" height="26" rx="13" fill="none" stroke="${color}" stroke-width="1" opacity="0.5"/>
-  <text x="${chipCx}" y="598" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="${color}" text-anchor="middle" letter-spacing="2">${escXml(teamName)}</text>
+  <g clip-path="url(#card-clip)">
+    <!-- ::before color strip — 3px gradient from team color, like CSS -->
+    <rect x="${CX}" y="${CY}" width="${CW}" height="3" fill="url(#stripGrad)"/>
 
-  <!-- RIGHT SECTION bg -->
-  <rect x="596" y="0" width="604" height="630" fill="url(#rBg)"/>
-  <!-- Color glow -->
-  <ellipse cx="900" cy="200" rx="320" ry="240" fill="url(#glow)"/>
-  <!-- Top accent bar -->
-  <rect x="630" y="0" width="540" height="4" fill="${color}"/>
-  <!-- Subtle color wash under the bar -->
-  <rect x="630" y="4" width="540" height="50" fill="${color}" opacity="0.04"/>
+    <!-- HEAD: full category name in amber on line 1, abbreviation + scope/mode on line 2 -->
+    <text x="${CX + 20}" y="${CY + 34}" font-family="${COVER_SVG_FONT}" font-size="14" font-weight="800" fill="#f59332" letter-spacing="2">${escXml(share.stat_title.toUpperCase())} ${isRec ? 'RECORD' : 'LEADER'}</text>
+    <text x="${CX + 20}" y="${CY + 54}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155" letter-spacing="2">${escXml(share.stat_label)} · ${escXml(scopeLabel)}${isRec ? '' : ` · ${escXml(modeLabel)}`}</text>
+    <line x1="${CX}" y1="${HEAD_BOT}" x2="${CX + CW}" y2="${HEAD_BOT}" stroke="#1e293b" stroke-width="1"/>
 
-  <!-- League + season -->
-  <text x="644" y="44" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#475569" letter-spacing="3">WKND BASKETBALL LEAGUE</text>
-  <text x="644" y="63" font-family="Arial,sans-serif" font-size="10" fill="#1e293b" letter-spacing="3">SEASON ${season} · ${escXml(modeLabel)}</text>
+    <!-- TOP gradient overlay -->
+    <rect x="${CX}" y="${HEAD_BOT}" width="${CW}" height="${TOP_H}" fill="url(#topGrad)"/>
 
-  <!-- Category label -->
-  <text x="644" y="108" font-family="Arial,sans-serif" font-size="13" font-weight="800" fill="${color}" letter-spacing="5">${escXml(share.stat_label)} LEADER</text>
+    <!-- Avatar: plain circle with color ring -->
+    <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R}" fill="#060c19"/>
+    ${!avatarBuf ? `<text x="${AV_CX}" y="${AV_CY + 20}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="52" font-weight="800" fill="${escXml(color)}" opacity="0.4">${escXml(svgInitials(share.player_name))}</text>` : ''}
+    <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R}" fill="none" stroke="${escXml(color)}" stroke-width="2.5" opacity="0.8"/>
 
-  <!-- GIANT stat -->
-  <text x="630" y="${statY}" font-family="Arial,sans-serif" font-size="${statFontSz}" font-weight="800" fill="#ffffff" letter-spacing="-2">${escXml(statStr)}</text>
+    <!-- Info: player name + team chip -->
+    <text x="${INFO_X}" y="${NAME_Y}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="700" fill="#e2e8f0">${escXml(displayName)}</text>
+    <rect x="${INFO_X}" y="${CHIP_TOP}" width="${chipW}" height="22" rx="11" fill="${escXml(color)}"/>
+    <text x="${INFO_X + Math.round(chipW / 2)}" y="${CHIP_TEXT}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="10" font-weight="800" fill="${chipTextColor}" letter-spacing="2">${escXml(teamName)}</text>
+    ${heroCtxSvg}
 
-  <!-- Stat subtitle -->
-  <text x="644" y="${subtitleY}" font-family="Arial,sans-serif" font-size="11" fill="#334155" letter-spacing="4">${escXml(share.stat_title.toUpperCase())}</text>
+    <!-- Stat: amber, right-anchored — no redundant label, header already identifies it -->
+    <text x="${STAT_X}" y="${STAT_Y}" font-family="${COVER_SVG_FONT}" font-size="${statFontSz}" font-weight="800" fill="#f59332" text-anchor="end">${escXml(statStr)}</text>
 
-  <!-- Divider -->
-  <line x1="644" y1="${dividerY}" x2="1162" y2="${dividerY}" stroke="#1e293b" stroke-width="1"/>
+    <!-- TOP bottom border -->
+    <line x1="${CX}" y1="${TOP_BOT}" x2="${CX + CW}" y2="${TOP_BOT}" stroke="#1e293b" stroke-width="1"/>
 
-  <!-- TOP 10 label -->
-  <text x="644" y="${top10LabelY}" font-family="Arial,sans-serif" font-size="9" font-weight="700" fill="#1e293b" letter-spacing="5">TOP 10 RANKINGS</text>
+    <!-- LIST rows -->
+    ${rowsSvg}
 
-  <!-- Rows -->
-  ${rowSvg}
+    <!-- Footer -->
+    <text x="${W / 2}" y="${TOP_BOT + 4 * ROW_H + Math.round(FOOTER_H / 2) + 5}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="9" fill="#334155" letter-spacing="3">WKNDBASKETBALL.COM</text>
+  </g>
 
-  <!-- Watermark -->
-  <text x="1162" y="618" font-family="Arial,sans-serif" font-size="11" fill="#1e293b" text-anchor="end" letter-spacing="1">wkndbasketball.com</text>
+  <!-- Card border -->
+  <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16" fill="none" stroke="#1e293b" stroke-width="1.5"/>
 </svg>`;
+
+  // ── Compose PNG ───────────────────────────────────────────────────────────
+  const base   = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } }).png().toBuffer();
+  const layers = [{ input: Buffer.from(svg), top: 0, left: 0 }];
+
+  if (avatarBuf) {
+    layers.push({ input: avatarBuf, left: AV_CX - AV_R, top: AV_CY - AV_R });
+  }
+
+  try {
+    if (existsSync(COVER_LOGO_PATH)) {
+      const logo = await sharp(COVER_LOGO_PATH)
+        .ensureAlpha()
+        .resize({ width: 130, height: 34, fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      // Right side of head zone, vertically centered
+      layers.push({ input: logo, left: CX + CW - 20 - 130, top: CY + Math.round((HEAD_H - 34) / 2) });
+    }
+  } catch {}
+
+  return sharp(base).composite(layers).png({ compressionLevel: 9 }).toBuffer();
 }
 
 // Mirrors derivePlayerOfTheGameFromState from the admin app.
@@ -1205,8 +1277,7 @@ app.get('/api/leaders/share/:id/image.png', async (req, res) => {
   const share = getShare(req.params.id);
   if (!share) return res.status(404).end();
   try {
-    const svg = await generateLeaderSvg(share);
-    const png = await sharp(Buffer.from(svg)).png().toBuffer();
+    const png = await generateLeaderSvg(share);
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=300');
     res.end(png);
