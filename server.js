@@ -264,7 +264,7 @@ function buildTicker() {
 }
 
 function renderPage(req, opts) {
-  return layout({ ...opts, ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin });
+  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, ...opts });
 }
 
 function formatName(raw) {
@@ -952,16 +952,17 @@ app.get('*', (req, res, next) => {
 // ── Admin routes ──────────────────────────────────────────────────────────────
 app.get('/login', (req, res) => {
   if (req.session?.isAdmin) return res.redirect('/');
-  res.send(renderPage(req, { title: 'Sign In — WKND Portal', currentPath: '/login', body: adminLoginBody() }));
+  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody() }));
 });
 
 app.post('/login', (req, res) => {
-  const { username = '', password = '' } = req.body;
+  const { username = '', password = '', remember = '' } = req.body;
   if (checkCredentials(username, password)) {
     req.session.isAdmin = true;
+    if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
     return res.redirect('/');
   }
-  res.send(renderPage(req, { title: 'Sign In — WKND Portal', currentPath: '/login', body: adminLoginBody({ error: 'Invalid username or password.' }) }));
+  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Invalid username or password.' }) }));
 });
 
 app.get('/logout', (req, res) => {
@@ -979,6 +980,7 @@ app.get('/admin/ledger', requireAuth, (req, res) => {
   res.send(renderPage(req, {
     title: 'Player Ledger — WKND Admin',
     currentPath: '/admin/ledger',
+    ticker: '',
     body: adminLedgerBody({ players, financials, txByPlayer }),
   }));
 });
