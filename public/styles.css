@@ -399,7 +399,7 @@ body {
 /* ── Score ticker ───────────────────────────────────────────────────────── */
 .ticker-wrap {
   position: relative;
-  margin-bottom: 26px;
+  margin-bottom: 48px;
 }
 .ticker-wrap::before,
 .ticker-wrap::after {

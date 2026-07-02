@@ -853,7 +853,13 @@ async function generateGameCoverPng(game, potgStat, bgDataUrl) {
   <text x="${W / 2}" y="617" fill="#334155" text-anchor="middle" font-size="11" font-weight="600" font-family="${COVER_SVG_FONT}" filter="url(#txt)">WKNDBASKETBALL.COM</text>
 </svg>`);
 
-  const layers = [{ input: overlaySvg, top: 0, left: 0 }];
+  // Render SVG at 2× density then resize down — produces much crisper text
+  const overlaySvgPng = await sharp(overlaySvg, { density: 144 })
+    .resize(W, H)
+    .png()
+    .toBuffer();
+
+  const layers = [{ input: overlaySvgPng, top: 0, left: 0 }];
   if (avatarOverlay) {
     layers.push({ input: avatarOverlay, left: avatarCx - avatarR, top: avatarCy - avatarR });
   }
