@@ -30,7 +30,7 @@ import {
   getPlayerWithTeam, getPlayerById, getTeamById,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
   getPlayerCareerHighs, getPlayerAwards, getGameDnpPlayers, getGameRecords,
-  getPlayerPhoto, getCurrentSeason, getTickerGames,
+  getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames,
   updateGameRecap, updateGameYoutube, updateGameCover, updatePlayerPhoto,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
@@ -305,6 +305,20 @@ async function resolveAvatar(pictureUrl) {
   } catch { return null; }
 }
 
+function buildShareAsOfLabel(share) {
+  const targetSeason = (share.season === 'alltime' || !share.season)
+    ? (getCurrentSeason()?.season ?? null)
+    : share.season;
+  if (!targetSeason) return { asOfLabel: '', asOfSeason: null, asOfWeek: null };
+  const week = getSeasonLatestWeek(targetSeason)?.week ?? null;
+  if (!week) return { asOfLabel: '', asOfSeason: targetSeason, asOfWeek: null };
+  return {
+    asOfLabel:  share.season === 'alltime' ? `THRU S${targetSeason} WK ${week}` : `THRU WK ${week}`,
+    asOfSeason: targetSeason,
+    asOfWeek:   week,
+  };
+}
+
 async function generateLeaderSvg(share) {
   const W = 1200, H = 630;
   const displayName = formatName(share.player_name).toUpperCase();
@@ -316,6 +330,8 @@ async function generateLeaderSvg(share) {
   const scopeLabel  = (isRec && share.season === 'alltime') ? 'ALL TIME' : `SEASON ${share.season}`;
   const chipTextColor = teamName === 'WHITE' ? '#10141d' : '#fff';
 
+  const { asOfLabel } = buildShareAsOfLabel(share);
+
   // Parse top5
   let top5 = [];
   try { top5 = JSON.parse(share.top10_json || '[]'); } catch {}
@@ -326,10 +342,13 @@ async function generateLeaderSvg(share) {
   const CX = 32, CY = 32, CW = W - 64, CH = H - 64;  // 1136 × 566
   const HEAD_H   = 72;
   const HEAD_BOT = CY + HEAD_H;                        // 104
-  const TOP_H    = 148;
-  const TOP_BOT  = HEAD_BOT + TOP_H;                   // 252
-  const FOOTER_H = 26;
-  const ROW_H    = Math.floor((CY + CH - TOP_BOT - FOOTER_H) / 4); // (598-252-26)/4 = 80
+  const TOP_H    = 168;
+  const TOP_BOT  = HEAD_BOT + TOP_H;                   // 272
+  const ROW_H     = Math.floor((CY + CH - TOP_BOT) / 4); // (598-272)/4 = 81
+  const ROW_AV_R   = 20;
+  const ROW_AV_CX  = CX + 76;                             // row avatar centre x = 108
+  const ROW_RANK_X = ROW_AV_CX - ROW_AV_R - 20;          // rank right-anchor x = 68  (20px gap to avatar)
+  const ROW_NAME_X = ROW_AV_CX + ROW_AV_R + 22;          // name start x = 150        (22px gap from avatar)
 
   // ── Avatar — larger for visual prominence ────────────────────────────────
   const AV_R  = 64;
@@ -340,16 +359,20 @@ async function generateLeaderSvg(share) {
   const INFO_X     = AV_CX + AV_R + 18;               // 200
   const nameFontSz = displayName.length > 22 ? 20 : displayName.length > 16 ? 24 : 28;
   const chipW      = Math.max(70, teamName.length * 10 + 32);
-  const NAME_Y     = HEAD_BOT + Math.round(TOP_H * 0.47); // 173 — vertically centred with avatar
+  const NAME_Y     = isRec
+    ? HEAD_BOT + Math.round(TOP_H * 0.38)   // 168 — centres 3-line block (name+chip+ctx) at AV_CY
+    : HEAD_BOT + Math.round(TOP_H * 0.45);  // 180 — centres 2-line block (name+chip) at AV_CY
   const CHIP_TOP   = NAME_Y + 14;                      // 187 — more breathing room below name
   const CHIP_TEXT  = CHIP_TOP + 15;                    // 202 — properly centred in 22px chip height
 
   // ── Stat — amber, right-anchored ─────────────────────────────────────────
   const STAT_X     = CX + CW - 20;                    // 1148
-  const statFontSz = statStr.length <= 2 ? 80 : statStr.length <= 4 ? 70 : statStr.length <= 6 ? 58 : 48;
-  const STAT_Y     = HEAD_BOT + Math.round(TOP_H * 0.60); // 193
+  const statFontSz = statStr.length <= 2 ? 96 : statStr.length <= 4 ? 82 : statStr.length <= 6 ? 66 : 54;
+  const STAT_Y     = HEAD_BOT + Math.round(TOP_H / 2) + Math.round(statFontSz * 0.70 / 2); // baseline to visually centre in TOP zone
 
-  // ── Avatar circular crop ──────────────────────────────────────────────────
+  const rowEntries = top5.slice(1);
+
+  // ── Hero avatar crop ──────────────────────────────────────────────────────
   let avatarBuf = null;
   {
     const livePlayer = getPlayerPhoto(share.player_id);
@@ -371,6 +394,25 @@ async function generateLeaderSvg(share) {
     }
   }
 
+  // ── Row avatar crops (parallel fetch) ────────────────────────────────────
+  const rowAvatarBufs = await Promise.all(rowEntries.map(async (p) => {
+    const livePlayer = getPlayerPhoto(p.player_id);
+    const photoUrl   = await resolveAvatar(livePlayer?.picture_url);
+    if (!photoUrl) return null;
+    try {
+      const src  = await fetchCoverImageBuffer(photoUrl);
+      if (!src) return null;
+      const size = ROW_AV_R * 2;
+      const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${ROW_AV_R}" cy="${ROW_AV_R}" r="${ROW_AV_R}" fill="#fff"/></svg>`);
+      return await sharp(src)
+        .rotate()
+        .resize(size, size, { fit: 'cover', position: 'top' })
+        .composite([{ input: mask, blend: 'dest-in' }])
+        .png()
+        .toBuffer();
+    } catch { return null; }
+  }));
+
   // ── Records hero context ──────────────────────────────────────────────────
   let heroCtxSvg = '';
   if (isRec && top5[0]) {
@@ -378,54 +420,52 @@ async function generateLeaderSvg(share) {
     const dateStr  = f.game_date ? new Date(f.game_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
     const resColor = String(f.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
     const isPO     = f.is_playoff === true || f.is_playoff === 1 || f.is_playoff === '1';
-    heroCtxSvg = `<text x="${INFO_X}" y="${CHIP_TEXT + 22}" font-family="${COVER_SVG_FONT}" font-size="12" fill="#475569">${escXml(dateStr)} · VS ${escXml(String(f.game_opp || '').toUpperCase())} · <tspan font-weight="700" fill="${resColor}">${escXml(String(f.game_result || ''))}</tspan>${isPO ? ` <tspan font-weight="700" fill="#f59332">PO</tspan>` : ''}</text>`;
+    heroCtxSvg = `<text x="${INFO_X}" y="${CHIP_TEXT + 30}" font-family="${COVER_SVG_FONT}" font-size="12" fill="#475569">${escXml(dateStr)} · VS ${escXml(String(f.game_opp || '').toUpperCase())} · <tspan font-weight="700" fill="${resColor}">${escXml(String(f.game_result || ''))}</tspan>${isPO ? ` <tspan font-weight="700" fill="#f59332">PO</tspan>` : ''}</text>`;
   }
 
-  // ── Row builder — mirrors .leader-panel__row ──────────────────────────────
-  const ROW_STAT_X = CX + CW - 20;
+  // ── Row builder ───────────────────────────────────────────────────────────
+  const ROW_STAT_X = CX + CW - 28;
 
   function makeRow(p, i) {
     const rank = i + 2;
     const rowY = TOP_BOT + i * ROW_H;
     const midY = rowY + Math.round(ROW_H / 2);
     const tc   = escXml(p.team_color || '#64748b');
-    const nm   = escXml(shortName(p.player_name).toUpperCase());
+    const nm   = escXml(formatName(p.player_name).toUpperCase());
     const val  = escXml(p.stat_fmt);
 
-    // Full-width bar bg (mirrors ::before at opacity 0.015 in CSS)
-    const barW   = maxVal > 0 ? Math.round(p.stat_value / maxVal * CW) : 0;
+    const barW   = maxVal > 0 ? Math.min(Math.round(p.stat_value / maxVal * CW), Math.round(CW * 0.85)) : 0;
     const barBg  = `<rect x="${CX}" y="${rowY + 1}" width="${barW}" height="${ROW_H - 2}" fill="${tc}" opacity="0.025"/>`;
     const divider = i < 3 ? `<line x1="${CX}" y1="${rowY + ROW_H}" x2="${CX + CW}" y2="${rowY + ROW_H}" stroke="#1e293b" stroke-width="1"/>` : '';
 
+    // Avatar placeholder — photo composited as PNG layer on top of the SVG
+    const avBg   = `<circle cx="${ROW_AV_CX}" cy="${midY}" r="${ROW_AV_R}" fill="#060c19"/>`;
+    const avInit = !rowAvatarBufs[i] ? `<text x="${ROW_AV_CX}" y="${midY + 7}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="18" font-weight="800" fill="${tc}" opacity="0.5">${escXml(svgInitials(p.player_name))}</text>` : '';
+    const avRing = `<circle cx="${ROW_AV_CX}" cy="${midY}" r="${ROW_AV_R}" fill="none" stroke="${tc}" stroke-width="1.5"/>`;
+
     if (isRec) {
-      // Two-line rec row: centre the two-line block vertically in ROW_H
-      const nameY  = midY - 7;  // name baseline (upper line)
-      const ctxY   = midY + 11; // ctx baseline (lower line)
-      const dotCY  = midY - 11; // dot at name's visual centre
+      const nameY    = midY + 1;  // two-line block centred: nameTop≈midY-12, ctxBase=midY+19
+      const ctxY     = midY + 19;
       const dateStr  = escXml(p.game_date ? new Date(p.game_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
       const oppStr   = escXml(String(p.game_opp || '').toUpperCase());
       const resStr   = escXml(String(p.game_result || ''));
       const resColor = String(p.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
-      return `${barBg}
-  <text x="${CX + 30}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
-  <circle cx="${CX + 42}" cy="${dotCY}" r="5" fill="${tc}"/>
-  <text x="${CX + 56}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="13" font-weight="600" fill="#64748b">${nm}</text>
-  <text x="${CX + 56}" y="${ctxY}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155">${dateStr} · VS ${oppStr} · <tspan font-weight="700" fill="${resColor}">${resStr}</tspan></text>
-  <text x="${ROW_STAT_X}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
+      return `${barBg}${avBg}${avInit}${avRing}
+  <text x="${ROW_RANK_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
+  <text x="${ROW_NAME_X}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0">${nm}</text>
+  <text x="${ROW_NAME_X}" y="${ctxY}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#475569">${dateStr} · VS ${oppStr} · <tspan font-weight="700" fill="${resColor}">${resStr}</tspan></text>
+  <text x="${ROW_STAT_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
   ${divider}`;
     }
 
-    // Single-line pg/tot row: text baseline at midY + half cap-height ≈ midY + 5
-    return `${barBg}
-  <text x="${CX + 30}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
-  <circle cx="${CX + 42}" cy="${midY}" r="5" fill="${tc}"/>
-  <text x="${CX + 56}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="13" font-weight="600" fill="#64748b">${nm}</text>
-  <text x="${ROW_STAT_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
+    return `${barBg}${avBg}${avInit}${avRing}
+  <text x="${ROW_RANK_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
+  <text x="${ROW_NAME_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0">${nm}</text>
+  <text x="${ROW_STAT_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
   ${divider}`;
   }
 
-  const rowEntries = top5.slice(1);
-  const rowsSvg   = rowEntries.map((p, i) => makeRow(p, i)).join('\n');
+  const rowsSvg = rowEntries.map((p, i) => makeRow(p, i)).join('\n');
 
   // ── SVG ───────────────────────────────────────────────────────────────────
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
@@ -444,7 +484,7 @@ async function generateLeaderSvg(share) {
   </defs>
 
   <!-- Outer bg -->
-  <rect width="${W}" height="${H}" fill="#020817"/>
+  <rect width="${W}" height="${H}" fill="#0a0e16"/>
 
   <!-- Card base (#0d1424 surface, rx=16, 1px border) -->
   <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16" fill="#0d1424"/>
@@ -455,7 +495,7 @@ async function generateLeaderSvg(share) {
 
     <!-- HEAD: full category name in amber on line 1, abbreviation + scope/mode on line 2 -->
     <text x="${CX + 20}" y="${CY + 34}" font-family="${COVER_SVG_FONT}" font-size="14" font-weight="800" fill="#f59332" letter-spacing="2">${escXml(share.stat_title.toUpperCase())} ${isRec ? 'RECORD' : 'LEADER'}</text>
-    <text x="${CX + 20}" y="${CY + 54}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155" letter-spacing="2">${escXml(share.stat_label)} · ${escXml(scopeLabel)}${isRec ? '' : ` · ${escXml(modeLabel)}`}</text>
+    <text x="${CX + 20}" y="${CY + 54}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155" letter-spacing="2">${escXml(share.stat_label)} · ${escXml(scopeLabel)}${isRec ? '' : ` · ${escXml(modeLabel)}`}${asOfLabel ? ` · ${escXml(asOfLabel)}` : ''}</text>
     <line x1="${CX}" y1="${HEAD_BOT}" x2="${CX + CW}" y2="${HEAD_BOT}" stroke="#1e293b" stroke-width="1"/>
 
     <!-- TOP gradient overlay -->
@@ -464,7 +504,7 @@ async function generateLeaderSvg(share) {
     <!-- Avatar: plain circle with color ring -->
     <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R}" fill="#060c19"/>
     ${!avatarBuf ? `<text x="${AV_CX}" y="${AV_CY + 20}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="52" font-weight="800" fill="${escXml(color)}" opacity="0.4">${escXml(svgInitials(share.player_name))}</text>` : ''}
-    <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R}" fill="none" stroke="${escXml(color)}" stroke-width="2.5" opacity="0.8"/>
+    <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R}" fill="none" stroke="${escXml(color)}" stroke-width="3"/>
 
     <!-- Info: player name + team chip -->
     <text x="${INFO_X}" y="${NAME_Y}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="700" fill="#e2e8f0">${escXml(displayName)}</text>
@@ -481,21 +521,31 @@ async function generateLeaderSvg(share) {
     <!-- LIST rows -->
     ${rowsSvg}
 
-    <!-- Footer -->
-    <text x="${W / 2}" y="${TOP_BOT + 4 * ROW_H + Math.round(FOOTER_H / 2) + 5}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="9" fill="#334155" letter-spacing="3">WKNDBASKETBALL.COM</text>
   </g>
 
   <!-- Card border -->
   <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16" fill="none" stroke="#1e293b" stroke-width="1.5"/>
+
+  <!-- Footer — outside card, centred in the gap below -->
+  <text x="${W / 2}" y="${H - 10}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="9" fill="#334155" letter-spacing="3">WKNDBASKETBALL.COM</text>
 </svg>`;
 
   // ── Compose PNG ───────────────────────────────────────────────────────────
-  const base   = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } }).png().toBuffer();
+  const base   = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 10, g: 14, b: 22 } } }).png().toBuffer();
   const layers = [{ input: Buffer.from(svg), top: 0, left: 0 }];
 
   if (avatarBuf) {
     layers.push({ input: avatarBuf, left: AV_CX - AV_R, top: AV_CY - AV_R });
   }
+
+  // Composite row avatars on top of their SVG placeholder circles
+  rowEntries.forEach((_, i) => {
+    if (rowAvatarBufs[i]) {
+      const rowY = TOP_BOT + i * ROW_H;
+      const midY = rowY + Math.round(ROW_H / 2);
+      layers.push({ input: rowAvatarBufs[i], left: ROW_AV_CX - ROW_AV_R, top: midY - ROW_AV_R });
+    }
+  });
 
   try {
     if (existsSync(COVER_LOGO_PATH)) {
@@ -1245,8 +1295,19 @@ app.get('/leaders/share/:id', (req, res) => {
   const teamName    = String(share.team_name || '').toUpperCase();
   const color       = share.team_color;
   const isLight     = teamName === 'WHITE';
-  const title       = `${displayName} · ${share.stat_label} Leader — WKND Basketball`;
-  const desc        = `${displayName} leads the league in ${share.stat_title} with ${share.stat_fmt} this season.`;
+  const isRecShare  = share.mode === 'rec';
+  const isAlltime   = share.season === 'alltime';
+  const scopeText   = isAlltime ? 'All-Time' : `Season ${share.season}`;
+  const { asOfSeason, asOfWeek } = buildShareAsOfLabel(share);
+  const asOfDesc    = asOfWeek
+    ? (isAlltime ? ` Updated through Season ${asOfSeason}, Week ${asOfWeek}.` : ` Updated through Week ${asOfWeek}.`)
+    : '';
+  const title       = isRecShare
+    ? `${displayName} · ${share.stat_label} ${scopeText} Record — WKND Basketball`
+    : `${displayName} · ${share.stat_label} Leader (${scopeText}) — WKND Basketball`;
+  const desc        = isRecShare
+    ? `${displayName} holds the ${isAlltime ? 'all-time' : `Season ${share.season}`} ${share.stat_title} record with ${share.stat_fmt}.${asOfDesc}`
+    : `${displayName} leads the WKND League in ${share.stat_title} with ${share.stat_fmt}${share.mode === 'pg' ? ' per game' : ' total'}.${asOfDesc}`;
   const imageUrl    = `${origin}/api/leaders/share/${share.id}/image.png`;
   const pageUrl     = `${origin}/leaders/share/${share.id}`;
   const metaTags = [

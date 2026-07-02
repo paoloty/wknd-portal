@@ -1234,8 +1234,12 @@ body {
 .leader-panel__cat { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: var(--amber); }
 .leader-panel__title { font-size: 11px; font-weight: 600; color: var(--text-muted); }
 .leader-panel__min { font-size: 9.5px; color: var(--text-subtle); }
-.leader-panel__share {
+.leader-panel__actions {
   margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.leader-panel__share {
   display: flex;
   align-items: center;
   gap: 4px;

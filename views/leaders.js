@@ -116,7 +116,7 @@ function recordPanel(cat, top5, scope = 'alltime') {
     <span class="leader-panel__cat">${escHtml(cat.label)}</span>
     <span class="leader-panel__title">${escHtml(cat.title)}</span>
     ${cat.min ? `<span class="leader-panel__min">${escHtml(cat.min)}</span>` : ''}
-    ${recShareBtn(cat, scope, first, color, fmt)}
+    <div class="leader-panel__actions">${recShareBtn(cat, scope, first, color, fmt)}${recDownloadBtn(cat, scope, first, color, fmt)}</div>
   </div>
   <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
     ${playerAvatar(first.r.player_id, first.r.name, color, { className: 'leader-avatar', link: true })}
@@ -203,6 +203,24 @@ function shareBtn(cat, mode, season, best, color, fmt) {
     data-stat-fmt="${escHtml(fmt(best.v))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>`;
 }
 
+const DL_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+
+function downloadBtn(cat, mode, season, best, color, fmt) {
+  return `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
+    data-season="${escHtml(String(season))}"
+    data-cat-id="${escHtml(cat.id)}"
+    data-mode="${escHtml(mode)}"
+    data-player-id="${escHtml(best.p.id)}"
+    data-player-name="${escHtml(best.p.name)}"
+    data-team-id="${escHtml(best.p.team_id)}"
+    data-team-name="${escHtml(String(best.p.team_name || ''))}"
+    data-team-color="${escHtml(color)}"
+    data-stat-label="${escHtml(cat.label)}"
+    data-stat-title="${escHtml(cat.title)}"
+    data-stat-value="${best.v}"
+    data-stat-fmt="${escHtml(fmt(best.v))}">${DL_ICON}</button>`;
+}
+
 function recShareBtn(cat, scope, first, color, fmt) {
   const ctx    = recordContext(first.r);
   const teamId = first.r.player_team_id || first.r.team_id || '';
@@ -227,6 +245,30 @@ function recShareBtn(cat, scope, first, color, fmt) {
   ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>`;
 }
 
+function recDownloadBtn(cat, scope, first, color, fmt) {
+  const ctx    = recordContext(first.r);
+  const teamId = first.r.player_team_id || first.r.team_id || '';
+  return `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
+    data-season="${escHtml(String(scope))}"
+    data-cat-id="${escHtml(cat.id)}"
+    data-mode="rec"
+    data-player-id="${escHtml(String(first.r.player_id || ''))}"
+    data-player-name="${escHtml(String(first.r.name || ''))}"
+    data-team-id="${escHtml(String(teamId))}"
+    data-team-name="${escHtml(String(first.r.team_name || ''))}"
+    data-team-color="${escHtml(color)}"
+    data-stat-label="${escHtml(cat.label)}"
+    data-stat-title="${escHtml(cat.title)}"
+    data-stat-value="${first.v}"
+    data-stat-fmt="${escHtml(fmt(first.v))}"
+    data-game-id="${escHtml(String(first.r.game_id || ''))}"
+    data-game-date="${escHtml(String(first.r.date || ''))}"
+    data-game-opp="${escHtml(ctx.opp)}"
+    data-game-result="${escHtml(ctx.result)}"
+    data-is-playoff="${ctx.isPO ? '1' : '0'}"
+  >${DL_ICON}</button>`;
+}
+
 function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}) {
   const scored = players
     .map(p => ({ p, v: cat.fn(p) }))
@@ -249,7 +291,7 @@ function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}
     <span class="leader-panel__cat">${escHtml(cat.label)}</span>
     <span class="leader-panel__title">${escHtml(cat.title)}</span>
     ${cat.min ? `<span class="leader-panel__min">${escHtml(cat.min)}</span>` : ''}
-    ${shareBtn(cat, mode, season, best, color, fmt)}
+    <div class="leader-panel__actions">${shareBtn(cat, mode, season, best, color, fmt)}${downloadBtn(cat, mode, season, best, color, fmt)}</div>
   </div>
   <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
     ${playerAvatar(best.p.id, best.p.name, color, { className: 'leader-avatar', link: true })}
@@ -323,6 +365,53 @@ export function leadersPage({ players, season = '', gameRecords = [], currentSea
         if (grid) grid.style.display = s === scope ? '' : 'none';
         if (btn)  btn.classList.toggle('season-pill--active', s === scope);
       });
+    }
+    async function downloadLeader(btn) {
+      if (btn._busy) return;
+      btn._busy = true;
+      const icon = btn.innerHTML;
+      btn.innerHTML = '&hellip;';
+      try {
+        const r = await fetch('/api/leaders/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            season:      btn.dataset.season,
+            category_id: btn.dataset.catId,
+            mode:        btn.dataset.mode,
+            player_id:   btn.dataset.playerId,
+            player_name: btn.dataset.playerName,
+            team_id:     btn.dataset.teamId,
+            team_name:   btn.dataset.teamName,
+            team_color:  btn.dataset.teamColor,
+            stat_label:  btn.dataset.statLabel,
+            stat_title:  btn.dataset.statTitle,
+            stat_value:  parseFloat(btn.dataset.statValue),
+            stat_fmt:    btn.dataset.statFmt,
+            game_id:     btn.dataset.gameId,
+            game_date:   btn.dataset.gameDate,
+            game_opp:    btn.dataset.gameOpp,
+            game_result: btn.dataset.gameResult,
+            is_playoff:  btn.dataset.isPlayoff,
+          })
+        });
+        const { id } = await r.json();
+        const imgRes = await fetch('/api/leaders/share/' + id + '/image.png');
+        const blob = await imgRes.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = 'wknd-' + btn.dataset.statLabel.toLowerCase() + '-' + btn.dataset.mode + '.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(objUrl);
+        btn.innerHTML = '&#10003;';
+        setTimeout(() => { btn.innerHTML = icon; btn._busy = false; }, 1500);
+      } catch {
+        btn.innerHTML = icon;
+        btn._busy = false;
+      }
     }
     async function shareLeader(btn) {
       if (btn._busy) return;
