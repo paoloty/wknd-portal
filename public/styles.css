@@ -399,7 +399,7 @@ body {
 /* ── Score ticker ───────────────────────────────────────────────────────── */
 .ticker-wrap {
   position: relative;
-  margin-bottom: 48px;
+  margin-bottom: 16px;
 }
 .ticker-wrap::before,
 .ticker-wrap::after {
@@ -770,6 +770,38 @@ body {
 
 /* ── League leaders grid ────────────────────────────────────────────────── */
 .leaders-carousel { position: relative; }
+.leaders-carousel::before,
+.leaders-carousel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  pointer-events: none;
+  z-index: 1;
+}
+.leaders-carousel::before { left: 0;  background: linear-gradient(to right, var(--bg), transparent); }
+.leaders-carousel::after  { right: 0; background: linear-gradient(to left,  var(--bg), transparent); }
+.lc-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(13,20,36,0.85);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.lc-nav:hover { color: var(--text); border-color: var(--text-muted); }
+.lc-nav--prev { left: 6px; }
+.lc-nav--next { right: 6px; }
 .lc-track {
   display: flex;
   gap: 14px;

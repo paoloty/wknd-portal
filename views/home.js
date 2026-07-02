@@ -203,44 +203,50 @@ function leagueLeaders(players) {
 </div>`;
   }).filter(Boolean);
 
+  const CHEVRON_L = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+  const CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+
   return `<div class="leaders-carousel">
-  <div class="lc-track" id="lc-track">
+  <button class="lc-nav lc-nav--prev" aria-label="Previous leaders">${CHEVRON_L}</button>
+  <div class="lc-track">
     ${cards.join('\n    ')}
   </div>
+  <button class="lc-nav lc-nav--next" aria-label="Next leaders">${CHEVRON_R}</button>
 </div>
-<script>
-(function(){
-  var track = document.getElementById('lc-track');
+<script>(function(){
+  var wrap = document.currentScript.previousElementSibling;
+  var track = wrap.querySelector('.lc-track');
+  var btnP = wrap.querySelector('.lc-nav--prev');
+  var btnN = wrap.querySelector('.lc-nav--next');
   var origCards = Array.from(track.querySelectorAll('.leader-card'));
   var n = origCards.length;
-
-  // Clone cards for seamless loop
   origCards.forEach(function(c){ track.appendChild(c.cloneNode(true)); });
-
   var current = 0;
+  var timer;
 
-  function cardW() {
-    return origCards[0] ? origCards[0].offsetWidth + 14 : 204;
-  }
+  function cardW() { return origCards[0] ? origCards[0].offsetWidth + 14 : 204; }
 
   function advance() {
     current++;
     if (current >= n) {
-      // Scroll to clone of card 0 (visually same as card 0)
       track.scrollTo({ left: cardW() * n, behavior: 'smooth' });
-      // After animation settles, silently reset to real card 0
-      setTimeout(function(){
-        track.scrollTo({ left: 0, behavior: 'instant' });
-        current = 0;
-      }, 450);
+      setTimeout(function(){ track.scrollTo({ left: 0, behavior: 'instant' }); current = 0; }, 450);
     } else {
       track.scrollTo({ left: cardW() * current, behavior: 'smooth' });
     }
   }
 
-  setInterval(advance, 3000);
-})();
-</script>`;
+  function resetTimer() { clearInterval(timer); timer = setInterval(advance, 3000); }
+
+  btnP.addEventListener('click', function(){
+    if (current > 0) { current--; } else { current = n - 1; }
+    track.scrollTo({ left: cardW() * current, behavior: 'smooth' });
+    resetTimer();
+  });
+  btnN.addEventListener('click', function(){ advance(); resetTimer(); });
+
+  resetTimer();
+})()</script>`;
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
