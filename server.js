@@ -451,10 +451,10 @@ async function generateLeaderSvg(share) {
       const resStr   = escXml(String(p.game_result || ''));
       const resColor = String(p.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
       return `${barBg}${avBg}${avInit}${avRing}
-  <text x="${ROW_RANK_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
+  <text x="${ROW_RANK_X}" y="${midY + 9}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
   <text x="${ROW_NAME_X}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0">${nm}</text>
   <text x="${ROW_NAME_X}" y="${ctxY}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#475569">${dateStr} · VS ${oppStr} · <tspan font-weight="700" fill="${resColor}">${resStr}</tspan></text>
-  <text x="${ROW_STAT_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
+  <text x="${ROW_STAT_X}" y="${midY + 10}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
   ${divider}`;
     }
 
@@ -1348,14 +1348,45 @@ app.get('/api/leaders/share/:id/image.png', async (req, res) => {
   }
 });
 
+app.get('/api/leaders/share/:id/card.png', async (req, res) => {
+  const share = getShare(req.params.id);
+  if (!share) return res.status(404).end();
+  try {
+    const fullPng  = await generateLeaderSvg(share);
+    const cardOnly = await sharp(fullPng).extract({ left: 32, top: 32, width: 1136, height: 566 }).toBuffer();
+    const { asOfLabel } = buildShareAsOfLabel(share);
+    const footerText = asOfLabel ? `WKNDBASKETBALL.COM   ·   ${asOfLabel}` : 'WKNDBASKETBALL.COM';
+    const FOOTER_H   = 44;
+    const footerSvg  = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="1136" height="${FOOTER_H}">` +
+      `<text x="568" y="28" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155" letter-spacing="3">${escXml(footerText)}</text>` +
+      `</svg>`
+    );
+    const result = await sharp({
+      create: { width: 1136, height: 566 + FOOTER_H, channels: 3, background: { r: 10, g: 14, b: 22 } }
+    })
+      .composite([{ input: cardOnly, top: 0, left: 0 }, { input: footerSvg, top: 566, left: 0 }])
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.end(result);
+  } catch (err) {
+    console.error('Leader card download error:', err);
+    res.status(500).end();
+  }
+});
+
 app.get('/leaders', (req, res) => {
   const players     = buildLeaderPlayers();
   const { season }  = getCurrentSeason() || {};
   const gameRecords = getGameRecords();
+  const weekNum     = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
+  const asOfLabel   = weekNum ? `S${season} · WK ${weekNum}` : '';
   res.send(renderPage(req, {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
-    body: leadersPage({ players, season: String(season || ''), gameRecords, currentSeason: season || 3 })
+    body: leadersPage({ players, season: String(season || ''), gameRecords, currentSeason: season || 3, asOfLabel })
   }));
 });
 
