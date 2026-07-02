@@ -47,7 +47,30 @@ export function scoreTicker(games) {
 </a>`;
   });
 
-  return `<div class="score-ticker">
+  const CHEVRON_L = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+  const CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+  return `<div class="ticker-wrap">
+  <button class="ticker-nav ticker-nav--prev" aria-label="Previous games">${CHEVRON_L}</button>
+  <div class="score-ticker">
   ${cards.join('\n  ')}
-</div>`;
+  </div>
+  <button class="ticker-nav ticker-nav--next" aria-label="Next games">${CHEVRON_R}</button>
+</div>
+<script>(function(){
+  var wrap = document.currentScript.previousElementSibling;
+  var track = wrap.querySelector('.score-ticker');
+  var btnP = wrap.querySelector('.ticker-nav--prev');
+  var btnN = wrap.querySelector('.ticker-nav--next');
+  var STEP = 174;
+  function update() {
+    var s = track.scrollLeft, max = track.scrollWidth - track.clientWidth;
+    wrap.classList.toggle('at-start', s < 4);
+    wrap.classList.toggle('at-end',   s > max - 4);
+  }
+  track.addEventListener('scroll', update, { passive: true });
+  btnP.addEventListener('click', function(){ track.scrollBy({ left: -STEP, behavior: 'smooth' }); });
+  btnN.addEventListener('click', function(){ track.scrollBy({ left:  STEP, behavior: 'smooth' }); });
+  update();
+})()</script>`;
 }

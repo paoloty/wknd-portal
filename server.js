@@ -531,8 +531,14 @@ async function generateLeaderSvg(share) {
 </svg>`;
 
   // ── Compose PNG ───────────────────────────────────────────────────────────
+  // Render SVG at 2× density then resize down — produces much crisper text
+  // when Facebook recompresses the PNG to JPEG for display
+  const svgLayer = await sharp(Buffer.from(svg), { density: 144 })
+    .resize(W, H)
+    .png()
+    .toBuffer();
   const base   = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 10, g: 14, b: 22 } } }).png().toBuffer();
-  const layers = [{ input: Buffer.from(svg), top: 0, left: 0 }];
+  const layers = [{ input: svgLayer, top: 0, left: 0 }];
 
   if (avatarBuf) {
     layers.push({ input: avatarBuf, left: AV_CX - AV_R, top: AV_CY - AV_R });

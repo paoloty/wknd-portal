@@ -397,6 +397,44 @@ body {
 @media (max-width: 640px) { .legal-card { padding: 20px; } }
 
 /* ── Score ticker ───────────────────────────────────────────────────────── */
+.ticker-wrap {
+  position: relative;
+  margin-bottom: 26px;
+}
+.ticker-wrap::before,
+.ticker-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 4px;
+  width: 56px;
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 0.25s;
+}
+.ticker-wrap::before { left: 0;  background: linear-gradient(to right, var(--bg), transparent); }
+.ticker-wrap::after  { right: 0; background: linear-gradient(to left,  var(--bg), transparent); }
+.ticker-wrap.at-start::before { opacity: 0; }
+.ticker-wrap.at-end::after   { opacity: 0; }
+.ticker-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(calc(-50% - 2px));
+  z-index: 3;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.25s, color 0.15s, border-color 0.15s;
+}
+.ticker-nav:hover { color: var(--text); border-color: #334155; }
+.ticker-nav--prev { left: 6px; }
+.ticker-nav--next { right: 6px; }
+.ticker-wrap.at-start .ticker-nav--prev { opacity: 0; pointer-events: none; }
+.ticker-wrap.at-end   .ticker-nav--next { opacity: 0; pointer-events: none; }
 .score-ticker {
   display: flex;
   gap: 14px;
@@ -405,7 +443,6 @@ body {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   padding-bottom: 4px;
-  margin-bottom: 26px;
 }
 .score-ticker::-webkit-scrollbar { display: none; }
 .score-ticker__card {
