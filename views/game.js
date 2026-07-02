@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, boldTitle, playerAvatar, playerLink } from './utils.js';
+import { parseWriteup } from '../lib/writeup.js';
 import { scoreTicker } from './ticker.js';
 
 function youtubeEmbedUrl(url) {
@@ -51,16 +52,97 @@ function scoreCard(game, colorA, colorB) {
 }
 
 // ── Game Recap tab ────────────────────────────────────────────────────────────
-function recapTab(game) {
-  const title = boldTitle(game.game_writeup);
-  const body = String(game.game_writeup || '').replace(/\*\*[^*]+\*\*/, '').trim();
-  if (!title && !body) {
-    return `<p class="tabs-empty">No recap available yet.</p>`;
+function renderWriteup(writeup) {
+  const s = String(writeup || '').trim();
+  if (!s) return '';
+
+  const isHtml = /<[a-z][\s\S]*>/i.test(s);
+
+  if (isHtml) {
+    // Split on first block break to separate title from body
+    const m = s.match(/^([\s\S]*?)(<br\s*\/?>|<\/(?:p|div|h[1-6])>)([\s\S]*)$/i);
+    const titleHtml = m ? m[1] : s;
+    const bodyHtml  = m ? m[3].trim() : '';
+    const titleText = titleHtml.replace(/<[^>]+>/g, '').replace(/\*\*/g, '').trim();
+    return [
+      titleText ? `<h2 class="recap-tab__title">${escHtml(titleText)}</h2>` : '',
+      bodyHtml  ? `<div class="recap-tab__body">${bodyHtml}</div>` : '',
+    ].filter(Boolean).join('\n');
   }
-  return `<div class="recap-tab">
-  ${title ? `<h2 class="recap-tab__title">${escHtml(title)}</h2>` : ''}
-  ${body ? `<p class="recap-tab__body">${escHtml(body)}</p>` : ''}
-</div>`;
+
+  // Legacy ** format or plain text
+  const { title } = parseWriteup(s);
+  const bodyRaw = title
+    ? s.replace(/^\*\*[^*]+\*\*\s*/, '').replace(/^[^\n]+\n?/, '').trim()
+    : s;
+
+  const bodyHtml = bodyRaw
+    .split(/\n{2,}/)
+    .filter(Boolean)
+    .map(para => `<p class="recap-tab__body">${escHtml(para.trim()).replace(/\n/g, '<br>')}</p>`)
+    .join('\n');
+
+  return [
+    title   ? `<h2 class="recap-tab__title">${escHtml(title)}</h2>` : '',
+    bodyHtml || '',
+  ].filter(Boolean).join('\n');
+}
+
+function writeupToEditorHtml(writeup) {
+  if (!writeup) return '';
+  if (/<[a-z][\s\S]*>/i.test(writeup)) return writeup;
+  // Convert legacy ** to <b>
+  return escHtml(writeup).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+}
+
+function recapTab(game, isAdmin) {
+  if (!isAdmin) {
+    const rendered = renderWriteup(game.game_writeup);
+    if (!rendered) return `<p class="tabs-empty">No recap available yet.</p>`;
+    return `<div class="recap-tab">${rendered}</div>`;
+  }
+
+  const editorHtml = writeupToEditorHtml(game.game_writeup || '');
+  return `<div class="recap-tab recap-tab--edit">
+  <div class="wysiwyg-toolbar">
+    <button type="button" class="wysiwyg-btn" onclick="document.execCommand('bold')" title="Bold"><b>B</b></button>
+    <button type="button" class="wysiwyg-btn" onclick="document.execCommand('italic')" title="Italic"><i>I</i></button>
+    <span class="wysiwyg-hint">Tip: first bold line becomes the recap title</span>
+  </div>
+  <div class="wysiwyg-editor" id="recap-editor" contenteditable="true" data-game-id="${escHtml(game.id)}">${editorHtml}</div>
+  <div class="wysiwyg-actions">
+    <button class="wysiwyg-save" onclick="saveRecap(this)">Save Recap</button>
+    <span class="wysiwyg-status" id="recap-status"></span>
+    <button class="wysiwyg-btn wysiwyg-btn--future" disabled title="Coming soon">Generate ✦</button>
+  </div>
+</div>
+<script>
+async function saveRecap(btn) {
+  if (btn._busy) return;
+  btn._busy = true;
+  const editor = document.getElementById('recap-editor');
+  const status = document.getElementById('recap-status');
+  const gameId = editor.dataset.gameId;
+  btn.textContent = 'Saving…';
+  status.textContent = '';
+  try {
+    const r = await fetch('/admin/games/' + gameId + '/recap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writeup: editor.innerHTML })
+    });
+    if (!r.ok) throw new Error('Server error');
+    btn.textContent = 'Saved ✓';
+    status.textContent = '';
+    setTimeout(() => { btn.textContent = 'Save Recap'; btn._busy = false; }, 2000);
+  } catch {
+    btn.textContent = 'Save Recap';
+    status.textContent = 'Error saving — try again';
+    status.style.color = 'var(--red, #f87171)';
+    btn._busy = false;
+  }
+}
+</script>`;
 }
 
 // ── Box Score tab ─────────────────────────────────────────────────────────────
@@ -226,7 +308,7 @@ function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
 </div>`;
 }
 
-function buildBoxScoreData(game, stats, playerMap, teamMap) {
+function buildBoxScoreData(game, stats, dnpPlayers = []) {
   const scoreA = Number(game.team_a_score);
   const scoreB = Number(game.team_b_score);
   const winnerName = scoreA >= scoreB ? game.team_a_name : game.team_b_name;
@@ -239,13 +321,8 @@ function buildBoxScoreData(game, stats, playerMap, teamMap) {
   }
 
   const dnpByTeam = {};
-  let dnpIds;
-  try { dnpIds = JSON.parse(String(game.dnp_players_json || '[]')); } catch { dnpIds = []; }
-  for (const pid of dnpIds) {
-    const p = playerMap[pid];
-    if (!p) continue;
-    const t = teamMap[p.team_id];
-    const teamName = String(t?.name || '').toUpperCase();
+  for (const p of dnpPlayers) {
+    const teamName = String(p.team_name || '').toUpperCase();
     if (!dnpByTeam[teamName]) dnpByTeam[teamName] = [];
     dnpByTeam[teamName].push({ id: p.id, name: displayPlayerName(p.name || '') });
   }
@@ -426,9 +503,112 @@ function teamComparisonTab(game, stats) {
 </div>`;
 }
 
+// ── Admin sidebar panel ───────────────────────────────────────────────────────
+function adminGamePanel(game) {
+  const youtubeVal = escHtml(game.youtube_url || '');
+  const hasCover   = !!game.has_cover;
+  return `<div class="card admin-game-panel">
+  <div class="card-label card-label--admin">ADMIN</div>
+
+  <div class="agp-section">
+    <div class="agp-label">Game Image</div>
+    <div class="agp-cover-preview" id="agp-cover-preview">
+      ${hasCover
+        ? `<img src="/api/photo/${escHtml(game.id)}" class="agp-cover-img" id="agp-cover-img" alt="">`
+        : `<div class="agp-cover-empty" id="agp-cover-img">No image</div>`}
+    </div>
+    <div class="agp-cover-actions">
+      <label class="agp-file-btn">
+        Upload
+        <input type="file" accept="image/*" id="agp-file-input" style="display:none" onchange="agpUpload(this,'${escHtml(game.id)}')">
+      </label>
+      ${hasCover ? `<button class="agp-remove-btn" onclick="agpRemoveCover('${escHtml(game.id)}')">Remove</button>` : ''}
+    </div>
+    <span class="agp-status" id="agp-cover-status"></span>
+  </div>
+
+  <div class="agp-section">
+    <label class="agp-label" for="agp-yt">YouTube URL</label>
+    <div class="agp-row">
+      <input class="agp-input" id="agp-yt" type="url" placeholder="https://youtu.be/…" value="${youtubeVal}">
+      <button class="agp-save-btn" onclick="agpSaveYoutube('${escHtml(game.id)}')">Save</button>
+    </div>
+    <span class="agp-status" id="agp-yt-status"></span>
+  </div>
+</div>
+<script>
+async function agpUpload(input, gameId) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById('agp-cover-status');
+  if (file.size > 15 * 1024 * 1024) {
+    status.textContent = 'File too large (max 15MB)';
+    return;
+  }
+  status.textContent = 'Uploading…';
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const r = await fetch('/admin/games/' + gameId + '/cover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: e.target.result })
+      });
+      if (!r.ok) throw new Error('Server error ' + r.status);
+      const data = await r.json();
+      const t = Date.now();
+      const newSrc = '/api/photo/' + gameId + '?t=' + t;
+      // Update admin panel preview
+      const img = document.getElementById('agp-cover-img');
+      img.outerHTML = '<img src="' + newSrc + '" class="agp-cover-img" id="agp-cover-img" alt="">';
+      // Update left media hero if present
+      const heroBg = document.querySelector('.sidebar-hero__bg img');
+      if (heroBg) heroBg.src = newSrc;
+      else {
+        const hero = document.querySelector('.sidebar-hero');
+        if (hero) hero.innerHTML = '<div class="sidebar-hero__bg"><img src="' + newSrc + '" alt=""></div>';
+      }
+      const sizeMsg = data.before && data.after ? ' (' + data.before + 'KB → ' + data.after + 'KB)' : '';
+      status.textContent = 'Saved ✓' + sizeMsg;
+      setTimeout(() => { status.textContent = ''; }, 4000);
+    } catch {
+      status.textContent = 'Upload failed';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+async function agpRemoveCover(gameId) {
+  if (!confirm('Remove game image?')) return;
+  const status = document.getElementById('agp-cover-status');
+  await fetch('/admin/games/' + gameId + '/cover', { method: 'DELETE' });
+  const img = document.getElementById('agp-cover-img');
+  img.outerHTML = '<div class="agp-cover-empty" id="agp-cover-img">No image</div>';
+  status.textContent = 'Removed';
+  setTimeout(() => { status.textContent = ''; }, 2000);
+}
+async function agpSaveYoutube(gameId) {
+  const input  = document.getElementById('agp-yt');
+  const status = document.getElementById('agp-yt-status');
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/admin/games/' + gameId + '/youtube', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: input.value.trim() })
+    });
+    if (!r.ok) throw new Error();
+    status.textContent = 'Saved ✓';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  } catch {
+    status.textContent = 'Error — try again';
+  }
+}
+</script>`;
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-function gameTabs(game, stats, quarterScores, playerMap, teamMap) {
-  const { byTeam, dnpByTeam, winner } = buildBoxScoreData(game, stats, playerMap, teamMap);
+function gameTabs(game, stats, dnpPlayers, quarterScores, playerMap, teamMap, isAdmin) {
+  const { byTeam, dnpByTeam, winner } = buildBoxScoreData(game, stats, dnpPlayers);
   const nameA = game.team_a_name.toUpperCase();
   const nameB = game.team_b_name.toUpperCase();
   const tabIdA = 'bs-' + nameA.replace(/\s+/g, '-');
@@ -443,7 +623,7 @@ function gameTabs(game, stats, quarterScores, playerMap, teamMap) {
     <button class="game-tabs__tab" data-tab="comparison">Team Comparison</button>
     <button class="game-tabs__tab" data-tab="linescore">Line Score</button>
   </div>
-  <div id="tab-recap" class="game-tabs__body">${recapTab(game)}</div>
+  <div id="tab-recap" class="game-tabs__body">${recapTab(game, isAdmin)}</div>
   <div id="tab-${tabIdA}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner)}</div>
   <div id="tab-${tabIdB}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner)}</div>
   <div id="tab-leaders" class="game-tabs__body game-tabs__body--hidden">${gameLeadersTab(game, stats)}</div>
@@ -537,7 +717,7 @@ function topPerformers(stats, potgPlayerId) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function gamePage({ game, stats, potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {} }) {
+export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, isAdmin = false }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
@@ -551,16 +731,16 @@ export function gamePage({ game, stats, potgPlayerId, quarterScores = [], allGam
     .slice(0, 5);
   const tickerGames = [...upcomingGames, ...completedGames];
 
-  return `${scoreTicker(tickerGames)}
-<div class="game-detail-layout">
+  return `<div class="game-detail-layout">
   <div class="game-detail-left">
     ${leftMedia(game, colorA, colorB)}
-    ${gameTabs(game, stats, quarterScores, playerMap, teamMap)}
+    ${gameTabs(game, stats, dnpPlayers, quarterScores, playerMap, teamMap, isAdmin)}
   </div>
   <div class="game-detail-right">
     ${scoreCard(game, colorA, colorB)}
     ${potgCard(potgStat, game.potg_writeup)}
     ${topPerformers(stats, potgPlayerId)}
+    ${isAdmin ? adminGamePanel(game) : ''}
   </div>
 </div>`;
 }

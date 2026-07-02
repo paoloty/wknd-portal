@@ -62,9 +62,7 @@ export function gamesPage({ games, highlights = [] }) {
     ? completedGames.map(gameRow).join('\n    ')
     : `<div class="card game-list__empty">No games yet.</div>`;
 
-  return `${scoreTicker(tickerGames)}
-
-<div class="games-layout">
+  return `<div class="games-layout">
   <div class="games-main">
     <div class="card game-list">
       <div class="card-label">GAME LOG</div>

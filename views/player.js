@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, truncate, playerAvatar } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, truncate, initials } from './utils.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -17,7 +17,7 @@ function parsePositions(raw) {
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
-function heroSection(player, totals) {
+function heroSection(player, totals, isAdmin = false) {
   const teamName  = String(player.team_name || '').toUpperCase();
   const color     = teamColor(teamName);
   const isLight   = teamName === 'WHITE';
@@ -31,8 +31,22 @@ function heroSection(player, totals) {
     `<span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>`,
   ].filter(Boolean).join('');
 
+  const avatarInits = initials(player.name);
+  const uploadOverlay = isAdmin ? `
+    <label class="player-avatar-upload" title="Upload photo">
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <input type="file" accept="image/*" style="display:none" onchange="__uploadPlayerPhoto(this,'${escHtml(player.id)}')">
+    </label>` : '';
+
   const leftCol = `<div class="player-hero__left">
-    ${playerAvatar(player.id, player.name, color, { className: 'player-hero__avatar' })}
+    <div class="player-hero__avatar" style="border-color:${color}">
+      <span class="font-condensed">${escHtml(avatarInits)}</span>
+      <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+      ${uploadOverlay}
+    </div>
     <div class="player-hero__info">
       <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
       <div class="player-hero__meta">${metaParts}</div>
@@ -69,12 +83,47 @@ function heroSection(player, totals) {
       : `<p class="player-hero__no-stats">No games recorded yet.</p>`}
   </div>`;
 
+  const uploadScript = isAdmin ? `
+<script>
+function __uploadPlayerPhoto(input, playerId) {
+  var file = input.files[0];
+  if (!file) return;
+  var label = input.closest('.player-avatar-upload');
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    label.classList.add('player-avatar-upload--loading');
+    fetch('/admin/player/' + encodeURIComponent(playerId) + '/photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl: e.target.result })
+    }).then(function(r) {
+      label.classList.remove('player-avatar-upload--loading');
+      if (!r.ok) throw new Error('failed');
+      var ts = Date.now();
+      var newSrc = '/api/player/' + encodeURIComponent(playerId) + '/photo?t=' + ts;
+      var img = document.getElementById('player-avatar-img');
+      img.style.display = '';
+      img.src = newSrc;
+      // Update og:image so any immediate re-share picks up the new photo
+      ['og:image', 'og:image:secure_url', 'twitter:image'].forEach(function(prop) {
+        var meta = document.querySelector('meta[property="' + prop + '"], meta[name="' + prop + '"]');
+        if (meta) meta.setAttribute('content', newSrc);
+      });
+    }).catch(function() {
+      label.classList.remove('player-avatar-upload--loading');
+      alert('Photo upload failed. Please try again.');
+    });
+  };
+  reader.readAsDataURL(file);
+}
+</script>` : '';
+
   return `<div class="card player-hero" style="--ph-color:${color}">
   <div class="player-hero__grid">
     ${leftCol}
     ${rightCol}
   </div>
-</div>`;
+</div>${uploadScript}`;
 }
 
 // ── Game log ──────────────────────────────────────────────────────────────────
@@ -110,7 +159,7 @@ function gameLog(allRows, player, potgGameIds) {
       ${isPO ? '<span class="gl-badge gl-badge--po">PO</span>' : ''}
     </div>`;
 
-    if (g.isDnp) {
+    if (g.status === 'dnp') {
       return `<tr class="gl-row gl-row--dnp">
       <td class="gl-date">${escHtml(formatDate(g.date))} <span class="dnp-pill">DNP</span></td>
       <td>${oppCell}</td>
@@ -276,20 +325,13 @@ function potgWriteups(potgGames, player) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, dnpGames = [], financialSection = '' }) {
+export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
 
-  // Merge played games + DNPs and sort by actual date DESC
-  const allRows = [
-    ...gameLogs.map(g => ({ ...g, isDnp: false })),
-    ...dnpGames.map(g => ({ ...g, isDnp: true, player_team_id: player.team_id })),
-  ].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  return `${heroSection(player, totals)}
+  return `${heroSection(player, totals, isAdmin)}
 <div class="game-detail-layout">
   <div class="game-detail-left">
-    ${gameLog(allRows, player, potgGameIds)}
-    ${financialSection}
+    ${gameLog(gameLogs, player, potgGameIds)}
   </div>
   <div class="game-detail-right">
     ${potgWriteups(potgGames, player)}

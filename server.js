@@ -1,24 +1,38 @@
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomBytes, timingSafeEqual } from 'crypto';
-import { statSync } from 'fs';
+import { randomBytes, timingSafeEqual, createHash } from 'crypto';
+import { statSync, existsSync } from 'fs';
 import express from 'express';
 import session from 'express-session';
-import Database from 'better-sqlite3';
+import { parseWriteup } from './lib/writeup.js';
 import sharp from 'sharp';
-import { layout } from './views/layout.js';
+import { layout, escHtml } from './views/layout.js';
 import { homePage } from './views/home.js';
 import { gamesPage } from './views/games.js';
 import { gamePage } from './views/game.js';
-import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals } from './views/leaders.js';
+import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { standingsPage } from './views/standings.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
+import { playersPage } from './views/players.js';
+import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage } from './views/legal.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
-import { upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug, getAllFinancials, getAllTransactions, recordTransaction, getPlayerFinancials, getPlayerTransactions, confirmTransaction } from './lib/portal-db.js';
+import {
+  upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
+  getAllFinancials, getAllTransactions, recordTransaction,
+  getPlayerFinancials, getPlayerTransactions, confirmTransaction,
+  getAllTeams, getAllPlayers, getAllGames, getGameCover,
+  getTeamSeasonStats, getTeamRecords, getLeaders,
+  getGameById, getGameDetailStats, getGameStats,
+  getPlayerWithTeam, getPlayerById, getTeamById,
+  getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
+  getPlayerCareerHighs, getPlayerAwards, getGameDnpPlayers, getGameRecords,
+  getPlayerPhoto, getCurrentSeason, getTickerGames,
+  updateGameRecap, updateGameYoutube, updateGameCover, updatePlayerPhoto,
+} from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, playerFinancialSection } from './views/admin/ledger.js';
@@ -28,12 +42,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CSS_VER = (() => { try { return statSync(path.join(__dirname, 'public/styles.css')).mtimeMs | 0; } catch { return Date.now(); } })();
 
 const PORT = process.env.PORT || 4000;
-const DB_PATH = path.resolve(__dirname, process.env.DB_PATH || '../wknd-stats/data/wknd-stats.db');
 const GA_MEASUREMENT_ID = String(process.env.GA_MEASUREMENT_ID || '').trim();
 const ADMIN_URL = String(process.env.ADMIN_URL || 'http://localhost:3000').replace(/\/$/, '');
 const PORTAL_ADMIN_USER = process.env.PORTAL_ADMIN_USER || 'admin';
 const PORTAL_ADMIN_PASS = process.env.PORTAL_ADMIN_PASS || '';
 const SESSION_SECRET    = process.env.SESSION_SECRET || randomBytes(32).toString('hex');
+const ROSTER_API_KEY    = process.env.ROSTER_API_KEY || '';
+const COVER_LOGO_PATH   = path.join(__dirname, 'wknd-logo.png');
+const COVER_SVG_FONT    = 'Noto Sans, DejaVu Sans, Liberation Sans, Arial, sans-serif';
 
 function checkCredentials(user, pass) {
   try {
@@ -73,16 +89,20 @@ function firstParagraph(text) {
 }
 
 function writeupTitle(text) {
-  const m = String(text || '').match(/\*\*(.+?)\*\*/);
-  return m ? m[1].trim() : null;
+  const { title } = parseWriteup(text);
+  return title || null;
 }
 
 function writeupDescription(text) {
-  return String(text || '')
-    .replace(/^\s*\*\*.*?\*\*\s*\n?/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 200);
+  const { body } = parseWriteup(text);
+  return body.slice(0, 200);
+}
+
+export function gamePageTitle(game) {
+  const scoreA = Number(game.team_a_score);
+  const scoreB = Number(game.team_b_score);
+  return writeupTitle(game.game_writeup)
+    || `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
 }
 
 function buildGameOgTags(req, game) {
@@ -90,11 +110,10 @@ function buildGameOgTags(req, game) {
   const scoreA = Number(game.team_a_score);
   const scoreB = Number(game.team_b_score);
   const isCompleted = scoreA + scoreB > 0;
-  const recapTitle = writeupTitle(game.game_writeup);
-  const title      = recapTitle || `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name} · Game Recap`;
+  const title      = gamePageTitle(game);
+  const scoreLabel = `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
   const url        = `${origin}/games/${encodeURIComponent(gameSlug(game))}`;
   const desc       = writeupDescription(game.game_writeup) || 'Game recap, box score, and player stats from WKND Basketball League.';
-  const scoreLabel = `${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}`;
   const img        = isCompleted ? `${origin}/api/cover/${encodeURIComponent(game.id)}.png` : null;
 
   const publishedIso = game.date ? (() => { try { return new Date(game.date).toISOString(); } catch { return null; } })() : null;
@@ -117,7 +136,7 @@ function buildGameOgTags(req, game) {
       `<meta property="og:image:type" content="image/png">`,
       `<meta property="og:image:width" content="1200">`,
       `<meta property="og:image:height" content="630">`,
-      `<meta property="og:image:alt" content="${escAttr(scoreLabel + ' · WKND Basketball')}">`,
+      `<meta property="og:image:alt" content="${escAttr(title)}">`,
     );
   }
 
@@ -142,7 +161,7 @@ function buildGameOgTags(req, game) {
   if (img) {
     tags.push(
       `<meta name="twitter:image" content="${escAttr(img)}">`,
-      `<meta name="twitter:image:alt" content="${escAttr(scoreLabel)}">`,
+      `<meta name="twitter:image:alt" content="${escAttr(title)}">`,
     );
   }
 
@@ -155,7 +174,12 @@ function buildPlayerOgTags(req, player, totals) {
   const team    = String(player.team_name || '').toUpperCase();
   const url     = `${origin}/players/${encodeURIComponent(playerSlug(player))}`;
   const hasPhoto = !!player.picture_url;
-  const img     = hasPhoto ? `${origin}/api/player/${encodeURIComponent(player.id)}/photo` : null;
+  // Version hash: short fingerprint of the stored photo so the og:image URL
+  // changes whenever the photo is replaced, bypassing social-crawler caches.
+  const photoVer = hasPhoto
+    ? createHash('sha1').update(player.picture_url.slice(0, 256)).digest('hex').slice(0, 8)
+    : '0';
+  const img = hasPhoto ? `${origin}/api/player/${encodeURIComponent(player.id)}/photo?v=${photoVer}` : null;
 
   let positions = [];
   try { positions = JSON.parse(player.positions || '[]'); } catch {}
@@ -233,8 +257,14 @@ function buildTeamOgTags(req, team) {
   return tags.join('\n  ');
 }
 
+function buildTicker() {
+  const games = getTickerGames();
+  if (!games.length) return '';
+  return scoreTicker(games);
+}
+
 function renderPage(req, opts) {
-  return layout({ ...opts, gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin });
+  return layout({ ...opts, ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin });
 }
 
 function formatName(raw) {
@@ -283,9 +313,9 @@ async function generateLeaderSvg(share) {
   const chipTextCol  = isLight ? '#10141d' : '#fff';
   const statStr      = String(share.stat_fmt);
   const season       = escXml(String(share.season || ''));
-  const modeLabel    = share.mode === 'pg' ? 'PER GAME' : 'TOTALS';
+  const modeLabel    = share.mode === 'pg' ? 'PER GAME' : share.mode === 'rec' ? 'SINGLE GAME' : 'TOTALS';
 
-  const livePlayer = db.prepare('SELECT picture_url FROM players WHERE id = ?').get(share.player_id);
+  const livePlayer = getPlayerPhoto(share.player_id);
   const photoUrl = await resolveAvatar(livePlayer?.picture_url);
 
   // ── Left pane: photo or stylized bg ───────────────────────────────────────
@@ -410,207 +440,6 @@ async function generateLeaderSvg(share) {
 </svg>`;
 }
 
-const db = new Database(DB_PATH, { readonly: true });
-
-const selectTeamsStmt = db.prepare('SELECT id, name, color FROM teams ORDER BY sort_order ASC, id ASC');
-
-const selectPlayersStmt = db.prepare(`
-  SELECT p.id, p.team_id, p.name, p.number, p.positions, p.picture_url,
-         COALESCE(t.games_played, 0) AS games_played,
-         COALESCE(t.pts, 0) AS pts,
-         COALESCE(t.ast, 0) AS ast,
-         COALESCE(t.reb, 0) AS reb,
-         COALESCE(t.stl, 0) AS stl,
-         COALESCE(t.blk, 0) AS blk,
-         COALESCE(t.fg2m, 0) AS fg2m,
-         COALESCE(t.fg3m, 0) AS fg3m,
-         COALESCE(t.fg2m_miss, 0) AS fg2m_miss,
-         COALESCE(t.fg3m_miss, 0) AS fg3m_miss,
-         COALESCE(t.ftm, 0) AS ftm,
-         COALESCE(t.ft_miss, 0) AS ft_miss,
-         COALESCE(t.turnover, 0) AS turnover,
-         COALESCE(t.pf, 0) AS pf
-  FROM players p
-  LEFT JOIN player_totals t ON t.player_id = p.id
-  ORDER BY p.sort_order ASC, p.id ASC
-`);
-
-const selectGamesStmt = db.prepare(`
-  SELECT id, date, team_a_id, team_b_id, team_a_name, team_b_name,
-         team_a_score, team_b_score, game_writeup, potg_writeup,
-         manual_potg_player_id, under_review, season, game_type,
-         playoff_round, series_id, youtube_url, scheduled,
-         (COALESCE(LENGTH(social_cover_data_url), 0) > 0) AS has_cover
-  FROM games
-  ORDER BY date DESC, id DESC
-`);
-
-const selectGameCoverStmt = db.prepare('SELECT social_cover_data_url FROM games WHERE id = ?');
-
-const selectTeamSeasonStatsStmt = db.prepare(`
-  SELECT gps.team_id, t.name AS team_name,
-         COUNT(DISTINCT gps.game_id)                                    AS gp,
-         COALESCE(SUM(gps.pts), 0)                                      AS pts,
-         COALESCE(SUM(gps.reb), 0)                                      AS reb,
-         COALESCE(SUM(gps.ast), 0)                                      AS ast,
-         COALESCE(SUM(gps.stl), 0)                                      AS stl,
-         COALESCE(SUM(gps.blk), 0)                                      AS blk,
-         COALESCE(SUM(gps.fg3m), 0)                                     AS fg3m,
-         COALESCE(SUM(gps.fg2m + gps.fg3m), 0)                         AS fgm,
-         COALESCE(SUM(gps.fg2m + gps.fg3m + gps.fg2m_miss + gps.fg3m_miss), 0) AS fga,
-         COALESCE(SUM(gps.fg3m + gps.fg3m_miss), 0)                   AS fg3a,
-         COALESCE(SUM(gps.ftm), 0)                                     AS ftm,
-         COALESCE(SUM(gps.ft_miss), 0)                                 AS ft_miss,
-         COALESCE(SUM(gps.turnover), 0)                                AS turnover,
-         COALESCE(SUM(gps.pf), 0)                                      AS pf
-  FROM game_player_stats gps
-  JOIN teams t ON t.id = gps.team_id
-  JOIN games g  ON g.id = gps.game_id
-  WHERE g.season = (SELECT MAX(season) FROM games WHERE game_type = 'regular' AND under_review = 0)
-    AND g.game_type = 'regular' AND g.under_review = 0
-  GROUP BY gps.team_id, t.name
-  ORDER BY t.sort_order ASC
-`);
-
-const selectCurrentSeasonTeamRecordsStmt = db.prepare(`
-  SELECT team_id,
-         SUM(CASE WHEN team_score > opp_score THEN 1 ELSE 0 END) AS wins,
-         SUM(CASE WHEN team_score < opp_score THEN 1 ELSE 0 END) AS losses
-  FROM (
-    SELECT team_a_id AS team_id, team_a_score AS team_score, team_b_score AS opp_score FROM games
-    WHERE season = (SELECT MAX(season) FROM games WHERE game_type = 'regular' AND under_review = 0)
-      AND game_type = 'regular' AND under_review = 0
-    UNION ALL
-    SELECT team_b_id, team_b_score, team_a_score FROM games
-    WHERE season = (SELECT MAX(season) FROM games WHERE game_type = 'regular' AND under_review = 0)
-      AND game_type = 'regular' AND under_review = 0
-  )
-  GROUP BY team_id
-`);
-
-const selectLeadersStmt = db.prepare(`
-  SELECT p.id, p.name, p.team_id, p.picture_url,
-         tm.name AS team_name,
-         COUNT(DISTINCT gps.game_id) AS games_played,
-         COALESCE(SUM(gps.pts), 0)         AS pts,
-         COALESCE(SUM(gps.ast), 0)         AS ast,
-         COALESCE(SUM(gps.reb), 0)         AS reb,
-         COALESCE(SUM(gps.stl), 0)         AS stl,
-         COALESCE(SUM(gps.blk), 0)         AS blk,
-         COALESCE(SUM(gps.turnover), 0)    AS turnover,
-         COALESCE(SUM(gps.pf), 0)          AS pf,
-         COALESCE(SUM(gps.fg2m), 0)        AS fg2m,
-         COALESCE(SUM(gps.fg3m), 0)        AS fg3m,
-         COALESCE(SUM(gps.fg2m_miss), 0)   AS fg2m_miss,
-         COALESCE(SUM(gps.fg3m_miss), 0)   AS fg3m_miss,
-         COALESCE(SUM(gps.ftm), 0)         AS ftm,
-         COALESCE(SUM(gps.ft_miss), 0)     AS ft_miss
-  FROM players p
-  JOIN teams tm ON tm.id = p.team_id
-  JOIN game_player_stats gps ON gps.player_id = p.id
-  JOIN games g ON g.id = gps.game_id
-  WHERE g.season = (SELECT MAX(season) FROM games WHERE game_type = 'regular' AND under_review = 0)
-    AND g.game_type = 'regular'
-    AND g.under_review = 0
-  GROUP BY p.id, p.name, p.team_id, tm.name
-  ORDER BY p.sort_order ASC, p.id ASC
-`);
-
-const selectGameByIdStmt = db.prepare(`
-  SELECT id, date, team_a_id, team_b_id, team_a_name, team_b_name,
-         team_a_score, team_b_score, game_writeup, potg_writeup,
-         manual_potg_player_id, under_review, season, game_type,
-         playoff_round, youtube_url, period_snapshots_json, dnp_players_json, game_log_json,
-         (COALESCE(LENGTH(social_cover_data_url), 0) > 0) AS has_cover
-  FROM games WHERE id = ?
-`);
-
-const selectGameDetailStatsStmt = db.prepare(`
-  SELECT gps.player_id, gps.team_id,
-         gps.pts, gps.ast, gps.reb, gps.stl, gps.blk, gps.turnover, gps.pf,
-         gps.fg2m, gps.fg3m, gps.fg2m_miss, gps.fg3m_miss, gps.ftm, gps.ft_miss, gps.minutes,
-         p.name, p.number,
-         t.name AS team_name
-  FROM game_player_stats gps
-  JOIN players p ON p.id = gps.player_id
-  JOIN teams t ON t.id = gps.team_id
-  WHERE gps.game_id = ?
-  ORDER BY gps.pts DESC
-`);
-
-const selectGameStatsStmt = db.prepare(`
-  SELECT player_id, team_id, pts, ast, reb, stl, blk, turnover,
-         fg2m, fg3m, fg2m_miss, fg3m_miss, ftm, ft_miss, minutes
-  FROM game_player_stats
-  WHERE game_id = ?
-  ORDER BY pts DESC
-`);
-
-const selectPlayerWithTeamStmt = db.prepare(`
-  SELECT p.*, t.name AS team_name
-  FROM players p JOIN teams t ON t.id = p.team_id
-  WHERE p.id = ?
-`);
-
-const selectPlayerTotalsStmt = db.prepare(
-  'SELECT * FROM player_totals WHERE player_id = ?'
-);
-
-const selectPlayerGameLogStmt = db.prepare(`
-  SELECT g.id, g.date, g.season, g.game_type,
-         g.team_a_id, g.team_a_name, g.team_a_score,
-         g.team_b_id, g.team_b_name, g.team_b_score,
-         g.manual_potg_player_id,
-         gps.team_id AS player_team_id,
-         gps.pts, gps.reb, gps.ast, gps.stl, gps.blk,
-         gps.fg2m, gps.fg3m, gps.fg2m_miss, gps.fg3m_miss,
-         gps.ftm, gps.ft_miss, gps.turnover, gps.pf
-  FROM game_player_stats gps
-  JOIN games g ON g.id = gps.game_id
-  WHERE gps.player_id = ? AND g.under_review = 0
-  ORDER BY g.id DESC
-`);
-
-// All games with a potg_writeup that this player participated in.
-// Filtered in JS via derivePotgPlayerId to avoid SQL approximation.
-const selectPlayerPotgCandidatesStmt = db.prepare(`
-  SELECT g.id, g.date, g.team_a_id, g.team_a_name, g.team_a_score,
-         g.team_b_id, g.team_b_name, g.team_b_score, g.potg_writeup,
-         g.manual_potg_player_id,
-         gps.team_id AS player_team_id,
-         gps.pts, gps.reb, gps.ast, gps.stl, gps.blk,
-         gps.fg2m, gps.fg3m, gps.fg2m_miss, gps.fg3m_miss, gps.ftm, gps.ft_miss
-  FROM games g
-  JOIN game_player_stats gps ON gps.game_id = g.id AND gps.player_id = @id
-  WHERE g.under_review = 0
-    AND g.potg_writeup IS NOT NULL AND g.potg_writeup != ''
-  ORDER BY g.id DESC
-`);
-
-const selectPlayerCareerHighsStmt = db.prepare(`
-  SELECT MAX(pts) AS pts, MAX(reb) AS reb, MAX(ast) AS ast,
-         MAX(stl) AS stl, MAX(blk) AS blk, MAX(fg3m) AS fg3m
-  FROM game_player_stats WHERE player_id = ?
-`);
-
-const selectPlayerAwardsStmt = db.prepare(
-  'SELECT * FROM awards WHERE player_id = ? ORDER BY season DESC'
-);
-
-const selectPlayerDnpGamesStmt = db.prepare(`
-  SELECT g.id, g.date, g.season, g.game_type,
-         g.team_a_id, g.team_a_name, g.team_a_score,
-         g.team_b_id, g.team_b_name, g.team_b_score
-  FROM games g
-  WHERE g.under_review = 0
-    AND (g.team_a_id = :teamId OR g.team_b_id = :teamId)
-    AND NOT EXISTS (
-      SELECT 1 FROM game_player_stats gps
-      WHERE gps.game_id = g.id AND gps.player_id = :playerId
-    )
-  ORDER BY g.id DESC
-`);
-
 // Mirrors derivePlayerOfTheGameFromState from the admin app.
 // Operates on game_player_stats rows (snake_case, `turnover` not `to`).
 function derivePotgPlayerId(game, gameStats) {
@@ -698,8 +527,8 @@ function extractQuarterScores(game) {
 }
 
 function buildLeaderPlayers() {
-  const players = selectLeadersStmt.all();
-  const records = selectCurrentSeasonTeamRecordsStmt.all();
+  const players = getLeaders();
+  const records = getTeamRecords();
   const recordMap = Object.fromEntries(records.map(r => [r.team_id, r]));
   return players.map(p => ({ ...p, team_wins: recordMap[p.team_id]?.wins ?? 0, team_losses: recordMap[p.team_id]?.losses ?? 0 }));
 }
@@ -729,7 +558,7 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
   for (const g of completedGames) {
     if (results.length >= count) break;
     if (!g.potg_writeup) continue;
-    const stats = selectGameStatsStmt.all(g.id);
+    const stats = getGameStats(g.id);
     const potgPlayerId = g.manual_potg_player_id || derivePotgPlayerId(g, stats);
     if (!potgPlayerId) continue;
     const potgStat = stats.find(s => s.player_id === potgPlayerId);
@@ -755,46 +584,201 @@ function requireAuth(req, res, next) {
   res.redirect('/login');
 }
 
+async function fetchCoverImageBuffer(url) {
+  if (!url) return null;
+  try {
+    if (url.startsWith('data:')) {
+      const comma = url.indexOf(',');
+      return Buffer.from(url.slice(comma + 1), 'base64');
+    }
+    const fetchUrl = url.startsWith('/') ? `${ADMIN_URL}${url}` : url;
+    const r = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000) });
+    if (r.ok) return Buffer.from(await r.arrayBuffer());
+  } catch {}
+  return null;
+}
+
+async function generateGameCoverPng(game, potgStat, bgDataUrl) {
+  const W = 1200, H = 630;
+
+  // Background
+  let base;
+  const bgBuf = await fetchCoverImageBuffer(bgDataUrl);
+  if (bgBuf) {
+    base = await sharp(bgBuf)
+      .rotate()
+      .resize(W, H, { fit: 'cover', position: 'centre' })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+  } else {
+    base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
+      .png()
+      .toBuffer();
+  }
+
+  // Team colors from DB
+  const teams  = getAllTeams();
+  const teamAR = teams.find(t => t.id === game.team_a_id);
+  const teamBR = teams.find(t => t.id === game.team_b_id);
+  const colorA = escXml(teamAR?.color || '#4a5263');
+  const colorB = escXml(teamBR?.color || '#4a5263');
+
+  const scoreA   = Number(game.team_a_score);
+  const scoreB   = Number(game.team_b_score);
+  const winA     = scoreA > scoreB;
+  const winB     = scoreB > scoreA;
+  const teamAName = escXml(String(game.team_a_name || '').toUpperCase());
+  const teamBName = escXml(String(game.team_b_name || '').toUpperCase());
+
+  // POTG
+  let potgSvgEl   = '';
+  let avatarR     = 60;
+  const avatarCx  = 88;
+  let avatarCy    = 514;
+  let avatarOverlay = null;
+
+  if (potgStat) {
+    const pts          = Number(potgStat.pts || 0);
+    const reb          = Number(potgStat.reb || 0);
+    const ast          = Number(potgStat.ast || 0);
+    const potgName     = escXml(String(potgStat.name || 'PLAYER').toUpperCase());
+    const potgStats    = escXml(`${pts} PTS - ${reb} REB - ${ast} AST`);
+    const potgMeta     = escXml(`#${potgStat.number || '–'}  ·  ${potgStat.team_name || ''}`);
+    const potgInitials = escXml(svgInitials(potgStat.name || '?'));
+    const potgTeamR    = teams.find(t => t.id === potgStat.team_id);
+    const potgColor    = escXml(potgStat.team_color || potgTeamR?.color || '#f97316');
+    const potgNameSize = potgName.length <= 18 ? 40 : potgName.length <= 24 ? 34 : 28;
+    avatarCy           = Math.round(484 + potgNameSize / 2);
+    const avatarSize   = avatarR * 2;
+    const nameY        = 452 + potgNameSize + 8;
+
+    // Circular avatar from player photo
+    if (potgStat.picture_url) {
+      try {
+        const src = await fetchCoverImageBuffer(potgStat.picture_url);
+        if (src) {
+          const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${avatarSize}" height="${avatarSize}"><circle cx="${avatarR}" cy="${avatarR}" r="${avatarR}" fill="#fff"/></svg>`);
+          avatarOverlay = await sharp(src)
+            .rotate()
+            .resize(avatarSize, avatarSize, { fit: 'cover', position: 'centre' })
+            .composite([{ input: mask, blend: 'dest-in' }])
+            .png({ compressionLevel: 9 })
+            .toBuffer();
+        }
+      } catch {}
+    }
+
+    potgSvgEl = `
+  <circle cx="${avatarCx}" cy="${avatarCy}" r="${avatarR + 12}" fill="${potgColor}" fill-opacity="0.08"/>
+  <circle cx="${avatarCx}" cy="${avatarCy}" r="${avatarR + 5}" fill="${potgColor}" fill-opacity="0.12"/>
+  <circle cx="${avatarCx}" cy="${avatarCy}" r="${avatarR}" fill="#020817" fill-opacity="0.7"/>
+  ${!avatarOverlay ? `<text x="${avatarCx}" y="${avatarCy + 12}" text-anchor="middle" fill="#475569" font-size="34" font-weight="800" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${potgInitials}</text>` : ''}
+  <circle cx="${avatarCx}" cy="${avatarCy}" r="${avatarR + 2}" fill="none" stroke="${potgColor}" stroke-width="2" stroke-opacity="0.9"/>
+  <text x="180" y="452" fill="#f97316" font-size="13" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)">PLAYER OF THE GAME</text>
+  <text x="180" y="${nameY}" fill="#ffffff" font-size="${potgNameSize}" font-weight="800" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${potgName}</text>
+  <text x="180" y="${nameY + 32}" fill="#e2e8f0" font-size="22" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${potgStats}</text>
+  <text x="180" y="${nameY + 56}" fill="#94a3b8" font-size="15" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${potgMeta}</text>`;
+  }
+
+  const overlaySvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <defs>
+    <filter id="txt" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="1" stdDeviation="4" flood-color="#000000" flood-opacity="0.9"/>
+    </filter>
+    <linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#020817" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="botFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#020817" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.94"/>
+    </linearGradient>
+    <filter id="card" x="-40%" y="-30%" width="180%" height="200%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.72"/>
+    </filter>
+    <linearGradient id="cardSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="scoreClip"><rect x="955" y="474" width="200" height="96" rx="12"/></clipPath>
+  </defs>
+  <rect x="0" y="0" width="${W}" height="160" fill="url(#topFade)"/>
+  <rect x="0" y="400" width="${W}" height="230" fill="url(#botFade)"/>
+  <rect x="0" y="0" width="600" height="6" fill="${colorA}"/>
+  <rect x="600" y="0" width="600" height="6" fill="${colorB}"/>
+  <rect x="0" y="6" width="5" height="${H - 12}" fill="${colorA}" opacity="0.65"/>
+  <rect x="${W - 5}" y="6" width="5" height="${H - 12}" fill="${colorB}" opacity="0.65"/>
+  <rect x="0" y="${H - 6}" width="600" height="6" fill="${colorA}" opacity="0.5"/>
+  <rect x="600" y="${H - 6}" width="600" height="6" fill="${colorB}" opacity="0.5"/>
+  <text x="129" y="24" text-anchor="middle" fill="${colorA}" font-size="9" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)" textLength="155" lengthAdjust="spacingAndGlyphs">SEASON ${escXml(String(game.season || ''))}  ·  ${escXml(game.game_type === 'playoff' ? 'PLAYOFFS' : 'REGULAR SEASON')}</text>
+  <rect x="955" y="474" width="200" height="96" rx="12" fill="#040c18" fill-opacity="0.80" filter="url(#card)" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1"/>
+  <rect x="955" y="474" width="100" height="96" fill="${colorA}" fill-opacity="${winA ? '0.38' : '0.10'}" clip-path="url(#scoreClip)"/>
+  <rect x="1055" y="474" width="100" height="96" fill="${colorB}" fill-opacity="${winB ? '0.38' : '0.10'}" clip-path="url(#scoreClip)"/>
+  <rect x="956" y="475" width="198" height="26" rx="11" fill="url(#cardSheen)"/>
+  <line x1="963" y1="500" x2="1147" y2="500" stroke="#ffffff" stroke-width="1" stroke-opacity="0.08"/>
+  <line x1="1055" y1="482" x2="1055" y2="562" stroke="#ffffff" stroke-width="1" stroke-opacity="0.08"/>
+  <text x="1005" y="493" fill="#ffffff" text-anchor="middle" font-size="12" font-weight="700" font-family="${COVER_SVG_FONT}" clip-path="url(#scoreClip)" filter="url(#txt)" opacity="${winA ? '1' : '0.45'}">${teamAName}</text>
+  <text x="1105" y="493" fill="#ffffff" text-anchor="middle" font-size="12" font-weight="700" font-family="${COVER_SVG_FONT}" clip-path="url(#scoreClip)" filter="url(#txt)" opacity="${winB ? '1' : '0.45'}">${teamBName}</text>
+  <text x="1005" y="548" fill="#ffffff" text-anchor="middle" font-size="48" font-weight="900" font-family="${COVER_SVG_FONT}" clip-path="url(#scoreClip)" filter="url(#txt)" opacity="${winA ? '1' : '0.38'}">${scoreA}</text>
+  <text x="1105" y="548" fill="#ffffff" text-anchor="middle" font-size="48" font-weight="900" font-family="${COVER_SVG_FONT}" clip-path="url(#scoreClip)" filter="url(#txt)" opacity="${winB ? '1' : '0.38'}">${scoreB}</text>
+  ${potgSvgEl}
+  <text x="${W / 2}" y="617" fill="#334155" text-anchor="middle" font-size="11" font-weight="600" font-family="${COVER_SVG_FONT}" filter="url(#txt)">WKNDBASKETBALL.COM</text>
+</svg>`);
+
+  const layers = [{ input: overlaySvg, top: 0, left: 0 }];
+  if (avatarOverlay) {
+    layers.push({ input: avatarOverlay, left: avatarCx - avatarR, top: avatarCy - avatarR });
+  }
+  try {
+    if (existsSync(COVER_LOGO_PATH)) {
+      const logoOverlay = await sharp(COVER_LOGO_PATH)
+        .ensureAlpha()
+        .resize({ width: 155, height: 44, fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      layers.push({ input: logoOverlay, left: 52, top: 34 });
+    }
+  } catch {}
+
+  return sharp(base).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+}
+
 async function serveCover(req, res) {
   const gameId = req.params.gameId;
+  const game = getGameById(gameId);
+  if (!game) return res.status(404).end();
   try {
-    const upstream = await fetch(
-      `${ADMIN_URL}/api/social-cover/${encodeURIComponent(gameId)}.png`,
-      { headers: { 'User-Agent': 'wknd-portal/cover-proxy' }, signal: AbortSignal.timeout(10000) }
-    );
-    if (!upstream.ok) return res.status(upstream.status).end();
-    const buf = Buffer.from(await upstream.arrayBuffer());
+    const stats       = getGameDetailStats(gameId);
+    const potgId      = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
+    const potgStat    = potgId ? stats.find(s => s.player_id === potgId) : null;
+    const coverRow    = game.has_cover ? getGameCover(gameId) : null;
+    const png = await generateGameCoverPng(game, potgStat, coverRow?.social_cover_data_url || null);
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=300');
-    res.end(buf);
-  } catch {
-    res.status(502).end();
+    res.end(png);
+  } catch (err) {
+    console.error('serveCover error:', err);
+    res.status(500).end();
   }
 }
 
 app.get('/api/cover/:gameId.png', serveCover);
 app.get('/api/cover/:gameId',     serveCover);
 
-app.get('/api/photo/:gameId', async (req, res) => {
-  try {
-    const upstream = await fetch(
-      `${ADMIN_URL}/api/social-cover/${encodeURIComponent(req.params.gameId)}/photo.jpg`,
-      { headers: { 'User-Agent': 'wknd-portal/photo-proxy' }, signal: AbortSignal.timeout(10000) }
-    );
-    if (!upstream.ok) return res.status(upstream.status).end();
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    res.set('Content-Type', 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.end(buf);
-  } catch {
-    res.status(502).end();
-  }
+app.get('/api/photo/:gameId', (req, res) => {
+  const row    = getGameCover(req.params.gameId);
+  const dataUrl = row?.social_cover_data_url;
+  if (!dataUrl) return res.status(404).end();
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return res.status(404).end();
+  const buf = Buffer.from(match[2], 'base64');
+  res.set('Content-Type', match[1]);
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.end(buf);
 });
 
-const selectPlayerPhotoStmt = db.prepare('SELECT picture_url FROM players WHERE id = ?');
-
 app.get('/api/player/:id/photo', async (req, res) => {
-  const row = selectPlayerPhotoStmt.get(req.params.id);
+  const row = getPlayerPhoto(req.params.id);
   const url = row?.picture_url;
   if (!url) return res.status(404).end();
   if (url.startsWith('data:')) {
@@ -802,7 +786,7 @@ app.get('/api/player/:id/photo', async (req, res) => {
     const mime  = (url.slice(0, comma).match(/^data:([^;]+)/) || [])[1] || 'image/jpeg';
     const buf   = Buffer.from(url.slice(comma + 1), 'base64');
     res.set('Content-Type', mime);
-    res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Cache-Control', 'public, max-age=60, must-revalidate');
     return res.end(buf);
   }
   // Relative paths are served by the admin server, not the portal
@@ -851,7 +835,7 @@ app.get('/logout', (req, res) => {
 });
 
 app.get('/admin/ledger', requireAuth, (req, res) => {
-  const players = selectPlayersStmt.all();
+  const players = getAllPlayers();
   const financials = getAllFinancials();
   const allTx = getAllTransactions();
   const txByPlayer = {};
@@ -893,9 +877,9 @@ app.post('/admin/ledger/transaction/:id/confirm', requireAuth, (req, res) => {
 
 // ── Public routes ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
-  const teams = selectTeamsStmt.all();
-  const players = selectPlayersStmt.all();
-  const games = byDate(selectGamesStmt.all());
+  const teams = getAllTeams();
+  const players = getAllPlayers();
+  const games = byDate(getAllGames());
 
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
@@ -916,7 +900,7 @@ app.get('/', (req, res) => {
 
 app.get('/games/:ref', (req, res) => {
   const resolved = resolveRef('game', req.params.ref,
-    ref => selectGameByIdStmt.get(ref),
+    ref => getGameById(ref),
     g   => gameSlug(g)
   );
   if (!resolved) return res.status(404).send(
@@ -924,37 +908,112 @@ app.get('/games/:ref', (req, res) => {
   );
   if (resolved.slug) return res.redirect(302, `/games/${resolved.slug}`);
 
-  const game = selectGameByIdStmt.get(resolved.id);
+  const game = getGameById(resolved.id);
   if (!game || game.under_review) return res.status(404).send(
     layout({ title: 'Not Found', currentPath: req.path, body: '<p style="padding:40px;color:var(--text-muted)">Game not found.</p>' })
   );
 
-  const stats = selectGameDetailStatsStmt.all(game.id);
+  const stats = getGameDetailStats(game.id);
+  const dnpPlayers = getGameDnpPlayers(game.id);
   const potgPlayerId = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
   const quarterScores = extractQuarterScores(game);
 
-  const teams = selectTeamsStmt.all();
-  const players = selectPlayersStmt.all();
-  const allGames = selectGamesStmt.all();
+  const teams = getAllTeams();
+  const players = getAllPlayers();
+  const allGames = getAllGames();
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
 
-  const scoreA = Number(game.team_a_score);
-  const scoreB = Number(game.team_b_score);
-  const title = `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
+  const pageTitle = gamePageTitle(game);
 
   res.send(renderPage(req, {
-    title: `${title} — WKND Basketball League`,
+    title: `${pageTitle} — WKND Basketball League`,
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
-    body: gamePage({ game, stats, potgPlayerId, quarterScores, allGames, playerMap, teamMap })
+    body: gamePage({ game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap, isAdmin: !!req.session?.isAdmin })
   }));
 });
 
+// ── Admin game endpoints ──────────────────────────────────────────────────────
+const jsonSmall = express.json();
+const jsonLarge = express.json({ limit: '8mb' });
+
+app.post('/admin/games/:id/recap', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  updateGameRecap(game.id, String(req.body.writeup || ''));
+  res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/youtube', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  updateGameYoutube(game.id, String(req.body.url || ''));
+  res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/cover', requireAuth, jsonLarge, async (req, res) => {
+  try {
+    const game = getGameById(req.params.id);
+    if (!game) return res.status(404).json({ error: 'Not found' });
+
+    const dataUrl = String(req.body.dataUrl || '');
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return res.status(400).json({ error: 'Invalid image data' });
+
+    const inputBuffer = Buffer.from(match[2], 'base64');
+    const compressed  = await sharp(inputBuffer)
+      .resize(1200, 900, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 82, progressive: true })
+      .toBuffer();
+
+    const before = Math.round(inputBuffer.length / 1024);
+    const after  = Math.round(compressed.length / 1024);
+    console.log(`Cover upload: ${before}KB → ${after}KB`);
+
+    updateGameCover(game.id, 'data:image/jpeg;base64,' + compressed.toString('base64'));
+    res.json({ ok: true, before, after });
+  } catch (err) {
+    console.error('Cover upload error:', err);
+    res.status(500).json({ error: 'Image processing failed' });
+  }
+});
+
+app.delete('/admin/games/:id/cover', requireAuth, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  updateGameCover(game.id, '');
+  res.json({ ok: true });
+});
+
+app.post('/admin/player/:id/photo', requireAuth, jsonLarge, async (req, res) => {
+  try {
+    const player = getPlayerById(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Not found' });
+
+    const dataUrl = String(req.body.dataUrl || '');
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return res.status(400).json({ error: 'Invalid image data' });
+
+    const inputBuffer = Buffer.from(match[2], 'base64');
+    const compressed  = await sharp(inputBuffer)
+      .rotate()
+      .resize(400, 400, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 85, progressive: true })
+      .toBuffer();
+
+    updatePlayerPhoto(player.id, 'data:image/jpeg;base64,' + compressed.toString('base64'));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Player photo upload error:', err);
+    res.status(500).json({ error: 'Image processing failed' });
+  }
+});
+
 app.get('/games', (req, res) => {
-  const teams = selectTeamsStmt.all();
-  const players = selectPlayersStmt.all();
-  const games = byDate(selectGamesStmt.all());
+  const teams = getAllTeams();
+  const players = getAllPlayers();
+  const games = byDate(getAllGames());
 
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
@@ -973,16 +1032,16 @@ app.get('/games', (req, res) => {
 });
 
 app.get('/standings', (req, res) => {
-  const teams = selectTeamsStmt.all();
-  const players = selectPlayersStmt.all();
-  const games = byDate(selectGamesStmt.all());
+  const teams = getAllTeams();
+  const players = getAllPlayers();
+  const games = byDate(getAllGames());
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
   const completedGames = games.filter(g =>
     !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
-  const teamStats = selectTeamSeasonStatsStmt.all();
+  const teamStats = getTeamSeasonStats();
   res.send(renderPage(req, {
     title: 'Standings — WKND Basketball League',
     currentPath: req.path,
@@ -990,11 +1049,42 @@ app.get('/standings', (req, res) => {
   }));
 });
 
-const selectCurrentSeasonStmt = db.prepare(
-  `SELECT MAX(season) AS season FROM games WHERE game_type = 'regular' AND under_review = 0`
-);
-
 app.use(express.json());
+
+// ── Roster endpoint (consumed by wknd-stats before each live game) ────────────
+app.get('/api/roster', (req, res) => {
+  const key = req.headers['x-api-key'] || req.query.key;
+  if (ROSTER_API_KEY && key !== ROSTER_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const teams   = getAllTeams();
+  const players = getAllPlayers();
+  const { season } = getCurrentSeason() || { season: 3 };
+
+  const roster = {
+    season,
+    gameTypes: ['regular', 'playoff', 'finals'],
+    teams: teams.map(t => ({
+      id:    t.id,
+      name:  t.name,
+      color: t.color,
+    })),
+    players: players.map(p => ({
+      id:         p.id,
+      name:       p.name,
+      firstName:  p.first_name,
+      lastName:   p.last_name,
+      number:     p.number,
+      teamId:     p.team_id,
+      positions:  (() => { try { return JSON.parse(p.positions || '[]'); } catch { return []; } })(),
+      pictureUrl: p.picture_url || '',
+      status:     p.status,
+    })),
+  };
+
+  res.json(roster);
+});
 
 app.post('/api/leaders/share', (req, res) => {
   const { season, category_id, mode, player_id, player_name, team_id,
@@ -1003,29 +1093,62 @@ app.post('/api/leaders/share', (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  // Compute top 10 + leader photo server-side for the share image
-  const allCats    = mode === 'pg' ? PER_GAME : TOTALS;
-  const cat        = allCats.find(c => c.id === category_id);
-  const defaultFmt = mode === 'pg' ? fmtPerGame : fmtTotals;
-  const fmt        = cat?.fmt || defaultFmt;
-  const allPlayers = buildLeaderPlayers();
-  const top10 = cat
-    ? allPlayers
-        .map(p => ({ p, v: cat.fn(p) }))
-        .filter(x => x.v > 0)
-        .sort((a, b) => b.v - a.v || b.p.games_played - a.p.games_played || (b.p.team_wins || 0) - (a.p.team_wins || 0))
-        .slice(0, 10)
-        .map(x => ({
-          player_id:   x.p.id,
-          player_name: x.p.name,
-          team_name:   x.p.team_name,
-          team_color:  teamColor(String(x.p.team_name || '').toUpperCase()),
-          stat_value:  x.v,
-          stat_fmt:    fmt(x.v),
-        }))
-    : [];
+  // Compute top entries + leader photo server-side for the share image
+  let top10 = [];
+  let leaderPlayer = null;
 
-  const leaderPlayer = allPlayers.find(p => p.id === player_id);
+  if (mode === 'rec') {
+    const recCat       = RECORD_CATS.find(c => c.id === category_id);
+    const recFmt       = recCat?.fmt || (v => String(Math.round(v)));
+    const allRecs      = getGameRecords();
+    const filteredRecs = season === 'alltime' ? allRecs : allRecs.filter(r => String(r.season) === String(season));
+    if (recCat) {
+      top10 = filteredRecs
+        .map(r => ({ r, v: Number(recCat.fn(r) || 0) }))
+        .filter(x => x.v > 0)
+        .sort((a, b) => b.v - a.v)
+        .slice(0, 5)
+        .map(x => {
+          const ctx = recordContext(x.r);
+          return {
+            player_id:   x.r.player_id,
+            player_name: x.r.name,
+            team_name:   String(x.r.team_name || '').toUpperCase(),
+            team_color:  teamColor(String(x.r.team_name || '').toUpperCase()),
+            stat_value:  x.v,
+            stat_fmt:    recFmt(x.v),
+            game_id:     String(x.r.game_id || ''),
+            game_date:   String(x.r.date || ''),
+            game_opp:    ctx.opp,
+            game_result: ctx.result,
+            is_playoff:  ctx.isPO,
+          };
+        });
+    }
+    leaderPlayer = getPlayerPhoto(player_id);
+  } else {
+    const allCats    = mode === 'pg' ? PER_GAME : TOTALS;
+    const cat        = allCats.find(c => c.id === category_id);
+    const defaultFmt = mode === 'pg' ? fmtPerGame : fmtTotals;
+    const fmt        = cat?.fmt || defaultFmt;
+    const allPlayers = buildLeaderPlayers();
+    leaderPlayer     = allPlayers.find(p => p.id === player_id);
+    top10 = cat
+      ? allPlayers
+          .map(p => ({ p, v: cat.fn(p) }))
+          .filter(x => x.v > 0)
+          .sort((a, b) => b.v - a.v || b.p.games_played - a.p.games_played || (b.p.team_wins || 0) - (a.p.team_wins || 0))
+          .slice(0, 10)
+          .map(x => ({
+            player_id:   x.p.id,
+            player_name: x.p.name,
+            team_name:   x.p.team_name,
+            team_color:  teamColor(String(x.p.team_name || '').toUpperCase()),
+            stat_value:  x.v,
+            stat_fmt:    fmt(x.v),
+          }))
+      : [];
+  }
 
   const id = upsertShare({
     id: randomBytes(4).toString('hex'),
@@ -1094,12 +1217,13 @@ app.get('/api/leaders/share/:id/image.png', async (req, res) => {
 });
 
 app.get('/leaders', (req, res) => {
-  const players = buildLeaderPlayers();
-  const { season } = selectCurrentSeasonStmt.get() || {};
+  const players     = buildLeaderPlayers();
+  const { season }  = getCurrentSeason() || {};
+  const gameRecords = getGameRecords();
   res.send(renderPage(req, {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
-    body: leadersPage({ players, season: String(season || '') })
+    body: leadersPage({ players, season: String(season || ''), gameRecords, currentSeason: season || 3 })
   }));
 });
 
@@ -1113,7 +1237,7 @@ app.get('/teams', (req, res) => {
 
 app.get('/teams/:ref', (req, res) => {
   const resolved = resolveRef('team', req.params.ref,
-    ref => db.prepare('SELECT * FROM teams WHERE id = ?').get(ref),
+    ref => getTeamById(ref),
     t   => teamSlug(t)
   );
   if (!resolved) return res.status(404).send(renderPage(req, {
@@ -1122,7 +1246,7 @@ app.get('/teams/:ref', (req, res) => {
   }));
   if (resolved.slug) return res.redirect(302, `/teams/${resolved.slug}`);
 
-  const team = db.prepare('SELECT * FROM teams WHERE id = ?').get(resolved.id);
+  const team = getTeamById(resolved.id);
   res.send(renderPage(req, {
     title: `${String(team.name).toUpperCase()} — WKND Basketball`,
     currentPath: '/teams',
@@ -1132,16 +1256,17 @@ app.get('/teams/:ref', (req, res) => {
 });
 
 app.get('/players', (req, res) => {
+  const players = getAllPlayers();
   res.send(renderPage(req, {
     title: 'Players — WKND Basketball League',
     currentPath: req.path,
-    body: comingSoonPage({ label: 'Players', description: 'Full player profiles and career stats are on their way.' })
+    body: playersPage({ players })
   }));
 });
 
 app.get('/players/:ref', (req, res) => {
   const resolved = resolveRef('player', req.params.ref,
-    ref => db.prepare('SELECT * FROM players WHERE id = ?').get(ref),
+    ref => getPlayerById(ref),
     p   => playerSlug(p)
   );
   if (!resolved) return res.status(404).send(renderPage(req, {
@@ -1150,29 +1275,28 @@ app.get('/players/:ref', (req, res) => {
   }));
   if (resolved.slug) return res.redirect(302, `/players/${resolved.slug}`);
 
-  const player      = selectPlayerWithTeamStmt.get(resolved.id);
+  const player      = getPlayerWithTeam(resolved.id);
   if (!player) return res.status(404).send(renderPage(req, {
     title: 'Not Found', currentPath: '/players',
     body: comingSoonPage({ label: 'Player Not Found', description: 'This player could not be found.' })
   }));
-  const totals      = selectPlayerTotalsStmt.get(resolved.id);
-  const gameLogs    = byDate(selectPlayerGameLogStmt.all(resolved.id));
-  const potgCandidates = selectPlayerPotgCandidatesStmt.all({ id: resolved.id });
+  const totals      = getPlayerTotals(resolved.id);
+  const gameLogs    = getPlayerGameLog(resolved.id);
+  const potgCandidates = getPlayerPotgCandidates(resolved.id);
   const potgGames = potgCandidates.filter(g => {
     if (g.manual_potg_player_id === resolved.id) return true;
     if (g.manual_potg_player_id) return false;
-    return derivePotgPlayerId(g, selectGameStatsStmt.all(g.id)) === resolved.id;
+    return derivePotgPlayerId(g, getGameStats(g.id)) === resolved.id;
   });
-  const careerHighs = selectPlayerCareerHighsStmt.get(resolved.id);
-  const awards      = selectPlayerAwardsStmt.all(resolved.id);
-  const dnpGames    = byDate(selectPlayerDnpGamesStmt.all({ teamId: player.team_id, playerId: resolved.id }));
+  const careerHighs = getPlayerCareerHighs(resolved.id);
+  const awards      = getPlayerAwards(resolved.id);
   const displayName = displayPlayerName(player.name);
 
   let financialSection = '';
   if (req.session?.isAdmin) {
     const fin = getPlayerFinancials(resolved.id);
     const txs = getPlayerTransactions(resolved.id);
-    const allPlayers = selectPlayersStmt.all();
+    const allPlayers = getAllPlayers();
     const allPlayerOptions = allPlayers.map(p =>
       `<option value="${p.id}"${p.id === resolved.id ? ' selected' : ''}>${displayPlayerName(p.name)} — ${p.team_name || ''}</option>`
     ).join('');
@@ -1183,7 +1307,7 @@ app.get('/players/:ref', (req, res) => {
     title: `${displayName} — WKND Basketball`,
     currentPath: '/players',
     metaTags: buildPlayerOgTags(req, player, totals),
-    body: playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, dnpGames, financialSection })
+    body: playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin })
   }));
 });
 
@@ -1205,5 +1329,5 @@ app.get('/terms', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`WKND Portal → http://localhost:${PORT}`);
-  console.log(`DB: ${DB_PATH}`);
+  console.log(`DB: portal.db (self-hosted)`);
 });

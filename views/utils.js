@@ -1,4 +1,5 @@
 import { escHtml } from './layout.js';
+import { parseWriteup } from '../lib/writeup.js';
 
 export const TEAM_COLORS = {
   WHITE:  '#d7dce5',
@@ -62,8 +63,7 @@ export function playerLink(id, rawName, { className = 'player-link', upper = fal
 }
 
 export function boldTitle(writeup) {
-  const m = String(writeup || '').match(/\*\*(.+?)\*\*/);
-  return m ? m[1].trim() : '';
+  return parseWriteup(writeup).title;
 }
 
 export function truncate(str, max = 90) {
@@ -73,9 +73,5 @@ export function truncate(str, max = 90) {
 }
 
 export function excerpt(writeup) {
-  const stripped = String(writeup || '').replace(/\*\*(.+?)\*\*/g, '$1').trim();
-  const paras = stripped.split(/\n{2,}/);
-  const first = paras[0]?.trim() || '';
-  if (first.split('\n').length <= 1 && paras.length > 1) return paras[1]?.trim() || '';
-  return first;
+  return parseWriteup(writeup).body;
 }

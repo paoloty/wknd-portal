@@ -1,4 +1,4 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false }) {
   const navLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
@@ -71,6 +71,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       })();
       </script>
       <div class="header-rule"></div>
+      ${ticker}
       ${body}
     </div>
   </div>

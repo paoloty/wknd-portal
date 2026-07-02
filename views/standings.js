@@ -254,8 +254,7 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [] })
     ${teamStatsSection}
   </div>`;
 
-  return `${scoreTicker(tickerGames)}
-  <div class="page-content">
+  return `<div class="page-content">
     ${mainContent}
   </div>`;
 }

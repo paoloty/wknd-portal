@@ -22,9 +22,7 @@ function heroCarousel(games) {
     const title = boldTitle(game.game_writeup) || `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
     const body = excerpt(game.game_writeup);
 
-    const bg = game.has_cover
-      ? `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt=""></div>`
-      : `<div class="hero-bg"></div>`;
+    const bg = `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt=""></div>`
     const flareOpacity = game.has_cover ? '44' : 'cc';
 
     return `<div class="hero-slide${i === 0 ? ' hero-slide--active' : ''}">
@@ -169,22 +167,20 @@ function leagueLeaders(players) {
   const fga = p => (p.fg2m||0)+(p.fg3m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0);
   const tpa = p => (p.fg3m||0)+(p.fg3m_miss||0);
   const fta = p => (p.ftm||0)+(p.ft_miss||0);
-
-  const eff = p => ((p.pts||0)+(p.reb||0)+(p.ast||0)+(p.stl||0)+(p.blk||0)-(p.turnover||0)-((p.fg2m_miss||0)+(p.fg3m_miss||0))-(p.ft_miss||0)) / p.games_played;
-
+  const per = p => { const fgm = (p.fg2m||0)+(p.fg3m||0), fga = fgm+(p.fg2m_miss||0)+(p.fg3m_miss||0); return ((p.pts||0) + 0.4*fgm - 0.7*fga - 0.4*(p.ft_miss||0) + 0.7*(p.reb||0) + (p.stl||0) + 0.7*(p.ast||0) + 0.7*(p.blk||0) - (p.turnover||0)) / p.games_played; };
   const categories = [
-    { label: 'PPG', title: 'Points',       sort: p => p.pts / p.games_played,                      fn: p => (p.pts / p.games_played).toFixed(1) },
-    { label: 'RPG', title: 'Rebounds',     sort: p => p.reb / p.games_played,                      fn: p => (p.reb / p.games_played).toFixed(1) },
-    { label: 'APG', title: 'Assists',      sort: p => p.ast / p.games_played,                      fn: p => (p.ast / p.games_played).toFixed(1) },
-    { label: 'SPG', title: 'Steals',       sort: p => p.stl / p.games_played,                      fn: p => (p.stl / p.games_played).toFixed(1) },
-    { label: 'BPG', title: 'Blocks',       sort: p => p.blk / p.games_played,                      fn: p => (p.blk / p.games_played).toFixed(1) },
-    { label: 'FG%', title: 'Field Goal %', sort: p => fga(p) >= 10 ? (p.fg2m+p.fg3m)/fga(p) : -1, fn: p => Math.round((p.fg2m+p.fg3m)/fga(p)*100)+'%', minFilter: p => fga(p) >= 10 },
-    { label: '3P%', title: '3-Point %',    sort: p => tpa(p) >= 5  ? p.fg3m/tpa(p) : -1,          fn: p => Math.round(p.fg3m/tpa(p)*100)+'%',           minFilter: p => tpa(p) >= 5 },
-    { label: 'FT%', title: 'Free Throw %', sort: p => fta(p) >= 5  ? p.ftm/fta(p) : -1,           fn: p => Math.round(p.ftm/fta(p)*100)+'%',            minFilter: p => fta(p) >= 5 },
-    { label: '3PM', title: '3-Pointers',   sort: p => p.fg3m / p.games_played,                     fn: p => (p.fg3m / p.games_played).toFixed(1) },
-    { label: 'FTM', title: 'Free Throws',  sort: p => p.ftm  / p.games_played,                     fn: p => (p.ftm  / p.games_played).toFixed(1) },
-    { label: 'TO',  title: 'Turnovers',    sort: p => p.turnover / p.games_played,                 fn: p => (p.turnover / p.games_played).toFixed(1) },
-    { label: 'EFF', title: 'Efficiency',   sort: p => eff(p),                                      fn: p => eff(p).toFixed(1) },
+    { label: 'PPG', title: 'Points',            sort: p => p.pts / p.games_played,                      fn: p => (p.pts / p.games_played).toFixed(1) },
+    { label: 'PER', title: 'Efficiency Rating', sort: p => per(p),                                      fn: p => per(p).toFixed(1) },
+    { label: 'RPG', title: 'Rebounds',          sort: p => p.reb / p.games_played,                      fn: p => (p.reb / p.games_played).toFixed(1) },
+    { label: 'APG', title: 'Assists',           sort: p => p.ast / p.games_played,                      fn: p => (p.ast / p.games_played).toFixed(1) },
+    { label: 'SPG', title: 'Steals',            sort: p => p.stl / p.games_played,                      fn: p => (p.stl / p.games_played).toFixed(1) },
+    { label: 'BPG', title: 'Blocks',            sort: p => p.blk / p.games_played,                      fn: p => (p.blk / p.games_played).toFixed(1) },
+    { label: 'FG%', title: 'Field Goal %',      sort: p => fga(p) >= 10 ? (p.fg2m+p.fg3m)/fga(p) : -1, fn: p => Math.round((p.fg2m+p.fg3m)/fga(p)*100)+'%', minFilter: p => fga(p) >= 10 },
+    { label: '3P%', title: '3-Point %',         sort: p => tpa(p) >= 5  ? p.fg3m/tpa(p) : -1,          fn: p => Math.round(p.fg3m/tpa(p)*100)+'%',           minFilter: p => tpa(p) >= 5 },
+    { label: '3PM', title: '3-Pointers',        sort: p => p.fg3m / p.games_played,                     fn: p => (p.fg3m / p.games_played).toFixed(1) },
+    { label: 'FTM', title: 'Free Throws',       sort: p => p.ftm  / p.games_played,                     fn: p => (p.ftm  / p.games_played).toFixed(1) },
+    { label: 'TO',  title: 'Turnovers',         sort: p => p.turnover / p.games_played,                 fn: p => (p.turnover / p.games_played).toFixed(1) },
+    { label: 'FT%', title: 'Free Throw %',      sort: p => fta(p) >= 5  ? p.ftm/fta(p) : -1,           fn: p => Math.round(p.ftm/fta(p)*100)+'%',            minFilter: p => fta(p) >= 5 },
   ];
 
   const cards = categories.map((cat, i) => {
@@ -258,9 +254,7 @@ export function homePage({ teams, players, games, highlights = [], leaderPlayers
     .slice(0, 5);
   const tickerGames = [...upcomingGames, ...completedGames];
 
-  return `${scoreTicker(tickerGames)}
-
-<div class="home-grid">
+  return `<div class="home-grid">
   ${heroCarousel(completedGames.slice(0, 4))}
   ${highlightsSidebar(highlights)}
 </div>
