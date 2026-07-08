@@ -370,6 +370,22 @@ body {
   transition: border-color .15s, color .15s;
 }
 .ledger-icon-btn:hover { border-color: var(--amber); color: var(--amber); }
+.lgr-confirm-btn {
+  margin-left: 6px; background: none; cursor: pointer;
+  border: 1px solid var(--amber); border-radius: 4px;
+  color: var(--amber); font-size: 10px; font-weight: 700;
+  padding: 2px 7px; line-height: 1.4; vertical-align: middle;
+  transition: background .12s, color .12s;
+}
+.lgr-confirm-btn:hover { background: var(--amber); color: #020817; }
+.lgr-delete-btn {
+  background: none; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-muted); font-size: 10px; font-weight: 700;
+  padding: 2px 7px; line-height: 1.4;
+  transition: border-color .12s, color .12s;
+}
+.lgr-delete-btn:hover { border-color: #ef4444; color: #ef4444; }
 
 .site-nav__hamburger {
   display: none;

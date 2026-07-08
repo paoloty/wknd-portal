@@ -23,8 +23,12 @@ import { frontOfficePage } from './views/front-office.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
-  getAllFinancials, getAllTransactions, recordTransaction,
-  getPlayerFinancials, getPlayerTransactions, confirmTransaction,
+  getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
+  recordTransaction, confirmTransaction, deleteTransaction,
+  getPlayerFinancials, getPlayerTransactions, getPlayerTransactionsBySeason,
+  getSeasonBalances, getSeasonSummary, getLedgerSeasons,
+  getSeasonQuota, setSeasonQuota, voidTransaction,
+  getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
   getTeamSeasonStats, getTeamRecords, getLeaders,
   getGameById, getGameDetailStats, getGameStats,
@@ -36,14 +40,21 @@ import {
   importGameResults, createGame,
   updatePlayerPhoto, updatePlayer,
   getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
+  getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
+  getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
+  getGameSeasons, setPlayerStatus, setPlayerTeam, setPlayerNumber,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { adminLoginBody } from './views/admin/login.js';
-import { adminLedgerBody, playerFinancialSection } from './views/admin/ledger.js';
+import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
+import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
+import { adminPlayersBody } from './views/admin/players.js';
+import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminLayout } from './views/admin/layout.js';
+import { computeRatings } from './lib/ratings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -932,7 +943,7 @@ app.get('/api/player/:id/photo', async (req, res) => {
     const mime  = (url.slice(0, comma).match(/^data:([^;]+)/) || [])[1] || 'image/jpeg';
     const buf   = Buffer.from(url.slice(comma + 1), 'base64');
     res.set('Content-Type', mime);
-    res.set('Cache-Control', 'public, max-age=60, must-revalidate');
+    res.set('Cache-Control', 'no-cache');
     return res.end(buf);
   }
   // Relative paths are served by the admin server, not the portal
@@ -963,7 +974,7 @@ app.get('*', (req, res, next) => {
 
 // ── Admin routes ──────────────────────────────────────────────────────────────
 app.get('/login', (req, res) => {
-  if (req.session?.isAdmin) return res.redirect('/');
+  if (req.session?.isAdmin) return res.redirect('/admin');
   res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody() }));
 });
 
@@ -972,7 +983,7 @@ app.post('/login', (req, res) => {
   if (checkCredentials(username, password)) {
     req.session.isAdmin = true;
     if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-    return res.redirect('/');
+    return res.redirect('/admin');
   }
   res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Invalid username or password.' }) }));
 });
@@ -990,44 +1001,236 @@ app.get('/admin', requireAuth, (req, res) => {
 });
 
 app.get('/admin/ledger', requireAuth, (req, res) => {
-  const players = getAllPlayers();
-  const financials = getAllFinancials();
-  const allTx = getAllTransactions();
+  const players  = getAllPlayers();
+  const seasons  = getLedgerSeasons();
+  const season   = req.query.season || seasons[0] || '';
+  const quota    = season ? getSeasonQuota(season) : 0;
+  const summary  = season ? getSeasonSummary(season) : {};
+  const balMap   = season ? Object.fromEntries(getSeasonBalances(season).map(r => [r.player_id, r])) : {};
+  const allTx    = season ? getAllTransactionsBySeason(season) : getAllTransactions();
   const txByPlayer = {};
-  for (const tx of allTx) {
-    (txByPlayer[tx.player_id] ??= []).push(tx);
-  }
+  for (const tx of allTx) (txByPlayer[tx.player_id] ??= []).push(tx);
   res.send(renderAdminPage(req, {
     title: 'Player Ledger',
     currentPath: '/admin/ledger',
-    body: adminLedgerBody({ players, financials, txByPlayer }),
+    body: adminLedgerBody({ players, txByPlayer, seasons, season, quota, summary, balMap }),
+  }));
+});
+
+app.get('/admin/ledger/:id', requireAuth, (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).send(renderAdminPage(req, {
+    title: 'Not Found', currentPath: '/admin/ledger',
+    body: '<p style="padding:40px;color:var(--text-muted)">Player not found.</p>',
+  }));
+  const seasons = getLedgerSeasons();
+  const season  = req.query.season || seasons[0] || '';
+  const fin     = getPlayerFinancials(player.id) ?? {};
+  const txs     = season ? getPlayerTransactionsBySeason(player.id, season) : getPlayerTransactions(player.id);
+  const quota   = season ? getSeasonQuota(season) : 0;
+  res.send(renderAdminPage(req, {
+    title: `${displayPlayerName(player.name)} — Ledger`,
+    currentPath: '/admin/ledger',
+    body: adminLedgerPlayerBody({ player, fin, transactions: txs, seasons, season, quota }),
   }));
 });
 
 app.post('/admin/ledger/transaction', requireAuth, express.json(), (req, res) => {
-  const { player_id, amount, type, payment_method, date, status, notes, reference_no } = req.body;
-  if (!player_id || !amount || !date) {
-    return res.status(400).json({ error: 'player_id, amount, and date are required.' });
-  }
+  const { player_id, amount, type, payment_method, date, status, notes, reference_no, season, category } = req.body;
+  if (!player_id || !amount || !date) return res.status(400).json({ error: 'player_id, amount, and date are required.' });
   const parsed = parseFloat(amount);
-  if (isNaN(parsed) || parsed <= 0) {
-    return res.status(400).json({ error: 'Amount must be a positive number.' });
-  }
-  if (!['payment', 'charge'].includes(type)) {
-    return res.status(400).json({ error: 'Invalid transaction type.' });
-  }
-  if (!['confirmed', 'pending'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status.' });
-  }
+  if (isNaN(parsed) || parsed <= 0) return res.status(400).json({ error: 'Amount must be a positive number.' });
+  if (!['payment', 'charge'].includes(type)) return res.status(400).json({ error: 'Invalid transaction type.' });
+  if (!['confirmed', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
   const id = randomBytes(6).toString('hex');
-  recordTransaction({ id, player_id, amount: parsed, type, payment_method: payment_method || '', date, status, notes: notes || '', reference_no: reference_no || '' });
+  recordTransaction({ id, player_id, amount: parsed, type, payment_method: payment_method || '', date, status, notes: notes || '', reference_no: reference_no || '', season: season || '', category: category || '' });
   res.json({ ok: true, id });
 });
+
 
 app.post('/admin/ledger/transaction/:id/confirm', requireAuth, (req, res) => {
   const ok = confirmTransaction(req.params.id);
   if (!ok) return res.status(400).json({ error: 'Transaction not found or not pending.' });
   res.json({ ok: true });
+});
+
+app.post('/admin/ledger/transaction/:id/void', requireAuth, (req, res) => {
+  const ok = voidTransaction(req.params.id);
+  if (!ok) return res.status(400).json({ error: 'Transaction not found or not confirmed.' });
+  res.json({ ok: true });
+});
+
+app.delete('/admin/ledger/transaction/:id', requireAuth, (req, res) => {
+  const ok = deleteTransaction(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Transaction not found.' });
+  res.json({ ok: true });
+});
+
+app.post('/admin/ledger/bulk-charge', requireAuth, express.json(), (req, res) => {
+  const { player_ids, amount, type, payment_method, date, status, notes, season, category } = req.body;
+  if (!player_ids?.length || !amount || !date) return res.status(400).json({ error: 'player_ids, amount, and date are required.' });
+  const parsed = parseFloat(amount);
+  if (isNaN(parsed) || parsed <= 0) return res.status(400).json({ error: 'Amount must be a positive number.' });
+  for (const pid of player_ids) {
+    const id = randomBytes(6).toString('hex');
+    recordTransaction({ id, player_id: pid, amount: parsed, type: type || 'charge', payment_method: payment_method || '', date, status: status || 'confirmed', notes: notes || '', reference_no: '', season: season || '', category: category || '' });
+  }
+  res.json({ ok: true, count: player_ids.length });
+});
+
+app.get('/admin/finance', requireAuth, (req, res) => {
+  const seasons = getLedgerSeasons();
+  const season  = req.query.season || seasons[0] || '';
+  const summary = season ? getSeasonSummary(season) : {};
+  const quota   = season ? getSeasonQuota(season) : 0;
+  const balMap  = season ? Object.fromEntries(getSeasonBalances(season).map(r => [r.player_id, r])) : {};
+  const players = getAllPlayers();
+  const pending = getPendingTransactions();
+  const categoryTotals = season ? getCategoryTotals(season) : [];
+  const teamTotals     = season ? getTeamTotals(season) : [];
+  const recentTx       = getRecentTransactions();
+  res.send(renderAdminPage(req, {
+    title: 'Finance',
+    currentPath: '/admin/finance',
+    body: adminFinanceDashBody({ seasons, season, summary, quota, balMap, players, pending, categoryTotals, teamTotals, recentTx }),
+  }));
+});
+
+app.get('/admin/ledger/quota/:season', requireAuth, (req, res) => {
+  res.json({ amount: getSeasonQuota(req.params.season) });
+});
+
+app.post('/admin/ledger/quota/:season', requireAuth, express.json(), (req, res) => {
+  const amount = parseFloat(req.body.amount);
+  if (isNaN(amount) || amount < 0) return res.status(400).json({ error: 'Invalid amount.' });
+  setSeasonQuota(req.params.season, amount);
+  res.json({ ok: true });
+});
+
+// ── Admin players routes ──────────────────────────────────────────────────────
+app.get('/admin/players', requireAuth, (req, res) => {
+  const seasons = getGameSeasons();
+  const season  = req.query.season || '';
+  const players = getPlayersWithRatings(season || null);
+  const teams   = getAllTeams();
+  res.send(renderAdminPage(req, {
+    title: 'Players',
+    currentPath: '/admin/players',
+    body: adminPlayersBody({ players, seasons, season, teams }),
+  }));
+});
+
+app.get('/admin/players/:id', requireAuth, (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).send(renderAdminPage(req, {
+    title: 'Not Found', currentPath: '/admin/players',
+    body: '<p style="padding:40px;color:var(--text-muted)">Player not found.</p>',
+  }));
+  const seasons = getGameSeasons();
+  const season  = req.query.season || '';
+  const rating  = getPlayerRating(player.id, season || null);
+  const stats   = getOnePlayerStats(player.id, season || null);
+  const teams   = getAllTeams();
+  res.send(renderAdminPage(req, {
+    title: displayPlayerName(player.name),
+    currentPath: '/admin/players',
+    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams }),
+  }));
+});
+
+app.post('/admin/players/:id/bio', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const { writeup, positions, number, status, team_id, first_name, last_name, ...details } = req.body;
+  if (writeup !== undefined) updatePlayerWriteup(player.id, String(writeup));
+  if (number  !== undefined) setPlayerNumber(player.id, number);
+  if (status  !== undefined) setPlayerStatus(player.id, status);
+  if (team_id !== undefined) setPlayerTeam(player.id, team_id);
+  upsertPlayerDetails(player.id, {
+    nickname:       details.nickname       || null,
+    hometown:       details.hometown       || null,
+    school:         details.school         || null,
+    height:         details.height         || null,
+    weight:         details.weight         || null,
+    wingspan:       details.wingspan       || null,
+    dominant_hand:  details.dominant_hand  || null,
+    years_playing:  details.years_playing  || null,
+    social_instagram: details.social_instagram || null,
+    social_twitter: details.social_twitter || null,
+  });
+  updatePlayer(player.id, {
+    first_name: first_name !== undefined ? first_name : player.first_name,
+    last_name:  last_name  !== undefined ? last_name  : player.last_name,
+    number:     number     !== undefined ? number     : player.number,
+    positions:  Array.isArray(positions) ? positions : (() => { try { return JSON.parse(player.positions || '[]'); } catch { return []; } })(),
+    status:     status     !== undefined ? status     : player.status,
+  });
+  res.json({ ok: true });
+});
+
+app.post('/admin/players/:id/photo', requireAuth, express.json({ limit: '8mb' }), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const dataUrl = String(req.body.dataUrl || '');
+  if (!dataUrl.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image data' });
+  updatePlayerPhoto(player.id, dataUrl);
+  res.json({ ok: true });
+});
+
+app.post('/admin/players/:id/status', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const status = req.body?.status;
+  if (!['active', 'inactive'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  setPlayerStatus(player.id, status);
+  res.json({ ok: true, status });
+});
+
+app.post('/admin/players/:id/team', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  setPlayerTeam(player.id, req.body?.team_id ?? '');
+  res.json({ ok: true });
+});
+
+app.post('/admin/players/:id/ratings', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const { season, ...fields } = req.body;
+  const ovr = {};
+  for (const key of ['scoring','shooting','rebounding','playmaking','defense','iq','athleticism','overall']) {
+    const val = fields[key + '_ovr'];
+    ovr[key + '_ovr'] = val !== '' && val !== undefined && val !== null ? parseInt(val, 10) : null;
+  }
+  saveRatingOverrides(player.id, season || '', ovr);
+  res.json({ ok: true });
+});
+
+function computeAndSave(playerId, season) {
+  const stats = getOnePlayerStats(playerId, season || null);
+  if (!stats) return null;
+  const r = computeRatings(stats);
+  upsertComputedRating(playerId, season || '', r);
+  return r;
+}
+
+app.post('/admin/players/:id/recompute', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const season = req.body?.season || '';
+  const r = computeAndSave(player.id, season);
+  res.json({ ok: true, rating: r });
+});
+
+app.post('/admin/players/recompute-all', requireAuth, express.json(), (req, res) => {
+  const season  = req.body?.season || '';
+  const players = getAllPlayers();
+  let count = 0;
+  for (const p of players) {
+    const r = computeAndSave(p.id, season);
+    if (r) count++;
+  }
+  res.json({ ok: true, count });
 });
 
 // ── Public routes ─────────────────────────────────────────────────────────────

@@ -17,7 +17,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/admin',           label: 'Dashboard', icon: 'dashboard', exact: true },
       { href: '/admin/games',     label: 'Games',     icon: 'games' },
-      { href: '/admin/players',   label: 'Players',   icon: 'players',   soon: true },
+      { href: '/admin/players',   label: 'Players',   icon: 'players' },
       { href: '/admin/teams',     label: 'Teams',     icon: 'teams',     soon: true },
       { href: '/admin/standings', label: 'Standings', icon: 'standings', soon: true },
     ],
@@ -25,7 +25,8 @@ const NAV_GROUPS = [
   {
     label: 'Finance',
     items: [
-      { href: '/admin/ledger', label: 'Ledger', icon: 'ledger' },
+      { href: '/admin/finance', label: 'Overview', icon: 'standings' },
+      { href: '/admin/ledger',  label: 'Ledger',   icon: 'ledger' },
     ],
   },
   {
