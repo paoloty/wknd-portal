@@ -20,6 +20,7 @@ import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage } from './views/legal.js';
 import { frontOfficePage } from './views/front-office.js';
+import { teamsBody } from './views/teams.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
@@ -1956,10 +1957,35 @@ app.get('/leaders', (req, res) => {
 });
 
 app.get('/teams', (req, res) => {
+  const teams   = getAllTeams();
+  const records = getTeamRecords();
+  const players = getPlayersWithRatings('');
+
+  const recordMap    = Object.fromEntries(records.map(r => [r.team_id, r]));
+  const teamIdByName = Object.fromEntries(teams.map(t => [t.name.toUpperCase(), t.id]));
+
+  const playersByTeam = {};
+  for (const p of players) {
+    if (!p.team_name || p.status !== 'active') continue;
+    const tid = teamIdByName[String(p.team_name).toUpperCase()];
+    if (!tid) continue;
+    if (!playersByTeam[tid]) playersByTeam[tid] = [];
+    playersByTeam[tid].push(p);
+  }
+
+  const teamData = teams.map(t => {
+    const plrs    = playersByTeam[t.id] || [];
+    const rated   = plrs.filter(p => p.eff_overall != null);
+    const avgOvr  = rated.length ? Math.round(rated.reduce((s, p) => s + p.eff_overall, 0) / rated.length) : null;
+    const topPlayer = rated[0] ?? null;
+    const rec     = recordMap[t.id] ?? null;
+    return { ...t, wins: rec?.wins ?? null, losses: rec?.losses ?? null, avgOvr, topPlayer, rosterCount: plrs.length };
+  });
+
   res.send(renderPage(req, {
     title: 'Teams — WKND Basketball League',
     currentPath: req.path,
-    body: comingSoonPage({ label: 'Teams', description: 'Team rosters, stats, and season averages are on their way.' })
+    body: teamsBody({ teams: teamData }),
   }));
 });
 
