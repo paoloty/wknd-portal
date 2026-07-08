@@ -1270,7 +1270,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
     `- Do NOT reference the crowd, audience, or spectators. The league has limited attendance.`,
     `- Stats shorthand: say "17 and 8" not "17 points and 8 rebounds." Use "pts/reb/ast" only when listing multiple players.`,
     `- Rotation/substitutions: mention only if directly relevant to a momentum shift. Do NOT describe lineup depth or patterns.`,
-    `- Output format: a one-line headline, then 2–4 paragraphs. More drama = more paragraphs. A blowout gets 2.`,
+    `- Output format: a one-line headline, then exactly 3 paragraphs minimum. Close games or playoff games get 4. Structure: (1) game flow/result, (2) key performers, (3) context/implications.`,
     `- Do NOT start with the date, a player name, or "In a [adjective] game."`,
     `- Banned words/phrases: ${CLICHE_BAN}`,
     ``,
@@ -1302,7 +1302,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
   ].filter(s => s !== null).join('\n');
 
   try {
-    const { text } = await generateText(prompt, { temperature: 0.72, maxTokens: 600 });
+    const { text } = await generateText(prompt, { temperature: 0.72, maxTokens: 900 });
     res.json({ writeup: text });
   } catch (err) {
     console.error('generate-recap error:', err.message);
