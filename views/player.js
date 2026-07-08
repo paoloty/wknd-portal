@@ -33,12 +33,12 @@ function heroSection(player, totals, isAdmin = false) {
 
   const avatarInits = initials(player.name);
   const uploadOverlay = isAdmin ? `
-    <label class="player-avatar-upload" title="Upload photo">
+    <label class="player-avatar-upload" id="pcp-label" title="Upload photo">
       <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
         <circle cx="12" cy="13" r="4"/>
       </svg>
-      <input type="file" accept="image/*" style="display:none" onchange="__uploadPlayerPhoto(this,'${escHtml(player.id)}')">
+      <input type="file" id="pcp-file" accept="image/*" style="display:none">
     </label>` : '';
 
   const leftCol = `<div class="player-hero__left">
@@ -84,18 +84,85 @@ function heroSection(player, totals, isAdmin = false) {
   </div>`;
 
   const uploadScript = isAdmin ? `
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
+
+<div class="pcp-backdrop" id="pcp-backdrop" hidden>
+  <div class="pcp-modal">
+    <div class="pcp-modal__header">
+      <span class="pcp-modal__title">Crop Photo</span>
+      <button class="pcp-modal__close" id="pcp-close">&#x2715;</button>
+    </div>
+    <div class="pcp-modal__body">
+      <img id="pcp-img" src="" alt="" style="max-width:100%;display:block">
+    </div>
+    <div class="pcp-modal__footer">
+      <button class="pcp-modal__cancel" id="pcp-cancel">Cancel</button>
+      <button class="pcp-modal__save" id="pcp-save">Crop &amp; Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"><\/script>
 <script>
-function __uploadPlayerPhoto(input, playerId) {
-  var file = input.files[0];
-  if (!file) return;
-  var label = input.closest('.player-avatar-upload');
-  var reader = new FileReader();
-  reader.onload = function(e) {
+(function() {
+  var playerId  = '${escHtml(player.id)}';
+  var fileInput = document.getElementById('pcp-file');
+  var label     = document.getElementById('pcp-label');
+  var backdrop  = document.getElementById('pcp-backdrop');
+  var cropImg   = document.getElementById('pcp-img');
+  var saveBtn   = document.getElementById('pcp-save');
+  var cropper   = null;
+
+  function openCrop(src) {
+    cropImg.src = src;
+    backdrop.hidden = false;
+    document.body.style.overflow = 'hidden';
+    if (cropper) { cropper.destroy(); }
+    cropper = new Cropper(cropImg, {
+      aspectRatio: 1,
+      viewMode: 1,
+      dragMode: 'move',
+      autoCropArea: 0.85,
+      guides: true,
+      highlight: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      toggleDragModeOnDblclick: false,
+    });
+  }
+
+  function closeCrop() {
+    backdrop.hidden = true;
+    document.body.style.overflow = '';
+    if (cropper) { cropper.destroy(); cropper = null; }
+    fileInput.value = '';
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Crop & Save';
+  }
+
+  fileInput.addEventListener('change', function() {
+    var file = this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) { openCrop(e.target.result); };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('pcp-close').addEventListener('click', closeCrop);
+  document.getElementById('pcp-cancel').addEventListener('click', closeCrop);
+  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) closeCrop(); });
+
+  saveBtn.addEventListener('click', function() {
+    if (!cropper) return;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
     label.classList.add('player-avatar-upload--loading');
+    var canvas = cropper.getCroppedCanvas({ width: 400, height: 400, imageSmoothingQuality: 'high' });
+    var dataUrl = canvas.toDataURL('image/jpeg', 0.88);
     fetch('/admin/player/' + encodeURIComponent(playerId) + '/photo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl: e.target.result })
+      body: JSON.stringify({ dataUrl: dataUrl })
     }).then(function(r) {
       label.classList.remove('player-avatar-upload--loading');
       if (!r.ok) throw new Error('failed');
@@ -104,19 +171,20 @@ function __uploadPlayerPhoto(input, playerId) {
       var img = document.getElementById('player-avatar-img');
       img.style.display = '';
       img.src = newSrc;
-      // Update og:image so any immediate re-share picks up the new photo
       ['og:image', 'og:image:secure_url', 'twitter:image'].forEach(function(prop) {
         var meta = document.querySelector('meta[property="' + prop + '"], meta[name="' + prop + '"]');
         if (meta) meta.setAttribute('content', newSrc);
       });
+      closeCrop();
     }).catch(function() {
       label.classList.remove('player-avatar-upload--loading');
       alert('Photo upload failed. Please try again.');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Crop & Save';
     });
-  };
-  reader.readAsDataURL(file);
-}
-</script>` : '';
+  });
+})();
+<\/script>` : '';
 
   return `<div class="card player-hero" style="--ph-color:${color}">
   <div class="player-hero__grid">

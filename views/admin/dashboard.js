@@ -1,11 +1,12 @@
+import { escHtml } from '../layout.js';
+
 export function adminDashboardBody({ registrations = [] } = {}) {
   const pending   = registrations.filter(r => r.status === 'pending').length;
   const freeAgent = registrations.filter(r => r.status === 'free_agent').length;
   const matched   = registrations.filter(r => r.status === 'matched').length;
 
-  return `<div class="container"><div class="page-content">
-  <div class="section-header">
-    <h2>Admin Dashboard</h2>
+  return `<div class="section-header">
+    <h2>Dashboard</h2>
   </div>
 
   <div class="admin-stat-grid">
@@ -35,20 +36,17 @@ export function adminDashboardBody({ registrations = [] } = {}) {
   ${registrations.length === 0
     ? `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">No registrations yet.</div>`
     : adminRegistrationTable(registrations.slice(0, 10))
-  }
-</div></div>`;
+  }`;
 }
 
 export function adminRegistrationsBody({ registrations = [] } = {}) {
-  return `<div class="container"><div class="page-content">
-  <div class="section-header">
+  return `<div class="section-header">
     <h2>Registrations</h2>
   </div>
   ${registrations.length === 0
     ? `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">No registrations yet.</div>`
     : adminRegistrationTable(registrations)
-  }
-</div></div>`;
+  }`;
 }
 
 function adminRegistrationTable(rows) {
@@ -80,10 +78,4 @@ function adminRegistrationTable(rows) {
     <tbody>${rowsHtml}</tbody>
   </table>
 </div>`;
-}
-
-function escHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

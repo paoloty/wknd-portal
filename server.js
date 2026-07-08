@@ -19,6 +19,7 @@ import { playerPage } from './views/player.js';
 import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage } from './views/legal.js';
+import { frontOfficePage } from './views/front-office.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
@@ -31,11 +32,18 @@ import {
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
   getPlayerCareerHighs, getPlayerAwards, getGameDnpPlayers, getGameRecords,
   getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames,
-  updateGameRecap, updateGameYoutube, updateGameCover, updatePlayerPhoto,
+  updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
+  importGameResults, createGame,
+  updatePlayerPhoto, updatePlayer,
+  getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
+import { generateText, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, playerFinancialSection } from './views/admin/ledger.js';
+import { adminDashboardBody } from './views/admin/dashboard.js';
+import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
+import { adminLayout } from './views/admin/layout.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -265,6 +273,10 @@ function buildTicker() {
 
 function renderPage(req, opts) {
   return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, ...opts });
+}
+
+function renderAdminPage(req, opts) {
+  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, ...opts });
 }
 
 function formatName(raw) {
@@ -969,6 +981,14 @@ app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
+app.get('/admin', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'Dashboard',
+    currentPath: '/admin',
+    body: adminDashboardBody(),
+  }));
+});
+
 app.get('/admin/ledger', requireAuth, (req, res) => {
   const players = getAllPlayers();
   const financials = getAllFinancials();
@@ -977,10 +997,9 @@ app.get('/admin/ledger', requireAuth, (req, res) => {
   for (const tx of allTx) {
     (txByPlayer[tx.player_id] ??= []).push(tx);
   }
-  res.send(renderPage(req, {
-    title: 'Player Ledger — WKND Admin',
+  res.send(renderAdminPage(req, {
+    title: 'Player Ledger',
     currentPath: '/admin/ledger',
-    ticker: '',
     body: adminLedgerBody({ players, financials, txByPlayer }),
   }));
 });
@@ -1066,7 +1085,7 @@ app.get('/games/:ref', (req, res) => {
     title: `${pageTitle} — WKND Basketball League`,
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
-    body: gamePage({ game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap, isAdmin: !!req.session?.isAdmin })
+    body: gamePage({ game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap })
   }));
 });
 
@@ -1074,11 +1093,300 @@ app.get('/games/:ref', (req, res) => {
 const jsonSmall = express.json();
 const jsonLarge = express.json({ limit: '8mb' });
 
+app.get('/admin/games', requireAuth, (req, res) => {
+  const games = getAllGames();
+  const teams = getAllTeams();
+  const seasons = [...new Set(games.map(g => g.season).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  const currentSeason = getCurrentSeason()?.season ?? 1;
+  res.send(renderAdminPage(req, {
+    title: 'Games',
+    currentPath: '/admin/games',
+    body: adminGamesListBody({ games, seasons, teams, currentSeason }),
+  }));
+});
+
+app.post('/admin/games', requireAuth, jsonSmall, (req, res) => {
+  const { date, team_a_id, team_b_id, season, game_type } = req.body;
+  if (!date || !team_a_id || !team_b_id || !season) return res.status(400).json({ error: 'Missing required fields' });
+  try {
+    const id = createGame({ date, teamAId: team_a_id, teamBId: team_b_id, season, gameType: game_type || 'regular' });
+    res.json({ ok: true, id });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/admin/games/:id/cover-img', requireAuth, (req, res) => {
+  const cover = getGameCover(req.params.id);
+  if (!cover?.social_cover_data_url) return res.status(404).end();
+  const match = cover.social_cover_data_url.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return res.status(404).end();
+  res.setHeader('Content-Type', match[1]);
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(Buffer.from(match[2], 'base64'));
+});
+
+app.get('/admin/games/:id', requireAuth, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/games', body: '<p style="color:var(--text-muted);padding:40px">Game not found.</p>' }));
+  const players = getAllPlayers();
+  const stats = getGameDetailStats(game.id);
+  const dnpPlayers = getGameDnpPlayers(game.id);
+  const quarterScores = extractQuarterScores(game);
+  res.send(renderAdminPage(req, {
+    title: `${game.team_a_name} vs ${game.team_b_name}`,
+    currentPath: '/admin/games',
+    body: adminGameDetailBody({ game, players, stats, dnpPlayers, quarterScores }),
+  }));
+});
+
+app.delete('/admin/games/:id', requireAuth, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  deleteGame(game.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/potg', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  updateGamePotg(game.id, String(req.body.writeup || ''), String(req.body.player_id || ''));
+  res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/review', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  updateGameReview(game.id, req.body.under_review);
+  res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/save', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  const b = req.body;
+  updateGameAll(game.id, {
+    game_writeup:         b.game_writeup     !== undefined ? String(b.game_writeup)     : game.game_writeup,
+    potg_writeup:         b.potg_writeup     !== undefined ? String(b.potg_writeup)     : game.potg_writeup,
+    manual_potg_player_id: b.potg_player_id  !== undefined ? String(b.potg_player_id)   : game.manual_potg_player_id,
+    youtube_url:          b.youtube_url      !== undefined ? String(b.youtube_url)       : game.youtube_url,
+    under_review:         b.status           !== undefined ? (b.status === 'draft' ? 1 : 0) : game.under_review,
+    date:                 b.date             !== undefined ? String(b.date)              : game.date,
+  });
+  res.json({ ok: true });
+});
+
 app.post('/admin/games/:id/recap', requireAuth, jsonSmall, (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
   updateGameRecap(game.id, String(req.body.writeup || ''));
   res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  if (game.scheduled) return res.status(400).json({ error: 'Game not yet imported.' });
+
+  const stats      = getGameDetailStats(game.id);
+  const dnpPlayers = getGameDnpPlayers(game.id);
+  const qScores    = extractQuarterScores(game);
+  const records    = getTeamRecords();
+  const recMap     = Object.fromEntries(records.map(r => [r.team_id, r]));
+  const prevMatch  = getPrevMatchup(game.id, game.team_a_id, game.team_b_id);
+  const streakA    = getTeamStreak(game.team_a_id, game.id);
+  const streakB    = getTeamStreak(game.team_b_id, game.id);
+
+  // Filter PBP
+  let log;
+  try { log = JSON.parse(game.game_log_json || '[]'); } catch { log = []; }
+  const pbpFiltered = filterPbpForRecap(log); // chronological order Q1→Q4
+
+  // Derive notable DNPs: gp >= 3 AND (ppg >= 8 OR top-2 scorer on team)
+  const allLeaders = getLeaders();
+  const teamTopScorers = {};
+  for (const p of allLeaders) {
+    if (!teamTopScorers[p.team_id]) teamTopScorers[p.team_id] = [];
+    if (teamTopScorers[p.team_id].length < 2) {
+      teamTopScorers[p.team_id].push(p.id);
+    }
+  }
+  const notableDnps = dnpPlayers
+    .map(d => {
+      const totals = getPlayerSeasonStats(d.id, game.season);
+      if (!totals || totals.games_played < 3) return null;
+      const ppg = totals.games_played > 0 ? totals.pts / totals.games_played : 0;
+      const isTopScorer = (teamTopScorers[d.team_id] || []).includes(d.id);
+      if (ppg < 8 && !isTopScorer) return null;
+      return { name: displayPlayerName(d.name), team: d.team_name, ppg: ppg.toFixed(1), gp: totals.games_played };
+    })
+    .filter(Boolean);
+
+  // Quarter lines
+  const scoreA = Number(game.team_a_score), scoreB = Number(game.team_b_score);
+  let cumA = 0, cumB = 0;
+  const qLines = qScores.map(q => {
+    if (q.a === null && q.b === null) return null;
+    cumA += q.a ?? 0; cumB += q.b ?? 0;
+    const lbl = q.quarter > 4 ? `OT${q.quarter - 4}` : `Q${q.quarter}`;
+    const diff = cumA - cumB;
+    const leader = diff > 0 ? game.team_a_name : diff < 0 ? game.team_b_name : 'TIE';
+    return `${lbl}: ${game.team_a_name} ${cumA} – ${cumB} ${game.team_b_name} (${diff !== 0 ? `${leader} +${Math.abs(diff)}` : 'TIE'})`;
+  }).filter(Boolean);
+  const isOT = qScores.some(q => q.quarter > 4 && (q.a ?? 0) + (q.b ?? 0) > 0);
+
+  const recA = recMap[game.team_a_id];
+  const recB = recMap[game.team_b_id];
+  const recordLineA = recA ? `${game.team_a_name}: ${recA.wins}-${recA.losses}` : null;
+  const recordLineB = recB ? `${game.team_b_name}: ${recB.wins}-${recB.losses}` : null;
+
+  const streakLine = (team, s) =>
+    s.streak >= 2 ? `${team} is on a ${s.streak}-game ${s.type === 'W' ? 'winning' : 'losing'} streak.` : null;
+
+  const pbpText = pbpFiltered.slice(-200).map(e => {
+    const q = e.quarter ? (e.quarter > 4 ? `OT${e.quarter - 4}` : `Q${e.quarter}`) : '?';
+    const clk = e.clockRemaining ?? '';
+    const txt = String(e.text || '').replace(/⚡/g, '').trim();
+    return txt ? `[${q} ${clk}] ${txt}` : null;
+  }).filter(Boolean).join('\n');
+
+  const topPerformers = [...stats].sort((a, b) => b.pts - a.pts).slice(0, 6).map(p => {
+    const fgm = (p.fg2m|0) + (p.fg3m|0);
+    const fga = fgm + (p.fg2m_miss|0) + (p.fg3m_miss|0);
+    const pct = fga > 0 ? ` (${Math.round(fgm/fga*100)}% FG)` : '';
+    return `${displayPlayerName(p.name)} (${p.team_name}): ${p.pts}pts/${p.reb}reb/${p.ast}ast/${p.stl}stl/${p.blk}blk${pct}`;
+  }).join('\n');
+
+  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "fired on all cylinders," "gave it their all," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "nothing short of spectacular"';
+
+  const prompt = [
+    `You are a local recreational basketball league writer — a community observer, not a broadcaster.`,
+    `Write a game recap for a WKND Basketball League game. Tone: grounded, conversational, direct. Not hype.`,
+    `Use ONLY the provided data. Do not invent quotes, events, or statistics.`,
+    `Write plain text only. No markdown.`,
+    ``,
+    `STRICT RULES:`,
+    `- Do NOT reference the crowd, audience, or spectators. The league has limited attendance.`,
+    `- Stats shorthand: say "17 and 8" not "17 points and 8 rebounds." Use "pts/reb/ast" only when listing multiple players.`,
+    `- Rotation/substitutions: mention only if directly relevant to a momentum shift. Do NOT describe lineup depth or patterns.`,
+    `- Output format: a one-line headline, then 2–4 paragraphs. More drama = more paragraphs. A blowout gets 2.`,
+    `- Do NOT start with the date, a player name, or "In a [adjective] game."`,
+    `- Banned words/phrases: ${CLICHE_BAN}`,
+    ``,
+    `GAME: ${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}`,
+    `Date: ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : 'Regular Season'}${isOT ? '  |  OVERTIME' : ''}`,
+    `Final margin: ${Math.abs(scoreA - scoreB)} pts${Math.abs(scoreA - scoreB) <= 6 ? ' (CLOSE GAME — emphasize late-game events)' : ''}`,
+    ``,
+    `TEAM RECORDS (entering this game):`,
+    recordLineA || `${game.team_a_name}: record unavailable`,
+    recordLineB || `${game.team_b_name}: record unavailable`,
+    [streakLine(game.team_a_name, streakA), streakLine(game.team_b_name, streakB)].filter(Boolean).join('\n') || '(no notable streaks)',
+    ``,
+    prevMatch
+      ? `PREVIOUS MATCHUP: ${prevMatch.team_a_name} ${prevMatch.team_a_score} – ${prevMatch.team_b_score} ${prevMatch.team_b_name} on ${prevMatch.date}`
+      : 'PREVIOUS MATCHUP: First meeting or no prior matchup found.',
+    ``,
+    `QUARTER-BY-QUARTER (running score):`,
+    qLines.length ? qLines.join('\n') : '(quarter scores unavailable)',
+    ``,
+    `TOP PERFORMERS:`,
+    topPerformers || '(no stats)',
+    ``,
+    notableDnps.length
+      ? `NOTABLE ABSENCES (DNP this game):\n${notableDnps.map(d => `${d.name} (${d.team}): ${d.ppg} PPG avg over ${d.gp} games this season`).join('\n')}`
+      : '',
+    ``,
+    `PLAY-BY-PLAY (chronological Q1→Q4, ${pbpFiltered.length} events):`,
+    pbpText || '(no play-by-play data)',
+  ].filter(s => s !== null).join('\n');
+
+  try {
+    const { text } = await generateText(prompt, { temperature: 0.72, maxTokens: 600 });
+    res.json({ writeup: text });
+  } catch (err) {
+    console.error('generate-recap error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post('/admin/games/:id/generate-potg', requireAuth, async (req, res) => {
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  if (game.scheduled) return res.status(400).json({ error: 'Game not yet imported.' });
+
+  const stats = getGameDetailStats(game.id);
+  const potgId = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
+  if (!potgId) return res.status(400).json({ error: 'Cannot determine player of the game.' });
+
+  const potgStat = stats.find(s => s.player_id === potgId);
+  if (!potgStat) return res.status(400).json({ error: 'POTG player stats not found.' });
+
+  const scoreA = Number(game.team_a_score), scoreB = Number(game.team_b_score);
+  const playerTeamWon = potgStat.team_id === game.team_a_id
+    ? scoreA > scoreB
+    : scoreB > scoreA;
+
+  const careerHighs = getPlayerCareerHighs(potgId);
+  const seasonStats = getPlayerSeasonStats(potgId, game.season);
+  const leagueRank  = getPlayerLeagueRank(potgId, game.season);
+  const gameLogs    = getPlayerGameLog(potgId).slice(1, 7); // exclude current game
+
+  const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0);
+  const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0);
+  const fgPct = fga > 0 ? `${Math.round(fgm/fga*100)}%FG` : '';
+
+  const careerHighFlags = [];
+  if (careerHighs) {
+    if (potgStat.pts >= careerHighs.pts && potgStat.pts > 0) careerHighFlags.push('PTS');
+    if (potgStat.reb >= careerHighs.reb && potgStat.reb > 0) careerHighFlags.push('REB');
+    if (potgStat.ast >= careerHighs.ast && potgStat.ast > 0) careerHighFlags.push('AST');
+  }
+
+  const seasonLine = seasonStats
+    ? `Season averages (${seasonStats.games_played}GP): ${(seasonStats.pts/seasonStats.games_played).toFixed(1)}pts / ${(seasonStats.reb/seasonStats.games_played).toFixed(1)}reb / ${(seasonStats.ast/seasonStats.games_played).toFixed(1)}ast`
+    : 'Season averages: unavailable';
+
+  const prevLines = gameLogs.map(g => {
+    const isTeamA = g.player_team_id === g.team_a_id;
+    const opp = isTeamA ? g.team_b_name : g.team_a_name;
+    return `${g.date} vs ${opp}: ${g.pts}pts/${g.reb}reb/${g.ast}ast`;
+  });
+
+  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "showed up big," "came to play," "heart-pounding," "jaw-dropping"';
+
+  const prompt = [
+    `You are writing a short player-of-the-game spotlight for a local recreational basketball league.`,
+    `Write exactly 2–3 sentences. Plain text only. No markdown.`,
+    `Lead with what the player DID, not their name. (e.g., "A 22-point, 9-rebound effort..." not "John Smith had...")`,
+    `Scale the tone to performance magnitude: a 10-pt game gets a plain sentence; a 30-pt game gets more energy.`,
+    `Do NOT mention PER, advanced metrics, or formula names.`,
+    `Do NOT reference the crowd or atmosphere.`,
+    `Banned phrases: ${CLICHE_BAN}`,
+    ``,
+    `GAME: ${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}  |  ${game.date}  |  Season ${game.season}`,
+    `Game type: ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : 'Regular Season'}`,
+    ``,
+    `PLAYER: ${displayPlayerName(potgStat.name)} (${potgStat.team_name})`,
+    `This game: ${potgStat.pts}pts / ${potgStat.reb}reb / ${potgStat.ast}ast / ${potgStat.stl}stl / ${potgStat.blk}blk${fgPct ? ' / ' + fgPct : ''}`,
+    `Player's team ${playerTeamWon ? 'WON' : 'LOST'} this game.`,
+    careerHighFlags.length ? `Career highs set this game: ${careerHighFlags.join(', ')}` : '',
+    leagueRank ? `League rank in scoring: ${leagueRank}${leagueRank === 1 ? 'st' : leagueRank === 2 ? 'nd' : leagueRank === 3 ? 'rd' : 'th'} in the league` : '',
+    seasonLine,
+    ``,
+    prevLines.length ? `Recent games:\n${prevLines.join('\n')}` : 'Recent games: none on record.',
+  ].filter(Boolean).join('\n');
+
+  try {
+    const { text } = await generateText(prompt, { temperature: 0.6, maxTokens: 160 });
+    // Trim to max 3 sentences
+    const sentences = text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean).slice(0, 3);
+    res.json({ writeup: sentences.join(' ') });
+  } catch (err) {
+    console.error('generate-potg error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
 });
 
 app.post('/admin/games/:id/youtube', requireAuth, jsonSmall, (req, res) => {
@@ -1120,6 +1428,46 @@ app.delete('/admin/games/:id/cover', requireAuth, (req, res) => {
   if (!game) return res.status(404).json({ error: 'Not found' });
   updateGameCover(game.id, '');
   res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+
+  const payload = req.body;
+  if (payload?.type !== 'wknd-game-log') {
+    return res.status(400).json({ error: 'Invalid file. Export the game from the wknd-stats admin app.' });
+  }
+
+  const g = payload.game;
+  if (!g) return res.status(400).json({ error: 'Missing game data in export file.' });
+
+  const nameA = String(g.teamAName || '').toUpperCase();
+  const nameB = String(g.teamBName || '').toUpperCase();
+  if (nameA !== game.team_a_name.toUpperCase() || nameB !== game.team_b_name.toUpperCase()) {
+    return res.status(400).json({
+      error: `Team mismatch: export is ${g.teamAName} vs ${g.teamBName}, this game is ${game.team_a_name} vs ${game.team_b_name}.`
+    });
+  }
+
+  const rawDnp = Array.isArray(payload.dnpPlayers) ? payload.dnpPlayers : [];
+  const dnpPlayerIds = rawDnp.map(p => (typeof p === 'string' ? p : String(p?.id || p?.player_id || ''))).filter(Boolean);
+
+  try {
+    importGameResults(game.id, {
+      teamAScore:      Number(g.teamAScore || 0),
+      teamBScore:      Number(g.teamBScore || 0),
+      periodSnapshots: Array.isArray(payload.periodSnapshots) ? payload.periodSnapshots : [],
+      gameLog:         Array.isArray(payload.gameLog) ? payload.gameLog : [],
+      dnpPlayerIds,
+      playerStats:     (typeof g.playerStats === 'object' && g.playerStats) ? g.playerStats : {},
+      season:          game.season,
+    });
+    res.json({ ok: true, teamAScore: Number(g.teamAScore), teamBScore: Number(g.teamBScore) });
+  } catch (err) {
+    console.error('Import error:', err);
+    res.status(500).json({ error: 'Import failed: ' + err.message });
+  }
 });
 
 app.post('/admin/player/:id/photo', requireAuth, jsonLarge, async (req, res) => {
@@ -1437,8 +1785,15 @@ app.get('/players', (req, res) => {
   res.send(renderPage(req, {
     title: 'Players — WKND Basketball League',
     currentPath: req.path,
-    body: playersPage({ players })
+    body: playersPage({ players, isAdmin: !!req.session?.isAdmin })
   }));
+});
+
+app.post('/admin/player/:id/edit', requireAuth, express.json(), (req, res) => {
+  const { first_name, last_name, number, positions, status } = req.body;
+  if (!first_name && !last_name) return res.status(400).json({ error: 'Name is required.' });
+  updatePlayer(req.params.id, { first_name, last_name, number, positions, status });
+  res.json({ ok: true });
 });
 
 app.get('/players/:ref', (req, res) => {
@@ -1485,6 +1840,14 @@ app.get('/players/:ref', (req, res) => {
     currentPath: '/players',
     metaTags: buildPlayerOgTags(req, player, totals),
     body: playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin })
+  }));
+});
+
+app.get('/front-office', (req, res) => {
+  res.send(renderPage(req, {
+    title: 'The Front Office — WKND Basketball',
+    currentPath: '/front-office',
+    body: frontOfficePage(),
   }));
 });
 

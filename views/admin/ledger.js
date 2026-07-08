@@ -213,8 +213,7 @@ export function adminLedgerBody({ players = [], financials = {}, txByPlayer = {}
 
   const today = new Date().toISOString().split('T')[0];
 
-  return `<div class="container"><div class="page-content">
-  <div class="section-header"><h2>Player Ledger</h2></div>
+  return `<div class="section-header"><h2>Player Ledger</h2></div>
   <div class="card standings-table">
     <div class="card-label" style="padding:12px 16px;border-bottom:1px solid var(--border)">
       PLAYERS
@@ -228,7 +227,6 @@ export function adminLedgerBody({ players = [], financials = {}, txByPlayer = {}
     </div>
     ${rows || '<div style="padding:40px;color:var(--text-muted);text-align:center;font-size:13px">No players found.</div>'}
   </div>
-</div></div>
 
 <div id="lgr-view-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(2,8,23,.82);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:540px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
