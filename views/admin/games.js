@@ -498,6 +498,10 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
             ${ICON_IMPORT} Import Results
           </button>
         </div>
+        <div class="agm-progress-wrap" id="agm-import-progress">
+          <div class="agm-progress-bar-track"><div class="agm-progress-bar-fill" id="agm-import-bar"></div></div>
+          <div class="agm-progress-label" id="agm-import-label">Uploading…</div>
+        </div>
       </div>
     </div>
     ` : ''}
@@ -595,7 +599,13 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
            </label>`
       }
       <input type="file" id="cover-file" accept="image/jpeg,image/png,image/webp" style="display:none">
-      <span class="agm-cover-status" id="cover-status"></span>
+      <div id="cover-progress" style="display:none">
+        <div class="agm-cover-progress">
+          <div class="agm-cover-progress-track"><div class="agm-cover-progress-fill" id="cover-bar"></div></div>
+          <span class="agm-progress-label" id="cover-status" style="margin-top:0;white-space:nowrap"></span>
+        </div>
+      </div>
+      <span class="agm-cover-status" id="cover-status-text"></span>
     </div>
     ` : ''}
 
@@ -746,19 +756,53 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
       var file = fileInput.files[0];
       if (!file) return;
       importTrigger.disabled = true;
-      importTrigger.textContent = 'Importing…';
+      importTrigger.innerHTML = '${ICON_IMPORT} Importing…';
+      var progressWrap = document.getElementById('agm-import-progress');
+      var progressBar  = document.getElementById('agm-import-bar');
+      var progressLabel = document.getElementById('agm-import-label');
+      progressWrap.classList.add('agm-progress-wrap--visible');
+      progressBar.style.width = '0%';
+      progressLabel.textContent = 'Reading file…';
       try {
         var text = await file.text();
         var payload = JSON.parse(text);
-        var r = await fetch('/admin/games/${id}/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        var body = JSON.stringify(payload);
+        await new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', '/admin/games/${id}/import');
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          var serverStart = null;
+          var ticker = null;
+          xhr.upload.onprogress = function(e) {
+            if (!e.lengthComputable) return;
+            var pct = Math.round(e.loaded / e.total * 100);
+            progressBar.style.width = pct + '%';
+            progressLabel.textContent = 'Uploading… ' + pct + '%';
+          };
+          xhr.upload.onload = function() {
+            progressBar.style.width = '100%';
+            progressLabel.textContent = 'Processing on server… 0s';
+            serverStart = Date.now();
+            ticker = setInterval(function() {
+              var s = Math.round((Date.now() - serverStart) / 1000);
+              progressLabel.textContent = 'Processing on server… ' + s + 's';
+            }, 1000);
+          };
+          xhr.onload = function() {
+            clearInterval(ticker);
+            try {
+              var data = JSON.parse(xhr.responseText);
+              if (xhr.status >= 200 && xhr.status < 300) { resolve(data); }
+              else { reject(new Error(data.error || 'Import failed')); }
+            } catch(e) { reject(new Error('Invalid response')); }
+          };
+          xhr.onerror = function() { clearInterval(ticker); reject(new Error('Network error')); };
+          xhr.send(body);
         });
-        var data = await r.json();
-        if (!r.ok) throw new Error(data.error || 'Import failed');
+        progressLabel.textContent = 'Done! Reloading…';
         location.reload();
       } catch (e) {
+        progressWrap.classList.remove('agm-progress-wrap--visible');
         filePlaceholder.textContent = 'Error: ' + e.message;
         filePlaceholder.style.color = '#f87171';
         importTrigger.disabled = false;
@@ -773,22 +817,61 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
     coverFile.addEventListener('change', async function() {
       var file = this.files[0];
       if (!file) return;
-      var status = document.getElementById('cover-status');
-      status.textContent = 'Uploading…';
+      var progressWrap = document.getElementById('cover-progress');
+      var progressBar  = document.getElementById('cover-bar');
+      var statusEl     = document.getElementById('cover-status');
+      var statusText   = document.getElementById('cover-status-text');
+      progressWrap.style.display = 'block';
+      statusText.textContent = '';
+      progressBar.style.width = '0%';
+      statusEl.textContent = 'Compressing…';
       try {
         var dataUrl = await new Promise(function(resolve, reject) {
-          var reader = new FileReader();
-          reader.onload = function(e) { resolve(e.target.result); };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
+          var img = new Image();
+          var objUrl = URL.createObjectURL(file);
+          img.onload = function() {
+            URL.revokeObjectURL(objUrl);
+            var MAX_W = 1200, MAX_H = 900;
+            var w = img.naturalWidth, h = img.naturalHeight;
+            var ratio = Math.min(MAX_W / w, MAX_H / h, 1);
+            var canvas = document.createElement('canvas');
+            canvas.width  = Math.round(w * ratio);
+            canvas.height = Math.round(h * ratio);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+          };
+          img.onerror = reject;
+          img.src = objUrl;
         });
-        var r = await fetch('/admin/games/${id}/cover', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dataUrl: dataUrl })
+        statusEl.textContent = 'Uploading… 0%';
+        var body = JSON.stringify({ dataUrl: dataUrl });
+        await new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', '/admin/games/${id}/cover');
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          xhr.upload.onprogress = function(e) {
+            if (!e.lengthComputable) return;
+            var pct = Math.round(e.loaded / e.total * 100);
+            progressBar.style.width = pct + '%';
+            statusEl.textContent = 'Uploading… ' + pct + '%';
+          };
+          xhr.upload.onload = function() {
+            progressBar.style.width = '100%';
+            statusEl.textContent = 'Saving…';
+          };
+          xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error('Upload failed'));
+          };
+          xhr.onerror = function() { reject(new Error('Network error')); };
+          xhr.send(body);
         });
-        if (r.ok) { location.reload(); } else { status.textContent = 'Upload failed'; }
-      } catch { status.textContent = 'Upload failed'; }
+        statusEl.textContent = 'Done!';
+        location.reload();
+      } catch {
+        progressWrap.style.display = 'none';
+        statusText.textContent = 'Upload failed';
+      }
     });
   }
   var delCover = document.getElementById('btn-cover-del');

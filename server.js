@@ -45,6 +45,7 @@ import {
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
   getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
   getGameSeasons, setPlayerStatus, setPlayerTeam, setPlayerNumber,
+  getCompareCache, setCompareCache,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, filterPbpForRecap, aiAvailable } from './lib/ai.js';
@@ -971,6 +972,9 @@ app.get('/api/compare', async (req, res) => {
     if (!pA || !pB) return res.status(404).json({ error: 'Player not found' });
     const tA = getPlayerTotals(a), tB = getPlayerTotals(b);
 
+    const cached = getCompareCache(a, b, tA, tB);
+    if (cached) return res.json({ writeup: cached, cached: true });
+
     const pg = (t, field) => {
       const gp = t?.games_played || 0;
       return gp > 0 ? ((t?.[field] || 0) / gp).toFixed(1) : '0.0';
@@ -995,6 +999,7 @@ ${line(pA, tA)}
 ${line(pB, tB)}`;
 
     const { text } = await generateText(prompt, { maxTokens: 160, temperature: 0.92 });
+    setCompareCache(a, b, tA, tB, text);
     res.json({ writeup: text });
   } catch (err) {
     console.error('compare writeup error:', err.message);
@@ -1466,7 +1471,7 @@ app.post('/admin/games/:id/recap', requireAuth, jsonSmall, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
+app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (req, res) => {
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
@@ -1617,7 +1622,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/admin/games/:id/generate-potg', requireAuth, async (req, res) => {
+app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (req, res) => {
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
@@ -1760,16 +1765,21 @@ app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
   const rawDnp = Array.isArray(payload.dnpPlayers) ? payload.dnpPlayers : [];
   const dnpPlayerIds = rawDnp.map(p => (typeof p === 'string' ? p : String(p?.id || p?.player_id || ''))).filter(Boolean);
 
+  const logJson   = Array.isArray(payload.gameLog) ? payload.gameLog : [];
+  const snapshots = Array.isArray(payload.periodSnapshots) ? payload.periodSnapshots : [];
+  console.log(`[import] game=${game.id} log_events=${logJson.length} snapshots=${snapshots.length} log_json_kb=${Math.round(JSON.stringify(logJson).length/1024)}`);
+  const t0 = Date.now();
   try {
     importGameResults(game.id, {
       teamAScore:      Number(g.teamAScore || 0),
       teamBScore:      Number(g.teamBScore || 0),
-      periodSnapshots: Array.isArray(payload.periodSnapshots) ? payload.periodSnapshots : [],
-      gameLog:         Array.isArray(payload.gameLog) ? payload.gameLog : [],
+      periodSnapshots: snapshots,
+      gameLog:         logJson,
       dnpPlayerIds,
       playerStats:     (typeof g.playerStats === 'object' && g.playerStats) ? g.playerStats : {},
       season:          game.season,
     });
+    console.log(`[import] done in ${Date.now() - t0}ms`);
     res.json({ ok: true, teamAScore: Number(g.teamAScore), teamBScore: Number(g.teamBScore) });
   } catch (err) {
     console.error('Import error:', err);

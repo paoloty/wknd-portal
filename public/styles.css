@@ -3659,6 +3659,52 @@ a.player-link:hover { color: var(--amber); }
 }
 .agm-import-trigger:not(:disabled):hover { opacity: 0.88; }
 
+.agm-progress-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 420px;
+}
+.agm-progress-wrap.agm-progress-wrap--visible { display: flex; }
+.agm-progress-bar-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.agm-progress-bar-fill {
+  height: 100%;
+  background: var(--amber);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+  width: 0%;
+}
+.agm-progress-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.agm-cover-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.agm-cover-progress-track {
+  flex: 1;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.agm-cover-progress-fill {
+  height: 100%;
+  background: var(--amber);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+  width: 0%;
+}
+
 /* ── Admin edit bar (sticky WP-style save) ───────────────────────────────── */
 .admin-content:has(.agm-edit-bar) {
   padding-top: 0;
