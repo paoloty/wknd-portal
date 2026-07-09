@@ -1973,13 +1973,16 @@ app.get('/teams', (req, res) => {
     playersByTeam[tid].push(p);
   }
 
+  const avgOf = (arr, fn) => arr.length ? Math.round(arr.reduce((s, p) => s + fn(p), 0) / arr.length) : null;
+
   const teamData = teams.map(t => {
-    const plrs    = playersByTeam[t.id] || [];
-    const rated   = plrs.filter(p => p.eff_overall != null);
-    const avgOvr  = rated.length ? Math.round(rated.reduce((s, p) => s + p.eff_overall, 0) / rated.length) : null;
-    const topPlayer = rated[0] ?? null;
-    const rec     = recordMap[t.id] ?? null;
-    return { ...t, wins: rec?.wins ?? null, losses: rec?.losses ?? null, avgOvr, topPlayer, rosterCount: plrs.length };
+    const plrs  = playersByTeam[t.id] || [];
+    const rated = plrs.filter(p => p.eff_overall != null);
+    const avgOvr = avgOf(rated, p => p.eff_overall);
+    const avgOff = avgOf(rated, p => Math.round(((p.eff_scoring ?? 0) + (p.eff_shooting ?? 0)) / 2));
+    const avgDef = avgOf(rated, p => p.eff_defense);
+    const rec    = recordMap[t.id] ?? null;
+    return { ...t, wins: rec?.wins ?? null, losses: rec?.losses ?? null, avgOvr, avgOff, avgDef, rosterCount: plrs.length };
   });
 
   res.send(renderPage(req, {

@@ -9,7 +9,7 @@ function pct(made, miss) {
 }
 
 function fmtPct(val) {
-  return val === null ? 'â€”' : Math.round(val * 100) + '%';
+  return val === null ? '—' : Math.round(val * 100) + '%';
 }
 
 function pergame(total, gp) {

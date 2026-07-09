@@ -1,6 +1,5 @@
 import { escHtml } from './layout.js';
-import { displayPlayerName, teamColor } from './utils.js';
-import { ovrColor } from '../lib/ratings.js';
+import { teamColor } from './utils.js';
 
 function rgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -24,22 +23,11 @@ export function teamsBody({ teams = [] } = {}) {
     const winsDisplay   = t.wins   != null ? String(t.wins)   : '—';
     const lossesDisplay = t.losses != null ? String(t.losses) : '—';
 
-    const bottomLeft = t.avgOvr != null
-      ? `<div class="t2k-ovr">
-           <span class="t2k-ovr__num font-condensed" style="color:${escHtml(color)}">${t.avgOvr}</span>
-           <span class="t2k-ovr__lbl">TEAM OVR</span>
-         </div>`
-      : `<div class="t2k-ovr__lbl" style="font-size:11px">No ratings yet</div>`;
-
-    const topPlayerHtml = t.topPlayer
-      ? `<div style="display:flex;flex-direction:column;gap:2px">
-           <span style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Top Rated</span>
-           <div style="display:flex;align-items:baseline;gap:6px">
-             <span style="font-size:13px;font-weight:600;color:var(--text-primary)">${escHtml(displayPlayerName(t.topPlayer.name))}</span>
-             <span class="font-condensed" style="font-size:18px;font-weight:800;color:${escHtml(ovrColor(t.topPlayer.eff_overall))}">${t.topPlayer.eff_overall}</span>
-           </div>
-         </div>`
-      : '';
+    const statCol = (label, val, highlight = false) =>
+      `<div class="t2k-stat">
+         <span class="t2k-stat__num font-condensed" style="${highlight ? `color:${escHtml(color)}` : 'color:var(--text-primary)'}">${val ?? '—'}</span>
+         <span class="t2k-stat__lbl">${label}</span>
+       </div>`;
 
     return `
 <a href="/teams/${encodeURIComponent(t.id)}" class="t2k-card" style="
@@ -71,9 +59,11 @@ export function teamsBody({ teams = [] } = {}) {
     </div>
 
     <div class="t2k-card__bottom">
-      ${bottomLeft}
-      ${t.avgOvr != null && topPlayerHtml ? `<div class="t2k-bottom__divider"></div>` : ''}
-      ${topPlayerHtml}
+      ${statCol('OFF', t.avgOff)}
+      <div class="t2k-bottom__divider"></div>
+      ${statCol('DEF', t.avgDef)}
+      <div class="t2k-bottom__divider"></div>
+      ${statCol('OVR', t.avgOvr, true)}
       <div class="t2k-roster-count">${t.rosterCount} <span>PLAYERS</span></div>
     </div>
   </div>
@@ -132,9 +122,9 @@ export function teamsBody({ teams = [] } = {}) {
     padding-top: 16px; margin-top: 16px;
     border-top: 1px solid rgba(255,255,255,.05);
   }
-  .t2k-ovr { display: flex; align-items: baseline; gap: 6px; }
-  .t2k-ovr__num { font-size: 36px; font-weight: 900; line-height: 1; }
-  .t2k-ovr__lbl { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em; }
+  .t2k-stat { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .t2k-stat__num { font-size: 32px; font-weight: 900; line-height: 1; }
+  .t2k-stat__lbl { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .1em; }
 
   .t2k-bottom__divider { width: 1px; height: 36px; background: rgba(255,255,255,.08); flex-shrink: 0; }
 
@@ -151,7 +141,6 @@ export function teamsBody({ teams = [] } = {}) {
   }
 </style>
 
-<div class="container">
   <div class="page-content">
 
     <div class="t2k-header">
@@ -164,5 +153,5 @@ export function teamsBody({ teams = [] } = {}) {
     </div>
 
   </div>
-</div>`;
+`;
 }
