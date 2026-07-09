@@ -45,8 +45,9 @@ import {
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
   getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
   getGameSeasons, setPlayerStatus, setPlayerTeam, setPlayerNumber,
-  getCompareCache, setCompareCache,
+  getCompareCache, setCompareCache, incrementCompareViews, getCompareAnalytics,
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
+  deleteUnlockedRating,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, filterPbpForRecap, aiAvailable } from './lib/ai.js';
@@ -58,6 +59,7 @@ import { adminDashboardBody } from './views/admin/dashboard.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
+import { adminComparePage } from './views/admin/compare.js';
 import { adminLayout } from './views/admin/layout.js';
 import { computeRatings } from './lib/ratings.js';
 
@@ -974,7 +976,10 @@ app.get('/api/compare', async (req, res) => {
     const tA = getPlayerTotals(a), tB = getPlayerTotals(b);
 
     const cached = getCompareCache(a, b, tA, tB);
-    if (cached) return res.json({ writeup: cached, cached: true });
+    if (cached) {
+      incrementCompareViews(a, b);
+      return res.json({ writeup: cached, cached: true });
+    }
 
     const pg = (t, field) => {
       const gp = t?.games_played || 0;
@@ -1001,6 +1006,7 @@ ${line(pB, tB)}`;
 
     const { text } = await generateText(prompt, { maxTokens: 160, temperature: 0.92 });
     setCompareCache(a, b, tA, tB, text);
+    incrementCompareViews(a, b);
     res.json({ writeup: text });
   } catch (err) {
     console.error('compare writeup error:', err.message);
@@ -1277,7 +1283,11 @@ app.post('/admin/players/:id/ratings', requireAuth, express.json(), (req, res) =
 
 function computeAndSave(playerId, season, sharedContext = null) {
   const stats = getOnePlayerStats(playerId, season || null);
-  if (!stats) return null;
+  if (!stats || !(stats.games_played > 0)) {
+    // Player has no games — delete any stale rating so they don't appear rated
+    deleteUnlockedRating(playerId, season || '');
+    return null;
+  }
 
   // Gather context — use pre-fetched shared data when batch-recomputing
   const resolvedSeason  = season || String(stats.season ?? '');
@@ -1380,6 +1390,16 @@ app.get('/games/:ref', (req, res) => {
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
     body: gamePage({ game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap })
+  }));
+});
+
+// ── Admin compare analytics ───────────────────────────────────────────────────
+app.get('/admin/compare', requireAuth, (req, res) => {
+  const rows = getCompareAnalytics();
+  res.send(renderAdminPage(req, {
+    title: 'Compare Analytics',
+    currentPath: '/admin/compare',
+    body: adminComparePage({ rows }),
   }));
 });
 

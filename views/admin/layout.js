@@ -9,6 +9,7 @@ const IC = {
   ledger:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3.5" width="12" height="9" rx="1.5"/><path d="M1.5 7h12"/><path d="M5 10.5h2"/></svg>`,
   users:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="4.5" r="2"/><path d="M1 12c0-2.21 1.79-4 4-4"/><circle cx="10.5" cy="5" r="2.5"/><path d="M6 13c0-2.485 2.015-4.5 4.5-4.5S15 10.515 15 13"/></svg>`,
   site:      `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><circle cx="7.5" cy="7.5" r="2"/><path d="M7.5 1.5v4M7.5 9.5v4M1.5 7.5h4M9.5 7.5h4"/></svg>`,
+  compare:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="7.5" r="2.5"/><circle cx="11" cy="7.5" r="2.5"/><path d="M6.5 7.5h2"/></svg>`,
 };
 
 const NAV_GROUPS = [
@@ -20,6 +21,7 @@ const NAV_GROUPS = [
       { href: '/admin/players',   label: 'Players',   icon: 'players' },
       { href: '/admin/teams',     label: 'Teams',     icon: 'teams',     soon: true },
       { href: '/admin/standings', label: 'Standings', icon: 'standings', soon: true },
+      { href: '/admin/compare',   label: 'Compares',  icon: 'compare' },
     ],
   },
   {
