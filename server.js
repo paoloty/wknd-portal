@@ -27,7 +27,7 @@ import {
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
   recordTransaction, confirmTransaction, deleteTransaction,
   getPlayerFinancials, getPlayerTransactions, getPlayerTransactionsBySeason,
-  getSeasonBalances, getSeasonSummary, getLedgerSeasons,
+  getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons,
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
@@ -37,6 +37,7 @@ import {
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
   getPlayerCareerHighs, getPlayerAwards, getGameDnpPlayers, getGameRecords,
   getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames,
+  getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, createGame,
   updatePlayerPhoto, updatePlayer,
@@ -49,6 +50,7 @@ import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
+import { adminSiteBody } from './views/admin/site.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
@@ -994,20 +996,41 @@ app.get('/logout', (req, res) => {
 });
 
 app.get('/admin', requireAuth, (req, res) => {
+  const players        = getAllPlayers();
+  const teams          = getAllTeams();
+  const recentGames    = getRecentPlayedGames();
+  const upcoming       = getScheduledGames();
+  const financeSummary = getAllSummary();
+  const pendingTx      = getPendingTransactions();
+  const underReview    = getGamesUnderReviewCount();
+  const activePlayers  = getActivePlayerCount();
+  const gamesPlayed    = getPlayedGamesCount();
   res.send(renderAdminPage(req, {
     title: 'Dashboard',
     currentPath: '/admin',
-    body: adminDashboardBody(),
+    body: adminDashboardBody({ players, teams, recentGames, upcoming, financeSummary, pendingTx, underReview, activePlayers, gamesPlayed }),
+  }));
+});
+
+app.get('/admin/site', requireAuth, (req, res) => {
+  const seasons = getLedgerSeasons();
+  const quotas  = Object.fromEntries(seasons.map(s => [s, getSeasonQuota(s)]));
+  res.send(renderAdminPage(req, {
+    title: 'Site Settings',
+    currentPath: '/admin/site',
+    body: adminSiteBody({ seasons, quotas }),
   }));
 });
 
 app.get('/admin/ledger', requireAuth, (req, res) => {
   const players  = getAllPlayers();
   const seasons  = getLedgerSeasons();
-  const season   = req.query.season || seasons[0] || '';
+  const season   = req.query.season ?? '';
   const quota    = season ? getSeasonQuota(season) : 0;
-  const summary  = season ? getSeasonSummary(season) : {};
-  const balMap   = season ? Object.fromEntries(getSeasonBalances(season).map(r => [r.player_id, r])) : {};
+  const summary  = season ? getSeasonSummary(season) : getAllSummary();
+  const balMap   = Object.fromEntries(
+    (season ? getSeasonBalances(season) : getAllBalances()).map(r => [r.player_id, r])
+  );
   const allTx    = season ? getAllTransactionsBySeason(season) : getAllTransactions();
   const txByPlayer = {};
   for (const tx of allTx) (txByPlayer[tx.player_id] ??= []).push(tx);

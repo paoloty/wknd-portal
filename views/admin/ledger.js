@@ -232,15 +232,10 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
 </div>
 
 ${season ? `
-<div id="lgr-quota-bar" style="display:flex;align-items:center;gap:10px;padding:10px 0;margin-bottom:4px">
+<div style="display:flex;align-items:center;gap:8px;padding:10px 0;margin-bottom:4px">
   <span style="font-size:12px;color:var(--text-muted)">Season quota:</span>
-  <span id="lgr-quota-val" style="font-size:13px;font-weight:600;color:var(--text-primary)">${quota ? fmt(quota) : 'Not set'}</span>
-  <button id="lgr-quota-edit-btn" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:11px;padding:2px 8px">Edit</button>
-  <span id="lgr-quota-form" hidden style="display:inline-flex;align-items:center;gap:6px">
-    <input type="number" id="lgr-quota-input" min="0" step="0.01" value="${quota || ''}" placeholder="0.00" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font:13px/1 inherit;padding:5px 10px;width:120px;outline:none">
-    <button id="lgr-quota-save" class="admin-btn" style="padding:5px 14px;font-size:11px">Save</button>
-    <button id="lgr-quota-cancel" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px">Cancel</button>
-  </span>
+  <span style="font-size:13px;font-weight:600;color:var(--text-primary)">${quota ? fmt(quota) : 'Not set'}</span>
+  <a href="/admin/site" style="font-size:11px;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:2px 8px;text-decoration:none">Edit in Site Settings</a>
 </div>` : ''}
 
 <div class="agm-filters">
@@ -365,28 +360,6 @@ ${summaryStrip}
       window.location.href = '/admin/ledger' + (s ? '?season=' + encodeURIComponent(s) : '');
     });
   });
-
-  // ── Quota edit ────────────────────────────────────────────────────────────
-  var qEditBtn = document.getElementById('lgr-quota-edit-btn');
-  var qForm    = document.getElementById('lgr-quota-form');
-  var qVal     = document.getElementById('lgr-quota-val');
-  if (qEditBtn) {
-    qEditBtn.addEventListener('click', function() { qForm.hidden = false; qEditBtn.hidden = true; });
-    document.getElementById('lgr-quota-cancel').addEventListener('click', function() { qForm.hidden = true; qEditBtn.hidden = false; });
-    document.getElementById('lgr-quota-save').addEventListener('click', async function() {
-      var amount = parseFloat(document.getElementById('lgr-quota-input').value);
-      if (isNaN(amount)) return;
-      var btn = this; btn.textContent = 'Saving…'; btn.disabled = true;
-      try {
-        var r = await fetch('/admin/ledger/quota/' + encodeURIComponent(currentSeason), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount })
-        });
-        if (!r.ok) throw new Error('Failed');
-        location.reload();
-      } catch(e) { btn.textContent = 'Save'; btn.disabled = false; }
-    });
-  }
 
   // ── Bulk charge ───────────────────────────────────────────────────────────
   var bulkPanel = document.getElementById('lgr-bulk-panel');
