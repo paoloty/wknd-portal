@@ -12,7 +12,7 @@ const ATTRS = [
   { key: 'rebounding',  label: 'Rebounding',  color: '#06b6d4' },
   { key: 'defense',     label: 'Defense',     color: '#22c55e' },
   { key: 'iq',          label: 'IQ',          color: '#94a3b8' },
-  { key: 'athleticism', label: 'Athleticism', color: '#22c55e' },
+  { key: 'usage',       label: 'Usage',       color: '#22c55e' },
 ];
 
 function ratingBar(val, color) {

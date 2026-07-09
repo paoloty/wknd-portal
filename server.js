@@ -46,6 +46,7 @@ import {
   getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
   getGameSeasons, setPlayerStatus, setPlayerTeam, setPlayerNumber,
   getCompareCache, setCompareCache,
+  getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, filterPbpForRecap, aiAvailable } from './lib/ai.js';
@@ -1266,7 +1267,7 @@ app.post('/admin/players/:id/ratings', requireAuth, express.json(), (req, res) =
   if (!player) return res.status(404).json({ error: 'Not found' });
   const { season, ...fields } = req.body;
   const ovr = {};
-  for (const key of ['scoring','shooting','rebounding','playmaking','defense','iq','athleticism','overall']) {
+  for (const key of ['scoring','shooting','rebounding','playmaking','defense','iq','usage','overall']) {
     const val = fields[key + '_ovr'];
     ovr[key + '_ovr'] = val !== '' && val !== undefined && val !== null ? parseInt(val, 10) : null;
   }
@@ -1274,12 +1275,33 @@ app.post('/admin/players/:id/ratings', requireAuth, express.json(), (req, res) =
   res.json({ ok: true });
 });
 
-function computeAndSave(playerId, season) {
+function computeAndSave(playerId, season, sharedContext = null) {
   const stats = getOnePlayerStats(playerId, season || null);
   if (!stats) return null;
-  const r = computeRatings(stats);
+
+  // Gather context — use pre-fetched shared data when batch-recomputing
+  const resolvedSeason  = season || String(stats.season ?? '');
+  const totalSeasonGames = sharedContext?.totalSeasonGames ?? getTotalSeasonGames(resolvedSeason);
+  const teamTotalsMap    = sharedContext?.teamTotalsMap   ?? getTeamRatingTotals(resolvedSeason);
+  const player           = sharedContext?.playerTeamMap?.[playerId] ?? getPlayerWithTeam(playerId);
+  const teamTotals       = player?.team_id ? (teamTotalsMap[player.team_id] ?? null) : null;
+  const recentStats      = getPlayerRecentStats(playerId, resolvedSeason);
+  const gamePts          = getPlayerGamePts(playerId, resolvedSeason);
+  const winRate          = getPlayerWinRate(playerId, resolvedSeason);
+
+  const r = computeRatings(stats, { totalSeasonGames, teamTotals, recentStats, gamePts, winRate });
   upsertComputedRating(playerId, season || '', r);
   return r;
+}
+
+function buildSharedContext(season) {
+  const resolvedSeason   = season || '';
+  const totalSeasonGames = getTotalSeasonGames(resolvedSeason);
+  const teamTotalsMap    = getTeamRatingTotals(resolvedSeason);
+  const players          = getAllPlayers();
+  // pre-build team lookup so we don't hit DB per player
+  const playerTeamMap    = Object.fromEntries(players.map(p => [p.id, p]));
+  return { totalSeasonGames, teamTotalsMap, playerTeamMap };
 }
 
 app.post('/admin/players/:id/recompute', requireAuth, express.json(), (req, res) => {
@@ -1293,9 +1315,10 @@ app.post('/admin/players/:id/recompute', requireAuth, express.json(), (req, res)
 app.post('/admin/players/recompute-all', requireAuth, express.json(), (req, res) => {
   const season  = req.body?.season || '';
   const players = getAllPlayers();
+  const ctx     = buildSharedContext(season);
   let count = 0;
   for (const p of players) {
-    const r = computeAndSave(p.id, season);
+    const r = computeAndSave(p.id, season, ctx);
     if (r) count++;
   }
   res.json({ ok: true, count });
@@ -1781,6 +1804,20 @@ app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
     });
     console.log(`[import] done in ${Date.now() - t0}ms`);
     res.json({ ok: true, teamAScore: Number(g.teamAScore), teamBScore: Number(g.teamBScore) });
+
+    // Auto-recompute ratings for all players in this game (non-blocking, after response)
+    setImmediate(() => {
+      try {
+        const season = String(game.season ?? '');
+        const ctx    = buildSharedContext(season);
+        const playerIds = Object.keys(
+          (typeof g.playerStats === 'object' && g.playerStats) ? g.playerStats : {}
+        );
+        for (const pid of playerIds) computeAndSave(pid, season, ctx);
+      } catch (e) {
+        console.error('[import] auto-recompute error:', e.message);
+      }
+    });
   } catch (err) {
     console.error('Import error:', err);
     res.status(500).json({ error: 'Import failed: ' + err.message });

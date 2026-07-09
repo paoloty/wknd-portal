@@ -66,7 +66,7 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
       <td class="admin-td" style="text-align:center">${ovrBadge(p.eff_overall)}</td>
       <td class="admin-td">${miniBar(off, '#f59332')}</td>
       <td class="admin-td">${miniBar(p.eff_defense, '#06b6d4')}</td>
-      <td class="admin-td">${miniBar(p.eff_athleticism, '#22c55e')}</td>
+      <td class="admin-td">${miniBar(p.eff_usage, '#22c55e')}</td>
       <td class="admin-td">${miniBar(p.eff_iq, '#94a3b8')}</td>
       <td class="admin-td agm-td--action">
         <a href="/admin/players/${escHtml(p.id)}${season ? '?season='+encodeURIComponent(season) : ''}" class="agm-edit-link">Edit ${ICON_CHEVRON_R}</a>
@@ -107,7 +107,7 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
         <th class="admin-th" style="text-align:center">OVR</th>
         <th class="admin-th">OFF</th>
         <th class="admin-th">DEF</th>
-        <th class="admin-th">ATH</th>
+        <th class="admin-th">USG</th>
         <th class="admin-th">IQ</th>
         <th class="admin-th"></th>
       </tr>
