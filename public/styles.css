@@ -2988,6 +2988,13 @@ a.player-link:hover { color: var(--amber); }
 .pt-table tbody tr:hover .pt-edit-btn { opacity: 1; }
 .pt-edit-btn:hover { color: var(--amber); border-color: var(--amber); }
 
+/* ── Compare mode ──────────────────────────────────────────────────────────── */
+.pt-body--compare tr { cursor: pointer; }
+.pt-body--compare tr:hover { background: rgba(245,147,50,0.04); }
+.pt-body--compare tr td:first-child a { pointer-events: none; }
+.pt-row--selected { background: rgba(245,147,50,0.06) !important; box-shadow: inset 3px 0 0 var(--amber); }
+.pt-row--selected td:first-child { background: rgba(245,147,50,0.06) !important; }
+
 /* Non-stat info cells */
 .pt-table td.pt-num {
   font-size: 12px;

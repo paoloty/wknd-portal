@@ -963,6 +963,45 @@ app.get('/api/player/:id/photo', async (req, res) => {
   }
 });
 
+app.get('/api/compare', async (req, res) => {
+  const { a, b } = req.query;
+  if (!a || !b) return res.status(400).json({ error: 'Missing player IDs' });
+  try {
+    const pA = getPlayerWithTeam(a), pB = getPlayerWithTeam(b);
+    if (!pA || !pB) return res.status(404).json({ error: 'Player not found' });
+    const tA = getPlayerTotals(a), tB = getPlayerTotals(b);
+
+    const pg = (t, field) => {
+      const gp = t?.games_played || 0;
+      return gp > 0 ? ((t?.[field] || 0) / gp).toFixed(1) : '0.0';
+    };
+    const fgPct = (t) => {
+      if (!t) return null;
+      const made = (t.fg2m || 0) + (t.fg3m || 0);
+      const att  = made + (t.fg2m_miss || 0) + (t.fg3m_miss || 0);
+      return att > 0 ? Math.round(made / att * 100) + '%' : null;
+    };
+    const line = (p, t) => {
+      const name = displayPlayerName(p.name);
+      const team = p.team_name || p.team_id || '';
+      const gp   = t?.games_played || 0;
+      const fg   = fgPct(t);
+      return `${name} (${team}): ${pg(t,'pts')} PPG, ${pg(t,'reb')} RPG, ${pg(t,'ast')} APG, ${pg(t,'stl')} SPG, ${pg(t,'blk')} BPG${fg ? ', ' + fg + ' FG%' : ''}, ${gp} GP`;
+    };
+
+    const prompt = `You are a funny, slightly savage sports commentator for WKND Basketball League, a recreational league. Compare these two players in 2-3 sentences. Be playfully trash-talking — roast their weaknesses, celebrate their strengths — but keep it fun and good-natured, not cruel. Be specific with the numbers. Refer to each player by their first name only — no nicknames, no last names. No emojis. Output just the paragraph, no labels or titles.
+
+${line(pA, tA)}
+${line(pB, tB)}`;
+
+    const { text } = await generateText(prompt, { maxTokens: 160, temperature: 0.92 });
+    res.json({ writeup: text });
+  } catch (err) {
+    console.error('compare writeup error:', err.message);
+    res.status(503).json({ error: 'AI unavailable' });
+  }
+});
+
 app.get('/history/game/:id', (req, res) => {
   res.redirect(301, `/games/${req.params.id}`);
 });

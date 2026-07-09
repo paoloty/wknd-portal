@@ -50,7 +50,7 @@ function playerRow(p, isAdmin = false) {
   const d      = (v) => v !== null ? v.toFixed(4) : '0';
   const posKey = positions.map(pos => `|${pos}|`).join('');
 
-  return `<tr data-name="${escHtml(name.toLowerCase())}" data-team="${escHtml(teamName)}" data-pos="${escHtml(posKey)}" data-num="${p.number ? parseInt(p.number, 10) || 0 : 0}" data-gp="${gp}" data-ppg="${d(ppg)}" data-rpg="${d(rpg)}" data-apg="${d(apg)}" data-spg="${d(spg)}" data-bpg="${d(bpg)}" data-tpg="${d(tpg)}" data-fgp="${d(fgp)}" data-tpp="${d(tpp)}" data-ftp="${d(ftp)}">
+  return `<tr data-name="${escHtml(name.toLowerCase())}" data-team="${escHtml(teamName)}" data-pos="${escHtml(posKey)}" data-num="${p.number ? parseInt(p.number, 10) || 0 : 0}" data-gp="${gp}" data-ppg="${d(ppg)}" data-rpg="${d(rpg)}" data-apg="${d(apg)}" data-spg="${d(spg)}" data-bpg="${d(bpg)}" data-tpg="${d(tpg)}" data-fgp="${d(fgp)}" data-tpp="${d(tpp)}" data-ftp="${d(ftp)}" data-id="${escHtml(p.id)}" data-color="${escHtml(color)}" data-display-name="${escHtml(name)}">
   <td class="pt-player">
     <a href="/players/${encodeURIComponent(p.id)}" class="pt-player-link">
       <div class="pt-avatar" style="border-color:${color}">
@@ -71,9 +71,9 @@ function playerRow(p, isAdmin = false) {
       data-status="${escHtml(p.status || 'active')}"
     >${ICON_PENCIL}</button>` : ''}
   </td>
-  <td class=”pt-num”>${p.number ? escHtml(String(p.number)) : '—'}</td>
-  <td class=”pt-pos”>${positions.length ? escHtml(positions.slice(0, 2).join(' · ')) : '—'}</td>
-  <td class=”pt-stat”>${gp || '—'}</td>
+  <td class="pt-num">${p.number ? escHtml(String(p.number)) : '—'}</td>
+  <td class="pt-pos">${positions.length ? escHtml(positions.slice(0, 2).join(' · ')) : '—'}</td>
+  <td class="pt-stat">${gp || '—'}</td>
   <td class="pt-stat">${fmtPg(ppg)}</td>
   <td class="pt-stat">${fmtPg(rpg)}</td>
   <td class="pt-stat">${fmtPg(apg)}</td>
@@ -126,6 +126,12 @@ export function playersPage({ players, isAdmin = false }) {
   <div class="pt-toolbar">
     ${teamGroup}
     ${posGroup}
+    <div class="pt-toolbar__group">
+      <button class="pt-pill" id="pt-cmp-btn" title="Select 2 players to compare" style="display:inline-flex;align-items:center;gap:5px">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 2h3.5v9H2zM7.5 2H11v9H7.5z"/></svg>
+        Compare
+      </button>
+    </div>
     <div class="pt-search-wrap">
       <svg class="pt-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
         <circle cx="6.5" cy="6.5" r="4.5"/><path d="M10.5 10.5 14 14"/>
@@ -157,6 +163,21 @@ export function playersPage({ players, isAdmin = false }) {
       </tbody>
     </table>
     <div class="pt-empty" id="pt-empty" style="display:none">No players match your search.</div>
+  </div>
+</div>
+
+<div id="pt-cmp-bar" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:900;background:var(--surface);border-top:1px solid var(--border);padding:12px 20px;align-items:center;gap:12px;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
+  <span style="font-size:13px;font-weight:600;color:var(--text-primary)">Compare Players</span>
+  <div id="pt-cmp-slots" style="display:flex;gap:8px;flex:1"></div>
+  <span id="pt-cmp-hint" style="font-size:12px;color:var(--text-muted)">Select 2 players from the table</span>
+  <button id="pt-cmp-go" disabled class="pt-pill pt-pill--active" style="padding:6px 16px;font-size:12px;font-weight:700;opacity:.45">Compare →</button>
+  <button id="pt-cmp-cancel" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:20px;line-height:1;padding:0 4px">&times;</button>
+</div>
+
+<div id="pt-cmp-modal" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(2,8,23,.88);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 16px">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;position:relative;margin:auto">
+    <button id="pt-cmp-close" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:22px;line-height:1;z-index:1">&times;</button>
+    <div id="pt-cmp-content"></div>
   </div>
 </div>
 
@@ -231,7 +252,7 @@ ${isAdmin ? `<div id="pt-edit-modal" style="display:none;position:fixed;inset:0;
     empty.style.display = visible.length ? 'none' : '';
   }
 
-  document.querySelectorAll('.pt-pill').forEach(function(btn) {
+  document.querySelectorAll('.pt-pill[data-group]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var group = btn.dataset.group, val = btn.dataset.val;
       var set = group === 'team' ? selTeams : selPos;
@@ -261,7 +282,219 @@ ${isAdmin ? `<div id="pt-edit-modal" style="display:none;position:fixed;inset:0;
 
   update();
 
-  ${isAdmin ? `// â”€â”€ Edit player modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Compare mode ──────────────────────────────────────────────────────────────
+  var cmpMode    = false;
+  var cmpPicked  = [];
+  var cmpBtn     = document.getElementById('pt-cmp-btn');
+  var cmpBar     = document.getElementById('pt-cmp-bar');
+  var cmpGo      = document.getElementById('pt-cmp-go');
+  var cmpCancel  = document.getElementById('pt-cmp-cancel');
+  var cmpSlots   = document.getElementById('pt-cmp-slots');
+  var cmpHint    = document.getElementById('pt-cmp-hint');
+  var cmpModal   = document.getElementById('pt-cmp-modal');
+  var cmpContent = document.getElementById('pt-cmp-content');
+  var cmpClose   = document.getElementById('pt-cmp-close');
+
+  function enterCompare() {
+    cmpMode = true; cmpPicked = [];
+    cmpBtn.classList.add('pt-pill--active');
+    cmpBar.style.display = 'flex';
+    body.classList.add('pt-body--compare');
+    updateCmpBar();
+  }
+  function exitCompare() {
+    cmpMode = false; cmpPicked = [];
+    cmpBtn.classList.remove('pt-pill--active');
+    cmpBar.style.display = 'none';
+    body.classList.remove('pt-body--compare');
+    rows.forEach(function(r) { r.classList.remove('pt-row--selected'); });
+  }
+  function updateCmpBar() {
+    var n = cmpPicked.length;
+    cmpSlots.innerHTML = cmpPicked.map(function(r) {
+      var col = r.dataset.color;
+      var nm  = r.dataset.displayName;
+      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--text-primary);background:var(--bg);border:1px solid ' + col + '44;border-radius:6px;padding:3px 10px"><span class="team-dot" style="background:' + col + ';width:7px;height:7px"></span>' + nm + '</span>';
+    }).join('');
+    cmpHint.style.display = n === 2 ? 'none' : '';
+    cmpGo.disabled = n !== 2;
+    cmpGo.style.opacity = n === 2 ? '1' : '.45';
+  }
+
+  cmpBtn.addEventListener('click', function() {
+    cmpMode ? exitCompare() : enterCompare();
+  });
+  cmpCancel.addEventListener('click', exitCompare);
+
+  rows.forEach(function(r) {
+    r.addEventListener('click', function(e) {
+      if (!cmpMode) return;
+      if (e.target.closest('button')) return;
+      e.preventDefault();
+      if (r.classList.contains('pt-row--selected')) {
+        r.classList.remove('pt-row--selected');
+        cmpPicked = cmpPicked.filter(function(x) { return x !== r; });
+      } else if (cmpPicked.length < 2) {
+        r.classList.add('pt-row--selected');
+        cmpPicked.push(r);
+        if (cmpPicked.length === 2) {
+          // auto-open comparison after brief highlight
+          setTimeout(openCmpModal, 220);
+        }
+      }
+      updateCmpBar();
+    });
+  });
+
+  cmpGo.addEventListener('click', openCmpModal);
+  cmpClose.addEventListener('click', function() { cmpModal.style.display = 'none'; });
+  cmpModal.addEventListener('click', function(e) { if (e.target === cmpModal) cmpModal.style.display = 'none'; });
+
+  function fmtStat(val, col) {
+    var v = parseFloat(val);
+    if (!val || val === '0' || isNaN(v) || v === 0) return '—';
+    if (col === 'fgp' || col === 'tpp' || col === 'ftp') return Math.round(v * 100) + '%';
+    if (col === 'gp') return String(Math.round(v));
+    return v.toFixed(1);
+  }
+
+  function generateWriteup(dA, dB, nameA, nameB) {
+    var ppgA = parseFloat(dA.ppg) || 0, ppgB = parseFloat(dB.ppg) || 0;
+    var rpgA = parseFloat(dA.rpg) || 0, rpgB = parseFloat(dB.rpg) || 0;
+    var apgA = parseFloat(dA.apg) || 0, apgB = parseFloat(dB.apg) || 0;
+    var spgA = parseFloat(dA.spg) || 0, spgB = parseFloat(dB.spg) || 0;
+    var bpgA = parseFloat(dA.bpg) || 0, bpgB = parseFloat(dB.bpg) || 0;
+    var fgpA = parseFloat(dA.fgp) || 0, fgpB = parseFloat(dB.fgp) || 0;
+    var gpA  = parseInt(dA.gp)  || 0,   gpB  = parseInt(dB.gp)  || 0;
+    if (gpA === 0 && gpB === 0) return '';
+    var lines = [];
+
+    // Scoring
+    if (ppgA > 0 || ppgB > 0) {
+      if (Math.abs(ppgA - ppgB) < 1.0) {
+        lines.push(nameA + ' and ' + nameB + ' produce at a similar scoring clip, both hovering around ' + ((ppgA + ppgB) / 2).toFixed(1) + ' PPG.');
+      } else {
+        var scorer = ppgA > ppgB ? nameA : nameB;
+        var other  = ppgA > ppgB ? nameB : nameA;
+        lines.push(scorer + ' brings more firepower offensively, averaging ' + Math.max(ppgA, ppgB).toFixed(1) + ' PPG to ' + other + "'s " + Math.min(ppgA, ppgB).toFixed(1) + '.');
+      }
+    }
+
+    // Boards vs. Assists
+    var rebDiff = rpgA - rpgB, astDiff = apgA - apgB;
+    var rebWin = Math.abs(rebDiff) >= 0.8 ? (rebDiff > 0 ? nameA : nameB) : null;
+    var astWin = Math.abs(astDiff) >= 0.6 ? (astDiff > 0 ? nameA : nameB) : null;
+    if (rebWin && astWin && rebWin !== astWin) {
+      var rHi = rebWin === nameA ? rpgA : rpgB;
+      var aHi = astWin === nameA ? apgA : apgB;
+      lines.push(rebWin + ' owns the glass with ' + rHi.toFixed(1) + ' RPG, while ' + astWin + ' runs the offense better at ' + aHi.toFixed(1) + ' APG.');
+    } else if (rebWin) {
+      var rHi = rebWin === nameA ? rpgA : rpgB, rLo = rebWin === nameA ? rpgB : rpgA;
+      var rOther = rebWin === nameA ? nameB : nameA;
+      lines.push(rebWin + ' is the superior rebounder, pulling down ' + rHi.toFixed(1) + ' boards compared to ' + rOther + "'s " + rLo.toFixed(1) + '.');
+    } else if (astWin) {
+      var aHi = astWin === nameA ? apgA : apgB, aLo = astWin === nameA ? apgB : apgA;
+      var aOther = astWin === nameA ? nameB : nameA;
+      lines.push(astWin + ' is the better playmaker, dishing out ' + aHi.toFixed(1) + ' APG to ' + aOther + "'s " + aLo.toFixed(1) + '.');
+    }
+
+    // Defense (combined steals + blocks)
+    var defA = spgA + bpgA, defB = spgB + bpgB;
+    if (Math.abs(defA - defB) >= 0.5 && (defA > 0 || defB > 0)) {
+      var defWin = defA > defB ? nameA : nameB;
+      lines.push(defWin + ' is the more disruptive defender, averaging ' + Math.max(defA, defB).toFixed(1) + ' combined steals and blocks per game.');
+    }
+
+    // Shooting efficiency
+    if ((fgpA > 0 || fgpB > 0) && Math.abs(fgpA - fgpB) >= 0.05) {
+      var effWin = fgpA > fgpB ? nameA : nameB;
+      var effHi = Math.round(Math.max(fgpA, fgpB) * 100);
+      var effLo = Math.round(Math.min(fgpA, fgpB) * 100);
+      lines.push(effWin + ' converts from the field at a higher rate (' + effHi + '% vs. ' + effLo + '%).');
+    }
+
+    return lines.join(' ');
+  }
+
+  function openCmpModal() {
+    if (cmpPicked.length !== 2) return;
+    var rA = cmpPicked[0], rB = cmpPicked[1];
+    var dA = rA.dataset, dB = rB.dataset;
+    var colA = dA.color, colB = dB.color;
+    var nameA = dA.displayName, nameB = dB.displayName;
+    var teamA = dA.team, teamB = dB.team;
+    var idA = dA.id, idB = dB.id;
+
+    var STATS = [
+      { label: 'PPG', col: 'ppg' },
+      { label: 'RPG', col: 'rpg' },
+      { label: 'APG', col: 'apg' },
+      { label: 'SPG', col: 'spg' },
+      { label: 'BPG', col: 'bpg' },
+      { label: 'TO',  col: 'tpg' },
+      { label: 'FG%', col: 'fgp' },
+      { label: '3P%', col: 'tpp' },
+      { label: 'FT%', col: 'ftp' },
+      { label: 'GP',  col: 'gp'  },
+    ];
+
+    var rowsHtml = STATS.map(function(s) {
+      var vA = parseFloat(dA[s.col] || '0') || 0;
+      var vB = parseFloat(dB[s.col] || '0') || 0;
+      var total = vA + vB;
+      var wA = total > 0 ? (vA / total * 100).toFixed(1) : 50;
+      var wB = total > 0 ? (vB / total * 100).toFixed(1) : 50;
+      return '<div class="comp-row">'
+        + '<div class="comp-val">' + fmtStat(dA[s.col], s.col) + '</div>'
+        + '<div class="comp-label">' + s.label + '</div>'
+        + '<div class="comp-val comp-val--b">' + fmtStat(dB[s.col], s.col) + '</div>'
+        + '<div class="comp-bars">'
+        + '<div class="comp-bars__half comp-bars__half--a"><div class="comp-bar" style="width:' + wA + '%;background:' + colA + '"></div></div>'
+        + '<div class="comp-bars__half comp-bars__half--b"><div class="comp-bar" style="width:' + wB + '%;background:' + colB + '"></div></div>'
+        + '</div></div>';
+    }).join('');
+
+    var playerCard = function(name, team, color, id, align) {
+      var right = align === 'right';
+      return '<div style="display:flex;justify-content:' + (right ? 'flex-end' : 'flex-start') + '">'
+        + '<div class="pt-avatar" style="border-color:' + color + '">'
+        + '<img src="/api/player/' + encodeURIComponent(id) + '/photo" alt="" onerror="this.style.display=\\'none\\'">'
+        + '</div>'
+        + '</div>';
+    };
+
+    var writeup = generateWriteup(dA, dB, nameA, nameB);
+
+    cmpContent.innerHTML =
+      '<div style="padding:20px 20px 0;display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center">'
+      + playerCard(nameA, teamA, colA, idA, 'right')
+      + '<div style="font-family:\\'Saira Condensed\\',sans-serif;font-size:28px;font-weight:800;color:var(--amber);text-align:center;padding:0 4px">VS</div>'
+      + playerCard(nameB, teamB, colB, idB, 'left')
+      + '</div>'
+      + '<p id="cmp-writeup" style="margin:12px 20px 0;font-size:13px;line-height:1.65;color:var(--text-muted);text-align:center"></p>'
+      + '<div class="comp-tab" style="padding:12px 20px 0">'
+      + '<div class="comp-teams" style="padding:8px 0;border-top:1px solid var(--border)">'
+      + '<div class="comp-team-name" style="color:' + colA + '">' + nameA.toUpperCase() + '</div>'
+      + '<div class="comp-team-label">STAT</div>'
+      + '<div class="comp-team-name comp-team-name--b" style="color:' + colB + '">' + nameB.toUpperCase() + '</div>'
+      + '</div>'
+      + rowsHtml
+      + '</div>';
+
+    cmpModal.style.display = 'flex';
+
+    var wupEl = cmpContent.querySelector('#cmp-writeup');
+    if (wupEl) {
+      fetch('/api/compare?a=' + encodeURIComponent(idA) + '&b=' + encodeURIComponent(idB))
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (wupEl.parentNode) wupEl.textContent = (data && data.writeup) ? data.writeup : writeup;
+        })
+        .catch(function() { if (wupEl.parentNode) wupEl.textContent = writeup; });
+    }
+  }
+
+  ${isAdmin ? `// ── Edit player modal â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   var modal     = document.getElementById('pt-edit-modal');
   var modalForm = document.getElementById('pt-edit-form');
   var modalMsg  = document.getElementById('pt-edit-msg');
