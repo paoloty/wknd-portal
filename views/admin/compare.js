@@ -3,7 +3,8 @@ import { displayPlayerName } from '../utils.js';
 
 function fmtDate(ts) {
   if (!ts) return '—';
-  return new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const ms = ts > 1e10 ? ts : ts * 1000;
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function fmtViews(n) {

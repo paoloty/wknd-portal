@@ -1006,7 +1006,6 @@ ${line(pB, tB)}`;
 
     const { text } = await generateText(prompt, { maxTokens: 160, temperature: 0.92 });
     setCompareCache(a, b, tA, tB, text);
-    incrementCompareViews(a, b);
     res.json({ writeup: text });
   } catch (err) {
     console.error('compare writeup error:', err.message);
