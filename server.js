@@ -1473,6 +1473,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
   if (game.scheduled) return res.status(400).json({ error: 'Game not yet imported.' });
 
   const stats      = getGameDetailStats(game.id);
+  const potgId     = req.body?.player_id || game.manual_potg_player_id || derivePotgPlayerId(game, stats);
   const dnpPlayers = getGameDnpPlayers(game.id);
   const qScores    = extractQuarterScores(game);
   const records    = getTeamRecords();
@@ -1541,6 +1542,16 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
     return `${displayPlayerName(p.name)} (${p.team_name}): ${p.pts}pts/${p.reb}reb/${p.ast}ast/${p.stl}stl/${p.blk}blk${pct}`;
   }).join('\n');
 
+  const potgStat = potgId ? stats.find(s => s.player_id === potgId) : null;
+  const potgLine = potgStat
+    ? (() => {
+        const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0);
+        const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0);
+        const pct = fga > 0 ? ` (${Math.round(fgm/fga*100)}% FG)` : '';
+        return `${displayPlayerName(potgStat.name)} (${potgStat.team_name}): ${potgStat.pts}pts/${potgStat.reb}reb/${potgStat.ast}ast${pct}`;
+      })()
+    : null;
+
   const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "fired on all cylinders," "gave it their all," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "nothing short of spectacular," "competitive matchup," "hard-fought," "gritty," "intense battle," "back-and-forth affair," "close contest," "dominant performance," "statement win," "impressive outing," "strong showing"';
 
   // Gather recent recap headlines to prevent repetition
@@ -1582,6 +1593,9 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
     ``,
     `QUARTER-BY-QUARTER (running score):`,
     qLines.length ? qLines.join('\n') : '(quarter scores unavailable)',
+    ``,
+    potgLine ? `PLAYER OF THE GAME: ${potgLine}` : '',
+    potgLine ? `(This player must be featured prominently in the recap — reference their specific stats in paragraphs 2 and/or 3.)` : '',
     ``,
     `TOP PERFORMERS:`,
     topPerformers || '(no stats)',

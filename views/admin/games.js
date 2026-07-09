@@ -664,7 +664,8 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
       btnGenRecap.disabled = true; btnGenRecap.textContent = 'Generating…';
       status.textContent = ''; status.className = 'agm-gen-status';
       try {
-        var r = await fetch('/admin/games/${id}/generate-recap', { method: 'POST' });
+        var potgSel = document.getElementById('val-potg-player');
+        var r = await fetch('/admin/games/${id}/generate-recap', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ player_id: potgSel ? potgSel.value : null }) });
         var j = await r.json();
         if (!r.ok) throw new Error(j.error || 'AI error');
         quill.clipboard.dangerouslyPasteHTML(
