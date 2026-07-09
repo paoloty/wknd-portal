@@ -141,7 +141,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
   ${seasons.length > 1 ? `<div class="agm-filter-group">${seasonPills}</div>` : ''}
 </div>
 
-<div class="card" style="padding:0;overflow:hidden">
+<div class="card admin-table-scroll" style="padding:0">
   <table class="admin-table">
     <thead>
       <tr>

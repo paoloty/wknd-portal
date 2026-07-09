@@ -64,7 +64,7 @@ function adminRegistrationTable(rows) {
     <td class="admin-td" style="color:var(--text-muted);font-size:12px">${fmt(r.created_at)}</td>
   </tr>`).join('');
 
-  return `<div class="card" style="padding:0;overflow:hidden">
+  return `<div class="card admin-table-scroll" style="padding:0">
   <table class="admin-table">
     <thead>
       <tr>

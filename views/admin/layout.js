@@ -70,16 +70,22 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
 <body class="admin-body">
   <div class="admin-shell">
     <header class="admin-topbar">
-      <a href="/admin" class="admin-topbar__brand">
-        <span class="admin-topbar__badge">W</span>
-        <span class="admin-topbar__name">WKND</span>
-        <span class="admin-topbar__sep">|</span>
-        <span class="admin-topbar__sub">Admin</span>
-      </a>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="admin-topbar__hamburger" id="admin-menu-btn" aria-label="Open menu">
+          <span></span><span></span><span></span>
+        </button>
+        <a href="/admin" class="admin-topbar__brand">
+          <span class="admin-topbar__badge">W</span>
+          <span class="admin-topbar__name">WKND</span>
+          <span class="admin-topbar__sep">|</span>
+          <span class="admin-topbar__sub">Admin</span>
+        </a>
+      </div>
       <a href="/logout" class="admin-topbar__logout">Sign out</a>
     </header>
     <div class="admin-layout">
-      <nav class="admin-sidebar">
+      <div class="admin-overlay" id="admin-overlay"></div>
+      <nav class="admin-sidebar" id="admin-sidebar">
         <div class="admin-sb__nav">${navHtml}</div>
         <div class="admin-sb__footer">
           <a href="/" target="_blank" class="admin-sb__portal">
@@ -92,6 +98,17 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
         ${body}
       </main>
     </div>
+    <script>
+    (function() {
+      var btn      = document.getElementById('admin-menu-btn');
+      var sidebar  = document.getElementById('admin-sidebar');
+      var overlay  = document.getElementById('admin-overlay');
+      function open()  { sidebar.classList.add('is-open');  overlay.classList.add('is-open');  document.body.style.overflow = 'hidden'; }
+      function close() { sidebar.classList.remove('is-open'); overlay.classList.remove('is-open'); document.body.style.overflow = ''; }
+      btn.addEventListener('click', function() { sidebar.classList.contains('is-open') ? close() : open(); });
+      overlay.addEventListener('click', close);
+    })();
+    </script>
   </div>
 </body>
 </html>`;

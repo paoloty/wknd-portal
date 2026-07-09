@@ -1092,6 +1092,7 @@ body {
   left: 44px;
   z-index: 2;
   background: var(--surface);
+  min-width: 0;
 }
 /* Sticky shadow via gradient (consistent with other tables) */
 .standings-cell--team::after {
@@ -1149,7 +1150,8 @@ body {
   border-radius: 4px;
   padding: 1px 5px;
 }
-.standings-team-name { min-width: 0; }
+.standings-team-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.standings-badge { flex-shrink: 0; }
 /* Team badge for stat panels (no player avatar) */
 .st-team-badge {
   width: 36px; height: 36px; border-radius: 50%;
@@ -3788,18 +3790,98 @@ a.player-link:hover { color: var(--amber); }
   .agm-game-header__meta { flex-wrap: wrap; row-gap: 6px; }
 }
 
+/* ── Admin hamburger + mobile drawer ──────────────────────────────────────── */
+.admin-topbar__hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.admin-topbar__hamburger span {
+  display: block;
+  height: 2px;
+  background: var(--text-muted);
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+.admin-topbar__hamburger:hover span { background: var(--text); }
+
+.admin-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(2,8,23,.6);
+  backdrop-filter: blur(2px);
+  z-index: 99;
+}
+.admin-overlay.is-open { display: block; }
+
+/* ── Responsive admin tables ──────────────────────────────────────────────── */
+.admin-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.admin-table-scroll .admin-table { min-width: 560px; }
+
+/* Frozen first column with shadow */
+.admin-table-scroll .admin-table th:first-child,
+.admin-table-scroll .admin-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.admin-table-scroll .admin-table th:first-child::after,
+.admin-table-scroll .admin-table td:first-child::after {
+  content: '';
+  position: absolute;
+  top: 0; right: -14px; bottom: 0;
+  width: 14px;
+  background: linear-gradient(to right, rgba(0,0,0,0.22), transparent);
+  pointer-events: none;
+}
+.admin-table-scroll .admin-table-row:hover td:first-child {
+  background: var(--surface);
+}
+
+@media (max-width: 900px) {
+  .admin-content { --content-pad: 24px; }
+  .agm-wp-layout { grid-template-columns: 1fr; }
+  .agm-wp-sidebar { position: static; }
+  .agm-game-header__meta { flex-wrap: wrap; row-gap: 6px; }
+  .agm-filters { flex-wrap: wrap; }
+  .agm-toolbar { flex-wrap: wrap; gap: 10px; }
+}
+
 @media (max-width: 768px) {
-  .admin-sidebar { display: none; }
+  .admin-topbar__hamburger { display: flex; }
+  .admin-sidebar {
+    position: fixed;
+    left: 0; top: 48px; bottom: 0;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 4px 0 24px rgba(0,0,0,.4);
+  }
+  .admin-sidebar.is-open { transform: translateX(0); display: flex; }
   .admin-content { --content-pad: 16px; }
   .agm-game-header { padding: 16px; }
   .agm-game-header__teams { font-size: 13px; gap: 12px; }
   .agm-game-header__score { font-size: 22px; min-width: 28px; }
+  .agm-edit-bar { padding: 0 16px; }
+  .agm-edit-bar__back span { display: none; }
 }
 
 @media (max-width: 480px) {
   .admin-content { --content-pad: 12px; }
   .agm-game-header__teams { flex-direction: column; gap: 10px; }
   .agm-vs { display: none; }
+  .agm-toolbar__right { width: 100%; }
+  .agm-search { flex: 1; }
 }
 
 /* ── Quill dark theme ────────────────────────────────────────────────────── */

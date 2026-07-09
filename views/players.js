@@ -17,7 +17,7 @@ function pergame(total, gp) {
 }
 
 function fmtPg(val) {
-  return val === null ? 'â€”' : val.toFixed(1);
+  return val === null ? '—' : val.toFixed(1);
 }
 
 function parsePositions(raw) {
@@ -71,9 +71,9 @@ function playerRow(p, isAdmin = false) {
       data-status="${escHtml(p.status || 'active')}"
     >${ICON_PENCIL}</button>` : ''}
   </td>
-  <td class="pt-num">${p.number ? escHtml(String(p.number)) : 'â€”'}</td>
-  <td class="pt-pos">${positions.length ? escHtml(positions.slice(0, 2).join(' Â· ')) : 'â€”'}</td>
-  <td class="pt-stat">${gp || 'â€”'}</td>
+  <td class=”pt-num”>${p.number ? escHtml(String(p.number)) : '—'}</td>
+  <td class=”pt-pos”>${positions.length ? escHtml(positions.slice(0, 2).join(' · ')) : '—'}</td>
+  <td class=”pt-stat”>${gp || '—'}</td>
   <td class="pt-stat">${fmtPg(ppg)}</td>
   <td class="pt-stat">${fmtPg(rpg)}</td>
   <td class="pt-stat">${fmtPg(apg)}</td>
@@ -130,7 +130,7 @@ export function playersPage({ players, isAdmin = false }) {
       <svg class="pt-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
         <circle cx="6.5" cy="6.5" r="4.5"/><path d="M10.5 10.5 14 14"/>
       </svg>
-      <input class="pt-search" id="pt-search" type="search" placeholder="Search playersâ€¦" autocomplete="off">
+      <input class="pt-search" id="pt-search" type="search" placeholder="Search players…" autocomplete="off">
     </div>
   </div>
   <div class="pt-table-wrap" id="pt-wrap">
@@ -310,7 +310,7 @@ ${isAdmin ? `<div id="pt-edit-modal" style="display:none;position:fixed;inset:0;
       positions:  positions,
     };
     var submit = document.getElementById('pt-edit-submit');
-    submit.disabled = true; submit.textContent = 'Savingâ€¦';
+    submit.disabled = true; submit.textContent = 'Saving…';
     fetch('/admin/player/' + encodeURIComponent(pid) + '/edit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     }).then(function(r) { return r.json(); }).then(function(data) {

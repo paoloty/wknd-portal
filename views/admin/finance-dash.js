@@ -179,7 +179,7 @@ ${kpiHtml}
   <div style="padding:4px 16px 8px">${categoryHtml}</div>
 </div>
 
-<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
+<div class="card admin-table-scroll" style="padding:0;margin-bottom:16px">
   <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--text-muted);text-transform:uppercase">
     Pending Confirmations
     ${pending.length ? `<span class="agm-badge agm-badge--amber" style="margin-left:8px">${pending.length}</span>` : ''}
