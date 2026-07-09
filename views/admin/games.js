@@ -687,7 +687,7 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
       btnGenPotg.disabled = true; btnGenPotg.textContent = 'Generating…';
       status.textContent = ''; status.className = 'agm-gen-status';
       try {
-        var r = await fetch('/admin/games/${id}/generate-potg', { method: 'POST' });
+        var r = await fetch('/admin/games/${id}/generate-potg', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ player_id: document.getElementById('val-potg-player').value }) });
         var j = await r.json();
         if (!r.ok) throw new Error(j.error || 'AI error');
         document.getElementById('val-potg').value = j.writeup;

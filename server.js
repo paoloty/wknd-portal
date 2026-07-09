@@ -1610,7 +1610,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, async (req, res) => {
   if (game.scheduled) return res.status(400).json({ error: 'Game not yet imported.' });
 
   const stats = getGameDetailStats(game.id);
-  const potgId = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
+  const potgId = req.body?.player_id || game.manual_potg_player_id || derivePotgPlayerId(game, stats);
   if (!potgId) return res.status(400).json({ error: 'Cannot determine player of the game.' });
 
   const potgStat = stats.find(s => s.player_id === potgId);
