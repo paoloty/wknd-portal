@@ -17,9 +17,15 @@ function isUpcoming(game) {
 }
 
 function statusBadge(game) {
-  if (isUpcoming(game))  return `<span class="agm-badge agm-badge--amber">Upcoming</span>`;
-  if (game.under_review) return `<span class="agm-badge agm-badge--gray">Draft</span>`;
+  if (isUpcoming(game) || game.status === 'scheduled') return `<span class="agm-badge agm-badge--amber">Upcoming</span>`;
+  if (game.status === 'final')    return `<span class="agm-badge agm-badge--blue">Final</span>`;
+  if (game.under_review)          return `<span class="agm-badge agm-badge--gray">Draft</span>`;
   return `<span class="agm-badge agm-badge--green">Live</span>`;
+}
+
+function otLabel(ot) {
+  const n = Number(ot) || 0;
+  return n === 0 ? '' : n === 1 ? 'OT' : `OT${n}`;
 }
 
 // ── Games list ────────────────────────────────────────────────────────────────
@@ -32,8 +38,29 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       `<span class="agm-dot${g.youtube_url  ? ' agm-dot--on' : ''}" title="YouTube"></span>`,
       `<span class="agm-dot${g.has_cover    ? ' agm-dot--on' : ''}" title="Cover"></span>`,
     ].join('');
-    const statusKey = isUpcoming(g) ? 'upcoming' : g.under_review ? 'draft' : 'live';
+    const isUpcom  = isUpcoming(g);
+    const isFinal  = g.status === 'final';
+    const statusKey = isUpcom ? 'upcoming' : isFinal ? 'final' : g.under_review ? 'draft' : 'live';
     const typeKey   = g.game_type === 'playoff' ? 'playoff' : 'regular';
+    const ot        = Number(g.overtime) || 0;
+    const otLbl     = otLabel(ot);
+
+    const scoreCell = isUpcom
+      ? `<span class="agm-vs">vs</span>`
+      : `<span class="agm-score">${scoreA} – ${scoreB}${otLbl ? `<span style="font-size:10px;font-weight:700;color:var(--amber);margin-left:4px">${otLbl}</span>` : ''}</span>`;
+
+    const otEdit = !isUpcom
+      ? `<select class="agm-ot-sel" data-gid="${escHtml(g.id)}" title="Overtime periods" style="font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;padding:1px 4px">
+          <option value="0"${ot===0?' selected':''}>REG</option>
+          <option value="1"${ot===1?' selected':''}>OT</option>
+          <option value="2"${ot===2?' selected':''}>OT2</option>
+          <option value="3"${ot===3?' selected':''}>OT3</option>
+        </select>`
+      : '';
+
+    const markFinalBtn = isUpcom
+      ? `<button class="agm-final-btn" data-gid="${escHtml(g.id)}" data-name="${escHtml(g.team_a_name + ' vs ' + g.team_b_name)}" style="font-size:11px;font-weight:600;color:var(--amber);background:none;border:1px solid var(--amber);border-radius:4px;padding:2px 8px;cursor:pointer;white-space:nowrap">Final Score</button>`
+      : '';
 
     return `<tr class="agm-row admin-table-row"
       data-type="${typeKey}"
@@ -43,9 +70,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       <td class="admin-td agm-td--date">${fmtDate(g.date)}</td>
       <td class="admin-td agm-td--matchup">
         <span class="${winner === 'a' ? 'agm-team--win' : ''}">${escHtml(g.team_a_name)}</span>
-        ${g.scheduled
-          ? `<span class="agm-vs">vs</span>`
-          : `<span class="agm-score">${scoreA} – ${scoreB}</span>`}
+        ${scoreCell}
         <span class="${winner === 'b' ? 'agm-team--win' : ''}">${escHtml(g.team_b_name)}</span>
       </td>
       <td class="admin-td">
@@ -53,8 +78,9 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       </td>
       <td class="admin-td agm-td--season">${escHtml(g.season || '—')}</td>
       <td class="admin-td">${statusBadge(g)}</td>
-      <td class="admin-td"><span class="agm-dots">${contentDots}</span></td>
-      <td class="admin-td agm-td--action">
+      <td class="admin-td"><span class="agm-dots">${contentDots}</span>${otEdit}</td>
+      <td class="admin-td agm-td--action" style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
+        ${markFinalBtn}
         <a href="/admin/games/${escHtml(g.id)}" class="agm-edit-link">Edit ${ICON_CHEVRON_R}</a>
       </td>
     </tr>`;
@@ -126,6 +152,42 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
   </div>
 </div>
 
+<div class="agm-modal-backdrop" id="agm-final-backdrop" hidden>
+  <div class="agm-modal">
+    <div class="agm-modal-header">
+      <h3 class="agm-modal-title">Mark as Final</h3>
+      <button class="agm-modal-close" id="agm-final-close" aria-label="Close">✕</button>
+    </div>
+    <div class="agm-modal-body">
+      <p id="agm-final-name" style="font-size:13px;color:var(--text-muted);margin:0 0 12px"></p>
+      <div class="agm-modal-row">
+        <div class="agm-modal-field">
+          <label class="agm-modal-label">Team A Score</label>
+          <input type="number" id="agm-final-score-a" class="agm-modal-input" min="0" step="1" placeholder="0">
+        </div>
+        <div class="agm-modal-field">
+          <label class="agm-modal-label">Team B Score</label>
+          <input type="number" id="agm-final-score-b" class="agm-modal-input" min="0" step="1" placeholder="0">
+        </div>
+      </div>
+      <div class="agm-modal-field">
+        <label class="agm-modal-label">Overtime</label>
+        <select id="agm-final-ot" class="agm-modal-select">
+          <option value="0">Regulation</option>
+          <option value="1">OT (1 overtime)</option>
+          <option value="2">OT2 (2 overtimes)</option>
+          <option value="3">OT3 (3 overtimes)</option>
+        </select>
+      </div>
+      <p class="agm-modal-err" id="agm-final-err" hidden></p>
+    </div>
+    <div class="agm-modal-footer">
+      <button class="agm-modal-cancel" id="agm-final-cancel">Cancel</button>
+      <button class="agm-modal-submit" id="agm-final-submit">Confirm Final Score</button>
+    </div>
+  </div>
+</div>
+
 <div class="agm-filters">
   <div class="agm-filter-group">
     <button class="agm-pill is-active" data-ft="">All</button>
@@ -136,6 +198,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     <button class="agm-pill is-active" data-fst="">All Status</button>
     <button class="agm-pill" data-fst="live">Live</button>
     <button class="agm-pill" data-fst="draft">Draft</button>
+    <button class="agm-pill" data-fst="final">Final</button>
     <button class="agm-pill" data-fst="upcoming">Upcoming</button>
   </div>
   ${seasons.length > 1 ? `<div class="agm-filter-group">${seasonPills}</div>` : ''}
@@ -198,6 +261,71 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     });
   });
   document.getElementById('agm-search').addEventListener('input', apply);
+
+  // Inline OT selects
+  document.querySelectorAll('.agm-ot-sel').forEach(function(sel) {
+    sel.addEventListener('change', function() {
+      var gid = this.dataset.gid;
+      var ot  = Number(this.value);
+      fetch('/admin/games/' + encodeURIComponent(gid) + '/overtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overtime: ot })
+      }).catch(function() {});
+    });
+  });
+
+  // Mark as Final modal
+  var finalBackdrop = document.getElementById('agm-final-backdrop');
+  var finalGid = null;
+  function openFinalModal(gid, name) {
+    finalGid = gid;
+    document.getElementById('agm-final-name').textContent = name;
+    document.getElementById('agm-final-score-a').value = '';
+    document.getElementById('agm-final-score-b').value = '';
+    document.getElementById('agm-final-ot').value = '0';
+    document.getElementById('agm-final-err').hidden = true;
+    finalBackdrop.hidden = false;
+    document.getElementById('agm-final-score-a').focus();
+  }
+  function closeFinalModal() { finalBackdrop.hidden = true; finalGid = null; }
+  document.getElementById('agm-final-close').addEventListener('click', closeFinalModal);
+  document.getElementById('agm-final-cancel').addEventListener('click', closeFinalModal);
+  finalBackdrop.addEventListener('click', function(e) { if (e.target === finalBackdrop) closeFinalModal(); });
+
+  document.querySelectorAll('.agm-final-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openFinalModal(this.dataset.gid, this.dataset.name);
+    });
+  });
+
+  document.getElementById('agm-final-submit').addEventListener('click', function() {
+    var scoreA = document.getElementById('agm-final-score-a').value.trim();
+    var scoreB = document.getElementById('agm-final-score-b').value.trim();
+    var ot     = document.getElementById('agm-final-ot').value;
+    var errEl  = document.getElementById('agm-final-err');
+    var btn    = this;
+    if (scoreA === '' || scoreB === '') {
+      errEl.textContent = 'Both scores are required.'; errEl.hidden = false; return;
+    }
+    errEl.hidden = true;
+    btn.disabled = true; btn.textContent = 'Saving…';
+    fetch('/admin/games/' + encodeURIComponent(finalGid) + '/final', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team_a_score: Number(scoreA), team_b_score: Number(scoreB), overtime: Number(ot) })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) { location.reload(); return; }
+      errEl.textContent = data.error || 'Failed to save.'; errEl.hidden = false;
+      btn.disabled = false; btn.textContent = 'Confirm Final Score';
+    })
+    .catch(function() {
+      errEl.textContent = 'Network error.'; errEl.hidden = false;
+      btn.disabled = false; btn.textContent = 'Confirm Final Score';
+    });
+  });
 
   // New Game modal
   var backdrop = document.getElementById('agm-modal-backdrop');
@@ -296,7 +424,9 @@ export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers
   const winA = !isUpcoming(game) && scoreA > scoreB;
   const winB = !isUpcoming(game) && scoreB > scoreA;
   const isScheduled = isUpcoming(game);
-  const isLive = !isScheduled && !game.under_review;
+  const isFinal = game.status === 'final';
+  const needsImport = isScheduled || isFinal;
+  const isLive = !isScheduled && !isFinal && !game.under_review;
   const id = escHtml(game.id);
 
   const colorA = teamColor(game.team_a_name);
@@ -315,13 +445,13 @@ export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers
   const nameB = game.team_b_name.toUpperCase();
 
   return `
-${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">` : ''}
+${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">` : ''}
 
 <div class="agm-edit-bar">
   <a href="/admin/games" class="agm-edit-bar__back">${ICON_CHEVRON_L} All Games</a>
   <div class="agm-edit-bar__right">
     <span id="save-msg" class="agm-save-msg"></span>
-    <button id="agm-save-all" class="agm-edit-bar__save">${isScheduled ? 'Save Date' : 'Save Changes'}</button>
+    <button id="agm-save-all" class="agm-edit-bar__save">${isScheduled || isFinal ? 'Save Date' : 'Save Changes'}</button>
   </div>
 </div>
 
@@ -352,12 +482,12 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
 <div class="agm-wp-layout">
 
   <div class="agm-wp-main">
-    ${isScheduled ? `
+    ${needsImport ? `
     <div class="card agm-section agm-import-section">
       <div class="agm-import-icon">${ICON_IMPORT}</div>
       <div class="agm-import-body">
         <h3 class="agm-section__title">Import Game Results</h3>
-        <p class="agm-import-desc">Export the game file from the wknd-stats admin app, then upload it here to import the final score, box score, and player stats into this game.</p>
+        <p class="agm-import-desc">${isFinal ? 'Score has been confirmed. Import the full game file to add box scores and player stats.' : 'Export the game file from the wknd-stats admin app, then upload it here to import the final score, box score, and player stats into this game.'}</p>
         <label class="agm-file-label" id="agm-file-label">
           <input type="file" id="agm-file-input" accept=".json" style="display:none">
           <span class="agm-file-placeholder" id="agm-file-placeholder">Choose exported file (.json)…</span>
@@ -370,7 +500,8 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
         </div>
       </div>
     </div>
-    ` : `
+    ` : ''}
+    ${!isScheduled && !isFinal ? `
     <div class="card agm-editor-card">
       <div class="agm-editor-card__title">YouTube</div>
       <input id="val-yt" type="url" class="admin-input" placeholder="https://youtube.com/watch?v=…" value="${escHtml(game.youtube_url || '')}">
@@ -379,11 +510,13 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
     <div class="card game-tabs">
       <div class="game-tabs__nav">
         <button class="game-tabs__tab game-tabs__tab--active" data-gtab="recap">Recap</button>
+        ${!isFinal ? `
         <button class="game-tabs__tab" data-gtab="bst-a"><span class="team-dot" style="background:${colorA}"></span>${escHtml(game.team_a_name)}</button>
         <button class="game-tabs__tab" data-gtab="bst-b"><span class="team-dot" style="background:${colorB}"></span>${escHtml(game.team_b_name)}</button>
         <button class="game-tabs__tab" data-gtab="leaders">Leaders</button>
         <button class="game-tabs__tab" data-gtab="comparison">Team Comparison</button>
         <button class="game-tabs__tab" data-gtab="linescore">Line Score</button>
+        ` : ''}
       </div>
       <div id="adm-tab-recap" class="game-tabs__body adm-recap-body">
         <div class="agm-gen-bar">
@@ -392,6 +525,7 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
         </div>
         <div id="recap-quill"></div>
       </div>
+      ${!isFinal ? `
       <div id="adm-tab-bst-a" class="game-tabs__body game-tabs__body--hidden">
         ${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner)}
       </div>
@@ -407,15 +541,16 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
       <div id="adm-tab-linescore" class="game-tabs__body game-tabs__body--hidden">
         ${lineScoreTab(game, quarterScores)}
       </div>
+      ` : ''}
     </div>
-    `}
+    ` : ''}
   </div>
 
   <div class="agm-wp-sidebar">
 
     <div class="card agm-sidebar-card">
-      <div class="agm-sidebar-card__title">${isScheduled ? 'Schedule' : 'Publish'}</div>
-      ${!isScheduled ? `
+      <div class="agm-sidebar-card__title">${isScheduled || isFinal ? 'Schedule' : 'Publish'}</div>
+      ${!isScheduled && !isFinal ? `
       <div class="agm-sidebar-field">
         <label class="admin-field-label">Status</label>
         <select id="pub-status" class="admin-input">
@@ -430,7 +565,7 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
       </div>
     </div>
 
-    ${!isScheduled ? `
+    ${!isScheduled && !isFinal ? `
     <div class="card agm-sidebar-card">
       <div class="agm-sidebar-card__title">Player of the Game</div>
       <select id="val-potg-player" class="admin-input">${playerOpts}</select>
@@ -441,7 +576,9 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
         <span class="agm-gen-status" id="gen-potg-status"></span>
       </div>
     </div>
+    ` : ''}
 
+    ${!isScheduled && !isFinal ? `
     <div class="card agm-sidebar-card">
       <div class="agm-sidebar-card__title">Cover Image</div>
       ${game.has_cover
@@ -470,10 +607,10 @@ ${!isScheduled ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quil
 
 </div>
 
-${!isScheduled ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>` : ''}
+${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>` : ''}
 <script>
 (function(){
-  ${!isScheduled ? `
+  ${!isScheduled && !isFinal ? `
   var quill = new Quill('#recap-quill', {
     theme: 'snow',
     placeholder: 'Write the game recap here…',
@@ -488,11 +625,13 @@ ${!isScheduled ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/qui
     btn.disabled = true;
     btn.textContent = 'Saving…';
     var body = { date: document.getElementById('pub-date').value };
-    ${!isScheduled ? `
-    body.game_writeup   = quill.root.innerHTML;
+    ${!isScheduled && !isFinal ? `
+    body.game_writeup = quill.root.innerHTML;
+    body.youtube_url  = document.getElementById('val-yt').value;
+    ` : ''}
+    ${!isScheduled && !isFinal ? `
     body.potg_writeup   = document.getElementById('val-potg').value;
     body.potg_player_id = document.getElementById('val-potg-player').value;
-    body.youtube_url    = document.getElementById('val-yt').value;
     body.status         = document.getElementById('pub-status').value;
     ` : ''}
     try {
@@ -511,7 +650,7 @@ ${!isScheduled ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/qui
       msg.textContent = e.message;
     } finally {
       btn.disabled = false;
-      btn.textContent = '${isScheduled ? 'Save Date' : 'Save Changes'}';
+      btn.textContent = '${isScheduled || isFinal ? 'Save Date' : 'Save Changes'}';
     }
   }
 
@@ -588,7 +727,7 @@ ${!isScheduled ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/qui
     }
   });
 
-  ${isScheduled ? `
+  ${needsImport ? `
   var fileInput = document.getElementById('agm-file-input');
   var fileLabel = document.getElementById('agm-file-label');
   var filePlaceholder = document.getElementById('agm-file-placeholder');
@@ -626,7 +765,8 @@ ${!isScheduled ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/qui
       }
     });
   }
-  ` : `
+  ` : ''}
+  ${!isScheduled && !isFinal ? `
   var coverFile = document.getElementById('cover-file');
   if (coverFile) {
     coverFile.addEventListener('change', async function() {
@@ -658,7 +798,7 @@ ${!isScheduled ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/qui
       if (r.ok) location.reload();
     });
   }
-  `}
+  ` : ''}
 })();
 </script>`;
 }

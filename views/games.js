@@ -11,6 +11,7 @@ function gameRow(game) {
   const winB = scoreB > scoreA;
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
+  const isFinal = game.status === 'final';
 
   const title = boldTitle(game.game_writeup)
     || `${game.team_a_name} vs ${game.team_b_name}`;
@@ -33,16 +34,20 @@ function gameRow(game) {
     <span class="team-dot" style="background:${colorB}"></span>
   </span>`;
 
+  const cta = isFinal
+    ? `<span class="game-row__cta" style="color:var(--text-muted)">STATS PENDING</span>`
+    : `<span class="game-row__cta">FULL GAME RECAP <span>→</span></span>`;
+
   return `<a href="/games/${encodeURIComponent(game.id)}" class="game-row">
   <div class="game-row__thumb">${thumb}</div>
   <div class="game-row__body">
     <div class="game-row__meta">
-      ${escHtml(formatDate(game.date))}${isPlayoff ? ' <span class="badge-playoff">PLAYOFF</span>' : ''}
+      ${escHtml(formatDate(game.date))}${isPlayoff ? ' <span class="badge-playoff">PLAYOFF</span>' : ''}${isFinal ? ' <span class="badge-playoff" style="background:rgba(59,130,246,.15);color:#60a5fa;border-color:#3b82f6">STATS PENDING</span>' : ''}
       ${scoreInline}
     </div>
     <h3 class="game-row__title">${escHtml(title.slice(0, 120))}</h3>
-    ${body ? `<p class="game-row__excerpt">${escHtml(body.length > 160 ? body.slice(0, 160) + '…' : body)}</p>` : ''}
-    <span class="game-row__cta">FULL GAME RECAP <span>→</span></span>
+    ${body && !isFinal ? `<p class="game-row__excerpt">${escHtml(body.length > 160 ? body.slice(0, 160) + '…' : body)}</p>` : ''}
+    ${cta}
   </div>
 </a>`;
 }
@@ -50,10 +55,10 @@ function gameRow(game) {
 // ── Main export ───────────────────────────────────────────────────────────────
 export function gamesPage({ games, highlights = [] }) {
   const completedGames = games
-    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .filter(g => g.status === 'final' || g.status === 'complete')
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   const upcomingGames = games
-    .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
+    .filter(g => g.status === 'scheduled')
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 5);
   const tickerGames = [...upcomingGames, ...completedGames];

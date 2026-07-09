@@ -24,6 +24,9 @@ export function scoreTicker(games) {
 </div>`;
     }
 
+    const otCount = Number(g.overtime) || 0;
+    const finalLabel = otCount === 0 ? 'FINAL' : otCount === 1 ? 'FINAL/OT' : `FINAL/OT${otCount}`;
+
     const winA = scoreA > scoreB;
     const top  = winA
       ? { name: g.team_a_name, score: scoreA, color: colorA, win: true }
@@ -40,7 +43,7 @@ export function scoreTicker(games) {
     return `<a href="/games/${encodeURIComponent(g.id)}" class="card score-ticker__card" style="--tc-a:${top.color};--tc-b:${bot.color}">
   <div class="ticker-header">
     <span class="ticker-date">${escHtml(formatDate(g.date))}</span>
-    <span class="ticker-status ticker-status--final">FINAL</span>
+    <span class="ticker-status ticker-status--final">${finalLabel}</span>
   </div>
   ${row(top)}
   ${row(bot)}

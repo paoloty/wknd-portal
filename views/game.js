@@ -32,6 +32,9 @@ function scoreCard(game, colorA, colorB) {
   const winA = scoreA > scoreB;
   const winB = scoreB > scoreA;
 
+  const ot = Number(game.overtime) || 0;
+  const finalLabel = ot === 0 ? 'FINAL' : ot === 1 ? 'FINAL/OT' : `FINAL/OT${ot}`;
+
   return `<div class="game-score-card" id="potg-anchor" style="background:linear-gradient(135deg,${colorA}55 0%,var(--surface) 50%,${colorB}55 100%)">
   <div class="game-score-card__board">
     <div class="game-score-card__team">
@@ -40,7 +43,7 @@ function scoreCard(game, colorA, colorB) {
     </div>
     <div class="game-score-card__divider">
       <div class="game-score-card__divider-line"></div>
-      <span class="game-score-card__divider-label">FINAL</span>
+      <span class="game-score-card__divider-label">${finalLabel}</span>
       <div class="game-score-card__divider-line"></div>
     </div>
     <div class="game-score-card__team">
@@ -97,8 +100,11 @@ function writeupToEditorHtml(writeup) {
 
 function recapTab(game) {
   const rendered = renderWriteup(game.game_writeup);
-  if (!rendered) return `<p class="tabs-empty">No recap available yet.</p>`;
-  return `<div class="recap-tab">${rendered}</div>`;
+  const statsPending = game.status === 'final'
+    ? `<p class="tabs-empty" style="margin-top:${rendered ? '16px' : '0'};border-top:${rendered ? '1px solid var(--border)' : 'none'};padding-top:${rendered ? '16px' : '0'}">Full box scores will be available once stats are imported.</p>`
+    : '';
+  if (!rendered) return `<p class="tabs-empty">No recap available yet.</p>${statsPending}`;
+  return `<div class="recap-tab">${rendered}</div>${statsPending}`;
 }
 
 // ── Box Score tab ─────────────────────────────────────────────────────────────
@@ -530,6 +536,15 @@ export function playByPlayTab(game) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 function gameTabs(game, stats, dnpPlayers, quarterScores, playerMap, teamMap) {
+  if (game.status === 'final') {
+    return `<div class="card game-tabs">
+  <div class="game-tabs__nav">
+    <button class="game-tabs__tab game-tabs__tab--active" data-tab="recap">Recap</button>
+  </div>
+  <div id="tab-recap" class="game-tabs__body">${recapTab(game)}</div>
+</div>`;
+  }
+
   const { byTeam, dnpByTeam, winner } = buildBoxScoreData(game, stats, dnpPlayers);
   const nameA = game.team_a_name.toUpperCase();
   const nameB = game.team_b_name.toUpperCase();
@@ -651,10 +666,10 @@ export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterSc
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
 
   const completedGames = allGames
-    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .filter(g => g.status === 'final' || g.status === 'complete')
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   const upcomingGames = allGames
-    .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
+    .filter(g => g.status === 'scheduled')
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 5);
   const tickerGames = [...upcomingGames, ...completedGames];

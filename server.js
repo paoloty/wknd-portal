@@ -39,7 +39,7 @@ import {
   getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
-  importGameResults, createGame,
+  importGameResults, markGameFinal, setGameOvertime, createGame,
   updatePlayerPhoto, updatePlayer,
   getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
@@ -1413,6 +1413,23 @@ app.delete('/admin/games/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/admin/games/:id/final', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  const scoreA = parseInt(req.body.team_a_score, 10);
+  const scoreB = parseInt(req.body.team_b_score, 10);
+  if (isNaN(scoreA) || isNaN(scoreB)) return res.status(400).json({ error: 'Invalid scores' });
+  markGameFinal(game.id, { teamAScore: scoreA, teamBScore: scoreB, overtime: Number(req.body.overtime) || 0 });
+  res.json({ ok: true });
+});
+
+app.post('/admin/games/:id/overtime', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  setGameOvertime(game.id, Number(req.body.overtime) || 0);
+  res.json({ ok: true });
+});
+
 app.post('/admin/games/:id/potg', requireAuth, jsonSmall, (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
@@ -1524,7 +1541,14 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
     return `${displayPlayerName(p.name)} (${p.team_name}): ${p.pts}pts/${p.reb}reb/${p.ast}ast/${p.stl}stl/${p.blk}blk${pct}`;
   }).join('\n');
 
-  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "fired on all cylinders," "gave it their all," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "nothing short of spectacular"';
+  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "fired on all cylinders," "gave it their all," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "nothing short of spectacular," "competitive matchup," "hard-fought," "gritty," "intense battle," "back-and-forth affair," "close contest," "dominant performance," "statement win," "impressive outing," "strong showing"';
+
+  // Gather recent recap headlines to prevent repetition
+  const recentTitles = getAllGames()
+    .filter(g => g.game_writeup && g.id !== game.id)
+    .slice(0, 10)
+    .map(g => parseWriteup(g.game_writeup).title)
+    .filter(Boolean);
 
   const prompt = [
     `You are a local recreational basketball league writer — a community observer, not a broadcaster.`,
@@ -1537,8 +1561,11 @@ app.post('/admin/games/:id/generate-recap', requireAuth, async (req, res) => {
     `- Stats shorthand: say "17 and 8" not "17 points and 8 rebounds." Use "pts/reb/ast" only when listing multiple players.`,
     `- Rotation/substitutions: mention only if directly relevant to a momentum shift. Do NOT describe lineup depth or patterns.`,
     `- Output format: a one-line headline, then exactly 3 paragraphs minimum. Close games or playoff games get 4. Structure: (1) game flow/result, (2) key performers, (3) context/implications.`,
-    `- Do NOT start with the date, a player name, or "In a [adjective] game."`,
+    `- HEADLINE RULES: Must name the winning team. Must reference something specific and factual from THIS game — a player's stat line, the winning margin, a lead that was blown, an OT finish, a streak broken. Max 10 words. Do NOT use a generic description of the game type. Do NOT start with "In a," "A," or the date.`,
     `- Banned words/phrases: ${CLICHE_BAN}`,
+    recentTitles.length
+      ? `- HEADLINES ALREADY USED IN RECENT RECAPS (do NOT repeat these patterns or use similar phrasing):\n${recentTitles.map(t => `  "${t}"`).join('\n')}`
+      : '',
     ``,
     `GAME: ${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}`,
     `Date: ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : 'Regular Season'}${isOT ? '  |  OVERTIME' : ''}`,
