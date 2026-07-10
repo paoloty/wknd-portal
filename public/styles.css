@@ -4177,3 +4177,215 @@ a.player-link:hover { color: var(--amber); }
 .agm-gen-status { font-size: 11px; }
 .agm-gen-status--ok  { color: #4ade80; }
 .agm-gen-status--err { color: #f87171; }
+
+/* ── MVP Race ────────────────────────────────────────────────────────────── */
+.mvp-list { display: flex; flex-direction: column; margin-top: 0; padding: 0; overflow: hidden; }
+
+.mvp-row {
+  display: flex; align-items: stretch;
+  border-top: 1px solid var(--border);
+  overflow: hidden; position: relative;
+  color: inherit; text-decoration: none;
+  transition: background 0.15s;
+}
+.mvp-row:hover { background: rgba(255,255,255,0.03); }
+
+.mvp-row__thumb {
+  width: 200px; height: 200px; flex-shrink: 0;
+  overflow: hidden; position: relative;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.mvp-row__thumb-placeholder {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.mvp-row__thumb-placeholder .font-condensed { font-size: 36px; font-weight: 800; color: var(--border); }
+.mvp-row__thumb-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center 5%; display: block;
+}
+.mvp-row__thumb-flare {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+}
+.mvp-row__rank {
+  position: absolute; top: 10px; left: 10px; z-index: 3;
+  font-size: 13px; font-weight: 700; line-height: 1;
+  color: var(--bt);
+  background: var(--bc);
+  padding: 4px 9px; border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+}
+
+.mvp-row__body {
+  flex: 1; min-width: 0; padding: 18px 22px;
+  display: flex; flex-direction: column; gap: 4px; justify-content: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--bc) 10%, transparent) 0%, transparent 55%);
+}
+
+.mvp-row__name {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.2;
+  letter-spacing: .02em;
+}
+
+.mvp-row__pills {
+  position: absolute; top: 14px; right: 16px; z-index: 2;
+  display: flex; align-items: center; gap: 6px;
+}
+.mvp-row__badge {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 5px;
+}
+.mvp-row__score {
+  font-size: 12px; font-weight: 700;
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 5px;
+}
+
+.mvp-row__cta {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 6px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--amber); opacity: 0.3; transition: opacity 0.15s;
+}
+.mvp-row:hover .mvp-row__cta { opacity: 1; }
+
+/* ── MVP sidebar ladder table ────────────────────────────────────────────── */
+.mvp-sb-table { overflow: hidden; }
+.mvp-sb-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 40px 42px 48px;
+  gap: 0;
+  align-items: center;
+  min-height: 40px;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  color: inherit; text-decoration: none;
+  transition: background 0.12s;
+}
+.mvp-sb-row--head {
+  background: rgba(255,255,255,0.02);
+  border-top: none;
+  border-bottom: 1px solid var(--border);
+  min-height: 30px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.mvp-sb-row:not(.mvp-sb-row--head):hover { background: rgba(255,255,255,0.025); }
+.mvp-sb-row--first { background: rgba(245,147,50,0.03); }
+.mvp-sb-rank {
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  align-self: stretch; padding: 0 4px;
+}
+.mvp-sb-name {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--text);
+  overflow: hidden; align-self: stretch;
+  border-left: 1px solid var(--border); padding: 0 6px;
+}
+.mvp-sb-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mvp-sb-cell--r { text-align: right; }
+.mvp-sb-num {
+  font-size: 12px; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: flex-end;
+  align-self: stretch;
+  border-left: 1px solid var(--border); padding: 0 8px;
+}
+.mvp-sb-score {
+  font-size: 12px; font-weight: 700; color: var(--amber);
+  display: flex; align-items: center; justify-content: flex-end;
+  align-self: stretch;
+  border-left: 1px solid var(--border); padding: 0 10px 0 6px;
+}
+
+/* ── MVP category leaders sidebar ───────────────────────────────────────── */
+.mvp-cl-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 48px;
+  align-items: center; min-height: 38px;
+  border-top: 1px solid var(--border);
+  padding: 0; gap: 0;
+}
+.mvp-cl-cat {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  align-self: stretch; padding: 0 4px;
+}
+.mvp-cl-player {
+  display: flex; align-items: center; gap: 6px;
+  align-self: stretch;
+  border-left: 1px solid var(--border); padding: 0 8px;
+  overflow: hidden;
+}
+.mvp-cl-name {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mvp-cl-val {
+  font-size: 12px; font-weight: 700; color: var(--amber);
+  display: flex; align-items: center; justify-content: flex-end;
+  align-self: stretch;
+  border-left: 1px solid var(--border); padding: 0 10px 0 6px;
+}
+
+/* ── MVP top 3 comparison sidebar ───────────────────────────────────────── */
+.mvp-cmp-row {
+  display: grid;
+  grid-template-columns: 44px repeat(3, 1fr);
+  align-items: center; min-height: 36px;
+  border-top: 1px solid var(--border);
+  padding: 0; gap: 0;
+}
+.mvp-cmp-row--head { min-height: 30px; }
+.mvp-cmp-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  color: var(--text-muted);
+  display: flex; align-items: center;
+  align-self: stretch; padding: 0 0 0 12px;
+}
+.mvp-cmp-name {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0 4px;
+}
+.mvp-cmp-name--gold { color: var(--amber); }
+.mvp-cmp-val {
+  font-size: 12px; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+}
+.mvp-cmp-val--hi { color: var(--text); font-weight: 700; }
+
+/* ── MVP standings sidebar ───────────────────────────────────────────────── */
+.mvp-standings-sidebar .standings-scroll > * { min-width: 0; }
+.mvp-standings-sidebar .standings-row {
+  grid-template-columns: 44px 1fr 52px 52px;
+}
+
+
+.mvp-row__article {
+  font-size: 13px; line-height: 1.55; color: var(--text-muted);
+  margin: 4px 0 0; font-style: normal;
+}
+.mvp-row__article--pending { color: var(--border); }
+
+/* ── The Roast page ──────────────────────────────────────────────────────── */
+.roast-header { margin-bottom: 4px; }
+.roast-intro { font-size: 13px; color: var(--text-muted); margin: 0 0 24px; }
+.roast-stat { color: #f87171; }
+.roast-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block; }
+
+@media (max-width: 600px) {
+  .mvp-row { flex-direction: column; }
+  .mvp-row__thumb { width: 100%; height: 180px; }
+  .mvp-row__rank { font-size: 28px; bottom: 10px; left: 12px; }
+  .mvp-row__body { padding: 14px 18px; }
+  .mvp-row__name { font-size: 14px; }
+}

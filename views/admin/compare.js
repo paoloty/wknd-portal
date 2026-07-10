@@ -12,6 +12,7 @@ export function adminComparePage({ rows = [] } = {}) {
     const nameA = r.player_a_name ? displayPlayerName(r.player_a_name) : r.player_a_id;
     const nameB = r.player_b_name ? displayPlayerName(r.player_b_name) : r.player_b_id;
     const preview = (r.writeup || '').slice(0, 110).replace(/\n/g, ' ');
+    const model = r.model || '—';
     return `<tr class="admin-table-row cmp-row" data-idx="${i}" style="cursor:pointer">
       <td class="admin-td" style="font-weight:500">${escHtml(nameA)}</td>
       <td class="admin-td" style="font-weight:500">${escHtml(nameB)}</td>
@@ -20,6 +21,7 @@ export function adminComparePage({ rows = [] } = {}) {
       </td>
       <td class="admin-td" style="color:var(--text-muted);font-size:13px">${escHtml(fmtDate(r.last_viewed_at))}</td>
       <td class="admin-td" style="color:var(--text-muted);font-size:13px">${escHtml(fmtDate(r.created_at))}</td>
+      <td class="admin-td" style="color:var(--text-muted);font-size:12px;font-family:'Saira Condensed',sans-serif;letter-spacing:.03em">${escHtml(model)}</td>
       <td class="admin-td" style="color:var(--text-muted);font-size:12px;max-width:280px;white-space:normal;line-height:1.4">${escHtml(preview)}${r.writeup && r.writeup.length > 110 ? '…' : ''}</td>
     </tr>`;
   }).join('');
@@ -32,6 +34,7 @@ export function adminComparePage({ rows = [] } = {}) {
     views: r.view_count ?? 0,
     lastViewed: fmtDate(r.last_viewed_at),
     created: fmtDate(r.created_at),
+    model: r.model || '—',
   }));
 
   return `
@@ -51,6 +54,7 @@ ${rows.length === 0
         <th class="admin-th" style="text-align:center">Views</th>
         <th class="admin-th">Last Viewed</th>
         <th class="admin-th">Created</th>
+        <th class="admin-th">Model</th>
         <th class="admin-th">Preview</th>
       </tr>
     </thead>
@@ -79,6 +83,10 @@ ${rows.length === 0
           <div class="agm-modal-label">Created</div>
           <div id="cmp-modal-created" style="font-size:13px;color:var(--text-muted);margin-top:4px">—</div>
         </div>
+        <div>
+          <div class="agm-modal-label">Model</div>
+          <div id="cmp-modal-model" style="font-size:12px;color:var(--text-muted);margin-top:4px;font-family:'Saira Condensed',sans-serif">—</div>
+        </div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:16px">
         <div class="agm-modal-label" style="margin-bottom:8px">Writeup</div>
@@ -103,6 +111,7 @@ ${rows.length === 0
     document.getElementById('cmp-modal-views').textContent = d.views;
     document.getElementById('cmp-modal-last').textContent = d.lastViewed;
     document.getElementById('cmp-modal-created').textContent = d.created;
+    document.getElementById('cmp-modal-model').textContent = d.model;
     document.getElementById('cmp-modal-writeup').textContent = d.writeup;
     backdrop.removeAttribute('hidden');
     document.body.style.overflow = 'hidden';

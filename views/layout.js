@@ -1,4 +1,4 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, features = {} }) {
   const navLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
@@ -6,6 +6,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     { href: '/teams',     label: 'Teams' },
     { href: '/players',   label: 'Players' },
     { href: '/leaders',   label: 'Leaders' },
+    ...(features.mvpRace !== false ? [{ href: '/mvp', label: 'MVP Race' }] : []),
+    { href: '/roast',     label: 'The Roast' },
   ];
 
   const nav = navLinks.map(({ href, label }) => {

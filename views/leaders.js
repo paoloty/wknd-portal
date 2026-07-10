@@ -29,6 +29,16 @@ export const RECORD_CATS = [
     fmt: v => Math.round(v * 100) + '%', min: '4+ FGA',
   },
   {
+    id: 'tsp', label: 'TS%', title: 'Best True Shooting',
+    fn: r => {
+      const fga = (r.fg2m||0)+(r.fg3m||0)+(r.fg2m_miss||0)+(r.fg3m_miss||0);
+      const fta = (r.ftm||0)+(r.ft_miss||0);
+      const d = 2 * (fga + 0.44 * fta);
+      return fga >= 4 ? (r.pts||0) / d : -1;
+    },
+    fmt: v => Math.round(v * 100) + '%', min: '4+ FGA',
+  },
+  {
     id: 'fg3p', label: '3P%', title: 'Best 3PT%',
     fn: r => { const a = (r.fg3m||0)+(r.fg3m_miss||0); return a >= 2 ? (r.fg3m||0) / a : -1; },
     fmt: v => Math.round(v * 100) + '%', min: '2+ 3PA',
@@ -152,6 +162,16 @@ export const PER_GAME = [
     fmt: v => (v * 100).toFixed(1) + '%', min: '10+ FGA',
   },
   {
+    id: 'tsp', label: 'TS%', title: 'True Shooting',
+    fn: p => {
+      const fga = p.fg2m + p.fg3m + p.fg2m_miss + p.fg3m_miss;
+      const fta = (p.ftm || 0) + (p.ft_miss || 0);
+      const d = 2 * (fga + 0.44 * fta);
+      return fga >= 10 ? p.pts / d : -1;
+    },
+    fmt: v => (v * 100).toFixed(1) + '%', min: '10+ FGA',
+  },
+  {
     id: 'fg3p', label: '3P%', title: '3PT Efficiency',
     fn: p => { const a = p.fg3m + p.fg3m_miss; return a >= 5 ? p.fg3m / a : -1; },
     fmt: v => (v * 100).toFixed(1) + '%', min: '5+ 3PA',
@@ -173,6 +193,16 @@ export const TOTALS = [
     id: 'per', label: 'PER', title: 'Efficiency Rating',
     fn: p => calcPer(p.pts, p.fg2m||0, p.fg3m||0, p.fg2m_miss||0, p.fg3m_miss||0, p.ft_miss||0, p.reb, p.ast, p.stl, p.blk, p.turnover),
     fmt: v => v.toFixed(1),
+  },
+  {
+    id: 'tsp', label: 'TS%', title: 'True Shooting',
+    fn: p => {
+      const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0);
+      const fta = (p.ftm||0)+(p.ft_miss||0);
+      const d = 2 * (fga + 0.44 * fta);
+      return fga >= 10 ? p.pts / d : -1;
+    },
+    fmt: v => (v * 100).toFixed(1) + '%', min: '10+ FGA',
   },
   { id: 'reb',      label: 'REB', title: 'Rebounds',       fn: p => p.reb },
   { id: 'ast',      label: 'AST', title: 'Assists',        fn: p => p.ast },

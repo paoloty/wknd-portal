@@ -12,6 +12,7 @@ import { homePage } from './views/home.js';
 import { gamesPage } from './views/games.js';
 import { gamePage } from './views/game.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
+import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
@@ -48,9 +49,11 @@ import {
   getCompareCache, setCompareCache, incrementCompareViews, getCompareAnalytics,
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
+  getMvpWriteup, setMvpWriteup, getMvpCandidates, getTotalSeasonGamesForMvp,
+  getSetting, setSetting,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
-import { generateText, filterPbpForRecap, aiAvailable } from './lib/ai.js';
+import { generateText, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
 import { adminSiteBody } from './views/admin/site.js';
@@ -62,6 +65,7 @@ import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
 import { adminLayout } from './views/admin/layout.js';
 import { computeRatings } from './lib/ratings.js';
+import { mvpPage } from './views/mvp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -283,14 +287,51 @@ function buildTeamOgTags(req, team) {
   return tags.join('\n  ');
 }
 
+function buildMvpOgTags(req, candidates, season) {
+  const origin  = getRequestOrigin(req);
+  const url     = `${origin}/mvp`;
+  const title   = `MVP Race — WKND Basketball League`;
+  const leader  = candidates[0];
+  let desc;
+  if (leader) {
+    const name = displayPlayerName(leader.player.name);
+    const team = String(leader.stats.team_name || '').toUpperCase();
+    const gp   = leader.stats.gp;
+    const ppg  = gp > 0 ? (leader.stats.pts / gp).toFixed(1) : '0.0';
+    const rpg  = gp > 0 ? (leader.stats.reb / gp).toFixed(1) : '0.0';
+    const apg  = gp > 0 ? (leader.stats.ast / gp).toFixed(1) : '0.0';
+    desc = `${name} (${team}) leads the Season ${season} MVP Race — ${ppg} PPG, ${rpg} RPG, ${apg} APG. Follow the updated rankings and AI-written MVP cases.`;
+  } else {
+    desc = `Follow the Season ${season} MVP Race — live rankings, efficiency stats, and AI-written MVP cases for every top candidate.`;
+  }
+  const tags = [
+    `<meta name="description" content="${escAttr(desc)}">`,
+    `<link rel="canonical" href="${escAttr(url)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:url" content="${escAttr(url)}">`,
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="${escAttr(title)}">`,
+    `<meta name="twitter:description" content="${escAttr(desc)}">`,
+  ];
+  return tags.join('\n  ');
+}
+
 function buildTicker() {
   const games = getTickerGames();
   if (!games.length) return '';
   return scoreTicker(games);
 }
 
+function getFeatureFlags() {
+  return { mvpRace: getSetting('mvp_race_enabled', '1') !== '0' };
+}
+
 function renderPage(req, opts) {
-  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, ...opts });
+  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, features: getFeatureFlags(), ...opts });
 }
 
 function renderAdminPage(req, opts) {
@@ -1004,8 +1045,8 @@ app.get('/api/compare', async (req, res) => {
 ${line(pA, tA)}
 ${line(pB, tB)}`;
 
-    const { text } = await generateText(prompt, { maxTokens: 160, temperature: 0.92 });
-    setCompareCache(a, b, tA, tB, text);
+    const { text, model } = await generateWithGemini(prompt, { maxTokens: 160, temperature: 0.92 });
+    setCompareCache(a, b, tA, tB, text, model);
     res.json({ writeup: text });
   } catch (err) {
     console.error('compare writeup error:', err.message);
@@ -1063,13 +1104,22 @@ app.get('/admin', requireAuth, (req, res) => {
 });
 
 app.get('/admin/site', requireAuth, (req, res) => {
-  const seasons = getLedgerSeasons();
-  const quotas  = Object.fromEntries(seasons.map(s => [s, getSeasonQuota(s)]));
+  const seasons  = getLedgerSeasons();
+  const quotas   = Object.fromEntries(seasons.map(s => [s, getSeasonQuota(s)]));
+  const settings = { mvp_race_enabled: getSetting('mvp_race_enabled', '1') };
   res.send(renderAdminPage(req, {
     title: 'Site Settings',
     currentPath: '/admin/site',
-    body: adminSiteBody({ seasons, quotas }),
+    body: adminSiteBody({ seasons, quotas, settings }),
   }));
+});
+
+app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
+  const allowed = ['mvp_race_enabled'];
+  for (const [key, value] of Object.entries(req.body || {})) {
+    if (allowed.includes(key)) setSetting(key, String(value));
+  }
+  res.json({ ok: true });
 });
 
 app.get('/admin/ledger', requireAuth, (req, res) => {
@@ -1983,6 +2033,26 @@ app.post('/api/leaders/share', (req, res) => {
         });
     }
     leaderPlayer = getPlayerPhoto(player_id);
+  } else if (mode === 'roast') {
+    const cat        = ROAST_CATS.find(c => c.id === category_id);
+    const fmt        = cat?.fmt || (v => v.toFixed(1));
+    const allPlayers = buildLeaderPlayers();
+    leaderPlayer     = allPlayers.find(p => p.id === player_id);
+    top10 = cat
+      ? allPlayers
+          .map(p => ({ p, v: cat.fn(p) }))
+          .filter(x => x.v !== null && x.v !== undefined && !isNaN(x.v))
+          .sort((a, b) => cat.asc ? a.v - b.v : b.v - a.v)
+          .slice(0, 10)
+          .map(x => ({
+            player_id:   x.p.id,
+            player_name: x.p.name,
+            team_name:   x.p.team_name,
+            team_color:  teamColor(String(x.p.team_name || '').toUpperCase()),
+            stat_value:  x.v,
+            stat_fmt:    fmt(x.v),
+          }))
+      : [];
   } else {
     const allCats    = mode === 'pg' ? PER_GAME : TOTALS;
     const cat        = allCats.find(c => c.id === category_id);
@@ -2037,12 +2107,17 @@ app.get('/leaders/share/:id', (req, res) => {
   const asOfDesc    = asOfWeek
     ? (isAlltime ? ` Updated through Season ${asOfSeason}, Week ${asOfWeek}.` : ` Updated through Week ${asOfWeek}.`)
     : '';
+  const isRoastShare = share.mode === 'roast';
   const title       = isRecShare
     ? `${displayName} · ${share.stat_label} ${scopeText} Record — WKND Basketball`
-    : `${displayName} · ${share.stat_label} Leader (${scopeText}) — WKND Basketball`;
+    : isRoastShare
+      ? `${displayName} · ${share.stat_title} — The Roast · WKND Basketball`
+      : `${displayName} · ${share.stat_label} Leader (${scopeText}) — WKND Basketball`;
   const desc        = isRecShare
     ? `${displayName} holds the ${isAlltime ? 'all-time' : `Season ${share.season}`} ${share.stat_title} record with ${share.stat_fmt}.${asOfDesc}`
-    : `${displayName} leads the WKND League in ${share.stat_title} with ${share.stat_fmt}${share.mode === 'pg' ? ' per game' : ' total'}.${asOfDesc}`;
+    : isRoastShare
+      ? `${displayName} earned the "${share.stat_title}" award — ${share.stat_fmt} ${share.stat_label}.${asOfDesc}`
+      : `${displayName} leads the WKND League in ${share.stat_title} with ${share.stat_fmt}${share.mode === 'pg' ? ' per game' : ' total'}.${asOfDesc}`;
   const imageUrl    = `${origin}/api/leaders/share/${share.id}/image.png`;
   const pageUrl     = `${origin}/leaders/share/${share.id}`;
   const metaTags = [
@@ -2112,6 +2187,141 @@ app.get('/api/leaders/share/:id/card.png', async (req, res) => {
   }
 });
 
+// ── MVP Race ──────────────────────────────────────────────────────────────────
+const SEASON_GAMES_PER_TEAM = 6; // double round robin
+
+function computeMvpScore(s) {
+  const gp  = s.gp;
+  const ppg = s.pts / gp, rpg = s.reb / gp, apg = s.ast / gp;
+  const spg = s.stl / gp, bpg = s.blk / gp, tpg = s.tov / gp;
+  const base = ppg + rpg*0.7 + apg*0.9 + spg*2.0 + bpg*2.0 - tpg*1.0;
+
+  const tsDenom = 2 * (s.fga + 0.44 * s.fta);
+  const tsPct   = tsDenom > 0 ? s.pts / tsDenom : 0;
+  let effMult = 1.00;
+  if (tsDenom > 0) {
+    if      (tsPct >= 0.70) effMult = 1.20;
+    else if (tsPct >= 0.60) effMult = 1.10;
+    else if (tsPct >= 0.50) effMult = 1.00;
+    else if (tsPct >= 0.40) effMult = 0.85;
+    else                    effMult = 0.70;
+  }
+  const winRate = (s.wins + s.losses) > 0 ? s.wins / (s.wins + s.losses) : 0.5;
+  const winMult = 0.80 + winRate * 0.40;
+  const gpRatio = Math.min(1, gp / SEASON_GAMES_PER_TEAM);
+  return base * effMult * winMult * gpRatio;
+}
+
+function mvpStatsKey(s) {
+  return `v2_${s.gp}_${s.pts}_${s.reb}_${s.ast}_${s.fgm}_${s.fga}_${s.ftm}_${s.fta}_${s.wins}_${s.losses}`;
+}
+
+app.get('/mvp', async (req, res) => {
+  if (getSetting('mvp_race_enabled', '1') === '0') return res.status(404).send(
+    renderPage(req, { title: 'Not Found', currentPath: '/mvp', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
+  );
+  const { season } = getCurrentSeason() || {};
+  const currentSeason = season || 3;
+  const raw = getMvpCandidates(currentSeason);
+  const totalGames = getTotalSeasonGamesForMvp(currentSeason);
+
+  const allPlayers = getAllPlayers();
+  const allTeams   = getAllTeams();
+  const allGames   = byDate(getAllGames());
+  const playerMap  = Object.fromEntries(allPlayers.map(p => [p.id, p]));
+  const teamMap    = Object.fromEntries(allTeams.map(t => [t.id, t]));
+  const completedGames = allGames.filter(g =>
+    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
+  );
+  const highlights = buildHighlights(completedGames, playerMap, teamMap, 10);
+
+  const allQualified = raw
+    .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
+    .filter(c => c.stats.gp >= 1);
+
+  // Pre-compute per-game league ranks for key stats
+  function leagueRank(arr, fn) {
+    const sorted = [...arr].sort((a, b) => fn(b) - fn(a));
+    return Object.fromEntries(sorted.map((c, i) => [c.player.id, i + 1]));
+  }
+  const rankPpg = leagueRank(allQualified, c => c.stats.pts / c.stats.gp);
+  const rankRpg = leagueRank(allQualified, c => c.stats.reb / c.stats.gp);
+  const rankApg = leagueRank(allQualified, c => c.stats.ast / c.stats.gp);
+  const rankSpg = leagueRank(allQualified, c => c.stats.stl / c.stats.gp);
+  const rankTs  = leagueRank(allQualified, c => {
+    const d = 2 * (c.stats.fga + 0.44 * c.stats.fta);
+    return d > 0 ? c.stats.pts / d : 0;
+  });
+  const total = allQualified.length;
+
+  const scored = allQualified
+    .sort((a, b) => b.mvpScore - a.mvpScore)
+    .slice(0, 10);
+
+  // Fetch or generate writeups for top candidates
+  const withWriteups = await Promise.all(scored.map(async c => {
+    const statsKey = mvpStatsKey(c.stats);
+    const cached   = getMvpWriteup(c.player.id, currentSeason, statsKey);
+    if (cached) return { ...c, writeup: cached };
+
+    try {
+      const gp  = c.stats.gp;
+      const ppg = (c.stats.pts / gp).toFixed(1);
+      const rpg = (c.stats.reb / gp).toFixed(1);
+      const apg = (c.stats.ast / gp).toFixed(1);
+      const spg = (c.stats.stl / gp).toFixed(1);
+      const tsDenom = 2 * (c.stats.fga + 0.44 * c.stats.fta);
+      const ts  = tsDenom > 0 ? Math.round(c.stats.pts / tsDenom * 100) + '%' : '—';
+      const fg  = c.stats.fga > 0 ? Math.round(c.stats.fgm / c.stats.fga * 100) + '%' : '—';
+      const wl  = `${c.stats.wins}W-${c.stats.losses}L`;
+      const name = displayPlayerName(c.player.name);
+      const pid  = c.player.id;
+
+      const rankLines = [
+        `PPG: ${ppg} (league rank #${rankPpg[pid]} of ${total})`,
+        `RPG: ${rpg} (league rank #${rankRpg[pid]} of ${total})`,
+        `APG: ${apg} (league rank #${rankApg[pid]} of ${total})`,
+        `SPG: ${spg} (league rank #${rankSpg[pid]} of ${total})`,
+        `TS%: ${ts} (league rank #${rankTs[pid]} of ${total})`,
+        `FG%: ${fg}, Record: ${wl}, GP: ${gp}, MVP Score: ${c.mvpScore.toFixed(1)}`,
+      ].join('\n');
+
+      const prompt = `You are a sharp basketball analyst covering WKND Basketball League, a recreational league. Write a 2-3 sentence MVP case for ${name} (${String(c.stats.team_name).toUpperCase()}) in the style of an ESPN MVP ladder entry. Be specific with numbers. Focus on what makes them a real MVP candidate — production, efficiency, winning.
+
+Rules:
+- Do NOT start with their name.
+- Do NOT open with "With a" or "With an" — vary the sentence structure completely.
+- Each player's blurb must read differently from the others. Lead with the most interesting or unusual thing about this player's case.
+- No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
+- ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
+
+${name} stats:\n${rankLines}`;
+
+      const { text } = await generateText(prompt, { maxTokens: 220, temperature: 0.75 });
+      setMvpWriteup(c.player.id, currentSeason, statsKey, text);
+      return { ...c, writeup: text };
+    } catch {
+      return { ...c, writeup: null };
+    }
+  }));
+
+  res.send(renderPage(req, {
+    title: 'MVP Race — WKND Basketball League',
+    currentPath: req.path,
+    metaTags: buildMvpOgTags(req, withWriteups, currentSeason),
+    body: mvpPage({
+      candidates: withWriteups,
+      season: currentSeason,
+      totalGames,
+      seasonGames: SEASON_GAMES_PER_TEAM,
+      highlights,
+      teams: allTeams,
+      games: completedGames,
+      leagueStats: allQualified,
+    }),
+  }));
+});
+
 app.get('/leaders', (req, res) => {
   const players     = buildLeaderPlayers();
   const { season }  = getCurrentSeason() || {};
@@ -2122,6 +2332,33 @@ app.get('/leaders', (req, res) => {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
     body: leadersPage({ players, season: String(season || ''), gameRecords, currentSeason: season || 3, asOfLabel })
+  }));
+});
+
+app.get('/roast', (req, res) => {
+  const players          = buildLeaderPlayers();
+  const { season }       = getCurrentSeason() || {};
+  const origin           = getRequestOrigin(req);
+  const roastUrl         = `${origin}/roast`;
+  const roastDesc        = `The flip side of the leaders board. Season ${season || ''} worst performers, funniest stat disasters, and dubious awards — only on WKND Basketball.`;
+  const roastMetaTags    = [
+    `<meta name="description" content="${escAttr(roastDesc)}">`,
+    `<link rel="canonical" href="${escAttr(roastUrl)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="The Roast — WKND Basketball League">`,
+    `<meta property="og:description" content="${escAttr(roastDesc)}">`,
+    `<meta property="og:url" content="${escAttr(roastUrl)}">`,
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="The Roast — WKND Basketball League">`,
+    `<meta name="twitter:description" content="${escAttr(roastDesc)}">`,
+  ].join('\n  ');
+  res.send(renderPage(req, {
+    title: 'The Roast — WKND Basketball League',
+    currentPath: req.path,
+    metaTags: roastMetaTags,
+    body: roastPage({ players, season: String(season || '') }),
   }));
 });
 
