@@ -64,7 +64,7 @@ import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
 import { adminLayout } from './views/admin/layout.js';
-import { computeRatings } from './lib/ratings.js';
+import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { mvpPage } from './views/mvp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -347,52 +347,164 @@ function buildDefaultOgSvg() {
 </svg>`;
 }
 
-function buildMvpOgSvg(leader, season) {
-  const name   = leader ? displayPlayerName(leader.player.name) : 'TBD';
-  const team   = leader ? String(leader.stats.team_name || '').toUpperCase() : '';
-  const gp     = leader?.stats?.gp || 1;
-  const ppg    = leader ? (leader.stats.pts / gp).toFixed(1) : '—';
-  const rpg    = leader ? (leader.stats.reb / gp).toFixed(1) : '—';
-  const apg    = leader ? (leader.stats.ast / gp).toFixed(1) : '—';
-  const scr    = leader ? leader.mvpScore.toFixed(1) : '—';
-  const disp   = name.length > 20 ? name.slice(0, 19) + '…' : name;
+// SVG overlay for the MVP social image. No full-background rect so it renders with
+// transparent pixels — sharp will composite it on top of the player photo layer.
+function buildMvpOgSvg(leader, season, hasPhoto = false) {
+  const name     = leader ? displayPlayerName(leader.player.name) : 'TBD';
+  const initials = leader ? svgInitials(leader.player.name) : '?';
+  const teamName = leader ? String(leader.stats.team_name || '').toUpperCase() : '';
+  const tc       = leader ? (leader.stats.team_color || '#f59332') : '#334155';
+  const gp       = Math.max(1, leader?.stats?.gp || 1);
+  const ppg      = leader ? (leader.stats.pts / gp).toFixed(1) : '—';
+  const rpg      = leader ? (leader.stats.reb / gp).toFixed(1) : '—';
+  const apg      = leader ? (leader.stats.ast / gp).toFixed(1) : '—';
+  const scr      = leader ? leader.mvpScore.toFixed(1) : '—';
+
+  const len  = name.length;
+  const disp = len > 26 ? name.slice(0, 25) + '…' : name;
+  const fs   = len <= 10 ? 96 : len <= 14 ? 82 : len <= 18 ? 68 : len <= 22 ? 56 : 46;
+
+  const tcS   = escXml(tc);
+  const teamS = escXml(teamName);
+  const nameS = escXml(disp);
+  const initS = escXml(initials);
+  const ppgS  = escXml(ppg);
+  const rpgS  = escXml(rpg);
+  const apgS  = escXml(apg);
+  const scrS  = escXml(scr);
+  const seasS = escXml(String(season || ''));
+
+  // When no photo: show basketball watermark + team-colored initials circle
+  const thumbFallback = hasPhoto ? '' : `
+  <circle cx="175" cy="288" r="205" fill="none" stroke="#0c1525" stroke-width="2"/>
+  <circle cx="175" cy="288" r="140" fill="none" stroke="#0c1525" stroke-width="1.5"/>
+  <circle cx="175" cy="288" r="72" fill="none" stroke="#0c1525" stroke-width="1.5"/>
+  <path d="M175 83 Q68 288 175 493" stroke="#0c1525" stroke-width="1.5" fill="none"/>
+  <path d="M175 83 Q282 288 175 493" stroke="#0c1525" stroke-width="1.5" fill="none"/>
+  <line x1="0" y1="288" x2="350" y2="288" stroke="#0c1525" stroke-width="1.5"/>
+  <circle cx="175" cy="288" r="122" fill="url(#circleGrad)" stroke="${tcS}" stroke-opacity="0.22" stroke-width="1.5"/>
+  <text x="175" y="330" font-family="Impact,Arial Black,Arial,sans-serif" font-size="90" font-weight="900" text-anchor="middle" fill="${tcS}" fill-opacity="0.5">${initS}</text>`;
 
   return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <radialGradient id="glow" cx="82%" cy="50%" r="45%">
-      <stop offset="0%" stop-color="#f59332" stop-opacity="0.07"/>
-      <stop offset="100%" stop-color="#020817" stop-opacity="0"/>
+    <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#f59332" stop-opacity="0.11"/>
+      <stop offset="55%" stop-color="#f59332" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="circleGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="${tcS}" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="${tcS}" stop-opacity="0.04"/>
     </radialGradient>
   </defs>
-  <rect width="1200" height="630" fill="#020817"/>
-  <rect width="1200" height="630" fill="url(#glow)"/>
-  <circle cx="1060" cy="315" r="260" fill="none" stroke="#0c1525" stroke-width="2"/>
-  <circle cx="1060" cy="315" r="185" fill="none" stroke="#0c1525" stroke-width="2"/>
-  <path d="M1060 55 Q930 315 1060 575" stroke="#0c1525" stroke-width="2" fill="none"/>
-  <path d="M1060 55 Q1190 315 1060 575" stroke="#0c1525" stroke-width="2" fill="none"/>
-  <line x1="800" y1="315" x2="1200" y2="315" stroke="#0c1525" stroke-width="2"/>
-  <rect x="0" y="0" width="6" height="630" fill="#f59332"/>
-  <rect x="6" y="78" width="1194" height="1" fill="#1e293b"/>
-  <rect x="6" y="553" width="1194" height="1" fill="#1e293b"/>
-  <text x="80" y="52" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="5" fill="#f59332">WKND BASKETBALL LEAGUE</text>
-  <text x="1120" y="52" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="4" fill="#334155" text-anchor="end">SEASON ${escAttr(String(season || ''))}</text>
-  <rect x="80" y="106" width="122" height="28" rx="4" fill="rgba(245,147,50,0.1)" stroke="#f59332" stroke-opacity="0.35" stroke-width="1"/>
-  <text x="141" y="125" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="4" fill="#f59332" text-anchor="middle">MVP RACE</text>
-  <text x="80" y="210" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="6" fill="#334155">#1  FRONTRUNNER</text>
-  <text x="78" y="335" font-family="Impact,Arial Black,Arial,sans-serif" font-size="90" font-weight="900" fill="#e2e8f0" letter-spacing="1">${escAttr(disp)}</text>
-  <text x="80" y="388" font-family="Arial,Helvetica,sans-serif" font-size="14" letter-spacing="6" fill="#475569">${escAttr(team)}</text>
-  <line x1="80" y1="415" x2="600" y2="415" stroke="#1e293b" stroke-width="1"/>
-  <text x="80" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#f59332">${escAttr(ppg)}</text>
-  <text x="80" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">PPG</text>
-  <text x="210" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#e2e8f0">${escAttr(rpg)}</text>
-  <text x="210" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">RPG</text>
-  <text x="340" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#e2e8f0">${escAttr(apg)}</text>
-  <text x="340" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">APG</text>
-  <line x1="462" y1="445" x2="462" y2="505" stroke="#1e293b" stroke-width="1"/>
-  <text x="478" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#f59332">${escAttr(scr)}</text>
-  <text x="478" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">MVP SCORE</text>
-  <text x="80" y="593" font-family="Arial,Helvetica,sans-serif" font-size="11" fill="#1e3050" letter-spacing="3">WKNDBASKETBALL.COM</text>
+
+  <!-- Top amber accent bar -->
+  <rect x="0" y="0" width="1200" height="5" fill="#f59332"/>
+
+  <!-- ── Left thumb panel (0–350): fallback only when no photo ── -->
+  ${thumbFallback}
+
+  <!-- Rank pill at bottom-left (always on top of photo) -->
+  <rect x="22" y="557" width="84" height="48" rx="6" fill="#f59332"/>
+  <text x="64" y="591" font-family="Impact,Arial Black,Arial,sans-serif" font-size="30" font-weight="900" text-anchor="middle" fill="#020817">01</text>
+
+  <!-- Vertical divider -->
+  <line x1="350" y1="5" x2="350" y2="630" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- ── Right body panel (351–1200) ── -->
+  <rect x="351" y="0" width="849" height="630" fill="#0d1424"/>
+  <rect x="351" y="0" width="849" height="630" fill="url(#bodyGrad)"/>
+
+  <!-- Season label (top-right, logo composited at top-left by sharp) -->
+  <text x="1180" y="42" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="4" fill="#2d3d54" text-anchor="end">SEASON ${seasS}</text>
+
+  <!-- Horizontal rule below header -->
+  <line x1="392" y1="72" x2="1180" y2="72" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- ── Badges ── -->
+  <rect x="1028" y="84" width="152" height="34" rx="4" fill="#f59332"/>
+  <text x="1104" y="106" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#020817" text-anchor="middle">FRONTRUNNER</text>
+  <rect x="920" y="84" width="100" height="34" rx="4" fill="#020817" stroke="#1e293b" stroke-width="1"/>
+  <text x="970" y="97" font-family="Arial,Helvetica,sans-serif" font-size="7" font-weight="700" letter-spacing="2" fill="#64748b" text-anchor="middle">MVP SCORE</text>
+  <text x="970" y="112" font-family="Impact,Arial Black,Arial,sans-serif" font-size="15" fill="#f59332" text-anchor="middle">${scrS}</text>
+
+  <!-- "#1 FRONTRUNNER" label -->
+  <text x="392" y="148" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="7" fill="#f59332">#1  FRONTRUNNER</text>
+
+  <!-- Player name -->
+  <text x="388" y="270" font-family="Impact,Arial Black,Arial,sans-serif" font-size="${fs}" font-weight="900" fill="#e2e8f0">${nameS}</text>
+
+  <!-- Team indicator -->
+  <circle cx="396" cy="299" r="5" fill="${tcS}"/>
+  <text x="410" y="305" font-family="Arial,Helvetica,sans-serif" font-size="13" letter-spacing="5" fill="#64748b">${teamS}</text>
+
+  <!-- Separator line -->
+  <line x1="388" y1="342" x2="1162" y2="342" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- ── Stats row ── -->
+  <text x="388" y="420" font-family="Impact,Arial Black,Arial,sans-serif" font-size="56" fill="#f59332">${ppgS}</text>
+  <text x="388" y="445" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">PPG</text>
+  <text x="556" y="420" font-family="Impact,Arial Black,Arial,sans-serif" font-size="56" fill="#e2e8f0">${rpgS}</text>
+  <text x="556" y="445" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">RPG</text>
+  <text x="724" y="420" font-family="Impact,Arial Black,Arial,sans-serif" font-size="56" fill="#e2e8f0">${apgS}</text>
+  <text x="724" y="445" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">APG</text>
+  <line x1="872" y1="374" x2="872" y2="454" stroke="#1e293b" stroke-width="1"/>
+  <text x="894" y="420" font-family="Impact,Arial Black,Arial,sans-serif" font-size="56" fill="#f59332">${scrS}</text>
+  <text x="894" y="445" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">MVP SCORE</text>
+
+  <!-- ── Footer ── -->
+  <line x1="388" y1="570" x2="1162" y2="570" stroke="#0f1d30" stroke-width="1"/>
+  <text x="392" y="596" font-family="Arial,Helvetica,sans-serif" font-size="10" letter-spacing="3" fill="#1a2d46">WKNDBASKETBALL.COM</text>
 </svg>`;
+}
+
+// Cached WKND logo buffer (scaled to 36px tall for header compositing)
+let _wkndLogoBuf;
+async function getWkndLogoBuf() {
+  if (_wkndLogoBuf === undefined) {
+    try {
+      _wkndLogoBuf = await sharp(path.join(__dirname, 'wknd-logo.png'))
+        .resize(null, 36).png().toBuffer();
+    } catch { _wkndLogoBuf = null; }
+  }
+  return _wkndLogoBuf || null;
+}
+
+async function buildMvpOgPng(leader, season) {
+  const W = 1200, H = 630, THUMB_W = 350;
+
+  // Fetch player photo (left thumb panel) — try admin URL
+  let thumbBuf = null;
+  const picUrl = leader?.stats?.picture_url;
+  if (picUrl) {
+    try {
+      const src = await fetchCoverImageBuffer(picUrl);
+      if (src) {
+        thumbBuf = await sharp(src)
+          .rotate()
+          .resize(THUMB_W, H, { fit: 'cover', position: 'top' })
+          .png()
+          .toBuffer();
+      }
+    } catch {}
+  }
+
+  // SVG overlay (transparent background, rank pill, body panel, all text)
+  const svgBuf = await sharp(Buffer.from(buildMvpOgSvg(leader, season, !!thumbBuf)), { density: 96 })
+    .resize(W, H).png().toBuffer();
+
+  // Flat dark base
+  const base = await sharp({
+    create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } }
+  }).png().toBuffer();
+
+  const layers = [];
+  if (thumbBuf) layers.push({ input: thumbBuf, top: 0, left: 0 });
+  layers.push({ input: svgBuf, top: 0, left: 0 });
+
+  const logoBuf = await getWkndLogoBuf();
+  if (logoBuf) layers.push({ input: logoBuf, top: 18, left: 392 });
+
+  return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
 }
 
 function buildTicker() {
@@ -1081,8 +1193,7 @@ app.get('/og-mvp.png', async (req, res) => {
         .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
         .filter(c => c.stats.gp >= 1)
         .sort((a, b) => b.mvpScore - a.mvpScore);
-      _ogMvpCache.buf = await sharp(Buffer.from(buildMvpOgSvg(candidates[0] || null, season || '')), { density: 96 })
-        .resize(1200, 630).png({ compressionLevel: 7 }).toBuffer();
+      _ogMvpCache.buf = await buildMvpOgPng(candidates[0] || null, season || '');
       _ogMvpCache.ts = Date.now();
     }
     res.set('Content-Type', 'image/png');
@@ -1454,22 +1565,21 @@ app.post('/admin/players/:id/ratings', requireAuth, express.json(), (req, res) =
 function computeAndSave(playerId, season, sharedContext = null) {
   const stats = getOnePlayerStats(playerId, season || null);
   if (!stats || !(stats.games_played > 0)) {
-    // Player has no games — delete any stale rating so they don't appear rated
     deleteUnlockedRating(playerId, season || '');
     return null;
   }
 
-  // Gather context — use pre-fetched shared data when batch-recomputing
-  const resolvedSeason  = season || String(stats.season ?? '');
+  const resolvedSeason   = season || String(stats.season ?? '');
   const totalSeasonGames = sharedContext?.totalSeasonGames ?? getTotalSeasonGames(resolvedSeason);
-  const teamTotalsMap    = sharedContext?.teamTotalsMap   ?? getTeamRatingTotals(resolvedSeason);
+  const teamTotalsMap    = sharedContext?.teamTotalsMap    ?? getTeamRatingTotals(resolvedSeason);
   const player           = sharedContext?.playerTeamMap?.[playerId] ?? getPlayerWithTeam(playerId);
   const teamTotals       = player?.team_id ? (teamTotalsMap[player.team_id] ?? null) : null;
   const recentStats      = getPlayerRecentStats(playerId, resolvedSeason);
   const gamePts          = getPlayerGamePts(playerId, resolvedSeason);
   const winRate          = getPlayerWinRate(playerId, resolvedSeason);
+  const leagueRaws       = sharedContext?.leagueRaws ?? null;
 
-  const r = computeRatings(stats, { totalSeasonGames, teamTotals, recentStats, gamePts, winRate });
+  const r = computeRatings(stats, { totalSeasonGames, teamTotals, recentStats, gamePts, winRate, leagueRaws });
   upsertComputedRating(playerId, season || '', r);
   return r;
 }
@@ -1479,16 +1589,41 @@ function buildSharedContext(season) {
   const totalSeasonGames = getTotalSeasonGames(resolvedSeason);
   const teamTotalsMap    = getTeamRatingTotals(resolvedSeason);
   const players          = getAllPlayers();
-  // pre-build team lookup so we don't hit DB per player
   const playerTeamMap    = Object.fromEntries(players.map(p => [p.id, p]));
-  return { totalSeasonGames, teamTotalsMap, playerTeamMap };
+
+  // Pre-compute raw values for all qualified players to enable percentile ranking
+  const allRaws = [];
+  for (const p of players) {
+    const stats = getOnePlayerStats(p.id, resolvedSeason || null);
+    if (!stats || !(stats.games_played > 0)) continue;
+    const teamTotals  = p.team_id ? (teamTotalsMap[p.team_id] ?? null) : null;
+    const recentStats = getPlayerRecentStats(p.id, resolvedSeason);
+    allRaws.push(computeRawValues(stats, { teamTotals, recentStats }));
+  }
+
+  function sortedVals(field) {
+    return allRaws.map(r => r[field]).filter(v => v != null && !isNaN(v)).sort((a, b) => a - b);
+  }
+
+  const leagueRaws = {
+    ppg:      sortedVals('ppg'),
+    rpg:      sortedVals('rpg'),
+    def_raw:  sortedVals('def_raw'),
+    play_raw: sortedVals('play_raw'),
+    ts_pct:   sortedVals('ts_pct'),
+    iq_raw:   sortedVals('iq_raw'),
+    usg:      sortedVals('usg'),
+  };
+
+  return { totalSeasonGames, teamTotalsMap, playerTeamMap, leagueRaws };
 }
 
 app.post('/admin/players/:id/recompute', requireAuth, express.json(), (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).json({ error: 'Not found' });
   const season = req.body?.season || '';
-  const r = computeAndSave(player.id, season);
+  const ctx = buildSharedContext(season);
+  const r = computeAndSave(player.id, season, ctx);
   res.json({ ok: true, rating: r });
 });
 
