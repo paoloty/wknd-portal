@@ -6,64 +6,53 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
 
   const quotaRows = seasons.length
     ? seasons.map(s => `
-  <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
-    <span style="font-size:13px;font-weight:600;color:var(--text-primary);width:80px">Season ${escHtml(String(s))}</span>
+  <div class="flex items-center gap-3 py-3 border-b border-admin-border/70 last:border-b-0">
+    <span class="text-[13px] font-semibold text-slate-200 w-20 shrink-0">Season ${escHtml(String(s))}</span>
     <input type="number" class="admin-input site-quota-input" data-season="${escHtml(String(s))}"
       min="0" step="0.01" placeholder="0.00"
       value="${escHtml(fmt(quotas[s]))}"
-      style="width:140px;padding:6px 10px;font-size:13px">
-    <span class="site-quota-msg" style="font-size:12px"></span>
+      style="width:140px">
+    <span class="site-quota-msg text-xs"></span>
   </div>`).join('')
-    : `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No seasons found. Games must exist before setting quotas.</p>`;
+    : `<p class="text-sm text-slate-500 py-3">No seasons found. Games must exist before setting quotas.</p>`;
 
   return `
-<div class="agm-toolbar">
-  <h2 class="agm-page-title">Site Settings</h2>
+<div class="mb-6 flex items-center justify-between gap-3">
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Site Settings</h2>
 </div>
 
-<div class="card agm-editor-card" style="max-width:560px;margin-bottom:20px">
-  <div class="agm-editor-card__title">Features</div>
-  <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Toggle public-facing pages on or off. Disabled pages are removed from the nav and return 404.</p>
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Features</div>
+  <div class="p-5">
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Toggle public-facing pages on or off. Disabled pages are removed from the nav and return 404.</p>
 
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-    <div>
-      <div style="font-size:13px;font-weight:600;color:var(--text-primary)">MVP Race</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Season MVP ladder with AI-written player cases (<code>/mvp</code>)</div>
+    <div class="flex items-center justify-between py-3 border-b border-admin-border/50">
+      <div>
+        <div class="text-[13px] font-semibold text-slate-200">MVP Race</div>
+        <div class="text-xs text-slate-500 mt-0.5">Season MVP ladder with AI-written player cases (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code>)</div>
+      </div>
+      <label class="site-toggle" title="Toggle MVP Race">
+        <input type="checkbox" id="toggle-mvp-race" ${mvpEnabled ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
     </div>
-    <label class="site-toggle" title="Toggle MVP Race">
-      <input type="checkbox" id="toggle-mvp-race" ${mvpEnabled ? 'checked' : ''}>
-      <span class="site-toggle__track"></span>
-    </label>
+    <span id="features-msg" class="text-xs block mt-2.5 min-h-[16px]"></span>
   </div>
-  <span id="features-msg" style="font-size:12px;display:block;margin-top:10px;min-height:16px"></span>
 </div>
 
-<div class="card agm-editor-card" style="max-width:560px">
-  <div class="agm-editor-card__title">Season Quotas</div>
-  <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Set the payment quota per player for each season. Used in the Ledger to track progress.</p>
-  ${quotaRows}
-  ${seasons.length ? `<button id="site-quota-save" class="agm-edit-bar__save" style="margin-top:16px">Save Quotas</button>
-  <span id="site-quota-msg" style="font-size:12px;margin-left:12px"></span>` : ''}
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg">
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Season Quotas</div>
+  <div class="p-5">
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Set the payment quota per player for each season. Used in the Ledger to track progress.</p>
+    ${quotaRows}
+    ${seasons.length ? `<div class="flex items-center gap-3 mt-4">
+      <button id="site-quota-save" class="agm-edit-bar__save">Save Quotas</button>
+      <span id="site-quota-msg" class="text-xs"></span>
+    </div>` : ''}
+  </div>
 </div>
-
-<style>
-.site-toggle { position:relative; display:inline-flex; cursor:pointer; }
-.site-toggle input { opacity:0; width:0; height:0; position:absolute; }
-.site-toggle__track {
-  width:40px; height:22px; background:var(--border); border-radius:11px;
-  transition:background .2s; position:relative;
-}
-.site-toggle__track::after {
-  content:''; position:absolute; top:3px; left:3px;
-  width:16px; height:16px; border-radius:50%; background:#fff;
-  transition:transform .2s;
-}
-.site-toggle input:checked + .site-toggle__track { background:var(--amber); }
-.site-toggle input:checked + .site-toggle__track::after { transform:translateX(18px); }
-</style>
 
 <script>
-  // Feature toggles
   document.getElementById('toggle-mvp-race').addEventListener('change', async function() {
     var msg = document.getElementById('features-msg');
     msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';

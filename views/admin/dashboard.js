@@ -1,45 +1,53 @@
 import { escHtml } from '../layout.js';
 
-const fmt    = n => `PHP ${Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2.5L9 7l-4 4.5"/></svg>`;
+
+const fmt     = n => `PHP ${Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
 
-function kpi(label, value, sub = '', color = 'var(--text-primary)', href = '') {
+function kpi(label, value, sub = '', accent = false, href = '') {
   const inner = `
-    <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">${escHtml(label)}</div>
-    <div style="font-size:26px;font-weight:800;color:${color};line-height:1;font-family:'Saira Condensed',sans-serif">${value}</div>
-    ${sub ? `<div style="font-size:12px;color:var(--text-muted);margin-top:5px">${sub}</div>` : ''}`;
+    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${escHtml(label)}</div>
+    <div class="mt-2 font-saira text-3xl font-extrabold leading-none ${accent ? 'text-brand' : 'text-slate-100'}">${value}</div>
+    ${sub ? `<div class="mt-1.5 text-xs text-slate-500">${escHtml(sub)}</div>` : ''}`;
+  const card = 'block bg-admin-surface border border-admin-border rounded-lg p-5';
   return href
-    ? `<a href="${href}" class="card" style="padding:18px 20px;text-decoration:none;display:block">${inner}</a>`
-    : `<div class="card" style="padding:18px 20px">${inner}</div>`;
+    ? `<a href="${href}" class="${card} transition-colors hover:border-admin-border2 no-underline">${inner}</a>`
+    : `<div class="${card}">${inner}</div>`;
 }
 
 function gameRow(g) {
   const aWon = g.team_a_score > g.team_b_score;
   const bWon = g.team_b_score > g.team_a_score;
-  const gameTypeBadge = g.game_type === 'playoff'
-    ? `<span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#f59332;text-transform:uppercase;margin-left:6px">PO</span>`
-    : '';
-  return `<tr>
-    <td style="padding:9px 0;color:var(--text-muted);font-size:12px;white-space:nowrap">${fmtDate(g.date)}${gameTypeBadge}</td>
-    <td style="padding:9px 0 9px 12px">
-      <span style="font-size:13px;font-weight:${aWon ? '700' : '400'};color:${aWon ? 'var(--text-primary)' : 'var(--text-muted)'}">${escHtml(g.team_a_name)}</span>
-      <span style="font-size:13px;font-weight:800;color:var(--text-primary);margin:0 8px;font-family:'Saira Condensed',sans-serif">${g.team_a_score}–${g.team_b_score}</span>
-      <span style="font-size:13px;font-weight:${bWon ? '700' : '400'};color:${bWon ? 'var(--text-primary)' : 'var(--text-muted)'}">${escHtml(g.team_b_name)}</span>
-    </td>
-    <td style="padding:9px 0;text-align:right">
-      <a href="/admin/games/${escHtml(g.id)}" style="font-size:11px;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:2px 8px;text-decoration:none">Edit</a>
-    </td>
-  </tr>`;
+  const isPO = g.game_type === 'playoff';
+  return `<div class="flex items-center gap-3 px-4 py-3 border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
+    <span class="w-16 shrink-0 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}${isPO ? `<span class="ml-1.5 text-[9px] font-bold text-brand">PO</span>` : ''}</span>
+    <span class="flex-1 min-w-0 flex items-center gap-2 text-sm truncate">
+      <span class="truncate ${aWon ? 'font-bold text-slate-100' : 'text-slate-400'}">${escHtml(g.team_a_name)}</span>
+      <span class="font-saira font-bold text-slate-500 shrink-0">${g.team_a_score}–${g.team_b_score}</span>
+      <span class="truncate ${bWon ? 'font-bold text-slate-100' : 'text-slate-400'}">${escHtml(g.team_b_name)}</span>
+    </span>
+    <a href="/admin/games/${escHtml(g.id)}" class="agm-edit-link shrink-0">Edit ${ICON_CHEVRON_R}</a>
+  </div>`;
 }
 
 function upcomingRow(g) {
-  return `<tr>
-    <td style="padding:9px 0;color:var(--text-muted);font-size:12px;white-space:nowrap">${fmtDate(g.date)}</td>
-    <td style="padding:9px 0 9px 12px;font-size:13px;color:var(--text-primary)">${escHtml(g.team_a_name)} <span style="color:var(--text-muted)">vs</span> ${escHtml(g.team_b_name)}</td>
-    <td style="padding:9px 0;text-align:right">
-      <a href="/admin/games/${escHtml(g.id)}" style="font-size:11px;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:2px 8px;text-decoration:none">Edit</a>
-    </td>
-  </tr>`;
+  return `<div class="flex items-center gap-3 px-4 py-3 border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
+    <span class="w-16 shrink-0 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}</span>
+    <span class="flex-1 min-w-0 flex items-center gap-2 text-sm truncate text-slate-300">
+      <span class="truncate">${escHtml(g.team_a_name)}</span>
+      <span class="text-xs text-slate-500 shrink-0">vs</span>
+      <span class="truncate">${escHtml(g.team_b_name)}</span>
+    </span>
+    <a href="/admin/games/${escHtml(g.id)}" class="agm-edit-link shrink-0">Edit ${ICON_CHEVRON_R}</a>
+  </div>`;
+}
+
+function quickLink(href, label, sub) {
+  return `<a href="${href}" class="flex flex-col justify-center gap-1 bg-admin-surface2 border border-admin-border2 rounded-lg px-4 py-3.5 transition-colors hover:border-brand/50 no-underline">
+    <span class="text-sm font-semibold text-slate-100">${escHtml(label)}</span>
+    <span class="text-xs text-slate-500">${escHtml(sub)}</span>
+  </a>`;
 }
 
 export function adminDashboardBody({
@@ -51,66 +59,70 @@ export function adminDashboardBody({
   const inactivePlayers  = players.length - activePlayers;
 
   const alerts = [];
-  if (pendingCount > 0) alerts.push(`<a href="/admin/ledger" style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:8px;background:#f5933210;border:1px solid #f5933230;text-decoration:none;font-size:13px;color:#f59332"><span style="font-weight:600">${pendingCount} pending transaction${pendingCount === 1 ? '' : 's'}</span> <span style="color:var(--text-muted)">awaiting confirmation →</span></a>`);
-  if (underReview > 0)  alerts.push(`<a href="/admin/games" style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:8px;background:#ef444410;border:1px solid #ef444430;text-decoration:none;font-size:13px;color:#ef4444"><span style="font-weight:600">${underReview} game${underReview === 1 ? '' : 's'} under review</span> <span style="color:var(--text-muted)">needs attention →</span></a>`);
-
-  const recentGamesHtml = recentGames.length
-    ? `<table style="width:100%;border-collapse:collapse">${recentGames.map(gameRow).join('')}</table>`
-    : `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No games recorded yet.</p>`;
-
-  const upcomingHtml = upcoming.length
-    ? `<table style="width:100%;border-collapse:collapse">${upcoming.map(upcomingRow).join('')}</table>`
-    : `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No upcoming games.</p>`;
+  if (pendingCount > 0) alerts.push(
+    `<a href="/admin/ledger" class="flex items-center gap-3 rounded-lg border border-brand/30 bg-brand/[.07] px-4 py-3 text-sm text-slate-200 transition-colors hover:bg-brand/[.12] no-underline">
+      <span class="h-2 w-2 shrink-0 rounded-full bg-brand"></span>
+      <span><strong class="font-bold text-brand">${pendingCount} pending transaction${pendingCount === 1 ? '' : 's'}</strong> awaiting confirmation</span>
+      <span class="ml-auto text-brand">→</span>
+    </a>`
+  );
+  if (underReview > 0) alerts.push(
+    `<a href="/admin/games" class="flex items-center gap-3 rounded-lg border border-error/30 bg-error/[.07] px-4 py-3 text-sm text-slate-200 transition-colors hover:bg-error/[.12] no-underline">
+      <span class="h-2 w-2 shrink-0 rounded-full bg-error"></span>
+      <span><strong class="font-bold text-error">${underReview} game${underReview === 1 ? '' : 's'} under review</strong> needs attention</span>
+      <span class="ml-auto text-error">→</span>
+    </a>`
+  );
 
   return `
-<div class="agm-toolbar">
-  <h2 class="agm-page-title">Dashboard</h2>
+<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Dashboard</h2>
 </div>
 
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
-  ${kpi('Players', activePlayers, inactivePlayers > 0 ? `${inactivePlayers} inactive` : 'all active', 'var(--text-primary)', '/admin/players')}
-  ${kpi('Teams', teams.length, '&nbsp;', 'var(--text-primary)')}
-  ${kpi('Games Played', String(gamesPlayed), 'all time', 'var(--text-primary)', '/admin/games')}
-  ${kpi('Outstanding', fmt(totalOutstanding), 'all time', totalOutstanding > 0 ? '#ef4444' : '#22c55e', '/admin/finance')}
+${alerts.length ? `<div class="mb-6 flex flex-col gap-2.5">${alerts.join('')}</div>` : ''}
+
+<div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+  ${kpi('Active Players', String(activePlayers), inactivePlayers > 0 ? `${inactivePlayers} inactive` : 'all active', false, '/admin/players')}
+  ${kpi('Teams', String(teams.length), '', false)}
+  ${kpi('Games Played', String(gamesPlayed), 'all time', false, '/admin/games')}
+  ${kpi('Outstanding', fmt(totalOutstanding), 'all time', totalOutstanding > 0, '/admin/finance')}
 </div>
 
-${alerts.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">${alerts.join('')}</div>` : ''}
-
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-  <div>
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-        <span style="font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--text-muted);text-transform:uppercase">Recent Results</span>
-        <a href="/admin/games" style="font-size:12px;color:var(--text-muted)">All games →</a>
-      </div>
-      <div style="padding:4px 16px 12px">${recentGamesHtml}</div>
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+  <div class="lg:col-span-2 bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-admin-border">
+      <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Recent Results</span>
+      <a href="/admin/games" class="text-xs font-semibold text-slate-500 hover:text-brand transition-colors no-underline">All games →</a>
+    </div>
+    <div>
+      ${recentGames.length
+        ? recentGames.map(gameRow).join('')
+        : `<p class="px-4 py-8 text-center text-sm text-slate-500">No games recorded yet.</p>`}
     </div>
   </div>
 
-  <div style="display:flex;flex-direction:column;gap:16px">
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-        <span style="font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--text-muted);text-transform:uppercase">Upcoming</span>
-        <a href="/admin/games" style="font-size:12px;color:var(--text-muted)">View →</a>
+  <div class="flex flex-col gap-4">
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-admin-border">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Upcoming</span>
+        <a href="/admin/games" class="text-xs font-semibold text-slate-500 hover:text-brand transition-colors no-underline">Schedule →</a>
       </div>
-      <div style="padding:4px 16px 12px">${upcomingHtml}</div>
+      <div>
+        ${upcoming.length
+          ? upcoming.map(upcomingRow).join('')
+          : `<p class="px-4 py-8 text-center text-sm text-slate-500">No upcoming games.</p>`}
+      </div>
     </div>
 
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
-        <span style="font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--text-muted);text-transform:uppercase">Quick Access</span>
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Quick Access</span>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;padding:8px">
-        ${[
-          { href: '/admin/players',  label: 'Players',       sub: `${players.length} total` },
-          { href: '/admin/games',    label: 'Games',         sub: upcoming.length ? `${upcoming.length} scheduled` : 'manage schedule' },
-          { href: '/admin/ledger',   label: 'Ledger',        sub: pendingCount ? `${pendingCount} pending` : 'view all' },
-          { href: '/admin/site',     label: 'Site Settings', sub: 'quotas & config' },
-        ].map(({ href, label, sub }) => `
-          <a href="${href}" style="display:flex;flex-direction:column;gap:3px;padding:12px;border-radius:8px;text-decoration:none;transition:background .15s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''">
-            <span style="font-size:13px;font-weight:600;color:var(--text-primary)">${escHtml(label)}</span>
-            <span style="font-size:11px;color:var(--text-muted)">${escHtml(sub)}</span>
-          </a>`).join('')}
+      <div class="grid grid-cols-2 gap-2.5 p-3">
+        ${quickLink('/admin/players',  'Players',       `${players.length} total`)}
+        ${quickLink('/admin/games',    'Games',         upcoming.length ? `${upcoming.length} scheduled` : 'manage')}
+        ${quickLink('/admin/ledger',   'Ledger',        pendingCount ? `${pendingCount} pending` : 'view all')}
+        ${quickLink('/admin/site',     'Site Settings', 'quotas & features')}
       </div>
     </div>
   </div>

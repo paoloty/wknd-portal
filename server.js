@@ -290,6 +290,7 @@ function buildTeamOgTags(req, team) {
 function buildMvpOgTags(req, candidates, season) {
   const origin  = getRequestOrigin(req);
   const url     = `${origin}/mvp`;
+  const img     = `${origin}/og-mvp.png`;
   const title   = `MVP Race — WKND Basketball League`;
   const leader  = candidates[0];
   let desc;
@@ -313,11 +314,85 @@ function buildMvpOgTags(req, candidates, season) {
     `<meta property="og:title" content="${escAttr(title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
     `<meta property="og:url" content="${escAttr(url)}">`,
-    `<meta name="twitter:card" content="summary">`,
+    `<meta property="og:image" content="${escAttr(img)}">`,
+    `<meta property="og:image:secure_url" content="${escAttr(img)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta property="og:image:alt" content="${escAttr(title)}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
     `<meta name="twitter:title" content="${escAttr(title)}">`,
     `<meta name="twitter:description" content="${escAttr(desc)}">`,
+    `<meta name="twitter:image" content="${escAttr(img)}">`,
   ];
   return tags.join('\n  ');
+}
+
+function buildDefaultOgSvg() {
+  return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#020817"/>
+  <circle cx="960" cy="315" r="310" fill="none" stroke="#0c1525" stroke-width="3"/>
+  <circle cx="960" cy="315" r="230" fill="none" stroke="#0c1525" stroke-width="2"/>
+  <circle cx="960" cy="315" r="145" fill="none" stroke="#121f35" stroke-width="2"/>
+  <path d="M960 5 Q810 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
+  <path d="M960 5 Q1110 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
+  <line x1="650" y1="315" x2="1200" y2="315" stroke="#0c1525" stroke-width="2"/>
+  <rect x="0" y="0" width="1200" height="5" fill="#f59332"/>
+  <text x="80" y="118" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" letter-spacing="6" fill="#f59332">WKND BASKETBALL LEAGUE</text>
+  <text x="72" y="305" font-family="Impact,Arial Black,Arial,sans-serif" font-size="148" font-weight="900" fill="#e2e8f0" letter-spacing="4">WKND</text>
+  <text x="80" y="388" font-family="Impact,Arial Black,Arial,sans-serif" font-size="58" font-weight="900" fill="#1e293b" letter-spacing="10">BASKETBALL</text>
+  <text x="80" y="458" font-family="Arial,Helvetica,sans-serif" font-size="17" fill="#475569" letter-spacing="2">STATS  \xB7  MVP RACE  \xB7  STANDINGS  \xB7  GAME RECAPS</text>
+  <rect x="80" y="548" width="44" height="3" fill="#f59332"/>
+  <text x="80" y="596" font-family="Arial,Helvetica,sans-serif" font-size="12" fill="#2d3d54" letter-spacing="3">WKNDBASKETBALL.COM</text>
+</svg>`;
+}
+
+function buildMvpOgSvg(leader, season) {
+  const name   = leader ? displayPlayerName(leader.player.name) : 'TBD';
+  const team   = leader ? String(leader.stats.team_name || '').toUpperCase() : '';
+  const gp     = leader?.stats?.gp || 1;
+  const ppg    = leader ? (leader.stats.pts / gp).toFixed(1) : '—';
+  const rpg    = leader ? (leader.stats.reb / gp).toFixed(1) : '—';
+  const apg    = leader ? (leader.stats.ast / gp).toFixed(1) : '—';
+  const scr    = leader ? leader.mvpScore.toFixed(1) : '—';
+  const disp   = name.length > 20 ? name.slice(0, 19) + '…' : name;
+
+  return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="82%" cy="50%" r="45%">
+      <stop offset="0%" stop-color="#f59332" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#020817"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <circle cx="1060" cy="315" r="260" fill="none" stroke="#0c1525" stroke-width="2"/>
+  <circle cx="1060" cy="315" r="185" fill="none" stroke="#0c1525" stroke-width="2"/>
+  <path d="M1060 55 Q930 315 1060 575" stroke="#0c1525" stroke-width="2" fill="none"/>
+  <path d="M1060 55 Q1190 315 1060 575" stroke="#0c1525" stroke-width="2" fill="none"/>
+  <line x1="800" y1="315" x2="1200" y2="315" stroke="#0c1525" stroke-width="2"/>
+  <rect x="0" y="0" width="6" height="630" fill="#f59332"/>
+  <rect x="6" y="78" width="1194" height="1" fill="#1e293b"/>
+  <rect x="6" y="553" width="1194" height="1" fill="#1e293b"/>
+  <text x="80" y="52" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="5" fill="#f59332">WKND BASKETBALL LEAGUE</text>
+  <text x="1120" y="52" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="4" fill="#334155" text-anchor="end">SEASON ${escAttr(String(season || ''))}</text>
+  <rect x="80" y="106" width="122" height="28" rx="4" fill="rgba(245,147,50,0.1)" stroke="#f59332" stroke-opacity="0.35" stroke-width="1"/>
+  <text x="141" y="125" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="4" fill="#f59332" text-anchor="middle">MVP RACE</text>
+  <text x="80" y="210" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="6" fill="#334155">#1  FRONTRUNNER</text>
+  <text x="78" y="335" font-family="Impact,Arial Black,Arial,sans-serif" font-size="90" font-weight="900" fill="#e2e8f0" letter-spacing="1">${escAttr(disp)}</text>
+  <text x="80" y="388" font-family="Arial,Helvetica,sans-serif" font-size="14" letter-spacing="6" fill="#475569">${escAttr(team)}</text>
+  <line x1="80" y1="415" x2="600" y2="415" stroke="#1e293b" stroke-width="1"/>
+  <text x="80" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#f59332">${escAttr(ppg)}</text>
+  <text x="80" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">PPG</text>
+  <text x="210" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#e2e8f0">${escAttr(rpg)}</text>
+  <text x="210" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">RPG</text>
+  <text x="340" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#e2e8f0">${escAttr(apg)}</text>
+  <text x="340" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">APG</text>
+  <line x1="462" y1="445" x2="462" y2="505" stroke="#1e293b" stroke-width="1"/>
+  <text x="478" y="468" font-family="Impact,Arial Black,Arial,sans-serif" font-size="40" fill="#f59332">${escAttr(scr)}</text>
+  <text x="478" y="492" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="3" fill="#334155">MVP SCORE</text>
+  <text x="80" y="593" font-family="Arial,Helvetica,sans-serif" font-size="11" fill="#1e3050" letter-spacing="3">WKNDBASKETBALL.COM</text>
+</svg>`;
 }
 
 function buildTicker() {
@@ -331,7 +406,19 @@ function getFeatureFlags() {
 }
 
 function renderPage(req, opts) {
-  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, features: getFeatureFlags(), ...opts });
+  const origin = getRequestOrigin(req);
+  const fallbackImg = `${origin}/og-image.png`;
+  const fallbackMeta = [
+    `<meta property="og:image" content="${escAttr(fallbackImg)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:image" content="${escAttr(fallbackImg)}">`,
+  ].join('\n  ');
+  const existing = opts.metaTags || '';
+  const metaTags = existing.includes('og:image') ? existing : (existing ? existing + '\n  ' + fallbackMeta : fallbackMeta);
+  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, features: getFeatureFlags(), ...opts, metaTags });
 }
 
 function renderAdminPage(req, opts) {
@@ -970,6 +1057,40 @@ async function serveCover(req, res) {
 app.get('/api/cover/:gameId.png', serveCover);
 app.get('/api/cover/:gameId',     serveCover);
 
+// ── Generic + MVP social OG images ───────────────────────────────────────────
+let _ogDefaultPng = null;
+app.get('/og-image.png', async (req, res) => {
+  try {
+    if (!_ogDefaultPng) {
+      _ogDefaultPng = await sharp(Buffer.from(buildDefaultOgSvg()), { density: 96 })
+        .resize(1200, 630).png({ compressionLevel: 9 }).toBuffer();
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=604800, immutable');
+    res.end(_ogDefaultPng);
+  } catch (err) { console.error('og-image error:', err); res.status(500).end(); }
+});
+
+const _ogMvpCache = { buf: null, ts: 0 };
+app.get('/og-mvp.png', async (req, res) => {
+  try {
+    if (!_ogMvpCache.buf || Date.now() - _ogMvpCache.ts > 3_600_000) {
+      const { season } = getCurrentSeason() || {};
+      const raw = season ? getMvpCandidates(season) : [];
+      const candidates = raw
+        .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
+        .filter(c => c.stats.gp >= 1)
+        .sort((a, b) => b.mvpScore - a.mvpScore);
+      _ogMvpCache.buf = await sharp(Buffer.from(buildMvpOgSvg(candidates[0] || null, season || '')), { density: 96 })
+        .resize(1200, 630).png({ compressionLevel: 7 }).toBuffer();
+      _ogMvpCache.ts = Date.now();
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(_ogMvpCache.buf);
+  } catch (err) { console.error('og-mvp error:', err); res.status(500).end(); }
+});
+
 app.get('/api/photo/:gameId', (req, res) => {
   const row    = getGameCover(req.params.gameId);
   const dataUrl = row?.social_cover_data_url;
@@ -1148,7 +1269,7 @@ app.get('/admin/ledger/:id', requireAuth, (req, res) => {
     body: '<p style="padding:40px;color:var(--text-muted)">Player not found.</p>',
   }));
   const seasons = getLedgerSeasons();
-  const season  = req.query.season || seasons[0] || '';
+  const season  = 'season' in req.query ? req.query.season : (seasons[0] || '');
   const fin     = getPlayerFinancials(player.id) ?? {};
   const txs     = season ? getPlayerTransactionsBySeason(player.id, season) : getPlayerTransactions(player.id);
   const quota   = season ? getSeasonQuota(season) : 0;

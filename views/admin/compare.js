@@ -13,20 +13,19 @@ export function adminComparePage({ rows = [] } = {}) {
     const nameB = r.player_b_name ? displayPlayerName(r.player_b_name) : r.player_b_id;
     const preview = (r.writeup || '').slice(0, 110).replace(/\n/g, ' ');
     const model = r.model || '—';
-    return `<tr class="admin-table-row cmp-row" data-idx="${i}" style="cursor:pointer">
-      <td class="admin-td" style="font-weight:500">${escHtml(nameA)}</td>
-      <td class="admin-td" style="font-weight:500">${escHtml(nameB)}</td>
-      <td class="admin-td" style="text-align:center">
-        <span style="font-size:15px;font-weight:700;color:var(--accent)">${r.view_count ?? 0}</span>
+    return `<tr class="cmp-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors cursor-pointer" data-idx="${i}">
+      <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(nameA)}</td>
+      <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(nameB)}</td>
+      <td class="px-4 py-3 text-center">
+        <span class="font-saira text-base font-bold text-brand">${r.view_count ?? 0}</span>
       </td>
-      <td class="admin-td" style="color:var(--text-muted);font-size:13px">${escHtml(fmtDate(r.last_viewed_at))}</td>
-      <td class="admin-td" style="color:var(--text-muted);font-size:13px">${escHtml(fmtDate(r.created_at))}</td>
-      <td class="admin-td" style="color:var(--text-muted);font-size:12px;font-family:'Saira Condensed',sans-serif;letter-spacing:.03em">${escHtml(model)}</td>
-      <td class="admin-td" style="color:var(--text-muted);font-size:12px;max-width:280px;white-space:normal;line-height:1.4">${escHtml(preview)}${r.writeup && r.writeup.length > 110 ? '…' : ''}</td>
+      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${escHtml(fmtDate(r.last_viewed_at))}</td>
+      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${escHtml(fmtDate(r.created_at))}</td>
+      <td class="px-4 py-3 text-xs text-slate-500 font-saira tracking-wide">${escHtml(model)}</td>
+      <td class="px-4 py-3 text-xs text-slate-500 max-w-[280px] whitespace-normal leading-relaxed hidden md:table-cell">${escHtml(preview)}${r.writeup && r.writeup.length > 110 ? '…' : ''}</td>
     </tr>`;
   }).join('');
 
-  // Serialize row data for JS
   const rowData = rows.map(r => ({
     nameA: r.player_a_name ? displayPlayerName(r.player_a_name) : (r.player_a_id || ''),
     nameB: r.player_b_name ? displayPlayerName(r.player_b_name) : (r.player_b_id || ''),
@@ -38,59 +37,68 @@ export function adminComparePage({ rows = [] } = {}) {
   }));
 
   return `
-<div class="agm-toolbar">
-  <h2 class="agm-page-title">Player Compares</h2>
-  <span style="color:var(--text-muted);font-size:13px">${rows.length} generated</span>
+<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Player Compares</h2>
+  <span class="text-sm text-slate-500">${rows.length} generated</span>
 </div>
 
 ${rows.length === 0
-  ? `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">No comparisons generated yet.</div>`
-  : `<div class="card admin-table-scroll" style="padding:0">
-  <table class="admin-table">
+  ? `<div class="bg-admin-surface border border-admin-border rounded-lg p-10 text-center text-sm text-slate-500">No comparisons generated yet.</div>`
+  : `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
+  <table class="w-full border-collapse has-col-dividers has-freeze-col">
     <thead>
       <tr>
-        <th class="admin-th">Player A</th>
-        <th class="admin-th">Player B</th>
-        <th class="admin-th" style="text-align:center">Views</th>
-        <th class="admin-th">Last Viewed</th>
-        <th class="admin-th">Created</th>
-        <th class="admin-th">Model</th>
-        <th class="admin-th">Preview</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Player A</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Player B</th>
+        <th class="px-4 py-2.5 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Views</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Last Viewed</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Created</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Model</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border hidden md:table-cell">Preview</th>
       </tr>
     </thead>
     <tbody>${tableRows}</tbody>
   </table>
 </div>`}
 
-<!-- Compare detail modal -->
 <div class="agm-modal-backdrop" id="cmp-backdrop" hidden>
-  <div class="agm-modal" style="max-width:540px;width:100%">
+  <div class="agm-modal" style="max-width:640px;width:100%">
     <div class="agm-modal-header">
-      <h3 class="agm-modal-title" id="cmp-modal-title">Comparison</h3>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Comparison</span>
       <button class="agm-modal-close" id="cmp-modal-close" aria-label="Close">✕</button>
     </div>
-    <div class="agm-modal-body" style="gap:16px">
-      <div style="display:flex;gap:24px">
-        <div>
-          <div class="agm-modal-label">Views</div>
-          <div id="cmp-modal-views" style="font-size:22px;font-weight:800;color:var(--accent);font-family:'Saira Condensed',sans-serif">—</div>
+    <div class="agm-modal-body" style="gap:0;padding:0">
+      <div class="grid grid-cols-2 gap-px bg-admin-border">
+        <div class="bg-admin-surface px-5 py-4">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Player A</div>
+          <div id="cmp-modal-name-a" class="text-base font-semibold text-slate-100">—</div>
         </div>
-        <div>
-          <div class="agm-modal-label">Last Viewed</div>
-          <div id="cmp-modal-last" style="font-size:13px;color:var(--text-muted);margin-top:4px">—</div>
-        </div>
-        <div>
-          <div class="agm-modal-label">Created</div>
-          <div id="cmp-modal-created" style="font-size:13px;color:var(--text-muted);margin-top:4px">—</div>
-        </div>
-        <div>
-          <div class="agm-modal-label">Model</div>
-          <div id="cmp-modal-model" style="font-size:12px;color:var(--text-muted);margin-top:4px;font-family:'Saira Condensed',sans-serif">—</div>
+        <div class="bg-admin-surface px-5 py-4">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Player B</div>
+          <div id="cmp-modal-name-b" class="text-base font-semibold text-slate-100">—</div>
         </div>
       </div>
-      <div style="border-top:1px solid var(--border);padding-top:16px">
-        <div class="agm-modal-label" style="margin-bottom:8px">Writeup</div>
-        <p id="cmp-modal-writeup" style="font-size:14px;line-height:1.7;color:var(--text);margin:0;white-space:pre-wrap"></p>
+      <div class="grid grid-cols-4 gap-px bg-admin-border border-t border-admin-border">
+        <div class="bg-admin-surface px-5 py-4">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Views</div>
+          <div id="cmp-modal-views" class="font-saira text-2xl font-extrabold text-brand">—</div>
+        </div>
+        <div class="bg-admin-surface px-5 py-4">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Last Viewed</div>
+          <div id="cmp-modal-last" class="text-sm text-slate-300 mt-0.5">—</div>
+        </div>
+        <div class="bg-admin-surface px-5 py-4">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Created</div>
+          <div id="cmp-modal-created" class="text-sm text-slate-300 mt-0.5">—</div>
+        </div>
+        <div class="bg-admin-surface px-5 py-4">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Model</div>
+          <div id="cmp-modal-model" class="text-xs text-slate-400 mt-0.5 font-saira tracking-wide">—</div>
+        </div>
+      </div>
+      <div class="px-5 py-4 border-t border-admin-border">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Writeup</div>
+        <p id="cmp-modal-writeup" class="text-sm leading-relaxed text-slate-300 m-0 whitespace-pre-wrap"></p>
       </div>
     </div>
     <div class="agm-modal-footer">
@@ -102,12 +110,12 @@ ${rows.length === 0
 <script>
 (function() {
   var DATA = ${JSON.stringify(rowData)};
-
   var backdrop = document.getElementById('cmp-backdrop');
 
   function openModal(idx) {
     var d = DATA[idx];
-    document.getElementById('cmp-modal-title').textContent = d.nameA + ' vs ' + d.nameB;
+    document.getElementById('cmp-modal-name-a').textContent = d.nameA;
+    document.getElementById('cmp-modal-name-b').textContent = d.nameB;
     document.getElementById('cmp-modal-views').textContent = d.views;
     document.getElementById('cmp-modal-last').textContent = d.lastViewed;
     document.getElementById('cmp-modal-created').textContent = d.created;

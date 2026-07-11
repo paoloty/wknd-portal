@@ -50,7 +50,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       : `<span class="agm-score">${scoreA} – ${scoreB}${otLbl ? `<span style="font-size:10px;font-weight:700;color:var(--amber);margin-left:4px">${otLbl}</span>` : ''}</span>`;
 
     const otEdit = !isUpcom
-      ? `<select class="agm-ot-sel" data-gid="${escHtml(g.id)}" title="Overtime periods" style="font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;padding:1px 4px">
+      ? `<select class="agm-ot-sel ml-2 text-[11px] bg-admin-bg border border-admin-border text-slate-500 rounded px-1 py-0.5" data-gid="${escHtml(g.id)}" title="Overtime periods">
           <option value="0"${ot===0?' selected':''}>REG</option>
           <option value="1"${ot===1?' selected':''}>OT</option>
           <option value="2"${ot===2?' selected':''}>OT2</option>
@@ -59,29 +59,31 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       : '';
 
     const markFinalBtn = isUpcom
-      ? `<button class="agm-final-btn" data-gid="${escHtml(g.id)}" data-name="${escHtml(g.team_a_name + ' vs ' + g.team_b_name)}" style="font-size:11px;font-weight:600;color:var(--amber);background:none;border:1px solid var(--amber);border-radius:4px;padding:2px 8px;cursor:pointer;white-space:nowrap">Final Score</button>`
+      ? `<button class="agm-final-btn" data-gid="${escHtml(g.id)}" data-name="${escHtml(g.team_a_name + ' vs ' + g.team_b_name)}">Final Score</button>`
       : '';
 
-    return `<tr class="agm-row admin-table-row"
+    return `<tr class="agm-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors"
       data-type="${typeKey}"
       data-status="${statusKey}"
       data-season="${escHtml(g.season || '')}"
       data-q="${escHtml((g.team_a_name + ' ' + g.team_b_name).toLowerCase())}">
-      <td class="admin-td agm-td--date">${fmtDate(g.date)}</td>
-      <td class="admin-td agm-td--matchup">
-        <span class="${winner === 'a' ? 'agm-team--win' : ''}">${escHtml(g.team_a_name)}</span>
+      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}</td>
+      <td class="px-4 py-3">
+        <span class="${winner === 'a' ? 'agm-team--win' : 'text-slate-400 text-sm'}">${escHtml(g.team_a_name)}</span>
         ${scoreCell}
-        <span class="${winner === 'b' ? 'agm-team--win' : ''}">${escHtml(g.team_b_name)}</span>
+        <span class="${winner === 'b' ? 'agm-team--win' : 'text-slate-400 text-sm'}">${escHtml(g.team_b_name)}</span>
       </td>
-      <td class="admin-td">
+      <td class="px-4 py-3">
         <span class="agm-type${typeKey === 'playoff' ? ' agm-type--po' : ''}">${typeKey === 'playoff' ? 'PO' : 'RS'}</span>
       </td>
-      <td class="admin-td agm-td--season">${escHtml(g.season || '—')}</td>
-      <td class="admin-td">${statusBadge(g)}</td>
-      <td class="admin-td"><span class="agm-dots">${contentDots}</span>${otEdit}</td>
-      <td class="admin-td agm-td--action" style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
-        ${markFinalBtn}
-        <a href="/admin/games/${escHtml(g.id)}" class="agm-edit-link">Edit ${ICON_CHEVRON_R}</a>
+      <td class="px-4 py-3 text-xs text-slate-500">${escHtml(g.season || '—')}</td>
+      <td class="px-4 py-3">${statusBadge(g)}</td>
+      <td class="px-4 py-3"><span class="agm-dots">${contentDots}</span>${otEdit}</td>
+      <td class="px-4 py-3">
+        <div class="flex items-center justify-end gap-1.5">
+          ${markFinalBtn}
+          <a href="/admin/games/${escHtml(g.id)}" class="agm-edit-link">Edit ${ICON_CHEVRON_R}</a>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -97,9 +99,9 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
   const today = new Date().toISOString().slice(0, 10);
 
   return `
-<div class="agm-toolbar">
-  <h2 class="agm-page-title">Games</h2>
-  <div class="agm-toolbar__right">
+<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Games</h2>
+  <div class="flex items-center gap-2">
     <input type="search" id="agm-search" class="agm-search" placeholder="Search teams…">
     <button class="agm-new-btn" id="agm-new-btn">+ New Game</button>
   </div>
@@ -159,7 +161,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       <button class="agm-modal-close" id="agm-final-close" aria-label="Close">✕</button>
     </div>
     <div class="agm-modal-body">
-      <p id="agm-final-name" style="font-size:13px;color:var(--text-muted);margin:0 0 12px"></p>
+      <p id="agm-final-name" class="text-xs text-slate-400 mb-3"></p>
       <div class="agm-modal-row">
         <div class="agm-modal-field">
           <label class="agm-modal-label">Team A Score</label>
@@ -188,37 +190,37 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
   </div>
 </div>
 
-<div class="agm-filters">
-  <div class="agm-filter-group">
+<div class="mb-4 flex flex-wrap gap-3">
+  <div class="flex flex-wrap items-center gap-1.5">
     <button class="agm-pill is-active" data-ft="">All</button>
     <button class="agm-pill" data-ft="regular">Regular</button>
     <button class="agm-pill" data-ft="playoff">Playoff</button>
   </div>
-  <div class="agm-filter-group">
+  <div class="flex flex-wrap items-center gap-1.5">
     <button class="agm-pill is-active" data-fst="">All Status</button>
     <button class="agm-pill" data-fst="live">Live</button>
     <button class="agm-pill" data-fst="draft">Draft</button>
     <button class="agm-pill" data-fst="final">Final</button>
     <button class="agm-pill" data-fst="upcoming">Upcoming</button>
   </div>
-  ${seasons.length > 1 ? `<div class="agm-filter-group">${seasonPills}</div>` : ''}
+  ${seasons.length > 1 ? `<div class="flex flex-wrap items-center gap-1.5">${seasonPills}</div>` : ''}
 </div>
 
-<div class="card admin-table-scroll" style="padding:0">
-  <table class="admin-table">
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
+  <table class="w-full border-collapse has-col-dividers has-freeze-col">
     <thead>
       <tr>
-        <th class="admin-th">Date</th>
-        <th class="admin-th">Matchup</th>
-        <th class="admin-th">Type</th>
-        <th class="admin-th">Season</th>
-        <th class="admin-th">Status</th>
-        <th class="admin-th" title="Recap · YouTube · Cover">R · Y · C</th>
-        <th class="admin-th"></th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Date</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Matchup</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Type</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Season</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Status</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border" title="Recap · YouTube · Cover">R · Y · C</th>
+        <th class="px-4 py-2.5 border-b border-admin-border"></th>
       </tr>
     </thead>
     <tbody id="agm-tbody">
-      ${rows || '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text-muted)">No games found.</td></tr>'}
+      ${rows || '<tr><td colspan="7" class="px-4 py-10 text-center text-sm text-slate-500">No games found.</td></tr>'}
     </tbody>
   </table>
 </div>
@@ -479,15 +481,15 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
   </div>
 </div>
 
-<div class="agm-wp-layout">
+<div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_300px] items-start">
 
-  <div class="agm-wp-main">
+  <div class="flex flex-col gap-4 min-w-0">
     ${needsImport ? `
-    <div class="card agm-section agm-import-section">
-      <div class="agm-import-icon">${ICON_IMPORT}</div>
-      <div class="agm-import-body">
-        <h3 class="agm-section__title">Import Game Results</h3>
-        <p class="agm-import-desc">${isFinal ? 'Score has been confirmed. Import the full game file to add box scores and player stats.' : 'Export the game file from the wknd-stats admin app, then upload it here to import the final score, box score, and player stats into this game.'}</p>
+    <div class="bg-admin-surface border border-admin-border rounded-lg p-5 flex gap-4 items-start">
+      <div class="text-brand mt-0.5 shrink-0">${ICON_IMPORT}</div>
+      <div class="flex-1 min-w-0">
+        <h3 class="text-sm font-semibold text-slate-200 mb-1">Import Game Results</h3>
+        <p class="text-xs text-slate-500 mb-4 leading-relaxed">${isFinal ? 'Score has been confirmed. Import the full game file to add box scores and player stats.' : 'Export the game file from the wknd-stats admin app, then upload it here to import the final score, box score, and player stats into this game.'}</p>
         <label class="agm-file-label" id="agm-file-label">
           <input type="file" id="agm-file-input" accept=".json" style="display:none">
           <span class="agm-file-placeholder" id="agm-file-placeholder">Choose exported file (.json)…</span>
@@ -506,9 +508,11 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
     </div>
     ` : ''}
     ${!isScheduled && !isFinal ? `
-    <div class="card agm-editor-card">
-      <div class="agm-editor-card__title">YouTube</div>
-      <input id="val-yt" type="url" class="admin-input" placeholder="https://youtube.com/watch?v=…" value="${escHtml(game.youtube_url || '')}">
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">YouTube</div>
+      <div class="p-4">
+        <input id="val-yt" type="url" class="admin-input" placeholder="https://youtube.com/watch?v=…" value="${escHtml(game.youtube_url || '')}">
+      </div>
     </div>
 
     <div class="card game-tabs">
@@ -550,67 +554,77 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
     ` : ''}
   </div>
 
-  <div class="agm-wp-sidebar">
+  <div class="flex flex-col gap-4">
 
-    <div class="card agm-sidebar-card">
-      <div class="agm-sidebar-card__title">${isScheduled || isFinal ? 'Schedule' : 'Publish'}</div>
-      ${!isScheduled && !isFinal ? `
-      <div class="agm-sidebar-field">
-        <label class="admin-field-label">Status</label>
-        <select id="pub-status" class="admin-input">
-          <option value="live"${isLive ? ' selected' : ''}>Live</option>
-          <option value="draft"${game.under_review ? ' selected' : ''}>Draft</option>
-        </select>
-      </div>
-      ` : ''}
-      <div class="agm-sidebar-field">
-        <label class="admin-field-label">Date</label>
-        <input type="date" id="pub-date" class="admin-input" value="${escHtml(game.date || '')}">
-      </div>
-    </div>
-
-    ${!isScheduled && !isFinal ? `
-    <div class="card agm-sidebar-card">
-      <div class="agm-sidebar-card__title">Player of the Game</div>
-      <select id="val-potg-player" class="admin-input">${playerOpts}</select>
-      <label class="admin-field-label">Write-up</label>
-      <textarea id="val-potg" class="admin-input agm-textarea" rows="4" placeholder="Write about the player of the game…">${escHtml(game.potg_writeup || '')}</textarea>
-      <div class="agm-gen-bar agm-gen-bar--sm">
-        <button class="agm-gen-btn agm-gen-btn--sm" id="btn-gen-potg">✦ Generate</button>
-        <span class="agm-gen-status" id="gen-potg-status"></span>
-      </div>
-    </div>
-    ` : ''}
-
-    ${!isScheduled && !isFinal ? `
-    <div class="card agm-sidebar-card">
-      <div class="agm-sidebar-card__title">Cover Image</div>
-      ${game.has_cover
-        ? `<div class="agm-cover-slot">
-             <img src="/admin/games/${id}/cover-img" class="agm-cover-img" id="cover-img" alt="">
-             <div class="agm-cover-btns">
-               <label class="agm-cover-btn" for="cover-file" title="Change image">${ICON_CAMERA}</label>
-               <button class="agm-cover-btn agm-cover-btn--del" id="btn-cover-del" title="Remove image">${ICON_TRASH}</button>
-             </div>
-           </div>`
-        : `<label class="agm-cover-canvas" for="cover-file">
-             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-             <span class="agm-cover-canvas__label">Upload cover image</span>
-           </label>`
-      }
-      <input type="file" id="cover-file" accept="image/jpeg,image/png,image/webp" style="display:none">
-      <div id="cover-progress" style="display:none">
-        <div class="agm-cover-progress">
-          <div class="agm-cover-progress-track"><div class="agm-cover-progress-fill" id="cover-bar"></div></div>
-          <span class="agm-progress-label" id="cover-status" style="margin-top:0;white-space:nowrap"></span>
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">${isScheduled || isFinal ? 'Schedule' : 'Publish'}</div>
+      <div class="p-4">
+        ${!isScheduled && !isFinal ? `
+        <div class="mb-3">
+          <label class="admin-field-label">Status</label>
+          <select id="pub-status" class="admin-input">
+            <option value="live"${isLive ? ' selected' : ''}>Live</option>
+            <option value="draft"${game.under_review ? ' selected' : ''}>Draft</option>
+          </select>
+        </div>
+        ` : ''}
+        <div>
+          <label class="admin-field-label">Date</label>
+          <input type="date" id="pub-date" class="admin-input" value="${escHtml(game.date || '')}">
         </div>
       </div>
-      <span class="agm-cover-status" id="cover-status-text"></span>
+    </div>
+
+    ${!isScheduled && !isFinal ? `
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Player of the Game</div>
+      <div class="p-4">
+        <div class="mb-3">
+          <select id="val-potg-player" class="admin-input">${playerOpts}</select>
+        </div>
+        <div class="mb-2">
+          <label class="admin-field-label">Write-up</label>
+          <textarea id="val-potg" class="admin-input agm-textarea" rows="4" placeholder="Write about the player of the game…">${escHtml(game.potg_writeup || '')}</textarea>
+        </div>
+        <div class="agm-gen-bar agm-gen-bar--sm">
+          <button class="agm-gen-btn agm-gen-btn--sm" id="btn-gen-potg">✦ Generate</button>
+          <span class="agm-gen-status" id="gen-potg-status"></span>
+        </div>
+      </div>
     </div>
     ` : ''}
 
-    <div class="agm-sidebar-danger">
-      <button id="agm-delete-btn" class="agm-delete-btn">${ICON_TRASH} Delete game</button>
+    ${!isScheduled && !isFinal ? `
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Cover Image</div>
+      <div class="p-4">
+        ${game.has_cover
+          ? `<div class="agm-cover-slot">
+               <img src="/admin/games/${id}/cover-img" class="agm-cover-img" id="cover-img" alt="">
+               <div class="agm-cover-btns">
+                 <label class="agm-cover-btn" for="cover-file" title="Change image">${ICON_CAMERA}</label>
+                 <button class="agm-cover-btn agm-cover-btn--del" id="btn-cover-del" title="Remove image">${ICON_TRASH}</button>
+               </div>
+             </div>`
+          : `<label class="agm-cover-canvas" for="cover-file">
+               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+               <span class="agm-cover-canvas__label">Upload cover image</span>
+             </label>`
+        }
+        <input type="file" id="cover-file" accept="image/jpeg,image/png,image/webp" style="display:none">
+        <div id="cover-progress" style="display:none">
+          <div class="agm-cover-progress">
+            <div class="agm-cover-progress-track"><div class="agm-cover-progress-fill" id="cover-bar"></div></div>
+            <span class="text-xs text-slate-500 whitespace-nowrap" id="cover-status"></span>
+          </div>
+        </div>
+        <span class="text-xs text-slate-500 mt-2 block" id="cover-status-text"></span>
+      </div>
+    </div>
+    ` : ''}
+
+    <div class="pt-1">
+      <button id="agm-delete-btn" class="admin-btn admin-btn--sm admin-btn--danger">${ICON_TRASH} Delete game</button>
     </div>
 
   </div>

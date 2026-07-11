@@ -4385,7 +4385,7 @@ a.player-link:hover { color: var(--amber); }
 @media (max-width: 600px) {
   .mvp-row { flex-direction: column; }
   .mvp-row__thumb { width: 100%; height: 180px; }
-  .mvp-row__rank { font-size: 28px; bottom: 10px; left: 12px; }
+  .mvp-row__rank { font-size: 28px; top: auto; bottom: 10px; left: 12px; }
   .mvp-row__body { padding: 14px 18px; }
   .mvp-row__name { font-size: 14px; }
 }

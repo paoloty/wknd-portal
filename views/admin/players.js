@@ -6,19 +6,19 @@ const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="no
 const ICON_RECOMPUTE = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
 
 function ovrBadge(ovr) {
-  if (ovr == null) return `<span style="color:var(--text-muted);font-size:12px">—</span>`;
+  if (ovr == null) return `<span class="text-xs text-slate-500">—</span>`;
   const color = ovrColor(ovr);
-  return `<span style="font-size:16px;font-weight:800;color:${color}">${ovr}</span>`;
+  return `<span class="font-saira text-lg font-extrabold leading-none" style="color:${color}">${ovr}</span>`;
 }
 
 function miniBar(val, color) {
-  if (val == null) return `<span style="color:var(--text-muted);font-size:12px">—</span>`;
+  if (val == null) return `<span class="text-xs text-slate-500">—</span>`;
   const pct = Math.round((val / 99) * 100);
-  return `<div style="display:flex;align-items:center;gap:6px">
-    <div style="width:42px;height:4px;background:var(--border);border-radius:99px;overflow:hidden;flex-shrink:0">
+  return `<div class="flex items-center gap-1.5">
+    <div class="w-10 h-1 bg-admin-border rounded-full overflow-hidden shrink-0">
       <div style="width:${pct}%;height:100%;background:${color};border-radius:99px"></div>
     </div>
-    <span style="font-size:12px;font-weight:600;color:${color}">${val}</span>
+    <span class="text-xs font-semibold" style="color:${color}">${val}</span>
   </div>`;
 }
 
@@ -26,7 +26,7 @@ function posChips(positions) {
   try {
     const arr = typeof positions === 'string' ? JSON.parse(positions) : (positions || []);
     if (!arr.length) return '';
-    return arr.map(p => `<span style="font-size:10px;background:var(--border);color:var(--text-muted);padding:1px 5px;border-radius:4px;margin-left:4px">${escHtml(p)}</span>`).join('');
+    return arr.map(p => `<span class="text-[10px] bg-admin-border/50 text-slate-500 px-1.5 py-0.5 rounded ml-1">${escHtml(p)}</span>`).join('');
   } catch { return ''; }
 }
 
@@ -47,78 +47,78 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
     const isRated  = p.eff_overall != null;
     const inactive = p.status === 'inactive';
 
-    return `<tr class="agm-row admin-table-row"
+    return `<tr class="agm-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors"
       data-id="${escHtml(p.id)}"
       data-q="${escHtml(name.toLowerCase())}"
       data-team="${escHtml((p.team_name || '').toLowerCase())}"
       data-status="${inactive ? 'inactive' : 'active'}"
-      style="${inactive ? 'opacity:0.45' : ''}">
-      <td class="admin-td">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="team-dot" style="background:${color};flex-shrink:0"></span>
-          <div>
-            <span style="font-weight:500">${escHtml(name)}</span>
-            ${inactive ? `<span style="font-size:10px;background:rgba(100,116,139,.15);color:var(--text-muted);padding:1px 6px;border-radius:4px;margin-left:6px">Inactive</span>` : ''}
+      ${inactive ? 'style="opacity:0.4"' : ''}>
+      <td class="px-4 py-3">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full shrink-0" style="background:${color}"></span>
+          <div class="min-w-0">
+            <span class="text-sm font-medium text-slate-200">${escHtml(name)}</span>
+            ${inactive ? `<span class="text-[10px] bg-slate-700/40 text-slate-500 px-1.5 py-0.5 rounded ml-1.5">Inactive</span>` : ''}
             ${posChips(p.positions)}
           </div>
         </div>
       </td>
-      <td class="admin-td" style="text-align:center">${ovrBadge(p.eff_overall)}</td>
-      <td class="admin-td">${miniBar(off, '#f59332')}</td>
-      <td class="admin-td">${miniBar(p.eff_defense, '#06b6d4')}</td>
-      <td class="admin-td">${miniBar(p.eff_usage, '#22c55e')}</td>
-      <td class="admin-td">${miniBar(p.eff_iq, '#94a3b8')}</td>
-      <td class="admin-td agm-td--action">
+      <td class="px-4 py-3 text-center">${ovrBadge(p.eff_overall)}</td>
+      <td class="px-4 py-3">${miniBar(off, '#f59332')}</td>
+      <td class="px-4 py-3">${miniBar(p.eff_defense, '#06b6d4')}</td>
+      <td class="px-4 py-3">${miniBar(p.eff_usage, '#22c55e')}</td>
+      <td class="px-4 py-3">${miniBar(p.eff_iq, '#94a3b8')}</td>
+      <td class="px-4 py-3 text-right">
         <a href="/admin/players/${escHtml(p.id)}${season ? '?season='+encodeURIComponent(season) : ''}" class="agm-edit-link">Edit ${ICON_CHEVRON_R}</a>
       </td>
     </tr>`;
   }).join('');
 
   return `
-<div class="agm-toolbar">
-  <h2 class="agm-page-title">Players</h2>
-  <div class="agm-toolbar__right">
-    <button id="plr-recompute-all" class="agm-pill" style="display:inline-flex;align-items:center;gap:6px">${ICON_RECOMPUTE} Recompute All</button>
+<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Players</h2>
+  <div class="flex flex-wrap items-center gap-2">
+    <button id="plr-recompute-all" class="agm-pill inline-flex items-center gap-1.5">${ICON_RECOMPUTE} Recompute All</button>
     <input type="search" id="plr-search" class="agm-search" placeholder="Search players…">
   </div>
 </div>
 
-<div class="agm-filters">
-  ${seasons.length ? `<div class="agm-filter-group" id="plr-season-pills">
+<div class="mb-4 flex flex-wrap gap-3">
+  ${seasons.length ? `<div class="flex flex-wrap items-center gap-1.5" id="plr-season-pills">
     <button class="agm-pill${!season ? ' is-active' : ''}" data-season="">All Time</button>
     ${seasonPills}
   </div>` : ''}
-  <div class="agm-filter-group">
+  <div class="flex flex-wrap items-center gap-1.5">
     <button class="agm-pill is-active" data-fteam="">All Teams</button>
     ${teamPills}
   </div>
-  <div class="agm-filter-group">
+  <div class="flex flex-wrap items-center gap-1.5">
     <button class="agm-pill is-active" id="plr-show-active">Active</button>
     <button class="agm-pill" id="plr-show-inactive">Inactive</button>
     <button class="agm-pill" id="plr-show-all">All</button>
   </div>
 </div>
 
-<div class="card admin-table-scroll" style="padding:0">
-  <table class="admin-table">
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
+  <table class="w-full border-collapse has-col-dividers has-freeze-col">
     <thead>
       <tr>
-        <th class="admin-th">Player</th>
-        <th class="admin-th" style="text-align:center">OVR</th>
-        <th class="admin-th">OFF</th>
-        <th class="admin-th">DEF</th>
-        <th class="admin-th">USG</th>
-        <th class="admin-th">IQ</th>
-        <th class="admin-th"></th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Player</th>
+        <th class="px-4 py-2.5 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">OVR</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">OFF</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">DEF</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">USG</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">IQ</th>
+        <th class="px-4 py-2.5 border-b border-admin-border"></th>
       </tr>
     </thead>
     <tbody id="plr-tbody">
-      ${rows || '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text-muted)">No players found.</td></tr>'}
+      ${rows || '<tr><td colspan="7" class="px-4 py-10 text-center text-sm text-slate-500">No players found.</td></tr>'}
     </tbody>
   </table>
 </div>
 
-<div id="plr-recompute-msg" hidden style="margin-top:12px;border-radius:8px;font-size:13px;padding:10px 14px"></div>
+<div id="plr-recompute-msg" hidden class="mt-3 rounded-lg text-[13px] px-3.5 py-2.5"></div>
 
 <script>
   // ── Season filter (reload) ────────────────────────────────────────────────
