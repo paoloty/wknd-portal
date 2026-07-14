@@ -1,19 +1,40 @@
 export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, features = {} }) {
-  const navLinks = [
+  const mainLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
     { href: '/standings', label: 'Standings' },
     { href: '/teams',     label: 'Teams' },
     { href: '/players',   label: 'Players' },
     { href: '/leaders',   label: 'Leaders' },
-    ...(features.mvpRace !== false ? [{ href: '/mvp', label: 'MVP Race' }] : []),
-    { href: '/roast',     label: 'The Roast' },
   ];
+  const navLinks = [...mainLinks, { href: '/roast', label: 'The Roast' }];
 
-  const nav = navLinks.map(({ href, label }) => {
+  const awardsActive = currentPath.startsWith('/awards') || currentPath.startsWith('/mvp');
+
+  const awardsDropdown = (() => {
+    const showAwards = features.awards  !== false;
+    const showMvp    = features.mvpRace !== false;
+    if (!showAwards && !showMvp) return '';
+    const items = [
+      showAwards ? `<a href="/awards" class="site-nav__dropdown-item${currentPath.startsWith('/awards') ? ' is-active' : ''}">Season Awards</a>` : '',
+      showMvp    ? `<a href="/mvp"    class="site-nav__dropdown-item${currentPath.startsWith('/mvp')    ? ' is-active' : ''}">MVP Race</a>`    : '',
+    ].join('');
+    return `<div class="site-nav__dropdown${awardsActive ? ' is-active' : ''}">
+      <button class="site-nav__dropdown-trigger"${awardsActive ? ' aria-current="page"' : ''}>Awards <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 3.5l3 3 3-3"/></svg></button>
+      <div class="site-nav__dropdown-menu">${items}</div>
+    </div>`;
+  })();
+
+  const linkHtml = ({ href, label }) => {
     const active = href === '/' ? currentPath === '/' : currentPath.startsWith(href);
     return `<a href="${href}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
-  }).join('');
+  };
+
+  const nav = [
+    ...mainLinks.map(linkHtml),
+    awardsDropdown,
+    linkHtml({ href: '/roast', label: 'The Roast' }),
+  ].join('');
 
   const adminActive = currentPath.startsWith('/admin');
   const authLink = isAdmin
@@ -83,6 +104,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         <a href="/" class="site-footer__logo">WKND Basketball</a>
         <nav class="site-footer__nav">
           ${navLinks.map(({ href, label }) => `<a href="${href}">${escHtml(label)}</a>`).join('')}
+          ${features.awards  !== false ? `<a href="/awards">Season Awards</a>` : ''}
+          ${features.mvpRace !== false ? `<a href="/mvp">MVP Race</a>`         : ''}
         </nav>
       </div>
       <div class="site-footer__bottom">

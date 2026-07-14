@@ -1,8 +1,37 @@
 import { escHtml } from '../layout.js';
 
+const ICON_CHECK = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
+
+const AWARD_SECTIONS = [
+  { key: 'award_show_mvp',            label: 'Season MVP' },
+  { key: 'award_show_dpoy',           label: 'Defensive Player of the Season' },
+  { key: 'award_show_all_wknd_1',     label: 'All WKND 1st Team' },
+  { key: 'award_show_all_wknd_2',     label: 'All WKND 2nd Team' },
+  { key: 'award_show_all_wknd_def',   label: 'All WKND Defensive Team' },
+  { key: 'award_show_scoring_champ',   label: 'Scoring Champion' },
+  { key: 'award_show_assists_leader',  label: 'Assists Leader' },
+  { key: 'award_show_rebounds_leader', label: 'Rebounds Leader' },
+  { key: 'award_show_steals_leader',   label: 'Steals Leader' },
+  { key: 'award_show_blocks_leader',   label: 'Blocks Leader' },
+  { key: 'award_show_three_pm_leader', label: '3-Pointers Leader' },
+];
+
 export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {}) {
   const fmt = v => v ? Number(v).toFixed(2) : '';
-  const mvpEnabled = settings.mvp_race_enabled !== '0';
+  const awardsEnabled = settings.awards_enabled   !== '0';
+  const mvpEnabled    = settings.mvp_race_enabled !== '0';
+  const regOpen       = settings.reg_open === '1';
+
+  const sectionToggles = AWARD_SECTIONS.map(({ key, label }) => {
+    const on = settings[key] !== '0';
+    return `<div class="flex items-center justify-between py-2 border-b border-admin-border/30 last:border-0">
+      <span class="text-[12px] text-slate-400">${escHtml(label)}</span>
+      <label class="site-toggle site-toggle--sm" title="Show ${escHtml(label)}">
+        <input type="checkbox" class="section-toggle" data-key="${escHtml(key)}" ${on ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </div>`;
+  }).join('');
 
   const quotaRows = seasons.length
     ? seasons.map(s => `
@@ -22,11 +51,26 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
 </div>
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
-  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Features</div>
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Awards</div>
   <div class="p-5">
-    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Toggle public-facing pages on or off. Disabled pages are removed from the nav and return 404.</p>
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Show or hide awards pages from the nav. Toggle off between seasons.</p>
 
     <div class="flex items-center justify-between py-3 border-b border-admin-border/50">
+      <div>
+        <div class="text-[13px] font-semibold text-slate-200">Season Awards</div>
+        <div class="text-xs text-slate-500 mt-0.5">Season awards page (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/awards</code>)</div>
+      </div>
+      <label class="site-toggle" title="Toggle Season Awards">
+        <input type="checkbox" id="toggle-awards" ${awardsEnabled ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </div>
+    <div class="ml-4 pl-3 border-l-2 border-admin-border/60 py-1 mb-3">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1 mt-1">Sections — release daily</div>
+      ${sectionToggles}
+      <span id="section-msg" class="text-xs block mt-1.5 min-h-[14px]"></span>
+    </div>
+    <div class="flex items-center justify-between py-3 border-t border-admin-border/50">
       <div>
         <div class="text-[13px] font-semibold text-slate-200">MVP Race</div>
         <div class="text-xs text-slate-500 mt-0.5">Season MVP ladder with AI-written player cases (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code>)</div>
@@ -36,7 +80,35 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
         <span class="site-toggle__track"></span>
       </label>
     </div>
-    <span id="features-msg" class="text-xs block mt-2.5 min-h-[16px]"></span>
+    <span id="features-msg" class="text-xs block mt-1 min-h-[16px]"></span>
+  </div>
+</div>
+
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Registration</div>
+  <div class="p-5">
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Show or hide the membership application banner on the homepage. This is not season-specific — it's for new players who want to join the league.</p>
+    <div class="flex items-center justify-between py-3 border-b border-admin-border/50">
+      <div>
+        <div class="text-[13px] font-semibold text-slate-200">Accepting Applications</div>
+        <div class="text-xs text-slate-500 mt-0.5">Shows the "Apply to Join" banner on the homepage</div>
+      </div>
+      <label class="site-toggle" title="Toggle registration banner">
+        <input type="checkbox" id="toggle-reg-open" ${regOpen ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </div>
+    <div class="py-3">
+      <label class="block text-[12px] font-semibold text-slate-300 mb-2">Application Deadline <span class="text-slate-500 font-normal">(optional)</span></label>
+      <div class="flex items-center gap-3">
+        <input type="text" id="reg-deadline-input" placeholder="e.g. August 15, 2026"
+          value="${escHtml(settings.reg_deadline || '')}"
+          class="admin-input" style="width:220px">
+        <button id="reg-deadline-save" class="agm-new-btn">${ICON_CHECK} Save</button>
+        <span id="reg-deadline-msg" class="text-xs"></span>
+      </div>
+    </div>
+    <span id="reg-msg" class="text-xs block min-h-[14px]"></span>
   </div>
 </div>
 
@@ -46,30 +118,88 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
     <p class="text-xs text-slate-500 mb-4 leading-relaxed">Set the payment quota per player for each season. Used in the Ledger to track progress.</p>
     ${quotaRows}
     ${seasons.length ? `<div class="flex items-center gap-3 mt-4">
-      <button id="site-quota-save" class="agm-edit-bar__save">Save Quotas</button>
+      <button id="site-quota-save" class="agm-new-btn">${ICON_CHECK} Save Quotas</button>
       <span id="site-quota-msg" class="text-xs"></span>
     </div>` : ''}
   </div>
 </div>
 
 <script>
-  document.getElementById('toggle-mvp-race').addEventListener('change', async function() {
-    var msg = document.getElementById('features-msg');
+  function bindToggle(id, key) {
+    document.getElementById(id).addEventListener('change', async function() {
+      var msg = document.getElementById('features-msg');
+      msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+      try {
+        var r = await fetch('/admin/site/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: this.checked ? '1' : '0' })
+        });
+        if (!r.ok) throw new Error();
+        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+      } catch(e) {
+        msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+        this.checked = !this.checked;
+      }
+      setTimeout(function() { msg.textContent = ''; }, 2000);
+    });
+  }
+  bindToggle('toggle-awards',   'awards_enabled');
+  bindToggle('toggle-mvp-race', 'mvp_race_enabled');
+  (function() {
+    document.getElementById('toggle-reg-open').addEventListener('change', async function() {
+      var msg = document.getElementById('reg-msg');
+      msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+      try {
+        var r = await fetch('/admin/site/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reg_open: this.checked ? '1' : '0' })
+        });
+        if (!r.ok) throw new Error();
+        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+      } catch(e) {
+        msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+        this.checked = !this.checked;
+      }
+      setTimeout(function() { msg.textContent = ''; }, 2000);
+    });
+  })();
+
+  document.getElementById('reg-deadline-save').addEventListener('click', async function() {
+    var val = document.getElementById('reg-deadline-input').value.trim();
+    var msg = document.getElementById('reg-deadline-msg');
     msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
     try {
       var r = await fetch('/admin/site/settings', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mvp_race_enabled: this.checked ? '1' : '0' })
+        body: JSON.stringify({ reg_deadline: val })
       });
       if (!r.ok) throw new Error();
-      msg.style.color = '#22c55e';
-      msg.textContent = 'Saved.';
+      msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
     } catch(e) {
-      msg.style.color = '#f87171';
-      msg.textContent = 'Error saving.';
-      this.checked = !this.checked;
+      msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
     }
     setTimeout(function() { msg.textContent = ''; }, 2000);
+  });
+
+  // Section toggles
+  document.querySelectorAll('.section-toggle').forEach(function(input) {
+    input.addEventListener('change', async function() {
+      var key = this.dataset.key;
+      var msg = document.getElementById('section-msg');
+      msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+      try {
+        var r = await fetch('/admin/site/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: this.checked ? '1' : '0' })
+        });
+        if (!r.ok) throw new Error();
+        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+      } catch(e) {
+        msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+        this.checked = !this.checked;
+      }
+      setTimeout(function() { msg.textContent = ''; }, 2000);
+    });
   });
 
   // Quota save
@@ -77,6 +207,7 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
   if (saveBtn) {
     saveBtn.addEventListener('click', async function() {
       var btn = this;
+      var origHtml = btn.innerHTML;
       var globalMsg = document.getElementById('site-quota-msg');
       btn.disabled = true; btn.textContent = 'Saving…';
       globalMsg.textContent = '';
@@ -103,7 +234,7 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
         }
       }));
 
-      btn.disabled = false; btn.textContent = 'Save Quotas';
+      btn.disabled = false; btn.innerHTML = origHtml;
       if (!errors) {
         globalMsg.style.color = '#22c55e';
         globalMsg.textContent = 'All quotas saved.';

@@ -392,6 +392,42 @@ function potgWriteups(potgGames, player) {
 </div>`;
 }
 
+// ── Awards section ────────────────────────────────────────────────────────────
+const AWARD_META = {
+  mvp:             { label: 'Season MVP',                     icon: '🏆', bg: '#f59332', text: '#10141d' },
+  dpoy:            { label: 'Defensive Player of the Season', icon: '🛡️', bg: '#3b82f6', text: '#fff'    },
+  all_wknd_1:      { label: 'All WKND 1st Team',             icon: '⭐', bg: '#22c55e', text: '#000'    },
+  all_wknd_2:      { label: 'All WKND 2nd Team',             icon: '🌟', bg: '#64748b', text: '#fff'    },
+  scoring_champ:   { label: 'Scoring Champion',              icon: '🔥', bg: '#f59332', text: '#10141d' },
+  assists_leader:  { label: 'Assists Leader',                icon: '🎯', bg: '#f59332', text: '#10141d' },
+  rebounds_leader: { label: 'Rebounds Leader',               icon: '💪', bg: '#f59332', text: '#10141d' },
+};
+
+function awardsSection(awards) {
+  if (!awards?.length) return '';
+
+  const bySeason = {};
+  for (const a of awards) {
+    (bySeason[a.season] ??= []).push(a);
+  }
+
+  const rows = Object.keys(bySeason).sort((a, b) => b - a).map(s => {
+    const badges = bySeason[s].map(a => {
+      const meta = AWARD_META[a.award_type] || { label: a.award_type, icon: '', bg: '#f59332', text: '#10141d' };
+      return `<span class="player-award-badge" style="background:${meta.bg}22;color:${meta.bg};border-color:${meta.bg}55">${meta.icon ? `<span style="font-style:normal">${meta.icon}</span>` : ''}${escHtml(meta.label)}</span>`;
+    }).join('');
+    return `<div class="player-award-season">
+      <div class="player-award-season__label">Season ${escHtml(String(s))}</div>
+      <div>${badges}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="card player-awards-section">
+  <div class="card-label">AWARDS &amp; HONORS</div>
+  ${rows}
+</div>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
@@ -402,6 +438,7 @@ export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, a
     ${gameLog(gameLogs, player, potgGameIds)}
   </div>
   <div class="game-detail-right">
+    ${awardsSection(awards)}
     ${potgWriteups(potgGames, player)}
   </div>
 </div>`;

@@ -249,8 +249,31 @@ function leagueLeaders(players) {
 })()</script>`;
 }
 
+// ── Registration Banner ───────────────────────────────────────────────────────
+function registrationBanner({ deadline }) {
+  return `<section class="reg-banner" aria-label="Membership Registration">
+  <div class="reg-banner__glow" aria-hidden="true"></div>
+  <div class="reg-banner__arc" aria-hidden="true"></div>
+  <div class="reg-banner__inner">
+    <div class="reg-banner__copy">
+      <div class="reg-banner__eyebrow">
+        <span class="reg-banner__pill">
+          <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
+          NOW ACCEPTING MEMBERS
+        </span>
+      </div>
+      <h2 class="reg-banner__headline">Come Ball With Us.</h2>
+      ${deadline ? `<p class="reg-banner__deadline">WKND is a friendly basketball community — good runs, good people. Sign up before&nbsp;<strong>${escHtml(deadline)}</strong>.</p>` : `<p class="reg-banner__deadline">WKND is a friendly basketball community — good runs, good people. Come join us.</p>`}
+    </div>
+    <a href="/register" class="reg-banner__cta">
+      Count Me In <span aria-hidden="true">→</span>
+    </a>
+  </div>
+</section>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
-export function homePage({ teams, players, games, highlights = [], leaderPlayers = [] }) {
+export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -258,12 +281,13 @@ export function homePage({ teams, players, games, highlights = [], leaderPlayers
     .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 5);
-  const tickerGames = [...upcomingGames, ...completedGames];
 
   return `<div class="home-grid">
   ${heroCarousel(completedGames.slice(0, 4))}
   ${highlightsSidebar(highlights)}
 </div>
+
+${regBanner ? registrationBanner(regBanner) : ''}
 
 ${leagueLeaders(leaderPlayers)}`;
 }

@@ -197,7 +197,7 @@ function top3ComparisonSidebar(candidates) {
 </div>`;
 }
 
-function mvpRow(c, rank) {
+function mvpRow(c, rank, isAdmin, season) {
   const { player, stats, mvpScore, writeup } = c;
   const name  = displayPlayerName(player.name);
   const color = teamColor(stats.team_name);
@@ -207,7 +207,7 @@ function mvpRow(c, rank) {
   const init  = initials(player.name);
   const href  = `/players/${encodeURIComponent(String(player.id))}`;
 
-  return `<a href="${href}" class="mvp-row" style="--tc:${color};--bc:${badge.bg};--bt:${badge.text}">
+  const link = `<a href="${href}" class="mvp-row" style="--tc:${color};--bc:${badge.bg};--bt:${badge.text}">
   <div class="mvp-row__pills">
     <span class="mvp-row__score" style="color:${badge.bg}">${mvpScore.toFixed(1)}</span>
     <span class="mvp-row__badge" style="background:${badge.bg};color:${badge.text}">${label}</span>
@@ -226,9 +226,15 @@ function mvpRow(c, rank) {
     <span class="mvp-row__cta">FULL STATS <span>→</span></span>
   </div>
 </a>`;
+
+  if (!isAdmin) return link;
+  return `<div style="position:relative">
+  ${link}
+  <button class="mvp-regen-btn" data-pid="${escHtml(String(player.id))}" data-season="${escHtml(String(season))}" title="Regenerate writeup" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);color:#94a3b8;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;z-index:2">↺</button>
+</div>`;
 }
 
-export function mvpPage({ candidates = [], season, totalGames, seasonGames, highlights = [], teams = [], games = [], leagueStats = [] }) {
+export function mvpPage({ candidates = [], season, totalGames, seasonGames, highlights = [], teams = [], games = [], leagueStats = [], isAdmin = false }) {
   const ladderSidebar  = candidates.length ? mvpLadderSidebar(candidates) : '';
   const catLeaders     = categoryLeadersSidebar(leagueStats);
   const top3           = top3ComparisonSidebar(candidates);
@@ -247,15 +253,42 @@ export function mvpPage({ candidates = [], season, totalGames, seasonGames, high
 
   const hasAllWriteups = candidates.every(c => c.writeup);
 
+  const regenAllBtn = isAdmin
+    ? `<button id="mvp-regen-all" data-season="${escHtml(String(season))}" style="background:transparent;border:1px solid rgba(255,255,255,.12);color:#64748b;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;margin-left:auto">↺ Regenerate All</button>`
+    : '';
+
+  const regenScript = isAdmin ? `
+<script>
+(function() {
+  async function regen(pid, season, btn) {
+    var orig = btn.innerHTML; btn.disabled = true; btn.textContent = '…';
+    await fetch('/admin/mvp/regenerate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(pid ? { player_id: pid, season } : { season })
+    });
+    location.reload();
+  }
+  document.querySelectorAll('.mvp-regen-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      regen(this.dataset.pid, this.dataset.season, this);
+    });
+  });
+  var all = document.getElementById('mvp-regen-all');
+  if (all) all.addEventListener('click', function() { regen(null, this.dataset.season, this); });
+})();
+</script>` : '';
+
   return `<div class="games-layout">
   <div class="games-main">
     <div class="card mvp-list">
-      <div class="card-label">MVP LADDER &nbsp;·&nbsp; Season ${escHtml(String(season))} &nbsp;·&nbsp; ${escHtml(String(totalGames))}/${escHtml(String(seasonGames * 2))} games</div>
-      ${candidates.map((c, i) => mvpRow(c, i + 1)).join('\n      ')}
+      <div class="card-label" style="display:flex;align-items:center;gap:8px">MVP LADDER &nbsp;·&nbsp; Season ${escHtml(String(season))} &nbsp;·&nbsp; ${escHtml(String(totalGames))}/${escHtml(String(seasonGames * 2))} games${regenAllBtn}</div>
+      ${candidates.map((c, i) => mvpRow(c, i + 1, isAdmin, season)).join('\n      ')}
     </div>
   </div>
   ${sidebarHtml}
 </div>
 
-${!hasAllWriteups ? `<script>setTimeout(function(){ location.reload(); }, 8000);</script>` : ''}`;
+${!hasAllWriteups ? `<script>setTimeout(function(){ location.reload(); }, 8000);</script>` : ''}
+${regenScript}`;
 }

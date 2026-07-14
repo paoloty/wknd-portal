@@ -4,6 +4,8 @@ import { ovrColor } from '../../lib/ratings.js';
 
 const ICON_CHEVRON_L = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
 const ICON_RECOMPUTE = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
+const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
+const ICON_X         = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
 
 const ATTRS = [
   { key: 'scoring',     label: 'Scoring',     color: '#f59332' },
@@ -107,7 +109,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
   <a href="/admin/players" class="agm-edit-bar__back">${ICON_CHEVRON_L} Players</a>
   <div class="agm-edit-bar__right">
     <span id="save-msg" class="agm-save-msg"></span>
-    <button id="plr-save-all" class="agm-edit-bar__save">Save Changes</button>
+    <button id="plr-save-all" class="agm-edit-bar__save">${ICON_CHECK} Save Changes</button>
   </div>
 </div>
 
@@ -199,7 +201,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="flex items-center justify-between px-4 py-3 border-b border-admin-border">
         <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Ratings</span>
-        <button id="plr-recompute" class="agm-pill inline-flex items-center gap-1 text-[11px]">${ICON_RECOMPUTE} Recompute</button>
+        <button id="plr-recompute" class="admin-btn admin-btn--sm">${ICON_RECOMPUTE} Recompute</button>
       </div>
       <div class="p-4">
 
@@ -226,7 +228,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
               class="admin-input" style="width:44px;padding:3px 5px;font-size:12px;text-align:center">
           </div>
           <span id="ratings-msg" class="text-xs block mb-2"></span>
-          <button type="submit" class="agm-edit-bar__save w-full text-[13px]">Save Ratings</button>
+          <button type="submit" class="agm-new-btn admin-btn--block">${ICON_CHECK} Save Ratings</button>
         </form>
       </div>
     </div>
@@ -244,8 +246,8 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       <img id="pcp-img" src="" alt="" style="max-width:100%;display:block">
     </div>
     <div class="pcp-modal__footer">
-      <button class="pcp-modal__cancel" id="pcp-cancel">Cancel</button>
-      <button class="pcp-modal__save" id="pcp-save">Crop &amp; Save</button>
+      <button class="admin-btn" id="pcp-cancel">${ICON_X} Cancel</button>
+      <button class="agm-new-btn" id="pcp-save">${ICON_CHECK} Crop &amp; Save</button>
     </div>
   </div>
 </div>
@@ -261,6 +263,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     var backdrop  = document.getElementById('pcp-backdrop');
     var cropImg   = document.getElementById('pcp-img');
     var saveBtn   = document.getElementById('pcp-save');
+    var saveBtnOrigHtml = saveBtn.innerHTML;
     var cropper   = null;
 
     function openCrop(src) {
@@ -287,7 +290,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       if (cropper) { cropper.destroy(); cropper = null; }
       fileInput.value = '';
       saveBtn.disabled = false;
-      saveBtn.textContent = 'Crop & Save';
+      saveBtn.innerHTML = saveBtnOrigHtml;
     }
 
     fileInput.addEventListener('change', function() {
@@ -328,7 +331,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
         msg.style.color = '#f87171';
         msg.textContent = 'Upload failed.';
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Crop & Save';
+        saveBtn.innerHTML = saveBtnOrigHtml;
       });
     });
   })();
@@ -336,6 +339,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
   // ── Single save (bio + number + profile + team + status) ──────────────────
   document.getElementById('plr-save-all').addEventListener('click', async function() {
     var btn = this;
+    var origHtml = btn.innerHTML;
     var msg = document.getElementById('save-msg');
     btn.disabled = true; btn.textContent = 'Saving…';
     msg.className = 'agm-save-msg'; msg.textContent = '';
@@ -373,13 +377,14 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     } catch(err) {
       msg.className = 'agm-save-msg agm-save-msg--err';
       msg.textContent = err.message;
-    } finally { btn.disabled = false; btn.textContent = 'Save Changes'; }
+    } finally { btn.disabled = false; btn.innerHTML = origHtml; }
   });
 
   // ── Ratings overrides save ────────────────────────────────────────────────
   document.getElementById('ratings-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var btn = e.target.querySelector('[type=submit]');
+    var origHtml = btn.innerHTML;
     var msg = document.getElementById('ratings-msg');
     btn.disabled = true; btn.textContent = 'Saving…';
     try {
@@ -393,7 +398,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       setTimeout(function(){ location.reload(); }, 600);
     } catch(err) {
       msg.style.color = '#f87171'; msg.textContent = err.message;
-      btn.disabled = false; btn.textContent = 'Save Ratings';
+      btn.disabled = false; btn.innerHTML = origHtml;
     }
   });
 

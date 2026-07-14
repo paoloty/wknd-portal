@@ -2,8 +2,11 @@ import { escHtml } from '../layout.js';
 import { displayPlayerName, teamColor } from '../utils.js';
 import { buildBoxScoreData, teamBoxScoreTab, gameLeadersTab, teamComparisonTab, lineScoreTab } from '../game.js';
 
-const ICON_IMPORT = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v7.5M4.5 6L7 8.5 9.5 6"/><path d="M2 10v1.5A1.5 1.5 0 0 0 3.5 13h7A1.5 1.5 0 0 0 12 11.5V10"/></svg>`;
+const ICON_IMPORT    = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v7.5M4.5 6L7 8.5 9.5 6"/><path d="M2 10v1.5A1.5 1.5 0 0 0 3.5 13h7A1.5 1.5 0 0 0 12 11.5V10"/></svg>`;
 const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
+const ICON_PLUS      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
+const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
+const ICON_X         = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
 
 const fmtDate = d => d
   ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -103,7 +106,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Games</h2>
   <div class="flex items-center gap-2">
     <input type="search" id="agm-search" class="agm-search" placeholder="Search teams…">
-    <button class="agm-new-btn" id="agm-new-btn">+ New Game</button>
+    <button class="agm-new-btn" id="agm-new-btn">${ICON_PLUS} New Game</button>
   </div>
 </div>
 
@@ -148,8 +151,8 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       <p class="agm-modal-err" id="ng-err" hidden></p>
     </div>
     <div class="agm-modal-footer">
-      <button class="agm-modal-cancel" id="agm-modal-cancel">Cancel</button>
-      <button class="agm-modal-submit" id="ng-submit">Create Game</button>
+      <button class="admin-btn" id="agm-modal-cancel">${ICON_X} Cancel</button>
+      <button class="agm-new-btn" id="ng-submit">${ICON_CHECK} Create Game</button>
     </div>
   </div>
 </div>
@@ -184,8 +187,8 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       <p class="agm-modal-err" id="agm-final-err" hidden></p>
     </div>
     <div class="agm-modal-footer">
-      <button class="agm-modal-cancel" id="agm-final-cancel">Cancel</button>
-      <button class="agm-modal-submit" id="agm-final-submit">Confirm Final Score</button>
+      <button class="admin-btn" id="agm-final-cancel">${ICON_X} Cancel</button>
+      <button class="agm-new-btn" id="agm-final-submit">${ICON_CHECK} Confirm Final Score</button>
     </div>
   </div>
 </div>
@@ -307,6 +310,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     var ot     = document.getElementById('agm-final-ot').value;
     var errEl  = document.getElementById('agm-final-err');
     var btn    = this;
+    var origHtml = btn.innerHTML;
     if (scoreA === '' || scoreB === '') {
       errEl.textContent = 'Both scores are required.'; errEl.hidden = false; return;
     }
@@ -321,11 +325,11 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     .then(function(data) {
       if (data.ok) { location.reload(); return; }
       errEl.textContent = data.error || 'Failed to save.'; errEl.hidden = false;
-      btn.disabled = false; btn.textContent = 'Confirm Final Score';
+      btn.disabled = false; btn.innerHTML = origHtml;
     })
     .catch(function() {
       errEl.textContent = 'Network error.'; errEl.hidden = false;
-      btn.disabled = false; btn.textContent = 'Confirm Final Score';
+      btn.disabled = false; btn.innerHTML = origHtml;
     });
   });
 
@@ -346,6 +350,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     var type    = document.getElementById('ng-type').value;
     var errEl   = document.getElementById('ng-err');
     var btn     = this;
+    var origHtml = btn.innerHTML;
 
     if (!date || !teamA || !teamB || !season) {
       errEl.textContent = 'All fields are required.'; errEl.hidden = false; return;
@@ -367,7 +372,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
         window.location.href = '/admin/games/' + data.id;
       } else {
         errEl.textContent = data.error || 'Failed to create game.'; errEl.hidden = false;
-        btn.disabled = false; btn.textContent = 'Create Game';
+        btn.disabled = false; btn.innerHTML = origHtml;
       }
     })
     .catch(function() {
@@ -624,7 +629,7 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
     ` : ''}
 
     <div class="pt-1">
-      <button id="agm-delete-btn" class="admin-btn admin-btn--sm admin-btn--danger">${ICON_TRASH} Delete game</button>
+      <button id="agm-delete-btn" class="admin-btn admin-btn--danger">${ICON_TRASH} Delete game</button>
     </div>
 
   </div>

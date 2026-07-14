@@ -77,8 +77,8 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Players</h2>
-  <div class="flex flex-wrap items-center gap-2">
-    <button id="plr-recompute-all" class="agm-pill inline-flex items-center gap-1.5">${ICON_RECOMPUTE} Recompute All</button>
+  <div class="flex items-center gap-2">
+    <button id="plr-recompute-all" class="admin-btn admin-btn--inline-action" style="align-self:center">${ICON_RECOMPUTE} Recompute</button>
     <input type="search" id="plr-search" class="agm-search" placeholder="Search players…">
   </div>
 </div>

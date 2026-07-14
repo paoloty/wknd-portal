@@ -20,6 +20,7 @@ import { playerPage } from './views/player.js';
 import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage } from './views/legal.js';
+import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamColor, displayPlayerName } from './views/utils.js';
@@ -32,11 +33,12 @@ import {
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
-  getTeamSeasonStats, getTeamRecords, getLeaders,
+  getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders,
   getGameById, getGameDetailStats, getGameStats,
   getPlayerWithTeam, getPlayerById, getTeamById,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
-  getPlayerCareerHighs, getPlayerAwards, getGameDnpPlayers, getGameRecords,
+  getPlayerCareerHighs, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
+  upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
   getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
@@ -49,14 +51,20 @@ import {
   getCompareCache, setCompareCache, incrementCompareViews, getCompareAnalytics,
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
-  getMvpWriteup, setMvpWriteup, getMvpCandidates, getTotalSeasonGamesForMvp,
+  getMvpWriteup, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
+  getMvpCandidates, getTotalSeasonGamesForMvp,
   getSetting, setSetting,
+  insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
+  createPlayer, mergeRegistrationIntoPlayer,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
 import { adminSiteBody } from './views/admin/site.js';
+import { adminAwardsBody } from './views/admin/awards.js';
+import { adminUsersBody }       from './views/admin/users.js';
+import { adminUserDetailBody }  from './views/admin/user-detail.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
@@ -66,6 +74,7 @@ import { adminComparePage } from './views/admin/compare.js';
 import { adminLayout } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { mvpPage } from './views/mvp.js';
+import { awardsPage } from './views/awards.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -514,7 +523,22 @@ function buildTicker() {
 }
 
 function getFeatureFlags() {
-  return { mvpRace: getSetting('mvp_race_enabled', '1') !== '0' };
+  return {
+    awards:  getSetting('awards_enabled',   '1') !== '0',
+    mvpRace: getSetting('mvp_race_enabled', '1') !== '0',
+  };
+}
+
+function regMiniBanner() {
+  const deadline = getSetting('reg_deadline', '');
+  return `<div class="reg-mini">
+  <span class="reg-mini__pill">
+    <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
+    Now Accepting Members
+  </span>
+  <span class="reg-mini__text">${deadline ? `Good runs, good people — sign up before <strong>${escHtml(deadline)}</strong>` : 'WKND is a friendly basketball community. Come join us.'}</span>
+  <a href="/register" class="reg-mini__cta">Count Me In <span aria-hidden="true">→</span></a>
+</div>`;
 }
 
 function renderPage(req, opts) {
@@ -530,7 +554,9 @@ function renderPage(req, opts) {
   ].join('\n  ');
   const existing = opts.metaTags || '';
   const metaTags = existing.includes('og:image') ? existing : (existing ? existing + '\n  ' + fallbackMeta : fallbackMeta);
-  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, features: getFeatureFlags(), ...opts, metaTags });
+  const showMini = getSetting('reg_open', '0') === '1' && opts.currentPath !== '/';
+  const body = showMini ? regMiniBanner() + (opts.body || '') : (opts.body || '');
+  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, features: getFeatureFlags(), ...opts, body, metaTags });
 }
 
 function renderAdminPage(req, opts) {
@@ -1241,17 +1267,28 @@ app.get('/api/player/:id/photo', async (req, res) => {
 });
 
 app.get('/api/compare', async (req, res) => {
-  const { a, b } = req.query;
+  const { a, b, force } = req.query;
   if (!a || !b) return res.status(400).json({ error: 'Missing player IDs' });
   try {
     const pA = getPlayerWithTeam(a), pB = getPlayerWithTeam(b);
     if (!pA || !pB) return res.status(404).json({ error: 'Player not found' });
     const tA = getPlayerTotals(a), tB = getPlayerTotals(b);
 
-    const cached = getCompareCache(a, b, tA, tB);
+    const playerData = (p, t) => ({
+      name: displayPlayerName(p.name),
+      team: p.team_name || '',
+      totals: {
+        gp: t?.games_played || 0, pts: t?.pts || 0, reb: t?.reb || 0,
+        ast: t?.ast || 0, stl: t?.stl || 0, blk: t?.blk || 0, tov: t?.turnover || 0,
+        fg2m: t?.fg2m || 0, fg3m: t?.fg3m || 0, fg2m_miss: t?.fg2m_miss || 0,
+        fg3m_miss: t?.fg3m_miss || 0, ftm: t?.ftm || 0, ft_miss: t?.ft_miss || 0,
+      },
+    });
+
+    const cached = force !== '1' && getCompareCache(a, b, tA, tB);
     if (cached) {
       incrementCompareViews(a, b);
-      return res.json({ writeup: cached, cached: true });
+      return res.json({ writeup: cached, cached: true, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
     }
 
     const pg = (t, field) => {
@@ -1279,7 +1316,7 @@ ${line(pB, tB)}`;
 
     const { text, model } = await generateWithGemini(prompt, { maxTokens: 160, temperature: 0.92 });
     setCompareCache(a, b, tA, tB, text, model);
-    res.json({ writeup: text });
+    res.json({ writeup: text, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
   } catch (err) {
     console.error('compare writeup error:', err.message);
     res.status(503).json({ error: 'AI unavailable' });
@@ -1335,10 +1372,323 @@ app.get('/admin', requireAuth, (req, res) => {
   }));
 });
 
+// ── Admin: Registrations ──────────────────────────────────────────────────────
+app.get('/admin/registrations', requireAuth, (req, res) => res.redirect('/admin/users'));
+
+app.get('/admin/users', requireAuth, (req, res) => {
+  const registrations = getAllRegistrations();
+  res.send(renderAdminPage(req, {
+    title: 'Users',
+    currentPath: '/admin/users',
+    body: adminUsersBody({ registrations }),
+  }));
+});
+
+app.get('/admin/users/:id', requireAuth, (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/users', body: '<p class="text-slate-500">Registration not found.</p>' }));
+  const players      = getAllPlayers();
+  const linkedPlayer = reg.player_id ? players.find(p => p.id === reg.player_id) : null;
+  res.send(renderAdminPage(req, {
+    title: reg.full_name,
+    currentPath: '/admin/users',
+    body: adminUserDetailBody({ reg, players, linkedPlayer }),
+  }));
+});
+
+app.post('/admin/users/:id/approve', requireAuth, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  const player_id = req.body?.player_id || '';
+  updateRegistration(reg.id, { status: 'approved', player_id, notes: reg.notes || '', approved_at: Date.now() });
+  if (player_id) mergeRegistrationIntoPlayer(player_id, reg);
+  res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/create', requireAuth, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+
+  const parts     = (reg.full_name || '').split(',');
+  const last_name  = (parts[0] || '').trim();
+  const first_name = (parts[1] || '').trim();
+  let positions = [];
+  try { positions = JSON.parse(reg.positions || '[]'); } catch {}
+
+  const newPlayerId = crypto.randomUUID();
+  createPlayer({
+    id:         newPlayerId,
+    first_name,
+    last_name,
+    birthday:   reg.birthday || '',
+    positions,
+    number:     reg.jersey_pref || '',
+    status:     'active',
+  });
+
+  updateRegistration(reg.id, { status: 'approved', player_id: newPlayerId, notes: 'Player record created from registration.', approved_at: Date.now() });
+  mergeRegistrationIntoPlayer(newPlayerId, reg);
+  res.json({ ok: true, player_id: newPlayerId });
+});
+
+app.post('/admin/users/:id/sync', requireAuth, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  if (!reg.player_id) return res.status(400).json({ error: 'No player linked to this registration.' });
+  mergeRegistrationIntoPlayer(reg.player_id, reg);
+  res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/reset', requireAuth, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  updateRegistration(reg.id, { status: 'pending', player_id: '', notes: '', approved_at: 0 });
+  res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/reject', requireAuth, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  const notes = req.body?.notes || '';
+  updateRegistration(reg.id, { status: 'rejected', player_id: reg.player_id || '', notes });
+  res.json({ ok: true });
+});
+
+const TEAM_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
+
+function playerPositions(p) {
+  try { return JSON.parse(p.positions || '[]'); } catch { return []; }
+}
+
+function computeAwardSuggestions(stats) {
+  if (!stats.length) return {};
+  const f   = (v, gp) => gp > 0 ? v / gp : 0;
+  const ppg = p => f(p.pts, p.games_played);
+  const apg = p => f(p.ast, p.games_played);
+  const rpg = p => f(p.reb, p.games_played);
+  const dpg = p => f((p.stl ?? 0) * 1.5 + (p.blk ?? 0) * 2, p.games_played);
+
+  // Shooting efficiency multiplier — mirrors computeMvpScore so suggestions stay consistent.
+  const tsMult = p => {
+    const fga   = (p.fg2m ?? 0) + (p.fg3m ?? 0) + (p.fg2m_miss ?? 0) + (p.fg3m_miss ?? 0);
+    const fta   = (p.ftm ?? 0) + (p.ft_miss ?? 0);
+    const denom = 2 * (fga + 0.44 * fta);
+    const ts    = denom > 0 ? (p.pts ?? 0) / denom : 0;
+    if (ts >= 0.70) return 1.20;
+    if (ts >= 0.60) return 1.10;
+    if (ts >= 0.50) return 1.00;
+    if (ts >= 0.40) return 0.85;
+    return 0.70;
+  };
+
+  // Same base coefficients as computeMvpScore so all three MVP surfaces rank consistently.
+  const impact = p => f(
+    (p.pts ?? 0) + (p.reb ?? 0) * 0.8 + (p.ast ?? 0) * 0.9 + (p.stl ?? 0) * 1.5 + (p.blk ?? 0) * 2.0
+    - (p.turnover ?? 0),
+    p.games_played
+  ) * tsMult(p);
+
+  // Use the pre-computed overall_ovr rating when available; fall back to impact score.
+  const ovr = p => p.overall_ovr != null ? p.overall_ovr : impact(p) * 3;
+
+  const sorted   = fn => [...stats].sort((a, b) => fn(b) - fn(a));
+  const fmt1     = n  => n.toFixed(1);
+  const top      = fn => { const p = sorted(fn)[0]; return p ? { player: p, statLine: '' } : null; };
+  const addLine  = (entry, label) => entry ? { ...entry, statLine: label } : null;
+
+  const byOvr    = sorted(ovr);
+
+  const pickByPosition = (pool, usedIds) => TEAM_POSITIONS.map(pos => {
+    const candidate = pool.find(p => !usedIds.has(p.id) && playerPositions(p).includes(pos))
+                   ?? pool.find(p => !usedIds.has(p.id));
+    if (!candidate) return null;
+    usedIds.add(candidate.id);
+    return {
+      player:   candidate,
+      position: pos,
+      statLine: `${fmt1(ppg(candidate))} PPG · ${fmt1(rpg(candidate))} RPG · ${fmt1(apg(candidate))} APG`,
+      ovr:      candidate.overall_ovr ?? Math.round(impact(candidate) * 3),
+      ppg:      fmt1(ppg(candidate)),
+      rpg:      fmt1(rpg(candidate)),
+      apg:      fmt1(apg(candidate)),
+    };
+  }).filter(Boolean);
+
+  const usedTeam = new Set();
+  const team1    = pickByPosition(byOvr, usedTeam);
+  const team2    = pickByPosition(byOvr, usedTeam);
+
+  const tpm  = p => f(p.fg3m ?? 0, p.games_played);
+  const spg  = p => f(p.stl ?? 0, p.games_played);
+  const bpg  = p => f(p.blk ?? 0, p.games_played);
+
+  const scorers    = sorted(ppg);
+  const assisters  = sorted(apg);
+  const rebounders = sorted(rpg);
+  const defenders  = sorted(dpg);
+  const stealers   = sorted(spg);
+  const blockers   = sorted(bpg);
+  const threeShooters = sorted(tpm);
+  const mvpPlayer  = byOvr[0];
+
+  // Defensive team: same position-based selection but ranked by dpg score.
+  const pickDefByPosition = (pool, usedIds) => TEAM_POSITIONS.map(pos => {
+    const candidate = pool.find(p => !usedIds.has(p.id) && playerPositions(p).includes(pos))
+                   ?? pool.find(p => !usedIds.has(p.id));
+    if (!candidate) return null;
+    usedIds.add(candidate.id);
+    const spg = f(candidate.stl ?? 0, candidate.games_played);
+    const bpg = f(candidate.blk ?? 0, candidate.games_played);
+    return {
+      player:   candidate,
+      position: pos,
+      statLine: `${fmt1(spg)} SPG · ${fmt1(bpg)} BPG`,
+      ovr:      candidate.overall_ovr ?? Math.round(impact(candidate) * 3),
+      ppg:      fmt1(ppg(candidate)),
+      rpg:      fmt1(rpg(candidate)),
+      apg:      fmt1(apg(candidate)),
+      spg:      fmt1(spg),
+      bpg:      fmt1(bpg),
+    };
+  }).filter(Boolean);
+  const usedDefTeam = new Set();
+  const defTeam = pickDefByPosition(defenders, usedDefTeam);
+
+  return {
+    scoring_champ:   addLine(top(ppg), scorers[0]      ? `${fmt1(ppg(scorers[0]))} PPG`          : ''),
+    assists_leader:  addLine(top(apg), assisters[0]    ? `${fmt1(apg(assisters[0]))} APG`         : ''),
+    rebounds_leader: addLine(top(rpg), rebounders[0]   ? `${fmt1(rpg(rebounders[0]))} RPG`        : ''),
+    steals_leader:   addLine(top(spg), stealers[0]     ? `${fmt1(spg(stealers[0]))} SPG`          : ''),
+    blocks_leader:   addLine(top(bpg), blockers[0]     ? `${fmt1(bpg(blockers[0]))} BPG`          : ''),
+    three_pm_leader: addLine(top(tpm), threeShooters[0]? `${fmt1(tpm(threeShooters[0]))} 3PM`     : ''),
+    dpoy:            addLine(top(dpg), defenders[0]
+      ? `${fmt1(f(defenders[0].stl, defenders[0].games_played))} SPG · ${fmt1(f(defenders[0].blk, defenders[0].games_played))} BPG` : ''),
+    mvp: mvpPlayer ? {
+      player:   mvpPlayer,
+      statLine: `${fmt1(ppg(mvpPlayer))} PPG · ${fmt1(rpg(mvpPlayer))} RPG · ${fmt1(apg(mvpPlayer))} APG`,
+    } : null,
+    all_wknd_1:   team1,
+    all_wknd_2:   team2,
+    all_wknd_def: defTeam,
+  };
+}
+
+app.get('/admin/awards', requireAuth, (req, res) => {
+  const { season: currentSeason } = getCurrentSeason() || {};
+  const season = Number(req.query.season) || currentSeason || 3;
+  const seasons = [...new Set(getLedgerSeasons())];
+  const awards      = getSeasonAwards(season);
+  const players     = getActivePlayers();
+  const seasonStats = getSeasonPlayerStats(season);
+  const suggestions = computeAwardSuggestions(seasonStats);
+  const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
+  const articles = Object.fromEntries(SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
+  // Also load per-player articles for confirmed team award entries (stored under <type>_<player_id> keys).
+  for (const award of awards) {
+    if (['all_wknd_1', 'all_wknd_2', 'all_wknd_def'].includes(award.award_type)) {
+      const key = `${award.award_type}_${award.player_id}`;
+      articles[key] = getSetting(`award_article_${key}_${season}`, '');
+    }
+  }
+  res.send(renderAdminPage(req, {
+    title: 'Season Awards',
+    currentPath: '/admin/awards',
+    body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles }),
+  }));
+});
+
+const AWARD_TEAM_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+
+app.post('/admin/awards', requireAuth, express.json(), (req, res) => {
+  const { season, award_type, player_id, position, clear_first, from_suggestion } = req.body || {};
+  if (!season || !award_type) return res.status(400).json({ error: 'Missing fields' });
+
+  if (from_suggestion) {
+    const stats = getSeasonPlayerStats(season);
+    const sugg  = computeAwardSuggestions(stats)[award_type];
+    const list  = Array.isArray(sugg) ? sugg : (sugg ? [sugg] : []);
+    clearAwardType(season, award_type);
+    for (const entry of list) {
+      if (!entry.player) continue;
+      const pid  = entry.player.id;
+      const pos  = entry.position || '';
+      const id   = AWARD_TEAM_TYPES.has(award_type) ? `${season}_${award_type}_${pos}` : `${season}_${award_type}_${pid}`;
+      upsertAward({ id, season, award_type, player_id: pid, notes: pos });
+    }
+    return res.json({ ok: true });
+  }
+
+  const { clear_only } = req.body || {};
+  if (clear_only) {
+    clearAwardType(season, award_type);
+    return res.json({ ok: true });
+  }
+
+  if (clear_first && !AWARD_TEAM_TYPES.has(award_type)) clearAwardType(season, award_type);
+
+  if (player_id) {
+    const notes = position || '';
+    const id    = AWARD_TEAM_TYPES.has(award_type) && position
+      ? `${season}_${award_type}_${position}`
+      : `${season}_${award_type}_${player_id}`;
+    upsertAward({ id, season, award_type, player_id, notes });
+  }
+  res.json({ ok: true });
+});
+
+app.delete('/admin/awards/:id', requireAuth, (req, res) => {
+  deleteAward(req.params.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/awards/generate-article', requireAuth, express.json(), async (req, res) => {
+  const { season, award_type, player_id } = req.body || {};
+  if (!award_type) return res.status(400).json({ error: 'Missing award_type' });
+
+  const LABELS = {
+    mvp: 'Season MVP', dpoy: 'Defensive Player of the Season',
+    all_wknd_1: 'All WKND 1st Team', all_wknd_2: 'All WKND 2nd Team', all_wknd_def: 'All WKND Defensive Team',
+    scoring_champ: 'Scoring Champion', assists_leader: 'Assists Leader', rebounds_leader: 'Rebounds Leader',
+    steals_leader: 'Steals Leader', blocks_leader: 'Blocks Leader', three_pm_leader: '3-Pointers Leader',
+  };
+
+  const awards = getSeasonAwards(season);
+  const byType = {};
+  for (const r of awards) (byType[r.award_type] ??= []).push(r);
+  const entries = byType[award_type] || [];
+
+  let context = '';
+  if (entries.length === 1) {
+    const e = entries[0];
+    const gp = e.games_played || 1;
+    const fmt = (v) => v != null ? (v / gp).toFixed(1) : '—';
+    context = `Winner: ${e.player_name} (${e.team_name}). Stats: ${fmt(e.pts)} PPG, ${fmt(e.reb)} RPG, ${fmt(e.ast)} APG, ${fmt(e.stl)} SPG, ${fmt(e.blk)} BPG over ${gp} games.`;
+  } else if (entries.length > 1) {
+    context = `Winners: ${entries.map(e => `${e.player_name} (${e.team_name})`).join(', ')}.`;
+  }
+
+  const prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Write it like a sports broadcaster presenting the award — exciting, specific, and confident. No generic filler. Don't start with "Congratulations".`;
+
+  try {
+    const result = await generateText(prompt, { max_tokens: 200 });
+    if (!result?.text) throw new Error('No response');
+    res.json({ text: result.text });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Generation failed' });
+  }
+});
+
 app.get('/admin/site', requireAuth, (req, res) => {
   const seasons  = getLedgerSeasons();
   const quotas   = Object.fromEntries(seasons.map(s => [s, getSeasonQuota(s)]));
-  const settings = { mvp_race_enabled: getSetting('mvp_race_enabled', '1') };
+  const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
+  const settings = {
+    awards_enabled:   getSetting('awards_enabled',   '1'),
+    mvp_race_enabled: getSetting('mvp_race_enabled', '1'),
+    reg_open:         getSetting('reg_open',         '0'),
+    reg_deadline:     getSetting('reg_deadline',     ''),
+    ...Object.fromEntries(SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
+  };
   res.send(renderAdminPage(req, {
     title: 'Site Settings',
     currentPath: '/admin/site',
@@ -1347,9 +1697,17 @@ app.get('/admin/site', requireAuth, (req, res) => {
 });
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
-  const allowed = ['mvp_race_enabled'];
+  const staticAllowed = new Set([
+    'mvp_race_enabled', 'awards_enabled',
+    'award_show_mvp', 'award_show_dpoy',
+    'award_show_all_wknd_1', 'award_show_all_wknd_2', 'award_show_all_wknd_def',
+    'award_show_scoring_champ', 'award_show_assists_leader', 'award_show_rebounds_leader',
+    'award_show_steals_leader', 'award_show_blocks_leader', 'award_show_three_pm_leader',
+    'reg_open', 'reg_deadline',
+  ]);
+  const articleKeyRe = /^award_article_(mvp|dpoy|all_wknd_1|all_wknd_2|all_wknd_def|scoring_champ|assists_leader|rebounds_leader|steals_leader|blocks_leader|three_pm_leader)(_[\w-]+)?_\d+$/;
   for (const [key, value] of Object.entries(req.body || {})) {
-    if (allowed.includes(key)) setSetting(key, String(value));
+    if (staticAllowed.has(key) || articleKeyRe.test(key)) setSetting(key, String(value));
   }
   res.json({ ok: true });
 });
@@ -1655,10 +2013,14 @@ app.get('/', (req, res) => {
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
   const leaderPlayers = buildLeaderPlayers();
 
+  const regBanner = getSetting('reg_open', '0') === '1'
+    ? { deadline: getSetting('reg_deadline', '') }
+    : null;
+
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, leaderPlayers })
+    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner })
   }));
 });
 
@@ -1700,11 +2062,12 @@ app.get('/games/:ref', (req, res) => {
 
 // ── Admin compare analytics ───────────────────────────────────────────────────
 app.get('/admin/compare', requireAuth, (req, res) => {
-  const rows = getCompareAnalytics();
+  const rows    = getCompareAnalytics();
+  const players = getAllPlayers();
   res.send(renderAdminPage(req, {
     title: 'Compare Analytics',
     currentPath: '/admin/compare',
-    body: adminComparePage({ rows }),
+    body: adminComparePage({ rows, players }),
   }));
 });
 
@@ -1829,7 +2192,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   const potgId     = req.body?.player_id || game.manual_potg_player_id || derivePotgPlayerId(game, stats);
   const dnpPlayers = getGameDnpPlayers(game.id);
   const qScores    = extractQuarterScores(game);
-  const records    = getTeamRecords();
+  const records    = getTeamRecordsAsOf(game.season, game.date);
   const recMap     = Object.fromEntries(records.map(r => [r.team_id, r]));
   const prevMatch  = getPrevMatchup(game.id, game.team_a_id, game.team_b_id);
   const streakA    = getTeamStreak(game.team_a_id, game.id);
@@ -2450,7 +2813,7 @@ function computeMvpScore(s) {
   const gp  = s.gp;
   const ppg = s.pts / gp, rpg = s.reb / gp, apg = s.ast / gp;
   const spg = s.stl / gp, bpg = s.blk / gp, tpg = s.tov / gp;
-  const base = ppg + rpg*0.7 + apg*0.9 + spg*2.0 + bpg*2.0 - tpg*1.0;
+  const base = ppg + rpg*0.8 + apg*0.9 + spg*1.5 + bpg*2.0 - tpg*1.0;
 
   const tsDenom = 2 * (s.fga + 0.44 * s.fta);
   const tsPct   = tsDenom > 0 ? s.pts / tsDenom : 0;
@@ -2472,6 +2835,43 @@ function mvpStatsKey(s) {
   return `v2_${s.gp}_${s.pts}_${s.reb}_${s.ast}_${s.fgm}_${s.fga}_${s.ftm}_${s.fta}_${s.wins}_${s.losses}`;
 }
 
+app.get('/awards', (req, res) => {
+  if (getSetting('awards_enabled', '1') === '0') return res.status(404).send(
+    renderPage(req, { title: 'Not Found', currentPath: '/awards', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
+  );
+  const { season: currentSeason } = getCurrentSeason() || {};
+  const season = Number(req.query.season) || currentSeason || 3;
+  const awards = getSeasonAwards(season);
+  const availableSeasons = getAwardSeasons();
+  const leagueStats = getSeasonPlayerStats(season);
+  // Use same candidate source as /mvp so both ladders show identical players and scores.
+  const mvpCandidates = getMvpCandidates(season)
+    .map(s => ({ ...s, mvpScore: computeMvpScore(s) }))
+    .filter(s => s.gp >= 1)
+    .sort((a, b) => b.mvpScore - a.mvpScore);
+  const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
+  const visibleSections = new Set(SECTION_KEYS.filter(k => getSetting(`award_show_${k}`, '0') !== '0'));
+  const articles = Object.fromEntries(SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
+  for (const award of awards) {
+    if (['all_wknd_1', 'all_wknd_2', 'all_wknd_def'].includes(award.award_type)) {
+      const key = `${award.award_type}_${award.player_id}`;
+      articles[key] = getSetting(`award_article_${key}_${season}`, '');
+    }
+  }
+  res.send(renderPage(req, {
+    title: `Season ${season} Awards — WKND Basketball`,
+    currentPath: '/awards',
+    body: awardsPage({ awards, season, availableSeasons, visibleSections, articles, leagueStats, mvpCandidates }),
+  }));
+});
+
+app.post('/admin/mvp/regenerate', requireAuth, express.json(), (req, res) => {
+  const { player_id, season } = req.body || {};
+  if (player_id) deleteMvpWriteupForPlayer(player_id, season);
+  else           clearMvpWriteupSeason(season);
+  res.json({ ok: true });
+});
+
 app.get('/mvp', async (req, res) => {
   if (getSetting('mvp_race_enabled', '1') === '0') return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/mvp', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
@@ -2490,6 +2890,17 @@ app.get('/mvp', async (req, res) => {
     !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
   const highlights = buildHighlights(completedGames, playerMap, teamMap, 10);
+
+  // Team records from regular complete games — used in AI writeups so the W-L is the team's
+  // actual record, not the individual player's personal participation record.
+  const teamRecords = {};
+  for (const g of completedGames.filter(g => g.game_type === 'regular')) {
+    const a = g.team_a_id, b = g.team_b_id;
+    if (!teamRecords[a]) teamRecords[a] = { w: 0, l: 0 };
+    if (!teamRecords[b]) teamRecords[b] = { w: 0, l: 0 };
+    if (Number(g.team_a_score) > Number(g.team_b_score)) { teamRecords[a].w++; teamRecords[b].l++; }
+    else if (Number(g.team_b_score) > Number(g.team_a_score)) { teamRecords[b].w++; teamRecords[a].l++; }
+  }
 
   const allQualified = raw
     .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
@@ -2529,7 +2940,8 @@ app.get('/mvp', async (req, res) => {
       const tsDenom = 2 * (c.stats.fga + 0.44 * c.stats.fta);
       const ts  = tsDenom > 0 ? Math.round(c.stats.pts / tsDenom * 100) + '%' : '—';
       const fg  = c.stats.fga > 0 ? Math.round(c.stats.fgm / c.stats.fga * 100) + '%' : '—';
-      const wl  = `${c.stats.wins}W-${c.stats.losses}L`;
+      const teamRec = teamRecords[c.stats.team_id] ?? { w: c.stats.wins, l: c.stats.losses };
+      const wl  = `${teamRec.w}W-${teamRec.l}L`;
       const name = displayPlayerName(c.player.name);
       const pid  = c.player.id;
 
@@ -2574,6 +2986,7 @@ ${name} stats:\n${rankLines}`;
       teams: allTeams,
       games: completedGames,
       leagueStats: allQualified,
+      isAdmin: !!req.session?.isAdmin,
     }),
   }));
 });
@@ -2759,6 +3172,94 @@ app.get('/terms', (req, res) => {
     currentPath: '/terms',
     body: termsPage(),
   }));
+});
+
+// ── Registration ──────────────────────────────────────────────────────────────
+app.get('/register', (req, res) => {
+  res.send(layout({
+    title: 'Join WKND Basketball',
+    currentPath: '/register',
+    body: registerPage(),
+  }));
+});
+
+app.post('/register', (req, res) => {
+  const { first_name, last_name, email, phone, birthday, positions, height, weight,
+          jersey_pref, dominant_hand, experience, referred_by,
+          emergency_name, emergency_phone, motto, agree } = req.body;
+
+  const prefill = { first_name, last_name, email, phone, birthday, height, weight,
+                    jersey_pref, dominant_hand, experience, referred_by,
+                    emergency_name, emergency_phone, motto };
+
+  // Validate required fields
+  if (!first_name?.trim() || !last_name?.trim()) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'First and last name are required.', prefill }) }));
+  }
+  if (!email?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'A valid email address is required.', prefill }) }));
+  }
+  if (!phone?.trim()) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Phone number is required.', prefill }) }));
+  }
+  if (!birthday?.trim()) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Birthday is required.', prefill }) }));
+  }
+  const posArr = Array.isArray(positions) ? positions : (positions ? [positions] : []);
+  if (posArr.length === 0) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Please select at least one position.', prefill }) }));
+  }
+  if (!height?.toString().trim()) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Height is required.', prefill }) }));
+  }
+  if (!weight?.toString().trim()) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Weight is required.', prefill }) }));
+  }
+  if (!dominant_hand?.trim()) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Dominant hand is required.', prefill }) }));
+  }
+  if (!agree) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Please confirm the agreement to continue.', prefill }) }));
+  }
+
+  // Check for duplicate email
+  const existing = getRegistrationByEmail(email.trim().toLowerCase());
+  if (existing) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'This email has already been registered. Contact an admin if you need help.', prefill }) }));
+  }
+
+  const full_name = `${last_name.trim().toUpperCase()}, ${first_name.trim()}`;
+
+  insertRegistration({
+    id: crypto.randomUUID(),
+    full_name,
+    email: email.trim().toLowerCase(),
+    phone: phone.trim(),
+    birthday: birthday.trim(),
+    positions: JSON.stringify(posArr),
+    height: (height || '').trim(),
+    weight: (weight || '').trim(),
+    jersey_pref: (jersey_pref || '').trim(),
+    dominant_hand: dominant_hand || '',
+    experience: experience || '',
+    referred_by: (referred_by || '').trim(),
+    emergency_name: (emergency_name || '').trim(),
+    emergency_phone: (emergency_phone || '').trim(),
+    motto: (motto || '').trim(),
+  });
+
+  res.send(layout({ title: 'Registration Received', currentPath: '/register',
+    body: registerPage({ success: true }) }));
 });
 
 app.listen(PORT, () => {

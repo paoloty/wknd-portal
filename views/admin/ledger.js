@@ -9,6 +9,8 @@ const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
 
 const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
 const ICON_EYE       = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 7c0 0 2.2-4 6-4s6 4 6 4-2.2 4-6 4-6-4-6-4z"/><circle cx="7" cy="7" r="1.6"/></svg>`;
+const ICON_PLUS      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
+const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
 const ICON_COPY      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M1 9V2.5A1.5 1.5 0 0 1 2.5 1H9"/></svg>`;
 const ICON_VOID      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="5"/><path d="M3.5 9.5l6-6"/></svg>`;
 const ICON_TRASH     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h9M5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M10 3.5l-.7 7a.5.5 0 0 1-.5.5H4.2a.5.5 0 0 1-.5-.5L3 3.5"/></svg>`;
@@ -100,8 +102,8 @@ function addTransactionForm(playerId, today, season) {
         <label class="admin-field-label">Reference No. <span class="font-normal text-slate-500">(optional)</span></label>
         <input type="text" name="reference_no" class="admin-input mt-1" placeholder="GCash ref, bank ref…">
       </div>
-      <div class="col-span-2">
-        <button type="submit" id="lgr-submit" class="admin-btn">ADD TRANSACTION</button>
+      <div class="col-span-2" style="display:flex">
+        <button type="submit" id="lgr-submit" class="admin-btn">${ICON_PLUS} Add Transaction</button>
       </div>
     </div>
   </form>`;
@@ -224,9 +226,9 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Ledger</h2>
-  <div class="flex flex-wrap items-center gap-2">
-    <button id="lgr-export-btn" class="agm-pill inline-flex items-center gap-1.5">${ICON_COPY} Copy Summary</button>
-    <button id="lgr-bulk-btn" class="agm-new-btn">+ Bulk Charge</button>
+  <div class="flex items-center gap-2">
+    <button id="lgr-export-btn" class="admin-btn admin-btn--inline-action" style="align-self:center">${ICON_COPY} Copy</button>
+    <button id="lgr-bulk-btn" class="agm-new-btn">${ICON_PLUS} Bulk Charge</button>
     <input type="search" id="lgr-search" class="agm-search" placeholder="Search players…">
   </div>
 </div>
@@ -299,10 +301,10 @@ ${summaryStrip}
         <input type="text" id="blk-notes" class="admin-input mt-1" placeholder="e.g. Season 3 Quota">
       </div>
     </div>
-    <div class="mt-4 flex items-center gap-3">
-      <button id="blk-select-all" class="agm-pill">Select All</button>
+    <div class="mt-4 flex items-center gap-2">
+      <button id="blk-select-all" class="admin-btn">${ICON_CHECK} Select All</button>
       <span id="blk-count" class="text-xs text-slate-500">0 players selected</span>
-      <button id="blk-submit" class="admin-btn ml-auto">APPLY TO SELECTED</button>
+      <button id="blk-submit" class="admin-btn" style="margin-left:auto">${ICON_CHECK} Apply to Selected</button>
     </div>
   </div>
 </div>
@@ -384,7 +386,9 @@ ${summaryStrip}
     var date   = document.getElementById('blk-date').value;
     if (!amount || !date) { alert('Amount and date are required.'); return; }
     var msg = document.getElementById('lgr-bulk-msg');
-    var btn = this; btn.disabled = true; btn.textContent = 'APPLYING…';
+    var btn = this;
+    var origHtml = btn.innerHTML;
+    btn.disabled = true; btn.textContent = 'Applying…';
     try {
       var r = await fetch('/admin/ledger/bulk-charge', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -408,7 +412,7 @@ ${summaryStrip}
       msg.removeAttribute('hidden');
       msg.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:8px;font-size:13px;padding:10px 14px;margin-bottom:14px';
       msg.textContent = err.message;
-      btn.disabled = false; btn.textContent = 'APPLY TO SELECTED';
+      btn.disabled = false; btn.innerHTML = origHtml;
     }
   });
 
