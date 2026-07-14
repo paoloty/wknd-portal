@@ -1460,7 +1460,7 @@ function playerPositions(p) {
   try { return JSON.parse(p.positions || '[]'); } catch { return []; }
 }
 
-function computeAwardSuggestions(stats) {
+function computeAwardSuggestions(stats, { mvpCandidates = null } = {}) {
   if (!stats.length) return {};
   const f   = (v, gp) => gp > 0 ? v / gp : 0;
   const ppg = p => f(p.pts, p.games_played);
@@ -1563,10 +1563,25 @@ function computeAwardSuggestions(stats) {
     three_pm_leader: addLine(top(tpm), threeShooters[0]? `${fmt1(tpm(threeShooters[0]))} 3PM`     : ''),
     dpoy:            addLine(top(dpg), defenders[0]
       ? `${fmt1(f(defenders[0].stl, defenders[0].games_played))} SPG · ${fmt1(f(defenders[0].blk, defenders[0].games_played))} BPG` : ''),
-    mvp: mvpPlayer ? {
-      player:   mvpPlayer,
-      statLine: `${fmt1(ppg(mvpPlayer))} PPG · ${fmt1(rpg(mvpPlayer))} RPG · ${fmt1(apg(mvpPlayer))} APG`,
-    } : null,
+    mvp: (() => {
+      if (mvpCandidates && mvpCandidates.length) {
+        const top = [...mvpCandidates]
+          .map(s => ({ ...s, mvpScore: computeMvpScore(s) }))
+          .filter(s => s.gp >= 1)
+          .sort((a, b) => b.mvpScore - a.mvpScore)[0];
+        if (top) {
+          const gp = top.gp;
+          return {
+            player:   { ...top, games_played: gp },
+            statLine: `${(top.pts / gp).toFixed(1)} PPG · ${(top.reb / gp).toFixed(1)} RPG · ${(top.ast / gp).toFixed(1)} APG`,
+          };
+        }
+      }
+      return mvpPlayer ? {
+        player:   mvpPlayer,
+        statLine: `${fmt1(ppg(mvpPlayer))} PPG · ${fmt1(rpg(mvpPlayer))} RPG · ${fmt1(apg(mvpPlayer))} APG`,
+      } : null;
+    })(),
     all_wknd_1:   team1,
     all_wknd_2:   team2,
     all_wknd_def: defTeam,
@@ -1580,7 +1595,7 @@ app.get('/admin/awards', requireAuth, (req, res) => {
   const awards      = getSeasonAwards(season);
   const players     = getActivePlayers();
   const seasonStats = getSeasonPlayerStats(season);
-  const suggestions = computeAwardSuggestions(seasonStats);
+  const suggestions = computeAwardSuggestions(seasonStats, { mvpCandidates: getMvpCandidates(season) });
   const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
   const articles = Object.fromEntries(SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
   // Also load per-player articles for confirmed team award entries (stored under <type>_<player_id> keys).
@@ -1605,7 +1620,7 @@ app.post('/admin/awards', requireAuth, express.json(), (req, res) => {
 
   if (from_suggestion) {
     const stats = getSeasonPlayerStats(season);
-    const sugg  = computeAwardSuggestions(stats)[award_type];
+    const sugg  = computeAwardSuggestions(stats, { mvpCandidates: getMvpCandidates(season) })[award_type];
     const list  = Array.isArray(sugg) ? sugg : (sugg ? [sugg] : []);
     clearAwardType(season, award_type);
     for (const entry of list) {
