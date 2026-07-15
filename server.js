@@ -1,13 +1,14 @@
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomBytes, timingSafeEqual, createHash } from 'crypto';
+import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
 import { statSync, existsSync } from 'fs';
 import express from 'express';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import { parseWriteup } from './lib/writeup.js';
 import { sendMail, approvedEmail, rejectedEmail } from './lib/mailer.js';
+import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import sharp from 'sharp';
 import { layout, escHtml } from './views/layout.js';
 import { homePage } from './views/home.js';
@@ -59,6 +60,8 @@ import {
   getMvpCandidates, getTotalSeasonGamesForMvp,
   getSetting, setSetting,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
+  setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
+  setRegistrationAdmin, insertAdminLog, getAdminLogs,
   createPlayer, mergeRegistrationIntoPlayer,
   getSeasonStandings, getPlayoffGames,
   db as portalDb,
@@ -71,6 +74,7 @@ import { adminSiteBody } from './views/admin/site.js';
 import { adminAwardsBody } from './views/admin/awards.js';
 import { adminUsersBody }       from './views/admin/users.js';
 import { adminUserDetailBody }  from './views/admin/user-detail.js';
+import { adminLogsPage }        from './views/admin/logs.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
@@ -101,6 +105,15 @@ function checkCredentials(user, pass) {
     const uOk = timingSafeEqual(Buffer.from(user), Buffer.from(PORTAL_ADMIN_USER));
     const pOk = timingSafeEqual(Buffer.from(pass), Buffer.from(PORTAL_ADMIN_PASS));
     return uOk && pOk;
+  } catch { return false; }
+}
+
+function checkPlayerPassword(password, storedHash) {
+  try {
+    const [salt, keyHex] = storedHash.split(':');
+    if (!salt || !keyHex) return false;
+    const derived = scryptSync(password, salt, 64);
+    return timingSafeEqual(derived, Buffer.from(keyHex, 'hex'));
   } catch { return false; }
 }
 
@@ -540,10 +553,13 @@ function regMiniBanner() {
   return `<div class="reg-mini">
   <span class="reg-mini__pill">
     <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-    Now Accepting Members
+    Registration Open
   </span>
-  <span class="reg-mini__text">${deadline ? `Good runs, good people — sign up before <strong>${escHtml(deadline)}</strong>` : 'WKND is a friendly basketball community. Come join us.'}</span>
-  <a href="/register" class="reg-mini__cta">Count Me In <span aria-hidden="true">→</span></a>
+  <span class="reg-mini__text">${deadline
+    ? `Register before <strong>${escHtml(deadline)}</strong> to be eligible for upcoming seasons, playoffs, and league events.`
+    : `Register now to join upcoming seasons, playoffs, and exclusive league events — spots are limited.`
+  }</span>
+  <a href="/register" class="reg-mini__cta">Register Now <span aria-hidden="true">→</span></a>
 </div>`;
 }
 
@@ -560,13 +576,15 @@ function renderPage(req, opts) {
   ].join('\n  ');
   const existing = opts.metaTags || '';
   const metaTags = existing.includes('og:image') ? existing : (existing ? existing + '\n  ' + fallbackMeta : fallbackMeta);
-  const showMini = getSetting('reg_open', '0') === '1' && opts.currentPath !== '/';
+  const isPlayer = !!req.session?.playerRegId;
+  const isLoggedIn = !!req.session?.isAdmin || isPlayer;
+  const showMini = getSetting('reg_open', '0') === '1' && opts.currentPath !== '/' && !isLoggedIn;
   const body = showMini ? regMiniBanner() + (opts.body || '') : (opts.body || '');
-  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, features: getFeatureFlags(), ...opts, body, metaTags });
+  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), ...opts, body, metaTags });
 }
 
 function renderAdminPage(req, opts) {
-  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, ...opts });
+  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, ...opts });
 }
 
 function formatName(raw) {
@@ -1013,8 +1031,28 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 function requireAuth(req, res, next) {
   if (req.session?.isAdmin) return next();
+  if (req.session?.playerRegId) return res.redirect('/me');
   res.redirect('/login');
 }
+
+function requireSuperAdmin(req, res, next) {
+  if (req.session?.isAdmin && !req.session?.isElevatedPlayer) return next();
+  res.status(403).send(renderAdminPage(req, { title: 'Forbidden', currentPath: '', body: '<p style="padding:40px;color:var(--text-muted)">Super admin access required.</p>' }));
+}
+
+// Log all mutating admin actions (skip GETs and file uploads)
+app.use('/admin', (req, res, next) => {
+  if (req.method === 'GET' || !req.session?.isAdmin) return next();
+  res.on('finish', () => {
+    if (res.statusCode >= 500) return;
+    const actor     = req.session.isElevatedPlayer ? (req.session.playerName || 'player-admin') : 'super';
+    const actorType = req.session.isElevatedPlayer ? 'admin' : 'super';
+    const body      = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+    delete body.password; delete body.confirm;
+    insertAdminLog({ actor, actorType, method: req.method, path: req.path, details: body });
+  });
+  next();
+});
 
 async function fetchCoverImageBuffer(url) {
   if (!url) return null;
@@ -1346,21 +1384,87 @@ app.get('*', (req, res, next) => {
 // ── Admin routes ──────────────────────────────────────────────────────────────
 app.get('/login', (req, res) => {
   if (req.session?.isAdmin) return res.redirect('/admin');
+  if (req.session?.playerRegId) return res.redirect('/me');
   res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody() }));
 });
 
 app.post('/login', (req, res) => {
   const { username = '', password = '', remember = '' } = req.body;
+
+  // Admin check
   if (checkCredentials(username, password)) {
     req.session.isAdmin = true;
     if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
     return res.redirect('/admin');
   }
-  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Invalid username or password.' }) }));
+
+  // Player check (username field used as email)
+  const reg = getRegistrationByEmail(username.trim());
+  if (reg) {
+    if (reg.status !== 'approved') {
+      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Your registration is not yet approved.' }) }));
+    }
+    if (!reg.password_hash) {
+      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'No password set yet — check your email for the setup link.' }) }));
+    }
+    if (checkPlayerPassword(password, reg.password_hash)) {
+      req.session.playerRegId    = reg.id;
+      req.session.playerPlayerId = reg.player_id;
+      if (reg.is_admin) {
+        req.session.isAdmin          = true;
+        req.session.isElevatedPlayer = true;
+        req.session.playerName       = (reg.full_name || '').split(',').reverse().map(s => s.trim()).join(' ');
+      }
+      if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+      return res.redirect(reg.is_admin ? '/admin' : '/me');
+    }
+  }
+
+  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Invalid email or password.' }) }));
 });
 
 app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
+});
+
+app.get('/me', (req, res) => {
+  if (!req.session?.playerRegId) return res.redirect('/login');
+  const playerId = req.session.playerPlayerId;
+  if (!playerId) return res.redirect('/login');
+  const slug = getSlugForEntity('player', playerId);
+  return res.redirect(slug ? `/players/${slug}` : `/players/${playerId}`);
+});
+
+app.get('/set-password', (req, res) => {
+  const { token = '' } = req.query;
+  const reg = token ? getRegByPasswordToken(token) : null;
+  if (!reg) {
+    return res.status(400).send(renderPage(req, {
+      title: 'Invalid Link — WKND Basketball', currentPath: '', ticker: '',
+      body: setPasswordPage({ error: 'This link is invalid or has expired. Contact your league admin.' }),
+    }));
+  }
+  const name = (reg.full_name || '').split(',')[1]?.trim() || reg.full_name || '';
+  res.send(renderPage(req, { title: 'Set Your Password — WKND Basketball', currentPath: '', ticker: '', body: setPasswordPage({ token, name }) }));
+});
+
+app.post('/set-password', express.urlencoded({ extended: false }), async (req, res) => {
+  const { token = '', password = '', confirm = '' } = req.body;
+  const renderErr = (error) => res.status(400).send(renderPage(req, {
+    title: 'Set Your Password — WKND Basketball', currentPath: '', ticker: '',
+    body: setPasswordPage({ token, error }),
+  }));
+  const reg = token ? getRegByPasswordToken(token) : null;
+  if (!reg) return renderErr('This link is invalid or has expired.');
+  if (password.length < 8) return renderErr('Password must be at least 8 characters.');
+  if (password !== confirm) return renderErr('Passwords do not match.');
+
+  const salt = randomBytes(16).toString('hex');
+  const hash = await new Promise((resolve, reject) => {
+    scrypt(password, salt, 64, (err, key) => err ? reject(err) : resolve(`${salt}:${key.toString('hex')}`));
+  });
+  setRegistrationPassword(reg.id, hash);
+  res.send(renderPage(req, { title: 'Password Set — WKND Basketball', currentPath: '', ticker: '', body: setPasswordDonePage() }));
 });
 
 app.get('/admin', requireAuth, (req, res) => {
@@ -1400,9 +1504,17 @@ app.get('/admin/users/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: reg.full_name,
     currentPath: '/admin/users',
-    body: adminUserDetailBody({ reg, players, linkedPlayer }),
+    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin: !req.session?.isElevatedPlayer }),
   }));
 });
+
+function makeSetPasswordUrl(req, regId) {
+  const token = randomBytes(32).toString('hex');
+  setPasswordToken(regId, token, Date.now() + 48 * 60 * 60 * 1000);
+  const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+  const host  = req.headers['x-forwarded-host'] || req.headers.host;
+  return { token, url: `${proto}://${host}/set-password?token=${token}` };
+}
 
 app.post('/admin/users/:id/approve', requireAuth, express.json(), async (req, res) => {
   const reg = getRegistration(req.params.id);
@@ -1412,7 +1524,8 @@ app.post('/admin/users/:id/approve', requireAuth, express.json(), async (req, re
   if (player_id) mergeRegistrationIntoPlayer(player_id, reg);
   if (reg.email) {
     const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
-    sendMail({ to: reg.email, ...approvedEmail({ name }) }).catch(e => console.error('[mailer]', e.message));
+    const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
+    sendMail({ to: reg.email, ...approvedEmail({ name, setPasswordUrl }) }).catch(e => console.error('[mailer]', e.message));
   }
   res.json({ ok: true });
 });
@@ -1442,7 +1555,8 @@ app.post('/admin/users/:id/create', requireAuth, express.json(), (req, res) => {
   mergeRegistrationIntoPlayer(newPlayerId, reg);
   if (reg.email) {
     const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
-    sendMail({ to: reg.email, ...approvedEmail({ name }) }).catch(e => console.error('[mailer]', e.message));
+    const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
+    sendMail({ to: reg.email, ...approvedEmail({ name, setPasswordUrl }) }).catch(e => console.error('[mailer]', e.message));
   }
   res.json({ ok: true, player_id: newPlayerId });
 });
@@ -1472,6 +1586,23 @@ app.post('/admin/users/:id/reject', requireAuth, express.json(), async (req, res
     sendMail({ to: reg.email, ...rejectedEmail({ name, reason: notes }) }).catch(e => console.error('[mailer]', e.message));
   }
   res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/toggle-admin', requireSuperAdmin, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  if (reg.status !== 'approved') return res.status(400).json({ error: 'User must be approved first.' });
+  setRegistrationAdmin(reg.id, !reg.is_admin);
+  res.json({ ok: true, is_admin: !reg.is_admin });
+});
+
+app.get('/admin/logs', requireSuperAdmin, (req, res) => {
+  const logs = getAdminLogs(500);
+  res.send(renderAdminPage(req, {
+    title: 'Admin Logs',
+    currentPath: '/admin/logs',
+    body: adminLogsPage({ logs }),
+  }));
 });
 
 const TEAM_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
@@ -3060,7 +3191,7 @@ app.get('/leaders', (req, res) => {
   res.send(renderPage(req, {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
-    body: leadersPage({ players, season: String(season || ''), gameRecords, currentSeason: season || 3, asOfLabel })
+    body: leadersPage({ players, season: String(season || ''), gameRecords, currentSeason: season || 3, asOfLabel, isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) })
   }));
 });
 
@@ -3087,7 +3218,7 @@ app.get('/roast', (req, res) => {
     title: 'The Roast — WKND Basketball League',
     currentPath: req.path,
     metaTags: roastMetaTags,
-    body: roastPage({ players, season: String(season || '') }),
+    body: roastPage({ players, season: String(season || ''), isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) }),
   }));
 });
 

@@ -1,4 +1,4 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, features = {} }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, features = {} }) {
   const navLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
@@ -57,8 +57,10 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
 
   const adminActive = currentPath.startsWith('/admin');
   const authLink = isAdmin
-    ? `<a href="/admin/ledger"${adminActive ? ' aria-current="page"' : ''} class="site-nav__admin">Admin</a><a href="/logout" class="site-nav__login">Sign out</a>`
-    : `<a href="/login" class="site-nav__login">Login</a>`;
+    ? `${isPlayer ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a>` : ''}<a href="/admin/ledger"${adminActive ? ' aria-current="page"' : ''} class="site-nav__admin">Admin</a><a href="/logout" class="site-nav__login">Sign out</a>`
+    : isPlayer
+      ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a><a href="/logout" class="site-nav__login">Sign out</a>`
+      : `<a href="/login" class="site-nav__login">Login</a>`;
 
   return `<!DOCTYPE html>
 <html lang="en">

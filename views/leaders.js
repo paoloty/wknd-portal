@@ -1,6 +1,8 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, playerLink } from './utils.js';
 
+let _showDownload = false;
+
 // ── Shared PER formula — matches box score (game.js calcPer) ─────────────────
 // pts + 0.4×FGM - 0.7×FGA - 0.4×missedFT + 0.7×REB + STL + 0.7×AST + 0.7×BLK - TO
 const calcPer = (pts, fg2m, fg3m, fg2m_miss, fg3m_miss, ft_miss, reb, ast, stl, blk, to) => {
@@ -236,6 +238,7 @@ function shareBtn(cat, mode, season, best, color, fmt) {
 const DL_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
 
 function downloadBtn(cat, mode) {
+  if (!_showDownload) return '';
   return `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
     data-label="${escHtml(cat.label)}"
     data-mode="${escHtml(mode)}">${DL_ICON}</button>`;
@@ -266,6 +269,7 @@ function recShareBtn(cat, scope, first, color, fmt) {
 }
 
 function recDownloadBtn(cat) {
+  if (!_showDownload) return '';
   return `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
     data-label="${escHtml(cat.label)}"
     data-mode="rec">${DL_ICON}</button>`;
@@ -318,7 +322,8 @@ function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}
 </div>`;
 }
 
-export function leadersPage({ players, season = '', gameRecords = [], currentSeason = 3, asOfLabel = '' }) {
+export function leadersPage({ players, season = '', gameRecords = [], currentSeason = 3, asOfLabel = '', isLoggedIn = false }) {
+  _showDownload = isLoggedIn;
   const opts = s => ({ mode: s, season });
   const pgPanels  = PER_GAME.map(cat => leaderPanel(cat, players, fmtPerGame, opts('pg'))).filter(Boolean).join('\n');
   const totPanels = TOTALS.map(cat => leaderPanel(cat, players, fmtTotals, opts('tot'))).filter(Boolean).join('\n');

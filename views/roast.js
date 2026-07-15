@@ -1,6 +1,8 @@
 import { escHtml } from './layout.js';
 import { teamColor, playerAvatar, playerLink } from './utils.js';
 
+let _showDownload = false;
+
 const SHARE_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
 const DL_ICON   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
 
@@ -129,9 +131,9 @@ function roastPanel(cat, players, season) {
     data-stat-value="${best.v}"
     data-stat-fmt="${escHtml(fmtVal)}">${SHARE_ICON}</button>`;
 
-  const dlBtn = `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
+  const dlBtn = _showDownload ? `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
     data-label="${escHtml(cat.label)}"
-    data-mode="roast">${DL_ICON}</button>`;
+    data-mode="roast">${DL_ICON}</button>` : '';
 
   const rows = top10.slice(1).map((x, i) => {
     const tc   = teamColor(String(x.p.team_name || '').toUpperCase());
@@ -164,7 +166,8 @@ function roastPanel(cat, players, season) {
 </div>`;
 }
 
-export function roastPage({ players = [], season = '' }) {
+export function roastPage({ players = [], season = '', isLoggedIn = false }) {
+  _showDownload = isLoggedIn;
   const panels = ROAST_CATS.map(cat => roastPanel(cat, players, season)).filter(Boolean).join('\n');
 
   if (!panels) {

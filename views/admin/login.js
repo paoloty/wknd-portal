@@ -11,8 +11,8 @@ export function adminLoginBody({ error = '' } = {}) {
     ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
     <form class="login-form" method="POST" action="/login">
       <div class="login-field">
-        <label for="username">Username</label>
-        <input id="username" name="username" type="text" autocomplete="username" required placeholder="Enter username">
+        <label for="username">Email or Username</label>
+        <input id="username" name="username" type="text" autocomplete="username" required placeholder="Enter email or username">
       </div>
       <div class="login-field">
         <label for="password">Password</label>

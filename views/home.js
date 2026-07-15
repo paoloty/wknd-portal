@@ -259,14 +259,17 @@ function registrationBanner({ deadline }) {
       <div class="reg-banner__eyebrow">
         <span class="reg-banner__pill">
           <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-          NOW ACCEPTING MEMBERS
+          REGISTRATION OPEN
         </span>
       </div>
       <h2 class="reg-banner__headline">Come Ball With Us.</h2>
-      ${deadline ? `<p class="reg-banner__deadline">WKND is a friendly basketball community — good runs, good people. Sign up before&nbsp;<strong>${escHtml(deadline)}</strong>.</p>` : `<p class="reg-banner__deadline">WKND is a friendly basketball community — good runs, good people. Come join us.</p>`}
+      ${deadline
+        ? `<p class="reg-banner__deadline">Register before&nbsp;<strong>${escHtml(deadline)}</strong> to be eligible for upcoming seasons, playoffs, and league events.</p>`
+        : `<p class="reg-banner__deadline">Register now to join upcoming seasons, playoffs, and exclusive league events — spots are limited.</p>`
+      }
     </div>
     <a href="/register" class="reg-banner__cta">
-      Count Me In <span aria-hidden="true">→</span>
+      Register Now <span aria-hidden="true">→</span>
     </a>
   </div>
 </section>`;

@@ -55,10 +55,20 @@ const NAV_GROUPS = [
   },
 ];
 
-export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '' }) {
+const SUPER_ADMIN_NAV = [
+  {
+    label: 'Super Admin',
+    items: [
+      { href: '/admin/logs', label: 'Action Logs', icon: 'ledger' },
+    ],
+  },
+];
+
+export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '', isSuperAdmin = true }) {
   const v = cssVer ? `?v=${cssVer}` : '';
 
-  const navHtml = NAV_GROUPS.map(({ label, items }, gi) => {
+  const allNavGroups = isSuperAdmin ? [...NAV_GROUPS, ...SUPER_ADMIN_NAV] : NAV_GROUPS;
+  const navHtml = allNavGroups.map(({ label, items }, gi) => {
     const itemsHtml = items.map(({ href, label: lbl, icon, exact, soon }) => {
       const active = exact ? currentPath === href : currentPath.startsWith(href);
       const base = 'flex items-center gap-2.5 mx-2 px-2.5 h-9 rounded-md text-[13px] font-medium transition-colors relative no-underline';

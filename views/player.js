@@ -504,9 +504,6 @@ export function playerPage({ player, totals, statsByType, gameLogs, potgGames, c
   const potgGameIds = new Set(potgGames.map(g => g.id));
 
   return `${heroSection(player, totals, isAdmin)}
-<div class="container">
-  ${statsTable(statsByType)}
-</div>
 <div class="game-detail-layout">
   <div class="game-detail-left">
     ${gameLog(gameLogs, player, potgGameIds)}

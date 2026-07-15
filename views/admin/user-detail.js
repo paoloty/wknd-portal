@@ -32,7 +32,7 @@ function field(label, value, opts = {}) {
   </div>`;
 }
 
-export function adminUserDetailBody({ reg, players = [], linkedPlayer = null }) {
+export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, isSuperAdmin = false }) {
   if (!reg) return `<div class="text-slate-500 text-sm">Registration not found.</div>`;
 
   let positions = [];
@@ -81,6 +81,11 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null }) 
   </div>
 </div>`;
   } else if (reg.status === 'approved') {
+    const adminToggle = isSuperAdmin ? `
+  <hr style="border:none;border-top:1px solid var(--border-2);margin:4px 0">
+  <button onclick="toggleAdmin()" id="admin-toggle-btn" class="admin-btn admin-btn--block ${reg.is_admin ? 'admin-btn--danger' : 'admin-btn--success'}" style="font-size:12px">
+    ${reg.is_admin ? '🔒 Revoke Admin Access' : '🛡 Grant Admin Access'}
+  </button>` : '';
     actionsHtml = `
 <div style="display:flex;flex-direction:column;gap:6px">
   ${linkedName ? `<a href="/players/${escHtml(reg.player_id)}" target="_blank" class="admin-btn admin-btn--block no-underline">
@@ -92,7 +97,7 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null }) 
   <hr style="border:none;border-top:1px solid var(--border-2);margin:4px 0">
   <button onclick="confirmReset()" class="admin-btn admin-btn--muted admin-btn--block">
     ${ICON_UNDO} Reset to Pending
-  </button>
+  </button>${adminToggle}
 </div>`;
   } else if (reg.status === 'rejected') {
     actionsHtml = `
@@ -333,6 +338,21 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null }) 
       var j = await resp.json();
       if (!resp.ok) throw new Error(j.error || 'Failed');
       location.href = '/admin/users/' + REG_ID;
+    } catch(e) { alert(e.message); }
+  };
+
+  window.toggleAdmin = async function() {
+    var btn = document.getElementById('admin-toggle-btn');
+    var isAdmin = btn && btn.textContent.trim().startsWith('🔒');
+    var msg = isAdmin ? 'Revoke admin access for this user?' : 'Grant admin access to this user? They will be able to access the admin panel.';
+    if (!confirm(msg)) return;
+    try {
+      var resp = await fetch('/admin/users/' + REG_ID + '/toggle-admin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      var j = await resp.json();
+      if (!resp.ok) throw new Error(j.error || 'Failed');
+      location.reload();
     } catch(e) { alert(e.message); }
   };
 
