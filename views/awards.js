@@ -273,23 +273,24 @@ export function awardsPage({ awards = [], season, availableSeasons = [], visible
 </div>`;
   }
 
+  const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+
   const groupCards = GROUPS.map(({ label, types }) => {
     const rows = types.flatMap(type => {
       if (!visibleSections.has(type) || !byType[type]?.length) return [];
-      const isSolo = !['all_wknd_1', 'all_wknd_2', 'all_wknd_def'].includes(type);
-      const article = isSolo ? (articles[type] || '') : '';
-      return byType[type].map((row, i) => awardRow(row, type, i === 0 ? article : ''));
+      const isTeam = TEAM_AWARD_TYPES.has(type);
+      return byType[type].map((row, i) => {
+        const article = isTeam
+          ? (articles[`${type}_${row.player_id}`] || '')
+          : (i === 0 ? (articles[type] || '') : '');
+        return awardRow(row, type, article);
+      });
     });
     if (!rows.length) return '';
 
-    const teamArticles = types
-      .filter(t => ['all_wknd_1', 'all_wknd_2', 'all_wknd_def'].includes(t) && articles[t] && visibleSections.has(t) && byType[t]?.length)
-      .map(t => `<p class="mvp-row__article" style="padding:16px 24px;border-top:1px solid var(--border);margin:0;opacity:.8">${escHtml(articles[t])}</p>`)
-      .join('');
-
     return `<div class="card mvp-list" style="margin-bottom:16px">
   <div class="card-label">${escHtml(label.toUpperCase())}</div>
-  ${rows.join('\n')}${teamArticles}
+  ${rows.join('\n')}
 </div>`;
   }).join('');
 

@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual, createHash } from 'crypto';
 import { statSync, existsSync } from 'fs';
 import express from 'express';
 import session from 'express-session';
+import SqliteStore from 'better-sqlite3-session-store';
 import { parseWriteup } from './lib/writeup.js';
 import sharp from 'sharp';
 import { layout, escHtml } from './views/layout.js';
@@ -14,6 +15,7 @@ import { gamePage } from './views/game.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
+import { playoffsPage } from './views/playoffs.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
@@ -38,6 +40,7 @@ import {
   getPlayerWithTeam, getPlayerById, getTeamById,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
   getPlayerCareerHighs, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
+  getPlayerStatsByType,
   upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
   getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
@@ -56,6 +59,8 @@ import {
   getSetting, setSetting,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
   createPlayer, mergeRegistrationIntoPlayer,
+  getSeasonStandings, getPlayoffGames,
+  db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
@@ -994,7 +999,9 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
 
 const app = express();
 
+const SessionStore = SqliteStore(session);
 app.use(session({
+  store: new SessionStore({ client: portalDb, expired: { clear: true, intervalMs: 15 * 60 * 1000 } }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -1666,23 +1673,37 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     scoring_champ: 'Scoring Champion', assists_leader: 'Assists Leader', rebounds_leader: 'Rebounds Leader',
     steals_leader: 'Steals Leader', blocks_leader: 'Blocks Leader', three_pm_leader: '3-Pointers Leader',
   };
+  const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
 
   const awards = getSeasonAwards(season);
   const byType = {};
   for (const r of awards) (byType[r.award_type] ??= []).push(r);
   const entries = byType[award_type] || [];
 
-  let context = '';
-  if (entries.length === 1) {
-    const e = entries[0];
-    const gp = e.games_played || 1;
-    const fmt = (v) => v != null ? (v / gp).toFixed(1) : '—';
-    context = `Winner: ${e.player_name} (${e.team_name}). Stats: ${fmt(e.pts)} PPG, ${fmt(e.reb)} RPG, ${fmt(e.ast)} APG, ${fmt(e.stl)} SPG, ${fmt(e.blk)} BPG over ${gp} games.`;
-  } else if (entries.length > 1) {
-    context = `Winners: ${entries.map(e => `${e.player_name} (${e.team_name})`).join(', ')}.`;
-  }
+  let prompt;
 
-  const prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Write it like a sports broadcaster presenting the award — exciting, specific, and confident. No generic filler. Don't start with "Congratulations".`;
+  if (TEAM_AWARD_TYPES.has(award_type) && player_id) {
+    const entry = entries.find(e => e.player_id === player_id);
+    if (!entry) return res.status(400).json({ error: 'Player not found in team award entries' });
+    const gp  = entry.games_played || 1;
+    const fmt = (v) => v != null ? (v / gp).toFixed(1) : '—';
+    const statLine = `${fmt(entry.pts)} PPG, ${fmt(entry.reb)} RPG, ${fmt(entry.ast)} APG, ${fmt(entry.stl)} SPG, ${fmt(entry.blk)} BPG over ${gp} games`;
+    const posNote  = entry.notes ? ` Selected as ${entry.notes}.` : '';
+    const teammates = entries.filter(e => e.player_id !== player_id).map(e => e.player_name).join(', ');
+    const teamCtx  = teammates ? ` Joins ${teammates} on the team.` : '';
+    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Stats this season: ${statLine}.${teamCtx} Focus on what specifically earned this player the honor — be vivid and specific, not generic. Write like a sports broadcaster. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+  } else {
+    let context = '';
+    if (entries.length === 1) {
+      const e = entries[0];
+      const gp = e.games_played || 1;
+      const fmt = (v) => v != null ? (v / gp).toFixed(1) : '—';
+      context = `Winner: ${e.player_name} (${e.team_name}). Stats: ${fmt(e.pts)} PPG, ${fmt(e.reb)} RPG, ${fmt(e.ast)} APG, ${fmt(e.stl)} SPG, ${fmt(e.blk)} BPG over ${gp} games.`;
+    } else if (entries.length > 1) {
+      context = `Winners: ${entries.map(e => `${e.player_name} (${e.team_name})`).join(', ')}.`;
+    }
+    prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Write it like a sports broadcaster presenting the award — exciting, specific, and confident. No generic filler. Each article should feel distinct — vary the opening angle and tone from other award articles. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+  }
 
   try {
     const result = await generateText(prompt, { max_tokens: 200 });
@@ -2103,10 +2124,10 @@ app.get('/admin/games', requireAuth, (req, res) => {
 });
 
 app.post('/admin/games', requireAuth, jsonSmall, (req, res) => {
-  const { date, team_a_id, team_b_id, season, game_type } = req.body;
+  const { date, team_a_id, team_b_id, season, game_type, series_id } = req.body;
   if (!date || !team_a_id || !team_b_id || !season) return res.status(400).json({ error: 'Missing required fields' });
   try {
-    const id = createGame({ date, teamAId: team_a_id, teamBId: team_b_id, season, gameType: game_type || 'regular' });
+    const id = createGame({ date, teamAId: team_a_id, teamBId: team_b_id, season, gameType: game_type || 'regular', seriesId: series_id || '' });
     res.json({ ok: true, id });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -2587,6 +2608,17 @@ app.get('/standings', (req, res) => {
     title: 'Standings — WKND Basketball League',
     currentPath: req.path,
     body: standingsPage({ teams, games, highlights, teamStats })
+  }));
+});
+
+app.get('/playoffs', (req, res) => {
+  const season = getCurrentSeason()?.season ?? 1;
+  const standings = getSeasonStandings(season);
+  const games = getPlayoffGames(season);
+  res.send(renderPage(req, {
+    title: 'Playoffs — WKND Basketball League',
+    currentPath: req.path,
+    body: playoffsPage({ standings, games, season })
   }));
 });
 
@@ -3135,6 +3167,7 @@ app.get('/players/:ref', (req, res) => {
     body: comingSoonPage({ label: 'Player Not Found', description: 'This player could not be found.' })
   }));
   const totals      = getPlayerTotals(resolved.id);
+  const statsByType = getPlayerStatsByType(resolved.id);
   const gameLogs    = getPlayerGameLog(resolved.id);
   const potgCandidates = getPlayerPotgCandidates(resolved.id);
   const potgGames = potgCandidates.filter(g => {
@@ -3161,7 +3194,7 @@ app.get('/players/:ref', (req, res) => {
     title: `${displayName} — WKND Basketball`,
     currentPath: '/players',
     metaTags: buildPlayerOgTags(req, player, totals),
-    body: playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin })
+    body: playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin })
   }));
 });
 

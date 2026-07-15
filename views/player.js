@@ -398,9 +398,13 @@ const AWARD_META = {
   dpoy:            { label: 'Defensive Player of the Season', icon: '🛡️', bg: '#3b82f6', text: '#fff'    },
   all_wknd_1:      { label: 'All WKND 1st Team',             icon: '⭐', bg: '#22c55e', text: '#000'    },
   all_wknd_2:      { label: 'All WKND 2nd Team',             icon: '🌟', bg: '#64748b', text: '#fff'    },
+  all_wknd_def:    { label: 'All WKND Defensive Team',       icon: '🔒', bg: '#3b82f6', text: '#fff'    },
   scoring_champ:   { label: 'Scoring Champion',              icon: '🔥', bg: '#f59332', text: '#10141d' },
   assists_leader:  { label: 'Assists Leader',                icon: '🎯', bg: '#f59332', text: '#10141d' },
   rebounds_leader: { label: 'Rebounds Leader',               icon: '💪', bg: '#f59332', text: '#10141d' },
+  steals_leader:   { label: 'Steals Leader',                 icon: '⚡', bg: '#f59332', text: '#10141d' },
+  blocks_leader:   { label: 'Blocks Leader',                 icon: '🚫', bg: '#f59332', text: '#10141d' },
+  three_pm_leader: { label: '3-Pointers Leader',             icon: '🏹', bg: '#f59332', text: '#10141d' },
 };
 
 function awardsSection(awards) {
@@ -428,11 +432,81 @@ function awardsSection(awards) {
 </div>`;
 }
 
+// ── Season/Career stats table ─────────────────────────────────────────────────
+function statsTable(statsByType) {
+  if (!statsByType || !statsByType.seasons?.length) return '';
+
+  const { seasons, career } = statsByType;
+  const hasPlayoffs = seasons.some(r => r.game_type === 'playoff');
+
+  const fgPct  = r => pct((r.fg2m || 0) + (r.fg3m || 0), (r.fg2m_miss || 0) + (r.fg3m_miss || 0));
+  const tpPct  = r => { const att = (r.fg3m || 0) + (r.fg3m_miss || 0); return att >= 3 ? pct(r.fg3m, r.fg3m_miss) : '—'; };
+  const ftPct  = r => { const att = (r.ftm || 0) + (r.ft_miss || 0); return att >= 3 ? pct(r.ftm, r.ft_miss) : '—'; };
+
+  const statRow = (r, label, isBold = false, dimmed = false) => {
+    const gp = r.games_played || 0;
+    if (!gp) return '';
+    const style = isBold ? ' style="font-weight:700;color:var(--text)"' : dimmed ? ' style="color:var(--text-muted)"' : '';
+    return `<tr${style}>
+      <td style="text-align:left;padding:7px 10px 7px 0;white-space:nowrap;font-size:12px">${escHtml(label)}</td>
+      <td>${gp}</td>
+      <td>${avg(r.pts, gp)}</td>
+      <td>${avg(r.reb, gp)}</td>
+      <td>${avg(r.ast, gp)}</td>
+      <td>${avg(r.stl, gp)}</td>
+      <td>${avg(r.blk, gp)}</td>
+      <td>${fgPct(r)}</td>
+      <td>${tpPct(r)}</td>
+      <td>${ftPct(r)}</td>
+    </tr>`;
+  };
+
+  const TYPE_LABEL = { regular: 'Regular', playoff: 'Playoffs', finals: 'Finals' };
+
+  // Group by season
+  const bySeason = {};
+  for (const r of seasons) {
+    if (!bySeason[r.season]) bySeason[r.season] = {};
+    bySeason[r.season][r.game_type] = r;
+  }
+  const seasonNums = Object.keys(bySeason).map(Number).sort((a, b) => b - a);
+
+  const rows = seasonNums.flatMap(s => {
+    const types = ['regular', 'playoff', 'finals'];
+    return types.map(type => {
+      const r = bySeason[s][type];
+      return r ? statRow(r, `Season ${s} — ${TYPE_LABEL[type]}`) : '';
+    });
+  }).join('');
+
+  const careerRow = career?.games_played ? statRow(career, 'Career', true) : '';
+
+  const th = (label) => `<th style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;white-space:nowrap">${label}</th>`;
+
+  return `<div class="card" style="margin-bottom:20px;overflow-x:auto">
+  <div class="section-header"><h2>Stats</h2></div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:'Saira Condensed',sans-serif;text-align:center">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border)">
+        ${th('')}${th('GP')}${th('PPG')}${th('RPG')}${th('APG')}${th('SPG')}${th('BPG')}${th('FG%')}${th('3P%')}${th('FT%')}
+      </tr>
+    </thead>
+    <tbody style="color:var(--text)">
+      ${rows}
+      ${careerRow ? `<tr><td colspan="10" style="border-top:1px solid var(--border);padding:0"></td></tr>${careerRow}` : ''}
+    </tbody>
+  </table>
+</div>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({ player, totals, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false }) {
+export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
 
   return `${heroSection(player, totals, isAdmin)}
+<div class="container">
+  ${statsTable(statsByType)}
+</div>
 <div class="game-detail-layout">
   <div class="game-detail-left">
     ${gameLog(gameLogs, player, potgGameIds)}

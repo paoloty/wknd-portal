@@ -41,51 +41,6 @@ export function adminComparePage({ rows = [], players = [] } = {}) {
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Compare Players</h2>
 </div>
 
-<!-- Compare widget -->
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-6">
-  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">New Comparison</div>
-  <div class="p-5">
-    <div class="flex flex-wrap gap-3 items-end mb-4">
-      <div style="flex:1;min-width:200px">
-        <label class="block text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">Player A</label>
-        <select id="cmp-a" class="admin-input w-full"><option value="">— select —</option>${playerOpts}</select>
-      </div>
-      <div style="flex:1;min-width:200px">
-        <label class="block text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">Player B</label>
-        <select id="cmp-b" class="admin-input w-full"><option value="">— select —</option>${playerOpts}</select>
-      </div>
-      <button id="cmp-go" class="agm-new-btn" style="height:36px;padding:0 20px">Compare</button>
-    </div>
-
-    <!-- Stat grid (hidden until compared) -->
-    <div id="cmp-result" hidden>
-      <div class="grid grid-cols-2 gap-px bg-admin-border rounded-lg overflow-hidden mb-4">
-        <div class="bg-admin-surface px-5 py-4">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Player A</div>
-          <div id="cmp-res-name-a" class="text-base font-bold text-slate-100 mb-3">—</div>
-          <div id="cmp-res-stats-a" class="cmp-stat-grid"></div>
-        </div>
-        <div class="bg-admin-surface px-5 py-4">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Player B</div>
-          <div id="cmp-res-name-b" class="text-base font-bold text-slate-100 mb-3">—</div>
-          <div id="cmp-res-stats-b" class="cmp-stat-grid"></div>
-        </div>
-      </div>
-      <div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4">
-        <div class="flex items-center justify-between mb-2">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500">AI Verdict</div>
-          <button id="cmp-regenerate" class="admin-btn admin-btn--sm admin-btn--inline-action" style="align-self:center">↺ Regenerate</button>
-        </div>
-        <p id="cmp-res-writeup" class="text-sm leading-relaxed text-slate-300 m-0 whitespace-pre-wrap"></p>
-        <div id="cmp-res-status" class="text-xs text-slate-600 mt-2"></div>
-      </div>
-    </div>
-
-    <div id="cmp-loading" hidden class="text-sm text-slate-500 py-2">Generating comparison…</div>
-    <div id="cmp-error"   hidden class="text-sm text-red-400 py-2"></div>
-  </div>
-</div>
-
 <!-- History table -->
 <div class="mb-3 flex items-center gap-2">
   <h3 class="text-[13px] font-bold text-slate-400 uppercase tracking-widest">History</h3>
@@ -162,76 +117,7 @@ ${rows.length === 0
 
 <script>
 (function() {
-  var DATA    = ${JSON.stringify(rowData)};
-  var selA    = document.getElementById('cmp-a');
-  var selB    = document.getElementById('cmp-b');
-  var goBtn   = document.getElementById('cmp-go');
-  var result  = document.getElementById('cmp-result');
-  var loading = document.getElementById('cmp-loading');
-  var errEl   = document.getElementById('cmp-error');
-  var regenBtn = document.getElementById('cmp-regenerate');
-
-  function statCell(val, label, isWin) {
-    return '<div class="cmp-stat"><div class="cmp-stat__val' + (isWin ? ' cmp-stat__val--win' : '') + '">' + val + '</div><div class="cmp-stat__lbl">' + label + '</div></div>';
-  }
-
-  function renderStats(elId, name, s, other) {
-    var el = document.getElementById(elId);
-    document.getElementById(elId.replace('stats', 'name')).textContent = name;
-    var gp   = s.gp   || 0;
-    var ppg  = gp ? (s.pts  / gp).toFixed(1) : '—';
-    var rpg  = gp ? (s.reb  / gp).toFixed(1) : '—';
-    var apg  = gp ? (s.ast  / gp).toFixed(1) : '—';
-    var spg  = gp ? (s.stl  / gp).toFixed(1) : '—';
-    var bpg  = gp ? (s.blk  / gp).toFixed(1) : '—';
-    var tpg  = gp ? (s.tov  / gp).toFixed(1) : '—';
-    var fgm  = (s.fg2m || 0) + (s.fg3m || 0);
-    var fga  = fgm + (s.fg2m_miss || 0) + (s.fg3m_miss || 0);
-    var fgp  = fga ? Math.round(fgm / fga * 100) + '%' : '—';
-    var fta  = (s.ftm || 0) + (s.ft_miss || 0);
-    var tsDenom = 2 * (fga + 0.44 * fta);
-    var ts   = tsDenom > 0 ? Math.round(s.pts / tsDenom * 100) + '%' : '—';
-
-    var og   = other.gp || 0;
-    var w    = function(mine, theirs) { return parseFloat(mine) > parseFloat(theirs); };
-
-    el.innerHTML = [
-      statCell(ppg, 'PPG', w(ppg, og ? (other.pts/og).toFixed(1) : 0)),
-      statCell(rpg, 'RPG', w(rpg, og ? (other.reb/og).toFixed(1) : 0)),
-      statCell(apg, 'APG', w(apg, og ? (other.ast/og).toFixed(1) : 0)),
-      statCell(spg, 'SPG', w(spg, og ? (other.stl/og).toFixed(1) : 0)),
-      statCell(bpg, 'BPG', w(bpg, og ? (other.blk/og).toFixed(1) : 0)),
-      statCell(fgp, 'FG%', false),
-      statCell(ts,  'TS%', false),
-      statCell(tpg, 'TOV', !w(tpg, og ? (other.tov/og).toFixed(1) : 99)),
-      statCell(String(gp), 'GP', false),
-    ].join('');
-  }
-
-  async function runCompare(force) {
-    var a = selA.value, b = selB.value;
-    if (!a || !b || a === b) { errEl.textContent = 'Select two different players.'; errEl.removeAttribute('hidden'); return; }
-    errEl.setAttribute('hidden', ''); result.setAttribute('hidden', ''); loading.removeAttribute('hidden');
-    goBtn.disabled = true;
-    try {
-      var url = '/api/compare?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) + (force ? '&force=1' : '');
-      var r = await fetch(url);
-      var d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Error');
-      renderStats('cmp-res-stats-a', d.playerA.name, d.playerA.totals, d.playerB.totals);
-      renderStats('cmp-res-stats-b', d.playerB.name, d.playerB.totals, d.playerA.totals);
-      document.getElementById('cmp-res-writeup').textContent = d.writeup;
-      document.getElementById('cmp-res-status').textContent = d.cached ? 'Cached result' : 'Fresh from AI';
-      result.removeAttribute('hidden');
-    } catch(e) {
-      errEl.textContent = e.message || 'Something went wrong.';
-      errEl.removeAttribute('hidden');
-    }
-    loading.setAttribute('hidden', ''); goBtn.disabled = false;
-  }
-
-  goBtn.addEventListener('click', function() { runCompare(false); });
-  regenBtn.addEventListener('click', function() { runCompare(true); });
+  var DATA = ${JSON.stringify(rowData)};
 
   // ── History modal ─────────────────────────────────────────────────────────
   var backdrop = document.getElementById('cmp-backdrop');

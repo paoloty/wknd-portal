@@ -44,7 +44,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     const isUpcom  = isUpcoming(g);
     const isFinal  = g.status === 'final';
     const statusKey = isUpcom ? 'upcoming' : isFinal ? 'final' : g.under_review ? 'draft' : 'live';
-    const typeKey   = g.game_type === 'playoff' ? 'playoff' : 'regular';
+    const typeKey   = g.game_type === 'playoff' ? 'playoff' : g.game_type === 'finals' ? 'finals' : 'regular';
     const ot        = Number(g.overtime) || 0;
     const otLbl     = otLabel(ot);
 
@@ -144,14 +144,22 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
           <label class="agm-modal-label">Type</label>
           <select id="ng-type" class="agm-modal-select">
             <option value="regular">Regular Season</option>
-            <option value="playoff">Playoff</option>
+            <option value="playoff">Playoff (Semi)</option>
+            <option value="finals">Finals</option>
           </select>
         </div>
+      </div>
+      <div class="agm-modal-field" id="ng-series-wrap" hidden>
+        <label class="agm-modal-label">Series ID <span style="font-weight:400;color:var(--text-muted)">(groups games in same series)</span></label>
+        <select id="ng-series" class="agm-modal-select">
+          <option value="semi-1">semi-1 &nbsp;(#1 vs #4)</option>
+          <option value="semi-2">semi-2 &nbsp;(#2 vs #3)</option>
+        </select>
       </div>
       <p class="agm-modal-err" id="ng-err" hidden></p>
     </div>
     <div class="agm-modal-footer">
-      <button class="admin-btn" id="agm-modal-cancel">${ICON_X} Cancel</button>
+      <button class="agm-new-btn agm-new-btn--ghost" id="agm-modal-cancel">${ICON_X} Cancel</button>
       <button class="agm-new-btn" id="ng-submit">${ICON_CHECK} Create Game</button>
     </div>
   </div>
@@ -342,14 +350,20 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
   document.getElementById('agm-modal-cancel').addEventListener('click', closeModal);
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) closeModal(); });
 
+  // Show/hide series field based on type
+  document.getElementById('ng-type').addEventListener('change', function() {
+    document.getElementById('ng-series-wrap').hidden = this.value !== 'playoff';
+  });
+
   document.getElementById('ng-submit').addEventListener('click', function() {
-    var date    = document.getElementById('ng-date').value.trim();
-    var teamA   = document.getElementById('ng-team-a').value;
-    var teamB   = document.getElementById('ng-team-b').value;
-    var season  = document.getElementById('ng-season').value.trim();
-    var type    = document.getElementById('ng-type').value;
-    var errEl   = document.getElementById('ng-err');
-    var btn     = this;
+    var date     = document.getElementById('ng-date').value.trim();
+    var teamA    = document.getElementById('ng-team-a').value;
+    var teamB    = document.getElementById('ng-team-b').value;
+    var season   = document.getElementById('ng-season').value.trim();
+    var type     = document.getElementById('ng-type').value;
+    var seriesId = type === 'playoff' ? document.getElementById('ng-series').value : '';
+    var errEl    = document.getElementById('ng-err');
+    var btn      = this;
     var origHtml = btn.innerHTML;
 
     if (!date || !teamA || !teamB || !season) {
@@ -364,7 +378,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     fetch('/admin/games', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: date, team_a_id: teamA, team_b_id: teamB, season: Number(season), game_type: type })
+      body: JSON.stringify({ date: date, team_a_id: teamA, team_b_id: teamB, season: Number(season), game_type: type, series_id: seriesId })
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -479,7 +493,7 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
   <div class="agm-game-header__meta">
     <span>${fmtDateLong(game.date)}</span>
     <span class="agm-sep">·</span>
-    <span>${game.game_type === 'playoff' ? 'Playoff' : 'Regular Season'}${game.season ? ` · ${escHtml(game.season)}` : ''}</span>
+    <span>${game.game_type === 'playoff' ? 'Playoff (Semi)' : game.game_type === 'finals' ? 'Finals' : 'Regular Season'}${game.season ? ` · Season ${escHtml(game.season)}` : ''}</span>
     <span class="agm-sep">·</span>
     ${statusBadge(game)}
     <a href="/games/${id}" target="_blank" class="agm-view-link">View on site ↗</a>

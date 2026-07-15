@@ -68,7 +68,7 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null }) 
     <div id="selected-player-label" class="text-[11px] text-slate-500 mt-2">No player selected — will approve without linking.</div>
   </div>
 
-  <div style="display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px solid var(--border-2)">
+  <div style="display:flex;flex-direction:column;gap:10px;padding-top:12px;border-top:1px solid var(--border-2)">
     <button data-action="approve" onclick="doAction(this.dataset.action)" class="admin-btn admin-btn--success admin-btn--block">
       ${ICON_CHECK} Approve &amp; Link
     </button>

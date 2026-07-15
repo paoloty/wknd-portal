@@ -1,39 +1,58 @@
 export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, features = {} }) {
-  const mainLinks = [
+  const navLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
     { href: '/standings', label: 'Standings' },
+    { href: '/playoffs',  label: 'Playoffs' },
     { href: '/teams',     label: 'Teams' },
     { href: '/players',   label: 'Players' },
     { href: '/leaders',   label: 'Leaders' },
+    { href: '/roast',     label: 'The Roast' },
   ];
-  const navLinks = [...mainLinks, { href: '/roast', label: 'The Roast' }];
 
-  const awardsActive = currentPath.startsWith('/awards') || currentPath.startsWith('/mvp');
+  const isActive = (href) => href === '/' ? currentPath === '/' : currentPath.startsWith(href);
+
+  const dropdown = (label, items, activeHrefs) => {
+    const active = activeHrefs.some(h => isActive(h));
+    const chevron = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 3.5l3 3 3-3"/></svg>`;
+    const itemHtml = items.map(({ href, label: lbl }) =>
+      `<a href="${href}" class="site-nav__dropdown-item${isActive(href) ? ' is-active' : ''}">${lbl}</a>`
+    ).join('');
+    return `<div class="site-nav__dropdown${active ? ' is-active' : ''}">
+      <button class="site-nav__dropdown-trigger"${active ? ' aria-current="page"' : ''}>${label} ${chevron}</button>
+      <div class="site-nav__dropdown-menu">${itemHtml}</div>
+    </div>`;
+  };
+
+  const gamesDropdown = dropdown('Games', [
+    { href: '/games',     label: 'All Games' },
+    { href: '/standings', label: 'Standings' },
+    { href: '/playoffs',  label: 'Playoffs' },
+  ], ['/games', '/standings', '/playoffs']);
+
+  const statsDropdown = dropdown('Stats', [
+    { href: '/teams',   label: 'Teams' },
+    { href: '/players', label: 'Players' },
+    { href: '/leaders', label: 'Leaders' },
+    { href: '/roast',   label: 'The Roast' },
+  ], ['/teams', '/players', '/leaders', '/roast']);
 
   const awardsDropdown = (() => {
     const showAwards = features.awards  !== false;
     const showMvp    = features.mvpRace !== false;
     if (!showAwards && !showMvp) return '';
     const items = [
-      showAwards ? `<a href="/awards" class="site-nav__dropdown-item${currentPath.startsWith('/awards') ? ' is-active' : ''}">Season Awards</a>` : '',
-      showMvp    ? `<a href="/mvp"    class="site-nav__dropdown-item${currentPath.startsWith('/mvp')    ? ' is-active' : ''}">MVP Race</a>`    : '',
-    ].join('');
-    return `<div class="site-nav__dropdown${awardsActive ? ' is-active' : ''}">
-      <button class="site-nav__dropdown-trigger"${awardsActive ? ' aria-current="page"' : ''}>Awards <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 3.5l3 3 3-3"/></svg></button>
-      <div class="site-nav__dropdown-menu">${items}</div>
-    </div>`;
+      showAwards ? { href: '/awards', label: 'Season Awards' } : null,
+      showMvp    ? { href: '/mvp',    label: 'MVP Race' }      : null,
+    ].filter(Boolean);
+    return dropdown('Awards', items, ['/awards', '/mvp']);
   })();
 
-  const linkHtml = ({ href, label }) => {
-    const active = href === '/' ? currentPath === '/' : currentPath.startsWith(href);
-    return `<a href="${href}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
-  };
-
   const nav = [
-    ...mainLinks.map(linkHtml),
+    `<a href="/"${isActive('/') ? ' aria-current="page"' : ''}>Home</a>`,
+    gamesDropdown,
+    statsDropdown,
     awardsDropdown,
-    linkHtml({ href: '/roast', label: 'The Roast' }),
   ].join('');
 
   const adminActive = currentPath.startsWith('/admin');
@@ -91,6 +110,21 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
             document.body.style.overflow = '';
           });
         });
+        // Accordion: toggle submenu on trigger click
+        nav.querySelectorAll('.site-nav__dropdown-trigger').forEach(function(trigger){
+          trigger.addEventListener('click', function(e){
+            e.stopPropagation();
+            var dd = trigger.closest('.site-nav__dropdown');
+            var wasOpen = dd.classList.contains('is-open');
+            nav.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
+            if (!wasOpen) dd.classList.add('is-open');
+          });
+        });
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(){
+          nav.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
+        });
+        nav.addEventListener('click', function(e){ e.stopPropagation(); });
       })();
       </script>
       <div class="header-rule"></div>
@@ -101,12 +135,30 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   <footer class="site-footer">
     <div class="container">
       <div class="site-footer__inner">
-        <a href="/" class="site-footer__logo">WKND Basketball</a>
-        <nav class="site-footer__nav">
-          ${navLinks.map(({ href, label }) => `<a href="${href}">${escHtml(label)}</a>`).join('')}
-          ${features.awards  !== false ? `<a href="/awards">Season Awards</a>` : ''}
-          ${features.mvpRace !== false ? `<a href="/mvp">MVP Race</a>`         : ''}
-        </nav>
+        <div class="site-footer__brand">
+          <a href="/" class="site-footer__logo">WKND Basketball</a>
+          <span class="site-footer__tagline">Ball is life. Every weekend.</span>
+        </div>
+        <div class="site-footer__groups">
+          <div class="site-footer__group">
+            <span class="site-footer__group-title">Games</span>
+            <a href="/games">All Games</a>
+            <a href="/standings">Standings</a>
+            <a href="/playoffs">Playoffs</a>
+          </div>
+          <div class="site-footer__group">
+            <span class="site-footer__group-title">Stats</span>
+            <a href="/teams">Teams</a>
+            <a href="/players">Players</a>
+            <a href="/leaders">Leaders</a>
+            <a href="/roast">The Roast</a>
+          </div>
+          ${features.awards !== false || features.mvpRace !== false ? `<div class="site-footer__group">
+            <span class="site-footer__group-title">Awards</span>
+            ${features.awards  !== false ? `<a href="/awards">Season Awards</a>` : ''}
+            ${features.mvpRace !== false ? `<a href="/mvp">MVP Race</a>`         : ''}
+          </div>` : ''}
+        </div>
       </div>
       <div class="site-footer__bottom">
         <nav class="site-footer__legal">
