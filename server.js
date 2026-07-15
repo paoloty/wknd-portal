@@ -61,7 +61,7 @@ import {
   getSetting, setSetting,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
-  setRegistrationAdmin, insertAdminLog, getAdminLogs,
+  setRegistrationAdmin, insertAdminLog, getAdminLogs, updateRegBirthday,
   createPlayer, mergeRegistrationIntoPlayer,
   getSeasonStandings, getPlayoffGames,
   db as portalDb,
@@ -1602,6 +1602,15 @@ app.post('/admin/users/:id/reject', requireAuth, express.json(), async (req, res
   res.json({ ok: true });
 });
 
+app.post('/admin/users/:id/birthday', requireAuth, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  const birthday = String(req.body?.birthday || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) return res.status(400).json({ error: 'Invalid date format.' });
+  updateRegBirthday(reg.id, birthday, reg.player_id || null);
+  res.json({ ok: true, birthday });
+});
+
 app.post('/admin/users/:id/toggle-admin', requireSuperAdmin, express.json(), (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
@@ -2034,16 +2043,29 @@ app.get('/admin/players/:id', requireAuth, (req, res) => {
     title: 'Not Found', currentPath: '/admin/players',
     body: '<p style="padding:40px;color:var(--text-muted)">Player not found.</p>',
   }));
-  const seasons = getGameSeasons();
-  const season  = req.query.season || '';
-  const rating  = getPlayerRating(player.id, season || null);
-  const stats   = getOnePlayerStats(player.id, season || null);
-  const teams   = getAllTeams();
+  const seasons    = getGameSeasons();
+  const season     = req.query.season || '';
+  const rating     = getPlayerRating(player.id, season || null);
+  const stats      = getOnePlayerStats(player.id, season || null);
+  const teams      = getAllTeams();
+  const currentSlug = getSlugForEntity('player', player.id);
+  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   res.send(renderAdminPage(req, {
     title: displayPlayerName(player.name),
     currentPath: '/admin/players',
-    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams }),
+    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams, currentSlug, isSuperAdmin }),
   }));
+});
+
+app.post('/admin/players/:id/slug', requireSuperAdmin, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const slug = String(req.body?.slug || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  if (!slug) return res.status(400).json({ error: 'Slug cannot be empty.' });
+  const existing = getEntityForSlug('player', slug);
+  if (existing && existing !== player.id) return res.status(409).json({ error: 'That slug is already taken by another player.' });
+  saveSlug('player', player.id, slug);
+  res.json({ ok: true, slug });
 });
 
 app.post('/admin/players/:id/bio', requireAuth, express.json(), (req, res) => {

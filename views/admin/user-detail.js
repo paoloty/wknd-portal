@@ -122,15 +122,27 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, is
   <div class="space-y-5">
 
     <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-admin-border">
+      <div class="px-5 py-3.5 border-b border-admin-border flex items-center justify-between">
         <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Personal Info</div>
+        ${reg.password_hash
+          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/15 text-green-400">✓ Password Set</span>`
+          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400">⚠ Awaiting Password</span>`
+        }
       </div>
       <div class="px-5 py-4">
         <dl class="grid grid-cols-2 gap-x-6 gap-y-4">
           ${field('Full Name', reg.full_name)}
           ${field('Email', reg.email)}
           ${field('Phone', reg.phone)}
-          ${field('Birthday', reg.birthday)}
+          <div>
+            <dt class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">Birthday</dt>
+            <dd class="flex items-center gap-2">
+              <input id="birthday-input" type="date" value="${escHtml(reg.birthday || '')}"
+                class="bg-admin-bg border border-admin-border rounded-md px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-brand">
+              <button onclick="saveBirthday()" class="text-[11px] font-semibold text-brand hover:opacity-80 transition-opacity">Save</button>
+              <span id="birthday-msg" class="text-[11px] text-slate-500"></span>
+            </dd>
+          </div>
         </dl>
       </div>
     </div>
@@ -354,6 +366,27 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, is
       if (!resp.ok) throw new Error(j.error || 'Failed');
       location.reload();
     } catch(e) { alert(e.message); }
+  };
+
+  window.saveBirthday = async function() {
+    var val = document.getElementById('birthday-input').value;
+    var msg = document.getElementById('birthday-msg');
+    if (!val) { msg.textContent = 'Pick a date first.'; return; }
+    try {
+      var resp = await fetch('/admin/users/' + REG_ID + '/birthday', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ birthday: val }),
+      });
+      var j = await resp.json();
+      if (!resp.ok) throw new Error(j.error || 'Failed');
+      msg.textContent = 'Saved ✓';
+      msg.style.color = '#4ade80';
+      setTimeout(function() { msg.textContent = ''; }, 3000);
+    } catch(e) {
+      msg.textContent = e.message;
+      msg.style.color = '#f87171';
+    }
   };
 
   window.openReject = function() {

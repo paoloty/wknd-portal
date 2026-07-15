@@ -30,7 +30,7 @@ function eff(rating, key) {
   return rating[key + '_ovr'] ?? rating[key] ?? null;
 }
 
-export function adminPlayerDetailBody({ player, rating = null, stats = null, seasons = [], season = '', teams = [] } = {}) {
+export function adminPlayerDetailBody({ player, rating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false } = {}) {
   const name  = displayPlayerName(player.name);
   const color = teamColor(player.team_name);
   const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -150,6 +150,19 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
         <textarea id="val-writeup" class="admin-input mt-1.5" rows="5" style="resize:vertical">${escHtml(player.writeup || '')}</textarea>
       </div>
     </div>
+
+    ${isSuperAdmin ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">URL Slug</div>
+      <div class="p-4">
+        <label class="admin-field-label">Player URL</label>
+        <div class="flex items-center gap-2 mt-1.5">
+          <span class="text-[11px] text-slate-500 shrink-0">/players/</span>
+          <input type="text" id="slug-input" class="admin-input flex-1" value="${escHtml(currentSlug || '')}" placeholder="e.g. juan-dela-cruz">
+          <button onclick="saveSlug()" class="admin-btn" style="white-space:nowrap">Save</button>
+        </div>
+        <div id="slug-msg" class="text-[11px] mt-1.5 text-slate-500"></div>
+      </div>
+    </div>` : ''}
 
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Profile</div>
@@ -401,6 +414,28 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       btn.disabled = false; btn.innerHTML = origHtml;
     }
   });
+
+  // ── Slug save ────────────────────────────────────────────────────────────
+  window.saveSlug = async function() {
+    var input = document.getElementById('slug-input');
+    var msg   = document.getElementById('slug-msg');
+    if (!input) return;
+    var slug = input.value.trim();
+    if (!slug) { msg.style.color = '#f87171'; msg.textContent = 'Slug cannot be empty.'; return; }
+    try {
+      var r = await fetch('/admin/players/' + PLAYER_ID + '/slug', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      });
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Failed');
+      input.value = j.slug;
+      msg.style.color = '#4ade80'; msg.textContent = 'Saved ✓ — new URL: /players/' + j.slug;
+      setTimeout(function() { msg.textContent = ''; }, 4000);
+    } catch(err) {
+      msg.style.color = '#f87171'; msg.textContent = err.message;
+    }
+  };
 
   // ── Recompute ─────────────────────────────────────────────────────────────
   document.getElementById('plr-recompute').addEventListener('click', async function() {
