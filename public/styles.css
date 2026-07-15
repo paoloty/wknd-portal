@@ -4875,9 +4875,7 @@ a.player-link:hover { color: var(--amber); }
 }
 .pm-team__name {
   font-size: 15px;
-  font-weight: 700;
-  font-family: 'Saira Condensed', sans-serif;
-  letter-spacing: .03em;
+  font-weight: 600;
   color: var(--text);
   flex: 1;
   transition: color .15s;
@@ -4886,18 +4884,16 @@ a.player-link:hover { color: var(--amber); }
 .pm-team__name--dim { color: var(--text-subtle); }
 .pm-team__badge {
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 600;
   background: rgba(245,147,50,.15);
   color: var(--amber);
   border-radius: 3px;
   padding: 2px 5px;
-  letter-spacing: .04em;
   flex-shrink: 0;
 }
 .pm-team__score {
-  font-size: 22px;
-  font-weight: 800;
-  font-family: 'Saira Condensed', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-muted);
   width: 24px;
   text-align: right;
