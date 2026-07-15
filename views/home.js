@@ -250,7 +250,71 @@ function leagueLeaders(players) {
 }
 
 // ── Registration Banner ───────────────────────────────────────────────────────
+const REG_BANNER_SETS = [
+  {
+    pill: 'Slay First. Score Later. 💅',
+    headline: "The League That Has Room for Everyone.*",
+    body: "(*including that one guy who insists he's a PG. you know who you are. we see you.)",
+    cta: "I'm That Girl 💅",
+  },
+  {
+    pill: 'Main Character Era 🔥',
+    headline: 'Your Villain Arc Starts Here.',
+    body: "All genders. All skill levels. All unresolved competitive trauma. We have a jersey for that and a group chat for the rest.",
+    cta: 'Let Me Cook 🔥',
+  },
+  {
+    pill: 'Bestie Alert 👀',
+    headline: "Don't Let Your Bestie Play Without You.",
+    body: "Imagine watching your best friend get a trophy while you sat at home refreshing their highlights. Haunting. Register now.",
+    cta: 'Not On My Watch',
+  },
+  {
+    pill: 'No Gatekeeping ✨',
+    headline: "We Don't Discriminate.*",
+    body: "(*except against ball hogs. and even then — only a little. lovingly. we still love you bestie.)",
+    cta: 'Sign Me Up Sis',
+  },
+  {
+    pill: 'Serving Looks & Buckets 🏀',
+    headline: 'Ball Is Life. Come Live It With Us.',
+    body: "Real games. Real stats. One sigma male per team — it's in the bylaws. One group chat that will become your entire personality.",
+    cta: 'Send It Bestie',
+  },
+  {
+    pill: 'The Glow Up Is Real ✨',
+    headline: 'New Jersey. New You. Same Issues.',
+    body: "Whatever you're running from, you can't outrun a full-court press. But you can try. We respect the attempt.",
+    cta: 'Run It Back',
+  },
+  {
+    pill: 'Court Is In Session 💁',
+    headline: "We Have a Spot With Your Name On It.*",
+    body: "(*literally. we put it on a jersey. it's sitting in the storage room. come get it bestie.)",
+    cta: "That's My Jersey",
+  },
+  {
+    pill: 'Hot Girl Summer 🏀',
+    headline: 'Sweat Is Just Glitter for Athletes.',
+    body: "Come for the basketball, stay for the post-game chismis, the group chat, and the friendships you never knew you needed.",
+    cta: "I'm So In",
+  },
+  {
+    pill: 'Era Check ✅',
+    headline: "You're Either In the League or Watching From the Sideline.",
+    body: "Stop watching others play and start being the player everyone talks about in the group chat at 2am. This is your sign.",
+    cta: 'This Is My Sign',
+  },
+  {
+    pill: 'Manifesting Your Bag 💰',
+    headline: 'The Best Decision You Will Make This Season.',
+    body: "Real talk: the friendships, the runs, the drama, the wins — this league will give you stories you will tell for years. And a jersey. Obviously.",
+    cta: 'Manifest It',
+  },
+];
+
 function registrationBanner({ deadline }) {
+  const set = REG_BANNER_SETS[Math.floor(Math.random() * REG_BANNER_SETS.length)];
   return `<section class="reg-banner" aria-label="Membership Registration">
   <div class="reg-banner__glow" aria-hidden="true"></div>
   <div class="reg-banner__arc" aria-hidden="true"></div>
@@ -259,17 +323,17 @@ function registrationBanner({ deadline }) {
       <div class="reg-banner__eyebrow">
         <span class="reg-banner__pill">
           <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-          REGISTRATION OPEN
+          ${escHtml(set.pill)}
         </span>
       </div>
-      <h2 class="reg-banner__headline">Come Ball With Us.</h2>
+      <h2 class="reg-banner__headline">${escHtml(set.headline)}</h2>
       ${deadline
-        ? `<p class="reg-banner__deadline">Register before&nbsp;<strong>${escHtml(deadline)}</strong> to be eligible for upcoming seasons, playoffs, and league events.</p>`
-        : `<p class="reg-banner__deadline">Register now to join upcoming seasons, playoffs, and exclusive league events — spots are limited.</p>`
+        ? `<p class="reg-banner__deadline">You have until&nbsp;<strong>${escHtml(deadline)}</strong> to secure your spot — don't let your bestie play without you.</p>`
+        : `<p class="reg-banner__deadline">${escHtml(set.body)}</p>`
       }
     </div>
     <a href="/register" class="reg-banner__cta">
-      Register Now <span aria-hidden="true">→</span>
+      ${escHtml(set.cta)} <span aria-hidden="true">→</span>
     </a>
   </div>
 </section>`;

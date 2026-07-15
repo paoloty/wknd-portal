@@ -244,7 +244,9 @@ body {
 }
 .login-field { margin-bottom: 16px; }
 .login-field label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .08em;
@@ -561,6 +563,17 @@ body {
   color: var(--text-subtle);
   line-height: 1.5;
 }
+.site-footer__social {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+.site-footer__social-link {
+  color: var(--text-muted);
+  transition: color .15s;
+  line-height: 0;
+}
+.site-footer__social-link:hover { color: var(--amber); }
 .site-footer__groups {
   display: flex;
   gap: 64px;

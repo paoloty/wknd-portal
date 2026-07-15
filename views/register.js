@@ -1,6 +1,12 @@
 import { escHtml } from './layout.js';
 
-const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
+const POSITIONS = [
+  { id: 'PG', desc: 'running the group chat' },
+  { id: 'SG', desc: 'shoots their shot. everywhere.' },
+  { id: 'SF', desc: 'versatile. very versatile. 👀' },
+  { id: 'PF', desc: 'muscles & issues' },
+  { id: 'C',  desc: 'tall and in the way' },
+];
 
 export function registerPage({ error = null, success = false, prefill = {} } = {}) {
   if (success) {
@@ -41,23 +47,23 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
       <div class="login-brand__badge">W</div>
       <span class="login-brand__name">WKND Basketball</span>
     </div>
-    <p class="login-brand__sub">Join our basketball community — good runs, good people.</p>
+    <p class="login-brand__sub">Open to all genders, all skill levels, and at least two people per team who think they're the main character.* We promise good runs, real community, and one group chat that will absolutely ruin your sleep schedule.** <span style="font-size:11px;opacity:.5">(*you know who you are) (**we will also judge your form — lovingly)</span></p>
 
     <!-- Stepper -->
     <div class="reg-stepper">
       <div class="reg-step is-active" data-step="1">
         <span class="reg-step__num">1</span>
-        <span class="reg-step__label">About You</span>
+        <span class="reg-step__label">Who Are You</span>
       </div>
       <div class="reg-step-line"></div>
       <div class="reg-step" data-step="2">
         <span class="reg-step__num">2</span>
-        <span class="reg-step__label">Your Game</span>
+        <span class="reg-step__label">Body Check</span>
       </div>
       <div class="reg-step-line"></div>
       <div class="reg-step" data-step="3">
         <span class="reg-step__num">3</span>
-        <span class="reg-step__label">Finish Up</span>
+        <span class="reg-step__label">Final Boss</span>
       </div>
     </div>
 
@@ -65,68 +71,70 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
 
     <form id="reg-form" method="POST" action="/register" novalidate>
 
-      <!-- Step 1: About You -->
+      <!-- Step 1: Who Are You -->
       <div class="login-form reg-panel" data-panel="1">
         <div class="reg-grid-2">
           <div class="login-field">
-            <label for="first_name">First Name <span class="reg-req">*</span></label>
+            <label for="first_name">First Slay Name <span class="reg-req">*</span></label>
             <input id="first_name" class="login-field__input" type="text" name="first_name" value="${v('first_name')}" autocomplete="given-name" placeholder="Juan" data-required="1" data-step="1">
           </div>
           <div class="login-field">
-            <label for="last_name">Last Name <span class="reg-req">*</span></label>
+            <label for="last_name">Government Name (the sequel) <span class="reg-req">*</span></label>
             <input id="last_name" class="login-field__input" type="text" name="last_name" value="${v('last_name')}" autocomplete="family-name" placeholder="dela Cruz" data-required="1" data-step="1">
           </div>
         </div>
         <div class="login-field">
-          <label for="email">Email <span class="reg-req">*</span></label>
+          <label for="email">Slide Into Our DMs <span class="reg-req">*</span></label>
           <input id="email" class="login-field__input" type="email" name="email" value="${v('email')}" autocomplete="email" placeholder="juan@example.com" data-required="1" data-step="1">
         </div>
         <div class="reg-grid-2">
           <div class="login-field">
-            <label for="phone">Phone / WhatsApp <span class="reg-req">*</span></label>
+            <label for="phone">Your Digits 👀 <span class="reg-req">*</span></label>
             <input id="phone" class="login-field__input" type="tel" name="phone" value="${v('phone')}" autocomplete="tel" placeholder="+63 917 123 4567" data-required="1" data-step="1">
           </div>
           <div class="login-field" style="margin-bottom:0">
-            <label for="birthday">Birthday <span class="reg-req">*</span></label>
+            <label for="birthday">Day You Entered the Chat <span class="reg-req">*</span></label>
             <input id="birthday" class="login-field__input" type="date" name="birthday" value="${v('birthday')}" data-required="1" data-step="1">
           </div>
         </div>
         <div class="reg-nav reg-nav--single">
-          <button type="button" class="reg-nav__next" data-next="2">Next <span aria-hidden="true">→</span></button>
+          <button type="button" class="reg-nav__next" data-next="2">Yes, that's me →</button>
         </div>
       </div>
 
-      <!-- Step 2: Your Game -->
+      <!-- Step 2: Body Check -->
       <div class="login-form reg-panel" data-panel="2" style="display:none">
         <div class="login-field">
-          <label>Position(s) <span class="reg-req">*</span></label>
+          <label>Where Do You Like to Play <span style="opacity:.5;font-size:11px">(on the court, focus)</span> <span class="reg-req">*</span></label>
           <div class="reg-pos-chips">
             ${POSITIONS.map(pos => `<label class="reg-pos-chip">
-              <input type="checkbox" name="positions" value="${pos}">
-              <span>${pos}</span>
+              <input type="checkbox" name="positions" value="${pos.id}">
+              <span class="reg-pos-chip__abbr">${pos.id}</span>
+              <span class="reg-pos-chip__divider"></span>
+              <span class="reg-pos-chip__desc">${pos.desc}</span>
             </label>`).join('')}
           </div>
         </div>
-        <div class="reg-grid-3">
+        <div class="reg-grid-2">
           <div class="login-field" style="margin-bottom:0">
-            <label for="height">Height (cm) <span class="reg-req">*</span></label>
+            <label for="height">Height — Be Honest (cm) <span class="reg-req">*</span></label>
             <input id="height" class="login-field__input" type="number" name="height" value="${v('height')}" placeholder="175" min="100" max="250" data-required="1" data-step="2">
           </div>
           <div class="login-field" style="margin-bottom:0">
-            <label for="weight">Weight (kg) <span class="reg-req">*</span></label>
+            <label for="weight">Current Form (kg) <span class="reg-req">*</span></label>
             <input id="weight" class="login-field__input" type="number" name="weight" value="${v('weight')}" placeholder="75" min="30" max="200" data-required="1" data-step="2">
           </div>
           <div class="login-field" style="margin-bottom:0">
-            <label for="dominant_hand">Dominant Hand <span class="reg-req">*</span></label>
+            <label for="dominant_hand">Working Hand 💅 <span class="reg-req">*</span></label>
             <select id="dominant_hand" class="login-field__input" name="dominant_hand" data-required="1" data-step="2">
               <option value="">—</option>
-              <option value="right" ${sel('dominant_hand','right')}>Right</option>
-              <option value="left"  ${sel('dominant_hand','left')}>Left</option>
-              <option value="both"  ${sel('dominant_hand','both')}>Both</option>
+              <option value="right" ${sel('dominant_hand','right')}>Right (allegedly)</option>
+              <option value="left"  ${sel('dominant_hand','left')}>Left (dangerous)</option>
+              <option value="both"  ${sel('dominant_hand','both')}>Both (show-off)</option>
             </select>
           </div>
           <div class="login-field" style="margin-bottom:0">
-            <label for="gender">Gender <span class="reg-req">*</span></label>
+            <label for="gender">Vibe <span class="reg-req">*</span></label>
             <select id="gender" class="login-field__input" name="gender" data-required="1" data-step="2">
               <option value="">—</option>
               <option value="male"        ${sel('gender','male')}>Male (allegedly)</option>
@@ -138,49 +146,49 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
           </div>
         </div>
         <div class="reg-nav reg-nav--single">
-          <button type="button" class="reg-nav__next" data-next="3">Next <span aria-hidden="true">→</span></button>
-          <button type="button" class="reg-nav__back reg-nav__back--link" data-back="1"><span aria-hidden="true">←</span> Back</button>
+          <button type="button" class="reg-nav__next" data-next="3">This body slays →</button>
+          <button type="button" class="reg-nav__back reg-nav__back--link" data-back="1">← wait, I lied</button>
         </div>
       </div>
 
-      <!-- Step 3: Finish Up -->
+      <!-- Step 3: Final Boss -->
       <div class="login-form reg-panel" data-panel="3" style="display:none">
         <div class="reg-grid-2">
           <div class="login-field">
-            <label for="experience">Experience Level</label>
+            <label for="experience">Basketball Resume</label>
             <select id="experience" class="login-field__input" name="experience">
-              <option value="">—</option>
-              <option value="beginner"     ${sel('experience','beginner')}>Beginner</option>
-              <option value="intermediate" ${sel('experience','intermediate')}>Intermediate</option>
-              <option value="advanced"     ${sel('experience','advanced')}>Advanced</option>
+              <option value="">— be honest —</option>
+              <option value="beginner"     ${sel('experience','beginner')}>New but make it fashion</option>
+              <option value="intermediate" ${sel('experience','intermediate')}>I've watched enough NBA</option>
+              <option value="advanced"     ${sel('experience','advanced')}>Built different. Trust.</option>
             </select>
           </div>
           <div class="login-field">
-            <label for="referred_by">Referred By</label>
-            <input id="referred_by" class="login-field__input" type="text" name="referred_by" value="${v('referred_by')}" placeholder="Player name">
+            <label for="referred_by">Who Dragged You Here</label>
+            <input id="referred_by" class="login-field__input" type="text" name="referred_by" value="${v('referred_by')}" placeholder="We love them for it">
           </div>
         </div>
         <div class="reg-grid-2">
           <div class="login-field">
-            <label for="emergency_name">Emergency Contact Name</label>
+            <label for="emergency_name">Who to Call When You Get Cooked</label>
             <input id="emergency_name" class="login-field__input" type="text" name="emergency_name" value="${v('emergency_name')}" placeholder="Full name">
           </div>
           <div class="login-field">
-            <label for="emergency_phone">Emergency Contact Phone</label>
+            <label for="emergency_phone">Their Digits (someone who picks up)</label>
             <input id="emergency_phone" class="login-field__input" type="tel" name="emergency_phone" value="${v('emergency_phone')}" placeholder="+63 917 000 0000">
           </div>
         </div>
         <div class="login-field" style="margin-bottom:20px">
-          <label for="motto">Quick Bio</label>
-          <textarea id="motto" class="login-field__input" name="motto" rows="3" placeholder="Tell us a bit about yourself — this shows on your player profile.">${escHtml(prefill.motto || '')}</textarea>
+          <label for="motto">Your Villain Arc Intro</label>
+          <textarea id="motto" class="login-field__input" name="motto" rows="3" placeholder="Your origin story — this shows on your player profile.">${escHtml(prefill.motto || '')}</textarea>
         </div>
         <label class="login-check" style="margin-bottom:20px">
           <input type="checkbox" name="agree" data-required="1" data-step="3">
-          <span>I confirm the information above is accurate and understand that my application is subject to admin approval.</span>
+          <span>I swear on my crossover that everything above is accurate, and I understand my application needs admin approval before I can ball. 🏀</span>
         </label>
         <div class="reg-nav reg-nav--single">
-          <button type="submit" class="login-submit">COUNT ME IN</button>
-          <button type="button" class="reg-nav__back reg-nav__back--link" data-back="2"><span aria-hidden="true">←</span> Back</button>
+          <button type="submit" class="login-submit">SEND IT BESTIE 💅</button>
+          <button type="button" class="reg-nav__back reg-nav__back--link" data-back="2">← actually—</button>
         </div>
       </div>
 
@@ -269,23 +277,42 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
 .login-field__input option { background: #0d1424; }
 
 /* Position chips */
-.reg-pos-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; margin-bottom: 16px; }
+.reg-pos-chips { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; margin-bottom: 16px; }
 .reg-pos-chip {
   display: flex;
+  flex-direction: row;
   align-items: center;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 9px 20px;
+  border-radius: 8px;
+  padding: 9px 14px;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
   color: var(--text-muted);
   transition: border-color .15s, color .15s;
   user-select: none;
 }
 .reg-pos-chip input { display: none; }
-.reg-pos-chip:has(input:checked) { border-color: var(--amber); color: var(--amber); }
+.reg-pos-chip__abbr {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  color: var(--text);
+  min-width: 36px;
+  text-align: center;
+  flex-shrink: 0;
+  transition: color .15s;
+}
+.reg-pos-chip__divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 12px;
+  flex-shrink: 0;
+}
+.reg-pos-chip__desc { font-size: 11px; font-weight: 400; line-height: 1.3; text-transform: none; }
+.reg-pos-chip:has(input:checked) { border-color: var(--amber); }
+.reg-pos-chip:has(input:checked) .reg-pos-chip__abbr { color: var(--amber); }
+.reg-pos-chip:has(input:checked) .reg-pos-chip__divider { background: var(--amber); opacity: .3; }
 
 /* Nav row */
 .reg-nav {
@@ -387,7 +414,7 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
       }
       var val = f.type === 'checkbox' ? f.checked : f.value.trim();
       if (!val) {
-        err.textContent = 'This field is required.';
+        err.textContent = 'Bestie, we need this one.';
         f.classList.add('reg-invalid');
         ok = false;
       } else {
@@ -405,7 +432,7 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
         posErr.className = 'reg-field-error reg-pos-err';
         form.querySelector('.reg-pos-chips').after(posErr);
       }
-      posErr.textContent = any ? '' : 'Please select at least one position.';
+      posErr.textContent = any ? '' : "Pick at least one position. You can't just stand there.";
       if (!any) ok = false;
     }
     return ok;

@@ -548,18 +548,32 @@ function getFeatureFlags() {
   };
 }
 
+const REG_MINI_SETS = [
+  { pill: 'Slay First. Score Later. 💅', body: "All genders. All skill levels. All unresolved competitive trauma. We have a jersey for that.",                                      cta: "I'm That Girl 💅"  },
+  { pill: 'Main Character Era 🔥',       body: "Your villain arc starts here. Register before your bestie does — we all know they're already thinking about it.",                   cta: 'Let Me Cook 🔥'    },
+  { pill: 'Bestie Alert 👀',             body: "Imagine watching your best friend get a trophy while you sat at home. Haunting. Register now.",                                     cta: 'Not On My Watch'   },
+  { pill: 'No Gatekeeping ✨',           body: "We don't discriminate.* (*except against ball hogs. and even then — only lovingly.)",                                               cta: 'Sign Me Up Sis'    },
+  { pill: 'Serving Looks & Buckets 🏀', body: "Real games. Real stats. One group chat that will become your entire personality. One sigma male per team — it's in the bylaws.",          cta: 'Send It Bestie'    },
+  { pill: 'The Glow Up Is Real ✨',     body: "New jersey. New you. Same issues. Whatever you're running from, you can't outrun a full-court press. We respect the attempt.",             cta: 'Run It Back'       },
+  { pill: 'Court Is In Session 💁',     body: "We literally have a spot with your name on it. It's in the storage room. Come get it bestie.",                                            cta: "That's My Jersey"  },
+  { pill: 'Hot Girl Summer 🏀',         body: "Come for the basketball, stay for the post-game chismis and the group chat you never knew you needed.",                                   cta: "I'm So In"         },
+  { pill: 'Era Check ✅',               body: "Stop watching others play and start being the player everyone talks about in the group chat at 2am. This is your sign.",                  cta: 'This Is My Sign'   },
+  { pill: 'Manifesting Your Bag 💰',    body: "The friendships, the runs, the drama, the wins — this league will give you stories you will tell for years. And a jersey. Obviously.",   cta: 'Manifest It'       },
+];
+
 function regMiniBanner() {
   const deadline = getSetting('reg_deadline', '');
+  const set = REG_MINI_SETS[Math.floor(Math.random() * REG_MINI_SETS.length)];
   return `<div class="reg-mini">
   <span class="reg-mini__pill">
     <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-    Registration Open
+    ${escHtml(set.pill)}
   </span>
   <span class="reg-mini__text">${deadline
-    ? `Register before <strong>${escHtml(deadline)}</strong> to be eligible for upcoming seasons, playoffs, and league events.`
-    : `Register now to join upcoming seasons, playoffs, and exclusive league events — spots are limited.`
+    ? `You have until <strong>${escHtml(deadline)}</strong> to secure your spot — don't let your bestie play without you.`
+    : escHtml(set.body)
   }</span>
-  <a href="/register" class="reg-mini__cta">Register Now <span aria-hidden="true">→</span></a>
+  <a href="/register" class="reg-mini__cta">${escHtml(set.cta)} <span aria-hidden="true">→</span></a>
 </div>`;
 }
 
