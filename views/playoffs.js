@@ -95,7 +95,14 @@ function matchupCard({ highSeed, highNum, lowSeed, lowNum, games, format, isFina
 }
 
 export function playoffsPage({ standings, games, season }) {
-  const seeds = standings.slice(0, 4);
+  const seeds = [...standings]
+    .sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      const qA = Number(a.pa) > 0 ? Number(a.pf) / Number(a.pa) : 0;
+      const qB = Number(b.pa) > 0 ? Number(b.pf) / Number(b.pa) : 0;
+      return qB - qA;
+    })
+    .slice(0, 4);
 
   const semiGames   = games.filter(g => g.game_type === 'playoff');
   const finalsGames = games.filter(g => g.game_type === 'finals');
