@@ -3378,11 +3378,11 @@ app.get('/register', (req, res) => {
 app.post('/register', (req, res) => {
   const { first_name, last_name, email, phone, birthday, positions, height, weight,
           jersey_pref, dominant_hand, experience, referred_by,
-          emergency_name, emergency_phone, motto, agree } = req.body;
+          emergency_name, emergency_phone, motto, gender, agree } = req.body;
 
   const prefill = { first_name, last_name, email, phone, birthday, height, weight,
                     jersey_pref, dominant_hand, experience, referred_by,
-                    emergency_name, emergency_phone, motto };
+                    emergency_name, emergency_phone, motto, gender };
 
   // Validate required fields
   if (!first_name?.trim() || !last_name?.trim()) {
@@ -3448,6 +3448,7 @@ app.post('/register', (req, res) => {
     emergency_name: (emergency_name || '').trim(),
     emergency_phone: (emergency_phone || '').trim(),
     motto: (motto || '').trim(),
+    gender: (gender || '').trim(),
   });
 
   res.send(layout({ title: 'Registration Received', currentPath: '/register',

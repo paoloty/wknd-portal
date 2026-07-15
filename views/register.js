@@ -125,6 +125,17 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
               <option value="both"  ${sel('dominant_hand','both')}>Both</option>
             </select>
           </div>
+          <div class="login-field" style="margin-bottom:0">
+            <label for="gender">Gender <span class="reg-req">*</span></label>
+            <select id="gender" class="login-field__input" name="gender" data-required="1" data-step="2">
+              <option value="">—</option>
+              <option value="male"        ${sel('gender','male')}>Male (allegedly)</option>
+              <option value="female"      ${sel('gender','female')}>Female (wrong group chat)</option>
+              <option value="sigma"       ${sel('gender','sigma')}>Sigma Male 🐺</option>
+              <option value="fabulous"    ${sel('gender','fabulous')}>Fabolous 💅</option>
+              <option value="classified"  ${sel('gender','classified')}>Classified (ask my bestie)</option>
+            </select>
+          </div>
         </div>
         <div class="reg-nav reg-nav--single">
           <button type="button" class="reg-nav__next" data-next="3">Next <span aria-hidden="true">→</span></button>
