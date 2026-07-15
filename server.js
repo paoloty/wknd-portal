@@ -7,6 +7,7 @@ import express from 'express';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import { parseWriteup } from './lib/writeup.js';
+import { sendMail, approvedEmail, rejectedEmail } from './lib/mailer.js';
 import sharp from 'sharp';
 import { layout, escHtml } from './views/layout.js';
 import { homePage } from './views/home.js';
@@ -1403,12 +1404,16 @@ app.get('/admin/users/:id', requireAuth, (req, res) => {
   }));
 });
 
-app.post('/admin/users/:id/approve', requireAuth, express.json(), (req, res) => {
+app.post('/admin/users/:id/approve', requireAuth, express.json(), async (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
   const player_id = req.body?.player_id || '';
   updateRegistration(reg.id, { status: 'approved', player_id, notes: reg.notes || '', approved_at: Date.now() });
   if (player_id) mergeRegistrationIntoPlayer(player_id, reg);
+  if (reg.email) {
+    const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
+    sendMail({ to: reg.email, ...approvedEmail({ name }) }).catch(e => console.error('[mailer]', e.message));
+  }
   res.json({ ok: true });
 });
 
@@ -1435,6 +1440,10 @@ app.post('/admin/users/:id/create', requireAuth, express.json(), (req, res) => {
 
   updateRegistration(reg.id, { status: 'approved', player_id: newPlayerId, notes: 'Player record created from registration.', approved_at: Date.now() });
   mergeRegistrationIntoPlayer(newPlayerId, reg);
+  if (reg.email) {
+    const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
+    sendMail({ to: reg.email, ...approvedEmail({ name }) }).catch(e => console.error('[mailer]', e.message));
+  }
   res.json({ ok: true, player_id: newPlayerId });
 });
 
@@ -1453,11 +1462,15 @@ app.post('/admin/users/:id/reset', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/admin/users/:id/reject', requireAuth, express.json(), (req, res) => {
+app.post('/admin/users/:id/reject', requireAuth, express.json(), async (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
   const notes = req.body?.notes || '';
   updateRegistration(reg.id, { status: 'rejected', player_id: reg.player_id || '', notes });
+  if (reg.email) {
+    const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
+    sendMail({ to: reg.email, ...rejectedEmail({ name, reason: notes }) }).catch(e => console.error('[mailer]', e.message));
+  }
   res.json({ ok: true });
 });
 

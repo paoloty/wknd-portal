@@ -5,11 +5,11 @@
 
 /* ── CSS tokens (admin context) ─────────────────────────────── */
 .admin-body {
-  --bg:         #080d17;
-  --surface:    #0f1623;
-  --surface-2:  #172030;
-  --border:     #1c2840;
-  --border-2:   #243350;
+  --bg:         #020817;
+  --surface:    #0d1424;
+  --surface-2:  #131d2e;
+  --border:     #1e293b;
+  --border-2:   #2a3a52;
   --text:       #e2e8f0;
   --text-2:     #94a3b8;
   --text-muted: #64748b;
@@ -89,7 +89,7 @@
   justify-content: center;
   font-size: 14px;
   font-weight: 800;
-  color: #080d17;
+  color: #020817;
   flex-shrink: 0;
   letter-spacing: -.01em;
 }
@@ -303,7 +303,7 @@
 /* Primary (amber filled) */
 .agm-new-btn {
   background: var(--amber);
-  color: #080d17;
+  color: #020817;
   border: none;
   transition: opacity .15s;
 }
@@ -434,7 +434,7 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  background: #0f1623;
+  background: #0d1424;
 }
 .has-freeze-col th:first-child::after,
 .has-freeze-col td:first-child::after {
@@ -444,7 +444,7 @@
   right: -1px;
   bottom: 0;
   width: 1px;
-  background: #1c2840;
+  background: #1e293b;
 }
 .has-freeze-col td:first-child::before,
 .has-freeze-col th:first-child::before {
@@ -652,7 +652,7 @@ select.admin-input {
   background: var(--amber);
   border: none;
   border-radius: var(--radius-sm);
-  color: #080d17;
+  color: #020817;
   font-size: 13px;
   font-weight: 700;
   font-family: inherit;
@@ -701,7 +701,7 @@ select.admin-input {
   height: 34px;
   padding: 0 14px;
   background: var(--amber);
-  color: #080d17;
+  color: #020817;
   border: none;
   border-radius: var(--radius-sm);
   font-size: 13px;
