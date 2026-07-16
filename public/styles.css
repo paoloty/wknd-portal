@@ -4565,6 +4565,26 @@ a.player-link:hover { color: var(--amber); }
 }
 .mvp-row:hover .mvp-row__cta { opacity: 1; }
 
+.mvp-row-wrap { position: relative; }
+.mvp-share-btn {
+  position: absolute; bottom: 10px; right: 10px;
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border);
+  background: rgba(13,20,36,0.85); color: var(--text-muted);
+  cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s, color 0.15s;
+  z-index: 2;
+}
+.mvp-row-wrap:hover .mvp-share-btn { opacity: 1; }
+.mvp-share-btn:hover { background: var(--surface); color: #e2e8f0; border-color: #2e4066; }
+
+.mvp-card-share-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 5px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.mvp-card-share-btn:hover { background: var(--surface); color: #e2e8f0; }
+
 /* ── MVP sidebar ladder table ────────────────────────────────────────────── */
 .mvp-sb-table { overflow: hidden; }
 .mvp-sb-row {

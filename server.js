@@ -535,6 +535,408 @@ async function buildMvpOgPng(leader, season) {
   return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
 }
 
+// ── Award share image generation ─────────────────────────────────────────────
+
+const AWARD_OG_BADGE = {
+  all_wknd_1:      { label: 'ALL WKND 1ST TEAM',       bg: '#22c55e', text: '#000'    },
+  all_wknd_2:      { label: 'ALL WKND 2ND TEAM',       bg: '#64748b', text: '#fff'    },
+  all_wknd_def:    { label: 'ALL WKND DEFENSIVE TEAM', bg: '#3b82f6', text: '#fff'    },
+  mvp:             { label: 'SEASON MVP',               bg: '#f59332', text: '#10141d' },
+  dpoy:            { label: 'BEST DEFENDER',            bg: '#3b82f6', text: '#fff'    },
+  scoring_champ:   { label: 'SCORING CHAMP',            bg: '#f59332', text: '#10141d' },
+  assists_leader:  { label: 'ASSISTS LEADER',           bg: '#f59332', text: '#10141d' },
+  rebounds_leader: { label: 'REBOUNDS LEADER',          bg: '#f59332', text: '#10141d' },
+  steals_leader:   { label: 'STEALS LEADER',            bg: '#f59332', text: '#10141d' },
+  blocks_leader:   { label: 'BLOCKS LEADER',            bg: '#f59332', text: '#10141d' },
+  three_pm_leader: { label: '3-PT LEADER',              bg: '#f59332', text: '#10141d' },
+};
+const TEAM_AWARD_TYPES_OG = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+const POSITIONS_OG_ORDER  = ['PG', 'SG', 'SF', 'PF', 'C'];
+const POSITION_ORDER_OG_MAP = Object.fromEntries(POSITIONS_OG_ORDER.map((p, i) => [p, i]));
+
+function ogStatLine(row, type) {
+  const gp  = row.games_played || 1;
+  const avg = v => (v != null ? (v / gp).toFixed(1) : null);
+  const parts =
+    (['mvp', 'all_wknd_1', 'all_wknd_2'].includes(type))
+      ? [avg(row.pts) && `${avg(row.pts)} PPG`, avg(row.reb) && `${avg(row.reb)} RPG`, avg(row.ast) && `${avg(row.ast)} APG`]
+    : (['dpoy', 'all_wknd_def'].includes(type))
+      ? [avg(row.stl) && `${avg(row.stl)} SPG`, avg(row.blk) && `${avg(row.blk)} BPG`]
+    : type === 'scoring_champ'   ? [avg(row.pts)  && `${avg(row.pts)} PPG`]
+    : type === 'assists_leader'  ? [avg(row.ast)  && `${avg(row.ast)} APG`]
+    : type === 'rebounds_leader' ? [avg(row.reb)  && `${avg(row.reb)} RPG`]
+    : type === 'steals_leader'   ? [avg(row.stl)  && `${avg(row.stl)} SPG`]
+    : type === 'blocks_leader'   ? [avg(row.blk)  && `${avg(row.blk)} BPG`]
+    : type === 'three_pm_leader' ? [row.fg3m != null && `${avg(row.fg3m)} 3PM`]
+    : [];
+  return parts.filter(Boolean).join('  ·  ');
+}
+
+function buildTeamAwardOgSvg(rows, badge, season) {
+  const W = 1200, H = 630, N = rows.length;
+  const STRIP_W = Math.floor(W / N);
+  const isDefTeam = badge._type === 'all_wknd_def';
+  const badgeBg   = escXml(badge.bg);
+  const badgeTxt  = escXml(badge.text);
+  const badgeLbl  = escXml(badge.label);
+
+  // Per-strip: dark cinematic gradient + team-color bottom glow
+  const gradDefs = rows.map((row, i) => {
+    const tc = row.team_color || '#4a5263';
+    return `
+    <linearGradient id="sgd${i}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#020817" stop-opacity="0"/>
+      <stop offset="42%"  stop-color="#020817" stop-opacity="0"/>
+      <stop offset="72%"  stop-color="#020817" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.96"/>
+    </linearGradient>
+    <linearGradient id="sgc${i}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="${tc}" stop-opacity="0"/>
+      <stop offset="65%"  stop-color="${tc}" stop-opacity="0"/>
+      <stop offset="100%" stop-color="${tc}" stop-opacity="0.28"/>
+    </linearGradient>`;
+  }).join('');
+
+  const POS_FULL = { PG: 'POINT GUARD', SG: 'SHOOTING GUARD', SF: 'SMALL FORWARD', PF: 'POWER FORWARD', C: 'CENTER' };
+
+  const strips = rows.map((row, i) => {
+    const x  = i * STRIP_W;
+    const cx = x + STRIP_W / 2;
+    const name  = formatName(row.player_name || '');
+    const parts = name.split(' ');
+    const last  = (parts.length > 1 ? parts[parts.length - 1] : name).toUpperCase();
+    const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+    const tc    = escXml(row.team_color || '#4a5263');
+    const posKey = POSITIONS_OG_ORDER.includes(row.notes) ? row.notes : '';
+    const posLbl = posKey ? escXml(POS_FULL[posKey] || posKey) : '';
+    const posPillW = posKey ? Math.min(Math.round((POS_FULL[posKey] || posKey).length * 6.4 + 36), STRIP_W - 16) : 0;
+    const posPillX = posKey ? Math.round(cx - posPillW / 2) : 0;
+    const gp    = row.games_played || 1;
+    const avg   = v => (v / gp).toFixed(1);
+    const stats = isDefTeam
+      ? escXml(`${avg(row.stl)} SPG  ·  ${avg(row.blk)} BPG`)
+      : escXml(`${avg(row.pts)} PPG  ·  ${avg(row.reb)} RPG  ·  ${avg(row.ast)} APG`);
+
+    const PILL_H = 24, PILL_RY = H - 126;
+    const pillTextY = PILL_RY + Math.round(PILL_H / 2 + 10 * 0.35);
+
+    return `
+  <!-- strip ${i} -->
+  <rect x="${x}" y="0" width="${STRIP_W}" height="${H}" fill="url(#sgd${i})"/>
+  <rect x="${x}" y="0" width="${STRIP_W}" height="${H}" fill="url(#sgc${i})"/>
+  ${i > 0 ? `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#0d1424" stroke-width="2"/>` : ''}
+
+  <!-- position pill (above stats) -->
+  ${posKey ? `<rect x="${posPillX}" y="${PILL_RY}" width="${posPillW}" height="${PILL_H}" rx="${PILL_H / 2}" fill="none" stroke="${badgeBg}" stroke-width="1.5"/>
+  <text x="${cx}" y="${pillTextY}" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="800" fill="${badgeBg}" text-anchor="middle" letter-spacing="0.8">${posLbl}</text>` : ''}
+
+  <!-- bottom content -->
+  <text x="${cx}" y="${H - 78}" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>
+  <text x="${cx}" y="${H - 54}" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="0.5">${escXml(first)}</text>
+  <text x="${cx}" y="${H - 26}" font-family="Arial,Helvetica,sans-serif" font-size="21" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="1">${escXml(last)}</text>
+
+  <!-- bottom accent bar -->
+  <rect x="${x}" y="${H - 5}" width="${STRIP_W}" height="5" fill="${tc}"/>`;
+  }).join('\n');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    ${gradDefs}
+    <linearGradient id="banner-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#020817" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.92"/>
+    </linearGradient>
+  </defs>
+
+  ${strips}
+
+  <!-- header banner -->
+  <rect x="0" y="0" width="${W}" height="72" fill="url(#banner-bg)"/>
+  <!-- left accent bar -->
+  <rect x="0" y="0" width="5" height="72" fill="${badgeBg}"/>
+  <!-- bottom rule of banner -->
+  <rect x="0" y="69" width="${W}" height="3" fill="${badgeBg}" opacity="0.35"/>
+
+  <!-- supertitle + award label -->
+  <text x="22" y="26" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="${badgeBg}" letter-spacing="3" opacity="0.8">WKND BASKETBALL</text>
+  <text x="22" y="55" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="800" fill="#f1f5f9" letter-spacing="1.5">${badgeLbl}</text>
+
+  <!-- season (right) -->
+  <text x="${W - 22}" y="27" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="600" fill="#475569" text-anchor="end" letter-spacing="3">SEASON</text>
+  <text x="${W - 22}" y="55" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" fill="#64748b" text-anchor="end" letter-spacing="1">${escXml(String(season))}</text>
+
+  <!-- watermark -->
+  <text x="${W - 22}" y="${H - 13}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#1e293b" text-anchor="end" letter-spacing="3">WKNDBASKETBALL.COM</text>
+</svg>`;
+}
+
+async function buildTeamAwardOgPng(rows, badge, season) {
+  const W = 1200, H = 630, N = Math.min(rows.length, 5);
+  const STRIP_W = Math.floor(W / N);
+
+  const sorted = [...rows]
+    .sort((a, b) => (POSITION_ORDER_OG_MAP[a.notes] ?? 99) - (POSITION_ORDER_OG_MAP[b.notes] ?? 99))
+    .slice(0, N);
+
+  const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
+    .png().toBuffer();
+
+  const photoLayers = await Promise.all(sorted.map(async (row, i) => {
+    const src = await fetchCoverImageBuffer(row.picture_url);
+    if (!src) return null;
+    try {
+      const buf = await sharp(src).rotate().resize(STRIP_W, H, { fit: 'cover', position: 'top' }).png().toBuffer();
+      return { input: buf, top: 72, left: i * STRIP_W };
+    } catch { return null; }
+  }));
+
+  const layers = photoLayers.filter(Boolean);
+
+  const svgBuf = await sharp(Buffer.from(buildTeamAwardOgSvg(sorted, badge, season)), { density: 96 })
+    .resize(W, H).png().toBuffer();
+  layers.push({ input: svgBuf, top: 0, left: 0 });
+
+  const logoBuf = await getWkndLogoBuf();
+  if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
+
+  return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
+}
+
+function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
+  const W = 1200, H = 630;
+  const cx = W / 2;
+
+  const badgeBg  = escXml(badge.bg);
+  const badgeTxt = escXml(badge.text);
+  const badgeLbl = escXml(badge.label);
+  const tc  = escXml(row.team_color || '#4a5263');
+  const tn  = escXml(String(row.team_name || '').toUpperCase());
+
+  const name  = formatName(row.player_name || '');
+  const parts = name.split(' ');
+  const last  = (parts.length > 1 ? parts[parts.length - 1] : name).toUpperCase();
+  const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+  const stats = escXml(ogStatLine(row, type));
+
+  const lastFs = last.length > 12 ? 48 : last.length > 9 ? 56 : 68;
+  const pillW  = Math.min(Math.round(badge.label.length * 6.4 + 36), W - 100);
+  const pillX  = Math.round(cx - pillW / 2);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <linearGradient id="bot-fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="42%"  stop-color="#020817" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.97"/>
+    </linearGradient>
+    <linearGradient id="team-glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="70%"  stop-color="${tc}" stop-opacity="0"/>
+      <stop offset="100%" stop-color="${tc}" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="edge-l" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#020817" stop-opacity="0.55"/>
+      <stop offset="22%"  stop-color="#020817" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="edge-r" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="78%"  stop-color="#020817" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="banner-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#020817" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+
+  ${!hasPhoto ? `<rect x="0" y="0" width="${W}" height="${H}" fill="#020817"/>` : ''}
+
+  <!-- Photo overlays -->
+  <rect x="0" y="0" width="${W}" height="${H}" fill="url(#bot-fade)"/>
+  <rect x="0" y="0" width="${W}" height="${H}" fill="url(#team-glow)"/>
+  <rect x="0" y="0" width="${W}" height="${H}" fill="url(#edge-l)"/>
+  <rect x="0" y="0" width="${W}" height="${H}" fill="url(#edge-r)"/>
+
+  <!-- Team name -->
+  <text x="${cx}" y="400" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" fill="${tc}" text-anchor="middle" letter-spacing="4">${tn}</text>
+
+  <!-- Award badge pill -->
+  <rect x="${pillX}" y="414" width="${pillW}" height="26" rx="13" fill="none" stroke="${badgeBg}" stroke-width="1.5"/>
+  <text x="${cx}" y="${414 + 13 + 4}" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="800" fill="${badgeBg}" text-anchor="middle" letter-spacing="1.2">${badgeLbl}</text>
+
+  <!-- Player name -->
+  <text x="${cx}" y="476" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="1">${escXml(first)}</text>
+  <text x="${cx}" y="548" font-family="Arial,Helvetica,sans-serif" font-size="${lastFs}" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="-1">${escXml(last)}</text>
+
+  <!-- Stats -->
+  ${stats ? `<text x="${cx}" y="584" font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>` : ''}
+
+  <!-- Banner -->
+  <rect x="0" y="0" width="${W}" height="72" fill="url(#banner-bg)"/>
+  <rect x="0" y="0" width="5" height="72" fill="${badgeBg}"/>
+  <rect x="0" y="69" width="${W}" height="3" fill="${badgeBg}" opacity="0.35"/>
+  <text x="22" y="26" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="${badgeBg}" letter-spacing="3" opacity="0.8">WKND BASKETBALL</text>
+  <text x="22" y="55" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="800" fill="#f1f5f9" letter-spacing="1.5">${badgeLbl}</text>
+  <text x="${W - 22}" y="27" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="600" fill="#475569" text-anchor="end" letter-spacing="3">SEASON</text>
+  <text x="${W - 22}" y="55" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" fill="#64748b" text-anchor="end" letter-spacing="1">${escXml(String(season))}</text>
+
+  <!-- Bottom accent + watermark -->
+  <rect x="0" y="${H - 5}" width="${W}" height="5" fill="${tc}"/>
+  <text x="${W - 22}" y="${H - 13}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#1e293b" text-anchor="end" letter-spacing="3">WKNDBASKETBALL.COM</text>
+</svg>`;
+}
+
+async function buildPlayerAwardOgPng(row, type, badge, season) {
+  const W = 1200, H = 630;
+
+  let photoBuf = null;
+  if (row.picture_url) {
+    try {
+      const src = await fetchCoverImageBuffer(row.picture_url);
+      if (src) photoBuf = await sharp(src).rotate().resize(W, H, { fit: 'cover', position: 'top' }).png().toBuffer();
+    } catch {}
+  }
+
+  const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
+    .png().toBuffer();
+
+  const layers = [];
+  if (photoBuf) layers.push({ input: photoBuf, top: 72, left: 0 });
+
+  const svgBuf = await sharp(Buffer.from(buildPlayerAwardOgSvg(row, type, badge, season, !!photoBuf)), { density: 96 })
+    .resize(W, H).png().toBuffer();
+  layers.push({ input: svgBuf, top: 0, left: 0 });
+
+  const logoBuf = await getWkndLogoBuf();
+  if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
+
+  return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
+}
+
+const STAT_LEADER_TYPES = ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'];
+
+function buildStatLeadersOgSvg(rows, season) {
+  const W = 1200, H = 630, N = rows.length;
+  const STRIP_W = Math.floor(W / N);
+
+  // Per-strip: cinematic dark + accent-color bottom glow
+  const gradDefs = rows.map((row, i) => {
+    const b  = AWARD_OG_BADGE[row.award_type] || { bg: '#f59332' };
+    const tc = row.team_color || '#4a5263';
+    return `
+    <linearGradient id="sld${i}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#020817" stop-opacity="0.6"/>
+      <stop offset="28%"  stop-color="#020817" stop-opacity="0"/>
+      <stop offset="52%"  stop-color="#020817" stop-opacity="0"/>
+      <stop offset="75%"  stop-color="#020817" stop-opacity="0.78"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.97"/>
+    </linearGradient>
+    <linearGradient id="slc${i}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="${tc}" stop-opacity="0"/>
+      <stop offset="62%"  stop-color="${tc}" stop-opacity="0"/>
+      <stop offset="100%" stop-color="${tc}" stop-opacity="0.22"/>
+    </linearGradient>`;
+  }).join('');
+
+  const strips = rows.map((row, i) => {
+    const x  = i * STRIP_W;
+    const cx = x + STRIP_W / 2;
+    const badge      = AWARD_OG_BADGE[row.award_type] || { label: row.award_type.toUpperCase(), bg: '#f59332', text: '#10141d' };
+    const badgeBg    = escXml(badge.bg);
+    const badgeTxt   = escXml(badge.text);
+    const badgeLbl   = escXml(badge.label);
+    const pillW      = Math.min(Math.round(badge.label.length * 6.4 + 36), STRIP_W - 16);
+    const pillX      = Math.round(cx - pillW / 2);
+    const tc         = escXml(row.team_color || '#4a5263');
+    const name  = formatName(row.player_name || '');
+    const parts = name.split(' ');
+    const last  = (parts.length > 1 ? parts[parts.length - 1] : name).toUpperCase();
+    const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+    const gp    = row.games_played || 1;
+    const statVal  = row.award_type === 'scoring_champ'   ? (row.pts  / gp).toFixed(1)
+                   : row.award_type === 'assists_leader'  ? (row.ast  / gp).toFixed(1)
+                   : row.award_type === 'rebounds_leader' ? (row.reb  / gp).toFixed(1)
+                   : row.award_type === 'steals_leader'   ? (row.stl  / gp).toFixed(1)
+                   : row.award_type === 'blocks_leader'   ? (row.blk  / gp).toFixed(1)
+                   : row.award_type === 'three_pm_leader' ? (row.fg3m / gp).toFixed(1) : '';
+    const statUnit = row.award_type === 'scoring_champ'   ? 'PPG'
+                   : row.award_type === 'assists_leader'  ? 'APG'
+                   : row.award_type === 'rebounds_leader' ? 'RPG'
+                   : row.award_type === 'steals_leader'   ? 'SPG'
+                   : row.award_type === 'blocks_leader'   ? 'BPG'
+                   : row.award_type === 'three_pm_leader' ? '3PM' : '';
+
+    return `
+  <!-- strip ${i}: ${badge.label} -->
+  <rect x="${x}" y="0" width="${STRIP_W}" height="${H}" fill="url(#sld${i})"/>
+  <rect x="${x}" y="0" width="${STRIP_W}" height="${H}" fill="url(#slc${i})"/>
+  ${i > 0 ? `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#0d1424" stroke-width="2"/>` : ''}
+
+  <!-- award category pill (above stat) -->
+  <rect x="${pillX}" y="${H - 146}" width="${pillW}" height="24" rx="12" fill="none" stroke="${badgeBg}" stroke-width="1.5"/>
+  <text x="${cx}" y="${H - 146 + 12 + 3}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="800" fill="${badgeBg}" text-anchor="middle" letter-spacing="1.2">${badgeLbl}</text>
+
+  <!-- stat + name (bottom) -->
+  <text x="${cx}" y="${H - 90}" font-family="Arial,Helvetica,sans-serif" font-size="30" font-weight="800" fill="#f59332" text-anchor="middle">${escXml(statVal)}</text>
+  <text x="${cx}" y="${H - 66}" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" fill="${badgeBg}" text-anchor="middle" letter-spacing="2">${escXml(statUnit)}</text>
+  <text x="${cx}" y="${H - 46}" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="0.3">${escXml(first)}</text>
+  <text x="${cx}" y="${H - 24}" font-family="Arial,Helvetica,sans-serif" font-size="14" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="0.5">${escXml(last)}</text>
+
+  <!-- bottom accent -->
+  <rect x="${x}" y="${H - 5}" width="${STRIP_W}" height="5" fill="${tc}"/>`;
+  }).join('\n');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    ${gradDefs}
+    <linearGradient id="banner-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#020817" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.92"/>
+    </linearGradient>
+  </defs>
+
+  ${strips}
+
+  <!-- header banner -->
+  <rect x="0" y="0" width="${W}" height="72" fill="url(#banner-bg)"/>
+  <rect x="0" y="0" width="5" height="72" fill="#f59332"/>
+  <rect x="0" y="69" width="${W}" height="3" fill="#f59332" opacity="0.35"/>
+  <text x="22" y="26" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#f59332" letter-spacing="3" opacity="0.8">WKND BASKETBALL</text>
+  <text x="22" y="55" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="800" fill="#f1f5f9" letter-spacing="1.5">STATISTICAL LEADERS</text>
+  <text x="${W - 22}" y="27" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="600" fill="#475569" text-anchor="end" letter-spacing="3">SEASON</text>
+  <text x="${W - 22}" y="55" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" fill="#64748b" text-anchor="end" letter-spacing="1">${escXml(String(season))}</text>
+
+  <text x="${W - 22}" y="${H - 13}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#1e293b" text-anchor="end" letter-spacing="3">WKNDBASKETBALL.COM</text>
+</svg>`;
+}
+
+async function buildStatLeadersOgPng(rows, season) {
+  const W = 1200, H = 630, N = rows.length;
+  const STRIP_W = Math.floor(W / N);
+
+  const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
+    .png().toBuffer();
+
+  const photoLayers = await Promise.all(rows.map(async (row, i) => {
+    const src = await fetchCoverImageBuffer(row.picture_url);
+    if (!src) return null;
+    try {
+      const buf = await sharp(src).rotate().resize(STRIP_W, H, { fit: 'cover', position: 'top' }).png().toBuffer();
+      return { input: buf, top: 72, left: i * STRIP_W };
+    } catch { return null; }
+  }));
+
+  const layers = photoLayers.filter(Boolean);
+
+  const svgBuf = await sharp(Buffer.from(buildStatLeadersOgSvg(rows, season)), { density: 96 })
+    .resize(W, H).png().toBuffer();
+  layers.push({ input: svgBuf, top: 0, left: 0 });
+
+  const logoBuf = await getWkndLogoBuf();
+  if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
+
+  return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
+}
+
+const _awardOgCache = new Map();
+
 function buildTicker() {
   const games = getTickerGames();
   if (!games.length) return '';
@@ -3089,6 +3491,172 @@ app.get('/awards', (req, res) => {
     title: `Season ${season} Awards — WKND Basketball`,
     currentPath: '/awards',
     body: awardsPage({ awards, season, availableSeasons, visibleSections, articles, leagueStats, mvpCandidates }),
+  }));
+});
+
+// ── Award share image routes ──────────────────────────────────────────────────
+
+app.get('/api/awards/:season/stat-leaders/og-image.png', async (req, res) => {
+  const season = Number(req.params.season);
+  if (!season) return res.status(404).end();
+  const cacheKey = `stat-leaders-${season}`;
+  try {
+    let entry = _awardOgCache.get(cacheKey);
+    if (!entry || Date.now() - entry.ts > 3_600_000) {
+      const all  = getSeasonAwards(season);
+      const rows = STAT_LEADER_TYPES.map(t => all.find(a => a.award_type === t)).filter(Boolean);
+      if (!rows.length) return res.status(404).end();
+      const buf = await buildStatLeadersOgPng(rows, season);
+      entry = { buf, ts: Date.now() };
+      _awardOgCache.set(cacheKey, entry);
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(entry.buf);
+  } catch (err) { console.error('stat-leaders-og error:', err); res.status(500).end(); }
+});
+
+app.get('/api/awards/:season/:type/og-image.png', async (req, res) => {
+  const season = Number(req.params.season);
+  const { type } = req.params;
+  if (!season || !AWARD_OG_BADGE[type] || !TEAM_AWARD_TYPES_OG.has(type)) return res.status(404).end();
+  const badge    = { ...AWARD_OG_BADGE[type], _type: type };
+  const cacheKey = `team-${season}-${type}`;
+  try {
+    let entry = _awardOgCache.get(cacheKey);
+    if (!entry || Date.now() - entry.ts > 3_600_000) {
+      const rows = getSeasonAwards(season).filter(a => a.award_type === type);
+      if (!rows.length) return res.status(404).end();
+      const buf = await buildTeamAwardOgPng(rows, badge, season);
+      entry = { buf, ts: Date.now() };
+      _awardOgCache.set(cacheKey, entry);
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(entry.buf);
+  } catch (err) { console.error('award-team-og error:', err); res.status(500).end(); }
+});
+
+app.get('/api/awards/:season/:type/:playerId/og-image.png', async (req, res) => {
+  const season = Number(req.params.season);
+  const { type, playerId } = req.params;
+  if (!season || !AWARD_OG_BADGE[type]) return res.status(404).end();
+  const badge    = AWARD_OG_BADGE[type];
+  const cacheKey = `player-${season}-${type}-${playerId}`;
+  try {
+    let entry = _awardOgCache.get(cacheKey);
+    if (!entry || Date.now() - entry.ts > 3_600_000) {
+      const row = getSeasonAwards(season).find(a => a.award_type === type && a.player_id === playerId);
+      if (!row) return res.status(404).end();
+      const buf = await buildPlayerAwardOgPng(row, type, badge, season);
+      entry = { buf, ts: Date.now() };
+      _awardOgCache.set(cacheKey, entry);
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(entry.buf);
+  } catch (err) { console.error('award-player-og error:', err); res.status(500).end(); }
+});
+
+app.get('/awards/share/:season/stat-leaders', (req, res) => {
+  const season = Number(req.params.season);
+  if (!season) return res.status(404).end();
+  const origin  = getRequestOrigin(req);
+  const pageUrl = `${origin}/awards/share/${season}/stat-leaders`;
+  const imgUrl  = `${origin}/api/awards/${season}/stat-leaders/og-image.png`;
+  const title   = `Statistical Leaders — Season ${season} — WKND Basketball`;
+  const desc    = `Check out the WKND Basketball Season ${season} Statistical Leaders!`;
+  const metaTags = [
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:url" content="${escAttr(pageUrl)}">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:image" content="${escAttr(imgUrl)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:image" content="${escAttr(imgUrl)}">`,
+  ].join('\n  ');
+  res.send(renderPage(req, {
+    title, currentPath: '/awards', metaTags,
+    body: `<div class="container"><div class="page-content" style="padding:60px 0;text-align:center">
+      <p style="color:var(--text-muted);margin-bottom:16px">Redirecting to awards...</p>
+      <a href="/awards?season=${season}" style="color:var(--amber);font-weight:600">View Awards →</a>
+    </div></div>
+    <script>setTimeout(function(){ location.replace("/awards?season=${season}"); }, 500);</script>`,
+  }));
+});
+
+app.get('/awards/share/:season/:type', (req, res) => {
+  const season = Number(req.params.season);
+  const { type } = req.params;
+  if (!season || !AWARD_OG_BADGE[type] || !TEAM_AWARD_TYPES_OG.has(type)) return res.status(404).end();
+  const badge      = AWARD_OG_BADGE[type];
+  const origin     = getRequestOrigin(req);
+  const pageUrl    = `${origin}/awards/share/${season}/${type}`;
+  const imgUrl     = `${origin}/api/awards/${season}/${type}/og-image.png`;
+  const title      = `${badge.label} — Season ${season} — WKND Basketball`;
+  const desc       = `Check out the WKND Basketball Season ${season} ${badge.label}!`;
+  const metaTags = [
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:url" content="${escAttr(pageUrl)}">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:image" content="${escAttr(imgUrl)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:image" content="${escAttr(imgUrl)}">`,
+  ].join('\n  ');
+  res.send(renderPage(req, {
+    title, currentPath: '/awards', metaTags,
+    body: `<div class="container"><div class="page-content" style="padding:60px 0;text-align:center">
+      <p style="color:var(--text-muted);margin-bottom:16px">Redirecting to awards...</p>
+      <a href="/awards?season=${season}" style="color:var(--amber);font-weight:600">View Awards →</a>
+    </div></div>
+    <script>setTimeout(function(){ location.replace("/awards?season=${season}"); }, 500);</script>`,
+  }));
+});
+
+app.get('/awards/share/:season/:type/:playerId', (req, res) => {
+  const season = Number(req.params.season);
+  const { type, playerId } = req.params;
+  if (!season || !AWARD_OG_BADGE[type]) return res.status(404).end();
+  const badge  = AWARD_OG_BADGE[type];
+  const awards = getSeasonAwards(season);
+  const row    = awards.find(a => a.award_type === type && a.player_id === playerId);
+  if (!row) return res.status(404).end();
+  const displayName = formatName(row.player_name || '');
+  const origin      = getRequestOrigin(req);
+  const pageUrl     = `${origin}/awards/share/${season}/${type}/${encodeURIComponent(playerId)}`;
+  const imgUrl      = `${origin}/api/awards/${season}/${type}/${encodeURIComponent(playerId)}/og-image.png`;
+  const title       = `${displayName} — ${badge.label} — Season ${season} — WKND Basketball`;
+  const desc        = `${displayName} has been named to the WKND Basketball Season ${season} ${badge.label}!`;
+  const metaTags = [
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:url" content="${escAttr(pageUrl)}">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:image" content="${escAttr(imgUrl)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:image" content="${escAttr(imgUrl)}">`,
+  ].join('\n  ');
+  const redirect = `/awards?season=${season}`;
+  res.send(renderPage(req, {
+    title, currentPath: '/awards', metaTags,
+    body: `<div class="container"><div class="page-content" style="padding:60px 0;text-align:center">
+      <p style="color:var(--text-muted);margin-bottom:16px">Redirecting to awards...</p>
+      <a href="${redirect}" style="color:var(--amber);font-weight:600">View Awards →</a>
+    </div></div>
+    <script>setTimeout(function(){ location.replace("${redirect}"); }, 500);</script>`,
   }));
 });
 

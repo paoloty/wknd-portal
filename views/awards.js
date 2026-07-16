@@ -17,15 +17,16 @@ const AWARD_BADGE = {
 };
 
 const GROUPS = [
-  { label: 'Season Awards',            types: ['mvp', 'dpoy'] },
-  { label: 'All WKND 1st Team',       types: ['all_wknd_1']  },
-  { label: 'All WKND 2nd Team',       types: ['all_wknd_2']  },
-  { label: 'All WKND Defensive Team', types: ['all_wknd_def'] },
-  { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'] },
+  { label: 'Season Awards',            types: ['mvp', 'dpoy'],                                                                                             shareKey: null          },
+  { label: 'All WKND 1st Team',       types: ['all_wknd_1'],                                                                                              shareKey: 'all_wknd_1'  },
+  { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],                                                                                              shareKey: 'all_wknd_2'  },
+  { label: 'All WKND Defensive Team', types: ['all_wknd_def'],                                                                                            shareKey: 'all_wknd_def' },
+  { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'], shareKey: 'stat-leaders' },
 ];
 
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
 const POSITION_ORDER = Object.fromEntries(POSITIONS.map((p, i) => [p, i]));
+const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
 
 // ── Stat helpers ──────────────────────────────────────────────────────────────
 function norm(p) {
@@ -70,7 +71,7 @@ function statLine(row, type) {
 }
 
 // ── Award row (main content) ──────────────────────────────────────────────────
-function awardRow(row, type, article) {
+function awardRow(row, type, article, season) {
   const name  = displayPlayerName(row.player_name || '');
   const color = teamColor(String(row.team_name || '').toUpperCase());
   const init  = initials(row.player_name || '');
@@ -78,24 +79,30 @@ function awardRow(row, type, article) {
   const href  = `/players/${encodeURIComponent(row.player_id)}`;
   const stats = statLine(row, type);
   const pos   = POSITIONS.includes(row.notes) ? row.notes : null;
+  const shareHref = `/awards/share/${encodeURIComponent(season)}/${encodeURIComponent(type)}/${encodeURIComponent(row.player_id)}`;
 
-  return `<a href="${href}" class="mvp-row" style="--tc:${color};--bc:${badge.bg};--bt:${badge.text}">
-  <div class="mvp-row__pills">
-    <span class="mvp-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(badge.label)}</span>
-  </div>
-  <div class="mvp-row__thumb">
-    <div class="mvp-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
-    <img src="/api/player/${encodeURIComponent(row.player_id)}/photo" alt="${escHtml(name)}" loading="lazy" class="mvp-row__thumb-img" onerror="this.style.display='none'">
-    <div class="mvp-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
-    ${pos ? `<span class="mvp-row__rank" style="background:${badge.bg};color:${badge.text};font-size:13px">${escHtml(pos)}</span>` : ''}
-  </div>
-  <div class="mvp-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
-    <div class="mvp-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
-    ${stats   ? `<p class="mvp-row__article">${escHtml(stats)}</p>` : ''}
-    ${article ? `<p class="mvp-row__article" style="margin-top:6px;opacity:.75">${escHtml(article)}</p>` : ''}
-    <span class="mvp-row__cta">FULL STATS <span>→</span></span>
-  </div>
-</a>`;
+  return `<div class="mvp-row-wrap">
+  <a href="${href}" class="mvp-row" style="--tc:${color};--bc:${badge.bg};--bt:${badge.text}">
+    <div class="mvp-row__pills">
+      <span class="mvp-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(badge.label)}</span>
+    </div>
+    <div class="mvp-row__thumb">
+      <div class="mvp-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
+      <img src="/api/player/${encodeURIComponent(row.player_id)}/photo" alt="${escHtml(name)}" loading="lazy" class="mvp-row__thumb-img" onerror="this.style.display='none'">
+      <div class="mvp-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
+      ${pos ? `<span class="mvp-row__rank" style="background:${badge.bg};color:${badge.text};font-size:13px">${escHtml(pos)}</span>` : ''}
+    </div>
+    <div class="mvp-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
+      <div class="mvp-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
+      ${stats   ? `<p class="mvp-row__article">${escHtml(stats)}</p>` : ''}
+      ${article ? `<p class="mvp-row__article" style="margin-top:6px;opacity:.75">${escHtml(article)}</p>` : ''}
+      <span class="mvp-row__cta">FULL STATS <span>→</span></span>
+    </div>
+  </a>
+  <button type="button" class="mvp-share-btn" onclick="wkndShareFb('${shareHref}',this)" aria-label="Copy share link">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+  </button>
+</div>`;
 }
 
 // ── Sidebars ──────────────────────────────────────────────────────────────────
@@ -273,26 +280,52 @@ export function awardsPage({ awards = [], season, availableSeasons = [], visible
 </div>`;
   }
 
-  const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+  const STAT_LEADER_TYPES = new Set(['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader']);
 
-  const groupCards = GROUPS.map(({ label, types }) => {
+  const groupCards = GROUPS.map(({ label, types, shareKey }) => {
+    const isStatGroup = types.every(t => STAT_LEADER_TYPES.has(t));
+    const statGroupVisible = isStatGroup && types.some(t => visibleSections.has(t));
+
     const rows = types.flatMap(type => {
-      if (!visibleSections.has(type) || !byType[type]?.length) return [];
+      const visible = isStatGroup ? statGroupVisible : visibleSections.has(type);
+      if (!visible || !byType[type]?.length) return [];
       const isTeam = TEAM_AWARD_TYPES.has(type);
       return byType[type].map((row, i) => {
         const article = isTeam
           ? (articles[`${type}_${row.player_id}`] || '')
           : (i === 0 ? (articles[type] || '') : '');
-        return awardRow(row, type, article);
+        return awardRow(row, type, article, season);
       });
     });
     if (!rows.length) return '';
 
+    const teamShareBtn = shareKey
+      ? `<button type="button" class="mvp-card-share-btn" onclick="wkndShareFb('/awards/share/${encodeURIComponent(season)}/${encodeURIComponent(shareKey)}',this)" aria-label="Copy share link">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </button>`
+      : '';
+
     return `<div class="card mvp-list" style="margin-bottom:16px">
-  <div class="card-label">${escHtml(label.toUpperCase())}</div>
+  <div class="card-label">${escHtml(label.toUpperCase())}${teamShareBtn}</div>
   ${rows.join('\n')}
 </div>`;
   }).join('');
+
+  const shareScript = `<script>
+function wkndShareFb(path, btn) {
+  var url = location.origin + path;
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.resolve(document.execCommand('copy', true, url)))
+    .then(function() {
+      var orig = btn.innerHTML;
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      btn.disabled = true;
+      setTimeout(function(){ btn.innerHTML = orig; btn.disabled = false; }, 2000);
+    })
+    .catch(function() {
+      window.prompt('Copy this link and paste into Facebook:', url);
+    });
+}
+</script>`;
 
   return `<div class="games-layout">
   <div class="games-main">
@@ -300,7 +333,8 @@ export function awardsPage({ awards = [], season, availableSeasons = [], visible
     ${groupCards}
   </div>
   ${sidebarHtml}
-</div>`;
+</div>
+${shareScript}`;
 }
 
 
