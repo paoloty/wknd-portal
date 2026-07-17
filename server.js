@@ -3464,6 +3464,10 @@ function mvpStatsKey(s) {
   return `v2_${s.gp}_${s.pts}_${s.reb}_${s.ast}_${s.fgm}_${s.fga}_${s.ftm}_${s.fta}_${s.wins}_${s.losses}`;
 }
 
+function isPlayoffStarted(season) {
+  return getPlayoffGames(String(season)).length > 0;
+}
+
 app.get('/awards', (req, res) => {
   if (getSetting('awards_enabled', '1') === '0') return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/awards', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
@@ -3662,6 +3666,10 @@ app.get('/awards/share/:season/:type/:playerId', (req, res) => {
 
 app.post('/admin/mvp/regenerate', requireAuth, express.json(), (req, res) => {
   const { player_id, season } = req.body || {};
+  const targetSeason = season || getCurrentSeason()?.season;
+  if (isPlayoffStarted(targetSeason)) {
+    return res.status(403).json({ error: 'Season locked — playoffs have started' });
+  }
   if (player_id) deleteMvpWriteupForPlayer(player_id, season);
   else           clearMvpWriteupSeason(season);
   res.json({ ok: true });
@@ -3673,6 +3681,7 @@ app.get('/mvp', async (req, res) => {
   );
   const { season } = getCurrentSeason() || {};
   const currentSeason = season || 3;
+  const playoffsStarted = isPlayoffStarted(currentSeason);
   const raw = getMvpCandidates(currentSeason);
   const totalGames = getTotalSeasonGamesForMvp(currentSeason);
 
@@ -3720,11 +3729,12 @@ app.get('/mvp', async (req, res) => {
     .sort((a, b) => b.mvpScore - a.mvpScore)
     .slice(0, 10);
 
-  // Fetch or generate writeups for top candidates
+  // Fetch or generate writeups for top candidates (locked once playoffs begin)
   const withWriteups = await Promise.all(scored.map(async c => {
     const statsKey = mvpStatsKey(c.stats);
     const cached   = getMvpWriteup(c.player.id, currentSeason, statsKey);
     if (cached) return { ...c, writeup: cached };
+    if (playoffsStarted) return { ...c, writeup: null };
 
     try {
       const gp  = c.stats.gp;
@@ -3769,7 +3779,9 @@ ${name} stats:\n${rankLines}`;
   }));
 
   res.send(renderPage(req, {
-    title: 'MVP Race — WKND Basketball League',
+    title: playoffsStarted
+      ? `Season ${currentSeason} MVP Race — Final — WKND Basketball League`
+      : 'MVP Race — WKND Basketball League',
     currentPath: req.path,
     metaTags: buildMvpOgTags(req, withWriteups, currentSeason),
     body: mvpPage({
@@ -3782,6 +3794,7 @@ ${name} stats:\n${rankLines}`;
       games: completedGames,
       leagueStats: allQualified,
       isAdmin: !!req.session?.isAdmin,
+      playoffsStarted,
     }),
   }));
 });

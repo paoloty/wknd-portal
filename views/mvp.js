@@ -197,7 +197,7 @@ function top3ComparisonSidebar(candidates) {
 </div>`;
 }
 
-function mvpRow(c, rank, isAdmin, season) {
+function mvpRow(c, rank, isAdmin, season, playoffsStarted = false) {
   const { player, stats, mvpScore, writeup } = c;
   const name  = displayPlayerName(player.name);
   const color = teamColor(stats.team_name);
@@ -227,14 +227,14 @@ function mvpRow(c, rank, isAdmin, season) {
   </div>
 </a>`;
 
-  if (!isAdmin) return link;
+  if (!isAdmin || playoffsStarted) return link;
   return `<div style="position:relative">
   ${link}
   <button class="mvp-regen-btn" data-pid="${escHtml(String(player.id))}" data-season="${escHtml(String(season))}" title="Regenerate writeup" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);color:#94a3b8;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;z-index:2">↺</button>
 </div>`;
 }
 
-export function mvpPage({ candidates = [], season, totalGames, seasonGames, highlights = [], teams = [], games = [], leagueStats = [], isAdmin = false }) {
+export function mvpPage({ candidates = [], season, totalGames, seasonGames, highlights = [], teams = [], games = [], leagueStats = [], isAdmin = false, playoffsStarted = false }) {
   const ladderSidebar  = candidates.length ? mvpLadderSidebar(candidates) : '';
   const catLeaders     = categoryLeadersSidebar(leagueStats);
   const top3           = top3ComparisonSidebar(candidates);
@@ -253,8 +253,12 @@ export function mvpPage({ candidates = [], season, totalGames, seasonGames, high
 
   const hasAllWriteups = candidates.every(c => c.writeup);
 
-  const regenAllBtn = isAdmin
+  const regenAllBtn = isAdmin && !playoffsStarted
     ? `<button id="mvp-regen-all" data-season="${escHtml(String(season))}" style="background:transparent;border:1px solid rgba(255,255,255,.12);color:#64748b;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;margin-left:auto">↺ Regenerate All</button>`
+    : '';
+
+  const finalBadge = playoffsStarted
+    ? `<span style="margin-left:auto;font-size:10px;font-weight:700;letter-spacing:1px;color:#f59332;background:rgba(245,147,50,.12);border:1px solid rgba(245,147,50,.25);border-radius:4px;padding:2px 8px">SEASON FINAL</span>`
     : '';
 
   const regenScript = isAdmin ? `
@@ -282,13 +286,13 @@ export function mvpPage({ candidates = [], season, totalGames, seasonGames, high
   return `<div class="games-layout">
   <div class="games-main">
     <div class="card mvp-list">
-      <div class="card-label" style="display:flex;align-items:center;gap:8px">MVP LADDER &nbsp;·&nbsp; Season ${escHtml(String(season))} &nbsp;·&nbsp; ${escHtml(String(totalGames))}/${escHtml(String(seasonGames * 2))} games${regenAllBtn}</div>
-      ${candidates.map((c, i) => mvpRow(c, i + 1, isAdmin, season)).join('\n      ')}
+      <div class="card-label" style="display:flex;align-items:center;gap:8px">MVP LADDER &nbsp;·&nbsp; Season ${escHtml(String(season))} &nbsp;·&nbsp; ${escHtml(String(totalGames))}/${escHtml(String(seasonGames * 2))} games${regenAllBtn}${finalBadge}</div>
+      ${candidates.map((c, i) => mvpRow(c, i + 1, isAdmin, season, playoffsStarted)).join('\n      ')}
     </div>
   </div>
   ${sidebarHtml}
 </div>
 
-${!hasAllWriteups ? `<script>setTimeout(function(){ location.reload(); }, 8000);</script>` : ''}
+${!hasAllWriteups && !playoffsStarted ? `<script>setTimeout(function(){ location.reload(); }, 8000);</script>` : ''}
 ${regenScript}`;
 }

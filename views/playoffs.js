@@ -9,7 +9,8 @@ function fmtDate(d) {
 function computeSeries(games, highSeedId, format) {
   let highWins = 0, lowWins = 0;
   for (const g of games) {
-    if (g.status !== 'complete') continue;
+    if (g.status !== 'complete' && g.status !== 'final') continue;
+    if (g.team_a_score === 0 && g.team_b_score === 0) continue;
     const isHighA = g.team_a_id === highSeedId;
     const highWon = isHighA ? g.team_a_score > g.team_b_score : g.team_b_score > g.team_a_score;
     if (highWon) highWins++; else lowWins++;
@@ -22,7 +23,7 @@ function computeSeries(games, highSeedId, format) {
 
 function gameChips(games, highSeedId, maxGames) {
   const chips = [];
-  const played = games.filter(g => g.status === 'complete').length;
+  const played = games.filter(g => g.status === 'complete' && (g.team_a_score > 0 || g.team_b_score > 0)).length;
   for (let i = 0; i < maxGames; i++) {
     const g = games[i];
     if (!g) {
