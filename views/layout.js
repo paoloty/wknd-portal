@@ -56,11 +56,15 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   ].join('');
 
   const adminActive = currentPath.startsWith('/admin');
+  const joinBtn = (!isAdmin && !isPlayer && features.regOpen)
+    ? `<a href="/register" class="site-nav__join">Join</a>`
+    : '';
+
   const authLink = isAdmin
     ? `${isPlayer ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a>` : ''}<a href="/admin/ledger"${adminActive ? ' aria-current="page"' : ''} class="site-nav__admin">Admin</a><a href="/logout" class="site-nav__login">Sign out</a>`
     : isPlayer
       ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a><a href="/logout" class="site-nav__login">Sign out</a>`
-      : `<a href="/login" class="site-nav__login">Login</a>`;
+      : `${joinBtn}<a href="/login" class="site-nav__login">Login</a>`;
 
   return `<!DOCTYPE html>
 <html lang="en">

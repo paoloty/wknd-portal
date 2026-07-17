@@ -98,7 +98,7 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
         <span class="site-toggle__track"></span>
       </label>
     </div>
-    <div class="py-3">
+    <div class="py-3 border-b border-admin-border/30">
       <label class="block text-[12px] font-semibold text-slate-300 mb-2">Application Deadline <span class="text-slate-500 font-normal">(optional)</span></label>
       <div class="flex items-center gap-3">
         <input type="text" id="reg-deadline-input" placeholder="e.g. August 15, 2026"
@@ -106,6 +106,33 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
           class="admin-input" style="width:220px">
         <button id="reg-deadline-save" class="agm-new-btn">${ICON_CHECK} Save</button>
         <span id="reg-deadline-msg" class="text-xs"></span>
+      </div>
+    </div>
+    <div class="py-3 border-b border-admin-border/30">
+      <div class="text-[11px] font-semibold text-slate-400 mb-3 uppercase tracking-widest">Info Strip (shown on the /register page)</div>
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          <span class="text-slate-500 text-xs w-24 shrink-0">📍 Venue</span>
+          <input type="text" id="reg-venue-input" placeholder="e.g. La Salle Gym, Makati"
+            value="${escHtml(settings.reg_venue || '')}"
+            class="admin-input" style="flex:1;max-width:280px">
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-slate-500 text-xs w-24 shrink-0">📅 Schedule</span>
+          <input type="text" id="reg-schedule-input" placeholder="e.g. Saturdays, 8am–12pm"
+            value="${escHtml(settings.reg_schedule || '')}"
+            class="admin-input" style="flex:1;max-width:280px">
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-slate-500 text-xs w-24 shrink-0">💸 Season Fee</span>
+          <input type="text" id="reg-fee-input" placeholder="e.g. ₱1,500 / season"
+            value="${escHtml(settings.reg_fee || '')}"
+            class="admin-input" style="flex:1;max-width:280px">
+        </div>
+        <div class="flex items-center gap-3 mt-1">
+          <button id="reg-info-save" class="agm-new-btn">${ICON_CHECK} Save Info</button>
+          <span id="reg-info-msg" class="text-xs"></span>
+        </div>
       </div>
     </div>
     <span id="reg-msg" class="text-xs block min-h-[14px]"></span>
@@ -172,6 +199,26 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
       var r = await fetch('/admin/site/settings', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reg_deadline: val })
+      });
+      if (!r.ok) throw new Error();
+      msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+    } catch(e) {
+      msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+    }
+    setTimeout(function() { msg.textContent = ''; }, 2000);
+  });
+
+  document.getElementById('reg-info-save').addEventListener('click', async function() {
+    var msg = document.getElementById('reg-info-msg');
+    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+    try {
+      var r = await fetch('/admin/site/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reg_venue:    document.getElementById('reg-venue-input').value.trim(),
+          reg_schedule: document.getElementById('reg-schedule-input').value.trim(),
+          reg_fee:      document.getElementById('reg-fee-input').value.trim(),
+        })
       });
       if (!r.ok) throw new Error();
       msg.style.color = '#22c55e'; msg.textContent = 'Saved.';

@@ -8,7 +8,7 @@ const POSITIONS = [
   { id: 'C',  desc: 'tall and in the way' },
 ];
 
-export function registerPage({ error = null, success = false, prefill = {} } = {}) {
+export function registerPage({ error = null, success = false, prefill = {}, regInfo = {} } = {}) {
   if (success) {
     return `<div class="login-page">
   <div class="reg-box">
@@ -48,6 +48,13 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
       <span class="login-brand__name">WKND Basketball</span>
     </div>
     <p class="login-brand__sub">Open to all genders, all skill levels, and at least two people per team who think they're the main character.* We promise good runs, real community, and one group chat that will absolutely ruin your sleep schedule.** <span style="font-size:11px;opacity:.5">(*you know who you are) (**we will also judge your form — lovingly)</span></p>
+
+    ${(regInfo.venue || regInfo.schedule || regInfo.fee) ? `<!-- League info strip -->
+    <div class="reg-info-strip">
+      ${regInfo.venue    ? `<div class="reg-info-item"><span class="reg-info-item__icon">📍</span><div><div class="reg-info-item__label">Where</div><div class="reg-info-item__value">${escHtml(regInfo.venue)}</div></div></div>` : ''}
+      ${regInfo.schedule ? `<div class="reg-info-item"><span class="reg-info-item__icon">📅</span><div><div class="reg-info-item__label">When</div><div class="reg-info-item__value">${escHtml(regInfo.schedule)}</div></div></div>` : ''}
+      ${regInfo.fee      ? `<div class="reg-info-item"><span class="reg-info-item__icon">💸</span><div><div class="reg-info-item__label">Season Fee</div><div class="reg-info-item__value">${escHtml(regInfo.fee)}</div></div></div>` : ''}
+    </div>` : ''}
 
     <!-- Stepper -->
     <div class="reg-stepper">
@@ -248,6 +255,33 @@ export function registerPage({ error = null, success = false, prefill = {} } = {
   height: 1px;
   background: var(--border);
   margin: 0 10px;
+}
+
+/* League info strip */
+.reg-info-strip {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.reg-info-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  padding: 12px 16px;
+  border-right: 1px solid var(--border);
+}
+.reg-info-item:last-child { border-right: none; }
+.reg-info-item__icon { font-size: 18px; flex-shrink: 0; line-height: 1; }
+.reg-info-item__label { font-size: 10px; font-weight: 600; color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2px; }
+.reg-info-item__value { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.35; }
+@media (max-width: 600px) {
+  .reg-info-strip { flex-direction: column; }
+  .reg-info-item { border-right: none; border-bottom: 1px solid var(--border); }
+  .reg-info-item:last-child { border-bottom: none; }
 }
 
 .reg-req { color: var(--amber); font-style: normal; }

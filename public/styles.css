@@ -89,6 +89,21 @@ body {
   color: #fff;
   border-bottom-color: var(--amber);
 }
+.site-nav__join {
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  color: var(--amber) !important;
+  border: 1.5px solid var(--amber) !important;
+  border-bottom: 1.5px solid var(--amber) !important;
+  border-radius: 6px !important;
+  padding: 5px 14px !important;
+  transition: background 0.15s, color 0.15s !important;
+  margin-left: 2px;
+}
+.site-nav__join:hover {
+  background: var(--amber) !important;
+  color: #0a0e16 !important;
+}
 .site-nav__login {
   font-size: 13.5px !important;
   font-weight: 600 !important;
@@ -2985,6 +3000,13 @@ a.player-link:hover { color: var(--amber); }
     padding-bottom: 0;
   }
   .site-nav a[aria-current] { color: #fff; border-bottom: none; }
+  .site-nav__join {
+    display: flex !important;
+    justify-content: center !important;
+    font-size: 15px !important;
+    padding: 11px 28px !important;
+    border-radius: 8px !important;
+  }
   .site-nav__login {
     display: flex !important;
     font-size: 15px !important;

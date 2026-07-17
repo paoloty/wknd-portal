@@ -947,6 +947,7 @@ function getFeatureFlags() {
   return {
     awards:  getSetting('awards_enabled',   '1') !== '0',
     mvpRace: getSetting('mvp_race_enabled', '1') !== '0',
+    regOpen: getSetting('reg_open',         '0') === '1',
   };
 }
 
@@ -2292,6 +2293,9 @@ app.get('/admin/site', requireAuth, (req, res) => {
     mvp_race_enabled: getSetting('mvp_race_enabled', '1'),
     reg_open:         getSetting('reg_open',         '0'),
     reg_deadline:     getSetting('reg_deadline',     ''),
+    reg_venue:        getSetting('reg_venue',        ''),
+    reg_schedule:     getSetting('reg_schedule',     ''),
+    reg_fee:          getSetting('reg_fee',          ''),
     ...Object.fromEntries(SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
   };
   res.send(renderAdminPage(req, {
@@ -2308,7 +2312,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     'award_show_all_wknd_1', 'award_show_all_wknd_2', 'award_show_all_wknd_def',
     'award_show_scoring_champ', 'award_show_assists_leader', 'award_show_rebounds_leader',
     'award_show_steals_leader', 'award_show_blocks_leader', 'award_show_three_pm_leader',
-    'reg_open', 'reg_deadline',
+    'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
   ]);
   const articleKeyRe = /^award_article_(mvp|dpoy|all_wknd_1|all_wknd_2|all_wknd_def|scoring_champ|assists_leader|rebounds_leader|steals_leader|blocks_leader|three_pm_leader)(_[\w-]+)?_\d+$/;
   for (const [key, value] of Object.entries(req.body || {})) {
@@ -2631,7 +2635,8 @@ app.get('/', (req, res) => {
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
   const leaderPlayers = buildLeaderPlayers();
 
-  const regBanner = getSetting('reg_open', '0') === '1'
+  const isHomepageLoggedIn = !!req.session?.isAdmin || !!req.session?.playerRegId;
+  const regBanner = !isHomepageLoggedIn && getSetting('reg_open', '0') === '1'
     ? { deadline: getSetting('reg_deadline', '') }
     : null;
 
@@ -3985,10 +3990,15 @@ app.get('/terms', (req, res) => {
 
 // ── Registration ──────────────────────────────────────────────────────────────
 app.get('/register', (req, res) => {
-  res.send(layout({
+  const regInfo = {
+    venue:    getSetting('reg_venue',    ''),
+    schedule: getSetting('reg_schedule', ''),
+    fee:      getSetting('reg_fee',      ''),
+  };
+  res.send(renderPage(req, {
     title: 'Join WKND Basketball',
     currentPath: '/register',
-    body: registerPage(),
+    body: registerPage({ regInfo }),
   }));
 });
 
