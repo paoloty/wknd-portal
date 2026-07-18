@@ -100,7 +100,7 @@ export function registerPage({ error = null, success = false, prefill = {}, regI
             <input id="phone" class="login-field__input" type="tel" name="phone" value="${v('phone')}" autocomplete="tel" placeholder="+63 917 123 4567" data-required="1" data-step="1">
           </div>
           <div class="login-field" style="margin-bottom:0">
-            <label for="birthday">Day You Entered the Chat <span class="reg-req">*</span></label>
+            <label for="birthday">Birthday — the real one <span class="reg-req">*</span></label>
             <input id="birthday" class="login-field__input" type="date" name="birthday" value="${v('birthday')}" data-required="1" data-step="1">
           </div>
         </div>
@@ -448,7 +448,7 @@ export function registerPage({ error = null, success = false, prefill = {}, regI
       }
       var val = f.type === 'checkbox' ? f.checked : f.value.trim();
       if (!val) {
-        err.textContent = 'Bestie, we need this one.';
+        err.textContent = 'Sis, this one is not optional.';
         f.classList.add('reg-invalid');
         ok = false;
       } else {
@@ -456,6 +456,21 @@ export function registerPage({ error = null, success = false, prefill = {}, regI
         f.classList.remove('reg-invalid');
       }
     });
+    // age check on step 1
+    if (n === 1) {
+      var bdayInput = form.querySelector('#birthday');
+      if (bdayInput && bdayInput.value) {
+        var dob    = new Date(bdayInput.value);
+        var age18  = new Date(dob.getFullYear() + 18, dob.getMonth(), dob.getDate());
+        if (new Date() < age18) {
+          var bdayErr = bdayInput.parentElement.querySelector('.reg-field-error');
+          if (!bdayErr) { bdayErr = document.createElement('div'); bdayErr.className = 'reg-field-error'; bdayInput.parentElement.appendChild(bdayErr); }
+          bdayErr.textContent = "Bestie, you're not 18 yet. The league will still be here when you're legal.";
+          bdayInput.classList.add('reg-invalid');
+          ok = false;
+        }
+      }
+    }
     // position check on step 2
     if (n === 2) {
       var boxes = form.querySelectorAll('[name="positions"]');
@@ -466,7 +481,7 @@ export function registerPage({ error = null, success = false, prefill = {}, regI
         posErr.className = 'reg-field-error reg-pos-err';
         form.querySelector('.reg-pos-chips').after(posErr);
       }
-      posErr.textContent = any ? '' : "Pick at least one position. You can't just stand there.";
+      posErr.textContent = any ? '' : "Pick a position, sis. You can't just vibe on the sideline.";
       if (!any) ok = false;
     }
     return ok;

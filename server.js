@@ -4137,47 +4137,53 @@ app.post('/register', (req, res) => {
   // Validate required fields
   if (!first_name?.trim() || !last_name?.trim()) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'First and last name are required.', prefill }) }));
+      body: registerPage({ error: 'We need your name, bestie. Both of them.', prefill }) }));
   }
   if (!email?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'A valid email address is required.', prefill }) }));
+      body: registerPage({ error: 'That email is giving nothing. Drop a real one.', prefill }) }));
   }
   if (!phone?.trim()) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Phone number is required.', prefill }) }));
+      body: registerPage({ error: 'No digits, no ball. Drop your phone number.', prefill }) }));
   }
   if (!birthday?.trim()) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Birthday is required.', prefill }) }));
+      body: registerPage({ error: 'We need your birthday. The real one, not your alter ego\'s.', prefill }) }));
+  }
+  const _dob   = new Date(birthday);
+  const _age18 = new Date(_dob.getFullYear() + 18, _dob.getMonth(), _dob.getDate());
+  if (new Date() < _age18) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Bestie, you\'re not 18 yet. The league will still be here when you\'re legal.', prefill }) }));
   }
   const posArr = Array.isArray(positions) ? positions : (positions ? [positions] : []);
   if (posArr.length === 0) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Please select at least one position.', prefill }) }));
+      body: registerPage({ error: 'Pick a position, sis. You can\'t just vibe on the sideline.', prefill }) }));
   }
   if (!height?.toString().trim()) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Height is required.', prefill }) }));
+      body: registerPage({ error: 'Height? Be honest. The court doesn\'t care about your feelings.', prefill }) }));
   }
   if (!weight?.toString().trim()) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Weight is required.', prefill }) }));
+      body: registerPage({ error: 'We need your weight. This is a safe space, babe.', prefill }) }));
   }
   if (!dominant_hand?.trim()) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Dominant hand is required.', prefill }) }));
+      body: registerPage({ error: 'Which hand runs the show? We need to know.', prefill }) }));
   }
   if (!agree) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Please confirm the agreement to continue.', prefill }) }));
+      body: registerPage({ error: 'You gotta swear on your crossover first, babe.', prefill }) }));
   }
 
   // Check for duplicate email
   const existing = getRegistrationByEmail(email.trim().toLowerCase());
   if (existing) {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'This email has already been registered. Contact an admin if you need help.', prefill }) }));
+      body: registerPage({ error: 'That email\'s already in the chat. Are you trying to have two accounts, sis?', prefill }) }));
   }
 
   const full_name = `${last_name.trim().toUpperCase()}, ${first_name.trim()}`;
