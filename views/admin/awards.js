@@ -48,10 +48,14 @@ function stat(v) {
     : `<span style="color:var(--border)">—</span>`;
 }
 
-function getStats(entry, isConf) {
-  if (isConf && entry.games_played) {
-    const gp = entry.games_played;
-    return { gp, ppg: (entry.pts/gp).toFixed(1), rpg: (entry.reb/gp).toFixed(1), apg: (entry.ast/gp).toFixed(1) };
+function getStats(entry, isConf, statsMap = {}) {
+  if (isConf) {
+    const pid = entry.player_id;
+    const s   = statsMap[pid];
+    if (s?.games_played) {
+      const gp = s.games_played;
+      return { gp, ppg: (s.pts/gp).toFixed(1), rpg: (s.reb/gp).toFixed(1), apg: (s.ast/gp).toFixed(1) };
+    }
   }
   if (!isConf) {
     return { gp: entry.player?.games_played ?? null, ppg: entry.ppg ?? null, rpg: entry.rpg ?? null, apg: entry.apg ?? null };
@@ -130,7 +134,7 @@ function emptyRow(colspan = 8) {
 
 // ── Group card ────────────────────────────────────────────────────────────────
 
-function groupCard({ label, types, col, byType, suggestions, articles }) {
+function groupCard({ label, types, col, byType, suggestions, articles, statsMap }) {
   const isTeamGroup = types.some(t => TEAM_TYPES.has(t));
 
   // Show Confirm All button when any team type still has unconfirmed suggestions remaining.
@@ -166,7 +170,7 @@ function groupCard({ label, types, col, byType, suggestions, articles }) {
         const pos         = isEntryConf ? (entry.notes || '') : (entry.position || '');
         const rowId       = `${type}-${i+1}`;
         const articleKey  = `${type}_${pid}`;
-        const stats       = isEntryConf ? getStats(entry, true) : getStats(entry, false);
+        const stats       = isEntryConf ? getStats(entry, true, statsMap) : getStats(entry, false, statsMap);
         return playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isEntryConf, stats, col, colVal: pos, withArticle: true, article: articles[articleKey] || '', articleKey, articlePid: pid });
       });
     } else {
@@ -181,7 +185,7 @@ function groupCard({ label, types, col, byType, suggestions, articles }) {
       const tname  = isConfSolo ? winner.team_name    : sugg.player.team_name;
       const awdId  = isConfSolo ? winner.id : '';
       const rowId  = type;
-      const stats  = isConfSolo ? getStats(winner, true) : getStats(sugg, false);
+      const stats  = isConfSolo ? getStats(winner, true, statsMap) : getStats(sugg, false, statsMap);
       const colVal = col === 'award' ? AWARD_LABELS[type] : '';
       const article = articles[type] || '';
       return [playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isConfSolo, stats, col, colVal, withArticle: true, article })];
@@ -225,9 +229,10 @@ function groupCard({ label, types, col, byType, suggestions, articles }) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export function adminAwardsBody({ season, seasons = [], awards = [], suggestions = {}, players = [], articles = {} }) {
-  const byType = {};
+export function adminAwardsBody({ season, seasons = [], awards = [], suggestions = {}, players = [], articles = {}, seasonStats = [] }) {
+  const byType   = {};
   for (const row of awards) (byType[row.award_type] ??= []).push(row);
+  const statsMap = Object.fromEntries(seasonStats.map(s => [s.id, s]));
 
   const seasonTabs = seasons.length > 1
     ? `<div class="flex gap-2 mb-5 flex-wrap">${seasons.map(s =>
@@ -237,7 +242,7 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
 
   const playerOptsJson = JSON.stringify(players.map(p => ({ id: p.id, name: p.name, team: p.team_id })));
 
-  const cards = AWARD_GROUPS.map(g => groupCard({ ...g, byType, suggestions, articles })).join('');
+  const cards = AWARD_GROUPS.map(g => groupCard({ ...g, byType, suggestions, articles, statsMap })).join('');
 
   return `
 <style>

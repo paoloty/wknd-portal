@@ -1,13 +1,15 @@
 import 'dotenv/config';
+const IS_DEV = process.env.NODE_ENV !== 'production';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
-import { statSync, existsSync } from 'fs';
+import { statSync, existsSync, unlinkSync } from 'fs';
 import express from 'express';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail } from './lib/mailer.js';
+import { sendMail, approvedEmail, rejectedEmail, seasonQualifiedEmail, seasonNotSelectedEmail } from './lib/mailer.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import sharp from 'sharp';
 import { layout, escHtml } from './views/layout.js';
@@ -59,6 +61,11 @@ import {
   getMvpWriteup, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
   getMvpCandidates, getTotalSeasonGamesForMvp,
   getSetting, setSetting,
+  insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, countSeasonSignups,
+  getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
+  getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
+  getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
+  getPortalCurrentSeason,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   setRegistrationAdmin, insertAdminLog, getAdminLogs, updateRegBirthday,
@@ -964,6 +971,18 @@ const REG_MINI_SETS = [
   { pill: 'Manifesting Your Bag 💰',    body: "The friendships, the runs, the drama, the wins — this league will give you stories you will tell for years. And a jersey. Obviously.",   cta: 'Manifest It'       },
 ];
 
+function memberSignupBanner(season, deadline) {
+  return `<div class="member-signup-banner">
+  <div class="member-signup-banner__inner">
+    <div class="member-signup-banner__copy">
+      <span class="member-signup-banner__pill">Season ${escHtml(String(season))} Signup Open</span>
+      ${deadline ? `<span class="member-signup-banner__deadline">Deadline: <strong>${escHtml(deadline)}</strong></span>` : ''}
+    </div>
+    <a href="/season-signup" class="member-signup-banner__cta">Sign Me Up →</a>
+  </div>
+</div>`;
+}
+
 function regMiniBanner() {
   const deadline = getSetting('reg_deadline', '');
   const set = REG_MINI_SETS[Math.floor(Math.random() * REG_MINI_SETS.length)];
@@ -993,15 +1012,35 @@ function renderPage(req, opts) {
   ].join('\n  ');
   const existing = opts.metaTags || '';
   const metaTags = existing.includes('og:image') ? existing : (existing ? existing + '\n  ' + fallbackMeta : fallbackMeta);
-  const isPlayer = !!req.session?.playerRegId;
+  const isPlayer   = !!req.session?.playerRegId;
   const isLoggedIn = !!req.session?.isAdmin || isPlayer;
+
+  // Reg mini banner — shown on every non-home page for guests when reg is enabled
   const showMini = getSetting('reg_open', '0') === '1' && opts.currentPath !== '/' && !isLoggedIn;
-  const body = showMini ? regMiniBanner() + (opts.body || '') : (opts.body || '');
+
+  // Season signup banner — shown to approved members who haven't yet signed up
+  let showSignupBanner = false, signupBannerSeason = '', signupBannerDeadline = '';
+  if (isPlayer && !req.session?.isAdmin) {
+    const sigSeason   = getSetting('signup_target_season', '');
+    const sigOpen     = getSetting('season_signup_open', '0') === '1';
+    const onSignupPg  = opts.currentPath === '/season-signup';
+    if (sigSeason && sigOpen && !onSignupPg) {
+      const existing = getSeasonSignup(req.session.playerRegId, sigSeason);
+      if (!existing) {
+        showSignupBanner    = true;
+        signupBannerSeason  = sigSeason;
+        signupBannerDeadline = getSetting('season_signup_deadline', '');
+      }
+    }
+  }
+
+  const bannerHtml = showSignupBanner ? memberSignupBanner(signupBannerSeason, signupBannerDeadline) : (showMini ? regMiniBanner() : '');
+  const body = bannerHtml ? bannerHtml + (opts.body || '') : (opts.body || '');
   return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), ...opts, body, metaTags });
 }
 
 function renderAdminPage(req, opts) {
-  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, ...opts });
+  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, ...opts });
 }
 
 function formatName(raw) {
@@ -1676,7 +1715,7 @@ const _ogMvpCache = { buf: null, ts: 0 };
 app.get('/og-mvp.png', async (req, res) => {
   try {
     if (!_ogMvpCache.buf || Date.now() - _ogMvpCache.ts > 3_600_000) {
-      const { season } = getCurrentSeason() || {};
+      const season = getPortalCurrentSeason();
       const raw = season ? getMvpCandidates(season) : [];
       const candidates = raw
         .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
@@ -1772,13 +1811,13 @@ app.get('/api/compare', async (req, res) => {
       return `${name} (${team}): ${pg(t,'pts')} PPG, ${pg(t,'reb')} RPG, ${pg(t,'ast')} APG, ${pg(t,'stl')} SPG, ${pg(t,'blk')} BPG${fg ? ', ' + fg + ' FG%' : ''}, ${gp} GP`;
     };
 
-    const prompt = `You are a funny, slightly savage sports commentator for WKND Basketball League, a recreational league. Compare these two players in 2-3 sentences. Be playfully trash-talking — roast their weaknesses, celebrate their strengths — but keep it fun and good-natured, not cruel. Be specific with the numbers. Refer to each player by their first name only — no nicknames, no last names. No emojis. Output just the paragraph, no labels or titles.
+    const prompt = `You are a funny, slightly savage sports commentator for WKND Basketball League, a recreational league. Write 2-3 sentences comparing these two players. Be playfully trash-talking — roast weaknesses, celebrate strengths — but keep it fun and good-natured. Be specific with the numbers. Use first names only. No emojis. Start the comparison immediately — no preamble, no "Alright" or "Let's" opener, no labels or headers. Output only the paragraph.
 
 ${line(pA, tA)}
 ${line(pB, tB)}`;
 
-    const { text, model } = await generateWithGemini(prompt, { maxTokens: 160, temperature: 0.92 });
-    setCompareCache(a, b, tA, tB, text, model);
+    const { text, model } = await generateWithGemini(prompt, { maxTokens: 280, temperature: 0.92 });
+    if (text && text.length >= 40) setCompareCache(a, b, tA, tB, text, model);
     res.json({ writeup: text, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
   } catch (err) {
     console.error('compare writeup error:', err.message);
@@ -2031,6 +2070,91 @@ app.get('/admin/logs', requireSuperAdmin, (req, res) => {
   }));
 });
 
+// ── DB sync (local-only UI + production export endpoint) ──────────────────
+
+// Production-side: exports DB to any caller with the correct key.
+// Key never leaves the server on the local side (proxied below).
+app.get('/api/db/export', async (req, res) => {
+  const key = process.env.DB_EXPORT_KEY;
+  if (!key || req.headers['x-export-key'] !== key) return res.status(401).end();
+  const backupPath = path.join(os.tmpdir(), `portal-export-${Date.now()}.db`);
+  try {
+    await portalDb.backup(backupPath);
+    res.download(backupPath, 'portal.db', () => { try { unlinkSync(backupPath); } catch {} });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Local-only page — hidden in production
+app.get('/admin/db', requireSuperAdmin, (req, res) => {
+  if (!IS_DEV) return res.status(404).end();
+  const configured = !!(process.env.LIVE_URL && process.env.DB_EXPORT_KEY);
+  const liveUrl    = process.env.LIVE_URL || '';
+  const body = `
+<div class="mb-6">
+  <h2 class="text-xl font-bold text-slate-100 m-0 mb-1">Sync DB from Live</h2>
+  <p class="text-sm text-slate-500 m-0">Pull the production database into your local environment.</p>
+</div>
+${!configured ? `
+<div class="bg-admin-surface border border-amber-500/30 rounded-xl p-5 max-w-lg text-sm">
+  <p class="m-0 mb-2 font-semibold text-amber-400">Setup required</p>
+  <p class="m-0 mb-3 text-slate-400">Add these to your <strong>local</strong> <code class="text-xs bg-admin-bg px-1.5 py-0.5 rounded">.env</code>:</p>
+  <pre class="text-xs bg-admin-bg rounded-lg p-3 m-0 text-slate-300 overflow-x-auto">LIVE_URL=https://your-production-domain.com
+DB_EXPORT_KEY=some-long-random-secret</pre>
+  <p class="m-0 mt-3 text-xs text-slate-500">Also add <code>DB_EXPORT_KEY</code> to your <strong>production</strong> <code>.env</code> with the same value, then restart the production server.</p>
+</div>` : `
+<div class="bg-admin-surface border border-admin-border rounded-xl p-6 max-w-md">
+  <div class="mb-5 text-sm">
+    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Source</div>
+    <div class="text-slate-300 font-mono text-xs">${escHtml(liveUrl)}</div>
+  </div>
+  <button id="sync-btn" class="agm-new-btn">↓ Sync DB from Live</button>
+  <p id="sync-msg" class="text-[11px] mt-3 mb-0 text-slate-500"></p>
+  <p class="text-[11px] text-slate-600 mt-2 mb-0">After downloading, replace your local <code class="text-xs bg-admin-bg px-1 rounded">data/portal.db</code> and restart the server.</p>
+</div>
+<script>
+document.getElementById('sync-btn').addEventListener('click', async function() {
+  var btn = this, msg = document.getElementById('sync-msg');
+  btn.textContent = 'Syncing…'; btn.disabled = true;
+  msg.textContent = ''; msg.className = 'text-[11px] mt-3 mb-0 text-slate-500';
+  try {
+    var r = await fetch('/admin/db/sync', { method: 'POST' });
+    if (!r.ok) { var d = await r.json(); throw new Error(d.error || 'Sync failed'); }
+    var blob = await r.blob();
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'portal.db'; a.click();
+    btn.textContent = '✓ Downloaded';
+    msg.textContent = 'Replace data/portal.db with the downloaded file, then restart the server.';
+    msg.className = 'text-[11px] mt-3 mb-0 text-green-400';
+  } catch(err) {
+    btn.textContent = '↓ Sync DB from Live'; btn.disabled = false;
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'text-[11px] mt-3 mb-0 text-red-400';
+  }
+});
+</script>`}`;
+  res.send(renderAdminPage(req, { title: 'Sync DB', body }));
+});
+
+// Local-only proxy — fetches production DB server-side so the key never hits the browser
+app.post('/admin/db/sync', requireSuperAdmin, async (req, res) => {
+  if (!IS_DEV) return res.status(404).end();
+  const liveUrl = (process.env.LIVE_URL || '').replace(/\/$/, '');
+  const key     = process.env.DB_EXPORT_KEY;
+  if (!liveUrl || !key) return res.status(500).json({ error: 'LIVE_URL and DB_EXPORT_KEY not configured' });
+  try {
+    const upstream = await fetch(`${liveUrl}/api/db/export`, { headers: { 'x-export-key': key } });
+    if (!upstream.ok) throw new Error(`Production returned HTTP ${upstream.status}`);
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="portal.db"');
+    res.send(buf);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 const TEAM_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
 
 function playerPositions(p) {
@@ -2185,7 +2309,7 @@ app.get('/admin/awards', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Season Awards',
     currentPath: '/admin/awards',
-    body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles }),
+    body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles, seasonStats }),
   }));
 });
 
@@ -3199,7 +3323,7 @@ app.get('/standings', (req, res) => {
 });
 
 app.get('/playoffs', (req, res) => {
-  const season = getCurrentSeason()?.season ?? 1;
+  const season = getPortalCurrentSeason();
   const standings = getSeasonStandings(season);
   const games = getPlayoffGames(season);
   res.send(renderPage(req, {
@@ -3220,7 +3344,7 @@ app.get('/api/roster', (req, res) => {
 
   const teams   = getAllTeams();
   const players = getAllPlayers();
-  const { season } = getCurrentSeason() || { season: 3 };
+  const season = getPortalCurrentSeason();
 
   const roster = {
     season,
@@ -3477,8 +3601,8 @@ app.get('/awards', (req, res) => {
   if (getSetting('awards_enabled', '1') === '0') return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/awards', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
   );
-  const { season: currentSeason } = getCurrentSeason() || {};
-  const season = Number(req.query.season) || currentSeason || 3;
+  const currentSeason = getPortalCurrentSeason();
+  const season = Number(req.query.season) || Number(currentSeason) || 3;
   const awards = getSeasonAwards(season);
   const availableSeasons = getAwardSeasons();
   const leagueStats = getSeasonPlayerStats(season);
@@ -3684,8 +3808,7 @@ app.get('/mvp', async (req, res) => {
   if (getSetting('mvp_race_enabled', '1') === '0') return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/mvp', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
   );
-  const { season } = getCurrentSeason() || {};
-  const currentSeason = season || 3;
+  const currentSeason = getPortalCurrentSeason();
   const playoffsStarted = isPlayoffStarted(currentSeason);
   const raw = getMvpCandidates(currentSeason);
   const totalGames = getTotalSeasonGamesForMvp(currentSeason);
@@ -3805,8 +3928,8 @@ ${name} stats:\n${rankLines}`;
 });
 
 app.get('/leaders', (req, res) => {
-  const players     = buildLeaderPlayers();
-  const { season }  = getCurrentSeason() || {};
+  const players  = buildLeaderPlayers();
+  const season   = getPortalCurrentSeason();
   const gameRecords = getGameRecords();
   const weekNum     = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
   const asOfLabel   = weekNum ? `S${season} · WK ${weekNum}` : '';
@@ -3818,8 +3941,8 @@ app.get('/leaders', (req, res) => {
 });
 
 app.get('/roast', (req, res) => {
-  const players          = buildLeaderPlayers();
-  const { season }       = getCurrentSeason() || {};
+  const players  = buildLeaderPlayers();
+  const season   = getPortalCurrentSeason();
   const origin           = getRequestOrigin(req);
   const roastUrl         = `${origin}/roast`;
   const roastDesc        = `The flip side of the leaders board. Season ${season || ''} worst performers, funniest stat disasters, and dubious awards — only on WKND Basketball.`;
@@ -4080,6 +4203,415 @@ app.post('/register', (req, res) => {
 
   res.send(layout({ title: 'Registration Received', currentPath: '/register',
     body: registerPage({ success: true }) }));
+});
+
+// ── Season Signup (member-facing) ─────────────────────────────────────────────
+import { seasonSignupPage } from './views/season-signup.js';
+
+app.get('/season-signup', (req, res) => {
+  const regId = req.session?.playerRegId;
+  if (!regId) return res.redirect('/login');
+
+  const reg = getRegistration(regId);
+  if (!reg || reg.status !== 'approved') {
+    return res.send(renderPage(req, {
+      title: 'Season Signup — WKND Basketball',
+      currentPath: '/season-signup',
+      body: seasonSignupPage({ state: 'not-approved' }),
+    }));
+  }
+
+  const sigSeason        = getSetting('signup_target_season', '');
+  const sigOpen          = getSetting('season_signup_open', '0') === '1';
+  const deadline         = getSetting('season_signup_deadline', '');
+  const seasonFormat     = getSetting('season_format', '');
+  const quotaAmount      = getSetting('season_quota_amount', '');
+  const jerseyTopPrice   = getSetting('jersey_top_price', '');
+  const jerseyShortPrice = getSetting('jersey_short_price', '');
+  const existing         = sigSeason ? getSeasonSignup(regId, sigSeason) : null;
+
+  res.send(renderPage(req, {
+    title: 'Season Signup — WKND Basketball',
+    currentPath: '/season-signup',
+    body: seasonSignupPage({ state: 'form', sigSeason, sigOpen, deadline, existing, name: reg.full_name, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice }),
+  }));
+});
+
+app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) => {
+  const regId = req.session?.playerRegId;
+  if (!regId) return res.redirect('/login');
+
+  const reg = getRegistration(regId);
+  if (!reg || reg.status !== 'approved') return res.redirect('/season-signup');
+
+  const sigSeason = getSetting('signup_target_season', '');
+  const sigOpen   = getSetting('season_signup_open', '0') === '1';
+  if (!sigSeason || !sigOpen) return res.redirect('/season-signup');
+
+  const existing = getSeasonSignup(regId, sigSeason);
+  if (existing) return res.redirect('/season-signup');
+
+  const jerseyTop    = (req.body.jersey_top    || '').trim();
+  const jerseyShorts = (req.body.jersey_shorts || '').trim();
+  const quotaAck     = req.body.quota_ack === '1' ? 1 : 0;
+
+  if (!jerseyTop) return res.redirect('/season-signup?err=jersey');
+
+  let hasBalance = false, balanceAmt = 0;
+  if (reg.player_id) {
+    const fin = getPlayerFinancials(reg.player_id);
+    if ((fin?.current_balance ?? 0) > 0) {
+      hasBalance = true;
+      balanceAmt = fin.current_balance;
+    }
+  }
+
+  insertSeasonSignup(regId, sigSeason, hasBalance, balanceAmt, jerseyTop, jerseyShorts, quotaAck);
+  const deadline         = getSetting('season_signup_deadline', '');
+  const seasonFormat     = getSetting('season_format', '');
+  const quotaAmount      = getSetting('season_quota_amount', '');
+  const jerseyTopPrice   = getSetting('jersey_top_price', '');
+  const jerseyShortPrice = getSetting('jersey_short_price', '');
+  const created          = getSeasonSignup(regId, sigSeason);
+
+  res.send(renderPage(req, {
+    title: 'Season Signup — WKND Basketball',
+    currentPath: '/season-signup',
+    body: seasonSignupPage({ sigSeason, deadline, existing: created, name: reg.full_name, hasBalance, balanceAmt, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice }),
+  }));
+});
+
+// ── Admin: Season Management ───────────────────────────────────────────────────
+import { adminSeasonsBody }    from './views/admin/seasons.js';
+import { adminSeasonBody }     from './views/admin/season.js';
+import { adminWaitlistBody }   from './views/admin/season-waitlist.js';
+import { adminSeasonTeamsBody } from './views/admin/season-teams.js';
+
+app.get('/admin/seasons', requireAuth, (req, res) => {
+  const gameCounts   = getGameCountsBySeason();
+  const signupStats  = getSignupStatsBySeason();
+  const quotas       = getAllSeasonQuotas();
+  const currentSeason = getSetting('portal_season', '') || getSetting('auto_season', '');
+  const signupSeason  = getSetting('signup_target_season', '');
+  const signupOpen    = getSetting('season_signup_open', '0') === '1';
+
+  // Merge all data by season
+  const signupMap = Object.fromEntries(signupStats.map(s => [String(s.season), s]));
+  const quotaMap  = Object.fromEntries(quotas.map(q => [String(q.season), q.amount]));
+
+  // Union of all seasons across game counts and signups
+  const allSeasons = [...new Set([
+    ...gameCounts.map(g => String(g.season)),
+    ...signupStats.map(s => String(s.season)),
+  ])].sort((a, b) => Number(b) - Number(a));
+
+  const rows = allSeasons.map(season => {
+    const gc = gameCounts.find(g => String(g.season) === season) || {};
+    const ss = signupMap[season] || {};
+    return {
+      season,
+      regular_games:    gc.regular_games   ?? 0,
+      playoff_games:    gc.playoff_games   ?? 0,
+      scheduled_games:  gc.scheduled_games ?? 0,
+      quota_amount:     quotaMap[season]   ?? null,
+      signup_total:     ss.total           ?? 0,
+      signup_confirmed: ss.confirmed       ?? 0,
+      signup_waitlisted: ss.waitlisted     ?? 0,
+      signup_rejected:  ss.rejected        ?? 0,
+    };
+  });
+
+  res.send(renderAdminPage(req, {
+    title: 'Seasons',
+    currentPath: '/admin/seasons',
+    body: adminSeasonsBody({ rows, currentSeason, signupSeason, signupOpen }),
+  }));
+});
+
+app.get('/admin/season', requireAuth, (req, res) => {
+  const sigSeason        = getSetting('signup_target_season', '');
+  const sigOpen          = getSetting('season_signup_open', '0') === '1';
+  const deadline         = getSetting('season_signup_deadline', '');
+  const portalSeason     = getSetting('portal_season', '');
+  const autoSeason       = getCurrentSeason()?.season ?? 3;
+  const signups          = sigSeason ? getSeasonSignups(sigSeason) : [];
+  const count            = signups.filter(s => s.status !== 'rejected').length;
+  const confirmedCount   = signups.filter(s => s.status === 'confirmed').length;
+  const seasonFormat     = getSetting('season_format', '');
+  const quotaAmount      = getSetting('season_quota_amount', '');
+  const jerseyTopPrice   = getSetting('jersey_top_price', '');
+  const jerseyShortPrice = getSetting('jersey_short_price', '');
+  const teamCount        = getSetting('season_team_count', '4');
+  const allSeasons       = getGameCountsBySeason().map(g => String(g.season));
+
+  res.send(renderAdminPage(req, {
+    title: 'Season Management',
+    currentPath: '/admin/season',
+    body: adminSeasonBody({ sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, allSeasons }),
+  }));
+});
+
+app.get('/admin/season/waitlist', requireAuth, (req, res) => {
+  const sigSeason = getSetting('signup_target_season', '');
+  if (!sigSeason) return res.redirect('/admin/season');
+
+  const signups        = getSeasonSignups(sigSeason);
+  const count          = signups.filter(s => s.status !== 'rejected').length;
+  const confirmedCount = signups.filter(s => s.status === 'confirmed').length;
+
+  res.send(renderAdminPage(req, {
+    title: 'Waitlist',
+    currentPath: '/admin/season/waitlist',
+    body: adminWaitlistBody({ sigSeason, signups, count, confirmedCount }),
+  }));
+});
+
+app.post('/admin/season/start', requireAuth, express.json(), (req, res) => {
+  const { season } = req.body || {};
+  if (!season) return res.status(400).json({ error: 'season required' });
+  setSetting('signup_target_season', String(season));
+  setSetting('season_signup_open', '0');
+  setSetting('season_signup_deadline', '');
+  setSetting('season_draft_status', '');
+  res.json({ ok: true });
+});
+
+app.post('/admin/season/settings', requireAuth, express.json(), (req, res) => {
+  const allowed = [
+    'season_signup_open', 'season_signup_deadline', 'portal_season',
+    'season_format', 'season_quota_amount', 'season_team_count',
+    'jersey_top_price', 'jersey_short_price',
+  ];
+  for (const key of allowed) {
+    if (key in (req.body || {})) setSetting(key, String(req.body[key]));
+  }
+  res.json({ ok: true });
+});
+
+app.post('/admin/season/signups/:id/confirm', requireAuth, express.json(), (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Not found' });
+  updateSeasonSignupStatus(signup.id, 'confirmed', req.body?.notes ?? '');
+  res.json({ ok: true });
+});
+
+app.post('/admin/season/signups/:id/reject', requireAuth, express.json(), (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Not found' });
+  updateSeasonSignupStatus(signup.id, 'rejected', req.body?.notes ?? '');
+  res.json({ ok: true });
+});
+
+// ── Admin: Team Builder ────────────────────────────────────────────────────────
+app.get('/admin/season/teams', requireAuth, (req, res) => {
+  const sigSeason   = getSetting('signup_target_season', '');
+  if (!sigSeason) return res.redirect('/admin/season');
+
+  const players     = getSeasonSignupsWithStats(sigSeason);
+  const teams       = getSeasonTeams(sigSeason);
+  const rosterRows  = getSeasonRoster(sigSeason);
+  const draftStatus = getSetting('season_draft_status', '');
+
+  // Build rosterMap: teamId → [player objects]
+  const signupById = Object.fromEntries(players.map(p => [p.id, p]));
+  const rosterMap  = {};
+  for (const row of rosterRows) {
+    const player = signupById[row.signup_id];
+    if (!player) continue;
+    if (!rosterMap[row.team_id]) rosterMap[row.team_id] = [];
+    rosterMap[row.team_id].push(player);
+  }
+
+  res.send(renderAdminPage(req, {
+    title: 'Team Builder',
+    currentPath: '/admin/season/teams',
+    body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus }),
+  }));
+});
+
+app.post('/admin/season/teams/create', requireAuth, express.json(), (req, res) => {
+  const { season, name, color } = req.body || {};
+  if (!season || !name) return res.status(400).json({ error: 'season and name required' });
+  const id = `st_${Date.now()}_${randomBytes(4).toString('hex')}`;
+  const teams = getSeasonTeams(season);
+  upsertSeasonTeam(id, season, name.trim(), color || '#f59332', teams.length);
+  res.json({ ok: true, id });
+});
+
+app.post('/admin/season/teams/:id/delete', requireAuth, express.json(), (req, res) => {
+  deleteSeasonTeam(req.params.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/season/teams/save', requireAuth, express.json(), (req, res) => {
+  const { season, teams = [], assignments = [] } = req.body || {};
+  if (!season) return res.status(400).json({ error: 'season required' });
+  // Update team names/colors
+  for (const t of teams) {
+    if (t.id && t.name) upsertSeasonTeam(t.id, season, t.name.trim(), t.color || '#f59332', t.sort_order ?? 0);
+  }
+  // Save roster assignments
+  saveSeasonRoster(season, assignments.filter(a => a.team_id));
+  setSetting('season_draft_status', 'draft');
+  res.json({ ok: true });
+});
+
+app.get('/admin/season/teams/sandbox', requireAuth, (req, res) => {
+  const currentSeason = getPortalCurrentSeason();
+  const source        = req.query.source === 'waitlist' ? 'waitlist' : 'players';
+  const season        = req.query.season || currentSeason;
+
+  let players;
+  if (source === 'waitlist') {
+    players = getSeasonSignupsWithStats(season)
+      .filter(s => s.status === 'confirmed')
+      .map(s => ({
+        id:           s.id,
+        full_name:    s.full_name || s.email || s.id,
+        positions:    s.positions || '[]',
+        height:       s.height    || '',
+        rating:       s.rating    ?? null,
+        off_rating:   s.off_rating ?? null,
+        def_rating:   s.def_rating ?? null,
+        picture_url:  s.picture_url || '',
+        career_games: s.career_games ?? 0,
+        status:       'confirmed',
+        jersey_top:   s.jersey_top    || null,
+        jersey_shorts: s.jersey_shorts || null,
+        _sandbox:     true,
+      }));
+  } else {
+    players = getPlayersWithRatings(season)
+      .filter(p => p.status === 'active')
+      .map(p => {
+        const parts    = String(p.name || '').split(',');
+        const fullName = parts.length >= 2 ? `${parts[1].trim()} ${parts[0].trim()}` : p.name;
+        return {
+          id:           p.id,
+          full_name:    fullName,
+          positions:    p.positions || '[]',
+          height:       '',
+          rating:       p.eff_overall ?? null,
+          off_rating:   p.eff_scoring  ?? null,
+          def_rating:   p.eff_defense  ?? null,
+          picture_url:  p.picture_url || '',
+          career_games: p.career_games ?? 0,
+          status:       'confirmed',
+          jersey_top:   null,
+          jersey_shorts: null,
+          _sandbox:     true,
+        };
+      });
+  }
+
+  // Build source option lists
+  const gameSeasons    = getGameSeasons();   // ['3','2','1'] newest-first
+  const signupSeasons  = getSignupStatsBySeason()
+    .filter(s => s.confirmed > 0)
+    .map(s => s.season);
+
+  const teams      = getSeasonTeams('sandbox');
+  const rosterRows = getSeasonRoster('sandbox');
+  const rosterMap  = {};
+  for (const row of rosterRows) {
+    const player = players.find(p => p.id === row.signup_id);
+    if (player) {
+      if (!rosterMap[row.team_id]) rosterMap[row.team_id] = [];
+      rosterMap[row.team_id].push(player);
+    }
+  }
+
+  res.send(renderAdminPage(req, {
+    title: 'Team Builder — Sandbox',
+    body: adminSeasonTeamsBody({
+      sigSeason: 'sandbox',
+      players,
+      teams,
+      rosterMap,
+      isSandbox:    true,
+      sandboxSource: { source, season: String(season), gameSeasons, signupSeasons },
+    }),
+  }));
+});
+
+app.post('/admin/season/teams/sandbox/clear', requireAuth, express.json(), (req, res) => {
+  clearSeasonTeams('sandbox');
+  clearSeasonRoster('sandbox');
+  res.json({ ok: true });
+});
+
+app.get('/admin/season/teams/charge-preview', requireAuth, (req, res) => {
+  const season       = req.query.season || getSetting('signup_target_season', '');
+  const quotaAmount  = Number(getSetting('season_quota_amount', '0')) || 0;
+  const topPrice     = Number(getSetting('jersey_top_price', '0')) || 0;
+  const shortPrice   = Number(getSetting('jersey_short_price', '0')) || 0;
+  const players      = getSeasonSignupsWithStats(season).filter(p => p.status === 'confirmed');
+
+  let grandTotal = 0;
+  const lines = players.map(p => {
+    let total = quotaAmount + topPrice + (p.jersey_shorts ? shortPrice : 0);
+    grandTotal += total;
+    return { name: p.full_name || '—', total: `₱${total.toLocaleString()}` };
+  });
+
+  res.json({ lines, grand_total: `₱${grandTotal.toLocaleString()}` });
+});
+
+app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, res) => {
+  const season = (req.body?.season || getSetting('signup_target_season', '')).toString();
+  if (!season) return res.status(400).json({ error: 'season required' });
+
+  const quotaAmount  = Number(getSetting('season_quota_amount', '0')) || 0;
+  const topPrice     = Number(getSetting('jersey_top_price', '0')) || 0;
+  const shortPrice   = Number(getSetting('jersey_short_price', '0')) || 0;
+  const teams        = getSeasonTeams(season);
+  const teamById     = Object.fromEntries(teams.map(t => [t.id, t]));
+  const rosterRows   = getSeasonRoster(season);
+  const teamBySignup = Object.fromEntries(rosterRows.map(r => [r.signup_id, r.team_id]));
+
+  const allSignups   = getSeasonSignupsWithStats(season);
+  const confirmed    = allSignups.filter(p => p.status === 'confirmed');
+  const notSelected  = allSignups.filter(p => p.status !== 'confirmed');
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Charge confirmed players
+  for (const p of confirmed) {
+    if (!p.player_id) continue;
+    const charge = quotaAmount + topPrice + (p.jersey_shorts ? shortPrice : 0);
+    if (charge > 0) {
+      const txId = randomBytes(6).toString('hex');
+      recordTransaction({
+        id: txId, player_id: p.player_id, amount: charge, type: 'charge',
+        payment_method: '', date: today, status: 'confirmed',
+        notes: `Season ${season} fee (jersey top${p.jersey_shorts ? ' + shorts' : ''})`,
+        reference_no: '', season, category: 'season_fee',
+      });
+    }
+  }
+
+  // Email confirmed players
+  const emailErrors = [];
+  for (const p of confirmed) {
+    if (!p.email) continue;
+    const teamName = teamById[teamBySignup[p.id] || '']?.name || '';
+    try {
+      await sendMail({ to: p.email, ...seasonQualifiedEmail({ name: p.full_name, season, teamName }) });
+    } catch(e) { emailErrors.push(p.email); }
+  }
+
+  // Email not-selected players
+  for (const p of notSelected) {
+    if (!p.email) continue;
+    try {
+      await sendMail({ to: p.email, ...seasonNotSelectedEmail({ name: p.full_name, season }) });
+    } catch(e) { emailErrors.push(p.email); }
+  }
+
+  setSetting('season_draft_status', 'started');
+  setSetting('season_signup_open', '0');
+
+  res.json({ ok: true, charged: confirmed.filter(p => p.player_id).length, emails_sent: confirmed.length + notSelected.length, email_errors: emailErrors });
 });
 
 app.listen(PORT, () => {

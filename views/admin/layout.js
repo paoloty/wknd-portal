@@ -44,7 +44,12 @@ const NAV_GROUPS = [
   {
     label: 'Season',
     items: [
-      { href: '/admin/awards', label: 'Awards', icon: 'awards' },
+      { href: '/admin/seasons',         label: 'Seasons',      icon: 'standings', exact: true },
+      { href: '/admin/season',          label: 'Manage',       icon: 'site',      exact: true },
+      { href: '/admin/season/waitlist', label: 'Waitlist',     icon: 'users' },
+      { href: '/admin/season/teams',    label: 'Team Builder', icon: 'teams', exact: true },
+      { href: '/admin/season/teams/sandbox', label: 'Sandbox',   icon: 'compare' },
+      { href: '/admin/awards',          label: 'Awards',       icon: 'awards' },
     ],
   },
   {
@@ -60,6 +65,7 @@ const SUPER_ADMIN_NAV = [
     label: 'Super Admin',
     items: [
       { href: '/admin/logs', label: 'Action Logs', icon: 'ledger' },
+      ...(process.env.NODE_ENV !== 'production' ? [{ href: '/admin/db', label: 'Sync DB', icon: 'finance' }] : []),
     ],
   },
 ];

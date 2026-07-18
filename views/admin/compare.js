@@ -15,14 +15,33 @@ export function adminComparePage({ rows = [], players = [] } = {}) {
   const tableRows = rows.map((r, i) => {
     const nameA  = r.player_a_name ? displayPlayerName(r.player_a_name) : r.player_a_id;
     const nameB  = r.player_b_name ? displayPlayerName(r.player_b_name) : r.player_b_id;
-    const preview = (r.writeup || '').slice(0, 110).replace(/\n/g, ' ');
-    return `<tr class="cmp-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] cursor-pointer transition-colors" data-idx="${i}">
+    const writeup  = r.writeup || '';
+    const isBroken = writeup.length < 40;
+    const preview  = writeup.slice(0, 110).replace(/\n/g, ' ');
+    const createdTs    = r.created_at    ? (r.created_at    > 1e10 ? r.created_at    : r.created_at    * 1000) : 0;
+    const lastViewedTs = r.last_viewed_at ? (r.last_viewed_at > 1e10 ? r.last_viewed_at : r.last_viewed_at * 1000) : 0;
+    return `<tr class="cmp-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] cursor-pointer transition-colors"
+      data-idx="${i}"
+      data-player-a="${escHtml(r.player_a_id)}"
+      data-player-b="${escHtml(r.player_b_id)}"
+      data-sort-name-a="${escHtml(nameA.toLowerCase())}"
+      data-sort-name-b="${escHtml(nameB.toLowerCase())}"
+      data-sort-views="${r.view_count ?? 0}"
+      data-sort-last-viewed="${lastViewedTs}"
+      data-sort-created="${createdTs}">
       <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(nameA)}</td>
       <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(nameB)}</td>
       <td class="px-4 py-3 text-center"><span class="font-saira text-base font-bold text-brand">${r.view_count ?? 0}</span></td>
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${escHtml(fmtDate(r.last_viewed_at))}</td>
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${escHtml(fmtDate(r.created_at))}</td>
-      <td class="px-4 py-3 text-xs text-slate-400 max-w-[260px] whitespace-normal leading-relaxed hidden md:table-cell">${escHtml(preview)}${r.writeup && r.writeup.length > 110 ? '…' : ''}</td>
+      <td class="px-4 py-3 text-xs max-w-[260px] whitespace-normal leading-relaxed hidden md:table-cell">
+        ${isBroken
+          ? `<span class="text-error/70 italic">Incomplete</span>`
+          : `<span class="text-slate-400">${escHtml(preview)}${writeup.length > 110 ? '…' : ''}</span>`}
+      </td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        ${isBroken ? `<button class="regen-btn text-[11px] font-semibold text-brand hover:text-amber-300 transition-colors" data-a="${escHtml(r.player_a_id)}" data-b="${escHtml(r.player_b_id)}">Regenerate</button>` : ''}
+      </td>
     </tr>`;
   }).join('');
 
@@ -49,15 +68,16 @@ export function adminComparePage({ rows = [], players = [] } = {}) {
 ${rows.length === 0
   ? `<div class="bg-admin-surface border border-admin-border rounded-lg p-8 text-center text-sm text-slate-500">No comparisons yet.</div>`
   : `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
-  <table class="w-full border-collapse has-col-dividers has-freeze-col">
+  <table id="cmp-table" class="w-full border-collapse has-col-dividers has-freeze-col">
     <thead>
       <tr>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player A</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player B</th>
-        <th class="px-4 py-2.5 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Views</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Last Viewed</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Created</th>
+        <th data-sort-col="name-a"     class="cmp-th px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border cursor-pointer select-none hover:text-slate-300">Player A <span class="cmp-sort-ind opacity-40"> ↕</span></th>
+        <th data-sort-col="name-b"     class="cmp-th px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border cursor-pointer select-none hover:text-slate-300">Player B <span class="cmp-sort-ind opacity-40"> ↕</span></th>
+        <th data-sort-col="views"      class="cmp-th px-4 py-2.5 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border cursor-pointer select-none hover:text-slate-300">Views <span class="cmp-sort-ind opacity-40"> ↕</span></th>
+        <th data-sort-col="last-viewed" class="cmp-th px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border cursor-pointer select-none hover:text-slate-300">Last Viewed <span class="cmp-sort-ind opacity-40"> ↕</span></th>
+        <th data-sort-col="created"    class="cmp-th px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border cursor-pointer select-none hover:text-slate-300 text-brand/80">Created <span class="cmp-sort-ind"> ↓</span></th>
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border hidden md:table-cell">Preview</th>
+        <th class="px-4 py-2.5 border-b border-admin-border"></th>
       </tr>
     </thead>
     <tbody>${tableRows}</tbody>
@@ -136,8 +156,79 @@ ${rows.length === 0
 
   function closeModal() { backdrop.setAttribute('hidden', ''); document.body.style.overflow = ''; }
 
+  // ── Table sort ────────────────────────────────────────────────────────────
+  var sortCol = 'created', sortDir = -1;
+
+  function applySort() {
+    var tbody = document.querySelector('#cmp-table tbody');
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll('tr.cmp-row'));
+    rows.sort(function(a, b) {
+      var av, bv;
+      if (sortCol === 'name-a')      { av = a.dataset.sortNameA || '';         bv = b.dataset.sortNameA || '';         return av.localeCompare(bv) * sortDir; }
+      if (sortCol === 'name-b')      { av = a.dataset.sortNameB || '';         bv = b.dataset.sortNameB || '';         return av.localeCompare(bv) * sortDir; }
+      if (sortCol === 'views')       { av = Number(a.dataset.sortViews);       bv = Number(b.dataset.sortViews);       return (av - bv) * sortDir; }
+      if (sortCol === 'last-viewed') { av = Number(a.dataset.sortLastViewed);  bv = Number(b.dataset.sortLastViewed);  return (av - bv) * sortDir; }
+      if (sortCol === 'created')     { av = Number(a.dataset.sortCreated);     bv = Number(b.dataset.sortCreated);     return (av - bv) * sortDir; }
+      return 0;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+
+    // Update header indicators
+    document.querySelectorAll('.cmp-th').forEach(function(th) {
+      var col = th.dataset.sortCol;
+      var ind = th.querySelector('.cmp-sort-ind');
+      if (!ind) return;
+      if (col === sortCol) {
+        ind.textContent = sortDir === 1 ? ' ↑' : ' ↓';
+        ind.classList.remove('opacity-40');
+        th.classList.add('text-brand/80');
+        th.classList.remove('text-slate-500');
+      } else {
+        ind.textContent = ' ↕';
+        ind.classList.add('opacity-40');
+        th.classList.remove('text-brand/80');
+        th.classList.add('text-slate-500');
+      }
+    });
+  }
+
+  document.querySelectorAll('.cmp-th').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = this.dataset.sortCol;
+      sortDir = (sortCol === col) ? sortDir * -1 : -1;
+      sortCol = col;
+      applySort();
+    });
+  });
+
+  // Default sort: created desc
+  applySort();
+
   document.querySelectorAll('.cmp-row').forEach(function(row) {
-    row.addEventListener('click', function() { openModal(Number(this.dataset.idx)); });
+    row.addEventListener('click', function(e) {
+      if (e.target.closest('.regen-btn')) return;
+      openModal(Number(this.dataset.idx));
+    });
+  });
+
+  document.querySelectorAll('.regen-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function(e) {
+      e.stopPropagation();
+      var a = this.dataset.a, b = this.dataset.b;
+      var orig = this.textContent;
+      this.textContent = 'Generating…'; this.disabled = true;
+      try {
+        var r = await fetch('/api/compare?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) + '&force=1');
+        var d = await r.json();
+        if (!r.ok || !d.writeup) throw new Error(d.error || 'No writeup');
+        location.reload();
+      } catch(err) {
+        this.textContent = 'Error — retry';
+        this.disabled = false;
+        setTimeout(function() { btn.textContent = orig; }, 3000);
+      }
+    });
   });
   document.getElementById('cmp-modal-close').addEventListener('click', closeModal);
   document.getElementById('cmp-modal-ok').addEventListener('click', closeModal);

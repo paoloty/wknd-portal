@@ -20,7 +20,6 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
   const fmt = v => v ? Number(v).toFixed(2) : '';
   const awardsEnabled = settings.awards_enabled   !== '0';
   const mvpEnabled    = settings.mvp_race_enabled !== '0';
-  const regOpen       = settings.reg_open === '1';
 
   const sectionToggles = AWARD_SECTIONS.map(({ key, label }) => {
     const on = settings[key] !== '0';
@@ -85,57 +84,10 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
 </div>
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
-  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Registration</div>
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Registration &amp; Season</div>
   <div class="p-5">
-    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Show or hide the membership application banner on the homepage. This is not season-specific — it's for new players who want to join the league.</p>
-    <div class="flex items-center justify-between py-3 border-b border-admin-border/50">
-      <div>
-        <div class="text-[13px] font-semibold text-slate-200">Accepting Applications</div>
-        <div class="text-xs text-slate-500 mt-0.5">Shows the "Apply to Join" banner on the homepage</div>
-      </div>
-      <label class="site-toggle" title="Toggle registration banner">
-        <input type="checkbox" id="toggle-reg-open" ${regOpen ? 'checked' : ''}>
-        <span class="site-toggle__track"></span>
-      </label>
-    </div>
-    <div class="py-3 border-b border-admin-border/30">
-      <label class="block text-[12px] font-semibold text-slate-300 mb-2">Application Deadline <span class="text-slate-500 font-normal">(optional)</span></label>
-      <div class="flex items-center gap-3">
-        <input type="text" id="reg-deadline-input" placeholder="e.g. August 15, 2026"
-          value="${escHtml(settings.reg_deadline || '')}"
-          class="admin-input" style="width:220px">
-        <button id="reg-deadline-save" class="agm-new-btn">${ICON_CHECK} Save</button>
-        <span id="reg-deadline-msg" class="text-xs"></span>
-      </div>
-    </div>
-    <div class="py-3 border-b border-admin-border/30">
-      <div class="text-[11px] font-semibold text-slate-400 mb-3 uppercase tracking-widest">Info Strip (shown on the /register page)</div>
-      <div class="flex flex-col gap-3">
-        <div class="flex items-center gap-3">
-          <span class="text-slate-500 text-xs w-24 shrink-0">📍 Venue</span>
-          <input type="text" id="reg-venue-input" placeholder="e.g. La Salle Gym, Makati"
-            value="${escHtml(settings.reg_venue || '')}"
-            class="admin-input" style="flex:1;max-width:280px">
-        </div>
-        <div class="flex items-center gap-3">
-          <span class="text-slate-500 text-xs w-24 shrink-0">📅 Schedule</span>
-          <input type="text" id="reg-schedule-input" placeholder="e.g. Saturdays, 8am–12pm"
-            value="${escHtml(settings.reg_schedule || '')}"
-            class="admin-input" style="flex:1;max-width:280px">
-        </div>
-        <div class="flex items-center gap-3">
-          <span class="text-slate-500 text-xs w-24 shrink-0">💸 Season Fee</span>
-          <input type="text" id="reg-fee-input" placeholder="e.g. ₱1,500 / season"
-            value="${escHtml(settings.reg_fee || '')}"
-            class="admin-input" style="flex:1;max-width:280px">
-        </div>
-        <div class="flex items-center gap-3 mt-1">
-          <button id="reg-info-save" class="agm-new-btn">${ICON_CHECK} Save Info</button>
-          <span id="reg-info-msg" class="text-xs"></span>
-        </div>
-      </div>
-    </div>
-    <span id="reg-msg" class="text-xs block min-h-[14px]"></span>
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Registration is always open. Season signup management (waitlist, deadlines, display season) has moved to its own page.</p>
+    <a href="/admin/season" class="agm-new-btn inline-flex items-center gap-2">Go to Season Management →</a>
   </div>
 </div>
 
@@ -172,61 +124,6 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
   }
   bindToggle('toggle-awards',   'awards_enabled');
   bindToggle('toggle-mvp-race', 'mvp_race_enabled');
-  (function() {
-    document.getElementById('toggle-reg-open').addEventListener('change', async function() {
-      var msg = document.getElementById('reg-msg');
-      msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
-      try {
-        var r = await fetch('/admin/site/settings', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reg_open: this.checked ? '1' : '0' })
-        });
-        if (!r.ok) throw new Error();
-        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
-      } catch(e) {
-        msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
-        this.checked = !this.checked;
-      }
-      setTimeout(function() { msg.textContent = ''; }, 2000);
-    });
-  })();
-
-  document.getElementById('reg-deadline-save').addEventListener('click', async function() {
-    var val = document.getElementById('reg-deadline-input').value.trim();
-    var msg = document.getElementById('reg-deadline-msg');
-    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
-    try {
-      var r = await fetch('/admin/site/settings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reg_deadline: val })
-      });
-      if (!r.ok) throw new Error();
-      msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
-    } catch(e) {
-      msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
-    }
-    setTimeout(function() { msg.textContent = ''; }, 2000);
-  });
-
-  document.getElementById('reg-info-save').addEventListener('click', async function() {
-    var msg = document.getElementById('reg-info-msg');
-    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
-    try {
-      var r = await fetch('/admin/site/settings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reg_venue:    document.getElementById('reg-venue-input').value.trim(),
-          reg_schedule: document.getElementById('reg-schedule-input').value.trim(),
-          reg_fee:      document.getElementById('reg-fee-input').value.trim(),
-        })
-      });
-      if (!r.ok) throw new Error();
-      msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
-    } catch(e) {
-      msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
-    }
-    setTimeout(function() { msg.textContent = ''; }, 2000);
-  });
 
   // Section toggles
   document.querySelectorAll('.section-toggle').forEach(function(input) {

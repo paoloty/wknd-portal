@@ -56,15 +56,11 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   ].join('');
 
   const adminActive = currentPath.startsWith('/admin');
-  const joinBtn = (!isAdmin && !isPlayer && features.regOpen)
-    ? `<a href="/register" class="site-nav__join">Join</a>`
-    : '';
-
   const authLink = isAdmin
-    ? `${isPlayer ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a>` : ''}<a href="/admin/ledger"${adminActive ? ' aria-current="page"' : ''} class="site-nav__admin">Admin</a><a href="/logout" class="site-nav__login">Sign out</a>`
+    ? `${isPlayer ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a>` : ''}<div class="site-nav__auth-pill"><a href="/admin/ledger"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
     : isPlayer
       ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a><a href="/logout" class="site-nav__login">Sign out</a>`
-      : `${joinBtn}<a href="/login" class="site-nav__login">Login</a>`;
+      : `<div class="site-nav__auth-pill"><a href="/register" class="site-nav__auth-join">Join</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/login" class="site-nav__auth-login">Login</a></div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
