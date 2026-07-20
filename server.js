@@ -2383,9 +2383,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     const fmt = (v) => v != null ? (v / gp).toFixed(1) : '—';
     const statLine = `${fmt(entry.pts)} PPG, ${fmt(entry.reb)} RPG, ${fmt(entry.ast)} APG, ${fmt(entry.stl)} SPG, ${fmt(entry.blk)} BPG over ${gp} games`;
     const posNote  = entry.notes ? ` Selected as ${entry.notes}.` : '';
-    const teammates = entries.filter(e => e.player_id !== player_id).map(e => e.player_name).join(', ');
-    const teamCtx  = teammates ? ` Joins ${teammates} on the team.` : '';
-    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Stats this season: ${statLine}.${teamCtx} Focus on what specifically earned this player the honor — be vivid and specific, not generic. Write like a sports broadcaster. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Stats this season: ${statLine}. Focus solely on what this player did to earn the honor — be vivid and specific, not generic. Do not mention teammates, other award recipients, or any other player. Write like a sports broadcaster. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
   } else {
     let context = '';
     if (entries.length === 1) {
@@ -2396,7 +2394,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     } else if (entries.length > 1) {
       context = `Winners: ${entries.map(e => `${e.player_name} (${e.team_name})`).join(', ')}.`;
     }
-    prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Write it like a sports broadcaster presenting the award — exciting, specific, and confident. No generic filler. Each article should feel distinct — vary the opening angle and tone from other award articles. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+    prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Write it like a sports broadcaster presenting the award — exciting, specific, and confident. No generic filler. Focus solely on the winner — do not mention other players, runners-up, or comparisons. Each article should feel distinct — vary the opening angle and tone from other award articles. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
   }
 
   try {
@@ -3887,12 +3885,13 @@ app.get('/mvp', async (req, res) => {
         `FG%: ${fg}, Record: ${wl}, GP: ${gp}, MVP Score: ${c.mvpScore.toFixed(1)}`,
       ].join('\n');
 
-      const prompt = `You are a sharp basketball analyst covering WKND Basketball League, a recreational league. Write a 2-3 sentence MVP case for ${name} (${String(c.stats.team_name).toUpperCase()}) in the style of an ESPN MVP ladder entry. Be specific with numbers. Focus on what makes them a real MVP candidate — production, efficiency, winning.
+      const prompt = `You are a sharp basketball analyst covering WKND Basketball League, a recreational league. Write a 2-3 sentence MVP case for ${name} (${String(c.stats.team_name).toUpperCase()}) in the style of an ESPN MVP ladder entry. Be specific with numbers. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
 
 Rules:
+- Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
 - Do NOT start with their name.
 - Do NOT open with "With a" or "With an" — vary the sentence structure completely.
-- Each player's blurb must read differently from the others. Lead with the most interesting or unusual thing about this player's case.
+- Lead with the most interesting or unusual thing about this player's case.
 - No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
 - ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
 
