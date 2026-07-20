@@ -56,9 +56,19 @@ function getStats(entry, isConf, statsMap = {}) {
       const gp = s.games_played;
       return { gp, ppg: (s.pts/gp).toFixed(1), rpg: (s.reb/gp).toFixed(1), apg: (s.ast/gp).toFixed(1) };
     }
+    // Fall back to stats embedded in the confirmed award entry (from stmtGetSeasonAwards)
+    if (entry.games_played) {
+      const gp = entry.games_played;
+      return { gp, ppg: (entry.pts/gp).toFixed(1), rpg: (entry.reb/gp).toFixed(1), apg: (entry.ast/gp).toFixed(1) };
+    }
   }
   if (!isConf) {
-    return { gp: entry.player?.games_played ?? null, ppg: entry.ppg ?? null, rpg: entry.rpg ?? null, apg: entry.apg ?? null };
+    const p   = entry.player;
+    const gp  = p?.games_played || null;
+    const ppg = entry.ppg ?? (gp && p?.pts != null ? (p.pts / gp).toFixed(1) : null);
+    const rpg = entry.rpg ?? (gp && p?.reb != null ? (p.reb / gp).toFixed(1) : null);
+    const apg = entry.apg ?? (gp && p?.ast != null ? (p.ast / gp).toFixed(1) : null);
+    return { gp, ppg, rpg, apg };
   }
   return { gp: null, ppg: null, rpg: null, apg: null };
 }
