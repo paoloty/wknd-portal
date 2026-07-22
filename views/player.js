@@ -56,9 +56,9 @@ function heroSection(player, totals, isAdmin = false) {
 
   // ── Right column: career averages ──────────────────────────────────────────
   const gp = totals?.games_played || 0;
-  const fga  = (totals.fg2m || 0) + (totals.fg3m || 0) + (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0);
-  const tpa  = (totals.fg3m || 0) + (totals.fg3m_miss || 0);
-  const fta  = (totals.ftm || 0) + (totals.ft_miss || 0);
+  const fga  = (totals?.fg2m || 0) + (totals?.fg3m || 0) + (totals?.fg2m_miss || 0) + (totals?.fg3m_miss || 0);
+  const tpa  = (totals?.fg3m || 0) + (totals?.fg3m_miss || 0);
+  const fta  = (totals?.ftm || 0) + (totals?.ft_miss || 0);
   const caStats = gp ? [
     { lbl: 'PPG', val: avg(totals.pts, gp) },
     { lbl: 'RPG', val: avg(totals.reb, gp) },

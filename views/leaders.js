@@ -322,11 +322,14 @@ function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}
 </div>`;
 }
 
-export function leadersPage({ players, season = '', gameRecords = [], currentSeason = 3, asOfLabel = '', isLoggedIn = false }) {
+export function leadersPage({ players, playoffPlayers = [], season = '', gameRecords = [], currentSeason = 3, asOfLabel = '', isLoggedIn = false }) {
   _showDownload = isLoggedIn;
   const opts = s => ({ mode: s, season });
   const pgPanels  = PER_GAME.map(cat => leaderPanel(cat, players, fmtPerGame, opts('pg'))).filter(Boolean).join('\n');
   const totPanels = TOTALS.map(cat => leaderPanel(cat, players, fmtTotals, opts('tot'))).filter(Boolean).join('\n');
+  const poPgPanels  = PER_GAME.map(cat => leaderPanel(cat, playoffPlayers, fmtPerGame, opts('po-pg'))).filter(Boolean).join('\n');
+  const poTotPanels = TOTALS.map(cat => leaderPanel(cat, playoffPlayers, fmtTotals, opts('po-tot'))).filter(Boolean).join('\n');
+  const hasPlayoffs = playoffPlayers.length > 0;
 
   const recordSeasons = [...new Set(gameRecords.map(r => r.season).filter(Boolean))].sort((a, b) => b - a);
   const allTimeGrid   = buildRecordsGrid(gameRecords, 'alltime');
@@ -342,15 +345,24 @@ export function leadersPage({ players, season = '', gameRecords = [], currentSea
       <div class="leaders-toggle">
         <button class="leaders-toggle__btn leaders-toggle__btn--active" id="leaders-btn-pg" onclick="leadersSwitch('pg')">Per Game<span class="leaders-toggle__desc">Season averages</span></button>
         <button class="leaders-toggle__btn" id="leaders-btn-tot" onclick="leadersSwitch('tot')">Totals<span class="leaders-toggle__desc">Season totals</span></button>
+        ${hasPlayoffs ? `<button class="leaders-toggle__btn" id="leaders-btn-po" onclick="leadersSwitch('po')">Playoffs<span class="leaders-toggle__desc">Per game</span></button>` : ''}
         <button class="leaders-toggle__btn" id="leaders-btn-rec" onclick="leadersSwitch('rec')">Records<span class="leaders-toggle__desc">Single-game bests</span></button>
       </div>
       <div class="leaders-season-pills" id="leaders-season-pills" style="display:none">
         <button class="season-pill season-pill--active" id="rec-btn-alltime" onclick="recordsSwitch('alltime')">All Time</button>
         ${seasonPillsHtml}
       </div>
+      ${hasPlayoffs ? `<div class="leaders-season-pills" id="leaders-po-pills" style="display:none">
+        <button class="season-pill season-pill--active" id="po-btn-pg" onclick="poSwitch('pg')">Per Game</button>
+        <button class="season-pill" id="po-btn-tot" onclick="poSwitch('tot')">Totals</button>
+      </div>` : ''}
     </div>
     <div class="leaders-page-grid" id="leaders-grid-pg">${pgPanels}</div>
     <div class="leaders-page-grid" id="leaders-grid-tot" style="display:none">${totPanels}</div>
+    ${hasPlayoffs ? `<div id="leaders-grid-po" style="display:none">
+      <div class="leaders-page-grid" id="leaders-grid-po-pg">${poPgPanels}</div>
+      <div class="leaders-page-grid" id="leaders-grid-po-tot" style="display:none">${poTotPanels}</div>
+    </div>` : ''}
     <div id="leaders-grid-rec" style="display:none">
       <div class="leaders-page-grid" id="rec-grid-alltime">${allTimeGrid}</div>
       ${seasonGridsHtml}
@@ -359,12 +371,26 @@ export function leadersPage({ players, season = '', gameRecords = [], currentSea
     var _recSeasons = ${JSON.stringify(recordSeasons)};
     var _allRecScopes = ['alltime'].concat(_recSeasons.map(function(s){ return 's'+s; }));
     var _asOfLabel = '${escHtml(asOfLabel)}';
+    var _hasPlayoffs = ${hasPlayoffs};
     function leadersSwitch(mode) {
-      ['pg','tot','rec'].forEach(function(m) {
-        document.getElementById('leaders-grid-' + m).style.display = mode === m ? '' : 'none';
-        document.getElementById('leaders-btn-' + m).classList.toggle('leaders-toggle__btn--active', mode === m);
+      var modes = ['pg','tot','rec'].concat(_hasPlayoffs ? ['po'] : []);
+      modes.forEach(function(m) {
+        var grid = document.getElementById('leaders-grid-' + m);
+        var btn  = document.getElementById('leaders-btn-' + m);
+        if (grid) grid.style.display = mode === m ? '' : 'none';
+        if (btn)  btn.classList.toggle('leaders-toggle__btn--active', mode === m);
       });
       document.getElementById('leaders-season-pills').style.display = mode === 'rec' ? '' : 'none';
+      var poPills = document.getElementById('leaders-po-pills');
+      if (poPills) poPills.style.display = mode === 'po' ? '' : 'none';
+    }
+    function poSwitch(sub) {
+      ['pg','tot'].forEach(function(s) {
+        var grid = document.getElementById('leaders-grid-po-' + s);
+        var btn  = document.getElementById('po-btn-' + s);
+        if (grid) grid.style.display = s === sub ? '' : 'none';
+        if (btn)  btn.classList.toggle('season-pill--active', s === sub);
+      });
     }
     function recordsSwitch(scope) {
       _allRecScopes.forEach(function(s) {

@@ -39,7 +39,7 @@ import {
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
-  getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders,
+  getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
   getGameById, getGameDetailStats, getGameStats,
   getPlayerWithTeam, getPlayerById, getTeamById,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
@@ -3342,7 +3342,18 @@ app.get('/api/roster', (req, res) => {
 
   const teams   = getAllTeams();
   const players = getAllPlayers();
-  const season = getPortalCurrentSeason();
+  const season  = getPortalCurrentSeason();
+
+  const heightRows = portalDb.prepare(
+    `SELECT player_id, height FROM registrations WHERE player_id IS NOT NULL AND height IS NOT NULL AND height != '' ORDER BY created_at DESC`
+  ).all();
+  const heightMap = {};
+  for (const r of heightRows) if (!heightMap[r.player_id]) heightMap[r.player_id] = r.height;
+
+  const fmtHeight = h => {
+    const n = parseInt(h, 10);
+    return isNaN(n) ? null : `${n}cm`;
+  };
 
   const roster = {
     season,
@@ -3362,6 +3373,7 @@ app.get('/api/roster', (req, res) => {
       positions:  (() => { try { return JSON.parse(p.positions || '[]'); } catch { return []; } })(),
       pictureUrl: p.picture_url || '',
       status:     p.status,
+      height:     fmtHeight(heightMap[p.id]) ?? null,
     })),
   };
 
@@ -3927,15 +3939,16 @@ ${name} stats:\n${rankLines}`;
 });
 
 app.get('/leaders', (req, res) => {
-  const players  = buildLeaderPlayers();
-  const season   = getPortalCurrentSeason();
-  const gameRecords = getGameRecords();
-  const weekNum     = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
-  const asOfLabel   = weekNum ? `S${season} · WK ${weekNum}` : '';
+  const players        = buildLeaderPlayers();
+  const playoffPlayers = getPlayoffLeaders();
+  const season         = getPortalCurrentSeason();
+  const gameRecords    = getGameRecords();
+  const weekNum        = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
+  const asOfLabel      = weekNum ? `S${season} · WK ${weekNum}` : '';
   res.send(renderPage(req, {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
-    body: leadersPage({ players, season: String(season || ''), gameRecords, currentSeason: season || 3, asOfLabel, isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) })
+    body: leadersPage({ players, playoffPlayers, season: String(season || ''), gameRecords, currentSeason: season || 3, asOfLabel, isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) })
   }));
 });
 

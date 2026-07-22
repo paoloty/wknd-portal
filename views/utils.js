@@ -13,12 +13,12 @@ export function teamColor(name) {
 }
 
 // Canonical player name display — update this one function when DB format changes.
-// Currently converts "LASTNAME, Firstname" → "Firstname LASTNAME".
+// Converts "LASTNAME, Firstname Middlename" → "Firstname LASTNAME" (first word of first name only, last name forced uppercase).
 export function displayPlayerName(raw) {
   const str = String(raw || '').trim();
   const comma = str.indexOf(',');
   if (comma === -1) return str;
-  const last  = str.slice(0, comma).trim();
+  const last  = str.slice(0, comma).trim().toUpperCase();
   const first = str.slice(comma + 1).trim();
   return `${first} ${last}`;
 }
