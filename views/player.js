@@ -499,14 +499,55 @@ function statsTable(statsByType) {
 </div>`;
 }
 
+// ── Facebook connect card ─────────────────────────────────────────────────────
+function fbConnectCard(fbLinked) {
+  const btnHtml = fbLinked
+    ? `<button class="fb-disconnect-btn" onclick="fbDisconnect()">Disconnect Facebook</button>`
+    : `<a href="/auth/facebook" class="fb-connect-btn">Connect with Facebook</a>`;
+  const statusHtml = fbLinked
+    ? `<span class="fb-status fb-status--on">Connected</span>`
+    : `<span class="fb-status fb-status--off">Not connected</span>`;
+  const desc = fbLinked
+    ? `Your account is linked to Facebook. You can sign in with Facebook and your profile photo syncs automatically.`
+    : `Link your Facebook account to sign in faster and sync your profile photo.`;
+  return `<div class="card" style="padding:18px 20px">
+  <div class="card-label" style="margin-bottom:12px">FACEBOOK</div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#1877F2" style="flex-shrink:0">
+      <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.022 1.792-4.692 4.533-4.692 1.313 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.93-1.956 1.886v2.256h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
+    </svg>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-weight:600;font-size:14px;color:var(--text)">Facebook</span>
+        ${statusHtml}
+      </div>
+      <p style="font-size:13px;color:var(--text-muted);margin:0">${escHtml(desc)}</p>
+    </div>
+    ${btnHtml}
+  </div>
+  ${fbLinked ? `<script>
+function fbDisconnect() {
+  if (!confirm("Disconnect your Facebook account?")) return;
+  fetch("/auth/facebook/disconnect", { method: "POST", headers: { "Content-Type": "application/json" } })
+    .then(r => r.json())
+    .then(d => { if (d.ok) location.reload(); })
+    .catch(() => alert("Something went wrong."));
+}
+<\/script>` : ''}
+</div>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false }) {
+export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false, fbLinked = null }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
+  // fbLinked = true/false when this is the owner's own profile; null = not owner
+  const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
 
   return `${heroSection(player, totals, isAdmin)}
 <div class="game-detail-layout">
   <div class="game-detail-left">
     ${gameLog(gameLogs, player, potgGameIds)}
+    ${fbCard}
   </div>
   <div class="game-detail-right">
     ${awardsSection(awards)}

@@ -68,6 +68,7 @@ import {
   getPortalCurrentSeason,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
+  getRegByFacebookId, setFacebookId, clearFacebookId,
   setRegistrationAdmin, insertAdminLog, getAdminLogs, updateRegBirthday,
   createPlayer, mergeRegistrationIntoPlayer,
   getSeasonStandings, getPlayoffGames,
@@ -1923,6 +1924,117 @@ app.post('/set-password', express.urlencoded({ extended: false }), async (req, r
   res.send(renderPage(req, { title: 'Password Set — WKND Basketball', currentPath: '', ticker: '', body: setPasswordDonePage() }));
 });
 
+// ── Facebook OAuth ────────────────────────────────────────────────────────────
+const FB_APP_ID     = process.env.FACEBOOK_APP_ID     || '';
+const FB_APP_SECRET = process.env.FACEBOOK_APP_SECRET || '';
+const APP_URL       = process.env.APP_URL || 'http://localhost:4000';
+const FB_CALLBACK   = `${APP_URL}/auth/facebook/callback`;
+const FB_ENABLED    = false; // flip to true once requirements are resolved
+
+app.get('/auth/facebook', (req, res) => {
+  if (!FB_ENABLED || !FB_APP_ID) return res.status(404).send('Not found.');
+  const state = req.session?.playerRegId ? 'connect' : 'login';
+  if (state === 'connect') req.session.fbConnectRegId = req.session.playerRegId;
+  const url = new URL('https://www.facebook.com/v19.0/dialog/oauth');
+  url.searchParams.set('client_id', FB_APP_ID);
+  url.searchParams.set('redirect_uri', FB_CALLBACK);
+  url.searchParams.set('scope', 'public_profile,email');
+  url.searchParams.set('state', state);
+  res.redirect(url.toString());
+});
+
+app.get('/auth/facebook/callback', async (req, res) => {
+  if (!FB_ENABLED) return res.status(404).send('Not found.');
+  const { code, state, error } = req.query;
+  if (error || !code) return res.redirect('/login?error=fb_denied');
+
+  try {
+    // Exchange code for access token
+    const tokenUrl = new URL('https://graph.facebook.com/v19.0/oauth/access_token');
+    tokenUrl.searchParams.set('client_id', FB_APP_ID);
+    tokenUrl.searchParams.set('client_secret', FB_APP_SECRET);
+    tokenUrl.searchParams.set('redirect_uri', FB_CALLBACK);
+    tokenUrl.searchParams.set('code', code);
+    const tokenRes  = await fetch(tokenUrl.toString());
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) throw new Error('No access token from Facebook');
+
+    // Fetch user profile
+    const meUrl = new URL('https://graph.facebook.com/me');
+    meUrl.searchParams.set('fields', 'id,name,email,picture.width(400)');
+    meUrl.searchParams.set('access_token', tokenData.access_token);
+    const meRes  = await fetch(meUrl.toString());
+    const fbUser = await meRes.json();
+    if (!fbUser.id) throw new Error('Could not get Facebook user info');
+
+    // Helper: grab FB profile photo and save to player
+    async function grabFbPhoto(playerId, pictureUrl) {
+      if (!playerId || !pictureUrl) return;
+      const player = getPlayerById(playerId);
+      if (!player || player.picture_url) return; // already has a photo
+      try {
+        const imgRes = await fetch(pictureUrl);
+        if (!imgRes.ok) return;
+        const buf  = Buffer.from(await imgRes.arrayBuffer());
+        const mime = imgRes.headers.get('content-type') || 'image/jpeg';
+        updatePlayerPhoto(playerId, `data:${mime};base64,${buf.toString('base64')}`);
+      } catch (e) {
+        console.error('[fb photo]', e.message);
+      }
+    }
+
+    const fbPicUrl = fbUser.picture?.data?.url || null;
+
+    if (state === 'connect') {
+      // Connect mode: link Facebook to the currently logged-in account
+      const regId = req.session.fbConnectRegId;
+      delete req.session.fbConnectRegId;
+      if (!regId) return res.redirect('/login');
+
+      // Check if another account already has this FB id
+      const existing = getRegByFacebookId(fbUser.id);
+      if (existing && existing.id !== regId) {
+        return res.redirect('/me?fb_error=already_linked');
+      }
+
+      setFacebookId(regId, fbUser.id);
+      const reg = getRegistration(regId);
+      await grabFbPhoto(reg?.player_id, fbPicUrl);
+      return res.redirect('/me?fb_success=connected');
+
+    } else {
+      // Login mode: sign in via Facebook
+      const existing = getRegByFacebookId(fbUser.id);
+      if (existing) {
+        if (existing.status !== 'approved') return res.redirect('/login?error=not_approved');
+        req.session.playerRegId    = existing.id;
+        req.session.playerPlayerId = existing.player_id;
+        if (existing.is_admin) {
+          req.session.isAdmin          = true;
+          req.session.isElevatedPlayer = true;
+          req.session.playerName       = (existing.full_name || '').split(',').reverse().map(s => s.trim()).join(' ');
+        }
+        await grabFbPhoto(existing.player_id, fbPicUrl);
+        return res.redirect(existing.is_admin ? '/admin' : '/me');
+      }
+
+      // No account linked — redirect to register with FB info pre-filled
+      req.session.fbPending = { id: fbUser.id, name: fbUser.name, email: fbUser.email || '', picture: fbPicUrl };
+      return res.redirect('/register?fb=1');
+    }
+  } catch (err) {
+    console.error('[fb callback]', err.message);
+    return res.redirect('/login?error=fb_failed');
+  }
+});
+
+app.post('/auth/facebook/disconnect', express.json(), (req, res) => {
+  if (!FB_ENABLED) return res.status(404).json({ error: 'Not found' });
+  if (!req.session?.playerRegId) return res.status(401).json({ error: 'Not logged in' });
+  clearFacebookId(req.session.playerRegId);
+  res.json({ ok: true });
+});
+
 app.get('/admin', requireAuth, (req, res) => {
   const players        = getAllPlayers();
   const teams          = getAllTeams();
@@ -2374,23 +2486,73 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
   for (const r of awards) (byType[r.award_type] ??= []).push(r);
   const entries = byType[award_type] || [];
 
+  // Build a full season stat line from an awards entry row
+  function buildStatLine(e) {
+    const gp   = e.games_played || 1;
+    const avg  = (v) => v != null ? (v / gp).toFixed(1) : null;
+    const fgm  = (e.fg2m || 0) + (e.fg3m || 0);
+    const fga  = fgm + (e.fg2m_miss || 0) + (e.fg3m_miss || 0);
+    const tpm  = e.fg3m || 0;
+    const tpa  = tpm + (e.fg3m_miss || 0);
+    const ftm  = e.ftm  || 0;
+    const fta  = ftm + (e.ft_miss || 0);
+    const fgPct = fga  > 0 ? Math.round(fgm / fga * 100)  + '%' : null;
+    const tpPct = tpa  > 0 ? Math.round(tpm / tpa * 100)  + '%' : null;
+    const ftPct = fta  > 0 ? Math.round(ftm / fta * 100)  + '%' : null;
+    return {
+      gp,
+      ppg: avg(e.pts),  rpg: avg(e.reb),  apg: avg(e.ast),
+      spg: avg(e.stl),  bpg: avg(e.blk),  topg: avg(e.turnover),
+      totalPts: e.pts || 0, totalAst: e.ast || 0, totalReb: e.reb || 0,
+      totalStl: e.stl || 0, totalBlk: e.blk || 0, totalTpm: tpm,
+      fgPct, tpPct, ftPct,
+    };
+  }
+
+  // Per-award-type stat emphasis for the prompt
+  function buildContextLine(e, type) {
+    const s = buildStatLine(e);
+    const base = `${s.ppg} PPG, ${s.rpg} RPG, ${s.apg} APG`;
+    const shooting = [
+      s.fgPct  ? `${s.fgPct} FG%`  : null,
+      s.tpPct  ? `${s.tpPct} 3P%`  : null,
+      s.ftPct  ? `${s.ftPct} FT%`  : null,
+    ].filter(Boolean).join(', ');
+    switch (type) {
+      case 'mvp':
+        return `${base}, ${s.spg} SPG, ${s.bpg} BPG${shooting ? ` | ${shooting}` : ''} over ${s.gp} regular-season games`;
+      case 'dpoy':
+        return `${s.spg} SPG, ${s.bpg} BPG, ${base} over ${s.gp} regular-season games (${s.totalStl} total steals, ${s.totalBlk} total blocks)`;
+      case 'scoring_champ':
+        return `${s.ppg} PPG (${s.totalPts} total points)${shooting ? `, ${shooting}` : ''} over ${s.gp} regular-season games`;
+      case 'assists_leader':
+        return `${s.apg} APG (${s.totalAst} total assists), ${s.ppg} PPG, ${s.topg} TOV/G over ${s.gp} regular-season games`;
+      case 'rebounds_leader':
+        return `${s.rpg} RPG (${s.totalReb} total rebounds), ${s.ppg} PPG over ${s.gp} regular-season games`;
+      case 'steals_leader':
+        return `${s.spg} SPG (${s.totalStl} total steals), ${base} over ${s.gp} regular-season games`;
+      case 'blocks_leader':
+        return `${s.bpg} BPG (${s.totalBlk} total blocks), ${base} over ${s.gp} regular-season games`;
+      case 'three_pm_leader':
+        return `${s.totalTpm} 3-pointers made (${(s.totalTpm / s.gp).toFixed(1)}/game)${s.tpPct ? `, ${s.tpPct} from three` : ''} over ${s.gp} regular-season games`;
+      default:
+        return `${base}${shooting ? `, ${shooting}` : ''} over ${s.gp} regular-season games`;
+    }
+  }
+
   let prompt;
 
   if (TEAM_AWARD_TYPES.has(award_type) && player_id) {
     const entry = entries.find(e => e.player_id === player_id);
     if (!entry) return res.status(400).json({ error: 'Player not found in team award entries' });
-    const gp  = entry.games_played || 1;
-    const fmt = (v) => v != null ? (v / gp).toFixed(1) : '—';
-    const statLine = `${fmt(entry.pts)} PPG, ${fmt(entry.reb)} RPG, ${fmt(entry.ast)} APG, ${fmt(entry.stl)} SPG, ${fmt(entry.blk)} BPG over ${gp} games`;
+    const statLine = buildContextLine(entry, award_type);
     const posNote  = entry.notes ? ` Selected as ${entry.notes}.` : '';
-    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Stats this season: ${statLine}. Focus solely on what this player did to earn the honor — be vivid and specific, not generic. Do not mention teammates, other award recipients, or any other player. Write like a sports broadcaster. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Season stats: ${statLine}. Focus solely on what this player did to earn the honor — be vivid and specific, not generic. Do not mention teammates, other award recipients, or any other player. Write like a sports broadcaster. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
   } else {
     let context = '';
     if (entries.length === 1) {
       const e = entries[0];
-      const gp = e.games_played || 1;
-      const fmt = (v) => v != null ? (v / gp).toFixed(1) : '—';
-      context = `Winner: ${e.player_name} (${e.team_name}). Stats: ${fmt(e.pts)} PPG, ${fmt(e.reb)} RPG, ${fmt(e.ast)} APG, ${fmt(e.stl)} SPG, ${fmt(e.blk)} BPG over ${gp} games.`;
+      context = `Winner: ${e.player_name} (${e.team_name}). Season stats: ${buildContextLine(e, award_type)}.`;
     } else if (entries.length > 1) {
       context = `Winners: ${entries.map(e => `${e.player_name} (${e.team_name})`).join(', ')}.`;
     }
