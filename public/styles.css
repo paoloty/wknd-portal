@@ -4161,6 +4161,7 @@ a.player-link:hover { color: var(--amber); }
 .agr-canvas {
   position: relative; width: 100%; background: #000;
   border-radius: 10px; overflow: hidden; border: 1px solid var(--admin-border, #1e293b);
+  container-type: inline-size;
 }
 .agr-grid-overlay { position: absolute; inset: 0; z-index: 8; pointer-events: none; display: none; }
 .agr-canvas--grid .agr-grid-overlay { display: block; }
@@ -4176,12 +4177,19 @@ a.player-link:hover { color: var(--amber); }
 .agr-canvas--grid .agr-strip__vline { display: block; }
 .agr-banner {
   position: absolute; top: 0; left: 0; width: 100%; z-index: 6;
-  background: #020817; border-bottom: 3px solid var(--amber);
+  background: #020817; border-bottom: 3px solid transparent;
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 3%; box-sizing: border-box; pointer-events: none;
 }
-.agr-banner__label { color: #f1f5f9; font-weight: 800; font-size: clamp(11px, 2vw, 18px); letter-spacing: .03em; }
-.agr-banner__season { color: #64748b; font-weight: 700; font-size: clamp(9px, 1.4vw, 13px); letter-spacing: .05em; }
+.agr-banner__bar { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; }
+.agr-banner__left, .agr-banner__right { display: flex; flex-direction: column; gap: 2px; }
+.agr-banner__right { align-items: flex-end; }
+.agr-banner__eyebrow {
+  font-size: .75cqw; font-weight: 700; letter-spacing: .2em;
+  color: #475569; opacity: .85; text-transform: uppercase;
+}
+.agr-banner__label { color: #f1f5f9; font-weight: 800; font-size: 1.833cqw; letter-spacing: .03em; }
+.agr-banner__season { color: #64748b; font-weight: 800; font-size: 1.5cqw; letter-spacing: .03em; }
 
 .agr-strip {
   position: absolute; top: 0; height: 100%;
@@ -4190,33 +4198,45 @@ a.player-link:hover { color: var(--amber); }
 }
 .agr-strip:first-child { border-left: none; }
 .agr-strip__frame {
-  position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none;
+  /* top matches BANNER_H/CANVAS_H (72/630) in server.js/award-graphic-editor.js — the real
+     compositor places the photo tile starting at canvas row 72 (top: bannerPct) and its
+     bottom 72px fall off the canvas edge. height stays 100% of the strip (not the visible
+     area) so the frame is the full tile size and strip's overflow:hidden clips the same
+     bottom slice reality discards, keeping the pan/zoom math identical to the server's. */
+  position: absolute; top: 11.4286%; left: 0; right: 0; height: 100%;
+  overflow: hidden; cursor: grab; touch-action: none;
 }
 .agr-strip__frame.is-dragging { cursor: grabbing; }
 .agr-strip__img {
   position: absolute; max-width: none; user-select: none; -webkit-user-drag: none;
 }
 .agr-strip__shade {
+  /* background is set inline per-column (server-computed, matches the real SVG gradient
+     stops exactly — see shadeGradient() in server.js) */
   position: absolute; inset: 0; z-index: 2; pointer-events: none;
-  background: linear-gradient(to bottom, rgba(2,8,23,0) 45%, rgba(2,8,23,.75) 78%, rgba(2,8,23,.97) 100%);
 }
 .agr-strip__bar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; z-index: 3; pointer-events: none; }
 .agr-strip__text {
-  position: absolute; left: 4%; right: 4%; bottom: 4%; z-index: 3; pointer-events: none;
+  position: absolute; left: 4%; right: 4%; bottom: 3%; z-index: 3; pointer-events: none;
   text-align: center; color: #f1f5f9;
 }
+/* line-height:1 on every line — without it the browser's default leading adds extra space
+   the margin-top gap values (computed server-side from real baseline deltas) don't account for. */
 .agr-strip__team {
-  font-size: clamp(7px, 1vw, 10px); font-weight: 700;
-  letter-spacing: .08em; margin-bottom: 6%;
+  font-size: 1cqw; font-weight: 700; line-height: 1;
+  letter-spacing: .08em;
 }
 .agr-strip__pill {
-  display: inline-block; border: 1.5px solid var(--amber); color: var(--amber);
-  border-radius: 999px; font-size: clamp(7px, 1vw, 10px); font-weight: 800;
-  letter-spacing: .06em; padding: 3px 8px; margin-bottom: 6%; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--amber); color: var(--amber);
+  border-radius: 999px; font-size: .833cqw; font-weight: 800; line-height: 1;
+  letter-spacing: .06em; padding: 0 .7cqw; white-space: nowrap;
 }
-.agr-strip__stats { font-size: clamp(7px, 1.1vw, 12px); font-weight: 700; color: var(--amber); letter-spacing: .03em; margin-bottom: 3%; }
-.agr-strip__first { font-size: clamp(6px, 0.9vw, 11px); color: #64748b; margin-bottom: 1%; }
-.agr-strip__last  { font-size: clamp(9px, 1.6vw, 18px); font-weight: 800; letter-spacing: .02em; }
+.agr-strip__stats { font-size: 1.083cqw; font-weight: 700; color: var(--amber); letter-spacing: .03em; line-height: 1; }
+.agr-strip__stat-val { font-size: 2.5cqw; font-weight: 800; color: var(--amber); line-height: 1; }
+.agr-strip__stat-unit { font-size: .833cqw; font-weight: 700; letter-spacing: .12em; line-height: 1; }
+.agr-strip__first { font-size: 1.083cqw; color: #64748b; line-height: 1; }
+.agr-strip__last  { font-size: 1.75cqw; font-weight: 800; letter-spacing: .02em; line-height: 1; }
 
 .agr-strip__ctl {
   position: absolute; top: calc(12% + 8px); left: 0; right: 0; z-index: 6;

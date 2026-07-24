@@ -8,7 +8,7 @@ const ICON_CHECK      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="n
 // thing as the ones the real PNG generator applies.
 const CANVAS_W = 1200, CANVAS_H = 630, BANNER_H = 72;
 
-export function awardGraphicEditorBody({ season, type, badgeLabel, columns, ogImagePath }) {
+export function awardGraphicEditorBody({ season, type, badgeLabel, badgeColor, columns, ogImagePath, bannerFs }) {
   const N = columns.length;
   const stripPct = 100 / N;
   const bannerPct = (BANNER_H / CANVAS_H) * 100;
@@ -16,18 +16,20 @@ export function awardGraphicEditorBody({ season, type, badgeLabel, columns, ogIm
   const strips = columns.map((col, i) => `
     <div class="agr-strip" style="left:${(i * stripPct).toFixed(4)}%;width:${stripPct.toFixed(4)}%"
          data-player-id="${escHtml(col.player_id)}"
-         data-default-photo="/api/player/${encodeURIComponent(col.player_id)}/photo-source"
+         data-default-photo="/api/player/${encodeURIComponent(col.player_id)}/photo"
          data-offset-x="${col.offsetX}" data-offset-y="${col.offsetY}" data-zoom="${col.zoom}">
       <div class="agr-strip__frame">
         <img class="agr-strip__img" src="${escHtml(col.photoUrl)}" alt="" draggable="false">
       </div>
-      <div class="agr-strip__shade" aria-hidden="true"></div>
+      <div class="agr-strip__shade" style="background:${escHtml(col.shadeCss)}" aria-hidden="true"></div>
       <div class="agr-strip__text" aria-hidden="true">
-        ${col.teamName ? `<div class="agr-strip__team" style="color:${escHtml(col.teamColor)}">${escHtml(col.teamName)}</div>` : ''}
-        ${col.pillLabel ? `<div class="agr-strip__pill">${escHtml(col.pillLabel)}</div>` : ''}
-        ${col.statLine ? `<div class="agr-strip__stats">${escHtml(col.statLine)}</div>` : ''}
-        <div class="agr-strip__first">${escHtml(col.first)}</div>
-        <div class="agr-strip__last">${escHtml(col.last)}</div>
+        ${col.teamName ? `<div class="agr-strip__team" style="color:${escHtml(col.teamColor)};font-size:${col.teamFs}cqw">${escHtml(col.teamName)}</div>` : ''}
+        ${col.pillLabel ? `<div class="agr-strip__pill" style="border-color:${escHtml(col.pillColor)};color:${escHtml(col.pillColor)};font-size:${col.pillFs}cqw;height:${col.pillHFs}cqw;margin-top:${col.pillGap}cqw">${escHtml(col.pillLabel)}</div>` : ''}
+        ${col.statLine ? `<div class="agr-strip__stats" style="font-size:${col.statsFs}cqw;margin-top:${col.statsGap}cqw">${escHtml(col.statLine)}</div>` : ''}
+        ${col.statVal ? `<div class="agr-strip__stat-val" style="font-size:${col.statValFs}cqw;margin-top:${col.statValGap}cqw">${escHtml(col.statVal)}</div>
+        <div class="agr-strip__stat-unit" style="color:${escHtml(col.pillColor)};font-size:${col.statUnitFs}cqw;margin-top:${col.statUnitGap}cqw">${escHtml(col.statUnit)}</div>` : ''}
+        <div class="agr-strip__first" style="font-size:${col.firstFs}cqw;margin-top:${col.firstGap}cqw">${escHtml(col.first)}</div>
+        <div class="agr-strip__last" style="font-size:${col.lastFs}cqw;margin-top:${col.lastGap}cqw">${escHtml(col.last)}</div>
       </div>
       <div class="agr-strip__bar" style="background:${escHtml(col.teamColor)}" aria-hidden="true"></div>
       <div class="agr-strip__vline" aria-hidden="true"></div>
@@ -62,9 +64,16 @@ export function awardGraphicEditorBody({ season, type, badgeLabel, columns, ogIm
   </div>
 
   <div class="agr-canvas" id="agr-canvas" style="aspect-ratio:${CANVAS_W}/${CANVAS_H}">
-    <div class="agr-banner" style="height:${bannerPct.toFixed(4)}%">
-      <span class="agr-banner__label">${escHtml(badgeLabel)}</span>
-      <span class="agr-banner__season">SEASON ${escHtml(String(season))}</span>
+    <div class="agr-banner" style="height:${bannerPct.toFixed(4)}%;border-bottom-color:${escHtml(badgeColor)}44">
+      <div class="agr-banner__bar" style="background:${escHtml(badgeColor)}" aria-hidden="true"></div>
+      <div class="agr-banner__left">
+        <span class="agr-banner__eyebrow" style="color:${escHtml(badgeColor)};font-size:${bannerFs.eyebrow}cqw">WKND BASKETBALL</span>
+        <span class="agr-banner__label" style="font-size:${bannerFs.title}cqw">${escHtml(badgeLabel)}</span>
+      </div>
+      <div class="agr-banner__right">
+        <span class="agr-banner__eyebrow" style="font-size:${bannerFs.eyebrow}cqw">SEASON</span>
+        <span class="agr-banner__season" style="font-size:${bannerFs.season}cqw">${escHtml(String(season))}</span>
+      </div>
     </div>
     ${strips}
     <div class="agr-grid-overlay" aria-hidden="true">
