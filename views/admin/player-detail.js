@@ -125,7 +125,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
           <div class="relative shrink-0">
             <div id="plr-photo-wrap" class="w-16 h-16 rounded-full overflow-hidden bg-admin-border flex items-center justify-center">
               ${player.picture_url
-                ? `<img src="/api/player/${escHtml(player.id)}/photo" class="w-full h-full object-cover object-top" alt="">`
+                ? `<img id="plr-photo-img" src="/api/player/${escHtml(player.id)}/photo" class="w-full h-full object-cover object-top cursor-pointer" title="Click to re-crop" alt="">`
                 : `<span class="text-xl font-extrabold text-slate-500">${escHtml(initials)}</span>`}
             </div>
             <label for="plr-photo-input" title="Change photo" class="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center cursor-pointer border-2 border-admin-bg">
@@ -258,6 +258,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     <div class="pcp-modal__body">
       <img id="pcp-img" src="" alt="" style="max-width:100%;display:block">
     </div>
+    <div class="pcp-modal__hint">Line up the eyes with the dashed line and keep the head inside the oval — this keeps photos consistent across players.</div>
     <div class="pcp-modal__footer">
       <button class="admin-btn" id="pcp-cancel">${ICON_X} Cancel</button>
       <button class="agm-new-btn" id="pcp-save">${ICON_CHECK} Crop &amp; Save</button>
@@ -294,6 +295,28 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
         cropBoxMovable: true,
         cropBoxResizable: true,
         toggleDragModeOnDblclick: false,
+        ready: function() {
+          var cropBox = backdrop.querySelector('.cropper-crop-box');
+          if (cropBox && !cropBox.querySelector('.pcp-head-guide')) {
+            var guide = document.createElement('div');
+            guide.className = 'pcp-head-guide';
+            guide.innerHTML =
+              '<div class="pcp-head-guide__oval"></div>' +
+              '<div class="pcp-head-guide__eyeline"></div>';
+            cropBox.appendChild(guide);
+          }
+          var body = backdrop.querySelector('.pcp-modal__body');
+          if (body && !body.querySelector('.pcp-zoom-ctrl')) {
+            var ctrl = document.createElement('div');
+            ctrl.className = 'pcp-zoom-ctrl';
+            ctrl.innerHTML =
+              '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-out" aria-label="Zoom out">−</button>' +
+              '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-in" aria-label="Zoom in">+</button>';
+            body.appendChild(ctrl);
+            ctrl.querySelector('#pcp-zoom-out').addEventListener('click', function() { cropper.zoom(-0.1); });
+            ctrl.querySelector('#pcp-zoom-in').addEventListener('click', function() { cropper.zoom(0.1); });
+          }
+        },
       });
     }
 
@@ -317,6 +340,13 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     document.getElementById('pcp-close').addEventListener('click', closeCrop);
     document.getElementById('pcp-cancel').addEventListener('click', closeCrop);
     backdrop.addEventListener('click', function(e) { if (e.target === backdrop) closeCrop(); });
+
+    var photoImg = document.getElementById('plr-photo-img');
+    if (photoImg) {
+      photoImg.addEventListener('click', function() {
+        openCrop('/api/player/' + PLAYER_ID + '/photo?t=' + Date.now());
+      });
+    }
 
     saveBtn.addEventListener('click', function() {
       if (!cropper) return;

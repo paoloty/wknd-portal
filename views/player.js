@@ -33,8 +33,8 @@ function heroSection(player, totals, isAdmin = false) {
 
   const avatarInits = initials(player.name);
   const uploadOverlay = isAdmin ? `
-    <label class="player-avatar-upload" id="pcp-label" title="Upload photo">
-      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <label class="player-avatar-replace" id="pcp-label" title="Replace photo">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
         <circle cx="12" cy="13" r="4"/>
       </svg>
@@ -42,9 +42,11 @@ function heroSection(player, totals, isAdmin = false) {
     </label>` : '';
 
   const leftCol = `<div class="player-hero__left">
-    <div class="player-hero__avatar" style="border-color:${color}">
-      <span class="font-condensed">${escHtml(avatarInits)}</span>
-      <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+    <div class="player-hero__avatar-wrap">
+      <div class="player-hero__avatar" style="border-color:${color}">
+        <span class="font-condensed">${escHtml(avatarInits)}</span>
+        <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+      </div>
       ${uploadOverlay}
     </div>
     <div class="player-hero__info">
@@ -95,6 +97,7 @@ function heroSection(player, totals, isAdmin = false) {
     <div class="pcp-modal__body">
       <img id="pcp-img" src="" alt="" style="max-width:100%;display:block">
     </div>
+    <div class="pcp-modal__hint">Line up the eyes with the dashed line and keep the head inside the oval — this keeps photos consistent across players.</div>
     <div class="pcp-modal__footer">
       <button class="pcp-modal__cancel" id="pcp-cancel">Cancel</button>
       <button class="pcp-modal__save" id="pcp-save">Crop &amp; Save</button>
@@ -128,6 +131,28 @@ function heroSection(player, totals, isAdmin = false) {
       cropBoxMovable: true,
       cropBoxResizable: true,
       toggleDragModeOnDblclick: false,
+      ready: function() {
+        var cropBox = backdrop.querySelector('.cropper-crop-box');
+        if (cropBox && !cropBox.querySelector('.pcp-head-guide')) {
+          var guide = document.createElement('div');
+          guide.className = 'pcp-head-guide';
+          guide.innerHTML =
+            '<div class="pcp-head-guide__oval"></div>' +
+            '<div class="pcp-head-guide__eyeline"></div>';
+          cropBox.appendChild(guide);
+        }
+        var body = backdrop.querySelector('.pcp-modal__body');
+        if (body && !body.querySelector('.pcp-zoom-ctrl')) {
+          var ctrl = document.createElement('div');
+          ctrl.className = 'pcp-zoom-ctrl';
+          ctrl.innerHTML =
+            '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-out" aria-label="Zoom out">−</button>' +
+            '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-in" aria-label="Zoom in">+</button>';
+          body.appendChild(ctrl);
+          ctrl.querySelector('#pcp-zoom-out').addEventListener('click', function() { cropper.zoom(-0.1); });
+          ctrl.querySelector('#pcp-zoom-in').addEventListener('click', function() { cropper.zoom(0.1); });
+        }
+      },
     });
   }
 
@@ -152,11 +177,28 @@ function heroSection(player, totals, isAdmin = false) {
   document.getElementById('pcp-cancel').addEventListener('click', closeCrop);
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) closeCrop(); });
 
+  var avatarImg = document.getElementById('player-avatar-img');
+  if (avatarImg) {
+    var markHasPhoto = function() {
+      avatarImg.classList.add('player-avatar-img--has-photo');
+      avatarImg.title = 'Click to re-crop';
+    };
+    if (avatarImg.complete && avatarImg.naturalWidth > 0) {
+      markHasPhoto();
+    } else {
+      avatarImg.addEventListener('load', markHasPhoto);
+    }
+    avatarImg.addEventListener('click', function() {
+      if (!avatarImg.classList.contains('player-avatar-img--has-photo')) return;
+      openCrop('/api/player/' + playerId + '/photo?t=' + Date.now());
+    });
+  }
+
   saveBtn.addEventListener('click', function() {
     if (!cropper) return;
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
-    label.classList.add('player-avatar-upload--loading');
+    label.classList.add('player-avatar-replace--loading');
     var canvas = cropper.getCroppedCanvas({ width: 400, height: 400, imageSmoothingQuality: 'high' });
     var dataUrl = canvas.toDataURL('image/jpeg', 0.88);
     fetch('/admin/player/' + encodeURIComponent(playerId) + '/photo', {
@@ -164,7 +206,7 @@ function heroSection(player, totals, isAdmin = false) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dataUrl: dataUrl })
     }).then(function(r) {
-      label.classList.remove('player-avatar-upload--loading');
+      label.classList.remove('player-avatar-replace--loading');
       if (!r.ok) throw new Error('failed');
       var ts = Date.now();
       var newSrc = '/api/player/' + encodeURIComponent(playerId) + '/photo?t=' + ts;
@@ -177,7 +219,7 @@ function heroSection(player, totals, isAdmin = false) {
       });
       closeCrop();
     }).catch(function() {
-      label.classList.remove('player-avatar-upload--loading');
+      label.classList.remove('player-avatar-replace--loading');
       alert('Photo upload failed. Please try again.');
       saveBtn.disabled = false;
       saveBtn.textContent = 'Crop & Save';

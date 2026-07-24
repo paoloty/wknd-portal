@@ -2879,24 +2879,25 @@ a.player-link:hover { color: var(--amber); }
   pointer-events: none; user-select: none;
   letter-spacing: -0.02em;
 }
+.player-hero__avatar-wrap { position: relative; flex-shrink: 0; }
 .player-hero__avatar {
   width: 112px; height: 112px; border-radius: 50%; border: 4px solid;
-  flex-shrink: 0; position: relative; overflow: hidden;
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   font-size: 36px; font-family: 'Saira Condensed', system-ui, sans-serif;
   font-weight: 700; color: rgba(255,255,255,0.7); background: rgba(0,0,0,0.2);
 }
 .player-hero__avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.player-avatar-upload {
-  position: absolute; inset: 0; border-radius: 50%;
-  background: rgba(0,0,0,0.55);
+.player-avatar-img--has-photo { cursor: pointer; }
+.player-avatar-replace {
+  position: absolute; bottom: 2px; right: 2px; z-index: 3;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--amber); border: 3px solid var(--surface);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; opacity: 0; transition: opacity 0.18s;
-  color: #fff;
+  cursor: pointer; color: #000;
 }
-.player-hero__avatar:hover .player-avatar-upload { opacity: 1; }
-.player-avatar-upload--loading { opacity: 1; }
-.player-avatar-upload--loading svg { opacity: 0.4; }
+.player-avatar-replace--loading { opacity: 0.6; pointer-events: none; }
+.player-avatar-replace--loading svg { opacity: 0.4; }
 .player-hero__info { flex: 1; min-width: 0; }
 .player-hero__name { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 10px; }
 .player-hero__meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -3024,6 +3025,7 @@ a.player-link:hover { color: var(--amber); }
   .leader-panel__top .leader-avatar { width: 48px; height: 48px; }
   .score-ticker__card { min-width: 148px; }
   .player-hero__avatar { width: 80px; height: 80px; font-size: 26px; }
+  .player-avatar-replace { width: 26px; height: 26px; }
   .player-hero__name { font-size: 1.4rem; }
   .player-hero__left { padding: 22px 20px; gap: 16px; }
   .player-hero__right { padding: 20px 20px; }
@@ -4538,6 +4540,7 @@ a.player-link:hover { color: var(--amber); }
 }
 .pcp-modal__close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
 .pcp-modal__body {
+  position: relative;
   flex: 1; overflow: hidden; background: #000;
   min-height: 280px; max-height: 420px;
 }
@@ -4561,6 +4564,33 @@ a.player-link:hover { color: var(--amber); }
 }
 .pcp-modal__save:hover { opacity: .88; }
 .pcp-modal__save:disabled { opacity: .5; cursor: default; }
+.pcp-modal__hint {
+  padding: 8px 16px 0;
+  font-size: 11px; color: var(--text-muted); text-align: center;
+}
+.pcp-head-guide { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.pcp-head-guide__oval {
+  position: absolute; left: 22%; right: 22%; top: 8%; height: 64%;
+  border: 2px dashed rgba(245, 147, 50, 0.85);
+  border-radius: 50%;
+}
+.pcp-head-guide__eyeline {
+  position: absolute; left: 8%; right: 8%; top: 42%;
+  border-top: 1px dashed rgba(245, 147, 50, 0.55);
+}
+.pcp-zoom-ctrl {
+  position: absolute; right: 10px; bottom: 10px;
+  display: flex; gap: 6px; z-index: 20;
+}
+.pcp-zoom-btn {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.25);
+  color: #fff; font-size: 16px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .12s;
+}
+.pcp-zoom-btn:hover { background: rgba(0,0,0,0.85); }
+.pcp-zoom-btn:active { background: rgba(245,147,50,0.85); border-color: transparent; }
 
 /* ── AI Generate bar ─────────────────────────────────────────────────────── */
 .agm-gen-bar {
