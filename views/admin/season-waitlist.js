@@ -16,8 +16,12 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
   const byStatus = { waitlisted: 0, confirmed: 0, rejected: 0 };
   for (const s of signups) byStatus[s.status] = (byStatus[s.status] ?? 0) + 1;
 
+  const byPref = { stick: 0, reshuffle: 0 };
+  for (const s of signups) if (s.team_pref === 'stick' || s.team_pref === 'reshuffle') byPref[s.team_pref]++;
+  const pollTotal = byPref.stick + byPref.reshuffle;
+
   const statsBar = `
-<div class="flex items-center gap-6 mb-6">
+<div class="flex items-center gap-6 mb-6 flex-wrap">
   <div class="text-center">
     <div class="text-2xl font-bold text-slate-100">${signups.length}</div>
     <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Total</div>
@@ -37,6 +41,17 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
     <div class="text-2xl font-bold text-slate-500">${byStatus.rejected}</div>
     <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Rejected</div>
   </div>
+  ${pollTotal > 0 ? `
+  <div class="w-px h-8 bg-admin-border"></div>
+  <div class="text-center">
+    <div class="text-2xl font-bold text-sky-400">${byPref.stick}</div>
+    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Stick</div>
+  </div>
+  <div class="w-px h-8 bg-admin-border"></div>
+  <div class="text-center">
+    <div class="text-2xl font-bold text-violet-400">${byPref.reshuffle}</div>
+    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Reshuffle</div>
+  </div>` : ''}
 </div>`;
 
   const table = signups.length === 0
@@ -67,6 +82,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
         <th class="px-5 py-2.5 text-left w-8"></th>
         <th class="px-4 py-2.5 text-left font-semibold">Member</th>
         <th class="px-4 py-2.5 text-left font-semibold">Jersey</th>
+        <th class="px-4 py-2.5 text-left font-semibold">Team Pref</th>
         <th class="px-4 py-2.5 text-left font-semibold">Signed Up</th>
         <th class="px-4 py-2.5 text-left font-semibold">Balance</th>
         <th class="px-4 py-2.5 text-left font-semibold">Status</th>
@@ -84,6 +100,13 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
         <td class="px-4 py-3">
           ${s.jersey_top    ? `<div class="text-slate-400">Top: <span class="text-slate-200 font-medium">${escHtml(s.jersey_top)}</span></div>` : '<div class="text-slate-600">—</div>'}
           ${s.jersey_shorts ? `<div class="text-slate-400">Shorts: <span class="text-slate-200 font-medium">${escHtml(s.jersey_shorts)}</span></div>` : ''}
+        </td>
+        <td class="px-4 py-3">
+          ${s.team_pref === 'stick'
+            ? `<span class="inline-flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${escHtml(s.prev_team_color || '#64748b')}"></span><span class="text-sky-400 font-medium">Stick</span>${s.prev_team_name ? `<span class="text-slate-600">(${escHtml(s.prev_team_name)})</span>` : ''}</span>`
+            : s.team_pref === 'reshuffle'
+              ? `<span class="text-violet-400 font-medium">Reshuffle</span>`
+              : `<span class="text-slate-600">—</span>`}
         </td>
         <td class="px-4 py-3 text-slate-400 whitespace-nowrap">${escHtml(fmtDate(s.created_at))}</td>
         <td class="px-4 py-3">

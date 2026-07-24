@@ -339,8 +339,33 @@ function registrationBanner({ deadline }) {
 </section>`;
 }
 
+function memberSignupBannerBig({ season, deadline }) {
+  return `<section class="reg-banner" aria-label="Season Signup">
+  <div class="reg-banner__glow" aria-hidden="true"></div>
+  <div class="reg-banner__arc" aria-hidden="true"></div>
+  <div class="reg-banner__inner">
+    <div class="reg-banner__copy">
+      <div class="reg-banner__eyebrow">
+        <span class="reg-banner__pill">
+          <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
+          Season ${escHtml(String(season))} Signup Open
+        </span>
+      </div>
+      <h2 class="reg-banner__headline">Lock In Your Spot for Season ${escHtml(String(season))}.</h2>
+      ${deadline
+        ? `<p class="reg-banner__deadline">You have until&nbsp;<strong>${escHtml(deadline)}</strong> to confirm your spot — don't miss the cutoff.</p>`
+        : `<p class="reg-banner__deadline">Confirm your spot for the upcoming season before signup closes.</p>`
+      }
+    </div>
+    <a href="/season-signup" class="reg-banner__cta">
+      Sign Me Up <span aria-hidden="true">→</span>
+    </a>
+  </div>
+</section>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
-export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null }) {
+export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null, signupBanner = null }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -354,7 +379,7 @@ export function homePage({ teams, players, games, highlights = [], leaderPlayers
   ${highlightsSidebar(highlights)}
 </div>
 
-${regBanner ? registrationBanner(regBanner) : ''}
+${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerBig(signupBanner) : ''}
 
 ${leagueLeaders(leaderPlayers)}`;
 }

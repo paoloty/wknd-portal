@@ -4197,6 +4197,13 @@ a.player-link:hover { color: var(--amber); }
   border-left: 2px solid #0d1424;
 }
 .agr-strip:first-child { border-left: none; }
+/* Hero mode (MVP/DPOY): name/badge/stats overlay spans the whole canvas, on top of every
+   photo slot — mirrors .agr-strip__text's positioning but at the canvas level instead of
+   scoped to one column, since the text never repeats per photo. */
+.agr-hero-text {
+  position: absolute; left: 4%; right: 4%; bottom: 3%; z-index: 5; pointer-events: none;
+  text-align: center; color: #f1f5f9;
+}
 .agr-strip__frame {
   /* top matches BANNER_H/CANVAS_H (72/630) in server.js/award-graphic-editor.js — the real
      compositor places the photo tile starting at canvas row 72 (top: bannerPct) and its
@@ -4227,11 +4234,12 @@ a.player-link:hover { color: var(--amber); }
   letter-spacing: .08em;
 }
 .agr-strip__pill {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center; gap: .45em;
   border: 1.5px solid var(--amber); color: var(--amber);
   border-radius: 999px; font-size: .833cqw; font-weight: 800; line-height: 1;
   letter-spacing: .06em; padding: 0 .7cqw; white-space: nowrap;
 }
+.agr-strip__pill-icon { height: 1.4em; width: auto; flex-shrink: 0; fill: currentColor; }
 .agr-strip__stats { font-size: 1.083cqw; font-weight: 700; color: var(--amber); letter-spacing: .03em; line-height: 1; }
 .agr-strip__stat-val { font-size: 2.5cqw; font-weight: 800; color: var(--amber); line-height: 1; }
 .agr-strip__stat-unit { font-size: .833cqw; font-weight: 700; letter-spacing: .12em; line-height: 1; }

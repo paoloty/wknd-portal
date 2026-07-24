@@ -74,6 +74,7 @@ export function seasonSignupPage({
   seasonFormat = '',
   jerseyTopPrice = '',
   jerseyShortPrice = '',
+  returning = null,
 } = {}) {
   const wrap = body => `<div class="login-page" style="padding:80px 16px">
   <div class="reg-box" style="max-width:560px">
@@ -104,6 +105,11 @@ export function seasonSignupPage({
     ${existing.jersey_top    ? `<div style="color:var(--text-muted)">Top: <strong style="color:var(--text)">${escHtml(existing.jersey_top)}</strong></div>` : ''}
     ${existing.jersey_shorts ? `<div style="color:var(--text-muted)">Shorts: <strong style="color:var(--text)">${escHtml(existing.jersey_shorts)}</strong></div>` : ''}
   </div>` : '';
+    const teamPrefInfo = existing.team_pref ? `
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px">
+    <div style="font-weight:700;color:var(--text);margin-bottom:6px">Team Preference</div>
+    <div style="color:var(--text-muted)">${existing.team_pref === 'stick' ? `Sticking with <strong style="color:var(--text)">${escHtml(existing.prev_team_name || 'your team')}</strong>` : 'Open to a reshuffle'}</div>
+  </div>` : '';
     return wrap(`<div class="login-form" style="text-align:center;padding:48px 32px">
   <div style="font-size:42px;margin-bottom:16px">${existing.status === 'confirmed' ? '✅' : existing.status === 'rejected' ? '😔' : '🏀'}</div>
   <h2 style="font-size:1.2rem;font-weight:800;color:var(--text);margin:0 0 8px">Season ${escHtml(String(sigSeason))} Signup</h2>
@@ -116,6 +122,7 @@ export function seasonSignupPage({
         : "You're on the waitlist. An admin will review and confirm your spot soon."}
   </p>
   ${jerseyInfo}
+  ${teamPrefInfo}
   ${existing.has_balance ? `<div style="background:rgba(245,147,50,.08);border:1px solid rgba(245,147,50,.25);border-radius:8px;padding:12px 16px;text-align:left;margin-bottom:20px;font-size:12px;color:#f59332">
     ⚠️ You have an outstanding balance of <strong>₱${Number(existing.balance_amt).toLocaleString()}</strong>. An admin will follow up about settlement before your spot is confirmed.
   </div>` : ''}
@@ -193,6 +200,20 @@ export function seasonSignupPage({
         </div>
       </div>
     </div>
+
+    ${returning ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:18px">
+      <label style="display:block;font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">You played for <strong>${escHtml(returning.team.name)}</strong> last season (Season ${escHtml(String(returning.prevSeason))}) <span style="color:#f87171">*</span></label>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;color:var(--text-muted)">
+          <input type="radio" name="team_pref" value="stick" required style="width:15px;height:15px;flex-shrink:0;accent-color:#f59332">
+          Stick with ${escHtml(returning.team.name)} for Season ${escHtml(String(sigSeason))}
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;color:var(--text-muted)">
+          <input type="radio" name="team_pref" value="reshuffle" required style="width:15px;height:15px;flex-shrink:0;accent-color:#f59332">
+          I'm open to being reshuffled onto a different team
+        </label>
+      </div>
+    </div>` : ''}
 
     ${quotaAmt ? `<div style="background:rgba(245,147,50,.06);border:1px solid rgba(245,147,50,.2);border-radius:8px;padding:14px 16px;margin-bottom:18px">
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">

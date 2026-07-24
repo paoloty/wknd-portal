@@ -14,9 +14,9 @@ function methodBadge(method) {
 }
 
 function actorBadge(type) {
-  return type === 'super'
-    ? `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f59332;background:rgba(245,147,50,.12);padding:1px 6px;border-radius:4px">Super</span>`
-    : `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#a78bfa;background:rgba(167,139,250,.12);padding:1px 6px;border-radius:4px">Admin</span>`;
+  if (type === 'super') return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f59332;background:rgba(245,147,50,.12);padding:1px 6px;border-radius:4px">Super</span>`;
+  if (type === 'player') return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#60a5fa;background:rgba(96,165,250,.12);padding:1px 6px;border-radius:4px">Player</span>`;
+  return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#a78bfa;background:rgba(167,139,250,.12);padding:1px 6px;border-radius:4px">Admin</span>`;
 }
 
 export function adminLogsPage({ logs = [] }) {
@@ -41,7 +41,7 @@ export function adminLogsPage({ logs = [] }) {
 <div class="mb-6 flex items-center justify-between">
   <div>
     <h2 class="text-xl font-bold tracking-tight text-slate-100">Admin Logs</h2>
-    <p class="text-xs text-slate-500 mt-0.5">All admin actions — visible to super admin only</p>
+    <p class="text-xs text-slate-500 mt-0.5">Admin actions and player account activity (email opens, password setup, logins) — visible to super admin only</p>
   </div>
   <span class="text-xs text-slate-600">${logs.length} entries</span>
 </div>

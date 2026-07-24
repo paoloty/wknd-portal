@@ -53,6 +53,7 @@ import {
   updatePlayerPhoto, updatePlayer,
   getPlayerPhotoOriginal, updatePlayerPhotoOriginal,
   getAwardPhotoOverrides, upsertAwardPhotoOverride, deleteAwardPhotoOverride,
+  getAwardPhotoOverridesForPlayer, deleteAwardPhotoOverridesFromSlot,
   getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
   getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
@@ -64,6 +65,7 @@ import {
   getMvpCandidates, getTotalSeasonGamesForMvp,
   getSetting, setSetting,
   insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, countSeasonSignups,
+  playerPlayedSeason, getPlayerCurrentTeam,
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
@@ -563,6 +565,19 @@ const AWARD_OG_BADGE = {
 };
 const TEAM_AWARD_TYPES_OG = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
 const SINGLE_PHOTO_AWARD_TYPES = new Set(['mvp', 'dpoy']);
+// MVP/DPOY normally show one hero photo; an admin can opt into a multi-column layout
+// (2..MAX side by side) instead. Stored per (season, type) since it's a display choice,
+// not season data — reuses the generic site_settings key/value store.
+const MAX_AWARD_COLUMNS = 8;
+function getAwardColumnCount(season, type) {
+  const n = parseInt(getSetting(`award_cols_${season}_${type}`, '1'), 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_AWARD_COLUMNS) : 1;
+}
+function setAwardColumnCount(season, type, n) {
+  const clamped = Math.min(MAX_AWARD_COLUMNS, Math.max(1, parseInt(n, 10) || 1));
+  setSetting(`award_cols_${season}_${type}`, clamped);
+  return clamped;
+}
 const POSITIONS_OG_ORDER  = ['PG', 'SG', 'SF', 'PF', 'C'];
 const POS_FULL_OG = { PG: 'POINT GUARD', SG: 'SHOOTING GUARD', SF: 'SMALL FORWARD', PF: 'POWER FORWARD', C: 'CENTER' };
 const POSITION_ORDER_OG_MAP = Object.fromEntries(POSITIONS_OG_ORDER.map((p, i) => [p, i]));
@@ -573,7 +588,11 @@ function ogStatLine(row, type) {
   const parts =
     (['mvp', 'all_wknd_1', 'all_wknd_2'].includes(type))
       ? [avg(row.pts) && `${avg(row.pts)} PPG`, avg(row.reb) && `${avg(row.reb)} RPG`, avg(row.ast) && `${avg(row.ast)} APG`]
-    : (['dpoy', 'all_wknd_def'].includes(type))
+    : type === 'dpoy'
+      // Individual DPOY share leads with rebounds too — the team defensive grid (all_wknd_def)
+      // stays SPG/BPG-only since that redesign was scoped to the single-player awards.
+      ? [avg(row.reb) && `${avg(row.reb)} RPG`, avg(row.stl) && `${avg(row.stl)} SPG`, avg(row.blk) && `${avg(row.blk)} BPG`]
+    : type === 'all_wknd_def'
       ? [avg(row.stl) && `${avg(row.stl)} SPG`, avg(row.blk) && `${avg(row.blk)} BPG`]
     : type === 'scoring_champ'   ? [avg(row.pts)  && `${avg(row.pts)} PPG`]
     : type === 'assists_leader'  ? [avg(row.ast)  && `${avg(row.ast)} APG`]
@@ -753,6 +772,13 @@ async function buildTeamAwardOgPng(rows, badge, season) {
   return buildOgStripPng({ rows: sorted, season, awardType: badge._type, svg });
 }
 
+// crown (MVP) / shield (DPOY) — filled, drawn in the badge's own text color so they sit
+// correctly against either badge fill.
+const AWARD_ICON_PATH = {
+  mvp:  { viewBox: '0 0 24 20', d: 'M2 6l4 4 6-8 6 8 4-4-2 11H4L2 6z' },
+  dpoy: { viewBox: '0 0 24 26', d: 'M12 1l10 4v7c0 6.5-4.3 11-10 13-5.7-2-10-6.5-10-13V5l10-4z' },
+};
+
 function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
   const W = 1200, H = 630;
   const cx = W / 2;
@@ -769,9 +795,49 @@ function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
   const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
   const stats = escXml(ogStatLine(row, type));
 
-  const lastFs = last.length > 12 ? 48 : last.length > 9 ? 56 : 68;
-  const pillW  = Math.min(Math.round(badge.label.length * 6.4 + 36), W - 100);
-  const pillX  = Math.round(cx - pillW / 2);
+  // MVP/DPOY get the bigger "hero" treatment (solid badge + icon); every other single-player
+  // share (individual stat-leader shares) keeps the original smaller outline-pill layout.
+  const isPrestige = type === 'mvp' || type === 'dpoy';
+  const icon = AWARD_ICON_PATH[type] || null;
+
+  const lastFs = isPrestige
+    ? (last.length > 12 ? 64 : last.length > 9 ? 74 : 90)
+    : (last.length > 12 ? 48 : last.length > 9 ? 56 : 68);
+
+  const teamY = isPrestige ? 388 : 400;
+  const teamFs = isPrestige ? 18 : 12;
+  const pillY = isPrestige ? 402 : 414;
+  const pillH = isPrestige ? 32 : 26;
+  const pillFs = isPrestige ? 13 : 10;
+  const firstY = isPrestige ? 468 : 476;
+  const firstFs = isPrestige ? 28 : 22;
+  const lastY = isPrestige ? 552 : 548;
+  const statsY = isPrestige ? 598 : 584;
+  const statsFs = isPrestige ? 19 : 15;
+
+  let badgeSvg;
+  if (isPrestige && icon) {
+    const iconSize = 18, gap = 8, padX = 20;
+    const textW  = badge.label.length * 8.3;
+    const iconW  = iconSize * (icon.viewBox.split(' ')[2] / icon.viewBox.split(' ')[3]);
+    const contentW = iconW + gap + textW;
+    const pillW  = Math.min(Math.round(contentW + padX * 2), W - 100);
+    const pillX  = Math.round(cx - pillW / 2);
+    const iconX  = pillX + padX;
+    const iconY  = pillY + (pillH - iconSize) / 2;
+    const textX  = iconX + iconW + gap + textW / 2;
+    const textY  = pillY + pillH / 2 + pillFs * 0.35;
+    badgeSvg = `
+  <rect x="${pillX}" y="${pillY}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="${badgeBg}"/>
+  <svg x="${iconX}" y="${iconY}" width="${iconW}" height="${iconSize}" viewBox="${icon.viewBox}" fill="${badgeTxt}"><path d="${icon.d}"/></svg>
+  <text x="${textX}" y="${textY}" font-family="Arial,Helvetica,sans-serif" font-size="${pillFs}" font-weight="800" fill="${badgeTxt}" text-anchor="middle" letter-spacing="1.2">${badgeLbl}</text>`;
+  } else {
+    const pillW = Math.min(Math.round(badge.label.length * 6.4 + 36), W - 100);
+    const pillX = Math.round(cx - pillW / 2);
+    badgeSvg = `
+  <rect x="${pillX}" y="${pillY}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="none" stroke="${badgeBg}" stroke-width="1.5"/>
+  <text x="${cx}" y="${pillY + pillH / 2 + pillFs * 0.35}" font-family="Arial,Helvetica,sans-serif" font-size="${pillFs}" font-weight="800" fill="${badgeBg}" text-anchor="middle" letter-spacing="1.2">${badgeLbl}</text>`;
+  }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>
@@ -806,18 +872,17 @@ function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
   <rect x="0" y="0" width="${W}" height="${H}" fill="url(#edge-r)"/>
 
   <!-- Team name -->
-  <text x="${cx}" y="400" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" fill="${tc}" text-anchor="middle" letter-spacing="4">${tn}</text>
+  <text x="${cx}" y="${teamY}" font-family="Arial,Helvetica,sans-serif" font-size="${teamFs}" font-weight="700" fill="${tc}" text-anchor="middle" letter-spacing="4">${tn}</text>
 
-  <!-- Award badge pill -->
-  <rect x="${pillX}" y="414" width="${pillW}" height="26" rx="13" fill="none" stroke="${badgeBg}" stroke-width="1.5"/>
-  <text x="${cx}" y="${414 + 13 + 4}" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="800" fill="${badgeBg}" text-anchor="middle" letter-spacing="1.2">${badgeLbl}</text>
+  <!-- Award badge -->
+  ${badgeSvg}
 
   <!-- Player name -->
-  <text x="${cx}" y="476" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="1">${escXml(first)}</text>
-  <text x="${cx}" y="548" font-family="Arial,Helvetica,sans-serif" font-size="${lastFs}" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="-1">${escXml(last)}</text>
+  <text x="${cx}" y="${firstY}" font-family="Arial,Helvetica,sans-serif" font-size="${firstFs}" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="1">${escXml(first)}</text>
+  <text x="${cx}" y="${lastY}" font-family="Arial,Helvetica,sans-serif" font-size="${lastFs}" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="-1">${escXml(last)}</text>
 
   <!-- Stats -->
-  ${stats ? `<text x="${cx}" y="584" font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>` : ''}
+  ${stats ? `<text x="${cx}" y="${statsY}" font-family="Arial,Helvetica,sans-serif" font-size="${statsFs}" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>` : ''}
 
   <!-- Banner -->
   <rect x="0" y="0" width="${W}" height="72" fill="url(#banner-bg)"/>
@@ -837,17 +902,29 @@ function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
 async function buildPlayerAwardOgPng(row, type, badge, season) {
   const W = 1200, H = 630;
 
-  const override = getAwardPhotoOverrides(season, type)[row.player_id] || null;
-  const photoUrl = (override && override.photo_url) || row.picture_url;
-  const photoBuf = photoUrl ? await renderPhotoStrip(photoUrl, W, H, override) : null;
+  // MVP/DPOY can show a multi-image cover (several photos of this same confirmed player
+  // tiled side by side) instead of one full-canvas photo. The name/badge/stats overlay
+  // below is unchanged either way — only the photo compositing splits into columns.
+  const n = SINGLE_PHOTO_AWARD_TYPES.has(type) ? getAwardColumnCount(season, type) : 1;
+  const overridesBySlot = SINGLE_PHOTO_AWARD_TYPES.has(type)
+    ? getAwardPhotoOverridesForPlayer(season, type, row.player_id)
+    : {};
 
   const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
     .png().toBuffer();
 
   const layers = [];
-  if (photoBuf) layers.push({ input: photoBuf, top: 72, left: 0 });
+  let hasPhoto = false;
+  const stripW = n > 1 ? Math.floor(W / n) : W;
+  for (let i = 0; i < Math.max(n, 1); i++) {
+    const override = overridesBySlot[i] || null;
+    const photoUrl = (override && override.photo_url) || row.picture_url;
+    if (!photoUrl) continue;
+    const buf = await renderPhotoStrip(photoUrl, stripW, H, override);
+    if (buf) { layers.push({ input: buf, top: 72, left: i * stripW }); hasPhoto = true; }
+  }
 
-  const svgBuf = await sharp(Buffer.from(buildPlayerAwardOgSvg(row, type, badge, season, !!photoBuf)), { density: 96 })
+  const svgBuf = await sharp(Buffer.from(buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto)), { density: 96 })
     .resize(W, H).png().toBuffer();
   layers.push({ input: svgBuf, top: 0, left: 0 });
 
@@ -1042,7 +1119,8 @@ function renderPage(req, opts) {
     const sigSeason   = getSetting('signup_target_season', '');
     const sigOpen     = getSetting('season_signup_open', '0') === '1';
     const onSignupPg  = opts.currentPath === '/season-signup';
-    if (sigSeason && sigOpen && !onSignupPg) {
+    const onHomePg    = opts.currentPath === '/';
+    if (sigSeason && sigOpen && !onSignupPg && !onHomePg) {
       const existing = getSeasonSignup(req.session.playerRegId, sigSeason);
       if (!existing) {
         showSignupBanner    = true;
@@ -1898,6 +1976,7 @@ app.post('/login', (req, res) => {
   if (checkCredentials(username, password)) {
     req.session.isAdmin = true;
     if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+    insertAdminLog({ actor: username, actorType: 'super', method: 'POST', path: '/login', details: { event: 'login' } });
     return res.redirect('/admin');
   }
 
@@ -1919,6 +1998,10 @@ app.post('/login', (req, res) => {
         req.session.playerName       = (reg.full_name || '').split(',').reverse().map(s => s.trim()).join(' ');
       }
       if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+      insertAdminLog({
+        actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
+        method: 'POST', path: '/login', details: { event: 'login', email: reg.email },
+      });
       return res.redirect(reg.is_admin ? '/admin' : '/me');
     }
   }
@@ -1948,6 +2031,10 @@ app.get('/set-password', (req, res) => {
     }));
   }
   const name = (reg.full_name || '').split(',')[1]?.trim() || reg.full_name || '';
+  insertAdminLog({
+    actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
+    method: 'GET', path: '/set-password', details: { event: 'email_opened', email: reg.email },
+  });
   res.send(renderPage(req, { title: 'Set Your Password — WKND Basketball', currentPath: '', ticker: '', body: setPasswordPage({ token, name }) }));
 });
 
@@ -1967,6 +2054,10 @@ app.post('/set-password', express.urlencoded({ extended: false }), async (req, r
     scrypt(password, salt, 64, (err, key) => err ? reject(err) : resolve(`${salt}:${key.toString('hex')}`));
   });
   setRegistrationPassword(reg.id, hash);
+  insertAdminLog({
+    actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
+    method: 'POST', path: '/set-password', details: { event: 'password_set', email: reg.email },
+  });
   res.send(renderPage(req, { title: 'Password Set — WKND Basketball', currentPath: '', ticker: '', body: setPasswordDonePage() }));
 });
 
@@ -2506,6 +2597,7 @@ app.post('/admin/awards', requireAuth, express.json(), (req, res) => {
       ? `${season}_${award_type}_${position}`
       : `${season}_${award_type}_${player_id}`;
     upsertAward({ id, season, award_type, player_id, notes });
+    if (SINGLE_PHOTO_AWARD_TYPES.has(award_type)) clearAwardOgCache(season, award_type, player_id);
   }
   res.json({ ok: true });
 });
@@ -2532,10 +2624,35 @@ function getAwardGraphicRows(season, type) {
 }
 
 function clearAwardOgCache(season, type, playerId) {
+  if (SINGLE_PHOTO_AWARD_TYPES.has(type)) {
+    if (playerId) _awardOgCache.delete(`player-${season}-${type}-${playerId}`);
+    return;
+  }
   const cacheKey = type === 'stat-leaders' ? `stat-leaders-${season}`
-    : SINGLE_PHOTO_AWARD_TYPES.has(type) ? `player-${season}-${type}-${playerId}`
     : `team-${season}-${type}`;
   _awardOgCache.delete(cacheKey);
+}
+
+const px2cqw = px => +(px / 1200 * 100).toFixed(3);
+const OG_NAVY = '#020817';
+const hexA = (hex, opacity) => hex + Math.round(opacity * 255).toString(16).padStart(2, '0');
+
+// Vertical fade + team-color glow, matching buildTeamAwardOgSvg's per-strip gradient stops
+// exactly. Used for every strip-style photo panel (team grids, and MVP/DPOY's photo slots
+// when it has more than one).
+function stripShadeGradient(teamColor) {
+  const tc = teamColor || '#4a5263';
+  return `linear-gradient(to bottom, ${hexA(OG_NAVY,0)} 0%, ${hexA(OG_NAVY,0)} 42%, ${hexA(OG_NAVY,.72)} 72%, ${hexA(OG_NAVY,.96)} 100%),` +
+         `linear-gradient(to bottom, ${hexA(tc,0)} 0%, ${hexA(tc,0)} 65%, ${hexA(tc,.28)} 100%)`;
+}
+// Full-bleed single-photo vignette, matching buildPlayerAwardOgSvg's 4-layer gradient
+// (bot-fade, team-glow, edge-l, edge-r — painted in that order, so the CSS list is reversed).
+function heroShadeGradient(teamColor) {
+  const tc = teamColor || '#4a5263';
+  return `linear-gradient(to right, ${hexA(OG_NAVY,0)} 78%, ${hexA(OG_NAVY,.55)} 100%),` +
+         `linear-gradient(to right, ${hexA(OG_NAVY,.55)} 0%, ${hexA(OG_NAVY,0)} 22%),` +
+         `linear-gradient(to bottom, ${hexA(tc,0)} 70%, ${hexA(tc,.28)} 100%),` +
+         `linear-gradient(to bottom, ${hexA(OG_NAVY,0)} 42%, ${hexA(OG_NAVY,.97)} 100%)`;
 }
 
 app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
@@ -2549,53 +2666,75 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
     }));
   }
 
-  const overrides = getAwardPhotoOverrides(season, type);
-  const isSingle  = SINGLE_PHOTO_AWARD_TYPES.has(type);
+  const isSingle = SINGLE_PHOTO_AWARD_TYPES.has(type);
   const badgeLabel = type === 'stat-leaders' ? 'Statistical Leaders' : AWARD_OG_BADGE[type].label;
   const badgeColor = type === 'stat-leaders' ? '#f59332' : AWARD_OG_BADGE[type].bg;
+  const bannerFs = { eyebrow: px2cqw(9), title: px2cqw(22), season: px2cqw(18) };
 
-  // Font sizes as % of canvas width (cqw), computed from the exact px values the real
-  // SVG generators use on the 1200-wide canvas — keeps the editor preview proportionally
-  // accurate regardless of how big the canvas actually renders on screen. Each graphic
-  // "kind" has its own type scale in the real generators, not just a size tweak.
-  const px2cqw = px => +(px / 1200 * 100).toFixed(3);
-  const kind = type === 'stat-leaders' ? 'stat' : isSingle ? 'single' : 'strip';
-  const FS_PX = {
-    strip:  { pill: 10, pillH: 24, stats: 13, first: 13, last: 21 },
-    stat:   { pill: 9,  pillH: 24, statVal: 30, statUnit: 10, first: 10, last: 14 },
-    single: { team: 12, pill: 10, pillH: 26, stats: 15, first: 22 },
-  }[kind];
-  // Gap-before-each-line (margin-top), in px on the 1200x630 canvas — derived from the real
-  // SVG's y-coordinates (box top/bottom estimated as baseline ∓ 0.8/0.2 × font-size), not guessed.
-  // single's last/stats gaps depend on the per-row dynamic last-name size, so are computed below.
-  const GAP_PX = {
-    strip:  { stats: 14, first: 11, last: 9 },
-    stat:   { statVal: 8, statUnit: 10, first: 10, last: 9 },
-    single: { pill: 12, first: 18 },
-  }[kind];
+  // ── MVP/DPOY: one confirmed player, 1..MAX photo slots for a multi-image cover ──────────
+  if (isSingle) {
+    const row = rows[0];
+    const columnCount = getAwardColumnCount(season, type);
+    const overridesBySlot = getAwardPhotoOverridesForPlayer(season, type, row.player_id);
 
-  // Photo shade gradients, ported stop-for-stop from the real SVG's <linearGradient> defs
-  // (buildTeamAwardOgSvg/buildStatLeadersOgSvg/buildPlayerAwardOgSvg) so the darkening behind
-  // the text matches exactly instead of an eyeballed CSS approximation.
-  const NAVY = '#020817';
-  const hexA = (hex, opacity) => hex + Math.round(opacity * 255).toString(16).padStart(2, '0');
-  function shadeGradient(teamColor) {
-    const tc = teamColor || '#4a5263';
-    if (kind === 'strip') {
-      return `linear-gradient(to bottom, ${hexA(NAVY,0)} 0%, ${hexA(NAVY,0)} 42%, ${hexA(NAVY,.72)} 72%, ${hexA(NAVY,.96)} 100%),` +
-             `linear-gradient(to bottom, ${hexA(tc,0)} 0%, ${hexA(tc,0)} 65%, ${hexA(tc,.28)} 100%)`;
-    }
-    if (kind === 'stat') {
-      return `linear-gradient(to bottom, ${hexA(NAVY,.6)} 0%, ${hexA(NAVY,0)} 28%, ${hexA(NAVY,0)} 52%, ${hexA(NAVY,.78)} 75%, ${hexA(NAVY,.97)} 100%),` +
-             `linear-gradient(to bottom, ${hexA(tc,0)} 0%, ${hexA(tc,0)} 62%, ${hexA(tc,.22)} 100%)`;
-    }
-    // single: SVG paints bot-fade, team-glow, edge-l, edge-r in that order (later = on top);
-    // CSS backgrounds paint first-listed on top, so the list here is reversed from SVG order.
-    return `linear-gradient(to right, ${hexA(NAVY,0)} 78%, ${hexA(NAVY,.55)} 100%),` +
-           `linear-gradient(to right, ${hexA(NAVY,.55)} 0%, ${hexA(NAVY,0)} 22%),` +
-           `linear-gradient(to bottom, ${hexA(tc,0)} 70%, ${hexA(tc,.28)} 100%),` +
-           `linear-gradient(to bottom, ${hexA(NAVY,0)} 42%, ${hexA(NAVY,.97)} 100%)`;
+    const name  = formatName(row.player_name || '');
+    const parts = name.split(' ');
+    const last  = (parts.length > 1 ? parts[parts.length - 1] : name).toUpperCase();
+    const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+    const lastPx = last.length > 12 ? 64 : last.length > 9 ? 74 : 90;
+
+    const hero = {
+      _playerId: row.player_id,
+      teamName: String(row.team_name || '').toUpperCase(),
+      teamColor: row.team_color || '#4a5263',
+      pillLabel: badgeLabel,
+      pillColor: badgeColor,
+      pillIcon: type === 'mvp' ? 'crown' : type === 'dpoy' ? 'shield' : null,
+      pillTextColor: AWARD_OG_BADGE[type]?.text || '#10141d',
+      first, last,
+      statLine: ogStatLine(row, type),
+      teamFs: px2cqw(18), pillFs: px2cqw(13), pillHFs: px2cqw(32), statsFs: px2cqw(19), firstFs: px2cqw(28), lastFs: px2cqw(lastPx),
+      pillGap: px2cqw(10), firstGap: px2cqw(12),
+      lastGap:  px2cqw(Math.round(78.4 - 0.8 * lastPx)),
+      statsGap: px2cqw(Math.round(30.8 - 0.2 * lastPx)),
+    };
+
+    const photoSlots = Array.from({ length: columnCount }, (_, slot) => {
+      const override = overridesBySlot[slot] || null;
+      return {
+        slot,
+        teamColor: row.team_color || '#4a5263',
+        shadeCss: columnCount > 1 ? stripShadeGradient(row.team_color) : heroShadeGradient(row.team_color),
+        photoUrl: (override && override.photo_url) || `/api/player/${encodeURIComponent(row.player_id)}/photo`,
+        offsetX: override ? override.offset_x : 50,
+        offsetY: override ? override.offset_y : 50,
+        zoom: override ? override.zoom : 1,
+      };
+    });
+
+    const ogImagePath = `/api/awards/${season}/${type}/${encodeURIComponent(row.player_id)}/og-image.png`;
+
+    return res.send(renderAdminPage(req, {
+      title: 'Edit Award Graphic',
+      currentPath: '/admin/awards',
+      body: awardGraphicEditorBody({
+        season, type, badgeLabel, badgeColor, ogImagePath, bannerFs,
+        mode: 'hero', hero, photoSlots, columnCount, maxColumns: MAX_AWARD_COLUMNS,
+      }),
+    }));
   }
+
+  // ── Team grids / stat leaders: unchanged N-different-players strip layout ───────────────
+  const kind = type === 'stat-leaders' ? 'stat' : 'strip';
+  const overrides = getAwardPhotoOverrides(season, type);
+  const FS_PX = {
+    strip: { pill: 10, pillH: 24, stats: 13, first: 13, last: 21 },
+    stat:  { pill: 9,  pillH: 24, statVal: 30, statUnit: 10, first: 10, last: 14 },
+  }[kind];
+  const GAP_PX = {
+    strip: { stats: 14, first: 11, last: 9 },
+    stat:  { statVal: 8, statUnit: 10, first: 10, last: 9 },
+  }[kind];
 
   const columns = rows.map(row => {
     const name  = formatName(row.player_name || '');
@@ -2605,38 +2744,27 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
     const b = kind === 'stat' ? (AWARD_OG_BADGE[row.award_type] || null) : null;
     const pillLabel = kind === 'stat'
       ? (b?.label || row.award_type.toUpperCase())
-      : isSingle
-        ? badgeLabel
-        : (row.notes && POS_FULL_OG[row.notes] ? POS_FULL_OG[row.notes] : '');
+      : (row.notes && POS_FULL_OG[row.notes] ? POS_FULL_OG[row.notes] : '');
     const pillColor = kind === 'stat' ? (b?.bg || badgeColor) : badgeColor;
-    // Matches buildPlayerAwardOgSvg's lastFs formula exactly (shrinks for long names).
-    const lastPx = kind === 'single' ? (last.length > 12 ? 48 : last.length > 9 ? 56 : 68) : FS_PX.last;
+    const lastPx = FS_PX.last;
     const statSplit = kind === 'stat' ? statLeaderValueUnit(row) : null;
-    // single's last-name box height varies with lastPx (fixed baseline y=548/584 in the real
-    // SVG regardless of font size), so the gaps around it have to be computed per-row too.
-    const lastGapPx  = kind === 'single' ? Math.round(67.6 - 0.8 * lastPx) : (GAP_PX.last ?? 0);
-    const statsGapPx = kind === 'single' ? Math.round(24 - 0.2 * lastPx) : 0;
     const override = overrides[row.player_id] || null;
     return {
       player_id: row.player_id,
       first, last,
-      pillLabel, pillColor,
-      teamName: isSingle ? String(row.team_name || '').toUpperCase() : '',
-      // Team strips and MVP/DPOY show one combined "18.0 PPG · 3.8 RPG" line; stat-leaders
-      // shows a single stat as a big standalone number with a small unit label beneath it.
+      pillLabel, pillColor, pillIcon: null, pillTextColor: null,
+      teamName: '',
       statLine: statSplit ? '' : ogStatLine(row, type),
       statVal: statSplit ? statSplit.val : '',
       statUnit: statSplit ? statSplit.unit : '',
       teamColor: row.team_color || '#4a5263',
-      shadeCss: shadeGradient(row.team_color),
-      // Must match renderPhotoStrip()'s own default source exactly (row.picture_url, i.e.
-      // /photo — NOT /photo-source) or the preview won't match what actually gets rendered.
+      shadeCss: stripShadeGradient(row.team_color),
       photoUrl: (override && override.photo_url) || `/api/player/${encodeURIComponent(row.player_id)}/photo`,
       offsetX: override ? override.offset_x : 50,
       offsetY: override ? override.offset_y : 50,
       zoom: override ? override.zoom : 1,
       hasCustomPhoto: !!(override && override.photo_url),
-      teamFs: px2cqw(FS_PX.team || 12),
+      teamFs: px2cqw(12),
       pillFs: px2cqw(FS_PX.pill),
       pillHFs: px2cqw(FS_PX.pillH),
       statsFs: px2cqw(FS_PX.stats || 13),
@@ -2645,25 +2773,36 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
       firstFs: px2cqw(FS_PX.first),
       lastFs: px2cqw(lastPx),
       pillGap:  px2cqw(GAP_PX.pill ?? 0),
-      statsGap: px2cqw(GAP_PX.stats ?? statsGapPx),
+      statsGap: px2cqw(GAP_PX.stats ?? 0),
       statValGap: px2cqw(GAP_PX.statVal ?? 0),
       statUnitGap: px2cqw(GAP_PX.statUnit ?? 0),
       firstGap: px2cqw(GAP_PX.first ?? 0),
-      lastGap:  px2cqw(GAP_PX.last ?? lastGapPx),
+      lastGap:  px2cqw(GAP_PX.last ?? 0),
     };
   });
 
-  const ogImagePath = isSingle
-    ? `/api/awards/${season}/${type}/${encodeURIComponent(columns[0].player_id)}/og-image.png`
-    : `/api/awards/${season}/${type}/og-image.png`;
-
-  const bannerFs = { eyebrow: px2cqw(9), title: px2cqw(22), season: px2cqw(18) };
+  const ogImagePath = `/api/awards/${season}/${type}/og-image.png`;
 
   res.send(renderAdminPage(req, {
     title: 'Edit Award Graphic',
     currentPath: '/admin/awards',
-    body: awardGraphicEditorBody({ season, type, badgeLabel, badgeColor, columns, ogImagePath, bannerFs }),
+    body: awardGraphicEditorBody({ season, type, badgeLabel, badgeColor, columns, ogImagePath, bannerFs, mode: 'grid' }),
   }));
+});
+
+app.post('/admin/awards/:season/:type/columns', requireAuth, express.json(), (req, res) => {
+  const season = Number(req.params.season);
+  const { type } = req.params;
+  if (!season || !SINGLE_PHOTO_AWARD_TYPES.has(type)) return res.status(400).json({ error: 'Not applicable' });
+  const count = setAwardColumnCount(season, type, req.body?.count);
+  const row = getSeasonAwards(season).find(a => a.award_type === type);
+  if (row) {
+    // Drop any saved slots beyond the new count so they don't linger and reappear if the
+    // count is raised again later.
+    deleteAwardPhotoOverridesFromSlot(season, type, row.player_id, count);
+    clearAwardOgCache(season, type, row.player_id);
+  }
+  res.json({ ok: true, count });
 });
 
 app.post('/admin/awards/:season/:type/graphic', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
@@ -2672,14 +2811,16 @@ app.post('/admin/awards/:season/:type/graphic', requireAuth, express.json({ limi
   if (!season || !type) return res.status(400).json({ error: 'Missing fields' });
 
   const items    = Array.isArray(req.body?.overrides) ? req.body.overrides : [];
+  const isSingle = SINGLE_PHOTO_AWARD_TYPES.has(type);
   const existing = getAwardPhotoOverrides(season, type);
 
   for (const item of items) {
     const player_id = String(item.player_id || '');
     if (!player_id) continue;
+    const slot = isSingle && Number.isFinite(Number(item.slot)) ? Number(item.slot) : 0;
 
     if (item.clear) {
-      deleteAwardPhotoOverride(season, type, player_id);
+      deleteAwardPhotoOverride(season, type, player_id, slot);
       continue;
     }
 
@@ -2687,7 +2828,10 @@ app.post('/admin/awards/:season/:type/graphic', requireAuth, express.json({ limi
     const offset_y = Number(item.offset_y);
     const zoom     = Number(item.zoom);
 
-    let photo_url = existing[player_id]?.photo_url || '';
+    const existingRow = isSingle
+      ? getAwardPhotoOverridesForPlayer(season, type, player_id)[slot]
+      : existing[player_id];
+    let photo_url = existingRow?.photo_url || '';
     if (item.newPhotoDataUrl) {
       const buf = parseDataUrl(item.newPhotoDataUrl);
       if (buf) { try { photo_url = await compressSourceImage(buf); } catch (err) { console.error('override photo compress error:', err); } }
@@ -2700,10 +2844,10 @@ app.post('/admin/awards/:season/:type/graphic', requireAuth, express.json({ limi
       !photo_url;
 
     if (isDefault) {
-      deleteAwardPhotoOverride(season, type, player_id);
+      deleteAwardPhotoOverride(season, type, player_id, slot);
     } else {
       upsertAwardPhotoOverride({
-        season, award_type: type, player_id,
+        season, award_type: type, player_id, slot,
         offset_x: Number.isFinite(offset_x) ? offset_x : 50,
         offset_y: Number.isFinite(offset_y) ? offset_y : 50,
         zoom: Number.isFinite(zoom) ? zoom : 1,
@@ -3177,10 +3321,19 @@ app.get('/', (req, res) => {
     ? { deadline: getSetting('reg_deadline', '') }
     : null;
 
+  let signupBanner = null;
+  if (req.session?.playerRegId && !req.session?.isAdmin) {
+    const sigSeason = getSetting('signup_target_season', '');
+    const sigOpen   = getSetting('season_signup_open', '0') === '1';
+    if (sigSeason && sigOpen && !getSeasonSignup(req.session.playerRegId, sigSeason)) {
+      signupBanner = { season: sigSeason, deadline: getSetting('season_signup_deadline', '') };
+    }
+  }
+
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner })
+    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner, signupBanner })
   }));
 });
 
@@ -4084,7 +4237,11 @@ app.get('/api/awards/:season/stat-leaders/og-image.png', async (req, res) => {
 app.get('/api/awards/:season/:type/og-image.png', async (req, res) => {
   const season = Number(req.params.season);
   const { type } = req.params;
-  if (!season || !AWARD_OG_BADGE[type] || !TEAM_AWARD_TYPES_OG.has(type)) return res.status(404).end();
+  if (!season) return res.status(404).end();
+
+  // MVP/DPOY are always single-player — even in multi-image cover mode — so they're
+  // served from the existing :playerId route/URL, not here.
+  if (!AWARD_OG_BADGE[type] || !TEAM_AWARD_TYPES_OG.has(type)) return res.status(404).end();
   const badge    = { ...AWARD_OG_BADGE[type], _type: type };
   const cacheKey = `team-${season}-${type}`;
   try {
@@ -4648,6 +4805,15 @@ app.post('/register', (req, res) => {
 // ── Season Signup (member-facing) ─────────────────────────────────────────────
 import { seasonSignupPage } from './views/season-signup.js';
 
+// Returning-player team poll: only shown if they actually played the prior season and
+// still have a team on record.
+function getReturningTeamInfo(reg, sigSeason) {
+  const prevSeason = Number(sigSeason) - 1;
+  if (!reg.player_id || !prevSeason || !playerPlayedSeason(reg.player_id, prevSeason)) return null;
+  const team = getPlayerCurrentTeam(reg.player_id);
+  return team ? { prevSeason, team } : null;
+}
+
 app.get('/season-signup', (req, res) => {
   const regId = req.session?.playerRegId;
   if (!regId) return res.redirect('/login');
@@ -4669,11 +4835,12 @@ app.get('/season-signup', (req, res) => {
   const jerseyTopPrice   = getSetting('jersey_top_price', '');
   const jerseyShortPrice = getSetting('jersey_short_price', '');
   const existing         = sigSeason ? getSeasonSignup(regId, sigSeason) : null;
+  const returning        = sigSeason ? getReturningTeamInfo(reg, sigSeason) : null;
 
   res.send(renderPage(req, {
     title: 'Season Signup — WKND Basketball',
     currentPath: '/season-signup',
-    body: seasonSignupPage({ state: 'form', sigSeason, sigOpen, deadline, existing, name: reg.full_name, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice }),
+    body: seasonSignupPage({ state: 'form', sigSeason, sigOpen, deadline, existing, name: reg.full_name, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, returning }),
   }));
 });
 
@@ -4697,6 +4864,14 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
 
   if (!jerseyTop) return res.redirect('/season-signup?err=jersey');
 
+  // Returning players get asked whether to stick with their team or reshuffle — required
+  // when applicable, recomputed server-side rather than trusting a hidden form field.
+  const returning = getReturningTeamInfo(reg, sigSeason);
+  const teamPref  = (req.body.team_pref || '').trim();
+  if (returning && !['stick', 'reshuffle'].includes(teamPref)) {
+    return res.redirect('/season-signup?err=teampref');
+  }
+
   let hasBalance = false, balanceAmt = 0;
   if (reg.player_id) {
     const fin = getPlayerFinancials(reg.player_id);
@@ -4706,7 +4881,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     }
   }
 
-  insertSeasonSignup(regId, sigSeason, hasBalance, balanceAmt, jerseyTop, jerseyShorts, quotaAck);
+  insertSeasonSignup(regId, sigSeason, hasBalance, balanceAmt, jerseyTop, jerseyShorts, quotaAck, returning ? teamPref : '');
   const deadline         = getSetting('season_signup_deadline', '');
   const seasonFormat     = getSetting('season_format', '');
   const quotaAmount      = getSetting('season_quota_amount', '');
