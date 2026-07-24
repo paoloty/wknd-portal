@@ -6,6 +6,9 @@ const ICON_X     = `<svg width="10" height="10" viewBox="0 0 11 11" fill="none" 
 const ICON_EDIT  = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2l2 2-6.5 6.5L2 11l.5-2.5z"/></svg>`;
 const ICON_SPARK = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 1v2M6.5 10v2M1 6.5h2M10 6.5h2M3 3l1.5 1.5M8.5 8.5L10 10M3 10l1.5-1.5M8.5 4.5L10 3"/><circle cx="6.5" cy="6.5" r="2"/></svg>`;
 const ICON_RETRY = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
+const ICON_PHOTO = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2.5" width="11" height="8" rx="1.2"/><circle cx="4.3" cy="5.5" r="1"/><path d="M12 8l-3-2.5-4 3.5-2-1.5-1.5 1.5"/></svg>`;
+
+const SINGLE_PHOTO_TYPES = new Set(['mvp', 'dpoy']);
 
 const AWARD_LABELS = {
   mvp:             'Season MVP',
@@ -26,10 +29,10 @@ const POSITION_ORDER = Object.fromEntries(['PG','SG','SF','PF','C'].map((p,i) =>
 
 const AWARD_GROUPS = [
   { label: 'Season Awards',            types: ['mvp', 'dpoy'],                                       col: 'award' },
-  { label: 'All WKND 1st Team',       types: ['all_wknd_1'],                                        col: 'pos'   },
-  { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],                                        col: 'pos'   },
-  { label: 'All WKND Defensive Team', types: ['all_wknd_def'],                                      col: 'pos'   },
-  { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'], col: 'award' },
+  { label: 'All WKND 1st Team',       types: ['all_wknd_1'],   graphicType: 'all_wknd_1',            col: 'pos'   },
+  { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],   graphicType: 'all_wknd_2',            col: 'pos'   },
+  { label: 'All WKND Defensive Team', types: ['all_wknd_def'], graphicType: 'all_wknd_def',          col: 'pos'   },
+  { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'], graphicType: 'stat-leaders', col: 'award' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -75,7 +78,7 @@ function getStats(entry, isConf, statsMap = {}) {
 
 // ── Row builder ───────────────────────────────────────────────────────────────
 
-function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, colVal, withArticle, article, articleKey, articlePid }) {
+function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, colVal, withArticle, article, articleKey, articlePid, season }) {
   const aKey = articleKey || type;
   const aPid = articlePid || '';
   const name   = displayPlayerName(pname || '');
@@ -112,6 +115,7 @@ function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, 
   </td>
   <td class="awd-td awd-td--actions">
     ${!isConf ? `<button class="awd-action awd-action--confirm" title="Confirm" data-confirm-solo="${escHtml(type)}" data-confirm-pid="${escHtml(pid)}">${ICON_CHECK}</button>` : ''}
+    ${isConf && SINGLE_PHOTO_TYPES.has(type) ? `<a class="awd-action" style="text-decoration:none" title="Edit photo" href="/admin/awards/${escHtml(String(season))}/${escHtml(type)}/graphic">${ICON_PHOTO}</a>` : ''}
     <button class="awd-action" title="Change player" data-toggle-picker="${escHtml(rowId)}" data-award-type="${escHtml(type)}" data-confirmed-id="${escHtml(awdId || '')}" data-pid="${escHtml(pid)}">${ICON_EDIT}</button>
     ${isConf && awdId ? `<button class="awd-action awd-action--danger" title="Remove" data-remove-id="${escHtml(awdId)}">${ICON_X}</button>` : ''}
     ${withArticle && isConf ? `<button class="awd-action" title="Article" data-toggle-article="${escHtml(aKey)}">${ICON_SPARK}</button>` : ''}
@@ -144,7 +148,7 @@ function emptyRow(colspan = 8) {
 
 // ── Group card ────────────────────────────────────────────────────────────────
 
-function groupCard({ label, types, col, byType, suggestions, articles, statsMap }) {
+function groupCard({ label, types, col, graphicType, season, byType, suggestions, articles, statsMap }) {
   const isTeamGroup = types.some(t => TEAM_TYPES.has(t));
 
   // Show Confirm All button when any team type still has unconfirmed suggestions remaining.
@@ -198,7 +202,7 @@ function groupCard({ label, types, col, byType, suggestions, articles, statsMap 
       const stats  = isConfSolo ? getStats(winner, true, statsMap) : getStats(sugg, false, statsMap);
       const colVal = col === 'award' ? AWARD_LABELS[type] : '';
       const article = articles[type] || '';
-      return [playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isConfSolo, stats, col, colVal, withArticle: true, article })];
+      return [playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isConfSolo, stats, col, colVal, withArticle: true, article, season })];
     }
   });
 
@@ -212,10 +216,14 @@ function groupCard({ label, types, col, byType, suggestions, articles, statsMap 
     ? `<button style="display:flex;align-items:center;gap:5px;height:26px;padding:0 12px;font-size:11px;font-weight:700;font-family:inherit;background:transparent;border:1px solid #334155;color:#94a3b8;border-radius:8px;cursor:pointer;white-space:nowrap" data-resuggest-team="${escHtml(types[0])}">${ICON_RETRY} Auto-suggest</button>`
     : '';
 
+  const editGraphicBtn = graphicType
+    ? `<a href="/admin/awards/${escHtml(String(season))}/${escHtml(graphicType)}/graphic" style="display:flex;align-items:center;gap:5px;height:26px;padding:0 12px;font-size:11px;font-weight:700;font-family:inherit;background:transparent;border:1px solid #334155;color:#94a3b8;border-radius:8px;cursor:pointer;white-space:nowrap;text-decoration:none">${ICON_EDIT} Edit Graphic</a>`
+    : '';
+
   return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-4">
   <div class="card-label card-label--admin" style="padding:10px 16px">
     ${escHtml(label.toUpperCase())}
-    <div style="display:flex;gap:6px">${confirmAllBtn}${resuggestBtn}</div>
+    <div style="display:flex;gap:6px">${editGraphicBtn}${confirmAllBtn}${resuggestBtn}</div>
   </div>
   <div style="overflow-x:auto">
     <table class="w-full border-collapse has-col-dividers has-freeze-col">
@@ -252,7 +260,7 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
 
   const playerOptsJson = JSON.stringify(players.map(p => ({ id: p.id, name: p.name, team: p.team_id })));
 
-  const cards = AWARD_GROUPS.map(g => groupCard({ ...g, byType, suggestions, articles, statsMap })).join('');
+  const cards = AWARD_GROUPS.map(g => groupCard({ ...g, season, byType, suggestions, articles, statsMap })).join('');
 
   return `
 <style>

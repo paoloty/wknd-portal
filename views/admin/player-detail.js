@@ -279,6 +279,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     var saveBtn   = document.getElementById('pcp-save');
     var saveBtnOrigHtml = saveBtn.innerHTML;
     var cropper   = null;
+    var pendingOriginalDataUrl = null;
 
     function openCrop(src) {
       cropImg.src = src;
@@ -289,7 +290,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
         aspectRatio: 1,
         viewMode: 1,
         dragMode: 'move',
-        autoCropArea: 0.85,
+        autoCropArea: 0.6,
         guides: true,
         highlight: false,
         cropBoxMovable: true,
@@ -310,9 +311,11 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
             var ctrl = document.createElement('div');
             ctrl.className = 'pcp-zoom-ctrl';
             ctrl.innerHTML =
+              '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-reset" aria-label="Reset crop" title="Reset crop">&#8635;</button>' +
               '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-out" aria-label="Zoom out">−</button>' +
               '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-in" aria-label="Zoom in">+</button>';
             body.appendChild(ctrl);
+            ctrl.querySelector('#pcp-zoom-reset').addEventListener('click', function() { cropper.reset(); });
             ctrl.querySelector('#pcp-zoom-out').addEventListener('click', function() { cropper.zoom(-0.1); });
             ctrl.querySelector('#pcp-zoom-in').addEventListener('click', function() { cropper.zoom(0.1); });
           }
@@ -325,6 +328,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       document.body.style.overflow = '';
       if (cropper) { cropper.destroy(); cropper = null; }
       fileInput.value = '';
+      pendingOriginalDataUrl = null;
       saveBtn.disabled = false;
       saveBtn.innerHTML = saveBtnOrigHtml;
     }
@@ -333,7 +337,10 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       var file = this.files[0];
       if (!file) return;
       var reader = new FileReader();
-      reader.onload = function(e) { openCrop(e.target.result); };
+      reader.onload = function(e) {
+        pendingOriginalDataUrl = e.target.result;
+        openCrop(e.target.result);
+      };
       reader.readAsDataURL(file);
     });
 
@@ -344,7 +351,8 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     var photoImg = document.getElementById('plr-photo-img');
     if (photoImg) {
       photoImg.addEventListener('click', function() {
-        openCrop('/api/player/' + PLAYER_ID + '/photo?t=' + Date.now());
+        pendingOriginalDataUrl = null;
+        openCrop('/api/player/' + PLAYER_ID + '/photo-source?t=' + Date.now());
       });
     }
 
@@ -358,7 +366,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       fetch('/admin/players/' + PLAYER_ID + '/photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: dataUrl })
+        body: JSON.stringify({ dataUrl: dataUrl, originalDataUrl: pendingOriginalDataUrl || '' })
       }).then(function(r) {
         if (!r.ok) throw new Error('failed');
         var wrap = document.getElementById('plr-photo-wrap');

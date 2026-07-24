@@ -4144,6 +4144,107 @@ a.player-link:hover { color: var(--amber); }
 .agm-edit-bar__save:hover { opacity: .88; }
 .agm-edit-bar__save:disabled { opacity: .45; cursor: default; }
 
+/* ── Award graphic editor ────────────────────────────────────────────────── */
+.agr-wrap { max-width: 980px; margin: 0 auto; }
+.agr-title { font-size: 20px; font-weight: 700; margin: 0 0 6px; color: var(--text); }
+.agr-title__season { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-left: 8px; }
+.agr-hint { font-size: 12.5px; color: var(--text-muted); margin: 0 0 16px; max-width: 640px; }
+
+.agr-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.agr-grid-toggle {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  cursor: pointer; user-select: none; padding-top: 2px; white-space: nowrap;
+}
+.agr-grid-toggle input { accent-color: var(--amber); cursor: pointer; }
+
+.agr-canvas {
+  position: relative; width: 100%; background: #000;
+  border-radius: 10px; overflow: hidden; border: 1px solid var(--admin-border, #1e293b);
+}
+.agr-grid-overlay { position: absolute; inset: 0; z-index: 8; pointer-events: none; display: none; }
+.agr-canvas--grid .agr-grid-overlay { display: block; }
+.agr-grid-overlay__h {
+  position: absolute; left: 0; right: 0; height: 0;
+  border-top: 1px dashed rgba(245, 147, 50, .65);
+}
+.agr-strip__vline {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 0;
+  border-left: 1px dashed rgba(245, 147, 50, .5);
+  z-index: 8; pointer-events: none; display: none;
+}
+.agr-canvas--grid .agr-strip__vline { display: block; }
+.agr-banner {
+  position: absolute; top: 0; left: 0; width: 100%; z-index: 6;
+  background: #020817; border-bottom: 3px solid var(--amber);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 3%; box-sizing: border-box; pointer-events: none;
+}
+.agr-banner__label { color: #f1f5f9; font-weight: 800; font-size: clamp(11px, 2vw, 18px); letter-spacing: .03em; }
+.agr-banner__season { color: #64748b; font-weight: 700; font-size: clamp(9px, 1.4vw, 13px); letter-spacing: .05em; }
+
+.agr-strip {
+  position: absolute; top: 0; height: 100%;
+  overflow: hidden; box-sizing: border-box;
+  border-left: 2px solid #0d1424;
+}
+.agr-strip:first-child { border-left: none; }
+.agr-strip__frame {
+  position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none;
+}
+.agr-strip__frame.is-dragging { cursor: grabbing; }
+.agr-strip__img {
+  position: absolute; max-width: none; user-select: none; -webkit-user-drag: none;
+}
+.agr-strip__shade {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(to bottom, rgba(2,8,23,0) 45%, rgba(2,8,23,.75) 78%, rgba(2,8,23,.97) 100%);
+}
+.agr-strip__bar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; z-index: 3; pointer-events: none; }
+.agr-strip__text {
+  position: absolute; left: 4%; right: 4%; bottom: 4%; z-index: 3; pointer-events: none;
+  text-align: center; color: #f1f5f9;
+}
+.agr-strip__team {
+  font-size: clamp(7px, 1vw, 10px); font-weight: 700;
+  letter-spacing: .08em; margin-bottom: 6%;
+}
+.agr-strip__pill {
+  display: inline-block; border: 1.5px solid var(--amber); color: var(--amber);
+  border-radius: 999px; font-size: clamp(7px, 1vw, 10px); font-weight: 800;
+  letter-spacing: .06em; padding: 3px 8px; margin-bottom: 6%; white-space: nowrap;
+}
+.agr-strip__stats { font-size: clamp(7px, 1.1vw, 12px); font-weight: 700; color: var(--amber); letter-spacing: .03em; margin-bottom: 3%; }
+.agr-strip__first { font-size: clamp(6px, 0.9vw, 11px); color: #64748b; margin-bottom: 1%; }
+.agr-strip__last  { font-size: clamp(9px, 1.6vw, 18px); font-weight: 800; letter-spacing: .02em; }
+
+.agr-strip__ctl {
+  position: absolute; top: calc(12% + 8px); left: 0; right: 0; z-index: 6;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  opacity: 0; transition: opacity .12s; pointer-events: none;
+}
+.agr-strip:hover .agr-strip__ctl { opacity: 1; pointer-events: auto; }
+.agr-ctl-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0,0,0,.7); border: 1px solid rgba(255,255,255,.25);
+  color: #fff; font-size: 13px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .12s;
+}
+.agr-ctl-btn:hover { background: rgba(0,0,0,.9); }
+
+.agr-preview { margin-top: 22px; }
+.agr-preview__head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 8px;
+}
+.agr-preview__img { width: 100%; border-radius: 10px; border: 1px solid var(--admin-border, #1e293b); display: block; }
+
+@media (max-width: 640px) {
+  .agr-strip__ctl { opacity: 1; pointer-events: auto; }
+}
+
 /* ── Admin game edit — WordPress layout ─────────────────────────────────── */
 .agm-wp-layout {
   display: grid;
@@ -4523,7 +4624,7 @@ a.player-link:hover { color: var(--amber); }
 .pcp-backdrop[hidden] { display: none; }
 .pcp-modal {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); width: 100%; max-width: 480px;
+  border-radius: var(--radius); width: 100%; max-width: 560px;
   display: flex; flex-direction: column; overflow: hidden;
   max-height: 90dvh;
 }
@@ -4542,9 +4643,9 @@ a.player-link:hover { color: var(--amber); }
 .pcp-modal__body {
   position: relative;
   flex: 1; overflow: hidden; background: #000;
-  min-height: 280px; max-height: 420px;
+  min-height: 320px; max-height: 520px;
 }
-.pcp-modal__body .cropper-container { max-height: 420px; }
+.pcp-modal__body .cropper-container { max-height: 520px; }
 .pcp-modal__footer {
   display: flex; gap: 8px; justify-content: flex-end;
   padding: 12px 16px; border-top: 1px solid var(--border);
@@ -4582,6 +4683,7 @@ a.player-link:hover { color: var(--amber); }
   position: absolute; right: 10px; bottom: 10px;
   display: flex; gap: 6px; z-index: 20;
 }
+.pcp-zoom-ctrl #pcp-zoom-reset { margin-right: 4px; font-size: 14px; }
 .pcp-zoom-btn {
   width: 30px; height: 30px; border-radius: 50%;
   background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.25);

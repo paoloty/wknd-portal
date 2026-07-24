@@ -115,6 +115,7 @@ function heroSection(player, totals, isAdmin = false) {
   var cropImg   = document.getElementById('pcp-img');
   var saveBtn   = document.getElementById('pcp-save');
   var cropper   = null;
+  var pendingOriginalDataUrl = null;
 
   function openCrop(src) {
     cropImg.src = src;
@@ -125,7 +126,7 @@ function heroSection(player, totals, isAdmin = false) {
       aspectRatio: 1,
       viewMode: 1,
       dragMode: 'move',
-      autoCropArea: 0.85,
+      autoCropArea: 0.6,
       guides: true,
       highlight: false,
       cropBoxMovable: true,
@@ -146,9 +147,11 @@ function heroSection(player, totals, isAdmin = false) {
           var ctrl = document.createElement('div');
           ctrl.className = 'pcp-zoom-ctrl';
           ctrl.innerHTML =
+            '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-reset" aria-label="Reset crop" title="Reset crop">&#8635;</button>' +
             '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-out" aria-label="Zoom out">−</button>' +
             '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-in" aria-label="Zoom in">+</button>';
           body.appendChild(ctrl);
+          ctrl.querySelector('#pcp-zoom-reset').addEventListener('click', function() { cropper.reset(); });
           ctrl.querySelector('#pcp-zoom-out').addEventListener('click', function() { cropper.zoom(-0.1); });
           ctrl.querySelector('#pcp-zoom-in').addEventListener('click', function() { cropper.zoom(0.1); });
         }
@@ -161,6 +164,7 @@ function heroSection(player, totals, isAdmin = false) {
     document.body.style.overflow = '';
     if (cropper) { cropper.destroy(); cropper = null; }
     fileInput.value = '';
+    pendingOriginalDataUrl = null;
     saveBtn.disabled = false;
     saveBtn.textContent = 'Crop & Save';
   }
@@ -169,7 +173,10 @@ function heroSection(player, totals, isAdmin = false) {
     var file = this.files[0];
     if (!file) return;
     var reader = new FileReader();
-    reader.onload = function(e) { openCrop(e.target.result); };
+    reader.onload = function(e) {
+      pendingOriginalDataUrl = e.target.result;
+      openCrop(e.target.result);
+    };
     reader.readAsDataURL(file);
   });
 
@@ -190,7 +197,8 @@ function heroSection(player, totals, isAdmin = false) {
     }
     avatarImg.addEventListener('click', function() {
       if (!avatarImg.classList.contains('player-avatar-img--has-photo')) return;
-      openCrop('/api/player/' + playerId + '/photo?t=' + Date.now());
+      pendingOriginalDataUrl = null;
+      openCrop('/api/player/' + playerId + '/photo-source?t=' + Date.now());
     });
   }
 
@@ -204,7 +212,7 @@ function heroSection(player, totals, isAdmin = false) {
     fetch('/admin/player/' + encodeURIComponent(playerId) + '/photo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl: dataUrl })
+      body: JSON.stringify({ dataUrl: dataUrl, originalDataUrl: pendingOriginalDataUrl || '' })
     }).then(function(r) {
       label.classList.remove('player-avatar-replace--loading');
       if (!r.ok) throw new Error('failed');

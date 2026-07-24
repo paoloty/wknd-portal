@@ -51,6 +51,8 @@ import {
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, markGameFinal, setGameOvertime, createGame,
   updatePlayerPhoto, updatePlayer,
+  getPlayerPhotoOriginal, updatePlayerPhotoOriginal,
+  getAwardPhotoOverrides, upsertAwardPhotoOverride, deleteAwardPhotoOverride,
   getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
   getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
@@ -80,6 +82,7 @@ import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
 import { adminSiteBody } from './views/admin/site.js';
 import { adminAwardsBody } from './views/admin/awards.js';
+import { awardGraphicEditorBody } from './views/admin/award-graphic-editor.js';
 import { adminUsersBody }       from './views/admin/users.js';
 import { adminUserDetailBody }  from './views/admin/user-detail.js';
 import { adminLogsPage }        from './views/admin/logs.js';
@@ -559,7 +562,9 @@ const AWARD_OG_BADGE = {
   three_pm_leader: { label: '3-PT LEADER',              bg: '#f59332', text: '#10141d' },
 };
 const TEAM_AWARD_TYPES_OG = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+const SINGLE_PHOTO_AWARD_TYPES = new Set(['mvp', 'dpoy']);
 const POSITIONS_OG_ORDER  = ['PG', 'SG', 'SF', 'PF', 'C'];
+const POS_FULL_OG = { PG: 'POINT GUARD', SG: 'SHOOTING GUARD', SF: 'SMALL FORWARD', PF: 'POWER FORWARD', C: 'CENTER' };
 const POSITION_ORDER_OG_MAP = Object.fromEntries(POSITIONS_OG_ORDER.map((p, i) => [p, i]));
 
 function ogStatLine(row, type) {
@@ -605,8 +610,6 @@ function buildTeamAwardOgSvg(rows, badge, season) {
     </linearGradient>`;
   }).join('');
 
-  const POS_FULL = { PG: 'POINT GUARD', SG: 'SHOOTING GUARD', SF: 'SMALL FORWARD', PF: 'POWER FORWARD', C: 'CENTER' };
-
   const strips = rows.map((row, i) => {
     const x  = i * STRIP_W;
     const cx = x + STRIP_W / 2;
@@ -616,8 +619,8 @@ function buildTeamAwardOgSvg(rows, badge, season) {
     const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
     const tc    = escXml(row.team_color || '#4a5263');
     const posKey = POSITIONS_OG_ORDER.includes(row.notes) ? row.notes : '';
-    const posLbl = posKey ? escXml(POS_FULL[posKey] || posKey) : '';
-    const posPillW = posKey ? Math.min(Math.round((POS_FULL[posKey] || posKey).length * 6.4 + 36), STRIP_W - 16) : 0;
+    const posLbl = posKey ? escXml(POS_FULL_OG[posKey] || posKey) : '';
+    const posPillW = posKey ? Math.min(Math.round((POS_FULL_OG[posKey] || posKey).length * 6.4 + 36), STRIP_W - 16) : 0;
     const posPillX = posKey ? Math.round(cx - posPillW / 2) : 0;
     const gp    = row.games_played || 1;
     const avg   = v => (v / gp).toFixed(1);
@@ -678,36 +681,76 @@ function buildTeamAwardOgSvg(rows, badge, season) {
 </svg>`;
 }
 
-async function buildTeamAwardOgPng(rows, badge, season) {
-  const W = 1200, H = 630, N = Math.min(rows.length, 5);
-  const STRIP_W = Math.floor(W / N);
+// Renders one player's photo into a STRIP_W x H tile. With no override, behaves
+// exactly like the original blind fit:cover/position:top crop. With an override
+// (admin-adjusted pan/zoom from the award-graphic editor), scales the source by
+// zoom * the minimum "cover" scale, then extracts a STRIP_W x H window positioned
+// by offset_x/offset_y (0-100%, fraction of the available pan range).
+async function renderPhotoStrip(url, stripW, h, override) {
+  const src = await fetchCoverImageBuffer(url);
+  if (!src) return null;
+  const defaultFit = () => sharp(src).rotate().resize(stripW, h, { fit: 'cover', position: 'top' }).png().toBuffer();
+  if (!override) {
+    try { return await defaultFit(); } catch { return null; }
+  }
+  try {
+    const meta = await sharp(src).rotate().metadata();
+    const srcW = meta.width, srcH = meta.height;
+    if (!srcW || !srcH) return await defaultFit();
 
-  const sorted = [...rows]
-    .sort((a, b) => (POSITION_ORDER_OG_MAP[a.notes] ?? 99) - (POSITION_ORDER_OG_MAP[b.notes] ?? 99))
-    .slice(0, N);
+    const baseScale = Math.max(stripW / srcW, h / srcH);
+    const zoom   = Math.min(3, Math.max(1, Number(override.zoom) || 1));
+    const scale  = baseScale * zoom;
+    const scaledW = Math.max(stripW, Math.round(srcW * scale));
+    const scaledH = Math.max(h, Math.round(srcH * scale));
+
+    const clampPct = v => { const n = Number(v); return (Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 50) / 100; };
+    const left = Math.round((scaledW - stripW) * clampPct(override.offset_x));
+    const top  = Math.round((scaledH - h)      * clampPct(override.offset_y));
+
+    return await sharp(src).rotate().resize(scaledW, scaledH).extract({ left, top, width: stripW, height: h }).png().toBuffer();
+  } catch {
+    try { return await defaultFit(); } catch { return null; }
+  }
+}
+
+// Generic "N equal-width photo strips + fixed SVG overlay" template shared by every
+// award share graphic. `awardType` is the key used to look up per-player photo
+// overrides saved via the award-graphic editor (a synthetic id like 'stat-leaders'
+// for graphics that combine multiple award rows into one image).
+async function buildOgStripPng({ rows, season, awardType, svg, W = 1200, H = 630 }) {
+  const N = rows.length;
+  const STRIP_W = Math.floor(W / N);
+  const overrides = getAwardPhotoOverrides(season, awardType);
 
   const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
     .png().toBuffer();
 
-  const photoLayers = await Promise.all(sorted.map(async (row, i) => {
-    const src = await fetchCoverImageBuffer(row.picture_url);
-    if (!src) return null;
-    try {
-      const buf = await sharp(src).rotate().resize(STRIP_W, H, { fit: 'cover', position: 'top' }).png().toBuffer();
-      return { input: buf, top: 72, left: i * STRIP_W };
-    } catch { return null; }
+  const photoLayers = await Promise.all(rows.map(async (row, i) => {
+    const override = overrides[row.player_id];
+    const url = (override && override.photo_url) || row.picture_url;
+    const buf = await renderPhotoStrip(url, STRIP_W, H, override);
+    return buf ? { input: buf, top: 72, left: i * STRIP_W } : null;
   }));
 
   const layers = photoLayers.filter(Boolean);
 
-  const svgBuf = await sharp(Buffer.from(buildTeamAwardOgSvg(sorted, badge, season)), { density: 96 })
-    .resize(W, H).png().toBuffer();
+  const svgBuf = await sharp(Buffer.from(svg), { density: 96 }).resize(W, H).png().toBuffer();
   layers.push({ input: svgBuf, top: 0, left: 0 });
 
   const logoBuf = await getWkndLogoBuf();
   if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
 
   return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
+}
+
+async function buildTeamAwardOgPng(rows, badge, season) {
+  const N = Math.min(rows.length, 5);
+  const sorted = [...rows]
+    .sort((a, b) => (POSITION_ORDER_OG_MAP[a.notes] ?? 99) - (POSITION_ORDER_OG_MAP[b.notes] ?? 99))
+    .slice(0, N);
+  const svg = buildTeamAwardOgSvg(sorted, badge, season);
+  return buildOgStripPng({ rows: sorted, season, awardType: badge._type, svg });
 }
 
 function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
@@ -794,13 +837,9 @@ function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
 async function buildPlayerAwardOgPng(row, type, badge, season) {
   const W = 1200, H = 630;
 
-  let photoBuf = null;
-  if (row.picture_url) {
-    try {
-      const src = await fetchCoverImageBuffer(row.picture_url);
-      if (src) photoBuf = await sharp(src).rotate().resize(W, H, { fit: 'cover', position: 'top' }).png().toBuffer();
-    } catch {}
-  }
+  const override = getAwardPhotoOverrides(season, type)[row.player_id] || null;
+  const photoUrl = (override && override.photo_url) || row.picture_url;
+  const photoBuf = photoUrl ? await renderPhotoStrip(photoUrl, W, H, override) : null;
 
   const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
     .png().toBuffer();
@@ -916,31 +955,8 @@ function buildStatLeadersOgSvg(rows, season) {
 }
 
 async function buildStatLeadersOgPng(rows, season) {
-  const W = 1200, H = 630, N = rows.length;
-  const STRIP_W = Math.floor(W / N);
-
-  const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
-    .png().toBuffer();
-
-  const photoLayers = await Promise.all(rows.map(async (row, i) => {
-    const src = await fetchCoverImageBuffer(row.picture_url);
-    if (!src) return null;
-    try {
-      const buf = await sharp(src).rotate().resize(STRIP_W, H, { fit: 'cover', position: 'top' }).png().toBuffer();
-      return { input: buf, top: 72, left: i * STRIP_W };
-    } catch { return null; }
-  }));
-
-  const layers = photoLayers.filter(Boolean);
-
-  const svgBuf = await sharp(Buffer.from(buildStatLeadersOgSvg(rows, season)), { density: 96 })
-    .resize(W, H).png().toBuffer();
-  layers.push({ input: svgBuf, top: 0, left: 0 });
-
-  const logoBuf = await getWkndLogoBuf();
-  if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
-
-  return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
+  const svg = buildStatLeadersOgSvg(rows, season);
+  return buildOgStripPng({ rows, season, awardType: 'stat-leaders', svg });
 }
 
 const _awardOgCache = new Map();
@@ -1525,6 +1541,22 @@ async function fetchCoverImageBuffer(url) {
   return null;
 }
 
+// Downscale + re-encode an arbitrary source photo (e.g. a pre-crop upload) so it's
+// cheap to keep around for future re-crops, without needing full original resolution.
+async function compressSourceImage(buffer) {
+  const out = await sharp(buffer)
+    .rotate()
+    .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 78, progressive: true })
+    .toBuffer();
+  return 'data:image/jpeg;base64,' + out.toString('base64');
+}
+
+function parseDataUrl(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+  return match ? Buffer.from(match[2], 'base64') : null;
+}
+
 async function generateGameCoverPng(game, potgStat, bgDataUrl) {
   const W = 1200, H = 630;
 
@@ -1743,9 +1775,7 @@ app.get('/api/photo/:gameId', (req, res) => {
   res.end(buf);
 });
 
-app.get('/api/player/:id/photo', async (req, res) => {
-  const row = getPlayerPhoto(req.params.id);
-  const url = row?.picture_url;
+async function sendPlayerPhotoUrl(res, url) {
   if (!url) return res.status(404).end();
   if (url.startsWith('data:')) {
     const comma = url.indexOf(',');
@@ -1767,6 +1797,21 @@ app.get('/api/player/:id/photo', async (req, res) => {
   } catch {
     res.status(502).end();
   }
+}
+
+app.get('/api/player/:id/photo', async (req, res) => {
+  const row = getPlayerPhoto(req.params.id);
+  await sendPlayerPhotoUrl(res, row?.picture_url);
+});
+
+// Best available source to re-crop from: the retained pre-crop original if we have
+// one, otherwise the already-cropped square (older photos uploaded before originals
+// were retained).
+app.get('/api/player/:id/photo-source', async (req, res) => {
+  const original = getPlayerPhotoOriginal(req.params.id);
+  if (original) return sendPlayerPhotoUrl(res, original);
+  const row = getPlayerPhoto(req.params.id);
+  await sendPlayerPhotoUrl(res, row?.picture_url);
 });
 
 app.get('/api/compare', async (req, res) => {
@@ -2469,6 +2514,132 @@ app.delete('/admin/awards/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+function getAwardGraphicRows(season, type) {
+  if (type === 'stat-leaders') {
+    const all = getSeasonAwards(season);
+    return STAT_LEADER_TYPES.map(t => all.find(a => a.award_type === t)).filter(Boolean);
+  }
+  if (SINGLE_PHOTO_AWARD_TYPES.has(type)) {
+    const row = getSeasonAwards(season).find(a => a.award_type === type);
+    return row ? [row] : [];
+  }
+  if (!AWARD_OG_BADGE[type] || !TEAM_AWARD_TYPES_OG.has(type)) return null;
+  return getSeasonAwards(season)
+    .filter(a => a.award_type === type)
+    .sort((a, b) => (POSITION_ORDER_OG_MAP[a.notes] ?? 99) - (POSITION_ORDER_OG_MAP[b.notes] ?? 99))
+    .slice(0, 5);
+}
+
+function clearAwardOgCache(season, type, playerId) {
+  const cacheKey = type === 'stat-leaders' ? `stat-leaders-${season}`
+    : SINGLE_PHOTO_AWARD_TYPES.has(type) ? `player-${season}-${type}-${playerId}`
+    : `team-${season}-${type}`;
+  _awardOgCache.delete(cacheKey);
+}
+
+app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
+  const season = Number(req.params.season);
+  const { type } = req.params;
+  const rows = season ? getAwardGraphicRows(season, type) : null;
+  if (!rows || !rows.length) {
+    return res.status(404).send(renderAdminPage(req, {
+      title: 'Not Found', currentPath: '/admin/awards',
+      body: '<p style="padding:40px;color:var(--text-muted)">No players found for this award graphic.</p>',
+    }));
+  }
+
+  const overrides = getAwardPhotoOverrides(season, type);
+  const isSingle  = SINGLE_PHOTO_AWARD_TYPES.has(type);
+  const badgeLabel = type === 'stat-leaders' ? 'Statistical Leaders' : AWARD_OG_BADGE[type].label;
+
+  const columns = rows.map(row => {
+    const name  = formatName(row.player_name || '');
+    const parts = name.split(' ');
+    const last  = (parts.length > 1 ? parts[parts.length - 1] : name).toUpperCase();
+    const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+    const b = type === 'stat-leaders' ? (AWARD_OG_BADGE[row.award_type] || null) : null;
+    const pillLabel = type === 'stat-leaders'
+      ? (b?.label || row.award_type.toUpperCase())
+      : isSingle
+        ? badgeLabel
+        : (row.notes && POS_FULL_OG[row.notes] ? POS_FULL_OG[row.notes] : '');
+    const override = overrides[row.player_id] || null;
+    return {
+      player_id: row.player_id,
+      first, last,
+      pillLabel,
+      teamName: isSingle ? String(row.team_name || '').toUpperCase() : '',
+      statLine: ogStatLine(row, type === 'stat-leaders' ? row.award_type : type),
+      teamColor: row.team_color || '#4a5263',
+      photoUrl: (override && override.photo_url) || `/api/player/${encodeURIComponent(row.player_id)}/photo-source`,
+      offsetX: override ? override.offset_x : 50,
+      offsetY: override ? override.offset_y : 50,
+      zoom: override ? override.zoom : 1,
+      hasCustomPhoto: !!(override && override.photo_url),
+    };
+  });
+
+  const ogImagePath = isSingle
+    ? `/api/awards/${season}/${type}/${encodeURIComponent(columns[0].player_id)}/og-image.png`
+    : `/api/awards/${season}/${type}/og-image.png`;
+
+  res.send(renderAdminPage(req, {
+    title: 'Edit Award Graphic',
+    currentPath: '/admin/awards',
+    body: awardGraphicEditorBody({ season, type, badgeLabel, columns, ogImagePath }),
+  }));
+});
+
+app.post('/admin/awards/:season/:type/graphic', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const season = Number(req.params.season);
+  const { type } = req.params;
+  if (!season || !type) return res.status(400).json({ error: 'Missing fields' });
+
+  const items    = Array.isArray(req.body?.overrides) ? req.body.overrides : [];
+  const existing = getAwardPhotoOverrides(season, type);
+
+  for (const item of items) {
+    const player_id = String(item.player_id || '');
+    if (!player_id) continue;
+
+    if (item.clear) {
+      deleteAwardPhotoOverride(season, type, player_id);
+      continue;
+    }
+
+    const offset_x = Number(item.offset_x);
+    const offset_y = Number(item.offset_y);
+    const zoom     = Number(item.zoom);
+
+    let photo_url = existing[player_id]?.photo_url || '';
+    if (item.newPhotoDataUrl) {
+      const buf = parseDataUrl(item.newPhotoDataUrl);
+      if (buf) { try { photo_url = await compressSourceImage(buf); } catch (err) { console.error('override photo compress error:', err); } }
+    }
+
+    const isDefault =
+      Math.abs((Number.isFinite(offset_x) ? offset_x : 50) - 50) < 0.5 &&
+      Math.abs((Number.isFinite(offset_y) ? offset_y : 50) - 50) < 0.5 &&
+      Math.abs((Number.isFinite(zoom) ? zoom : 1) - 1) < 0.01 &&
+      !photo_url;
+
+    if (isDefault) {
+      deleteAwardPhotoOverride(season, type, player_id);
+    } else {
+      upsertAwardPhotoOverride({
+        season, award_type: type, player_id,
+        offset_x: Number.isFinite(offset_x) ? offset_x : 50,
+        offset_y: Number.isFinite(offset_y) ? offset_y : 50,
+        zoom: Number.isFinite(zoom) ? zoom : 1,
+        photo_url,
+      });
+    }
+  }
+
+  clearAwardOgCache(season, type, items[0]?.player_id);
+  res.json({ ok: true });
+});
+
 app.post('/admin/awards/generate-article', requireAuth, express.json(), async (req, res) => {
   const { season, award_type, player_id } = req.body || {};
   if (!award_type) return res.status(400).json({ error: 'Missing award_type' });
@@ -2788,12 +2959,18 @@ app.post('/admin/players/:id/bio', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/admin/players/:id/photo', requireAuth, express.json({ limit: '8mb' }), (req, res) => {
+app.post('/admin/players/:id/photo', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).json({ error: 'Not found' });
   const dataUrl = String(req.body.dataUrl || '');
   if (!dataUrl.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image data' });
   updatePlayerPhoto(player.id, dataUrl);
+  const originalDataUrl = String(req.body.originalDataUrl || '');
+  const originalBuf = originalDataUrl ? parseDataUrl(originalDataUrl) : null;
+  if (originalBuf) {
+    try { updatePlayerPhotoOriginal(player.id, await compressSourceImage(originalBuf)); }
+    catch (err) { console.error('photo_original compress error:', err); }
+  }
   res.json({ ok: true });
 });
 
@@ -2980,7 +3157,7 @@ app.get('/admin/compare', requireAuth, (req, res) => {
 
 // ── Admin game endpoints ──────────────────────────────────────────────────────
 const jsonSmall = express.json();
-const jsonLarge = express.json({ limit: '8mb' });
+const jsonLarge = express.json({ limit: '20mb' });
 
 app.get('/admin/games', requireAuth, (req, res) => {
   const games = getAllGames();
@@ -3436,6 +3613,13 @@ app.post('/admin/player/:id/photo', requireAuth, jsonLarge, async (req, res) => 
       .toBuffer();
 
     updatePlayerPhoto(player.id, 'data:image/jpeg;base64,' + compressed.toString('base64'));
+
+    const originalBuf = parseDataUrl(req.body.originalDataUrl);
+    if (originalBuf) {
+      try { updatePlayerPhotoOriginal(player.id, await compressSourceImage(originalBuf)); }
+      catch (err) { console.error('photo_original compress error:', err); }
+    }
+
     res.json({ ok: true });
   } catch (err) {
     console.error('Player photo upload error:', err);
