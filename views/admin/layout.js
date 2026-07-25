@@ -22,6 +22,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/admin',           label: 'Dashboard', icon: 'dashboard', exact: true },
       { href: '/admin/games',     label: 'Games',     icon: 'games' },
+      { href: '/admin/papawis',   label: 'Papawis',   icon: 'games' },
       { href: '/admin/players',   label: 'Players',   icon: 'players' },
       { href: '/admin/teams',     label: 'Teams',     icon: 'teams',     soon: true },
       { href: '/admin/standings', label: 'Standings', icon: 'standings', soon: true },

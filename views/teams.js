@@ -155,3 +155,4 @@ export function teamsBody({ teams = [] } = {}) {
   </div>
 `;
 }
+

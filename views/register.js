@@ -8,7 +8,8 @@ const POSITIONS = [
   { id: 'C',  desc: 'tall and in the way' },
 ];
 
-export function registerPage({ error = null, success = false, prefill = {}, regInfo = {} } = {}) {
+export function registerPage({ error = null, success = false, prefill = {}, regInfo = {}, ref = '' } = {}) {
+  const refValue = ref || prefill.ref || '';
   if (success) {
     return `<div class="login-page">
   <div class="reg-box">
@@ -77,6 +78,7 @@ export function registerPage({ error = null, success = false, prefill = {}, regI
     ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
 
     <form id="reg-form" method="POST" action="/register" novalidate>
+      ${refValue ? `<input type="hidden" name="ref" value="${escHtml(refValue)}">` : ''}
 
       <!-- Step 1: Who Are You -->
       <div class="login-form reg-panel" data-panel="1">

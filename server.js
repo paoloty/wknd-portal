@@ -29,7 +29,7 @@ import { privacyPage, termsPage } from './views/legal.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
-import { teamColor, displayPlayerName } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -76,6 +76,10 @@ import {
   setRegistrationAdmin, insertAdminLog, getAdminLogs, updateRegBirthday,
   createPlayer, mergeRegistrationIntoPlayer,
   getSeasonStandings, getPlayoffGames,
+  getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
+  createPapawisGame, joinPapawisGame, cancelPapawisSignup,
+  adminAddPapawisSignup, adminRemovePapawisSignup, completePapawisGame, cancelPapawisGame, deletePapawisGame,
+  logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
   db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
@@ -98,6 +102,8 @@ import { adminLayout } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
+import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
+import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody } from './views/admin/papawis.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1050,47 +1056,145 @@ function getFeatureFlags() {
     awards:  getSetting('awards_enabled',   '1') !== '0',
     mvpRace: getSetting('mvp_race_enabled', '1') !== '0',
     regOpen: getSetting('reg_open',         '0') === '1',
+    papawis: getSetting('papawis_enabled',  '0') === '1',
   };
 }
 
-const REG_MINI_SETS = [
-  { pill: 'Slay First. Score Later. 💅', body: "All genders. All skill levels. All unresolved competitive trauma. We have a jersey for that.",                                      cta: "I'm That Girl 💅"  },
-  { pill: 'Main Character Era 🔥',       body: "Your villain arc starts here. Register before your bestie does — we all know they're already thinking about it.",                   cta: 'Let Me Cook 🔥'    },
-  { pill: 'Bestie Alert 👀',             body: "Imagine watching your best friend get a trophy while you sat at home. Haunting. Register now.",                                     cta: 'Not On My Watch'   },
-  { pill: 'No Gatekeeping ✨',           body: "We don't discriminate.* (*except against ball hogs. and even then — only lovingly.)",                                               cta: 'Sign Me Up Sis'    },
-  { pill: 'Serving Looks & Buckets 🏀', body: "Real games. Real stats. One group chat that will become your entire personality. One sigma male per team — it's in the bylaws.",          cta: 'Send It Bestie'    },
-  { pill: 'The Glow Up Is Real ✨',     body: "New jersey. New you. Same issues. Whatever you're running from, you can't outrun a full-court press. We respect the attempt.",             cta: 'Run It Back'       },
-  { pill: 'Court Is In Session 💁',     body: "We literally have a spot with your name on it. It's in the storage room. Come get it bestie.",                                            cta: "That's My Jersey"  },
-  { pill: 'Hot Girl Summer 🏀',         body: "Come for the basketball, stay for the post-game chismis and the group chat you never knew you needed.",                                   cta: "I'm So In"         },
-  { pill: 'Era Check ✅',               body: "Stop watching others play and start being the player everyone talks about in the group chat at 2am. This is your sign.",                  cta: 'This Is My Sign'   },
-  { pill: 'Manifesting Your Bag 💰',    body: "The friendships, the runs, the drama, the wins — this league will give you stories you will tell for years. And a jersey. Obviously.",   cta: 'Manifest It'       },
+const BANNER_POOL_REFRESH_MS = 24 * 60 * 60 * 1000; // once a day per pool — a batch, not one call per pageview
+const BANNER_POOL_BATCH_SIZE = 15;
+
+// Generic "AI-written banner copy" pool: one Gemini call writes a day's worth of rows
+// (shape given by `fields`) and appends them to a growing, deduped pool stored in
+// site_settings, so traffic never costs more than ~1 API call per pool per day. Returns a
+// pick() function that each banner calls to grab a random row at render time.
+function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool }) {
+  function getPool() {
+    try {
+      const stored = JSON.parse(getSetting(settingKey, '') || '[]');
+      return Array.isArray(stored) && stored.length && fields.every(f => stored[0][f] != null) ? stored : [];
+    } catch { return []; }
+  }
+
+  async function refresh() {
+    const existing = getPool();
+    const prompt = buildPrompt(existing);
+    try {
+      const { text } = await generateWithGemini(prompt, { maxTokens: 1200, temperature: 1.05 });
+      const minSlashes = fields.length - 1;
+      const fresh = text
+        .split('\n')
+        .map(line => line.replace(/^[\s\d.\-)*]+/, '').trim())
+        .filter(line => (line.match(/\//g) || []).length >= minSlashes)
+        .map(line => {
+          const parts = line.split('/').map(s => s.trim().replace(/^["']|["']$/g, ''));
+          return Object.fromEntries(fields.map((f, i) => [f, parts[i]]));
+        })
+        .filter(p => fields.every(f => p[f]));
+      if (fresh.length) {
+        const seen = new Set(existing.map(p => p.message.toLowerCase()));
+        const newOnes = fresh.filter(p => !seen.has(p.message.toLowerCase()));
+        setSetting(settingKey, JSON.stringify([...existing, ...newOnes]));
+        setSetting(`${settingKey}_at`, String(Date.now()));
+      }
+    } catch (e) {
+      console.error(`${settingKey} message generation failed:`, e.message);
+    }
+  }
+
+  // Refresh at boot only if the cached pool is missing or already a day old (fire-and-forget
+  // — never block server startup on an AI call), then regenerate once every 24 hours.
+  const age = Date.now() - Number(getSetting(`${settingKey}_at`, '0'));
+  if (!getSetting(settingKey) || age > BANNER_POOL_REFRESH_MS) refresh();
+  setInterval(refresh, BANNER_POOL_REFRESH_MS);
+
+  return function pick() {
+    const stored = getPool();
+    const pool = stored.length ? stored : fallbackPool;
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+}
+
+const SIGNUP_BANNER_FALLBACK_POOL = [
+  { headline: 'Your Roster Spot Is Waiting.', message: "We already saved you a spot on the roster. It's in the storage room. Come claim it bestie.", cta: 'Claim My Spot' },
+  { headline: 'No Bench Warmers This Season.', message: "You're already one of us — now make it official for this season, no gatekeeping.", cta: 'Confirm My Season' },
+  { headline: 'Main Character Season Only.', message: "Confirm before your bestie takes your usual spot on the court — we all know they're already thinking about it.", cta: 'Lock In My Spot 🔒' },
+  { headline: "You're Either On the Roster or Watching.", message: "Stop watching others play and start being the player everyone talks about in the group chat at 2am.", cta: 'This Is My Sign' },
+  { headline: 'The Best Decision This Season.', message: "The friendships, the runs, the drama, the wins — this season will give you stories you'll tell for years.", cta: 'Manifest It' },
 ];
 
-function memberSignupBanner(season, deadline) {
+const pickSignupBannerMessage = createBannerMessagePool({
+  settingKey: 'signup_banner_msgs',
+  fields: ['headline', 'message', 'cta'],
+  fallbackPool: SIGNUP_BANNER_FALLBACK_POOL,
+  buildPrompt: (existing) => {
+    const avoidSample = existing.slice(-20).map(p => `- "${p.headline}" / "${p.message}"`).join('\n');
+    return `Write ${BANNER_POOL_BATCH_SIZE} rows for a promo banner shown to EXISTING MEMBERS of a recreational weekend basketball league in the Philippines, prompting them to confirm their spot for the upcoming SEASON. These are already-registered members, not newcomers — the ask is "lock in your roster spot this season," not "join the league" or "register." Never use the words "register" or "sign up for the league" — this is season-specific, and season signup is exclusive to members who've already registered.
+
+Voice: mix English with Taglish (natural Filipino-English code-switching, not forced). Channel cheeky, campy Filipino gay humor (bekimon/swardspeak-flavored — words like "bes," "chika," "keri," "werpa," "the audacity," "promise," "charot" are welcome where natural) — playful teasing, gossip/chismis energy, dramatic camp sass, backhanded-but-loving compliments. Do NOT use romantic framing (no "love story," "date," couple-talk) and do NOT use sexual or sensual innuendo — keep it about friendly shade and hype, not romance or anything suggestive. Still genuinely enticing, not just jokes for jokes' sake.
+
+Each row has three parts: a short punchy headline (4-8 words, title case), a longer supporting sentence (max 20 words), and a catchy 2-5 word call-to-action button label. A fitting emoji is welcome on any part.
+- "The Audacity To Ghost Us?" / "Alam namin gustong-gusto mo bumalik, wag ka nang mag-pa-cute pa. Chika, confirm ka na." / Keri Ko 'To 💅
+- "Sis, We See You Scrolling." / "Oo na, alam namin sinusundan mo kami sa group chat. Tara na, confirm ka na rin." / Caught In 4K
+- "No Bench Warmers This Season." / "You're already one of us — now make it official, walang gatekeeping dito." / Confirm My Season
+
+Do NOT mention any specific date, deadline, or time limit. Every row must be distinct — no near-duplicates.${avoidSample ? `\n\nROWS ALREADY IN ROTATION (do NOT repeat these or close variations):\n${avoidSample}` : ''}
+
+Output exactly one "headline / sentence / button label" row per line, no numbering, no bullets, no quotes around the whole row, no blank lines, no preamble.`;
+  },
+});
+
+const REGISTRATION_BANNER_FALLBACK_POOL = [
+  { pill: 'Main Character Era 🔥', headline: 'Your Villain Arc Starts Here.', message: "All genders. All skill levels. All unresolved competitive trauma. We have a jersey for that.", cta: 'Let Me Cook 🔥' },
+  { pill: 'No Gatekeeping ✨', headline: "We Don't Discriminate.", message: "Except against ball hogs. And even then — only a little. Lovingly. Register now.", cta: 'Sign Me Up Sis' },
+  { pill: 'Court Is In Session 💁', headline: 'We Have a Spot With Your Name On It.', message: "It's literally sitting in the storage room. Come register and get it bestie.", cta: "That's My Jersey" },
+  { pill: 'Bestie Alert 👀', headline: "Don't Let Your Bestie Play Without You.", message: "Imagine watching your best friend get a trophy while you sat at home. Haunting. Register now.", cta: 'Not On My Watch' },
+  { pill: 'Manifesting Your Bag 💰', headline: 'The Best Decision You Will Make.', message: "The friendships, the runs, the drama, the wins — join the league and get stories you'll tell for years.", cta: 'Manifest It' },
+];
+
+const pickRegistrationBannerMessage = createBannerMessagePool({
+  settingKey: 'registration_banner_msgs',
+  fields: ['pill', 'headline', 'message', 'cta'],
+  fallbackPool: REGISTRATION_BANNER_FALLBACK_POOL,
+  buildPrompt: (existing) => {
+    const avoidSample = existing.slice(-20).map(p => `- "${p.headline}"`).join('\n');
+    return `Write ${BANNER_POOL_BATCH_SIZE} rows for a promo banner recruiting BRAND NEW, PROSPECTIVE members to a recreational weekend basketball league in the Philippines — people who have never joined before. This is the opposite of a returning-member message: the whole point is getting a stranger to register and become a member for the first time. Freely use words like "register," "join," and "sign up."
+
+Voice: mix English with Taglish (natural Filipino-English code-switching, not forced). Channel cheeky, campy Filipino gay humor (bekimon/swardspeak-flavored — words like "bes," "chika," "keri," "werpa," "the audacity," "promise," "charot," "anak" are welcome where natural) — playful teasing, gossip/chismis energy, dramatic camp sass, backhanded-but-loving compliments. Do NOT use romantic framing (no "love story," "date," couple-talk) and do NOT use sexual or sensual innuendo — keep it about friendly shade and hype, not romance or anything suggestive. Still genuinely enticing, not just jokes for jokes' sake.
+
+Each row has FOUR parts: a punchy 2-4 word eyebrow badge (with emoji), a short punchy headline (4-8 words, title case), a longer supporting sentence (max 20 words) that sells the vibe (inclusive, all skill levels, social, funny), and a catchy 2-4 word call-to-action button label.
+- "Bagong Dating? 👀" / "Wag Ka Nang Mahiya." / "Lahat type meron dito — laki man ng tiwala mo sa sarili o sa laban, may lugar ka. Register na, keri na 'yan." / Sige Na Nga
+- "The Chismis Is True 👀" / "Everyone's Talking About This League." / "Sabi nila ang saya raw dito, kaya siguradong may FOMO ka na. Sumali ka na, sis." / Tara Na, Bes!
+- "No Gatekeeping ✨" / "We Don't Discriminate." / "Except against ball hogs. And even then — only a little. Lovingly. Register now, promise." / Sign Me Up Sis
+
+Do NOT mention any specific date, deadline, or time limit. Every row must be distinct — no near-duplicates.${avoidSample ? `\n\nHEADLINES ALREADY IN ROTATION (do NOT repeat these or close variations):\n${avoidSample}` : ''}
+
+Output exactly one "pill / headline / sentence / button label" row per line, no numbering, no bullets, no quotes around the whole row, no blank lines, no preamble.`;
+  },
+});
+
+function memberSignupBanner(season) {
+  const { message, cta } = pickSignupBannerMessage();
   return `<div class="member-signup-banner">
-  <div class="member-signup-banner__inner">
-    <div class="member-signup-banner__copy">
-      <span class="member-signup-banner__pill">Season ${escHtml(String(season))} Signup Open</span>
-      ${deadline ? `<span class="member-signup-banner__deadline">Deadline: <strong>${escHtml(deadline)}</strong></span>` : ''}
-    </div>
-    <a href="/season-signup" class="member-signup-banner__cta">Sign Me Up →</a>
+  <div class="member-signup-banner__copy">
+    <span class="member-signup-banner__pill">
+      <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
+      Season ${escHtml(String(season))} Signup Open
+    </span>
+    <span class="member-signup-banner__msg">${escHtml(message)}</span>
   </div>
+  <a href="/season-signup" class="member-signup-banner__cta">${escHtml(cta)} →</a>
 </div>`;
 }
 
 function regMiniBanner() {
-  const deadline = getSetting('reg_deadline', '');
-  const set = REG_MINI_SETS[Math.floor(Math.random() * REG_MINI_SETS.length)];
+  const { pill, message, cta } = pickRegistrationBannerMessage();
   return `<div class="reg-mini">
   <span class="reg-mini__pill">
     <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-    ${escHtml(set.pill)}
+    ${escHtml(pill)}
   </span>
-  <span class="reg-mini__text">${deadline
-    ? `You have until <strong>${escHtml(deadline)}</strong> to secure your spot — don't let your bestie play without you.`
-    : escHtml(set.body)
-  }</span>
-  <a href="/register" class="reg-mini__cta">${escHtml(set.cta)} <span aria-hidden="true">→</span></a>
+  <span class="reg-mini__text">${escHtml(message)}</span>
+  <a href="/register" class="reg-mini__cta">${escHtml(cta)} <span aria-hidden="true">→</span></a>
 </div>`;
 }
 
@@ -1113,8 +1217,10 @@ function renderPage(req, opts) {
   // Reg mini banner — shown on every non-home page for guests when reg is enabled
   const showMini = getSetting('reg_open', '0') === '1' && opts.currentPath !== '/' && !isLoggedIn;
 
-  // Season signup banner — shown to approved members who haven't yet signed up
-  let showSignupBanner = false, signupBannerSeason = '', signupBannerDeadline = '';
+  // Season signup banner — shown to approved members who haven't yet signed up. Not on the
+  // homepage, which gets the bigger mid-page banner (registrationBanner/memberSignupBannerBig
+  // in views/home.js) instead of this thin top strip.
+  let showSignupBanner = false, signupBannerSeason = '';
   if (isPlayer && !req.session?.isAdmin) {
     const sigSeason   = getSetting('signup_target_season', '');
     const sigOpen     = getSetting('season_signup_open', '0') === '1';
@@ -1123,14 +1229,13 @@ function renderPage(req, opts) {
     if (sigSeason && sigOpen && !onSignupPg && !onHomePg) {
       const existing = getSeasonSignup(req.session.playerRegId, sigSeason);
       if (!existing) {
-        showSignupBanner    = true;
-        signupBannerSeason  = sigSeason;
-        signupBannerDeadline = getSetting('season_signup_deadline', '');
+        showSignupBanner   = true;
+        signupBannerSeason = sigSeason;
       }
     }
   }
 
-  const bannerHtml = showSignupBanner ? memberSignupBanner(signupBannerSeason, signupBannerDeadline) : (showMini ? regMiniBanner() : '');
+  const bannerHtml = showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showMini ? regMiniBanner() : '');
   const body = bannerHtml ? bannerHtml + (opts.body || '') : (opts.body || '');
   return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), ...opts, body, metaTags });
 }
@@ -1581,10 +1686,16 @@ app.use(session({
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Bounces a logged-out visitor to /login with a next= pointing back at whatever page
+// they actually asked for, so signing in lands them where they meant to go.
+function loginUrl(req) {
+  return '/login?next=' + encodeURIComponent(req.originalUrl);
+}
+
 function requireAuth(req, res, next) {
   if (req.session?.isAdmin) return next();
   if (req.session?.playerRegId) return res.redirect('/me');
-  res.redirect('/login');
+  res.redirect(loginUrl(req));
 }
 
 function requireSuperAdmin(req, res, next) {
@@ -1977,31 +2088,41 @@ app.get('*', (req, res, next) => {
 });
 
 // ── Admin routes ──────────────────────────────────────────────────────────────
+// Only ever redirect somewhere internal — a bare "/" path, never "//host" (protocol-
+// relative) or back to /login itself (which would just loop).
+function safeNextPath(next) {
+  if (typeof next !== 'string' || !next || !next.startsWith('/') || next.startsWith('//')) return null;
+  if (next.startsWith('/login')) return null;
+  return next;
+}
+
 app.get('/login', (req, res) => {
+  const next = req.query.next;
   if (req.session?.isAdmin) return res.redirect('/admin');
-  if (req.session?.playerRegId) return res.redirect('/me');
-  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody() }));
+  if (req.session?.playerRegId) return res.redirect(safeNextPath(next) || '/me');
+  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ ref: req.query.ref, next }) }));
 });
 
 app.post('/login', (req, res) => {
-  const { username = '', password = '', remember = '' } = req.body;
+  const { username = '', password = '', remember = '', next, ref } = req.body;
+  const dest = safeNextPath(next);
 
   // Admin check
   if (checkCredentials(username, password)) {
     req.session.isAdmin = true;
     if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
     insertAdminLog({ actor: username, actorType: 'super', method: 'POST', path: '/login', details: { event: 'login' } });
-    return res.redirect('/admin');
+    return res.redirect(dest || '/admin');
   }
 
   // Player check (username field used as email)
   const reg = getRegistrationByEmail(username.trim());
   if (reg) {
     if (reg.status !== 'approved') {
-      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Your registration is not yet approved.' }) }));
+      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Your registration is not yet approved.', ref, next }) }));
     }
     if (!reg.password_hash) {
-      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'No password set yet — check your email for the setup link.' }) }));
+      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'No password set yet — check your email for the setup link.', ref, next }) }));
     }
     if (checkPlayerPassword(password, reg.password_hash)) {
       req.session.playerRegId    = reg.id;
@@ -2016,11 +2137,11 @@ app.post('/login', (req, res) => {
         actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
         method: 'POST', path: '/login', details: { event: 'login', email: reg.email },
       });
-      return res.redirect(reg.is_admin ? '/admin' : '/me');
+      return res.redirect(dest || (reg.is_admin ? '/admin' : '/me'));
     }
   }
 
-  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Invalid email or password.' }) }));
+  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Invalid email or password.', ref, next }) }));
 });
 
 app.get('/logout', (req, res) => {
@@ -2980,6 +3101,7 @@ app.get('/admin/site', requireAuth, (req, res) => {
   const settings = {
     awards_enabled:   getSetting('awards_enabled',   '1'),
     mvp_race_enabled: getSetting('mvp_race_enabled', '1'),
+    papawis_enabled:  getSetting('papawis_enabled',  '0'),
     reg_open:         getSetting('reg_open',         '0'),
     reg_deadline:     getSetting('reg_deadline',     ''),
     reg_venue:        getSetting('reg_venue',        ''),
@@ -2996,7 +3118,7 @@ app.get('/admin/site', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled',
     'award_show_mvp', 'award_show_dpoy',
     'award_show_all_wknd_1', 'award_show_all_wknd_2', 'award_show_all_wknd_def',
     'award_show_scoring_champ', 'award_show_assists_leader', 'award_show_rebounds_leader',
@@ -3332,7 +3454,7 @@ app.get('/', (req, res) => {
 
   const isHomepageLoggedIn = !!req.session?.isAdmin || !!req.session?.playerRegId;
   const regBanner = !isHomepageLoggedIn && getSetting('reg_open', '0') === '1'
-    ? { deadline: getSetting('reg_deadline', '') }
+    ? pickRegistrationBannerMessage()
     : null;
 
   let signupBanner = null;
@@ -3340,7 +3462,7 @@ app.get('/', (req, res) => {
     const sigSeason = getSetting('signup_target_season', '');
     const sigOpen   = getSetting('season_signup_open', '0') === '1';
     if (sigSeason && sigOpen && !getSeasonSignup(req.session.playerRegId, sigSeason)) {
-      signupBanner = { season: sigSeason, deadline: getSetting('season_signup_deadline', '') };
+      signupBanner = { season: sigSeason, ...pickSignupBannerMessage() };
     }
   }
 
@@ -4726,18 +4848,18 @@ app.get('/register', (req, res) => {
   res.send(renderPage(req, {
     title: 'Join WKND Basketball',
     currentPath: '/register',
-    body: registerPage({ regInfo }),
+    body: registerPage({ regInfo, ref: req.query.ref }),
   }));
 });
 
 app.post('/register', (req, res) => {
   const { first_name, last_name, email, phone, birthday, positions, height, weight,
           jersey_pref, dominant_hand, experience, referred_by,
-          emergency_name, emergency_phone, motto, gender, agree } = req.body;
+          emergency_name, emergency_phone, motto, gender, agree, ref } = req.body;
 
   const prefill = { first_name, last_name, email, phone, birthday, height, weight,
                     jersey_pref, dominant_hand, experience, referred_by,
-                    emergency_name, emergency_phone, motto, gender };
+                    emergency_name, emergency_phone, motto, gender, ref };
 
   // Validate required fields
   if (!first_name?.trim() || !last_name?.trim()) {
@@ -4792,9 +4914,10 @@ app.post('/register', (req, res) => {
   }
 
   const full_name = `${last_name.trim().toUpperCase()}, ${first_name.trim()}`;
+  const regId = crypto.randomUUID();
 
   insertRegistration({
-    id: crypto.randomUUID(),
+    id: regId,
     full_name,
     email: email.trim().toLowerCase(),
     phone: phone.trim(),
@@ -4811,6 +4934,12 @@ app.post('/register', (req, res) => {
     motto: (motto || '').trim(),
     gender: (gender || '').trim(),
   });
+
+  // Not tied to any specific game — the shared papawis page lists every game rather
+  // than linking to one, so this is a global (game_id: '') activity entry.
+  if (ref === 'papawis') {
+    logPapawisActivity({ gameId: '', eventType: 'registered', playerId: regId, playerName: full_name, notes: 'via papawis link' });
+  }
 
   res.send(layout({ title: 'Registration Received', currentPath: '/register',
     body: registerPage({ success: true }) }));
@@ -4830,7 +4959,7 @@ function getReturningTeamInfo(reg, sigSeason) {
 
 app.get('/season-signup', (req, res) => {
   const regId = req.session?.playerRegId;
-  if (!regId) return res.redirect('/login');
+  if (!regId) return res.redirect(loginUrl(req));
 
   const reg = getRegistration(regId);
   if (!reg || reg.status !== 'approved') {
@@ -4860,7 +4989,7 @@ app.get('/season-signup', (req, res) => {
 
 app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) => {
   const regId = req.session?.playerRegId;
-  if (!regId) return res.redirect('/login');
+  if (!regId) return res.redirect(loginUrl(req));
 
   const reg = getRegistration(regId);
   if (!reg || reg.status !== 'approved') return res.redirect('/season-signup');
@@ -5241,6 +5370,196 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   setSetting('season_signup_open', '0');
 
   res.json({ ok: true, charged: confirmed.filter(p => p.player_id).length, emails_sent: confirmed.length + notSelected.length, email_errors: emailErrors });
+});
+
+// ── Papawis (pickup games) ─────────────────────────────────────────────────────
+app.get('/papawis', (req, res) => {
+  if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).send(
+    renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
+  );
+  const games = getPapawisGames();
+  const signupsByGame = Object.fromEntries(games.map(g => [g.id, getPapawisSignups(g.id)]));
+  const viewerPlayerId = req.session?.playerPlayerId || null;
+  const isLoggedIn = !!req.session?.playerRegId;
+  let hasBalance = false;
+  if (viewerPlayerId) {
+    const fin = getPlayerFinancials(viewerPlayerId);
+    hasBalance = (fin?.current_balance ?? 0) > 0;
+  }
+  res.send(renderPage(req, {
+    title: 'Papawis — WKND Basketball',
+    currentPath: '/papawis',
+    body: papawisPage({ games, signupsByGame, viewerPlayerId, isLoggedIn, hasBalance }),
+  }));
+});
+
+app.post('/papawis/:id/join', (req, res) => {
+  if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) {
+    return res.status(401).json({ error: 'Please log in to join.' });
+  }
+  const playerId = req.session.playerPlayerId;
+  const fin = getPlayerFinancials(playerId);
+  if ((fin?.current_balance ?? 0) > 0) {
+    return res.status(403).json({ error: "You have an outstanding balance — clear it with an admin before joining." });
+  }
+  const signupId = randomBytes(6).toString('hex');
+  const result = joinPapawisGame(req.params.id, playerId, signupId);
+  if (result.error === 'not_found')      return res.status(404).json({ error: 'Game not found.' });
+  if (result.error === 'not_open')       return res.status(400).json({ error: 'Sign-ups for this game are not open yet.' });
+  if (result.error === 'already_listed') return res.status(400).json({ error: "You're already listed for this game." });
+  res.json({ ok: true, status: result.status });
+});
+
+app.post('/papawis/:id/cancel', (req, res) => {
+  if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) {
+    return res.status(401).json({ error: 'Please log in.' });
+  }
+  const playerId = req.session.playerPlayerId;
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+  const signup = getPapawisActiveSignupForPlayer(req.params.id, playerId);
+  if (!signup) return res.status(404).json({ error: 'You are not listed for this game.' });
+  if (signup.status === 'confirmed') {
+    const today = new Date(manilaTodayStr() + 'T00:00:00');
+    const gameDate = new Date(game.date + 'T00:00:00');
+    const daysLeft = Math.round((gameDate - today) / 86400000);
+    if (daysLeft < PAPAWIS_CUTOFF_DAYS) {
+      return res.status(403).json({ error: `Cancellation window closed ${PAPAWIS_CUTOFF_DAYS} days before game day — message an admin.` });
+    }
+  }
+  const result = cancelPapawisSignup(signup.id);
+  if (result.error) return res.status(400).json({ error: 'Could not cancel.' });
+  res.json({ ok: true });
+});
+
+// Fire-and-forget beacon from the "See all players" / "See who was listed" / "See who
+// played" button — logs that a specific logged-in member looked at the roster.
+app.post('/papawis/:id/viewed', (req, res) => {
+  if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).end();
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.status(401).end();
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).end();
+  const playerId = req.session.playerPlayerId;
+  const player = getPlayerById(playerId);
+  logPapawisActivity({ gameId: game.id, eventType: 'viewed_roster', playerId, playerName: player?.name || '' });
+  res.json({ ok: true });
+});
+
+// ── Admin: Papawis ──────────────────────────────────────────────────────────────
+app.get('/admin/papawis', requireAuth, (req, res) => {
+  const games = getPapawisGames();
+  res.send(renderAdminPage(req, {
+    title: 'Papawis',
+    currentPath: '/admin/papawis',
+    body: adminPapawisListBody({ games }),
+  }));
+});
+
+app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
+  const { title, date, start_time, end_time, location, max_slots, open_days_before } = req.body;
+  if (!date) return res.status(400).json({ error: 'Date is required.' });
+  const defaultTitle = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
+    + ' (' + new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')';
+  const id = randomBytes(6).toString('hex');
+  const created = createPapawisGame({
+    id,
+    title: (title || '').trim() || defaultTitle,
+    date,
+    start_time: (start_time || '').trim(),
+    end_time: (end_time || '').trim(),
+    location: (location || '').trim(),
+    max_slots: Number(max_slots) || 10,
+    open_days_before: open_days_before ? Number(open_days_before) : null,
+    created_by: req.session.playerName || 'admin',
+  });
+  res.json({ ok: true, id: created.id });
+});
+
+// Declared before the /:id route below so "activity" isn't swallowed as a game id.
+app.get('/admin/papawis/activity', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'Papawis Activity',
+    currentPath: '/admin/papawis',
+    body: adminPapawisActivityBody({
+      activity: getAllPapawisActivity(200),
+      cancellers: getFrequentPapawisCancellers(),
+    }),
+  }));
+});
+
+app.get('/admin/papawis/:id', requireAuth, (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).send('Not found');
+  const signups = getPapawisSignups(req.params.id);
+  const players = getAllPlayers();
+  const activity = getPapawisActivityForGame(req.params.id);
+  res.send(renderAdminPage(req, {
+    title: game.title || 'Papawis',
+    currentPath: '/admin/papawis',
+    body: adminPapawisDetailBody({ game, signups, players, activity }),
+  }));
+});
+
+app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
+  const { player_id, status, guest_names } = req.body;
+  if (!player_id) return res.status(400).json({ error: 'Select a player.' });
+  const st = status === 'waitlist' ? 'waitlist' : 'confirmed';
+  const names = String(guest_names || '').split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+
+  if (!names.length) {
+    const id = randomBytes(6).toString('hex');
+    const result = adminAddPapawisSignup({ id, gameId: req.params.id, playerId: player_id, status: st });
+    if (result.error) return res.status(400).json({ error: 'That player is already listed.' });
+    return res.json({ ok: true, added: 1 });
+  }
+
+  let added = 0;
+  for (const guestName of names) {
+    const id = randomBytes(6).toString('hex');
+    const result = adminAddPapawisSignup({ id, gameId: req.params.id, playerId: player_id, status: st, guestName });
+    if (!result.error) added++;
+  }
+  res.json({ ok: true, added });
+});
+
+app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
+  const result = adminRemovePapawisSignup(req.params.signupId);
+  if (result.error) return res.status(400).json({ error: 'Could not remove.' });
+  res.json({ ok: true });
+});
+
+app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  const price = Number(req.body.price_per_player);
+  if (!price || price <= 0) return res.status(400).json({ error: 'Enter a valid price per player.' });
+  const confirmed = getPapawisSignups(req.params.id).filter(s => s.status === 'confirmed');
+  const today = manilaTodayStr();
+  for (const s of confirmed) {
+    const txId = randomBytes(6).toString('hex');
+    recordTransaction({
+      id: txId, player_id: s.player_id, amount: price, type: 'charge',
+      payment_method: '', date: today, status: 'confirmed',
+      notes: s.guest_name
+        ? `Papawis — ${game.title || 'Pickup game'} (${game.date}) — guest: ${s.guest_name}`
+        : `Papawis — ${game.title || 'Pickup game'} (${game.date})`,
+      reference_no: game.id, season: '', category: 'papawis',
+    });
+  }
+  completePapawisGame(req.params.id, price);
+  res.json({ ok: true, charged: confirmed.length });
+});
+
+app.post('/admin/papawis/:id/cancel', requireAuth, (req, res) => {
+  cancelPapawisGame(req.params.id);
+  res.json({ ok: true });
+});
+
+app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
+  deletePapawisGame(req.params.id);
+  res.json({ ok: true });
 });
 
 app.listen(PORT, () => {

@@ -26,12 +26,47 @@ export function displayPlayerName(raw) {
 // Alias kept so callers can be migrated gradually.
 export const formatPlayerName = displayPlayerName;
 
+// Today's calendar date in Manila (Asia/Manila, UTC+8), as "YYYY-MM-DD" — independent of
+// whatever timezone the server process itself happens to be running in. All "days until
+// game day" / "is it past midnight yet" comparisons in the league should key off this
+// rather than the server's local `new Date()`, since the server may be hosted in UTC.
+export function manilaTodayStr() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (type) => parts.find(p => p.type === type).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 export function formatDate(raw) {
   try {
     return new Date(raw).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
   } catch {
     return String(raw || '');
   }
+}
+
+// "18:00" -> "6:00 PM"
+function formatClockTime(hhmm) {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+// Formats a start/end pair of "HH:MM" (24h) inputs into e.g. "6:00–8:00 PM" (shared AM/PM
+// dropped from the start) or "11:00 AM–1:00 PM" (different periods, both shown in full).
+export function formatTimeRange(start, end) {
+  if (!start && !end) return '';
+  if (start && !end) return formatClockTime(start);
+  if (!start && end) return formatClockTime(end);
+  const startPeriod = Number(start.split(':')[0]) >= 12 ? 'PM' : 'AM';
+  const endPeriod   = Number(end.split(':')[0])   >= 12 ? 'PM' : 'AM';
+  const startFull = formatClockTime(start);
+  const endFull   = formatClockTime(end);
+  return startPeriod === endPeriod
+    ? `${startFull.replace(` ${startPeriod}`, '')}–${endFull}`
+    : `${startFull}–${endFull}`;
 }
 
 export function initials(name) {

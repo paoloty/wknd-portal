@@ -50,6 +50,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
 
   const nav = [
     `<a href="/"${isActive('/') ? ' aria-current="page"' : ''}>Home</a>`,
+    features.papawis ? `<a href="/papawis"${isActive('/papawis') ? ' aria-current="page"' : ''}>Papawis</a>` : '',
     gamesDropdown,
     statsDropdown,
     awardsDropdown,
@@ -158,6 +159,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
             <a href="/games">All Games</a>
             <a href="/standings">Standings</a>
             <a href="/playoffs">Playoffs</a>
+            ${features.papawis ? '<a href="/papawis">Papawis</a>' : ''}
           </div>
           <div class="site-footer__group">
             <span class="site-footer__group-title">Stats</span>

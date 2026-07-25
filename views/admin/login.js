@@ -1,6 +1,7 @@
 import { escHtml } from '../layout.js';
 
-export function adminLoginBody({ error = '' } = {}) {
+export function adminLoginBody({ error = '', ref = '', next = '' } = {}) {
+  const registerHref = ref ? `/register?ref=${encodeURIComponent(ref)}` : '/register';
   return `<div class="login-page">
   <div class="login-box">
     <div class="login-brand">
@@ -10,6 +11,8 @@ export function adminLoginBody({ error = '' } = {}) {
     <p class="login-brand__sub">Sign in to access your account</p>
     ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
     <form class="login-form" method="POST" action="/login">
+      ${next ? `<input type="hidden" name="next" value="${escHtml(next)}">` : ''}
+      ${ref ? `<input type="hidden" name="ref" value="${escHtml(ref)}">` : ''}
       <div class="login-field">
         <label for="username">Email or Username</label>
         <input id="username" name="username" type="text" autocomplete="username" required placeholder="Enter email or username">
@@ -39,6 +42,7 @@ export function adminLoginBody({ error = '' } = {}) {
         <span class="login-fb__badge">Coming soon</span>
       </button>
     </div>
+    <p class="login-register">New here? <a href="${escHtml(registerHref)}">Register to join the league</a></p>
   </div>
 </div>`;
 }

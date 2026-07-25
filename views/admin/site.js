@@ -18,8 +18,9 @@ const AWARD_SECTIONS = [
 
 export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {}) {
   const fmt = v => v ? Number(v).toFixed(2) : '';
-  const awardsEnabled = settings.awards_enabled   !== '0';
-  const mvpEnabled    = settings.mvp_race_enabled !== '0';
+  const awardsEnabled  = settings.awards_enabled   !== '0';
+  const mvpEnabled     = settings.mvp_race_enabled !== '0';
+  const papawisEnabled = settings.papawis_enabled  === '1';
 
   const sectionToggles = AWARD_SECTIONS.map(({ key, label }) => {
     const on = settings[key] !== '0';
@@ -84,6 +85,24 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
 </div>
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Papawis</div>
+  <div class="p-5">
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Off by default — flip this on when you're ready to make Papawis visible to the public (nav link + <code class="text-[11px] bg-admin-border/50 px-1 rounded">/papawis</code>). Admin management stays available either way.</p>
+    <div class="flex items-center justify-between py-3">
+      <div>
+        <div class="text-[13px] font-semibold text-slate-200">Show Papawis publicly</div>
+        <div class="text-xs text-slate-500 mt-0.5">Pickup game sign-ups (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/papawis</code>)</div>
+      </div>
+      <label class="site-toggle" title="Toggle Papawis">
+        <input type="checkbox" id="toggle-papawis" ${papawisEnabled ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </div>
+    <span id="papawis-msg" class="text-xs block mt-1 min-h-[16px]"></span>
+  </div>
+</div>
+
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
   <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Registration &amp; Season</div>
   <div class="p-5">
     <p class="text-xs text-slate-500 mb-4 leading-relaxed">Registration is always open. Season signup management (waitlist, deadlines, display season) has moved to its own page.</p>
@@ -104,9 +123,9 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
 </div>
 
 <script>
-  function bindToggle(id, key) {
+  function bindToggle(id, key, msgId) {
     document.getElementById(id).addEventListener('change', async function() {
-      var msg = document.getElementById('features-msg');
+      var msg = document.getElementById(msgId || 'features-msg');
       msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
       try {
         var r = await fetch('/admin/site/settings', {
@@ -122,6 +141,7 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
       setTimeout(function() { msg.textContent = ''; }, 2000);
     });
   }
+  bindToggle('toggle-papawis',  'papawis_enabled', 'papawis-msg');
   bindToggle('toggle-awards',   'awards_enabled');
   bindToggle('toggle-mvp-race', 'mvp_race_enabled');
 

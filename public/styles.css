@@ -372,6 +372,14 @@ body {
   border-radius: 4px;
   margin-left: auto;
 }
+.login-register {
+  margin: 20px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.login-register a { color: var(--amber); font-weight: 600; text-decoration: none; }
+.login-register a:hover { text-decoration: underline; }
 /* ── Ledger table ─────────────────────────────────────────────────────────── */
 /* ── Ledger table ─────────────────────────────────────────────────────────── */
 .ledger-head {
@@ -1116,54 +1124,80 @@ body {
 
 /* ── Member Season Signup Banner ─────────────────────────────────────────── */
 .member-signup-banner {
-  background: linear-gradient(90deg, rgba(245,147,50,.08) 0%, transparent 60%);
-  border-bottom: 1px solid rgba(245,147,50,.2);
-  padding: 10px 0;
-}
-.member-signup-banner__inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 16px 22px;
+  margin-bottom: 28px;
+  background: #060d18;
+  border: 1px solid rgba(245,147,50,.28);
+  border-top: 3px solid var(--amber);
+  border-radius: var(--radius);
+  position: relative;
+  overflow: hidden;
+}
+.member-signup-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 45% 180% at 0% 50%, rgba(245,147,50,.16) 0%, transparent 60%);
+  pointer-events: none;
 }
 .member-signup-banner__copy {
   display: flex;
   align-items: center;
   gap: 14px;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 .member-signup-banner__pill {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
   color: var(--amber);
   text-transform: uppercase;
+  background: rgba(245,147,50,.14);
+  border: 1px solid rgba(245,147,50,.35);
+  padding: 5px 12px 5px 10px;
+  border-radius: 99px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-.member-signup-banner__deadline {
-  font-size: 12px;
+.member-signup-banner__msg {
+  font-size: 13.5px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.member-signup-banner__deadline strong { color: var(--text); }
 .member-signup-banner__cta {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--amber);
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: #0a0e16;
+  background: var(--amber);
   text-decoration: none;
   white-space: nowrap;
-  border: 1px solid rgba(245,147,50,.35);
-  border-radius: 6px;
-  padding: 5px 14px;
-  transition: background .15s, color .15s;
+  border-radius: 8px;
+  padding: 10px 20px;
+  transition: opacity .15s;
   flex-shrink: 0;
 }
-.member-signup-banner__cta:hover { background: var(--amber); color: #0a0e16; }
+.member-signup-banner__cta:hover { opacity: .88; }
+@media (max-width: 640px) {
+  .member-signup-banner { flex-wrap: wrap; }
+  .member-signup-banner__copy { flex-wrap: wrap; }
+}
 
 /* ── Registration Banner ─────────────────────────────────────────────────── */
 .reg-banner {
