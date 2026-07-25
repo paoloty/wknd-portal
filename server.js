@@ -1936,7 +1936,21 @@ app.get('/api/compare', async (req, res) => {
       return `${name} (${team}): ${pg(t,'pts')} PPG, ${pg(t,'reb')} RPG, ${pg(t,'ast')} APG, ${pg(t,'stl')} SPG, ${pg(t,'blk')} BPG${fg ? ', ' + fg + ' FG%' : ''}, ${gp} GP`;
     };
 
-    const prompt = `You are a funny, slightly savage sports commentator for WKND Basketball League, a recreational league. Write 2-3 sentences comparing these two players. Be playfully trash-talking — roast weaknesses, celebrate strengths — but keep it fun and good-natured. Be specific with the numbers. Use first names only. No emojis. Start the comparison immediately — no preamble, no "Alright" or "Let's" opener, no labels or headers. Output only the paragraph.
+    // Gather recent roast openers to keep intros unique across comparisons
+    const currentPair = [a, b].sort().join('|');
+    const recentOpeners = getCompareAnalytics()
+      .filter(r => r.writeup && r.pair_key !== currentPair)
+      .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
+      .slice(0, 10)
+      .map(r => r.writeup.split(/(?<=[.!?])\s/)[0])
+      .filter(Boolean);
+
+    const prompt = `You are a ruthless roast comic doing a comedy roast of two players in the WKND Basketball League, a recreational league. Write 2-3 sentences roasting both players by comparing their stats. The roast is the main event — dig into weaknesses, bad shooting splits, low numbers, whatever the stats hand you, and make it sting a little. You can land a backhanded compliment if it sets up a better joke, but do not go soft or turn it into a celebration. Be specific with the numbers. Use first names only. No emojis. Start the roast immediately — no preamble, no "Alright" or "Let's" opener, no labels or headers. Output only the paragraph.
+
+Vary your opening line every time — do not fall back on the same sentence structure or stock setup across different roasts.${recentOpeners.length ? `
+
+OPENING LINES ALREADY USED IN RECENT ROASTS (do NOT reuse these words, structures, or patterns for your opening line):
+${recentOpeners.map(o => `- "${o}"`).join('\n')}` : ''}
 
 ${line(pA, tA)}
 ${line(pB, tB)}`;
