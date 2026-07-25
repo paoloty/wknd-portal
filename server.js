@@ -394,6 +394,26 @@ function buildDefaultOgSvg() {
 </svg>`;
 }
 
+function buildPapawisOgSvg() {
+  return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#020817"/>
+  <circle cx="960" cy="315" r="310" fill="none" stroke="#0c1525" stroke-width="3"/>
+  <circle cx="960" cy="315" r="230" fill="none" stroke="#0c1525" stroke-width="2"/>
+  <circle cx="960" cy="315" r="145" fill="none" stroke="#121f35" stroke-width="2"/>
+  <path d="M960 5 Q810 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
+  <path d="M960 5 Q1110 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
+  <line x1="650" y1="315" x2="1200" y2="315" stroke="#0c1525" stroke-width="2"/>
+  <rect x="0" y="0" width="1200" height="5" fill="#f59332"/>
+  <text x="80" y="118" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" letter-spacing="6" fill="#f59332">WKND BASKETBALL LEAGUE</text>
+  <text x="72" y="290" font-family="Impact,Arial Black,Arial,sans-serif" font-size="118" font-weight="900" fill="#e2e8f0" letter-spacing="2">PAPAWIS</text>
+  <text x="80" y="358" font-family="Impact,Arial Black,Arial,sans-serif" font-size="38" font-weight="900" fill="#1e293b" letter-spacing="6">PICKUP GAMES</text>
+  <text x="80" y="420" font-family="Arial,Helvetica,sans-serif" font-size="16" fill="#475569" letter-spacing="1.5">LIMITED SLOTS &#183; FIRST COME, FIRST SERVED</text>
+  <text x="80" y="450" font-family="Arial,Helvetica,sans-serif" font-size="16" fill="#475569" letter-spacing="1.5">WAITLIST AUTO-FILLS WHEN A SPOT OPENS</text>
+  <rect x="80" y="548" width="44" height="3" fill="#f59332"/>
+  <text x="80" y="596" font-family="Arial,Helvetica,sans-serif" font-size="12" fill="#2d3d54" letter-spacing="3">WKNDBASKETBALL.COM/PAPAWIS</text>
+</svg>`;
+}
+
 // SVG overlay for the MVP social image. No full-background rect so it renders with
 // transparent pixels — sharp will composite it on top of the player photo layer.
 function buildMvpOgSvg(leader, season, hasPhoto = false) {
@@ -1932,6 +1952,19 @@ app.get('/og-image.png', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=604800, immutable');
     res.end(_ogDefaultPng);
   } catch (err) { console.error('og-image error:', err); res.status(500).end(); }
+});
+
+let _ogPapawisPng = null;
+app.get('/api/papawis/og-image.png', async (req, res) => {
+  try {
+    if (!_ogPapawisPng) {
+      _ogPapawisPng = await sharp(Buffer.from(buildPapawisOgSvg()), { density: 96 })
+        .resize(1200, 630).png({ compressionLevel: 9 }).toBuffer();
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=604800, immutable');
+    res.end(_ogPapawisPng);
+  } catch (err) { console.error('papawis og-image error:', err); res.status(500).end(); }
 });
 
 const _ogMvpCache = { buf: null, ts: 0 };
@@ -5386,9 +5419,36 @@ app.get('/papawis', (req, res) => {
     const fin = getPlayerFinancials(viewerPlayerId);
     hasBalance = (fin?.current_balance ?? 0) > 0;
   }
+
+  const origin = getRequestOrigin(req);
+  const papawisUrl  = `${origin}/papawis`;
+  const papawisDesc = 'Pickup games with limited slots. First come, first served — see the schedule, who\'s in, and join the waitlist.';
+  const papawisImg  = `${origin}/api/papawis/og-image.png`;
+  const papawisMetaTags = [
+    `<meta name="description" content="${escAttr(papawisDesc)}">`,
+    `<link rel="canonical" href="${escAttr(papawisUrl)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="Papawis — WKND Basketball League">`,
+    `<meta property="og:description" content="${escAttr(papawisDesc)}">`,
+    `<meta property="og:url" content="${escAttr(papawisUrl)}">`,
+    `<meta property="og:image" content="${escAttr(papawisImg)}">`,
+    `<meta property="og:image:secure_url" content="${escAttr(papawisImg)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta property="og:image:alt" content="Papawis — WKND Basketball League">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="Papawis — WKND Basketball League">`,
+    `<meta name="twitter:description" content="${escAttr(papawisDesc)}">`,
+    `<meta name="twitter:image" content="${escAttr(papawisImg)}">`,
+  ].join('\n  ');
+
   res.send(renderPage(req, {
     title: 'Papawis — WKND Basketball',
     currentPath: '/papawis',
+    metaTags: papawisMetaTags,
     body: papawisPage({ games, signupsByGame, viewerPlayerId, isLoggedIn, hasBalance }),
   }));
 });
