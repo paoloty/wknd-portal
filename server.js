@@ -82,10 +82,12 @@ import {
   adminAddPapawisSignup, adminRemovePapawisSignup, completePapawisGame, cancelPapawisGame, deletePapawisGame,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
   getPapawisGamesForPlayer,
+  getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
 import { generateText, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
+import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
 import { adminSiteBody } from './views/admin/site.js';
@@ -100,6 +102,7 @@ import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js'
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
+import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { mvpPage } from './views/mvp.js';
@@ -2552,6 +2555,15 @@ app.post('/admin/users/:id/toggle-admin', requireSuperAdmin, express.json(), (re
   res.json({ ok: true, is_admin: !reg.is_admin });
 });
 
+app.get('/admin/coach-notes', requireAuth, (req, res) => {
+  const analyses = getAllCoachAnalyses();
+  res.send(renderAdminPage(req, {
+    title: 'Coach Notes',
+    currentPath: '/admin/coach-notes',
+    body: adminCoachNotesBody({ analyses, focusLabels: FOCUS_LABELS, focusVideos: FOCUS_VIDEOS }),
+  }));
+});
+
 app.get('/admin/logs', requireSuperAdmin, (req, res) => {
   const logs = getAdminLogs(500);
   res.send(renderAdminPage(req, {
@@ -4883,7 +4895,7 @@ app.post('/admin/player/:id/edit', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/players/:ref', (req, res) => {
+app.get('/players/:ref', async (req, res) => {
   const resolved = resolveRef('player', req.params.ref,
     ref => getPlayerById(ref),
     p   => playerSlug(p)
@@ -4925,9 +4937,11 @@ app.get('/players/:ref', (req, res) => {
 
   const isOwnProfile = !!req.session?.playerPlayerId && resolved.id === req.session.playerPlayerId;
   let balanceAmount = 0, papawisGames = [];
+  let coachNote = null;
   if (isOwnProfile) {
     balanceAmount = getPlayerFinancials(resolved.id)?.current_balance ?? 0;
     papawisGames  = getPapawisGamesForPlayer(resolved.id);
+    coachNote     = await getOrGenerateCoachNote(resolved.id, player, totals, gameLogs);
   }
 
   res.send(renderPage(req, {
@@ -4935,9 +4949,43 @@ app.get('/players/:ref', (req, res) => {
     currentPath: '/players',
     isOwnProfile,
     metaTags: buildPlayerOgTags(req, player, totals),
-    body: playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisGames })
+    body: playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisGames, coachNote })
   }));
 });
+
+// Fixed/cached per player — only calls the AI when the player's career totals have
+// actually changed since the last generation. Falls back to serving the last good
+// analysis (rather than nothing) if a fresh generation attempt fails.
+async function getOrGenerateCoachNote(playerId, player, totals) {
+  if (!totals?.games_played) return null;
+  const snapshot = statSnapshotFromTotals(totals);
+  const stored = getCoachAnalysis(playerId);
+  if (stored && stored.stat_snapshot === snapshot) {
+    return { analysis: stored.analysis, focus_tag: stored.focus_tag, generated_at: stored.generated_at };
+  }
+  try {
+    const positions = (() => { try { return JSON.parse(player.positions || '[]'); } catch { return []; } })();
+    const group = classifyPositionGroup(positions);
+    const peerRows = getAllPlayerCareerTotals().filter(r => r.player_id !== playerId);
+    const peerAverages = aggregatePeerAverages(peerRows, group);
+    const recentGames = (getPlayerGameLog(playerId) || []).filter(g => g.status === 'played').slice(0, 4);
+    const displayName = displayPlayerName(player.name);
+    const result = await generateCoachAnalysis({
+      displayName, positions, totals, peerAverages,
+      groupLabel: group === 'perimeter' ? 'PG/SG/SF' : 'PF/C',
+      recentGames,
+    }, { primaryProvider: 'gemini' });
+    saveCoachAnalysis({
+      player_id: playerId, model: result.model || '', provider: result.provider || '',
+      stat_snapshot: snapshot, analysis: result.analysis, focus_tag: result.focus_tag,
+    });
+    return { analysis: result.analysis, focus_tag: result.focus_tag, generated_at: Date.now() };
+  } catch (err) {
+    console.error('coach-analysis generation error:', err.message);
+    // Serve the last good analysis rather than nothing if regeneration fails.
+    return stored ? { analysis: stored.analysis, focus_tag: stored.focus_tag, generated_at: stored.generated_at } : null;
+  }
+}
 
 app.get('/front-office', (req, res) => {
   res.send(renderPage(req, {

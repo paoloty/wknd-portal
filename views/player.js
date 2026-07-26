@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, formatDate, truncate, initials } from './utils.js';
+import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -594,6 +595,40 @@ function fmtShortDate(d) {
     : '—';
 }
 
+// Owner-only — full-width, sits between the hero and the two-column layout below.
+// Fixed until the player's career averages actually change (see getOrGenerateCoachNote
+// in server.js), so the footer date is important context, not decoration.
+function coachNoteCard(coachNote) {
+  if (!coachNote?.analysis) return '';
+  const label = FOCUS_LABELS[coachNote.focus_tag] || coachNote.focus_tag;
+  const video = FOCUS_VIDEOS[coachNote.focus_tag];
+  const dateStr = coachNote.generated_at
+    ? new Date(coachNote.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+
+  return `<div class="card coach-card">
+    <div class="section-header"><h2>Coach's Note</h2></div>
+    <span class="coach-card__tag">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Focus: ${escHtml(label)}
+    </span>
+    <p class="coach-card__body">${escHtml(coachNote.analysis)}</p>
+    ${video ? `<a class="coach-card__video" href="${escHtml(video.url)}" target="_blank" rel="noopener">
+      <span class="coach-card__play">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </span>
+      <span class="coach-card__video-meta">
+        <span class="coach-card__video-eyebrow">Watch &middot; ${escHtml(label)}</span>
+        <span class="coach-card__video-title">${escHtml(video.title)}</span>
+      </span>
+    </a>` : ''}
+    ${dateStr ? `<div class="coach-card__foot">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+      Based on stats through ${escHtml(dateStr)} &middot; updates the next time your season averages change
+    </div>` : ''}
+  </div>`;
+}
+
 // Owner-only — top of the right sidebar on your own profile. Balance notice is
 // deliberately not dismissable (unlike the site-wide balance-bar): this is the one place
 // on the site meant to be a persistent record, not a transient reminder.
@@ -635,13 +670,15 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [] }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false, fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [] }) {
+export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false, fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [], coachNote = null }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
   const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
   const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames }) : '';
+  const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 
   return `${heroSection(player, totals, isAdmin)}
+${coachNoteHtml}
 <div class="game-detail-layout">
   <div class="game-detail-left">
     ${gameLog(gameLogs, player, potgGameIds)}

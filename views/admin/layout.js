@@ -12,6 +12,7 @@ const IC = {
   site:      `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><circle cx="7.5" cy="7.5" r="2"/><path d="M7.5 1.5v4M7.5 9.5v4M1.5 7.5h4M9.5 7.5h4"/></svg>`,
   awards:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1l1.545 3.09L13 4.854l-2.75 2.687.65 3.793L7.5 9.59l-3.4 1.744.65-3.793L2 4.854l3.955-.764z"/></svg>`,
   compare:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="7.5" r="2.5"/><circle cx="11" cy="7.5" r="2.5"/><path d="M6.5 7.5h2"/></svg>`,
+  coach:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4v4l2.5 1.5"/></svg>`,
   external:  `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8"/><polyline points="9.5 1 13 1 13 4.5"/><line x1="7" y1="7" x2="13" y2="1"/></svg>`,
   signout:   `<svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3"/><path d="M10 10.5l3-3-3-3"/><line x1="13" y1="7.5" x2="6" y2="7.5"/></svg>`,
 };
@@ -27,6 +28,7 @@ const NAV_GROUPS = [
       { href: '/admin/teams',     label: 'Teams',     icon: 'teams',     soon: true },
       { href: '/admin/standings', label: 'Standings', icon: 'standings', soon: true },
       { href: '/admin/compare',   label: 'Compares',  icon: 'compare' },
+      { href: '/admin/coach-notes', label: 'Coach Notes', icon: 'coach' },
     ],
   },
   {
