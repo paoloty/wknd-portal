@@ -3,6 +3,59 @@ import { PAYMENT_CATEGORIES } from './utils.js';
 
 const PAYMENT_METHODS = ['GCash', 'Bank Transfer', 'Cash', 'Other'];
 
+// Shared by both the success branch and the form branch below — each returns its own
+// complete fragment early, so the styles have to travel with whichever one renders.
+const SB_STYLES = `<style>
+.sb-page { max-width: 900px; margin: 0 auto; padding-bottom: 60px; }
+.sb-head { margin-bottom: 20px; }
+.sb-head__title { font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; color: var(--text); margin: 0 0 4px; }
+.sb-head__sub { font-size: 13.5px; color: var(--text-muted); margin: 0; }
+
+.sb-balance-strip { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: rgba(248,113,113,.06); border: 1px solid rgba(248,113,113,.25); border-top: 2px solid #f2b263; border-radius: var(--radius); margin-bottom: 24px; }
+.sb-balance-strip__label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #f2b263; }
+.sb-balance-strip__amount { font-size: 22px; font-weight: 800; color: #fbbf77; font-variant-numeric: tabular-nums; }
+
+.sb-layout { display: grid; gap: 24px; align-items: start; }
+.sb-layout--split { grid-template-columns: 1fr 340px; }
+.sb-layout--full { grid-template-columns: 1fr; }
+.sb-layout--split .sb-gcash-card { grid-column: 2; grid-row: 1; position: sticky; top: 24px; }
+.sb-layout--split .sb-form-card { grid-column: 1; grid-row: 1; }
+
+.sb-gcash-card__body { padding: 18px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
+.sb-gcash-card__qr { width: 100%; max-width: 220px; aspect-ratio: 1 / 1; height: auto; border-radius: 8px; background: #fff; padding: 10px; box-sizing: border-box; }
+.sb-gcash-card__details { display: flex; flex-direction: column; gap: 2px; }
+.sb-gcash-card__name { font-size: 14px; font-weight: 700; color: var(--text); }
+.sb-gcash-card__number { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.sb-steps { width: 100%; text-align: left; margin: 4px 0 0; padding: 14px 16px 14px 34px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+.sb-steps li::marker { color: var(--amber); font-weight: 700; }
+
+.sb-form-card__body { padding: 22px; }
+.sb-form .login-field { margin-bottom: 16px; }
+.sb-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sb-season-hint { margin: -6px 0 16px; font-size: 12px; color: var(--amber); }
+.sb-season-hint strong { color: var(--text); }
+/* Fixed height regardless of the uploaded image's own dimensions — the form's layout
+   shouldn't jump around based on whatever screenshot someone picks. */
+.sb-preview-wrap { margin-top: 10px; height: 180px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.sb-preview-wrap__img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+.sb-success { max-width: 420px; margin: 60px auto 0; text-align: center; padding: 48px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.sb-success__icon { font-size: 44px; margin-bottom: 16px; }
+.sb-success__title { font-size: 1.25rem; font-weight: 800; color: var(--text); margin: 0 0 10px; }
+.sb-success__body { color: var(--text-muted); font-size: 13px; line-height: 1.75; margin: 0 0 28px; }
+.sb-success__cta { display: block; background: var(--amber); color: #0a0e16; font-weight: 800; font-size: 13px; letter-spacing: .06em; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; }
+
+@media (max-width: 900px) {
+  .sb-layout--split { grid-template-columns: 1fr; }
+  .sb-layout--split .sb-gcash-card { grid-column: 1; grid-row: 1; position: static; }
+  .sb-layout--split .sb-form-card { grid-column: 1; grid-row: 2; }
+}
+@media (max-width: 560px) {
+  .sb-field-row { grid-template-columns: 1fr; gap: 0; }
+  .sb-form-card__body { padding: 18px; }
+}
+</style>`;
+
 export function settleBalancePage({ balance = 0, gcashName = '', gcashNumber = '', hasQr = false, activeSeason = '', success = false, error = '' } = {}) {
   if (success) {
     return `<div class="page-content sb-page">
@@ -15,7 +68,8 @@ export function settleBalancePage({ balance = 0, gcashName = '', gcashNumber = '
     </p>
     <a href="/me" class="sb-success__cta">Back to My Profile</a>
   </div>
-</div>`;
+</div>
+${SB_STYLES}`;
   }
 
   const hasPaymentInfo = !!(gcashName || gcashNumber || hasQr);
@@ -99,57 +153,7 @@ export function settleBalancePage({ balance = 0, gcashName = '', gcashNumber = '
     </div>
   </div>
 </div>
-
-<style>
-.sb-page { max-width: 900px; margin: 0 auto; padding-bottom: 60px; }
-.sb-head { margin-bottom: 20px; }
-.sb-head__title { font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; color: var(--text); margin: 0 0 4px; }
-.sb-head__sub { font-size: 13.5px; color: var(--text-muted); margin: 0; }
-
-.sb-balance-strip { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: rgba(248,113,113,.06); border: 1px solid rgba(248,113,113,.25); border-top: 2px solid #f2b263; border-radius: var(--radius); margin-bottom: 24px; }
-.sb-balance-strip__label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #f2b263; }
-.sb-balance-strip__amount { font-size: 22px; font-weight: 800; color: #fbbf77; font-variant-numeric: tabular-nums; }
-
-.sb-layout { display: grid; gap: 24px; align-items: start; }
-.sb-layout--split { grid-template-columns: 1fr 340px; }
-.sb-layout--full { grid-template-columns: 1fr; }
-.sb-layout--split .sb-gcash-card { grid-column: 2; grid-row: 1; position: sticky; top: 24px; }
-.sb-layout--split .sb-form-card { grid-column: 1; grid-row: 1; }
-
-.sb-gcash-card__body { padding: 18px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
-.sb-gcash-card__qr { width: 100%; max-width: 220px; aspect-ratio: 1 / 1; height: auto; border-radius: 8px; background: #fff; padding: 10px; box-sizing: border-box; }
-.sb-gcash-card__details { display: flex; flex-direction: column; gap: 2px; }
-.sb-gcash-card__name { font-size: 14px; font-weight: 700; color: var(--text); }
-.sb-gcash-card__number { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.sb-steps { width: 100%; text-align: left; margin: 4px 0 0; padding: 14px 16px 14px 34px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
-.sb-steps li::marker { color: var(--amber); font-weight: 700; }
-
-.sb-form-card__body { padding: 22px; }
-.sb-form .login-field { margin-bottom: 16px; }
-.sb-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.sb-season-hint { margin: -6px 0 16px; font-size: 12px; color: var(--amber); }
-.sb-season-hint strong { color: var(--text); }
-/* Fixed height regardless of the uploaded image's own dimensions — the form's layout
-   shouldn't jump around based on whatever screenshot someone picks. */
-.sb-preview-wrap { margin-top: 10px; height: 180px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.sb-preview-wrap__img { max-width: 100%; max-height: 100%; object-fit: contain; }
-
-.sb-success { max-width: 420px; margin: 60px auto 0; text-align: center; padding: 48px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-.sb-success__icon { font-size: 44px; margin-bottom: 16px; }
-.sb-success__title { font-size: 1.25rem; font-weight: 800; color: var(--text); margin: 0 0 10px; }
-.sb-success__body { color: var(--text-muted); font-size: 13px; line-height: 1.75; margin: 0 0 28px; }
-.sb-success__cta { display: block; background: var(--amber); color: #0a0e16; font-weight: 800; font-size: 13px; letter-spacing: .06em; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; }
-
-@media (max-width: 900px) {
-  .sb-layout--split { grid-template-columns: 1fr; }
-  .sb-layout--split .sb-gcash-card { grid-column: 1; grid-row: 1; position: static; }
-  .sb-layout--split .sb-form-card { grid-column: 1; grid-row: 2; }
-}
-@media (max-width: 560px) {
-  .sb-field-row { grid-template-columns: 1fr; gap: 0; }
-  .sb-form-card__body { padding: 18px; }
-}
-</style>
+${SB_STYLES}
 
 <script>
 (function() {
