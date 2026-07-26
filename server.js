@@ -80,6 +80,7 @@ import {
   createPapawisGame, joinPapawisGame, cancelPapawisSignup,
   adminAddPapawisSignup, adminRemovePapawisSignup, completePapawisGame, cancelPapawisGame, deletePapawisGame,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
+  getPapawisGamesForPlayer,
   db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
@@ -1218,6 +1219,32 @@ function regMiniBanner() {
 </div>`;
 }
 
+// Dismissal lives in the server session (not localStorage) so it clears itself on
+// logout — session.destroy() wipes it — and reappears on the next fresh login even at
+// the same balance, rather than staying silenced forever once closed once.
+function balanceReminderBar(amount) {
+  return `<div class="balance-bar" id="balance-bar" data-amount="${amount}">
+  <div class="balance-bar__inner">
+    <span class="balance-bar__text"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4.2v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg> You have an outstanding balance of <strong>₱${Number(amount).toLocaleString()}</strong> — please settle it with an admin.</span>
+    <button class="balance-bar__close" id="balance-bar-close" type="button" aria-label="Dismiss">✕</button>
+  </div>
+</div>
+<script>
+(function() {
+  var bar = document.getElementById('balance-bar');
+  var closeBtn = document.getElementById('balance-bar-close');
+  if (!bar || !closeBtn) return;
+  closeBtn.addEventListener('click', function() {
+    fetch('/balance-bar/dismiss', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Number(bar.dataset.amount) })
+    }).catch(function() {});
+    bar.style.display = 'none';
+  });
+})();
+</script>`;
+}
+
 function renderPage(req, opts) {
   const origin = getRequestOrigin(req);
   const fallbackImg = `${origin}/og-image.png`;
@@ -1256,7 +1283,21 @@ function renderPage(req, opts) {
   }
 
   const bannerHtml = showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showMini ? regMiniBanner() : '');
-  const body = bannerHtml ? bannerHtml + (opts.body || '') : (opts.body || '');
+
+  // Balance reminder — shown site-wide to a player with an outstanding balance, on top of
+  // whatever other banner is already showing. Dismissal is per-amount and lives in the
+  // session (see balanceReminderBar), so it comes back if the balance changes, and always
+  // comes back on the next fresh login regardless of amount.
+  let balanceBarHtml = '';
+  if (isPlayer && req.session?.playerPlayerId) {
+    const fin = getPlayerFinancials(req.session.playerPlayerId);
+    const balance = fin?.current_balance ?? 0;
+    if (balance > 0 && req.session.balanceBarDismissedAmount !== balance) {
+      balanceBarHtml = balanceReminderBar(balance);
+    }
+  }
+
+  const body = balanceBarHtml + bannerHtml + (opts.body || '');
   return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), ...opts, body, metaTags });
 }
 
@@ -2131,7 +2172,7 @@ function safeNextPath(next) {
 
 app.get('/login', (req, res) => {
   const next = req.query.next;
-  if (req.session?.isAdmin) return res.redirect('/admin');
+  if (req.session?.isAdmin && !req.session?.isElevatedPlayer) return res.redirect('/admin');
   if (req.session?.playerRegId) return res.redirect(safeNextPath(next) || '/me');
   res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ ref: req.query.ref, next }) }));
 });
@@ -2170,7 +2211,10 @@ app.post('/login', (req, res) => {
         actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
         method: 'POST', path: '/login', details: { event: 'login', email: reg.email },
       });
-      return res.redirect(dest || (reg.is_admin ? '/admin' : '/me'));
+      // Elevated player-admins (reg.is_admin) aren't true super admins — see
+      // isSuperAdmin checks elsewhere (isAdmin && !isElevatedPlayer) — so they land on
+      // their own profile like any other player, not the admin dashboard.
+      return res.redirect(dest || '/me');
     }
   }
 
@@ -2179,6 +2223,14 @@ app.post('/login', (req, res) => {
 
 app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
+});
+
+app.post('/balance-bar/dismiss', express.json(), (req, res) => {
+  if (!req.session?.playerRegId) return res.status(401).end();
+  const amount = Number(req.body?.amount);
+  if (!Number.isFinite(amount)) return res.status(400).end();
+  req.session.balanceBarDismissedAmount = amount;
+  res.json({ ok: true });
 });
 
 app.get('/me', (req, res) => {
@@ -4839,11 +4891,19 @@ app.get('/players/:ref', (req, res) => {
     financialSection = playerFinancialSection(fin, txs, displayName, resolved.id, allPlayerOptions);
   }
 
+  const isOwnProfile = !!req.session?.playerPlayerId && resolved.id === req.session.playerPlayerId;
+  let balanceAmount = 0, papawisGames = [];
+  if (isOwnProfile) {
+    balanceAmount = getPlayerFinancials(resolved.id)?.current_balance ?? 0;
+    papawisGames  = getPapawisGamesForPlayer(resolved.id);
+  }
+
   res.send(renderPage(req, {
     title: `${displayName} — WKND Basketball`,
     currentPath: '/players',
+    isOwnProfile,
     metaTags: buildPlayerOgTags(req, player, totals),
-    body: playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin })
+    body: playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisGames })
   }));
 });
 

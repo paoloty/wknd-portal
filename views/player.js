@@ -587,11 +587,59 @@ function fbDisconnect() {
 </div>`;
 }
 
+// "2026-08-02" -> "Sun, Aug 2"
+function fmtShortDate(d) {
+  return d
+    ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    : '—';
+}
+
+// Owner-only — top of the right sidebar on your own profile. Balance notice is
+// deliberately not dismissable (unlike the site-wide balance-bar): this is the one place
+// on the site meant to be a persistent record, not a transient reminder.
+function myProfileSidebar({ balanceAmount = 0, papawisGames = [] }) {
+  const balanceHtml = balanceAmount > 0 ? `
+  <div class="mp-balance-card">
+    <svg width="18" height="18" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg>
+    <div>
+      <div class="mp-balance-card__title">Outstanding balance</div>
+      <div class="mp-balance-card__amount">₱${Number(balanceAmount).toLocaleString()}</div>
+      <p class="mp-balance-card__hint">Please settle this with an admin.</p>
+    </div>
+  </div>` : '';
+
+  const papawisHtml = papawisGames.length ? `
+  <div class="card">
+    <div class="card-label">YOUR PAPAWIS</div>
+    <div class="mp-papawis-list">
+      ${papawisGames.map(g => {
+        const label = g.status === 'cancelled' ? 'Cancelled'
+          : g.status === 'completed' ? 'Played'
+          : g.any_confirmed ? 'Confirmed' : 'Waitlist';
+        const cls = g.status === 'cancelled' ? 'mp-papawis-badge--cancelled'
+          : g.status === 'completed' ? 'mp-papawis-badge--muted'
+          : g.any_confirmed ? 'mp-papawis-badge--confirmed' : 'mp-papawis-badge--waitlist';
+        return `<a href="/papawis" class="mp-papawis-item">
+          <span class="mp-papawis-item__main">
+            <span class="mp-papawis-item__title">${escHtml(g.title || 'Papawis')}</span>
+            <span class="mp-papawis-item__date">${escHtml(fmtShortDate(g.date))}</span>
+          </span>
+          <span class="mp-papawis-badge ${cls}">${label}</span>
+        </a>`;
+      }).join('')}
+    </div>
+  </div>` : '';
+
+  if (!balanceHtml && !papawisHtml) return '';
+  return `<div class="mp-sidebar">${balanceHtml}${papawisHtml}</div>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false, fbLinked = null }) {
+export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false, fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [] }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
   const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
+  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames }) : '';
 
   return `${heroSection(player, totals, isAdmin)}
 <div class="game-detail-layout">
@@ -600,6 +648,7 @@ export function playerPage({ player, totals, statsByType, gameLogs, potgGames, c
     ${fbCard}
   </div>
   <div class="game-detail-right">
+    ${sidebarHtml}
     ${awardsSection(awards)}
     ${potgWriteups(potgGames, player)}
   </div>

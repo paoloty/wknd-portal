@@ -26,16 +26,37 @@ export function displayPlayerName(raw) {
 // Alias kept so callers can be migrated gradually.
 export const formatPlayerName = displayPlayerName;
 
-// Today's calendar date in Manila (Asia/Manila, UTC+8), as "YYYY-MM-DD" — independent of
-// whatever timezone the server process itself happens to be running in. All "days until
-// game day" / "is it past midnight yet" comparisons in the league should key off this
-// rather than the server's local `new Date()`, since the server may be hosted in UTC.
+// Today's calendar date in Manila (Asia/Manila, UTC+8 — no DST, so this offset is always
+// correct year-round), as "YYYY-MM-DD". Deliberately pure epoch math instead of
+// Intl.DateTimeFormat({ timeZone: 'Asia/Manila' }): that relies on the Node build having
+// full ICU/tzdata bundled, which isn't guaranteed on every host (confirmed broken on the
+// Hetzner deploy, silently drifting a day near the UTC/Manila day boundary). Date.now()
+// and the UTC getters below have no timezone-database dependency at all, so this is
+// correct regardless of the server's own system timezone or Node's ICU build.
 export function manilaTodayStr() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const get = (type) => parts.find(p => p.type === type).value;
-  return `${get('year')}-${get('month')}-${get('day')}`;
+  const d = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+// Absolute instant (ms since epoch) a papawis game's held-back sign-ups actually open —
+// 8:00 AM Manila time on the day `open_days_before` days before game day. Returns null
+// when sign-ups aren't held back at all (always open). Built from pure calendar-string
+// arithmetic (UTC getters) plus an explicit "+08:00" offset on the final instant — no
+// reliance on the server's local timezone or Intl/ICU tzdata, same reasoning as
+// manilaTodayStr(). This is the single source of truth for both the join-gate check and
+// the live countdown target, so they can never disagree with each other.
+export function papawisSignupOpensAtMs(game) {
+  if (!game?.open_days_before) return null;
+  const [y, m, d] = game.date.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - game.open_days_before);
+  const openDateStr = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+  return new Date(`${openDateStr}T08:00:00+08:00`).getTime();
+}
+
+export function isPapawisSignupOpenNow(game) {
+  const opensAt = papawisSignupOpensAtMs(game);
+  return opensAt === null || Date.now() >= opensAt;
 }
 
 export function formatDate(raw) {

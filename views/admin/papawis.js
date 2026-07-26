@@ -1,5 +1,5 @@
 import { escHtml } from '../layout.js';
-import { displayPlayerName, formatTimeRange, manilaTodayStr } from '../utils.js';
+import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow } from '../utils.js';
 
 const PAPAWIS_LOCATIONS = [
   'Cloverleaf Basketball Court, Makati',
@@ -64,13 +64,7 @@ function activityTableHead(showGame) {
   </tr></thead>`;
 }
 
-function signupOpenNow(game) {
-  if (!game.open_days_before) return true;
-  const today = new Date(manilaTodayStr() + 'T00:00:00');
-  const gameDate = new Date(game.date + 'T00:00:00');
-  const daysLeft = Math.round((gameDate - today) / 86400000);
-  return daysLeft <= game.open_days_before;
-}
+const signupOpenNow = isPapawisSignupOpenNow;
 
 function statusBadge(game) {
   if (game.status === 'cancelled') return `<span class="agm-badge agm-badge--gray">Cancelled</span>`;
@@ -148,7 +142,7 @@ export function adminPapawisListBody({ games = [] } = {}) {
       </div>
       <label class="agm-modal-checkbox">
         <input type="checkbox" id="pw-delay-open">
-        <span>Hold sign-ups until 5 days before the game (game still shows publicly, marked "Scheduled")</span>
+        <span>Hold sign-ups until 6 days before the game (game still shows publicly, marked "Scheduled")</span>
       </label>
       <p class="agm-modal-err" id="pw-err" hidden></p>
     </div>
@@ -224,7 +218,7 @@ export function adminPapawisListBody({ games = [] } = {}) {
     btn.disabled = true; btn.textContent = 'Creating…';
     fetch('/admin/papawis', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title, date: date, start_time: startTime, end_time: endTime, location: location, max_slots: maxSlots, open_days_before: delayOpen ? 5 : null })
+      body: JSON.stringify({ title: title, date: date, start_time: startTime, end_time: endTime, location: location, max_slots: maxSlots, open_days_before: delayOpen ? 6 : null })
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -277,7 +271,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ${game.location ? `<span class="agm-sep">·</span><span>${escHtml(game.location)}</span>` : ''}
     <span class="agm-sep">·</span>
     ${statusBadge(game)}
-    ${isScheduled ? `<span class="text-xs text-slate-500">Sign-ups open ${fmtDate(addDaysStr(game.date, -game.open_days_before))}</span>` : ''}
+    ${isScheduled ? `<span class="text-xs text-slate-500">Sign-ups open ${fmtDate(addDaysStr(game.date, -game.open_days_before))}, 8:00 AM</span>` : ''}
     <a href="/papawis" target="_blank" class="agm-view-link">View on site ↗</a>
   </div>
 </div>

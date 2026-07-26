@@ -1,4 +1,11 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, features = {} }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, features = {} }) {
+  // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
+  // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
+  // with "browsing another player via Stats > Players". The route resolves this directly
+  // (comparing the viewed player's real id against the session), not via URL matching —
+  // the player route passes a fixed currentPath: '/players' for other reasons, so
+  // comparing currentPath against a computed "own profile URL" can never actually match.
+  const onOwnProfile = isPlayer && isOwnProfile;
   const navLinks = [
     { href: '/',          label: 'Home' },
     { href: '/games',     label: 'Games' },
@@ -10,7 +17,12 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     { href: '/roast',     label: 'The Roast' },
   ];
 
-  const isActive = (href) => href === '/' ? currentPath === '/' : currentPath.startsWith(href);
+  const isActive = (href) => {
+    // Own profile lands on /players/:slug too, but that shouldn't light up "Players" /
+    // the Stats dropdown — My Profile covers that case separately below.
+    if (onOwnProfile && href === '/players') return false;
+    return href === '/' ? currentPath === '/' : currentPath.startsWith(href);
+  };
 
   const dropdown = (label, items, activeHrefs) => {
     const active = activeHrefs.some(h => isActive(h));
@@ -58,9 +70,9 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
 
   const adminActive = currentPath.startsWith('/admin');
   const authLink = isAdmin
-    ? `${isPlayer ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a>` : ''}<div class="site-nav__auth-pill"><a href="/admin/ledger"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
+    ? `${isPlayer ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a>` : ''}<div class="site-nav__auth-pill"><a href="/admin"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
     : isPlayer
-      ? `<a href="/me"${currentPath === '/me' ? ' aria-current="page"' : ''}>My Profile</a><a href="/logout" class="site-nav__login">Sign out</a>`
+      ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a><a href="/logout" class="site-nav__login">Sign out</a>`
       : `<div class="site-nav__auth-pill"><a href="/register" class="site-nav__auth-join">Join</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/login" class="site-nav__auth-login">Login</a></div>`;
 
   return `<!DOCTYPE html>

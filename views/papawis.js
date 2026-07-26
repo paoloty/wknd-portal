@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerLink, playerAvatar, teamColor, formatTimeRange, manilaTodayStr } from './utils.js';
+import { playerLink, playerAvatar, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow } from './utils.js';
 
 const MAX_AVATARS = 12;
 const PAD_TO_COUNT = 5;
@@ -20,10 +20,8 @@ function daysUntil(dateStr) {
 
 // A game can be created far ahead of time with sign-ups deliberately held back — see
 // open_days_before on papawis_games — so it's visible/informational but not joinable
-// until within that many days of game day. Unset = always open once status is 'open'.
-function signupOpenNow(game) {
-  return !game.open_days_before || daysUntil(game.date) <= game.open_days_before;
-}
+// until 8AM Manila on that day. Unset = always open once status is 'open'.
+const signupOpenNow = isPapawisSignupOpenNow;
 
 const ICON_LOCK = `<svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="8" height="6" rx="1"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>`;
 
@@ -166,10 +164,10 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
           <button class="pw-btn pw-btn--ghost" data-action="cancel" data-game="${escHtml(game.id)}">Leave waitlist</button>`;
       }
     } else if (!signupOpen) {
-      // Sign-ups open at midnight Manila time on that day — encode the exact instant (with
-      // explicit +08:00 offset) so the client-side ticker counts down correctly regardless
-      // of the viewer's own timezone.
-      const opensAtIso = `${addDays(game.date, -game.open_days_before)}T00:00:00+08:00`;
+      // Same instant (8AM Manila) that gates the actual join — see papawisSignupOpensAtMs
+      // in utils.js — so the live countdown can never disagree with what the join button
+      // is actually waiting for.
+      const opensAtIso = new Date(papawisSignupOpensAtMs(game)).toISOString();
       actionHtml = `<button class="pw-btn pw-btn--placeholder" data-opens-at="${escHtml(opensAtIso)}" disabled>${ICON_LOCK} Opens in <span class="pw-countdown-value">…</span></button>`;
     } else if (!isLoggedIn) {
       actionHtml = `<a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--primary">Log in to join</a>`;
