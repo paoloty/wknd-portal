@@ -8,6 +8,10 @@ export const TEAM_COLORS = {
   MAROON: '#b0455a',
 };
 
+// Shared between the admin ledger's manual-entry form and the player-facing settle-balance
+// form, so a category picked by a player matches exactly what admin sees/filters by.
+export const PAYMENT_CATEGORIES = ['Season Fee', 'Game Fee', 'Papawis', 'Penalty', 'Equipment', 'Other'];
+
 export function teamColor(name) {
   return TEAM_COLORS[String(name || '').toUpperCase()] || '#4a5263';
 }

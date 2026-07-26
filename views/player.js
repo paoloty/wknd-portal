@@ -604,7 +604,7 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [] }) {
     <div>
       <div class="mp-balance-card__title">Outstanding balance</div>
       <div class="mp-balance-card__amount">₱${Number(balanceAmount).toLocaleString()}</div>
-      <p class="mp-balance-card__hint">Please settle this with an admin.</p>
+      <a href="/settle-balance" class="mp-balance-card__cta">Settle balance →</a>
     </div>
   </div>` : '';
 

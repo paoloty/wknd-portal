@@ -1,8 +1,7 @@
 import { escHtml } from '../layout.js';
-import { displayPlayerName, teamColor } from '../utils.js';
+import { displayPlayerName, teamColor, PAYMENT_CATEGORIES as CATEGORIES } from '../utils.js';
 
 const METHOD_LABELS = { cash: 'Cash', gcash: 'GCash', bank: 'Bank Transfer', other: 'Other' };
-const CATEGORIES    = ['Season Fee', 'Game Fee', 'Papawis', 'Penalty', 'Equipment', 'Other'];
 
 const fmt     = n => `PHP ${Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -456,9 +455,14 @@ export function adminLedgerPlayerBody({ player, fin = {}, transactions = [], sea
         const canConfirm = tx.status === 'pending';
         const canVoid    = tx.status === 'confirmed';
 
-        const notesCell = `
-          ${escHtml(tx.notes || '—')}
-          ${tx.category ? `<span class="ml-1.5 text-[10px] text-slate-500 bg-admin-border/50 px-1.5 py-0.5 rounded-full">${escHtml(tx.category)}</span>` : ''}`;
+        const refLine = tx.reference_no ? `<div class="text-[10px] text-slate-500 mt-0.5">Ref: ${escHtml(tx.reference_no)}</div>` : '';
+        const notesCell = canConfirm
+          ? `${escHtml(tx.notes || '—')}${refLine}
+             ${tx.screenshot_url ? `<a href="${tx.screenshot_url}" target="_blank" class="ml-1.5 text-[10px] text-brand hover:underline">📷 screenshot</a>` : ''}
+             <input type="text" id="cat-${escHtml(tx.id)}" class="admin-input mt-1.5" style="max-width:180px;height:26px;font-size:11px" placeholder="Category — e.g. papawis" value="${escHtml(tx.category || '')}">`
+          : `${escHtml(tx.notes || '—')}${refLine}
+             ${tx.screenshot_url ? `<a href="${tx.screenshot_url}" target="_blank" class="ml-1.5 text-[10px] text-brand hover:underline">📷 screenshot</a>` : ''}
+             ${tx.category ? `<span class="ml-1.5 text-[10px] text-slate-500 bg-admin-border/50 px-1.5 py-0.5 rounded-full">${escHtml(tx.category)}</span>` : ''}`;
 
         const statusCell = canConfirm
           ? `<button onclick="lgrConfirm('${escHtml(tx.id)}')" id="status-${escHtml(tx.id)}" class="agm-badge agm-badge--amber cursor-pointer hover:opacity-80" title="Click to confirm">pending</button>`
@@ -538,8 +542,12 @@ ${seasons.length ? `<div class="mb-4 flex flex-wrap items-center gap-1.5">
   // ── Confirm (in-place via status badge click) ─────────────────────────────
   window.lgrConfirm = async function(id) {
     if (!confirm('Mark this transaction as confirmed?')) return;
+    var catInput = document.getElementById('cat-' + id);
     try {
-      var r = await fetch('/admin/ledger/transaction/' + id + '/confirm', { method: 'POST' });
+      var r = await fetch('/admin/ledger/transaction/' + id + '/confirm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: catInput ? catInput.value.trim() : undefined })
+      });
       var j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Failed');
       var statusCell = document.getElementById('status-cell-' + id);

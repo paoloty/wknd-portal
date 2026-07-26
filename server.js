@@ -9,9 +9,10 @@ import express from 'express';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail, seasonQualifiedEmail, seasonNotSelectedEmail } from './lib/mailer.js';
+import { sendMail, approvedEmail, rejectedEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail } from './lib/mailer.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import sharp from 'sharp';
+import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
 import { homePage } from './views/home.js';
 import { gamesPage } from './views/games.js';
@@ -33,7 +34,7 @@ import { teamColor, displayPlayerName, manilaTodayStr } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
-  recordTransaction, confirmTransaction, deleteTransaction,
+  recordTransaction, confirmTransaction, deleteTransaction, setTransactionCategory,
   getPlayerFinancials, getPlayerTransactions, getPlayerTransactionsBySeason,
   getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons,
   getSeasonQuota, setSeasonQuota, voidTransaction,
@@ -1225,7 +1226,8 @@ function regMiniBanner() {
 function balanceReminderBar(amount) {
   return `<div class="balance-bar" id="balance-bar" data-amount="${amount}">
   <div class="balance-bar__inner">
-    <span class="balance-bar__text"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4.2v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg> You have an outstanding balance of <strong>₱${Number(amount).toLocaleString()}</strong> — please settle it with an admin.</span>
+    <span class="balance-bar__text"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4.2v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg> You have an outstanding balance of <strong>₱${Number(amount).toLocaleString()}</strong>.</span>
+    <a href="/settle-balance" class="balance-bar__cta">Settle now</a>
     <button class="balance-bar__close" id="balance-bar-close" type="button" aria-label="Dismiss">✕</button>
   </div>
 </div>
@@ -1287,9 +1289,12 @@ function renderPage(req, opts) {
   // Balance reminder — shown site-wide to a player with an outstanding balance, on top of
   // whatever other banner is already showing. Dismissal is per-amount and lives in the
   // session (see balanceReminderBar), so it comes back if the balance changes, and always
-  // comes back on the next fresh login regardless of amount.
+  // comes back on the next fresh login regardless of amount. Skipped on your own profile
+  // (already has its own non-dismissable balance card) and on the settle-balance page
+  // itself (redundant — you're already there doing exactly what the strip asks).
+  const onOwnBalanceSurface = opts.currentPath === '/settle-balance' || (opts.currentPath === '/players' && opts.isOwnProfile);
   let balanceBarHtml = '';
-  if (isPlayer && req.session?.playerPlayerId) {
+  if (isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface) {
     const fin = getPlayerFinancials(req.session.playerPlayerId);
     const balance = fin?.current_balance ?? 0;
     if (balance > 0 && req.session.balanceBarDismissedAmount !== balance) {
@@ -2006,6 +2011,23 @@ app.get('/api/papawis/og-image.png', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=604800, immutable');
     res.end(_ogPapawisPng);
   } catch (err) { console.error('papawis og-image error:', err); res.status(500).end(); }
+});
+
+// Keyed by the payload string itself — changing the setting naturally invalidates the
+// cache (new key, cache miss) without needing an explicit "clear on save" step.
+const _gcashQrCache = { payload: null, buf: null };
+app.get('/api/gcash-qr.png', async (req, res) => {
+  const payload = getSetting('gcash_qr_payload', '');
+  if (!payload) return res.status(404).end();
+  try {
+    if (_gcashQrCache.payload !== payload) {
+      _gcashQrCache.buf = await QRCode.toBuffer(payload, { type: 'png', width: 500, margin: 1 });
+      _gcashQrCache.payload = payload;
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-store');
+    res.end(_gcashQrCache.buf);
+  } catch (err) { console.error('gcash-qr error:', err); res.status(500).end(); }
 });
 
 const _ogMvpCache = { buf: null, ts: 0 };
@@ -3192,6 +3214,9 @@ app.get('/admin/site', requireAuth, (req, res) => {
     reg_venue:        getSetting('reg_venue',        ''),
     reg_schedule:     getSetting('reg_schedule',     ''),
     reg_fee:          getSetting('reg_fee',          ''),
+    gcash_name:        getSetting('gcash_name',        ''),
+    gcash_number:      getSetting('gcash_number',      ''),
+    gcash_qr_payload:  getSetting('gcash_qr_payload',  ''),
     ...Object.fromEntries(SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
   };
   res.send(renderAdminPage(req, {
@@ -3209,6 +3234,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     'award_show_scoring_champ', 'award_show_assists_leader', 'award_show_rebounds_leader',
     'award_show_steals_leader', 'award_show_blocks_leader', 'award_show_three_pm_leader',
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
+    'gcash_name', 'gcash_number', 'gcash_qr_payload',
   ]);
   const articleKeyRe = /^award_article_(mvp|dpoy|all_wknd_1|all_wknd_2|all_wknd_def|scoring_champ|assists_leader|rebounds_leader|steals_leader|blocks_leader|three_pm_leader)(_[\w-]+)?_\d+$/;
   for (const [key, value] of Object.entries(req.body || {})) {
@@ -3267,7 +3293,9 @@ app.post('/admin/ledger/transaction', requireAuth, express.json(), (req, res) =>
 });
 
 
-app.post('/admin/ledger/transaction/:id/confirm', requireAuth, (req, res) => {
+app.post('/admin/ledger/transaction/:id/confirm', requireAuth, express.json(), (req, res) => {
+  const category = req.body?.category;
+  if (category) setTransactionCategory(req.params.id, String(category).trim());
   const ok = confirmTransaction(req.params.id);
   if (!ok) return res.status(400).json({ error: 'Transaction not found or not pending.' });
   res.json({ ok: true });
@@ -4127,7 +4155,11 @@ app.get('/playoffs', (req, res) => {
   }));
 });
 
-app.use(express.json());
+// Applies to every request from here on, ahead of any route's own express.json() — a
+// route-level limit override (e.g. /settle-balance's 20mb) never actually took effect
+// while this ran first with Express's 100kb default and rejected the request before the
+// route-specific parser ever got a chance to run.
+app.use(express.json({ limit: '20mb' }));
 
 // ── Roster endpoint (consumed by wknd-stats before each live game) ────────────
 app.get('/api/roster', (req, res) => {
@@ -5130,6 +5162,75 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     currentPath: '/season-signup',
     body: seasonSignupPage({ sigSeason, deadline, existing: created, name: reg.full_name, hasBalance, balanceAmt, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice }),
   }));
+});
+
+// ── Settle Balance (member-facing) ─────────────────────────────────────────────
+import { settleBalancePage } from './views/settle-balance.js';
+
+app.get('/settle-balance', (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.redirect(loginUrl(req));
+  const fin = getPlayerFinancials(req.session.playerPlayerId);
+  res.send(renderPage(req, {
+    title: 'Settle Balance — WKND Basketball',
+    currentPath: '/settle-balance',
+    body: settleBalancePage({
+      balance: fin?.current_balance ?? 0,
+      gcashName: getSetting('gcash_name', ''),
+      gcashNumber: getSetting('gcash_number', ''),
+      hasQr: !!getSetting('gcash_qr_payload', ''),
+      activeSeason: getPortalCurrentSeason(),
+      success: req.query.submitted === '1',
+    }),
+  }));
+});
+
+app.post('/settle-balance', express.json({ limit: '20mb' }), async (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.status(401).json({ error: 'Please log in.' });
+  const { amount, category, payment_method, reference_no = '', screenshot } = req.body;
+  const amt = Number(amount);
+  if (!amt || amt <= 0) return res.status(400).json({ error: 'Enter a valid amount.' });
+  if (!category?.trim()) return res.status(400).json({ error: "Select what this payment is for." });
+  if (!payment_method?.trim()) return res.status(400).json({ error: 'Select a mode of payment.' });
+  const screenshotBuf = parseDataUrl(screenshot);
+  if (!screenshotBuf) return res.status(400).json({ error: 'Attach a screenshot of the payment.' });
+
+  const playerId = req.session.playerPlayerId;
+  const player = getPlayerById(playerId);
+  const displayName = displayPlayerName(player?.name || '');
+  const categoryTrimmed = category.trim();
+  // "Season Fee" is the one category tied to a specific season — auto-tag it with
+  // whatever season is currently active rather than asking the player to know/pick it.
+  const season = categoryTrimmed === 'Season Fee' ? getPortalCurrentSeason() : '';
+
+  let screenshotDataUrl = '';
+  try {
+    screenshotDataUrl = await compressSourceImage(screenshotBuf);
+  } catch (err) {
+    console.error('settle-balance screenshot compress error:', err);
+    return res.status(400).json({ error: 'Could not process that screenshot — try a different image.' });
+  }
+
+  const txId = randomBytes(6).toString('hex');
+  const today = manilaTodayStr();
+  recordTransaction({
+    id: txId, player_id: playerId, amount: amt, type: 'payment',
+    payment_method: payment_method.trim(), date: today, status: 'pending',
+    notes: '', reference_no: reference_no.trim(), season, category: categoryTrimmed,
+    screenshot_url: screenshotDataUrl,
+  });
+
+  const origin = getRequestOrigin(req);
+  sendMail({
+    to: 'paolo.ty@gmail.com',
+    attachments: [{ filename: 'payment-screenshot.jpg', content: screenshotDataUrl.split(',')[1] }],
+    ...paymentSubmittedEmail({
+      playerName: displayName, amount: amt, paymentMethod: payment_method.trim(),
+      category: categoryTrimmed, referenceNo: reference_no.trim(), hasScreenshot: true,
+      adminUrl: `${origin}/admin/ledger/${encodeURIComponent(playerId)}`,
+    }),
+  }).catch(err => console.error('settle-balance email error:', err));
+
+  res.json({ ok: true });
 });
 
 // ── Admin: Season Management ───────────────────────────────────────────────────

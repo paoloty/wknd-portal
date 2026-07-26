@@ -103,6 +103,33 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
 </div>
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">GCash Settlement</div>
+  <div class="p-5">
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Shown to players on the Settle Balance page so they can pay you directly via GCash.</p>
+    <div class="mb-3">
+      <label class="admin-field-label">Account name</label>
+      <input type="text" id="gcash-name" class="admin-input" placeholder="e.g. Paolo T." value="${escHtml(settings.gcash_name || '')}">
+    </div>
+    <div class="mb-3">
+      <label class="admin-field-label">Mobile number</label>
+      <input type="text" id="gcash-number" class="admin-input" placeholder="09XX XXX XXXX" value="${escHtml(settings.gcash_number || '')}">
+    </div>
+    <div class="mb-3">
+      <label class="admin-field-label">QR code content <span class="normal-case font-normal text-slate-600">— paste the exact code/payload from your GCash QR</span></label>
+      <textarea id="gcash-qr-payload" class="admin-input" rows="3" placeholder="Paste your GCash QR payload here">${escHtml(settings.gcash_qr_payload || '')}</textarea>
+    </div>
+    <div class="flex items-center gap-4">
+      <button id="gcash-save" class="agm-new-btn">${ICON_CHECK} Save</button>
+      <span id="gcash-msg" class="text-xs"></span>
+    </div>
+    ${settings.gcash_qr_payload ? `<div class="mt-4 pt-4 border-t border-admin-border/50">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Preview</div>
+      <img src="/api/gcash-qr.png?v=${Date.now()}" alt="GCash QR preview" style="width:160px;height:160px;border-radius:8px;border:1px solid var(--admin-border-color,#1e293b)">
+    </div>` : ''}
+  </div>
+</div>
+
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
   <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Registration &amp; Season</div>
   <div class="p-5">
     <p class="text-xs text-slate-500 mb-4 leading-relaxed">Registration is always open. Season signup management (waitlist, deadlines, display season) has moved to its own page.</p>
@@ -165,6 +192,33 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
       setTimeout(function() { msg.textContent = ''; }, 2000);
     });
   });
+
+  // GCash settlement save
+  var gcashSaveBtn = document.getElementById('gcash-save');
+  if (gcashSaveBtn) {
+    gcashSaveBtn.addEventListener('click', async function() {
+      var btn = this;
+      var msg = document.getElementById('gcash-msg');
+      btn.disabled = true;
+      msg.style.color = 'var(--text-muted)'; msg.textContent = 'Saving…';
+      try {
+        var r = await fetch('/admin/site/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gcash_name: document.getElementById('gcash-name').value.trim(),
+            gcash_number: document.getElementById('gcash-number').value.trim(),
+            gcash_qr_payload: document.getElementById('gcash-qr-payload').value.trim(),
+          })
+        });
+        if (!r.ok) throw new Error();
+        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+        setTimeout(function() { location.reload(); }, 500);
+      } catch (e) {
+        msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+        btn.disabled = false;
+      }
+    });
+  }
 
   // Quota save
   var saveBtn = document.getElementById('site-quota-save');

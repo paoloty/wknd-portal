@@ -292,25 +292,8 @@ export function registerPage({ error = null, success = false, prefill = {}, regI
 .reg-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 0; }
 .reg-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 
-/* Input overrides for select/textarea */
-.login-field__input {
-  display: block;
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 14px;
-  color: var(--text);
-  font-family: inherit;
-  outline: none;
-  transition: border-color .15s;
-  box-sizing: border-box;
-  resize: vertical;
-}
-.login-field__input:focus { border-color: var(--amber); }
-.login-field__input::placeholder { color: var(--text-muted); opacity: .5; }
-.login-field__input option { background: #0d1424; }
+/* .login-field__input (select/textarea styling) now lives in public/styles.css —
+   shared with the login and settle-balance pages too. */
 
 /* Position chips */
 .reg-pos-chips { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; margin-bottom: 16px; }

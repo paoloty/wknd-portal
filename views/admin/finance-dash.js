@@ -84,7 +84,7 @@ ${quota ? `
           </td>
           <td class="px-4 py-3 text-xs" style="color:${isCharge ? '#ef4444' : '#22c55e'}">${isCharge ? 'Charge' : 'Payment'}</td>
           <td class="px-4 py-3 text-sm font-semibold font-saira" style="color:${isCharge ? '#ef4444' : '#22c55e'}">${fmt(tx.amount)}</td>
-          <td class="px-4 py-3 text-sm text-slate-400">${escHtml(tx.notes || '—')}</td>
+          <td class="px-4 py-3 text-sm text-slate-400">${escHtml(tx.notes || tx.category || '—')}${tx.reference_no ? ` <span class="text-[10px] text-slate-500">Ref: ${escHtml(tx.reference_no)}</span>` : ''}${tx.screenshot_url ? ` <a href="${tx.screenshot_url}" target="_blank" class="text-[10px] text-brand hover:underline">📷</a>` : ''}</td>
           <td class="px-4 py-3 text-xs text-slate-500">${escHtml(tx.season || '—')}</td>
           <td class="px-4 py-3 text-right">
             <button onclick="fnConfirm('${escHtml(tx.id)}')" class="agm-icon-btn agm-icon-btn--success" title="Confirm">${ICON_CHECK}</button>

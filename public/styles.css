@@ -302,6 +302,27 @@ body {
 }
 .login-field input:focus { border-color: var(--amber); }
 .login-field input::placeholder { color: var(--text-muted); opacity: .5; }
+/* Class-based variant of the above — covers select/textarea too, not just <input>, since
+   the element selector above only ever matches <input> tags. Shared by any form styled
+   like the login/register/settle-balance pages. */
+.login-field__input {
+  display: block;
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  transition: border-color .15s;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.login-field__input:focus { border-color: var(--amber); }
+.login-field__input::placeholder { color: var(--text-muted); opacity: .5; }
+.login-field__input option { background: #0d1424; }
 .login-remember { margin-bottom: 20px; }
 .login-check {
   display: flex;
@@ -1147,6 +1168,20 @@ body {
   min-width: 0;
 }
 .balance-bar__text strong { color: #fbbf77; font-weight: 700; }
+.balance-bar__cta {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #020817;
+  background: #f2b263;
+  padding: 5px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.balance-bar__cta:hover { opacity: .85; }
 .balance-bar__close {
   background: transparent;
   border: none;
@@ -2329,7 +2364,8 @@ a.player-link:hover { color: var(--amber); }
 .mp-balance-card svg { flex-shrink: 0; margin-top: 2px; }
 .mp-balance-card__title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #f2b263; }
 .mp-balance-card__amount { font-size: 22px; font-weight: 800; color: #fbbf77; margin-top: 2px; font-variant-numeric: tabular-nums; }
-.mp-balance-card__hint { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 0; }
+.mp-balance-card__cta { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 700; color: #fbbf77; text-decoration: none; }
+.mp-balance-card__cta:hover { text-decoration: underline; }
 
 .mp-papawis-list { display: flex; flex-direction: column; }
 .mp-papawis-item {
