@@ -273,6 +273,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ${statusBadge(game)}
     ${isScheduled ? `<span class="text-xs text-slate-500">Sign-ups open ${fmtDate(addDaysStr(game.date, -game.open_days_before))}, 8:00 AM</span>` : ''}
     <a href="/papawis" target="_blank" class="agm-view-link">View on site ↗</a>
+    <button id="pw-copy-messenger" type="button" class="admin-btn admin-btn--sm">📋 Copy for Messenger</button>
   </div>
 </div>
 
@@ -369,6 +370,61 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
 (function() {
   var gameId = ${JSON.stringify(game.id)};
   var players = ${JSON.stringify(playerList)};
+
+  // ── Copy for Messenger ────────────────────────────────────────────────
+  var gcMeta = ${JSON.stringify({
+    date: game.date,
+    start_time: game.start_time,
+    end_time: game.end_time,
+    location: game.location || '',
+    max_slots: game.max_slots,
+  })};
+  var gcConfirmedNames = ${JSON.stringify(confirmed.map(s => s.guest_name ? s.guest_name : displayPlayerName(s.player_name)))};
+
+  function pwCompactClock(hhmm) {
+    var parts = hhmm.split(':');
+    var h = Number(parts[0]), m = Number(parts[1]);
+    var period = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12 === 0 ? 12 : h % 12;
+    return m === 0 ? (h12 + period) : (h12 + ':' + String(m).padStart(2, '0') + period);
+  }
+
+  function buildMessengerText() {
+    var d = new Date(gcMeta.date + 'T00:00:00');
+    var dayName = d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+    var monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    var timeRange = (gcMeta.start_time && gcMeta.end_time)
+      ? (pwCompactClock(gcMeta.start_time) + '-' + pwCompactClock(gcMeta.end_time))
+      : '';
+
+    var lines = [];
+    lines.push('Papawis sign-ups are open! 🏀');
+    lines.push('Head to the WKND Portal (https://wkndbasketball.com/papawis), log in, and tap Join to grab a slot. First come, first served — once we hit the slot limit, extra names go on the waitlist.');
+    lines.push('');
+    lines.push('⚠ Not able to make it? Cancel on the portal at least 3 days before game day. After that, message an admin directly — no-shows without notice may affect future priority. ⚠');
+    lines.push('');
+    lines.push('🏀 PPWS : ' + dayName + ' : ' + timeRange + ' - ' + monthDay + ' 🏀');
+    if (gcMeta.location) lines.push('📍 ' + gcMeta.location);
+    lines.push('');
+    for (var i = 0; i < gcMeta.max_slots; i++) {
+      lines.push((i + 1) + '. ' + (gcConfirmedNames[i] || ''));
+    }
+    return lines.join('\\n');
+  }
+
+  var copyBtn = document.getElementById('pw-copy-messenger');
+  if (copyBtn) {
+    var copyBtnDefault = copyBtn.textContent;
+    copyBtn.addEventListener('click', function() {
+      var text = buildMessengerText();
+      navigator.clipboard.writeText(text).then(function() {
+        copyBtn.textContent = '✅ Copied!';
+        setTimeout(function() { copyBtn.textContent = copyBtnDefault; }, 1800);
+      }).catch(function() {
+        alert('Could not copy automatically — copy the text below:\\n\\n' + text);
+      });
+    });
+  }
 
   var pInput    = document.getElementById('pw-add-player-input');
   var pHidden   = document.getElementById('pw-add-player-id');
