@@ -1,7 +1,10 @@
 import { escHtml } from './layout.js';
 import { playerLink, playerAvatar, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow } from './utils.js';
 
-const MAX_AVATARS = 12;
+// Capped low enough that avatars + the "+N" bubble always fit inside the card on a
+// narrow phone width — MAX_AVATARS=12 used to run past the card's overflow:hidden edge
+// on a full 16+ roster, clipping the bubble off-screen instead of showing it.
+const MAX_AVATARS = 7;
 const PAD_TO_COUNT = 5;
 
 export const CUTOFF_DAYS = 3;
@@ -56,7 +59,8 @@ function firstNameOf(raw) {
 }
 
 // Overlapping avatar stack (confirmed players only), capped with a "+N" overflow bubble,
-// plus a comma-separated first-name line underneath — names only for logged-in viewers.
+// plus a comma-separated first-name line underneath. Logged-out viewers get a short
+// 3-name teaser (first names only, no links); logged-in viewers get the full list.
 // Games with a thin roster get padded with blank placeholder slots (never a specific fake
 // name/photo) so the card doesn't look dead/broken and lines up visually with fuller ones —
 // for open games it's also a gentle "there's room" nudge; for cancelled ones it's purely
@@ -93,7 +97,18 @@ function rosterSummary(signups, game, { isLoggedIn }) {
 
   if (!isLoggedIn) {
     if (!confirmed.length && !padCount) return emptyText;
-    return `<div class="pw-roster-row">${avatarStack}</div>
+    // Teaser: first few first names only (no last names, no profile links) — enough to
+    // feel like real people without giving away the full roster ahead of login.
+    const previewCount = Math.min(3, confirmed.length);
+    const previewNames = confirmed.slice(0, previewCount).map(s => firstNameOf(s.guest_name || s.player_name));
+    const previewRest = confirmed.length - previewCount;
+    const previewText = previewNames.length
+      ? `${previewNames.join(', ')}${previewRest > 0 ? ` & ${previewRest} more` : ''}`
+      : '';
+    return `<div class="pw-roster-row">
+        ${avatarStack}
+        ${previewText ? `<p class="pw-names">${escHtml(previewText)}</p>` : ''}
+      </div>
       <a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--ghost">${escHtml(loginLabel)}</a>`;
   }
 

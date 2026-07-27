@@ -2410,7 +2410,8 @@ a.player-link:hover { color: var(--amber); }
   margin-bottom: 20px;
 }
 .coach-card__video {
-  display: inline-flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2423,9 +2424,11 @@ a.player-link:hover { color: var(--amber); }
   background: var(--amber-dim); border: 1px solid rgba(245,147,50,.4);
   display: flex; align-items: center; justify-content: center; color: var(--amber);
 }
-.coach-card__video-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+/* min-width:0 lets this flex child shrink below its content size — required for the
+   title's ellipsis to trigger instead of the row just growing wider than the card. */
+.coach-card__video-meta { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
 .coach-card__video-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-subtle); }
-.coach-card__video-title { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 44ch; }
+.coach-card__video-title { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .coach-card__foot {
   margin-top: 18px; font-size: 11.5px; color: var(--text-subtle);
   display: flex; align-items: center; gap: 6px;
