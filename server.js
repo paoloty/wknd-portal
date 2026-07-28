@@ -79,7 +79,8 @@ import {
   getSeasonStandings, getPlayoffGames,
   getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
   createPapawisGame, joinPapawisGame, cancelPapawisSignup,
-  adminAddPapawisSignup, adminRemovePapawisSignup, completePapawisGame, cancelPapawisGame, deletePapawisGame,
+  adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
+  completePapawisGame, cancelPapawisGame, deletePapawisGame,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
   getPapawisGamesForPlayer,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
@@ -1287,7 +1288,10 @@ function renderPage(req, opts) {
     }
   }
 
-  const bannerHtml = showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showMini ? regMiniBanner() : '');
+  // Focused auth-style pages (register, login, season-signup, set-password) skip
+  // every site-wide banner/ticker/balance-reminder — none of it is relevant on the
+  // page that IS the CTA those banners would otherwise point at.
+  const bannerHtml = opts.minimalHeader ? '' : (showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showMini ? regMiniBanner() : ''));
 
   // Balance reminder — shown site-wide to a player with an outstanding balance, on top of
   // whatever other banner is already showing. Dismissal is per-amount and lives in the
@@ -1297,7 +1301,7 @@ function renderPage(req, opts) {
   // itself (redundant — you're already there doing exactly what the strip asks).
   const onOwnBalanceSurface = opts.currentPath === '/settle-balance' || (opts.currentPath === '/players' && opts.isOwnProfile);
   let balanceBarHtml = '';
-  if (isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface) {
+  if (!opts.minimalHeader && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface) {
     const fin = getPlayerFinancials(req.session.playerPlayerId);
     const balance = fin?.current_balance ?? 0;
     if (balance > 0 && req.session.balanceBarDismissedAmount !== balance) {
@@ -1306,7 +1310,7 @@ function renderPage(req, opts) {
   }
 
   const body = balanceBarHtml + bannerHtml + (opts.body || '');
-  return layout({ ticker: buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), ...opts, body, metaTags });
+  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), ...opts, body, metaTags });
 }
 
 function renderAdminPage(req, opts) {
@@ -5013,77 +5017,85 @@ app.get('/terms', (req, res) => {
 
 // ── Registration ──────────────────────────────────────────────────────────────
 app.get('/register', (req, res) => {
-  const regInfo = {
-    venue:    getSetting('reg_venue',    ''),
-    schedule: getSetting('reg_schedule', ''),
-    fee:      getSetting('reg_fee',      ''),
-  };
+  // Sidebar "hype" avatar pool — any active player with a real photo. The page
+  // measures its own available width client-side and picks a random subset that
+  // fits, so this can just be the full eligible list, not a pre-trimmed sample.
+  const hypeAvatars = getAllPlayers()
+    .filter(p => p.status !== 'inactive' && p.picture_url)
+    .map(p => ({ id: p.id, name: p.name, color: teamColor(p.team_name) }));
   res.send(renderPage(req, {
     title: 'Join WKND Basketball',
     currentPath: '/register',
-    body: registerPage({ regInfo, ref: req.query.ref }),
+    minimalHeader: true,
+    body: registerPage({ hypeAvatars, ref: req.query.ref }),
   }));
 });
 
 app.post('/register', (req, res) => {
   const { first_name, last_name, email, phone, birthday, positions, height, weight,
           jersey_pref, dominant_hand, experience, referred_by,
-          emergency_name, emergency_phone, motto, gender, agree, ref } = req.body;
+          emergency_name, emergency_phone, motto, gender, social_handle, agree, ref } = req.body;
 
   const prefill = { first_name, last_name, email, phone, birthday, height, weight,
                     jersey_pref, dominant_hand, experience, referred_by,
-                    emergency_name, emergency_phone, motto, gender, ref };
+                    emergency_name, emergency_phone, motto, gender, social_handle, ref };
+
+  // Same pool the initial GET renders — needed again here since every error
+  // branch below re-renders the full page (sidebar included), not just a redirect.
+  const hypeAvatars = getAllPlayers()
+    .filter(p => p.status !== 'inactive' && p.picture_url)
+    .map(p => ({ id: p.id, name: p.name, color: teamColor(p.team_name) }));
 
   // Validate required fields
   if (!first_name?.trim() || !last_name?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'We need your name, bestie. Both of them.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'We need your name, bestie. Both of them.', prefill, hypeAvatars }) }));
   }
   if (!email?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'That email is giving nothing. Drop a real one.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'That email is giving nothing. Drop a real one.', prefill, hypeAvatars }) }));
   }
   if (!phone?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'No digits, no ball. Drop your phone number.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'No digits, no ball. Drop your phone number.', prefill, hypeAvatars }) }));
   }
   if (!birthday?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'We need your birthday. The real one, not your alter ego\'s.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'We need your birthday. The real one, not your alter ego\'s.', prefill, hypeAvatars }) }));
   }
   const _dob   = new Date(birthday);
   const _age18 = new Date(_dob.getFullYear() + 18, _dob.getMonth(), _dob.getDate());
   if (new Date() < _age18) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Bestie, you\'re not 18 yet. The league will still be here when you\'re legal.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'Bestie, you\'re not 18 yet. The league will still be here when you\'re legal.', prefill, hypeAvatars }) }));
   }
   const posArr = Array.isArray(positions) ? positions : (positions ? [positions] : []);
   if (posArr.length === 0) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Pick a position, sis. You can\'t just vibe on the sideline.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'Pick a position, sis. You can\'t just vibe on the sideline.', prefill, hypeAvatars }) }));
   }
   if (!height?.toString().trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Height? Be honest. The court doesn\'t care about your feelings.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'Height? Be honest. The court doesn\'t care about your feelings.', prefill, hypeAvatars }) }));
   }
   if (!weight?.toString().trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'We need your weight. This is a safe space, babe.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'We need your weight. This is a safe space, babe.', prefill, hypeAvatars }) }));
   }
   if (!dominant_hand?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'Which hand runs the show? We need to know.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'Which hand runs the show? We need to know.', prefill, hypeAvatars }) }));
   }
   if (!agree) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'You gotta swear on your crossover first, babe.', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'You gotta swear on your crossover first, babe.', prefill, hypeAvatars }) }));
   }
 
   // Check for duplicate email
   const existing = getRegistrationByEmail(email.trim().toLowerCase());
   if (existing) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register',
-      body: registerPage({ error: 'That email\'s already in the chat. Are you trying to have two accounts, sis?', prefill }) }));
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'That email\'s already in the chat. Are you trying to have two accounts, sis?', prefill, hypeAvatars }) }));
   }
 
   const full_name = `${last_name.trim().toUpperCase()}, ${first_name.trim()}`;
@@ -5106,6 +5118,7 @@ app.post('/register', (req, res) => {
     emergency_phone: (emergency_phone || '').trim(),
     motto: (motto || '').trim(),
     gender: (gender || '').trim(),
+    social_handle: (social_handle || '').trim(),
   });
 
   // Not tied to any specific game — the shared papawis page lists every game rather
@@ -5114,8 +5127,8 @@ app.post('/register', (req, res) => {
     logPapawisActivity({ gameId: '', eventType: 'registered', playerId: regId, playerName: full_name, notes: 'via papawis link' });
   }
 
-  res.send(layout({ title: 'Registration Received', currentPath: '/register',
-    body: registerPage({ success: true }) }));
+  res.send(layout({ title: 'Registration Received', currentPath: '/register', minimalHeader: true,
+    body: registerPage({ success: true, hypeAvatars }) }));
 });
 
 // ── Season Signup (member-facing) ─────────────────────────────────────────────
@@ -5796,6 +5809,21 @@ app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
 app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
   const result = adminRemovePapawisSignup(req.params.signupId);
   if (result.error) return res.status(400).json({ error: 'Could not remove.' });
+  res.json({ ok: true });
+});
+
+app.post('/admin/papawis/:id/signups/:signupId/status', requireAuth, express.json(), (req, res) => {
+  const status = req.body.status === 'confirmed' ? 'confirmed' : 'waitlist';
+  const result = setPapawisSignupStatus(req.params.signupId, status);
+  if (result.error === 'full') return res.status(400).json({ error: 'Confirmed list is full.' });
+  if (result.error) return res.status(400).json({ error: 'Could not move.' });
+  res.json({ ok: true });
+});
+
+app.post('/admin/papawis/:id/signups/reorder', requireAuth, express.json(), (req, res) => {
+  const status = req.body.status === 'confirmed' ? 'confirmed' : 'waitlist';
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string') : [];
+  reorderPapawisSignups(req.params.id, status, ids);
   res.json({ ok: true });
 });
 

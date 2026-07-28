@@ -50,6 +50,75 @@ body {
 .site-header {
   padding: 26px 0 0;
 }
+/* Wraps header+body+footer for minimalHeader pages. .shell-left inside is
+   position:fixed (ignores this flex context entirely, sizes off the real
+   viewport), but the REST of the page (header, form content, footer) is
+   normal flow — if that content is shorter than one viewport, min-height:100vh
+   + flex:1 on the body slot still pushes the footer down to exactly the
+   viewport's bottom edge, matching the fixed sidebar's bottom edge instead of
+   leaving the footer stranded mid-screen with the sidebar bleeding past it. */
+.minimal-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.minimal-page__body { flex: 1 0 auto; }
+/* Logo-only header for focused auth-style flows (register, login, season-signup,
+   set-password). Full width (a sibling of .container, not nested inside it) so it
+   reads as its own utility strip rather than trying to align with a content grid
+   it isn't part of — the page content below it manages its own width instead of
+   sharing .container's. On mobile it disappears entirely (see below) — its
+   hamburger's job is taken over by a second one inside the sidebar instead. */
+/* Desktop shows the real nav links inline, right-aligned (no hamburger/
+   overlay here at all — that's simpler and reads better than hiding real
+   nav behind a toggle on a page that has plenty of width for it). On mobile
+   this whole header disappears (.container is at its full-width breakpoint
+   anyway) and the sidebar's own hamburger takes over instead, opening the
+   separate .site-nav--overlay sibling below. */
+.site-header--minimal {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 18px 40px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+@media (max-width: 900px) {
+  .site-header--minimal { display: none; }
+}
+/* Reuses .site-nav (same link/dropdown styling as the default site header)
+   — .site-header--minimal__nav only exists to opt out of the ≤900px rule
+   further down this file that turns plain .site-nav into a full-screen
+   overlay for the DEFAULT header's mobile nav; this one has no such rule of
+   its own, so it would otherwise get swept up by that unrelated selector. */
+.site-header--minimal__nav { display: flex; align-items: center; gap: 30px; }
+/* This overlay is a sibling of .site-header--minimal now, not nested inside
+   it (a display:none ancestor would take the overlay down with it, and on
+   mobile the header IS display:none) — .site-nav--overlay is what it's
+   selected by instead, regardless of where it sits in the DOM. */
+.site-nav--overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 36px;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.site-nav--overlay.site-nav--open { opacity: 1; pointer-events: auto; }
+.site-nav--overlay a { font-size: 20px; font-weight: 700; color: var(--text-muted); border-bottom: none; padding-bottom: 0; }
+.site-nav--overlay a[aria-current] { color: #fff; }
+.site-nav--overlay .site-nav__auth-pill { border-radius: 8px !important; }
+.site-nav--overlay .site-nav__auth-join,
+.site-nav--overlay .site-nav__auth-login { font-size: 15px !important; padding: 12px 28px !important; justify-content: center !important; }
+.site-nav--overlay .site-nav__login { display: flex !important; font-size: 15px !important; padding: 11px 28px !important; }
 .site-header__inner {
   display: flex;
   align-items: center;
@@ -597,6 +666,38 @@ body {
   margin-top: 64px;
   padding: 52px 0 40px;
   background: var(--bg);
+}
+/* Matching counterpart to .site-header--minimal — copyright only, no logo (the
+   sidebar owns the one clickable brand mark now), no site-wide link columns
+   (irrelevant on a focused auth-flow page). z-index below the fixed 100vh
+   sidebar (z-index:50 in register.js) — the sidebar is the top layer here, it
+   overlaps this and the header at their shared corners, not the other way. */
+.site-footer--minimal {
+  position: relative;
+  z-index: 30;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 20px 40px;
+  border-top: 1px solid var(--border);
+  /* .shell-left (register.js) is position:fixed, so it never reserves layout
+     space of its own — without this offset, centering here happens across the
+     FULL viewport width and the fixed sidebar just visually overlaps the left
+     portion of that, leaving the legal links crammed against its edge instead
+     of centered in the space actually free beside it. Matches .shell-right's
+     own offset/width so both line up against the same sidebar edge. */
+  width: calc(100% - clamp(320px, 30vw, 420px));
+  margin-left: clamp(320px, 30vw, 420px);
+}
+@media (max-width: 900px) {
+  /* .shell-left drops to position:static at this same breakpoint (register.js)
+     and stops overlapping anything, so the footer no longer needs to dodge it. */
+  .site-footer--minimal { width: 100%; margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .site-footer--minimal { flex-direction: column; text-align: center; padding: 20px; }
 }
 .site-footer__inner {
   display: flex;

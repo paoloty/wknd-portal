@@ -1,4 +1,4 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, features = {} }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, features = {}, minimalHeader = false }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -75,6 +75,61 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a><a href="/logout" class="site-nav__login">Sign out</a>`
       : `<div class="site-nav__auth-pill"><a href="/register" class="site-nav__auth-join">Join</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/login" class="site-nav__auth-login">Login</a></div>`;
 
+  // Shared by both header variants (full and minimal) — only one ever renders,
+  // both use the same #nav-toggle/#site-nav ids, so one script covers either.
+  // Two hamburger buttons can exist for minimalHeader pages — one in the
+  // header (desktop) and one in the sidebar (mobile, register.js) — only one
+  // is ever visually shown at a given width, but both stay wired to the same
+  // #site-nav overlay and stay in sync with each other regardless of which is
+  // visible, since resizing across the breakpoint shouldn't leave a stale
+  // open/closed icon state on the one that becomes visible next.
+  const navToggleScript = `<script>
+      (function(){
+        var nav = document.getElementById('site-nav');
+        if (!nav) return;
+        // Buttons are queried lazily (at click/toggle time, not once at script
+        // load) since minimalHeader pages render a second hamburger inside the
+        // page body, which comes AFTER this script tag in the HTML — an
+        // upfront querySelectorAll here would run before that button exists
+        // in the DOM yet and silently never attach a listener to it.
+        function btns(){ return Array.prototype.slice.call(document.querySelectorAll('.site-nav__hamburger')); }
+        function setOpen(open){
+          nav.classList.toggle('site-nav--open', open);
+          btns().forEach(function(b){
+            b.classList.toggle('site-nav__hamburger--open', open);
+            b.setAttribute('aria-expanded', String(open));
+            b.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+          });
+          document.body.style.overflow = open ? 'hidden' : '';
+        }
+        document.addEventListener('click', function(e){
+          var btn = e.target.closest && e.target.closest('.site-nav__hamburger');
+          if (btn) setOpen(!nav.classList.contains('site-nav--open'));
+        });
+        nav.querySelectorAll('a').forEach(function(a){
+          a.addEventListener('click', function(){ setOpen(false); });
+        });
+        // Dropdown (Games/Stats/Awards) toggle + click-outside-close, delegated
+        // on document rather than scoped to one nav element — minimalHeader
+        // pages render TWO separate nav copies (an inline one in the desktop
+        // header, a full-screen one for the mobile overlay), each with their
+        // own dropdown triggers, so this has to work regardless of which nav
+        // instance a given trigger lives in.
+        document.addEventListener('click', function(e){
+          var trigger = e.target.closest && e.target.closest('.site-nav__dropdown-trigger');
+          if (trigger) {
+            var dd = trigger.closest('.site-nav__dropdown');
+            var scope = trigger.closest('nav') || document;
+            var wasOpen = dd.classList.contains('is-open');
+            scope.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
+            if (!wasOpen) dd.classList.add('is-open');
+            return;
+          }
+          document.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
+        });
+      })();
+      </script>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -89,7 +144,27 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   ${gaSnippet}
 </head>
 <body>
-  <div class="page-body">
+  ${minimalHeader ? `<div class="minimal-page">
+    <header class="site-header site-header--minimal">
+      <nav class="site-nav site-header--minimal__nav">
+        ${nav}
+        ${authLink}
+      </nav>
+    </header>
+    <nav class="site-nav site-nav--overlay" id="site-nav">
+      ${nav}
+      ${authLink}
+    </nav>
+    ${navToggleScript}
+    <div class="minimal-page__body">${body}</div>
+    <footer class="site-footer--minimal">
+      <nav class="site-footer__legal">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+      </nav>
+      <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
+    </footer>
+  </div>` : `<div class="page-body">
     <div class="container">
       <header class="site-header">
         <div class="site-header__inner">
@@ -105,43 +180,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
           </button>
         </div>
       </header>
-      <script>
-      (function(){
-        var btn = document.getElementById('nav-toggle');
-        var nav = document.getElementById('site-nav');
-        btn.addEventListener('click', function(){
-          var open = nav.classList.toggle('site-nav--open');
-          btn.classList.toggle('site-nav__hamburger--open', open);
-          btn.setAttribute('aria-expanded', String(open));
-          btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-          document.body.style.overflow = open ? 'hidden' : '';
-        });
-        nav.querySelectorAll('a').forEach(function(a){
-          a.addEventListener('click', function(){
-            nav.classList.remove('site-nav--open');
-            btn.classList.remove('site-nav__hamburger--open');
-            btn.setAttribute('aria-expanded', 'false');
-            btn.setAttribute('aria-label', 'Open menu');
-            document.body.style.overflow = '';
-          });
-        });
-        // Accordion: toggle submenu on trigger click
-        nav.querySelectorAll('.site-nav__dropdown-trigger').forEach(function(trigger){
-          trigger.addEventListener('click', function(e){
-            e.stopPropagation();
-            var dd = trigger.closest('.site-nav__dropdown');
-            var wasOpen = dd.classList.contains('is-open');
-            nav.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
-            if (!wasOpen) dd.classList.add('is-open');
-          });
-        });
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', function(){
-          nav.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
-        });
-        nav.addEventListener('click', function(e){ e.stopPropagation(); });
-      })();
-      </script>
+      ${navToggleScript}
       <div class="header-rule"></div>
       ${ticker}
       ${body}
@@ -195,7 +234,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
       </div>
     </div>
-  </footer>
+  </footer>`}
 </body>
 </html>`;
 }

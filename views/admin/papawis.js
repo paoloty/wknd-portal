@@ -20,6 +20,8 @@ const ICON_PLUS      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="no
 const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
 const ICON_X         = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
 const ICON_TRASH     = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M12 3.5l-.9 8a1 1 0 0 1-1 .9H3.9a1 1 0 0 1-1-.9L2 3.5"/></svg>`;
+const ICON_CHEVRON_UP   = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3.5-3.5 3.5 3.5"/></svg>`;
+const ICON_CHEVRON_DOWN = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5l3.5 3.5 3.5-3.5"/></svg>`;
 
 function fmtDate(d) {
   return d
@@ -41,6 +43,8 @@ const ACTIVITY_LABELS = {
   registered:    { label: 'registered', color: 'text-amber-400' },
   joined:        { label: 'joined',    color: 'text-emerald-400' },
   cancelled:     { label: 'cancelled', color: 'text-red-400' },
+  promoted:      { label: 'moved to confirmed', color: 'text-emerald-400' },
+  waitlisted:    { label: 'moved to waitlist',  color: 'text-amber-400' },
   viewed_roster: { label: 'viewed the player list', color: 'text-slate-400' },
 };
 
@@ -247,14 +251,24 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     name: displayPlayerName(p.name) + (p.team_name ? ' — ' + p.team_name : ''),
   }));
 
-  const signupRow = (s) => `<tr class="border-b border-admin-border/50 last:border-b-0">
-      <td class="px-4 py-2.5 text-sm text-slate-200">${s.guest_name ? `${escHtml(s.guest_name)} <span class="text-[10px] text-slate-500 font-normal">(guest)</span>` : escHtml(displayPlayerName(s.player_name))}</td>
-      <td class="px-4 py-2.5 text-xs text-slate-500">${s.guest_name ? `Billed to ${escHtml(displayPlayerName(s.player_name))}` : escHtml(s.team_name || '—')}</td>
-      <td class="px-4 py-2.5 text-xs text-slate-500">${s.status === 'waitlist' ? '<span class="agm-badge agm-badge--gray">Waitlist</span>' : '<span class="agm-badge agm-badge--green">Confirmed</span>'}</td>
-      <td class="px-4 py-2.5 text-right">
-        ${!isCompleted && !isCancelled ? `<button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>` : ''}
-      </td>
-    </tr>`;
+  // Read-only once a game is completed/cancelled — no drag handle, no move/remove
+  // controls, matches the old table's own gating on the Remove button.
+  const canManage = !isCompleted && !isCancelled;
+  const isConfirmedFull = confirmed.length >= game.max_slots;
+
+  const signupRow = (s) => `<li class="pw-row" ${canManage ? 'draggable="true"' : ''} data-id="${escHtml(s.id)}" data-status="${s.status}">
+      ${canManage ? `<span class="pw-row__handle" aria-hidden="true">⠿</span>` : ''}
+      <div class="pw-row__info">
+        <div class="pw-row__name">${s.guest_name ? `${escHtml(s.guest_name)} <span class="pw-row__guest-tag">(guest)</span>` : escHtml(displayPlayerName(s.player_name))}</div>
+        <div class="pw-row__meta">${s.guest_name ? `Billed to ${escHtml(displayPlayerName(s.player_name))}` : escHtml(s.team_name || '—')}</div>
+      </div>
+      ${canManage ? `<div class="pw-row__actions">
+        ${s.status === 'waitlist'
+          ? `<button class="pw-move-btn pw-move-btn--confirm" data-move="${escHtml(s.id)}" data-to="confirmed" ${isConfirmedFull ? 'disabled title="Confirmed is full"' : ''}>${ICON_CHEVRON_UP} Confirm</button>`
+          : `<button class="pw-move-btn" data-move="${escHtml(s.id)}" data-to="waitlist">${ICON_CHEVRON_DOWN} Waitlist</button>`}
+        <button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>
+      </div>` : ''}
+    </li>`;
 
   return `
 <div class="agm-edit-bar">
@@ -280,15 +294,23 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
 <div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_320px] items-start">
 
   <div class="flex flex-col gap-4 min-w-0">
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Signups — ${confirmed.length}/${game.max_slots}${waitlist.length ? ` · ${waitlist.length} waiting` : ''}</span>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="pw-panel pw-panel--confirmed bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between">
+          <span class="text-[10px] font-bold uppercase tracking-widest pw-panel__label pw-panel__label--confirmed">Confirmed — ${confirmed.length}/${game.max_slots}</span>
+        </div>
+        <ul class="pw-list" id="pw-list-confirmed" data-status="confirmed">
+          ${confirmed.length ? confirmed.map(signupRow).join('') : '<li class="pw-list__empty">No one confirmed yet.</li>'}
+        </ul>
       </div>
-      <table class="w-full border-collapse">
-        <tbody>
-          ${signups.length ? signups.map(signupRow).join('') : '<tr><td class="px-4 py-8 text-center text-sm text-slate-500">No one listed yet.</td></tr>'}
-        </tbody>
-      </table>
+      <div class="pw-panel pw-panel--waitlist bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between">
+          <span class="text-[10px] font-bold uppercase tracking-widest pw-panel__label pw-panel__label--waitlist">Waitlist${waitlist.length ? ` — ${waitlist.length}` : ''}</span>
+        </div>
+        <ul class="pw-list" id="pw-list-waitlist" data-status="waitlist">
+          ${waitlist.length ? waitlist.map(signupRow).join('') : '<li class="pw-list__empty">Nobody waiting.</li>'}
+        </ul>
+      </div>
     </div>
 
     ${!isCompleted && !isCancelled ? `
@@ -460,6 +482,117 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
       if (e.target !== pInput && !pDropdown.contains(e.target)) pDropdown.hidden = true;
     });
   }
+
+  // ── Confirmed/Waitlist: move buttons + drag-and-drop reorder ─────────────
+  var pwLists = Array.prototype.slice.call(document.querySelectorAll('.pw-list'));
+
+  function pwListEl(status) { return document.getElementById('pw-list-' + status); }
+
+  function pwPersistOrder(status) {
+    var list = pwListEl(status);
+    if (!list) return Promise.resolve();
+    var ids = Array.prototype.slice.call(list.querySelectorAll('.pw-row')).map(function(li) { return li.dataset.id; });
+    if (!ids.length) return Promise.resolve();
+    return fetch('/admin/papawis/' + gameId + '/signups/reorder', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: status, ids: ids })
+    });
+  }
+
+  // Button-based move — the reliable path (also the only one that works on touch,
+  // since native HTML5 drag-and-drop below is desktop/mouse only).
+  document.querySelectorAll('[data-move]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var sid = btn.dataset.move, to = btn.dataset.to;
+      btn.disabled = true;
+      fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: to })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not move.'); btn.disabled = false; } })
+      .catch(function() { alert('Network error'); btn.disabled = false; });
+    });
+  });
+
+  // Drag-and-drop: reorders within a list, or moves between the two (server has final
+  // say on the confirmed-list cap — a rejected cross-list move just reloads to the
+  // last-saved state instead of leaving the UI showing a drop that didn't actually stick).
+  var draggingRow = null, draggingFrom = null;
+
+  document.querySelectorAll('.pw-row[draggable="true"]').forEach(function(row) {
+    row.addEventListener('dragstart', function() {
+      draggingRow = row;
+      draggingFrom = row.dataset.status;
+      row.classList.add('is-dragging');
+    });
+    row.addEventListener('dragend', function() {
+      row.classList.remove('is-dragging');
+      pwLists.forEach(function(l) { l.classList.remove('is-drag-over'); l.classList.remove('is-drag-blocked'); });
+      draggingRow = null; draggingFrom = null;
+    });
+  });
+
+  function pwRowAfterPoint(list, y) {
+    var rows = Array.prototype.slice.call(list.querySelectorAll('.pw-row:not(.is-dragging)'));
+    var closest = null, closestOffset = -Infinity;
+    rows.forEach(function(r) {
+      var box = r.getBoundingClientRect();
+      var offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = r; }
+    });
+    return closest;
+  }
+
+  pwLists.forEach(function(list) {
+    list.addEventListener('dragover', function(e) {
+      if (!draggingRow) return;
+      // Only a cross-list drag actually adds a new row to Confirmed — reordering
+      // within an already-full Confirmed list doesn't grow it, so that stays allowed.
+      var isConfirmedList = list.dataset.status === 'confirmed';
+      var wouldExceed = isConfirmedList && draggingFrom !== 'confirmed'
+        && list.querySelectorAll('.pw-row:not(.is-dragging)').length >= gcMeta.max_slots;
+      if (wouldExceed) {
+        list.classList.remove('is-drag-over');
+        list.classList.add('is-drag-blocked');
+        return; // no preventDefault() — browser shows its native not-allowed cursor and blocks the drop
+      }
+      e.preventDefault();
+      list.classList.remove('is-drag-blocked');
+      list.classList.add('is-drag-over');
+      var empty = list.querySelector('.pw-list__empty');
+      if (empty) empty.remove();
+      var after = pwRowAfterPoint(list, e.clientY);
+      if (after == null) list.appendChild(draggingRow);
+      else list.insertBefore(draggingRow, after);
+    });
+    list.addEventListener('dragleave', function(e) {
+      if (e.target === list) { list.classList.remove('is-drag-over'); list.classList.remove('is-drag-blocked'); }
+    });
+    list.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!draggingRow) return;
+      list.classList.remove('is-drag-over');
+      list.classList.remove('is-drag-blocked');
+      var toStatus = list.dataset.status;
+      var sid = draggingRow.dataset.id;
+      if (draggingFrom === toStatus) {
+        pwPersistOrder(toStatus);
+      } else {
+        draggingRow.dataset.status = toStatus;
+        fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/status', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: toStatus })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.ok) return pwPersistOrder(toStatus).then(function() { location.reload(); });
+          alert(d.error || 'Could not move.'); location.reload();
+        })
+        .catch(function() { alert('Network error'); location.reload(); });
+      }
+    });
+  });
 
   document.querySelectorAll('[data-remove]').forEach(function(btn) {
     btn.addEventListener('click', function() {

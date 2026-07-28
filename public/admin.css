@@ -861,6 +861,54 @@ select.admin-input {
 }
 .agm-view-link:hover { color: var(--text); border-color: var(--border-2); }
 
+/* ── Papawis roster (confirmed/waitlist drag-and-drop) ─────────────────────── */
+/* Left accent bar, same technique as .agm-banner__bar — clipped to the panel's own
+   rounded corners by its overflow:hidden, so it reads as a colored edge rather than
+   a hard-cornered strip. Green/gray reuse the same pairing the old status badges
+   (agm-badge--green/--gray) already used for Confirmed/Waitlist, so the color meaning
+   isn't new, just moved from a per-row badge to a per-column cue. */
+.pw-panel { position: relative; }
+.pw-panel::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.pw-panel--confirmed::before { background: #34d399; }
+.pw-panel--waitlist::before  { background: #64748b; }
+.pw-panel__label--confirmed { color: #34d399; }
+.pw-panel__label--waitlist  { color: var(--text-muted); }
+
+.pw-list { min-height: 40px; }
+.pw-list__empty { padding: 24px 16px; text-align: center; font-size: 12px; color: var(--text-muted); }
+.pw-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  cursor: grab;
+}
+.pw-row:last-child { border-bottom: none; }
+.pw-row.is-dragging { opacity: .35; }
+/* Drop target feedback while something's being dragged over this list — cheap and
+   readable without needing a live insertion-point caret. */
+.pw-list.is-drag-over { background: rgba(245,147,50,.04); outline: 1px dashed rgba(245,147,50,.3); outline-offset: -1px; }
+/* Confirmed is full and this drag would add a new row to it, not just reorder within
+   it — no preventDefault() fires for this case (see script), so the browser already
+   shows its own not-allowed cursor; this just reinforces it on the drop zone itself. */
+.pw-list.is-drag-blocked { background: rgba(248,113,113,.04); outline: 1px dashed rgba(248,113,113,.3); outline-offset: -1px; }
+.pw-row__handle { color: var(--text-2); font-size: 13px; line-height: 1; flex-shrink: 0; user-select: none; }
+.pw-row__info { flex: 1; min-width: 0; }
+.pw-row__name { font-size: 13px; color: var(--text); font-weight: 600; }
+.pw-row__name .pw-row__guest-tag { font-size: 10px; font-weight: 500; color: var(--text-muted); }
+.pw-row__meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.pw-row__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pw-move-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 28px; padding: 0 10px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text);
+  font-size: 12px; font-weight: 700; font-family: inherit; white-space: nowrap;
+  cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+}
+.pw-move-btn:hover { background: var(--border); }
+.pw-move-btn--confirm { color: #34d399; border-color: rgba(52,211,153,.35); }
+.pw-move-btn--confirm:hover { background: rgba(52,211,153,.08); border-color: rgba(52,211,153,.55); }
+.pw-move-btn:disabled { opacity: .3; cursor: not-allowed; }
+
 /* ── Sections ───────────────────────────────────────────────── */
 .agm-sections { display: flex; flex-direction: column; gap: 14px; }
 .agm-section { padding: 20px 24px; }
