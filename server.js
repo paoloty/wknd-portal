@@ -75,7 +75,7 @@ import {
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
   setRegistrationAdmin, insertAdminLog, getAdminLogs, updateRegBirthday,
-  createPlayer, mergeRegistrationIntoPlayer,
+  createPlayer, mergeRegistrationIntoPlayer, playerHasActivity, deletePlayer,
   getSeasonStandings, getPlayoffGames,
   getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
   createPapawisGame, joinPapawisGame, cancelPapawisSignup,
@@ -3396,11 +3396,20 @@ app.get('/admin/players/:id', requireAuth, (req, res) => {
   const teams      = getAllTeams();
   const currentSlug = getSlugForEntity('player', player.id);
   const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  const canDelete = !playerHasActivity(player.id);
   res.send(renderAdminPage(req, {
     title: displayPlayerName(player.name),
     currentPath: '/admin/players',
-    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams, currentSlug, isSuperAdmin }),
+    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams, currentSlug, isSuperAdmin, canDelete }),
   }));
+});
+
+app.delete('/admin/players/:id', requireAuth, (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const result = deletePlayer(req.params.id);
+  if (result.error) return res.status(400).json({ error: 'This player has games, payments, papawis history, or an award on record — cannot delete.' });
+  res.json({ ok: true });
 });
 
 app.post('/admin/players/:id/slug', requireSuperAdmin, express.json(), (req, res) => {

@@ -6,6 +6,7 @@ const ICON_CHEVRON_L = `<svg width="14" height="14" viewBox="0 0 14 14" fill="no
 const ICON_RECOMPUTE = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
 const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
 const ICON_X         = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
+const ICON_TRASH     = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M12 3.5l-.9 8a1 1 0 0 1-1 .9H3.9a1 1 0 0 1-1-.9L2 3.5"/></svg>`;
 
 const ATTRS = [
   { key: 'scoring',     label: 'Scoring',     color: '#f59332' },
@@ -30,7 +31,7 @@ function eff(rating, key) {
   return rating[key + '_ovr'] ?? rating[key] ?? null;
 }
 
-export function adminPlayerDetailBody({ player, rating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false } = {}) {
+export function adminPlayerDetailBody({ player, rating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false, canDelete = false } = {}) {
   const name  = displayPlayerName(player.name);
   const color = teamColor(player.team_name);
   const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -245,6 +246,14 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
         </form>
       </div>
     </div>
+
+    ${canDelete ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Danger Zone</div>
+      <div class="p-4">
+        <p class="text-[11px] text-slate-500 leading-relaxed mb-3">No games, payments, papawis history, or awards on record yet — safe to remove entirely instead of just marking inactive.</p>
+        <button id="plr-delete-btn" class="admin-btn admin-btn--danger admin-btn--block">${ICON_TRASH} Delete Player</button>
+      </div>
+    </div>` : ''}
 
   </div>
 </div>
@@ -493,5 +502,21 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       btn.disabled = false; btn.style.opacity = '';
     }
   });
+
+  // ── Delete player ─────────────────────────────────────────────────────────
+  var deleteBtn = document.getElementById('plr-delete-btn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', function() {
+      if (!confirm('Delete this player entirely? This cannot be undone.')) return;
+      deleteBtn.disabled = true; deleteBtn.textContent = 'Deleting…';
+      fetch('/admin/players/' + PLAYER_ID, { method: 'DELETE' })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
+        .then(function(res) {
+          if (res.ok) { window.location.href = '/admin/players'; }
+          else { alert(res.body.error || 'Failed'); deleteBtn.disabled = false; deleteBtn.innerHTML = '${ICON_TRASH} Delete Player'; }
+        })
+        .catch(function() { alert('Network error'); deleteBtn.disabled = false; deleteBtn.innerHTML = '${ICON_TRASH} Delete Player'; });
+    });
+  }
 </script>`;
 }
