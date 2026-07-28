@@ -230,14 +230,25 @@ function addDays(dateStr, delta) {
   return d.toISOString().slice(0, 10);
 }
 
-// Most recent (latest date+time) first, regardless of status — matches the underlying
-// getPapawisGames() DB ordering and the admin list's convention.
+// Joinable games (status 'open' and past their sign-up-open instant — same definition
+// gameCard uses for the amber "active" card treatment) always lead the grid, soonest
+// game first — that's the thing a visitor actually needs to act on right now. Everything
+// else (not open yet, full-but-not-open... n/a, completed, cancelled) falls back to the
+// original newest-first chronological order once nothing's actively joinable, same as
+// before this sort existed.
 function sortGames(games) {
   const keyOf = (g) => `${g.date}T${g.start_time || '00:00'}`;
-  return [...games].sort((a, b) => {
+  const isJoinable = (g) => g.status === 'open' && signupOpenNow(g);
+
+  const joinable = games.filter(isJoinable).sort((a, b) => {
     const keyA = keyOf(a), keyB = keyOf(b);
-    return keyA < keyB ? 1 : keyA > keyB ? -1 : 0;
+    return keyA < keyB ? -1 : keyA > keyB ? 1 : 0; // soonest game date first
   });
+  const rest = games.filter(g => !isJoinable(g)).sort((a, b) => {
+    const keyA = keyOf(a), keyB = keyOf(b);
+    return keyA < keyB ? 1 : keyA > keyB ? -1 : 0; // newest first, unchanged
+  });
+  return [...joinable, ...rest];
 }
 
 export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, isLoggedIn = false, hasBalance = false } = {}) {
