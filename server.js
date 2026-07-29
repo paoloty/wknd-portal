@@ -83,6 +83,7 @@ import {
   completePapawisGame, cancelPapawisGame, deletePapawisGame,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
   getPapawisGamesForPlayer,
+  getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   db as portalDb,
 } from './lib/portal-db.js';
@@ -109,7 +110,8 @@ import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
-import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody } from './views/admin/papawis.js';
+import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
+import { buildBalancedTeams } from './lib/papawis-teams.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -5698,6 +5700,7 @@ app.post('/papawis/:id/join', (req, res) => {
   const result = joinPapawisGame(req.params.id, playerId, signupId);
   if (result.error === 'not_found')      return res.status(404).json({ error: 'Game not found.' });
   if (result.error === 'not_open')       return res.status(400).json({ error: 'Sign-ups for this game are not open yet.' });
+  if (result.error === 'passed')         return res.status(400).json({ error: 'This game has already happened — sign-ups are closed.' });
   if (result.error === 'already_listed') return res.status(400).json({ error: "You're already listed for this game." });
   res.json({ ok: true, status: result.status });
 });
@@ -5786,11 +5789,47 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   const signups = getPapawisSignups(req.params.id);
   const players = getAllPlayers();
   const activity = getPapawisActivityForGame(req.params.id);
+  const today = new Date(manilaTodayStr() + 'T00:00:00');
+  const gameDate = new Date(game.date + 'T00:00:00');
+  const daysLeft = Math.round((gameDate - today) / 86400000);
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft }),
   }));
+});
+
+// Team-builder page: auto-arranges the confirmed roster into LIGHT/DARK the first time
+// it's opened for a game (persisted immediately so a refresh doesn't reshuffle), then just
+// renders whatever's stored — see buildBalancedTeams() in lib/papawis-teams.js for the
+// position/height balancing logic. Re-arranging after that is an explicit action (the
+// Re-shuffle button below), not something that happens on every page load.
+app.get('/admin/papawis/:id/teams', requireAuth, (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).send('Not found');
+  let roster = getPapawisConfirmedForTeams(req.params.id);
+  if (roster.length && roster.every(r => !r.team)) {
+    setPapawisTeams(buildBalancedTeams(roster));
+    roster = getPapawisConfirmedForTeams(req.params.id);
+  }
+  res.send(renderAdminPage(req, {
+    title: `Teams — ${game.title || 'Papawis'}`,
+    currentPath: '/admin/papawis',
+    body: adminPapawisTeamsBody({ game, roster }),
+  }));
+});
+
+app.post('/admin/papawis/:id/teams/reshuffle', requireAuth, (req, res) => {
+  const roster = getPapawisConfirmedForTeams(req.params.id);
+  setPapawisTeams(buildBalancedTeams(roster));
+  res.json({ ok: true });
+});
+
+app.post('/admin/papawis/:id/teams/assign', requireAuth, express.json(), (req, res) => {
+  const { signup_id, team } = req.body;
+  const result = setPapawisSignupTeam(signup_id, team);
+  if (result.error) return res.status(400).json({ error: 'Could not move.' });
+  res.json({ ok: true });
 });
 
 app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {

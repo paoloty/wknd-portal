@@ -1,5 +1,7 @@
 import { escHtml } from '../layout.js';
 import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow } from '../utils.js';
+import { CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from '../papawis.js';
+import { parseHeightCm } from '../../lib/papawis-teams.js';
 
 const PAPAWIS_LOCATIONS = [
   'Cloverleaf Basketball Court, Makati',
@@ -236,13 +238,29 @@ export function adminPapawisListBody({ games = [] } = {}) {
 }
 
 // ── Detail / manage ───────────────────────────────────────────────────────────
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [] } = {}) {
+// 20 slots has historically settled on a flat ₱270/player rate; smaller turnouts scale
+// off a fixed ₱4,200 court budget instead, rounded to the nearest ₱10 so the number is
+// still easy to collect in cash. Always just a starting point in the (editable) input —
+// never charged as-is without the admin looking at it first.
+function defaultPapawisPrice(confirmedCount) {
+  if (!confirmedCount) return null;
+  if (confirmedCount === 20) return 270;
+  return Math.round((4200 / confirmedCount) / 10) * 10;
+}
+
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const isOpen      = game.status === 'open';
   const isCompleted = game.status === 'completed';
   const isCancelled = game.status === 'cancelled';
   const isScheduled = isOpen && !signupOpenNow(game);
+  const defaultPrice = defaultPapawisPrice(confirmed.length);
+  // Admin can build/edit teams whenever — this only controls what the "Teams" panel
+  // tells them about whether players can currently see the split (see the matching
+  // showTeams gate in rosterModalBody, views/papawis.js).
+  const isConfirmedFull = confirmed.length >= game.max_slots;
+  const teamsPubliclyVisible = isConfirmedFull && daysLeft <= PAPAWIS_CUTOFF_DAYS;
 
   // Not pre-filtered by "already listed" — the same picker is used both to add a player
   // themselves and to add their guests, and only the former can actually collide.
@@ -254,9 +272,10 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   // Read-only once a game is completed/cancelled — no drag handle, no move/remove
   // controls, matches the old table's own gating on the Remove button.
   const canManage = !isCompleted && !isCancelled;
-  const isConfirmedFull = confirmed.length >= game.max_slots;
 
-  const signupRow = (s) => `<li class="pw-row" ${canManage ? 'draggable="true"' : ''} data-id="${escHtml(s.id)}" data-status="${s.status}">
+  const signupRow = (s) => {
+    const name = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
+    return `<li class="pw-row" ${canManage ? 'draggable="true"' : ''} data-id="${escHtml(s.id)}" data-status="${s.status}" data-name="${escHtml(name)}">
       ${canManage ? `<span class="pw-row__handle" aria-hidden="true">⠿</span>` : ''}
       <div class="pw-row__info">
         <div class="pw-row__name">${s.guest_name ? `${escHtml(s.guest_name)} <span class="pw-row__guest-tag">(guest)</span>` : escHtml(displayPlayerName(s.player_name))}</div>
@@ -269,6 +288,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         <button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>
       </div>` : ''}
     </li>`;
+  };
 
   return `
 <div class="agm-edit-bar">
@@ -354,12 +374,22 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   <div class="flex flex-col gap-4">
     ${isOpen ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Teams</div>
+      <div class="p-4 flex flex-col gap-2">
+        <p class="text-xs text-slate-500 leading-relaxed">Split the confirmed roster into LIGHT/DARK scrimmage sides, balanced by position and height. You can build this anytime.</p>
+        <p class="text-[11px] ${teamsPubliclyVisible ? 'text-emerald-400' : 'text-slate-600'}">${teamsPubliclyVisible
+          ? '● Visible to players now.'
+          : `○ Not visible to players yet — needs to be full (${confirmed.length}/${game.max_slots}) and within ${PAPAWIS_CUTOFF_DAYS} days of game day.`}</p>
+        <a href="/admin/papawis/${escHtml(game.id)}/teams" class="agm-new-btn">Create Teams</a>
+      </div>
+    </div>
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Close out</div>
       <div class="p-4 flex flex-col gap-3">
         <p class="text-xs text-slate-500 leading-relaxed">No division — pick a flat, rounded price. Every confirmed player (${confirmed.length}) gets charged exactly that.</p>
         <div>
           <label class="admin-field-label">Price per player</label>
-          <input type="number" id="pw-price" class="admin-input" placeholder="e.g. 250" min="0" step="1">
+          <input type="number" id="pw-price" class="admin-input" placeholder="e.g. 250" min="0" step="1" ${defaultPrice ? `value="${defaultPrice}"` : ''}>
         </div>
         <div id="pw-complete-msg" class="text-xs text-error" style="display:none"></div>
         <button class="admin-btn admin-btn--danger" id="pw-cancel-game-btn">Cancel game</button>
@@ -401,7 +431,6 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     location: game.location || '',
     max_slots: game.max_slots,
   })};
-  var gcConfirmedNames = ${JSON.stringify(confirmed.map(s => s.guest_name ? s.guest_name : displayPlayerName(s.player_name)))};
 
   function pwCompactClock(hhmm) {
     var parts = hhmm.split(':');
@@ -411,6 +440,16 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     return m === 0 ? (h12 + period) : (h12 + ':' + String(m).padStart(2, '0') + period);
   }
 
+  // Reads straight off the current DOM order rather than a snapshot taken at page load —
+  // drag-and-drop reorders and confirmed/waitlist moves update the DOM (and persist to the
+  // server) without a page reload, so a baked-in array would silently go stale the moment
+  // an admin reordered anything without refreshing first.
+  function pwCurrentNames(status) {
+    var list = document.getElementById('pw-list-' + status);
+    if (!list) return [];
+    return Array.prototype.slice.call(list.querySelectorAll('.pw-row')).map(function(li) { return li.dataset.name || ''; });
+  }
+
   function buildMessengerText() {
     var d = new Date(gcMeta.date + 'T00:00:00');
     var dayName = d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
@@ -418,6 +457,8 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     var timeRange = (gcMeta.start_time && gcMeta.end_time)
       ? (pwCompactClock(gcMeta.start_time) + '-' + pwCompactClock(gcMeta.end_time))
       : '';
+    var confirmedNames = pwCurrentNames('confirmed');
+    var waitlistNames   = pwCurrentNames('waitlist');
 
     var lines = [];
     lines.push('Papawis sign-ups are open! 🏀');
@@ -429,8 +470,15 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     if (gcMeta.location) lines.push('📍 ' + gcMeta.location);
     lines.push('');
     for (var i = 0; i < gcMeta.max_slots; i++) {
-      lines.push((i + 1) + '. ' + (gcConfirmedNames[i] || ''));
+      lines.push((i + 1) + '. ' + (confirmedNames[i] || ''));
     }
+    if (waitlistNames.length) {
+      lines.push('');
+      lines.push('Waitlist:');
+      waitlistNames.forEach(function(name, i) { lines.push((i + 1) + '. ' + name); });
+    }
+    lines.push('');
+    lines.push('💸 After the game, you can settle up anytime through your Portal account — totally optional, you can always just send payment straight to an admin instead.');
     return lines.join('\\n');
   }
 
@@ -670,6 +718,132 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     fetch('/admin/papawis/' + gameId, { method: 'DELETE' })
       .then(function(r) { if (r.ok) { window.location.href = '/admin/papawis'; } else { alert('Failed'); btn.disabled = false; } })
       .catch(function() { alert('Network error'); btn.disabled = false; });
+  });
+})();
+</script>`;
+}
+
+// ── Teams (LIGHT vs DARK scrimmage split) ─────────────────────────────────────
+function teamRosterRow(r) {
+  let positions = [];
+  try { positions = JSON.parse(r.positions || '[]'); } catch { /* leave empty */ }
+  const heightCm = parseHeightCm(r.height);
+  const name = r.guest_name ? escHtml(r.guest_name) : escHtml(displayPlayerName(r.player_name));
+  return `<li class="pwt-row" draggable="true" data-id="${escHtml(r.id)}" data-team="${r.team}">
+    <span class="pwt-row__handle" aria-hidden="true">⠿</span>
+    <div class="pwt-row__info">
+      <div class="pwt-row__name">${name}${r.guest_name ? ' <span class="pwt-row__guest-tag">(guest)</span>' : ''}</div>
+      <div class="pwt-row__meta">${positions.join('/') || '—'}${heightCm ? ` · ${Math.round(heightCm)}cm` : ''}</div>
+    </div>
+  </li>`;
+}
+
+export function adminPapawisTeamsBody({ game, roster = [] } = {}) {
+  const light = roster.filter(r => r.team === 'light');
+  const dark  = roster.filter(r => r.team === 'dark');
+  const unassigned = roster.filter(r => r.team !== 'light' && r.team !== 'dark');
+
+  return `
+<div class="agm-edit-bar">
+  <a href="/admin/papawis/${escHtml(game.id)}" class="agm-edit-bar__back">${ICON_CHEVRON_L} ${escHtml(game.title || 'Papawis')}</a>
+</div>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mt-4 mb-5">
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Teams — ${escHtml(game.title || 'Papawis')}</h2>
+  <button class="admin-btn" id="pwt-reshuffle-btn">↻ Re-shuffle</button>
+</div>
+
+<p class="text-xs text-slate-500 mb-4 leading-relaxed">Auto-arranged by position and height (ratings ignored), guests placed randomly. Drag a player across to swap sides — saves immediately.</p>
+
+${unassigned.length ? `<div class="mb-4 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300">
+  ${unassigned.length} player(s) not yet assigned to a side — drag them into LIGHT or DARK below.
+</div>` : ''}
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+  <div class="pwt-col pwt-col--light rounded-lg overflow-hidden border border-admin-border">
+    <div class="px-4 py-3 bg-white text-slate-900 font-bold text-sm uppercase tracking-widest flex items-center justify-between">
+      <span>Light</span><span class="font-saira">${light.length}</span>
+    </div>
+    <ul class="pwt-list" id="pwt-list-light" data-team="light">
+      ${light.map(teamRosterRow).join('') || '<li class="pwt-list__empty">Drop players here</li>'}
+    </ul>
+  </div>
+  <div class="pwt-col pwt-col--dark rounded-lg overflow-hidden border border-admin-border">
+    <div class="px-4 py-3 bg-slate-950 text-slate-100 font-bold text-sm uppercase tracking-widest flex items-center justify-between">
+      <span>Dark</span><span class="font-saira">${dark.length}</span>
+    </div>
+    <ul class="pwt-list" id="pwt-list-dark" data-team="dark">
+      ${dark.map(teamRosterRow).join('') || '<li class="pwt-list__empty">Drop players here</li>'}
+    </ul>
+  </div>
+</div>
+
+${unassigned.length ? `<div class="mt-4">
+  <div class="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">Unassigned</div>
+  <ul class="pwt-list" id="pwt-list-unassigned" data-team="">
+    ${unassigned.map(teamRosterRow).join('')}
+  </ul>
+</div>` : ''}
+
+<script>
+(function() {
+  var gameId = ${JSON.stringify(game.id)};
+
+  var reshuffleBtn = document.getElementById('pwt-reshuffle-btn');
+  reshuffleBtn.addEventListener('click', function() {
+    if (!confirm('Re-shuffle both sides from scratch? Any manual swaps you made will be lost.')) return;
+    reshuffleBtn.disabled = true;
+    fetch('/admin/papawis/' + gameId + '/teams/reshuffle', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.ok) location.reload(); else { alert('Failed'); reshuffleBtn.disabled = false; } })
+      .catch(function() { alert('Network error'); reshuffleBtn.disabled = false; });
+  });
+
+  var lists = Array.prototype.slice.call(document.querySelectorAll('.pwt-list'));
+  var draggingRow = null, draggingFrom = null;
+
+  document.querySelectorAll('.pwt-row').forEach(function(row) {
+    row.addEventListener('dragstart', function() {
+      draggingRow = row;
+      draggingFrom = row.dataset.team;
+      row.classList.add('is-dragging');
+    });
+    row.addEventListener('dragend', function() {
+      row.classList.remove('is-dragging');
+      lists.forEach(function(l) { l.classList.remove('is-drag-over'); });
+      draggingRow = null; draggingFrom = null;
+    });
+  });
+
+  lists.forEach(function(list) {
+    list.addEventListener('dragover', function(e) {
+      if (!draggingRow) return;
+      e.preventDefault();
+      list.classList.add('is-drag-over');
+      var empty = list.querySelector('.pwt-list__empty');
+      if (empty) empty.remove();
+    });
+    list.addEventListener('dragleave', function(e) {
+      if (e.target === list) list.classList.remove('is-drag-over');
+    });
+    list.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!draggingRow) return;
+      list.classList.remove('is-drag-over');
+      var toTeam = list.dataset.team;
+      var sid = draggingRow.dataset.id;
+      list.appendChild(draggingRow);
+      if (draggingFrom === toTeam) return;
+      draggingRow.dataset.team = toTeam;
+      if (!toTeam) return; // dropped into the "Unassigned" bucket isn't a real state — ignore
+      fetch('/admin/papawis/' + gameId + '/teams/assign', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signup_id: sid, team: toTeam })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (!d.ok) { alert(d.error || 'Could not move.'); location.reload(); } })
+      .catch(function() { alert('Network error'); location.reload(); });
+    });
   });
 })();
 </script>`;

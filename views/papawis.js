@@ -29,17 +29,33 @@ const signupOpenNow = isPapawisSignupOpenNow;
 const ICON_LOCK = `<svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="8" height="6" rx="1"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>`;
 
 // Detailed numbered breakdown (confirmed + waitlist) — used inside the "see all" modal.
-function rosterModalBody(signups) {
+// showTeams: an admin can build/edit the LIGHT/DARK split at any time (see
+// adminPapawisTeamsBody in views/admin/papawis.js), but it's only *revealed* here once
+// the game is full and within CUTOFF_DAYS of game day — the caller (gameCard) decides
+// that and passes it in, so a team column existing in the DB doesn't mean it's public yet.
+function rosterModalBody(signups, { showTeams = false } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
+  const hasTeams  = showTeams && confirmed.some(s => s.team === 'light' || s.team === 'dark');
 
   const rosterLine = (s) => s.guest_name
     ? `${escHtml(s.guest_name)} <span class="pw-roster-guest-tag">guest of ${escHtml(firstNameOf(s.player_name))}</span>`
     : playerLink(s.player_id, s.player_name, { className: 'pw-roster-link' });
 
-  const confirmedHtml = confirmed.length
-    ? `<ol class="pw-roster">${confirmed.map((s, i) => `<li>${i + 1}. ${rosterLine(s)}</li>`).join('')}</ol>`
-    : `<p class="pw-roster-empty">No one's listed yet — be the first.</p>`;
+  const teamGroup = (team, label) => {
+    const rows = confirmed.filter(s => s.team === team);
+    if (!rows.length) return '';
+    return `<div class="pw-team-group pw-team-group--${team}">
+      <span class="pw-team-label">${label}</span>
+      <ol class="pw-roster">${rows.map((s, i) => `<li>${i + 1}. ${rosterLine(s)}</li>`).join('')}</ol>
+    </div>`;
+  };
+
+  const confirmedHtml = !confirmed.length
+    ? `<p class="pw-roster-empty">No one's listed yet — be the first.</p>`
+    : hasTeams
+      ? teamGroup('light', 'Light') + teamGroup('dark', 'Dark')
+      : `<ol class="pw-roster">${confirmed.map((s, i) => `<li>${i + 1}. ${rosterLine(s)}</li>`).join('')}</ol>`;
 
   const waitlistHtml = waitlist.length
     ? `<div class="pw-waitlist">
@@ -135,13 +151,22 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
   const isCancelled = game.status === 'cancelled';
   const dLeft        = daysUntil(game.date);
   const cancellable  = dLeft >= CUTOFF_DAYS;
-  const signupOpen   = isOpen && signupOpenNow(game);
+  // Day-granularity, same as the cancel cutoff below — once the calendar date is behind
+  // today's, sign-ups auto-close even if an admin never manually completed/cancelled it.
+  // Mirrors isPapawisGamePassed() in lib/portal-db.js, the actual join-gate the join
+  // endpoint enforces server-side; this is just the display-side version of that same rule.
+  const hasPassed    = dLeft < 0;
   // Held-back sign-ups only hide the roster for an *upcoming* game still waiting on its
   // open date — never for a cancelled or completed one, where isOpen is already false and
   // the point is the opposite: logged-in users should still see who was/is listed for the
   // record. Admin can pre-load players/guests behind the scenes either way; the public
   // just doesn't see them (or the real slot count) until an upcoming game's window opens.
   const isScheduledClosed = isOpen && !signupOpenNow(game);
+  // Opened on schedule, but the game date has since gone by and nobody closed it out —
+  // distinct from isScheduledClosed (waiting to open) even though both mean "not joinable
+  // right now," since the messaging/badge for each is opposite (not open yet vs. already over).
+  const isPassedClosed = isOpen && !isScheduledClosed && hasPassed;
+  const signupOpen   = isOpen && signupOpenNow(game) && !hasPassed;
   const publicSignups   = isScheduledClosed ? [] : signups;
   const confirmedCount  = isScheduledClosed ? 0 : (game.confirmed_count || 0);
   const waitlistCount   = isScheduledClosed ? 0 : (game.waitlist_count  || 0);
@@ -159,11 +184,13 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
     ? `<span class="pw-badge pw-badge--cancelled">Cancelled</span>`
     : isCompleted
       ? `<span class="pw-badge pw-badge--muted">Played</span>`
-      : isOpen && !signupOpen
+      : isScheduledClosed
         ? `<span class="pw-badge pw-badge--muted">Scheduled</span>`
-        : isFull
-          ? `<span class="pw-badge pw-badge--full">Full</span>`
-          : `<span class="pw-badge pw-badge--open">Open</span>`;
+        : isPassedClosed
+          ? `<span class="pw-badge pw-badge--muted">Closed</span>`
+          : isFull
+            ? `<span class="pw-badge pw-badge--full">Full</span>`
+            : `<span class="pw-badge pw-badge--open">Open</span>`;
 
   let actionHtml = '';
   if (isOpen) {
@@ -178,12 +205,14 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
         actionHtml = `<div class="pw-status-line"><span class="pw-dot"></span> You're on the waitlist — you'll be confirmed automatically if a spot opens</div>
           <button class="pw-btn pw-btn--ghost" data-action="cancel" data-game="${escHtml(game.id)}">Leave waitlist</button>`;
       }
-    } else if (!signupOpen) {
+    } else if (isScheduledClosed) {
       // Same instant (8AM Manila) that gates the actual join — see papawisSignupOpensAtMs
       // in utils.js — so the live countdown can never disagree with what the join button
       // is actually waiting for.
       const opensAtIso = new Date(papawisSignupOpensAtMs(game)).toISOString();
       actionHtml = `<button class="pw-btn pw-btn--placeholder" data-opens-at="${escHtml(opensAtIso)}" disabled>${ICON_LOCK} Opens in <span class="pw-countdown-value">…</span></button>`;
+    } else if (isPassedClosed) {
+      actionHtml = `<button class="pw-btn pw-btn--placeholder" disabled>Sign-ups closed</button>`;
     } else if (!isLoggedIn) {
       actionHtml = `<a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--primary">Log in to join</a>`;
     } else if (hasBalance) {
@@ -221,7 +250,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
       <div class="pw-err" data-err-for="${escHtml(game.id)}" hidden></div>
     </div>
   </article>
-  ${isLoggedIn ? `<template data-roster-tpl="${escHtml(game.id)}" data-title="${escHtml(game.title || 'Papawis')}">${rosterModalBody(publicSignups)}</template>` : ''}`;
+  ${isLoggedIn ? `<template data-roster-tpl="${escHtml(game.id)}" data-title="${escHtml(game.title || 'Papawis')}">${rosterModalBody(publicSignups, { showTeams: isFull && dLeft <= CUTOFF_DAYS })}</template>` : ''}`;
 }
 
 function addDays(dateStr, delta) {
@@ -238,7 +267,7 @@ function addDays(dateStr, delta) {
 // before this sort existed.
 function sortGames(games) {
   const keyOf = (g) => `${g.date}T${g.start_time || '00:00'}`;
-  const isJoinable = (g) => g.status === 'open' && signupOpenNow(g);
+  const isJoinable = (g) => g.status === 'open' && signupOpenNow(g) && daysUntil(g.date) >= 0;
 
   const joinable = games.filter(isJoinable).sort((a, b) => {
     const keyA = keyOf(a), keyB = keyOf(b);
@@ -346,6 +375,11 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
 .pw-modal-body .pw-waitlist-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 8px; }
 .pw-modal-body .pw-roster--waitlist { color: var(--text-muted); }
 .pw-roster-guest-tag { font-size: 11px; color: var(--text-muted); font-style: italic; }
+.pw-team-group + .pw-team-group { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.pw-team-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.pw-team-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.pw-team-group--light .pw-team-label::before { background: #f8fafc; border: 1px solid var(--border); }
+.pw-team-group--dark  .pw-team-label::before { background: #0b1220; border: 1px solid var(--border); }
 
 .pw-foot { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
 .pw-status-line { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-muted); }
