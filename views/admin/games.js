@@ -613,7 +613,7 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
     </div>
     ` : ''}
 
-    ${!isScheduled && !isFinal ? `
+    ${!isScheduled ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Cover Image</div>
       <div class="p-4">
@@ -844,7 +844,7 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
     });
   }
   ` : ''}
-  ${!isScheduled && !isFinal ? `
+  ${!isScheduled ? `
   var coverFile = document.getElementById('cover-file');
   if (coverFile) {
     coverFile.addEventListener('change', async function() {
