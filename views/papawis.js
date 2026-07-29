@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerLink, playerAvatar, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow } from './utils.js';
+import { playerLink, playerAvatar, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials } from './utils.js';
 
 // Capped low enough that avatars + the "+N" bubble always fit inside the card on a
 // narrow phone width — MAX_AVATARS=12 used to run past the card's overflow:hidden edge
@@ -28,41 +28,116 @@ const signupOpenNow = isPapawisSignupOpenNow;
 
 const ICON_LOCK = `<svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="8" height="6" rx="1"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>`;
 
-// Detailed numbered breakdown (confirmed + waitlist) — used inside the "see all" modal.
-// showTeams: an admin can build/edit the LIGHT/DARK split at any time (see
-// adminPapawisTeamsBody in views/admin/papawis.js), but it's only *revealed* here once
-// the game is full and within CUTOFF_DAYS of game day — the caller (gameCard) decides
-// that and passes it in, so a team column existing in the DB doesn't mean it's public yet.
+// Guests have no player record of their own — their signup's player_id is the sponsor
+// who's paying, not who's actually playing, so showing that player's photo/team color
+// on a guest's row would misrepresent whose avatar it is. A plain initials badge avoids
+// that without needing a fake photo lookup.
+function rosterAvatarHtml(s) {
+  return s.guest_name
+    ? `<div class="pw-roster-avatar pw-roster-avatar--guest">${escHtml(initials(s.guest_name))}</div>`
+    : playerAvatar(s.player_id, s.player_name, teamColor(s.team_name), { className: 'pw-roster-avatar', link: true });
+}
+function rosterNameHtml(s) {
+  return s.guest_name
+    ? `${escHtml(s.guest_name)} <span class="pw-roster-guest-tag">guest of ${escHtml(firstNameOf(s.player_name))}</span>`
+    : playerLink(s.player_id, s.player_name, { className: 'pw-roster-link' });
+}
+// Just the very first word — "Mejari" not "Mejari GARGANTA", and no "guest of ..." tag —
+// used on mobile for the LIGHT/DARK team table only, where 5 columns packed into a phone
+// width leaves no room for a full name. firstNameOf() already strips the last name; this
+// additionally drops any middle name so it's a single word either way. displayPlayerName
+// (called inside playerLink) passes a comma-less string straight through unchanged, so
+// handing it an already-shortened first name here is safe.
+function rosterShortNameHtml(s) {
+  const raw = s.guest_name ? s.guest_name : firstNameOf(s.player_name);
+  const firstWord = String(raw).trim().split(/\s+/)[0] || raw;
+  return s.guest_name ? escHtml(firstWord) : playerLink(s.player_id, firstWord, { className: 'pw-roster-link' });
+}
+
+// Detailed numbered breakdown (confirmed + waitlist) — used inside the "see all" modal,
+// for the flat (non-team) case only. Number, Avatar, Name — the team table (light vs
+// dark) has its own different column order, see teamMatchRow below.
+function rosterRow(s, i) {
+  return `<tr>
+    <td class="pw-roster-table__num">${i + 1}</td>
+    <td class="pw-roster-table__avatar">${rosterAvatarHtml(s)}</td>
+    <td class="pw-roster-table__name">${rosterNameHtml(s)}</td>
+  </tr>`;
+}
+
+function rosterTable(rows) {
+  return `<div class="pw-roster-table-wrap"><table class="pw-roster-table"><tbody>${rows.map(rosterRow).join('')}</tbody></table></div>`;
+}
+
+// Single shared table once teams are revealed — one number in the middle per row, pairing
+// the Nth Light player against the Nth Dark player: Name (light) · Avatar (light) · # ·
+// Avatar (dark) · Name (dark). Squad sizes don't have to match (a manual drag/drop can
+// leave them uneven), so a row with no counterpart on one side just renders blank cells
+// there rather than misaligning everything below it.
+function teamMatchNameCell(row) {
+  if (!row) return '';
+  return `<span class="pw-team-row__name-full">${rosterNameHtml(row)}</span><span class="pw-team-row__name-short">${rosterShortNameHtml(row)}</span>`;
+}
+
+function teamMatchRow(lightRow, darkRow) {
+  return `<tr>
+    <td class="pw-team-row__name pw-team-row__name--light">${teamMatchNameCell(lightRow)}</td>
+    <td class="pw-team-row__avatar pw-team-row__avatar--light">${lightRow ? rosterAvatarHtml(lightRow) : ''}</td>
+    <td class="pw-team-row__avatar pw-team-row__avatar--dark">${darkRow ? rosterAvatarHtml(darkRow) : ''}</td>
+    <td class="pw-team-row__name pw-team-row__name--dark">${teamMatchNameCell(darkRow)}</td>
+  </tr>`;
+}
+
+function teamMatchTable(lightRows, darkRows) {
+  const max = Math.max(lightRows.length, darkRows.length);
+  const rows = [];
+  for (let i = 0; i < max; i++) rows.push(teamMatchRow(lightRows[i] || null, darkRows[i] || null));
+  // No colspan here on purpose: table-layout:fixed takes its column widths from the FIRST
+  // row alone, and a colspan="2" cell splits its width across two columns ambiguously
+  // (browsers don't agree on how) — that's what was actually causing the widths to drift,
+  // not the padding math. Four real header cells, one per body column, makes the mapping
+  // exact — the empty ones just carry the width, no visible content needed.
+  // Widths live on pw-team-row__name--light/--dark and pw-team-row__avatar — reused as-is
+  // on these header cells (not a parallel set of pw-team-header--* width classes)
+  // specifically so the header and body columns can never drift apart; pw-team-header
+  // only carries the header's own text styling.
+  return `<p class="pw-team-note">🎽 Bring the right color — Light wears a light shirt, Dark wears a dark one.</p>
+  <div class="pw-team-table-wrap">
+    <table class="pw-team-table">
+      <thead><tr>
+        <th class="pw-team-header pw-team-header--light pw-team-row__name--light">Light</th>
+        <th class="pw-team-header pw-team-row__avatar pw-team-row__avatar--light"></th>
+        <th class="pw-team-header pw-team-row__avatar pw-team-row__avatar--dark"></th>
+        <th class="pw-team-header pw-team-header--dark pw-team-row__name--dark">Dark</th>
+      </tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>
+  </div>`;
+}
+
 function rosterModalBody(signups, { showTeams = false } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const hasTeams  = showTeams && confirmed.some(s => s.team === 'light' || s.team === 'dark');
 
-  const rosterLine = (s) => s.guest_name
-    ? `${escHtml(s.guest_name)} <span class="pw-roster-guest-tag">guest of ${escHtml(firstNameOf(s.player_name))}</span>`
-    : playerLink(s.player_id, s.player_name, { className: 'pw-roster-link' });
-
-  const teamGroup = (team, label) => {
-    const rows = confirmed.filter(s => s.team === team);
-    if (!rows.length) return '';
-    return `<div class="pw-team-group pw-team-group--${team}">
-      <span class="pw-team-label">${label}</span>
-      <ol class="pw-roster">${rows.map((s, i) => `<li>${i + 1}. ${rosterLine(s)}</li>`).join('')}</ol>
-    </div>`;
-  };
-
   const confirmedHtml = !confirmed.length
     ? `<p class="pw-roster-empty">No one's listed yet — be the first.</p>`
     : hasTeams
-      ? teamGroup('light', 'Light') + teamGroup('dark', 'Dark')
-      : `<ol class="pw-roster">${confirmed.map((s, i) => `<li>${i + 1}. ${rosterLine(s)}</li>`).join('')}</ol>`;
+      ? teamMatchTable(confirmed.filter(s => s.team === 'light'), confirmed.filter(s => s.team === 'dark'))
+      : rosterTable(confirmed);
 
-  const waitlistHtml = waitlist.length
-    ? `<div class="pw-waitlist">
-        <span class="pw-waitlist-label">Waitlist</span>
-        <ol class="pw-roster pw-roster--waitlist">${waitlist.map((s, i) => `<li>${i + 1}. ${rosterLine(s)}</li>`).join('')}</ol>
-      </div>`
-    : '';
+  // Once teams are shown, the waitlist isn't on either side yet — a one-line "Waitlist:
+  // A, B, C" reads better there than the full avatar table, which is really about who's
+  // playing on which side. Plain names, no guest tag, to keep it a single flowing line.
+  const waitlistName = (s) => s.guest_name ? escHtml(s.guest_name) : playerLink(s.player_id, s.player_name, { className: 'pw-roster-link' });
+  const waitlistHtml = !waitlist.length
+    ? ''
+    : hasTeams
+      ? `<p class="pw-waitlist-text">Waitlist: ${waitlist.map(waitlistName).join(', ')}</p>`
+      : `<div class="pw-waitlist">
+          <span class="pw-waitlist-label">Waitlist</span>
+          ${rosterTable(waitlist)}
+        </div>`;
 
   return confirmedHtml + waitlistHtml;
 }
@@ -364,22 +439,133 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
 .pw-modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(2,8,23,.82); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; }
 .pw-modal-backdrop[hidden] { display: none; }
 .pw-modal { background: var(--surface); border: 1px solid var(--border); border-radius: 15px; width: 100%; max-width: 380px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+/* Wide enough for two team columns side-by-side once teams are revealed — applies to
+   every roster (not just the team view) since the extra breathing room around the
+   avatar+name table doesn't hurt the flat single-column case either. */
+@media (min-width: 640px) { .pw-modal { max-width: 640px; } }
 .pw-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 700; color: var(--text-primary); }
 .pw-modal-close { background: rgba(255,255,255,.06); border: none; color: var(--text-muted); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-size: 12px; }
 .pw-modal-close:hover { color: var(--text-primary); }
 .pw-modal-body { padding: 18px; overflow-y: auto; }
-.pw-modal-body .pw-roster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
 .pw-modal-body .pw-roster-link { color: var(--text-primary); text-decoration: none; }
 .pw-modal-body .pw-roster-link:hover { color: var(--amber); }
-.pw-modal-body .pw-waitlist { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.pw-modal-body .pw-waitlist { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
 .pw-modal-body .pw-waitlist-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 8px; }
-.pw-modal-body .pw-roster--waitlist { color: var(--text-muted); }
+.pw-waitlist-text { margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 12px; font-style: italic; text-align: center; color: var(--text-muted); line-height: 1.5; }
 .pw-roster-guest-tag { font-size: 11px; color: var(--text-muted); font-style: italic; }
-.pw-team-group + .pw-team-group { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
-.pw-team-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.pw-team-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.pw-team-group--light .pw-team-label::before { background: #f8fafc; border: 1px solid var(--border); }
-.pw-team-group--dark  .pw-team-label::before { background: #0b1220; border: 1px solid var(--border); }
+
+/* Wrapper (not the <table> itself) owns the rounded corners + outer border — clipping a
+   collapsed border-grid to a radius via the table element is unreliable across browsers,
+   overflow:hidden on a plain div isn't. */
+.pw-roster-table-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.pw-roster-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+/* No horizontal padding at the table level — the avatar column needs to be exactly the
+   avatar's own width with nothing added around it, so horizontal spacing is opted into
+   per-column below instead of inherited from a blanket rule here. */
+.pw-roster-table td { padding: 7px 3.75px; vertical-align: middle; border: 1px solid var(--border); }
+.pw-roster-table tr:first-child td { border-top: none; }
+.pw-roster-table tr td:first-child { border-left: none; }
+.pw-roster-table tr:last-child td { border-bottom: none; }
+.pw-roster-table tr td:last-child { border-right: none; }
+.pw-roster-table__num { width: 20px; font-size: 12px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.pw-roster-table__avatar { width: 30px; text-align: center; }
+/* td-prefixed everywhere here to match (not lose to) the general .pw-roster-table td
+   rule's specificity — a bare class alone silently loses that fight and the padding/
+   border below would never actually apply, same trap the team table hit earlier. */
+td.pw-roster-table__num { padding-left: 4px; padding-right: 8px; }
+td.pw-roster-table__name { padding-left: 7px; padding-right: 7px; }
+/* No border between the avatar and its name — the number/avatar border stays. Both sides
+   of the shared edge set to none since border-collapse otherwise picks one side to win. */
+td.pw-roster-table__avatar { border-right: none; }
+td.pw-roster-table__name { border-left: none; }
+/* line-height:1 on the container is what actually keeps the initials centered — without
+   it the text inherits the page's 1.6 line-height, and flex centers that taller line box
+   rather than the glyph itself, so the letters read as sitting above-center in the circle. */
+.pw-roster-avatar { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; line-height: 1; color: rgba(255,255,255,.7); background: var(--bg); }
+.pw-roster-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.pw-roster-avatar--guest { border-style: dashed; }
+
+/* One shared table once teams are revealed: Name(light) · Avatar(light) · # · Avatar(dark)
+   · Name(dark). Top-to-bottom wash across the whole table — light tint at the top fading
+   through the middle to a blue "dark team" tint at the bottom. */
+.pw-team-table-wrap {
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  xbackground: linear-gradient(to bottom,
+    rgba(248,250,252,.10) 0%, rgba(248,250,252,0) 42%,
+    rgba(96,165,250,0) 58%, rgba(96,165,250,.10) 100%);
+}
+/* table-layout:fixed bases column widths on the FIRST row alone — the header row (see
+   teamMatchTable) has five real cells matching the body 1:1, no colspan, so there's no
+   ambiguity about which column a width belongs to. box-sizing:border-box on every cell
+   means each column's declared width IS its total rendered size, padding included, so
+   the row math below doesn't need to separately track padding on top of it. */
+.pw-team-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13.5px; }
+/* Vertical padding matches .pw-roster-table's (7px) so row height is the same whether the
+   modal is showing the flat roster or the light/dark team table — horizontal stays 7px,
+   unchanged from what the width calc() below already assumes. */
+.pw-team-table th, .pw-team-table td { box-sizing: border-box; padding: 7px; vertical-align: middle; border: 1px solid var(--border); }
+.pw-team-table thead th { border-top: none; }
+.pw-team-table tbody tr:last-child td { border-bottom: none; }
+.pw-team-table tr > :first-child { border-left: none; }
+.pw-team-table tr > :last-child { border-right: none; }
+.pw-team-header { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+/* Solid white/black header, same literal-pinnie-color idea as the admin team builder's
+   title bars — the background itself now carries the Light/Dark identity, so the little
+   color-swatch dot next to the label isn't needed anymore. thead-scoped (not just the
+   bare class) since pw-team-row__avatar--light/--dark are shared with the body rows,
+   which must stay on the gradient background, not solid white/black. */
+.pw-team-header--light,
+.pw-team-table thead th.pw-team-row__avatar--light { background: #f8fafc; color: #0f172a; }
+.pw-team-header--dark,
+.pw-team-table thead th.pw-team-row__avatar--dark { background: #0b1220; color: #e2e8f0; }
+.pw-team-header--light { text-align: right; }
+.pw-team-header--dark { text-align: left; }
+.pw-team-note { font-size: 12px; color: var(--text-muted); text-align: center; margin: 0 0 10px; }
+.pw-team-row__name { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Columns 1 & 4 (name) are fluid but equal; 2 & 3 (avatar/avatar) are fixed — border-box
+   means those two total exactly 44+44=88px regardless of internal padding, so each name
+   column just gets half of whatever's left: (100% - 88px) / 2. */
+.pw-team-row__name--light, .pw-team-row__name--dark { width: calc(50% - 44px); }
+.pw-team-row__name--light { text-align: right; }
+.pw-team-row__name--dark { text-align: left; }
+.pw-team-row__avatar { width: 44px; text-align: center; }
+/* Row order left-to-right: name-light, avatar-light, avatar-dark, name-dark. No border
+   between a name and its own avatar (the name-light|avatar-light edge, and the
+   avatar-dark|name-dark edge) — but the avatar-light|avatar-dark edge in the middle stays,
+   it's now the only divider between the two sides with the number column gone. Each
+   avatar cell therefore has ONE side removed (facing its own name) and the other side
+   explicit 1px (facing the other avatar) — easy to invert these by mistake, so: light's
+   avatar is to light-name's RIGHT, so light-name loses its right border and light-avatar
+   loses its LEFT (matching left) border, keeping its right. Mirror for dark. Both sides of
+   a removed edge have to agree it's "none" since border-collapse otherwise arbitrates
+   which one wins; td/th-prefixed to match (not lose to) the general th/td border rule's
+   specificity. */
+td.pw-team-row__name--light, th.pw-team-row__name--light { border-right: none; }
+td.pw-team-row__avatar--light, th.pw-team-row__avatar--light { border-left: none; border-right: 1px solid var(--border); }
+td.pw-team-row__avatar--dark, th.pw-team-row__avatar--dark { border-right: none; border-left: 1px solid var(--border); }
+td.pw-team-row__name--dark, th.pw-team-row__name--dark { border-left: none; }
+/* Two names are always in the markup; only one shows at a time. Desktop shows the full
+   name, mobile swaps to first-word-only (see the media query below) — CSS-only toggle
+   rather than picking server-side, so no JS/resize listener is needed either way. */
+.pw-team-row__name-short { display: none; }
+
+/* The merged team table packs 4 columns (name/avatar/avatar/name) into one row — on a
+   phone-width modal that's tight enough to wrap names awkwardly unless everything shrinks
+   a step down from the desktop sizing used above. */
+@media (max-width: 640px) {
+  .pw-roster-table, .pw-team-table { font-size: 12px; }
+  .pw-roster-table td, .pw-team-table th, .pw-team-table td { padding: 6px 5px; }
+  .pw-roster-avatar { width: 26px; height: 26px; font-size: 9.5px; }
+  .pw-roster-table__avatar { width: 26px; }
+  /* border-box again: 26px avatar + 5px×2 padding = 36px; (36+36)/2 = 36. */
+  .pw-team-row__avatar { width: 36px; }
+  .pw-team-row__name--light, .pw-team-row__name--dark { width: calc(50% - 36px); }
+  .pw-team-header { font-size: 9px; }
+  .pw-team-note { font-size: 11px; }
+  .pw-roster-guest-tag { font-size: 10px; }
+  .pw-team-row__name-full { display: none; }
+  .pw-team-row__name-short { display: inline; }
+}
 
 .pw-foot { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
 .pw-status-line { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-muted); }

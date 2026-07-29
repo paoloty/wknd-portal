@@ -83,7 +83,7 @@ import {
   completePapawisGame, cancelPapawisGame, deletePapawisGame,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
   getPapawisGamesForPlayer,
-  getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams,
+  getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   db as portalDb,
 } from './lib/portal-db.js';
@@ -5829,6 +5829,13 @@ app.post('/admin/papawis/:id/teams/assign', requireAuth, express.json(), (req, r
   const { signup_id, team } = req.body;
   const result = setPapawisSignupTeam(signup_id, team);
   if (result.error) return res.status(400).json({ error: 'Could not move.' });
+  res.json({ ok: true });
+});
+
+app.post('/admin/papawis/:id/teams/reorder', requireAuth, express.json(), (req, res) => {
+  const team = req.body.team === 'dark' ? 'dark' : 'light';
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string') : [];
+  reorderPapawisTeam(req.params.id, team, ids);
   res.json({ ok: true });
 });
 

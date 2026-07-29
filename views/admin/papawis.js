@@ -815,6 +815,34 @@ ${unassigned.length ? `<div class="mt-4">
     });
   });
 
+  // Same insertion-point technique as the confirmed/waitlist board above (pwRowAfterPoint)
+  // — finds the row whose vertical midpoint the pointer is above, so a mid-list drop lands
+  // where it visually looks like it should instead of always jumping to the end.
+  function pwtRowAfterPoint(list, y) {
+    var rows = Array.prototype.slice.call(list.querySelectorAll('.pwt-row:not(.is-dragging)'));
+    var closest = null, closestOffset = -Infinity;
+    rows.forEach(function(r) {
+      var box = r.getBoundingClientRect();
+      var offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = r; }
+    });
+    return closest;
+  }
+
+  // Best-effort: the row is already visually in place from the dragover reorder, so a
+  // failed save just means it'll snap back to the last-saved order on the next reload
+  // rather than leaving the page in a broken state.
+  function pwtPersistOrder(team) {
+    var list = document.getElementById('pwt-list-' + team);
+    if (!list) return;
+    var ids = Array.prototype.slice.call(list.querySelectorAll('.pwt-row')).map(function(li) { return li.dataset.id; });
+    if (!ids.length) return;
+    fetch('/admin/papawis/' + gameId + '/teams/reorder', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: team, ids: ids })
+    }).catch(function() {});
+  }
+
   lists.forEach(function(list) {
     list.addEventListener('dragover', function(e) {
       if (!draggingRow) return;
@@ -822,6 +850,9 @@ ${unassigned.length ? `<div class="mt-4">
       list.classList.add('is-drag-over');
       var empty = list.querySelector('.pwt-list__empty');
       if (empty) empty.remove();
+      var after = pwtRowAfterPoint(list, e.clientY);
+      if (after == null) list.appendChild(draggingRow);
+      else list.insertBefore(draggingRow, after);
     });
     list.addEventListener('dragleave', function(e) {
       if (e.target === list) list.classList.remove('is-drag-over');
@@ -832,8 +863,11 @@ ${unassigned.length ? `<div class="mt-4">
       list.classList.remove('is-drag-over');
       var toTeam = list.dataset.team;
       var sid = draggingRow.dataset.id;
-      list.appendChild(draggingRow);
-      if (draggingFrom === toTeam) return;
+      // Row is already at the right spot in the DOM (dragover moved it) — just persist.
+      if (draggingFrom === toTeam) {
+        if (toTeam) pwtPersistOrder(toTeam); // dropping within "Unassigned" isn't a real state
+        return;
+      }
       draggingRow.dataset.team = toTeam;
       if (!toTeam) return; // dropped into the "Unassigned" bucket isn't a real state — ignore
       fetch('/admin/papawis/' + gameId + '/teams/assign', {
@@ -841,7 +875,10 @@ ${unassigned.length ? `<div class="mt-4">
         body: JSON.stringify({ signup_id: sid, team: toTeam })
       })
       .then(function(r) { return r.json(); })
-      .then(function(d) { if (!d.ok) { alert(d.error || 'Could not move.'); location.reload(); } })
+      .then(function(d) {
+        if (!d.ok) { alert(d.error || 'Could not move.'); location.reload(); return; }
+        pwtPersistOrder(toTeam); // also save the drop position within the new team
+      })
       .catch(function() { alert('Network error'); location.reload(); });
     });
   });

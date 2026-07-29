@@ -910,10 +910,13 @@ select.admin-input {
 .pw-move-btn:disabled { opacity: .3; cursor: not-allowed; }
 
 /* ── Papawis team builder (LIGHT vs DARK scrimmage split) ──────────────────── */
-/* The two columns are deliberately literal light-on-white / light-on-black, mirroring
-   the actual pinnie colors players wear, not the admin theme's usual dark palette. */
-.pwt-col--light { background: #f8fafc; }
-.pwt-col--dark  { background: #0b1220; }
+/* Same rgba values as the LIGHT/DARK gradient on the public roster modal's team table
+   (.pw-team-table-wrap, views/papawis.js) — a low-opacity wash, not a solid fill. Reused
+   as-is rather than an opaque white/black gradient, so these read as a subtle tint over
+   whatever's behind the column (the admin page's own dark background) instead of a
+   literal white/black card. */
+.pwt-col--light { background: linear-gradient(180deg, rgba(248,250,252,.10), rgba(248,250,252,0) 65%); }
+.pwt-col--dark  { background: linear-gradient(180deg, rgba(96,165,250,.10), rgba(96,165,250,0) 65%); }
 .pwt-list { min-height: 48px; }
 .pwt-list__empty { padding: 24px 16px; text-align: center; font-size: 12px; color: var(--text-muted); }
 .pwt-list.is-drag-over { outline: 1px dashed rgba(245,147,50,.4); outline-offset: -1px; }
@@ -923,7 +926,10 @@ select.admin-input {
   cursor: grab;
 }
 .pwt-row.is-dragging { opacity: .35; }
-.pwt-col--light .pwt-row { border-bottom: 1px solid rgba(0,0,0,.08); color: #0f172a; }
+/* Both columns now sit on a dark tint rather than solid white/black (see .pwt-col--light
+   above), so both need light text — the dark #0f172a this used to be for the white
+   background would be unreadable against a mostly-dark backdrop now. */
+.pwt-col--light .pwt-row,
 .pwt-col--dark  .pwt-row { border-bottom: 1px solid rgba(255,255,255,.06); color: #e2e8f0; }
 .pwt-row:last-child { border-bottom: none; }
 .pwt-row__handle { font-size: 13px; line-height: 1; flex-shrink: 0; user-select: none; opacity: .5; }
