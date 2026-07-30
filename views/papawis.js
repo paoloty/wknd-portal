@@ -304,7 +304,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
   }
 
   const cardStateClass = isJoined ? ' pw-card--joined' : signupOpen ? ' pw-card--open' : '';
-  return `<article class="pw-card${cardStateClass}${cancelledUpcoming ? ' pw-card--cancelled-alert' : ''}" data-game-id="${escHtml(game.id)}">
+  return `<article id="pw-game-${escHtml(game.id)}" class="pw-card${cardStateClass}${cancelledUpcoming ? ' pw-card--cancelled-alert' : ''}" data-game-id="${escHtml(game.id)}">
     <div class="pw-card-titlebar">
       <div class="pw-card-name">${escHtml(game.title || 'Papawis')}</div>
       ${statusBadge}
