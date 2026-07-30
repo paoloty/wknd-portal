@@ -87,20 +87,23 @@ import {
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
+  createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
+  getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
   db as portalDb,
 } from './lib/portal-db.js';
-import { playerSlug, teamSlug, gameSlug } from './lib/slugs.js';
-import { generateText, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
+import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
+import { generateText, generateJson, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
-import { adminSiteBody } from './views/admin/site.js';
 import { adminAwardsBody } from './views/admin/awards.js';
+import { adminVisibilityBody } from './views/admin/visibility.js';
 import { awardGraphicEditorBody } from './views/admin/award-graphic-editor.js';
 import { adminUsersBody }       from './views/admin/users.js';
 import { adminUserDetailBody }  from './views/admin/user-detail.js';
 import { adminLogsPage }        from './views/admin/logs.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
+import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
 import { adminPlayersBody } from './views/admin/players.js';
@@ -115,6 +118,8 @@ import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis
 import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails } from './lib/papawis-notify.js';
+import { postsListPage, postDetailPage } from './views/posts.js';
+import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -252,6 +257,32 @@ function buildGameOgTags(req, game) {
       `<meta name="twitter:image:alt" content="${escAttr(title)}">`,
     );
   }
+
+  return tags.join('\n  ');
+}
+
+function buildPostOgTags(req, post) {
+  const origin = getRequestOrigin(req);
+  const url    = `${origin}/posts/${encodeURIComponent(post.slug)}`;
+  const desc   = firstParagraph(post.body_html) || 'League news from WKND Basketball League.';
+  const img    = `${origin}/og-image.png`;
+  const publishedIso = post.publish_at ? new Date(post.publish_at).toISOString() : null;
+
+  const tags = [
+    `<meta name="description" content="${escAttr(desc)}">`,
+    `<link rel="canonical" href="${escAttr(url)}">`,
+    `<meta property="og:type" content="article">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:title" content="${escAttr(post.title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:url" content="${escAttr(url)}">`,
+    `<meta property="og:image" content="${escAttr(img)}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${escAttr(post.title)}">`,
+    `<meta name="twitter:description" content="${escAttr(desc)}">`,
+    `<meta name="twitter:image" content="${escAttr(img)}">`,
+  ];
+  if (publishedIso) tags.push(`<meta property="article:published_time" content="${escAttr(publishedIso)}">`);
 
   return tags.join('\n  ');
 }
@@ -1088,6 +1119,7 @@ function getFeatureFlags() {
     mvpRace: getSetting('mvp_race_enabled', '1') !== '0',
     regOpen: getSetting('reg_open',         '0') === '1',
     papawis: getSetting('papawis_enabled',  '0') === '1',
+    posts:   getSetting('posts_enabled',    '0') === '1',
   };
 }
 
@@ -3222,35 +3254,28 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
   }
 });
 
-app.get('/admin/site', requireAuth, (req, res) => {
-  const seasons  = getLedgerSeasons();
-  const quotas   = Object.fromEntries(seasons.map(s => [s, getSeasonQuota(s)]));
+// Feature toggles and payment config used to live on one catch-all Site Settings
+// page; visibility toggles now live on /admin/visibility, payment config on Finance.
+app.get('/admin/site', requireAuth, (req, res) => res.redirect('/admin/visibility'));
+
+app.get('/admin/visibility', requireAuth, (req, res) => {
   const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
-  const settings = {
-    awards_enabled:   getSetting('awards_enabled',   '1'),
-    mvp_race_enabled: getSetting('mvp_race_enabled', '1'),
-    papawis_enabled:  getSetting('papawis_enabled',  '0'),
-    papawis_reminders_enabled: getSetting('papawis_reminders_enabled', '0'),
-    reg_open:         getSetting('reg_open',         '0'),
-    reg_deadline:     getSetting('reg_deadline',     ''),
-    reg_venue:        getSetting('reg_venue',        ''),
-    reg_schedule:     getSetting('reg_schedule',     ''),
-    reg_fee:          getSetting('reg_fee',          ''),
-    gcash_name:        getSetting('gcash_name',        ''),
-    gcash_number:      getSetting('gcash_number',      ''),
-    gcash_qr_payload:  getSetting('gcash_qr_payload',  ''),
-    ...Object.fromEntries(SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
-  };
   res.send(renderAdminPage(req, {
-    title: 'Site Settings',
-    currentPath: '/admin/site',
-    body: adminSiteBody({ seasons, quotas, settings }),
+    title: 'Visibility',
+    currentPath: '/admin/visibility',
+    body: adminVisibilityBody({
+      papawisEnabled: getSetting('papawis_enabled', '0') === '1',
+      postsEnabled:   getSetting('posts_enabled', '0') === '1',
+      awardsEnabled:  getSetting('awards_enabled', '1') !== '0',
+      mvpEnabled:     getSetting('mvp_race_enabled', '1') !== '0',
+      sectionSettings: Object.fromEntries(SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
+    }),
   }));
 });
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled',
     'award_show_mvp', 'award_show_dpoy',
     'award_show_all_wknd_1', 'award_show_all_wknd_2', 'award_show_all_wknd_def',
     'award_show_scoring_champ', 'award_show_assists_leader', 'award_show_rebounds_leader',
@@ -3365,15 +3390,17 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   }));
 });
 
-app.get('/admin/ledger/quota/:season', requireAuth, (req, res) => {
-  res.json({ amount: getSeasonQuota(req.params.season) });
-});
-
-app.post('/admin/ledger/quota/:season', requireAuth, express.json(), (req, res) => {
-  const amount = parseFloat(req.body.amount);
-  if (isNaN(amount) || amount < 0) return res.status(400).json({ error: 'Invalid amount.' });
-  setSeasonQuota(req.params.season, amount);
-  res.json({ ok: true });
+app.get('/admin/finance/gcash', requireAuth, (req, res) => {
+  const gcash = {
+    name:       getSetting('gcash_name', ''),
+    number:     getSetting('gcash_number', ''),
+    qr_payload: getSetting('gcash_qr_payload', ''),
+  };
+  res.send(renderAdminPage(req, {
+    title: 'GCash Settlement',
+    currentPath: '/admin/finance/gcash',
+    body: adminFinanceGcashBody({ gcash }),
+  }));
 });
 
 // ── Admin players routes ──────────────────────────────────────────────────────
@@ -3610,10 +3637,12 @@ app.get('/', (req, res) => {
     }
   }
 
+  const homePosts = getSetting('posts_enabled', '0') === '1' ? getPublicPosts() : [];
+
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner, signupBanner })
+    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner, signupBanner, posts: homePosts })
   }));
 });
 
@@ -3651,6 +3680,219 @@ app.get('/games/:ref', (req, res) => {
     metaTags: buildGameOgTags(req, game),
     body: gamePage({ game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap })
   }));
+});
+
+// ── Posts ──────────────────────────────────────────────────────────────────────
+// posts_enabled only controls the nav link (views/layout.js) and the homepage
+// "Latest Posts" teaser — these pages themselves stay reachable by direct URL
+// either way, so a post can be shared/linked without being generally advertised.
+app.get('/posts', (req, res) => {
+  const posts = getPublicPosts();
+  res.send(renderPage(req, {
+    title: 'Posts — WKND Basketball League',
+    currentPath: req.path,
+    body: postsListPage({ posts })
+  }));
+});
+
+app.get('/posts/:slug', (req, res) => {
+  const post = getPostBySlug(req.params.slug);
+  const now = Date.now();
+  const isVisible = post && (post.status === 'published' || (post.status === 'scheduled' && post.publish_at <= now));
+  if (!isVisible) return res.status(404).send(
+    layout({ title: 'Not Found', currentPath: req.path, body: '<p style="padding:40px;color:var(--text-muted)">Post not found.</p>' })
+  );
+  res.send(renderPage(req, {
+    title: `${post.title} — WKND Basketball League`,
+    currentPath: req.path,
+    metaTags: buildPostOgTags(req, post),
+    body: postDetailPage({ post })
+  }));
+});
+
+function uniquePostSlug(base, excludeId = '') {
+  let slug = base || 'post';
+  let n = 2;
+  while (isPostSlugTaken(slug, excludeId)) { slug = `${base}-${n}`; n++; }
+  return slug;
+}
+
+app.get('/admin/posts', requireAuth, (req, res) => {
+  const posts = getAllPostsAdmin();
+  res.send(renderAdminPage(req, {
+    title: 'Posts',
+    currentPath: '/admin/posts',
+    body: adminPostsListBody({ posts }),
+  }));
+});
+
+app.get('/admin/posts/new', requireAuth, (req, res) => {
+  const teams = getAllTeams();
+  res.send(renderAdminPage(req, {
+    title: 'New Post',
+    currentPath: '/admin/posts',
+    body: adminPostEditorBody({ post: null, teams }),
+  }));
+});
+
+app.get('/admin/posts/:id/edit', requireAuth, (req, res) => {
+  const post = getPostById(req.params.id);
+  if (!post) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/posts', body: '<p style="color:var(--text-muted);padding:40px">Post not found.</p>' }));
+  const teams = getAllTeams();
+  res.send(renderAdminPage(req, {
+    title: `Edit — ${post.title || 'Untitled'}`,
+    currentPath: '/admin/posts',
+    body: adminPostEditorBody({ post, teams }),
+  }));
+});
+
+app.post('/admin/posts', requireAuth, express.json(), (req, res) => {
+  const { title, body_html, status, publish_at } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title is required' });
+  const slug = uniquePostSlug(slugify(req.body.slug || title));
+  const id = crypto.randomUUID();
+  createPost({ id, title, slug, body_html: body_html || '', status: status || 'draft', publish_at: publish_at || null });
+  res.json({ ok: true, id, slug });
+});
+
+app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (req, res) => {
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const { teamAId, teamBId, steer } = req.body || {};
+  const teamA = getTeamById(teamAId);
+  const teamB = getTeamById(teamBId);
+  if (!teamA || !teamB) return res.status(400).json({ error: 'Pick two valid teams.' });
+
+  const season = getCurrentSeason()?.season ?? 1;
+  const standings = getSeasonStandings(season);
+  const standA = standings.find(s => s.id === teamA.id);
+  const standB = standings.find(s => s.id === teamB.id);
+  const h2h = getHeadToHeadRecord(teamA.id, teamB.id);
+
+  const topPlayers = teamId => getLeaders()
+    .filter(p => p.team_id === teamId && p.games_played > 0)
+    .map(p => ({ ...p, ppg: p.pts / p.games_played }))
+    .sort((a, b) => b.ppg - a.ppg)
+    .slice(0, 3)
+    .map(p => `${displayPlayerName(p.name)} (${p.ppg.toFixed(1)} PPG)`)
+    .join(', ');
+
+  const recordLine = s => s ? `${s.wins}-${s.losses} (point diff ${s.point_diff >= 0 ? '+' : ''}${s.point_diff})` : 'record unavailable';
+  const h2hLine = h2h.games.length
+    ? `${teamA.name} ${h2h.teamAWins} – ${h2h.teamBWins} ${teamB.name} across ${h2h.games.length} meeting(s) all-time. Games: ${h2h.games.map(g => `${g.team_a_name} ${g.team_a_score}–${g.team_b_score} ${g.team_b_name} (${g.date})`).join('; ')}`
+    : `${teamA.name} and ${teamB.name} have not played each other yet.`;
+
+  const prompt = [
+    `You are a local recreational basketball league writer previewing an upcoming playoff/finals matchup — a community observer, not a broadcaster.`,
+    `Write a matchup preview post for the WKND Basketball League. Tone: grounded, conversational, builds anticipation without hype-speak.`,
+    `Use ONLY the numbers provided below. Do NOT invent, estimate, or round any statistic, record, or head-to-head result not explicitly given.`,
+    `Do NOT reference the crowd, audience, or spectators. The league has limited attendance.`,
+    `Output as JSON: a short headline (max 10 words, must name both teams) and 3-4 body paragraphs (plain text, no markdown).`,
+    ``,
+    `MATCHUP: ${teamA.name} vs ${teamB.name}`,
+    `Season ${season} records: ${teamA.name} ${recordLine(standA)} | ${teamB.name} ${recordLine(standB)}`,
+    `Head-to-head: ${h2hLine}`,
+    `${teamA.name} top scorers: ${topPlayers(teamA.id) || 'no data'}`,
+    `${teamB.name} top scorers: ${topPlayers(teamB.id) || 'no data'}`,
+    steer ? `` : '',
+    steer ? `ANGLE/STEER FROM EDITOR: ${steer}` : '',
+  ].filter(s => s !== '').join('\n');
+
+  const schema = {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      paragraphs: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['title', 'paragraphs'],
+  };
+
+  try {
+    const { data } = await generateJson(prompt, schema, { temperature: 0.72, maxTokens: 700 });
+    const body_html = (data.paragraphs || []).map(p => `<p>${escHtml(p)}</p>`).join('');
+    res.json({ title: data.title || '', body_html, ai_generated: true });
+  } catch (err) {
+    console.error('generate-preview error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post('/admin/posts/:id', requireAuth, express.json(), (req, res) => {
+  const post = getPostById(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Not found' });
+  const { title, body_html, status, publish_at } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title is required' });
+  const rawSlug = slugify(req.body.slug || title);
+  const slug = rawSlug === post.slug ? post.slug : uniquePostSlug(rawSlug, post.id);
+  updatePost(post.id, {
+    title, slug, body_html: body_html || '', status: status || 'draft',
+    publish_at: publish_at || null, stat_check_json: post.stat_check_json,
+  });
+  res.json({ ok: true, slug });
+});
+
+app.delete('/admin/posts/:id', requireAuth, (req, res) => {
+  const post = getPostById(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Not found' });
+  deletePost(post.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/posts/:id/verify-stats', requireAuth, express.json(), async (req, res) => {
+  const post = getPostById(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Not found' });
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+
+  const plainText = post.body_html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const extractSchema = {
+    type: 'object',
+    properties: {
+      claims: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            claim_text: { type: 'string' },
+            team_name:  { type: 'string', description: 'the team this claim is about — resolve from surrounding context/pronouns, never leave blank' },
+            stat_type:  { type: 'string', description: 'one of: record, head_to_head, ppg, other' },
+            claimed_value: { type: 'string' },
+          },
+          required: ['claim_text', 'team_name', 'stat_type', 'claimed_value'],
+        },
+      },
+    },
+    required: ['claims'],
+  };
+  const extractPrompt = `Extract every concrete numeric claim (records like "10-2", head-to-head results, scoring averages, streaks) from this basketball post text. Every claim MUST include which team it's about, resolved from context even if the sentence uses a pronoun or implied subject. If there are none, return an empty array.\n\nTEXT:\n${plainText}`;
+
+  try {
+    const { data } = await generateJson(extractPrompt, extractSchema, { temperature: 0, maxTokens: 500 });
+    const teams = getAllTeams();
+    const season = getCurrentSeason()?.season ?? 1;
+    const standings = getSeasonStandings(season);
+
+    const mismatches = [];
+    for (const claim of data.claims || []) {
+      const team = teams.find(t => claim.team_name && t.name.toLowerCase() === claim.team_name.toLowerCase());
+      if (!team) continue; // can't verify without a matched team, skip rather than false-flag
+      if (claim.stat_type === 'record') {
+        const stand = standings.find(s => s.id === team.id);
+        if (stand) {
+          const expected = `${stand.wins}-${stand.losses}`;
+          if (!claim.claimed_value.includes(expected)) {
+            mismatches.push({ claim: claim.claim_text, expected, found: claim.claimed_value });
+          }
+        }
+      }
+    }
+    updatePost(post.id, {
+      title: post.title, slug: post.slug, body_html: post.body_html, status: post.status,
+      publish_at: post.publish_at, stat_check_json: JSON.stringify(mismatches),
+    });
+    res.json({ mismatches });
+  } catch (err) {
+    console.error('verify-stats error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // ── Admin compare analytics ───────────────────────────────────────────────────
@@ -5719,6 +5961,10 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   const shortPrice     = Number(getSetting('jersey_short_price', '0')) || 0;
   const surchargeStep  = Number(getSetting('jersey_surcharge_step', '50')) || 0;
   const pocketsPrice   = Number(getSetting('jersey_pockets_price', '100')) || 0;
+  // Snapshot the fee into season_quotas so Ledger/Finance collection-rate reporting
+  // for this season tracks against what players were actually charged, without a
+  // separate manual entry step.
+  setSeasonQuota(season, quotaAmount);
   const teams        = getSeasonTeams(season);
   const teamById     = Object.fromEntries(teams.map(t => [t.id, t]));
   const rosterRows   = getSeasonRoster(season);
@@ -5878,10 +6124,11 @@ app.post('/papawis/:id/viewed', (req, res) => {
 // ── Admin: Papawis ──────────────────────────────────────────────────────────────
 app.get('/admin/papawis', requireAuth, (req, res) => {
   const games = getPapawisGames();
+  const papawisRemindersEnabled = getSetting('papawis_reminders_enabled', '0') === '1';
   res.send(renderAdminPage(req, {
     title: 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisListBody({ games }),
+    body: adminPapawisListBody({ games, papawisRemindersEnabled }),
   }));
 });
 
@@ -5909,7 +6156,7 @@ app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
 app.get('/admin/papawis/activity', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Papawis Activity',
-    currentPath: '/admin/papawis',
+    currentPath: '/admin/papawis/activity',
     body: adminPapawisActivityBody({
       activity: getAllPapawisActivity(200),
       cancellers: getFrequentPapawisCancellers(),
@@ -6057,7 +6304,7 @@ app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
 // (reminder_sent_at IS NULL + game within PAPAWIS_CUTOFF_DAYS), not per-job-run, so an
 // hourly cadence is plenty and this also self-heals: a game already sitting inside the
 // window when this job first ships gets caught up on its very first tick.
-// Gated behind papawis_reminders_enabled (off by default, admin toggle in /admin/site) —
+// Gated behind papawis_reminders_enabled (off by default, admin toggle in /admin/papawis) —
 // this runs unconditionally at every boot, so without the gate a plain server restart
 // with real credentials loaded would silently mass-email everyone currently due.
 const PAPAWIS_REMINDER_CHECK_MS = 60 * 60 * 1000;

@@ -660,6 +660,23 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
     modules: { toolbar: [['bold','italic','underline'],[{list:'ordered'},{list:'bullet'}],['link','clean']] }
   });
   quill.clipboard.dangerouslyPasteHTML(${JSON.stringify(recapInitHtml)});
+  // Quill's root.innerHTML almost always carries a trailing <p><br></p> for
+  // whatever empty line the cursor is resting on — strip only leading and
+  // trailing empty paragraphs before save so that artifact doesn't ship as a
+  // blank gap on the public page. Deliberately leaves every interior
+  // paragraph untouched, even if blank, so real content can never be caught.
+  // DOM-based (not regex) — this text sits inside a template literal, and
+  // backslash escapes in a regex literal don't survive that intact.
+  function cleanEditorHtml(html) {
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    function isEmptyP(el) {
+      return !!el && (el.tagName === 'P' || el.tagName === 'DIV') && !el.textContent.trim() && !el.querySelector('img, video, iframe');
+    }
+    while (isEmptyP(div.firstElementChild)) div.firstElementChild.remove();
+    while (isEmptyP(div.lastElementChild)) div.lastElementChild.remove();
+    return div.innerHTML.trim();
+  }
   ` : ''}
 
   async function doSave() {
@@ -669,7 +686,7 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
     btn.textContent = 'Saving…';
     var body = { date: document.getElementById('pub-date').value };
     ${!isScheduled && !isFinal ? `
-    body.game_writeup = quill.root.innerHTML;
+    body.game_writeup = cleanEditorHtml(quill.root.innerHTML);
     body.youtube_url  = document.getElementById('val-yt').value;
     ` : ''}
     ${!isScheduled && !isFinal ? `

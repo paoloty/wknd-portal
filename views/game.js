@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, boldTitle, playerAvatar, playerLink } from './utils.js';
+import { teamColor, displayPlayerName, initials, boldTitle, playerAvatar, playerLink, stripEmptyParagraphs } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { scoreTicker } from './ticker.js';
 
@@ -62,9 +62,12 @@ function renderWriteup(writeup) {
   const isHtml = /<[a-z][\s\S]*>/i.test(s);
 
   if (isHtml) {
-    // Split on first block break to separate title from body
-    const m = s.match(/^([\s\S]*?)(<br\s*\/?>|<\/(?:p|div|h[1-6])>)([\s\S]*)$/i);
-    const titleHtml = m ? m[1] : s;
+    // Split on first block break to separate title from body. Strip empty <p>
+    // tags first — a leading one (Quill leftover) would otherwise get matched
+    // as the "title" and push the real headline into the body instead.
+    const cleaned = stripEmptyParagraphs(s);
+    const m = cleaned.match(/^([\s\S]*?)(<br\s*\/?>|<\/(?:p|div|h[1-6])>)([\s\S]*)$/i);
+    const titleHtml = m ? m[1] : cleaned;
     const bodyHtml  = m ? m[3].trim() : '';
     const titleText = titleHtml.replace(/<[^>]+>/g, '').replace(/\*\*/g, '').trim();
     return [

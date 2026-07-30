@@ -83,7 +83,7 @@ function statusBadge(game) {
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
-export function adminPapawisListBody({ games = [] } = {}) {
+export function adminPapawisListBody({ games = [], papawisRemindersEnabled = false } = {}) {
   const rows = games.map(g => `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}</td>
       <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(g.title || 'Papawis')}</td>
@@ -100,8 +100,26 @@ export function adminPapawisListBody({ games = [] } = {}) {
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Papawis</h2>
   <div class="flex items-center gap-2">
+    <a href="/admin/visibility" class="admin-btn">Visibility</a>
     <a href="/admin/papawis/activity" class="admin-btn">Activity Log</a>
     <button class="agm-new-btn" id="pw-new-btn">${ICON_PLUS} New Papawis</button>
+  </div>
+</div>
+
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-5">
+  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Notifications</div>
+  <div class="p-5">
+    <div class="flex items-center justify-between py-1">
+      <div>
+        <div class="text-[13px] font-semibold text-slate-200">Send reminder &amp; cancellation emails</div>
+        <div class="text-xs text-slate-500 mt-0.5">Off by default — the hourly reminder scan and cancel-notice emails only fire once this is on.</div>
+      </div>
+      <label class="site-toggle" title="Toggle Papawis emails">
+        <input type="checkbox" id="pw-toggle-reminders" ${papawisRemindersEnabled ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </div>
+    <span id="pw-reminders-msg" class="text-xs block mt-1 min-h-[16px]"></span>
   </div>
 </div>
 
@@ -182,6 +200,28 @@ export function adminPapawisListBody({ games = [] } = {}) {
 
 <script>
 (function() {
+  function bindToggle(id, key, msgId) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', async function() {
+      var msg = document.getElementById(msgId);
+      msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+      try {
+        var r = await fetch('/admin/site/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: this.checked ? '1' : '0' })
+        });
+        if (!r.ok) throw new Error();
+        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+      } catch(e) {
+        msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+        this.checked = !this.checked;
+      }
+      setTimeout(function() { msg.textContent = ''; }, 2000);
+    });
+  }
+  bindToggle('pw-toggle-reminders', 'papawis_reminders_enabled', 'pw-reminders-msg');
+
   var backdrop = document.getElementById('pw-modal-backdrop');
   function openModal() { backdrop.hidden = false; document.getElementById('pw-title').focus(); }
   function closeModal() { backdrop.hidden = true; document.getElementById('pw-err').hidden = true; }

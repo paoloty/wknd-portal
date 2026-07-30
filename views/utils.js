@@ -16,6 +16,17 @@ export function teamColor(name) {
   return TEAM_COLORS[String(name || '').toUpperCase()] || '#4a5263';
 }
 
+// Quill (the WYSIWYG editor used for Posts and Game Recaps) tends to leave
+// behind fully-empty <p> or <div> blocks — a trailing one for whatever line
+// the cursor was resting on, or others left over from older saves before the
+// editor's own save-time cleanup existed. This runs at render time
+// (server-side, on every request) so it self-heals published content
+// regardless of when or how it was saved, rather than depending on
+// client-side cleanup alone.
+export function stripEmptyParagraphs(html) {
+  return String(html || '').replace(/<(p|div)>(?:\s|&nbsp;|<br\s*\/?>)*<\/\1>/gi, '');
+}
+
 // Canonical player name display — update this one function when DB format changes.
 // Converts "LASTNAME, Firstname Middlename" → "Firstname LASTNAME" (first word of first name only, last name forced uppercase).
 export function displayPlayerName(raw) {

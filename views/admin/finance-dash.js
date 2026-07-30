@@ -80,7 +80,7 @@ ${quota ? `
         return `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
           <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(tx.date)}</td>
           <td class="px-4 py-3">
-            <a href="/admin/ledger/${escHtml(tx.player_id)}" class="text-sm font-medium text-slate-200 no-underline hover:text-brand transition-colors">${escHtml(pName)}</a>
+            <a href="/admin/ledger/${escHtml(tx.player_id)}" class="text-xs font-medium text-slate-200 no-underline hover:text-brand transition-colors">${escHtml(pName)}</a>
           </td>
           <td class="px-4 py-3 text-xs" style="color:${isCharge ? '#ef4444' : '#22c55e'}">${isCharge ? 'Charge' : 'Payment'}</td>
           <td class="px-4 py-3 text-sm font-semibold font-saira" style="color:${isCharge ? '#ef4444' : '#22c55e'}">${fmt(tx.amount)}</td>

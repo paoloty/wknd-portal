@@ -295,7 +295,32 @@ function memberSignupBannerBig({ season, headline, message, cta }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null, signupBanner = null }) {
+function latestPosts(posts) {
+  if (!posts.length) return '';
+  const rows = posts.slice(0, 3).map(p => {
+    const body = excerpt(p.body_html.replace(/<[^>]+>/g, ' '));
+    return `<a href="/posts/${encodeURIComponent(p.slug)}" class="home-post-row">
+  <span class="home-post-row__meta">${p.publish_at ? escHtml(formatDate(new Date(p.publish_at).toISOString())) : ''}</span>
+  <h3 class="home-post-row__title">${escHtml(p.title)}</h3>
+  ${body ? `<p class="home-post-row__excerpt">${escHtml(body.length > 120 ? body.slice(0, 120) + '…' : body)}</p>` : ''}
+</a>`;
+  }).join('');
+
+  return `<div class="card" style="margin-top:24px">
+  <div class="card-label">LATEST POSTS<a href="/posts" class="card-label__more">See all</a></div>
+  <div class="home-posts">${rows}</div>
+</div>
+<style>
+  .home-posts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .home-post-row { display: block; padding: 18px; text-decoration: none; border-right: 1px solid var(--border); }
+  .home-post-row:last-child { border-right: none; }
+  .home-post-row__meta { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+  .home-post-row__title { font-size: 15px; font-weight: 800; color: var(--text-primary); margin: 6px 0 4px; }
+  .home-post-row__excerpt { font-size: 12.5px; color: var(--text-muted); margin: 0; line-height: 1.45; }
+</style>`;
+}
+
+export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null, signupBanner = null, posts = [] }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -311,5 +336,7 @@ export function homePage({ teams, players, games, highlights = [], leaderPlayers
 
 ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerBig(signupBanner) : ''}
 
-${leagueLeaders(leaderPlayers)}`;
+${leagueLeaders(leaderPlayers)}
+
+${latestPosts(posts)}`;
 }

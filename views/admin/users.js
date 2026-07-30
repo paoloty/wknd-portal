@@ -36,7 +36,7 @@ export function adminUsersBody({ registrations = [] } = {}) {
   const rows = registrations.map(r => `
 <tr class="border-b border-admin-border/50 last:border-0 hover:bg-white/[.015] transition-colors" data-status="${escHtml(r.status)}">
   <td class="px-4 py-3">
-    <div class="text-sm font-semibold text-slate-200 whitespace-nowrap">${escHtml(r.full_name)}</div>
+    <div class="text-xs font-semibold text-slate-200 whitespace-nowrap">${escHtml(r.full_name)}</div>
     <div class="text-xs text-slate-500 mt-0.5">${escHtml(r.email)}</div>
   </td>
   <td class="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">${escHtml(r.phone || '—')}</td>

@@ -2768,6 +2768,11 @@ a.player-link:hover { color: var(--amber); }
   margin: 0;
   white-space: pre-wrap;
 }
+/* WYSIWYG-saved recaps render as a wrapping .recap-tab__body div around real
+   <p> tags (see renderWriteup() in views/game.js) — those need their own
+   gap since the universal reset zeroes every element's margin by default. */
+.recap-tab__body p { margin: 0 0 14px; }
+.recap-tab__body p:last-child { margin-bottom: 0; }
 
 /* ── Line score ─────────────────────────────────────────────────────────── */
 .ls-wrap {
@@ -4783,7 +4788,6 @@ a.player-link:hover { color: var(--amber); }
   border: 1px solid var(--border) !important;
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   background: var(--bg);
-  font-family: 'Archivo', sans-serif;
 }
 .ql-editor {
   color: var(--text); min-height: 180px;

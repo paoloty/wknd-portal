@@ -122,7 +122,7 @@ ${alerts.length ? `<div class="mb-6 flex flex-col gap-2.5">${alerts.join('')}</d
         ${quickLink('/admin/players',  'Players',       `${players.length} total`)}
         ${quickLink('/admin/games',    'Games',         upcoming.length ? `${upcoming.length} scheduled` : 'manage')}
         ${quickLink('/admin/ledger',   'Ledger',        pendingCount ? `${pendingCount} pending` : 'view all')}
-        ${quickLink('/admin/site',     'Site Settings', 'quotas & features')}
+        ${quickLink('/admin/finance',  'Finance',       'overview & payouts')}
       </div>
     </div>
   </div>

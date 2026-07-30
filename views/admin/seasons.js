@@ -86,7 +86,7 @@ export function adminSeasonsBody({ rows = [], currentSeason = null, signupSeason
   </div>
 
   <p class="text-xs text-slate-600 mt-4 leading-relaxed">
-    Seasons are derived from game data. Set fees on <a href="/admin/site" class="text-slate-500 hover:text-slate-300">Site Settings</a>. Manage the active signup season on <a href="/admin/season" class="text-slate-500 hover:text-slate-300">Season Management</a>.
+    Seasons are derived from game data. Manage the active signup season, including its fee, on <a href="/admin/season" class="text-slate-500 hover:text-slate-300">Season Management</a>.
   </p>
 </div>`;
 }

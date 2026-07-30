@@ -13,29 +13,52 @@ const IC = {
   awards:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1l1.545 3.09L13 4.854l-2.75 2.687.65 3.793L7.5 9.59l-3.4 1.744.65-3.793L2 4.854l3.955-.764z"/></svg>`,
   compare:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="7.5" r="2.5"/><circle cx="11" cy="7.5" r="2.5"/><path d="M6.5 7.5h2"/></svg>`,
   coach:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4v4l2.5 1.5"/></svg>`,
+  papawis:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><path d="M1.5 7.5h12"/><path d="M7.5 1.5v12"/><path d="M3.05 3.05c2.4 2.4 2.4 6.4 0 8.9"/><path d="M11.95 3.05c-2.4 2.4-2.4 6.4 0 8.9"/></svg>`,
+  activity:  `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7.5H4L5.5 3L7 12L8.5 7.5H14"/></svg>`,
+  posts:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="12" height="11" rx="1.2"/><rect x="3" y="3.5" width="4" height="3.2" rx="0.5"/><path d="M8.5 4h3.3M8.5 6h3.3"/><path d="M3 8.7h9M3 10.5h9M3 12.2h5.5"/></svg>`,
+  visibility: `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7.5C2.5 4 5 2.5 7.5 2.5S12.5 4 14 7.5C12.5 11 10 12.5 7.5 12.5S2.5 11 1 7.5Z"/><circle cx="7.5" cy="7.5" r="2"/></svg>`,
+  wallet:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="4" width="12" height="9" rx="1.5"/><path d="M1.5 6.5h12"/><circle cx="10.5" cy="9.75" r=".9" fill="currentColor" stroke="none"/></svg>`,
   external:  `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8"/><polyline points="9.5 1 13 1 13 4.5"/><line x1="7" y1="7" x2="13" y2="1"/></svg>`,
   signout:   `<svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3"/><path d="M10 10.5l3-3-3-3"/><line x1="13" y1="7.5" x2="6" y2="7.5"/></svg>`,
 };
 
 const NAV_GROUPS = [
   {
-    label: 'Content',
+    label: 'Overview',
     items: [
-      { href: '/admin',           label: 'Dashboard', icon: 'dashboard', exact: true },
+      { href: '/admin', label: 'Dashboard', icon: 'dashboard', exact: true },
+    ],
+  },
+  {
+    label: 'Games & Stats',
+    items: [
       { href: '/admin/games',     label: 'Games',     icon: 'games' },
-      { href: '/admin/papawis',   label: 'Papawis',   icon: 'games' },
       { href: '/admin/players',   label: 'Players',   icon: 'players' },
       { href: '/admin/teams',     label: 'Teams',     icon: 'teams',     soon: true },
       { href: '/admin/standings', label: 'Standings', icon: 'standings', soon: true },
-      { href: '/admin/compare',   label: 'Compares',  icon: 'compare' },
+    ],
+  },
+  {
+    label: 'Content',
+    items: [
+      { href: '/admin/posts',       label: 'Posts',       icon: 'posts' },
       { href: '/admin/coach-notes', label: 'Coach Notes', icon: 'coach' },
+      { href: '/admin/compare',     label: 'Compares',    icon: 'compare' },
+    ],
+  },
+  {
+    label: 'Papawis',
+    items: [
+      { href: '/admin/papawis',          label: 'Manage',   icon: 'papawis', exact: true },
+      { href: '/admin/papawis/activity', label: 'Activity', icon: 'activity' },
     ],
   },
   {
     label: 'Finance',
     items: [
-      { href: '/admin/finance', label: 'Overview', icon: 'finance' },
-      { href: '/admin/ledger',  label: 'Ledger',   icon: 'ledger' },
+      { href: '/admin/finance',        label: 'Overview', icon: 'finance', exact: true },
+      { href: '/admin/ledger',         label: 'Ledger',   icon: 'ledger' },
+      { href: '/admin/finance/gcash',  label: 'GCash',    icon: 'wallet' },
     ],
   },
   {
@@ -56,9 +79,9 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Settings',
+    label: 'Visibility',
     items: [
-      { href: '/admin/site', label: 'Site', icon: 'site' },
+      { href: '/admin/visibility', label: 'Visibility', icon: 'visibility', exact: true },
     ],
   },
 ];

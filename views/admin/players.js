@@ -57,7 +57,7 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
         <div class="flex items-center gap-2">
           <span class="w-2 h-2 rounded-full shrink-0" style="background:${color}"></span>
           <div class="min-w-0">
-            <span class="text-sm font-medium text-slate-200">${escHtml(name)}</span>
+            <span class="text-xs font-medium text-slate-200">${escHtml(name)}</span>
             ${inactive ? `<span class="text-[10px] bg-slate-700/40 text-slate-500 px-1.5 py-0.5 rounded ml-1.5">Inactive</span>` : ''}
             ${posChips(p.positions)}
           </div>

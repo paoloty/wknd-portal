@@ -196,7 +196,7 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
         <label class="inline-flex items-center gap-2 cursor-pointer">
           <input type="checkbox" class="lgr-check accent-brand" value="${escHtml(p.id)}">
           <span class="w-2 h-2 rounded-full shrink-0" style="background:${color}"></span>
-          <span class="text-sm text-slate-200">${escHtml(name)}</span>
+          <span class="text-xs text-slate-200">${escHtml(name)}</span>
         </label>
       </td>
       <td class="px-4 py-3 font-semibold text-sm" style="color:${balanceColor(bal)}">
@@ -236,7 +236,7 @@ ${season ? `
 <div class="flex items-center gap-2 py-2 mb-2">
   <span class="text-xs text-slate-500">Season quota:</span>
   <span class="text-sm font-semibold text-slate-200">${quota ? fmt(quota) : 'Not set'}</span>
-  <a href="/admin/site" class="text-[11px] text-slate-500 border border-admin-border rounded px-2 py-0.5 no-underline hover:border-brand/50 transition-colors">Edit in Site Settings</a>
+  ${!quota ? `<a href="/admin/season" class="text-[11px] text-slate-500 border border-admin-border rounded px-2 py-0.5 no-underline hover:border-brand/50 transition-colors">Set season fee</a>` : ''}
 </div>` : ''}
 
 <div class="mb-4 flex flex-wrap gap-3">

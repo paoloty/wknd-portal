@@ -329,7 +329,10 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
 
 <div class="mb-5 flex items-center justify-between">
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Season Awards</h2>
-  <span style="font-size:12px;color:var(--text-muted)">Season ${escHtml(String(season))}</span>
+  <div class="flex items-center gap-3">
+    <span style="font-size:12px;color:var(--text-muted)">Season ${escHtml(String(season))}</span>
+    <a href="/admin/visibility" class="admin-btn">Visibility</a>
+  </div>
 </div>
 ${seasonTabs}
 ${cards}

@@ -29,8 +29,8 @@ export function adminComparePage({ rows = [], players = [] } = {}) {
       data-sort-views="${r.view_count ?? 0}"
       data-sort-last-viewed="${lastViewedTs}"
       data-sort-created="${createdTs}">
-      <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(nameA)}</td>
-      <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(nameB)}</td>
+      <td class="px-4 py-3 text-xs font-medium text-slate-200">${escHtml(nameA)}</td>
+      <td class="px-4 py-3 text-xs font-medium text-slate-200">${escHtml(nameB)}</td>
       <td class="px-4 py-3 text-center"><span class="font-saira text-base font-bold text-brand">${r.view_count ?? 0}</span></td>
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${escHtml(fmtDate(r.last_viewed_at))}</td>
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${escHtml(fmtDate(r.created_at))}</td>
