@@ -48,6 +48,8 @@ const ACTIVITY_LABELS = {
   promoted:      { label: 'moved to confirmed', color: 'text-emerald-400' },
   waitlisted:    { label: 'moved to waitlist',  color: 'text-amber-400' },
   viewed_roster: { label: 'viewed the player list', color: 'text-slate-400' },
+  reminded:      { label: 'reminder emailed', color: 'text-sky-400' },
+  cancel_notified: { label: 'notified of cancellation', color: 'text-red-400' },
 };
 
 // Shared between the per-game log (Game column hidden) and the global feed (shown).
@@ -242,7 +244,7 @@ export function adminPapawisListBody({ games = [] } = {}) {
 // off a fixed ₱4,200 court budget instead, rounded to the nearest ₱10 so the number is
 // still easy to collect in cash. Always just a starting point in the (editable) input —
 // never charged as-is without the admin looking at it first.
-function defaultPapawisPrice(confirmedCount) {
+export function defaultPapawisPrice(confirmedCount) {
   if (!confirmedCount) return null;
   if (confirmedCount === 20) return 270;
   return Math.round((4200 / confirmedCount) / 10) * 10;

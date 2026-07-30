@@ -8,6 +8,12 @@ const STATUS_BADGE = {
   rejected:   `<span style="background:#64748b22;color:#64748b;border:1px solid #64748b44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">REJECTED</span>`,
 };
 
+const ASSESSMENT_TAG_BADGE = {
+  no_concerns:        `<span style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">NO CONCERNS</span>`,
+  worth_conversation: `<span style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WORTH A CONVO</span>`,
+  discuss_admin:      `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">DISCUSS W/ ADMIN</span>`,
+};
+
 function fmtDate(ts) {
   return ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 }
@@ -85,6 +91,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
         <th class="px-4 py-2.5 text-left font-semibold">Team Pref</th>
         <th class="px-4 py-2.5 text-left font-semibold">Signed Up</th>
         <th class="px-4 py-2.5 text-left font-semibold">Balance</th>
+        <th class="px-4 py-2.5 text-left font-semibold">Assessment</th>
         <th class="px-4 py-2.5 text-left font-semibold">Status</th>
         <th class="px-4 py-2.5 text-right font-semibold">Actions</th>
       </tr>
@@ -113,6 +120,11 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
           ${s.has_balance
             ? `<span class="text-amber-400 font-medium">⚠ ₱${Number(s.balance_amt).toLocaleString()}</span>`
             : `<span class="text-slate-600">—</span>`}
+        </td>
+        <td class="px-4 py-3">
+          ${s.assessment
+            ? `<a href="/admin/season/assessments/${escHtml(s.assessment.id)}" class="no-underline hover:opacity-80">${ASSESSMENT_TAG_BADGE[s.assessment.admin_tag] ?? '<span style="color:#64748b;font-size:11px">Not reviewed</span>'}</a>`
+            : '<span style="color:#475569;font-size:11px">—</span>'}
         </td>
         <td class="px-4 py-3">${STATUS_BADGE[s.status] ?? escHtml(s.status)}</td>
         <td class="px-4 py-3 text-right whitespace-nowrap">

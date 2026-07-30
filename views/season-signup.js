@@ -1,64 +1,226 @@
 import { escHtml } from './layout.js';
+import { SIZES, sizeSurcharge, computeJerseyTotal } from '../lib/season-pricing.js';
+import { TIERS, TIER_LABELS } from '../lib/assessment-scoring.js';
 
 const STATUS_LABEL = { waitlisted: 'Waitlisted', confirmed: 'Confirmed', rejected: 'Not Selected' };
 const STATUS_COLOR = { waitlisted: '#f59332', confirmed: '#22c55e', rejected: '#64748b' };
 
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+// Chest/length (top) and hips/length (shorts), in inches, per size.
+const SIZE_CHART = {
+  top:    { XS: [19, 27], S: [20, 28], M: [21, 29], L: [22, 30], XL: [23, 31], '2XL': [24, 32], '3XL': [25, 33], '4XL': [26, 34], '5XL': [27, 36] },
+  shorts: { XS: [21, 19], S: [22, 20], M: [23, 21], L: [24, 22], XL: [25, 23], '2XL': [26, 24], '3XL': [27, 25], '4XL': [28, 26], '5XL': [29, 27] },
+};
 
-const SIZE_CHART_TOPS = [
-  { size: 'XS',  chest: '84–88', length: '68' },
-  { size: 'S',   chest: '88–92', length: '70' },
-  { size: 'M',   chest: '92–96', length: '72' },
-  { size: 'L',   chest: '96–100', length: '74' },
-  { size: 'XL',  chest: '100–104', length: '76' },
-  { size: '2XL', chest: '104–110', length: '78' },
-  { size: '3XL', chest: '110–118', length: '80' },
-];
+const fmtMoney = v => (v ? `₱${Number(v).toLocaleString()}` : '');
 
-const SIZE_CHART_SHORTS = [
-  { size: 'XS',  waist: '64–68',   hip: '84–88' },
-  { size: 'S',   waist: '68–72',   hip: '88–92' },
-  { size: 'M',   waist: '72–76',   hip: '92–96' },
-  { size: 'L',   waist: '76–80',   hip: '96–100' },
-  { size: 'XL',  waist: '80–84',   hip: '100–104' },
-  { size: '2XL', waist: '84–90',   hip: '104–110' },
-  { size: '3XL', waist: '90–98',   hip: '110–118' },
-];
+// Shared shell — back link, brand, subhead, and static context panels. Identical
+// across every branch (form / not-approved / not-open / existing-status), same
+// convention register.js uses for its own shell-left.
+function shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct }) {
+  const infoRows = [
+    seasonFormat  ? `<div class="info-row"><span class="info-row__label">Format</span><span class="info-row__val">${escHtml(seasonFormat)}</span></div>` : '',
+    quotaAmount   ? `<div class="info-row"><span class="info-row__label">Season Fee</span><span class="info-row__val">${escHtml(fmtMoney(quotaAmount))}</span></div>` : '',
+    jerseyTopPrice ? `<div class="info-row"><span class="info-row__label">Jersey Top</span><span class="info-row__val">${escHtml(fmtMoney(jerseyTopPrice))}</span></div>` : '',
+    jerseyShortPrice ? `<div class="info-row"><span class="info-row__label">Jersey Shorts</span><span class="info-row__val">${escHtml(fmtMoney(jerseyShortPrice))}</span></div>` : '',
+    deadline ? `<div class="info-row"><span class="info-row__label">Deadline</span><span class="info-row__val">${escHtml(deadline)}</span></div>` : '',
+  ].filter(Boolean).join('');
 
-function sizeChart() {
-  const topRows  = SIZE_CHART_TOPS.map(r   => `<tr><td>${r.size}</td><td>${r.chest} cm</td><td>${r.length} cm</td></tr>`).join('');
-  const shortRows = SIZE_CHART_SHORTS.map(r => `<tr><td>${r.size}</td><td>${r.waist} cm</td><td>${r.hip} cm</td></tr>`).join('');
-  return `
-<div id="size-chart-wrap" style="display:none;margin-top:12px">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-    <div>
-      <div style="font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Jersey Top</div>
-      <table style="width:100%;font-size:11px;border-collapse:collapse">
-        <thead><tr style="color:var(--text-muted)"><th style="text-align:left;padding:3px 6px">Size</th><th style="text-align:left;padding:3px 6px">Chest</th><th style="text-align:left;padding:3px 6px">Length</th></tr></thead>
-        <tbody>${topRows}</tbody>
-      </table>
+  return `<div class="shell-left">
+    <div class="shell-back-row">
+      <a href="/me" class="shell-back">&larr; Back to My Profile</a>
     </div>
-    <div>
-      <div style="font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Shorts</div>
-      <table style="width:100%;font-size:11px;border-collapse:collapse">
-        <thead><tr style="color:var(--text-muted)"><th style="text-align:left;padding:3px 6px">Size</th><th style="text-align:left;padding:3px 6px">Waist</th><th style="text-align:left;padding:3px 6px">Hip</th></tr></thead>
-        <tbody>${shortRows}</tbody>
-      </table>
+    <div class="shell-brand-row">
+      <a href="/" class="site-header__logo-text shell-logo">WKND Basketball</a>
+      <button class="site-nav__hamburger shell-hamburger" id="nav-toggle-sidebar" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+        <span class="site-nav__hamburger-line"></span>
+        <span class="site-nav__hamburger-line"></span>
+        <span class="site-nav__hamburger-line"></span>
+      </button>
     </div>
-  </div>
-</div>
-<style>
-  #size-chart-wrap td { padding:3px 6px; color:var(--text-muted); border-bottom:1px solid var(--border); }
-  #size-chart-wrap tr:last-child td { border-bottom:none; }
-</style>
-<script>
-  document.getElementById('size-chart-toggle')?.addEventListener('click', function() {
-    var w = document.getElementById('size-chart-wrap');
-    var open = w.style.display === 'block';
-    w.style.display = open ? 'none' : 'block';
-    this.textContent = open ? 'View Size Chart ↓' : 'Hide Size Chart ↑';
-  });
-</script>`;
+    <p class="login-brand__sub">Lock in your spot for Season ${escHtml(String(sigSeason || ''))}. Same league, same crew &mdash; just don't ghost the form this time.</p>
+
+    ${infoRows ? `<div class="next-panel">
+      <div class="next-panel__label">Season ${escHtml(String(sigSeason))} Info</div>
+      <div class="info-list">${infoRows}</div>
+      ${capacityPct !== null ? `<div class="capacity-bar">
+        <div class="capacity-bar__track"><div class="capacity-bar__fill" style="width:${capacityPct}%"></div></div>
+        <div class="capacity-bar__label">Spots are filling up</div>
+      </div>` : ''}
+    </div>` : ''}
+
+    <div class="next-panel">
+      <div class="next-panel__label">What happens next</div>
+      <div class="next-list">
+        <div class="next-item"><span class="next-num">1</span><span class="next-text">You submit the form below &mdash; sizes, prefs, the whole thing.</span></div>
+        <div class="next-item"><span class="next-num">2</span><span class="next-text">Admin reviews the waitlist and builds out the rosters.</span></div>
+        <div class="next-item"><span class="next-num">3</span><span class="next-text">You'll hear back either way once spots are confirmed.</span></div>
+        <div class="next-item"><span class="next-num">4</span><span class="next-text">Season fee + jersey charges apply once the season actually starts &mdash; nothing is charged today.</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+const stylesBlock = `<style>
+:root { --surface-2: #151b26; --border-solid: #1e2530; }
+
+.login-brand__sub em { font-style: normal; opacity: .55; font-size: 11.5px; }
+
+.shell-back-row { margin-bottom: 14px; }
+.shell-back { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); transition: color .15s; }
+.shell-back:hover { color: var(--amber); }
+.shell-brand-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.shell-logo { display: block; }
+
+.shell { width: 100%; }
+.shell-left {
+  position: fixed; top: 0; left: 0; z-index: 50;
+  width: clamp(320px, 30vw, 420px);
+  height: 100vh;
+  padding: 48px 44px 40px;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  background: radial-gradient(600px circle at 20% 15%, rgba(245,147,50,.10), transparent 60%), var(--surface);
+  border-right: 1px solid var(--border-solid);
+}
+.shell-right {
+  width: calc(100% - clamp(320px, 30vw, 420px));
+  margin-left: clamp(320px, 30vw, 420px);
+  padding: 48px 56px 80px;
+  display: flex; flex-direction: column; align-items: center;
+}
+.shell-right > .login-error,
+.shell-right > form,
+.shell-right > .status-panel { width: 100%; max-width: 720px; }
+.shell-right--status { justify-content: center; min-height: 100vh; }
+.status-panel { width: 100%; max-width: 480px; text-align: center; }
+.status-panel__icon { font-size: 42px; margin-bottom: 16px; }
+.status-panel__title { font-size: 1.25rem; font-weight: 800; color: var(--text); margin: 0 0 10px; }
+.status-panel__body { color: var(--text-muted); font-size: 13px; line-height: 1.75; margin: 0 0 24px; }
+.status-pill { display: inline-block; border-radius: 20px; padding: 3px 14px; font-size: 12px; font-weight: 700; letter-spacing: .04em; margin-bottom: 20px; }
+.status-recap { background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; text-align: left; font-size: 12px; }
+.status-recap__label { font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.status-recap__row { color: var(--text-muted); }
+.status-recap__row strong { color: var(--text); }
+.balance-warn { background: rgba(245,147,50,.08); border: 1px solid rgba(245,147,50,.25); border-radius: 8px; padding: 12px 16px; text-align: left; margin-bottom: 20px; font-size: 12px; color: #f59332; }
+
+.next-panel { background: var(--bg); border: 1px solid var(--border-solid); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 24px; }
+.next-panel__label { font-size: 10px; font-weight: 700; color: var(--text-subtle); letter-spacing: .07em; text-transform: uppercase; margin-bottom: 14px; }
+.next-list { display: flex; flex-direction: column; gap: 14px; }
+.next-item { display: flex; align-items: center; gap: 14px; }
+.next-num {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: var(--surface-2); border: 1px solid var(--border-solid); color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; font-weight: 700; padding-top: 1px;
+}
+.next-item:last-child .next-num { background: var(--amber-dim); border-color: rgba(245,147,50,.4); color: var(--amber); }
+.next-text { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+.next-text strong { color: var(--text); font-weight: 600; }
+
+.info-list { display: flex; flex-direction: column; gap: 8px; }
+.info-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.info-row__label { color: var(--text-muted); }
+.info-row__val { color: var(--text); font-weight: 600; text-align: right; }
+
+.capacity-bar { margin-top: 16px; }
+.capacity-bar__track { height: 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border-solid); overflow: hidden; }
+.capacity-bar__fill { height: 100%; border-radius: 5px 0 0 5px; background: var(--amber); }
+.capacity-bar__label { margin-top: 6px; font-size: 10.5px; color: var(--text-subtle); }
+
+/* ── accordion (shared with register.js's pattern) ───────────────────── */
+.acc-item { border: 1px solid var(--border-solid); border-radius: var(--radius); background: var(--surface); margin-bottom: 14px; overflow: hidden; transition: border-color .15s; }
+.acc-item.is-open { border-color: rgba(245,147,50,.35); }
+.acc-header { width: 100%; display: flex; align-items: center; gap: 16px; padding: 20px 26px; background: none; border: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.acc-item.is-pending .acc-header { cursor: not-allowed; }
+.acc-num {
+  width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border-solid); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; font-weight: 700; color: var(--text-muted);
+  padding-top: 1px; transition: background .2s, border-color .2s, color .2s;
+}
+.acc-item.is-open .acc-num { background: var(--amber); border-color: var(--amber); color: #0a0e16; }
+.acc-item.is-done .acc-num { background: transparent; border-color: var(--amber); color: var(--amber); }
+.acc-header-text { flex: 1; min-width: 0; }
+.acc-header-label { font-size: 15px; font-weight: 700; color: var(--text); }
+.acc-item.is-pending .acc-header-label { color: var(--text-muted); }
+.acc-header-summary { font-size: 12px; color: var(--text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-chevron { color: var(--text-muted); flex-shrink: 0; transition: transform .2s ease; }
+.acc-item.is-open .acc-chevron { transform: rotate(180deg); }
+.acc-item.is-pending .acc-chevron { opacity: .3; }
+.acc-body { max-height: 0; overflow: hidden; transition: max-height .35s ease; }
+.acc-item.is-open .acc-body { max-height: 2400px; }
+.acc-body-inner { padding: 2px 26px 30px; display: flex; flex-direction: column; gap: 22px; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.field { margin-bottom: 0; }
+.field label { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px; }
+.req { color: var(--amber); font-style: normal; }
+.field__input {
+  display: block; width: 100%; background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px;
+  padding: 11px 13px; font-size: 14px; color: var(--text); font-family: inherit; outline: none;
+  transition: border-color .15s; box-sizing: border-box; resize: vertical;
+}
+.field__input:focus { border-color: var(--amber); }
+.field__input::placeholder { color: var(--text-muted); opacity: .5; }
+.field__input.reg-invalid { border-color: #f87171; }
+.reg-field-error { font-size: 11px; color: #f87171; margin-top: 5px; }
+
+/* ── size picker ──────────────────────────────────────────────────────── */
+.pick-grid { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.pick-cell {
+  flex: 1 1 0; min-width: 58px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 6px 9px; border: 1px solid var(--border-solid); border-radius: 10px;
+  background: var(--surface-2); cursor: pointer; user-select: none;
+  transition: border-color .15s, background .15s;
+}
+.pick-cell input { display: none; }
+.pick-cell:hover { border-color: var(--amber); }
+.pick-cell:has(input:checked) { border-color: var(--amber); background: rgba(245,147,50,.12); }
+.pick-cell__meas { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pick-cell__size { font-family: 'Saira Condensed'; font-weight: 700; font-size: 15px; color: var(--text); line-height: 1; }
+.pick-cell:has(input:checked) .pick-cell__size { color: var(--amber); }
+.pick-cell__delta { font-size: 9.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pick-cell__delta--surcharge { color: var(--amber); }
+.pick-axis { margin-top: 6px; font-size: 10.5px; color: var(--text-subtle); }
+
+.pockets-check.is-disabled { opacity: .4; pointer-events: none; }
+.pick-grid--scale { max-width: 340px; }
+.pick-grid--scale .pick-cell { min-width: 0; padding: 12px 6px; }
+
+.fee-total { background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px; padding: 14px 16px; display: flex; align-items: baseline; justify-content: space-between; }
+.fee-total__label { font-size: 12px; color: var(--text-muted); }
+.fee-total__amt { font-family: 'Saira Condensed'; font-weight: 800; font-size: 22px; color: var(--amber); font-variant-numeric: tabular-nums; }
+
+.nav { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.btn-next { background: var(--amber); border: none; border-radius: 8px; color: #0a0e16; font-size: 14px; font-weight: 700; padding: 12px 26px; cursor: pointer; letter-spacing: .04em; transition: opacity .15s; width: 100%; font-family: inherit; }
+.btn-next:hover { opacity: .88; }
+.check { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
+.check input { accent-color: var(--amber); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; margin-top: 2px; }
+.check--radio { display: flex; }
+
+@media (max-width: 900px) {
+  .shell-left { position: static; width: auto; height: auto; border-right: none; border-bottom: 1px solid var(--border-solid); padding: 26px 20px 40px; }
+  .shell-back-row { display: none; }
+  .shell-hamburger { display: flex; margin-left: auto; }
+  .shell-right { width: 100%; margin-left: 0; padding: 48px 24px 24px; max-width: none; }
+  .shell-right--status { min-height: 0; padding-top: 64px; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .acc-header { padding: 16px 18px; }
+  .acc-body-inner { padding: 2px 18px 24px; }
+  .pick-grid { flex-wrap: wrap; }
+  .pick-cell { flex: 1 1 30%; }
+}
+</style>`;
+
+function statusPanel({ icon, title, body, extra = '', cta = true }) {
+  return `<div class="shell-right shell-right--status">
+    <div class="status-panel">
+      <div class="status-panel__icon">${icon}</div>
+      <h2 class="status-panel__title">${title}</h2>
+      <p class="status-panel__body">${body}</p>
+      ${extra}
+      ${cta ? `<a href="/me" class="btn-next" style="display:block;text-decoration:none;text-align:center">Back to My Profile</a>` : ''}
+    </div>
+  </div>`;
 }
 
 export function seasonSignupPage({
@@ -67,6 +229,7 @@ export function seasonSignupPage({
   sigOpen = false,
   deadline = '',
   existing = null,
+  reg = null,
   name = '',
   hasBalance = false,
   balanceAmt = 0,
@@ -74,156 +237,600 @@ export function seasonSignupPage({
   seasonFormat = '',
   jerseyTopPrice = '',
   jerseyShortPrice = '',
+  surchargeStep = 50,
+  pocketsPrice = 100,
+  capacityPct = null,
   returning = null,
+  error = null,
+  prefill = {},
 } = {}) {
-  const wrap = body => `<div class="login-page" style="padding:80px 16px">
-  <div class="reg-box" style="max-width:560px">
-    <div class="login-brand" style="margin-bottom:28px">
-      <div class="login-brand__badge">W</div>
-      <span class="login-brand__name">WKND Basketball</span>
-    </div>
-    ${body}
-  </div>
-</div>`;
+  const wrap = right => `<div class="shell">
+  ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct })}
+  ${right}
+</div>
+${stylesBlock}`;
 
   if (state === 'not-approved') {
-    return wrap(`<div class="login-form" style="text-align:center;padding:40px 32px">
-  <div style="font-size:36px;margin-bottom:16px">⏳</div>
-  <h2 style="font-size:1.15rem;font-weight:800;color:var(--text);margin:0 0 10px">Application Pending</h2>
-  <p style="color:var(--text-muted);font-size:13px;line-height:1.75;margin:0 0 24px">Your membership application hasn't been approved yet. Season signup will be available once an admin approves your account.</p>
-  <a href="/" class="login-submit" style="display:block;text-decoration:none;text-align:center">Back to Home</a>
-</div>`);
+    return wrap(statusPanel({
+      icon: '⏳',
+      title: 'Application Pending',
+      body: "Your membership application hasn't been approved yet. Season signup opens up once an admin approves your account.",
+    }));
   }
 
-  // Already signed up — show status
   if (existing) {
     const statusLabel = STATUS_LABEL[existing.status] ?? existing.status;
     const statusColor = STATUS_COLOR[existing.status] ?? '#64748b';
-    const jerseyInfo  = (existing.jersey_top || existing.jersey_shorts) ? `
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px">
-    <div style="font-weight:700;color:var(--text);margin-bottom:6px">Jersey Selection</div>
-    ${existing.jersey_top    ? `<div style="color:var(--text-muted)">Top: <strong style="color:var(--text)">${escHtml(existing.jersey_top)}</strong></div>` : ''}
-    ${existing.jersey_shorts ? `<div style="color:var(--text-muted)">Shorts: <strong style="color:var(--text)">${escHtml(existing.jersey_shorts)}</strong></div>` : ''}
-  </div>` : '';
+    const jerseyInfo = (existing.jersey_top || existing.jersey_shorts) ? `
+      <div class="status-recap">
+        <div class="status-recap__label">Jersey Selection</div>
+        ${existing.jersey_top    ? `<div class="status-recap__row">Top: <strong>${escHtml(existing.jersey_top)}</strong></div>` : ''}
+        ${existing.jersey_shorts ? `<div class="status-recap__row">Shorts: <strong>${escHtml(existing.jersey_shorts)}</strong>${existing.pockets ? ' (with pockets)' : ''}</div>` : ''}
+      </div>` : '';
     const teamPrefInfo = existing.team_pref ? `
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px">
-    <div style="font-weight:700;color:var(--text);margin-bottom:6px">Team Preference</div>
-    <div style="color:var(--text-muted)">${existing.team_pref === 'stick' ? `Sticking with <strong style="color:var(--text)">${escHtml(existing.prev_team_name || 'your team')}</strong>` : 'Open to a reshuffle'}</div>
-  </div>` : '';
-    return wrap(`<div class="login-form" style="text-align:center;padding:48px 32px">
-  <div style="font-size:42px;margin-bottom:16px">${existing.status === 'confirmed' ? '✅' : existing.status === 'rejected' ? '😔' : '🏀'}</div>
-  <h2 style="font-size:1.2rem;font-weight:800;color:var(--text);margin:0 0 8px">Season ${escHtml(String(sigSeason))} Signup</h2>
-  <p style="margin:0 0 20px"><span style="display:inline-block;background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}55;border-radius:20px;padding:3px 14px;font-size:12px;font-weight:700;letter-spacing:.04em">${escHtml(statusLabel)}</span></p>
-  <p style="color:var(--text-muted);font-size:13px;line-height:1.75;margin:0 0 16px">
-    ${existing.status === 'confirmed'
+      <div class="status-recap">
+        <div class="status-recap__label">Team Preference</div>
+        <div class="status-recap__row">${existing.team_pref === 'stick' ? `Sticking with <strong>${escHtml(existing.prev_team_name || 'your team')}</strong>` : 'Open to a reshuffle'}</div>
+      </div>` : '';
+
+    const body = existing.status === 'confirmed'
       ? "You're confirmed for the upcoming season. We'll reach out with next steps."
       : existing.status === 'rejected'
         ? "Unfortunately you weren't selected for this season. Keep an eye out for future seasons."
-        : "You're on the waitlist. An admin will review and confirm your spot soon."}
-  </p>
-  ${jerseyInfo}
-  ${teamPrefInfo}
-  ${existing.has_balance ? `<div style="background:rgba(245,147,50,.08);border:1px solid rgba(245,147,50,.25);border-radius:8px;padding:12px 16px;text-align:left;margin-bottom:20px;font-size:12px;color:#f59332">
-    ⚠️ You have an outstanding balance of <strong>₱${Number(existing.balance_amt).toLocaleString()}</strong>. An admin will follow up about settlement before your spot is confirmed.
-  </div>` : ''}
-  <a href="/" class="login-submit" style="display:block;text-decoration:none;text-align:center">Back to Home</a>
-</div>`);
+        : "You're on the waitlist. An admin will review and confirm your spot soon.";
+
+    const extra = `
+      ${jerseyInfo}${teamPrefInfo}
+      ${existing.has_balance ? `<div class="balance-warn">⚠️ You have an outstanding balance of <strong>₱${Number(existing.balance_amt).toLocaleString()}</strong>. An admin will follow up about settlement before your spot is confirmed.</div>` : ''}
+    `;
+
+    return wrap(`<div class="shell-right shell-right--status">
+      <div class="status-panel">
+        <div class="status-panel__icon">${existing.status === 'confirmed' ? '✅' : existing.status === 'rejected' ? '😔' : '🏀'}</div>
+        <h2 class="status-panel__title">Season ${escHtml(String(sigSeason))} Signup</h2>
+        <p style="margin:0 0 20px"><span class="status-pill" style="background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}55">${escHtml(statusLabel)}</span></p>
+        <p class="status-panel__body">${body}</p>
+        ${extra}
+        <a href="/me" class="btn-next" style="display:block;text-decoration:none;text-align:center">Back to My Profile</a>
+      </div>
+    </div>`);
   }
 
-  // Signup not open / no season started
   if (!sigSeason || !sigOpen) {
-    return wrap(`<div class="login-form" style="text-align:center;padding:48px 32px">
-  <div style="font-size:36px;margin-bottom:16px">🔒</div>
-  <h2 style="font-size:1.15rem;font-weight:800;color:var(--text);margin:0 0 10px">Not Open Yet</h2>
-  <p style="color:var(--text-muted);font-size:13px;line-height:1.75;margin:0 0 24px">Season signup isn't open right now. Check back soon or watch for an announcement.</p>
-  <a href="/" class="login-submit" style="display:block;text-decoration:none;text-align:center">Back to Home</a>
-</div>`);
+    return wrap(statusPanel({
+      icon: '🔒',
+      title: 'Not Open Yet',
+      body: "Season signup isn't open right now. Check back soon or watch for an announcement.",
+    }));
   }
 
-  // Build season info section
-  const fmtMoney = v => v ? `₱${Number(v).toLocaleString()}` : '';
-  const quotaAmt  = quotaAmount  ? fmtMoney(quotaAmount)    : null;
-  const topPrice  = jerseyTopPrice   ? fmtMoney(jerseyTopPrice)   : null;
-  const shrtPrice = jerseyShortPrice ? fmtMoney(jerseyShortPrice) : null;
+  // ── The actual form ──────────────────────────────────────────────────────
+  const v = name => escHtml(prefill[name] || '');
+  const checked = (name, val) => prefill[name] === val ? 'checked' : '';
 
-  const seasonInfoItems = [
-    seasonFormat  ? `<div><span style="color:var(--text-muted)">Format:</span> <strong style="color:var(--text)">${escHtml(seasonFormat)}</strong></div>` : '',
-    quotaAmt      ? `<div><span style="color:var(--text-muted)">Season Fee:</span> <strong style="color:var(--text)">${escHtml(quotaAmt)}</strong></div>` : '',
-    topPrice      ? `<div><span style="color:var(--text-muted)">Jersey Top:</span> <strong style="color:var(--text)">${escHtml(topPrice)}</strong></div>` : '',
-    shrtPrice     ? `<div><span style="color:var(--text-muted)">Jersey Shorts:</span> <strong style="color:var(--text)">${escHtml(shrtPrice)} (optional)</strong></div>` : '',
-  ].filter(Boolean).join('');
+  const stepDefs = [
+    { key: 'jersey' },
+    { key: 'mindset' },
+    { key: 'selfAssess' },
+    ...(returning ? [{ key: 'teamPref' }] : []),
+    { key: 'reshuffle' },
+    { key: 'fee' },
+    { key: 'contact' },
+    { key: 'comments' },
+  ];
+  stepDefs.forEach((s, i) => { s.num = i + 1; });
+  const STEP = Object.fromEntries(stepDefs.map(s => [s.key, s.num]));
+  const totalSteps = stepDefs.length;
 
-  const sizeOptions = SIZES.map(s => `<option value="${s}">${s}</option>`).join('');
+  const errorStep = (() => {
+    if (!error) return STEP.jersey;
+    if (/jersey|shorts|pocket/i.test(error)) return STEP.jersey;
+    if (/mindset|playing this season|losing badly|ref call|teammate|feedback|benched|work on/i.test(error)) return STEP.mindset;
+    if (/self-rat|scoring vs|defense vs|overall game/i.test(error)) return STEP.selfAssess;
+    if (/team|reshuffle your team|stick/i.test(error)) return STEP.teamPref || STEP.jersey;
+    if (/reshuffle/i.test(error)) return STEP.reshuffle;
+    if (/fee|payment plan/i.test(error)) return STEP.fee;
+    if (/emergency|birthday|18/i.test(error)) return STEP.contact;
+    return STEP.jersey;
+  })();
 
-  const firstName = (name || '').split(',').pop()?.trim() || name;
+  const sizeCell = (kind, size, name) => {
+    const [meas1, meas2] = SIZE_CHART[kind][size];
+    const delta = sizeSurcharge(size, surchargeStep);
+    return `<label class="pick-cell">
+      <input type="radio" name="${name}" value="${size}" ${checked(name, size)}>
+      <span class="pick-cell__meas">${meas1}&Prime; / ${meas2}&Prime;</span>
+      <span class="pick-cell__size">${size}</span>
+      <span class="pick-cell__delta${delta ? ' pick-cell__delta--surcharge' : ''}">${delta ? `+${fmtMoney(delta)}` : 'Base'}</span>
+    </label>`;
+  };
 
-  return wrap(`<div class="login-form">
-  <h2 style="font-size:1.25rem;font-weight:800;color:var(--text);margin:0 0 6px">Season ${escHtml(String(sigSeason))} Signup</h2>
-  <p style="color:var(--text-muted);font-size:13px;margin:0 0 20px">Hey ${escHtml(firstName)}! Lock in your spot for the upcoming season.${deadline ? ` Deadline: <strong style="color:var(--text)">${escHtml(deadline)}</strong>.` : ''}</p>
+  const topCells    = SIZES.map(s => sizeCell('top', s, 'jersey_top')).join('');
+  const shortsCells = `<label class="pick-cell">
+      <input type="radio" name="jersey_shorts" value="" ${prefill.jersey_shorts === undefined || prefill.jersey_shorts === '' ? 'checked' : ''}>
+      <span class="pick-cell__meas">&nbsp;</span>
+      <span class="pick-cell__size">None</span>
+      <span class="pick-cell__delta">&mdash;</span>
+    </label>` + SIZES.map(s => sizeCell('shorts', s, 'jersey_shorts')).join('');
 
-  ${hasBalance ? `<div style="background:rgba(245,147,50,.08);border:1px solid rgba(245,147,50,.3);border-radius:8px;padding:14px 16px;margin-bottom:20px">
-    <div style="font-size:13px;font-weight:700;color:#f59332;margin-bottom:4px">⚠️ Outstanding Balance</div>
-    <div style="font-size:12px;color:var(--text-muted);line-height:1.6">You have an unpaid balance of <strong style="color:var(--text)">₱${Number(balanceAmt).toLocaleString()}</strong> from a previous season. You can still sign up — an admin will follow up about settling this before your spot is confirmed.</div>
-  </div>` : ''}
+  const initialTotal = Number(quotaAmount || 0) + computeJerseyTotal({
+    topPrice: jerseyTopPrice, shortPrice: jerseyShortPrice,
+    jerseyTop: prefill.jersey_top || '', jerseyShorts: prefill.jersey_shorts || '',
+    pockets: prefill.pockets === '1', pocketsPrice, surchargeStep,
+  });
 
-  ${seasonInfoItems ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;flex-direction:column;gap:7px;font-size:13px">
-    <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">Season ${escHtml(String(sigSeason))} Info</div>
-    ${seasonInfoItems}
-  </div>` : ''}
-
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:20px;display:flex;flex-direction:column;gap:8px">
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">What happens next</div>
-    <div style="font-size:12px;color:var(--text-muted);line-height:1.65">1. You're added to the Season ${escHtml(String(sigSeason))} waitlist.<br>2. Admin reviews and confirms your spot.<br>3. You'll be notified by email once confirmed.<br>4. Season fee and jersey charges are applied to your account.</div>
-  </div>
-
-  <form method="POST" action="/season-signup" id="signup-form">
-    <div style="margin-bottom:18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <label style="font-size:13px;font-weight:700;color:var(--text)">Jersey Selection</label>
-        <button type="button" id="size-chart-toggle" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">View Size Chart ↓</button>
-      </div>
-      ${sizeChart()}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
-        <div>
-          <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em">Jersey Top <span style="color:#f87171">*</span></label>
-          <select name="jersey_top" required style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none">
-            <option value="" disabled selected>Select size</option>
-            ${sizeOptions}
-          </select>
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em">Shorts <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
-          <select name="jersey_shorts" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;outline:none">
-            <option value="">No shorts needed</option>
-            ${sizeOptions}
-          </select>
-        </div>
-      </div>
+  const scaleCells = (name, loLabel, hiLabel) => `<div class="pick-grid pick-grid--scale" data-field="${name}">
+      ${[1, 2, 3, 4, 5].map(n => `<label class="pick-cell"><input type="radio" name="${name}" value="${n}" ${checked(name, String(n))}><span class="pick-cell__size">${n}</span></label>`).join('')}
     </div>
+    <div class="pick-axis" style="display:flex;justify-content:space-between"><span>${loLabel}</span><span>${hiLabel}</span></div>`;
 
-    ${returning ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:18px">
-      <label style="display:block;font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">You played for <strong>${escHtml(returning.team.name)}</strong> last season (Season ${escHtml(String(returning.prevSeason))}) <span style="color:#f87171">*</span></label>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;color:var(--text-muted)">
-          <input type="radio" name="team_pref" value="stick" required style="width:15px;height:15px;flex-shrink:0;accent-color:#f59332">
-          Stick with ${escHtml(returning.team.name)} for Season ${escHtml(String(sigSeason))}
-        </label>
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;color:var(--text-muted)">
-          <input type="radio" name="team_pref" value="reshuffle" required style="width:15px;height:15px;flex-shrink:0;accent-color:#f59332">
-          I'm open to being reshuffled onto a different team
-        </label>
+  const tierCells = name => `<div class="pick-grid" data-field="${name}">
+      ${TIERS.map(t => `<label class="pick-cell"><input type="radio" name="${name}" value="${t}" ${checked(name, t)}><span class="pick-cell__size" style="font-size:12px">${TIER_LABELS[t]}</span></label>`).join('')}
+    </div>`;
+
+  const mindsetStep = `
+      <div class="acc-item" data-item="${STEP.mindset}">
+        <button type="button" class="acc-header" data-toggle="${STEP.mindset}">
+          <span class="acc-num">${STEP.mindset}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Mindset &amp; Team Fit</span>
+            <span class="acc-header-summary" data-summary="${STEP.mindset}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="field">
+              <label for="q1_why_playing">Why are you playing this season? <span class="req">*</span></label>
+              <textarea id="q1_why_playing" class="field__input" name="q1_why_playing" rows="2" data-required="1" data-step="${STEP.mindset}" data-minlen="10">${escHtml(prefill.q1_why_playing || '')}</textarea>
+            </div>
+            <div class="field">
+              <label>How do you handle it when the team is losing badly? <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="stay_engaged" ${checked('q2_losing_badly', 'stay_engaged')}> Stay engaged</label>
+              <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="go_quiet" ${checked('q2_losing_badly', 'go_quiet')}> Go quiet</label>
+              <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="frustrated_vocal" ${checked('q2_losing_badly', 'frustrated_vocal')}> Get frustrated and vocal</label>
+              <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="take_over" ${checked('q2_losing_badly', 'take_over')}> Try to take over</label>
+            </div>
+            <div class="field">
+              <label>How do you usually react to a bad call from the ref? <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="q3_bad_ref_call" value="let_it_go" ${checked('q3_bad_ref_call', 'let_it_go')}> Let it go</label>
+              <label class="check check--radio"><input type="radio" name="q3_bad_ref_call" value="voice_briefly" ${checked('q3_bad_ref_call', 'voice_briefly')}> Voice it briefly, then move on</label>
+              <label class="check check--radio"><input type="radio" name="q3_bad_ref_call" value="argue_it" ${checked('q3_bad_ref_call', 'argue_it')}> Argue it</label>
+              <label class="check check--radio"><input type="radio" name="q3_bad_ref_call" value="carry_into_plays" ${checked('q3_bad_ref_call', 'carry_into_plays')}> Carry it into the next few plays</label>
+            </div>
+            <div class="field">
+              <label>Rate how you handle a heated moment with a teammate mid-game <span class="req">*</span></label>
+              ${scaleCells('q4_heated_teammate', 'Handle it poorly', 'Handle it well')}
+            </div>
+            <div class="field">
+              <label>How do you prefer to receive feedback from a coach/captain? <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="direct" ${checked('q5_feedback_style', 'direct')}> Direct, in the moment</label>
+              <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="private" ${checked('q5_feedback_style', 'private')}> Private, after the game</label>
+              <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="written" ${checked('q5_feedback_style', 'written')}> Written</label>
+            </div>
+            <div class="field">
+              <label>Rate how comfortable you are being benched for a rotation you don't agree with <span class="req">*</span></label>
+              ${scaleCells('q6_benched_comfort', 'Uncomfortable', 'Comfortable')}
+            </div>
+            <div class="field">
+              <label for="q7_work_on">What's one thing a past teammate would say you need to work on? <span class="req">*</span></label>
+              <textarea id="q7_work_on" class="field__input" name="q7_work_on" rows="2" data-required="1" data-step="${STEP.mindset}" data-minlen="10">${escHtml(prefill.q7_work_on || '')}</textarea>
+            </div>
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.mindset}">Continue &rarr;</button></div>
+          </div>
+        </div>
+      </div>`;
+
+  const selfAssessStep = `
+      <div class="acc-item" data-item="${STEP.selfAssess}">
+        <button type="button" class="acc-header" data-toggle="${STEP.selfAssess}">
+          <span class="acc-num">${STEP.selfAssess}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Self-Assessment</span>
+            <span class="acc-header-summary" data-summary="${STEP.selfAssess}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="field">
+              <label>Rate your Scoring/Shooting vs. other players in the league <span class="req">*</span></label>
+              ${tierCells('self_scoring')}
+            </div>
+            <div class="field">
+              <label>Rate your Defense vs. other players in the league <span class="req">*</span></label>
+              ${tierCells('self_defense')}
+            </div>
+            <div class="field">
+              <label>Rate your Overall game vs. other players in the league <span class="req">*</span></label>
+              ${tierCells('self_overall')}
+            </div>
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.selfAssess}">Continue &rarr;</button></div>
+          </div>
+        </div>
+      </div>`;
+
+  const teamPrefStep = returning ? `
+      <div class="acc-item" data-item="${STEP.teamPref}">
+        <button type="button" class="acc-header" data-toggle="${STEP.teamPref}">
+          <span class="acc-num">${STEP.teamPref}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Team Preference</span>
+            <span class="acc-header-summary" data-summary="${STEP.teamPref}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="field">
+              <label>You played for <strong>${escHtml(returning.team.name)}</strong> last season (Season ${escHtml(String(returning.prevSeason))}) <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="team_pref" value="stick" ${checked('team_pref', 'stick')}> Stick with ${escHtml(returning.team.name)} for Season ${escHtml(String(sigSeason))}</label>
+              <label class="check check--radio"><input type="radio" name="team_pref" value="reshuffle" ${checked('team_pref', 'reshuffle')}> I'm open to being reshuffled onto a different team</label>
+            </div>
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.teamPref}">Continue &rarr;</button></div>
+          </div>
+        </div>
+      </div>` : '';
+
+  return `<div class="shell">
+  ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct })}
+
+  <div class="shell-right">
+    ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
+
+    <form id="signup-form" method="POST" action="/season-signup" novalidate>
+
+      <div class="acc-item" data-item="${STEP.jersey}">
+        <button type="button" class="acc-header" data-toggle="${STEP.jersey}">
+          <span class="acc-num">${STEP.jersey}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Jersey Selection</span>
+            <span class="acc-header-summary" data-summary="${STEP.jersey}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="field">
+              <label>Jersey Top <span class="req">*</span></label>
+              <div class="pick-grid" data-field="jersey_top">${topCells}</div>
+              <div class="pick-axis">Chest / Length, inches</div>
+            </div>
+            <div class="field">
+              <label>Shorts <span style="opacity:.5;font-size:11px;text-transform:none;letter-spacing:normal">(optional)</span></label>
+              <div class="pick-grid" data-field="jersey_shorts">${shortsCells}</div>
+              <div class="pick-axis">Hips / Length, inches</div>
+            </div>
+            <label class="check pockets-check is-disabled" id="pockets-check">
+              <input type="checkbox" name="pockets" value="1" ${prefill.pockets === '1' ? 'checked' : ''} id="pockets-input">
+              <span>Add pockets to shorts &mdash; +${fmtMoney(pocketsPrice)}</span>
+            </label>
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.jersey}">Continue &rarr;</button></div>
+          </div>
+        </div>
       </div>
-    </div>` : ''}
 
-    ${quotaAmt ? `<div style="background:rgba(245,147,50,.06);border:1px solid rgba(245,147,50,.2);border-radius:8px;padding:14px 16px;margin-bottom:18px">
-      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-        <input type="checkbox" name="quota_ack" value="1" required style="margin-top:2px;width:15px;height:15px;flex-shrink:0;accent-color:#f59332">
-        <span style="font-size:12px;color:var(--text-muted);line-height:1.6">I understand the season fee is <strong style="color:var(--text)">${escHtml(quotaAmt)}</strong>${topPrice ? ` + ${escHtml(topPrice)} jersey top` : ''}${shrtPrice ? ` (+ ${escHtml(shrtPrice)} if adding shorts)` : ''} and will be charged to my account when my spot is confirmed. <span style="color:#f87171">*</span></span>
-      </label>
-    </div>` : ''}
+      ${mindsetStep}
+      ${selfAssessStep}
+      ${teamPrefStep}
 
-    <button type="submit" class="login-submit">Count Me In for Season ${escHtml(String(sigSeason))} →</button>
-  </form>
-  <p style="text-align:center;font-size:11px;color:var(--text-muted);margin-top:12px;opacity:.6">Signing up puts you on the waitlist — not a guarantee of a spot.</p>
-</div>`);
+      <div class="acc-item" data-item="${STEP.reshuffle}">
+        <button type="button" class="acc-header" data-toggle="${STEP.reshuffle}">
+          <span class="acc-num">${STEP.reshuffle}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">League Reshuffle Poll</span>
+            <span class="acc-header-summary" data-summary="${STEP.reshuffle}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="field">
+              <label>Would you support a full league reshuffle for Season ${escHtml(String(sigSeason))}? <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="reshuffle_vote" value="yes" ${checked('reshuffle_vote', 'yes')}> Yes, I'm open to a full reshuffle</label>
+              <label class="check check--radio"><input type="radio" name="reshuffle_vote" value="no" ${checked('reshuffle_vote', 'no')}> No, keep teams mostly as-is</label>
+            </div>
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.reshuffle}">Continue &rarr;</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item" data-item="${STEP.fee}">
+        <button type="button" class="acc-header" data-toggle="${STEP.fee}">
+          <span class="acc-num">${STEP.fee}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Fee Acknowledgment &amp; Payment Plan</span>
+            <span class="acc-header-summary" data-summary="${STEP.fee}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="fee-total">
+              <span class="fee-total__label">Total due at season start</span>
+              <span class="fee-total__amt" id="fee-total">${fmtMoney(initialTotal)}</span>
+            </div>
+            ${hasBalance ? `<div class="balance-warn">⚠️ You have an unpaid balance of <strong>₱${Number(balanceAmt).toLocaleString()}</strong> from a previous season. You can still sign up &mdash; an admin will follow up about settling this before your spot is confirmed.</div>` : ''}
+            <label class="check">
+              <input type="checkbox" name="quota_ack" value="1" ${prefill.quota_ack === '1' ? 'checked' : ''}>
+              <span>I understand the season fee shown above will be charged to my account once my spot is confirmed and the season starts. <span class="req">*</span></span>
+            </label>
+            <div class="field">
+              <label>Payment Plan <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="payment_plan" value="full" ${checked('payment_plan', 'full')}> Pay in full upfront</label>
+              <label class="check check--radio"><input type="radio" name="payment_plan" value="installment" ${checked('payment_plan', 'installment')}> Request an installment plan</label>
+            </div>
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.fee}">Continue &rarr;</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item" data-item="${STEP.contact}">
+        <button type="button" class="acc-header" data-toggle="${STEP.contact}">
+          <span class="acc-num">${STEP.contact}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Contact &amp; Eligibility Reconfirmation</span>
+            <span class="acc-header-summary" data-summary="${STEP.contact}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="grid-2">
+              <div class="field">
+                <label for="emergency_name">Emergency Contact Name <span class="req">*</span></label>
+                <input id="emergency_name" class="field__input" type="text" name="emergency_name" value="${prefill.emergency_name !== undefined ? v('emergency_name') : escHtml(reg?.emergency_name || '')}" placeholder="Full name" data-required="1" data-step="${STEP.contact}">
+              </div>
+              <div class="field">
+                <label for="emergency_phone">Emergency Contact Number <span class="req">*</span></label>
+                <input id="emergency_phone" class="field__input" type="tel" name="emergency_phone" value="${prefill.emergency_phone !== undefined ? v('emergency_phone') : escHtml(reg?.emergency_phone || '')}" placeholder="09XX XXX XXXX" data-required="1" data-step="${STEP.contact}">
+              </div>
+            </div>
+            <div class="field">
+              <label for="birthday">Confirm Your Birthday <span class="req">*</span></label>
+              <input id="birthday" class="field__input" type="date" name="birthday" value="${prefill.birthday !== undefined ? v('birthday') : escHtml(reg?.birthday || '')}" data-required="1" data-step="${STEP.contact}">
+            </div>
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.contact}">Continue &rarr;</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item" data-item="${STEP.comments}">
+        <button type="button" class="acc-header" data-toggle="${STEP.comments}">
+          <span class="acc-num">${STEP.comments}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Comments or Suggestions</span>
+            <span class="acc-header-summary" data-summary="${STEP.comments}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="field">
+              <label for="comments">Anything else you'd like us to know? <span style="opacity:.5;font-size:11px;text-transform:none;letter-spacing:normal">(optional)</span></label>
+              <textarea id="comments" class="field__input" name="comments" rows="3" placeholder="Format ideas, scheduling gripes, shout-outs — whatever.">${escHtml(prefill.comments || '')}</textarea>
+            </div>
+            <div class="nav"><button type="submit" class="btn-next" id="submit-btn">Count Me In for Season ${escHtml(String(sigSeason))} &rarr;</button></div>
+            <p style="text-align:center;font-size:11px;color:var(--text-subtle);margin:0">Signing up puts you on the waitlist &mdash; not a guarantee of a spot.</p>
+          </div>
+        </div>
+      </div>
+
+    </form>
+  </div>
+</div>
+${stylesBlock}
+
+<script>
+(function () {
+  var form  = document.getElementById('signup-form');
+  var items = Array.prototype.slice.call(form.querySelectorAll('.acc-item'));
+  var totalSteps = ${totalSteps};
+  var errorStep = ${errorStep};
+  var STEP = ${JSON.stringify(STEP)};
+  var state = {};
+  items.forEach(function (el) {
+    var n = parseInt(el.dataset.item, 10);
+    state[n] = n < errorStep ? 'done' : (n === errorStep ? 'open' : 'pending');
+  });
+
+  var PRICING = ${JSON.stringify({ topPrice: Number(jerseyTopPrice) || 0, shortPrice: Number(jerseyShortPrice) || 0, quotaAmount: Number(quotaAmount) || 0, surchargeStep: Number(surchargeStep) || 0, pocketsPrice: Number(pocketsPrice) || 0 })};
+  var SURCHARGE_TIERS = ['2XL', '3XL', '4XL', '5XL']; // mirrors lib/season-pricing.js — keep in sync
+  function sizeSurchargeJs(size) {
+    var i = SURCHARGE_TIERS.indexOf(size);
+    return i === -1 ? 0 : (i + 1) * PRICING.surchargeStep;
+  }
+
+  function render() {
+    items.forEach(function (el) {
+      var n = el.dataset.item;
+      el.classList.remove('is-open', 'is-done', 'is-pending');
+      el.classList.add('is-' + state[n]);
+    });
+  }
+
+  function openOnly(n) {
+    Object.keys(state).forEach(function (k) { if (state[k] === 'open') state[k] = 'done'; });
+    state[n] = 'open';
+    render();
+  }
+
+  function checkedVal(name) {
+    var el = form.querySelector('input[name="' + name + '"]:checked');
+    return el ? el.value : '';
+  }
+
+  function recomputeTotal() {
+    var jerseyTop    = checkedVal('jersey_top');
+    var jerseyShorts = checkedVal('jersey_shorts');
+    var pockets      = form.querySelector('[name="pockets"]').checked;
+    var total = PRICING.quotaAmount;
+    if (jerseyTop) total += PRICING.topPrice + sizeSurchargeJs(jerseyTop);
+    if (jerseyShorts) {
+      total += PRICING.shortPrice + sizeSurchargeJs(jerseyShorts);
+      if (pockets) total += PRICING.pocketsPrice;
+    }
+    var el = document.getElementById('fee-total');
+    if (el) el.textContent = '₱' + total.toLocaleString();
+  }
+
+  function updatePocketsGate() {
+    var shorts = checkedVal('jersey_shorts');
+    var wrap = document.getElementById('pockets-check');
+    var input = document.getElementById('pockets-input');
+    var enabled = !!shorts;
+    wrap.classList.toggle('is-disabled', !enabled);
+    if (!enabled) input.checked = false;
+  }
+
+  function summarize(n) {
+    var el = document.querySelector('[data-summary="' + n + '"]');
+    if (!el) return;
+    if (n == STEP.jersey) {
+      var top = checkedVal('jersey_top'), shorts = checkedVal('jersey_shorts');
+      var parts = [];
+      if (top) parts.push(top + ' top');
+      if (shorts) parts.push(shorts + ' shorts');
+      el.textContent = parts.length ? parts.join(' · ') : 'No jersey selected';
+    }
+    if (n == STEP.mindset) {
+      el.textContent = 'Saved';
+    }
+    if (n == STEP.selfAssess) {
+      el.textContent = 'Saved';
+    }
+    if (STEP.teamPref && n == STEP.teamPref) {
+      var pref = checkedVal('team_pref');
+      el.textContent = pref === 'stick' ? 'Sticking with your team' : pref === 'reshuffle' ? 'Open to reshuffle' : '';
+    }
+    if (n == STEP.reshuffle) {
+      var vote = checkedVal('reshuffle_vote');
+      el.textContent = vote === 'yes' ? 'Voted yes' : vote === 'no' ? 'Voted no' : '';
+    }
+    if (n == STEP.fee) {
+      var plan = checkedVal('payment_plan');
+      el.textContent = plan === 'full' ? 'Paying in full' : plan === 'installment' ? 'Installment plan' : '';
+    }
+    if (n == STEP.contact) {
+      var nm = form.querySelector('#emergency_name').value.trim();
+      el.textContent = nm ? 'Saved · ' + nm : 'Saved';
+    }
+  }
+
+  function fieldError(f, msg) {
+    var err = f.parentElement.querySelector('.reg-field-error');
+    if (!err) { err = document.createElement('div'); err.className = 'reg-field-error'; f.parentElement.appendChild(err); }
+    if (msg) { err.textContent = msg; f.classList.add('reg-invalid'); }
+    else { err.textContent = ''; f.classList.remove('reg-invalid'); }
+  }
+
+  function radioGroupError(container, name, msg) {
+    var wrap = container.querySelector('[data-field="' + name + '"]') || container;
+    var err = wrap.parentElement.querySelector('.reg-field-error.rg-' + name) || (function () {
+      var e = document.createElement('div');
+      e.className = 'reg-field-error rg-' + name;
+      wrap.after(e);
+      return e;
+    })();
+    err.textContent = msg || '';
+  }
+
+  function validateStep(n) {
+    var ok = true;
+    var textFields = form.querySelectorAll('[data-step="' + n + '"][data-required]');
+    textFields.forEach(function (f) {
+      var val = f.value.trim();
+      var minlen = parseInt(f.dataset.minlen || '0', 10);
+      if (!val) { fieldError(f, 'This one is not optional.'); ok = false; }
+      else if (minlen && val.length < minlen) { fieldError(f, 'A real answer, please — a couple sentences is plenty.'); ok = false; }
+      else { fieldError(f, ''); }
+    });
+
+    if (n == STEP.jersey) {
+      var hasTop = !!checkedVal('jersey_top');
+      radioGroupError(form, 'jersey_top', hasTop ? '' : 'Pick a jersey top size.');
+      if (!hasTop) ok = false;
+    }
+    if (n == STEP.mindset) {
+      ['q2_losing_badly', 'q3_bad_ref_call', 'q4_heated_teammate', 'q5_feedback_style', 'q6_benched_comfort'].forEach(function (name) {
+        if (!checkedVal(name)) ok = false;
+      });
+    }
+    if (n == STEP.selfAssess) {
+      ['self_scoring', 'self_defense', 'self_overall'].forEach(function (name) {
+        if (!checkedVal(name)) ok = false;
+      });
+    }
+    if (STEP.teamPref && n == STEP.teamPref) {
+      if (!checkedVal('team_pref')) ok = false;
+    }
+    if (n == STEP.reshuffle) {
+      if (!checkedVal('reshuffle_vote')) ok = false;
+    }
+    if (n == STEP.fee) {
+      var ackEl = form.querySelector('[name="quota_ack"]');
+      if (!ackEl.checked) ok = false;
+      if (!checkedVal('payment_plan')) ok = false;
+    }
+    if (n == STEP.contact) {
+      var phoneEl = form.querySelector('#emergency_phone');
+      var phone = phoneEl.value.replace(/[\\s-]/g, '');
+      if (phone && !/^(?:\\+63|0)9\\d{9}$/.test(phone)) {
+        fieldError(phoneEl, 'Enter a valid PH mobile number.');
+        ok = false;
+      }
+      var bdayEl = form.querySelector('#birthday');
+      if (bdayEl.value) {
+        var dob = new Date(bdayEl.value);
+        var age18 = new Date(dob.getFullYear() + 18, dob.getMonth(), dob.getDate());
+        if (new Date() < age18) {
+          fieldError(bdayEl, 'You must be 18+ to sign up.');
+          ok = false;
+        }
+      }
+    }
+    return ok;
+  }
+
+  form.querySelectorAll('[data-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var n = btn.dataset.toggle;
+      if (state[n] === 'pending' || state[n] === 'open') return;
+      openOnly(n);
+    });
+  });
+
+  form.querySelectorAll('[data-continue]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var n = btn.dataset.continue;
+      if (!validateStep(parseInt(n, 10))) return;
+      summarize(n);
+      state[n] = 'done';
+      var next = String(parseInt(n, 10) + 1);
+      if (state[next] !== undefined) { state[next] = 'open'; render(); }
+    });
+  });
+
+  form.addEventListener('submit', function (e) {
+    if (!validateStep(totalSteps)) e.preventDefault();
+  });
+
+  form.addEventListener('change', function (e) {
+    if (e.target.name === 'jersey_top' || e.target.name === 'jersey_shorts' || e.target.name === 'pockets') {
+      updatePocketsGate();
+      recomputeTotal();
+    }
+  });
+
+  form.addEventListener('input', function (e) {
+    var err = e.target.parentElement && e.target.parentElement.querySelector('.reg-field-error');
+    if (err) err.textContent = '';
+    e.target.classList.remove('reg-invalid');
+  });
+
+  render();
+  updatePocketsGate();
+  Object.keys(state).forEach(function (n) { if (state[n] === 'done') summarize(n); });
+})();
+</script>`;
 }

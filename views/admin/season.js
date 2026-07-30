@@ -8,6 +8,7 @@ export function adminSeasonBody({
   sigSeason = '', sigOpen = false, deadline = '', portalSeason = '', autoSeason = 3,
   count = 0, confirmedCount = 0,
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
+  jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
   allSeasons = [],
 } = {}) {
   const autoStr   = String(autoSeason);
@@ -145,6 +146,23 @@ export function adminSeasonBody({
             value="${escHtml(String(jerseyShortPrice))}" class="admin-input w-full">
         </div>
       </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-[12px] font-semibold text-slate-300 mb-1.5">Size Surcharge Step (₱) <span class="text-slate-500 font-normal">per tier, 2XL+</span></label>
+          <input id="jersey-surcharge-step-input" type="number" min="0" step="1" placeholder="50"
+            value="${escHtml(String(jerseySurchargeStep))}" class="admin-input w-full">
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-slate-300 mb-1.5">Pockets Add-on (₱)</label>
+          <input id="jersey-pockets-price-input" type="number" min="0" step="1" placeholder="100"
+            value="${escHtml(String(jerseyPocketsPrice))}" class="admin-input w-full">
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-slate-300 mb-1.5">Roster Capacity <span class="text-slate-500 font-normal">(optional)</span></label>
+          <input id="season-roster-capacity-input" type="number" min="0" step="1" placeholder="e.g. 40"
+            value="${escHtml(String(seasonRosterCapacity))}" class="admin-input w-full">
+        </div>
+      </div>
       <div class="flex items-center gap-3">
         <button id="settings-save-btn" class="agm-new-btn">${IC_CHECK} Save Settings</button>
         <span id="settings-save-msg" class="text-xs"></span>
@@ -234,11 +252,14 @@ export function adminSeasonBody({
       var r = await fetch('/admin/season/settings', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          season_format:       document.getElementById('season-format-input').value.trim(),
-          season_quota_amount: document.getElementById('quota-amount-input').value.trim(),
-          season_team_count:   document.getElementById('team-count-input').value.trim(),
-          jersey_top_price:    document.getElementById('jersey-top-price-input').value.trim(),
-          jersey_short_price:  document.getElementById('jersey-short-price-input').value.trim(),
+          season_format:          document.getElementById('season-format-input').value.trim(),
+          season_quota_amount:    document.getElementById('quota-amount-input').value.trim(),
+          season_team_count:      document.getElementById('team-count-input').value.trim(),
+          jersey_top_price:       document.getElementById('jersey-top-price-input').value.trim(),
+          jersey_short_price:     document.getElementById('jersey-short-price-input').value.trim(),
+          jersey_surcharge_step:  document.getElementById('jersey-surcharge-step-input').value.trim(),
+          jersey_pockets_price:   document.getElementById('jersey-pockets-price-input').value.trim(),
+          season_roster_capacity: document.getElementById('season-roster-capacity-input').value.trim(),
         })
       });
       if (!r.ok) throw new Error();

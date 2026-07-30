@@ -21,6 +21,7 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
   const awardsEnabled  = settings.awards_enabled   !== '0';
   const mvpEnabled     = settings.mvp_race_enabled !== '0';
   const papawisEnabled = settings.papawis_enabled  === '1';
+  const papawisRemindersEnabled = settings.papawis_reminders_enabled === '1';
 
   const sectionToggles = AWARD_SECTIONS.map(({ key, label }) => {
     const on = settings[key] !== '0';
@@ -99,6 +100,17 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
       </label>
     </div>
     <span id="papawis-msg" class="text-xs block mt-1 min-h-[16px]"></span>
+    <div class="flex items-center justify-between py-3 border-t border-admin-border/30 mt-1">
+      <div>
+        <div class="text-[13px] font-semibold text-slate-200">Send reminder &amp; cancellation emails</div>
+        <div class="text-xs text-slate-500 mt-0.5">Off by default — the hourly reminder scan and cancel-notice emails only fire once this is on.</div>
+      </div>
+      <label class="site-toggle" title="Toggle Papawis emails">
+        <input type="checkbox" id="toggle-papawis-reminders" ${papawisRemindersEnabled ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </div>
+    <span id="papawis-reminders-msg" class="text-xs block mt-1 min-h-[16px]"></span>
   </div>
 </div>
 
@@ -169,6 +181,7 @@ export function adminSiteBody({ seasons = [], quotas = {}, settings = {} } = {})
     });
   }
   bindToggle('toggle-papawis',  'papawis_enabled', 'papawis-msg');
+  bindToggle('toggle-papawis-reminders', 'papawis_reminders_enabled', 'papawis-reminders-msg');
   bindToggle('toggle-awards',   'awards_enabled');
   bindToggle('toggle-mvp-race', 'mvp_race_enabled');
 
