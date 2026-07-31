@@ -21,6 +21,7 @@ const IC = {
   shield:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1.5l5 1.8v3.6c0 3.6-2 6-5 6.9-3-.9-5-3.3-5-6.9V3.3l5-1.8z"/></svg>`,
   external:  `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8"/><polyline points="9.5 1 13 1 13 4.5"/><line x1="7" y1="7" x2="13" y2="1"/></svg>`,
   signout:   `<svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3"/><path d="M10 10.5l3-3-3-3"/><line x1="13" y1="7.5" x2="6" y2="7.5"/></svg>`,
+  chevron:   `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5L5 6l2.5-2.5"/></svg>`,
 };
 
 const NAV_GROUPS = [
@@ -117,9 +118,21 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
         ${soon ? `<span class="ml-auto text-[9px] font-bold uppercase tracking-wide text-slate-500 bg-white/[.06] px-1.5 py-0.5 rounded">Soon</span>` : ''}
       </a>`;
     }).join('');
+    const isGroupActive = items.some(({ href, exact }) =>
+      exact ? currentPath === href : currentPath.startsWith(href));
+    const collapsible = items.length > 1;
+    const open = !collapsible || isGroupActive;
+
+    const header = collapsible
+      ? `<button type="button" class="nav-group-toggle w-full flex items-center justify-between px-[18px] pt-1.5 pb-1 bg-transparent border-0 cursor-pointer text-slate-500/70 hover:text-slate-400 transition-colors" aria-expanded="${open}">
+          <span class="text-[9.5px] font-bold tracking-[.12em] uppercase">${escHtml(label)}</span>
+          <span class="nav-group-chevron transition-transform duration-150 ${open ? '' : '-rotate-90'}">${IC.chevron}</span>
+        </button>`
+      : `<div class="px-[18px] pt-1.5 pb-1 text-[9.5px] font-bold tracking-[.12em] uppercase text-slate-500/70">${escHtml(label)}</div>`;
+
     return `<div class="py-1.5 ${gi > 0 ? 'border-t border-admin-border mt-1.5 pt-2.5' : ''}">
-      <div class="px-[18px] pt-1.5 pb-1 text-[9.5px] font-bold tracking-[.12em] uppercase text-slate-500/70">${escHtml(label)}</div>
-      ${itemsHtml}
+      ${header}
+      <div class="nav-group-items ${open ? '' : 'hidden'}">${itemsHtml}</div>
     </div>`;
   }).join('');
 
@@ -206,6 +219,17 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
     function close() { sidebar.classList.remove('is-open'); overlay.classList.remove('is-open'); document.body.style.overflow = ''; }
     if (btn) btn.addEventListener('click', function() { sidebar.classList.contains('is-open') ? close() : open(); });
     overlay.addEventListener('click', close);
+
+    document.querySelectorAll('.nav-group-toggle').forEach(function(toggle) {
+      var itemsEl   = toggle.nextElementSibling;
+      var chevronEl = toggle.querySelector('.nav-group-chevron');
+      toggle.addEventListener('click', function() {
+        var willOpen = itemsEl.classList.contains('hidden');
+        itemsEl.classList.toggle('hidden', !willOpen);
+        chevronEl.classList.toggle('-rotate-90', !willOpen);
+        toggle.setAttribute('aria-expanded', String(willOpen));
+      });
+    });
   })();
   </script>
 
