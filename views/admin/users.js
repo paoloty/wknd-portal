@@ -25,29 +25,38 @@ function posChips(positions) {
   } catch { return '—'; }
 }
 
+function awaitingPassword(r) {
+  return r.status === 'approved' && !r.password_hash;
+}
+
 export function adminUsersBody({ registrations = [] } = {}) {
   const counts = {
-    all:      registrations.length,
-    pending:  registrations.filter(r => r.status === 'pending').length,
-    approved: registrations.filter(r => r.status === 'approved').length,
-    rejected: registrations.filter(r => r.status === 'rejected').length,
+    all:              registrations.length,
+    pending:          registrations.filter(r => r.status === 'pending').length,
+    approved:         registrations.filter(r => r.status === 'approved').length,
+    rejected:         registrations.filter(r => r.status === 'rejected').length,
+    awaiting_password: registrations.filter(awaitingPassword).length,
   };
 
-  const rows = registrations.map(r => `
-<tr class="border-b border-admin-border/50 last:border-0 hover:bg-white/[.015] transition-colors" data-status="${escHtml(r.status)}">
+  const rows = registrations.map(r => {
+    const filters = [r.status];
+    if (awaitingPassword(r)) filters.push('awaiting_password');
+    return `
+<tr class="border-b border-admin-border/50 last:border-0 hover:bg-white/[.015] transition-colors" data-filters="${escHtml(filters.join(' '))}">
   <td class="px-4 py-3">
     <div class="text-xs font-semibold text-slate-200 whitespace-nowrap">${escHtml(r.full_name)}</div>
     <div class="text-xs text-slate-500 mt-0.5">${escHtml(r.email)}</div>
   </td>
   <td class="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">${escHtml(r.phone || '—')}</td>
   <td class="px-4 py-3"><div class="flex gap-1 flex-wrap">${posChips(r.positions)}</div></td>
-  <td class="px-4 py-3">${badge(r.status)}</td>
+  <td class="px-4 py-3"><div class="flex gap-1 flex-wrap items-center">${badge(r.status)}${awaitingPassword(r) ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 whitespace-nowrap">⚠ Awaiting Password</span>` : ''}</div></td>
   <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(r.created_at)}</td>
   <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${r.approved_at ? fmtDate(r.approved_at) : '—'}</td>
   <td class="px-4 py-3 text-right">
     <a href="/admin/users/${escHtml(r.id)}" class="admin-btn admin-btn--sm no-underline whitespace-nowrap">Review ${ICON_CHEVRON_R}</a>
   </td>
-</tr>`).join('');
+</tr>`;
+  }).join('');
 
   return `
 <div class="mb-6 flex items-center justify-between gap-3">
@@ -62,6 +71,7 @@ export function adminUsersBody({ registrations = [] } = {}) {
   <button onclick="filterUsers('pending')"  id="f-pending"  class="agm-pill">Pending (${counts.pending})</button>
   <button onclick="filterUsers('approved')" id="f-approved" class="agm-pill">Approved (${counts.approved})</button>
   <button onclick="filterUsers('rejected')" id="f-rejected" class="agm-pill">Rejected (${counts.rejected})</button>
+  <button onclick="filterUsers('awaiting_password')" id="f-awaiting_password" class="agm-pill">Awaiting Password (${counts.awaiting_password})</button>
 </div>
 
 ${registrations.length === 0
@@ -88,10 +98,11 @@ ${registrations.length === 0
 <script>
 (function() {
   window.filterUsers = function(status) {
-    document.querySelectorAll('#f-all,#f-pending,#f-approved,#f-rejected').forEach(function(b) { b.classList.remove('is-active'); });
+    document.querySelectorAll('#f-all,#f-pending,#f-approved,#f-rejected,#f-awaiting_password').forEach(function(b) { b.classList.remove('is-active'); });
     document.getElementById('f-' + status).classList.add('is-active');
     document.querySelectorAll('#users-tbody tr').forEach(function(tr) {
-      tr.style.display = (status === 'all' || tr.dataset.status === status) ? '' : 'none';
+      var filters = (' ' + tr.dataset.filters + ' ');
+      tr.style.display = (status === 'all' || filters.indexOf(' ' + status + ' ') !== -1) ? '' : 'none';
     });
   };
 })();
