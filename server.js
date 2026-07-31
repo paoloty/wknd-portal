@@ -9,7 +9,8 @@ import express from 'express';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail } from './lib/mailer.js';
+import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail } from './lib/mailer.js';
+import { detectBogusFlags } from './lib/registration-flags.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import sharp from 'sharp';
 import QRCode from 'qrcode';
@@ -76,7 +77,8 @@ import {
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
-  setRegistrationAdmin, insertAdminLog, getAdminLogs, updateRegBirthday,
+  setRegistrationAdmin, insertAdminLog, getAdminLogs, getAdminLogsForUser, updateRegBirthday,
+  setRegistrationLastLogin, setRegistrationSensitiveAccess,
   createPlayer, mergeRegistrationIntoPlayer, playerHasActivity, deletePlayer,
   getSeasonStandings, getPlayoffGames,
   getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
@@ -101,6 +103,7 @@ import { adminVisibilityBody } from './views/admin/visibility.js';
 import { awardGraphicEditorBody } from './views/admin/award-graphic-editor.js';
 import { adminUsersBody }       from './views/admin/users.js';
 import { adminUserDetailBody }  from './views/admin/user-detail.js';
+import { adminPrivilegesBody }  from './views/admin/privileges.js';
 import { adminLogsPage }        from './views/admin/logs.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
@@ -1813,6 +1816,14 @@ function requireSuperAdmin(req, res, next) {
   res.status(403).send(renderAdminPage(req, { title: 'Forbidden', currentPath: '', body: '<p style="padding:40px;color:var(--text-muted)">Super admin access required.</p>' }));
 }
 
+// Looked up fresh per request (not session-cached) so a super admin revoking this flag
+// takes effect immediately, not on the elevated admin's next login.
+function canViewSensitiveData(req) {
+  if (!req.session?.isElevatedPlayer) return true;
+  const self = getRegistration(req.session.playerRegId);
+  return !!self?.can_view_sensitive;
+}
+
 // Log all mutating admin actions (skip GETs and file uploads)
 app.use('/admin', (req, res, next) => {
   if (req.method === 'GET' || !req.session?.isAdmin) return next();
@@ -2265,6 +2276,7 @@ app.post('/login', (req, res) => {
       return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'No password set yet — check your email for the setup link.', ref, next }) }));
     }
     if (checkPlayerPassword(password, reg.password_hash)) {
+      setRegistrationLastLogin(reg.id);
       req.session.playerRegId    = reg.id;
       req.session.playerPlayerId = reg.player_id;
       if (reg.is_admin) {
@@ -2480,22 +2492,50 @@ app.get('/admin/registrations', requireAuth, (req, res) => res.redirect('/admin/
 
 app.get('/admin/users', requireAuth, (req, res) => {
   const registrations = getAllRegistrations();
+  const withFlags = registrations.map(r => ({ ...r, bogusFlags: detectBogusFlags(r, registrations) }));
   res.send(renderAdminPage(req, {
     title: 'Users',
     currentPath: '/admin/users',
-    body: adminUsersBody({ registrations }),
+    body: adminUsersBody({ registrations: withFlags, canViewSensitive: canViewSensitiveData(req) }),
   }));
 });
+
+// Compares only the fields a linked registration would actually push into the player
+// record (mirrors mergeRegistrationIntoPlayer's own skip-if-blank behavior) — an empty
+// registration field is never a "mismatch", it just means that field was never collected.
+function computeSyncDiff(reg, player) {
+  if (!player) return { inSync: true, mismatches: [] };
+  const mismatches = [];
+  const parts     = (reg.full_name || '').split(',');
+  const regLast   = (parts[0] || '').trim();
+  const regFirst  = (parts[1] || '').trim();
+  if ((regFirst || regLast) && (regFirst !== (player.first_name || '') || regLast !== (player.last_name || ''))) mismatches.push('name');
+  if (reg.birthday && reg.birthday !== (player.birthday || '')) mismatches.push('birthday');
+  if (reg.motto && reg.motto.trim() !== (player.writeup || '')) mismatches.push('bio');
+  let regPositions = [];
+  try { regPositions = JSON.parse(reg.positions || '[]'); } catch {}
+  let playerPositions = [];
+  try { playerPositions = JSON.parse(player.positions || '[]'); } catch {}
+  if (regPositions.length && JSON.stringify([...regPositions].sort()) !== JSON.stringify([...playerPositions].sort())) mismatches.push('positions');
+  if (reg.height && reg.height !== (player.height || '')) mismatches.push('height');
+  if (reg.weight && reg.weight !== (player.weight || '')) mismatches.push('weight');
+  if (reg.dominant_hand && reg.dominant_hand !== (player.dominant_hand || '')) mismatches.push('dominant hand');
+  return { inSync: mismatches.length === 0, mismatches };
+}
 
 app.get('/admin/users/:id', requireAuth, (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/users', body: '<p class="text-slate-500">Registration not found.</p>' }));
   const players      = getAllPlayers();
   const linkedPlayer = reg.player_id ? players.find(p => p.id === reg.player_id) : null;
+  const isSuperAdmin = !req.session?.isElevatedPlayer;
+  const { inSync }   = reg.player_id ? computeSyncDiff(reg, getPlayerWithTeam(reg.player_id)) : { inSync: true };
+  const bogusFlags    = detectBogusFlags(reg, getAllRegistrations());
+  const canViewSensitive = canViewSensitiveData(req);
   res.send(renderAdminPage(req, {
     title: reg.full_name,
     currentPath: '/admin/users',
-    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin: !req.session?.isElevatedPlayer }),
+    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin, inSync, bogusFlags, canViewSensitive }),
   }));
 });
 
@@ -2552,7 +2592,7 @@ app.post('/admin/users/:id/create', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true, player_id: newPlayerId });
 });
 
-app.post('/admin/users/:id/sync', requireAuth, express.json(), (req, res) => {
+app.post('/admin/users/:id/sync', requireSuperAdmin, express.json(), (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
   if (!reg.player_id) return res.status(400).json({ error: 'No player linked to this registration.' });
@@ -2560,10 +2600,26 @@ app.post('/admin/users/:id/sync', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/admin/users/:id/reset', requireAuth, express.json(), (req, res) => {
+app.post('/admin/users/:id/reset', requireSuperAdmin, express.json(), (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
   updateRegistration(reg.id, { status: 'pending', player_id: '', notes: '', approved_at: 0 });
+  res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/send-reset', requireAuth, express.json(), async (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  if (reg.status !== 'approved') return res.status(400).json({ error: 'User must be approved first.' });
+  if (!reg.email) return res.status(400).json({ error: 'This user has no email on file.' });
+  const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
+  const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
+  try {
+    await sendMail({ to: reg.email, ...resetPasswordEmail({ name, setPasswordUrl, isReset: !!reg.password_hash }) });
+  } catch (e) {
+    console.error('[mailer]', e.message);
+    return res.status(500).json({ error: 'Failed to send email.' });
+  }
   res.json({ ok: true });
 });
 
@@ -2596,6 +2652,14 @@ app.post('/admin/users/:id/toggle-admin', requireSuperAdmin, express.json(), (re
   res.json({ ok: true, is_admin: !reg.is_admin });
 });
 
+app.post('/admin/users/:id/toggle-sensitive', requireSuperAdmin, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  if (!reg.is_admin) return res.status(400).json({ error: 'User must be an admin first.' });
+  setRegistrationSensitiveAccess(reg.id, !reg.can_view_sensitive);
+  res.json({ ok: true, can_view_sensitive: !reg.can_view_sensitive });
+});
+
 app.get('/admin/coach-notes', requireAuth, (req, res) => {
   const analyses = getAllCoachAnalyses();
   res.send(renderAdminPage(req, {
@@ -2605,12 +2669,25 @@ app.get('/admin/coach-notes', requireAuth, (req, res) => {
   }));
 });
 
+app.get('/admin/privileges', requireSuperAdmin, (req, res) => {
+  const registrations = getAllRegistrations();
+  const admins     = registrations.filter(r => r.is_admin);
+  const candidates = registrations.filter(r => r.status === 'approved' && !r.is_admin);
+  res.send(renderAdminPage(req, {
+    title: 'Admin Privileges',
+    currentPath: '/admin/privileges',
+    body: adminPrivilegesBody({ admins, candidates }),
+  }));
+});
+
 app.get('/admin/logs', requireSuperAdmin, (req, res) => {
-  const logs = getAdminLogs(500);
+  const userId = req.query.user;
+  const filterReg = userId ? getRegistration(userId) : null;
+  const logs = filterReg ? getAdminLogsForUser(filterReg.id, filterReg.email, 500) : getAdminLogs(500);
   res.send(renderAdminPage(req, {
     title: 'Admin Logs',
     currentPath: '/admin/logs',
-    body: adminLogsPage({ logs }),
+    body: adminLogsPage({ logs, filterLabel: filterReg ? filterReg.full_name : null }),
   }));
 });
 

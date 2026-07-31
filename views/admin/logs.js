@@ -19,7 +19,7 @@ function actorBadge(type) {
   return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#a78bfa;background:rgba(167,139,250,.12);padding:1px 6px;border-radius:4px">Admin</span>`;
 }
 
-export function adminLogsPage({ logs = [] }) {
+export function adminLogsPage({ logs = [], filterLabel = null }) {
   const rows = logs.map(l => {
     let details = '';
     try {
@@ -40,8 +40,12 @@ export function adminLogsPage({ logs = [] }) {
   return `
 <div class="mb-6 flex items-center justify-between">
   <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">Admin Logs</h2>
-    <p class="text-xs text-slate-500 mt-0.5">Admin actions and player account activity (email opens, password setup, logins) — visible to super admin only</p>
+    <h2 class="text-xl font-bold tracking-tight text-slate-100">${filterLabel ? `Activity for ${escHtml(filterLabel)}` : 'Admin Logs'}</h2>
+    <p class="text-xs text-slate-500 mt-0.5">
+      ${filterLabel
+        ? `<a href="/admin/logs" class="text-brand hover:underline">Clear filter</a> — showing only actions on and by this user`
+        : 'Admin actions and player account activity (email opens, password setup, logins) — visible to super admin only'}
+    </p>
   </div>
   <span class="text-xs text-slate-600">${logs.length} entries</span>
 </div>

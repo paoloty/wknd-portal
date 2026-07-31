@@ -49,7 +49,18 @@ function categoryOpts(selected = '') {
   return CATEGORIES.map(c => `<option value="${escHtml(c)}"${selected === c ? ' selected' : ''}>${escHtml(c)}</option>`).join('');
 }
 
-function addTransactionForm(playerId, today, season) {
+// Dropdown of known season values only — no free-text entry, so a manually
+// added transaction can never end up with a malformed season like "Season 3"
+// instead of "3" (which is what broke the Awards page season tabs before).
+// Always includes `selected` even if it's not otherwise in `seasons`, so the
+// currently-filtered season stays choosable even before it has any
+// transactions of its own yet.
+function seasonOpts(seasons, selected = '') {
+  const all = selected && !seasons.includes(selected) ? [selected, ...seasons] : seasons;
+  return all.map(s => `<option value="${escHtml(s)}"${String(s) === String(selected) ? ' selected' : ''}>Season ${escHtml(String(s))}</option>`).join('');
+}
+
+function addTransactionForm(playerId, today, season, seasons = []) {
   return `<div id="lgr-msg" hidden class="rounded-lg text-[13px] px-3.5 py-2.5 mb-3.5"></div>
   <form id="lgr-form">
     <input type="hidden" name="player_id" value="${escHtml(playerId)}">
@@ -91,7 +102,7 @@ function addTransactionForm(playerId, today, season) {
       </div>
       <div>
         <label class="admin-field-label">Season</label>
-        <input type="text" name="season" class="admin-input mt-1" value="${escHtml(season)}" placeholder="e.g. Season 3">
+        <select name="season" class="admin-input mt-1">${seasonOpts(seasons, season)}</select>
       </div>
       <div>
         <label class="admin-field-label">Notes</label>
@@ -293,7 +304,7 @@ ${summaryStrip}
       </div>
       <div>
         <label class="admin-field-label">Season</label>
-        <input type="text" id="blk-season" class="admin-input mt-1" value="${escHtml(season)}" placeholder="e.g. Season 3">
+        <select id="blk-season" class="admin-input mt-1">${seasonOpts(seasons, season)}</select>
       </div>
       <div class="col-span-3">
         <label class="admin-field-label">Notes</label>
@@ -534,7 +545,7 @@ ${seasons.length ? `<div class="mb-4 flex flex-wrap items-center gap-1.5">
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
   <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Add Transaction</div>
   <div class="p-5">
-    ${addTransactionForm(player.id, today, season)}
+    ${addTransactionForm(player.id, today, season, seasons)}
   </div>
 </div>
 
