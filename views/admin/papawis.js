@@ -74,6 +74,24 @@ function activityTableHead(showGame) {
 
 const signupOpenNow = isPapawisSignupOpenNow;
 
+function papawisTeamLabel(team) {
+  if (team === 'light') return 'Light';
+  if (team === 'dark')  return 'Dark';
+  return '—';
+}
+
+// Read-only stand-in for the interactive confirmed/waitlist board once a roster is
+// locked — a plain table is simpler and less error-prone than trying to keep half the
+// drag/move affordances alive on a list that shouldn't actually change anymore.
+function lockedSummaryRow(s) {
+  const name = s.guest_name ? escHtml(s.guest_name) : escHtml(displayPlayerName(s.player_name));
+  return `<tr class="border-b border-admin-border/50 last:border-b-0">
+    <td class="px-4 py-2.5 text-sm font-medium text-slate-200">${name}${s.guest_name ? ' <span class="text-xs text-slate-500">(guest)</span>' : ''}</td>
+    <td class="px-4 py-2.5 text-xs">${s.status === 'confirmed' ? '<span class="agm-badge agm-badge--green">Confirmed</span>' : '<span class="agm-badge agm-badge--amber">Waitlist</span>'}</td>
+    <td class="px-4 py-2.5 text-xs text-slate-400">${papawisTeamLabel(s.team)}</td>
+  </tr>`;
+}
+
 function statusBadge(game) {
   if (game.status === 'cancelled') return `<span class="agm-badge agm-badge--gray">Cancelled</span>`;
   if (game.status === 'completed') return `<span class="agm-badge agm-badge--blue">Completed</span>`;
@@ -297,6 +315,10 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   const isCompleted = game.status === 'completed';
   const isCancelled = game.status === 'cancelled';
   const isScheduled = isOpen && !signupOpenNow(game);
+  // Manual lock — set once an admin has actually sent the list out (e.g. "Copy for
+  // Messenger"), independent of the automated reminder-email setting. While locked, the
+  // whole roster/teams editing surface is swapped for a static summary table.
+  const isLocked    = !!game.signups_locked_at;
   const defaultPrice = defaultPapawisPrice(confirmed.length);
   // Admin can build/edit teams whenever — this only controls what the "Teams" panel
   // tells them about whether players can currently see the split (see the matching
@@ -311,9 +333,9 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     name: displayPlayerName(p.name) + (p.team_name ? ' — ' + p.team_name : ''),
   }));
 
-  // Read-only once a game is completed/cancelled — no drag handle, no move/remove
+  // Read-only once a game is completed/cancelled/locked — no drag handle, no move/remove
   // controls, matches the old table's own gating on the Remove button.
-  const canManage = !isCompleted && !isCancelled;
+  const canManage = !isCompleted && !isCancelled && !isLocked;
 
   const signupRow = (s) => {
     const name = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
@@ -350,12 +372,31 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ${isScheduled ? `<span class="text-xs text-slate-500">Sign-ups open ${fmtDate(addDaysStr(game.date, -game.open_days_before))}, 8:00 AM</span>` : ''}
     <a href="/papawis" target="_blank" class="agm-view-link">View on site ↗</a>
     <button id="pw-copy-messenger" type="button" class="admin-btn admin-btn--sm">📋 Copy for Messenger</button>
+    ${isOpen ? `<button id="pw-lock-btn" type="button" class="admin-btn admin-btn--sm" data-locked="${isLocked ? '1' : '0'}">${isLocked ? '🔓 Unlock Roster' : '🔒 Lock Roster'}</button>` : ''}
   </div>
 </div>
 
 <div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_320px] items-start">
 
   <div class="flex flex-col gap-4 min-w-0">
+    ${isLocked ? `
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Roster — ${confirmed.length}/${game.max_slots}${waitlist.length ? ` · ${waitlist.length} waiting` : ''}</span>
+        <span class="text-[11px] text-slate-500">🔒 Locked — read only</span>
+      </div>
+      <table class="w-full border-collapse">
+        <thead><tr>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Name</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Status</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Team</th>
+        </tr></thead>
+        <tbody>
+          ${[...confirmed, ...waitlist].map(lockedSummaryRow).join('') || `<tr><td colspan="3" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    ` : `
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div class="pw-panel pw-panel--confirmed bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
         <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between">
@@ -403,6 +444,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
       <div id="pw-add-msg" class="px-4 pb-3 text-xs text-error" style="display:none"></div>
     </div>
     ` : ''}
+    `}
 
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Activity Log</div>
@@ -414,7 +456,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   </div>
 
   <div class="flex flex-col gap-4">
-    ${isOpen ? `
+    ${isOpen && !isLocked ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Teams</div>
       <div class="p-4 flex flex-col gap-2">
@@ -422,9 +464,11 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         <p class="text-[11px] ${teamsPubliclyVisible ? 'text-emerald-400' : 'text-slate-600'}">${teamsPubliclyVisible
           ? '● Visible to players now.'
           : `○ Not visible to players yet — needs to be full (${confirmed.length}/${game.max_slots}) and within ${PAPAWIS_CUTOFF_DAYS} days of game day.`}</p>
-        <a href="/admin/papawis/${escHtml(game.id)}/teams" class="agm-new-btn">Create Teams</a>
+        <a href="/admin/papawis/${escHtml(game.id)}/teams" class="agm-new-btn">${confirmed.some(s => s.team) ? 'View Teams' : 'Create Teams'}</a>
       </div>
     </div>
+    ` : ''}
+    ${isOpen ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Close out</div>
       <div class="p-4 flex flex-col gap-3">
@@ -522,6 +566,22 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     lines.push('');
     lines.push('💸 After the game, you can settle up anytime through your Portal account — totally optional, you can always just send payment straight to an admin instead.');
     return lines.join('\\n');
+  }
+
+  var lockBtn = document.getElementById('pw-lock-btn');
+  if (lockBtn) {
+    lockBtn.addEventListener('click', function() {
+      var locked = lockBtn.dataset.locked === '1';
+      var msg = locked
+        ? 'Unlock this roster? You\\'ll be able to edit signups and teams again.'
+        : 'Lock this roster? Signups and teams become read-only until you unlock it.';
+      if (!confirm(msg)) return;
+      lockBtn.disabled = true;
+      fetch('/admin/papawis/' + gameId + '/' + (locked ? 'unlock' : 'lock'), { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Failed'); lockBtn.disabled = false; } })
+        .catch(function() { alert('Network error'); lockBtn.disabled = false; });
+    });
   }
 
   var copyBtn = document.getElementById('pw-copy-messenger');

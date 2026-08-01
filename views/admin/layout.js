@@ -17,6 +17,7 @@ const IC = {
   activity:  `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7.5H4L5.5 3L7 12L8.5 7.5H14"/></svg>`,
   posts:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="12" height="11" rx="1.2"/><rect x="3" y="3.5" width="4" height="3.2" rx="0.5"/><path d="M8.5 4h3.3M8.5 6h3.3"/><path d="M3 8.7h9M3 10.5h9M3 12.2h5.5"/></svg>`,
   visibility: `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7.5C2.5 4 5 2.5 7.5 2.5S12.5 4 14 7.5C12.5 11 10 12.5 7.5 12.5S2.5 11 1 7.5Z"/><circle cx="7.5" cy="7.5" r="2"/></svg>`,
+  seo:        `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="5"/><path d="M10.2 10.2L14 14"/></svg>`,
   wallet:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="4" width="12" height="9" rx="1.5"/><path d="M1.5 6.5h12"/><circle cx="10.5" cy="9.75" r=".9" fill="currentColor" stroke="none"/></svg>`,
   shield:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1.5l5 1.8v3.6c0 3.6-2 6-5 6.9-3-.9-5-3.3-5-6.9V3.3l5-1.8z"/></svg>`,
   external:  `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8"/><polyline points="9.5 1 13 1 13 4.5"/><line x1="7" y1="7" x2="13" y2="1"/></svg>`,
@@ -46,6 +47,7 @@ const NAV_GROUPS = [
       { href: '/admin/posts',       label: 'Posts',       icon: 'posts' },
       { href: '/admin/coach-notes', label: 'Coach Notes', icon: 'coach' },
       { href: '/admin/compare',     label: 'Compares',    icon: 'compare' },
+      { href: '/admin/seo',         label: 'SEO Overrides', icon: 'seo' },
     ],
   },
   {
@@ -142,6 +144,9 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escHtml(title)} — WKND Admin</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon-32.png" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">

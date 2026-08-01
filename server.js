@@ -88,9 +88,11 @@ import {
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
+  lockPapawisSignups, unlockPapawisSignups,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
   getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
+  getSeoOverride, getAllSeoOverrides, upsertSeoOverride, deleteSeoOverride,
   db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -123,6 +125,7 @@ import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails } from './lib/papawis-notify.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
+import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1303,7 +1306,13 @@ function renderPage(req, opts) {
     `<meta name="twitter:image" content="${escAttr(fallbackImg)}">`,
   ].join('\n  ');
   const existing = opts.metaTags || '';
-  const metaTags = existing.includes('og:image') ? existing : (existing ? existing + '\n  ' + fallbackMeta : fallbackMeta);
+  let metaTags = existing.includes('og:image') ? existing : (existing ? existing + '\n  ' + fallbackMeta : fallbackMeta);
+  let title = opts.title;
+  const seoOverride = getSeoOverride(req.path);
+  if (seoOverride) {
+    if (seoOverride.title) title = seoOverride.title;
+    metaTags = applySeoOverrideTags(metaTags, seoOverride, title);
+  }
   const isPlayer   = !!req.session?.playerRegId;
   const isLoggedIn = !!req.session?.isAdmin || isPlayer;
 
@@ -1350,7 +1359,44 @@ function renderPage(req, opts) {
   }
 
   const body = balanceBarHtml + bannerHtml + (opts.body || '');
-  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), ...opts, body, metaTags });
+  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), origin, ...opts, title, body, metaTags });
+}
+
+// Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
+// normal meta tags — only the fields the admin actually set are touched, so a page's
+// existing og:image (or the sitewide fallback added just above) survives untouched
+// when an override only sets e.g. a title.
+function applySeoOverrideTags(metaTags, override, effectiveTitle) {
+  let mt = metaTags;
+  if (override.title) {
+    mt = mt.replace(/<meta property="og:title"[^>]*>\n?\s*/g, '')
+           .replace(/<meta name="twitter:title"[^>]*>\n?\s*/g, '');
+    mt += `\n  <meta property="og:title" content="${escAttr(effectiveTitle)}">`;
+    mt += `\n  <meta name="twitter:title" content="${escAttr(effectiveTitle)}">`;
+  }
+  if (override.description) {
+    mt = mt.replace(/<meta name="description"[^>]*>\n?\s*/g, '')
+           .replace(/<meta property="og:description"[^>]*>\n?\s*/g, '')
+           .replace(/<meta name="twitter:description"[^>]*>\n?\s*/g, '');
+    mt += `\n  <meta name="description" content="${escAttr(override.description)}">`;
+    mt += `\n  <meta property="og:description" content="${escAttr(override.description)}">`;
+    mt += `\n  <meta name="twitter:description" content="${escAttr(override.description)}">`;
+  }
+  if (override.image_url) {
+    mt = mt.replace(/<meta property="og:image[^"]*"[^>]*>\n?\s*/g, '')
+           .replace(/<meta name="twitter:image"[^>]*>\n?\s*/g, '')
+           .replace(/<meta name="twitter:card"[^>]*>\n?\s*/g, '');
+    mt += [
+      `\n  <meta property="og:image" content="${escAttr(override.image_url)}">`,
+      `\n  <meta property="og:image:secure_url" content="${escAttr(override.image_url)}">`,
+      `\n  <meta property="og:image:type" content="image/jpeg">`,
+      `\n  <meta property="og:image:width" content="1200">`,
+      `\n  <meta property="og:image:height" content="630">`,
+      `\n  <meta name="twitter:card" content="summary_large_image">`,
+      `\n  <meta name="twitter:image" content="${escAttr(override.image_url)}">`,
+    ].join('');
+  }
+  return mt;
 }
 
 function renderAdminPage(req, opts) {
@@ -3723,6 +3769,70 @@ app.get('/', (req, res) => {
   }));
 });
 
+app.get('/robots.txt', (req, res) => {
+  const origin = getRequestOrigin(req);
+  res.type('text/plain').send(
+`User-agent: *
+Disallow: /admin/
+Disallow: /login
+Disallow: /logout
+Disallow: /set-password
+Disallow: /me
+Disallow: /settle-balance
+Disallow: /balance-bar/
+Disallow: /auth/
+
+Sitemap: ${origin}/sitemap.xml
+`);
+});
+
+// Regenerated fresh on every request from live DB rows — new games, players, teams,
+// and posts show up here automatically the moment they exist, with no separate build
+// or regeneration step needed.
+app.get('/sitemap.xml', (req, res) => {
+  const origin = getRequestOrigin(req);
+  const flags  = getFeatureFlags();
+  const isoDate = ms => ms ? new Date(ms).toISOString().slice(0, 10) : undefined;
+
+  const urls = [
+    { loc: '/',           priority: '1.0', changefreq: 'daily' },
+    { loc: '/games',      priority: '0.8', changefreq: 'daily' },
+    { loc: '/standings',  priority: '0.8', changefreq: 'daily' },
+    { loc: '/playoffs',   priority: '0.6', changefreq: 'weekly' },
+    { loc: '/teams',      priority: '0.7', changefreq: 'weekly' },
+    { loc: '/players',    priority: '0.7', changefreq: 'weekly' },
+    { loc: '/leaders',    priority: '0.7', changefreq: 'daily' },
+    { loc: '/roast',      priority: '0.5', changefreq: 'weekly' },
+  ];
+  if (flags.awards)  urls.push({ loc: '/awards', priority: '0.5', changefreq: 'monthly' });
+  if (flags.mvpRace) urls.push({ loc: '/mvp',    priority: '0.5', changefreq: 'weekly' });
+  if (flags.papawis) urls.push({ loc: '/papawis', priority: '0.5', changefreq: 'weekly' });
+  if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
+
+  for (const t of getAllTeams())   urls.push({ loc: `/teams/${teamSlug(t)}`,     priority: '0.6', changefreq: 'weekly' });
+  for (const p of getAllPlayers()) urls.push({ loc: `/players/${playerSlug(p)}`, priority: '0.5', changefreq: 'weekly' });
+  for (const g of getAllGames()) {
+    if (g.under_review) continue;
+    urls.push({ loc: `/games/${gameSlug(g)}`, priority: '0.5', changefreq: 'monthly', lastmod: isoDate(Date.parse(g.date)) });
+  }
+  if (flags.posts) {
+    for (const post of getPublicPosts()) {
+      urls.push({ loc: `/posts/${post.slug}`, priority: '0.5', changefreq: 'monthly', lastmod: isoDate(post.updated_at) });
+    }
+  }
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map(u => `  <url>
+    <loc>${origin}${u.loc}</loc>
+${u.lastmod ? `    <lastmod>${u.lastmod}</lastmod>\n` : ''}    <changefreq>${u.changefreq}</changefreq>
+    <priority>${u.priority}</priority>
+  </url>`).join('\n')}
+</urlset>
+`;
+  res.type('application/xml').send(xml);
+});
+
 app.get('/games/:ref', (req, res) => {
   const resolved = resolveRef('game', req.params.ref,
     ref => getGameById(ref),
@@ -3911,6 +4021,77 @@ app.delete('/admin/posts/:id', requireAuth, (req, res) => {
   const post = getPostById(req.params.id);
   if (!post) return res.status(404).json({ error: 'Not found' });
   deletePost(post.id);
+  res.json({ ok: true });
+});
+
+// SEO Overrides — manual, per-slug title/description/cover overrides (Yoast-style).
+// Routes take the slug in the request body/query (never the URL path) since slugs
+// are full page paths like "/games/<id>" and would otherwise collide with Express's
+// own route matching.
+async function compressSeoImage(dataUrl) {
+  const match = String(dataUrl).match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return '';
+  const inputBuffer = Buffer.from(match[2], 'base64');
+  const compressed = await sharp(inputBuffer)
+    .resize(1200, 630, { fit: 'cover' })
+    .jpeg({ quality: 82, progressive: true })
+    .toBuffer();
+  return 'data:image/jpeg;base64,' + compressed.toString('base64');
+}
+
+app.get('/admin/seo', requireAuth, (req, res) => {
+  const overrides = getAllSeoOverrides();
+  res.send(renderAdminPage(req, {
+    title: 'SEO Overrides',
+    currentPath: '/admin/seo',
+    body: adminSeoListBody({ overrides }),
+  }));
+});
+
+app.get('/admin/seo/new', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'New SEO Override',
+    currentPath: '/admin/seo',
+    body: adminSeoEditorBody({ override: null }),
+  }));
+});
+
+app.get('/admin/seo/edit', requireAuth, (req, res) => {
+  const slug = String(req.query.slug || '');
+  const override = getSeoOverride(slug);
+  if (!override) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/seo', body: '<p style="color:var(--text-muted);padding:40px">Override not found.</p>' }));
+  res.send(renderAdminPage(req, {
+    title: `Edit — ${override.slug}`,
+    currentPath: '/admin/seo',
+    body: adminSeoEditorBody({ override }),
+  }));
+});
+
+app.post('/admin/seo', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const slug = String(req.body.slug || '').trim();
+  if (!slug || !slug.startsWith('/')) return res.status(400).json({ error: 'Slug must start with /' });
+  if (getSeoOverride(slug)) return res.status(400).json({ error: 'An override for this slug already exists.' });
+  let imageUrl = req.body.image_url || '';
+  if (imageUrl.startsWith('data:')) imageUrl = await compressSeoImage(imageUrl);
+  upsertSeoOverride({ slug, title: req.body.title || '', description: req.body.description || '', image_url: imageUrl });
+  res.json({ ok: true, slug });
+});
+
+app.post('/admin/seo/update', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const slug = String(req.body.slug || '').trim();
+  const existing = getSeoOverride(slug);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  let imageUrl = req.body.image_url;
+  if (imageUrl === undefined) imageUrl = existing.image_url;
+  else if (imageUrl.startsWith('data:')) imageUrl = await compressSeoImage(imageUrl);
+  upsertSeoOverride({ slug, title: req.body.title || '', description: req.body.description || '', image_url: imageUrl || '' });
+  res.json({ ok: true });
+});
+
+app.post('/admin/seo/delete', requireAuth, express.json(), (req, res) => {
+  const slug = String(req.body.slug || '').trim();
+  if (!getSeoOverride(slug)) return res.status(404).json({ error: 'Not found' });
+  deleteSeoOverride(slug);
   res.json({ ok: true });
 });
 
@@ -6241,6 +6422,31 @@ app.get('/admin/papawis/activity', requireAuth, (req, res) => {
   }));
 });
 
+// Defense-in-depth for the mutation routes below — the admin UI hides the interactive
+// controls once a game's roster is locked, but a locked game's signups/teams shouldn't be
+// mutable via a direct request either. Returns null (and has already sent a response) if
+// the game doesn't exist or is locked, so callers can just `if (!game) return;`.
+function papawisLockCheck(gameId, res) {
+  const game = getPapawisGame(gameId);
+  if (!game) { res.status(404).json({ error: 'Not found.' }); return null; }
+  if (game.signups_locked_at) { res.status(400).json({ error: 'Roster is locked. Unlock it first.' }); return null; }
+  return game;
+}
+
+app.post('/admin/papawis/:id/lock', requireAuth, (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  lockPapawisSignups(game.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/papawis/:id/unlock', requireAuth, (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  unlockPapawisSignups(game.id);
+  res.json({ ok: true });
+});
+
 app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).send('Not found');
@@ -6265,6 +6471,7 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
 app.get('/admin/papawis/:id/teams', requireAuth, (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).send('Not found');
+  if (game.signups_locked_at) return res.redirect(`/admin/papawis/${game.id}`);
   let roster = getPapawisConfirmedForTeams(req.params.id);
   if (roster.length && roster.every(r => !r.team)) {
     setPapawisTeams(buildBalancedTeams(roster));
@@ -6278,12 +6485,14 @@ app.get('/admin/papawis/:id/teams', requireAuth, (req, res) => {
 });
 
 app.post('/admin/papawis/:id/teams/reshuffle', requireAuth, (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
   const roster = getPapawisConfirmedForTeams(req.params.id);
   setPapawisTeams(buildBalancedTeams(roster));
   res.json({ ok: true });
 });
 
 app.post('/admin/papawis/:id/teams/assign', requireAuth, express.json(), (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
   const { signup_id, team } = req.body;
   const result = setPapawisSignupTeam(signup_id, team);
   if (result.error) return res.status(400).json({ error: 'Could not move.' });
@@ -6291,6 +6500,7 @@ app.post('/admin/papawis/:id/teams/assign', requireAuth, express.json(), (req, r
 });
 
 app.post('/admin/papawis/:id/teams/reorder', requireAuth, express.json(), (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
   const team = req.body.team === 'dark' ? 'dark' : 'light';
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string') : [];
   reorderPapawisTeam(req.params.id, team, ids);
@@ -6298,6 +6508,7 @@ app.post('/admin/papawis/:id/teams/reorder', requireAuth, express.json(), (req, 
 });
 
 app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
   const { player_id, status, guest_names } = req.body;
   if (!player_id) return res.status(400).json({ error: 'Select a player.' });
   const st = status === 'waitlist' ? 'waitlist' : 'confirmed';
@@ -6320,12 +6531,14 @@ app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
 });
 
 app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
   const result = adminRemovePapawisSignup(req.params.signupId);
   if (result.error) return res.status(400).json({ error: 'Could not remove.' });
   res.json({ ok: true });
 });
 
 app.post('/admin/papawis/:id/signups/:signupId/status', requireAuth, express.json(), (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
   const status = req.body.status === 'confirmed' ? 'confirmed' : 'waitlist';
   const result = setPapawisSignupStatus(req.params.signupId, status);
   if (result.error === 'full') return res.status(400).json({ error: 'Confirmed list is full.' });
@@ -6334,6 +6547,7 @@ app.post('/admin/papawis/:id/signups/:signupId/status', requireAuth, express.jso
 });
 
 app.post('/admin/papawis/:id/signups/reorder', requireAuth, express.json(), (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
   const status = req.body.status === 'confirmed' ? 'confirmed' : 'waitlist';
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string') : [];
   reorderPapawisSignups(req.params.id, status, ids);

@@ -310,6 +310,10 @@
 .agm-new-btn:hover  { opacity: .88; }
 .agm-new-btn:active { opacity: .78; }
 .agm-new-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* .agm-new-btn is mostly used on <button>s, but a few (e.g. "Create/View Teams") are
+   real <a> links — the only ones that can ever hit :visited. Restate the color there
+   explicitly so a visited link never silently reverts to the browser's default link color. */
+a.agm-new-btn:visited { color: #020817; }
 
 /* Secondary (outlined) */
 .admin-btn {
