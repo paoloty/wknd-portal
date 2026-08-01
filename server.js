@@ -23,7 +23,7 @@ import { gamePage } from './views/game.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
-import { playoffsPage } from './views/playoffs.js';
+import { playoffsPage, computeSeeds } from './views/playoffs.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
@@ -50,7 +50,7 @@ import {
   getPlayerCareerHighs, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
   getPlayerStatsByType,
   upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
-  getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames,
+  getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, markGameFinal, setGameOvertime, createGame,
@@ -1124,6 +1124,38 @@ const _awardOgCache = new Map();
 function buildTicker() {
   const games = getTickerGames();
   if (!games.length) return '';
+
+  // Semifinal series are "twice to beat" — need each game's higher seed to detect a clinch
+  // (see getSeriesRecordForGame's highTeamId param). Seeds only depend on regular-season
+  // standings, so compute them once per season actually needed instead of per game.
+  const seedsBySeason = new Map();
+  const seedsFor = (season) => {
+    if (!seedsBySeason.has(season)) seedsBySeason.set(season, computeSeeds(getSeasonStandings(season)));
+    return seedsBySeason.get(season);
+  };
+
+  for (const g of games) {
+    if (g.game_type !== 'playoff' && g.game_type !== 'finals') continue;
+
+    let highTeamId = null;
+    if (g.game_type === 'playoff') {
+      const seeds = seedsFor(g.season);
+      const idxA = seeds.findIndex(s => s.id === g.team_a_id);
+      const idxB = seeds.findIndex(s => s.id === g.team_b_id);
+      if (idxA !== -1 && idxB !== -1) highTeamId = idxA < idxB ? g.team_a_id : g.team_b_id;
+    }
+
+    const rec = getSeriesRecordForGame(g, highTeamId);
+    if (rec) {
+      g.seriesRecord = {
+        ...rec,
+        winnerName: rec.winnerTeamId === g.team_a_id ? g.team_a_name
+          : rec.winnerTeamId === g.team_b_id ? g.team_b_name
+          : null,
+      };
+    }
+  }
+
   return scoreTicker(games);
 }
 

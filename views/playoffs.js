@@ -95,8 +95,11 @@ function matchupCard({ highSeed, highNum, lowSeed, lowNum, games, format, isFina
 </div>`;
 }
 
-export function playoffsPage({ standings, games, season }) {
-  const seeds = [...standings]
+// Wins first, point-differential quotient (pf/pa) as tiebreak, top 4 make the bracket.
+// Exported so anything needing to know seeding (e.g. the ticker's "twice to beat"
+// clinch detection) uses the exact same order as the bracket itself.
+export function computeSeeds(standings) {
+  return [...standings]
     .sort((a, b) => {
       if (b.wins !== a.wins) return b.wins - a.wins;
       const qA = Number(a.pa) > 0 ? Number(a.pf) / Number(a.pa) : 0;
@@ -104,6 +107,10 @@ export function playoffsPage({ standings, games, season }) {
       return qB - qA;
     })
     .slice(0, 4);
+}
+
+export function playoffsPage({ standings, games, season }) {
+  const seeds = computeSeeds(standings);
 
   const semiGames   = games.filter(g => g.game_type === 'playoff');
   const finalsGames = games.filter(g => g.game_type === 'finals');

@@ -955,6 +955,54 @@ body {
   padding: 2px 5px;
   border-radius: 3px;
 }
+/* Reserved-height info slot on every ticker card (regular included, left empty there) —
+   playoff/finals cards use it for the series score so no card ever grows an extra line
+   relative to the rest of the strip. */
+.ticker-series {
+  height: 13px;
+  line-height: 13px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-align: center;
+  color: var(--amber);
+  opacity: 0.9;
+  padding: 0 12px 5px;
+}
+/* ── Playoff tier: full presence, no dimming, reused outline badge — deliberately
+   quieter than Finals (no border tint, no glow). ── */
+.ticker-card--playoff .ticker-status--upcoming,
+.ticker-card--playoff .ticker-status--final {
+  background: none;
+  border: 1px solid rgba(245,147,50,0.4);
+  color: var(--amber);
+}
+/* .ticker-status--final has no padding/radius by default (it's plain text normally) — the
+   tier overrides above/below give it a background or border, so it needs the same pill
+   padding .ticker-status--upcoming already had, or the text sits flush against the edge. */
+.ticker-card--playoff .ticker-status--final,
+.ticker-card--finals .ticker-status--final {
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+/* ── Finals tier: "Etched / Ceremonial" — full amber border, faint diagonal sheen, no
+   top bar, trophy folded into the badge, uppercase tracked-out team names. ── */
+.ticker-card--finals {
+  border: 1.5px solid var(--amber);
+  background: linear-gradient(135deg, rgba(245,147,50,0.09) 0%, transparent 40%), var(--surface);
+}
+.ticker-card--finals::before { display: none; }
+.ticker-card--finals .ticker-status--upcoming,
+.ticker-card--finals .ticker-status--final {
+  background: var(--amber);
+  color: #14100a;
+  font-weight: 800;
+}
+.ticker-card--finals .ticker-team-name {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
 .ticker-team-row {
   display: flex;
   align-items: center;
