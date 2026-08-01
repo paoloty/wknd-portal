@@ -563,7 +563,7 @@ function gameTabsStyles() {
        textarea's height changes as it auto-grows, which made a position:absolute button
        drift/overlap unpredictably. align-items:center keeps the send button vertically
        centered against the textarea regardless of how tall it gets. */
-    .game-comments-composer__box { display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 6px 6px 6px 14px; box-sizing: border-box; }
+    .game-comments-composer__box { position: relative; display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 6px 6px 6px 14px; box-sizing: border-box; }
     .game-comments-composer textarea { flex: 1; min-width: 0; min-height: 22px; max-height: 160px; resize: none; overflow-y: auto; background: none; border: none; color: var(--text); font: inherit; padding: 6px 0; box-sizing: border-box; }
     .game-comments-composer textarea:focus { outline: none; }
     .game-comments-composer__send { flex-shrink: 0; width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--border); color: var(--text-muted); border: none; border-radius: 50%; cursor: pointer; transition: background .12s, color .12s; }
@@ -590,6 +590,13 @@ function gameTabsStyles() {
     .game-comment__text { margin: 4px 0 6px; font-size: 13.5px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
     .game-comment__react { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
     .game-comment__react.is-active { border-color: var(--amber); color: var(--amber); }
+    .game-comment__mention { color: var(--amber); font-weight: 600; text-decoration: none; }
+    .game-comment__mention:hover { text-decoration: underline; }
+    .game-comments-mention-dropdown { position: absolute; width: 220px; max-width: calc(100% - 20px); bottom: calc(100% + 6px); max-height: 190px; overflow-y: auto; background: var(--surface2, var(--surface)); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 20; }
+    .game-comments-mention-dropdown__item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 13px; color: var(--text); cursor: pointer; }
+    .game-comments-mention-dropdown__item:hover, .game-comments-mention-dropdown__item.is-active { background: rgba(245,147,50,.12); }
+    .game-comments-mention-dropdown__avatar { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); flex-shrink: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--text-muted); background: var(--bg); }
+    .game-comments-mention-dropdown__avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
   </style>`;
 }
 
@@ -597,13 +604,13 @@ function commentsTabButton(comments) {
   return `<button class="game-tabs__tab" data-tab="comments">💬 Comments<span id="comments-count">${comments.length ? ` · ${comments.length}` : ''}</span></button>`;
 }
 
-function commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin }) {
-  return `<div id="tab-comments" class="game-tabs__body game-tabs__body--hidden">${commentsTabBody({ gameId: game.id, comments, reactedIds, isPlayer, isAdmin })}</div>`;
+function commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers }) {
+  return `<div id="tab-comments" class="game-tabs__body game-tabs__body--hidden">${commentsTabBody({ gameId: game.id, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers })}</div>`;
 }
 
 // One shared script for tab switching + comments (post/react/delete) + page-level react/share
 // — all game-tabs concerns live in this one block regardless of which branch built the markup.
-function gameTabsScript({ gameId, isAdmin = false }) {
+function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
   return `<script>
 (function(){
   var nav = document.querySelector('.game-tabs__nav');
@@ -627,19 +634,138 @@ function gameTabsScript({ gameId, isAdmin = false }) {
     });
   }
 
+  var mentionablePlayers = ${JSON.stringify(mentionablePlayers)};
+
   var submitBtn = document.getElementById('gc-submit');
   var gcInput   = document.getElementById('gc-input');
+  var mentionDropdown = document.getElementById('gc-mention-dropdown');
+  var mentionMatches = [];
+  var mentionActiveIndex = -1;
+
+  // Matches an in-progress "@partial name" run right up to the cursor — letters/spaces
+  // only, capped at 30 chars so it can't run away across a whole long comment.
+  function activeMentionQuery() {
+    var pos = gcInput.selectionStart;
+    var head = gcInput.value.slice(0, pos);
+    var m = head.match(/@([A-Za-z ]{0,30})$/);
+    return m ? m[1] : null;
+  }
+
+  function closeMentionDropdown() {
+    mentionDropdown.hidden = true;
+    mentionDropdown.innerHTML = '';
+    mentionMatches = []; mentionActiveIndex = -1;
+  }
+
+  function renderMentionDropdown() {
+    mentionDropdown.innerHTML = mentionMatches.map(function(p, i) {
+      return '<div class="game-comments-mention-dropdown__item' + (i === mentionActiveIndex ? ' is-active' : '') + '" data-idx="' + i + '">' +
+        '<span class="game-comments-mention-dropdown__avatar">' +
+          '<span class="font-condensed">' + (p.initials || '') + '</span>' +
+          '<img src="' + p.photoUrl + '" alt="" loading="lazy" onerror="this.style.display=\\'none\\'">' +
+        '</span>' +
+        '<span>' + p.name + '</span>' +
+      '</div>';
+    }).join('');
+    mentionDropdown.hidden = false;
+  }
+
+  // Textareas have no native "give me the pixel position of the caret" API, so this
+  // builds an invisible clone of the textarea (same font/padding/wrapping), stuffs the
+  // text-up-to-the-caret into it, and reads where that text naturally wrapped to — the
+  // standard technique for this (same approach the textarea-caret-position library uses).
+  function getCaretCoordinates(textarea, position) {
+    var mirror = document.createElement('div');
+    var style = window.getComputedStyle(textarea);
+    ['boxSizing', 'width', 'fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight',
+     'textTransform', 'wordSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+     'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth'].forEach(function(p) {
+      mirror.style[p] = style[p];
+    });
+    mirror.style.position = 'absolute';
+    mirror.style.visibility = 'hidden';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+    mirror.style.top = '0';
+    mirror.style.left = '-9999px';
+    document.body.appendChild(mirror);
+    mirror.textContent = textarea.value.slice(0, position);
+    var marker = document.createElement('span');
+    marker.textContent = textarea.value.slice(position)[0] || '.';
+    mirror.appendChild(marker);
+    var coords = { left: marker.offsetLeft, top: marker.offsetTop };
+    document.body.removeChild(mirror);
+    return coords;
+  }
+
+  function positionMentionDropdown() {
+    var coords = getCaretCoordinates(gcInput, gcInput.selectionStart);
+    var box = gcInput.parentElement; // .game-comments-composer__box — the positioned ancestor
+    var maxLeft = Math.max(0, box.clientWidth - mentionDropdown.offsetWidth - 4);
+    mentionDropdown.style.left = Math.min(gcInput.offsetLeft + coords.left, maxLeft) + 'px';
+  }
+
+  function updateMentionDropdown() {
+    var q = activeMentionQuery();
+    if (q === null || !mentionablePlayers.length) { closeMentionDropdown(); return; }
+    var ql = q.toLowerCase();
+    mentionMatches = mentionablePlayers.filter(function(p) { return p.name.toLowerCase().indexOf(ql) !== -1; }).slice(0, 6);
+    if (!mentionMatches.length) { closeMentionDropdown(); return; }
+    mentionActiveIndex = 0;
+    renderMentionDropdown();
+    positionMentionDropdown();
+  }
+
+  function selectMention(player) {
+    var pos = gcInput.selectionStart;
+    var head = gcInput.value.slice(0, pos);
+    var tail = gcInput.value.slice(pos);
+    var newHead = head.replace(/@([A-Za-z ]{0,30})$/, '@' + player.name + ' ');
+    gcInput.value = newHead + tail;
+    var caret = newHead.length;
+    gcInput.focus();
+    gcInput.setSelectionRange(caret, caret);
+    gcInput.style.height = 'auto'; gcInput.style.height = gcInput.scrollHeight + 'px';
+    submitBtn.disabled = !gcInput.value.trim();
+    closeMentionDropdown();
+  }
+
+  if (mentionDropdown) {
+    // mousedown (not click) fires before the textarea's blur, so a selection registers
+    // before closeMentionDropdown()/blur handling could otherwise remove it first.
+    mentionDropdown.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      var item = e.target.closest('[data-idx]');
+      if (!item) return;
+      var p = mentionMatches[Number(item.dataset.idx)];
+      if (p) selectMention(p);
+    });
+  }
+
   if (submitBtn && gcInput) {
     // Auto-grow — starts single-line (matches the Facebook-style box), expands as text
     // wraps rather than staying a fixed multi-line block from the start. Same listener
-    // also grays the send button out while the box is empty/whitespace-only.
+    // also grays the send button out while the box is empty/whitespace-only, and drives
+    // the @mention dropdown.
     gcInput.addEventListener('input', function() {
       gcInput.style.height = 'auto';
       gcInput.style.height = gcInput.scrollHeight + 'px';
       submitBtn.disabled = !gcInput.value.trim();
+      updateMentionDropdown();
     });
     gcInput.addEventListener('keydown', function(e) {
+      if (!mentionDropdown.hidden && mentionMatches.length) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); mentionActiveIndex = (mentionActiveIndex + 1) % mentionMatches.length; renderMentionDropdown(); return; }
+        if (e.key === 'ArrowUp')   { e.preventDefault(); mentionActiveIndex = (mentionActiveIndex - 1 + mentionMatches.length) % mentionMatches.length; renderMentionDropdown(); return; }
+        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectMention(mentionMatches[mentionActiveIndex]); return; }
+        if (e.key === 'Escape') { closeMentionDropdown(); return; }
+      }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postComment(); }
+    });
+    gcInput.addEventListener('blur', function() {
+      // Slight delay so a mousedown-driven selectMention() (above) still gets to run
+      // before the dropdown is torn down out from under it.
+      setTimeout(closeMentionDropdown, 150);
     });
     submitBtn.addEventListener('click', postComment);
   }
@@ -722,6 +848,21 @@ function gameTabsScript({ gameId, isAdmin = false }) {
     var next = Math.max(0, current + delta);
     el.textContent = next ? ' · ' + next : '';
   }
+  // Mirrors linkifyMentions() server-side (views/game.js) — kept in sync manually since
+  // one runs in Node at render time and the other runs in the browser on live WS arrival.
+  function linkifyMentionsLive(escapedBody) {
+    if (!mentionablePlayers.length) return escapedBody;
+    var withEsc = mentionablePlayers.map(function(p) { return { id: p.id, name: escLive(p.name) }; })
+      .sort(function(a, b) { return b.name.length - a.name.length; });
+    var byName = {};
+    var pattern = withEsc.map(function(p) { byName[p.name] = p.id; return p.name.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&'); }).join('|');
+    if (!pattern) return escapedBody;
+    var re = new RegExp('@(' + pattern + ')(?![A-Za-z0-9])', 'g');
+    return escapedBody.replace(re, function(match, name) {
+      var id = byName[name];
+      return id ? '<a href="/players/' + encodeURIComponent(id) + '" class="game-comment__mention">@' + name + '</a>' : match;
+    });
+  }
   function buildCommentLi(c) {
     var li = document.createElement('li');
     li.className = 'game-comment';
@@ -738,7 +879,7 @@ function gameTabsScript({ gameId, isAdmin = false }) {
           '<span class="game-comment__time">' + fmtLiveTime(c.created_at) + '</span>' +
           (isAdmin ? '<button type="button" class="game-comment__delete" data-delete-id="' + c.id + '" title="Delete comment" aria-label="Delete comment">✕</button>' : '') +
         '</div>' +
-        '<p class="game-comment__text">' + escLive(c.body) + '</p>' +
+        '<p class="game-comment__text">' + linkifyMentionsLive(escLive(c.body)) + '</p>' +
         '<button type="button" class="game-comment__react" data-react-id="' + c.id + '">🔥 <span class="game-comment__react-count">0</span></button>' +
       '</div>';
     return li;
@@ -840,8 +981,16 @@ function gameTabsScript({ gameId, isAdmin = false }) {
 </script>`;
 }
 
-function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, isPlayer = false, isAdmin = false }) {
+function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers: rawMentionablePlayers = [], isPlayer = false, isAdmin = false }) {
   const actions = tabActionsBar({ commentsEnabled, gameReaction });
+  // getPlayersWithAccounts() (server.js) returns names in raw "LASTNAME, Firstname"
+  // storage form — format for display/matching the same way comment authorship already is.
+  // initials/photoUrl are precomputed here so the dropdown can show a real avatar without
+  // duplicating name-initial logic client-side.
+  const mentionablePlayers = rawMentionablePlayers.map(p => {
+    const name = displayPlayerName(p.name);
+    return { id: p.id, name, initials: initials(name), photoUrl: `/api/player/${encodeURIComponent(p.id)}/photo` };
+  });
 
   if (game.status === 'final') {
     return `<div class="card game-tabs">
@@ -851,10 +1000,10 @@ function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = fa
     ${actions}
   </div>
   <div id="tab-recap" class="game-tabs__body">${recapTab(game)}</div>
-  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin }) : ''}
+  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers }) : ''}
 </div>
 ${gameTabsStyles()}
-${gameTabsScript({ gameId: game.id, isAdmin })}`;
+${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
   }
 
   const { byTeam, dnpByTeam, winner } = buildBoxScoreData(game, stats, dnpPlayers);
@@ -886,10 +1035,10 @@ ${gameTabsScript({ gameId: game.id, isAdmin })}`;
   <div id="tab-comparison" class="game-tabs__body game-tabs__body--hidden">${teamComparisonTab(game, stats)}</div>
   <div id="tab-linescore" class="game-tabs__body game-tabs__body--hidden">${lineScoreTab(game, quarterScores)}</div>
   ${hasLog ? `<div id="tab-pbp" class="game-tabs__body game-tabs__body--hidden">${playByPlayTab(game)}</div>` : ''}
-  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin }) : ''}
+  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers }) : ''}
 </div>
 ${gameTabsStyles()}
-${gameTabsScript({ gameId: game.id, isAdmin })}`;
+${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
 }
 
 // ── POTG card ─────────────────────────────────────────────────────────────────
@@ -971,7 +1120,27 @@ function fmtCommentTime(ms) {
 // Real player avatar/name (team-colored ring, links to profile) rather than a generic
 // commenter identity — the whole point of tying comments to player_id instead of a
 // freeform display name.
-function commentRow(c, { reacted, isAdmin, collapsed = false } = {}) {
+// Runs against already-escaped HTML, only ever inserting a fixed <a> structure around
+// text that's already safe — matches against a known finite player-name list (not
+// generic input), so this can't be used to smuggle unescaped content back in. Names are
+// escaped the same way the body was, so matching stays correct even if a name contains
+// an HTML-special character (e.g. an apostrophe).
+function linkifyMentions(escapedBody, mentionablePlayers) {
+  if (!mentionablePlayers || !mentionablePlayers.length) return escapedBody;
+  const withEsc = mentionablePlayers
+    .map(p => ({ id: p.id, name: escHtml(p.name) }))
+    .sort((a, b) => b.name.length - a.name.length); // longest name first, avoids a short name matching inside a longer one
+  const pattern = withEsc.map(p => p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  if (!pattern) return escapedBody;
+  const byName = new Map(withEsc.map(p => [p.name, p.id]));
+  const re = new RegExp('@(' + pattern + ')(?![A-Za-z0-9])', 'g');
+  return escapedBody.replace(re, (match, name) => {
+    const id = byName.get(name);
+    return id ? `<a href="/players/${encodeURIComponent(id)}" class="game-comment__mention">@${name}</a>` : match;
+  });
+}
+
+function commentRow(c, { reacted, isAdmin, collapsed = false, mentionablePlayers = [] } = {}) {
   const color = teamColor(c.team_name || '');
   return `<li class="game-comment" data-id="${escHtml(c.id)}"${collapsed ? ' hidden' : ''}>
     ${playerAvatar(c.player_id, c.player_name, color, { className: 'game-comment__avatar', link: true })}
@@ -981,7 +1150,7 @@ function commentRow(c, { reacted, isAdmin, collapsed = false } = {}) {
         <span class="game-comment__time">${fmtCommentTime(c.created_at)}</span>
         ${isAdmin ? `<button type="button" class="game-comment__delete" data-delete-id="${escHtml(c.id)}" title="Delete comment" aria-label="Delete comment">✕</button>` : ''}
       </div>
-      <p class="game-comment__text">${escHtml(c.body)}</p>
+      <p class="game-comment__text">${linkifyMentions(escHtml(c.body), mentionablePlayers)}</p>
       <button type="button" class="game-comment__react${reacted ? ' is-active' : ''}" data-react-id="${escHtml(c.id)}">
         🔥 <span class="game-comment__react-count">${c.reaction_count || 0}</span>
       </button>
@@ -998,15 +1167,15 @@ const COMMENTS_VISIBLE_COUNT = 5;
 // fetch — comment volume per game is small enough that rendering everything up front and
 // just toggling `hidden` client-side is simpler than building cursor-based pagination for
 // a scale problem this app doesn't have.
-function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlayer = false, isAdmin = false }) {
+function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlayer = false, isAdmin = false, mentionablePlayers = [] }) {
   const older  = comments.slice(0, -COMMENTS_VISIBLE_COUNT);
   const recent = comments.slice(-COMMENTS_VISIBLE_COUNT);
-  const row = c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin });
+  const row = c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, mentionablePlayers });
 
   const list = comments.length
     ? `<ul class="game-comments-list" id="game-comments-list">
         ${older.length ? `<li class="game-comments-more"><button type="button" id="gc-see-more">See ${older.length} more comment${older.length === 1 ? '' : 's'}</button></li>` : ''}
-        ${older.map(c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, collapsed: true })).join('')}
+        ${older.map(c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, collapsed: true, mentionablePlayers })).join('')}
         ${recent.map(row).join('')}
       </ul>`
     : `<p class="game-comments-empty" id="game-comments-empty">No comments yet — be the first to say something.</p>`;
@@ -1014,7 +1183,8 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
   const composer = isPlayer
     ? `<div class="game-comments-composer">
         <div class="game-comments-composer__box">
-          <textarea id="gc-input" maxlength="500" rows="1" placeholder="Write a comment…"></textarea>
+          <textarea id="gc-input" maxlength="500" rows="1" placeholder="Write a comment… (@ to mention a player)"></textarea>
+          <div id="gc-mention-dropdown" class="game-comments-mention-dropdown" hidden></div>
           <button type="button" id="gc-submit" class="game-comments-composer__send" aria-label="Post comment" disabled><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 1.5L10 6L2 10.5Z" fill="currentColor"/></svg></button>
         </div>
         <span id="gc-msg" class="game-comments-composer__msg"></span>
@@ -1027,7 +1197,7 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
   </div>`;
 }
 
-export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, isPlayer = false, isAdmin = false }) {
+export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], isPlayer = false, isAdmin = false }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
@@ -1044,7 +1214,7 @@ export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterSc
   return `<div class="game-detail-layout">
   <div class="game-detail-left">
     ${leftMedia(game, colorA, colorB)}
-    ${gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled, comments, reactedIds, gameReaction, isPlayer, isAdmin })}
+    ${gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers, isPlayer, isAdmin })}
   </div>
   <div class="game-detail-right">
     ${scoreCard(game, colorA, colorB)}

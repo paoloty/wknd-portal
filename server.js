@@ -97,7 +97,7 @@ import {
   getSeoOverride, getAllSeoOverrides, upsertSeoOverride, deleteSeoOverride,
   getGameComments, getCommentById, getCommentWithMeta, addGameComment, deleteGameComment,
   toggleCommentReaction, getReactedCommentIdsForPlayer,
-  toggleGameReaction, getGameReactionState,
+  toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -3870,11 +3870,14 @@ app.get('/games/:ref', (req, res) => {
 
   const commentsEnabled = getSetting('comments_enabled', '0') === '1';
   const currentPlayerId = req.session?.playerPlayerId || null;
-  let comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false };
+  let comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [];
   if (commentsEnabled) {
     comments = getGameComments(game.id);
     reactedIds = getReactedCommentIdsForPlayer(comments.map(c => c.id), currentPlayerId);
     gameReaction = getGameReactionState(game.id, currentPlayerId);
+    // Anyone with a real, working login — not just players in this specific game — so a
+    // comment can pull in someone unrelated to the game just to get them talking.
+    mentionablePlayers = getPlayersWithAccounts();
   }
 
   res.send(renderPage(req, {
@@ -3883,7 +3886,7 @@ app.get('/games/:ref', (req, res) => {
     metaTags: buildGameOgTags(req, game),
     body: gamePage({
       game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap,
-      commentsEnabled, comments, reactedIds, gameReaction,
+      commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
       currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin,
     })
   }));
