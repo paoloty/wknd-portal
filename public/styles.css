@@ -3061,8 +3061,24 @@ a.player-link:hover { color: var(--amber); }
   overflow: hidden;
   border-top: 1px solid var(--border);
   transition: background 0.15s;
+  position: relative;
 }
 .game-row:hover { background: rgba(255,255,255,0.03); }
+/* Stretched-link pattern: the whole row is clickable via this invisible full-bleed <a>
+   (z-index:1), while .game-row__actions sits above it (z-index:2) so its real buttons/
+   links receive their own clicks instead of the row's — avoids nesting interactive
+   elements inside an <a>, which is both invalid HTML and unreliable to click. */
+.game-row__link { position: absolute; inset: 0; z-index: 1; }
+.game-row__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.game-row__actions { position: relative; z-index: 2; display: flex; align-items: center; gap: 6px; }
+.game-row__action {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 10px; font-size: 12px; color: var(--text-muted);
+  cursor: pointer; text-decoration: none;
+}
+.game-row__action:hover { color: var(--text); border-color: var(--text-muted); }
+.game-row__action.is-active { border-color: var(--amber); color: var(--amber); }
 
 .game-row__thumb {
   width: 200px;

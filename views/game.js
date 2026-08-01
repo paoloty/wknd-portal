@@ -556,6 +556,49 @@ function gameTabsStyles() {
   return `<style>
     .game-tabs__actions { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 8px; flex-shrink: 0; }
     .game-tabs__icon-btn { display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+    .game-floater { display: none; }
+    @media (max-width: 900px) {
+      /* React + share move into the floater on mobile; Comments stays in the tab
+         row (still swipeable to) but drops its text label to save space. */
+      .game-tabs__actions { display: none; }
+      .game-tabs__tab-label { display: none; }
+      .game-floater { display: block; position: fixed; right: 16px; bottom: 84px; z-index: 80; }
+    }
+    .game-floater__menu { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .game-floater__menu[hidden] { display: none; }
+    .game-floater__item {
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+      min-width: 44px; height: 44px; padding: 0 12px; border-radius: 999px;
+      background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
+      font-size: 14px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+      animation: game-floater-item-in .18s ease both;
+    }
+    .game-floater__item.is-active { border-color: var(--amber); color: var(--amber); }
+    .game-floater__count { font-size: 12.5px; font-weight: 600; }
+    .game-floater__bubble {
+      position: relative; width: 52px; height: 52px; border-radius: 50%;
+      background: var(--amber); border: none; color: #0a0e16; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 6px 18px rgba(0,0,0,.35);
+      animation: game-floater-bounce-in .5s ease both;
+    }
+    .game-floater__bubble-icon { display: block; font-size: 19px; line-height: 1; }
+    .game-floater__bubble.is-open { background: var(--surface); color: var(--text); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+    .game-floater__badge {
+      position: absolute; top: -2px; right: -2px; min-width: 16px; height: 16px; padding: 0 4px;
+      border-radius: 999px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg);
+    }
+    .game-floater__badge[hidden] { display: none; }
+    @keyframes game-floater-bounce-in {
+      0% { transform: scale(.4); opacity: 0; }
+      60% { transform: scale(1.08); opacity: 1; }
+      100% { transform: scale(1); }
+    }
+    @keyframes game-floater-item-in {
+      from { transform: translateY(6px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
     .game-tabs__icon-btn.is-active { border-color: var(--amber); color: var(--amber); }
     .game-comments-panel { padding: 20px 24px 24px; }
     .game-comments-composer { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
@@ -601,7 +644,32 @@ function gameTabsStyles() {
 }
 
 function commentsTabButton(comments, isActive) {
-  return `<button class="game-tabs__tab${isActive ? ' game-tabs__tab--active' : ''}" data-tab="comments">💬 Comments<span id="comments-count">${comments.length ? ` · ${comments.length}` : ''}</span></button>`;
+  return `<button class="game-tabs__tab${isActive ? ' game-tabs__tab--active' : ''}" data-tab="comments">💬<span class="game-tabs__tab-label"> Comments</span><span id="comments-count">${comments.length ? ` · ${comments.length}` : ''}</span></button>`;
+}
+
+// Mobile-only floating menu — mirrors comment/react/share off the (cramped, horizontally
+// scrolling) tab row into a fixed bottom-right bubble that expands on tap. Desktop is
+// untouched; see the ≤900px rules in gameTabsStyles() for the actual swap.
+function gameSocialFloater({ commentsEnabled, gameReaction, commentsCount }) {
+  const reactCount = gameReaction.count || 0;
+  const badgeTotal = commentsEnabled ? commentsCount + reactCount : 0;
+  const commentItem = commentsEnabled
+    ? `<button type="button" class="game-floater__item" id="floater-comment-btn" aria-label="Comments">💬<span class="game-floater__count" id="floater-comments-count">${commentsCount}</span></button>`
+    : '';
+  const reactItem = commentsEnabled
+    ? `<button type="button" class="game-floater__item${gameReaction.reacted ? ' is-active' : ''}" id="floater-react-btn" aria-label="React to this game">🔥<span class="game-floater__count" id="floater-react-count">${reactCount}</span></button>`
+    : '';
+  return `<div class="game-floater" id="game-floater">
+    <div class="game-floater__menu" id="game-floater-menu" hidden>
+      ${commentItem}
+      ${reactItem}
+      <button type="button" class="game-floater__item" id="floater-share-btn" aria-label="Share">↗</button>
+    </div>
+    <button type="button" class="game-floater__bubble" id="game-floater-toggle" aria-label="Comments, reactions & share" aria-expanded="false">
+      <span class="game-floater__bubble-icon" id="game-floater-icon" aria-hidden="true">💬</span>
+      <span class="game-floater__badge" id="game-floater-badge"${badgeTotal ? '' : ' hidden'}>${badgeTotal}</span>
+    </button>
+  </div>`;
 }
 
 function commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive }) {
@@ -622,6 +690,16 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
     btn.classList.add('game-tabs__tab--active');
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('game-tabs__body--hidden');
   });
+
+  // Deep link from elsewhere (e.g. the comment icon on /games) straight into the
+  // comments tab, rather than landing on Recap and making the visitor find it themselves.
+  if (window.location.hash === '#comments') {
+    var commentsTabBtn = document.querySelector('.game-tabs__tab[data-tab="comments"]');
+    if (commentsTabBtn) {
+      commentsTabBtn.click();
+      document.querySelector('.game-tabs').scrollIntoView({ block: 'start' });
+    }
+  }
 
   var gameId = ${JSON.stringify(gameId)};
   var isAdmin = ${JSON.stringify(isAdmin)};
@@ -849,6 +927,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
     var current = parseInt((el.textContent || '').replace(/[^0-9]/g, ''), 10) || 0;
     var next = Math.max(0, current + delta);
     el.textContent = next ? ' · ' + next : '';
+    updateFloaterState();
   }
   // Mirrors linkifyMentions() server-side (views/game.js) — kept in sync manually since
   // one runs in Node at render time and the other runs in the browser on live WS arrival.
@@ -939,6 +1018,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
       if (msg.type === 'game:react') {
         var gc = document.getElementById('game-react-count');
         if (gc) gc.textContent = msg.count;
+        updateFloaterState();
         return;
       }
     });
@@ -959,6 +1039,9 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
           if (!d.ok) return;
           reactBtn.classList.toggle('is-active', d.reacted);
           document.getElementById('game-react-count').textContent = d.count;
+          var floaterReactBtn = document.getElementById('floater-react-btn');
+          if (floaterReactBtn) floaterReactBtn.classList.toggle('is-active', d.reacted);
+          updateFloaterState();
         })
         .catch(function() { reactBtn.disabled = false; });
     });
@@ -979,12 +1062,71 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
       }).catch(function() {});
     });
   }
+
+  // Mobile floater — mirrors the react/comment/share buttons above rather than
+  // duplicating their logic: each item just clicks the real button (or the real tab)
+  // and reads counts back off the same source-of-truth elements those buttons update.
+  function updateFloaterState() {
+    var floaterBadge = document.getElementById('game-floater-badge');
+    if (!floaterBadge) return;
+    var commentsCountEl = document.getElementById('comments-count');
+    var commentsCount = commentsCountEl ? (parseInt((commentsCountEl.textContent || '').replace(/[^0-9]/g, ''), 10) || 0) : 0;
+    var reactCountEl = document.getElementById('game-react-count');
+    var reactCount = reactCountEl ? (parseInt(reactCountEl.textContent, 10) || 0) : 0;
+    var floaterCommentsCount = document.getElementById('floater-comments-count');
+    if (floaterCommentsCount) floaterCommentsCount.textContent = commentsCount;
+    var floaterReactCount = document.getElementById('floater-react-count');
+    if (floaterReactCount) floaterReactCount.textContent = reactCount;
+    var total = commentsCount + reactCount;
+    floaterBadge.textContent = total;
+    floaterBadge.hidden = !total;
+  }
+
+  var floaterToggle = document.getElementById('game-floater-toggle');
+  var floaterMenu = document.getElementById('game-floater-menu');
+  var floaterIcon = document.getElementById('game-floater-icon');
+  if (floaterToggle && floaterMenu) {
+    var setFloaterOpen = function(open) {
+      floaterMenu.hidden = !open;
+      floaterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      floaterToggle.classList.toggle('is-open', open);
+      if (floaterIcon) floaterIcon.textContent = open ? '✕' : '💬';
+    };
+    floaterToggle.addEventListener('click', function() {
+      setFloaterOpen(floaterMenu.hidden);
+    });
+
+    var floaterCommentBtn = document.getElementById('floater-comment-btn');
+    if (floaterCommentBtn) {
+      floaterCommentBtn.addEventListener('click', function() {
+        var tabBtn = document.querySelector('.game-tabs__tab[data-tab="comments"]');
+        if (tabBtn) {
+          tabBtn.click();
+          document.querySelector('.game-tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        setFloaterOpen(false);
+      });
+    }
+    var floaterReactBtn = document.getElementById('floater-react-btn');
+    if (floaterReactBtn) {
+      floaterReactBtn.addEventListener('click', function() {
+        if (reactBtn) reactBtn.click();
+      });
+    }
+    var floaterShareBtn = document.getElementById('floater-share-btn');
+    if (floaterShareBtn) {
+      floaterShareBtn.addEventListener('click', function() {
+        if (shareBtn) shareBtn.click();
+      });
+    }
+  }
 })();
 </script>`;
 }
 
 function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers: rawMentionablePlayers = [], isPlayer = false, isAdmin = false }) {
   const actions = tabActionsBar({ commentsEnabled, gameReaction });
+  const floater = gameSocialFloater({ commentsEnabled, gameReaction, commentsCount: comments.length });
   // getPlayersWithAccounts() (server.js) returns names in raw "LASTNAME, Firstname"
   // storage form — format for display/matching the same way comment authorship already is.
   // initials/photoUrl are precomputed here so the dropdown can show a real avatar without
@@ -1008,6 +1150,7 @@ function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = fa
   <div id="tab-recap" class="game-tabs__body${commentsIsDefault ? ' game-tabs__body--hidden' : ''}">${recapTab(game)}</div>
   ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive: commentsIsDefault }) : ''}
 </div>
+${floater}
 ${gameTabsStyles()}
 ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
   }
@@ -1043,6 +1186,7 @@ ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
   ${hasLog ? `<div id="tab-pbp" class="game-tabs__body game-tabs__body--hidden">${playByPlayTab(game)}</div>` : ''}
   ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive: commentsIsDefault }) : ''}
 </div>
+${floater}
 ${gameTabsStyles()}
 ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
 }

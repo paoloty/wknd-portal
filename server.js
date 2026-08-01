@@ -98,6 +98,7 @@ import {
   getGameComments, getCommentById, getCommentWithMeta, addGameComment, deleteGameComment,
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
+  getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   getTransactionById,
   db as portalDb,
@@ -4835,10 +4836,24 @@ app.get('/games', (req, res) => {
 
   const highlights = buildHighlights(completedGames, playerMap, teamMap, 10);
 
+  const commentsEnabled = getSetting('comments_enabled', '0') === '1';
+  let socialByGame = {};
+  if (commentsEnabled) {
+    const ids = completedGames.map(g => g.id);
+    const commentCounts = getGameCommentCounts(ids);
+    const reactionCounts = getGameReactionCounts(ids);
+    const reactedIds = getReactedGameIdsForPlayer(ids, req.session?.playerPlayerId || null);
+    socialByGame = Object.fromEntries(ids.map(id => [id, {
+      commentsCount: commentCounts[id] || 0,
+      reactCount: reactionCounts[id] || 0,
+      reacted: reactedIds.has(id),
+    }]));
+  }
+
   res.send(renderPage(req, {
     title: 'Games — WKND Basketball League',
     currentPath: req.path,
-    body: gamesPage({ games, highlights })
+    body: gamesPage({ games, highlights, commentsEnabled, socialByGame })
   }));
 });
 

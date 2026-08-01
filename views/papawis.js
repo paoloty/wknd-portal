@@ -334,25 +334,37 @@ function addDays(dateStr, delta) {
   return d.toISOString().slice(0, 10);
 }
 
-// Joinable games (status 'open' and past their sign-up-open instant — same definition
-// gameCard uses for the amber "active" card treatment) always lead the grid, soonest
-// game first — that's the thing a visitor actually needs to act on right now. Everything
-// else (not open yet, full-but-not-open... n/a, completed, cancelled) falls back to the
-// original newest-first chronological order once nothing's actively joinable, same as
-// before this sort existed.
+// Four urgency tiers rather than pure chronology. A flat "everything else, newest-date-
+// first" sort (the original version of this function) put Scheduled games further in the
+// future ABOVE ones opening sooner, since future date strings sort lexicographically
+// larger than nearer ones — backwards from what's actually useful. Tiers, each sorted
+// within itself:
+//   1. Joinable now (Open/Full badge) — soonest first. The thing a visitor can act on.
+//   2. Cancelled but upcoming (the red-alert cards) — soonest first. Not actionable, but
+//      urgent: players may still be expecting to show up, so this outranks Scheduled even
+//      though Scheduled is otherwise "more upcoming."
+//   3. Scheduled (signup window hasn't opened yet) — soonest first, so the next game to
+//      open sits closest to the top.
+//   4. Historical (Completed, past Cancelled, and the rare stale-Closed edge case where
+//      signup was open but nobody closed it after the date passed) — newest first, same
+//      direction as the original single "rest" bucket.
 function sortGames(games) {
   const keyOf = (g) => `${g.date}T${g.start_time || '00:00'}`;
-  const isJoinable = (g) => g.status === 'open' && signupOpenNow(g) && daysUntil(g.date) >= 0;
+  const soonestFirst = (a, b) => { const ka = keyOf(a), kb = keyOf(b); return ka < kb ? -1 : ka > kb ? 1 : 0; };
+  const newestFirst  = (a, b) => { const ka = keyOf(a), kb = keyOf(b); return ka < kb ? 1 : ka > kb ? -1 : 0; };
 
-  const joinable = games.filter(isJoinable).sort((a, b) => {
-    const keyA = keyOf(a), keyB = keyOf(b);
-    return keyA < keyB ? -1 : keyA > keyB ? 1 : 0; // soonest game date first
-  });
-  const rest = games.filter(g => !isJoinable(g)).sort((a, b) => {
-    const keyA = keyOf(a), keyB = keyOf(b);
-    return keyA < keyB ? 1 : keyA > keyB ? -1 : 0; // newest first, unchanged
-  });
-  return [...joinable, ...rest];
+  const isJoinable          = (g) => g.status === 'open' && signupOpenNow(g) && daysUntil(g.date) >= 0;
+  const isCancelledUpcoming = (g) => g.status === 'cancelled' && daysUntil(g.date) >= 0;
+  const isScheduled         = (g) => g.status === 'open' && !signupOpenNow(g);
+
+  const joinable          = games.filter(isJoinable).sort(soonestFirst);
+  const cancelledUpcoming = games.filter(isCancelledUpcoming).sort(soonestFirst);
+  const scheduled         = games.filter(isScheduled).sort(soonestFirst);
+  const historical         = games
+    .filter(g => !isJoinable(g) && !isCancelledUpcoming(g) && !isScheduled(g))
+    .sort(newestFirst);
+
+  return [...joinable, ...cancelledUpcoming, ...scheduled, ...historical];
 }
 
 export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, isLoggedIn = false, hasBalance = false } = {}) {
