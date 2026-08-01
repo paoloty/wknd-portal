@@ -1,10 +1,11 @@
 import { escHtml } from './layout.js';
 import { teamColor, formatDate } from './utils.js';
 
-// "TEAM LEADS 2–1" / "SERIES TIED 1–1" / "VS" (no games played yet) / '' (not a series game
-// at all) / "TEAM ADVANCES" / "TEAM — CHAMPIONS 🏆" (series clinched). Renders into a
-// reserved-height slot on every card (see .ticker-series in styles.css) so postseason cards
-// never grow an extra line relative to regular ones.
+// "BEST OF 3" (finals, no games played yet) / "VS" (semis, no games played yet) /
+// "TEAM LEADS 2–1" / "SERIES TIED 1–1" / '' (not a series game at all) / "TEAM ADVANCES" /
+// "TEAM — CHAMPIONS 🏆" (series clinched). Renders into a reserved-height slot on every
+// card (see .ticker-series in styles.css) so postseason cards never grow an extra line
+// relative to regular ones.
 //
 // Semifinals are "twice to beat" (see getSeriesRecordForGame's highTeamId) — the higher
 // seed can clinch on a single win, so "LEADS 1–0" would be misleading once decided: the
@@ -18,7 +19,7 @@ function seriesLabel(g) {
       ? `${String(winnerName).toUpperCase()} — CHAMPIONS \u{1F3C6}`
       : `${String(winnerName).toUpperCase()} ADVANCES`;
   }
-  if (teamAWins === 0 && teamBWins === 0) return 'VS';
+  if (teamAWins === 0 && teamBWins === 0) return g.game_type === 'finals' ? 'BEST OF 3' : 'VS';
   if (teamAWins === teamBWins) return `SERIES TIED ${teamAWins}–${teamBWins}`;
   const leader = teamAWins > teamBWins ? g.team_a_name : g.team_b_name;
   const lead = Math.max(teamAWins, teamBWins), trail = Math.min(teamAWins, teamBWins);
