@@ -2391,6 +2391,18 @@ app.get('/me', (req, res) => {
   return res.redirect(slug ? `/players/${slug}` : `/players/${playerId}`);
 });
 
+// Self-service intro edit — a player editing their own profile, not the admin bio route
+// at /admin/players/:id/bio. Keyed entirely off the session, no :id param — there's no
+// ownership check to get wrong when the target is always "whoever's logged in."
+app.post('/me/writeup', express.json(), (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) {
+    return res.status(401).json({ error: 'Log in to edit your profile.' });
+  }
+  const writeup = String(req.body?.writeup || '').trim().slice(0, 500);
+  updatePlayerWriteup(req.session.playerPlayerId, writeup);
+  res.json({ ok: true });
+});
+
 app.get('/set-password', (req, res) => {
   const { token = '' } = req.query;
   const reg = token ? getRegByPasswordToken(token) : null;

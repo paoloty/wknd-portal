@@ -18,7 +18,7 @@ function parsePositions(raw) {
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
-function heroSection(player, totals, isAdmin = false) {
+function heroSection(player, totals, isAdmin = false, isOwnProfile = false) {
   const teamName  = String(player.team_name || '').toUpperCase();
   const color     = teamColor(teamName);
   const isLight   = teamName === 'WHITE';
@@ -53,7 +53,15 @@ function heroSection(player, totals, isAdmin = false) {
     <div class="player-hero__info">
       <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
       <div class="player-hero__meta">${metaParts}</div>
-      ${bio ? `<p class="player-hero__bio">${escHtml(bio)}</p>` : ''}
+      ${isOwnProfile ? `
+      <div class="player-hero__bio-block" id="bio-block">
+        <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you.">${escHtml(bio)}</textarea>
+        <button type="button" class="player-hero__bio-edit-btn" id="bio-edit-btn" aria-label="Edit intro" title="Edit intro">✎</button>
+        <div class="player-hero__bio-actions" id="bio-actions" hidden>
+          <button type="button" class="player-hero__bio-icon-btn" id="bio-cancel" aria-label="Cancel" title="Cancel">✕</button>
+          <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
+        </div>
+      </div>` : (bio ? `<p class="player-hero__bio">${escHtml(bio)}</p>` : '')}
     </div>
   </div>`;
 
@@ -237,11 +245,81 @@ function heroSection(player, totals, isAdmin = false) {
 })();
 <\/script>` : '';
 
+  const bioEditScript = isOwnProfile ? `
+<script>
+(function() {
+  var input     = document.getElementById('bio-input');
+  var editBtn   = document.getElementById('bio-edit-btn');
+  var actions   = document.getElementById('bio-actions');
+  var saveBtn   = document.getElementById('bio-save');
+  var cancelBtn = document.getElementById('bio-cancel');
+  if (!input || !editBtn) return;
+
+  var originalValue = input.value;
+
+  function autoGrow() {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  }
+
+  function enterEdit() {
+    originalValue = input.value;
+    input.readOnly = false;
+    input.classList.add('is-editing');
+    editBtn.hidden = true;
+    actions.hidden = false;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    autoGrow();
+  }
+
+  function exitEdit() {
+    input.readOnly = true;
+    input.classList.remove('is-editing');
+    editBtn.hidden = false;
+    actions.hidden = true;
+    autoGrow();
+  }
+
+  editBtn.addEventListener('click', enterEdit);
+
+  cancelBtn.addEventListener('click', function() {
+    input.value = originalValue;
+    exitEdit();
+  });
+
+  input.addEventListener('input', autoGrow);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveBtn.click(); }
+    else if (e.key === 'Escape') { cancelBtn.click(); }
+  });
+
+  saveBtn.addEventListener('click', function() {
+    saveBtn.disabled = true;
+    fetch('/me/writeup', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ writeup: input.value })
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+    .then(function(res) {
+      saveBtn.disabled = false;
+      if (!res.ok) { alert(res.d.error || 'Failed to save.'); return; }
+      input.value = input.value.trim();
+      exitEdit();
+    })
+    .catch(function() { saveBtn.disabled = false; alert('Network error.'); });
+  });
+
+  autoGrow();
+})();
+<\/script>` : '';
+
   return `<div class="card player-hero" style="--ph-color:${color}">
   <div class="player-hero__grid">
     ${leftCol}
     ${rightCol}
   </div>
+  ${bioEditScript}
 </div>${uploadScript}`;
 }
 
@@ -677,7 +755,7 @@ export function playerPage({ player, totals, statsByType, gameLogs, potgGames, c
   const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 
-  return `${heroSection(player, totals, isAdmin)}
+  return `${heroSection(player, totals, isAdmin, isOwnProfile)}
 ${coachNoteHtml}
 <div class="game-detail-layout">
   <div class="game-detail-left">

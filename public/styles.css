@@ -3261,7 +3261,38 @@ a.player-link:hover { color: var(--amber); }
 .player-hero__number { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 1rem; color: var(--text-muted); }
 .player-hero__pos { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .player-hero__bio { margin-top: 10px; font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+.player-hero__bio--placeholder { font-style: italic; opacity: .7; }
 .player-hero__no-stats { font-size: 13px; color: var(--text-muted); margin: 0; }
+
+/* Self-service intro edit (own profile only) — in-place, no layout shift */
+.player-hero__bio-block { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; }
+.player-hero__bio-input {
+  flex: 1; min-width: 0; display: block; width: 100%;
+  font: inherit; font-size: 14px; line-height: 1.6; color: var(--text-muted);
+  background: none; border: none; outline: none; resize: none;
+  padding: 0; margin: 0; box-sizing: border-box; overflow: hidden;
+  cursor: default;
+}
+.player-hero__bio-input::placeholder { color: var(--text-muted); font-style: italic; opacity: .7; }
+.player-hero__bio-input.is-editing {
+  color: var(--text); cursor: text;
+  background: rgba(255,255,255,.05);
+  border-radius: 8px;
+  padding: 4px 8px; margin: -4px -8px;
+}
+.player-hero__bio-edit-btn { flex-shrink: 0; background: none; border: none; color: var(--amber); font-size: 13px; cursor: pointer; padding: 2px 4px; line-height: 1.6; }
+.player-hero__bio-edit-btn:hover { opacity: .8; }
+.player-hero__bio-actions { flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+.player-hero__bio-actions[hidden] { display: none; }
+.player-hero__bio-icon-btn {
+  width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: none; cursor: pointer; font-size: 12px; line-height: 1;
+  background: var(--surface); color: var(--text-muted);
+}
+.player-hero__bio-icon-btn:hover { background: var(--border); }
+.player-hero__bio-icon-btn--save { background: var(--amber); color: #0a0e16; }
+.player-hero__bio-icon-btn--save:hover { opacity: .88; }
+.player-hero__bio-icon-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Career averages */
 .ca-label {
