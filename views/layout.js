@@ -1,4 +1,8 @@
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, features = {}, minimalHeader = false, origin = '' }) {
+function fmtNotifTime(ms) {
+  return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, features = {}, minimalHeader = false, origin = '', notifications = [], unreadNotificationCount = 0 }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -69,11 +73,38 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     awardsDropdown,
   ].join('');
 
+  // Bell + dropdown panel — reuses the same trigger/panel/click-outside mechanics as the
+  // Games/Stats dropdowns above (see .site-nav__dropdown handling in navToggleScript),
+  // just under its own class so it can carry an unread badge and mark-as-read behavior
+  // the plain nav dropdowns don't need.
+  // Uses class-based JS targeting throughout, not ids — this markup can render twice on
+  // minimalHeader pages (desktop nav + mobile overlay nav), same reason the hamburger
+  // buttons above use .site-nav__hamburger instead of an id.
+  const notificationBell = isPlayer ? `<div class="site-nav__notif">
+    <button class="site-nav__notif-trigger" type="button" aria-label="Notifications" aria-expanded="false">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6.5a5 5 0 0 0-10 0c0 4.5-1.5 5.5-1.5 5.5h13S14 11 14 6.5z"/><path d="M7.5 15a1.5 1.5 0 0 0 3 0"/></svg>
+      ${unreadNotificationCount > 0 ? `<span class="site-nav__notif-badge">${unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>` : ''}
+    </button>
+    <div class="site-nav__notif-panel">
+      <div class="site-nav__notif-panel-head">Notifications</div>
+      <div class="site-nav__notif-list">
+        ${notifications.length ? notifications.map(n => `<a href="${n.link ? escHtml(n.link) : '#'}" class="site-nav__notif-item${!n.read_at ? ' is-unread' : ''}">
+          <div class="site-nav__notif-item-title">${escHtml(n.title)}</div>
+          ${n.body ? `<div class="site-nav__notif-item-body">${escHtml(n.body)}</div>` : ''}
+          <div class="site-nav__notif-item-time">${fmtNotifTime(n.created_at)}</div>
+        </a>`).join('') : `<div class="site-nav__notif-empty">No notifications yet.</div>`}
+      </div>
+    </div>
+  </div>` : '';
+
+  // Bell sits right after "My Profile" (not before it) — folded into authLink itself
+  // rather than inserted as a separate element at the nav render sites, so it always
+  // lands in the same spot relative to My Profile regardless of admin/player branch.
   const adminActive = currentPath.startsWith('/admin');
   const authLink = isAdmin
-    ? `${isPlayer ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a>` : ''}<div class="site-nav__auth-pill"><a href="/admin"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
+    ? `${isPlayer ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a>${notificationBell}` : ''}<div class="site-nav__auth-pill"><a href="/admin"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
     : isPlayer
-      ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a><a href="/logout" class="site-nav__login">Sign out</a>`
+      ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a>${notificationBell}<a href="/logout" class="site-nav__login">Sign out</a>`
       : `<div class="site-nav__auth-pill"><a href="/register" class="site-nav__auth-join">Join</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/login" class="site-nav__auth-login">Login</a></div>`;
 
   // Shared by both header variants (full and minimal) — only one ever renders,
@@ -127,6 +158,34 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
             return;
           }
           document.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
+        });
+        // Notification bell — same open/close mechanics as the dropdowns above, plus
+        // marking everything read (once, across however many copies of the bell exist on
+        // this page) the first time the panel is actually opened.
+        var notifMarkedRead = false;
+        document.addEventListener('click', function(e){
+          var trigger = e.target.closest && e.target.closest('.site-nav__notif-trigger');
+          if (trigger) {
+            var wrap = trigger.closest('.site-nav__notif');
+            var wasOpen = wrap.classList.contains('is-open');
+            document.querySelectorAll('.site-nav__notif').forEach(function(d){ d.classList.remove('is-open'); });
+            document.querySelectorAll('.site-nav__notif-trigger').forEach(function(t){ t.setAttribute('aria-expanded', 'false'); });
+            if (!wasOpen) {
+              wrap.classList.add('is-open');
+              trigger.setAttribute('aria-expanded', 'true');
+              if (!notifMarkedRead) {
+                notifMarkedRead = true;
+                document.querySelectorAll('.site-nav__notif-badge').forEach(function(b){ b.remove(); });
+                document.querySelectorAll('.site-nav__notif-item.is-unread').forEach(function(it){ it.classList.remove('is-unread'); });
+                fetch('/notifications/mark-read', { method: 'POST', headers: {'Content-Type':'application/json'} }).catch(function(){});
+              }
+            }
+            return;
+          }
+          if (!(e.target.closest && e.target.closest('.site-nav__notif-panel'))) {
+            document.querySelectorAll('.site-nav__notif').forEach(function(d){ d.classList.remove('is-open'); });
+            document.querySelectorAll('.site-nav__notif-trigger').forEach(function(t){ t.setAttribute('aria-expanded', 'false'); });
+          }
         });
       })();
       </script>`;

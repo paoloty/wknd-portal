@@ -98,6 +98,8 @@ import {
   getGameComments, getCommentById, getCommentWithMeta, addGameComment, deleteGameComment,
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
+  createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
+  getTransactionById,
   db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -1365,7 +1367,17 @@ function renderPage(req, opts) {
   }
 
   const body = balanceBarHtml + bannerHtml + (opts.body || '');
-  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), origin, ...opts, title, body, metaTags });
+
+  // Notification bell data — computed per request like everything else here (no client
+  // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
+  // sessions and guests never see the bell at all (see the isPlayer gate in views/layout.js).
+  let notifications = [], unreadNotificationCount = 0;
+  if (isPlayer && req.session?.playerPlayerId) {
+    notifications = getNotificationsForPlayer(req.session.playerPlayerId, 20);
+    unreadNotificationCount = getUnreadNotificationCount(req.session.playerPlayerId);
+  }
+
+  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), origin, notifications, unreadNotificationCount, ...opts, title, body, metaTags });
 }
 
 // Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
@@ -2360,6 +2372,14 @@ app.post('/balance-bar/dismiss', express.json(), (req, res) => {
   const amount = Number(req.body?.amount);
   if (!Number.isFinite(amount)) return res.status(400).end();
   req.session.balanceBarDismissedAmount = amount;
+  res.json({ ok: true });
+});
+
+// Marks every notification as read the moment the bell panel is opened (not per-item) —
+// matches how most notification bells behave, and avoids extra click-tracking machinery.
+app.post('/notifications/mark-read', express.json(), (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.status(401).end();
+  markNotificationsRead(req.session.playerPlayerId);
   res.json({ ok: true });
 });
 
@@ -3457,6 +3477,19 @@ app.get('/admin/ledger/:id', requireAuth, (req, res) => {
   }));
 });
 
+// Shared by every real "money moved" event below — a confirmed charge or a confirmed
+// payment, never a pending one (pending isn't a real event from the player's side yet).
+function notifyLedgerEvent({ playerId, type, amount, notes }) {
+  const amt = `₱${Number(amount).toLocaleString()}`;
+  createNotification({
+    playerId,
+    type: type === 'charge' ? 'ledger_charge' : 'ledger_payment_confirmed',
+    title: type === 'charge' ? `You were charged ${amt}` : `Payment confirmed: ${amt}`,
+    body: notes || '',
+    link: '/settle-balance',
+  });
+}
+
 app.post('/admin/ledger/transaction', requireAuth, express.json(), (req, res) => {
   const { player_id, amount, type, payment_method, date, status, notes, reference_no, season, category } = req.body;
   if (!player_id || !amount || !date) return res.status(400).json({ error: 'player_id, amount, and date are required.' });
@@ -3466,6 +3499,7 @@ app.post('/admin/ledger/transaction', requireAuth, express.json(), (req, res) =>
   if (!['confirmed', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
   const id = randomBytes(6).toString('hex');
   recordTransaction({ id, player_id, amount: parsed, type, payment_method: payment_method || '', date, status, notes: notes || '', reference_no: reference_no || '', season: season || '', category: category || '' });
+  if (status === 'confirmed') notifyLedgerEvent({ playerId: player_id, type, amount: parsed, notes });
   res.json({ ok: true, id });
 });
 
@@ -3473,8 +3507,10 @@ app.post('/admin/ledger/transaction', requireAuth, express.json(), (req, res) =>
 app.post('/admin/ledger/transaction/:id/confirm', requireAuth, express.json(), (req, res) => {
   const category = req.body?.category;
   if (category) setTransactionCategory(req.params.id, String(category).trim());
+  const tx = getTransactionById(req.params.id);
   const ok = confirmTransaction(req.params.id);
   if (!ok) return res.status(400).json({ error: 'Transaction not found or not pending.' });
+  if (tx) notifyLedgerEvent({ playerId: tx.player_id, type: tx.type, amount: tx.amount, notes: tx.notes });
   res.json({ ok: true });
 });
 
@@ -3495,9 +3531,11 @@ app.post('/admin/ledger/bulk-charge', requireAuth, express.json(), (req, res) =>
   if (!player_ids?.length || !amount || !date) return res.status(400).json({ error: 'player_ids, amount, and date are required.' });
   const parsed = parseFloat(amount);
   if (isNaN(parsed) || parsed <= 0) return res.status(400).json({ error: 'Amount must be a positive number.' });
+  const finalStatus = status || 'confirmed';
   for (const pid of player_ids) {
     const id = randomBytes(6).toString('hex');
-    recordTransaction({ id, player_id: pid, amount: parsed, type: type || 'charge', payment_method: payment_method || '', date, status: status || 'confirmed', notes: notes || '', reference_no: '', season: season || '', category: category || '' });
+    recordTransaction({ id, player_id: pid, amount: parsed, type: type || 'charge', payment_method: payment_method || '', date, status: finalStatus, notes: notes || '', reference_no: '', season: season || '', category: category || '' });
+    if (finalStatus === 'confirmed') notifyLedgerEvent({ playerId: pid, type: type || 'charge', amount: parsed, notes });
   }
   res.json({ ok: true, count: player_ids.length });
 });
@@ -3893,6 +3931,25 @@ app.get('/games/:ref', (req, res) => {
 });
 
 // ── Game comments + reactions ───────────────────────────────────────────────────
+// Mirrors linkifyMentions()'s matching logic in views/game.js, but returns matched player
+// ids instead of HTML — used to decide who gets a "you were mentioned" notification.
+// Kept in sync manually with the view-layer version, same as the client-side port.
+function extractMentionedPlayerIds(body, players) {
+  if (!players.length) return [];
+  const sorted = [...players].sort((a, b) => b.name.length - a.name.length);
+  const pattern = sorted.map(p => p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  if (!pattern) return [];
+  const byName = new Map(sorted.map(p => [p.name, p.id]));
+  const re = new RegExp('@(' + pattern + ')(?![A-Za-z0-9])', 'g');
+  const found = new Set();
+  let m;
+  while ((m = re.exec(body))) {
+    const id = byName.get(m[1]);
+    if (id) found.add(id);
+  }
+  return [...found];
+}
+
 app.post('/games/:id/comments', express.json(), (req, res) => {
   if (getSetting('comments_enabled', '0') !== '1') return res.status(404).json({ error: 'Not found.' });
   const playerId = req.session?.playerPlayerId;
@@ -3916,6 +3973,39 @@ app.post('/games/:id/comments', express.json(), (req, res) => {
       color: teamColor(saved.team_name || ''),
     },
   });
+
+  // Notifications: an @mentioned player gets a specific callout; everyone else who
+  // actually played in this game gets a general "new comment" one. Never both for the
+  // same person, and never for the commenter's own comment.
+  const gameLink = `/games/${gameSlug(game)}`;
+  const commenterName = displayPlayerName(saved.player_name);
+  const accountedPlayers = getPlayersWithAccounts().map(p => ({ id: p.id, name: displayPlayerName(p.name) }));
+  const mentionedIds = new Set(extractMentionedPlayerIds(body, accountedPlayers));
+
+  mentionedIds.forEach(mentionedId => {
+    if (mentionedId === playerId) return;
+    createNotification({
+      playerId: mentionedId,
+      type: 'comment_mention',
+      title: `${commenterName} mentioned you`,
+      body: body.length > 140 ? body.slice(0, 140) + '…' : body,
+      link: gameLink,
+    });
+  });
+
+  const gameStats = getGameDetailStats(game.id);
+  const participantIds = new Set(gameStats.map(s => s.player_id));
+  participantIds.forEach(pid => {
+    if (pid === playerId || mentionedIds.has(pid)) return;
+    createNotification({
+      playerId: pid,
+      type: 'comment_new',
+      title: `New comment on ${game.team_a_name} vs ${game.team_b_name}`,
+      body: `${commenterName}: ${body.length > 100 ? body.slice(0, 100) + '…' : body}`,
+      link: gameLink,
+    });
+  });
+
   res.json({ ok: true, id });
 });
 
@@ -6326,12 +6416,14 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
     });
     if (charge > 0) {
       const txId = randomBytes(6).toString('hex');
+      const chargeNotes = `Season ${season} fee (jersey top${p.jersey_shorts ? ' + shorts' : ''})`;
       recordTransaction({
         id: txId, player_id: p.player_id, amount: charge, type: 'charge',
         payment_method: '', date: today, status: 'confirmed',
-        notes: `Season ${season} fee (jersey top${p.jersey_shorts ? ' + shorts' : ''})`,
+        notes: chargeNotes,
         reference_no: '', season, category: 'season_fee',
       });
+      notifyLedgerEvent({ playerId: p.player_id, type: 'charge', amount: charge, notes: chargeNotes });
     }
   }
 
@@ -6426,6 +6518,22 @@ app.post('/papawis/:id/join', (req, res) => {
   res.json({ ok: true, status: result.status });
 });
 
+// Shared by both cancel paths (player self-cancel and admin remove) — cancelPapawisSignup
+// already tells the caller who (if anyone) got auto-promoted off the waitlist; this just
+// turns that into the player-facing notification. A guest promotion has no player_id of
+// its own to notify (guest signups are billed to but not "owned" by any one account beyond
+// the sponsor, who already knows), so those are silently skipped.
+function notifyPapawisPromotion(game, promoted) {
+  if (!promoted || !promoted.player_id || promoted.guest_name) return;
+  createNotification({
+    playerId: promoted.player_id,
+    type: 'papawis_promoted',
+    title: `You're confirmed for ${game.title || 'Papawis'}!`,
+    body: 'A spot opened up and you were moved off the waitlist.',
+    link: `/papawis#pw-game-${game.id}`,
+  });
+}
+
 app.post('/papawis/:id/cancel', (req, res) => {
   if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
   if (!req.session?.playerRegId || !req.session?.playerPlayerId) {
@@ -6446,6 +6554,7 @@ app.post('/papawis/:id/cancel', (req, res) => {
   }
   const result = cancelPapawisSignup(signup.id);
   if (result.error) return res.status(400).json({ error: 'Could not cancel.' });
+  notifyPapawisPromotion(game, result.promoted);
   res.json({ ok: true });
 });
 
@@ -6559,6 +6668,20 @@ app.get('/admin/papawis/:id/teams', requireAuth, (req, res) => {
   if (roster.length && roster.every(r => !r.team)) {
     setPapawisTeams(buildBalancedTeams(roster));
     roster = getPapawisConfirmedForTeams(req.params.id);
+    // Only on this first-ever build, not on later manual reshuffles/drag-assigns — those
+    // are the admin still fine-tuning, not the "here's your final team" moment. This is
+    // exactly the parked "confirmed-no-team-yet reminder, then team assigned later, no
+    // follow-up" gap noted in the Papawis notifications memory.
+    roster.forEach(r => {
+      if (!r.player_id || r.guest_name) return;
+      createNotification({
+        playerId: r.player_id,
+        type: 'papawis_team_assigned',
+        title: `Your team is set for ${game.title || 'Papawis'}`,
+        body: `You're on Team ${r.team === 'dark' ? 'Dark' : 'Light'}.`,
+        link: `/papawis#pw-game-${game.id}`,
+      });
+    });
   }
   res.send(renderAdminPage(req, {
     title: `Teams — ${game.title || 'Papawis'}`,
@@ -6617,6 +6740,10 @@ app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
   if (!papawisLockCheck(req.params.id, res)) return;
   const result = adminRemovePapawisSignup(req.params.signupId);
   if (result.error) return res.status(400).json({ error: 'Could not remove.' });
+  if (result.promoted) {
+    const game = getPapawisGame(req.params.id);
+    if (game) notifyPapawisPromotion(game, result.promoted);
+  }
   res.json({ ok: true });
 });
 
@@ -6646,14 +6773,16 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
   const today = manilaTodayStr();
   for (const s of confirmed) {
     const txId = randomBytes(6).toString('hex');
+    const chargeNotes = s.guest_name
+      ? `Papawis — ${game.title || 'Pickup game'} (${game.date}) — guest: ${s.guest_name}`
+      : `Papawis — ${game.title || 'Pickup game'} (${game.date})`;
     recordTransaction({
       id: txId, player_id: s.player_id, amount: price, type: 'charge',
       payment_method: '', date: today, status: 'confirmed',
-      notes: s.guest_name
-        ? `Papawis — ${game.title || 'Pickup game'} (${game.date}) — guest: ${s.guest_name}`
-        : `Papawis — ${game.title || 'Pickup game'} (${game.date})`,
+      notes: chargeNotes,
       reference_no: game.id, season: '', category: 'papawis',
     });
+    notifyLedgerEvent({ playerId: s.player_id, type: 'charge', amount: price, notes: chargeNotes });
   }
   completePapawisGame(req.params.id, price);
   res.json({ ok: true, charged: confirmed.length });

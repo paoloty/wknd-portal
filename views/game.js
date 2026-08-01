@@ -600,12 +600,12 @@ function gameTabsStyles() {
   </style>`;
 }
 
-function commentsTabButton(comments) {
-  return `<button class="game-tabs__tab" data-tab="comments">💬 Comments<span id="comments-count">${comments.length ? ` · ${comments.length}` : ''}</span></button>`;
+function commentsTabButton(comments, isActive) {
+  return `<button class="game-tabs__tab${isActive ? ' game-tabs__tab--active' : ''}" data-tab="comments">💬 Comments<span id="comments-count">${comments.length ? ` · ${comments.length}` : ''}</span></button>`;
 }
 
-function commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers }) {
-  return `<div id="tab-comments" class="game-tabs__body game-tabs__body--hidden">${commentsTabBody({ gameId: game.id, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers })}</div>`;
+function commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive }) {
+  return `<div id="tab-comments" class="game-tabs__body${isActive ? '' : ' game-tabs__body--hidden'}">${commentsTabBody({ gameId: game.id, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers })}</div>`;
 }
 
 // One shared script for tab switching + comments (post/react/delete) + page-level react/share
@@ -643,12 +643,14 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
   var mentionActiveIndex = -1;
 
   // Matches an in-progress "@partial name" run right up to the cursor — letters/spaces
-  // only, capped at 30 chars so it can't run away across a whole long comment.
+  // only, capped at 30 chars so it can't run away across a whole long comment. Returns
+  // the @'s own index too, not just the query text — the dropdown anchors to where the
+  // @ sits, not wherever the cursor has since moved to as you keep typing the name.
   function activeMentionQuery() {
     var pos = gcInput.selectionStart;
     var head = gcInput.value.slice(0, pos);
     var m = head.match(/@([A-Za-z ]{0,30})$/);
-    return m ? m[1] : null;
+    return m ? { query: m[1], atIndex: m.index } : null;
   }
 
   function closeMentionDropdown() {
@@ -698,22 +700,22 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
     return coords;
   }
 
-  function positionMentionDropdown() {
-    var coords = getCaretCoordinates(gcInput, gcInput.selectionStart);
+  function positionMentionDropdown(atIndex) {
+    var coords = getCaretCoordinates(gcInput, atIndex);
     var box = gcInput.parentElement; // .game-comments-composer__box — the positioned ancestor
     var maxLeft = Math.max(0, box.clientWidth - mentionDropdown.offsetWidth - 4);
     mentionDropdown.style.left = Math.min(gcInput.offsetLeft + coords.left, maxLeft) + 'px';
   }
 
   function updateMentionDropdown() {
-    var q = activeMentionQuery();
-    if (q === null || !mentionablePlayers.length) { closeMentionDropdown(); return; }
-    var ql = q.toLowerCase();
+    var active = activeMentionQuery();
+    if (active === null || !mentionablePlayers.length) { closeMentionDropdown(); return; }
+    var ql = active.query.toLowerCase();
     mentionMatches = mentionablePlayers.filter(function(p) { return p.name.toLowerCase().indexOf(ql) !== -1; }).slice(0, 6);
     if (!mentionMatches.length) { closeMentionDropdown(); return; }
     mentionActiveIndex = 0;
     renderMentionDropdown();
-    positionMentionDropdown();
+    positionMentionDropdown(active.atIndex);
   }
 
   function selectMention(player) {
@@ -991,16 +993,20 @@ function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = fa
     const name = displayPlayerName(p.name);
     return { id: p.id, name, initials: initials(name), photoUrl: `/api/player/${encodeURIComponent(p.id)}/photo` };
   });
+  // Comments leads the tab bar, but only actually opens by default once there's a
+  // conversation already happening there — an empty comments tab isn't a useful landing
+  // page, so a game with no comments yet still lands on Recap like before.
+  const commentsIsDefault = commentsEnabled && comments.length > 0;
 
   if (game.status === 'final') {
     return `<div class="card game-tabs">
   <div class="game-tabs__nav">
-    <button class="game-tabs__tab game-tabs__tab--active" data-tab="recap">Recap</button>
-    ${commentsEnabled ? commentsTabButton(comments) : ''}
+    ${commentsEnabled ? commentsTabButton(comments, commentsIsDefault) : ''}
+    <button class="game-tabs__tab${commentsIsDefault ? '' : ' game-tabs__tab--active'}" data-tab="recap">Recap</button>
     ${actions}
   </div>
-  <div id="tab-recap" class="game-tabs__body">${recapTab(game)}</div>
-  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers }) : ''}
+  <div id="tab-recap" class="game-tabs__body${commentsIsDefault ? ' game-tabs__body--hidden' : ''}">${recapTab(game)}</div>
+  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive: commentsIsDefault }) : ''}
 </div>
 ${gameTabsStyles()}
 ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
@@ -1018,24 +1024,24 @@ ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
 
   return `<div class="card game-tabs">
   <div class="game-tabs__nav">
-    <button class="game-tabs__tab game-tabs__tab--active" data-tab="recap">Recap</button>
+    ${commentsEnabled ? commentsTabButton(comments, commentsIsDefault) : ''}
+    <button class="game-tabs__tab${commentsIsDefault ? '' : ' game-tabs__tab--active'}" data-tab="recap">Recap</button>
     <button class="game-tabs__tab" data-tab="${tabIdA}">${escHtml(nameA)}${nameA === winner ? ' <span class="tab-win-dot"></span>' : ''}</button>
     <button class="game-tabs__tab" data-tab="${tabIdB}">${escHtml(nameB)}${nameB === winner ? ' <span class="tab-win-dot"></span>' : ''}</button>
     <button class="game-tabs__tab" data-tab="leaders">Leaders</button>
     <button class="game-tabs__tab" data-tab="comparison">Team Comparison</button>
     <button class="game-tabs__tab" data-tab="linescore">Line Score</button>
     ${hasLog ? `<button class="game-tabs__tab" data-tab="pbp">Play by Play</button>` : ''}
-    ${commentsEnabled ? commentsTabButton(comments) : ''}
     ${actions}
   </div>
-  <div id="tab-recap" class="game-tabs__body">${recapTab(game)}</div>
+  <div id="tab-recap" class="game-tabs__body${commentsIsDefault ? ' game-tabs__body--hidden' : ''}">${recapTab(game)}</div>
   <div id="tab-${tabIdA}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner)}</div>
   <div id="tab-${tabIdB}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner)}</div>
   <div id="tab-leaders" class="game-tabs__body game-tabs__body--hidden">${gameLeadersTab(game, stats)}</div>
   <div id="tab-comparison" class="game-tabs__body game-tabs__body--hidden">${teamComparisonTab(game, stats)}</div>
   <div id="tab-linescore" class="game-tabs__body game-tabs__body--hidden">${lineScoreTab(game, quarterScores)}</div>
   ${hasLog ? `<div id="tab-pbp" class="game-tabs__body game-tabs__body--hidden">${playByPlayTab(game)}</div>` : ''}
-  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers }) : ''}
+  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive: commentsIsDefault }) : ''}
 </div>
 ${gameTabsStyles()}
 ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;

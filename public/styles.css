@@ -207,6 +207,60 @@ body {
 }
 .site-nav__login:hover { opacity: 0.9; }
 
+/* ── Notification bell ───────────────────────────────────────────────────── */
+/* No extra margin — .site-nav already applies gap:30px between every child, same as
+   every other nav item, so the bell shouldn't add its own on top (that was what threw
+   its spacing off relative to its neighbors). */
+.site-nav__notif { position: relative; }
+.site-nav__notif-trigger {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  height: 34px;
+  background: none; border: none; border-radius: 50%;
+  color: var(--text-muted); cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.site-nav__notif-trigger:hover { background: rgba(255,255,255,.06); color: var(--text); }
+.site-nav__notif.is-open .site-nav__notif-trigger { color: var(--amber); }
+.site-nav__notif-badge {
+  position: absolute; top: 2px; right: 2px;
+  background: var(--amber); color: #0a0e16;
+  font-size: 10px; font-weight: 800; line-height: 14px;
+  min-width: 15px; height: 15px; padding: 0 3px;
+  border-radius: 999px; text-align: center;
+  border: 2px solid var(--bg, #020817);
+}
+.site-nav__notif-panel {
+  display: none;
+  position: absolute; top: 100%; right: 0;
+  margin-top: 10px;
+  width: 320px; max-width: 90vw; max-height: 420px;
+  overflow-y: auto;
+  background: #111827; border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  z-index: 100;
+}
+.site-nav__notif.is-open .site-nav__notif-panel { display: block; }
+.site-nav__notif-panel-head {
+  padding: 12px 14px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.site-nav__notif-item {
+  display: block; padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none !important; color: inherit;
+  transition: background 0.12s;
+}
+.site-nav__notif-item:last-child { border-bottom: none; }
+.site-nav__notif-item:hover { background: rgba(255,255,255,.04); }
+.site-nav__notif-item.is-unread { background: rgba(245,147,50,.07); border-left: 2px solid var(--amber); }
+.site-nav__notif-item-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.site-nav__notif-item-body { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.site-nav__notif-item-time { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.site-nav__notif-empty { padding: 24px 14px; text-align: center; font-size: 13px; color: var(--text-muted); }
+
 /* ── Nav dropdown (Awards) ───────────────────────────────────────────────── */
 .site-nav__dropdown { position: relative; }
 .site-nav__dropdown-trigger {
@@ -3424,6 +3478,18 @@ a.player-link:hover { color: var(--amber); }
     background: none !important;
   }
   .site-nav__dropdown-item.is-active { color: var(--amber); background: none !important; }
+
+  /* Notification bell — full-width static panel instead of a floating dropdown, same
+     treatment as the nav dropdowns above on the full-screen mobile overlay. */
+  .site-nav__notif-trigger { width: auto; height: auto; }
+  .site-nav__notif-panel {
+    display: none;
+    position: static;
+    margin-top: 12px;
+    width: 100%; max-width: 320px; max-height: 300px;
+    box-shadow: none;
+  }
+  .site-nav__notif.is-open .site-nav__notif-panel { display: block; }
 
   /* Players table */
   .pt-toolbar { gap: 10px; justify-content: flex-start; }
