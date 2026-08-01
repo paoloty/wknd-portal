@@ -37,6 +37,7 @@ function card(title, body) {
 export function adminVisibilityBody({
   papawisEnabled = false,
   postsEnabled = false,
+  commentsEnabled = false,
   awardsEnabled = true,
   mvpEnabled = true,
   sectionSettings = {},
@@ -63,6 +64,12 @@ export function adminVisibilityBody({
     label: 'Show Posts publicly',
     sub: `League news / matchup previews (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/posts</code>). Management stays available either way.`,
   }) + `<span id="vis-msg-posts_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
+
+  const commentsCard = card('Comments', toggleRow({
+    id: 'vis-comments-enabled', dataKey: 'comments_enabled', checked: commentsEnabled,
+    label: 'Show comments &amp; reactions on games',
+    sub: `Registered players can comment and react on any game page. Admins can delete inline either way.`,
+  }) + `<span id="vis-msg-comments_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
 
   const awardsCard = card('Awards', `
     ${toggleRow({
@@ -93,6 +100,7 @@ export function adminVisibilityBody({
 
 ${papawisCard}
 ${postsCard}
+${commentsCard}
 ${awardsCard}
 
 <style>
@@ -122,8 +130,9 @@ ${awardsCard}
     });
   }
 
-  bindToggle('vis-papawis-enabled', 'papawis_enabled',   'vis-msg-papawis_enabled');
-  bindToggle('vis-posts-enabled',   'posts_enabled',     'vis-msg-posts_enabled');
+  bindToggle('vis-papawis-enabled',  'papawis_enabled',   'vis-msg-papawis_enabled');
+  bindToggle('vis-posts-enabled',    'posts_enabled',     'vis-msg-posts_enabled');
+  bindToggle('vis-comments-enabled', 'comments_enabled',  'vis-msg-comments_enabled');
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
 

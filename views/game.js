@@ -538,14 +538,323 @@ export function playByPlayTab(game) {
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-function gameTabs(game, stats, dnpPlayers, quarterScores, playerMap, teamMap) {
+// React (page-level "liked the game") + Share, pinned to the right end of the tab nav —
+// separate from the tab-switching buttons since they're actions, not views to switch to.
+function tabActionsBar({ commentsEnabled, gameReaction }) {
+  const reactBtn = commentsEnabled
+    ? `<button type="button" id="game-react-btn" class="game-tabs__icon-btn${gameReaction.reacted ? ' is-active' : ''}" title="React to this game">
+        🔥 <span id="game-react-count">${gameReaction.count || 0}</span>
+      </button>`
+    : '';
+  return `<div class="game-tabs__actions">
+    ${reactBtn}
+    <button type="button" id="game-share-btn" class="game-tabs__icon-btn" title="Share">↗</button>
+  </div>`;
+}
+
+function gameTabsStyles() {
+  return `<style>
+    .game-tabs__actions { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 8px; flex-shrink: 0; }
+    .game-tabs__icon-btn { display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+    .game-tabs__icon-btn.is-active { border-color: var(--amber); color: var(--amber); }
+    .game-comments-panel { padding: 20px 24px 24px; }
+    .game-comments-composer { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+    /* Flex row rather than an absolutely-positioned button over the textarea — the
+       textarea's height changes as it auto-grows, which made a position:absolute button
+       drift/overlap unpredictably. align-items:center keeps the send button vertically
+       centered against the textarea regardless of how tall it gets. */
+    .game-comments-composer__box { display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 6px 6px 6px 14px; box-sizing: border-box; }
+    .game-comments-composer textarea { flex: 1; min-width: 0; min-height: 22px; max-height: 160px; resize: none; overflow-y: auto; background: none; border: none; color: var(--text); font: inherit; padding: 6px 0; box-sizing: border-box; }
+    .game-comments-composer textarea:focus { outline: none; }
+    .game-comments-composer__send { flex-shrink: 0; width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--border); color: var(--text-muted); border: none; border-radius: 50%; cursor: pointer; transition: background .12s, color .12s; }
+    .game-comments-composer__send svg { display: block; }
+    .game-comments-composer__send:not(:disabled) { background: var(--amber); color: #020817; cursor: pointer; }
+    .game-comments-composer__send:disabled { cursor: not-allowed; }
+    .game-comments-composer__msg { font-size: 12px; color: var(--text-muted); padding-left: 4px; min-height: 14px; }
+    .game-comments-cta { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-size: 13px; color: var(--text-muted); margin-top: 16px; }
+    .game-comments-cta a { color: var(--amber); font-weight: 600; }
+    .game-comments-empty { color: var(--text-muted); font-size: 13px; }
+    .game-comments-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+    .game-comments-more { display: flex; }
+    .game-comments-more button { background: none; border: none; color: var(--amber); font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
+    .game-comments-more button:hover { text-decoration: underline; }
+    .game-comment { display: flex; gap: 12px; align-items: flex-start; }
+    .game-comment__avatar { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--text-muted); background: var(--bg); }
+    .game-comment__avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .game-comment__body { flex: 1; min-width: 0; }
+    .game-comment__head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .game-comment__name { font-weight: 700; color: var(--text); text-decoration: none; font-size: 13px; }
+    .game-comment__time { font-size: 11px; color: var(--text-muted); }
+    .game-comment__delete { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+    .game-comment__delete:hover { color: #ef4444; }
+    .game-comment__text { margin: 4px 0 6px; font-size: 13.5px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+    .game-comment__react { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+    .game-comment__react.is-active { border-color: var(--amber); color: var(--amber); }
+  </style>`;
+}
+
+function commentsTabButton(comments) {
+  return `<button class="game-tabs__tab" data-tab="comments">💬 Comments<span id="comments-count">${comments.length ? ` · ${comments.length}` : ''}</span></button>`;
+}
+
+function commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin }) {
+  return `<div id="tab-comments" class="game-tabs__body game-tabs__body--hidden">${commentsTabBody({ gameId: game.id, comments, reactedIds, isPlayer, isAdmin })}</div>`;
+}
+
+// One shared script for tab switching + comments (post/react/delete) + page-level react/share
+// — all game-tabs concerns live in this one block regardless of which branch built the markup.
+function gameTabsScript({ gameId, isAdmin = false }) {
+  return `<script>
+(function(){
+  var nav = document.querySelector('.game-tabs__nav');
+  nav.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-tab]');
+    if (!btn) return;
+    document.querySelectorAll('.game-tabs__tab').forEach(function(b){ b.classList.remove('game-tabs__tab--active'); });
+    document.querySelectorAll('.game-tabs__body').forEach(function(b){ b.classList.add('game-tabs__body--hidden'); });
+    btn.classList.add('game-tabs__tab--active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('game-tabs__body--hidden');
+  });
+
+  var gameId = ${JSON.stringify(gameId)};
+  var isAdmin = ${JSON.stringify(isAdmin)};
+
+  var seeMoreBtn = document.getElementById('gc-see-more');
+  if (seeMoreBtn) {
+    seeMoreBtn.addEventListener('click', function() {
+      document.querySelectorAll('.game-comment[hidden]').forEach(function(li) { li.hidden = false; });
+      seeMoreBtn.closest('.game-comments-more').remove();
+    });
+  }
+
+  var submitBtn = document.getElementById('gc-submit');
+  var gcInput   = document.getElementById('gc-input');
+  if (submitBtn && gcInput) {
+    // Auto-grow — starts single-line (matches the Facebook-style box), expands as text
+    // wraps rather than staying a fixed multi-line block from the start. Same listener
+    // also grays the send button out while the box is empty/whitespace-only.
+    gcInput.addEventListener('input', function() {
+      gcInput.style.height = 'auto';
+      gcInput.style.height = gcInput.scrollHeight + 'px';
+      submitBtn.disabled = !gcInput.value.trim();
+    });
+    gcInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postComment(); }
+    });
+    submitBtn.addEventListener('click', postComment);
+  }
+  // wsReady tracks whether the live channel is actually up — if it never connects (or
+  // drops), posting/deleting falls back to the old reload-based behavior instead of
+  // silently leaving the page out of sync. Live updates are a bonus, not a dependency.
+  var wsReady = false;
+
+  function postComment() {
+    var msg = document.getElementById('gc-msg');
+    var body = gcInput.value.trim();
+    if (!body) { msg.textContent = 'Write something first.'; return; }
+    submitBtn.disabled = true; msg.textContent = '';
+    fetch('/games/' + gameId + '/comments', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ body: body })
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+    .then(function(res) {
+      if (!res.ok) { msg.textContent = res.d.error || 'Failed to post.'; submitBtn.disabled = false; return; }
+      if (wsReady) {
+        // The broadcast (including our own new comment) does the actual rendering —
+        // just reset the box rather than inserting it twice.
+        gcInput.value = ''; gcInput.style.height = 'auto'; submitBtn.disabled = true;
+      } else {
+        location.reload();
+      }
+    })
+    .catch(function() { msg.textContent = 'Network error.'; submitBtn.disabled = false; });
+  }
+
+  // Delegated (not per-button) — comments/buttons added later by the WebSocket handler
+  // below need working react/delete clicks without re-binding anything.
+  var commentsPanel = document.querySelector('.game-comments-panel');
+  if (commentsPanel) {
+    commentsPanel.addEventListener('click', function(e) {
+      var reactBtnEl = e.target.closest('[data-react-id]');
+      if (reactBtnEl) {
+        var rid = reactBtnEl.dataset.reactId;
+        reactBtnEl.disabled = true;
+        fetch('/games/' + gameId + '/comments/' + rid + '/react', { method: 'POST', headers: {'Content-Type':'application/json'} })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            reactBtnEl.disabled = false;
+            if (!d.ok) return;
+            reactBtnEl.classList.toggle('is-active', d.reacted);
+            reactBtnEl.querySelector('.game-comment__react-count').textContent = d.count;
+          })
+          .catch(function() { reactBtnEl.disabled = false; });
+        return;
+      }
+      var delBtnEl = e.target.closest('[data-delete-id]');
+      if (delBtnEl) {
+        if (!confirm('Delete this comment?')) return;
+        var did = delBtnEl.dataset.deleteId;
+        fetch('/games/' + gameId + '/comments/' + did, { method: 'DELETE' })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (!d.ok) { alert(d.error || 'Failed'); return; }
+            // Remove immediately for the admin who clicked — the broadcast (if connected)
+            // separately handles removing it for everyone else viewing the page.
+            var li = commentsPanel.querySelector('.game-comment[data-id="' + did + '"]');
+            if (li) li.remove();
+          })
+          .catch(function() { alert('Network error'); });
+      }
+    });
+  }
+
+  // ── Live updates (WebSocket) ────────────────────────────────────────────────
+  function escLive(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function fmtLiveTime(ms) {
+    return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function bumpCommentsCount(delta) {
+    var el = document.getElementById('comments-count');
+    if (!el) return;
+    var current = parseInt((el.textContent || '').replace(/[^0-9]/g, ''), 10) || 0;
+    var next = Math.max(0, current + delta);
+    el.textContent = next ? ' · ' + next : '';
+  }
+  function buildCommentLi(c) {
+    var li = document.createElement('li');
+    li.className = 'game-comment';
+    li.setAttribute('data-id', c.id);
+    var playerHref = '/players/' + encodeURIComponent(c.player_id);
+    li.innerHTML =
+      '<a href="' + playerHref + '" class="game-comment__avatar" style="border-color:' + escLive(c.color) + '">' +
+        '<span class="font-condensed">' + escLive(c.initials) + '</span>' +
+        '<img src="' + escLive(c.photoUrl) + '" alt="" loading="lazy" onerror="this.style.display=\\'none\\'">' +
+      '</a>' +
+      '<div class="game-comment__body">' +
+        '<div class="game-comment__head">' +
+          '<a href="' + playerHref + '" class="game-comment__name">' + escLive(c.displayName) + '</a>' +
+          '<span class="game-comment__time">' + fmtLiveTime(c.created_at) + '</span>' +
+          (isAdmin ? '<button type="button" class="game-comment__delete" data-delete-id="' + c.id + '" title="Delete comment" aria-label="Delete comment">✕</button>' : '') +
+        '</div>' +
+        '<p class="game-comment__text">' + escLive(c.body) + '</p>' +
+        '<button type="button" class="game-comment__react" data-react-id="' + c.id + '">🔥 <span class="game-comment__react-count">0</span></button>' +
+      '</div>';
+    return li;
+  }
+
+  var tabComments = document.getElementById('tab-comments');
+  if (tabComments) {
+    connectCommentsSocket();
+  }
+  function connectCommentsSocket() {
+    var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var ws;
+    try { ws = new WebSocket(proto + '//' + window.location.host + '/ws/games/' + encodeURIComponent(gameId) + '/comments'); }
+    catch (e) { return; }
+
+    ws.addEventListener('open', function() { wsReady = true; });
+    ws.addEventListener('close', function() {
+      wsReady = false;
+      // One retry after a few seconds — covers a dropped connection without hammering
+      // the server if comments_enabled is simply off (upgrade gets rejected instantly).
+      setTimeout(connectCommentsSocket, 4000);
+    });
+    ws.addEventListener('error', function() { wsReady = false; });
+
+    ws.addEventListener('message', function(evt) {
+      var msg;
+      try { msg = JSON.parse(evt.data); } catch (e) { return; }
+
+      if (msg.type === 'comment:new') {
+        var container = document.getElementById('game-comments-container');
+        var list = document.getElementById('game-comments-list');
+        if (!list) {
+          var empty = document.getElementById('game-comments-empty');
+          if (empty) empty.remove();
+          list = document.createElement('ul');
+          list.className = 'game-comments-list';
+          list.id = 'game-comments-list';
+          container.appendChild(list);
+        }
+        list.appendChild(buildCommentLi(msg.comment));
+        bumpCommentsCount(1);
+        return;
+      }
+      if (msg.type === 'comment:delete') {
+        var row = document.querySelector('.game-comment[data-id="' + msg.id + '"]');
+        if (row) row.remove();
+        bumpCommentsCount(-1);
+        return;
+      }
+      if (msg.type === 'comment:react') {
+        var reactRow = document.querySelector('.game-comment[data-id="' + msg.id + '"] .game-comment__react-count');
+        if (reactRow) reactRow.textContent = msg.count;
+        return;
+      }
+      if (msg.type === 'game:react') {
+        var gc = document.getElementById('game-react-count');
+        if (gc) gc.textContent = msg.count;
+        return;
+      }
+    });
+  }
+
+  var reactBtn = document.getElementById('game-react-btn');
+  if (reactBtn) {
+    reactBtn.addEventListener('click', function() {
+      reactBtn.disabled = true;
+      fetch('/games/' + gameId + '/react', { method: 'POST', headers: {'Content-Type':'application/json'} })
+        .then(function(r) {
+          if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return null; }
+          return r.json();
+        })
+        .then(function(d) {
+          if (!d) return;
+          reactBtn.disabled = false;
+          if (!d.ok) return;
+          reactBtn.classList.toggle('is-active', d.reacted);
+          document.getElementById('game-react-count').textContent = d.count;
+        })
+        .catch(function() { reactBtn.disabled = false; });
+    });
+  }
+
+  var shareBtn = document.getElementById('game-share-btn');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', function() {
+      var url = window.location.href;
+      if (navigator.share) {
+        navigator.share({ title: document.title, url: url }).catch(function() {});
+        return;
+      }
+      navigator.clipboard.writeText(url).then(function() {
+        var orig = shareBtn.innerHTML;
+        shareBtn.innerHTML = '✓';
+        setTimeout(function() { shareBtn.innerHTML = orig; }, 1500);
+      }).catch(function() {});
+    });
+  }
+})();
+</script>`;
+}
+
+function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, isPlayer = false, isAdmin = false }) {
+  const actions = tabActionsBar({ commentsEnabled, gameReaction });
+
   if (game.status === 'final') {
     return `<div class="card game-tabs">
   <div class="game-tabs__nav">
     <button class="game-tabs__tab game-tabs__tab--active" data-tab="recap">Recap</button>
+    ${commentsEnabled ? commentsTabButton(comments) : ''}
+    ${actions}
   </div>
   <div id="tab-recap" class="game-tabs__body">${recapTab(game)}</div>
-</div>`;
+  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin }) : ''}
+</div>
+${gameTabsStyles()}
+${gameTabsScript({ gameId: game.id, isAdmin })}`;
   }
 
   const { byTeam, dnpByTeam, winner } = buildBoxScoreData(game, stats, dnpPlayers);
@@ -567,6 +876,8 @@ function gameTabs(game, stats, dnpPlayers, quarterScores, playerMap, teamMap) {
     <button class="game-tabs__tab" data-tab="comparison">Team Comparison</button>
     <button class="game-tabs__tab" data-tab="linescore">Line Score</button>
     ${hasLog ? `<button class="game-tabs__tab" data-tab="pbp">Play by Play</button>` : ''}
+    ${commentsEnabled ? commentsTabButton(comments) : ''}
+    ${actions}
   </div>
   <div id="tab-recap" class="game-tabs__body">${recapTab(game)}</div>
   <div id="tab-${tabIdA}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner)}</div>
@@ -575,20 +886,10 @@ function gameTabs(game, stats, dnpPlayers, quarterScores, playerMap, teamMap) {
   <div id="tab-comparison" class="game-tabs__body game-tabs__body--hidden">${teamComparisonTab(game, stats)}</div>
   <div id="tab-linescore" class="game-tabs__body game-tabs__body--hidden">${lineScoreTab(game, quarterScores)}</div>
   ${hasLog ? `<div id="tab-pbp" class="game-tabs__body game-tabs__body--hidden">${playByPlayTab(game)}</div>` : ''}
+  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin }) : ''}
 </div>
-<script>
-(function(){
-  var nav = document.querySelector('.game-tabs__nav');
-  nav.addEventListener('click', function(e){
-    var btn = e.target.closest('[data-tab]');
-    if (!btn) return;
-    document.querySelectorAll('.game-tabs__tab').forEach(function(b){ b.classList.remove('game-tabs__tab--active'); });
-    document.querySelectorAll('.game-tabs__body').forEach(function(b){ b.classList.add('game-tabs__body--hidden'); });
-    btn.classList.add('game-tabs__tab--active');
-    document.getElementById('tab-' + btn.dataset.tab).classList.remove('game-tabs__body--hidden');
-  });
-})();
-</script>`;
+${gameTabsStyles()}
+${gameTabsScript({ gameId: game.id, isAdmin })}`;
 }
 
 // ── POTG card ─────────────────────────────────────────────────────────────────
@@ -663,7 +964,70 @@ function topPerformers(stats, potgPlayerId) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {} }) {
+function fmtCommentTime(ms) {
+  return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+// Real player avatar/name (team-colored ring, links to profile) rather than a generic
+// commenter identity — the whole point of tying comments to player_id instead of a
+// freeform display name.
+function commentRow(c, { reacted, isAdmin, collapsed = false } = {}) {
+  const color = teamColor(c.team_name || '');
+  return `<li class="game-comment" data-id="${escHtml(c.id)}"${collapsed ? ' hidden' : ''}>
+    ${playerAvatar(c.player_id, c.player_name, color, { className: 'game-comment__avatar', link: true })}
+    <div class="game-comment__body">
+      <div class="game-comment__head">
+        ${playerLink(c.player_id, c.player_name, { className: 'game-comment__name' })}
+        <span class="game-comment__time">${fmtCommentTime(c.created_at)}</span>
+        ${isAdmin ? `<button type="button" class="game-comment__delete" data-delete-id="${escHtml(c.id)}" title="Delete comment" aria-label="Delete comment">✕</button>` : ''}
+      </div>
+      <p class="game-comment__text">${escHtml(c.body)}</p>
+      <button type="button" class="game-comment__react${reacted ? ' is-active' : ''}" data-react-id="${escHtml(c.id)}">
+        🔥 <span class="game-comment__react-count">${c.reaction_count || 0}</span>
+      </button>
+    </div>
+  </li>`;
+}
+
+const COMMENTS_VISIBLE_COUNT = 5;
+
+// List first, composer last — you scroll down through the thread and land on the box to
+// add your own, same order as Facebook's comment thread. `comments` arrives oldest-first
+// (see stmtGetGameComments), so the most recent COMMENTS_VISIBLE_COUNT stay visible and
+// anything older sits behind a "See N more comments" reveal rather than a real paginated
+// fetch — comment volume per game is small enough that rendering everything up front and
+// just toggling `hidden` client-side is simpler than building cursor-based pagination for
+// a scale problem this app doesn't have.
+function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlayer = false, isAdmin = false }) {
+  const older  = comments.slice(0, -COMMENTS_VISIBLE_COUNT);
+  const recent = comments.slice(-COMMENTS_VISIBLE_COUNT);
+  const row = c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin });
+
+  const list = comments.length
+    ? `<ul class="game-comments-list" id="game-comments-list">
+        ${older.length ? `<li class="game-comments-more"><button type="button" id="gc-see-more">See ${older.length} more comment${older.length === 1 ? '' : 's'}</button></li>` : ''}
+        ${older.map(c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, collapsed: true })).join('')}
+        ${recent.map(row).join('')}
+      </ul>`
+    : `<p class="game-comments-empty" id="game-comments-empty">No comments yet — be the first to say something.</p>`;
+
+  const composer = isPlayer
+    ? `<div class="game-comments-composer">
+        <div class="game-comments-composer__box">
+          <textarea id="gc-input" maxlength="500" rows="1" placeholder="Write a comment…"></textarea>
+          <button type="button" id="gc-submit" class="game-comments-composer__send" aria-label="Post comment" disabled><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 1.5L10 6L2 10.5Z" fill="currentColor"/></svg></button>
+        </div>
+        <span id="gc-msg" class="game-comments-composer__msg"></span>
+      </div>`
+    : `<div class="game-comments-cta"><a href="/login?next=${encodeURIComponent(`/games/${gameId}`)}">Login</a> to join the conversation.</div>`;
+
+  return `<div class="game-comments-panel">
+    <div id="game-comments-container">${list}</div>
+    ${composer}
+  </div>`;
+}
+
+export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, isPlayer = false, isAdmin = false }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
@@ -680,7 +1044,7 @@ export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterSc
   return `<div class="game-detail-layout">
   <div class="game-detail-left">
     ${leftMedia(game, colorA, colorB)}
-    ${gameTabs(game, stats, dnpPlayers, quarterScores, playerMap, teamMap)}
+    ${gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled, comments, reactedIds, gameReaction, isPlayer, isAdmin })}
   </div>
   <div class="game-detail-right">
     ${scoreCard(game, colorA, colorB)}

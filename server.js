@@ -2,6 +2,8 @@ import 'dotenv/config';
 const IS_DEV = process.env.NODE_ENV !== 'production';
 import path from 'path';
 import os from 'os';
+import http from 'http';
+import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
 import { statSync, existsSync, unlinkSync } from 'fs';
@@ -31,7 +33,7 @@ import { privacyPage, termsPage } from './views/legal.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
-import { teamColor, displayPlayerName, manilaTodayStr } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, initials } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -93,6 +95,9 @@ import {
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
   getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
   getSeoOverride, getAllSeoOverrides, upsertSeoOverride, deleteSeoOverride,
+  getGameComments, getCommentById, getCommentWithMeta, addGameComment, deleteGameComment,
+  toggleCommentReaction, getReactedCommentIdsForPlayer,
+  toggleGameReaction, getGameReactionState,
   db as portalDb,
 } from './lib/portal-db.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -1126,6 +1131,7 @@ function getFeatureFlags() {
     regOpen: getSetting('reg_open',         '0') === '1',
     papawis: getSetting('papawis_enabled',  '0') === '1',
     posts:   getSetting('posts_enabled',    '0') === '1',
+    comments: getSetting('comments_enabled', '0') === '1',
   };
 }
 
@@ -3387,10 +3393,11 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
     title: 'Visibility',
     currentPath: '/admin/visibility',
     body: adminVisibilityBody({
-      papawisEnabled: getSetting('papawis_enabled', '0') === '1',
-      postsEnabled:   getSetting('posts_enabled', '0') === '1',
-      awardsEnabled:  getSetting('awards_enabled', '1') !== '0',
-      mvpEnabled:     getSetting('mvp_race_enabled', '1') !== '0',
+      papawisEnabled:  getSetting('papawis_enabled', '0') === '1',
+      postsEnabled:    getSetting('posts_enabled', '0') === '1',
+      commentsEnabled: getSetting('comments_enabled', '0') === '1',
+      awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
+      mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       sectionSettings: Object.fromEntries(SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
     }),
   }));
@@ -3398,7 +3405,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled',
     'award_show_mvp', 'award_show_dpoy',
     'award_show_all_wknd_1', 'award_show_all_wknd_2', 'award_show_all_wknd_def',
     'award_show_scoring_champ', 'award_show_assists_leader', 'award_show_rebounds_leader',
@@ -3861,12 +3868,85 @@ app.get('/games/:ref', (req, res) => {
 
   const pageTitle = gamePageTitle(game);
 
+  const commentsEnabled = getSetting('comments_enabled', '0') === '1';
+  const currentPlayerId = req.session?.playerPlayerId || null;
+  let comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false };
+  if (commentsEnabled) {
+    comments = getGameComments(game.id);
+    reactedIds = getReactedCommentIdsForPlayer(comments.map(c => c.id), currentPlayerId);
+    gameReaction = getGameReactionState(game.id, currentPlayerId);
+  }
+
   res.send(renderPage(req, {
     title: `${pageTitle} — WKND Basketball League`,
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
-    body: gamePage({ game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap })
+    body: gamePage({
+      game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap,
+      commentsEnabled, comments, reactedIds, gameReaction,
+      currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin,
+    })
   }));
+});
+
+// ── Game comments + reactions ───────────────────────────────────────────────────
+app.post('/games/:id/comments', express.json(), (req, res) => {
+  if (getSetting('comments_enabled', '0') !== '1') return res.status(404).json({ error: 'Not found.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Log in to comment.' });
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  const body = String(req.body?.body || '').trim().slice(0, 500);
+  if (!body) return res.status(400).json({ error: 'Comment can\'t be empty.' });
+  const id = addGameComment({ gameId: game.id, playerId, body });
+  const saved = getCommentWithMeta(id);
+  broadcastToGame(game.id, {
+    type: 'comment:new',
+    comment: {
+      id: saved.id,
+      player_id: saved.player_id,
+      body: saved.body,
+      created_at: saved.created_at,
+      displayName: displayPlayerName(saved.player_name),
+      initials: initials(saved.player_name),
+      photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo`,
+      color: teamColor(saved.team_name || ''),
+    },
+  });
+  res.json({ ok: true, id });
+});
+
+app.post('/games/:id/comments/:commentId/react', express.json(), (req, res) => {
+  if (getSetting('comments_enabled', '0') !== '1') return res.status(404).json({ error: 'Not found.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Log in to react.' });
+  const comment = getCommentById(req.params.commentId);
+  if (!comment || comment.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
+  const result = toggleCommentReaction(comment.id, playerId);
+  broadcastToGame(comment.game_id, { type: 'comment:react', id: comment.id, count: result.count });
+  res.json({ ok: true, ...result });
+});
+
+// Page-level reaction — "liked the game itself," gated behind the same comments_enabled
+// flag since it shipped as part of the same social-engagement launch, not a separate toggle.
+app.post('/games/:id/react', express.json(), (req, res) => {
+  if (getSetting('comments_enabled', '0') !== '1') return res.status(404).json({ error: 'Not found.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Log in to react.' });
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  const result = toggleGameReaction(game.id, playerId);
+  broadcastToGame(game.id, { type: 'game:react', count: result.count });
+  res.json({ ok: true, ...result });
+});
+
+app.delete('/games/:id/comments/:commentId', (req, res) => {
+  if (!req.session?.isAdmin) return res.status(403).json({ error: 'Admins only.' });
+  const comment = getCommentById(req.params.commentId);
+  if (!comment || comment.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
+  deleteGameComment(comment.id);
+  broadcastToGame(comment.game_id, { type: 'comment:delete', id: comment.id });
+  res.json({ ok: true });
 });
 
 // ── Posts ──────────────────────────────────────────────────────────────────────
@@ -6608,7 +6688,43 @@ function runPapawisReminders() {
 runPapawisReminders();
 setInterval(runPapawisReminders, PAPAWIS_REMINDER_CHECK_MS);
 
-app.listen(PORT, () => {
+// ── Live game-comments WebSocket ────────────────────────────────────────────────
+// Scoped to one room per game (not a site-wide socket) — a client on /games/:id only
+// gets that game's comment/reaction events. Receive-only for clients: comments are
+// already public-read (see commentsTabBody), so no session auth on the socket itself —
+// the actual writes still go through the existing authenticated HTTP routes below; this
+// channel purely pushes "something changed, here's the update" to open tabs. Purely
+// additive — if the socket never connects, every route above still works exactly the
+// same via a manual refresh, same as before this existed.
+const gameCommentRooms = new Map(); // gameId -> Set<WebSocket>
+const wss = new WebSocketServer({ noServer: true });
+
+function broadcastToGame(gameId, payload) {
+  const room = gameCommentRooms.get(gameId);
+  if (!room || !room.size) return;
+  const msg = JSON.stringify(payload);
+  for (const ws of room) {
+    if (ws.readyState === ws.OPEN) ws.send(msg);
+  }
+}
+
+const server = http.createServer(app);
+server.on('upgrade', (req, socket, head) => {
+  const { pathname } = new URL(req.url, 'http://localhost');
+  const match = pathname.match(/^\/ws\/games\/([^/]+)\/comments$/);
+  if (!match || getSetting('comments_enabled', '0') !== '1') { socket.destroy(); return; }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    const gameId = decodeURIComponent(match[1]);
+    if (!gameCommentRooms.has(gameId)) gameCommentRooms.set(gameId, new Set());
+    gameCommentRooms.get(gameId).add(ws);
+    ws.on('close', () => {
+      const room = gameCommentRooms.get(gameId);
+      if (room) { room.delete(ws); if (!room.size) gameCommentRooms.delete(gameId); }
+    });
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`WKND Portal → http://localhost:${PORT}`);
   console.log(`DB: portal.db (self-hosted)`);
 });

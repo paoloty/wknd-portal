@@ -310,10 +310,13 @@
 .agm-new-btn:hover  { opacity: .88; }
 .agm-new-btn:active { opacity: .78; }
 .agm-new-btn:disabled { opacity: .4; cursor: not-allowed; }
-/* .agm-new-btn is mostly used on <button>s, but a few (e.g. "Create/View Teams") are
-   real <a> links — the only ones that can ever hit :visited. Restate the color there
-   explicitly so a visited link never silently reverts to the browser's default link color. */
-a.agm-new-btn:visited { color: #020817; }
+/* .agm-new-btn is mostly used on <button>s, but a few (e.g. "Create/View Teams") are real
+   <a> links, and something (likely the Tailwind CDN Preflight's `a { color: inherit }`,
+   which the plain-class rule above apparently isn't beating for anchors specifically)
+   was letting those fall through to the inherited slate-gray body text color instead of
+   staying dark. Tag-qualified selector + !important so this wins outright, in every link
+   state, regardless of what's fighting it. */
+a.agm-new-btn, a.agm-new-btn:link, a.agm-new-btn:visited { color: #020817 !important; }
 
 /* Secondary (outlined) */
 .admin-btn {
