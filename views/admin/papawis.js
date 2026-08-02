@@ -50,6 +50,7 @@ const ACTIVITY_LABELS = {
   viewed_roster: { label: 'viewed the player list', color: 'text-slate-400' },
   reminded:      { label: 'reminder emailed', color: 'text-sky-400' },
   cancel_notified: { label: 'notified of cancellation', color: 'text-red-400' },
+  completion_notified: { label: 'sent payment receipt', color: 'text-sky-400' },
 };
 
 // Shared between the per-game log (Game column hidden) and the global feed (shown).
@@ -80,15 +81,28 @@ function papawisTeamLabel(team) {
   return '—';
 }
 
+// Paid status — only meaningful for a confirmed signup on a *completed* game (waitlisted
+// players were never charged, and there's nothing to mark on an open one). The "Paid"
+// state doubles as an unmark button, so a mis-click is reversible without leaving the
+// ledger out of sync — see the /admin/papawis/:id/signups/:signupId/paid route, which
+// voids the exact transaction this created rather than guessing which one to reverse.
+function paidStatusHtml(s) {
+  if (s.status !== 'confirmed') return '<span class="text-slate-600">—</span>';
+  return s.paid_at
+    ? `<button type="button" class="agm-badge agm-badge--green" data-unmark-paid="${escHtml(s.id)}" style="border:none;cursor:pointer;font:inherit">Paid ✓</button>`
+    : `<span class="agm-badge agm-badge--amber">Unpaid</span> <button type="button" class="admin-btn admin-btn--sm admin-btn--success" data-mark-paid="${escHtml(s.id)}" style="margin-left:6px">Mark Paid</button>`;
+}
+
 // Read-only stand-in for the interactive confirmed/waitlist board once a roster is
 // locked — a plain table is simpler and less error-prone than trying to keep half the
 // drag/move affordances alive on a list that shouldn't actually change anymore.
-function lockedSummaryRow(s) {
+function lockedSummaryRow(s, { showPaid = false } = {}) {
   const name = s.guest_name ? escHtml(s.guest_name) : escHtml(displayPlayerName(s.player_name));
   return `<tr class="border-b border-admin-border/50 last:border-b-0">
     <td class="px-4 py-2.5 text-sm font-medium text-slate-200">${name}${s.guest_name ? ' <span class="text-xs text-slate-500">(guest)</span>' : ''}</td>
     <td class="px-4 py-2.5 text-xs">${s.status === 'confirmed' ? '<span class="agm-badge agm-badge--green">Confirmed</span>' : '<span class="agm-badge agm-badge--amber">Waitlist</span>'}</td>
     <td class="px-4 py-2.5 text-xs text-slate-400">${papawisTeamLabel(s.team)}</td>
+    ${showPaid ? `<td class="px-4 py-2.5 text-xs">${paidStatusHtml(s)}</td>` : ''}
   </tr>`;
 }
 
@@ -350,7 +364,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
           ? `<button class="pw-move-btn pw-move-btn--confirm" data-move="${escHtml(s.id)}" data-to="confirmed" ${isConfirmedFull ? 'disabled title="Confirmed is full"' : ''}>${ICON_CHEVRON_UP} Confirm</button>`
           : `<button class="pw-move-btn" data-move="${escHtml(s.id)}" data-to="waitlist">${ICON_CHEVRON_DOWN} Waitlist</button>`}
         <button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>
-      </div>` : ''}
+      </div>` : isCompleted && s.status === 'confirmed' ? `<div class="pw-row__actions">${paidStatusHtml(s)}</div>` : ''}
     </li>`;
   };
 
@@ -390,9 +404,10 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Name</th>
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Status</th>
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Team</th>
+          ${isCompleted ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Paid</th>` : ''}
         </tr></thead>
         <tbody>
-          ${[...confirmed, ...waitlist].map(lockedSummaryRow).join('') || `<tr><td colspan="3" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
+          ${[...confirmed, ...waitlist].map(s => lockedSummaryRow(s, { showPaid: isCompleted })).join('') || `<tr><td colspan="${isCompleted ? 4 : 3}" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -485,9 +500,17 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ` : isCompleted ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Closed out</div>
-      <div class="p-4">
-        <div class="text-2xl font-extrabold font-saira text-brand">₱${Number(game.price_per_player || 0).toLocaleString()}</div>
-        <div class="text-xs text-slate-500 mt-1">per player · ${confirmed.length} charged</div>
+      <div class="p-4 flex flex-col gap-3">
+        <div>
+          <div class="text-2xl font-extrabold font-saira text-brand">₱${Number(game.price_per_player || 0).toLocaleString()}</div>
+          <div class="text-xs text-slate-500 mt-1">per player · ${confirmed.length} charged</div>
+          <div class="text-xs mt-2 ${confirmed.every(s => s.paid_at) && confirmed.length ? 'text-emerald-400' : 'text-slate-500'}">${confirmed.filter(s => s.paid_at).length}/${confirmed.length} paid</div>
+        </div>
+        <div class="pt-2 border-t border-admin-border">
+          <button class="admin-btn admin-btn--sm" id="pw-send-emails-btn">📧 Send payment emails</button>
+          <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">Emails every confirmed player their total for this game with a link to settle up. Doesn't re-charge anyone — sends regardless of the reminder-emails toggle, since this is a deliberate one-off action.</p>
+          <div id="pw-send-emails-msg" class="text-xs mt-1.5 min-h-[16px]"></div>
+        </div>
       </div>
     </div>
     ` : `
@@ -755,6 +778,50 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         .catch(function() { alert('Network error'); btn.disabled = false; });
     });
   });
+
+  function pwSetPaid(sid, paid, btn) {
+    btn.disabled = true;
+    fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/paid', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paid: paid })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not update.'); btn.disabled = false; } })
+      .catch(function() { alert('Network error'); btn.disabled = false; });
+  }
+  document.querySelectorAll('[data-mark-paid]').forEach(function(btn) {
+    btn.addEventListener('click', function() { pwSetPaid(btn.dataset.markPaid, true, btn); });
+  });
+  document.querySelectorAll('[data-unmark-paid]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      if (!confirm('Unmark as paid? This voids the recorded payment in the ledger.')) return;
+      pwSetPaid(btn.dataset.unmarkPaid, false, btn);
+    });
+  });
+
+  var sendEmailsBtn = document.getElementById('pw-send-emails-btn');
+  if (sendEmailsBtn) {
+    sendEmailsBtn.addEventListener('click', function() {
+      if (!confirm('Email every confirmed player their total for this game?')) return;
+      var msg = document.getElementById('pw-send-emails-msg');
+      sendEmailsBtn.disabled = true;
+      msg.textContent = 'Sending…';
+      msg.className = 'text-xs mt-1.5 min-h-[16px] text-slate-500';
+      fetch('/admin/papawis/' + gameId + '/send-payment-emails', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          sendEmailsBtn.disabled = false;
+          if (!d.ok) { msg.textContent = d.error || 'Failed to send.'; msg.className = 'text-xs mt-1.5 min-h-[16px] text-error'; return; }
+          msg.textContent = 'Sent to ' + d.sent + (d.sent === 1 ? ' player' : ' players') + (d.errors && d.errors.length ? ' (' + d.errors.length + ' failed)' : '.');
+          msg.className = 'text-xs mt-1.5 min-h-[16px] text-emerald-400';
+        })
+        .catch(function() {
+          sendEmailsBtn.disabled = false;
+          msg.textContent = 'Network error.';
+          msg.className = 'text-xs mt-1.5 min-h-[16px] text-error';
+        });
+    });
+  }
 
   var addBtn = document.getElementById('pw-add-btn');
   if (addBtn) {

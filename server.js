@@ -99,6 +99,7 @@ import {
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
+  getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   getTransactionById,
   db as portalDb,
@@ -130,7 +131,7 @@ import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
-import { sendPapawisReminders, sendPapawisCancellationEmails } from './lib/papawis-notify.js';
+import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails } from './lib/papawis-notify.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
@@ -6845,6 +6846,67 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
   }
   completePapawisGame(req.params.id, price);
   res.json({ ok: true, charged: confirmed.length });
+  if (getSetting('papawis_reminders_enabled', '0') === '1') {
+    sendPapawisCompletionEmails(req.params.id, price).then(({ sent, errors }) => {
+      if (errors.length) console.error(`[papawis] completion emails: ${sent} sent, ${errors.length} failed`, errors);
+    }).catch(e => console.error('[papawis] completion email send failed:', e.message));
+  }
+});
+
+// Paid tracking is only meaningful once a game is completed (that's when the charge
+// transactions actually exist) — mirrors the charge loop above but per-signup and using
+// type:'payment' instead of 'charge', same reference_no/category convention so it shows
+// up correctly in the ledger. Un-marking voids the exact transaction this created rather
+// than searching for one, so it can't accidentally void an unrelated payment.
+app.post('/admin/papawis/:id/signups/:signupId/paid', requireAuth, express.json(), (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.status !== 'completed') return res.status(400).json({ error: 'Game must be completed first.' });
+  const signup = getPapawisSignupById(req.params.signupId);
+  if (!signup || signup.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
+
+  const markPaid = req.body.paid !== false;
+  if (markPaid) {
+    if (!signup.paid_at) {
+      const price = Number(game.price_per_player) || 0;
+      let txId = '';
+      if (price > 0) {
+        txId = randomBytes(6).toString('hex');
+        const notes = signup.guest_name
+          ? `Papawis payment — ${game.title || 'Pickup game'} (${game.date}) — guest: ${signup.guest_name}`
+          : `Papawis payment — ${game.title || 'Pickup game'} (${game.date})`;
+        recordTransaction({
+          id: txId, player_id: signup.player_id, amount: price, type: 'payment',
+          payment_method: '', date: manilaTodayStr(), status: 'confirmed',
+          notes, reference_no: game.id, season: '', category: 'papawis',
+        });
+        notifyLedgerEvent({ playerId: signup.player_id, type: 'payment', amount: price, notes });
+      }
+      markPapawisSignupPaid(signup.id, txId);
+    }
+  } else {
+    if (signup.paid_tx_id) voidTransaction(signup.paid_tx_id);
+    markPapawisSignupUnpaid(signup.id);
+  }
+  res.json({ ok: true });
+});
+
+// Manual, on-demand send — deliberately NOT gated behind papawis_reminders_enabled like the
+// automatic sends in /complete and /cancel are. That flag exists to stop an automated
+// trigger from firing unexpectedly; an admin explicitly clicking this button is already the
+// human-in-the-loop check the flag is there to provide. Mainly for games completed before
+// this email existed (or a resend after fixing a bad email address) — doesn't touch
+// charges, only re-reads the game's current price/roster and sends.
+app.post('/admin/papawis/:id/send-payment-emails', requireAuth, async (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.status !== 'completed') return res.status(400).json({ error: 'Game must be completed first.' });
+  try {
+    const { sent, errors } = await sendPapawisCompletionEmails(game.id, game.price_per_player);
+    res.json({ ok: true, sent, errors });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to send.' });
+  }
 });
 
 app.post('/admin/papawis/:id/cancel', requireAuth, (req, res) => {
