@@ -6,10 +6,11 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
-import { statSync, existsSync, unlinkSync } from 'fs';
+import { statSync, existsSync, unlinkSync, readFileSync } from 'fs';
 import express from 'express';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
+import CleanCSS from 'clean-css';
 import { parseWriteup } from './lib/writeup.js';
 import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail } from './lib/mailer.js';
 import { detectBogusFlags } from './lib/registration-flags.js';
@@ -138,7 +139,28 @@ import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const CSS_VER = (() => { try { return statSync(path.join(__dirname, 'public/styles.css')).mtimeMs | 0; } catch { return Date.now(); } })();
+// mtimeMs is ~1.7 trillion for a modern timestamp — the old `| 0` truncated it to a 32-bit
+// signed int, which silently overflows into an arbitrary-looking negative number. Doesn't
+// break caching (this only runs once at process start, so the value is still stable across
+// every request in a given run), but it's not the clean version string it looks like it
+// should be. Math.floor just keeps it an integer without the overflow.
+const CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/styles.css')).mtimeMs); } catch { return Date.now(); } })();
+
+// Minified once at process start (same lifecycle as CSS_VER — both only change on a
+// restart, which is also the only time the underlying file can change anyway) rather than
+// per-request. null means minification failed for some reason; the route below falls back
+// to serving the original file as-is instead of a broken empty response.
+const MINIFIED_CSS = (() => {
+  const cache = {};
+  for (const file of ['styles.css', 'admin.css']) {
+    try {
+      const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
+      const out = new CleanCSS({}).minify(raw);
+      cache[file] = out.errors.length ? null : out.styles;
+    } catch { cache[file] = null; }
+  }
+  return cache;
+})();
 
 const PORT = process.env.PORT || 4000;
 const GA_MEASUREMENT_ID = String(process.env.GA_MEASUREMENT_ID || '').trim();
@@ -1895,6 +1917,20 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000 }
 }));
 app.use(express.urlencoded({ extended: false }));
+
+// Registered ahead of express.static so these two paths hit the minified, cached-in-memory
+// version instead of the raw source file — everything else in public/ still goes through
+// express.static unchanged. Safe to cache for a full year: the URL is always requested
+// with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
+// invalidating this one.
+app.get(['/styles.css', '/admin.css'], (req, res) => {
+  const file = req.path.slice(1);
+  const minified = MINIFIED_CSS[file];
+  if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  res.type('text/css').send(minified);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Bounces a logged-out visitor to /login with a next= pointing back at whatever page
