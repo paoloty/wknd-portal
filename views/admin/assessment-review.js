@@ -4,6 +4,8 @@ import { TIER_LABELS, alignmentFlag, ALIGNMENT_LABELS } from '../../lib/assessme
 const Q2_LABELS = { stay_engaged: 'Stay engaged', go_quiet: 'Go quiet', frustrated_vocal: 'Get frustrated and vocal', take_over: 'Try to take over' };
 const Q3_LABELS = { let_it_go: 'Let it go', voice_briefly: 'Voice it briefly, then move on', argue_it: 'Argue it', carry_into_plays: 'Carry it into the next few plays' };
 const Q5_LABELS = { direct: 'Direct, in the moment', private: 'Private, after the game', written: 'Written' };
+const Q8_LABELS = { raise_with_group: 'Raise it right there with the group', private_after: 'Pull the coach or captain aside privately after', vent_no_address: 'Vent to teammates without addressing it directly', put_in_writing: "Put it in writing so there's a record", sit_on_it: 'Sit on it and let it build' };
+const Q9_LABELS = { welcome_specifics: 'Welcome it and ask for specifics', listen_disagree: 'Listen but privately disagree', defensive_argue: 'Get defensive or argue', brush_off: 'Brush it off — I know my game' };
 
 const ALIGNMENT_COLOR = { aligned: '#22c55e', optimistic: '#f59332', gap: '#f87171', not_ratable: '#64748b' };
 
@@ -34,7 +36,9 @@ export function adminAssessmentReviewBody({ assessment: a, signup, rating } = {}
     ${row('Handling the team losing badly', escHtml(Q2_LABELS[a.q2_losing_badly] || a.q2_losing_badly))}
     ${row('Reaction to a bad ref call', escHtml(Q3_LABELS[a.q3_bad_ref_call] || a.q3_bad_ref_call))}
     ${row('Heated moment with a teammate', `${escHtml(String(a.q4_heated_teammate))} / 5`)}
+    ${row('How they handle disagreeing with a team decision', escHtml(Q8_LABELS[a.q8_disagreement_style] || a.q8_disagreement_style))}
     ${row('Preferred feedback style', escHtml(Q5_LABELS[a.q5_feedback_style] || a.q5_feedback_style))}
+    ${row('Reaction to being told a part of their game needs work', escHtml(Q9_LABELS[a.q9_reaction_to_criticism] || a.q9_reaction_to_criticism))}
     ${row('Comfort being benched', `${escHtml(String(a.q6_benched_comfort))} / 5`)}
     ${row('What a teammate would say you need to work on', escHtml(a.q7_work_on))}
   `;

@@ -6032,6 +6032,8 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   const q5FeedbackStyle  = (req.body.q5_feedback_style  || '').trim();
   const q6BenchedComfort = (req.body.q6_benched_comfort || '').trim();
   const q7WorkOn         = (req.body.q7_work_on         || '').trim();
+  const q8DisagreementStyle    = (req.body.q8_disagreement_style    || '').trim();
+  const q9ReactionToCriticism  = (req.body.q9_reaction_to_criticism || '').trim();
   const selfScoring      = (req.body.self_scoring       || '').trim();
   const selfDefense      = (req.body.self_defense       || '').trim();
   const selfOverall      = (req.body.self_overall       || '').trim();
@@ -6043,7 +6045,9 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   if (!['stay_engaged', 'go_quiet', 'frustrated_vocal', 'take_over'].includes(q2LosingBadly)) return rerender('Answer how you handle the team losing badly.');
   if (!['let_it_go', 'voice_briefly', 'argue_it', 'carry_into_plays'].includes(q3BadRefCall)) return rerender('Answer how you react to a bad ref call.');
   if (!['1','2','3','4','5'].includes(q4HeatedTeammate)) return rerender('Rate how you handle a heated moment with a teammate.');
+  if (!['raise_with_group', 'private_after', 'vent_no_address', 'put_in_writing', 'sit_on_it'].includes(q8DisagreementStyle)) return rerender('Answer how you handle disagreeing with a team decision.');
   if (!['direct', 'private', 'written'].includes(q5FeedbackStyle)) return rerender('Answer how you prefer to receive feedback.');
+  if (!['welcome_specifics', 'listen_disagree', 'defensive_argue', 'brush_off'].includes(q9ReactionToCriticism)) return rerender('Answer how you\'d react to being told a part of your game needs work.');
   if (!['1','2','3','4','5'].includes(q6BenchedComfort)) return rerender('Rate your comfort being benched.');
   if (q7WorkOn.length < 10) return rerender('Tell us a bit more about what a past teammate would say you need to work on.');
   if (!['below_average','average','above_average','best'].includes(selfScoring)) return rerender('Rate your scoring/shooting vs. the league.');
@@ -6096,7 +6100,8 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   });
   insertPlayerAssessment(reg.player_id || '', regId, sigSeason, {
     q1WhyPlaying, q2LosingBadly, q3BadRefCall, q4HeatedTeammate, q5FeedbackStyle,
-    q6BenchedComfort, q7WorkOn, selfScoring, selfDefense, selfOverall,
+    q6BenchedComfort, q7WorkOn, q8DisagreementStyle, q9ReactionToCriticism,
+    selfScoring, selfDefense, selfOverall,
   });
   const created = getSeasonSignup(regId, sigSeason);
 

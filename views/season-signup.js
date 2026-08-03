@@ -403,10 +403,25 @@ ${stylesBlock}`;
               ${scaleCells('q4_heated_teammate', 'Handle it poorly', 'Handle it well')}
             </div>
             <div class="field">
+              <label>When you disagree with a team decision (a rotation, a tactical call, playing time), what do you actually do? <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="raise_with_group" ${checked('q8_disagreement_style', 'raise_with_group')}> Raise it right there with the group</label>
+              <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="private_after" ${checked('q8_disagreement_style', 'private_after')}> Pull the coach or captain aside privately after</label>
+              <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="vent_no_address" ${checked('q8_disagreement_style', 'vent_no_address')}> Vent to teammates without addressing it directly</label>
+              <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="put_in_writing" ${checked('q8_disagreement_style', 'put_in_writing')}> Put it in writing — text, group chat — so there's a record</label>
+              <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="sit_on_it" ${checked('q8_disagreement_style', 'sit_on_it')}> Sit on it and let it build</label>
+            </div>
+            <div class="field">
               <label>How do you prefer to receive feedback from a coach/captain? <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="direct" ${checked('q5_feedback_style', 'direct')}> Direct, in the moment</label>
               <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="private" ${checked('q5_feedback_style', 'private')}> Private, after the game</label>
               <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="written" ${checked('q5_feedback_style', 'written')}> Written</label>
+            </div>
+            <div class="field">
+              <label>If a coach or captain told you a specific part of your game (shooting, defense, IQ, etc.) needs real work, how would you react? <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="q9_reaction_to_criticism" value="welcome_specifics" ${checked('q9_reaction_to_criticism', 'welcome_specifics')}> Welcome it and ask for specifics</label>
+              <label class="check check--radio"><input type="radio" name="q9_reaction_to_criticism" value="listen_disagree" ${checked('q9_reaction_to_criticism', 'listen_disagree')}> Listen but privately disagree</label>
+              <label class="check check--radio"><input type="radio" name="q9_reaction_to_criticism" value="defensive_argue" ${checked('q9_reaction_to_criticism', 'defensive_argue')}> Get defensive or argue</label>
+              <label class="check check--radio"><input type="radio" name="q9_reaction_to_criticism" value="brush_off" ${checked('q9_reaction_to_criticism', 'brush_off')}> Brush it off — I know my game</label>
             </div>
             <div class="field">
               <label>Rate how comfortable you are being benched for a rotation you don't agree with <span class="req">*</span></label>
@@ -752,7 +767,7 @@ ${stylesBlock}
       if (!hasTop) ok = false;
     }
     if (n == STEP.mindset) {
-      ['q2_losing_badly', 'q3_bad_ref_call', 'q4_heated_teammate', 'q5_feedback_style', 'q6_benched_comfort'].forEach(function (name) {
+      ['q2_losing_badly', 'q3_bad_ref_call', 'q4_heated_teammate', 'q8_disagreement_style', 'q5_feedback_style', 'q9_reaction_to_criticism', 'q6_benched_comfort'].forEach(function (name) {
         if (!checkedVal(name)) ok = false;
       });
     }
