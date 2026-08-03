@@ -86,23 +86,50 @@ function papawisTeamLabel(team) {
 // state doubles as an unmark button, so a mis-click is reversible without leaving the
 // ledger out of sync — see the /admin/papawis/:id/signups/:signupId/paid route, which
 // voids the exact transaction this created rather than guessing which one to reverse.
-function paidStatusHtml(s) {
+//
+// candidates = getUnlinkedPapawisPayments(s.player_id), passed down from the route — a
+// player who already paid through /settle-balance (or was entered directly in the ledger)
+// shows up here instead of silently staying "Unpaid" forever. Exactly one candidate gets a
+// one-click Link suggestion (adopts that existing transaction, creates nothing new);
+// more than one is genuinely ambiguous, so that just points at the ledger instead of
+// guessing which payment belongs to this game.
+function paidStatusHtml(s, candidates = []) {
   if (s.status !== 'confirmed') return '<span class="text-slate-600">—</span>';
-  return s.paid_at
-    ? `<button type="button" class="agm-badge agm-badge--green" data-unmark-paid="${escHtml(s.id)}" style="border:none;cursor:pointer;font:inherit">Paid ✓</button>`
-    : `<span class="agm-badge agm-badge--amber">Unpaid</span> <button type="button" class="admin-btn admin-btn--sm admin-btn--success" data-mark-paid="${escHtml(s.id)}" style="margin-left:6px">Mark Paid</button>`;
+  if (s.paid_at) {
+    return `<button type="button" class="agm-badge agm-badge--green" data-unmark-paid="${escHtml(s.id)}" style="border:none;cursor:pointer;font:inherit">Paid ✓</button>`;
+  }
+  const markPaidBtn = (label) => `<button type="button" class="admin-btn admin-btn--sm admin-btn--success" data-mark-paid="${escHtml(s.id)}">${label}</button>`;
+  if (candidates.length === 1) {
+    const c = candidates[0];
+    return `<div class="flex flex-col gap-1 items-start">
+      <span class="agm-badge agm-badge--amber">Unpaid</span>
+      <div class="text-[11px] text-emerald-400 leading-snug">Possible match: ₱${Number(c.amount).toLocaleString()} paid ${escHtml(fmtDate(c.date))}</div>
+      <div class="flex gap-1.5">
+        <button type="button" class="admin-btn admin-btn--sm admin-btn--success" data-link-payment="${escHtml(s.id)}" data-tx-id="${escHtml(c.id)}">Link</button>
+        ${markPaidBtn('Mark Paid instead')}
+      </div>
+    </div>`;
+  }
+  if (candidates.length > 1) {
+    return `<div class="flex flex-col gap-1 items-start">
+      <span class="agm-badge agm-badge--amber">Unpaid</span>
+      <a href="/admin/ledger/${escHtml(s.player_id)}" target="_blank" class="text-[11px] text-amber-400 leading-snug">⚠ ${candidates.length} unconfirmed papawis payments — check ledger</a>
+      ${markPaidBtn('Mark Paid')}
+    </div>`;
+  }
+  return `<span class="agm-badge agm-badge--amber">Unpaid</span> <span style="margin-left:6px">${markPaidBtn('Mark Paid')}</span>`;
 }
 
 // Read-only stand-in for the interactive confirmed/waitlist board once a roster is
 // locked — a plain table is simpler and less error-prone than trying to keep half the
 // drag/move affordances alive on a list that shouldn't actually change anymore.
-function lockedSummaryRow(s, { showPaid = false } = {}) {
+function lockedSummaryRow(s, { showPaid = false, unlinkedByPlayer = {} } = {}) {
   const name = s.guest_name ? escHtml(s.guest_name) : escHtml(displayPlayerName(s.player_name));
   return `<tr class="border-b border-admin-border/50 last:border-b-0">
     <td class="px-4 py-2.5 text-sm font-medium text-slate-200">${name}${s.guest_name ? ' <span class="text-xs text-slate-500">(guest)</span>' : ''}</td>
     <td class="px-4 py-2.5 text-xs">${s.status === 'confirmed' ? '<span class="agm-badge agm-badge--green">Confirmed</span>' : '<span class="agm-badge agm-badge--amber">Waitlist</span>'}</td>
     <td class="px-4 py-2.5 text-xs text-slate-400">${papawisTeamLabel(s.team)}</td>
-    ${showPaid ? `<td class="px-4 py-2.5 text-xs">${paidStatusHtml(s)}</td>` : ''}
+    ${showPaid ? `<td class="px-4 py-2.5 text-xs">${paidStatusHtml(s, unlinkedByPlayer[s.player_id] || [])}</td>` : ''}
   </tr>`;
 }
 
@@ -322,7 +349,7 @@ export function defaultPapawisPrice(confirmedCount) {
   return Math.round((4200 / confirmedCount) / 10) * 10;
 }
 
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity } = {}) {
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {} } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const isOpen      = game.status === 'open';
@@ -364,7 +391,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
           ? `<button class="pw-move-btn pw-move-btn--confirm" data-move="${escHtml(s.id)}" data-to="confirmed" ${isConfirmedFull ? 'disabled title="Confirmed is full"' : ''}>${ICON_CHEVRON_UP} Confirm</button>`
           : `<button class="pw-move-btn" data-move="${escHtml(s.id)}" data-to="waitlist">${ICON_CHEVRON_DOWN} Waitlist</button>`}
         <button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>
-      </div>` : isCompleted && s.status === 'confirmed' ? `<div class="pw-row__actions">${paidStatusHtml(s)}</div>` : ''}
+      </div>` : isCompleted && s.status === 'confirmed' ? `<div class="pw-row__actions">${paidStatusHtml(s, unlinkedByPlayer[s.player_id] || [])}</div>` : ''}
     </li>`;
   };
 
@@ -407,7 +434,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
           ${isCompleted ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Paid</th>` : ''}
         </tr></thead>
         <tbody>
-          ${[...confirmed, ...waitlist].map(s => lockedSummaryRow(s, { showPaid: isCompleted })).join('') || `<tr><td colspan="${isCompleted ? 4 : 3}" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
+          ${[...confirmed, ...waitlist].map(s => lockedSummaryRow(s, { showPaid: isCompleted, unlinkedByPlayer })).join('') || `<tr><td colspan="${isCompleted ? 4 : 3}" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -796,6 +823,19 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     btn.addEventListener('click', function() {
       if (!confirm('Unmark as paid? This voids the recorded payment in the ledger.')) return;
       pwSetPaid(btn.dataset.unmarkPaid, false, btn);
+    });
+  });
+  document.querySelectorAll('[data-link-payment]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var sid = btn.dataset.linkPayment, txId = btn.dataset.txId;
+      btn.disabled = true;
+      fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/link-payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tx_id: txId })
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not link.'); btn.disabled = false; } })
+        .catch(function() { alert('Network error'); btn.disabled = false; });
     });
   });
 

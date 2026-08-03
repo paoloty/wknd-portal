@@ -171,12 +171,15 @@ export function playerFinancialSection(fin, transactions, playerName, playerId) 
 }
 
 // ── Ledger list page ──────────────────────────────────────────────────────────
-export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], season = '', quota = 0, summary = {}, balMap = {} } = {}) {
+export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], season = '', quota = 0, summary = {}, balMap = {}, lastActivityMap = {} } = {}) {
   const teams = [...new Set(players.map(p => p.team_name).filter(Boolean))];
 
+  // balMap is always the all-time balance now (see server.js) regardless of the season
+  // filter, so sorting by it is meaningful in both "All Time" and season-filtered views —
+  // no more only-sorts-when-a-season-is-picked.
   const sorted = [...players].sort((a, b) => {
-    const bA = season ? Number(balMap[a.id]?.balance ?? 0) : 0;
-    const bB = season ? Number(balMap[b.id]?.balance ?? 0) : 0;
+    const bA = Number(balMap[a.id]?.balance ?? 0);
+    const bB = Number(balMap[b.id]?.balance ?? 0);
     return bB - bA;
   });
 
@@ -197,12 +200,17 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
     const pending = Number(sbal?.pending_count ?? txByPlayer[p.id]?.filter(t => t.status === 'pending').length ?? 0);
     const balKey  = bal > 0 ? 'owed' : 'settled';
     const balLabel = bal === 0 ? 'Settled' : fmt(Math.abs(bal));
+    const lastActivity = lastActivityMap[p.id] || '';
 
     return `<tr class="agm-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors"
       data-q="${escHtml(name.toLowerCase() + ' ' + (p.team_name || '').toLowerCase())}"
       data-team="${escHtml((p.team_name || '').toLowerCase())}"
       data-bal="${balKey}"
-      data-pid="${escHtml(p.id)}">
+      data-pid="${escHtml(p.id)}"
+      data-name="${escHtml(name.toLowerCase())}"
+      data-balnum="${bal}"
+      data-pending="${pending}"
+      data-lastactivity="${escHtml(lastActivity)}">
       <td class="px-4 py-3">
         <label class="inline-flex items-center gap-2 cursor-pointer">
           <input type="checkbox" class="lgr-check accent-brand" value="${escHtml(p.id)}">
@@ -217,11 +225,15 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
       <td class="px-4 py-3">
         ${pending > 0 ? `<span class="agm-badge agm-badge--amber">${pending} pending</span>` : `<span class="text-slate-600 text-xs">–</span>`}
       </td>
+      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(lastActivity)}</td>
       <td class="px-4 py-3 text-right">
         <a href="/admin/ledger/${escHtml(p.id)}${season ? `?season=${encodeURIComponent(season)}` : ''}" class="agm-edit-link">View ${ICON_CHEVRON_R}</a>
       </td>
     </tr>`;
   }).join('');
+
+  const visibleCount = players.length;
+  const visibleTotal = sorted.reduce((s, p) => s + Number(balMap[p.id]?.balance ?? 0), 0);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -264,9 +276,14 @@ ${season ? `
     <button class="agm-pill" data-fbal="owed">Owed</button>
     <button class="agm-pill" data-fbal="settled">Settled</button>
   </div>
+  <div class="flex flex-wrap items-center gap-1.5">
+    <button class="agm-pill" id="lgr-pending-toggle">⏳ Pending only</button>
+  </div>
 </div>
 
 ${summaryStrip}
+
+<div id="lgr-totals" class="text-xs text-slate-500 mb-2">${visibleCount} player${visibleCount === 1 ? '' : 's'} · ${fmt(visibleTotal)} outstanding</div>
 
 <div id="lgr-bulk-panel" hidden class="mb-4">
   <div class="bg-admin-surface border border-admin-border rounded-lg p-5">
@@ -323,31 +340,46 @@ ${summaryStrip}
   <table class="w-full border-collapse has-col-dividers has-freeze-col">
     <thead>
       <tr>
-        <th class="${TH}">Player</th>
-        <th class="${TH}">${season ? 'Season Balance' : 'Balance'}</th>
-        <th class="${TH}">Pending</th>
+        <th class="${TH} lgr-sortable" data-sort="name" style="cursor:pointer;user-select:none">Player <span class="lgr-sort-arrow"></span></th>
+        <th class="${TH} lgr-sortable" data-sort="balnum" style="cursor:pointer;user-select:none">Balance <span class="lgr-sort-arrow"></span></th>
+        <th class="${TH} lgr-sortable" data-sort="pending" style="cursor:pointer;user-select:none">Pending <span class="lgr-sort-arrow"></span></th>
+        <th class="${TH} lgr-sortable" data-sort="lastactivity" style="cursor:pointer;user-select:none">Last Activity <span class="lgr-sort-arrow"></span></th>
         <th class="${TH}"></th>
       </tr>
     </thead>
     <tbody id="lgr-tbody">
-      ${rows || '<tr><td colspan="4" class="px-4 py-10 text-center text-sm text-slate-500">No players found.</td></tr>'}
+      ${rows || '<tr><td colspan="5" class="px-4 py-10 text-center text-sm text-slate-500">No players found.</td></tr>'}
     </tbody>
   </table>
 </div>
 
 <script>
 (function(){
-  var fteam = '', fbal = '', currentSeason = '${escHtml(season)}';
+  var fteam = '', fbal = '', fpending = false, currentSeason = '${escHtml(season)}';
 
   // ── Filters ───────────────────────────────────────────────────────────────
+  // "Pending only" is a separate on/off toggle rather than a third data-fbal option —
+  // owed/settled and having a pending transaction are independent (a settled player can
+  // still have a fresh pending charge, an owed one might have no pending activity at all),
+  // so it needs to AND with the other filters rather than replace them.
   function apply() {
     var q = document.getElementById('lgr-search').value.toLowerCase().trim();
+    var visibleCount = 0, visibleTotal = 0;
     document.querySelectorAll('#lgr-tbody .agm-row').forEach(function(r) {
       var show = (!fteam || r.dataset.team === fteam)
               && (!fbal  || r.dataset.bal  === fbal)
+              && (!fpending || Number(r.dataset.pending) > 0)
               && (!q     || r.dataset.q.includes(q));
       r.style.display = show ? '' : 'none';
+      if (show) { visibleCount++; visibleTotal += Number(r.dataset.balnum); }
     });
+    var totalsEl = document.getElementById('lgr-totals');
+    if (totalsEl) totalsEl.textContent = visibleCount + (visibleCount === 1 ? ' player · ' : ' players · ') + fmtPeso(visibleTotal) + ' outstanding';
+  }
+  // Mirrors fmt() server-side (views/admin/ledger.js) exactly, so the totals line reads
+  // the same before and after any filter/search interaction touches it.
+  function fmtPeso(n) {
+    return 'PHP ' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
   document.querySelectorAll('[data-fteam]').forEach(function(b) {
     b.addEventListener('click', function() {
@@ -363,7 +395,46 @@ ${summaryStrip}
       apply();
     });
   });
+  document.getElementById('lgr-pending-toggle').addEventListener('click', function() {
+    fpending = !fpending;
+    this.classList.toggle('is-active', fpending);
+    apply();
+  });
   document.getElementById('lgr-search').addEventListener('input', apply);
+  apply();
+
+  // ── Sorting ───────────────────────────────────────────────────────────────
+  // Client-side, like the filters above — reorders the existing rows rather than
+  // reloading, and doesn't fight with the show/hide filtering since that only ever
+  // touches display, never DOM order. Defaults to Balance descending, matching the
+  // order the server already rendered, so the arrow is correct without an extra sort
+  // on load actually changing anything.
+  var sortKey = 'balnum', sortDir = -1;
+  function applySort() {
+    var tbody = document.getElementById('lgr-tbody');
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('.agm-row'));
+    rows.sort(function(a, b) {
+      if (sortKey === 'name' || sortKey === 'lastactivity') {
+        return sortDir * a.dataset[sortKey].localeCompare(b.dataset[sortKey]);
+      }
+      return sortDir * (Number(a.dataset[sortKey]) - Number(b.dataset[sortKey]));
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+    document.querySelectorAll('.lgr-sortable').forEach(function(th) {
+      var active = th.dataset.sort === sortKey;
+      th.style.color = active ? '#f59332' : '';
+      th.querySelector('.lgr-sort-arrow').textContent = active ? (sortDir === 1 ? '▲' : '▼') : '';
+    });
+  }
+  document.querySelectorAll('.lgr-sortable').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var key = th.dataset.sort;
+      if (sortKey === key) sortDir *= -1;
+      else { sortKey = key; sortDir = key === 'name' ? 1 : -1; }
+      applySort();
+    });
+  });
+  applySort();
 
   // ── Season pills (reload page) ────────────────────────────────────────────
   document.querySelectorAll('[data-season]').forEach(function(b) {
@@ -513,8 +584,8 @@ ${seasons.length ? `<div class="mb-4 flex flex-wrap items-center gap-1.5">
 </div>` : ''}
 
 <div class="grid grid-cols-3 gap-3 mb-5">
-  ${statTile(season ? 'Season Balance' : 'All Time Balance', fmt(seasonBal), balanceColor(seasonBal))}
-  ${statTile(season ? 'Season Paid' : 'All Time Paid', fmt(seasonPaid), '#22c55e')}
+  ${statTile('All Time Balance', fmt(bal), balanceColor(bal))}
+  ${statTile('All Time Paid', fmt(fin.total_paid ?? 0), '#22c55e')}
   ${quota && season
     ? `<div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4">
         <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">Quota Progress</div>

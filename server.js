@@ -39,7 +39,7 @@ import {
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
   recordTransaction, confirmTransaction, deleteTransaction, setTransactionCategory,
   getPlayerFinancials, getPlayerTransactions, getPlayerTransactionsBySeason,
-  getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons,
+  getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
@@ -99,7 +99,7 @@ import {
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
-  getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid,
+  getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   getTransactionById,
   db as portalDb,
@@ -3491,17 +3491,27 @@ app.get('/admin/ledger', requireAuth, (req, res) => {
   const seasons  = getLedgerSeasons();
   const season   = req.query.season ?? '';
   const quota    = season ? getSeasonQuota(season) : 0;
-  const summary  = season ? getSeasonSummary(season) : getAllSummary();
-  const balMap   = Object.fromEntries(
-    (season ? getSeasonBalances(season) : getAllBalances()).map(r => [r.player_id, r])
-  );
+  // Charged/paid/pending are legitimate season-scoped reporting ("how much came in this
+  // season") — total_outstanding is not, and always comes from the all-time figure even
+  // when a season is selected. A debt doesn't reset when a new season starts; a
+  // season-scoped "Total Outstanding" was undercounting anything not tagged with that
+  // season (which is most charge types — only Season Fee auto-tags a season), making it
+  // look like less was owed than actually was.
+  const allSummary = getAllSummary();
+  const summary  = season ? { ...getSeasonSummary(season), total_outstanding: allSummary.total_outstanding } : allSummary;
+  // Balance is never season-scoped, for the same reason — always the true running balance
+  // (player_financials, via getAllBalances) regardless of which season pill is active. The
+  // season pills below only filter which transactions are listed, not what "balance" means.
+  const balMap   = Object.fromEntries(getAllBalances().map(r => [r.player_id, r]));
+  // Same "never season-scoped" reasoning as balance — see getLastTransactionDates.
+  const lastActivityMap = getLastTransactionDates();
   const allTx    = season ? getAllTransactionsBySeason(season) : getAllTransactions();
   const txByPlayer = {};
   for (const tx of allTx) (txByPlayer[tx.player_id] ??= []).push(tx);
   res.send(renderAdminPage(req, {
     title: 'Player Ledger',
     currentPath: '/admin/ledger',
-    body: adminLedgerBody({ players, txByPlayer, seasons, season, quota, summary, balMap }),
+    body: adminLedgerBody({ players, txByPlayer, seasons, season, quota, summary, balMap, lastActivityMap }),
   }));
 });
 
@@ -6708,10 +6718,24 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   const today = new Date(manilaTodayStr() + 'T00:00:00');
   const gameDate = new Date(game.date + 'T00:00:00');
   const daysLeft = Math.round((gameDate - today) / 86400000);
+
+  // "Possible match" suggestions for still-unpaid players — only worth checking once the
+  // game is completed (paid tracking doesn't mean anything before that). One lookup per
+  // distinct unpaid player rather than per signup row, since a sponsor + their guest slot
+  // share the same player_id and would otherwise re-run the same query twice.
+  let unlinkedByPlayer = {};
+  if (game.status === 'completed') {
+    const unpaidPlayerIds = [...new Set(signups.filter(s => s.status === 'confirmed' && !s.paid_at).map(s => s.player_id))];
+    for (const pid of unpaidPlayerIds) {
+      const candidates = getUnlinkedPapawisPayments(pid);
+      if (candidates.length) unlinkedByPlayer[pid] = candidates;
+    }
+  }
+
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer }),
   }));
 });
 
@@ -6840,7 +6864,10 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
       id: txId, player_id: s.player_id, amount: price, type: 'charge',
       payment_method: '', date: today, status: 'confirmed',
       notes: chargeNotes,
-      reference_no: game.id, season: '', category: 'papawis',
+      // 'Papawis', matching the player-facing PAYMENT_CATEGORIES value (views/utils.js) —
+      // was previously lowercase 'papawis', which split ledger category reports in two and
+      // meant a settle-balance payment could never string-match a papawis charge.
+      reference_no: game.id, season: '', category: 'Papawis',
     });
     notifyLedgerEvent({ playerId: s.player_id, type: 'charge', amount: price, notes: chargeNotes });
   }
@@ -6878,7 +6905,7 @@ app.post('/admin/papawis/:id/signups/:signupId/paid', requireAuth, express.json(
         recordTransaction({
           id: txId, player_id: signup.player_id, amount: price, type: 'payment',
           payment_method: '', date: manilaTodayStr(), status: 'confirmed',
-          notes, reference_no: game.id, season: '', category: 'papawis',
+          notes, reference_no: game.id, season: '', category: 'Papawis',
         });
         notifyLedgerEvent({ playerId: signup.player_id, type: 'payment', amount: price, notes });
       }
@@ -6888,6 +6915,29 @@ app.post('/admin/papawis/:id/signups/:signupId/paid', requireAuth, express.json(
     if (signup.paid_tx_id) voidTransaction(signup.paid_tx_id);
     markPapawisSignupUnpaid(signup.id);
   }
+  res.json({ ok: true });
+});
+
+// Adopts an *existing* confirmed payment (e.g. one the player submitted through
+// /settle-balance, or an admin entered directly in the ledger) as this signup's paid
+// evidence — unlike the /paid route above, this never creates a new transaction. tx_id
+// comes from the client rather than re-deriving "the" candidate server-side, but is
+// re-validated against the live unlinked-candidates list right before accepting it, so a
+// stale suggestion (e.g. two browser tabs, or someone else already linked it) can't slip
+// through between when the page rendered and when this fires.
+app.post('/admin/papawis/:id/signups/:signupId/link-payment', requireAuth, express.json(), (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.status !== 'completed') return res.status(400).json({ error: 'Game must be completed first.' });
+  const signup = getPapawisSignupById(req.params.signupId);
+  if (!signup || signup.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
+  if (signup.paid_at) return res.status(400).json({ error: 'Already marked paid.' });
+
+  const txId = String(req.body.tx_id || '');
+  const stillValid = getUnlinkedPapawisPayments(signup.player_id).some(c => c.id === txId);
+  if (!stillValid) return res.status(400).json({ error: 'That payment is no longer available to link — refresh and try again.' });
+
+  markPapawisSignupPaid(signup.id, txId);
   res.json({ ok: true });
 });
 
