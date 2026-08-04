@@ -7324,15 +7324,17 @@ app.get('/admin/fines/categories', requireAuth, (req, res) => {
   }));
 });
 app.post('/admin/fines/categories', requireAuth, express.json(), (req, res) => {
-  const { label, amount, examples = '' } = req.body || {};
-  if (!label || !(Number(amount) > 0)) return res.status(400).json({ error: 'Label and a positive amount are required.' });
-  const id = createFineCategory({ label, amount: Number(amount), examples });
+  const { label, amount, description = '', examples = [] } = req.body || {};
+  const amt = Number(amount);
+  if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
+  const id = createFineCategory({ label, amount: amt, description, examples: Array.isArray(examples) ? examples : [] });
   res.json({ ok: true, id });
 });
 app.post('/admin/fines/categories/:id', requireAuth, express.json(), (req, res) => {
-  const { label, amount, examples = '' } = req.body || {};
-  if (!label || !(Number(amount) > 0)) return res.status(400).json({ error: 'Label and a positive amount are required.' });
-  updateFineCategory(req.params.id, { label, amount: Number(amount), examples });
+  const { label, amount, description = '', examples = [] } = req.body || {};
+  const amt = Number(amount);
+  if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
+  updateFineCategory(req.params.id, { label, amount: amt, description, examples: Array.isArray(examples) ? examples : [] });
   res.json({ ok: true });
 });
 app.post('/admin/fines/categories/:id/toggle', requireAuth, express.json(), (req, res) => {

@@ -247,14 +247,24 @@ window.resolveCase = async function(approved) {
 </script>`;
 }
 
+function examplePillsDisplay(examples) {
+  if (!examples.length) return '';
+  return `<div class="flex flex-wrap gap-1 mt-1.5">
+    ${examples.map(ex => `<span class="inline-block text-[11px] bg-admin-border/50 text-slate-300 px-2 py-0.5 rounded-full">${escHtml(ex)}</span>`).join('')}
+  </div>`;
+}
+
 function categoryRow(c) {
   return `<tr class="border-b border-admin-border/40 last:border-0" data-id="${escHtml(c.id)}">
-    <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(c.label)}</td>
-    <td class="px-4 py-3 text-sm font-saira text-brand">${peso(c.amount)}</td>
-    <td class="px-4 py-3 text-xs text-slate-500 max-w-md">${escHtml(c.examples)}</td>
-    <td class="px-4 py-3">${c.active ? `<span class="agm-badge agm-badge--amber">Active</span>` : `<span class="agm-badge agm-badge--gray">Inactive</span>`}</td>
-    <td class="px-4 py-3 text-right whitespace-nowrap">
-      <button class="admin-btn admin-btn--sm" onclick='openCategoryModal(${JSON.stringify({ id: c.id, label: c.label, amount: c.amount, examples: c.examples }).replace(/'/g, '&#39;')})'>Edit</button>
+    <td class="px-4 py-3 text-sm font-medium text-slate-200 align-top">${escHtml(c.label)}</td>
+    <td class="px-4 py-3 text-sm font-saira text-brand align-top">${peso(c.amount)}</td>
+    <td class="px-4 py-3 text-xs text-slate-500 max-w-md align-top">
+      ${c.description ? `<p class="text-slate-400">${escHtml(c.description)}</p>` : ''}
+      ${examplePillsDisplay(c.examples)}
+    </td>
+    <td class="px-4 py-3 align-top">${c.active ? `<span class="agm-badge agm-badge--amber">Active</span>` : `<span class="agm-badge agm-badge--gray">Inactive</span>`}</td>
+    <td class="px-4 py-3 text-right whitespace-nowrap align-top">
+      <button class="admin-btn admin-btn--sm" onclick='openCategoryModal(${JSON.stringify({ id: c.id, label: c.label, amount: c.amount, description: c.description, examples: c.examples }).replace(/'/g, '&#39;')})'>Edit</button>
       <button class="admin-btn admin-btn--sm ${c.active ? 'admin-btn--danger' : 'admin-btn--success'}" onclick="toggleCategory('${escHtml(c.id)}')">${c.active ? 'Deactivate' : 'Activate'}</button>
     </td>
   </tr>`;
@@ -293,11 +303,16 @@ export function adminFineCategoriesBody({ categories = [] } = {}) {
       </div>
       <div>
         <label class="admin-field-label">Amount (₱)</label>
-        <input id="cat-amount" type="number" min="0" step="1" class="admin-input">
+        <input id="cat-amount" type="number" min="0" step="1" class="admin-input" placeholder="0 for a reference-only, non-fineable category">
       </div>
       <div>
-        <label class="admin-field-label">Examples / description</label>
-        <textarea id="cat-examples" class="admin-input" rows="3" placeholder="Examples of conduct in this category…"></textarea>
+        <label class="admin-field-label">Description</label>
+        <textarea id="cat-description" class="admin-input" rows="2" placeholder="One sentence describing this category…"></textarea>
+      </div>
+      <div>
+        <label class="admin-field-label">Examples</label>
+        <div id="cat-examples-pills" class="flex flex-wrap gap-1 mb-2"></div>
+        <input id="cat-examples-input" type="text" class="admin-input" placeholder="Type an example, press Enter or comma to add…">
       </div>
       <div id="cat-modal-msg" class="text-xs text-error" style="display:none"></div>
       <button class="agm-new-btn" id="cat-submit-btn">Save</button>
@@ -306,13 +321,42 @@ export function adminFineCategoriesBody({ categories = [] } = {}) {
 </div>
 
 <script>
+var catExamples = [];
+function renderCatExamplePills() {
+  var container = document.getElementById('cat-examples-pills');
+  container.innerHTML = catExamples.map(function(ex, i) {
+    var span = document.createElement('span');
+    span.textContent = ex;
+    return '<span class="inline-flex items-center gap-1.5 text-[11px] bg-admin-border/50 text-slate-300 px-2 py-0.5 rounded-full">' + span.innerHTML +
+      '<button type="button" class="text-slate-500 hover:text-red-400" data-i="' + i + '">&times;</button></span>';
+  }).join('');
+}
+document.getElementById('cat-examples-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    var val = this.value.trim().replace(/,$/, '');
+    if (val) { catExamples.push(val); renderCatExamplePills(); this.value = ''; }
+  } else if (e.key === 'Backspace' && !this.value && catExamples.length) {
+    catExamples.pop(); renderCatExamplePills();
+  }
+});
+document.getElementById('cat-examples-pills').addEventListener('click', function(e) {
+  var btn = e.target.closest('button[data-i]');
+  if (!btn) return;
+  catExamples.splice(Number(btn.dataset.i), 1);
+  renderCatExamplePills();
+});
+
 document.getElementById('cat-modal-close').addEventListener('click', function() { document.getElementById('cat-modal-backdrop').hidden = true; });
 window.openCategoryModal = function(cat) {
   document.getElementById('cat-modal-title').textContent = cat ? 'Edit Category' : 'Add Category';
   document.getElementById('cat-id').value = cat ? cat.id : '';
   document.getElementById('cat-label').value = cat ? cat.label : '';
   document.getElementById('cat-amount').value = cat ? cat.amount : '';
-  document.getElementById('cat-examples').value = cat ? cat.examples : '';
+  document.getElementById('cat-description').value = cat ? (cat.description || '') : '';
+  catExamples = cat && Array.isArray(cat.examples) ? cat.examples.slice() : [];
+  renderCatExamplePills();
+  document.getElementById('cat-examples-input').value = '';
   document.getElementById('cat-modal-msg').style.display = 'none';
   document.getElementById('cat-modal-backdrop').hidden = false;
 };
@@ -320,12 +364,17 @@ document.getElementById('cat-submit-btn').addEventListener('click', async functi
   var msg = document.getElementById('cat-modal-msg');
   msg.style.display = 'none';
   var id = document.getElementById('cat-id').value;
+  // A pending, not-yet-committed example still sitting in the input counts too — easy to
+  // type one and hit Save without remembering to press Enter first.
+  var pending = document.getElementById('cat-examples-input').value.trim();
+  var examples = pending ? catExamples.concat([pending]) : catExamples.slice();
   var body = {
     label: document.getElementById('cat-label').value.trim(),
     amount: Number(document.getElementById('cat-amount').value),
-    examples: document.getElementById('cat-examples').value.trim(),
+    description: document.getElementById('cat-description').value.trim(),
+    examples: examples,
   };
-  if (!body.label || !(body.amount > 0)) { msg.textContent = 'Label and a positive amount are required.'; msg.style.display = 'block'; return; }
+  if (!body.label || Number.isNaN(body.amount) || body.amount < 0) { msg.textContent = 'Label and an amount of 0 or more are required.'; msg.style.display = 'block'; return; }
   var btn = this; btn.disabled = true;
   try {
     var r = await fetch(id ? '/admin/fines/categories/' + id : '/admin/fines/categories', {
