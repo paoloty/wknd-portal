@@ -183,7 +183,7 @@ const stylesBlock = `<style>
 .pick-axis { margin-top: 6px; font-size: 10.5px; color: var(--text-subtle); }
 
 .pockets-check.is-disabled { opacity: .4; pointer-events: none; }
-.pick-grid--scale { max-width: 340px; }
+.pick-grid--scale { width: 100%; }
 .pick-grid--scale .pick-cell { min-width: 0; padding: 12px 6px; }
 
 .fee-total { background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px; padding: 14px 16px; display: flex; align-items: baseline; justify-content: space-between; }

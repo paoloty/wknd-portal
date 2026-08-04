@@ -12,6 +12,8 @@ const AWARD_SECTIONS = [
   { key: 'award_show_steals_leader',   label: 'Steals Leader' },
   { key: 'award_show_blocks_leader',   label: 'Blocks Leader' },
   { key: 'award_show_three_pm_leader', label: '3-Pointers Leader' },
+  { key: 'award_show_champion',        label: 'Champion' },
+  { key: 'award_show_finals_mvp',      label: 'Finals MVP' },
 ];
 
 function toggleRow({ id, label, sub, checked, dataKey, extraClass = '' }) {
@@ -38,6 +40,7 @@ export function adminVisibilityBody({
   papawisEnabled = false,
   postsEnabled = false,
   commentsEnabled = false,
+  peerRatingsEnabled = false,
   awardsEnabled = true,
   mvpEnabled = true,
   sectionSettings = {},
@@ -71,6 +74,12 @@ export function adminVisibilityBody({
     sub: `Registered players can comment and react on any game page. Admins can delete inline either way.`,
   }) + `<span id="vis-msg-comments_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
 
+  const peerRatingsCard = card('Player Ratings', toggleRow({
+    id: 'vis-peer-ratings-enabled', dataKey: 'peer_ratings_enabled', checked: peerRatingsEnabled,
+    label: 'Show peer ratings on player profiles',
+    sub: `Roast-style player-to-player ratings, shown on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>. Anonymous ratings are masked to everyone except a super admin.`,
+  }) + `<span id="vis-msg-peer_ratings_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
+
   const awardsCard = card('Awards', `
     ${toggleRow({
       id: 'vis-awards-enabled', dataKey: 'awards_enabled', checked: awardsEnabled,
@@ -101,6 +110,7 @@ export function adminVisibilityBody({
 ${papawisCard}
 ${postsCard}
 ${commentsCard}
+${peerRatingsCard}
 ${awardsCard}
 
 <style>
@@ -133,6 +143,7 @@ ${awardsCard}
   bindToggle('vis-papawis-enabled',  'papawis_enabled',   'vis-msg-papawis_enabled');
   bindToggle('vis-posts-enabled',    'posts_enabled',     'vis-msg-posts_enabled');
   bindToggle('vis-comments-enabled', 'comments_enabled',  'vis-msg-comments_enabled');
+  bindToggle('vis-peer-ratings-enabled', 'peer_ratings_enabled', 'vis-msg-peer_ratings_enabled');
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
 

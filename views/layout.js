@@ -2,7 +2,7 @@ function fmtNotifTime(ms) {
   return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, features = {}, minimalHeader = false, origin = '', notifications = [], unreadNotificationCount = 0 }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, origin = '', notifications = [], unreadNotificationCount = 0 }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -28,11 +28,15 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     return href === '/' ? currentPath === '/' : currentPath.startsWith(href);
   };
 
-  const dropdown = (label, items, activeHrefs) => {
-    const active = activeHrefs.some(h => isActive(h));
+  // forceActive + a per-item `active` override exist for My Account below — /me redirects
+  // to /players/:slug, so plain isActive(href) can't detect "viewing your own profile" the
+  // way it can for every other dropdown here (see onOwnProfile above). Both are optional
+  // and unused by the other three dropdowns, which keep relying on isActive(href) as before.
+  const dropdown = (label, items, activeHrefs, forceActive = false) => {
+    const active = forceActive || activeHrefs.some(h => isActive(h));
     const chevron = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 3.5l3 3 3-3"/></svg>`;
-    const itemHtml = items.map(({ href, label: lbl }) =>
-      `<a href="${href}" class="site-nav__dropdown-item${isActive(href) ? ' is-active' : ''}">${lbl}</a>`
+    const itemHtml = items.map(({ href, label: lbl, active: itemActive }) =>
+      `<a href="${href}" class="site-nav__dropdown-item${(itemActive ?? isActive(href)) ? ' is-active' : ''}">${lbl}</a>`
     ).join('');
     return `<div class="site-nav__dropdown${active ? ' is-active' : ''}">
       <button class="site-nav__dropdown-trigger"${active ? ' aria-current="page"' : ''}>${label} ${chevron}</button>
@@ -97,14 +101,23 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     </div>
   </div>` : '';
 
-  // Bell sits right after "My Profile" (not before it) — folded into authLink itself
+  // Groups "My Profile" with head/coach-only features (Fines today, more later per
+  // Paolo) under one dropdown rather than piling standalone links into the nav — isHead
+  // is computed once per request in server.js' renderPage(), not looked up here.
+  const myAccountItems = [
+    { href: '/me', label: 'My Profile', active: onOwnProfile },
+    ...(isHead ? [{ href: '/fines', label: 'Fines', active: currentPath.startsWith('/fines') }] : []),
+  ];
+  const myAccountDropdown = dropdown('My Account', myAccountItems, [], onOwnProfile || (isHead && currentPath.startsWith('/fines')));
+
+  // Bell sits right after My Account (not before it) — folded into authLink itself
   // rather than inserted as a separate element at the nav render sites, so it always
-  // lands in the same spot relative to My Profile regardless of admin/player branch.
+  // lands in the same spot relative to My Account regardless of admin/player branch.
   const adminActive = currentPath.startsWith('/admin');
   const authLink = isAdmin
-    ? `${isPlayer ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a>${notificationBell}` : ''}<div class="site-nav__auth-pill"><a href="/admin"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
+    ? `${isPlayer ? `${myAccountDropdown}${notificationBell}` : ''}<div class="site-nav__auth-pill"><a href="/admin"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
     : isPlayer
-      ? `<a href="/me"${onOwnProfile ? ' aria-current="page"' : ''}>My Profile</a>${notificationBell}<a href="/logout" class="site-nav__login">Sign out</a>`
+      ? `${myAccountDropdown}${notificationBell}<a href="/logout" class="site-nav__login">Sign out</a>`
       : `<div class="site-nav__auth-pill"><a href="/register" class="site-nav__auth-join">Join</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/login" class="site-nav__auth-login">Login</a></div>`;
 
   // Shared by both header variants (full and minimal) — only one ever renders,

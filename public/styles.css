@@ -2591,6 +2591,7 @@ a.player-link:hover { color: var(--amber); }
 .mp-papawis-badge--waitlist  { background: rgba(148,163,184,.12); color: #94a3b8; border: 1px solid rgba(148,163,184,.3); }
 .mp-papawis-badge--cancelled { background: rgba(248,113,113,.12); color: #f87171; border: 1px solid rgba(248,113,113,.3); }
 .mp-papawis-badge--muted     { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+.mp-papawis-badge--unpaid    { background: rgba(245,147,50,.12); color: var(--amber); border: 1px solid rgba(245,147,50,.3); }
 
 /* ── Coach's Note (owner-only, full-width, between hero and game-detail-layout) ── */
 .coach-card {
@@ -3292,7 +3293,7 @@ a.player-link:hover { color: var(--amber); }
 /* Jersey number watermark */
 .player-hero__num-bg {
   position: absolute;
-  font-family: 'Saira Condensed', system-ui, sans-serif;
+  font-family: 'Archivo', system-ui, sans-serif;
   font-size: 150px; font-weight: 800; line-height: 1;
   color: var(--ph-color, var(--border));
   opacity: 0.09;
@@ -3305,7 +3306,7 @@ a.player-link:hover { color: var(--amber); }
   width: 112px; height: 112px; border-radius: 50%; border: 4px solid;
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
-  font-size: 36px; font-family: 'Saira Condensed', system-ui, sans-serif;
+  font-size: 36px; font-family: 'Archivo', system-ui, sans-serif;
   font-weight: 700; color: rgba(255,255,255,0.7); background: rgba(0,0,0,0.2);
 }
 .player-hero__avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -3322,16 +3323,22 @@ a.player-link:hover { color: var(--amber); }
 .player-hero__info { flex: 1; min-width: 0; }
 .player-hero__name { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 10px; }
 .player-hero__meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.player-hero__number { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 1rem; color: var(--text-muted); }
+.player-hero__number { font-family: 'Archivo', system-ui, sans-serif; font-weight: 700; font-size: 1rem; color: var(--text-muted); }
 .player-hero__pos { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .player-hero__bio { margin-top: 10px; font-size: 14px; color: var(--text-muted); line-height: 1.6; }
 .player-hero__bio--placeholder { font-style: italic; opacity: .7; }
 .player-hero__no-stats { font-size: 13px; color: var(--text-muted); margin: 0; }
 
 /* Self-service intro edit (own profile only) — in-place, no layout shift */
-.player-hero__bio-block { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; }
+.player-hero__bio-block { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+/* field-sizing: content sizes the box to its own text (both dimensions) instead of
+   stretching to fill the row — that's what keeps the edit/save/cancel controls sitting
+   right after the text instead of pinned to the far edge of a much wider parent, in both
+   read and editing mode. max-width caps it so a long bio still wraps within the card
+   rather than overflowing. Unsupported browsers (older Safari/Firefox) just fall back to
+   full-width, same as before — not broken, just unenhanced. */
 .player-hero__bio-input {
-  flex: 1; min-width: 0; display: block; width: 100%;
+  field-sizing: content; min-width: 40px; max-width: 100%; display: block;
   font: inherit; font-size: 14px; line-height: 1.6; color: var(--text-muted);
   background: none; border: none; outline: none; resize: none;
   padding: 0; margin: 0; box-sizing: border-box; overflow: hidden;
@@ -3374,7 +3381,7 @@ a.player-link:hover { color: var(--amber); }
   display: flex; flex-direction: column; align-items: center; gap: 5px;
   padding: 10px 8px;
 }
-.ca-item__val { font-size: 1.5rem; line-height: 1; color: var(--text); }
+.ca-item__val { font-size: 1.5rem; font-weight: 700; line-height: 1; color: var(--text); }
 .ca-item__lbl { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-muted); text-transform: uppercase; }
 
 /* Season column */
@@ -5728,3 +5735,66 @@ a.player-link:hover { color: var(--amber); }
 }
 .fb-status--on { background: rgba(74,222,128,.15); color: #4ade80; }
 .fb-status--off { background: rgba(100,116,139,.15); color: var(--text-muted); }
+
+/* ── Peer ratings (roast-style player-to-player ratings) ─────────────────── */
+.panel-body { padding: 18px 18px 20px; }
+.panel-body--flush-top { padding-top: 14px; }
+.panel__sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
+
+.anon-toggle { display: flex; align-items: center; gap: 10px; text-transform: none; letter-spacing: 0; }
+.anon-toggle__label { font-size: 11.5px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+.switch input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
+.switch__track { position: absolute; inset: 0; background: rgba(255,255,255,0.1); border-radius: 99px; transition: background 0.15s; }
+.switch__knob { position: absolute; top: 2.5px; left: 2.5px; width: 15px; height: 15px; border-radius: 50%; background: #cbd5e1; transition: transform 0.15s, background 0.15s; }
+.switch input:checked ~ .switch__track { background: var(--amber-dim); border: 1px solid rgba(245,147,50,0.4); }
+.switch input:checked ~ .switch__knob { transform: translateX(16px); background: var(--amber); }
+
+.rate-group + .rate-group { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--border); }
+.rate-group__label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-subtle); text-transform: uppercase; margin-bottom: 10px; }
+.rate-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+.rate-row + .rate-row { border-top: 1px solid var(--border); }
+.rate-row__info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rate-row__emoji { font-size: 18px; flex-shrink: 0; width: 22px; text-align: center; }
+.rate-row__text { min-width: 0; }
+.rate-row__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.rate-row__desc { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+
+.stars { display: flex; flex-direction: row-reverse; gap: 2px; flex-shrink: 0; }
+.stars input { position: absolute; opacity: 0; width: 0; height: 0; }
+.stars label { font-size: 18px; line-height: 1; cursor: pointer; color: rgba(255,255,255,0.1); transition: color 0.1s; }
+.stars--positive input:checked ~ label, .stars--positive label:hover, .stars--positive label:hover ~ label { color: var(--amber); }
+.stars--roast input:checked ~ label, .stars--roast label:hover, .stars--roast label:hover ~ label { color: #f87171; }
+
+.submit-btn { display: block; width: 100%; margin-top: 18px; background: var(--amber); color: #0a0e16; border-radius: 8px; padding: 12px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; text-align: center; text-transform: uppercase; border: none; cursor: pointer; font-family: inherit; transition: opacity .15s; }
+.submit-btn:hover { opacity: .9; }
+.submit-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.meter-row { padding: 12px 0; }
+.meter-row + .meter-row { border-top: 1px solid var(--border); }
+.meter-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.meter-row__label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); }
+.meter-row__emoji { font-size: 15px; }
+.meter-row__stat { display: flex; align-items: baseline; gap: 6px; flex-shrink: 0; }
+.meter-row__avg { font-size: 1.05rem; font-weight: 700; color: var(--text); }
+.meter-row__count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+.meter-track { height: 5px; border-radius: 99px; background: var(--border); overflow: hidden; }
+.meter-fill { height: 100%; border-radius: 99px; }
+.meter-fill--positive { background: linear-gradient(to right, rgba(245,147,50,0.6), var(--amber)); }
+.meter-fill--roast { background: linear-gradient(to right, rgba(239,68,68,0.55), #f87171); }
+
+.feed-note { font-size: 10px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-subtle); }
+.rater-row { display: grid; grid-template-columns: 140px 1fr 60px 90px; align-items: center; gap: 10px; padding: 10px 0; }
+.rater-row + .rater-row { border-top: 1px solid var(--border); }
+.rater-row__who { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.rater-row__who--anon { color: var(--text-muted); font-style: italic; font-weight: 500; }
+.rater-row__real { font-style: normal; color: var(--amber); }
+.rater-row__cat { font-size: 12.5px; color: var(--text-muted); }
+.rater-row__score { font-size: 12.5px; color: var(--amber); text-align: right; }
+.rater-row__score--roast { color: #f87171; }
+.rater-row__time { font-size: 11.5px; color: var(--text-subtle); text-align: right; white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .rater-row { grid-template-columns: 1fr; gap: 2px; }
+  .rater-row__score, .rater-row__time { text-align: left; }
+}

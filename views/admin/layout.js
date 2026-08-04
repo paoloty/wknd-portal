@@ -83,6 +83,14 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Fines',
+    items: [
+      { href: '/admin/fines',            label: 'Cases',      icon: 'shield', exact: true },
+      { href: '/admin/fines/categories', label: 'Categories', icon: 'ledger' },
+      { href: '/admin/fines/heads',      label: 'Team Heads', icon: 'users' },
+    ],
+  },
+  {
     label: 'Visibility',
     items: [
       { href: '/admin/visibility', label: 'Visibility', icon: 'visibility', exact: true },

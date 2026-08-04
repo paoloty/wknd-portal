@@ -14,10 +14,13 @@ const AWARD_BADGE = {
   steals_leader:   { label: 'STEALS LEADER',    bg: '#f59332', text: '#10141d' },
   blocks_leader:   { label: 'BLOCKS LEADER',    bg: '#f59332', text: '#10141d' },
   three_pm_leader: { label: '3-PT LEADER',      bg: '#f59332', text: '#10141d' },
+  champion:        { label: 'CHAMPION',         bg: '#facc15', text: '#10141d' },
+  finals_mvp:      { label: 'FINALS MVP',       bg: '#ef4444', text: '#fff'    },
 };
 
 const GROUPS = [
-  { label: 'Season Awards',            types: ['mvp', 'dpoy'],                                                                                             shareKey: null          },
+  { label: 'Season Awards',            types: ['mvp', 'dpoy', 'finals_mvp'],                                                                             shareKey: null          },
+  { label: 'Champions',               types: ['champion'],                                                                                                shareKey: null          },
   { label: 'All WKND 1st Team',       types: ['all_wknd_1'],                                                                                              shareKey: 'all_wknd_1'  },
   { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],                                                                                              shareKey: 'all_wknd_2'  },
   { label: 'All WKND Defensive Team', types: ['all_wknd_def'],                                                                                            shareKey: 'all_wknd_def' },
@@ -26,7 +29,7 @@ const GROUPS = [
 
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
 const POSITION_ORDER = Object.fromEntries(POSITIONS.map((p, i) => [p, i]));
-const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def', 'champion']);
 
 // ── Stat helpers ──────────────────────────────────────────────────────────────
 function norm(p) {
@@ -56,7 +59,7 @@ function statLine(row, type) {
   const gp  = row.games_played || 1;
   const avg = v => v != null ? (v / gp).toFixed(1) : null;
   const parts =
-    (type === 'mvp' || type === 'all_wknd_1' || type === 'all_wknd_2')
+    (type === 'mvp' || type === 'all_wknd_1' || type === 'all_wknd_2' || type === 'finals_mvp')
       ? [avg(row.pts) && `${avg(row.pts)} PPG`, avg(row.reb) && `${avg(row.reb)} RPG`, avg(row.ast) && `${avg(row.ast)} APG`]
     : (type === 'dpoy' || type === 'all_wknd_def')
       ? [avg(row.stl) && `${avg(row.stl)} SPG`, avg(row.blk) && `${avg(row.blk)} BPG`]

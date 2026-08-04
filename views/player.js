@@ -1,6 +1,7 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, formatDate, truncate, initials } from './utils.js';
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
+import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -45,7 +46,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false) {
   const leftCol = `<div class="player-hero__left">
     <div class="player-hero__avatar-wrap">
       <div class="player-hero__avatar" style="border-color:${color}">
-        <span class="font-condensed">${escHtml(avatarInits)}</span>
+        <span>${escHtml(avatarInits)}</span>
         <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
       </div>
       ${uploadOverlay}
@@ -87,7 +88,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false) {
     ${caStats.length
       ? `<div class="ca-grid" style="--ca-count:${caStats.length}">
           ${caStats.map(s => `<div class="ca-item">
-            <span class="font-condensed ca-item__val">${escHtml(String(s.val))}</span>
+            <span class="ca-item__val">${escHtml(String(s.val))}</span>
             <span class="ca-item__lbl">${s.lbl}</span>
           </div>`).join('')}
         </div>`
@@ -534,6 +535,8 @@ const AWARD_META = {
   steals_leader:   { label: 'Steals Leader',                 icon: '⚡', bg: '#f59332', text: '#10141d' },
   blocks_leader:   { label: 'Blocks Leader',                 icon: '🚫', bg: '#f59332', text: '#10141d' },
   three_pm_leader: { label: '3-Pointers Leader',             icon: '🏹', bg: '#f59332', text: '#10141d' },
+  champion:        { label: 'League Champion',                icon: '👑', bg: '#facc15', text: '#10141d' },
+  finals_mvp:      { label: 'Finals MVP',                     icon: '🥇', bg: '#ef4444', text: '#fff'    },
 };
 
 function awardsSection(awards) {
@@ -614,7 +617,7 @@ function statsTable(statsByType) {
 
   return `<div class="card" style="margin-bottom:20px;overflow-x:auto">
   <div class="section-header"><h2>Stats</h2></div>
-  <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:'Saira Condensed',sans-serif;text-align:center">
+  <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:'Archivo',sans-serif;text-align:center">
     <thead>
       <tr style="border-bottom:1px solid var(--border)">
         ${th('')}${th('GP')}${th('PPG')}${th('RPG')}${th('APG')}${th('SPG')}${th('BPG')}${th('FG%')}${th('3P%')}${th('FT%')}
@@ -727,10 +730,10 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [] }) {
     <div class="mp-papawis-list">
       ${papawisGames.map(g => {
         const label = g.status === 'cancelled' ? 'Cancelled'
-          : g.status === 'completed' ? 'Played'
+          : g.status === 'completed' ? (g.any_confirmed ? (g.all_paid ? 'Played' : 'Unpaid') : 'Waitlisted')
           : g.any_confirmed ? 'Confirmed' : 'Waitlist';
         const cls = g.status === 'cancelled' ? 'mp-papawis-badge--cancelled'
-          : g.status === 'completed' ? 'mp-papawis-badge--muted'
+          : g.status === 'completed' ? (g.any_confirmed ? (g.all_paid ? 'mp-papawis-badge--muted' : 'mp-papawis-badge--unpaid') : 'mp-papawis-badge--waitlist')
           : g.any_confirmed ? 'mp-papawis-badge--confirmed' : 'mp-papawis-badge--waitlist';
         return `<a href="/papawis" class="mp-papawis-item">
           <span class="mp-papawis-item__main">
@@ -747,23 +750,190 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [] }) {
   return `<div class="mp-sidebar">${balanceHtml}${papawisHtml}</div>`;
 }
 
+// ── Peer ratings (roast-style player-to-player ratings) ────────────────────────
+function timeAgo(ts) {
+  const diffMs = Date.now() - Number(ts);
+  const days = Math.floor(diffMs / 86400000);
+  if (days >= 1) return `${days} day${days === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(diffMs / 3600000);
+  if (hours >= 1) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const mins = Math.max(1, Math.floor(diffMs / 60000));
+  return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+}
+
+function starsInput(catKey, kind, currentValue) {
+  // Radios rendered highest-value-first + row-reverse in CSS so the sibling selector
+  // (~) can fill leftward from whichever star is hovered/checked — a pure-CSS star
+  // widget, no JS needed for the visual fill.
+  const inputs = [5, 4, 3, 2, 1].map(n => {
+    const id = `pr-${catKey}-${n}`;
+    const checked = Number(currentValue) === n ? ' checked' : (n === 3 && !currentValue ? ' checked' : '');
+    return `<input type="radio" name="pr-${catKey}" id="${id}" value="${n}"${checked}><label for="${id}">★</label>`;
+  }).join('');
+  return `<div class="stars stars--${kind}" role="radiogroup" aria-label="${escHtml(catKey)} rating">${inputs}</div>`;
+}
+
+function rateThisPlayerCard(rateeId, viewerExistingRating, cooldownActive, cooldownUntil) {
+  // Once rating is disabled (cooldown), don't show the categories at all — just the
+  // card-label and the "come back later" note. There's nothing to submit, so no
+  // anon toggle, no star rows, no submit button, no client script.
+  if (cooldownActive) {
+    return `<div class="card" id="pr-rate-card">
+  <div class="card-label">${viewerExistingRating ? 'UPDATE YOUR RATING' : 'RATE THIS PLAYER'}</div>
+  <div class="panel-body">
+    <div class="panel__sub" id="pr-cooldown-note" style="margin-bottom:0">You can update your rating for this player again on ${escHtml(new Date(cooldownUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}.</div>
+  </div>
+</div>`;
+  }
+
+  const positiveRows = RATING_CATEGORIES.filter(c => c.kind === 'positive').map(cat => `
+    <div class="rate-row">
+      <div class="rate-row__info">
+        <span class="rate-row__emoji">${cat.emoji}</span>
+        <div class="rate-row__text"><div class="rate-row__name">${escHtml(cat.label)}</div><div class="rate-row__desc">${escHtml(cat.desc)}</div></div>
+      </div>
+      ${starsInput(cat.key, 'positive', viewerExistingRating?.[cat.key])}
+    </div>`).join('');
+  const roastRows = RATING_CATEGORIES.filter(c => c.kind === 'roast').map(cat => `
+    <div class="rate-row">
+      <div class="rate-row__info">
+        <span class="rate-row__emoji">${cat.emoji}</span>
+        <div class="rate-row__text"><div class="rate-row__name">${escHtml(cat.label)}</div><div class="rate-row__desc">${escHtml(cat.desc)}</div></div>
+      </div>
+      ${starsInput(cat.key, 'roast', viewerExistingRating?.[cat.key])}
+    </div>`).join('');
+
+  return `<div class="card" id="pr-rate-card">
+  <div class="card-label" style="display:flex;align-items:center;justify-content:space-between">
+    <span>${viewerExistingRating ? 'UPDATE YOUR RATING' : 'RATE THIS PLAYER'}</span>
+    <span class="anon-toggle">
+      <span class="anon-toggle__label">Anonymous</span>
+      <label class="switch">
+        <input type="checkbox" id="pr-anon-toggle"${viewerExistingRating?.is_anonymous ? ' checked' : ''}>
+        <span class="switch__track"></span>
+        <span class="switch__knob"></span>
+      </label>
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="panel__sub">Pick your tags. Be honest — or don't, that's the fun part.</div>
+    <div class="rate-group">
+      <div class="rate-group__label">Give props</div>
+      ${positiveRows}
+    </div>
+    <div class="rate-group">
+      <div class="rate-group__label">Roast 'em</div>
+      ${roastRows}
+    </div>
+    <button class="submit-btn" type="button" id="pr-submit-btn">Submit Ratings</button>
+    <div class="panel__sub" id="pr-error" style="color:#f87171;display:none;margin:10px 0 0"></div>
+  </div>
+</div>
+<script>
+(function() {
+  var card = document.getElementById('pr-rate-card');
+  if (!card) return;
+  var btn = document.getElementById('pr-submit-btn');
+  var err = document.getElementById('pr-error');
+  btn.addEventListener('click', function() {
+    var scores = {};
+    ${RATING_CATEGORIES.map(c => `scores['${c.key}'] = Number((card.querySelector('input[name="pr-${c.key}"]:checked') || {}).value || 0);`).join('\n    ')}
+    for (var k in scores) { if (!scores[k]) { err.textContent = 'Pick a star for every category.'; err.style.display = 'block'; return; } }
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    err.style.display = 'none';
+    fetch('/players/${escHtml(rateeId)}/rate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scores: scores, isAnonymous: document.getElementById('pr-anon-toggle').checked })
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+    .then(function(res) {
+      if (!res.ok) { err.textContent = res.d.error || 'Something went wrong.'; err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Submit Ratings'; return; }
+      location.reload();
+    })
+    .catch(function() { err.textContent = 'Network error.'; err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Submit Ratings'; });
+  });
+})();
+<\/script>`;
+}
+
+function communityRatingsCard(summary) {
+  if (!summary.count) {
+    return `<div class="card" id="community-ratings">
+  <div class="card-label">COMMUNITY RATINGS</div>
+  <p style="padding:16px 18px;color:var(--text-muted);font-size:13px">No ratings yet — be the first.</p>
+</div>`;
+  }
+  const rows = RATING_CATEGORIES.map(cat => {
+    const avg = summary.averages[cat.key];
+    const pct = Math.round((avg / 5) * 100);
+    return `<div class="meter-row">
+      <div class="meter-row__top">
+        <span class="meter-row__label"><span class="meter-row__emoji">${cat.emoji}</span>${escHtml(cat.label)}</span>
+        <span class="meter-row__stat"><span class="meter-row__avg">${avg.toFixed(1)}</span><span class="meter-row__count">${summary.count} rating${summary.count === 1 ? '' : 's'}</span></span>
+      </div>
+      <div class="meter-track"><div class="meter-fill meter-fill--${cat.kind}" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+  return `<div class="card" id="community-ratings">
+  <div class="card-label">COMMUNITY RATINGS</div>
+  <div class="panel-body panel-body--flush-top">${rows}</div>
+</div>`;
+}
+
+function ratingFeedCard(feed) {
+  if (!feed.length) return '';
+  const rows = feed.slice(0, 25).map(item => {
+    const topCat = RATING_CATEGORIES.reduce((best, c) => (item.scores[c.key] > (item.scores[best.key] ?? 0) ? c : best), RATING_CATEGORIES[0]);
+    const nameHtml = item.isAnonymous
+      ? `<span class="rater-row__who rater-row__who--anon">${escHtml(item.raterName)}${item.realName ? ` <span class="rater-row__real" title="Visible to super admin only">(${escHtml(item.realName)})</span>` : ''}</span>`
+      : `<span class="rater-row__who">${escHtml(item.raterName)}</span>`;
+    return `<div class="rater-row">
+      ${nameHtml}
+      <span class="rater-row__cat">rated ${escHtml(topCat.label)} highest</span>
+      <span class="rater-row__score${topCat.kind === 'roast' ? ' rater-row__score--roast' : ''}">${item.scores[topCat.key]} ★</span>
+      <span class="rater-row__time">${escHtml(timeAgo(item.updatedAt))}</span>
+    </div>`;
+  }).join('');
+  return `<div class="card">
+  <div class="card-label" style="display:flex;align-items:center;justify-content:space-between">
+    <span>RATING FEED</span>
+    <span class="feed-note">Anonymous names are masked${feed.some(f => f.realName) ? ' &middot; you can see who is behind them' : ''}</span>
+  </div>
+  <div class="panel-body panel-body--flush-top">${rows}</div>
+</div>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false, fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [], coachNote = null }) {
+export function playerPage({
+  player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false,
+  fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [], coachNote = null,
+  peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
+  viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
+}) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
   const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
   const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 
+  const peerRatingsHtml = peerRatingsEnabled ? `
+    ${canRate ? rateThisPlayerCard(player.id, viewerExistingRating, viewerCooldownActive, viewerCooldownUntil) : ''}
+    ${ratingFeedCard(peerRatingsFeed)}
+  ` : '';
+  const ratingSnapshotHtml = peerRatingsEnabled ? communityRatingsCard(peerRatingSummary) : '';
+
   return `${heroSection(player, totals, isAdmin, isOwnProfile)}
 ${coachNoteHtml}
 <div class="game-detail-layout">
   <div class="game-detail-left">
     ${gameLog(gameLogs, player, potgGameIds)}
+    ${peerRatingsHtml}
     ${fbCard}
   </div>
   <div class="game-detail-right">
     ${sidebarHtml}
+    ${ratingSnapshotHtml}
     ${awardsSection(awards)}
     ${potgWriteups(potgGames, player)}
   </div>

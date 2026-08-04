@@ -8,7 +8,7 @@ const ICON_SPARK = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" 
 const ICON_RETRY = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
 const ICON_PHOTO = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2.5" width="11" height="8" rx="1.2"/><circle cx="4.3" cy="5.5" r="1"/><path d="M12 8l-3-2.5-4 3.5-2-1.5-1.5 1.5"/></svg>`;
 
-const SINGLE_PHOTO_TYPES = new Set(['mvp', 'dpoy']);
+const SINGLE_PHOTO_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp']);
 
 const AWARD_LABELS = {
   mvp:             'Season MVP',
@@ -22,13 +22,19 @@ const AWARD_LABELS = {
   steals_leader:   'Steals Leader',
   blocks_leader:   'Blocks Leader',
   three_pm_leader: '3-Pointers Leader',
+  finals_mvp:      'Finals MVP',
 };
 
-const TEAM_TYPES     = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+// 'champion' is roster-wide (every player on the winning finals team, not a
+// fixed 5-slot position grid like all_wknd_*) — it still renders through the
+// same multi-row "team" path in groupCard(), just without position sorting.
+const TEAM_TYPES     = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def', 'champion']);
+const ROSTER_TYPES   = new Set(['champion']);
 const POSITION_ORDER = Object.fromEntries(['PG','SG','SF','PF','C'].map((p,i) => [p,i]));
 
 const AWARD_GROUPS = [
-  { label: 'Season Awards',            types: ['mvp', 'dpoy'],                                       col: 'award' },
+  { label: 'Season Awards',            types: ['mvp', 'dpoy', 'finals_mvp'],                         col: 'award' },
+  { label: 'Champions',                types: ['champion'],                                          col: 'squad', maxRows: 20 },
   { label: 'All WKND 1st Team',       types: ['all_wknd_1'],   graphicType: 'all_wknd_1',            col: 'pos'   },
   { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],   graphicType: 'all_wknd_2',            col: 'pos'   },
   { label: 'All WKND Defensive Team', types: ['all_wknd_def'], graphicType: 'all_wknd_def',          col: 'pos'   },
@@ -148,7 +154,7 @@ function emptyRow(colspan = 8) {
 
 // ── Group card ────────────────────────────────────────────────────────────────
 
-function groupCard({ label, types, col, graphicType, season, byType, suggestions, articles, statsMap }) {
+function groupCard({ label, types, col, graphicType, season, byType, suggestions, articles, statsMap, maxRows = 5 }) {
   const isTeamGroup = types.some(t => TEAM_TYPES.has(t));
 
   // Show Confirm All button when any team type still has unconfirmed suggestions remaining.
@@ -157,21 +163,25 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
     return Array.isArray(suggestions[t]) && suggestions[t].some(e => !confirmedIds.has(e.player.id));
   });
 
-  const colHeader = col === 'award' ? 'Award' : 'Pos';
+  const colHeader = col === 'award' ? 'Award' : col === 'squad' ? 'Squad' : 'Pos';
 
   const rows = types.flatMap(type => {
     const confirmed = byType[type] || [];
     const isConf    = confirmed.length > 0;
     const isTeam    = TEAM_TYPES.has(type);
+    const isRoster  = ROSTER_TYPES.has(type);
 
     if (isTeam) {
-      // Show confirmed entries first, then fill remaining slots with unconfirmed suggestions.
-      const confirmedSorted = [...confirmed].sort((a,b) => (POSITION_ORDER[a.notes]??99) - (POSITION_ORDER[b.notes]??99));
+      // Roster-wide types (champion) have no position slots — sort alphabetically and
+      // don't cap at 5 like the position-slotted All-WKND teams do.
+      const confirmedSorted = isRoster
+        ? [...confirmed].sort((a,b) => (a.player_name||'').localeCompare(b.player_name||''))
+        : [...confirmed].sort((a,b) => (POSITION_ORDER[a.notes]??99) - (POSITION_ORDER[b.notes]??99));
       const confirmedIds    = new Set(confirmed.map(e => e.player_id));
       const remainingSugg   = Array.isArray(suggestions[type])
         ? suggestions[type].filter(e => !confirmedIds.has(e.player.id))
         : [];
-      const fullList = [...confirmedSorted, ...remainingSugg].slice(0, 5);
+      const fullList = [...confirmedSorted, ...remainingSugg].slice(0, maxRows);
 
       if (!fullList.length) return [emptyRow()];
 
@@ -181,7 +191,7 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
         const pname       = isEntryConf ? entry.player_name  : entry.player.name;
         const tname       = isEntryConf ? entry.team_name    : entry.player.team_name;
         const awdId       = isEntryConf ? entry.id : '';
-        const pos         = isEntryConf ? (entry.notes || '') : (entry.position || '');
+        const pos         = isRoster ? '' : (isEntryConf ? (entry.notes || '') : (entry.position || ''));
         const rowId       = `${type}-${i+1}`;
         const articleKey  = `${type}_${pid}`;
         const stats       = isEntryConf ? getStats(entry, true, statsMap) : getStats(entry, false, statsMap);

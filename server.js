@@ -67,7 +67,7 @@ import {
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
   getMvpWriteup, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
-  getMvpCandidates, getTotalSeasonGamesForMvp,
+  getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
   insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, countSeasonSignups, countConfirmedSeasonSignups,
   updateRegistrationContact,
@@ -103,8 +103,14 @@ import {
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   getTransactionById,
+  addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
+  getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
+  createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer,
+  getFineVotesForCase, castFineVote, resolveFineCase,
+  getPeerRating, getPeerRatingsForRatee, upsertPeerRating, isPlayerConfirmedForSeason, getOrAssignPlayerAlias,
   db as portalDb,
 } from './lib/portal-db.js';
+import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
@@ -136,6 +142,8 @@ import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisComplet
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
+import { adminFinesListBody, adminFineCaseBody, adminFineCategoriesBody, adminFineHeadsBody } from './views/admin/fines.js';
+import { finesPage } from './views/fines.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -667,9 +675,24 @@ const AWARD_OG_BADGE = {
   steals_leader:   { label: 'STEALS LEADER',            bg: '#f59332', text: '#10141d' },
   blocks_leader:   { label: 'BLOCKS LEADER',            bg: '#f59332', text: '#10141d' },
   three_pm_leader: { label: '3-PT LEADER',              bg: '#f59332', text: '#10141d' },
+  champion:        { label: 'CHAMPION',                 bg: '#facc15', text: '#10141d' },
+  finals_mvp:      { label: 'FINALS MVP',                bg: '#ef4444', text: '#fff'    },
 };
 const TEAM_AWARD_TYPES_OG = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
-const SINGLE_PHOTO_AWARD_TYPES = new Set(['mvp', 'dpoy']);
+const SINGLE_PHOTO_AWARD_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp']);
+// Roster-wide team award: every player on the winning finals team gets an individual
+// row (unlike all_wknd_*, which is capped at one player per position) — keyed by
+// player id like a solo award, not by position slot.
+const ROSTER_AWARD_TYPES = new Set(['champion']);
+// Single source of truth for which award types have a public visibility toggle,
+// an admin/site/settings allowlist entry, and an article-generation key — kept in
+// one place because the same list is otherwise easy to update inconsistently
+// across the admin, public, and settings routes.
+const AWARD_SECTION_KEYS = [
+  'mvp', 'dpoy', 'all_wknd_1', 'all_wknd_2', 'all_wknd_def',
+  'scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader',
+  'champion', 'finals_mvp',
+];
 // MVP/DPOY normally show one hero photo; an admin can opt into a multi-column layout
 // (2..MAX side by side) instead. Stored per (season, type) since it's a display choice,
 // not season data — reuses the generic site_settings key/value store.
@@ -1190,6 +1213,7 @@ function getFeatureFlags() {
     papawis: getSetting('papawis_enabled',  '0') === '1',
     posts:   getSetting('posts_enabled',    '0') === '1',
     comments: getSetting('comments_enabled', '0') === '1',
+    peerRatings: getSetting('peer_ratings_enabled', '0') === '1',
   };
 }
 
@@ -1305,6 +1329,23 @@ Output exactly one "pill / headline / sentence / button label" row per line, no 
   },
 });
 
+// Masked identities for anonymous peer ratings (see lib/peer-ratings.js). Kept
+// deliberately simple/PG (adjective + animal) rather than the Taglish/camp voice used
+// for marketing banners above — this alias sits right next to potentially spicy roast
+// content, so the name itself shouldn't add another layer of edge. Assigned once per
+// player and reused for every anonymous rating they submit (see getOrAssignPlayerAlias).
+const pickPeerRatingAlias = createBannerMessagePool({
+  settingKey: 'peer_rating_aliases',
+  fields: ['alias'],
+  fallbackPool: ALIAS_FALLBACK_POOL.map(alias => ({ alias })),
+  buildPrompt: (existing) => {
+    const avoidSample = existing.slice(-40).map(p => `- ${p.alias}`).join('\n');
+    return `Write 30 two-word pseudonyms in the form "Adjective Animal" (e.g. "Sneaky Badger", "Silent Hawk"), title case, for masking a user's identity in an anonymous feedback feed on a recreational basketball league site. Keep it light, playful, PG — no offensive, dark, or aggressive words. Every entry must be distinct — no near-duplicates or repeated animals back to back.${avoidSample ? `\n\nALREADY IN ROTATION (do NOT repeat these or close variations):\n${avoidSample}` : ''}
+
+Output exactly one "Adjective Animal" pair per line, no numbering, no bullets, no quotes, no blank lines, no preamble.`;
+  },
+});
+
 function memberSignupBanner(season) {
   const { message, cta } = pickSignupBannerMessage();
   return `<div class="member-signup-banner">
@@ -1375,10 +1416,11 @@ function renderPage(req, opts) {
   const seoOverride = getSeoOverride(req.path);
   if (seoOverride) {
     if (seoOverride.title) title = seoOverride.title;
-    metaTags = applySeoOverrideTags(metaTags, seoOverride, title);
+    metaTags = applySeoOverrideTags(metaTags, seoOverride, title, origin);
   }
   const isPlayer   = !!req.session?.playerRegId;
   const isLoggedIn = !!req.session?.isAdmin || isPlayer;
+  const isHead     = isPlayer && !!req.session?.playerPlayerId && getHeadTeamIds(req.session.playerPlayerId).length > 0;
 
   // Reg mini banner — shown on every non-home page for guests when reg is enabled
   const showMini = getSetting('reg_open', '0') === '1' && opts.currentPath !== '/' && !isLoggedIn;
@@ -1433,14 +1475,14 @@ function renderPage(req, opts) {
     unreadNotificationCount = getUnreadNotificationCount(req.session.playerPlayerId);
   }
 
-  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, features: getFeatureFlags(), origin, notifications, unreadNotificationCount, ...opts, title, body, metaTags });
+  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, features: getFeatureFlags(), origin, notifications, unreadNotificationCount, ...opts, title, body, metaTags });
 }
 
 // Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
 // normal meta tags — only the fields the admin actually set are touched, so a page's
 // existing og:image (or the sitewide fallback added just above) survives untouched
 // when an override only sets e.g. a title.
-function applySeoOverrideTags(metaTags, override, effectiveTitle) {
+function applySeoOverrideTags(metaTags, override, effectiveTitle, origin) {
   let mt = metaTags;
   if (override.title) {
     mt = mt.replace(/<meta property="og:title"[^>]*>\n?\s*/g, '')
@@ -1457,17 +1499,23 @@ function applySeoOverrideTags(metaTags, override, effectiveTitle) {
     mt += `\n  <meta name="twitter:description" content="${escAttr(override.description)}">`;
   }
   if (override.image_url) {
+    // Stored as a base64 data: URI (see compressSeoImage) — og:image must be a real
+    // fetchable URL since social crawlers never resolve data: URIs, so this points at
+    // /api/seo-cover which decodes and serves the stored image as bytes.
+    const imgUrl = override.image_url.startsWith('data:')
+      ? `${origin}/api/seo-cover?slug=${encodeURIComponent(override.slug)}`
+      : override.image_url;
     mt = mt.replace(/<meta property="og:image[^"]*"[^>]*>\n?\s*/g, '')
            .replace(/<meta name="twitter:image"[^>]*>\n?\s*/g, '')
            .replace(/<meta name="twitter:card"[^>]*>\n?\s*/g, '');
     mt += [
-      `\n  <meta property="og:image" content="${escAttr(override.image_url)}">`,
-      `\n  <meta property="og:image:secure_url" content="${escAttr(override.image_url)}">`,
+      `\n  <meta property="og:image" content="${escAttr(imgUrl)}">`,
+      `\n  <meta property="og:image:secure_url" content="${escAttr(imgUrl)}">`,
       `\n  <meta property="og:image:type" content="image/jpeg">`,
       `\n  <meta property="og:image:width" content="1200">`,
       `\n  <meta property="og:image:height" content="630">`,
       `\n  <meta name="twitter:card" content="summary_large_image">`,
-      `\n  <meta name="twitter:image" content="${escAttr(override.image_url)}">`,
+      `\n  <meta name="twitter:image" content="${escAttr(imgUrl)}">`,
     ].join('');
   }
   return mt;
@@ -1950,6 +1998,35 @@ function requireSuperAdmin(req, res, next) {
   res.status(403).send(renderAdminPage(req, { title: 'Forbidden', currentPath: '', body: '<p style="padding:40px;color:var(--text-muted)">Super admin access required.</p>' }));
 }
 
+// Team heads/coaches are just registered players granted one extra privilege (see
+// team_heads in lib/portal-db.js) — they authenticate through the normal player session,
+// not the admin one, so this is a third, separate gate from requireAuth/requireSuperAdmin.
+// A logged-in player who isn't a head gets a 403 (not redirected to /login — they're
+// already logged in, bouncing them there would just loop); a logged-out visitor still
+// gets sent to log in first.
+function requireHead(req, res, next) {
+  if (req.session?.playerPlayerId && getHeadTeamIds(req.session.playerPlayerId).length) return next();
+  if (req.session?.playerRegId) {
+    return res.status(403).send(renderPage(req, { title: 'Not Authorized', currentPath: '/fines', body: '<div class="container"><div class="page-content"><p style="padding:40px 0;color:var(--text-muted)">This page is only available to team heads/coaches.</p></div></div>' }));
+  }
+  res.redirect(loginUrl(req));
+}
+
+// Who cast a vote / filed a report, for both admin surfaces. A true super admin (the
+// shared PORTAL_ADMIN_USER/PASS login) has no individual identity, so votes from that
+// login collapse into one 'super_admin' bucket — an elevated player-admin (admin-core.md)
+// already has their own player identity, so their votes/reports are individually
+// attributed for free, no extra auth work needed.
+function currentAdminActor(req) {
+  if (req.session?.isElevatedPlayer) {
+    return { type: 'admin', id: req.session.playerPlayerId, name: req.session.playerName || 'Admin' };
+  }
+  return { type: 'admin', id: 'super_admin', name: 'Super Admin' };
+}
+function currentHeadActor(req) {
+  return { type: 'head', id: req.session.playerPlayerId, name: req.session.playerName || 'Team Head' };
+}
+
 // Looked up fresh per request (not session-cached) so a super admin revoking this flag
 // takes effect immediately, not on the elevated admin's next login.
 function canViewSensitiveData(req) {
@@ -2241,6 +2318,21 @@ app.get('/og-mvp.png', async (req, res) => {
 app.get('/api/photo/:gameId', (req, res) => {
   const row    = getGameCover(req.params.gameId);
   const dataUrl = row?.social_cover_data_url;
+  if (!dataUrl) return res.status(404).end();
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return res.status(404).end();
+  const buf = Buffer.from(match[2], 'base64');
+  res.set('Content-Type', match[1]);
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.end(buf);
+});
+
+// SEO override cover images are stored as base64 data: URIs (see compressSeoImage),
+// but og:image/twitter:image must be a real fetchable URL — social crawlers don't
+// resolve data: URIs — so this decodes and serves the stored image as bytes.
+app.get('/api/seo-cover', (req, res) => {
+  const override = getSeoOverride(String(req.query.slug || ''));
+  const dataUrl = override?.image_url;
   if (!dataUrl) return res.status(404).end();
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return res.status(404).end();
@@ -2936,7 +3028,7 @@ function playerPositions(p) {
   try { return JSON.parse(p.positions || '[]'); } catch { return []; }
 }
 
-function computeAwardSuggestions(stats, { mvpCandidates = null } = {}) {
+function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } = {}) {
   if (!stats.length) return {};
   const f   = (v, gp) => gp > 0 ? v / gp : 0;
   const ppg = p => f(p.pts, p.games_played);
@@ -3061,6 +3153,35 @@ function computeAwardSuggestions(stats, { mvpCandidates = null } = {}) {
     all_wknd_1:   team1,
     all_wknd_2:   team2,
     all_wknd_def: defTeam,
+    champion: finals?.winnerTeamId
+      ? finals.roster.map(p => ({ player: { ...p, team_name: finals.winnerTeamName }, statLine: '' }))
+      : null,
+    finals_mvp: (() => {
+      if (!finals?.candidates?.length) return null;
+      const top = [...finals.candidates]
+        .map(s => ({ ...s, mvpScore: computeMvpScore(s) }))
+        .filter(s => s.gp >= 1)
+        .sort((a, b) => b.mvpScore - a.mvpScore)[0];
+      if (!top) return null;
+      const gp = top.gp;
+      return {
+        player:   { ...top, games_played: gp },
+        statLine: `${(top.pts / gp).toFixed(1)} PPG · ${(top.reb / gp).toFixed(1)} RPG · ${(top.ast / gp).toFixed(1)} APG`,
+      };
+    })(),
+  };
+}
+
+// Finals series context for the Championship group's suggestions — null until the
+// season's finals games (game_type='finals') exist and the series is decided.
+function getFinalsSuggestionContext(season) {
+  const result = getFinalsSeriesResult(season);
+  if (!result?.decided || !result.winnerTeamId) return null;
+  return {
+    winnerTeamId:   result.winnerTeamId,
+    winnerTeamName: result.winnerTeamName,
+    roster:         getActivePlayers().filter(p => p.team_id === result.winnerTeamId),
+    candidates:     getFinalsMvpCandidates(season).filter(c => c.team_id === result.winnerTeamId),
   };
 }
 
@@ -3071,12 +3192,14 @@ app.get('/admin/awards', requireAuth, (req, res) => {
   const awards      = getSeasonAwards(season);
   const players     = getActivePlayers();
   const seasonStats = getSeasonPlayerStats(season);
-  const suggestions = computeAwardSuggestions(seasonStats, { mvpCandidates: getMvpCandidates(season) });
-  const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
-  const articles = Object.fromEntries(SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
+  const suggestions = computeAwardSuggestions(seasonStats, {
+    mvpCandidates: getMvpCandidates(season),
+    finals: getFinalsSuggestionContext(season),
+  });
+  const articles = Object.fromEntries(AWARD_SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
   // Also load per-player articles for confirmed team award entries (stored under <type>_<player_id> keys).
   for (const award of awards) {
-    if (['all_wknd_1', 'all_wknd_2', 'all_wknd_def'].includes(award.award_type)) {
+    if (['all_wknd_1', 'all_wknd_2', 'all_wknd_def', 'champion'].includes(award.award_type)) {
       const key = `${award.award_type}_${award.player_id}`;
       articles[key] = getSetting(`award_article_${key}_${season}`, '');
     }
@@ -3096,7 +3219,10 @@ app.post('/admin/awards', requireAuth, express.json(), (req, res) => {
 
   if (from_suggestion) {
     const stats = getSeasonPlayerStats(season);
-    const sugg  = computeAwardSuggestions(stats, { mvpCandidates: getMvpCandidates(season) })[award_type];
+    const sugg  = computeAwardSuggestions(stats, {
+      mvpCandidates: getMvpCandidates(season),
+      finals: getFinalsSuggestionContext(season),
+    })[award_type];
     const list  = Array.isArray(sugg) ? sugg : (sugg ? [sugg] : []);
     clearAwardType(season, award_type);
     for (const entry of list) {
@@ -3115,7 +3241,7 @@ app.post('/admin/awards', requireAuth, express.json(), (req, res) => {
     return res.json({ ok: true });
   }
 
-  if (clear_first && !AWARD_TEAM_TYPES.has(award_type)) clearAwardType(season, award_type);
+  if (clear_first && !AWARD_TEAM_TYPES.has(award_type) && !ROSTER_AWARD_TYPES.has(award_type)) clearAwardType(season, award_type);
 
   if (player_id) {
     const notes = position || '';
@@ -3395,8 +3521,9 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     all_wknd_1: 'All WKND 1st Team', all_wknd_2: 'All WKND 2nd Team', all_wknd_def: 'All WKND Defensive Team',
     scoring_champ: 'Scoring Champion', assists_leader: 'Assists Leader', rebounds_leader: 'Rebounds Leader',
     steals_leader: 'Steals Leader', blocks_leader: 'Blocks Leader', three_pm_leader: '3-Pointers Leader',
+    champion: 'Champion', finals_mvp: 'Finals MVP',
   };
-  const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def']);
+  const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def', 'champion']);
 
   const awards = getSeasonAwards(season);
   const byType = {};
@@ -3490,7 +3617,6 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
 app.get('/admin/site', requireAuth, (req, res) => res.redirect('/admin/visibility'));
 
 app.get('/admin/visibility', requireAuth, (req, res) => {
-  const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
   res.send(renderAdminPage(req, {
     title: 'Visibility',
     currentPath: '/admin/visibility',
@@ -3498,24 +3624,22 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       papawisEnabled:  getSetting('papawis_enabled', '0') === '1',
       postsEnabled:    getSetting('posts_enabled', '0') === '1',
       commentsEnabled: getSetting('comments_enabled', '0') === '1',
+      peerRatingsEnabled: getSetting('peer_ratings_enabled', '0') === '1',
       awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
-      sectionSettings: Object.fromEntries(SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
+      sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
     }),
   }));
 });
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled',
-    'award_show_mvp', 'award_show_dpoy',
-    'award_show_all_wknd_1', 'award_show_all_wknd_2', 'award_show_all_wknd_def',
-    'award_show_scoring_champ', 'award_show_assists_leader', 'award_show_rebounds_leader',
-    'award_show_steals_leader', 'award_show_blocks_leader', 'award_show_three_pm_leader',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled',
+    ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
   ]);
-  const articleKeyRe = /^award_article_(mvp|dpoy|all_wknd_1|all_wknd_2|all_wknd_def|scoring_champ|assists_leader|rebounds_leader|steals_leader|blocks_leader|three_pm_leader)(_[\w-]+)?_\d+$/;
+  const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
   for (const [key, value] of Object.entries(req.body || {})) {
     if (staticAllowed.has(key) || articleKeyRe.test(key)) setSetting(key, String(value));
   }
@@ -5259,11 +5383,10 @@ app.get('/awards', (req, res) => {
     .map(s => ({ ...s, mvpScore: computeMvpScore(s) }))
     .filter(s => s.gp >= 1)
     .sort((a, b) => b.mvpScore - a.mvpScore);
-  const SECTION_KEYS = ['mvp','dpoy','all_wknd_1','all_wknd_2','all_wknd_def','scoring_champ','assists_leader','rebounds_leader','steals_leader','blocks_leader','three_pm_leader'];
-  const visibleSections = new Set(SECTION_KEYS.filter(k => getSetting(`award_show_${k}`, '0') !== '0'));
-  const articles = Object.fromEntries(SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
+  const visibleSections = new Set(AWARD_SECTION_KEYS.filter(k => getSetting(`award_show_${k}`, '0') !== '0'));
+  const articles = Object.fromEntries(AWARD_SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
   for (const award of awards) {
-    if (['all_wknd_1', 'all_wknd_2', 'all_wknd_def'].includes(award.award_type)) {
+    if (['all_wknd_1', 'all_wknd_2', 'all_wknd_def', 'champion'].includes(award.award_type)) {
       const key = `${award.award_type}_${award.player_id}`;
       articles[key] = getSetting(`award_article_${key}_${season}`, '');
     }
@@ -5742,13 +5865,79 @@ app.get('/players/:ref', async (req, res) => {
     coachNote     = await getOrGenerateCoachNote(resolved.id, player, totals, gameLogs);
   }
 
+  const peerSeason = getPortalCurrentSeason();
+  const peerRatingRows = getFeatureFlags().peerRatings ? getPeerRatingsForRatee(peerSeason, resolved.id) : [];
+  const peerRatingSummary = summarizePeerRatings(peerRatingRows);
+  const viewerPlayerId = req.session?.playerPlayerId || null;
+  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  const viewerExistingRating = viewerPlayerId ? getPeerRating(peerSeason, viewerPlayerId, resolved.id) : null;
+  const viewerCooldownUntil = viewerExistingRating ? viewerExistingRating.updated_at + RATING_COOLDOWN_MS : 0;
+  const canRate = !!viewerPlayerId && viewerPlayerId !== resolved.id
+    && isPlayerConfirmedForSeason(viewerPlayerId, peerSeason)
+    && isPlayerConfirmedForSeason(resolved.id, peerSeason);
+  const peerRatingsFeed = peerRatingRows.map(r => {
+    const isAnon = !!r.is_anonymous;
+    const raterPlayer = getPlayerById(r.rater_player_id);
+    const raterName = isAnon
+      ? (raterPlayer?.anon_alias || 'Anonymous')
+      : displayPlayerName(raterPlayer?.name || 'Unknown');
+    return {
+      raterName,
+      isAnonymous: isAnon,
+      realName: isSuperAdmin && isAnon ? displayPlayerName(raterPlayer?.name || 'Unknown') : null,
+      updatedAt: r.updated_at,
+      scores: Object.fromEntries(RATING_CATEGORY_KEYS.map(k => [k, r[k]])),
+    };
+  });
+
   res.send(renderPage(req, {
     title: `${displayName} — WKND Basketball`,
     currentPath: '/players',
     isOwnProfile,
     metaTags: buildPlayerOgTags(req, player, totals),
-    body: playerPage({ player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisGames, coachNote })
+    body: playerPage({
+      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection,
+      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisGames, coachNote,
+      peerRatingsEnabled: getFeatureFlags().peerRatings,
+      peerRatingSummary, peerRatingsFeed, canRate,
+      viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
+    })
   }));
+});
+
+app.post('/players/:id/rate', express.json(), (req, res) => {
+  if (!getFeatureFlags().peerRatings) return res.status(404).json({ error: 'Not found.' });
+  const raterPlayerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !raterPlayerId) return res.status(401).json({ error: 'Log in to rate players.' });
+
+  const rateePlayerId = req.params.id;
+  const rateePlayer = getPlayerById(rateePlayerId);
+  if (!rateePlayer) return res.status(404).json({ error: 'Player not found.' });
+  if (rateePlayerId === raterPlayerId) return res.status(400).json({ error: "You can't rate yourself." });
+
+  const season = getPortalCurrentSeason();
+  if (!isPlayerConfirmedForSeason(raterPlayerId, season) || !isPlayerConfirmedForSeason(rateePlayerId, season)) {
+    return res.status(403).json({ error: 'Both players need to be confirmed for the current season to rate each other.' });
+  }
+
+  const scores = {};
+  for (const key of RATING_CATEGORY_KEYS) {
+    const val = Number(req.body?.scores?.[key]);
+    if (!Number.isInteger(val) || val < 1 || val > 5) return res.status(400).json({ error: `Invalid score for ${key}.` });
+    scores[key] = val;
+  }
+  const isAnonymous = !!req.body?.isAnonymous;
+
+  if (isAnonymous) getOrAssignPlayerAlias(raterPlayerId, () => pickPeerRatingAlias().alias);
+
+  const result = upsertPeerRating({ season, raterPlayerId, rateePlayerId, scores, isAnonymous });
+  if (result.error === 'cooldown') {
+    return res.status(429).json({ error: 'You can update your rating for this player once a week.', retryAt: result.retryAt });
+  }
+  if (result.error) return res.status(400).json({ error: 'Could not save rating.' });
+
+  const summary = summarizePeerRatings(getPeerRatingsForRatee(season, rateePlayerId));
+  res.json({ ok: true, summary });
 });
 
 // Fixed/cached per player — only calls the AI when the player's career totals have
@@ -6682,6 +6871,42 @@ app.post('/papawis/:id/viewed', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Fines: team head/coach surface ──────────────────────────────────────────────
+// Outside /admin — heads authenticate via the player session (requireHead), not the
+// admin one. Deliberately minimal: case queue + voting + a report form, nothing else.
+app.get('/fines', requireHead, (req, res) => {
+  const open     = getFineCasesByStatus('open');
+  const resolved = [...getFineCasesByStatus('approved'), ...getFineCasesByStatus('rejected')]
+    .sort((a, b) => (b.resolved_at || 0) - (a.resolved_at || 0)).slice(0, 30);
+  const votesByCase = Object.fromEntries(open.map(c => [c.id, getFineVotesForCase(c.id)]));
+  const categories = getActiveFineCategories();
+  const players = getAllPlayers();
+  const actor = currentHeadActor(req);
+  res.send(renderPage(req, {
+    title: 'Fines — WKND Basketball',
+    currentPath: '/fines',
+    body: finesPage({ open, resolved, votesByCase, categories, players, viewerId: actor.id }),
+  }));
+});
+
+app.post('/fines', requireHead, express.json(), (req, res) => {
+  const actor = currentHeadActor(req);
+  const { playerId, gameId = '', categoryId, description = '' } = req.body || {};
+  if (!playerId || !categoryId) return res.status(400).json({ error: 'Player and category are required.' });
+  const result = createFineCase({ playerId, gameId, categoryId, description, reportedByType: actor.type, reportedById: actor.id, reportedByName: actor.name });
+  if (result.error) return res.status(400).json({ error: 'Could not file the report.' });
+  res.json({ ok: true, id: result.id });
+});
+
+app.post('/fines/:id/vote', requireHead, express.json(), (req, res) => {
+  const actor = currentHeadActor(req);
+  const { vote, comment = '' } = req.body || {};
+  if (vote !== 'approve' && vote !== 'reject') return res.status(400).json({ error: 'Invalid vote.' });
+  const result = castFineVote({ caseId: req.params.id, voterType: actor.type, voterId: actor.id, voterName: actor.name, vote, comment });
+  if (result.error) return res.status(400).json({ error: 'This case is no longer open for voting.' });
+  res.json({ ok: true });
+});
+
 // ── Admin: Papawis ──────────────────────────────────────────────────────────────
 app.get('/admin/papawis', requireAuth, (req, res) => {
   const games = getPapawisGames();
@@ -7013,6 +7238,116 @@ app.post('/admin/papawis/:id/cancel', requireAuth, (req, res) => {
 app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
   deletePapawisGame(req.params.id);
   res.json({ ok: true });
+});
+
+// ── Admin: Fines & Conduct ───────────────────────────────────────────────────────
+// Literal sub-paths (categories, heads) registered before the /:id case-detail route,
+// same ordering reason as /admin/papawis/activity above /admin/papawis/:id — otherwise
+// Express would match "categories"/"heads" as a case id.
+app.get('/admin/fines/categories', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'Fine Categories', currentPath: '/admin/fines/categories',
+    body: adminFineCategoriesBody({ categories: getAllFineCategories() }),
+  }));
+});
+app.post('/admin/fines/categories', requireAuth, express.json(), (req, res) => {
+  const { label, amount, examples = '' } = req.body || {};
+  if (!label || !(Number(amount) > 0)) return res.status(400).json({ error: 'Label and a positive amount are required.' });
+  const id = createFineCategory({ label, amount: Number(amount), examples });
+  res.json({ ok: true, id });
+});
+app.post('/admin/fines/categories/:id', requireAuth, express.json(), (req, res) => {
+  const { label, amount, examples = '' } = req.body || {};
+  if (!label || !(Number(amount) > 0)) return res.status(400).json({ error: 'Label and a positive amount are required.' });
+  updateFineCategory(req.params.id, { label, amount: Number(amount), examples });
+  res.json({ ok: true });
+});
+app.post('/admin/fines/categories/:id/toggle', requireAuth, express.json(), (req, res) => {
+  const category = getFineCategory(req.params.id);
+  if (!category) return res.status(404).json({ error: 'Not found.' });
+  setFineCategoryActive(req.params.id, !category.active);
+  res.json({ ok: true, active: !category.active });
+});
+
+app.get('/admin/fines/heads', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'Team Heads', currentPath: '/admin/fines/heads',
+    body: adminFineHeadsBody({ heads: getAllTeamHeads(), teams: getAllTeams(), players: getAllPlayers() }),
+  }));
+});
+app.post('/admin/fines/heads', requireAuth, express.json(), (req, res) => {
+  const { teamId, playerId } = req.body || {};
+  if (!teamId || !playerId) return res.status(400).json({ error: 'Team and player are required.' });
+  addTeamHead(teamId, playerId);
+  res.json({ ok: true });
+});
+app.post('/admin/fines/heads/:id/revoke', requireAuth, (req, res) => {
+  removeTeamHead(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/admin/fines', requireAuth, (req, res) => {
+  const open     = getFineCasesByStatus('open');
+  const resolved = [...getFineCasesByStatus('approved'), ...getFineCasesByStatus('rejected')]
+    .sort((a, b) => (b.resolved_at || 0) - (a.resolved_at || 0));
+  res.send(renderAdminPage(req, {
+    title: 'Fines', currentPath: '/admin/fines',
+    body: adminFinesListBody({ open, resolved, players: getAllPlayers(), categories: getActiveFineCategories() }),
+  }));
+});
+app.post('/admin/fines', requireAuth, express.json(), (req, res) => {
+  const actor = currentAdminActor(req);
+  const { playerId, gameId = '', categoryId, description = '' } = req.body || {};
+  if (!playerId || !categoryId) return res.status(400).json({ error: 'Player and category are required.' });
+  const result = createFineCase({ playerId, gameId, categoryId, description, reportedByType: actor.type, reportedById: actor.id, reportedByName: actor.name });
+  if (result.error) return res.status(400).json({ error: 'Could not file the report.' });
+  res.json({ ok: true, id: result.id });
+});
+app.get('/admin/fines/:id', requireAuth, (req, res) => {
+  const kase = getFineCase(req.params.id);
+  if (!kase) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/fines', body: '<p style="padding:40px;color:var(--text-muted)">Case not found.</p>' }));
+  res.send(renderAdminPage(req, {
+    title: 'Fine Case', currentPath: '/admin/fines',
+    body: adminFineCaseBody({ case: kase, votes: getFineVotesForCase(kase.id), player: getPlayerWithTeam(kase.player_id) }),
+  }));
+});
+app.post('/admin/fines/:id/vote', requireAuth, express.json(), (req, res) => {
+  const actor = currentAdminActor(req);
+  const { vote, comment = '' } = req.body || {};
+  if (vote !== 'approve' && vote !== 'reject') return res.status(400).json({ error: 'Invalid vote.' });
+  const result = castFineVote({ caseId: req.params.id, voterType: actor.type, voterId: actor.id, voterName: actor.name, vote, comment });
+  if (result.error) return res.status(400).json({ error: 'This case is no longer open for voting.' });
+  res.json({ ok: true });
+});
+// Resolution is always a deliberate admin action (see lib/portal-db.js comment on
+// resolveFineCase) — the vote tally informs this, it doesn't auto-decide it. Approving
+// charges the ledger (category 'Penalty', same mechanism as season fees/Papawis) and
+// notifies the player only now, on resolution — never while the case is still open, so a
+// player never sees an in-progress accusation, only the outcome.
+app.post('/admin/fines/:id/resolve', requireAuth, express.json(), (req, res) => {
+  const kase = getFineCase(req.params.id);
+  if (!kase || kase.status !== 'open') return res.status(400).json({ error: 'Case is not open.' });
+  const actor = currentAdminActor(req);
+  const { approved, note = '' } = req.body || {};
+  let transactionId = '';
+  if (approved) {
+    transactionId = randomBytes(6).toString('hex');
+    recordTransaction({
+      id: transactionId, player_id: kase.player_id, amount: kase.amount, type: 'charge',
+      payment_method: '', date: manilaTodayStr(), status: 'confirmed',
+      notes: `Fine — ${kase.category_label}${kase.description ? `: ${kase.description}` : ''}`,
+      reference_no: kase.id, season: '', category: 'Penalty',
+    });
+  }
+  resolveFineCase(kase.id, { approved: !!approved, resolvedByName: actor.name, note, transactionId });
+  createNotification({
+    playerId: kase.player_id,
+    type: approved ? 'fine_approved' : 'fine_rejected',
+    title: approved ? `You've been fined ₱${Number(kase.amount).toLocaleString()}` : 'A conduct report about you was reviewed',
+    body: approved ? kase.category_label : 'No fine was issued.',
+    link: '/me',
+  });
+  res.json({ ok: true, approved: !!approved });
 });
 
 // Papawis pre-game reminders — see lib/papawis-notify.js. "Due" is decided per-signup
