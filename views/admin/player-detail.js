@@ -7,6 +7,7 @@ const ICON_RECOMPUTE = `<svg width="13" height="13" viewBox="0 0 13 13" fill="no
 const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
 const ICON_X         = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
 const ICON_TRASH     = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M12 3.5l-.9 8a1 1 0 0 1-1 .9H3.9a1 1 0 0 1-1-.9L2 3.5"/></svg>`;
+const ICON_EYE       = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7s2.5-4.5 6-4.5S13 7 13 7s-2.5 4.5-6 4.5S1 7 1 7z"/><circle cx="7" cy="7" r="2"/></svg>`;
 
 const ATTRS = [
   { key: 'scoring',     label: 'Scoring',     color: '#f59332' },
@@ -31,7 +32,7 @@ function eff(rating, key) {
   return rating[key + '_ovr'] ?? rating[key] ?? null;
 }
 
-export function adminPlayerDetailBody({ player, rating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false, canDelete = false } = {}) {
+export function adminPlayerDetailBody({ player, rating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false, canDelete = false, canImpersonate = false } = {}) {
   const name  = displayPlayerName(player.name);
   const color = teamColor(player.team_name);
   const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -202,13 +203,14 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
             ${teamOpts}
           </select>
         </div>
-        <div>
+        <div${canImpersonate ? ' class="mb-3"' : ''}>
           <label class="admin-field-label">Status</label>
           <select id="val-status" class="admin-input mt-1">
             <option value="active"${!isInactive ? ' selected' : ''}>Active</option>
             <option value="inactive"${isInactive ? ' selected' : ''}>Inactive</option>
           </select>
         </div>
+        ${canImpersonate ? `<button id="plr-impersonate-btn" type="button" class="admin-btn admin-btn--block">${ICON_EYE} View as this player</button>` : ''}
       </div>
     </div>
 
@@ -502,6 +504,22 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       btn.disabled = false; btn.style.opacity = '';
     }
   });
+
+  // ── View as this player ──────────────────────────────────────────────────
+  var impersonateBtn = document.getElementById('plr-impersonate-btn');
+  if (impersonateBtn) {
+    impersonateBtn.addEventListener('click', function() {
+      if (!confirm('View the site as ' + ${JSON.stringify(name)} + '? You will see the site exactly as they do (read-only) until you return to admin.')) return;
+      impersonateBtn.disabled = true; impersonateBtn.textContent = 'Loading…';
+      fetch('/admin/impersonate/' + PLAYER_ID, { method: 'POST' })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
+        .then(function(res) {
+          if (res.ok) { window.location.href = '/me'; }
+          else { alert(res.body.error || 'Failed'); impersonateBtn.disabled = false; impersonateBtn.innerHTML = '${ICON_EYE} View as this player'; }
+        })
+        .catch(function() { alert('Network error'); impersonateBtn.disabled = false; impersonateBtn.innerHTML = '${ICON_EYE} View as this player'; });
+    });
+  }
 
   // ── Delete player ─────────────────────────────────────────────────────────
   var deleteBtn = document.getElementById('plr-delete-btn');

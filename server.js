@@ -77,7 +77,7 @@ import {
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
-  insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, updateRegistration,
+  insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
   setRegistrationAdmin, insertAdminLog, getAdminLogs, getAdminLogsForUser, updateRegBirthday,
@@ -1399,6 +1399,31 @@ function balanceReminderBar(amount) {
 </script>`;
 }
 
+// Shown site-wide (even on minimal-header pages — unlike the other banners, this one
+// exists for safety/clarity, not conversion, so it should never be able to disappear)
+// whenever a super admin is viewing the site through /admin/impersonate/:playerId. No
+// dismiss button — the only way out is actually returning to admin.
+function impersonationBanner(playerName) {
+  return `<div class="balance-bar" style="background:#7c2d12;border-color:#9a3412">
+  <div class="balance-bar__inner">
+    <span class="balance-bar__text">👁 Viewing as <strong>${escHtml(playerName)}</strong> — read-only.</span>
+    <button class="balance-bar__cta" id="stop-impersonating-btn" type="button" style="border:0;cursor:pointer">Return to Admin</button>
+  </div>
+</div>
+<script>
+(function() {
+  var btn = document.getElementById('stop-impersonating-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    btn.disabled = true;
+    fetch('/admin/stop-impersonating', { method: 'POST' })
+      .then(function() { window.location.href = '/admin'; })
+      .catch(function() { btn.disabled = false; });
+  });
+})();
+</script>`;
+}
+
 function renderPage(req, opts) {
   const origin = getRequestOrigin(req);
   const fallbackImg = `${origin}/og-image.png`;
@@ -1464,7 +1489,9 @@ function renderPage(req, opts) {
     }
   }
 
-  const body = balanceBarHtml + bannerHtml + (opts.body || '');
+  const impersonatingHtml = req.session?.impersonating ? impersonationBanner(req.session.impersonatingPlayerName || 'this player') : '';
+
+  const body = impersonatingHtml + balanceBarHtml + bannerHtml + (opts.body || '');
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -2047,6 +2074,45 @@ app.use('/admin', (req, res, next) => {
     insertAdminLog({ actor, actorType, method: req.method, path: req.path, details: body });
   });
   next();
+});
+
+// "View as" — lets a true super admin (never an elevated player-admin — team heads/coaches
+// promoted to admin already have their own identity and don't need this) see the site
+// exactly as a given player does. Swaps the admin session for that player's session,
+// stashing enough to restore it on /admin/stop-impersonating. Read-only is enforced by
+// the write-blocking middleware below, not by anything on these two routes themselves.
+app.post('/admin/impersonate/:playerId', requireSuperAdmin, express.json(), (req, res) => {
+  const reg = getRegistrationByPlayerId(req.params.playerId);
+  if (!reg || reg.status !== 'approved') return res.status(400).json({ error: 'This player has no active account to view as.' });
+  const player = getPlayerWithTeam(req.params.playerId);
+  req.session.impersonating           = true;
+  req.session.impersonatingPlayerName = displayPlayerName(player?.name || reg.full_name || '');
+  req.session.playerRegId             = reg.id;
+  req.session.playerPlayerId          = reg.player_id;
+  delete req.session.isAdmin;
+  delete req.session.isElevatedPlayer;
+  res.json({ ok: true });
+});
+
+app.post('/admin/stop-impersonating', (req, res) => {
+  if (!req.session?.impersonating) return res.status(400).json({ error: 'Not currently viewing as another player.' });
+  const playerId = req.session.playerPlayerId;
+  delete req.session.impersonating;
+  delete req.session.impersonatingPlayerName;
+  delete req.session.playerRegId;
+  delete req.session.playerPlayerId;
+  req.session.isAdmin = true;
+  insertAdminLog({ actor: 'Super Admin', actorType: 'super', method: 'POST', path: req.path, details: { event: 'impersonate_stop', playerId } });
+  res.json({ ok: true });
+});
+
+// While viewing as another player, every non-GET request is blocked — this is a read-only
+// window into their account, not a way to act as them (comment, react, settle balance,
+// etc. as someone else with zero attribution). /logout is unaffected since it's a GET.
+app.use((req, res, next) => {
+  if (!req.session?.impersonating || req.method === 'GET') return next();
+  if (req.path === '/admin/stop-impersonating') return next();
+  res.status(403).json({ error: 'Read-only while viewing as another player.' });
 });
 
 async function fetchCoverImageBuffer(url) {
@@ -3814,10 +3880,12 @@ app.get('/admin/players/:id', requireAuth, (req, res) => {
   const currentSlug = getSlugForEntity('player', player.id);
   const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   const canDelete = !playerHasActivity(player.id);
+  const linkedReg = getRegistrationByPlayerId(player.id);
+  const canImpersonate = isSuperAdmin && !!linkedReg && linkedReg.status === 'approved';
   res.send(renderAdminPage(req, {
     title: displayPlayerName(player.name),
     currentPath: '/admin/players',
-    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams, currentSlug, isSuperAdmin, canDelete }),
+    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams, currentSlug, isSuperAdmin, canDelete, canImpersonate }),
   }));
 });
 
