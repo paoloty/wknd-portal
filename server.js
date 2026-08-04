@@ -107,7 +107,7 @@ import {
   getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
   createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer,
   getFineVotesForCase, castFineVote, resolveFineCase,
-  getPeerRating, getPeerRatingsForRatee, upsertPeerRating, isPlayerConfirmedForSeason, getOrAssignPlayerAlias,
+  getPeerRating, getPeerRatingsForRatee, upsertPeerRating, getOrAssignPlayerAlias,
   db as portalDb,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
@@ -5937,12 +5937,15 @@ app.get('/players/:ref', async (req, res) => {
   const peerRatingRows = getFeatureFlags().peerRatings ? getPeerRatingsForRatee(peerSeason, resolved.id) : [];
   const peerRatingSummary = summarizePeerRatings(peerRatingRows);
   const viewerPlayerId = req.session?.playerPlayerId || null;
+  const viewerPlayer = viewerPlayerId ? getPlayerById(viewerPlayerId) : null;
   const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   const viewerExistingRating = viewerPlayerId ? getPeerRating(peerSeason, viewerPlayerId, resolved.id) : null;
   const viewerCooldownUntil = viewerExistingRating ? viewerExistingRating.updated_at + RATING_COOLDOWN_MS : 0;
+  // Eligibility is just "both players are active" — the earlier season_signups-confirmed
+  // check was too strict in practice (nobody gets marked confirmed until an admin processes
+  // signups, which lags well behind when players actually want to use this).
   const canRate = !!viewerPlayerId && viewerPlayerId !== resolved.id
-    && isPlayerConfirmedForSeason(viewerPlayerId, peerSeason)
-    && isPlayerConfirmedForSeason(resolved.id, peerSeason);
+    && viewerPlayer?.status === 'active' && player.status === 'active';
   const peerRatingsFeed = peerRatingRows.map(r => {
     const isAnon = !!r.is_anonymous;
     const raterPlayer = getPlayerById(r.rater_player_id);
@@ -5983,10 +5986,12 @@ app.post('/players/:id/rate', express.json(), (req, res) => {
   if (!rateePlayer) return res.status(404).json({ error: 'Player not found.' });
   if (rateePlayerId === raterPlayerId) return res.status(400).json({ error: "You can't rate yourself." });
 
-  const season = getPortalCurrentSeason();
-  if (!isPlayerConfirmedForSeason(raterPlayerId, season) || !isPlayerConfirmedForSeason(rateePlayerId, season)) {
-    return res.status(403).json({ error: 'Both players need to be confirmed for the current season to rate each other.' });
+  const raterPlayer = getPlayerById(raterPlayerId);
+  if (raterPlayer?.status !== 'active' || rateePlayer.status !== 'active') {
+    return res.status(403).json({ error: 'Both players need to be active to rate each other.' });
   }
+
+  const season = getPortalCurrentSeason();
 
   const scores = {};
   for (const key of RATING_CATEGORY_KEYS) {

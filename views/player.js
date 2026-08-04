@@ -857,11 +857,14 @@ function rateThisPlayerCard(rateeId, viewerExistingRating, cooldownActive, coold
 <\/script>`;
 }
 
-function communityRatingsCard(summary) {
+function communityRatingsCard(summary, isOwnProfile = false) {
   if (!summary.count) {
+    const emptyMsg = isOwnProfile
+      ? 'No one has rated you yet.'
+      : 'No ratings yet — be the first.';
     return `<div class="card" id="community-ratings">
   <div class="card-label">COMMUNITY RATINGS</div>
-  <p style="padding:16px 18px;color:var(--text-muted);font-size:13px">No ratings yet — be the first.</p>
+  <p style="padding:16px 18px;color:var(--text-muted);font-size:13px">${emptyMsg}</p>
 </div>`;
   }
   const rows = RATING_CATEGORIES.map(cat => {
@@ -921,7 +924,7 @@ export function playerPage({
     ${canRate ? rateThisPlayerCard(player.id, viewerExistingRating, viewerCooldownActive, viewerCooldownUntil) : ''}
     ${ratingFeedCard(peerRatingsFeed)}
   ` : '';
-  const ratingSnapshotHtml = peerRatingsEnabled ? communityRatingsCard(peerRatingSummary) : '';
+  const ratingSnapshotHtml = peerRatingsEnabled ? communityRatingsCard(peerRatingSummary, isOwnProfile) : '';
 
   return `${heroSection(player, totals, isAdmin, isOwnProfile)}
 ${coachNoteHtml}
