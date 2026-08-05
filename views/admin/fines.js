@@ -249,7 +249,7 @@ window.resolveCase = async function(approved) {
 
 function examplePillsDisplay(examples) {
   if (!examples.length) return '';
-  return `<div class="flex flex-wrap gap-1 mt-1.5">
+  return `<div class="flex flex-wrap gap-1">
     ${examples.map(ex => `<span class="inline-block text-[11px] bg-admin-border/50 text-slate-300 px-2 py-0.5 rounded-full">${escHtml(ex)}</span>`).join('')}
   </div>`;
 }
@@ -258,10 +258,8 @@ function categoryRow(c) {
   return `<tr class="border-b border-admin-border/40 last:border-0" data-id="${escHtml(c.id)}">
     <td class="px-4 py-3 text-sm font-medium text-slate-200 align-top">${escHtml(c.label)}</td>
     <td class="px-4 py-3 text-sm font-saira text-brand align-top">${peso(c.amount)}</td>
-    <td class="px-4 py-3 text-xs text-slate-500 max-w-md align-top">
-      ${c.description ? `<p class="text-slate-400">${escHtml(c.description)}</p>` : ''}
-      ${examplePillsDisplay(c.examples)}
-    </td>
+    <td class="px-4 py-3 text-xs text-slate-400 max-w-xs align-top">${c.description ? escHtml(c.description) : `<span class="text-slate-600">—</span>`}</td>
+    <td class="px-4 py-3 max-w-sm align-top">${examplePillsDisplay(c.examples) || `<span class="text-xs text-slate-600">—</span>`}</td>
     <td class="px-4 py-3 align-top">${c.active ? `<span class="agm-badge agm-badge--amber">Active</span>` : `<span class="agm-badge agm-badge--gray">Inactive</span>`}</td>
     <td class="px-4 py-3 text-right whitespace-nowrap align-top">
       <button class="admin-btn admin-btn--sm" onclick='openCategoryModal(${JSON.stringify({ id: c.id, label: c.label, amount: c.amount, description: c.description, examples: c.examples }).replace(/'/g, '&#39;')})'>Edit</button>
@@ -283,10 +281,20 @@ export function adminFineCategoriesBody({ categories = [] } = {}) {
   </div>
 </div>
 
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden overflow-x-auto">
   ${categories.length === 0
     ? `<div class="p-8 text-center text-sm text-slate-500">No categories yet.</div>`
-    : `<table class="w-full border-collapse"><tbody>${categories.map(categoryRow).join('')}</tbody></table>`}
+    : `<table class="w-full border-collapse">
+        <thead><tr class="border-b border-admin-border">
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Category</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Amount</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Description</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Examples</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Status</th>
+          <th class="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500">Actions</th>
+        </tr></thead>
+        <tbody>${categories.map(categoryRow).join('')}</tbody>
+      </table>`}
 </div>
 
 <div class="agm-modal-backdrop" id="cat-modal-backdrop" hidden>
@@ -332,13 +340,26 @@ function renderCatExamplePills() {
   }).join('');
 }
 document.getElementById('cat-examples-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' || e.key === ',') {
+  // Enter-only — commas are a valid character inside a single example (e.g. "getting in
+  // faces, chest bumping"), so treating comma as a second add-pill trigger would split
+  // that mid-word the moment it's typed. Paste-to-split-many still uses commas, just not
+  // this key handler.
+  if (e.key === 'Enter') {
     e.preventDefault();
-    var val = this.value.trim().replace(/,$/, '');
+    var val = this.value.trim();
     if (val) { catExamples.push(val); renderCatExamplePills(); this.value = ''; }
   } else if (e.key === 'Backspace' && !this.value && catExamples.length) {
     catExamples.pop(); renderCatExamplePills();
   }
+});
+// Pasting a comma-separated list (e.g. copied straight from the original policy doc)
+// splits into multiple pills at once instead of landing as one giant pill.
+document.getElementById('cat-examples-input').addEventListener('paste', function(e) {
+  var text = (e.clipboardData || window.clipboardData).getData('text');
+  if (!text || text.indexOf(',') === -1) return;
+  e.preventDefault();
+  text.split(',').map(function(s) { return s.trim(); }).filter(Boolean).forEach(function(s) { catExamples.push(s); });
+  renderCatExamplePills();
 });
 document.getElementById('cat-examples-pills').addEventListener('click', function(e) {
   var btn = e.target.closest('button[data-i]');

@@ -149,7 +149,7 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, is
   }
 
   return `
-<div class="mb-6 flex items-center gap-3">
+<div class="mb-6 flex flex-wrap items-center gap-3">
   <a href="/admin/users" class="text-slate-500 hover:text-slate-300 text-sm no-underline transition-colors">← Users</a>
   <span class="text-slate-700">/</span>
   <span class="text-sm text-slate-400">${escHtml(reg.full_name)}</span>
@@ -165,7 +165,7 @@ ${bogusFlags.length ? `
   </ul>
 </div>` : ''}
 
-<div class="grid gap-5" style="grid-template-columns:1fr 380px;align-items:start">
+<div class="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_380px] items-start">
 
   <!-- Left: registration details -->
   <div class="space-y-5">
@@ -176,7 +176,7 @@ ${bogusFlags.length ? `
         ${passwordBadge(passwordStatus(reg))}
       </div>
       <div class="px-5 py-4">
-        <dl class="grid grid-cols-2 gap-x-6 gap-y-4">
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
           ${field('Full Name', reg.full_name)}
           ${field('Email', display(reg.email, canViewSensitive, maskEmail))}
           ${field('Phone', display(reg.phone, canViewSensitive, maskPhone))}
@@ -209,7 +209,7 @@ ${bogusFlags.length ? `
             ${positions.map(p => `<span class="px-3 py-1 text-xs font-bold bg-admin-border/60 text-slate-300 rounded-md">${escHtml(p)}</span>`).join('')}
           </div>
         </div>` : ''}
-        <dl class="grid grid-cols-3 gap-x-6 gap-y-4">
+        <dl class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
           ${field('Height', reg.height ? reg.height + ' cm' : '')}
           ${field('Weight', reg.weight ? reg.weight + ' kg' : '')}
           ${field('Dominant Hand', reg.dominant_hand, { capitalize: true })}
@@ -222,7 +222,7 @@ ${bogusFlags.length ? `
         <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">A Few More Things</div>
       </div>
       <div class="px-5 py-4 space-y-4">
-        <dl class="grid grid-cols-2 gap-x-6 gap-y-4">
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
           ${field('Experience', reg.experience, { capitalize: true })}
           ${field('Referred By', reg.referred_by)}
           ${field('Emergency Contact', display(reg.emergency_name, canViewSensitive, maskName))}
@@ -240,7 +240,7 @@ ${bogusFlags.length ? `
         <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Timeline</div>
       </div>
       <div class="px-5 py-4">
-        <dl class="grid grid-cols-2 gap-x-6 gap-y-4">
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
           ${field('Submitted', fmtDate(reg.created_at))}
           ${field('Approved', reg.approved_at ? fmtDate(reg.approved_at) : '')}
           ${field('Last Login', reg.last_login_at ? fmtDateTime(reg.last_login_at) : '')}
@@ -253,7 +253,7 @@ ${bogusFlags.length ? `
   </div>
 
   <!-- Right: actions -->
-  <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden" style="position:sticky;top:24px">
+  <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden lg:sticky lg:top-6">
     <div class="px-5 py-3.5 border-b border-admin-border">
       <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Admin Actions</div>
     </div>
@@ -265,7 +265,7 @@ ${bogusFlags.length ? `
 </div>
 
 <!-- Reject modal -->
-<div id="reject-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:center;justify-content:center">
+<div id="reject-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">
   <div class="bg-admin-surface border border-admin-border rounded-xl p-6" style="width:100%;max-width:420px">
     <div class="text-sm font-bold text-slate-200 mb-3">Reject Registration</div>
     <textarea id="reject-notes" rows="3" placeholder="Reason (optional)…"

@@ -2792,10 +2792,21 @@ app.get('/admin', requireAuth, (req, res) => {
   const underReview    = getGamesUnderReviewCount();
   const activePlayers  = getActivePlayerCount();
   const gamesPlayed    = getPlayedGamesCount();
+  const pendingUsers   = getAllRegistrations().filter(r => r.status === 'pending').length;
+  const openFineCases  = getFineCasesByStatus('open');
+  const today          = manilaTodayStr();
+  const nextPapawis    = getPapawisGames()
+    .filter(g => g.date >= today && g.status !== 'cancelled' && g.status !== 'completed')
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)[0] || null;
+  const isSuperAdmin   = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  const recentActivity = isSuperAdmin ? getAdminLogs(8) : [];
   res.send(renderAdminPage(req, {
     title: 'Dashboard',
     currentPath: '/admin',
-    body: adminDashboardBody({ players, teams, recentGames, upcoming, financeSummary, pendingTx, underReview, activePlayers, gamesPlayed }),
+    body: adminDashboardBody({
+      players, teams, recentGames, upcoming, financeSummary, pendingTx, underReview, activePlayers, gamesPlayed,
+      pendingUsers, openFineCases, nextPapawis, isSuperAdmin, recentActivity,
+    }),
   }));
 });
 
