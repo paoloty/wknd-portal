@@ -378,6 +378,13 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   // controls, matches the old table's own gating on the Remove button.
   const canManage = !isCompleted && !isCancelled && !isLocked;
 
+  // The reminder only mentions a team if one was already assigned *when it ran* — a
+  // signup reminded before teams existed just says "confirmed, no team yet" and nothing
+  // ever re-scans it. This is the narrow gap that leaves open: reminded, team assigned
+  // afterward, never told. Excludes guests — they have no account/email of their own, same
+  // exclusion the automated reminder already applies (see stmtPapawisSignupsDueForReminder).
+  const canNotifyTeam = (s) => canManage && !s.guest_name && s.status === 'confirmed' && s.team && s.reminder_sent_at && !s.team_notified_at;
+
   const signupRow = (s) => {
     const name = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
     return `<li class="pw-row" ${canManage ? 'draggable="true"' : ''} data-id="${escHtml(s.id)}" data-status="${s.status}" data-name="${escHtml(name)}">
@@ -387,6 +394,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         <div class="pw-row__meta">${s.guest_name ? `Billed to ${escHtml(displayPlayerName(s.player_name))}` : escHtml(s.team_name || '—')}</div>
       </div>
       ${canManage ? `<div class="pw-row__actions">
+        ${canNotifyTeam(s) ? `<button class="admin-btn admin-btn--sm" data-notify-team="${escHtml(s.id)}" data-team-label="${escHtml(papawisTeamLabel(s.team))}" title="Reminder already went out before Team ${papawisTeamLabel(s.team)} was assigned — send a one-time catch-up email now.">✉ Notify Team</button>` : ''}
         ${s.status === 'waitlist'
           ? `<button class="pw-move-btn pw-move-btn--confirm" data-move="${escHtml(s.id)}" data-to="confirmed" ${isConfirmedFull ? 'disabled title="Confirmed is full"' : ''}>${ICON_CHEVRON_UP} Confirm</button>`
           : `<button class="pw-move-btn" data-move="${escHtml(s.id)}" data-to="waitlist">${ICON_CHEVRON_DOWN} Waitlist</button>`}
@@ -712,6 +720,18 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
       .then(function(r) { return r.json(); })
       .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not move.'); btn.disabled = false; } })
       .catch(function() { alert('Network error'); btn.disabled = false; });
+    });
+  });
+
+  document.querySelectorAll('[data-notify-team]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      if (!confirm('Send a one-time "you\\'re on Team ' + btn.dataset.teamLabel + '" email now?')) return;
+      var sid = btn.dataset.notifyTeam;
+      btn.disabled = true; btn.textContent = 'Sending…';
+      fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/notify-team', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not send.'); btn.disabled = false; btn.textContent = '✉ Notify Team'; } })
+        .catch(function() { alert('Network error'); btn.disabled = false; btn.textContent = '✉ Notify Team'; });
     });
   });
 

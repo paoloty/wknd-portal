@@ -19,7 +19,7 @@ function parsePositions(raw) {
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
-function heroSection(player, totals, isAdmin = false, isOwnProfile = false) {
+function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canReport = false, reportCategories = [], reportOtherCategoryId = '') {
   const teamName  = String(player.team_name || '').toUpperCase();
   const color     = teamColor(teamName);
   const isLight   = teamName === 'WHITE';
@@ -54,6 +54,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false) {
     <div class="player-hero__info">
       <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
       <div class="player-hero__meta">${metaParts}</div>
+      ${canReport ? reportPlayerSection(player, reportCategories, reportOtherCategoryId) : ''}
       ${isOwnProfile ? `
       <div class="player-hero__bio-block" id="bio-block">
         <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you.">${escHtml(bio)}</textarea>
@@ -327,82 +328,213 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false) {
 // ── Report player ───────────────────────────────────────────────────────────────
 // Deliberately understated compared to "Rate This Player" (a full card) — a conduct
 // report is a serious, reputation-affecting accusation, not something that should read as
-// equally casual as a peer rating. A plain text link + a lightweight modal, built on the
-// same .pcp-modal/.pcp-backdrop convention already used above for the photo-crop modal
-// (globally styled in public/styles.css, unlike views/fines.js's page-scoped .fn-modal).
-function reportPlayerSection(player, categories) {
-  const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}">${escHtml(c.label)}</option>`).join('');
+// equally casual as a peer rating. A plain text link opens a Facebook-style drill-down
+// modal: pick a category → pick a specific example (if the category has any) → a final
+// free-text step for detail, always available as a fallback ("Something else") at either
+// level. Structured choices do most of the work so the free-text box is a supplement, not
+// the only option — reduces both blank-page friction and pure text-dump reports.
+// Built on the .pcp-modal/.pcp-backdrop convention already used above for the photo-crop
+// modal (globally styled in public/styles.css) but NOT .pcp-modal__body — that class is
+// crop-tool-specific (black background, fixed crop-container sizing), wrong for a form.
+function reportPlayerSection(player, categories, otherCategoryId) {
+  const categoriesData = JSON.stringify(categories.map(c => ({ id: c.id, label: c.label, description: c.description || '', examples: c.examples || [] }))).replace(/</g, '\\u003c');
   return `<div class="player-report-entry">
   <button type="button" class="player-report-link" id="rp-open-btn">⚑ Report this player</button>
 </div>
 
 <div class="pcp-backdrop" id="rp-backdrop" hidden>
-  <div class="pcp-modal">
+  <div class="pcp-modal" style="max-width:420px">
     <div class="pcp-modal__header">
-      <span class="pcp-modal__title">Report Player</span>
+      <button type="button" class="rp-back-btn" id="rp-back" hidden aria-label="Back">&#8249;</button>
+      <span class="pcp-modal__title" id="rp-title">Report Player</span>
       <button class="pcp-modal__close" id="rp-close">&#x2715;</button>
     </div>
-    <div class="pcp-modal__body" style="display:flex;flex-direction:column;gap:12px">
-      <p style="margin:0;font-size:12.5px;color:var(--text-muted);line-height:1.5">Reports are reviewed by admins before anything happens — the player you're reporting is never notified unless a case is actually escalated and resolved.</p>
-      <div>
-        <label class="fn-label" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-subtle);margin:0 0 6px">Category</label>
-        <select id="rp-category" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 11px;font-size:13.5px;color:var(--text);font-family:inherit">${categoryOptions}</select>
-      </div>
-      <div>
-        <label class="fn-label" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-subtle);margin:0 0 6px">What happened</label>
-        <textarea id="rp-description" rows="4" placeholder="Describe what happened — game, context, who else saw it…" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 11px;font-size:13.5px;color:var(--text);font-family:inherit;resize:vertical"></textarea>
-      </div>
-      <div id="rp-msg" style="font-size:12px;color:#f87171" hidden></div>
+
+    <div class="rp-step" id="rp-step-category">
+      <p class="rp-intro">Reports are reviewed by admins before anything happens — the player you're reporting is never notified unless a case is actually escalated and resolved.</p>
+      <div class="rp-option-list" id="rp-category-list"></div>
     </div>
-    <div class="pcp-modal__footer">
-      <button class="pcp-modal__cancel" id="rp-cancel">Cancel</button>
-      <button class="pcp-modal__save" id="rp-submit">File Report</button>
+
+    <div class="rp-step" id="rp-step-example" hidden>
+      <div class="rp-option-list" id="rp-example-list"></div>
+    </div>
+
+    <div class="rp-step" id="rp-step-detail" hidden>
+      <div class="rp-detail-body">
+        <div class="rp-context-note" id="rp-context-note"></div>
+        <textarea id="rp-description" rows="5" maxlength="500" placeholder="Tell us what happened — game, context, who else saw it…"></textarea>
+        <div class="rp-charcount" id="rp-charcount">0 / 500</div>
+        <div id="rp-msg" hidden></div>
+      </div>
+      <div class="pcp-modal__footer">
+        <button class="pcp-modal__cancel" id="rp-cancel">Cancel</button>
+        <button class="pcp-modal__save" id="rp-submit">File Report</button>
+      </div>
     </div>
   </div>
 </div>
 
 <style>
-.player-report-entry { padding: 8px 0 0; }
+.player-report-entry { margin-top: 5px; }
 .player-report-link { background: none; border: none; padding: 0; font-size: 12px; color: var(--text-subtle); cursor: pointer; transition: color .15s; }
-.player-report-link:hover { color: var(--text-muted); }
+.player-report-link:hover { color: var(--amber); }
+
+.rp-back-btn { width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: none; border: none; margin: 0; padding: 0; font-size: 22px; line-height: 1; color: var(--text-muted); cursor: pointer; }
+.rp-back-btn[hidden] { display: none; width: 0; }
+.rp-back-btn:hover { color: var(--text); }
+.pcp-modal__header #rp-title { flex: 1; text-align: center; }
+
+.rp-intro { margin: 0; padding: 14px 18px 4px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.rp-option-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; }
+.rp-option-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 12px 18px; background: none; border: none; border-top: 1px solid var(--border); text-align: left; cursor: pointer; }
+.rp-option-list .rp-option-row:first-child { border-top: none; }
+.rp-option-row:hover { background: rgba(255,255,255,0.04); }
+.rp-option-row__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rp-option-row__label { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.rp-option-row__desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.4; }
+.rp-option-row__chevron { flex-shrink: 0; color: var(--text-subtle); font-size: 16px; }
+.rp-option-row--other .rp-option-row__label { color: var(--text-muted); font-weight: 500; }
+
+.rp-detail-body { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; }
+.rp-context-note { font-size: 11.5px; font-weight: 600; color: var(--amber); text-transform: uppercase; letter-spacing: .03em; }
+.rp-detail-body textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; font-size: 13.5px; color: var(--text); font-family: inherit; resize: vertical; }
+.rp-charcount { font-size: 11px; color: var(--text-subtle); text-align: right; }
+#rp-msg { font-size: 12px; color: #f87171; }
 </style>
 
 <script>
 (function() {
-  var PLAYER_ID = '${escHtml(player.id)}';
+  var PLAYER_ID  = '${escHtml(player.id)}';
+  var CATEGORIES = ${categoriesData};
+  var OTHER_ID   = '${escHtml(otherCategoryId)}';
+
   var openBtn   = document.getElementById('rp-open-btn');
   var backdrop  = document.getElementById('rp-backdrop');
   var closeBtn  = document.getElementById('rp-close');
+  var backBtn   = document.getElementById('rp-back');
+  var title     = document.getElementById('rp-title');
   var cancelBtn = document.getElementById('rp-cancel');
   var submitBtn = document.getElementById('rp-submit');
   var msg       = document.getElementById('rp-msg');
+  var textarea  = document.getElementById('rp-description');
+  var charcount = document.getElementById('rp-charcount');
+  var contextNote = document.getElementById('rp-context-note');
+  var steps = {
+    category: document.getElementById('rp-step-category'),
+    example:  document.getElementById('rp-step-example'),
+    detail:   document.getElementById('rp-step-detail'),
+  };
+
+  var state = { categoryId: '', categoryLabel: '', example: null, fromExample: false };
+
+  function optionRow(label, desc, onClick, isOther) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rp-option-row' + (isOther ? ' rp-option-row--other' : '');
+    btn.innerHTML =
+      '<span class="rp-option-row__text">' +
+        '<span class="rp-option-row__label"></span>' +
+        (desc ? '<span class="rp-option-row__desc"></span>' : '') +
+      '</span><span class="rp-option-row__chevron">\\u203a</span>';
+    btn.querySelector('.rp-option-row__label').textContent = label;
+    if (desc) btn.querySelector('.rp-option-row__desc').textContent = desc;
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function showStep(name) {
+    Object.keys(steps).forEach(function(k) { steps[k].hidden = k !== name; });
+    backBtn.hidden = name === 'category';
+    title.textContent = name === 'detail' ? 'What happened?' : 'Report Player';
+  }
+
+  function goToDetail() {
+    contextNote.textContent = state.categoryLabel + (state.example ? ' — ' + state.example : '');
+    textarea.value = state.example || '';
+    charcount.textContent = textarea.value.length + ' / 500';
+    msg.hidden = true;
+    showStep('detail');
+  }
+
+  function renderCategoryList() {
+    var list = document.getElementById('rp-category-list');
+    list.innerHTML = '';
+    CATEGORIES.forEach(function(cat) {
+      list.appendChild(optionRow(cat.label, cat.description, function() {
+        state.categoryId = cat.id;
+        state.categoryLabel = cat.label;
+        state.example = null;
+        if (cat.examples && cat.examples.length) {
+          state.fromExample = true;
+          renderExampleList(cat);
+          showStep('example');
+        } else {
+          state.fromExample = false;
+          goToDetail();
+        }
+      }));
+    });
+    list.appendChild(optionRow('Something else', '', function() {
+      state.categoryId = OTHER_ID;
+      state.categoryLabel = 'Something else';
+      state.example = null;
+      state.fromExample = false;
+      goToDetail();
+    }, true));
+  }
+
+  function renderExampleList(cat) {
+    var list = document.getElementById('rp-example-list');
+    list.innerHTML = '';
+    cat.examples.forEach(function(ex) {
+      list.appendChild(optionRow(ex, '', function() {
+        state.example = ex;
+        goToDetail();
+      }));
+    });
+    list.appendChild(optionRow('Something else', '', function() {
+      state.example = null;
+      goToDetail();
+    }, true));
+  }
+
+  function reset() {
+    state = { categoryId: '', categoryLabel: '', example: null, fromExample: false };
+    showStep('category');
+  }
 
   function close() { backdrop.hidden = true; }
+
   openBtn.addEventListener('click', function() {
-    msg.hidden = true;
-    document.getElementById('rp-description').value = '';
+    renderCategoryList();
+    reset();
     backdrop.hidden = false;
   });
   closeBtn.addEventListener('click', close);
   cancelBtn.addEventListener('click', close);
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
 
+  backBtn.addEventListener('click', function() {
+    if (!steps.detail.hidden) { showStep(state.fromExample ? 'example' : 'category'); return; }
+    showStep('category');
+  });
+
+  textarea.addEventListener('input', function() {
+    charcount.textContent = textarea.value.length + ' / 500';
+  });
+
   submitBtn.addEventListener('click', function() {
     msg.hidden = true;
     submitBtn.disabled = true;
     fetch('/players/' + PLAYER_ID + '/report', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        categoryId: document.getElementById('rp-category').value,
-        description: document.getElementById('rp-description').value,
-      }),
+      body: JSON.stringify({ categoryId: state.categoryId, description: textarea.value }),
     })
       .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
       .then(function(res) {
         submitBtn.disabled = false;
         if (!res.ok) { msg.textContent = res.d.error || 'Could not file the report.'; msg.hidden = false; return; }
         close();
-        msg.hidden = true;
         alert('Report filed — admins will review it.');
       })
       .catch(function() { submitBtn.disabled = false; msg.textContent = 'Network error.'; msg.hidden = false; });
@@ -1000,7 +1132,7 @@ export function playerPage({
   fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [], coachNote = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
-  canReport = false, reportCategories = [],
+  canReport = false, reportCategories = [], reportOtherCategoryId = '',
 }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
@@ -1013,10 +1145,8 @@ export function playerPage({
     ${ratingFeedCard(peerRatingsFeed)}
   ` : '';
   const ratingSnapshotHtml = peerRatingsEnabled ? communityRatingsCard(peerRatingSummary, isOwnProfile) : '';
-  const reportHtml = canReport ? reportPlayerSection(player, reportCategories) : '';
 
-  return `${heroSection(player, totals, isAdmin, isOwnProfile)}
-${reportHtml}
+  return `${heroSection(player, totals, isAdmin, isOwnProfile, canReport, reportCategories, reportOtherCategoryId)}
 ${coachNoteHtml}
 <div class="game-detail-layout">
   <div class="game-detail-left">

@@ -105,6 +105,7 @@ import {
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
+  getReportableFineCategories, getOtherFineCategory,
   createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer, hasOpenPlayerReport,
   getFineVotesForCase, castFineVote, resolveFineCase,
   getEscalationVotesForCase, castEscalationVote, getTotalAdminCount, recomputeEscalation, forceEscalationDecision,
@@ -139,7 +140,7 @@ import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
-import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails } from './lib/papawis-notify.js';
+import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail } from './lib/papawis-notify.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
@@ -5991,7 +5992,8 @@ app.get('/players/:ref', async (req, res) => {
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
       viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
-      canReport, reportCategories: canReport ? getActiveFineCategories() : [],
+      canReport, reportCategories: canReport ? getReportableFineCategories() : [],
+      reportOtherCategoryId: canReport ? (getOtherFineCategory()?.id || '') : '',
     })
   }));
 });
@@ -7181,6 +7183,16 @@ app.post('/admin/papawis/:id/teams/assign', requireAuth, express.json(), (req, r
   const { signup_id, team } = req.body;
   const result = setPapawisSignupTeam(signup_id, team);
   if (result.error) return res.status(400).json({ error: 'Could not move.' });
+  res.json({ ok: true });
+});
+
+// Manual, exactly-once catch-up email — see sendPapawisTeamAssignedEmail's comment in
+// lib/papawis-notify.js for the gap this covers (reminder already sent with no team,
+// team arranged afterward, nothing re-scans an already-reminded signup automatically).
+app.post('/admin/papawis/:id/signups/:signupId/notify-team', requireAuth, async (req, res) => {
+  const result = await sendPapawisTeamAssignedEmail(req.params.signupId);
+  if (result.error === 'not_eligible') return res.status(400).json({ error: 'This signup is not eligible for a team-assigned email (no team, not confirmed, or already sent).' });
+  if (result.error === 'no_email') return res.status(400).json({ error: 'No email on file for this player.' });
   res.json({ ok: true });
 });
 

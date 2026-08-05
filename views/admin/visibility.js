@@ -16,24 +16,30 @@ const AWARD_SECTIONS = [
   { key: 'award_show_finals_mvp',      label: 'Finals MVP' },
 ];
 
-function toggleRow({ id, label, sub, checked, dataKey, extraClass = '' }) {
-  return `<div class="flex items-center justify-between py-3 ${extraClass}">
-    <div>
-      <div class="text-[13px] font-semibold text-slate-200">${escHtml(label)}</div>
-      ${sub ? `<div class="text-xs text-slate-500 mt-0.5">${sub}</div>` : ''}
-    </div>
-    <label class="site-toggle" title="Toggle ${escHtml(label)}">
-      <input type="checkbox" id="${id}" ${dataKey ? `data-key="${escHtml(dataKey)}"` : ''} ${checked ? 'checked' : ''}>
-      <span class="site-toggle__track"></span>
-    </label>
-  </div>`;
+function featureRow({ id, label, sub, checked, dataKey, msgId }) {
+  return `<tr class="admin-table-row">
+    <td class="admin-td" style="font-weight:600;white-space:nowrap">${escHtml(label)}</td>
+    <td class="admin-td" style="color:var(--text-muted)">${sub}</td>
+    <td class="admin-td" style="text-align:right">
+      <label class="site-toggle" title="Toggle ${escHtml(label)}">
+        <input type="checkbox" id="${id}" data-key="${escHtml(dataKey)}" ${checked ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+      <span id="${msgId}" class="text-xs block mt-1 min-h-[14px]"></span>
+    </td>
+  </tr>`;
 }
 
-function card(title, body) {
-  return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg mb-4">
-    <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">${escHtml(title)}</div>
-    <div class="p-5">${body}</div>
-  </div>`;
+function sectionRow({ key, label, on }) {
+  return `<tr class="admin-table-row vis-section-row">
+    <td class="admin-td" style="padding-left:36px;color:var(--text-muted);font-size:12px" colspan="2">${escHtml(label)}</td>
+    <td class="admin-td" style="text-align:right">
+      <label class="site-toggle site-toggle--sm" title="Show ${escHtml(label)}">
+        <input type="checkbox" class="vis-awards-child" data-key="${escHtml(key)}" ${on ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </td>
+  </tr>`;
 }
 
 export function adminVisibilityBody({
@@ -46,67 +52,7 @@ export function adminVisibilityBody({
   mvpEnabled = true,
   sectionSettings = {},
 } = {}) {
-  const sectionRows = AWARD_SECTIONS.map(({ key, label }) => {
-    const on = sectionSettings[key] !== '0';
-    return `<div class="vis-section-row flex items-center justify-between py-2 border-b border-admin-border/30 last:border-0">
-      <span class="text-[12px] text-slate-400">${escHtml(label)}</span>
-      <label class="site-toggle site-toggle--sm" title="Show ${escHtml(label)}">
-        <input type="checkbox" class="vis-awards-child" data-key="${escHtml(key)}" ${on ? 'checked' : ''}>
-        <span class="site-toggle__track"></span>
-      </label>
-    </div>`;
-  }).join('');
-
-  const papawisCard = card('Papawis', toggleRow({
-    id: 'vis-papawis-enabled', dataKey: 'papawis_enabled', checked: papawisEnabled,
-    label: 'Show Papawis publicly',
-    sub: `Pickup game sign-ups (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/papawis</code>). Management stays available either way.`,
-  }) + `<span id="vis-msg-papawis_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
-
-  const postsCard = card('Posts', toggleRow({
-    id: 'vis-posts-enabled', dataKey: 'posts_enabled', checked: postsEnabled,
-    label: 'Show Posts publicly',
-    sub: `League news / matchup previews (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/posts</code>). Management stays available either way.`,
-  }) + `<span id="vis-msg-posts_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
-
-  const commentsCard = card('Comments', toggleRow({
-    id: 'vis-comments-enabled', dataKey: 'comments_enabled', checked: commentsEnabled,
-    label: 'Show comments &amp; reactions on games',
-    sub: `Registered players can comment and react on any game page. Admins can delete inline either way.`,
-  }) + `<span id="vis-msg-comments_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
-
-  const peerRatingsCard = card('Player Ratings', toggleRow({
-    id: 'vis-peer-ratings-enabled', dataKey: 'peer_ratings_enabled', checked: peerRatingsEnabled,
-    label: 'Show peer ratings on player profiles',
-    sub: `Roast-style player-to-player ratings, shown on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>. Anonymous ratings are masked to everyone except a super admin.`,
-  }) + `<span id="vis-msg-peer_ratings_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
-
-  const playerReportsCard = card('Player Reports', toggleRow({
-    id: 'vis-player-reports-enabled', dataKey: 'player_reports_enabled', checked: playerReportsEnabled,
-    label: 'Allow players to report other players',
-    sub: `Adds a "Report" button on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>. Reports need a majority admin vote to escalate to team heads before an admin can act on them — see <code class="text-[11px] bg-admin-border/50 px-1 rounded">/admin/fines</code>.`,
-  }) + `<span id="vis-msg-player_reports_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
-
-  const awardsCard = card('Awards', `
-    ${toggleRow({
-      id: 'vis-awards-enabled', dataKey: 'awards_enabled', checked: awardsEnabled,
-      label: 'Season Awards', sub: `Season awards page (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/awards</code>)`,
-      extraClass: 'border-b border-admin-border/50',
-    })}
-    <span id="vis-msg-awards_enabled" class="text-xs block mt-1 min-h-[14px]"></span>
-    <div class="ml-4 pl-3 border-l-2 border-admin-border/60 py-1 mb-3" id="vis-awards-sections">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1 mt-1">Sections — release daily</div>
-      <p id="vis-awards-note" class="text-[11px] text-slate-600 italic mb-1" style="display:${awardsEnabled ? 'none' : 'block'}">Staged here, but won't show publicly until Season Awards above is on.</p>
-      ${sectionRows}
-      <span id="vis-section-msg" class="text-xs block mt-1.5 min-h-[14px]"></span>
-    </div>
-    ${toggleRow({
-      id: 'vis-mvp-enabled', dataKey: 'mvp_race_enabled', checked: mvpEnabled,
-      label: 'MVP Race', sub: `Season MVP ladder with AI-written player cases (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code>)`,
-      extraClass: 'border-t border-admin-border/50',
-    })}
-    <span id="vis-msg-mvp_race_enabled" class="text-xs block mt-1 min-h-[16px]"></span>
-  `);
+  const sectionRows = AWARD_SECTIONS.map(({ key, label }) => sectionRow({ key, label, on: sectionSettings[key] !== '0' })).join('');
 
   return `
 <div class="mb-6">
@@ -114,16 +60,63 @@ export function adminVisibilityBody({
   <p class="text-xs text-slate-500 mt-0.5">What's currently shown to the public. Each feature keeps its own management page — this is only the public on/off switch.</p>
 </div>
 
-${papawisCard}
-${postsCard}
-${commentsCard}
-${peerRatingsCard}
-${playerReportsCard}
-${awardsCard}
-
-<style>
-  #vis-awards-sections.is-dim .vis-section-row { opacity: .45; }
-</style>
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden overflow-x-auto">
+  <table class="w-full border-collapse">
+    <thead>
+      <tr>
+        <th class="admin-th" style="width:200px">Feature</th>
+        <th class="admin-th">Description</th>
+        <th class="admin-th" style="text-align:right;width:90px">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${featureRow({
+        id: 'vis-papawis-enabled', dataKey: 'papawis_enabled', checked: papawisEnabled, msgId: 'vis-msg-papawis_enabled',
+        label: 'Papawis',
+        sub: `Pickup game sign-ups (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/papawis</code>). Management stays available either way.`,
+      })}
+      ${featureRow({
+        id: 'vis-posts-enabled', dataKey: 'posts_enabled', checked: postsEnabled, msgId: 'vis-msg-posts_enabled',
+        label: 'Posts',
+        sub: `League news / matchup previews (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/posts</code>). Management stays available either way.`,
+      })}
+      ${featureRow({
+        id: 'vis-comments-enabled', dataKey: 'comments_enabled', checked: commentsEnabled, msgId: 'vis-msg-comments_enabled',
+        label: 'Comments',
+        sub: `Registered players can comment and react on any game page. Admins can delete inline either way.`,
+      })}
+      ${featureRow({
+        id: 'vis-peer-ratings-enabled', dataKey: 'peer_ratings_enabled', checked: peerRatingsEnabled, msgId: 'vis-msg-peer_ratings_enabled',
+        label: 'Player Ratings',
+        sub: `Roast-style player-to-player ratings on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>. Anonymous ratings are masked to everyone except a super admin.`,
+      })}
+      ${featureRow({
+        id: 'vis-player-reports-enabled', dataKey: 'player_reports_enabled', checked: playerReportsEnabled, msgId: 'vis-msg-player_reports_enabled',
+        label: 'Player Reports',
+        sub: `Adds a "Report" button on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>. Needs a majority admin vote to escalate to team heads — see <code class="text-[11px] bg-admin-border/50 px-1 rounded">/admin/fines</code>.`,
+      })}
+      ${featureRow({
+        id: 'vis-awards-enabled', dataKey: 'awards_enabled', checked: awardsEnabled, msgId: 'vis-msg-awards_enabled',
+        label: 'Season Awards',
+        sub: `Season awards page (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/awards</code>)`,
+      })}
+    </tbody>
+    <tbody id="vis-awards-sections" ${awardsEnabled ? '' : 'hidden'}>
+      <tr><td colspan="3" class="admin-td" style="padding:8px 16px 4px;border-bottom:none">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-600">Sections — release daily</span>
+      </td></tr>
+      ${sectionRows}
+      <tr><td colspan="3" class="admin-td" style="border-bottom:none"><span id="vis-section-msg" class="text-xs block min-h-[14px]"></span></td></tr>
+    </tbody>
+    <tbody>
+      ${featureRow({
+        id: 'vis-mvp-enabled', dataKey: 'mvp_race_enabled', checked: mvpEnabled, msgId: 'vis-msg-mvp_race_enabled',
+        label: 'MVP Race',
+        sub: `Season MVP ladder with AI-written player cases (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code>)`,
+      })}
+    </tbody>
+  </table>
+</div>
 
 <script>
 (function() {
@@ -176,19 +169,13 @@ ${awardsCard}
     });
   });
 
-  // Section toggles stay clickable even while Season Awards is off (so you can
-  // stage next week's releases in advance) — just visually flagged as inert
-  // until the parent switch is actually on.
+  // Sections only show while Season Awards itself is on — collapsed out of the
+  // table entirely otherwise, same as the initial server-rendered state.
   var awardsParent = document.getElementById('vis-awards-enabled');
   var sectionsWrap = document.getElementById('vis-awards-sections');
-  var note = document.getElementById('vis-awards-note');
-  function syncAwardsDim() {
-    var on = awardsParent.checked;
-    sectionsWrap.classList.toggle('is-dim', !on);
-    note.style.display = on ? 'none' : 'block';
-  }
-  awardsParent.addEventListener('change', syncAwardsDim);
-  syncAwardsDim();
+  awardsParent.addEventListener('change', function() {
+    sectionsWrap.hidden = !awardsParent.checked;
+  });
 })();
 </script>`;
 }
