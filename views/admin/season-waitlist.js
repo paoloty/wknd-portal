@@ -6,6 +6,7 @@ const STATUS_BADGE = {
   waitlisted: `<span style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WAITLISTED</span>`,
   confirmed:  `<span style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">CONFIRMED</span>`,
   rejected:   `<span style="background:#64748b22;color:#64748b;border:1px solid #64748b44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">REJECTED</span>`,
+  withdrawn:  `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WITHDRAWN</span>`,
 };
 
 const ASSESSMENT_TAG_BADGE = {
@@ -14,17 +15,32 @@ const ASSESSMENT_TAG_BADGE = {
   discuss_admin:      `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">DISCUSS W/ ADMIN</span>`,
 };
 
+// Only the two alignment outcomes that are actually worth a glance — 'aligned' and
+// 'not_ratable' (no rating yet to compare against) are the common/expected case and would
+// just be noise if shown on every row alongside the admin_tag badge.
+const ALIGNMENT_FLAG_BADGE = {
+  optimistic: `<span title="Self-rated a tier above their actual rating" style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">OPTIMISTIC</span>`,
+  gap:        `<span title="Self-rated two or more tiers above their actual rating" style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">SELF-RATING GAP</span>`,
+};
+
 function fmtDate(ts) {
   return ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 }
 
 export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, confirmedCount = 0 } = {}) {
-  const byStatus = { waitlisted: 0, confirmed: 0, rejected: 0 };
+  const byStatus = { waitlisted: 0, confirmed: 0, rejected: 0, withdrawn: 0 };
   for (const s of signups) byStatus[s.status] = (byStatus[s.status] ?? 0) + 1;
 
   const byPref = { stick: 0, reshuffle: 0 };
   for (const s of signups) if (s.team_pref === 'stick' || s.team_pref === 'reshuffle') byPref[s.team_pref]++;
   const pollTotal = byPref.stick + byPref.reshuffle;
+
+  // League Reshuffle Poll (reshuffle_vote) is a separate yes/no asked of every registrant —
+  // distinct from team_pref above, which only applies to returning players with a team on
+  // record and only means "keep my own team or not."
+  const byReshuffleVote = { yes: 0, no: 0 };
+  for (const s of signups) if (s.reshuffle_vote === 'yes' || s.reshuffle_vote === 'no') byReshuffleVote[s.reshuffle_vote]++;
+  const reshuffleVoteTotal = byReshuffleVote.yes + byReshuffleVote.no;
 
   const statsBar = `
 <div class="flex items-center gap-6 mb-6 flex-wrap">
@@ -47,6 +63,12 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
     <div class="text-2xl font-bold text-slate-500">${byStatus.rejected}</div>
     <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Rejected</div>
   </div>
+  ${byStatus.withdrawn > 0 ? `
+  <div class="w-px h-8 bg-admin-border"></div>
+  <div class="text-center">
+    <div class="text-2xl font-bold text-rose-400">${byStatus.withdrawn}</div>
+    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Withdrawn</div>
+  </div>` : ''}
   ${pollTotal > 0 ? `
   <div class="w-px h-8 bg-admin-border"></div>
   <div class="text-center">
@@ -57,6 +79,17 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
   <div class="text-center">
     <div class="text-2xl font-bold text-violet-400">${byPref.reshuffle}</div>
     <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Reshuffle</div>
+  </div>` : ''}
+  ${reshuffleVoteTotal > 0 ? `
+  <div class="w-px h-8 bg-admin-border"></div>
+  <div class="text-center">
+    <div class="text-2xl font-bold text-emerald-400">${byReshuffleVote.yes}</div>
+    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Reshuffle Poll — Yes</div>
+  </div>
+  <div class="w-px h-8 bg-admin-border"></div>
+  <div class="text-center">
+    <div class="text-2xl font-bold text-rose-400">${byReshuffleVote.no}</div>
+    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Reshuffle Poll — No</div>
   </div>` : ''}
 </div>`;
 
@@ -74,6 +107,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
       <option value="waitlisted">Waitlisted</option>
       <option value="confirmed">Confirmed</option>
       <option value="rejected">Rejected</option>
+      <option value="withdrawn">Withdrawn</option>
     </select>
     <span class="text-slate-700">|</span>
     <button id="bulk-confirm-btn" class="text-[11px] font-semibold text-green-400 hover:text-green-300 disabled:opacity-30" disabled>Confirm Selected</button>
@@ -100,7 +134,10 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
       ${signups.map(s => `<tr class="waitlist-row border-b border-admin-border/40 last:border-0" data-id="${escHtml(s.id)}" data-status="${escHtml(s.status)}">
         <td class="px-5 py-3"><input type="checkbox" class="row-check accent-amber-400" data-id="${escHtml(s.id)}"></td>
         <td class="px-4 py-3">
-          <div class="font-semibold text-slate-200">${escHtml(s.full_name || '—')}</div>
+          <div class="font-semibold text-slate-200 flex items-center gap-1.5">
+            ${escHtml(s.full_name || '—')}
+            ${s.contact_changed_at ? `<span title="${escHtml(s.contact_change_note || 'Emergency contact or birthday differs from what is on file')}" style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;cursor:help">⚠ CONTACT CHANGED</span>` : ''}
+          </div>
           <div class="text-slate-500">${escHtml(s.email || '')}</div>
           ${s.phone ? `<div class="text-slate-600 text-[10px] mt-0.5">${escHtml(s.phone)}</div>` : ''}
         </td>
@@ -123,11 +160,12 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
         </td>
         <td class="px-4 py-3">
           ${s.assessment
-            ? `<a href="/admin/season/assessments/${escHtml(s.assessment.id)}" class="no-underline hover:opacity-80">${ASSESSMENT_TAG_BADGE[s.assessment.admin_tag] ?? '<span style="color:#64748b;font-size:11px">Not reviewed</span>'}</a>`
+            ? `<a href="/admin/season/assessments/${escHtml(s.assessment.id)}" class="no-underline hover:opacity-80 inline-flex flex-col items-start gap-1">${ASSESSMENT_TAG_BADGE[s.assessment.admin_tag] ?? '<span style="color:#64748b;font-size:11px">Not reviewed</span>'}${ALIGNMENT_FLAG_BADGE[s.alignmentFlag] || ''}</a>`
             : '<span style="color:#475569;font-size:11px">—</span>'}
         </td>
         <td class="px-4 py-3">${STATUS_BADGE[s.status] ?? escHtml(s.status)}</td>
         <td class="px-4 py-3 text-right whitespace-nowrap">
+          ${s.status === 'confirmed' ? `<button class="signup-withdraw-btn text-[11px] font-semibold text-rose-400 hover:text-rose-300 mr-3 transition-colors" data-id="${escHtml(s.id)}">Withdraw</button>` : ''}
           ${s.status !== 'confirmed' ? `<button class="signup-confirm-btn text-[11px] font-semibold text-green-400 hover:text-green-300 mr-3 transition-colors" data-id="${escHtml(s.id)}">Confirm</button>` : ''}
           ${s.status !== 'rejected'  ? `<button class="signup-reject-btn text-[11px] font-semibold text-slate-500 hover:text-rose-400 transition-colors" data-id="${escHtml(s.id)}">Reject</button>` : ''}
         </td>
@@ -223,6 +261,18 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
       this.textContent = '…'; this.disabled = true;
       fetch('/admin/season/signups/' + this.dataset.id + '/reject', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
         .then(function() { location.reload(); });
+    });
+  });
+  document.querySelectorAll('.signup-withdraw-btn').forEach(function(b) {
+    b.addEventListener('click', function() {
+      if (!confirm('Withdraw this player and free their confirmed spot? The earliest waitlisted signup will be promoted automatically. If this player has already been charged (season started), you\\'ll need to handle any refund/credit manually in the Ledger — this does not touch it.')) return;
+      this.textContent = '…'; this.disabled = true;
+      fetch('/admin/season/signups/' + this.dataset.id + '/withdraw', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+        .then(function(res) {
+          if (!res.ok) { alert(res.d.error || 'Could not withdraw.'); location.reload(); return; }
+          location.reload();
+        });
     });
   });
 })();

@@ -69,7 +69,7 @@ import {
   getMvpWriteup, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
-  insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, countSeasonSignups, countConfirmedSeasonSignups,
+  insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup,
   updateRegistrationContact,
   insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, setAssessmentTag, getLatestPlayerRating,
   playerPlayedSeason, getPlayerCurrentTeam,
@@ -77,7 +77,7 @@ import {
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
-  insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration,
+  insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, setWaiverAgreement,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
   setRegistrationAdmin, insertAdminLog, getAdminLogs, getAdminLogsForUser, updateRegBirthday,
@@ -135,6 +135,7 @@ import { adminComparePage } from './views/admin/compare.js';
 import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
+import { alignmentFlag } from './lib/assessment-scoring.js';
 import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
@@ -6148,11 +6149,13 @@ app.get('/register', (req, res) => {
 app.post('/register', (req, res) => {
   const { first_name, last_name, email, phone, birthday, positions, height, weight,
           jersey_pref, dominant_hand, experience, referred_by,
-          emergency_name, emergency_phone, motto, gender, social_handle, agree, ref } = req.body;
+          emergency_name, emergency_phone, motto, gender, social_handle, agree,
+          waiver_agree, waiver_signature, ref } = req.body;
 
   const prefill = { first_name, last_name, email, phone, birthday, height, weight,
                     jersey_pref, dominant_hand, experience, referred_by,
-                    emergency_name, emergency_phone, motto, gender, social_handle, ref };
+                    emergency_name, emergency_phone, motto, gender, social_handle,
+                    waiver_signature, ref };
 
   // Same pool the initial GET renders — needed again here since every error
   // branch below re-renders the full page (sidebar included), not just a redirect.
@@ -6204,6 +6207,14 @@ app.post('/register', (req, res) => {
     return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
       body: registerPage({ error: 'You gotta swear on your crossover first, babe.', prefill, hypeAvatars }) }));
   }
+  if (!waiver_agree) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'Read the fine print and check the waiver box, bestie — non-negotiable.', prefill, hypeAvatars }) }));
+  }
+  if (!waiver_signature?.trim()) {
+    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
+      body: registerPage({ error: 'Type your full legal name as your signature on the waiver.', prefill, hypeAvatars }) }));
+  }
 
   // Check for duplicate email
   const existing = getRegistrationByEmail(email.trim().toLowerCase());
@@ -6234,6 +6245,7 @@ app.post('/register', (req, res) => {
     gender: (gender || '').trim(),
     social_handle: (social_handle || '').trim(),
   });
+  setWaiverAgreement(regId, waiver_signature.trim());
 
   // Not tied to any specific game — the shared papawis page lists every game rather
   // than linking to one, so this is a global (game_id: '') activity entry.
@@ -6344,6 +6356,8 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   const emergencyPhone  = (req.body.emergency_phone  || '').trim();
   const birthday         = (req.body.birthday         || '').trim();
   const teamPref       = (req.body.team_pref     || '').trim();
+  const waiverAgree     = req.body.waiver_agree === 'on' || req.body.waiver_agree === '1';
+  const waiverSignature = (req.body.waiver_signature || '').trim();
 
   const q1WhyPlaying     = (req.body.q1_why_playing     || '').trim();
   const q2LosingBadly    = (req.body.q2_losing_badly    || '').trim();
@@ -6384,6 +6398,12 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   if (!quotaAck) return rerender('You need to acknowledge the season fee.');
   if (!['full', 'installment'].includes(paymentPlan)) return rerender('Pick a payment plan.');
 
+  // Registrants with no waiver on file yet (predates /register's waiver step) get the
+  // full text + a typed signature here instead of the lightweight reconfirm-only
+  // checkbox — see hasWaiverOnFile in views/season-signup.js.
+  if (!waiverAgree) return rerender('Read the fine print and check the waiver box before continuing.');
+  if (!reg.waiver_agreed_at && !waiverSignature) return rerender('Type your full legal name as your signature on the waiver.');
+
   if (!emergencyName) return rerender('Emergency contact name is required.');
   const emergencyPhoneDigits = emergencyPhone.replace(/[\s-]/g, '');
   if (!/^(?:\+63|0)9\d{9}$/.test(emergencyPhoneDigits)) return rerender('Enter a valid PH mobile number for your emergency contact.');
@@ -6404,6 +6424,11 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   updateRegistrationContact(regId, { emergency_name: emergencyName, emergency_phone: emergencyPhone });
   updateRegBirthday(regId, birthday, reg.player_id || null);
 
+  // Legacy registrant (no waiver on file) — this submission's checkbox + typed name IS
+  // their first real agreement, not just a reconfirmation. Someone who already had one
+  // just reconfirms it; setWaiverAgreement is never called again for them.
+  if (!reg.waiver_agreed_at) setWaiverAgreement(regId, waiverSignature);
+
   let hasBalance = false, balanceAmt = 0;
   if (reg.player_id) {
     const fin = getPlayerFinancials(reg.player_id);
@@ -6417,6 +6442,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     pockets, reshuffleVote, paymentPlan, comments,
     contactChangedAt: changes.length ? Date.now() : 0,
     contactChangeNote: changes.join('; '),
+    waiverReconfirmedAt: Date.now(),
   });
   insertPlayerAssessment(reg.player_id || '', regId, sigSeason, {
     q1WhyPlaying, q2LosingBadly, q3BadRefCall, q4HeatedTeammate, q5FeedbackStyle,
@@ -6587,6 +6613,13 @@ app.get('/admin/season/waitlist', requireAuth, (req, res) => {
   // and this is a small per-page lookup, not something that needs to scale past one season.
   for (const s of signups) {
     s.assessment = s.player_id ? getPlayerAssessment(s.player_id, sigSeason) : null;
+    // "Overall game vs. the league" is the same headline comparison the assessment detail
+    // page leads with (adminAssessmentReviewBody's sectionB) — good enough as the one
+    // glance-level signal for the list; admin still clicks through for the full scoring/
+    // defense/overall breakdown. Not computed at all when there's no assessment to compare.
+    s.alignmentFlag = s.assessment && s.player_id
+      ? alignmentFlag(s.assessment.self_overall, getLatestPlayerRating(s.player_id)?.overall ?? null)
+      : null;
   }
 
   res.send(renderAdminPage(req, {
@@ -6652,6 +6685,15 @@ app.post('/admin/season/signups/:id/reject', requireAuth, express.json(), (req, 
   if (!signup) return res.status(404).json({ error: 'Not found' });
   updateSeasonSignupStatus(signup.id, 'rejected', req.body?.notes ?? '');
   res.json({ ok: true });
+});
+
+// Admin-only — see withdrawSeasonSignup's comment in lib/portal-db.js for why this isn't
+// self-service and doesn't touch the ledger. Atomically flips to 'withdrawn' and promotes
+// the earliest waitlisted signup for the same season, if one exists.
+app.post('/admin/season/signups/:id/withdraw', requireAuth, express.json(), (req, res) => {
+  const result = withdrawSeasonSignup(req.params.id);
+  if (result.error) return res.status(400).json({ error: 'Only a confirmed signup can be withdrawn.' });
+  res.json({ ok: true, promotedId: result.promoted?.id || null });
 });
 
 // ── Admin: Team Builder ────────────────────────────────────────────────────────

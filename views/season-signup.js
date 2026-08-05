@@ -190,6 +190,15 @@ const stylesBlock = `<style>
 .fee-total__label { font-size: 12px; color: var(--text-muted); }
 .fee-total__amt { font-family: 'Saira Condensed'; font-weight: 800; font-size: 22px; color: var(--amber); font-variant-numeric: tabular-nums; }
 
+/* ── waiver text (Group 08) ───────────────────────────────────────────── */
+.waiver-box {
+  max-height: 220px; overflow-y: auto; margin-top: 8px;
+  padding: 14px 16px; background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px;
+}
+.waiver-box p { margin: 0 0 10px; font-size: 12px; line-height: 1.6; color: var(--text-muted); }
+.waiver-box p:last-child { margin-bottom: 0; }
+.waiver-box strong { color: var(--text); font-weight: 700; }
+
 .nav { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .btn-next { background: var(--amber); border: none; border-radius: 8px; color: #0a0e16; font-size: 14px; font-weight: 700; padding: 12px 26px; cursor: pointer; letter-spacing: .04em; transition: opacity .15s; width: 100%; font-family: inherit; }
 .btn-next:hover { opacity: .88; }
@@ -307,6 +316,11 @@ ${stylesBlock}`;
   // ── The actual form ──────────────────────────────────────────────────────
   const v = name => escHtml(prefill[name] || '');
   const checked = (name, val) => prefill[name] === val ? 'checked' : '';
+  // Registrants who signed up before the /register waiver existed have no
+  // waiver_agreed_at on file yet — Group 08 shows them the full waiver + signature
+  // instead of the lightweight reconfirm-only version, backfilling it on submit
+  // (see setWaiverAgreement in the POST /season-signup handler).
+  const hasWaiverOnFile = !!reg?.waiver_agreed_at;
 
   const stepDefs = [
     { key: 'jersey' },
@@ -315,6 +329,7 @@ ${stylesBlock}`;
     ...(returning ? [{ key: 'teamPref' }] : []),
     { key: 'reshuffle' },
     { key: 'fee' },
+    { key: 'waiver' },
     { key: 'contact' },
     { key: 'comments' },
   ];
@@ -330,6 +345,7 @@ ${stylesBlock}`;
     if (/team|reshuffle your team|stick/i.test(error)) return STEP.teamPref || STEP.jersey;
     if (/reshuffle/i.test(error)) return STEP.reshuffle;
     if (/fee|payment plan/i.test(error)) return STEP.fee;
+    if (/waiver|signature|fine print/i.test(error)) return STEP.waiver;
     if (/emergency|birthday|18/i.test(error)) return STEP.contact;
     return STEP.jersey;
   })();
@@ -580,6 +596,51 @@ ${stylesBlock}`;
         </div>
       </div>
 
+      <div class="acc-item" data-item="${STEP.waiver}">
+        <button type="button" class="acc-header" data-toggle="${STEP.waiver}">
+          <span class="acc-num">${STEP.waiver}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Waiver Reconfirmation</span>
+            <span class="acc-header-summary" data-summary="${STEP.waiver}"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            ${hasWaiverOnFile ? `
+            <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.6">You agreed to the League's Liability Waiver &amp; Assumption of Risk when you registered. It stays in effect for as long as you're an active member &mdash; we just ask you to reconfirm it each season.</p>
+            <label class="check">
+              <input type="checkbox" name="waiver_agree">
+              <span>I reconfirm that the Liability Waiver &amp; Assumption of Risk I agreed to at registration still applies for Season ${escHtml(String(sigSeason))}.</span>
+            </label>
+            ` : `
+            <p style="margin:0 0 8px;font-size:13px;color:var(--text-muted);line-height:1.6">We don't have a signed waiver on file for you yet &mdash; please read and agree below before continuing.</p>
+            <div class="field">
+              <label>Liability Waiver &amp; Assumption of Risk <span class="req">*</span></label>
+              <div class="waiver-box">
+                <p><strong>1. Assumption of Risk.</strong> Basketball is a physical contact sport that carries inherent risks of injury, including but not limited to sprains, fractures, collisions, and other physical harm. By participating in WKND Basketball League ("the League") activities &mdash; games, practices, and Papawis pickup sessions &mdash; I voluntarily assume all such risks, foreseeable or not.</p>
+                <p><strong>2. Release of Liability.</strong> To the fullest extent permitted by law, I release and hold harmless the League, its organizers, coaches, and fellow participants from claims, damages, or liability arising from my participation, except where caused by gross negligence or willful misconduct.</p>
+                <p><strong>3. Medical Fitness.</strong> I confirm I am physically fit to participate and am not aware of any medical condition that would make participation unsafe. I am responsible for my own health insurance and any medical costs arising from participation.</p>
+                <p><strong>4. Photo/Video.</strong> Games and events may be photographed or recorded for the League's social media and promotional use. By participating, I consent to this unless I notify admin otherwise in writing.</p>
+                <p><strong>5. Code of Conduct.</strong> I agree to follow the League's conduct policies and understand that violations may result in fines or removal from the League, per its published rules.</p>
+                <p>This waiver applies to all League activities for as long as I remain an active member, reconfirmed each season.</p>
+              </div>
+              <p style="font-size:11px;color:var(--text-subtle);margin:8px 0 0">This is a template, not a substitute for real legal advice specific to your jurisdiction.</p>
+            </div>
+            <label class="check">
+              <input type="checkbox" name="waiver_agree">
+              <span>I have read and agree to the Liability Waiver &amp; Assumption of Risk above.</span>
+            </label>
+            <div class="field">
+              <label for="waiver_signature">Type Your Full Legal Name as Your Signature <span class="req">*</span></label>
+              <input id="waiver_signature" class="field__input" type="text" name="waiver_signature" value="${v('waiver_signature')}" placeholder="Juan Miguel dela Cruz" data-required="1" data-step="${STEP.waiver}">
+            </div>
+            `}
+            <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.waiver}">Continue &rarr;</button></div>
+          </div>
+        </div>
+      </div>
+
       <div class="acc-item" data-item="${STEP.contact}">
         <button type="button" class="acc-header" data-toggle="${STEP.contact}">
           <span class="acc-num">${STEP.contact}</span>
@@ -726,6 +787,9 @@ ${stylesBlock}
       var plan = checkedVal('payment_plan');
       el.textContent = plan === 'full' ? 'Paying in full' : plan === 'installment' ? 'Installment plan' : '';
     }
+    if (n == STEP.waiver) {
+      el.textContent = 'Reconfirmed';
+    }
     if (n == STEP.contact) {
       var nm = form.querySelector('#emergency_name').value.trim();
       el.textContent = nm ? 'Saved · ' + nm : 'Saved';
@@ -786,6 +850,10 @@ ${stylesBlock}
       var ackEl = form.querySelector('[name="quota_ack"]');
       if (!ackEl.checked) ok = false;
       if (!checkedVal('payment_plan')) ok = false;
+    }
+    if (n == STEP.waiver) {
+      var waiverAgreeEl = form.querySelector('[name="waiver_agree"]');
+      if (!waiverAgreeEl.checked) ok = false;
     }
     if (n == STEP.contact) {
       var phoneEl = form.querySelector('#emergency_phone');

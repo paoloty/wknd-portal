@@ -283,6 +283,15 @@ export function registerPage({ error = null, success = false, prefill = {}, hype
 .court-legend-item { display: flex; align-items: baseline; gap: 10px; font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 .court-legend-item strong { font-weight: 700; font-size: 12.5px; color: var(--text); min-width: 22px; flex-shrink: 0; }
 
+/* ── waiver text ──────────────────────────────────────────────────────── */
+.waiver-box {
+  max-height: 220px; overflow-y: auto; margin-top: 8px;
+  padding: 14px 16px; background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px;
+}
+.waiver-box p { margin: 0 0 10px; font-size: 12px; line-height: 1.6; color: var(--text-muted); }
+.waiver-box p:last-child { margin-bottom: 0; }
+.waiver-box strong { color: var(--text); font-weight: 700; }
+
 .nav { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .btn-next { background: var(--amber); border: none; border-radius: 8px; color: #0a0e16; font-size: 14px; font-weight: 700; padding: 12px 26px; cursor: pointer; letter-spacing: .04em; transition: opacity .15s; width: 100%; font-family: inherit; }
 .btn-next:hover { opacity: .88; }
@@ -370,6 +379,7 @@ ${hypeAvatarsScript}`;
   const errorStep = (() => {
     if (!error) return 1;
     if (/position|height|weight|hand/i.test(error)) return 2;
+    if (/waiver|signature|fine print/i.test(error)) return 4;
     if (/agree|emergency|experience|bio/i.test(error)) return 3;
     return 1;
   })();
@@ -535,6 +545,44 @@ ${hypeAvatarsScript}`;
               <input type="checkbox" name="agree" data-required="1" data-step="3">
               <span>I swear on my crossover that everything above is accurate, and I understand my application needs admin approval before I can ball. 🏀</span>
             </label>
+            <div class="nav">
+              <button type="button" class="btn-next" data-continue="3">One more thing &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item" data-item="4">
+        <button type="button" class="acc-header" data-toggle="4">
+          <span class="acc-num">4</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">The Fine Print</span>
+            <span class="acc-header-summary" data-summary="4"></span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <div class="field">
+              <label>Liability Waiver &amp; Assumption of Risk <span class="req">*</span></label>
+              <div class="waiver-box">
+                <p><strong>1. Assumption of Risk.</strong> Basketball is a physical contact sport that carries inherent risks of injury, including but not limited to sprains, fractures, collisions, and other physical harm. By participating in WKND Basketball League ("the League") activities &mdash; games, practices, and Papawis pickup sessions &mdash; I voluntarily assume all such risks, foreseeable or not.</p>
+                <p><strong>2. Release of Liability.</strong> To the fullest extent permitted by law, I release and hold harmless the League, its organizers, coaches, and fellow participants from claims, damages, or liability arising from my participation, except where caused by gross negligence or willful misconduct.</p>
+                <p><strong>3. Medical Fitness.</strong> I confirm I am physically fit to participate and am not aware of any medical condition that would make participation unsafe. I am responsible for my own health insurance and any medical costs arising from participation.</p>
+                <p><strong>4. Photo/Video.</strong> Games and events may be photographed or recorded for the League's social media and promotional use. By participating, I consent to this unless I notify admin otherwise in writing.</p>
+                <p><strong>5. Code of Conduct.</strong> I agree to follow the League's conduct policies and understand that violations may result in fines or removal from the League, per its published rules.</p>
+                <p>This waiver applies to all League activities for as long as I remain an active member. I'll be asked to reconfirm it each season during Season Signup.</p>
+              </div>
+              <p style="font-size:11px;color:var(--text-subtle);margin:8px 0 0">This is a template, not a substitute for real legal advice specific to your jurisdiction.</p>
+            </div>
+            <label class="check">
+              <input type="checkbox" name="waiver_agree" data-required="1" data-step="4">
+              <span>I have read and agree to the Liability Waiver &amp; Assumption of Risk above.</span>
+            </label>
+            <div class="field">
+              <label for="waiver_signature">Type Your Full Legal Name as Your Signature <span class="req">*</span></label>
+              <input id="waiver_signature" class="field__input" type="text" name="waiver_signature" value="${v('waiver_signature')}" placeholder="Juan Miguel dela Cruz" data-required="1" data-step="4">
+            </div>
             <div class="nav">
               <button type="submit" class="btn-next" id="submit-btn">SEND IT BESTIE 💅</button>
             </div>
