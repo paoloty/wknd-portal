@@ -105,8 +105,9 @@ import {
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
-  createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer,
+  createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer, hasOpenPlayerReport,
   getFineVotesForCase, castFineVote, resolveFineCase,
+  getEscalationVotesForCase, castEscalationVote, getTotalAdminCount, recomputeEscalation, forceEscalationDecision,
   getPeerRating, getPeerRatingsForRatee, upsertPeerRating, getOrAssignPlayerAlias,
   db as portalDb,
 } from './lib/portal-db.js';
@@ -1214,6 +1215,7 @@ function getFeatureFlags() {
     posts:   getSetting('posts_enabled',    '0') === '1',
     comments: getSetting('comments_enabled', '0') === '1',
     peerRatings: getSetting('peer_ratings_enabled', '0') === '1',
+    playerReports: getSetting('player_reports_enabled', '0') === '1',
   };
 }
 
@@ -1248,8 +1250,9 @@ function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool
         })
         .filter(p => fields.every(f => p[f]));
       if (fresh.length) {
-        const seen = new Set(existing.map(p => p.message.toLowerCase()));
-        const newOnes = fresh.filter(p => !seen.has(p.message.toLowerCase()));
+        const dedupeKey = p => fields.map(f => p[f]).join('|').toLowerCase();
+        const seen = new Set(existing.map(dedupeKey));
+        const newOnes = fresh.filter(p => !seen.has(dedupeKey(p)));
         setSetting(settingKey, JSON.stringify([...existing, ...newOnes]));
         setSetting(`${settingKey}_at`, String(Date.now()));
       }
@@ -3702,6 +3705,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       postsEnabled:    getSetting('posts_enabled', '0') === '1',
       commentsEnabled: getSetting('comments_enabled', '0') === '1',
       peerRatingsEnabled: getSetting('peer_ratings_enabled', '0') === '1',
+      playerReportsEnabled: getSetting('player_reports_enabled', '0') === '1',
       awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
@@ -3711,7 +3715,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -5957,6 +5961,10 @@ app.get('/players/:ref', async (req, res) => {
   // signups, which lags well behind when players actually want to use this).
   const canRate = !!viewerPlayerId && viewerPlayerId !== resolved.id
     && viewerPlayer?.status === 'active' && player.status === 'active';
+  // Same eligibility shape as canRate — mirrors it deliberately rather than sharing the
+  // variable, since these are two independent features that happen to have the same rule.
+  const canReport = getFeatureFlags().playerReports && !!viewerPlayerId && viewerPlayerId !== resolved.id
+    && viewerPlayer?.status === 'active' && player.status === 'active';
   const peerRatingsFeed = peerRatingRows.map(r => {
     const isAnon = !!r.is_anonymous;
     const raterPlayer = getPlayerById(r.rater_player_id);
@@ -5983,6 +5991,7 @@ app.get('/players/:ref', async (req, res) => {
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
       viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
+      canReport, reportCategories: canReport ? getActiveFineCategories() : [],
     })
   }));
 });
@@ -6022,6 +6031,42 @@ app.post('/players/:id/rate', express.json(), (req, res) => {
 
   const summary = summarizePeerRatings(getPeerRatingsForRatee(season, rateePlayerId));
   res.json({ ok: true, summary });
+});
+
+// Any logged-in player reporting another — distinct from the head-only /fines "Report
+// Incident" flow (which skips straight to head-voting). A player-submitted report starts
+// at 'pending_admin' and needs a majority admin escalation vote before any head ever sees
+// it — see the admin escalation routes below and lib/portal-db.js's recomputeEscalation.
+app.post('/players/:id/report', express.json(), (req, res) => {
+  if (!getFeatureFlags().playerReports) return res.status(404).json({ error: 'Not found.' });
+  const reporterPlayerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !reporterPlayerId) return res.status(401).json({ error: 'Log in to report a player.' });
+
+  const targetPlayerId = req.params.id;
+  const targetPlayer = getPlayerById(targetPlayerId);
+  if (!targetPlayer) return res.status(404).json({ error: 'Player not found.' });
+  if (targetPlayerId === reporterPlayerId) return res.status(400).json({ error: "You can't report yourself." });
+
+  const reporterPlayer = getPlayerById(reporterPlayerId);
+  if (reporterPlayer?.status !== 'active' || targetPlayer.status !== 'active') {
+    return res.status(403).json({ error: 'Both players need to be active to file a report.' });
+  }
+
+  if (hasOpenPlayerReport(targetPlayerId, reporterPlayerId)) {
+    return res.status(400).json({ error: 'You already have an open report against this player.' });
+  }
+
+  const { categoryId, description = '' } = req.body || {};
+  if (!categoryId) return res.status(400).json({ error: 'Category is required.' });
+
+  const reporterName = displayPlayerName(reporterPlayer?.name || '') || 'A player';
+  const result = createFineCase({
+    playerId: targetPlayerId, categoryId, description,
+    reportedByType: 'player', reportedById: reporterPlayerId, reportedByName: reporterName,
+    status: 'pending_admin',
+  });
+  if (result.error) return res.status(400).json({ error: 'Could not file the report.' });
+  res.json({ ok: true, id: result.id });
 });
 
 // Fixed/cached per player — only calls the AI when the player's career totals have
@@ -7373,12 +7418,13 @@ app.post('/admin/fines/heads/:id/revoke', requireAuth, (req, res) => {
 });
 
 app.get('/admin/fines', requireAuth, (req, res) => {
+  const pendingAdmin = getFineCasesByStatus('pending_admin');
   const open     = getFineCasesByStatus('open');
-  const resolved = [...getFineCasesByStatus('approved'), ...getFineCasesByStatus('rejected')]
+  const resolved = [...getFineCasesByStatus('approved'), ...getFineCasesByStatus('rejected'), ...getFineCasesByStatus('dismissed')]
     .sort((a, b) => (b.resolved_at || 0) - (a.resolved_at || 0));
   res.send(renderAdminPage(req, {
     title: 'Fines', currentPath: '/admin/fines',
-    body: adminFinesListBody({ open, resolved, players: getAllPlayers(), categories: getActiveFineCategories() }),
+    body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories() }),
   }));
 });
 app.post('/admin/fines', requireAuth, express.json(), (req, res) => {
@@ -7392,9 +7438,14 @@ app.post('/admin/fines', requireAuth, express.json(), (req, res) => {
 app.get('/admin/fines/:id', requireAuth, (req, res) => {
   const kase = getFineCase(req.params.id);
   if (!kase) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/fines', body: '<p style="padding:40px;color:var(--text-muted)">Case not found.</p>' }));
+  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   res.send(renderAdminPage(req, {
     title: 'Fine Case', currentPath: '/admin/fines',
-    body: adminFineCaseBody({ case: kase, votes: getFineVotesForCase(kase.id), player: getPlayerWithTeam(kase.player_id) }),
+    body: adminFineCaseBody({
+      case: kase, votes: getFineVotesForCase(kase.id), player: getPlayerWithTeam(kase.player_id),
+      escalationVotes: getEscalationVotesForCase(kase.id), totalAdmins: getTotalAdminCount(),
+      viewerAdminId: currentAdminActor(req).id, isSuperAdmin,
+    }),
   }));
 });
 app.post('/admin/fines/:id/vote', requireAuth, express.json(), (req, res) => {
@@ -7434,6 +7485,51 @@ app.post('/admin/fines/:id/resolve', requireAuth, express.json(), (req, res) => 
     link: '/me',
   });
   res.json({ ok: true, approved: !!approved });
+});
+
+// Notifies the reporting player their report didn't move forward — the accused is never
+// told a pending_admin/dismissed case existed at all (same "outcome only, never
+// in-progress" principle as /admin/fines/:id/resolve above).
+function notifyReporterOfDismissal(kase) {
+  if (kase.reported_by_type !== 'player' || !kase.reported_by_id) return;
+  createNotification({
+    playerId: kase.reported_by_id,
+    type: 'report_dismissed',
+    title: 'Your report was reviewed',
+    body: `Admins reviewed your report and it was not escalated further.`,
+    link: '/me',
+  });
+}
+
+// Admin escalation vote — only meaningful on a pending_admin (player-submitted) case.
+// Majority math + auto-transition lives in recomputeEscalation (lib/portal-db.js); this
+// route just records the vote and lets that run, then notifies the reporter if the
+// case just went terminal without ever reaching a head.
+app.post('/admin/fines/:id/escalate-vote', requireAuth, express.json(), (req, res) => {
+  const kase = getFineCase(req.params.id);
+  if (!kase || kase.status !== 'pending_admin') return res.status(400).json({ error: 'This case is not awaiting escalation.' });
+  const actor = currentAdminActor(req);
+  const { vote, comment = '' } = req.body || {};
+  if (vote !== 'escalate' && vote !== 'dismiss') return res.status(400).json({ error: 'Invalid vote.' });
+  const result = castEscalationVote({ caseId: kase.id, adminId: actor.id, adminName: actor.name, vote, comment });
+  if (result.error) return res.status(400).json({ error: 'This case is no longer awaiting escalation.' });
+  recomputeEscalation(kase.id);
+  const after = getFineCase(kase.id);
+  if (after.status === 'dismissed') notifyReporterOfDismissal(after);
+  res.json({ ok: true, status: after.status });
+});
+
+// Super-admin-only escape hatch for a pending_admin case whose vote count has stalled —
+// see forceEscalationDecision's comment in lib/portal-db.js.
+app.post('/admin/fines/:id/force-escalation', requireSuperAdmin, express.json(), (req, res) => {
+  const kase = getFineCase(req.params.id);
+  if (!kase || kase.status !== 'pending_admin') return res.status(400).json({ error: 'This case is not awaiting escalation.' });
+  const actor = currentAdminActor(req);
+  const { escalate } = req.body || {};
+  const result = forceEscalationDecision(kase.id, { escalate: !!escalate, decidedByName: actor.name });
+  if (!result.ok) return res.status(400).json({ error: 'Could not update this case.' });
+  if (!escalate) notifyReporterOfDismissal(getFineCase(kase.id));
+  res.json({ ok: true });
 });
 
 // Papawis pre-game reminders — see lib/papawis-notify.js. "Due" is decided per-signup

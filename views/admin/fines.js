@@ -9,6 +9,8 @@ function peso(n) { return '₱' + Number(n || 0).toLocaleString(); }
 function statusBadge(status) {
   if (status === 'approved') return `<span class="agm-badge agm-badge--blue">Fined</span>`;
   if (status === 'rejected') return `<span class="agm-badge agm-badge--gray">Rejected</span>`;
+  if (status === 'pending_admin') return `<span class="agm-badge agm-badge--amber">Pending Escalation</span>`;
+  if (status === 'dismissed') return `<span class="agm-badge agm-badge--gray">Dismissed</span>`;
   return `<span class="agm-badge agm-badge--amber">Open</span>`;
 }
 
@@ -119,12 +121,12 @@ function caseRow(c, base) {
   </tr>`;
 }
 
-export function adminFinesListBody({ open = [], resolved = [], players = [], categories = [] } = {}) {
+export function adminFinesListBody({ pendingAdmin = [], open = [], resolved = [], players = [], categories = [] } = {}) {
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <div>
     <h2 class="text-xl font-bold tracking-tight text-slate-100">Fines &amp; Conduct</h2>
-    <p class="text-sm text-slate-500 mt-0.5">${open.length} open case${open.length === 1 ? '' : 's'}</p>
+    <p class="text-sm text-slate-500 mt-0.5">${open.length} open case${open.length === 1 ? '' : 's'}${pendingAdmin.length ? ` · ${pendingAdmin.length} awaiting escalation` : ''}</p>
   </div>
   <div class="flex items-center gap-2">
     <a href="/admin/fines/heads" class="admin-btn">Team Heads</a>
@@ -132,6 +134,12 @@ export function adminFinesListBody({ open = [], resolved = [], players = [], cat
     <button class="agm-new-btn" onclick="openFineModal()">Report Incident</button>
   </div>
 </div>
+
+${pendingAdmin.length ? `
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-6">
+  <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Pending Escalation — player-submitted, needs an admin vote</div>
+  <table class="w-full border-collapse"><tbody>${pendingAdmin.map(c => caseRow(c, '/admin/fines')).join('')}</tbody></table>
+</div>` : ''}
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-6">
   <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Open cases</div>
@@ -160,11 +168,24 @@ function voteRow(v) {
   </tr>`;
 }
 
-export function adminFineCaseBody({ case: c, votes = [], player } = {}) {
-  const approveCount = votes.filter(v => v.vote === 'approve').length;
-  const rejectCount  = votes.filter(v => v.vote === 'reject').length;
-  const isOpen = c.status === 'open';
-  return `
+function escalationVoteRow(v) {
+  const color = v.vote === 'escalate' ? 'text-emerald-400' : 'text-red-400';
+  return `<tr class="border-b border-admin-border/40 last:border-0">
+    <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(v.admin_name)}</td>
+    <td class="px-4 py-2.5 text-sm font-semibold ${color}">${v.vote === 'escalate' ? 'Escalate' : 'Dismiss'}</td>
+    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(v.comment || '—')}</td>
+    <td class="px-4 py-2.5 text-xs text-slate-500 text-right whitespace-nowrap">${fmtDate(v.created_at)}</td>
+  </tr>`;
+}
+
+const descriptionCard = c => `<div class="bg-admin-surface border border-admin-border rounded-lg p-5">
+  <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Description</div>
+  <p class="text-sm text-slate-300 leading-relaxed">${escHtml(c.description) || '<span class="text-slate-600">No description provided.</span>'}</p>
+  <p class="text-xs text-slate-600 mt-3">Reported by ${escHtml(c.reported_by_name)} (${c.reported_by_type}) · ${fmtDate(c.created_at)}</p>
+</div>`;
+
+export function adminFineCaseBody({ case: c, votes = [], player, escalationVotes = [], totalAdmins = 0, viewerAdminId = '', isSuperAdmin = false } = {}) {
+  const header = `
 <div class="mb-5">
   <a href="/admin/fines" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Fines</a>
   <div class="flex items-center gap-3 mt-2">
@@ -172,15 +193,115 @@ export function adminFineCaseBody({ case: c, votes = [], player } = {}) {
     ${statusBadge(c.status)}
   </div>
   <p class="text-sm text-slate-500 mt-1">${escHtml(c.category_label)} · <span class="text-brand font-saira">${peso(c.amount)}</span>${player?.team_name ? ` · ${escHtml(player.team_name)}` : ''}</p>
-</div>
+</div>`;
 
+  // ── Player-submitted, awaiting an admin escalation vote ────────────────────────
+  if (c.status === 'pending_admin') {
+    const escalateCount = escalationVotes.filter(v => v.vote === 'escalate').length;
+    const dismissCount  = escalationVotes.filter(v => v.vote === 'dismiss').length;
+    const escalateNeeded = Math.floor(totalAdmins / 2) + 1;
+    const dismissNeeded  = totalAdmins - escalateNeeded + 1;
+    const myVote = escalationVotes.find(v => v.admin_id === viewerAdminId);
+    return `${header}
 <div class="grid gap-5" style="grid-template-columns:1fr 340px;align-items:start">
   <div class="flex flex-col gap-5">
-    <div class="bg-admin-surface border border-admin-border rounded-lg p-5">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Description</div>
-      <p class="text-sm text-slate-300 leading-relaxed">${escHtml(c.description) || '<span class="text-slate-600">No description provided.</span>'}</p>
-      <p class="text-xs text-slate-600 mt-3">Reported by ${escHtml(c.reported_by_name)} (${c.reported_by_type}) · ${fmtDate(c.created_at)}</p>
+    ${descriptionCard(c)}
+
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation votes (${escalateCount} escalate · ${dismissCount} dismiss — needs ${escalateNeeded} of ${totalAdmins} to escalate, ${dismissNeeded} to dismiss)</div>
+      ${escalationVotes.length === 0
+        ? `<div class="p-6 text-center text-sm text-slate-500">No votes yet.</div>`
+        : `<table class="w-full border-collapse"><tbody>${escalationVotes.map(escalationVoteRow).join('')}</tbody></table>`}
     </div>
+
+    <div class="bg-admin-surface border border-admin-border rounded-lg p-5">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Cast your vote${myVote ? ` — you voted ${myVote.vote === 'escalate' ? 'Escalate' : 'Dismiss'}` : ''}</div>
+      <textarea id="esc-comment" class="admin-input mb-3" rows="2" placeholder="Optional comment…">${myVote ? escHtml(myVote.comment) : ''}</textarea>
+      <div class="flex gap-2">
+        <button class="admin-btn admin-btn--success" onclick="castEscalationVote('escalate')">Escalate to heads</button>
+        <button class="admin-btn admin-btn--danger" onclick="castEscalationVote('dismiss')">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" style="position:sticky;top:24px">
+    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation</div>
+    <div class="p-4">
+      <p class="text-xs text-slate-500 leading-relaxed">A player filed this report directly. Once a majority of admins vote to escalate, it moves to team heads for a recommendation — you still have final say after that, same as any other case.</p>
+      ${isSuperAdmin ? `
+      <div class="mt-4 pt-4" style="border-top:1px solid var(--border-2)">
+        <p class="text-[11px] text-slate-600 mb-2">Super admin override — use if the vote has stalled.</p>
+        <div class="flex flex-col gap-2">
+          <button class="admin-btn admin-btn--block" onclick="forceEscalation(true)">Force Escalate</button>
+          <button class="admin-btn admin-btn--danger admin-btn--block" onclick="forceEscalation(false)">Force Dismiss</button>
+        </div>
+      </div>` : ''}
+    </div>
+  </div>
+</div>
+
+<script>
+window.castEscalationVote = async function(vote) {
+  var btn = event.target; btn.disabled = true;
+  try {
+    var r = await fetch('/admin/fines/${escHtml(c.id)}/escalate-vote', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vote: vote, comment: document.getElementById('esc-comment').value }),
+    });
+    var j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Failed');
+    location.reload();
+  } catch (e) { alert(e.message); btn.disabled = false; }
+};
+window.forceEscalation = async function(escalate) {
+  if (!confirm(escalate ? 'Force-escalate this case to team heads?' : 'Force-dismiss this case?')) return;
+  try {
+    var r = await fetch('/admin/fines/${escHtml(c.id)}/force-escalation', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ escalate: escalate }),
+    });
+    var j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Failed');
+    location.reload();
+  } catch (e) { alert(e.message); }
+};
+</script>`;
+  }
+
+  // ── Dismissed by admin vote (or forced) before ever reaching a head ────────────
+  if (c.status === 'dismissed') {
+    const escalateCount = escalationVotes.filter(v => v.vote === 'escalate').length;
+    const dismissCount  = escalationVotes.filter(v => v.vote === 'dismiss').length;
+    return `${header}
+<div class="grid gap-5" style="grid-template-columns:1fr 340px;align-items:start">
+  <div class="flex flex-col gap-5">
+    ${descriptionCard(c)}
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation votes (${escalateCount} escalate · ${dismissCount} dismiss)</div>
+      ${escalationVotes.length === 0
+        ? `<div class="p-6 text-center text-sm text-slate-500">No votes recorded.</div>`
+        : `<table class="w-full border-collapse"><tbody>${escalationVotes.map(escalationVoteRow).join('')}</tbody></table>`}
+    </div>
+  </div>
+
+  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" style="position:sticky;top:24px">
+    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Resolution</div>
+    <div class="p-4">
+      <p class="text-sm text-slate-300">${c.resolution_note ? escHtml(c.resolution_note) : `Dismissed by admin vote — ${dismissCount} dismiss vs ${escalateCount} escalate.`}</p>
+      <p class="text-xs text-slate-600 mt-2">Never reached team heads. The reporting player was notified.</p>
+    </div>
+  </div>
+</div>`;
+  }
+
+  // ── Open (head-voting) / approved / rejected — unchanged from before escalation existed ──
+  const approveCount = votes.filter(v => v.vote === 'approve').length;
+  const rejectCount  = votes.filter(v => v.vote === 'reject').length;
+  const isOpen = c.status === 'open';
+  return `${header}
+<div class="grid gap-5" style="grid-template-columns:1fr 340px;align-items:start">
+  <div class="flex flex-col gap-5">
+    ${descriptionCard(c)}
 
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Votes (${approveCount} approve · ${rejectCount} reject)</div>

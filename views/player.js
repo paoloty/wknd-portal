@@ -324,6 +324,93 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false) {
 </div>${uploadScript}`;
 }
 
+// ── Report player ───────────────────────────────────────────────────────────────
+// Deliberately understated compared to "Rate This Player" (a full card) — a conduct
+// report is a serious, reputation-affecting accusation, not something that should read as
+// equally casual as a peer rating. A plain text link + a lightweight modal, built on the
+// same .pcp-modal/.pcp-backdrop convention already used above for the photo-crop modal
+// (globally styled in public/styles.css, unlike views/fines.js's page-scoped .fn-modal).
+function reportPlayerSection(player, categories) {
+  const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}">${escHtml(c.label)}</option>`).join('');
+  return `<div class="player-report-entry">
+  <button type="button" class="player-report-link" id="rp-open-btn">⚑ Report this player</button>
+</div>
+
+<div class="pcp-backdrop" id="rp-backdrop" hidden>
+  <div class="pcp-modal">
+    <div class="pcp-modal__header">
+      <span class="pcp-modal__title">Report Player</span>
+      <button class="pcp-modal__close" id="rp-close">&#x2715;</button>
+    </div>
+    <div class="pcp-modal__body" style="display:flex;flex-direction:column;gap:12px">
+      <p style="margin:0;font-size:12.5px;color:var(--text-muted);line-height:1.5">Reports are reviewed by admins before anything happens — the player you're reporting is never notified unless a case is actually escalated and resolved.</p>
+      <div>
+        <label class="fn-label" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-subtle);margin:0 0 6px">Category</label>
+        <select id="rp-category" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 11px;font-size:13.5px;color:var(--text);font-family:inherit">${categoryOptions}</select>
+      </div>
+      <div>
+        <label class="fn-label" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-subtle);margin:0 0 6px">What happened</label>
+        <textarea id="rp-description" rows="4" placeholder="Describe what happened — game, context, who else saw it…" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 11px;font-size:13.5px;color:var(--text);font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div id="rp-msg" style="font-size:12px;color:#f87171" hidden></div>
+    </div>
+    <div class="pcp-modal__footer">
+      <button class="pcp-modal__cancel" id="rp-cancel">Cancel</button>
+      <button class="pcp-modal__save" id="rp-submit">File Report</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.player-report-entry { padding: 8px 0 0; }
+.player-report-link { background: none; border: none; padding: 0; font-size: 12px; color: var(--text-subtle); cursor: pointer; transition: color .15s; }
+.player-report-link:hover { color: var(--text-muted); }
+</style>
+
+<script>
+(function() {
+  var PLAYER_ID = '${escHtml(player.id)}';
+  var openBtn   = document.getElementById('rp-open-btn');
+  var backdrop  = document.getElementById('rp-backdrop');
+  var closeBtn  = document.getElementById('rp-close');
+  var cancelBtn = document.getElementById('rp-cancel');
+  var submitBtn = document.getElementById('rp-submit');
+  var msg       = document.getElementById('rp-msg');
+
+  function close() { backdrop.hidden = true; }
+  openBtn.addEventListener('click', function() {
+    msg.hidden = true;
+    document.getElementById('rp-description').value = '';
+    backdrop.hidden = false;
+  });
+  closeBtn.addEventListener('click', close);
+  cancelBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
+
+  submitBtn.addEventListener('click', function() {
+    msg.hidden = true;
+    submitBtn.disabled = true;
+    fetch('/players/' + PLAYER_ID + '/report', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        categoryId: document.getElementById('rp-category').value,
+        description: document.getElementById('rp-description').value,
+      }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+      .then(function(res) {
+        submitBtn.disabled = false;
+        if (!res.ok) { msg.textContent = res.d.error || 'Could not file the report.'; msg.hidden = false; return; }
+        close();
+        msg.hidden = true;
+        alert('Report filed — admins will review it.');
+      })
+      .catch(function() { submitBtn.disabled = false; msg.textContent = 'Network error.'; msg.hidden = false; });
+  });
+})();
+<\/script>`;
+}
+
 // ── Game log ──────────────────────────────────────────────────────────────────
 function gameLog(allRows, player, potgGameIds) {
   if (!allRows.length) {
@@ -558,7 +645,7 @@ function awardsSection(awards) {
     </div>`;
   }).join('');
 
-  return `<div class="card player-awards-section">
+  return `<div class="card">
   <div class="card-label">AWARDS &amp; HONORS</div>
   ${rows}
 </div>`;
@@ -913,6 +1000,7 @@ export function playerPage({
   fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [], coachNote = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
+  canReport = false, reportCategories = [],
 }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
@@ -925,8 +1013,10 @@ export function playerPage({
     ${ratingFeedCard(peerRatingsFeed)}
   ` : '';
   const ratingSnapshotHtml = peerRatingsEnabled ? communityRatingsCard(peerRatingSummary, isOwnProfile) : '';
+  const reportHtml = canReport ? reportPlayerSection(player, reportCategories) : '';
 
   return `${heroSection(player, totals, isAdmin, isOwnProfile)}
+${reportHtml}
 ${coachNoteHtml}
 <div class="game-detail-layout">
   <div class="game-detail-left">

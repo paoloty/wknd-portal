@@ -1232,7 +1232,7 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 12px 14px 10px;
+  padding: 12px 18px 10px;
 }
 .hc-info {
   flex: 1;
@@ -1274,7 +1274,7 @@ body {
 }
 .hc-body {
   margin: 0;
-  padding: 4px 14px 12px;
+  padding: 4px 18px 12px;
   font-size: 12px;
   line-height: 1.5;
   max-height: 70px;
@@ -5523,7 +5523,6 @@ a.player-link:hover { color: var(--amber); }
 }
 
 /* Player profile awards */
-.player-awards-section { margin-bottom: 12px; }
 .player-award-season { padding: 10px 18px; border-bottom: 1px solid var(--border); }
 .player-award-season:last-child { border-bottom: none; padding-bottom: 14px; }
 .player-award-season__label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }

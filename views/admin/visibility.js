@@ -41,6 +41,7 @@ export function adminVisibilityBody({
   postsEnabled = false,
   commentsEnabled = false,
   peerRatingsEnabled = false,
+  playerReportsEnabled = false,
   awardsEnabled = true,
   mvpEnabled = true,
   sectionSettings = {},
@@ -80,6 +81,12 @@ export function adminVisibilityBody({
     sub: `Roast-style player-to-player ratings, shown on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>. Anonymous ratings are masked to everyone except a super admin.`,
   }) + `<span id="vis-msg-peer_ratings_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
 
+  const playerReportsCard = card('Player Reports', toggleRow({
+    id: 'vis-player-reports-enabled', dataKey: 'player_reports_enabled', checked: playerReportsEnabled,
+    label: 'Allow players to report other players',
+    sub: `Adds a "Report" button on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>. Reports need a majority admin vote to escalate to team heads before an admin can act on them — see <code class="text-[11px] bg-admin-border/50 px-1 rounded">/admin/fines</code>.`,
+  }) + `<span id="vis-msg-player_reports_enabled" class="text-xs block mt-1 min-h-[16px]"></span>`);
+
   const awardsCard = card('Awards', `
     ${toggleRow({
       id: 'vis-awards-enabled', dataKey: 'awards_enabled', checked: awardsEnabled,
@@ -111,6 +118,7 @@ ${papawisCard}
 ${postsCard}
 ${commentsCard}
 ${peerRatingsCard}
+${playerReportsCard}
 ${awardsCard}
 
 <style>
@@ -144,6 +152,7 @@ ${awardsCard}
   bindToggle('vis-posts-enabled',    'posts_enabled',     'vis-msg-posts_enabled');
   bindToggle('vis-comments-enabled', 'comments_enabled',  'vis-msg-comments_enabled');
   bindToggle('vis-peer-ratings-enabled', 'peer_ratings_enabled', 'vis-msg-peer_ratings_enabled');
+  bindToggle('vis-player-reports-enabled', 'player_reports_enabled', 'vis-msg-player_reports_enabled');
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
 
