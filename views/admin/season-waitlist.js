@@ -9,25 +9,23 @@ const STATUS_BADGE = {
   withdrawn:  `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WITHDRAWN</span>`,
 };
 
-const ASSESSMENT_TAG_BADGE = {
-  no_concerns:        `<span style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">NO CONCERNS</span>`,
-  worth_conversation: `<span style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WORTH A CONVO</span>`,
-  discuss_admin:      `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">DISCUSS W/ ADMIN</span>`,
-};
+// Checkbox + Member stay pinned while the rest of the row scrolls horizontally, so an admin
+// scanning Balance/Status/Actions on a wide row never loses track of whose row it is. Member
+// carries the shadow (not the checkbox) since it's the visual edge of the frozen region —
+// widths are fixed rather than measured so the second column's sticky offset is deterministic.
+const FROZEN_CHECK_TH   = 'px-5 py-2.5 text-left sticky left-0 z-20 bg-admin-surface w-[44px] min-w-[44px]';
+const FROZEN_CHECK_TD   = 'px-5 py-3 sticky left-0 z-10 bg-admin-surface w-[44px] min-w-[44px]';
+const FROZEN_MEMBER_TH  = 'px-4 py-2.5 text-left font-semibold sticky left-[44px] z-20 bg-admin-surface shadow-[8px_0_12px_-4px_rgba(0,0,0,0.85)]';
+const FROZEN_MEMBER_TD  = 'px-4 py-3 sticky left-[44px] z-10 bg-admin-surface shadow-[8px_0_12px_-4px_rgba(0,0,0,0.85)]';
 
-// Only the two alignment outcomes that are actually worth a glance — 'aligned' and
-// 'not_ratable' (no rating yet to compare against) are the common/expected case and would
-// just be noise if shown on every row alongside the admin_tag badge.
-const ALIGNMENT_FLAG_BADGE = {
-  optimistic: `<span title="Self-rated a tier above their actual rating" style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">OPTIMISTIC</span>`,
-  gap:        `<span title="Self-rated two or more tiers above their actual rating" style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">SELF-RATING GAP</span>`,
-};
-
-function fmtDate(ts) {
-  return ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+// Matches the dot + count legend rows in the sidebar poll cards (season-waitlist's stats
+// sidebar) — same colors, same "colored dot carries identity, text stays readable" split,
+// so a value means the same thing whether you're reading the table or the poll card.
+function dotLabel(color, textClass, label) {
+  return `<span class="inline-flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${color}"></span><span class="${textClass} font-medium">${escHtml(label)}</span></span>`;
 }
 
-export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, confirmedCount = 0 } = {}) {
+export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, confirmedCount = 0, isSuperAdmin = false } = {}) {
   const byStatus = { waitlisted: 0, confirmed: 0, rejected: 0, withdrawn: 0 };
   for (const s of signups) byStatus[s.status] = (byStatus[s.status] ?? 0) + 1;
 
@@ -42,56 +40,79 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
   for (const s of signups) if (s.reshuffle_vote === 'yes' || s.reshuffle_vote === 'no') byReshuffleVote[s.reshuffle_vote]++;
   const reshuffleVoteTotal = byReshuffleVote.yes + byReshuffleVote.no;
 
-  const statsBar = `
-<div class="flex items-center gap-6 mb-6 flex-wrap">
-  <div class="text-center">
-    <div class="text-2xl font-bold text-slate-100">${signups.length}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Total</div>
+  const overviewCard = `
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+  <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Overview</div>
+  <div class="grid grid-cols-2 gap-4 p-4">
+    <div><div class="text-2xl font-bold text-slate-100">${signups.length}</div><div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Total</div></div>
+    <div><div class="text-2xl font-bold text-amber-400">${byStatus.waitlisted}</div><div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Waitlisted</div></div>
+    <div><div class="text-2xl font-bold text-green-400">${byStatus.confirmed}</div><div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Confirmed</div></div>
+    <div><div class="text-2xl font-bold text-slate-500">${byStatus.rejected}</div><div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Rejected</div></div>
+    ${byStatus.withdrawn > 0 ? `<div><div class="text-2xl font-bold text-rose-400">${byStatus.withdrawn}</div><div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Withdrawn</div></div>` : ''}
   </div>
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-amber-400">${byStatus.waitlisted}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Waitlisted</div>
-  </div>
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-green-400">${byStatus.confirmed}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Confirmed</div>
-  </div>
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-slate-500">${byStatus.rejected}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Rejected</div>
-  </div>
-  ${byStatus.withdrawn > 0 ? `
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-rose-400">${byStatus.withdrawn}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Withdrawn</div>
-  </div>` : ''}
-  ${pollTotal > 0 ? `
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-sky-400">${byPref.stick}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Stick</div>
-  </div>
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-violet-400">${byPref.reshuffle}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Reshuffle</div>
-  </div>` : ''}
-  ${reshuffleVoteTotal > 0 ? `
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-emerald-400">${byReshuffleVote.yes}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Reshuffle Poll — Yes</div>
-  </div>
-  <div class="w-px h-8 bg-admin-border"></div>
-  <div class="text-center">
-    <div class="text-2xl font-bold text-rose-400">${byReshuffleVote.no}</div>
-    <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Reshuffle Poll — No</div>
-  </div>` : ''}
 </div>`;
+
+  // Shared visual for both polls — a legend row per option (dot + label in neutral ink,
+  // never the series color itself — a colored mark carries identity, colored text doesn't
+  // read as data) with its count and share % read off directly, then one stacked meter bar
+  // underneath so the split still reads at a glance instead of requiring mental math.
+  // Sample size is captioned in the header since a 100%-filled bar off one vote would
+  // otherwise read as consensus rather than "n=1." Each poll gets its own card — they're
+  // answering unrelated questions (returning-team preference vs. a league-wide reshuffle
+  // vote) and a shared box would imply a connection that isn't there.
+  function pollCard(title, blurb, options) {
+    const total = options.reduce((sum, o) => sum + o.count, 0);
+    const pct = (o) => total > 0 ? Math.round((o.count / total) * 100) : 0;
+
+    const legendRow = (o) => `
+    <div class="flex items-center justify-between text-xs py-1">
+      <span class="inline-flex items-center gap-2 text-slate-300 font-medium">
+        <span style="width:8px;height:8px;border-radius:50%;background:${o.color};flex-shrink:0"></span>
+        ${escHtml(o.label)}
+      </span>
+      <span class="text-slate-500" style="font-variant-numeric:tabular-nums">${o.count} &middot; ${pct(o)}%</span>
+    </div>`;
+
+    // 2px surface-color gaps between segments (rather than a border) so touching shares
+    // still read as distinct — zero-share options are dropped from the bar entirely so an
+    // empty segment doesn't still eat a gap.
+    const bar = `<div class="flex h-2 rounded-full overflow-hidden mt-3" style="gap:2px" aria-hidden="true">
+      ${options.filter(o => o.count > 0).map(o => `<div style="width:${(o.count / total) * 100}%;background:${o.color};border-radius:99px"></div>`).join('')}
+    </div>`;
+
+    return `
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+  <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between gap-2">
+    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${escHtml(title)}</span>
+    <span class="text-[10px] text-slate-600">n=${total}</span>
+  </div>
+  <div class="p-4">
+    <p class="text-[11px] text-slate-500 leading-relaxed mb-3">${blurb}</p>
+    <div class="flex flex-col divide-y divide-admin-border/40">${options.map(legendRow).join('')}</div>
+    ${bar}
+  </div>
+</div>`;
+  }
+
+  const teamPrefCard = pollTotal > 0 ? pollCard(
+    'Team Preference',
+    'Returning players choosing to stick with their prior team vs. opting into the shuffle.',
+    [
+      { label: 'Stick', count: byPref.stick, color: '#38bdf8' },
+      { label: 'Shuffle', count: byPref.reshuffle, color: '#a78bfa' },
+    ]
+  ) : '';
+
+  const reshuffleVoteCard = reshuffleVoteTotal > 0 ? pollCard(
+    'League Shuffle Poll',
+    'League-wide yes/no on a full shuffle, asked of every registrant.',
+    [
+      { label: 'Yes', count: byReshuffleVote.yes, color: '#34d399' },
+      { label: 'No', count: byReshuffleVote.no, color: '#f87171' },
+    ]
+  ) : '';
+
+  const sidebar = `<div class="flex flex-col gap-5">${overviewCard}${teamPrefCard}${reshuffleVoteCard}</div>`;
 
   const table = signups.length === 0
     ? `<div class="p-12 text-center text-sm text-slate-500">No signups yet for Season ${escHtml(sigSeason)}.</div>`
@@ -119,55 +140,57 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
   <table class="w-full text-xs">
     <thead>
       <tr class="border-b border-admin-border text-slate-500 uppercase tracking-wider text-[10px]">
-        <th class="px-5 py-2.5 text-left w-8"></th>
-        <th class="px-4 py-2.5 text-left font-semibold">Member</th>
-        <th class="px-4 py-2.5 text-left font-semibold">Jersey</th>
+        <th class="${FROZEN_CHECK_TH}"></th>
+        <th class="${FROZEN_MEMBER_TH}">Member</th>
         <th class="px-4 py-2.5 text-left font-semibold">Team Pref</th>
-        <th class="px-4 py-2.5 text-left font-semibold">Signed Up</th>
+        <th class="px-4 py-2.5 text-left font-semibold">League Shuffle</th>
         <th class="px-4 py-2.5 text-left font-semibold">Balance</th>
-        <th class="px-4 py-2.5 text-left font-semibold">Assessment</th>
         <th class="px-4 py-2.5 text-left font-semibold">Status</th>
         <th class="px-4 py-2.5 text-right font-semibold">Actions</th>
       </tr>
     </thead>
     <tbody>
       ${signups.map(s => `<tr class="waitlist-row border-b border-admin-border/40 last:border-0" data-id="${escHtml(s.id)}" data-status="${escHtml(s.status)}">
-        <td class="px-5 py-3"><input type="checkbox" class="row-check accent-amber-400" data-id="${escHtml(s.id)}"></td>
-        <td class="px-4 py-3">
+        <td class="${FROZEN_CHECK_TD}"><input type="checkbox" class="row-check accent-amber-400" data-id="${escHtml(s.id)}"></td>
+        <td class="${FROZEN_MEMBER_TD}">
           <div class="font-semibold text-slate-200 flex items-center gap-1.5">
-            ${escHtml(s.full_name || '—')}
+            <a href="/admin/season/signups/${escHtml(s.id)}" class="text-slate-200 hover:text-amber-400 no-underline">${escHtml(s.full_name || '—')}</a>
             ${s.contact_changed_at ? `<span title="${escHtml(s.contact_change_note || 'Emergency contact or birthday differs from what is on file')}" style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;cursor:help">⚠ CONTACT CHANGED</span>` : ''}
+            ${s.liveness
+              ? (isSuperAdmin
+                  ? `<a href="/admin/season/liveness/${escHtml(s.liveness.id)}" title="View liveness capture vs. profile photo" style="background:#3b82f622;color:#60a5fa;border:1px solid #3b82f644;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;text-decoration:none">📷 PHOTO</a>`
+                  : `<span title="Liveness capture on file — super admin only" style="background:#3b82f622;color:#60a5fa;border:1px solid #3b82f644;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;cursor:help">📷 PHOTO</span>`)
+              : s.liveness_skipped_at ? `<span title="Registrant used the skip option instead of capturing a photo" style="color:#64748b;font-size:9px;font-weight:700;cursor:help">📷 SKIPPED</span>` : ''}
           </div>
           <div class="text-slate-500">${escHtml(s.email || '')}</div>
           ${s.phone ? `<div class="text-slate-600 text-[10px] mt-0.5">${escHtml(s.phone)}</div>` : ''}
         </td>
         <td class="px-4 py-3">
-          ${s.jersey_top    ? `<div class="text-slate-400">Top: <span class="text-slate-200 font-medium">${escHtml(s.jersey_top)}</span></div>` : '<div class="text-slate-600">—</div>'}
-          ${s.jersey_shorts ? `<div class="text-slate-400">Shorts: <span class="text-slate-200 font-medium">${escHtml(s.jersey_shorts)}</span></div>` : ''}
-        </td>
-        <td class="px-4 py-3">
           ${s.team_pref === 'stick'
             ? `<span class="inline-flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${escHtml(s.prev_team_color || '#64748b')}"></span><span class="text-sky-400 font-medium">Stick</span>${s.prev_team_name ? `<span class="text-slate-600">(${escHtml(s.prev_team_name)})</span>` : ''}</span>`
             : s.team_pref === 'reshuffle'
-              ? `<span class="text-violet-400 font-medium">Reshuffle</span>`
+              ? dotLabel('#a78bfa', 'text-violet-400', 'Shuffle')
               : `<span class="text-slate-600">—</span>`}
         </td>
-        <td class="px-4 py-3 text-slate-400 whitespace-nowrap">${escHtml(fmtDate(s.created_at))}</td>
+        <td class="px-4 py-3">
+          ${s.reshuffle_vote === 'yes'
+            ? dotLabel('#34d399', 'text-emerald-400', 'Yes')
+            : s.reshuffle_vote === 'no'
+              ? dotLabel('#f87171', 'text-rose-400', 'No')
+              : `<span class="text-slate-600">—</span>`}
+        </td>
         <td class="px-4 py-3">
           ${s.has_balance
             ? `<span class="text-amber-400 font-medium">⚠ ₱${Number(s.balance_amt).toLocaleString()}</span>`
             : `<span class="text-slate-600">—</span>`}
         </td>
-        <td class="px-4 py-3">
-          ${s.assessment
-            ? `<a href="/admin/season/assessments/${escHtml(s.assessment.id)}" class="no-underline hover:opacity-80 inline-flex flex-col items-start gap-1">${ASSESSMENT_TAG_BADGE[s.assessment.admin_tag] ?? '<span style="color:#64748b;font-size:11px">Not reviewed</span>'}${ALIGNMENT_FLAG_BADGE[s.alignmentFlag] || ''}</a>`
-            : '<span style="color:#475569;font-size:11px">—</span>'}
-        </td>
         <td class="px-4 py-3">${STATUS_BADGE[s.status] ?? escHtml(s.status)}</td>
         <td class="px-4 py-3 text-right whitespace-nowrap">
-          ${s.status === 'confirmed' ? `<button class="signup-withdraw-btn text-[11px] font-semibold text-rose-400 hover:text-rose-300 mr-3 transition-colors" data-id="${escHtml(s.id)}">Withdraw</button>` : ''}
-          ${s.status !== 'confirmed' ? `<button class="signup-confirm-btn text-[11px] font-semibold text-green-400 hover:text-green-300 mr-3 transition-colors" data-id="${escHtml(s.id)}">Confirm</button>` : ''}
-          ${s.status !== 'rejected'  ? `<button class="signup-reject-btn text-[11px] font-semibold text-slate-500 hover:text-rose-400 transition-colors" data-id="${escHtml(s.id)}">Reject</button>` : ''}
+          <div class="flex items-center justify-end gap-2">
+            ${s.status === 'confirmed' ? `<button class="admin-btn admin-btn--sm admin-btn--danger signup-withdraw-btn" data-id="${escHtml(s.id)}">Withdraw</button>` : ''}
+            ${s.status !== 'confirmed' ? `<button class="admin-btn admin-btn--sm admin-btn--success signup-confirm-btn" data-id="${escHtml(s.id)}">Confirm</button>` : ''}
+            ${s.status !== 'rejected'  ? `<button class="admin-btn admin-btn--sm admin-btn--muted signup-reject-btn" data-id="${escHtml(s.id)}">Reject</button>` : ''}
+          </div>
         </td>
       </tr>`).join('')}
     </tbody>
@@ -175,19 +198,21 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
 </div>`;
 
   return `
-<div style="max-width:960px">
+<div class="w-full">
   <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
     <div>
       <a href="/admin/season" class="text-xs text-slate-500 hover:text-slate-300 no-underline inline-flex items-center gap-1 mb-1">← Season Management</a>
       <h1 class="text-xl font-bold text-slate-100">Waitlist <span class="text-amber-400">Season ${escHtml(String(sigSeason))}</span></h1>
+      ${isSuperAdmin ? `<a href="/admin/season/liveness" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300 no-underline">📷 All Liveness Photos</a>` : ''}
     </div>
     ${confirmedCount > 0 ? `<a href="/admin/season/teams" class="agm-new-btn inline-flex items-center gap-1.5">${ICON_TEAM} Build Teams (${confirmedCount})</a>` : ''}
   </div>
 
-  ${statsBar}
-
-  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-    ${table}
+  <div class="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px] items-start">
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden min-w-0">
+      ${table}
+    </div>
+    ${sidebar}
   </div>
 </div>
 

@@ -19,7 +19,8 @@ function renderRecordsMode(share, color, teamName, isLight) {
   const first = top5[0];
   const firstCtxResult = first.game_result || '';
   const firstIsW  = firstCtxResult.startsWith('W');
-  const firstIsPO = first.is_playoff === true || first.is_playoff === 1 || first.is_playoff === '1';
+  const firstIsPO     = first.is_playoff === true || first.is_playoff === 1 || first.is_playoff === '1';
+  const firstIsFinals = first.is_finals === true || first.is_finals === 1 || first.is_finals === '1';
 
   const rows = top5.slice(1).map((x, i) => {
     const tc = escHtml(x.team_color || '#64748b');
@@ -56,7 +57,7 @@ function renderRecordsMode(share, color, teamName, isLight) {
       <div class="leader-panel__info">
         <div class="leader-panel__name">${playerLink(share.player_id, share.player_name, { upper: true })}</div>
         <span class="team-chip" style="background:${escHtml(color)};color:${chipColor}">${escHtml(teamName)}</span>
-        <a href="/games/${encodeURIComponent(first.game_id || '')}" class="record-panel__ctx">${escHtml(fmtShareDate(first.game_date))} · vs ${escHtml(first.game_opp || '')} · <span class="${firstIsW ? 'record-ctx--w' : 'record-ctx--l'}">${escHtml(firstCtxResult)}</span>${firstIsPO ? ' <span class="gl-badge gl-badge--po">PO</span>' : ''}</a>
+        <a href="/games/${encodeURIComponent(first.game_id || '')}" class="record-panel__ctx">${escHtml(fmtShareDate(first.game_date))} · vs ${escHtml(first.game_opp || '')} · <span class="${firstIsW ? 'record-ctx--w' : 'record-ctx--l'}">${escHtml(firstCtxResult)}</span>${firstIsPO ? ' <span class="gl-badge gl-badge--po">PO</span>' : ''}${firstIsFinals ? ' <span class="gl-badge gl-badge--finals">F</span>' : ''}</a>
       </div>
       <div class="leader-panel__stat font-condensed">${escHtml(share.stat_fmt)}</div>
     </div>

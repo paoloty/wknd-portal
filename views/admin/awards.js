@@ -84,7 +84,7 @@ function getStats(entry, isConf, statsMap = {}) {
 
 // ── Row builder ───────────────────────────────────────────────────────────────
 
-function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, colVal, withArticle, article, articleKey, articlePid, season }) {
+function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, colVal, withArticle, article, articleKey, articlePid, season, provisional }) {
   const aKey = articleKey || type;
   const aPid = articlePid || '';
   const name   = displayPlayerName(pname || '');
@@ -92,9 +92,9 @@ function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, 
   const team   = String(tname || '').toUpperCase();
   const s      = stats;
 
-  const statusBg    = isConf ? 'rgba(34,197,94,.12)'  : 'rgba(245,147,50,.12)';
-  const statusColor = isConf ? '#22c55e' : '#f59332';
-  const statusLabel = isConf ? 'Confirmed' : 'Suggested';
+  const statusBg    = isConf ? 'rgba(34,197,94,.12)' : provisional ? 'rgba(148,163,184,.12)' : 'rgba(245,147,50,.12)';
+  const statusColor = isConf ? '#22c55e' : provisional ? '#94a3b8' : '#f59332';
+  const statusLabel = isConf ? 'Confirmed' : provisional ? 'Provisional' : 'Suggested';
 
   return `<tr class="awd-tr" id="awd-row-${escHtml(rowId)}">
   <td class="awd-td awd-td--name">
@@ -120,11 +120,13 @@ function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, 
     <span class="awd-status" style="background:${statusBg};color:${statusColor};border-color:${statusColor}33">${statusLabel}</span>
   </td>
   <td class="awd-td awd-td--actions">
+    ${provisional ? `<span style="font-size:10px;color:var(--text-muted)" title="Finals series still in progress — this pick may change and can't be confirmed yet">Series in progress</span>` : `
     ${!isConf ? `<button class="awd-action awd-action--confirm" title="Confirm" data-confirm-solo="${escHtml(type)}" data-confirm-pid="${escHtml(pid)}">${ICON_CHECK}</button>` : ''}
     ${isConf && SINGLE_PHOTO_TYPES.has(type) ? `<a class="awd-action" style="text-decoration:none" title="Edit photo" href="/admin/awards/${escHtml(String(season))}/${escHtml(type)}/graphic">${ICON_PHOTO}</a>` : ''}
     <button class="awd-action" title="Change player" data-toggle-picker="${escHtml(rowId)}" data-award-type="${escHtml(type)}" data-confirmed-id="${escHtml(awdId || '')}" data-pid="${escHtml(pid)}">${ICON_EDIT}</button>
     ${isConf && awdId ? `<button class="awd-action awd-action--danger" title="Remove" data-remove-id="${escHtml(awdId)}">${ICON_X}</button>` : ''}
     ${withArticle && isConf ? `<button class="awd-action" title="Article" data-toggle-article="${escHtml(aKey)}">${ICON_SPARK}</button>` : ''}
+    `}
   </td>
 </tr>
 <tr id="awd-picker-${escHtml(rowId)}" style="display:none">
@@ -157,10 +159,12 @@ function emptyRow(colspan = 8) {
 function groupCard({ label, types, col, graphicType, season, byType, suggestions, articles, statsMap, maxRows = 5 }) {
   const isTeamGroup = types.some(t => TEAM_TYPES.has(t));
 
-  // Show Confirm All button when any team type still has unconfirmed suggestions remaining.
+  // Show Confirm All button when any team type still has unconfirmed, non-provisional
+  // suggestions remaining (provisional = finals series still in progress, can't confirm yet).
   const unconfirmedTeam = isTeamGroup && types.some(t => {
     const confirmedIds = new Set((byType[t] || []).map(e => e.player_id));
-    return Array.isArray(suggestions[t]) && suggestions[t].some(e => !confirmedIds.has(e.player.id));
+    const sugg = suggestions[t];
+    return Array.isArray(sugg) && sugg.some(e => !confirmedIds.has(e.player.id)) && !sugg.some(e => e.provisional);
   });
 
   const colHeader = col === 'award' ? 'Award' : col === 'squad' ? 'Squad' : 'Pos';
@@ -195,7 +199,8 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
         const rowId       = `${type}-${i+1}`;
         const articleKey  = `${type}_${pid}`;
         const stats       = isEntryConf ? getStats(entry, true, statsMap) : getStats(entry, false, statsMap);
-        return playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isEntryConf, stats, col, colVal: pos, withArticle: true, article: articles[articleKey] || '', articleKey, articlePid: pid });
+        const provisional = !isEntryConf && !!entry.provisional;
+        return playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isEntryConf, stats, col, colVal: pos, withArticle: true, article: articles[articleKey] || '', articleKey, articlePid: pid, provisional });
       });
     } else {
       const winner = confirmed[0] || null;
@@ -212,7 +217,8 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
       const stats  = isConfSolo ? getStats(winner, true, statsMap) : getStats(sugg, false, statsMap);
       const colVal = col === 'award' ? AWARD_LABELS[type] : '';
       const article = articles[type] || '';
-      return [playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isConfSolo, stats, col, colVal, withArticle: true, article, season })];
+      const provisional = !isConfSolo && !!sugg?.provisional;
+      return [playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isConfSolo, stats, col, colVal, withArticle: true, article, season, provisional })];
     }
   });
 

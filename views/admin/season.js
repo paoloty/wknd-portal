@@ -119,8 +119,8 @@ export function adminSeasonBody({
     <!-- Settings fields -->
     <div class="flex flex-col gap-4">
       <div>
-        <label class="block text-[12px] font-semibold text-slate-300 mb-1.5">Season Format <span class="text-slate-500 font-normal">(shown to members on signup)</span></label>
-        <textarea id="season-format-input" rows="2" class="admin-input w-full resize-none" style="font-size:12px" placeholder="e.g. 4 teams · 10-game round robin · best-of-3 playoffs">${escHtml(seasonFormat)}</textarea>
+        <label class="block text-[12px] font-semibold text-slate-300 mb-1.5">Season Format <span class="text-slate-500 font-normal">(shown to members on signup &mdash; separate points with &middot; for a bulleted list)</span></label>
+        <textarea id="season-format-input" rows="2" class="admin-input w-full resize-none" style="font-size:12px" placeholder="e.g. Double Round Robin · Top 4 Twice-to-Beat (1 vs 4, 2 vs 3) · Finals Best of 3">${escHtml(seasonFormat)}</textarea>
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>

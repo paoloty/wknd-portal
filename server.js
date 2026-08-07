@@ -70,6 +70,7 @@ import {
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
   insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup,
+  upsertLivenessCapture, getLivenessCaptureByRegId, getLivenessCaptureById, getAllLivenessCaptures, deleteLivenessCapture,
   updateRegistrationContact,
   insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, setAssessmentTag, getLatestPlayerRating,
   playerPlayedSeason, getPlayerCurrentTeam,
@@ -1710,7 +1711,8 @@ async function generateLeaderSvg(share) {
     const dateStr  = f.game_date ? new Date(f.game_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
     const resColor = String(f.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
     const isPO     = f.is_playoff === true || f.is_playoff === 1 || f.is_playoff === '1';
-    heroCtxSvg = `<text x="${INFO_X}" y="${CHIP_TEXT + 30}" font-family="${COVER_SVG_FONT}" font-size="12" fill="#475569">${escXml(dateStr)} · VS ${escXml(String(f.game_opp || '').toUpperCase())} · <tspan font-weight="700" fill="${resColor}">${escXml(String(f.game_result || ''))}</tspan>${isPO ? ` <tspan font-weight="700" fill="#f59332">PO</tspan>` : ''}</text>`;
+    const isFinals = f.is_finals === true || f.is_finals === 1 || f.is_finals === '1';
+    heroCtxSvg = `<text x="${INFO_X}" y="${CHIP_TEXT + 30}" font-family="${COVER_SVG_FONT}" font-size="12" fill="#475569">${escXml(dateStr)} · VS ${escXml(String(f.game_opp || '').toUpperCase())} · <tspan font-weight="700" fill="${resColor}">${escXml(String(f.game_result || ''))}</tspan>${isPO ? ` <tspan font-weight="700" fill="#f59332">PO</tspan>` : ''}${isFinals ? ` <tspan font-weight="700" fill="#f59332">F</tspan>` : ''}</text>`;
   }
 
   // ── Row builder ───────────────────────────────────────────────────────────
@@ -2262,7 +2264,7 @@ async function generateGameCoverPng(game, potgStat, bgDataUrl) {
   <rect x="${W - 5}" y="6" width="5" height="${H - 12}" fill="${colorB}" opacity="0.65"/>
   <rect x="0" y="${H - 6}" width="600" height="6" fill="${colorA}" opacity="0.5"/>
   <rect x="600" y="${H - 6}" width="600" height="6" fill="${colorB}" opacity="0.5"/>
-  <text x="129" y="24" text-anchor="middle" fill="${colorA}" font-size="9" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)" textLength="155" lengthAdjust="spacingAndGlyphs">SEASON ${escXml(String(game.season || ''))}  ·  ${escXml(game.game_type === 'playoff' ? 'PLAYOFFS' : 'REGULAR SEASON')}</text>
+  <text x="129" y="24" text-anchor="middle" fill="${colorA}" font-size="9" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)" textLength="155" lengthAdjust="spacingAndGlyphs">SEASON ${escXml(String(game.season || ''))}  ·  ${escXml(game.game_type === 'playoff' ? 'PLAYOFFS' : game.game_type === 'finals' ? 'FINALS' : 'REGULAR SEASON')}</text>
   <rect x="955" y="474" width="200" height="96" rx="12" fill="#040c18" fill-opacity="0.80" filter="url(#card)" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1"/>
   <rect x="955" y="474" width="100" height="96" fill="${colorA}" fill-opacity="${winA ? '0.38' : '0.10'}" clip-path="url(#scoreClip)"/>
   <rect x="1055" y="474" width="100" height="96" fill="${colorB}" fill-opacity="${winB ? '0.38' : '0.10'}" clip-path="url(#scoreClip)"/>
@@ -3236,7 +3238,7 @@ function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } 
     all_wknd_2:   team2,
     all_wknd_def: defTeam,
     champion: finals?.winnerTeamId
-      ? finals.roster.map(p => ({ player: { ...p, team_name: finals.winnerTeamName }, statLine: '' }))
+      ? finals.roster.map(p => ({ player: { ...p, team_name: finals.winnerTeamName }, statLine: '', provisional: !finals.decided }))
       : null,
     finals_mvp: (() => {
       if (!finals?.candidates?.length) return null;
@@ -3247,23 +3249,34 @@ function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } 
       if (!top) return null;
       const gp = top.gp;
       return {
-        player:   { ...top, games_played: gp },
-        statLine: `${(top.pts / gp).toFixed(1)} PPG · ${(top.reb / gp).toFixed(1)} RPG · ${(top.ast / gp).toFixed(1)} APG`,
+        player:      { ...top, games_played: gp },
+        statLine:    `${(top.pts / gp).toFixed(1)} PPG · ${(top.reb / gp).toFixed(1)} RPG · ${(top.ast / gp).toFixed(1)} APG`,
+        provisional: !finals.decided,
       };
     })(),
   };
 }
 
-// Finals series context for the Championship group's suggestions — null until the
-// season's finals games (game_type='finals') exist and the series is decided.
+// Finals series context for the Champion/Finals MVP suggestions. Once the series has
+// a leader (someone's won at least one game), suggest that team's roster/MVP candidate
+// as a provisional pick — `decided` tells the caller whether it's official yet or just
+// "leading so far." Returns null only when finals games haven't started or are tied 0-0,
+// i.e. there's no leader to suggest anything from.
 function getFinalsSuggestionContext(season) {
   const result = getFinalsSeriesResult(season);
-  if (!result?.decided || !result.winnerTeamId) return null;
+  if (!result) return null;
+  const leadTeamId = result.winnerTeamId
+    ?? (result.teamAWins > result.teamBWins ? result.teamAId
+      : result.teamBWins > result.teamAWins ? result.teamBId
+      : null);
+  if (!leadTeamId) return null;
+  const leadTeamName = leadTeamId === result.teamAId ? result.teamAName : result.teamBName;
   return {
-    winnerTeamId:   result.winnerTeamId,
-    winnerTeamName: result.winnerTeamName,
-    roster:         getActivePlayers().filter(p => p.team_id === result.winnerTeamId),
-    candidates:     getFinalsMvpCandidates(season).filter(c => c.team_id === result.winnerTeamId),
+    decided:        result.decided,
+    winnerTeamId:   leadTeamId,
+    winnerTeamName: leadTeamName,
+    roster:         getActivePlayers().filter(p => p.team_id === leadTeamId),
+    candidates:     getFinalsMvpCandidates(season).filter(c => c.team_id === leadTeamId),
   };
 }
 
@@ -3306,6 +3319,7 @@ app.post('/admin/awards', requireAuth, express.json(), (req, res) => {
       finals: getFinalsSuggestionContext(season),
     })[award_type];
     const list  = Array.isArray(sugg) ? sugg : (sugg ? [sugg] : []);
+    if (list.some(e => e.provisional)) return res.status(400).json({ error: 'Finals series not decided yet' });
     clearAwardType(season, award_type);
     for (const entry of list) {
       if (!entry.player) continue;
@@ -4862,7 +4876,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       : '',
     ``,
     `GAME: ${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}`,
-    `Date: ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : 'Regular Season'}${isOT ? '  |  OVERTIME' : ''}`,
+    `Date: ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : game.game_type === 'finals' ? 'FINALS' : 'Regular Season'}${isOT ? '  |  OVERTIME' : ''}`,
     `Final margin: ${Math.abs(scoreA - scoreB)} pts${Math.abs(scoreA - scoreB) <= 6 ? ' (CLOSE GAME — emphasize late-game events)' : ''}`,
     ``,
     `TEAM RECORDS (entering this game):`,
@@ -4956,7 +4970,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     `Banned phrases: ${CLICHE_BAN}`,
     ``,
     `GAME: ${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}  |  ${game.date}  |  Season ${game.season}`,
-    `Game type: ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : 'Regular Season'}`,
+    `Game type: ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : game.game_type === 'finals' ? 'FINALS' : 'Regular Season'}`,
     ``,
     `PLAYER: ${displayPlayerName(potgStat.name)} (${potgStat.team_name})`,
     `This game: ${potgStat.pts}pts / ${potgStat.reb}reb / ${potgStat.ast}ast / ${potgStat.stl}stl / ${potgStat.blk}blk${fgPct ? ' / ' + fgPct : ''}`,
@@ -5100,6 +5114,42 @@ app.post('/admin/player/:id/photo', requireAuth, jsonLarge, async (req, res) => 
     const originalBuf = parseDataUrl(req.body.originalDataUrl);
     if (originalBuf) {
       try { updatePlayerPhotoOriginal(player.id, await compressSourceImage(originalBuf)); }
+      catch (err) { console.error('photo_original compress error:', err); }
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Player photo upload error:', err);
+    res.status(500).json({ error: 'Image processing failed' });
+  }
+});
+
+// Self-service counterpart — same crop/compress pipeline, keyed off the session instead of
+// a trusted :id param (same reasoning as /me/writeup) so a plain player can update their own
+// photo without an admin session. Admins editing their own profile still go through the
+// route above, since isAdmin already satisfies its requireAuth gate.
+app.post('/me/photo', jsonLarge, async (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) {
+    return res.status(401).json({ error: 'Log in to edit your profile.' });
+  }
+  try {
+    const playerId = req.session.playerPlayerId;
+    const dataUrl = String(req.body.dataUrl || '');
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return res.status(400).json({ error: 'Invalid image data' });
+
+    const inputBuffer = Buffer.from(match[2], 'base64');
+    const compressed  = await sharp(inputBuffer)
+      .rotate()
+      .resize(400, 400, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 85, progressive: true })
+      .toBuffer();
+
+    updatePlayerPhoto(playerId, 'data:image/jpeg;base64,' + compressed.toString('base64'));
+
+    const originalBuf = parseDataUrl(req.body.originalDataUrl);
+    if (originalBuf) {
+      try { updatePlayerPhotoOriginal(playerId, await compressSourceImage(originalBuf)); }
       catch (err) { console.error('photo_original compress error:', err); }
     }
 
@@ -5263,6 +5313,7 @@ app.post('/api/leaders/share', (req, res) => {
             game_opp:    ctx.opp,
             game_result: ctx.result,
             is_playoff:  ctx.isPO,
+            is_finals:   ctx.isFinals,
           };
         });
     }
@@ -5942,10 +5993,13 @@ app.get('/players/:ref', async (req, res) => {
   }
 
   const isOwnProfile = !!req.session?.playerPlayerId && resolved.id === req.session.playerPlayerId;
-  let balanceAmount = 0, papawisGames = [];
+  let balanceAmount = 0, balanceTransactions = [], papawisGames = [];
   let coachNote = null;
   if (isOwnProfile) {
     balanceAmount = getPlayerFinancials(resolved.id)?.current_balance ?? 0;
+    // Own-profile breakdown is intentionally the same read-only transaction list admin sees
+    // (getPlayerTransactions) — no separate query, no separate source of truth to drift.
+    balanceTransactions = balanceAmount > 0 ? getPlayerTransactions(resolved.id) : [];
     papawisGames  = getPapawisGamesForPlayer(resolved.id);
     coachNote     = await getOrGenerateCoachNote(resolved.id, player, totals, gameLogs);
   }
@@ -5989,7 +6043,7 @@ app.get('/players/:ref', async (req, res) => {
     metaTags: buildPlayerOgTags(req, player, totals),
     body: playerPage({
       player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection,
-      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisGames, coachNote,
+      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, balanceTransactions, papawisGames, coachNote,
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
       viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
@@ -6261,6 +6315,17 @@ app.post('/register', (req, res) => {
 import { seasonSignupPage } from './views/season-signup.js';
 import { SIZES as JERSEY_SIZES, computeJerseyTotal } from './lib/season-pricing.js';
 
+// Capacity bar shown on the public signup form — still driven by real confirmed-signup
+// counts, just padded so it reads as "filling up" from the start instead of looking dead
+// at low fill. Floors the display at 55% and compresses the real 0-100 range into the
+// remaining 45 points, so it's still monotonic with actual signups and genuinely hits
+// 100% only once the season is actually full.
+const CAPACITY_BAR_FLOOR = 55;
+function padCapacityPct(rawPct) {
+  if (rawPct === null) return null;
+  return Math.round(CAPACITY_BAR_FLOOR + (rawPct / 100) * (100 - CAPACITY_BAR_FLOOR));
+}
+
 // Returning-player team poll: only shown if they actually played the prior season and
 // still have a team on record.
 function getReturningTeamInfo(reg, sigSeason) {
@@ -6293,9 +6358,13 @@ app.get('/season-signup', (req, res) => {
   const surchargeStep    = Number(getSetting('jersey_surcharge_step', '50')) || 0;
   const pocketsPrice     = Number(getSetting('jersey_pockets_price', '100')) || 0;
   const capacity         = Number(getSetting('season_roster_capacity', '0')) || 0;
-  const capacityPct      = (capacity && sigSeason) ? Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100)) : null;
+  const capacityPct      = (capacity && sigSeason) ? padCapacityPct(Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100))) : null;
   const existing         = sigSeason ? getSeasonSignup(regId, sigSeason) : null;
   const returning        = sigSeason ? getReturningTeamInfo(reg, sigSeason) : null;
+  const existingLivenessCapture = getLivenessCaptureByRegId(regId);
+  // Re-rolled on every page load (not once per session) — session-held so the capture POST
+  // below can trust it without the client ever having to send the prompt text itself.
+  req.session.livenessPrompt = randomLivenessPrompt();
 
   res.send(renderPage(req, {
     title: 'Season Signup — WKND Basketball',
@@ -6304,7 +6373,8 @@ app.get('/season-signup', (req, res) => {
     body: seasonSignupPage({
       state: 'form', sigSeason, sigOpen, deadline, existing, reg, name: reg.full_name,
       seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice,
-      surchargeStep, pocketsPrice, capacityPct, returning,
+      surchargeStep, pocketsPrice, capacityPct, returning, existingLivenessCapture,
+      livenessPrompt: req.session.livenessPrompt,
     }),
   }));
 });
@@ -6331,7 +6401,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   const surchargeStep    = Number(getSetting('jersey_surcharge_step', '50')) || 0;
   const pocketsPrice     = Number(getSetting('jersey_pockets_price', '100')) || 0;
   const capacity         = Number(getSetting('season_roster_capacity', '0')) || 0;
-  const capacityPct      = capacity ? Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100)) : null;
+  const capacityPct      = capacity ? padCapacityPct(Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100))) : null;
   const returning        = getReturningTeamInfo(reg, sigSeason);
 
   const rerender = (error) => res.send(renderPage(req, {
@@ -6342,6 +6412,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
       state: 'form', sigSeason, sigOpen: true, deadline, reg, name: reg.full_name,
       seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice,
       surchargeStep, pocketsPrice, capacityPct, returning, error, prefill: req.body,
+      existingLivenessCapture: getLivenessCaptureByRegId(regId),
     }),
   }));
 
@@ -6358,6 +6429,11 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   const teamPref       = (req.body.team_pref     || '').trim();
   const waiverAgree     = req.body.waiver_agree === 'on' || req.body.waiver_agree === '1';
   const waiverSignature = (req.body.waiver_signature || '').trim();
+  // Group 00 is now required (see the getLivenessCaptureByRegId gate below) — the capture
+  // itself already saved via /season-signup/liveness-capture well before this final submit.
+  // liveness_skip is no longer offered in the UI; this stays only to keep displaying the
+  // "Skipped" badge on pre-existing rows from before the step became mandatory.
+  const livenessSkipped = req.body.liveness_skip === 'on' || req.body.liveness_skip === '1';
 
   const q1WhyPlaying     = (req.body.q1_why_playing     || '').trim();
   const q2LosingBadly    = (req.body.q2_losing_badly    || '').trim();
@@ -6371,6 +6447,8 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   const selfScoring      = (req.body.self_scoring       || '').trim();
   const selfDefense      = (req.body.self_defense       || '').trim();
   const selfOverall      = (req.body.self_overall       || '').trim();
+
+  if (!getLivenessCaptureByRegId(regId)) return rerender('Take a liveness photo (camera or phone) before continuing.');
 
   if (!JERSEY_SIZES.includes(jerseyTop)) return rerender('Pick a jersey top size.');
   if (jerseyShorts && !JERSEY_SIZES.includes(jerseyShorts)) return rerender('Pick a valid shorts size.');
@@ -6391,10 +6469,10 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   // Returning players get asked whether to stick with their team or reshuffle — required
   // when applicable, recomputed server-side rather than trusting a hidden form field.
   if (returning && !['stick', 'reshuffle'].includes(teamPref)) {
-    return rerender("Let us know: stick with your team or open to a reshuffle?");
+    return rerender("Let us know: stick with your team or open to a shuffle?");
   }
 
-  if (!['yes', 'no'].includes(reshuffleVote)) return rerender('Vote yes or no on the league reshuffle.');
+  if (!['yes', 'no'].includes(reshuffleVote)) return rerender('Vote yes or no on the league shuffle.');
   if (!quotaAck) return rerender('You need to acknowledge the season fee.');
   if (!['full', 'installment'].includes(paymentPlan)) return rerender('Pick a payment plan.');
 
@@ -6443,6 +6521,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     contactChangedAt: changes.length ? Date.now() : 0,
     contactChangeNote: changes.join('; '),
     waiverReconfirmedAt: Date.now(),
+    livenessSkippedAt: livenessSkipped ? Date.now() : 0,
   });
   insertPlayerAssessment(reg.player_id || '', regId, sigSeason, {
     q1WhyPlaying, q2LosingBadly, q3BadRefCall, q4HeatedTeammate, q5FeedbackStyle,
@@ -6457,6 +6536,98 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     minimalHeader: true,
     body: seasonSignupPage({ sigSeason, deadline, existing: created, reg, name: reg.full_name, hasBalance, balanceAmt, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct }),
   }));
+});
+
+// ── Season Signup Group 00 — Liveness Check ─────────────────────────────────────
+// Admin-reference-only photo, not identity verification (no matching, no pass/fail — see
+// liveness_captures' comment in lib/portal-db.js). Two capture paths: inline on the same
+// device (this route), or via a QR code scanned by a phone when the desktop browser has no
+// webcam (the token/WebSocket routes further down). Either way the capture itself saves
+// immediately, independent of the main multi-step form's own POST — Group 00 never blocks
+// final submission either way (see livenessSkipped in POST /season-signup above).
+import { livenessMobilePage } from './views/liveness-mobile.js';
+
+// Purely decorative — makes the capture moment less awkward, never validated against what's
+// actually in the photo (see liveness_captures.prompt in lib/portal-db.js). Scoped to things
+// that are basically always already on/near a person at home — no kitchen trips, no specific
+// ownership required — so it's genuinely doable regardless of what someone's house has in it.
+const LIVENESS_PROMPTS = [
+  'Grab your tsinelas and hold it up — the universal Filipino weapon',
+  'Hold up your barya — pamasahe money, no excuses',
+  "Grab the TV remote and guard it like it's the last two minutes of the game",
+  'Hold up a plastic tingi bag from that one drawer every house has',
+  "Show us your GCash balance... or don't, we don't want any drama",
+  'Grab your phone charger — nobody knows whose it actually is',
+  'Hold up a random receipt from your wallet or pocket',
+  'Grab any rubber band, hair tie, or twistie within reach',
+  "Hold up whatever's currently in your pocket — no peeking beforehand",
+];
+function randomLivenessPrompt() {
+  return LIVENESS_PROMPTS[Math.floor(Math.random() * LIVENESS_PROMPTS.length)];
+}
+
+function resolveSeasonSignupContext(req) {
+  const regId = req.session?.playerRegId;
+  if (!regId) return null;
+  const reg = getRegistration(regId);
+  if (!reg || reg.status !== 'approved') return null;
+  const sigSeason = getSetting('signup_target_season', '');
+  const sigOpen = getSetting('season_signup_open', '0') === '1';
+  if (!sigSeason || !sigOpen) return null;
+  return { regId, reg, sigSeason };
+}
+
+app.post('/season-signup/liveness-capture', express.json({ limit: '5mb' }), (req, res) => {
+  const ctx = resolveSeasonSignupContext(req);
+  if (!ctx) return res.status(401).json({ error: 'Not eligible to sign up right now.' });
+  const dataUrl = String(req.body?.dataUrl || '');
+  if (!/^data:image\/(jpeg|jpg|png);base64,/.test(dataUrl)) return res.status(400).json({ error: 'Invalid image.' });
+  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, photoData: dataUrl, via: 'inline', prompt: req.session.livenessPrompt || '' });
+  res.json({ ok: true });
+});
+
+// In-memory only — short-lived, single-use, never needs to survive a restart. token ->
+// { regId, playerId, season, expiresAt, consumed }. Pruned opportunistically on issue
+// rather than a dedicated interval, since traffic through this is inherently low (one
+// token per desktop user without a webcam, once per signup).
+const livenessTokens = new Map();
+const LIVENESS_TOKEN_TTL_MS = 10 * 60 * 1000;
+function pruneLivenessTokens() {
+  const now = Date.now();
+  for (const [token, info] of livenessTokens) if (info.expiresAt < now) livenessTokens.delete(token);
+}
+
+app.post('/season-signup/liveness-token', async (req, res) => {
+  const ctx = resolveSeasonSignupContext(req);
+  if (!ctx) return res.status(401).json({ error: 'Not eligible to sign up right now.' });
+  pruneLivenessTokens();
+  const token = randomBytes(16).toString('hex');
+  // Picked once here, not per mobile-page load — same token can be re-fetched (e.g. the
+  // phone reloads after a slow connection) without the prompt changing mid-attempt.
+  livenessTokens.set(token, { regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, expiresAt: Date.now() + LIVENESS_TOKEN_TTL_MS, consumed: false, prompt: randomLivenessPrompt() });
+  const url = `${getRequestOrigin(req)}/season-signup/liveness/${token}`;
+  const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 240 });
+  res.json({ ok: true, token, url, qrDataUrl });
+});
+
+app.get('/season-signup/liveness/:token', (req, res) => {
+  pruneLivenessTokens();
+  const info = livenessTokens.get(req.params.token);
+  const expired = !info || info.consumed || info.expiresAt < Date.now();
+  res.type('html').send(livenessMobilePage({ token: req.params.token, expired, prompt: info?.prompt || '' }));
+});
+
+app.post('/season-signup/liveness/:token/capture', express.json({ limit: '5mb' }), (req, res) => {
+  pruneLivenessTokens();
+  const token = req.params.token;
+  const info = livenessTokens.get(token);
+  if (!info || info.consumed || info.expiresAt < Date.now()) return res.status(410).json({ error: 'This link has expired.' });
+  const dataUrl = String(req.body?.dataUrl || '');
+  if (!/^data:image\/(jpeg|jpg|png);base64,/.test(dataUrl)) return res.status(400).json({ error: 'Invalid image.' });
+  info.consumed = true;
+  upsertLivenessCapture({ regId: info.regId, playerId: info.playerId, season: info.season, photoData: dataUrl, via: 'qr', prompt: info.prompt || '' });
+  broadcastLivenessCaptured(token);
+  res.json({ ok: true });
 });
 
 // ── Settle Balance (member-facing) ─────────────────────────────────────────────
@@ -6532,7 +6703,10 @@ app.post('/settle-balance', express.json({ limit: '20mb' }), async (req, res) =>
 import { adminSeasonsBody }    from './views/admin/seasons.js';
 import { adminSeasonBody }     from './views/admin/season.js';
 import { adminWaitlistBody }   from './views/admin/season-waitlist.js';
+import { adminSignupDetailBody } from './views/admin/season-signup-detail.js';
 import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
+import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
+import { adminLivenessListBody } from './views/admin/liveness-list.js';
 import { adminSeasonTeamsBody } from './views/admin/season-teams.js';
 
 app.get('/admin/seasons', requireAuth, (req, res) => {
@@ -6602,6 +6776,22 @@ app.get('/admin/season', requireAuth, (req, res) => {
   }));
 });
 
+// Shared by the waitlist list and the per-signup detail page — assessment/alignment/
+// liveness are looked up in JS rather than joined into stmtGetSeasonSignups since they're
+// small per-page lookups, not something that needs to scale past one season.
+function enrichSignup(s, sigSeason) {
+  s.assessment = s.player_id ? getPlayerAssessment(s.player_id, sigSeason) : null;
+  // "Overall game vs. the league" is the same headline comparison the assessment detail
+  // page leads with (adminAssessmentReviewBody's sectionB) — good enough as the one
+  // glance-level signal for the list; admin still clicks through for the full scoring/
+  // defense/overall breakdown. Not computed at all when there's no assessment to compare.
+  s.alignmentFlag = s.assessment && s.player_id
+    ? alignmentFlag(s.assessment.self_overall, getLatestPlayerRating(s.player_id)?.overall ?? null)
+    : null;
+  s.liveness = getLivenessCaptureByRegId(s.reg_id);
+  return s;
+}
+
 app.get('/admin/season/waitlist', requireAuth, (req, res) => {
   const sigSeason = getSetting('signup_target_season', '');
   if (!sigSeason) return res.redirect('/admin/season');
@@ -6609,23 +6799,27 @@ app.get('/admin/season/waitlist', requireAuth, (req, res) => {
   const signups        = getSeasonSignups(sigSeason);
   const count          = signups.filter(s => s.status !== 'rejected').length;
   const confirmedCount = signups.filter(s => s.status === 'confirmed').length;
-  // Mapped in JS rather than joined into the signups query — keeps that query untouched
-  // and this is a small per-page lookup, not something that needs to scale past one season.
-  for (const s of signups) {
-    s.assessment = s.player_id ? getPlayerAssessment(s.player_id, sigSeason) : null;
-    // "Overall game vs. the league" is the same headline comparison the assessment detail
-    // page leads with (adminAssessmentReviewBody's sectionB) — good enough as the one
-    // glance-level signal for the list; admin still clicks through for the full scoring/
-    // defense/overall breakdown. Not computed at all when there's no assessment to compare.
-    s.alignmentFlag = s.assessment && s.player_id
-      ? alignmentFlag(s.assessment.self_overall, getLatestPlayerRating(s.player_id)?.overall ?? null)
-      : null;
-  }
+  for (const s of signups) enrichSignup(s, sigSeason);
 
+  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   res.send(renderAdminPage(req, {
     title: 'Waitlist',
     currentPath: '/admin/season/waitlist',
-    body: adminWaitlistBody({ sigSeason, signups, count, confirmedCount }),
+    body: adminWaitlistBody({ sigSeason, signups, count, confirmedCount, isSuperAdmin }),
+  }));
+});
+
+app.get('/admin/season/signups/:id', requireAuth, (req, res) => {
+  const bare = getSeasonSignupById(req.params.id);
+  if (!bare) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/season/waitlist', body: '<p style="padding:40px;color:var(--text-muted)">Signup not found.</p>' }));
+  const signup = getSeasonSignups(bare.season).find(s => s.id === bare.id);
+  enrichSignup(signup, bare.season);
+
+  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  res.send(renderAdminPage(req, {
+    title: displayPlayerName(signup.full_name || 'Signup'),
+    currentPath: '/admin/season/waitlist',
+    body: adminSignupDetailBody({ signup, isSuperAdmin }),
   }));
 });
 
@@ -6648,6 +6842,58 @@ app.post('/admin/season/assessments/:id/tag', requireAuth, express.json(), (req,
   if (!['', 'no_concerns', 'worth_conversation', 'discuss_admin'].includes(tag)) return res.status(400).json({ error: 'invalid tag' });
   setAssessmentTag(a.id, tag, String(req.body?.note || ''));
   res.json({ ok: true });
+});
+
+// Super-admin-only, both to view and to purge — liveness captures are the most sensitive
+// thing this app stores (raw webcam photos), so this is one notch tighter than the rest of
+// the season-signup admin surface (requireAuth), which any elevated player-admin can reach.
+app.get('/admin/season/liveness', requireSuperAdmin, (req, res) => {
+  const captures = getAllLivenessCaptures();
+  const seasonSignups = new Map(); // season -> reg_id -> signup, fetched once per season present
+  for (const c of captures) {
+    if (!seasonSignups.has(c.season)) {
+      const byRegId = new Map();
+      for (const s of getSeasonSignups(c.season)) byRegId.set(s.reg_id, s);
+      seasonSignups.set(c.season, byRegId);
+    }
+    c.signupName = seasonSignups.get(c.season).get(c.reg_id)?.full_name || '';
+  }
+  res.send(renderAdminPage(req, {
+    title: 'Liveness Check Photos',
+    currentPath: '/admin/season/waitlist',
+    body: adminLivenessListBody({ captures }),
+  }));
+});
+
+app.delete('/admin/season/liveness/:id', requireSuperAdmin, (req, res) => {
+  const capture = getLivenessCaptureById(req.params.id);
+  if (!capture) return res.status(404).json({ error: 'not found' });
+  deleteLivenessCapture(req.params.id);
+  res.json({ ok: true });
+});
+
+// "Nothing goes out" — this decode-and-serve route is the ONLY place liveness_captures'
+// photo_data ever leaves the database. Never a public/CDN URL, never attached to an email
+// or export.
+app.get('/admin/season/liveness/:id/photo', requireSuperAdmin, (req, res) => {
+  const capture = getLivenessCaptureById(req.params.id);
+  if (!capture) return res.status(404).end();
+  const match = capture.photo_data.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return res.status(404).end();
+  res.set('Content-Type', match[1]);
+  res.set('Cache-Control', 'private, no-store');
+  res.end(Buffer.from(match[2], 'base64'));
+});
+
+app.get('/admin/season/liveness/:id', requireSuperAdmin, (req, res) => {
+  const capture = getLivenessCaptureById(req.params.id);
+  if (!capture) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/season/waitlist', body: '<p style="padding:40px;color:var(--text-muted)">Capture not found.</p>' }));
+  const signup = getSeasonSignups(capture.season).find(s => s.reg_id === capture.reg_id) || null;
+  res.send(renderAdminPage(req, {
+    title: 'Liveness Check',
+    currentPath: '/admin/season/waitlist',
+    body: adminLivenessReviewBody({ capture, signup }),
+  }));
 });
 
 app.post('/admin/season/start', requireAuth, express.json(), (req, res) => {
@@ -7623,20 +7869,56 @@ function broadcastToGame(gameId, payload) {
   }
 }
 
+// One room per liveness-check token — the desktop browser that generated the QR code
+// connects here and waits; the phone that scanned it never connects to this socket at all,
+// it just POSTs the capture over plain HTTP (see /season-signup/liveness/:token/capture)
+// and this is what tells the waiting desktop tab it arrived. Rooms are single-listener in
+// practice (one token = one desktop tab) but built as a Set for the same reason
+// gameCommentRooms is — a stray duplicate connection is a no-op, not a bug.
+const livenessRooms = new Map(); // token -> Set<WebSocket>
+function broadcastLivenessCaptured(token) {
+  const room = livenessRooms.get(token);
+  if (!room || !room.size) return;
+  const msg = JSON.stringify({ type: 'captured' });
+  for (const ws of room) {
+    if (ws.readyState === ws.OPEN) ws.send(msg);
+  }
+}
+
 const server = http.createServer(app);
 server.on('upgrade', (req, socket, head) => {
   const { pathname } = new URL(req.url, 'http://localhost');
-  const match = pathname.match(/^\/ws\/games\/([^/]+)\/comments$/);
-  if (!match || getSetting('comments_enabled', '0') !== '1') { socket.destroy(); return; }
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    const gameId = decodeURIComponent(match[1]);
-    if (!gameCommentRooms.has(gameId)) gameCommentRooms.set(gameId, new Set());
-    gameCommentRooms.get(gameId).add(ws);
-    ws.on('close', () => {
-      const room = gameCommentRooms.get(gameId);
-      if (room) { room.delete(ws); if (!room.size) gameCommentRooms.delete(gameId); }
+
+  const commentsMatch = pathname.match(/^\/ws\/games\/([^/]+)\/comments$/);
+  if (commentsMatch) {
+    if (getSetting('comments_enabled', '0') !== '1') { socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const gameId = decodeURIComponent(commentsMatch[1]);
+      if (!gameCommentRooms.has(gameId)) gameCommentRooms.set(gameId, new Set());
+      gameCommentRooms.get(gameId).add(ws);
+      ws.on('close', () => {
+        const room = gameCommentRooms.get(gameId);
+        if (room) { room.delete(ws); if (!room.size) gameCommentRooms.delete(gameId); }
+      });
     });
-  });
+    return;
+  }
+
+  const livenessMatch = pathname.match(/^\/ws\/liveness\/([^/]+)$/);
+  if (livenessMatch) {
+    const token = decodeURIComponent(livenessMatch[1]);
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      if (!livenessRooms.has(token)) livenessRooms.set(token, new Set());
+      livenessRooms.get(token).add(ws);
+      ws.on('close', () => {
+        const room = livenessRooms.get(token);
+        if (room) { room.delete(ws); if (!room.size) livenessRooms.delete(token); }
+      });
+    });
+    return;
+  }
+
+  socket.destroy();
 });
 
 server.listen(PORT, () => {

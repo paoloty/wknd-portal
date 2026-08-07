@@ -67,9 +67,10 @@ export function recordContext(row) {
   const opScore = Number(isA ? row.team_b_score : row.team_a_score);
   const opp     = (isA ? row.team_b_name : row.team_a_name) || '';
   const won     = myScore > opScore;
-  const isPO    = row.game_type === 'playoff';
+  const isPO      = row.game_type === 'playoff';
+  const isFinals  = row.game_type === 'finals';
   return {
-    opp, myScore, opScore, won, isPO,
+    opp, myScore, opScore, won, isPO, isFinals,
     result: `${won ? 'W' : 'L'} ${myScore}–${opScore}`,
   };
 }
@@ -135,7 +136,7 @@ function recordPanel(cat, top5, scope = 'alltime') {
     <div class="leader-panel__info">
       <div class="leader-panel__name">${playerLink(first.r.player_id, first.r.name, { upper: true })}</div>
       <span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(String(first.r.team_name || '').toUpperCase())}</span>
-      <a href="/games/${encodeURIComponent(first.r.game_id)}" class="record-panel__ctx">${escHtml(fmtRecordDate(first.r.date))} · vs ${escHtml(ctx.opp)} · <span class="${ctx.won ? 'record-ctx--w' : 'record-ctx--l'}">${escHtml(ctx.result)}</span>${ctx.isPO ? ' <span class="gl-badge gl-badge--po">PO</span>' : ''}</a>
+      <a href="/games/${encodeURIComponent(first.r.game_id)}" class="record-panel__ctx">${escHtml(fmtRecordDate(first.r.date))} · vs ${escHtml(ctx.opp)} · <span class="${ctx.won ? 'record-ctx--w' : 'record-ctx--l'}">${escHtml(ctx.result)}</span>${ctx.isPO ? ' <span class="gl-badge gl-badge--po">PO</span>' : ''}${ctx.isFinals ? ' <span class="gl-badge gl-badge--finals">F</span>' : ''}</a>
     </div>
     <div class="leader-panel__stat font-condensed">${escHtml(fmt(first.v))}</div>
   </div>

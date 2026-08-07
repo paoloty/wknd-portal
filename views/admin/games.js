@@ -77,7 +77,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
         <span class="${winner === 'b' ? 'agm-team--win' : 'text-slate-400 text-sm'}">${escHtml(g.team_b_name)}</span>
       </td>
       <td class="px-4 py-3">
-        <span class="agm-type${typeKey === 'playoff' ? ' agm-type--po' : ''}">${typeKey === 'playoff' ? 'PO' : 'RS'}</span>
+        <span class="agm-type${typeKey === 'playoff' ? ' agm-type--po' : typeKey === 'finals' ? ' agm-type--finals' : ''}">${typeKey === 'playoff' ? 'PO' : typeKey === 'finals' ? 'F' : 'RS'}</span>
       </td>
       <td class="px-4 py-3 text-xs text-slate-500">${escHtml(g.season || '—')}</td>
       <td class="px-4 py-3">${statusBadge(g)}</td>

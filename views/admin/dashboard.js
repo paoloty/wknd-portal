@@ -40,9 +40,10 @@ function kpi(label, value, sub = '', accent = false, href = '') {
 function gameRow(g) {
   const aWon = g.team_a_score > g.team_b_score;
   const bWon = g.team_b_score > g.team_a_score;
-  const isPO = g.game_type === 'playoff';
+  const isPO     = g.game_type === 'playoff';
+  const isFinals = g.game_type === 'finals';
   return `<div class="flex items-center gap-3 px-4 py-3 border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
-    <span class="w-16 shrink-0 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}${isPO ? `<span class="ml-1.5 text-[9px] font-bold text-brand">PO</span>` : ''}</span>
+    <span class="w-16 shrink-0 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}${isPO ? `<span class="ml-1.5 text-[9px] font-bold text-brand">PO</span>` : ''}${isFinals ? `<span class="ml-1.5 text-[9px] font-bold text-brand">F</span>` : ''}</span>
     <span class="flex-1 min-w-0 flex items-center gap-2 text-sm truncate">
       <span class="truncate ${aWon ? 'font-bold text-slate-100' : 'text-slate-400'}">${escHtml(g.team_a_name)}</span>
       <span class="font-saira font-bold text-slate-500 shrink-0">${g.team_a_score}–${g.team_b_score}</span>

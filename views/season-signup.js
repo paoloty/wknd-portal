@@ -16,9 +16,23 @@ const fmtMoney = v => (v ? `₱${Number(v).toLocaleString()}` : '');
 // Shared shell — back link, brand, subhead, and static context panels. Identical
 // across every branch (form / not-approved / not-open / existing-status), same
 // convention register.js uses for its own shell-left.
+// season_format is admin free text (e.g. "Double Round Robin · Top 4 Twice-to-Beat (1v4, 2v3) · Finals Best of 3").
+// Split on the middle-dot separator into a bulleted writeup; a single segment with no
+// separator just renders as a plain sentence.
+function formatPanel(seasonFormat) {
+  if (!seasonFormat) return '';
+  const items = seasonFormat.split(/[·•]/).map(s => s.trim()).filter(Boolean);
+  const body = items.length > 1
+    ? `<div class="format-list">${items.map(i => `<div class="format-item"><span class="format-dot"></span><span>${escHtml(i)}</span></div>`).join('')}</div>`
+    : `<p class="format-text">${escHtml(seasonFormat)}</p>`;
+  return `<div class="next-panel">
+    <div class="next-panel__label">League Format</div>
+    ${body}
+  </div>`;
+}
+
 function shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct }) {
   const infoRows = [
-    seasonFormat  ? `<div class="info-row"><span class="info-row__label">Format</span><span class="info-row__val">${escHtml(seasonFormat)}</span></div>` : '',
     quotaAmount   ? `<div class="info-row"><span class="info-row__label">Season Fee</span><span class="info-row__val">${escHtml(fmtMoney(quotaAmount))}</span></div>` : '',
     jerseyTopPrice ? `<div class="info-row"><span class="info-row__label">Jersey Top</span><span class="info-row__val">${escHtml(fmtMoney(jerseyTopPrice))}</span></div>` : '',
     jerseyShortPrice ? `<div class="info-row"><span class="info-row__label">Jersey Shorts</span><span class="info-row__val">${escHtml(fmtMoney(jerseyShortPrice))}</span></div>` : '',
@@ -47,6 +61,8 @@ function shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPr
         <div class="capacity-bar__label">Spots are filling up</div>
       </div>` : ''}
     </div>` : ''}
+
+    ${formatPanel(seasonFormat)}
 
     <div class="next-panel">
       <div class="next-panel__label">What happens next</div>
@@ -121,6 +137,11 @@ const stylesBlock = `<style>
 .info-row__label { color: var(--text-muted); }
 .info-row__val { color: var(--text); font-weight: 600; text-align: right; }
 
+.format-list { display: flex; flex-direction: column; gap: 10px; }
+.format-item { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+.format-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex-shrink: 0; margin-top: 6px; }
+.format-text { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; margin: 0; }
+
 .capacity-bar { margin-top: 16px; }
 .capacity-bar__track { height: 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border-solid); overflow: hidden; }
 .capacity-bar__fill { height: 100%; border-radius: 5px 0 0 5px; background: var(--amber); }
@@ -190,6 +211,42 @@ const stylesBlock = `<style>
 .fee-total__label { font-size: 12px; color: var(--text-muted); }
 .fee-total__amt { font-family: 'Saira Condensed'; font-weight: 800; font-size: 22px; color: var(--amber); font-variant-numeric: tabular-nums; }
 
+.hidden { display: none !important; }
+
+/* ── liveness check (Group 00) ────────────────────────────────────────── */
+#lv-idle { width: 100%; margin: 0 auto; }
+@media (min-width: 901px) {
+  #lv-idle { max-width: 360px; }
+}
+.lv-cam-wrap {
+  margin-top: 10px; width: 100%;
+  aspect-ratio: 3/4; background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px;
+  overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center;
+}
+.lv-cam-wrap video, .lv-cam-wrap canvas, .lv-cam-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lv-placeholder { font-size: 12px; color: var(--text-subtle); text-align: center; padding: 0 16px; }
+.lv-qr-overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 16px; text-align: center; background: var(--bg);
+}
+.lv-action-row {
+  position: absolute; left: 0; right: 0; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px 8px; justify-content: center; padding: 0 12px;
+}
+.lv-icon-btn {
+  display: flex; align-items: center; gap: 6px; background: var(--amber); color: #0a0e16; border: none; border-radius: 18px;
+  padding: 9px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35); letter-spacing: .02em;
+}
+.lv-icon-btn svg { flex-shrink: 0; }
+.lv-icon-btn--ghost { background: rgba(15,23,42,.78); color: #e2e8f0; border: 1px solid rgba(255,255,255,.15); }
+.lv-icon-btn:disabled { opacity: .5; cursor: default; }
+#lv-capture-btn { margin-top: 10px; }
+#lv-error { min-height: 0; }
+.lv-prompt {
+  margin: 10px 0 0; padding: 9px 12px; font-size: 12.5px; line-height: 1.5; color: var(--text);
+  background: rgba(245,147,50,.1); border: 1px solid rgba(245,147,50,.3); border-radius: 8px;
+}
+
 /* ── waiver text (Group 08) ───────────────────────────────────────────── */
 .waiver-box {
   max-height: 220px; overflow-y: auto; margin-top: 8px;
@@ -252,6 +309,8 @@ export function seasonSignupPage({
   returning = null,
   error = null,
   prefill = {},
+  existingLivenessCapture = null,
+  livenessPrompt = '',
 } = {}) {
   const wrap = right => `<div class="shell">
   ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct })}
@@ -279,7 +338,7 @@ ${stylesBlock}`;
     const teamPrefInfo = existing.team_pref ? `
       <div class="status-recap">
         <div class="status-recap__label">Team Preference</div>
-        <div class="status-recap__row">${existing.team_pref === 'stick' ? `Sticking with <strong>${escHtml(existing.prev_team_name || 'your team')}</strong>` : 'Open to a reshuffle'}</div>
+        <div class="status-recap__row">${existing.team_pref === 'stick' ? `Sticking with <strong>${escHtml(existing.prev_team_name || 'your team')}</strong>` : 'Open to a shuffle'}</div>
       </div>` : '';
 
     const body = existing.status === 'confirmed'
@@ -323,6 +382,7 @@ ${stylesBlock}`;
   const hasWaiverOnFile = !!reg?.waiver_agreed_at;
 
   const stepDefs = [
+    { key: 'liveness' },
     { key: 'jersey' },
     { key: 'mindset' },
     { key: 'selfAssess' },
@@ -338,12 +398,13 @@ ${stylesBlock}`;
   const totalSteps = stepDefs.length;
 
   const errorStep = (() => {
-    if (!error) return STEP.jersey;
+    if (!error) return STEP.liveness;
+    if (/liveness|photo/i.test(error)) return STEP.liveness;
     if (/jersey|shorts|pocket/i.test(error)) return STEP.jersey;
     if (/mindset|playing this season|losing badly|ref call|teammate|feedback|benched|work on/i.test(error)) return STEP.mindset;
     if (/self-rat|scoring vs|defense vs|overall game/i.test(error)) return STEP.selfAssess;
     if (/team|reshuffle your team|stick/i.test(error)) return STEP.teamPref || STEP.jersey;
-    if (/reshuffle/i.test(error)) return STEP.reshuffle;
+    if (/shuffle/i.test(error)) return STEP.reshuffle;
     if (/fee|payment plan/i.test(error)) return STEP.fee;
     if (/waiver|signature|fine print/i.test(error)) return STEP.waiver;
     if (/emergency|birthday|18/i.test(error)) return STEP.contact;
@@ -496,7 +557,7 @@ ${stylesBlock}`;
             <div class="field">
               <label>You played for <strong>${escHtml(returning.team.name)}</strong> last season (Season ${escHtml(String(returning.prevSeason))}) <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="team_pref" value="stick" ${checked('team_pref', 'stick')}> Stick with ${escHtml(returning.team.name)} for Season ${escHtml(String(sigSeason))}</label>
-              <label class="check check--radio"><input type="radio" name="team_pref" value="reshuffle" ${checked('team_pref', 'reshuffle')}> I'm open to being reshuffled onto a different team</label>
+              <label class="check check--radio"><input type="radio" name="team_pref" value="reshuffle" ${checked('team_pref', 'reshuffle')}> I'm open to being shuffled onto a different team</label>
             </div>
             <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.teamPref}">Continue &rarr;</button></div>
           </div>
@@ -510,6 +571,65 @@ ${stylesBlock}`;
     ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
 
     <form id="signup-form" method="POST" action="/season-signup" novalidate>
+
+      <div class="acc-item" data-item="${STEP.liveness}">
+        <button type="button" class="acc-header" data-toggle="${STEP.liveness}">
+          <span class="acc-num">${STEP.liveness}</span>
+          <span class="acc-header-text">
+            <span class="acc-header-label">Liveness Check</span>
+            <span class="acc-header-summary" data-summary="${STEP.liveness}">${existingLivenessCapture ? 'Already captured' : ''}</span>
+          </span>
+          <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="acc-body-inner">
+            <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.6">A quick photo helps admin confirm it's really you signing up &mdash; not an ID check, just a reference photo they can glance at next to your profile picture. <strong style="color:var(--text)">No automated matching, no pass/fail.</strong></p>
+            <label class="check">
+              <input type="checkbox" id="lv-consent">
+              <span>I understand a photo will be captured for admin's reference only &mdash; stored securely, never shown publicly, never sent anywhere else, and replaced if I do this again in a future season.</span>
+            </label>
+            <p style="font-size:11px;color:var(--text-subtle);margin:-4px 0 0">Separate from the liability waiver above &mdash; this consent covers the photo specifically.</p>
+
+            <div id="lv-idle" ${existingLivenessCapture ? 'class="hidden"' : ''}>
+              ${livenessPrompt ? `<p class="lv-prompt">🎉 Bonus round: <strong>${escHtml(livenessPrompt)}</strong></p>` : ''}
+              <div class="lv-cam-wrap" id="lv-cam-wrap">
+                <video id="lv-video" autoplay playsinline muted class="hidden"></video>
+                <canvas id="lv-canvas" class="hidden"></canvas>
+                <img id="lv-preview" class="hidden" alt="Captured photo preview">
+                <span id="lv-placeholder" class="lv-placeholder">Check the box above to continue</span>
+                <div id="lv-qr-panel" class="hidden lv-qr-overlay">
+                  <img id="lv-qr-img" alt="QR code" style="width:180px;height:180px;border-radius:8px;background:#fff;padding:8px">
+                  <p style="font-size:12px;color:var(--text-muted);margin:0">Scan with your phone's camera, take the photo there &mdash; this page updates automatically once it's in.</p>
+                </div>
+                <div class="lv-action-row" id="lv-action-row">
+                  <button type="button" class="lv-icon-btn" id="lv-start-btn" disabled title="Enable Camera">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span>Camera</span>
+                  </button>
+                  <button type="button" class="lv-icon-btn lv-icon-btn--ghost" id="lv-qr-btn" disabled title="Use My Phone Instead">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+                    <span>Phone</span>
+                  </button>
+                </div>
+              </div>
+              <button type="button" class="btn-next hidden" id="lv-capture-btn">Capture</button>
+              <div class="row hidden" id="lv-confirm-row" style="display:flex;gap:10px">
+                <button type="button" class="btn-next" id="lv-retake-btn" style="flex:1;background:var(--surface-2);color:var(--text)">Retake</button>
+                <button type="button" class="btn-next" id="lv-use-btn" style="flex:1">Use This Photo</button>
+              </div>
+              <div class="reg-field-error" id="lv-error"></div>
+            </div>
+            <div id="lv-done" class="${existingLivenessCapture ? '' : 'hidden'}" style="display:flex;align-items:center;gap:8px;padding:10px 0;color:#22c55e;font-size:13px;font-weight:600">
+              <span>&#10003;</span><span id="lv-done-text">Photo captured.</span>
+            </div>
+
+            <input type="hidden" name="liveness_captured" id="liveness_captured_input" value="${existingLivenessCapture ? 'on' : ''}">
+            <div class="nav">
+              <button type="button" class="btn-next" data-continue="${STEP.liveness}">Continue &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="acc-item" data-item="${STEP.jersey}">
         <button type="button" class="acc-header" data-toggle="${STEP.jersey}">
@@ -549,7 +669,7 @@ ${stylesBlock}`;
         <button type="button" class="acc-header" data-toggle="${STEP.reshuffle}">
           <span class="acc-num">${STEP.reshuffle}</span>
           <span class="acc-header-text">
-            <span class="acc-header-label">League Reshuffle Poll</span>
+            <span class="acc-header-label">League Shuffle Poll</span>
             <span class="acc-header-summary" data-summary="${STEP.reshuffle}"></span>
           </span>
           <svg class="acc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -557,8 +677,8 @@ ${stylesBlock}`;
         <div class="acc-body">
           <div class="acc-body-inner">
             <div class="field">
-              <label>Would you support a full league reshuffle for Season ${escHtml(String(sigSeason))}? <span class="req">*</span></label>
-              <label class="check check--radio"><input type="radio" name="reshuffle_vote" value="yes" ${checked('reshuffle_vote', 'yes')}> Yes, I'm open to a full reshuffle</label>
+              <label>Would you support a full league shuffle for Season ${escHtml(String(sigSeason))}? <span class="req">*</span></label>
+              <label class="check check--radio"><input type="radio" name="reshuffle_vote" value="yes" ${checked('reshuffle_vote', 'yes')}> Yes, I'm open to a full shuffle</label>
               <label class="check check--radio"><input type="radio" name="reshuffle_vote" value="no" ${checked('reshuffle_vote', 'no')}> No, keep teams mostly as-is</label>
             </div>
             <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.reshuffle}">Continue &rarr;</button></div>
@@ -710,6 +830,179 @@ ${stylesBlock}
     state[n] = n < errorStep ? 'done' : (n === errorStep ? 'open' : 'pending');
   });
 
+  // ── Liveness Check (Group 00) — fully discretionary, never blocks Continue. Inline
+  // capture posts straight to /season-signup/liveness-capture as soon as confirmed, and
+  // the QR path opens a WebSocket to /ws/liveness/:token and waits for the phone's capture
+  // to land — same shared infra as the mobile page at views/liveness-mobile.js. Required —
+  // Continue is gated on liveness_captured (see validateStep) via either path.
+  (function () {
+    var consent      = document.getElementById('lv-consent');
+    var startBtn     = document.getElementById('lv-start-btn');
+    var qrBtn        = document.getElementById('lv-qr-btn');
+    var captureBtn   = document.getElementById('lv-capture-btn');
+    var confirmRow   = document.getElementById('lv-confirm-row');
+    var retakeBtn    = document.getElementById('lv-retake-btn');
+    var useBtn       = document.getElementById('lv-use-btn');
+    var video        = document.getElementById('lv-video');
+    var canvas       = document.getElementById('lv-canvas');
+    var preview      = document.getElementById('lv-preview');
+    var placeholder  = document.getElementById('lv-placeholder');
+    var qrPanel      = document.getElementById('lv-qr-panel');
+    var qrImg        = document.getElementById('lv-qr-img');
+    var errorEl      = document.getElementById('lv-error');
+    var idleWrap     = document.getElementById('lv-idle');
+    var doneWrap     = document.getElementById('lv-done');
+    var doneText     = document.getElementById('lv-done-text');
+    var capturedInput = document.getElementById('liveness_captured_input');
+    if (!consent) return;
+
+    var stream = null, dataUrl = null, ws = null;
+
+    function setError(msg) { errorEl.textContent = msg || ''; }
+
+    // getUserMedia on an insecure origin (http://, and not literally "localhost") throws
+    // SYNCHRONOUSLY because navigator.mediaDevices itself is undefined there — that throw
+    // happens before any promise exists, so a plain .then()/.catch() never runs and the UI
+    // was silently stuck with no error shown. This wraps the call so that failure mode (and
+    // a hung permission prompt) both surface as a real, visible error instead of a freeze.
+    function requestCamera(constraints, onResult) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        onResult(null, 'insecure-context');
+        return;
+      }
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        onResult(null, 'timeout');
+      }, 12000);
+      navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
+        clearTimeout(timer);
+        if (settled) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+        settled = true;
+        onResult(s, null);
+      }).catch(function (err) {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        onResult(null, (err && err.name) || 'error');
+      });
+    }
+
+    function cameraErrorMessage(reason) {
+      if (reason === 'insecure-context') return 'Camera access needs a secure connection — try the phone option below instead.';
+      if (reason === 'timeout') return 'The camera permission prompt took too long to respond. Try again, or use the phone option below.';
+      if (reason === 'NotAllowedError') return "Camera access was denied — check your browser's permission settings, or try the phone option below.";
+      if (reason === 'NotFoundError') return 'No camera was found on this device — try the phone option below.';
+      return "Couldn't access the camera — try the phone option below.";
+    }
+
+    function markDone(text) {
+      idleWrap.classList.add('hidden');
+      doneWrap.classList.remove('hidden');
+      doneText.textContent = text;
+      capturedInput.value = 'on';
+      setError('');
+      var summary = document.querySelector('[data-summary="' + STEP.liveness + '"]');
+      if (summary) summary.textContent = 'Captured';
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+      if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+    }
+
+    consent.addEventListener('change', function () {
+      startBtn.disabled = !consent.checked;
+      qrBtn.disabled = !consent.checked;
+      placeholder.textContent = consent.checked ? 'Ready when you are' : 'Check the box above to continue';
+    });
+
+    startBtn.addEventListener('click', function () {
+      setError('');
+      requestCamera({ video: { facingMode: 'user' }, audio: false }, function (s, reason) {
+        if (!s) {
+          setError(cameraErrorMessage(reason));
+          return;
+        }
+        stream = s;
+        video.srcObject = s;
+        placeholder.classList.add('hidden');
+        video.classList.remove('hidden');
+        startBtn.classList.add('hidden');
+        qrBtn.classList.add('hidden');
+        captureBtn.classList.remove('hidden');
+      });
+    });
+
+    captureBtn.addEventListener('click', function () {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      preview.src = dataUrl;
+      preview.classList.remove('hidden');
+      video.classList.add('hidden');
+      captureBtn.classList.add('hidden');
+      confirmRow.classList.remove('hidden');
+    });
+
+    retakeBtn.addEventListener('click', function () {
+      dataUrl = null;
+      preview.classList.add('hidden');
+      video.classList.remove('hidden');
+      confirmRow.classList.add('hidden');
+      captureBtn.classList.remove('hidden');
+    });
+
+    useBtn.addEventListener('click', function () {
+      if (!dataUrl) return;
+      useBtn.disabled = true; retakeBtn.disabled = true;
+      setError('');
+      fetch('/season-signup/liveness-capture', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: dataUrl }),
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          useBtn.disabled = false; retakeBtn.disabled = false;
+          if (!res.ok) { setError(res.d.error || 'Could not save photo.'); return; }
+          markDone('Photo captured.');
+        })
+        .catch(function () {
+          useBtn.disabled = false; retakeBtn.disabled = false;
+          setError('Network error — try again.');
+        });
+    });
+
+    qrBtn.addEventListener('click', function () {
+      setError('');
+      qrBtn.disabled = true;
+      fetch('/season-signup/liveness-token', { method: 'POST' })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          qrBtn.disabled = false;
+          if (!res.ok) { setError(res.d.error || 'Could not generate QR code.'); return; }
+          qrImg.src = res.d.qrDataUrl;
+          qrPanel.classList.remove('hidden');
+          startBtn.classList.add('hidden');
+          qrBtn.classList.add('hidden');
+          placeholder.classList.add('hidden');
+
+          var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          ws = new WebSocket(proto + '//' + location.host + '/ws/liveness/' + encodeURIComponent(res.d.token));
+          ws.onmessage = function (ev) {
+            try {
+              var msg = JSON.parse(ev.data);
+              if (msg.type === 'captured') markDone('Photo received from your phone.');
+            } catch (e) {}
+          };
+        })
+        .catch(function () {
+          qrBtn.disabled = false;
+          setError('Network error — try again.');
+        });
+    });
+
+  })();
+
   var PRICING = ${JSON.stringify({ topPrice: Number(jerseyTopPrice) || 0, shortPrice: Number(jerseyShortPrice) || 0, quotaAmount: Number(quotaAmount) || 0, surchargeStep: Number(surchargeStep) || 0, pocketsPrice: Number(pocketsPrice) || 0 })};
   var SURCHARGE_TIERS = ['2XL', '3XL', '4XL', '5XL']; // mirrors lib/season-pricing.js — keep in sync
   function sizeSurchargeJs(size) {
@@ -777,7 +1070,7 @@ ${stylesBlock}
     }
     if (STEP.teamPref && n == STEP.teamPref) {
       var pref = checkedVal('team_pref');
-      el.textContent = pref === 'stick' ? 'Sticking with your team' : pref === 'reshuffle' ? 'Open to reshuffle' : '';
+      el.textContent = pref === 'stick' ? 'Sticking with your team' : pref === 'reshuffle' ? 'Open to shuffle' : '';
     }
     if (n == STEP.reshuffle) {
       var vote = checkedVal('reshuffle_vote');
@@ -825,6 +1118,13 @@ ${stylesBlock}
       else { fieldError(f, ''); }
     });
 
+    if (n == STEP.liveness) {
+      var capturedEl = form.querySelector('[name="liveness_captured"]');
+      var captured = !!(capturedEl && capturedEl.value === 'on');
+      var lvErrEl = document.getElementById('lv-error');
+      if (lvErrEl) lvErrEl.textContent = captured ? '' : 'Take a photo (or use your phone) before continuing.';
+      if (!captured) ok = false;
+    }
     if (n == STEP.jersey) {
       var hasTop = !!checkedVal('jersey_top');
       radioGroupError(form, 'jersey_top', hasTop ? '' : 'Pick a jersey top size.');
@@ -892,6 +1192,18 @@ ${stylesBlock}
       var next = String(parseInt(n, 10) + 1);
       if (state[next] !== undefined) { state[next] = 'open'; render(); }
     });
+  });
+
+  // Every step lives in the same <form> (just hidden via .is-pending), so a plain text
+  // input anywhere in it would otherwise trigger the browser's native "Enter submits the
+  // form" behavior straight through to the final submit button, skipping every step in
+  // between. Redirect Enter to whichever step is actually open instead.
+  form.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+    e.preventDefault();
+    var openStep = Object.keys(state).filter(function (k) { return state[k] === 'open'; })[0];
+    var btn = openStep && form.querySelector('[data-continue="' + openStep + '"]');
+    if (btn) btn.click();
   });
 
   form.addEventListener('submit', function (e) {

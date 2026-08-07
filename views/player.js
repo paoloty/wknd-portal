@@ -34,7 +34,11 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
   ].filter(Boolean).join('');
 
   const avatarInits = initials(player.name);
-  const uploadOverlay = isAdmin ? `
+  // Own-profile players get the same replace-photo affordance admins already had — the
+  // only thing that changes below is which endpoint the crop/save script posts to
+  // (see canEditPhoto/uploadScript).
+  const canEditPhoto = isAdmin || isOwnProfile;
+  const uploadOverlay = canEditPhoto ? `
     <label class="player-avatar-replace" id="pcp-label" title="Replace photo">
       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
@@ -43,6 +47,52 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
       <input type="file" id="pcp-file" accept="image/*" style="display:none">
     </label>` : '';
 
+  // Everyone else (including logged-out visitors) just gets a click-to-enlarge lightbox —
+  // same avatar image, same "has a photo → pointer cursor" affordance as the edit path, but
+  // no crop tool, no file input, nothing that implies they can change it.
+  const viewLightbox = canEditPhoto ? '' : `
+<div class="pcp-backdrop" id="pv-backdrop" hidden>
+  <div class="pcp-modal" style="max-width:420px">
+    <div class="pcp-modal__header">
+      <span class="pcp-modal__title">Photo</span>
+      <button class="pcp-modal__close" id="pv-close">&#x2715;</button>
+    </div>
+    <div class="pcp-modal__body" style="display:flex;align-items:center;justify-content:center">
+      <img id="pv-img" src="" alt="" style="max-width:100%;max-height:520px;object-fit:contain;display:block">
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var img = document.getElementById('player-avatar-img');
+  var backdrop = document.getElementById('pv-backdrop');
+  var lightboxImg = document.getElementById('pv-img');
+  var closeBtn = document.getElementById('pv-close');
+  if (!img || !backdrop) return;
+
+  function open() {
+    lightboxImg.src = img.src;
+    backdrop.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+  function close() {
+    backdrop.hidden = true;
+    document.body.style.overflow = '';
+  }
+
+  function markHasPhoto() { img.classList.add('player-avatar-img--has-photo'); }
+  if (img.complete && img.naturalWidth > 0) markHasPhoto();
+  else img.addEventListener('load', markHasPhoto);
+
+  img.addEventListener('click', function() {
+    if (!img.classList.contains('player-avatar-img--has-photo')) return;
+    open();
+  });
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
+})();
+</script>`;
+
   const leftCol = `<div class="player-hero__left">
     <div class="player-hero__avatar-wrap">
       <div class="player-hero__avatar" style="border-color:${color}">
@@ -50,11 +100,11 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
         <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
       </div>
       ${uploadOverlay}
+      ${viewLightbox}
     </div>
     <div class="player-hero__info">
       <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
       <div class="player-hero__meta">${metaParts}</div>
-      ${canReport ? reportPlayerSection(player, reportCategories, reportOtherCategoryId) : ''}
       ${isOwnProfile ? `
       <div class="player-hero__bio-block" id="bio-block">
         <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you.">${escHtml(bio)}</textarea>
@@ -64,6 +114,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
           <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
         </div>
       </div>` : (bio ? `<p class="player-hero__bio">${escHtml(bio)}</p>` : '')}
+      ${canReport ? reportPlayerSection(player, reportCategories, reportOtherCategoryId) : ''}
     </div>
   </div>`;
 
@@ -96,7 +147,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
       : `<p class="player-hero__no-stats">No games recorded yet.</p>`}
   </div>`;
 
-  const uploadScript = isAdmin ? `
+  const uploadScript = canEditPhoto ? `
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
 
 <div class="pcp-backdrop" id="pcp-backdrop" hidden>
@@ -220,7 +271,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
     label.classList.add('player-avatar-replace--loading');
     var canvas = cropper.getCroppedCanvas({ width: 400, height: 400, imageSmoothingQuality: 'high' });
     var dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-    fetch('/admin/player/' + encodeURIComponent(playerId) + '/photo', {
+    fetch(${isAdmin ? "'/admin/player/' + encodeURIComponent(playerId) + '/photo'" : "'/me/photo'"}, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dataUrl: dataUrl, originalDataUrl: pendingOriginalDataUrl || '' })
@@ -568,12 +619,14 @@ function gameLog(allRows, player, potgGameIds) {
     const myName  = (isA ? g.team_a_name : g.team_b_name) || '';
     const won     = myScore > opScore;
     const isPotg  = potgGameIds.has(g.id);
-    const isPO    = g.game_type === 'playoff';
+    const isPO     = g.game_type === 'playoff';
+    const isFinals = g.game_type === 'finals';
 
     const oppCell = `<div class="gl-opp">
       <span class="team-dot" style="background:${teamColor(oppName)}"></span>
       <a href="/games/${encodeURIComponent(g.id)}" class="gl-opp__link">${escHtml(String(oppName).toUpperCase())}</a>
       ${isPO ? '<span class="gl-badge gl-badge--po">PO</span>' : ''}
+      ${isFinals ? '<span class="gl-badge gl-badge--finals">F</span>' : ''}
     </div>`;
 
     if (g.status === 'dnp') {
@@ -932,15 +985,64 @@ function coachNoteCard(coachNote) {
 // Owner-only — top of the right sidebar on your own profile. Balance notice is
 // deliberately not dismissable (unlike the site-wide balance-bar): this is the one place
 // on the site meant to be a persistent record, not a transient reminder.
-function myProfileSidebar({ balanceAmount = 0, papawisGames = [] }) {
+// Status badges only shown for anything other than 'confirmed' — a confirmed charge/payment
+// is just a normal line, the ones actually worth flagging to the player are "this hasn't
+// been confirmed yet" or "this got voided," same distinction admin's ledger view makes.
+const TX_STATUS_LABEL = { pending: 'Pending', voided: 'Voided' };
+
+function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransactions = [] }) {
+  // Most-recent-first, capped — this is a glance-level "why do I owe this" list, not a
+  // full statement; the admin ledger view is the source of truth for everything.
+  const breakdownRows = balanceTransactions.slice(0, 8).map(tx => {
+    const isCharge = tx.type === 'charge';
+    const label = tx.notes || (isCharge ? 'Charge' : 'Payment');
+    const statusTag = TX_STATUS_LABEL[tx.status] ? `<span class="mp-balance-breakdown__status mp-balance-breakdown__status--${tx.status}">${TX_STATUS_LABEL[tx.status]}</span>` : '';
+    return `<div class="mp-balance-breakdown__row">
+      <div class="mp-balance-breakdown__label">
+        <span class="mp-balance-breakdown__desc">${escHtml(label)}</span>
+        <span class="mp-balance-breakdown__date">${escHtml(fmtShortDate(tx.date))}</span>
+      </div>
+      <span class="mp-balance-breakdown__amount mp-balance-breakdown__amount--${isCharge ? 'charge' : 'payment'}">${isCharge ? '+' : '−'}₱${Number(tx.amount).toLocaleString()}</span>
+      ${statusTag}
+    </div>`;
+  }).join('');
+
+  // One unified card (single border/background/radius) rather than the balance info and
+  // transaction history reading as two stacked boxes — the amber "you owe money" treatment
+  // now runs through the whole thing, divider between the two sections instead of a gap.
+  // History stays collapsed by default and caps at a fixed height + scroll once open, so a
+  // long list doesn't push Papawis/ratings further down the sidebar.
+  const historyToggleHtml = breakdownRows ? `
+  <button type="button" class="mp-balance-group__toggle" id="mp-balance-history-toggle" aria-expanded="false" aria-controls="mp-balance-history-body">
+    <span>Transaction History</span>
+    <svg class="mp-balance-history__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+  <div class="mp-balance-history__body" id="mp-balance-history-body">
+    <div class="mp-balance-breakdown">${breakdownRows}</div>
+  </div>
+  <script>
+  (function() {
+    var toggle = document.getElementById('mp-balance-history-toggle');
+    var wrap = document.getElementById('mp-balance-group');
+    if (!toggle || !wrap) return;
+    toggle.addEventListener('click', function() {
+      var open = wrap.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  })();
+  </script>` : '';
+
   const balanceHtml = balanceAmount > 0 ? `
-  <div class="mp-balance-card">
-    <svg width="18" height="18" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg>
-    <div>
-      <div class="mp-balance-card__title">Outstanding balance</div>
-      <div class="mp-balance-card__amount">₱${Number(balanceAmount).toLocaleString()}</div>
-      <a href="/settle-balance" class="mp-balance-card__cta">Settle balance →</a>
+  <div class="mp-balance-group" id="mp-balance-group">
+    <div class="mp-balance-card">
+      <svg width="18" height="18" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg>
+      <div>
+        <div class="mp-balance-card__title">Outstanding balance</div>
+        <div class="mp-balance-card__amount">₱${Number(balanceAmount).toLocaleString()}</div>
+        <a href="/settle-balance" class="mp-balance-card__cta">Settle balance →</a>
+      </div>
     </div>
+    ${historyToggleHtml}
   </div>` : '';
 
   const papawisHtml = papawisGames.length ? `
@@ -1129,7 +1231,7 @@ function ratingFeedCard(feed) {
 // ── Main export ───────────────────────────────────────────────────────────────
 export function playerPage({
   player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false,
-  fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisGames = [], coachNote = null,
+  fbLinked = null, isOwnProfile = false, balanceAmount = 0, balanceTransactions = [], papawisGames = [], coachNote = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
   canReport = false, reportCategories = [], reportOtherCategoryId = '',
@@ -1137,7 +1239,7 @@ export function playerPage({
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
   const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
-  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames }) : '';
+  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 
   const peerRatingsHtml = peerRatingsEnabled ? `

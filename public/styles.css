@@ -2553,15 +2553,24 @@ a.player-link:hover { color: var(--amber); }
 
 /* ── My Profile sidebar (owner-only: balance notice + papawis history) ─────── */
 .mp-sidebar { display: flex; flex-direction: column; gap: 14px; }
+
+/* One unified card — the amber "you owe money" treatment (background/border/top-accent)
+   lives on the outer group now, not on the balance row alone, so the transaction history
+   toggle+body underneath reads as the same card instead of a second box stacked below it.
+   Collapsed by default and capped at a fixed height with a scrollbar once open, so a long
+   history doesn't push Papawis/ratings further down the sidebar. */
+.mp-balance-group {
+  background: rgba(248,113,113,.06);
+  border: 1px solid rgba(248,113,113,.25);
+  border-top: 2px solid #f2b263;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
 .mp-balance-card {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: 16px 18px;
-  background: rgba(248,113,113,.06);
-  border: 1px solid rgba(248,113,113,.25);
-  border-top: 2px solid #f2b263;
-  border-radius: var(--radius);
   color: #f2b263;
 }
 .mp-balance-card svg { flex-shrink: 0; margin-top: 2px; }
@@ -2569,6 +2578,38 @@ a.player-link:hover { color: var(--amber); }
 .mp-balance-card__amount { font-size: 22px; font-weight: 800; color: #fbbf77; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .mp-balance-card__cta { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 700; color: #fbbf77; text-decoration: none; }
 .mp-balance-card__cta:hover { text-decoration: underline; }
+
+.mp-balance-group__toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: none; border: none; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: #f2b263; text-align: left;
+  padding: 12px 18px; border-top: 1px solid rgba(248,113,113,.2);
+}
+.mp-balance-group__toggle:hover { color: #fbbf77; }
+.mp-balance-history__chevron { flex-shrink: 0; transition: transform .2s ease; }
+.mp-balance-group.is-open .mp-balance-history__chevron { transform: rotate(180deg); }
+.mp-balance-history__body { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+.mp-balance-group.is-open .mp-balance-history__body { max-height: 260px; overflow-y: auto; }
+
+.mp-balance-breakdown { display: flex; flex-direction: column; padding: 0 18px 8px; }
+.mp-balance-breakdown__row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.mp-balance-breakdown__row:last-child { border-bottom: none; }
+.mp-balance-breakdown__label { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.mp-balance-breakdown__desc { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp-balance-breakdown__date { font-size: 11px; color: var(--text-muted); }
+.mp-balance-breakdown__amount { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp-balance-breakdown__amount--charge { color: #f87171; }
+.mp-balance-breakdown__amount--payment { color: #34d399; }
+.mp-balance-breakdown__status {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  padding: 2px 6px; border-radius: 10px; white-space: nowrap;
+}
+.mp-balance-breakdown__status--pending { background: rgba(245,147,50,.15); color: #f2b263; }
+.mp-balance-breakdown__status--voided { background: rgba(100,116,139,.2); color: #94a3b8; }
 
 .mp-papawis-list { display: flex; flex-direction: column; }
 .mp-papawis-item {
@@ -3435,6 +3476,7 @@ a.player-link:hover { color: var(--amber); }
 .gl-opp__link:hover { color: var(--amber); }
 .gl-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 1px 5px; border-radius: 4px; }
 .gl-badge--po { color: var(--amber); border: 1px solid rgba(245,147,50,0.4); }
+.gl-badge--finals { background: var(--amber); color: #0a0e16; border: 1px solid var(--amber); }
 .gl-result--w { color: #4ade80; }
 .gl-result--l { color: var(--text-muted); }
 .gl-result--dnp { color: var(--text-muted); font-style: italic; }
@@ -4270,6 +4312,7 @@ a.player-link:hover { color: var(--amber); }
   color: var(--text-muted);
 }
 .agm-type--po { background: rgba(245,147,50,0.12); color: var(--amber); }
+.agm-type--finals { background: var(--amber); color: #0a0e16; }
 .agm-badge {
   display: inline-block;
   padding: 2px 8px;
