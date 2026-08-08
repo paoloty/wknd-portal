@@ -7,8 +7,13 @@ const ICON_EDIT  = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" 
 const ICON_SPARK = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 1v2M6.5 10v2M1 6.5h2M10 6.5h2M3 3l1.5 1.5M8.5 8.5L10 10M3 10l1.5-1.5M8.5 4.5L10 3"/><circle cx="6.5" cy="6.5" r="2"/></svg>`;
 const ICON_RETRY = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
 const ICON_PHOTO = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2.5" width="11" height="8" rx="1.2"/><circle cx="4.3" cy="5.5" r="1"/><path d="M12 8l-3-2.5-4 3.5-2-1.5-1.5 1.5"/></svg>`;
+const ICON_GALLERY = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="11" height="11" rx="1.2"/><circle cx="4.3" cy="4.5" r="1"/><path d="M12 8.5l-3.5-3-4.5 4-1.5-1.3-1.5 1.3"/></svg>`;
 
 const SINGLE_PHOTO_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp']);
+// Every solo (one-player) award gets the per-row homepage toggle in playerRow(). Team/roster
+// awards (TEAM_TYPES, defined below) get an equivalent toggle at the group-card level instead,
+// since "show on homepage" is a per-award-type choice, not per-player, for those.
+const HOME_GALLERY_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp', 'scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader']);
 
 const AWARD_LABELS = {
   mvp:             'Season MVP',
@@ -84,7 +89,7 @@ function getStats(entry, isConf, statsMap = {}) {
 
 // ── Row builder ───────────────────────────────────────────────────────────────
 
-function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, colVal, withArticle, article, articleKey, articlePid, season, provisional }) {
+function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, colVal, withArticle, article, articleKey, articlePid, season, provisional, homeGalleryOn }) {
   const aKey = articleKey || type;
   const aPid = articlePid || '';
   const name   = displayPlayerName(pname || '');
@@ -123,6 +128,7 @@ function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, 
     ${provisional ? `<span style="font-size:10px;color:var(--text-muted)" title="Finals series still in progress — this pick may change and can't be confirmed yet">Series in progress</span>` : `
     ${!isConf ? `<button class="awd-action awd-action--confirm" title="Confirm" data-confirm-solo="${escHtml(type)}" data-confirm-pid="${escHtml(pid)}">${ICON_CHECK}</button>` : ''}
     ${isConf && SINGLE_PHOTO_TYPES.has(type) ? `<a class="awd-action" style="text-decoration:none" title="Edit photo" href="/admin/awards/${escHtml(String(season))}/${escHtml(type)}/graphic">${ICON_PHOTO}</a>` : ''}
+    ${isConf && HOME_GALLERY_TYPES.has(type) ? `<button class="awd-action${homeGalleryOn ? ' awd-action--home-on' : ''}" title="${homeGalleryOn ? 'Showing in homepage gallery — click to hide' : 'Show in homepage gallery'}" data-toggle-home="${escHtml(type)}" data-home-season="${escHtml(String(season))}" data-home-on="${homeGalleryOn ? '1' : '0'}">${ICON_GALLERY}</button>` : ''}
     <button class="awd-action" title="Change player" data-toggle-picker="${escHtml(rowId)}" data-award-type="${escHtml(type)}" data-confirmed-id="${escHtml(awdId || '')}" data-pid="${escHtml(pid)}">${ICON_EDIT}</button>
     ${isConf && awdId ? `<button class="awd-action awd-action--danger" title="Remove" data-remove-id="${escHtml(awdId)}">${ICON_X}</button>` : ''}
     ${withArticle && isConf ? `<button class="awd-action" title="Article" data-toggle-article="${escHtml(aKey)}">${ICON_SPARK}</button>` : ''}
@@ -156,7 +162,7 @@ function emptyRow(colspan = 8) {
 
 // ── Group card ────────────────────────────────────────────────────────────────
 
-function groupCard({ label, types, col, graphicType, season, byType, suggestions, articles, statsMap, maxRows = 5 }) {
+function groupCard({ label, types, col, graphicType, season, byType, suggestions, articles, statsMap, homeGallery = {}, maxRows = 5 }) {
   const isTeamGroup = types.some(t => TEAM_TYPES.has(t));
 
   // Show Confirm All button when any team type still has unconfirmed, non-provisional
@@ -218,7 +224,8 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
       const colVal = col === 'award' ? AWARD_LABELS[type] : '';
       const article = articles[type] || '';
       const provisional = !isConfSolo && !!sugg?.provisional;
-      return [playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isConfSolo, stats, col, colVal, withArticle: true, article, season, provisional })];
+      const homeGalleryOn = HOME_GALLERY_TYPES.has(type) && !!homeGallery[type];
+      return [playerRow({ rowId, pid, pname, tname, type, awdId, isConf: isConfSolo, stats, col, colVal, withArticle: true, article, season, provisional, homeGalleryOn })];
     }
   });
 
@@ -236,10 +243,18 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
     ? `<a href="/admin/awards/${escHtml(String(season))}/${escHtml(graphicType)}/graphic" style="display:flex;align-items:center;gap:5px;height:26px;padding:0 12px;font-size:11px;font-weight:700;font-family:inherit;background:transparent;border:1px solid #334155;color:#94a3b8;border-radius:8px;cursor:pointer;white-space:nowrap;text-decoration:none">${ICON_EDIT} Edit Graphic</a>`
     : '';
 
+  // Team/roster awards get this at the group level (one toggle per award type) instead of
+  // per-row like solo awards, since "show on homepage" isn't a per-player choice here.
+  const teamType = types[0];
+  const teamHomeOn = isTeamGroup && !!homeGallery[teamType];
+  const homeToggleBtn = (hasAnyConfirmed && isTeamGroup)
+    ? `<button style="display:flex;align-items:center;gap:5px;height:26px;padding:0 12px;font-size:11px;font-weight:700;font-family:inherit;border-radius:8px;cursor:pointer;white-space:nowrap;${teamHomeOn ? 'background:rgba(245,147,50,.12);border:1px solid rgba(245,147,50,.35);color:var(--amber)' : 'background:transparent;border:1px solid #334155;color:#94a3b8'}" title="${teamHomeOn ? 'Showing in homepage gallery — click to hide' : 'Show in homepage gallery'}" data-toggle-home="${escHtml(teamType)}" data-home-season="${escHtml(String(season))}" data-home-on="${teamHomeOn ? '1' : '0'}">${ICON_GALLERY} Homepage</button>`
+    : '';
+
   return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-4">
   <div class="card-label card-label--admin" style="padding:10px 16px">
     ${escHtml(label.toUpperCase())}
-    <div style="display:flex;gap:6px">${editGraphicBtn}${confirmAllBtn}${resuggestBtn}</div>
+    <div style="display:flex;gap:6px">${editGraphicBtn}${confirmAllBtn}${resuggestBtn}${homeToggleBtn}</div>
   </div>
   <div style="overflow-x:auto">
     <table class="w-full border-collapse has-col-dividers has-freeze-col">
@@ -263,7 +278,7 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export function adminAwardsBody({ season, seasons = [], awards = [], suggestions = {}, players = [], articles = {}, seasonStats = [] }) {
+export function adminAwardsBody({ season, seasons = [], awards = [], suggestions = {}, players = [], articles = {}, seasonStats = [], homeGallery = {} }) {
   const byType   = {};
   for (const row of awards) (byType[row.award_type] ??= []).push(row);
   const statsMap = Object.fromEntries(seasonStats.map(s => [s.id, s]));
@@ -276,7 +291,7 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
 
   const playerOptsJson = JSON.stringify(players.map(p => ({ id: p.id, name: p.name, team: p.team_id })));
 
-  const cards = AWARD_GROUPS.map(g => groupCard({ ...g, season, byType, suggestions, articles, statsMap })).join('');
+  const cards = AWARD_GROUPS.map(g => groupCard({ ...g, season, byType, suggestions, articles, statsMap, homeGallery })).join('');
 
   return `
 <style>
@@ -341,6 +356,7 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
 .awd-action:hover { background: rgba(255,255,255,.06); border-color: var(--admin-border, #1e293b); color: var(--text); }
 .awd-action--confirm:hover { color: #22c55e; border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.08); }
 .awd-action--danger:hover  { color: #f87171; border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.08); }
+.awd-action--home-on       { color: var(--amber); border-color: rgba(245,147,50,.35); background: rgba(245,147,50,.08); }
 </style>
 
 <div class="mb-5 flex items-center justify-between">
@@ -406,6 +422,26 @@ document.querySelectorAll('[data-picker-save]').forEach(function(btn) {
       if (msg) { msg.textContent = 'Error'; msg.style.color = '#f87171'; }
       this.disabled = false; this.innerHTML = orig;
     }
+  });
+});
+
+// ── Homepage gallery toggle ───────────────────────────────────────────────────
+document.querySelectorAll('[data-toggle-home]').forEach(function(btn) {
+  btn.addEventListener('click', async function() {
+    var type = this.dataset.toggleHome;
+    var season = this.dataset.homeSeason;
+    var nextOn = this.dataset.homeOn !== '1';
+    var orig = this.innerHTML; this.disabled = true; this.textContent = '…';
+    try {
+      var body = {};
+      body['award_home_' + type + '_' + season] = nextOn ? '1' : '0';
+      var r = await fetch('/admin/site/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) throw new Error();
+      location.reload();
+    } catch(e) { this.disabled = false; this.innerHTML = orig; }
   });
 });
 

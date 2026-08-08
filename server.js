@@ -736,7 +736,7 @@ function ogStatLine(row, type) {
   return parts.filter(Boolean).join('  ·  ');
 }
 
-function buildTeamAwardOgSvg(rows, badge, season) {
+function buildTeamAwardOgSvg(rows, badge, season, { text: showText = true } = {}) {
   const W = 1200, H = 630, N = rows.length;
   const STRIP_W = Math.floor(W / N);
   const isDefTeam = badge._type === 'all_wknd_def';
@@ -789,13 +789,13 @@ function buildTeamAwardOgSvg(rows, badge, season) {
   ${i > 0 ? `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#0d1424" stroke-width="2"/>` : ''}
 
   <!-- position pill (above stats) -->
-  ${posKey ? `<rect x="${posPillX}" y="${PILL_RY}" width="${posPillW}" height="${PILL_H}" rx="${PILL_H / 2}" fill="none" stroke="${badgeBg}" stroke-width="1.5"/>
+  ${showText && posKey ? `<rect x="${posPillX}" y="${PILL_RY}" width="${posPillW}" height="${PILL_H}" rx="${PILL_H / 2}" fill="none" stroke="${badgeBg}" stroke-width="1.5"/>
   <text x="${cx}" y="${pillTextY}" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="800" fill="${badgeBg}" text-anchor="middle" letter-spacing="0.8">${posLbl}</text>` : ''}
 
   <!-- bottom content -->
-  <text x="${cx}" y="${H - 78}" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>
+  ${showText ? `<text x="${cx}" y="${H - 78}" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>
   <text x="${cx}" y="${H - 54}" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="0.5">${escXml(first)}</text>
-  <text x="${cx}" y="${H - 26}" font-family="Arial,Helvetica,sans-serif" font-size="21" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="1">${escXml(last)}</text>
+  <text x="${cx}" y="${H - 26}" font-family="Arial,Helvetica,sans-serif" font-size="21" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="1">${escXml(last)}</text>` : ''}
 
   <!-- bottom accent bar -->
   <rect x="${x}" y="${H - 5}" width="${STRIP_W}" height="5" fill="${tc}"/>`;
@@ -812,7 +812,7 @@ function buildTeamAwardOgSvg(rows, badge, season) {
 
   ${strips}
 
-  <!-- header banner -->
+  ${showText ? `<!-- header banner -->
   <rect x="0" y="0" width="${W}" height="72" fill="url(#banner-bg)"/>
   <!-- left accent bar -->
   <rect x="0" y="0" width="5" height="72" fill="${badgeBg}"/>
@@ -828,7 +828,7 @@ function buildTeamAwardOgSvg(rows, badge, season) {
   <text x="${W - 22}" y="55" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" fill="#64748b" text-anchor="end" letter-spacing="1">${escXml(String(season))}</text>
 
   <!-- watermark -->
-  <text x="${W - 22}" y="${H - 13}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#1e293b" text-anchor="end" letter-spacing="3">WKNDBASKETBALL.COM</text>
+  <text x="${W - 22}" y="${H - 13}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#1e293b" text-anchor="end" letter-spacing="3">WKNDBASKETBALL.COM</text>` : ''}
 </svg>`;
 }
 
@@ -869,10 +869,13 @@ async function renderPhotoStrip(url, stripW, h, override) {
 // award share graphic. `awardType` is the key used to look up per-player photo
 // overrides saved via the award-graphic editor (a synthetic id like 'stat-leaders'
 // for graphics that combine multiple award rows into one image).
-async function buildOgStripPng({ rows, season, awardType, svg, W = 1200, H = 630 }) {
+async function buildOgStripPng({ rows, season, awardType, svg, W = 1200, H = 630, text = true }) {
   const N = rows.length;
   const STRIP_W = Math.floor(W / N);
   const overrides = getAwardPhotoOverrides(season, awardType);
+  // See buildPlayerAwardOgPng's photoTop for why this needs to track `text`: with no
+  // banner drawn there's nothing reserving the top 72px, so the photo should fill it.
+  const photoTop = text ? 72 : 0;
 
   const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 2, g: 8, b: 23 } } })
     .png().toBuffer();
@@ -881,7 +884,7 @@ async function buildOgStripPng({ rows, season, awardType, svg, W = 1200, H = 630
     const override = overrides[row.player_id];
     const url = (override && override.photo_url) || row.picture_url;
     const buf = await renderPhotoStrip(url, STRIP_W, H, override);
-    return buf ? { input: buf, top: 72, left: i * STRIP_W } : null;
+    return buf ? { input: buf, top: photoTop, left: i * STRIP_W } : null;
   }));
 
   const layers = photoLayers.filter(Boolean);
@@ -889,19 +892,21 @@ async function buildOgStripPng({ rows, season, awardType, svg, W = 1200, H = 630
   const svgBuf = await sharp(Buffer.from(svg), { density: 96 }).resize(W, H).png().toBuffer();
   layers.push({ input: svgBuf, top: 0, left: 0 });
 
-  const logoBuf = await getWkndLogoBuf();
-  if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
+  if (text) {
+    const logoBuf = await getWkndLogoBuf();
+    if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
+  }
 
   return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
 }
 
-async function buildTeamAwardOgPng(rows, badge, season) {
+async function buildTeamAwardOgPng(rows, badge, season, { text = true } = {}) {
   const N = Math.min(rows.length, 5);
   const sorted = [...rows]
     .sort((a, b) => (POSITION_ORDER_OG_MAP[a.notes] ?? 99) - (POSITION_ORDER_OG_MAP[b.notes] ?? 99))
     .slice(0, N);
-  const svg = buildTeamAwardOgSvg(sorted, badge, season);
-  return buildOgStripPng({ rows: sorted, season, awardType: badge._type, svg });
+  const svg = buildTeamAwardOgSvg(sorted, badge, season, { text });
+  return buildOgStripPng({ rows: sorted, season, awardType: badge._type, svg, text });
 }
 
 // crown (MVP) / shield (DPOY) — filled, drawn in the badge's own text color so they sit
@@ -911,7 +916,7 @@ const AWARD_ICON_PATH = {
   dpoy: { viewBox: '0 0 24 26', d: 'M12 1l10 4v7c0 6.5-4.3 11-10 13-5.7-2-10-6.5-10-13V5l10-4z' },
 };
 
-function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
+function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto, { text: showText = true } = {}) {
   const W = 1200, H = 630;
   const cx = W / 2;
 
@@ -947,8 +952,8 @@ function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
   const statsY = isPrestige ? 598 : 584;
   const statsFs = isPrestige ? 19 : 15;
 
-  let badgeSvg;
-  if (isPrestige && icon) {
+  let badgeSvg = '';
+  if (showText && isPrestige && icon) {
     const iconSize = 18, gap = 8, padX = 20;
     const textW  = badge.label.length * 8.3;
     const iconW  = iconSize * (icon.viewBox.split(' ')[2] / icon.viewBox.split(' ')[3]);
@@ -963,7 +968,7 @@ function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
   <rect x="${pillX}" y="${pillY}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="${badgeBg}"/>
   <svg x="${iconX}" y="${iconY}" width="${iconW}" height="${iconSize}" viewBox="${icon.viewBox}" fill="${badgeTxt}"><path d="${icon.d}"/></svg>
   <text x="${textX}" y="${textY}" font-family="Arial,Helvetica,sans-serif" font-size="${pillFs}" font-weight="800" fill="${badgeTxt}" text-anchor="middle" letter-spacing="1.2">${badgeLbl}</text>`;
-  } else {
+  } else if (showText) {
     const pillW = Math.min(Math.round(badge.label.length * 6.4 + 36), W - 100);
     const pillX = Math.round(cx - pillW / 2);
     badgeSvg = `
@@ -1004,34 +1009,34 @@ function buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto) {
   <rect x="0" y="0" width="${W}" height="${H}" fill="url(#edge-r)"/>
 
   <!-- Team name -->
-  <text x="${cx}" y="${teamY}" font-family="Arial,Helvetica,sans-serif" font-size="${teamFs}" font-weight="700" fill="${tc}" text-anchor="middle" letter-spacing="4">${tn}</text>
+  ${showText ? `<text x="${cx}" y="${teamY}" font-family="Arial,Helvetica,sans-serif" font-size="${teamFs}" font-weight="700" fill="${tc}" text-anchor="middle" letter-spacing="4">${tn}</text>` : ''}
 
   <!-- Award badge -->
   ${badgeSvg}
 
   <!-- Player name -->
-  <text x="${cx}" y="${firstY}" font-family="Arial,Helvetica,sans-serif" font-size="${firstFs}" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="1">${escXml(first)}</text>
-  <text x="${cx}" y="${lastY}" font-family="Arial,Helvetica,sans-serif" font-size="${lastFs}" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="-1">${escXml(last)}</text>
+  ${showText ? `<text x="${cx}" y="${firstY}" font-family="Arial,Helvetica,sans-serif" font-size="${firstFs}" font-weight="400" fill="#64748b" text-anchor="middle" letter-spacing="1">${escXml(first)}</text>
+  <text x="${cx}" y="${lastY}" font-family="Arial,Helvetica,sans-serif" font-size="${lastFs}" font-weight="800" fill="#f1f5f9" text-anchor="middle" letter-spacing="-1">${escXml(last)}</text>` : ''}
 
   <!-- Stats -->
-  ${stats ? `<text x="${cx}" y="${statsY}" font-family="Arial,Helvetica,sans-serif" font-size="${statsFs}" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>` : ''}
+  ${showText && stats ? `<text x="${cx}" y="${statsY}" font-family="Arial,Helvetica,sans-serif" font-size="${statsFs}" font-weight="700" fill="#f59332" text-anchor="middle" letter-spacing="1">${stats}</text>` : ''}
 
   <!-- Banner -->
-  <rect x="0" y="0" width="${W}" height="72" fill="url(#banner-bg)"/>
+  ${showText ? `<rect x="0" y="0" width="${W}" height="72" fill="url(#banner-bg)"/>
   <rect x="0" y="0" width="5" height="72" fill="${badgeBg}"/>
   <rect x="0" y="69" width="${W}" height="3" fill="${badgeBg}" opacity="0.35"/>
   <text x="22" y="26" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="${badgeBg}" letter-spacing="3" opacity="0.8">WKND BASKETBALL</text>
   <text x="22" y="55" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="800" fill="#f1f5f9" letter-spacing="1.5">${badgeLbl}</text>
   <text x="${W - 22}" y="27" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="600" fill="#475569" text-anchor="end" letter-spacing="3">SEASON</text>
-  <text x="${W - 22}" y="55" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" fill="#64748b" text-anchor="end" letter-spacing="1">${escXml(String(season))}</text>
+  <text x="${W - 22}" y="55" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" fill="#64748b" text-anchor="end" letter-spacing="1">${escXml(String(season))}</text>` : ''}
 
   <!-- Bottom accent + watermark -->
   <rect x="0" y="${H - 5}" width="${W}" height="5" fill="${tc}"/>
-  <text x="${W - 22}" y="${H - 13}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#1e293b" text-anchor="end" letter-spacing="3">WKNDBASKETBALL.COM</text>
+  ${showText ? `<text x="${W - 22}" y="${H - 13}" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#1e293b" text-anchor="end" letter-spacing="3">WKNDBASKETBALL.COM</text>` : ''}
 </svg>`;
 }
 
-async function buildPlayerAwardOgPng(row, type, badge, season) {
+async function buildPlayerAwardOgPng(row, type, badge, season, { text = true } = {}) {
   const W = 1200, H = 630;
 
   // MVP/DPOY can show a multi-image cover (several photos of this same confirmed player
@@ -1048,25 +1053,38 @@ async function buildPlayerAwardOgPng(row, type, badge, season) {
   const layers = [];
   let hasPhoto = false;
   const stripW = n > 1 ? Math.floor(W / n) : W;
+  // Photos are normally pushed down 72px so the banner has a background to sit on;
+  // with no banner drawn there's nothing reserving that space, so let the photo fill
+  // the full canvas instead of leaving the bare navy base color exposed at the top.
+  const photoTop = text ? 72 : 0;
   for (let i = 0; i < Math.max(n, 1); i++) {
     const override = overridesBySlot[i] || null;
     const photoUrl = (override && override.photo_url) || row.picture_url;
     if (!photoUrl) continue;
     const buf = await renderPhotoStrip(photoUrl, stripW, H, override);
-    if (buf) { layers.push({ input: buf, top: 72, left: i * stripW }); hasPhoto = true; }
+    if (buf) { layers.push({ input: buf, top: photoTop, left: i * stripW }); hasPhoto = true; }
   }
 
-  const svgBuf = await sharp(Buffer.from(buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto)), { density: 96 })
+  const svgBuf = await sharp(Buffer.from(buildPlayerAwardOgSvg(row, type, badge, season, hasPhoto, { text })), { density: 96 })
     .resize(W, H).png().toBuffer();
   layers.push({ input: svgBuf, top: 0, left: 0 });
 
-  const logoBuf = await getWkndLogoBuf();
-  if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
+  if (text) {
+    const logoBuf = await getWkndLogoBuf();
+    if (logoBuf) layers.push({ input: logoBuf, top: 17, left: W - 148 });
+  }
 
   return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
 }
 
 const STAT_LEADER_TYPES = ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'];
+// All solo (one-player) award types vs. the team/roster ones — used to pick which hero-slide
+// shape (single photo + writeup vs. team strip graphic + no writeup) a homepage gallery
+// entry gets. Champion isn't in TEAM_AWARD_TYPES_OG (no public og-image route exists for it
+// yet — the graphic editor was never wired up for it), but it still gets the team-strip
+// treatment here since it's roster-wide, not single-player.
+const HOME_GALLERY_SOLO_TYPES = [...SINGLE_PHOTO_AWARD_TYPES, ...STAT_LEADER_TYPES];
+const HOME_GALLERY_TEAM_TYPES = [...TEAM_AWARD_TYPES_OG, 'champion'];
 
 function statLeaderValueUnit(row) {
   const gp = row.games_played || 1;
@@ -3299,10 +3317,13 @@ app.get('/admin/awards', requireAuth, (req, res) => {
       articles[key] = getSetting(`award_article_${key}_${season}`, '');
     }
   }
+  const homeGallery = Object.fromEntries(
+    AWARD_SECTION_KEYS.map(k => [k, getSetting(`award_home_${k}_${season}`, '0') === '1'])
+  );
   res.send(renderAdminPage(req, {
     title: 'Season Awards',
     currentPath: '/admin/awards',
-    body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles, seasonStats }),
+    body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles, seasonStats, homeGallery }),
   }));
 });
 
@@ -3737,8 +3758,9 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
   ]);
   const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
+  const homeGalleryKeyRe = new RegExp(`^award_home_(${AWARD_SECTION_KEYS.join('|')})_\\d+$`);
   for (const [key, value] of Object.entries(req.body || {})) {
-    if (staticAllowed.has(key) || articleKeyRe.test(key)) setSetting(key, String(value));
+    if (staticAllowed.has(key) || articleKeyRe.test(key) || homeGalleryKeyRe.test(key)) setSetting(key, String(value));
   }
   res.json({ ok: true });
 });
@@ -4122,10 +4144,60 @@ app.get('/', (req, res) => {
 
   const homePosts = getSetting('posts_enabled', '0') === '1' ? getPublicPosts() : [];
 
+  let awardsGallery = [];
+  if (getSetting('awards_enabled', '1') !== '0') {
+    const awardSeason = getPortalCurrentSeason();
+    if (awardSeason) {
+      const seasonAwards = getSeasonAwards(awardSeason);
+
+      const soloItems = HOME_GALLERY_SOLO_TYPES
+        .filter(type => getSetting(`award_home_${type}_${awardSeason}`, '0') === '1')
+        .map(type => {
+          const row = seasonAwards.find(a => a.award_type === type);
+          if (!row) return null;
+          return {
+            kind: 'solo',
+            type,
+            label: AWARD_OG_BADGE[type].label,
+            playerId: row.player_id,
+            playerName: row.player_name,
+            teamName: row.team_name,
+            writeup: getSetting(`award_article_${type}_${awardSeason}`, ''),
+            imgUrl: `/api/awards/${awardSeason}/${type}/${encodeURIComponent(row.player_id)}/gallery-image.png`,
+          };
+        })
+        .filter(Boolean);
+
+      // Team/roster awards have no single confirmed player or shared writeup — the hero
+      // slide just shows the strip graphic with the award (and for Champions, the winning
+      // team) as the title, no excerpt.
+      const teamItems = HOME_GALLERY_TEAM_TYPES
+        .filter(type => getSetting(`award_home_${type}_${awardSeason}`, '0') === '1')
+        .map(type => {
+          const rows = seasonAwards.filter(a => a.award_type === type);
+          if (!rows.length) return null;
+          const label = AWARD_OG_BADGE[type].label;
+          const title = type === 'champion' && rows[0].team_name
+            ? `${rows[0].team_name} — ${label}`
+            : label;
+          return {
+            kind: 'team',
+            type,
+            label,
+            title,
+            imgUrl: `/api/awards/${awardSeason}/${type}/gallery-image.png`,
+          };
+        })
+        .filter(Boolean);
+
+      awardsGallery = [...soloItems, ...teamItems];
+    }
+  }
+
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner, signupBanner, posts: homePosts })
+    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner, signupBanner, posts: homePosts, awardsGallery })
   }));
 });
 
@@ -5581,6 +5653,32 @@ app.get('/api/awards/:season/:type/og-image.png', async (req, res) => {
   } catch (err) { console.error('award-team-og error:', err); res.status(500).end(); }
 });
 
+// Text-stripped variant for the homepage hero carousel — same team-strip graphic (photos,
+// crop overrides, gradients) without the banner/pill/watermark, since the hero slide draws
+// its own title/CTA as HTML. Also serves 'champion' (roster-wide, capped at 5 for the strip),
+// which the regular og-image route above doesn't support.
+app.get('/api/awards/:season/:type/gallery-image.png', async (req, res) => {
+  const season = Number(req.params.season);
+  const { type } = req.params;
+  if (!season) return res.status(404).end();
+  if (!AWARD_OG_BADGE[type] || !HOME_GALLERY_TEAM_TYPES.includes(type)) return res.status(404).end();
+  const badge    = { ...AWARD_OG_BADGE[type], _type: type };
+  const cacheKey = `team-gallery-${season}-${type}`;
+  try {
+    let entry = _awardOgCache.get(cacheKey);
+    if (!entry || Date.now() - entry.ts > 3_600_000) {
+      const rows = getSeasonAwards(season).filter(a => a.award_type === type);
+      if (!rows.length) return res.status(404).end();
+      const buf = await buildTeamAwardOgPng(rows, badge, season, { text: false });
+      entry = { buf, ts: Date.now() };
+      _awardOgCache.set(cacheKey, entry);
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(entry.buf);
+  } catch (err) { console.error('award-team-gallery error:', err); res.status(500).end(); }
+});
+
 app.get('/api/awards/:season/:type/:playerId/og-image.png', async (req, res) => {
   const season = Number(req.params.season);
   const { type, playerId } = req.params;
@@ -5600,6 +5698,31 @@ app.get('/api/awards/:season/:type/:playerId/og-image.png', async (req, res) => 
     res.set('Cache-Control', 'public, max-age=3600');
     res.end(entry.buf);
   } catch (err) { console.error('award-player-og error:', err); res.status(500).end(); }
+});
+
+// Same graphic as the og-image route above (photo, crop/zoom overrides, gradient/team-glow
+// treatment) with every text overlay stripped — used for the homepage hero carousel, which
+// draws its own title/writeup/CTA as HTML on top and doesn't want the baked-in labels
+// colliding with that.
+app.get('/api/awards/:season/:type/:playerId/gallery-image.png', async (req, res) => {
+  const season = Number(req.params.season);
+  const { type, playerId } = req.params;
+  if (!season || !AWARD_OG_BADGE[type]) return res.status(404).end();
+  const badge    = AWARD_OG_BADGE[type];
+  const cacheKey = `player-gallery-${season}-${type}-${playerId}`;
+  try {
+    let entry = _awardOgCache.get(cacheKey);
+    if (!entry || Date.now() - entry.ts > 3_600_000) {
+      const row = getSeasonAwards(season).find(a => a.award_type === type && a.player_id === playerId);
+      if (!row) return res.status(404).end();
+      const buf = await buildPlayerAwardOgPng(row, type, badge, season, { text: false });
+      entry = { buf, ts: Date.now() };
+      _awardOgCache.set(cacheKey, entry);
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(entry.buf);
+  } catch (err) { console.error('award-player-gallery error:', err); res.status(500).end(); }
 });
 
 app.get('/awards/share/:season/stat-leaders', (req, res) => {

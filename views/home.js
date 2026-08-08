@@ -5,14 +5,18 @@ import { scoreTicker } from './ticker.js';
 
 
 // ── Hero Carousel ─────────────────────────────────────────────────────────────
-function heroCarousel(games) {
-  if (!games.length) {
+// Game-recap slides (score, recap excerpt, full recap CTA) followed by any Season
+// Award slides (MVP/Finals MVP graphics — already have badge/name/stats baked into
+// the image itself, so no title/excerpt overlay is added; a top eyebrow link is
+// the only HTML text, kept clear of the baked-in bottom text).
+function heroCarousel(games, awardItems = []) {
+  if (!games.length && !awardItems.length) {
     return `<div class="card hero-carousel hero-carousel--empty">
   <span class="hero-carousel--empty__label">No games yet</span>
 </div>`;
   }
 
-  const slides = games.map((game, i) => {
+  const gameSlides = games.map((game, i) => {
     const scoreA = Number(game.team_a_score);
     const scoreB = Number(game.team_b_score);
     const winA = scoreA > scoreB;
@@ -53,11 +57,49 @@ function heroCarousel(games) {
 </div>`;
   });
 
-  const dots = games.map((_, i) =>
+  // Slide background is the award graphic itself (photo(s) + admin's crop/zoom override +
+  // its own team-glow/edge gradients, text stripped via gallery-image.png) — no hero-flare
+  // needed here since the graphic already carries that color treatment. Solo awards (one
+  // player) get a name + writeup excerpt; team/roster awards have no single player or
+  // shared writeup, so their slide is just the strip graphic + award (and for Champions,
+  // team) name as the title.
+  const awardSlides = awardItems.map((it, i) => {
+    const isActive = games.length === 0 && i === 0;
+
+    if (it.kind === 'team') {
+      return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
+  <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt=""></div>
+  <div class="hero-overlay"></div>
+  <div class="hero-date">${escHtml(it.label)}</div>
+  <div class="hero-content">
+    <h2 class="hero-title">${escHtml(it.title.toUpperCase())}</h2>
+    <a href="/awards" class="hero-cta">VIEW SEASON AWARDS <span>→</span></a>
+  </div>
+</div>`;
+    }
+
+    const name    = displayPlayerName(it.playerName || '').toUpperCase();
+    const writeup = String(it.writeup || '').replace(/\*\*/g, '').trim();
+
+    return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
+  <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt=""></div>
+  <div class="hero-overlay"></div>
+  <div class="hero-date">${escHtml(it.label)}</div>
+  <div class="hero-content">
+    <h2 class="hero-title">${escHtml(name)}</h2>
+    ${writeup ? `<p class="hero-excerpt">${escHtml(writeup.slice(0, 280))}</p>` : ''}
+    <a href="/awards" class="hero-cta">VIEW SEASON AWARDS <span>→</span></a>
+  </div>
+</div>`;
+  });
+
+  const slides = [...gameSlides, ...awardSlides];
+
+  const dots = slides.map((_, i) =>
     `<span class="hero-dot" style="width:${i === 0 ? '22px' : '8px'};background:${i === 0 ? '#f59332' : 'rgba(255,255,255,0.25)'}"></span>`
   ).join('');
 
-  const arrows = games.length > 1 ? `
+  const arrows = slides.length > 1 ? `
   <button id="hero-prev" class="hero-arrow hero-arrow--prev">&#8249;</button>
   <button id="hero-next" class="hero-arrow hero-arrow--next">&#8250;</button>` : '';
 
@@ -320,7 +362,7 @@ function latestPosts(posts) {
 </style>`;
 }
 
-export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null, signupBanner = null, posts = [] }) {
+export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -330,7 +372,7 @@ export function homePage({ teams, players, games, highlights = [], leaderPlayers
     .slice(0, 5);
 
   return `<div class="home-grid">
-  ${heroCarousel(completedGames.slice(0, 4))}
+  ${heroCarousel(completedGames.slice(0, 4), awardsGallery)}
   ${highlightsSidebar(highlights)}
 </div>
 
