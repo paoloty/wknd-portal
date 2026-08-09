@@ -35,15 +35,18 @@ export function livenessMobilePage({ token, expired = false, prompt = '' } = {})
   .status.ok { color:#22c55e; }
   .status.err { color:#f87171; }
   .hidden { display:none !important; }
-  .prompt { width:100%; max-width:360px; margin:0 0 14px; padding:9px 12px; font-size:12.5px; line-height:1.5; color:#e2e8f0; background:rgba(245,147,50,.1); border:1px solid rgba(245,147,50,.3); border-radius:8px; box-sizing:border-box; }
+  /* Pinned to the top of the camera view itself (not just above it) so it's still in
+     view at the moment of framing/capture, not just something read once beforehand. */
+  .prompt { position:absolute; top:0; left:0; right:0; z-index:1; margin:0; padding:10px 14px 16px; font-size:12px; line-height:1.4; color:#fff; text-align:center; background:linear-gradient(180deg, rgba(0,0,0,.72) 0%, rgba(0,0,0,.4) 65%, transparent 100%); box-sizing:border-box; }
+  .prompt strong { color:#f59332; }
 </style>
 </head>
 <body>
   <h1>Snap a Quick Photo</h1>
   <p class="sub">For admin's reference only — never shown publicly, never sent anywhere else. This finishes the Season Signup you started on your other device.</p>
-  ${prompt ? `<p class="prompt">🎉 Bonus round: <strong>${escHtml(prompt)}</strong></p>` : ''}
 
   <div class="cam-wrap">
+    ${prompt ? `<p class="prompt">📸 <strong>${escHtml(prompt)}</strong></p>` : ''}
     <video id="lv-video" autoplay playsinline muted></video>
     <canvas id="lv-canvas" class="hidden"></canvas>
     <img id="lv-preview" class="preview hidden" alt="Captured photo preview">

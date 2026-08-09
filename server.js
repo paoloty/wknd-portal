@@ -6715,9 +6715,14 @@ app.post('/season-signup/liveness-token', async (req, res) => {
   if (!ctx) return res.status(401).json({ error: 'Not eligible to sign up right now.' });
   pruneLivenessTokens();
   const token = randomBytes(16).toString('hex');
-  // Picked once here, not per mobile-page load — same token can be re-fetched (e.g. the
-  // phone reloads after a slow connection) without the prompt changing mid-attempt.
-  livenessTokens.set(token, { regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, expiresAt: Date.now() + LIVENESS_TOKEN_TTL_MS, consumed: false, prompt: randomLivenessPrompt() });
+  // Reuse the prompt already shown on the desktop page (session-scoped, set once at GET
+  // /season-signup) rather than drawing a fresh random one — this used to call
+  // randomLivenessPrompt() again here, so the phone would almost always ask for something
+  // different from what the user just read on the desktop screen. Stored on the token
+  // (not re-read from session on GET) so a slow-connection reload of the mobile page still
+  // shows the same prompt instead of re-rolling mid-attempt.
+  const prompt = req.session.livenessPrompt || randomLivenessPrompt();
+  livenessTokens.set(token, { regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, expiresAt: Date.now() + LIVENESS_TOKEN_TTL_MS, consumed: false, prompt });
   const url = `${getRequestOrigin(req)}/season-signup/liveness/${token}`;
   const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 240 });
   res.json({ ok: true, token, url, qrDataUrl });

@@ -43,8 +43,8 @@ export function registerPage({ error = null, success = false, prefill = {}, hype
       <div class="next-list">
         <div class="next-item"><span class="next-num">1</span><span class="next-text">Your application <strong>slides into the admin team's DMs</strong> for a thorough vibe check.</span></div>
         <div class="next-item"><span class="next-num">2</span><span class="next-text">They give it a proper once-over &mdash; takes a few days, we promise we're not just vibing.</span></div>
-        <div class="next-item"><span class="next-num">3</span><span class="next-text">You get <strong>The Email&trade;</strong> once you're in &mdash; screenshot it, it's basically a certificate. 📩</span></div>
-        <div class="next-item"><span class="next-num">4</span><span class="next-text">You're in, bestie &mdash; basically famous now, and ready for the next season signup.</span></div>
+        <div class="next-item"><span class="next-num">3</span><span class="next-text">You get <strong>The Email&trade;</strong> once you're in &mdash; it's not just a certificate, it's got your link to <strong>set your password</strong>. Actually click it. 📩</span></div>
+        <div class="next-item"><span class="next-num">4</span><span class="next-text">Set your password, log in, and you're in, bestie &mdash; basically famous now, ready for the next season signup.</span></div>
       </div>
     </div>
   </div>`;
@@ -168,6 +168,11 @@ export function registerPage({ error = null, success = false, prefill = {}, hype
 .next-item:last-child .next-num { background: var(--amber-dim); border-color: rgba(245,147,50,.4); color: var(--amber); }
 .next-text { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
 .next-text strong { color: var(--text); font-weight: 600; }
+
+/* Desktop never shows this — the sidebar's fixed side-by-side layout already makes
+   it obvious the form is a separate column. Only needed once the sidebar stacks on
+   top of the form on mobile (see the shell-right / form-start-anchor rules below). */
+.form-start-anchor { display: none; }
 
 /* A .shell-level sibling now (not nested in .shell-left) — on mobile this
    needs to render AFTER the whole form so the form is visible without
@@ -314,6 +319,15 @@ export function registerPage({ error = null, success = false, prefill = {}, hype
      still nested here, and was stacking on top of .shell-left's own bottom
      padding + .shell-right's top padding for a redundant, oversized gap. */
   .next-panel { margin-bottom: 0; }
+  /* Same circular numbered badge as the form's own .acc-num made this list easy to
+     mistake for the form itself when it's the first thing in the mobile fold —
+     square it off and shrink it so "what happens next" reads as a status list,
+     not step 1 of a wizard. */
+  .next-num { border-radius: 6px; width: 24px; height: 24px; font-size: 11px; }
+  /* Unambiguous handoff point right where the real form starts, so scrolling past
+     the steps panel doesn't leave it looking like the whole page. */
+  .form-start-anchor { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--amber); letter-spacing: .02em; margin-bottom: 18px; }
+  .form-start-anchor span { font-size: 16px; }
   /* The header disappears entirely on mobile (public/styles.css) — this takes
      over as the way to reach the rest of the site. Sits in the same row as
      the logo (shell-brand-row's align-items:center), pushed to the row's end. */
@@ -398,6 +412,8 @@ ${hypeAvatarsScript}`;
   ${shellLeftHtml}
 
   <div class="shell-right">
+
+    <div class="form-start-anchor" aria-hidden="true"><span>&#128071;</span> Fill Out Your Application</div>
 
     ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
 

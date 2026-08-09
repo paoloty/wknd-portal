@@ -29,6 +29,7 @@ export function adminLoginBody({ error = '', ref = '', next = '' } = {}) {
       </div>
       <button class="login-submit" type="submit">SIGN IN</button>
     </form>
+    <p class="login-hint">First time logging in? Check your email for your password-setup link.</p>
     <div class="login-divider"><span>or</span></div>
     <div class="login-social">
       <button class="login-social-btn" type="button" disabled>

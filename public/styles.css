@@ -516,6 +516,12 @@ body {
   border-radius: 4px;
   margin-left: auto;
 }
+.login-hint {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-subtle);
+}
 .login-register {
   margin: 20px 0 0;
   text-align: center;

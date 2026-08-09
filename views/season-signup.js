@@ -132,6 +132,12 @@ const stylesBlock = `<style>
 .next-text { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
 .next-text strong { color: var(--text); font-weight: 600; }
 
+/* Desktop never shows this — the sidebar's fixed side-by-side layout already makes
+   it obvious the form is a separate column. Only needed once the sidebar (Season
+   Info + League Format + What Happens Next, all stacked) sits on top of the form
+   on mobile — see the mobile media query below. */
+.form-start-anchor { display: none; }
+
 .info-list { display: flex; flex-direction: column; gap: 8px; }
 .info-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12.5px; }
 .info-row__label { color: var(--text-muted); }
@@ -240,10 +246,15 @@ const stylesBlock = `<style>
 .lv-icon-btn:disabled { opacity: .5; cursor: default; }
 #lv-capture-btn { margin-top: 10px; }
 #lv-error { min-height: 0; }
+/* Pinned to the top of the camera view itself (not just above it) so it's still
+   in view at the moment of framing/capture, not just something read once before
+   the camera even opened. Dark gradient backdrop keeps it legible over any feed. */
 .lv-prompt {
-  margin: 10px 0 0; padding: 9px 12px; font-size: 12.5px; line-height: 1.5; color: var(--text);
-  background: rgba(245,147,50,.1); border: 1px solid rgba(245,147,50,.3); border-radius: 8px;
+  position: absolute; top: 0; left: 0; right: 0; margin: 0; padding: 10px 14px 16px;
+  font-size: 12px; line-height: 1.4; color: #fff; text-align: center;
+  background: linear-gradient(180deg, rgba(0,0,0,.72) 0%, rgba(0,0,0,.4) 65%, transparent 100%);
 }
+.lv-prompt strong { color: var(--amber); }
 
 /* ── waiver text (Group 08) ───────────────────────────────────────────── */
 .waiver-box {
@@ -267,6 +278,15 @@ const stylesBlock = `<style>
   .shell-hamburger { display: flex; margin-left: auto; }
   .shell-right { width: 100%; margin-left: 0; padding: 48px 24px 24px; max-width: none; }
   .shell-right--status { min-height: 0; padding-top: 64px; }
+  /* Same circular numbered badge as the form's own .acc-num made this list easy to
+     mistake for the form itself when three stacked panels (Season Info, League
+     Format, What Happens Next) are the first thing in the mobile fold — square it
+     off and shrink it so these read as status lists, not step 1 of a wizard. */
+  .next-num { border-radius: 6px; width: 24px; height: 24px; font-size: 11px; }
+  /* Unambiguous handoff point right where the real form starts, so scrolling past
+     all that sidebar content doesn't leave it looking like the whole page. */
+  .form-start-anchor { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--amber); letter-spacing: .02em; margin-bottom: 18px; }
+  .form-start-anchor span { font-size: 16px; }
   .grid-2 { grid-template-columns: 1fr; }
   .acc-header { padding: 16px 18px; }
   .acc-body-inner { padding: 2px 18px 24px; }
@@ -557,6 +577,8 @@ ${stylesBlock}`;
   ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, capacityPct })}
 
   <div class="shell-right">
+    <div class="form-start-anchor" aria-hidden="true"><span>&#128071;</span> Fill Out Your Sign-Up</div>
+
     ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
 
     <form id="signup-form" method="POST" action="/season-signup" novalidate>
@@ -580,8 +602,8 @@ ${stylesBlock}`;
             <p style="font-size:11px;color:var(--text-subtle);margin:-4px 0 0">Separate from the liability waiver above &mdash; this consent covers the photo specifically.</p>
 
             <div id="lv-idle" ${existingLivenessCapture ? 'class="hidden"' : ''}>
-              ${livenessPrompt ? `<p class="lv-prompt">🎉 Bonus round: <strong>${escHtml(livenessPrompt)}</strong></p>` : ''}
               <div class="lv-cam-wrap" id="lv-cam-wrap">
+                ${livenessPrompt ? `<p class="lv-prompt">📸 <strong>${escHtml(livenessPrompt)}</strong></p>` : ''}
                 <video id="lv-video" autoplay playsinline muted class="hidden"></video>
                 <canvas id="lv-canvas" class="hidden"></canvas>
                 <img id="lv-preview" class="hidden" alt="Captured photo preview">
