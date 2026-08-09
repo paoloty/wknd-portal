@@ -124,8 +124,9 @@ function paidStatusHtml(s, candidates = []) {
 // locked — a plain table is simpler and less error-prone than trying to keep half the
 // drag/move affordances alive on a list that shouldn't actually change anymore.
 function lockedSummaryRow(s, { showPaid = false, unlinkedByPlayer = {} } = {}) {
-  const name = s.guest_name ? escHtml(s.guest_name) : escHtml(displayPlayerName(s.player_name));
-  return `<tr class="border-b border-admin-border/50 last:border-b-0">
+  const rawName = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
+  const name = escHtml(rawName);
+  return `<tr class="border-b border-admin-border/50 last:border-b-0" data-status="${s.status}" data-name="${escHtml(rawName)}" data-paid="${s.paid_at ? '1' : '0'}">
     <td class="px-4 py-2.5 text-sm font-medium text-slate-200">${name}${s.guest_name ? ' <span class="text-xs text-slate-500">(guest)</span>' : ''}</td>
     <td class="px-4 py-2.5 text-xs">${s.status === 'confirmed' ? '<span class="agm-badge agm-badge--green">Confirmed</span>' : '<span class="agm-badge agm-badge--amber">Waitlist</span>'}</td>
     <td class="px-4 py-2.5 text-xs text-slate-400">${papawisTeamLabel(s.team)}</td>
@@ -387,7 +388,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
 
   const signupRow = (s) => {
     const name = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
-    return `<li class="pw-row" ${canManage ? 'draggable="true"' : ''} data-id="${escHtml(s.id)}" data-status="${s.status}" data-name="${escHtml(name)}">
+    return `<li class="pw-row" ${canManage ? 'draggable="true"' : ''} data-id="${escHtml(s.id)}" data-status="${s.status}" data-name="${escHtml(name)}" data-paid="${s.paid_at ? '1' : '0'}">
       ${canManage ? `<span class="pw-row__handle" aria-hidden="true">⠿</span>` : ''}
       <div class="pw-row__info">
         <div class="pw-row__name">${s.guest_name ? `${escHtml(s.guest_name)} <span class="pw-row__guest-tag">(guest)</span>` : escHtml(displayPlayerName(s.player_name))}</div>
@@ -420,7 +421,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ${statusBadge(game)}
     ${isScheduled ? `<span class="text-xs text-slate-500">Sign-ups open ${fmtDate(addDaysStr(game.date, -game.open_days_before))}, 8:00 AM</span>` : ''}
     <a href="/papawis" target="_blank" class="agm-view-link">View on site ↗</a>
-    <button id="pw-copy-messenger" type="button" class="admin-btn admin-btn--sm">📋 Copy for Messenger</button>
+    <button id="pw-copy-messenger" type="button" class="admin-btn admin-btn--sm">${isCompleted ? '📋 Copy Payment Status' : '📋 Copy for Messenger'}</button>
     ${isOpen ? `<button id="pw-lock-btn" type="button" class="admin-btn admin-btn--sm" data-locked="${isLocked ? '1' : '0'}">${isLocked ? '🔓 Unlock Roster' : '🔒 Lock Roster'}</button>` : ''}
   </div>
 </div>
@@ -441,7 +442,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Team</th>
           ${isCompleted ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Paid</th>` : ''}
         </tr></thead>
-        <tbody>
+        <tbody id="pw-locked-body">
           ${[...confirmed, ...waitlist].map(s => lockedSummaryRow(s, { showPaid: isCompleted, unlinkedByPlayer })).join('') || `<tr><td colspan="${isCompleted ? 4 : 3}" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
         </tbody>
       </table>
@@ -566,6 +567,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
 (function() {
   var gameId = ${JSON.stringify(game.id)};
   var players = ${JSON.stringify(playerList)};
+  var isCompleted = ${JSON.stringify(isCompleted)};
 
   // ── Copy for Messenger ────────────────────────────────────────────────
   var gcMeta = ${JSON.stringify({
@@ -585,16 +587,50 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   }
 
   // Reads straight off the current DOM order rather than a snapshot taken at page load —
-  // drag-and-drop reorders and confirmed/waitlist moves update the DOM (and persist to the
-  // server) without a page reload, so a baked-in array would silently go stale the moment
-  // an admin reordered anything without refreshing first.
+  // drag-and-drop reorders, confirmed/waitlist moves, and Mark Paid/Unmark all update the
+  // DOM (and persist to the server) without a page reload, so a baked-in array would
+  // silently go stale the moment an admin touched anything without refreshing first.
   function pwCurrentNames(status) {
     var list = document.getElementById('pw-list-' + status);
     if (!list) return [];
     return Array.prototype.slice.call(list.querySelectorAll('.pw-row')).map(function(li) { return li.dataset.name || ''; });
   }
 
+  // A locked roster swaps the interactive board for a static summary table (see
+  // isLocked in adminPapawisDetailBody) — read whichever one is actually in the DOM.
+  function pwCurrentConfirmedWithPaid() {
+    var list = document.getElementById('pw-list-confirmed');
+    if (list) {
+      return Array.prototype.slice.call(list.querySelectorAll('.pw-row')).map(function(li) {
+        return { name: li.dataset.name || '', paid: li.dataset.paid === '1' };
+      });
+    }
+    var lockedBody = document.getElementById('pw-locked-body');
+    if (!lockedBody) return [];
+    return Array.prototype.slice.call(lockedBody.querySelectorAll('tr[data-status="confirmed"]')).map(function(tr) {
+      return { name: tr.dataset.name || '', paid: tr.dataset.paid === '1' };
+    });
+  }
+
+  function buildPaymentStatusText() {
+    var d = new Date(gcMeta.date + 'T00:00:00');
+    var monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    var confirmed = pwCurrentConfirmedWithPaid();
+
+    var lines = [];
+    lines.push('🏀 PPWS : ' + monthDay + ' — Payment Status 🏀');
+    lines.push('');
+    confirmed.forEach(function(p, i) {
+      lines.push((i + 1) + '. ' + p.name + ' ' + (p.paid ? '✅' : '❌'));
+    });
+    lines.push('');
+    lines.push('❌ = still unpaid — settle up through the Portal or send an admin your payment directly.');
+    return lines.join('\\n');
+  }
+
   function buildMessengerText() {
+    if (isCompleted) return buildPaymentStatusText();
+
     var d = new Date(gcMeta.date + 'T00:00:00');
     var dayName = d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
     var monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
