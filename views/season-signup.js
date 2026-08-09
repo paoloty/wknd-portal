@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { SIZES, sizeSurcharge, computeJerseyTotal } from '../lib/season-pricing.js';
+import { SIZES } from '../lib/season-pricing.js';
 import { TIERS, TIER_LABELS } from '../lib/assessment-scoring.js';
 
 const STATUS_LABEL = { waitlisted: 'Waitlisted', confirmed: 'Confirmed', rejected: 'Not Selected' };
@@ -31,11 +31,11 @@ function formatPanel(seasonFormat) {
   </div>`;
 }
 
-function shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct }) {
+// Jersey prices intentionally aren't shown here — this signup round only collects sizes,
+// jerseys aren't being charged yet (see initialTotal in the form below).
+function shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, capacityPct }) {
   const infoRows = [
     quotaAmount   ? `<div class="info-row"><span class="info-row__label">Season Fee</span><span class="info-row__val">${escHtml(fmtMoney(quotaAmount))}</span></div>` : '',
-    jerseyTopPrice ? `<div class="info-row"><span class="info-row__label">Jersey Top</span><span class="info-row__val">${escHtml(fmtMoney(jerseyTopPrice))}</span></div>` : '',
-    jerseyShortPrice ? `<div class="info-row"><span class="info-row__label">Jersey Shorts</span><span class="info-row__val">${escHtml(fmtMoney(jerseyShortPrice))}</span></div>` : '',
     deadline ? `<div class="info-row"><span class="info-row__label">Deadline</span><span class="info-row__val">${escHtml(deadline)}</span></div>` : '',
   ].filter(Boolean).join('');
 
@@ -199,8 +199,6 @@ const stylesBlock = `<style>
 .pick-cell__meas { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pick-cell__size { font-family: 'Saira Condensed'; font-weight: 700; font-size: 15px; color: var(--text); line-height: 1; }
 .pick-cell:has(input:checked) .pick-cell__size { color: var(--amber); }
-.pick-cell__delta { font-size: 9.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.pick-cell__delta--surcharge { color: var(--amber); }
 .pick-axis { margin-top: 6px; font-size: 10.5px; color: var(--text-subtle); }
 
 .pockets-check.is-disabled { opacity: .4; pointer-events: none; }
@@ -301,10 +299,6 @@ export function seasonSignupPage({
   balanceAmt = 0,
   quotaAmount = '',
   seasonFormat = '',
-  jerseyTopPrice = '',
-  jerseyShortPrice = '',
-  surchargeStep = 50,
-  pocketsPrice = 100,
   capacityPct = null,
   returning = null,
   error = null,
@@ -313,7 +307,7 @@ export function seasonSignupPage({
   livenessPrompt = '',
 } = {}) {
   const wrap = right => `<div class="shell">
-  ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct })}
+  ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, capacityPct })}
   ${right}
 </div>
 ${stylesBlock}`;
@@ -413,12 +407,10 @@ ${stylesBlock}`;
 
   const sizeCell = (kind, size, name) => {
     const [meas1, meas2] = SIZE_CHART[kind][size];
-    const delta = sizeSurcharge(size, surchargeStep);
     return `<label class="pick-cell">
       <input type="radio" name="${name}" value="${size}" ${checked(name, size)}>
       <span class="pick-cell__meas">${meas1}&Prime; / ${meas2}&Prime;</span>
       <span class="pick-cell__size">${size}</span>
-      <span class="pick-cell__delta${delta ? ' pick-cell__delta--surcharge' : ''}">${delta ? `+${fmtMoney(delta)}` : 'Base'}</span>
     </label>`;
   };
 
@@ -427,14 +419,11 @@ ${stylesBlock}`;
       <input type="radio" name="jersey_shorts" value="" ${prefill.jersey_shorts === undefined || prefill.jersey_shorts === '' ? 'checked' : ''}>
       <span class="pick-cell__meas">&nbsp;</span>
       <span class="pick-cell__size">None</span>
-      <span class="pick-cell__delta">&mdash;</span>
     </label>` + SIZES.map(s => sizeCell('shorts', s, 'jersey_shorts')).join('');
 
-  const initialTotal = Number(quotaAmount || 0) + computeJerseyTotal({
-    topPrice: jerseyTopPrice, shortPrice: jerseyShortPrice,
-    jerseyTop: prefill.jersey_top || '', jerseyShorts: prefill.jersey_shorts || '',
-    pockets: prefill.pockets === '1', pocketsPrice, surchargeStep,
-  });
+  // Jerseys aren't being charged this signup round — just collecting sizes. Total only
+  // reflects the season fee; jersey cost gets added at charge time later (see teams-start).
+  const initialTotal = Number(quotaAmount || 0);
 
   const scaleCells = (name, loLabel, hiLabel) => `<div class="pick-grid pick-grid--scale" data-field="${name}">
       ${[1, 2, 3, 4, 5].map(n => `<label class="pick-cell"><input type="radio" name="${name}" value="${n}" ${checked(name, String(n))}><span class="pick-cell__size">${n}</span></label>`).join('')}
@@ -565,7 +554,7 @@ ${stylesBlock}`;
       </div>` : '';
 
   return `<div class="shell">
-  ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct })}
+  ${shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, capacityPct })}
 
   <div class="shell-right">
     ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
@@ -654,7 +643,7 @@ ${stylesBlock}`;
             </div>
             <label class="check pockets-check is-disabled" id="pockets-check">
               <input type="checkbox" name="pockets" value="1" ${prefill.pockets === '1' ? 'checked' : ''} id="pockets-input">
-              <span>Add pockets to shorts &mdash; +${fmtMoney(pocketsPrice)}</span>
+              <span>Add pockets to shorts</span>
             </label>
             <div class="nav"><button type="button" class="btn-next" data-continue="${STEP.jersey}">Continue &rarr;</button></div>
           </div>
@@ -1003,13 +992,6 @@ ${stylesBlock}
 
   })();
 
-  var PRICING = ${JSON.stringify({ topPrice: Number(jerseyTopPrice) || 0, shortPrice: Number(jerseyShortPrice) || 0, quotaAmount: Number(quotaAmount) || 0, surchargeStep: Number(surchargeStep) || 0, pocketsPrice: Number(pocketsPrice) || 0 })};
-  var SURCHARGE_TIERS = ['2XL', '3XL', '4XL', '5XL']; // mirrors lib/season-pricing.js — keep in sync
-  function sizeSurchargeJs(size) {
-    var i = SURCHARGE_TIERS.indexOf(size);
-    return i === -1 ? 0 : (i + 1) * PRICING.surchargeStep;
-  }
-
   function render() {
     items.forEach(function (el) {
       var n = el.dataset.item;
@@ -1027,20 +1009,6 @@ ${stylesBlock}
   function checkedVal(name) {
     var el = form.querySelector('input[name="' + name + '"]:checked');
     return el ? el.value : '';
-  }
-
-  function recomputeTotal() {
-    var jerseyTop    = checkedVal('jersey_top');
-    var jerseyShorts = checkedVal('jersey_shorts');
-    var pockets      = form.querySelector('[name="pockets"]').checked;
-    var total = PRICING.quotaAmount;
-    if (jerseyTop) total += PRICING.topPrice + sizeSurchargeJs(jerseyTop);
-    if (jerseyShorts) {
-      total += PRICING.shortPrice + sizeSurchargeJs(jerseyShorts);
-      if (pockets) total += PRICING.pocketsPrice;
-    }
-    var el = document.getElementById('fee-total');
-    if (el) el.textContent = '₱' + total.toLocaleString();
   }
 
   function updatePocketsGate() {
@@ -1213,7 +1181,6 @@ ${stylesBlock}
   form.addEventListener('change', function (e) {
     if (e.target.name === 'jersey_top' || e.target.name === 'jersey_shorts' || e.target.name === 'pockets') {
       updatePocketsGate();
-      recomputeTotal();
     }
   });
 

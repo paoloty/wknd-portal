@@ -6476,10 +6476,6 @@ app.get('/season-signup', (req, res) => {
   const deadline         = getSetting('season_signup_deadline', '');
   const seasonFormat     = getSetting('season_format', '');
   const quotaAmount      = getSetting('season_quota_amount', '');
-  const jerseyTopPrice   = getSetting('jersey_top_price', '');
-  const jerseyShortPrice = getSetting('jersey_short_price', '');
-  const surchargeStep    = Number(getSetting('jersey_surcharge_step', '50')) || 0;
-  const pocketsPrice     = Number(getSetting('jersey_pockets_price', '100')) || 0;
   const capacity         = Number(getSetting('season_roster_capacity', '0')) || 0;
   const capacityPct      = (capacity && sigSeason) ? padCapacityPct(Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100))) : null;
   const existing         = sigSeason ? getSeasonSignup(regId, sigSeason) : null;
@@ -6495,8 +6491,7 @@ app.get('/season-signup', (req, res) => {
     minimalHeader: true,
     body: seasonSignupPage({
       state: 'form', sigSeason, sigOpen, deadline, existing, reg, name: reg.full_name,
-      seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice,
-      surchargeStep, pocketsPrice, capacityPct, returning, existingLivenessCapture,
+      seasonFormat, quotaAmount, capacityPct, returning, existingLivenessCapture,
       livenessPrompt: req.session.livenessPrompt,
     }),
   }));
@@ -6519,10 +6514,6 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
   const deadline         = getSetting('season_signup_deadline', '');
   const seasonFormat     = getSetting('season_format', '');
   const quotaAmount      = getSetting('season_quota_amount', '');
-  const jerseyTopPrice   = getSetting('jersey_top_price', '');
-  const jerseyShortPrice = getSetting('jersey_short_price', '');
-  const surchargeStep    = Number(getSetting('jersey_surcharge_step', '50')) || 0;
-  const pocketsPrice     = Number(getSetting('jersey_pockets_price', '100')) || 0;
   const capacity         = Number(getSetting('season_roster_capacity', '0')) || 0;
   const capacityPct      = capacity ? padCapacityPct(Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100))) : null;
   const returning        = getReturningTeamInfo(reg, sigSeason);
@@ -6533,8 +6524,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     minimalHeader: true,
     body: seasonSignupPage({
       state: 'form', sigSeason, sigOpen: true, deadline, reg, name: reg.full_name,
-      seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice,
-      surchargeStep, pocketsPrice, capacityPct, returning, error, prefill: req.body,
+      seasonFormat, quotaAmount, capacityPct, returning, error, prefill: req.body,
       existingLivenessCapture: getLivenessCaptureByRegId(regId),
     }),
   }));
@@ -6657,7 +6647,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     title: 'Season Signup — WKND Basketball',
     currentPath: '/season-signup',
     minimalHeader: true,
-    body: seasonSignupPage({ sigSeason, deadline, existing: created, reg, name: reg.full_name, hasBalance, balanceAmt, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, capacityPct }),
+    body: seasonSignupPage({ sigSeason, deadline, existing: created, reg, name: reg.full_name, hasBalance, balanceAmt, seasonFormat, quotaAmount, capacityPct }),
   }));
 });
 
