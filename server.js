@@ -7837,7 +7837,7 @@ app.post('/admin/fines/heads/:id/revoke', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/admin/ratings', requireAuth, (req, res) => {
+app.get('/admin/ratings', requireSuperAdmin, (req, res) => {
   const seasons = getPeerRatingSeasons();
   const season  = req.query.season || seasons[0] || getPortalCurrentSeason() || '';
   const ratings = season ? getAllPeerRatings(season) : [];

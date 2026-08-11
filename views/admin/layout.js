@@ -91,12 +91,6 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Ratings',
-    items: [
-      { href: '/admin/ratings', label: 'Community Ratings', icon: 'awards', exact: true },
-    ],
-  },
-  {
     label: 'Visibility',
     items: [
       { href: '/admin/visibility', label: 'Visibility', icon: 'visibility', exact: true },
@@ -110,6 +104,7 @@ const SUPER_ADMIN_NAV = [
     items: [
       { href: '/admin/privileges', label: 'Privileges', icon: 'shield' },
       { href: '/admin/logs', label: 'Action Logs', icon: 'ledger' },
+      { href: '/admin/ratings', label: 'Community Ratings', icon: 'awards' },
       ...(process.env.NODE_ENV !== 'production' ? [{ href: '/admin/db', label: 'Sync DB', icon: 'finance' }] : []),
     ],
   },
