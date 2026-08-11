@@ -91,6 +91,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Ratings',
+    items: [
+      { href: '/admin/ratings', label: 'Community Ratings', icon: 'awards', exact: true },
+    ],
+  },
+  {
     label: 'Visibility',
     items: [
       { href: '/admin/visibility', label: 'Visibility', icon: 'visibility', exact: true },

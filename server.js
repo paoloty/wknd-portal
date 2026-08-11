@@ -111,6 +111,7 @@ import {
   getFineVotesForCase, castFineVote, resolveFineCase,
   getEscalationVotesForCase, castEscalationVote, getTotalAdminCount, recomputeEscalation, forceEscalationDecision,
   getPeerRating, getPeerRatingsForRatee, upsertPeerRating, getOrAssignPlayerAlias,
+  getAllPeerRatings, getPeerRatingSeasons,
   db as portalDb,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
@@ -147,6 +148,7 @@ import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
 import { adminFinesListBody, adminFineCaseBody, adminFineCategoriesBody, adminFineHeadsBody } from './views/admin/fines.js';
+import { adminRatingsBody } from './views/admin/ratings.js';
 import { finesPage } from './views/fines.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -7833,6 +7835,17 @@ app.post('/admin/fines/heads', requireAuth, express.json(), (req, res) => {
 app.post('/admin/fines/heads/:id/revoke', requireAuth, (req, res) => {
   removeTeamHead(req.params.id);
   res.json({ ok: true });
+});
+
+app.get('/admin/ratings', requireAuth, (req, res) => {
+  const seasons = getPeerRatingSeasons();
+  const season  = req.query.season || seasons[0] || getPortalCurrentSeason() || '';
+  const ratings = season ? getAllPeerRatings(season) : [];
+  res.send(renderAdminPage(req, {
+    title: 'Community Ratings',
+    currentPath: '/admin/ratings',
+    body: adminRatingsBody({ season, seasons, ratings }),
+  }));
 });
 
 app.get('/admin/fines', requireAuth, (req, res) => {
