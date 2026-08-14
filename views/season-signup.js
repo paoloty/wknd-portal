@@ -944,9 +944,17 @@ ${stylesBlock}
     });
 
     captureBtn.addEventListener('click', function () {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video, 0, 0);
+      // Capturing at the camera's native resolution (some phone rear cameras report several
+      // thousand px wide) produced base64 payloads that occasionally blew past the server's
+      // upload size limit — Express rejected the request before the route handler ever ran,
+      // so the client saw a non-JSON error response and just reported "Network error", hiding
+      // the real cause. This is a casual reference photo, not something that needs full
+      // camera resolution, so cap the longest side instead of shipping the raw frame.
+      var LV_MAX_DIM = 900;
+      var lvScale = Math.min(1, LV_MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.round(video.videoWidth * lvScale);
+      canvas.height = Math.round(video.videoHeight * lvScale);
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
       dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       preview.src = dataUrl;
       preview.classList.remove('hidden');

@@ -18,14 +18,18 @@ export function adminLivenessListBody({ captures = [] } = {}) {
     : `
 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-5">
   ${captures.map(c => {
-    const name = c.signupName ? displayPlayerName(c.signupName) : (c.player_id || 'Unlinked');
+    const name = c.signupName ? displayPlayerName(c.signupName) : (c.player_id ? c.player_id : 'Unlinked');
+    // Player profile is the more useful destination when linked (photo/stats to actually
+    // compare against); fall back to the registration/application page otherwise — both
+    // beat leaving the admin stuck reading a bare reg_id/player_id with nowhere to go.
+    const profileHref = c.player_id ? `/admin/players/${escHtml(c.player_id)}` : `/admin/users/${escHtml(c.reg_id)}`;
     return `
   <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" data-capture-row="${escHtml(c.id)}">
     <a href="/admin/season/liveness/${escHtml(c.id)}" style="display:block;aspect-ratio:3/4;background:#0d1424">
       <img src="/admin/season/liveness/${escHtml(c.id)}/photo" alt="Liveness capture" style="width:100%;height:100%;object-fit:cover">
     </a>
     <div class="p-3">
-      <div class="text-xs font-semibold text-slate-200 truncate" title="${escHtml(name)}">${escHtml(name)}</div>
+      <a href="${profileHref}" class="text-xs font-semibold text-slate-200 hover:text-brand truncate block no-underline" title="${escHtml(name)}">${escHtml(name)}</a>
       <div class="text-[10px] text-slate-500 mt-0.5">Season ${escHtml(String(c.season))} &middot; ${fmtDate(c.captured_at)}</div>
       <div class="flex items-center justify-between mt-2.5">
         <a href="/admin/season/liveness/${escHtml(c.id)}" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300 no-underline">Compare</a>

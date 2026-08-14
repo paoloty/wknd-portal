@@ -135,9 +135,15 @@ export function livenessMobilePage({ token, expired = false, prompt = '' } = {})
   });
 
   captureBtn.addEventListener('click', function () {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    // See the matching comment in season-signup.js's Group 00 — native-resolution phone
+    // camera captures occasionally exceeded the server's upload size limit, which failed
+    // silently as a generic "Network error" instead of a clear message. Cap the longest
+    // side; this is a casual reference photo, not something needing full resolution.
+    var LV_MAX_DIM = 900;
+    var lvScale = Math.min(1, LV_MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * lvScale);
+    canvas.height = Math.round(video.videoHeight * lvScale);
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
     dataUrl = canvas.toDataURL('image/jpeg', 0.85);
     preview.src = dataUrl;
     preview.classList.remove('hidden');

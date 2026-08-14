@@ -7,14 +7,20 @@ function fmtDate(ts) {
 
 const VIA_LABEL = { inline: 'Captured on the same device', qr: 'Captured via phone (QR bridge)' };
 
-export function adminLivenessReviewBody({ capture, signup } = {}) {
-  const name = signup?.full_name ? displayPlayerName(signup.full_name) : (capture.player_id || 'Unknown');
+export function adminLivenessReviewBody({ capture, signup, registration } = {}) {
+  // signup (season_signups) only exists once the form's actually submitted — the photo
+  // itself saves earlier, so someone who took it and abandoned the form has no signup row.
+  // The registration always exists by this point, so it's the reliable fallback.
+  const fullName = signup?.full_name || registration?.full_name || '';
+  const name = fullName ? displayPlayerName(fullName) : (capture.player_id || 'Unknown');
+  const playerId = capture.player_id || registration?.player_id || '';
+  const profileHref = playerId ? `/admin/players/${escHtml(playerId)}` : `/admin/users/${escHtml(capture.reg_id)}`;
 
   return `
 <div style="max-width:640px">
   <a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Waitlist</a>
   <h1 class="text-xl font-bold text-slate-100 mt-2 mb-1">Liveness Check</h1>
-  <div class="text-sm text-slate-400 mb-6">${escHtml(name)} &middot; Season ${escHtml(String(capture.season))}</div>
+  <div class="text-sm text-slate-400 mb-6"><a href="${profileHref}" class="text-slate-200 hover:text-brand font-semibold no-underline">${escHtml(name)}</a> &middot; Season ${escHtml(String(capture.season))}</div>
 
   <div class="bg-admin-surface border border-admin-border rounded-lg p-5 mb-4">
     <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Side-by-side — admin reference only, not automated matching</div>
@@ -28,8 +34,8 @@ export function adminLivenessReviewBody({ capture, signup } = {}) {
       <div>
         <div class="text-[11px] text-slate-500 mb-2">Profile Photo</div>
         <div style="aspect-ratio:3/4;background:#0d1424;border:1px solid var(--admin-border);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center">
-          ${capture.player_id
-            ? `<img src="/api/player/${escHtml(capture.player_id)}/photo" alt="Profile photo" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          ${playerId
+            ? `<img src="/api/player/${escHtml(playerId)}/photo" alt="Profile photo" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                <span style="display:none;color:var(--text-muted, #64748b);font-size:12px">No profile photo</span>`
             : `<span style="color:#64748b;font-size:12px">No player linked yet</span>`}
         </div>

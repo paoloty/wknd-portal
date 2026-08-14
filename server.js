@@ -6692,7 +6692,7 @@ function resolveSeasonSignupContext(req) {
   return { regId, reg, sigSeason };
 }
 
-app.post('/season-signup/liveness-capture', express.json({ limit: '5mb' }), (req, res) => {
+app.post('/season-signup/liveness-capture', express.json({ limit: '8mb' }), (req, res) => {
   const ctx = resolveSeasonSignupContext(req);
   if (!ctx) return res.status(401).json({ error: 'Not eligible to sign up right now.' });
   const dataUrl = String(req.body?.dataUrl || '');
@@ -6737,7 +6737,7 @@ app.get('/season-signup/liveness/:token', (req, res) => {
   res.type('html').send(livenessMobilePage({ token: req.params.token, expired, prompt: info?.prompt || '' }));
 });
 
-app.post('/season-signup/liveness/:token/capture', express.json({ limit: '5mb' }), (req, res) => {
+app.post('/season-signup/liveness/:token/capture', express.json({ limit: '8mb' }), (req, res) => {
   pruneLivenessTokens();
   const token = req.params.token;
   const info = livenessTokens.get(token);
@@ -6976,7 +6976,18 @@ app.get('/admin/season/liveness', requireSuperAdmin, (req, res) => {
       for (const s of getSeasonSignups(c.season)) byRegId.set(s.reg_id, s);
       seasonSignups.set(c.season, byRegId);
     }
-    c.signupName = seasonSignups.get(c.season).get(c.reg_id)?.full_name || '';
+    const signup = seasonSignups.get(c.season).get(c.reg_id);
+    if (signup) {
+      c.signupName = signup.full_name || '';
+    } else {
+      // The liveness photo saves as soon as it's captured — well before the season-signup
+      // form is actually submitted (see /season-signup/liveness-capture) — so someone who
+      // took the photo and then abandoned the form has no season_signups row at all. Fall
+      // back to the registration itself, which always exists once they're this far.
+      const reg = getRegistration(c.reg_id);
+      c.signupName = reg?.full_name || '';
+      if (!c.player_id && reg?.player_id) c.player_id = reg.player_id;
+    }
   }
   res.send(renderAdminPage(req, {
     title: 'Liveness Check Photos',
@@ -7009,10 +7020,13 @@ app.get('/admin/season/liveness/:id', requireSuperAdmin, (req, res) => {
   const capture = getLivenessCaptureById(req.params.id);
   if (!capture) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/season/waitlist', body: '<p style="padding:40px;color:var(--text-muted)">Capture not found.</p>' }));
   const signup = getSeasonSignups(capture.season).find(s => s.reg_id === capture.reg_id) || null;
+  // Same fallback as the list route — an abandoned (never-submitted) signup has no
+  // season_signups row, but the registration itself always exists.
+  const registration = getRegistration(capture.reg_id);
   res.send(renderAdminPage(req, {
     title: 'Liveness Check',
     currentPath: '/admin/season/waitlist',
-    body: adminLivenessReviewBody({ capture, signup }),
+    body: adminLivenessReviewBody({ capture, signup, registration }),
   }));
 });
 

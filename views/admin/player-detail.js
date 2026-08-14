@@ -278,6 +278,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"><\/script>
 <script>
   var PLAYER_ID = '${escHtml(player.id)}';
   var SEASON    = '${escHtml(String(season ?? ''))}';
@@ -289,8 +290,33 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     var cropImg   = document.getElementById('pcp-img');
     var saveBtn   = document.getElementById('pcp-save');
     var saveBtnOrigHtml = saveBtn.innerHTML;
+    var photoMsg  = document.getElementById('photo-msg');
     var cropper   = null;
     var pendingOriginalDataUrl = null;
+
+    function setPhotoMsg(text, color) {
+      photoMsg.style.color = color || '';
+      photoMsg.textContent = text || '';
+    }
+
+    // Neither sharp (server-side) nor Chromium/Firefox (client-side <img>) can decode HEIC —
+    // the default photo format on iPhones — so a straight-off-the-phone upload would silently
+    // break the crop step or fail to process server-side. Convert to JPEG in-browser first;
+    // everything downstream (crop canvas, server compressSourceImage) just sees a normal JPEG.
+    function isHeic(file) {
+      var type = (file.type || '').toLowerCase();
+      if (type === 'image/heic' || type === 'image/heif') return true;
+      return /\\.hei[cf]$/i.test(file.name || '');
+    }
+
+    function readAsDataUrl(fileOrBlob) {
+      return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function(e) { resolve(e.target.result); };
+        reader.onerror = function() { reject(new Error('read failed')); };
+        reader.readAsDataURL(fileOrBlob);
+      });
+    }
 
     function openCrop(src) {
       cropImg.src = src;
@@ -347,12 +373,35 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     fileInput.addEventListener('change', function() {
       var file = this.files[0];
       if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        pendingOriginalDataUrl = e.target.result;
-        openCrop(e.target.result);
-      };
-      reader.readAsDataURL(file);
+      setPhotoMsg('', '');
+
+      var converting = isHeic(file);
+      var prep;
+      if (converting) {
+        setPhotoMsg('Converting HEIC photo…', '#94a3b8');
+        prep = heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 }).then(function(result) {
+          return Array.isArray(result) ? result[0] : result;
+        });
+      } else {
+        prep = Promise.resolve(file);
+      }
+
+      prep
+        .then(readAsDataUrl)
+        .then(function(dataUrl) {
+          if (converting) setPhotoMsg('Converted from HEIC.', '#22c55e');
+          pendingOriginalDataUrl = dataUrl;
+          openCrop(dataUrl);
+        })
+        .catch(function() {
+          fileInput.value = '';
+          setPhotoMsg(
+            converting
+              ? "Couldn't convert this HEIC photo — try exporting it as JPEG first."
+              : "Couldn't read this file — try a different photo.",
+            '#f87171'
+          );
+        });
     });
 
     document.getElementById('pcp-close').addEventListener('click', closeCrop);
@@ -373,25 +422,24 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       saveBtn.textContent = 'Saving…';
       var canvas = cropper.getCroppedCanvas({ width: 400, height: 400, imageSmoothingQuality: 'high' });
       var dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-      var msg = document.getElementById('photo-msg');
       fetch('/admin/players/' + PLAYER_ID + '/photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dataUrl: dataUrl, originalDataUrl: pendingOriginalDataUrl || '' })
       }).then(function(r) {
-        if (!r.ok) throw new Error('failed');
+        return r.json().catch(function() { return {}; }).then(function(d) { return { ok: r.ok, d: d }; });
+      }).then(function(res) {
+        if (!res.ok) { setPhotoMsg(res.d.error || 'Upload failed.', '#f87171'); saveBtn.disabled = false; saveBtn.innerHTML = saveBtnOrigHtml; return; }
         var wrap = document.getElementById('plr-photo-wrap');
         wrap.innerHTML = '';
         var img = document.createElement('img');
         img.src = '/api/player/' + PLAYER_ID + '/photo?t=' + Date.now();
         img.style.cssText = 'width:100%;height:100%;object-fit:cover;object-position:top';
         wrap.appendChild(img);
-        msg.style.color = '#22c55e';
-        msg.textContent = 'Photo saved.';
+        setPhotoMsg('Photo saved.', '#22c55e');
         closeCrop();
       }).catch(function() {
-        msg.style.color = '#f87171';
-        msg.textContent = 'Upload failed.';
+        setPhotoMsg('Network error — try again.', '#f87171');
         saveBtn.disabled = false;
         saveBtn.innerHTML = saveBtnOrigHtml;
       });
