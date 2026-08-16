@@ -6824,6 +6824,7 @@ import { adminSeasonsBody }    from './views/admin/seasons.js';
 import { adminSeasonBody }     from './views/admin/season.js';
 import { adminWaitlistBody }   from './views/admin/season-waitlist.js';
 import { adminSignupDetailBody } from './views/admin/season-signup-detail.js';
+import { adminReturningBody }  from './views/admin/season-returning.js';
 import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
 import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
 import { adminLivenessListBody } from './views/admin/liveness-list.js';
@@ -6926,6 +6927,36 @@ app.get('/admin/season/waitlist', requireAuth, (req, res) => {
     title: 'Waitlist',
     currentPath: '/admin/season/waitlist',
     body: adminWaitlistBody({ sigSeason, signups, count, confirmedCount, isSuperAdmin }),
+  }));
+});
+
+// Cross-references last season's actual roster (from game participation, the most reliable
+// "who was really playing" signal) against this season's signups so an admin doing outreach
+// can see at a glance who from last time hasn't re-registered yet. player_id is only present
+// on a signup when the registrant is linked to an existing player account, which is exactly
+// how a returning player's signup connects back to their prior-season row here.
+app.get('/admin/season/returning', requireAuth, (req, res) => {
+  const sigSeason  = getSetting('signup_target_season', '');
+  if (!sigSeason) return res.redirect('/admin/season');
+
+  const prevSeason = getCurrentSeason()?.season ?? null;
+  const prevPlayers = prevSeason ? getSeasonPlayerStats(prevSeason) : [];
+
+  const signupByPlayerId = new Map();
+  for (const s of getSeasonSignups(sigSeason)) {
+    if (s.player_id) signupByPlayerId.set(s.player_id, s);
+  }
+
+  const players = prevPlayers.map(p => ({
+    id: p.id, name: p.name, team_id: p.team_id, team_name: p.team_name, team_color: p.team_color,
+    picture_url: p.picture_url,
+    signup: signupByPlayerId.get(p.id) || null,
+  }));
+
+  res.send(renderAdminPage(req, {
+    title: 'Returning Players',
+    currentPath: '/admin/season/returning',
+    body: adminReturningBody({ prevSeason, sigSeason, players }),
   }));
 });
 

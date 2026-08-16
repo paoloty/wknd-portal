@@ -94,6 +94,52 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
 </div>`;
   }
 
+  // Per-team breakdown of the same Stick/Shuffle poll — the aggregate count above answers
+  // "how many total," this answers "which teams actually need their roster held open." Only
+  // returning players (those with a prev_team_id) contribute; a team with e.g. 4 stick / 1
+  // shuffle out of 5 returners tells the admin building teams that team is nearly locked in.
+  function teamBreakdownCard(rows) {
+    const groups = new Map();
+    for (const s of rows) {
+      if (!s.prev_team_id) continue;
+      if (s.team_pref !== 'stick' && s.team_pref !== 'reshuffle') continue;
+      if (!groups.has(s.prev_team_id)) {
+        groups.set(s.prev_team_id, { name: s.prev_team_name, color: s.prev_team_color || '#64748b', stick: 0, reshuffle: 0 });
+      }
+      groups.get(s.prev_team_id)[s.team_pref]++;
+    }
+    const teams = Array.from(groups.values()).sort((a, b) => (b.stick + b.reshuffle) - (a.stick + a.reshuffle));
+    if (teams.length === 0) return '';
+
+    const row = (t) => {
+      const total = t.stick + t.reshuffle;
+      const stickPct = total > 0 ? (t.stick / total) * 100 : 0;
+      return `
+      <div class="py-2">
+        <div class="flex items-center justify-between text-xs mb-1">
+          <span class="inline-flex items-center gap-1.5 text-slate-300 font-medium">
+            <span style="width:8px;height:8px;border-radius:50%;background:${escHtml(t.color)};flex-shrink:0"></span>
+            ${escHtml(t.name)}
+          </span>
+          <span class="text-slate-500" style="font-variant-numeric:tabular-nums">${t.stick} stick &middot; ${t.reshuffle} shuffle</span>
+        </div>
+        <div class="flex h-1.5 rounded-full overflow-hidden bg-admin-border/60" style="gap:2px" aria-hidden="true">
+          ${t.stick > 0 ? `<div style="width:${stickPct}%;background:${escHtml(t.color)};border-radius:99px"></div>` : ''}
+          ${t.reshuffle > 0 ? `<div style="width:${100 - stickPct}%;background:#a78bfa;border-radius:99px"></div>` : ''}
+        </div>
+      </div>`;
+    };
+
+    return `
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+  <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between gap-2">
+    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Team Preference by Team</span>
+    <span class="text-[10px] text-slate-600">n=${teams.reduce((sum, t) => sum + t.stick + t.reshuffle, 0)}</span>
+  </div>
+  <div class="px-4 py-2 divide-y divide-admin-border/40">${teams.map(row).join('')}</div>
+</div>`;
+  }
+
   const teamPrefCard = pollTotal > 0 ? pollCard(
     'Team Preference',
     'Returning players choosing to stick with their prior team vs. opting into the shuffle.',
@@ -102,6 +148,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
       { label: 'Shuffle', count: byPref.reshuffle, color: '#a78bfa' },
     ]
   ) : '';
+  const teamBreakdown = teamBreakdownCard(signups);
 
   const reshuffleVoteCard = reshuffleVoteTotal > 0 ? pollCard(
     'League Shuffle Poll',
@@ -112,7 +159,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
     ]
   ) : '';
 
-  const sidebar = `<div class="flex flex-col gap-5">${overviewCard}${teamPrefCard}${reshuffleVoteCard}</div>`;
+  const sidebar = `<div class="flex flex-col gap-5">${overviewCard}${teamPrefCard}${teamBreakdown}${reshuffleVoteCard}</div>`;
 
   const table = signups.length === 0
     ? `<div class="p-12 text-center text-sm text-slate-500">No signups yet for Season ${escHtml(sigSeason)}.</div>`
@@ -167,7 +214,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
         </td>
         <td class="px-4 py-3">
           ${s.team_pref === 'stick'
-            ? `<span class="inline-flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${escHtml(s.prev_team_color || '#64748b')}"></span><span class="text-sky-400 font-medium">Stick</span>${s.prev_team_name ? `<span class="text-slate-600">(${escHtml(s.prev_team_name)})</span>` : ''}</span>`
+            ? `<span style="background:${escHtml(s.prev_team_color || '#64748b')}22;color:${escHtml(s.prev_team_color || '#64748b')};border:1px solid ${escHtml(s.prev_team_color || '#64748b')}44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap">STICK${s.prev_team_name ? ` &middot; ${escHtml(s.prev_team_name)}` : ''}</span>`
             : s.team_pref === 'reshuffle'
               ? dotLabel('#a78bfa', 'text-violet-400', 'Shuffle')
               : `<span class="text-slate-600">—</span>`}

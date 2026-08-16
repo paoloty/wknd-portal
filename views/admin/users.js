@@ -68,8 +68,9 @@ export function adminUsersBody({ registrations = [], canViewSensitive = true } =
     const flaggedBadge = flags.length
       ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/15 text-red-400 whitespace-nowrap" title="${escHtml(flags.join('; '))}">⚑ Flagged</span>`
       : '';
+    const q = [r.full_name, r.email, r.phone].filter(Boolean).join(' ').toLowerCase();
     return `
-<tr class="border-b border-admin-border/50 last:border-0 hover:bg-white/[.015] transition-colors" data-filters="${escHtml(filters.join(' '))}">
+<tr class="border-b border-admin-border/50 last:border-0 hover:bg-white/[.015] transition-colors" data-filters="${escHtml(filters.join(' '))}" data-q="${escHtml(q)}">
   <td class="px-4 py-3">
     <div class="text-xs font-semibold text-slate-200 whitespace-nowrap">${escHtml(r.full_name)}</div>
     <div class="text-xs text-slate-500 mt-0.5">${escHtml(canViewSensitive ? r.email : maskEmail(r.email))}</div>
@@ -92,6 +93,7 @@ export function adminUsersBody({ registrations = [], canViewSensitive = true } =
     <h2 class="text-xl font-bold tracking-tight text-slate-100">Users</h2>
     <p class="text-sm text-slate-500 mt-0.5">${counts.all} total · ${counts.pending} pending · ${counts.approved} approved</p>
   </div>
+  <input type="search" id="usr-search" class="agm-search" placeholder="Search name, email, phone…">
 </div>
 
 <div class="flex items-center gap-1.5 mb-4 flex-wrap">
@@ -129,14 +131,27 @@ ${registrations.length === 0
 <script>
 (function() {
   var FILTER_IDS = ['f-all','f-pending','f-approved','f-rejected','f-awaiting_password','f-link_expired','f-flagged'];
-  window.filterUsers = function(status) {
-    FILTER_IDS.forEach(function(id) { document.getElementById(id).classList.remove('is-active'); });
-    document.getElementById('f-' + status).classList.add('is-active');
+  var status = 'all';
+  var search = document.getElementById('usr-search');
+
+  function applyFilters() {
+    var q = (search.value || '').toLowerCase().trim();
     document.querySelectorAll('#users-tbody tr').forEach(function(tr) {
       var filters = (' ' + tr.dataset.filters + ' ');
-      tr.style.display = (status === 'all' || filters.indexOf(' ' + status + ' ') !== -1) ? '' : 'none';
+      var statusOk = status === 'all' || filters.indexOf(' ' + status + ' ') !== -1;
+      var searchOk = !q || tr.dataset.q.indexOf(q) !== -1;
+      tr.style.display = (statusOk && searchOk) ? '' : 'none';
     });
+  }
+
+  window.filterUsers = function(s) {
+    status = s;
+    FILTER_IDS.forEach(function(id) { document.getElementById(id).classList.remove('is-active'); });
+    document.getElementById('f-' + s).classList.add('is-active');
+    applyFilters();
   };
+
+  if (search) search.addEventListener('input', applyFilters);
 })();
 </script>`;
 }
