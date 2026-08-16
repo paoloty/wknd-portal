@@ -1,4 +1,5 @@
 import { escHtml } from '../layout.js';
+import { signupDisplayName } from '../utils.js';
 
 const ICON_TEAM = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1.5L2 4v4c0 2.5 2 4.5 5 5 3-.5 5-2.5 5-5V4L7 1.5z"/></svg>`;
 
@@ -201,7 +202,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
         <td class="${FROZEN_CHECK_TD}"><input type="checkbox" class="row-check accent-amber-400" data-id="${escHtml(s.id)}"></td>
         <td class="${FROZEN_MEMBER_TD}">
           <div class="font-semibold text-slate-200 flex items-center gap-1.5">
-            <a href="/admin/season/signups/${escHtml(s.id)}" class="text-slate-200 hover:text-amber-400 no-underline">${escHtml(s.full_name || '—')}</a>
+            <a href="/admin/season/signups/${escHtml(s.id)}" class="text-slate-200 hover:text-amber-400 no-underline">${escHtml(signupDisplayName(s) || '—')}</a>
             ${s.contact_changed_at ? `<span title="${escHtml(s.contact_change_note || 'Emergency contact or birthday differs from what is on file')}" style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;cursor:help">⚠ CONTACT CHANGED</span>` : ''}
             ${s.liveness
               ? (isSuperAdmin

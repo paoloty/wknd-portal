@@ -1,4 +1,5 @@
 import { escHtml } from '../layout.js';
+import { signupDisplayName } from '../utils.js';
 
 const TEAM_COLORS = [
   '#f59332', '#3b82f6', '#ef4444', '#22c55e',
@@ -17,7 +18,7 @@ function playerRow(p, teamColor = '') {
   const posDisplay  = positions.slice(0, 2).join('/');
   const posOrder    = POS_ORDER[primaryPos] ?? 99;
   const accent      = teamColor || '#1e293b';
-  const displayName = p.full_name || '—';
+  const displayName = signupDisplayName(p) || '—';
   const initials    = escHtml(displayName.charAt(0).toUpperCase());
   const pic         = p.picture_url || '';
   const isNew       = (p.career_games ?? 0) === 0;
@@ -39,7 +40,7 @@ function playerRow(p, teamColor = '') {
     data-rating="${p.rating ?? ''}"
     data-off-rating="${p.off_rating ?? ''}"
     data-def-rating="${p.def_rating ?? ''}"
-    data-name="${escHtml((p.full_name || '').toLowerCase())}"
+    data-name="${escHtml(displayName.toLowerCase())}"
     data-display-name="${escHtml(displayName)}"
     data-primary-pos="${escHtml(primaryPos)}"
     data-pos-order="${posOrder}">

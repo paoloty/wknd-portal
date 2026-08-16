@@ -41,6 +41,16 @@ export function displayPlayerName(raw) {
 // Alias kept so callers can be migrated gradually.
 export const formatPlayerName = displayPlayerName;
 
+// A season_signups row's registrant may have typo'd/nicknamed their name on the signup form,
+// or the linked player record may have since been corrected — the players table is the
+// source of truth once a signup is actually linked to one. Falls back to the registration's
+// self-entered full_name for signups with no player_id (brand-new registrants with no
+// player record yet).
+export function signupDisplayName(s) {
+  const playerName = [s.player_first_name, s.player_last_name].filter(Boolean).join(' ').trim();
+  return playerName || s.full_name || '';
+}
+
 // Today's calendar date in Manila (Asia/Manila, UTC+8 — no DST, so this offset is always
 // correct year-round), as "YYYY-MM-DD". Deliberately pure epoch math instead of
 // Intl.DateTimeFormat({ timeZone: 'Asia/Manila' }): that relies on the Node build having

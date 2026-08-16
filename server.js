@@ -34,7 +34,7 @@ import { privacyPage, termsPage } from './views/legal.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
-import { teamColor, displayPlayerName, manilaTodayStr, initials } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, initials, signupDisplayName } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -7187,7 +7187,7 @@ app.get('/admin/season/teams/sandbox', requireAuth, (req, res) => {
       .filter(s => s.status === 'confirmed')
       .map(s => ({
         id:           s.id,
-        full_name:    s.full_name || s.email || s.id,
+        full_name:    signupDisplayName(s) || s.email || s.id,
         positions:    s.positions || '[]',
         height:       s.height    || '',
         rating:       s.rating    ?? null,
