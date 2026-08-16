@@ -126,13 +126,28 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, is
       : `<button data-action="sync" onclick="doAction(this.dataset.action)" class="admin-btn admin-btn--block">
     ${ICON_REFRESH} Re-sync to Player
   </button>`;
+    const relinkBlock = `
+  <hr style="border:none;border-top:1px solid var(--border-2);margin:4px 0">
+  <div>
+    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Relink to a different player</div>
+    <div style="position:relative">
+      <input id="relink-search" type="text" placeholder="Search all players…" autocomplete="off"
+        class="w-full bg-admin-border/50 border border-admin-border rounded-md px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand">
+      <div id="relink-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:220px;overflow-y:auto"></div>
+    </div>
+    <div id="relink-selected-label" class="text-[11px] text-slate-500 mt-2">Won't send an email — just repoints the link.</div>
+    <button id="relink-confirm-btn" onclick="doRelink()" class="admin-btn admin-btn--block mt-2" disabled>
+      ${ICON_REFRESH} Relink Player
+    </button>
+  </div>`;
     const superAdminBlock = isSuperAdmin ? `
   ${syncControl}
+  ${relinkBlock}
   <hr style="border:none;border-top:1px solid var(--border-2);margin:4px 0">
   <button onclick="confirmReset()" class="admin-btn admin-btn--muted admin-btn--block">
     ${ICON_UNDO} Reset to Pending
   </button>${adminToggle}` : `
-  <p class="text-[11px] text-slate-600">Only super admins can re-sync, reset, or grant admin access.</p>`;
+  <p class="text-[11px] text-slate-600">Only super admins can re-sync, relink, reset, or grant admin access.</p>`;
     actionsHtml = `
 <div style="display:flex;flex-direction:column;gap:6px">
   ${linkedName ? `<a href="/players/${escHtml(reg.player_id)}" target="_blank" class="admin-btn admin-btn--block no-underline">
@@ -374,6 +389,58 @@ ${bogusFlags.length ? `
       });
     }
   }
+
+  // ── Relink (approved registrations only) ─────────────────────────────────
+  var relinkInput    = document.getElementById('relink-search');
+  var relinkDropdown = document.getElementById('relink-dropdown');
+  var relinkBtn      = document.getElementById('relink-confirm-btn');
+  var relinkLabel    = document.getElementById('relink-selected-label');
+  var _relinkPlayerId = '';
+
+  if (relinkInput && relinkDropdown) {
+    relinkInput.addEventListener('input', function() {
+      var q = this.value.trim().toLowerCase();
+      _relinkPlayerId = '';
+      if (relinkBtn) relinkBtn.disabled = true;
+      if (!q) { relinkDropdown.style.display = 'none'; return; }
+      var results = PLAYERS.filter(function(p) {
+        return playerDisplay(p).toLowerCase().includes(q);
+      }).slice(0, 10);
+      relinkDropdown.innerHTML = results.length
+        ? results.map(function(p) {
+            return '<button class="search-result" data-pid="' + p.id + '">' + playerDisplay(p) + '</button>';
+          }).join('')
+        : '<div style="padding:10px 14px;font-size:12px;color:#475569">No results</div>';
+      relinkDropdown.style.display = 'block';
+    });
+    relinkDropdown.addEventListener('click', function(e) {
+      var btn = e.target.closest('.search-result');
+      if (!btn) return;
+      _relinkPlayerId = btn.dataset.pid;
+      relinkInput.value = btn.textContent.trim();
+      relinkDropdown.style.display = 'none';
+      if (relinkBtn)   relinkBtn.disabled = false;
+      if (relinkLabel) relinkLabel.textContent = 'Will relink to: ' + btn.textContent.trim() + ' — no email sent.';
+    });
+    document.addEventListener('click', function(e) {
+      if (!relinkInput.contains(e.target) && !relinkDropdown.contains(e.target)) relinkDropdown.style.display = 'none';
+    });
+  }
+
+  window.doRelink = async function() {
+    if (!_relinkPlayerId) return;
+    if (!confirm('Relink this registration to the selected player? No email will be sent.')) return;
+    try {
+      var resp = await fetch('/admin/users/' + REG_ID + '/relink', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: _relinkPlayerId }),
+      });
+      var j = await resp.json();
+      if (!resp.ok) throw new Error(j.error || 'Failed');
+      location.href = '/admin/users/' + REG_ID;
+    } catch(e) { alert(e.message); }
+  };
 
   // ── Actions ───────────────────────────────────────────────────────────────
   window.doAction = async function(action) {

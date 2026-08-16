@@ -78,7 +78,7 @@ import {
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
-  insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, setWaiverAgreement,
+  insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, relinkRegistrationPlayer, setWaiverAgreement,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
   setRegistrationAdmin, insertAdminLog, getAdminLogs, getAdminLogsForUser, updateRegBirthday,
@@ -2947,6 +2947,21 @@ app.post('/admin/users/:id/sync', requireSuperAdmin, express.json(), (req, res) 
   if (!reg) return res.status(404).json({ error: 'Not found' });
   if (!reg.player_id) return res.status(400).json({ error: 'No player linked to this registration.' });
   mergeRegistrationIntoPlayer(reg.player_id, reg);
+  res.json({ ok: true });
+});
+
+// Fixes a mislinked/mistakenly-created player after approval without touching status or
+// re-sending the approval email (unlike reset-to-pending + re-approve, which does both).
+app.post('/admin/users/:id/relink', requireSuperAdmin, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  if (reg.status !== 'approved') return res.status(400).json({ error: 'Only approved registrations can be relinked.' });
+  const player_id = req.body?.player_id || '';
+  if (!player_id) return res.status(400).json({ error: 'Select a player to link to.' });
+  const player = getPlayerWithTeam(player_id);
+  if (!player) return res.status(404).json({ error: 'Player not found.' });
+  relinkRegistrationPlayer(reg.id, player_id);
+  mergeRegistrationIntoPlayer(player_id, reg);
   res.json({ ok: true });
 });
 
