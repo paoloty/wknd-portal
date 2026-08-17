@@ -73,7 +73,7 @@ import {
   upsertLivenessCapture, getLivenessCaptureByRegId, getLivenessCaptureById, getAllLivenessCaptures, deleteLivenessCapture,
   updateRegistrationContact,
   insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, getAssessmentsBySeason, getLatestPlayerRating,
-  upsertAssessmentReview, getAssessmentReviews, getAssessmentReviewsBySeason,
+  upsertAssessmentReview, getAssessmentReviews, getAssessmentReviewsBySeason, deleteAssessmentReview,
   playerPlayedSeason, getPlayerCurrentTeam,
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
@@ -7054,11 +7054,22 @@ app.get('/admin/season/assessments/:id', requireAuth, (req, res) => {
   const reviews = getAssessmentReviews(a.id);
   const me = reviewerIdentity(req);
   const myReview = reviews.find(r => r.reviewer_reg_id === me.reviewer_reg_id) || null;
+  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   res.send(renderAdminPage(req, {
     title: 'Mindset & Self-Assessment',
     currentPath: '/admin/season/waitlist',
-    body: adminAssessmentReviewBody({ assessment: a, signup, rating, reviews, myReview }),
+    body: adminAssessmentReviewBody({ assessment: a, signup, rating, reviews, myReview, isSuperAdmin }),
   }));
+});
+
+// Super-admin-only — an individual admin can already fix their own review by re-saving the
+// form (upsertAssessmentReview overwrites in place), so a delete button is only for removing
+// someone else's (a test entry, something posted in error, etc.).
+app.delete('/admin/season/assessments/:assessmentId/review/:reviewId', requireSuperAdmin, (req, res) => {
+  const a = getPlayerAssessmentById(req.params.assessmentId);
+  if (!a) return res.status(404).json({ error: 'not found' });
+  deleteAssessmentReview(req.params.reviewId);
+  res.json({ ok: true });
 });
 
 app.post('/admin/season/assessments/:id/review', requireAuth, express.json(), (req, res) => {

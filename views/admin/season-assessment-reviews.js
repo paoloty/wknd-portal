@@ -26,7 +26,7 @@ export function adminAssessmentReviewsListBody({ sigSeason = '', rows = [] } = {
   const unreviewedCount = rows.filter(r => r.summary.count === 0).length;
 
   const row = (r) => {
-    const name = signupDisplayName(r.signup || {}) || r.playerId || 'Unknown player';
+    const name = (r.signup && signupDisplayName(r.signup)) || 'Unknown player';
     const reviewerNames = r.reviews.map(rv => escHtml(rv.reviewer_name || 'Admin')).join(', ');
     return `
   <div class="flex items-center gap-3 px-4 py-2.5 border-b border-admin-border/40 last:border-0">

@@ -1,4 +1,5 @@
 import { escHtml } from '../layout.js';
+import { signupDisplayName } from '../utils.js';
 import { TIER_LABELS, alignmentFlag, ALIGNMENT_LABELS, REVIEW_TAG_LABELS, summarizeReviews } from '../../lib/assessment-scoring.js';
 
 const Q2_LABELS = { stay_engaged: 'Stay engaged', go_quiet: 'Go quiet', frustrated_vocal: 'Get frustrated and vocal', take_over: 'Try to take over' };
@@ -47,8 +48,8 @@ function fmtDate(ts) {
 // reviews: assessment_admin_reviews rows for this assessment, oldest first.
 // myReview: the logged-in admin's own row (or null if they haven't reviewed yet) — pre-fills
 // the form so re-opening the page to edit shows what you already said, not a blank slate.
-export function adminAssessmentReviewBody({ assessment: a, signup, rating, reviews = [], myReview = null } = {}) {
-  const name = signup?.full_name || a.player_id || 'Unknown player';
+export function adminAssessmentReviewBody({ assessment: a, signup, rating, reviews = [], myReview = null, isSuperAdmin = false } = {}) {
+  const name = (signup && signupDisplayName(signup)) || 'Unknown player';
   const summary = summarizeReviews(reviews);
 
   const sectionA = `
@@ -72,13 +73,14 @@ export function adminAssessmentReviewBody({ assessment: a, signup, rating, revie
   const reviewsList = reviews.length === 0
     ? `<div class="text-[13px] text-slate-500 py-2">No admin has reviewed this yet.</div>`
     : reviews.map(r => `
-    <div class="py-3 border-b border-admin-border/40 last:border-0">
+    <div class="py-3 border-b border-admin-border/40 last:border-0 review-row" data-review-id="${escHtml(r.id)}">
       <div class="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
         <span class="text-[13px] font-semibold text-slate-200">${escHtml(r.reviewer_name || 'Admin')}</span>
         <div class="flex items-center gap-2">
           ${tagPill(r.tag)}
           ${votePill(r.vote)}
           <span class="text-[10px] text-slate-600">${fmtDate(r.updated_at)}</span>
+          ${isSuperAdmin ? `<button class="review-remove-btn" data-id="${escHtml(r.id)}" title="Remove this review" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:11px;padding:0 0 0 4px">&#10005;</button>` : ''}
         </div>
       </div>
       ${r.note ? `<div class="text-[12px] text-slate-400 leading-relaxed">${escHtml(r.note)}</div>` : ''}
@@ -168,6 +170,21 @@ export function adminAssessmentReviewBody({ assessment: a, signup, rating, revie
       msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
       setTimeout(function () { location.reload(); }, 500);
     } catch (e) { msg.style.color = '#f87171'; msg.textContent = 'Error.'; }
+  });
+
+  document.querySelectorAll('.review-remove-btn').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      if (!confirm('Remove this admin review? This cannot be undone.')) return;
+      btn.disabled = true;
+      try {
+        var r = await fetch('/admin/season/assessments/${escHtml(a.id)}/review/' + btn.dataset.id, { method: 'DELETE' });
+        if (!r.ok) throw new Error();
+        location.reload();
+      } catch (e) {
+        btn.disabled = false;
+        alert('Could not remove review.');
+      }
+    });
   });
 })();
 </script>`;
