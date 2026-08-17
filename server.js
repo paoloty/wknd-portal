@@ -69,7 +69,7 @@ import {
   getMvpWriteup, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
-  insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup,
+  insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, updateSignupTeamPref, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup,
   upsertLivenessCapture, getLivenessCaptureByRegId, getLivenessCaptureById, getAllLivenessCaptures, deleteLivenessCapture,
   updateRegistrationContact,
   insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, setAssessmentTag, getLatestPlayerRating,
@@ -7120,6 +7120,15 @@ app.post('/admin/season/signups/:id/withdraw', requireAuth, express.json(), (req
   const result = withdrawSeasonSignup(req.params.id);
   if (result.error) return res.status(400).json({ error: 'Only a confirmed signup can be withdrawn.' });
   res.json({ ok: true, promotedId: result.promoted?.id || null });
+});
+
+app.post('/admin/season/signups/:id/team-pref', requireSuperAdmin, express.json(), (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Not found' });
+  const teamPref = req.body?.team_pref ?? '';
+  if (!['', 'stick', 'reshuffle'].includes(teamPref)) return res.status(400).json({ error: 'Invalid value.' });
+  updateSignupTeamPref(signup.id, teamPref);
+  res.json({ ok: true });
 });
 
 // ── Admin: Team Builder ────────────────────────────────────────────────────────

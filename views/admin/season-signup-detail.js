@@ -40,6 +40,22 @@ export function adminSignupDetailBody({ signup, isSuperAdmin = false } = {}) {
       ? `<span class="text-violet-400 font-medium">Shuffle</span>`
       : `<span class="text-slate-600">—</span>`;
 
+  // Editable for super admins — corrects a registrant's own poll answer after the fact
+  // (e.g. they meant the other option) without needing a raw SQL fix.
+  const teamPrefField = isSuperAdmin ? `
+    <div>
+      <dt class="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Team Preference</dt>
+      <dd class="flex items-center gap-2 flex-wrap">
+        <select id="team-pref-select" class="bg-admin-bg border border-admin-border rounded-md px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-brand">
+          <option value="" ${!s.team_pref ? 'selected' : ''}>—</option>
+          <option value="stick" ${s.team_pref === 'stick' ? 'selected' : ''}>Stick${s.prev_team_name ? ` (${escHtml(s.prev_team_name)})` : ''}</option>
+          <option value="reshuffle" ${s.team_pref === 'reshuffle' ? 'selected' : ''}>Shuffle</option>
+        </select>
+        <button onclick="saveTeamPref()" class="text-[11px] font-semibold text-brand hover:opacity-80 transition-opacity">Save</button>
+        <span id="team-pref-msg" class="text-[11px] text-slate-500"></span>
+      </dd>
+    </div>` : field('Team Preference', teamPref);
+
   const reshuffleVote = s.reshuffle_vote === 'yes' ? '<span class="text-emerald-400 font-medium">Yes</span>'
     : s.reshuffle_vote === 'no' ? '<span class="text-rose-400 font-medium">No</span>'
     : '<span class="text-slate-600">—</span>';
@@ -81,7 +97,7 @@ export function adminSignupDetailBody({ signup, isSuperAdmin = false } = {}) {
       ${field('Signed Up', escHtml(fmtDate(s.created_at)))}
       ${field('Jersey Top', s.jersey_top ? escHtml(s.jersey_top) : '<span class="text-slate-600">—</span>')}
       ${field('Jersey Shorts', s.jersey_shorts ? escHtml(s.jersey_shorts) : '<span class="text-slate-600">—</span>')}
-      ${field('Team Preference', teamPref)}
+      ${teamPrefField}
       ${field('League Shuffle Vote', reshuffleVote)}
       ${field('Balance', balance)}
       ${field('Assessment', assessment)}
@@ -97,6 +113,24 @@ export function adminSignupDetailBody({ signup, isSuperAdmin = false } = {}) {
 </div>
 <script>
 (function() {
+  var teamPrefSelect = document.getElementById('team-pref-select');
+  if (teamPrefSelect) {
+    window.saveTeamPref = function() {
+      var msg = document.getElementById('team-pref-msg');
+      msg.style.color = 'var(--text-muted)'; msg.textContent = 'Saving…';
+      fetch('/admin/season/signups/' + ${JSON.stringify(s.id)} + '/team-pref', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_pref: teamPrefSelect.value })
+      }).then(function(r) {
+        if (!r.ok) throw new Error();
+        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+        setTimeout(function() { location.reload(); }, 500);
+      }).catch(function() {
+        msg.style.color = '#f87171'; msg.textContent = 'Error.';
+      });
+    };
+  }
+
   document.querySelectorAll('.signup-confirm-btn').forEach(function(b) {
     b.addEventListener('click', function() {
       this.textContent = '…'; this.disabled = true;
