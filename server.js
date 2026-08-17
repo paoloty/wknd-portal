@@ -72,7 +72,8 @@ import {
   insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, updateSignupTeamPref, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup,
   upsertLivenessCapture, getLivenessCaptureByRegId, getLivenessCaptureById, getAllLivenessCaptures, deleteLivenessCapture,
   updateRegistrationContact,
-  insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, setAssessmentTag, getLatestPlayerRating,
+  insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, getAssessmentsBySeason, getLatestPlayerRating,
+  upsertAssessmentReview, getAssessmentReviews, getAssessmentReviewsBySeason,
   playerPlayedSeason, getPlayerCurrentTeam,
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
@@ -137,7 +138,7 @@ import { adminComparePage } from './views/admin/compare.js';
 import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
-import { alignmentFlag } from './lib/assessment-scoring.js';
+import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
@@ -6841,6 +6842,7 @@ import { adminWaitlistBody }   from './views/admin/season-waitlist.js';
 import { adminSignupDetailBody } from './views/admin/season-signup-detail.js';
 import { adminReturningBody }  from './views/admin/season-returning.js';
 import { adminCommentsBody }   from './views/admin/season-comments.js';
+import { adminAssessmentReviewsListBody } from './views/admin/season-assessment-reviews.js';
 import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
 import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
 import { adminLivenessListBody } from './views/admin/liveness-list.js';
@@ -6925,8 +6927,20 @@ function enrichSignup(s, sigSeason) {
   s.alignmentFlag = s.assessment && s.player_id
     ? alignmentFlag(s.assessment.self_overall, getLatestPlayerRating(s.player_id)?.overall ?? null)
     : null;
+  s.reviewSummary = s.assessment ? summarizeReviews(getAssessmentReviews(s.assessment.id)) : null;
   s.liveness = getLivenessCaptureByRegId(s.reg_id);
   return s;
+}
+
+// A logged-in player-admin (their own account, own registration) is attributed by name; the
+// shared super-admin login has no per-person identity at all, so every review left through it
+// collapses onto one fixed 'super' reviewer — a second admin using that login overwrites the
+// first's review rather than creating a phantom duplicate.
+function reviewerIdentity(req) {
+  if (req.session?.isElevatedPlayer && req.session?.playerRegId) {
+    return { reviewer_reg_id: req.session.playerRegId, reviewer_name: req.session.playerName || 'Admin' };
+  }
+  return { reviewer_reg_id: 'super', reviewer_name: 'Admin' };
 }
 
 app.get('/admin/season/waitlist', requireAuth, (req, res) => {
@@ -6976,6 +6990,33 @@ app.get('/admin/season/returning', requireAuth, (req, res) => {
   }));
 });
 
+app.get('/admin/season/assessment-reviews', requireAuth, (req, res) => {
+  const sigSeason = getSetting('signup_target_season', '');
+  if (!sigSeason) return res.redirect('/admin/season');
+
+  const assessments = getAssessmentsBySeason(sigSeason);
+  const signups = getSeasonSignups(sigSeason);
+  const signupByPlayerId = new Map(signups.filter(s => s.player_id).map(s => [s.player_id, s]));
+
+  const reviewsByAssessment = new Map();
+  for (const r of getAssessmentReviewsBySeason(sigSeason)) {
+    if (!reviewsByAssessment.has(r.assessment_id)) reviewsByAssessment.set(r.assessment_id, []);
+    reviewsByAssessment.get(r.assessment_id).push(r);
+  }
+
+  const rows = assessments.map(a => {
+    const signup = signupByPlayerId.get(a.player_id) || null;
+    const reviews = reviewsByAssessment.get(a.id) || [];
+    return { assessmentId: a.id, playerId: a.player_id, signup, reviews, summary: summarizeReviews(reviews) };
+  });
+
+  res.send(renderAdminPage(req, {
+    title: 'Assessment Reviews',
+    currentPath: '/admin/season/assessment-reviews',
+    body: adminAssessmentReviewsListBody({ sigSeason, rows }),
+  }));
+});
+
 app.get('/admin/season/comments', requireAuth, (req, res) => {
   const sigSeason = getSetting('signup_target_season', '');
   if (!sigSeason) return res.redirect('/admin/season');
@@ -7010,19 +7051,25 @@ app.get('/admin/season/assessments/:id', requireAuth, (req, res) => {
   if (!a) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '', body: '<p style="padding:40px;color:var(--text-muted)">Assessment not found.</p>' }));
   const signup = getSeasonSignups(a.season).find(s => s.player_id === a.player_id) || null;
   const rating = a.player_id ? getLatestPlayerRating(a.player_id) : null;
+  const reviews = getAssessmentReviews(a.id);
+  const me = reviewerIdentity(req);
+  const myReview = reviews.find(r => r.reviewer_reg_id === me.reviewer_reg_id) || null;
   res.send(renderAdminPage(req, {
     title: 'Mindset & Self-Assessment',
     currentPath: '/admin/season/waitlist',
-    body: adminAssessmentReviewBody({ assessment: a, signup, rating }),
+    body: adminAssessmentReviewBody({ assessment: a, signup, rating, reviews, myReview }),
   }));
 });
 
-app.post('/admin/season/assessments/:id/tag', requireAuth, express.json(), (req, res) => {
+app.post('/admin/season/assessments/:id/review', requireAuth, express.json(), (req, res) => {
   const a = getPlayerAssessmentById(req.params.id);
   if (!a) return res.status(404).json({ error: 'not found' });
   const tag = String(req.body?.tag || '');
   if (!['', 'no_concerns', 'worth_conversation', 'discuss_admin'].includes(tag)) return res.status(400).json({ error: 'invalid tag' });
-  setAssessmentTag(a.id, tag, String(req.body?.note || ''));
+  const vote = String(req.body?.vote || '');
+  if (!['', 'yes', 'no'].includes(vote)) return res.status(400).json({ error: 'invalid vote' });
+  const me = reviewerIdentity(req);
+  upsertAssessmentReview(a.id, me.reviewer_reg_id, me.reviewer_name, tag, String(req.body?.note || ''), vote);
   res.json({ ok: true });
 });
 

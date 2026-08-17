@@ -1,5 +1,6 @@
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
+import { REVIEW_TAG_LABELS } from '../../lib/assessment-scoring.js';
 
 const STATUS_BADGE = {
   waitlisted: `<span style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WAITLISTED</span>`,
@@ -8,11 +9,11 @@ const STATUS_BADGE = {
   withdrawn:  `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WITHDRAWN</span>`,
 };
 
-const ASSESSMENT_TAG_BADGE = {
-  no_concerns:        `<span style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">NO CONCERNS</span>`,
-  worth_conversation: `<span style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WORTH A CONVO</span>`,
-  discuss_admin:      `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">DISCUSS W/ ADMIN</span>`,
-};
+const TAG_COLOR = { '': '#64748b', no_concerns: '#22c55e', worth_conversation: '#f59332', discuss_admin: '#f87171' };
+function tagPill(tag) {
+  const color = TAG_COLOR[tag] || TAG_COLOR[''];
+  return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap">${escHtml((REVIEW_TAG_LABELS[tag] || 'Not reviewed').toUpperCase())}</span>`;
+}
 
 const ALIGNMENT_FLAG_BADGE = {
   optimistic: `<span title="Self-rated a tier above their actual rating" style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">OPTIMISTIC</span>`,
@@ -64,8 +65,15 @@ export function adminSignupDetailBody({ signup, isSuperAdmin = false } = {}) {
     ? `<span class="text-amber-400 font-medium">⚠ ₱${Number(s.balance_amt).toLocaleString()}</span>`
     : '<span class="text-slate-600">—</span>';
 
+  const reviewSummary = s.reviewSummary;
+  const voteTally = reviewSummary && reviewSummary.count > 0
+    ? `<span class="text-[11px] text-slate-500">${reviewSummary.yes}&#10003; &middot; ${reviewSummary.no}&#10007; &middot; ${reviewSummary.count} review${reviewSummary.count === 1 ? '' : 's'}</span>`
+    : '';
   const assessment = s.assessment
-    ? `<a href="/admin/season/assessments/${escHtml(s.assessment.id)}" class="no-underline hover:opacity-80 inline-flex flex-col items-start gap-1">${ASSESSMENT_TAG_BADGE[s.assessment.admin_tag] ?? '<span style="color:#64748b;font-size:11px">Not reviewed</span>'}${ALIGNMENT_FLAG_BADGE[s.alignmentFlag] || ''}</a>`
+    ? `<a href="/admin/season/assessments/${escHtml(s.assessment.id)}" class="no-underline hover:opacity-80 inline-flex flex-col items-start gap-1.5">
+        <span class="flex items-center gap-2">${tagPill(reviewSummary?.tag ?? '')}${ALIGNMENT_FLAG_BADGE[s.alignmentFlag] || ''}</span>
+        ${voteTally}
+      </a>`
     : '<span class="text-slate-600 text-sm">—</span>';
 
   const liveness = s.liveness

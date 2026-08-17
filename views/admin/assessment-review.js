@@ -1,5 +1,5 @@
 import { escHtml } from '../layout.js';
-import { TIER_LABELS, alignmentFlag, ALIGNMENT_LABELS } from '../../lib/assessment-scoring.js';
+import { TIER_LABELS, alignmentFlag, ALIGNMENT_LABELS, REVIEW_TAG_LABELS, summarizeReviews } from '../../lib/assessment-scoring.js';
 
 const Q2_LABELS = { stay_engaged: 'Stay engaged', go_quiet: 'Go quiet', frustrated_vocal: 'Get frustrated and vocal', take_over: 'Try to take over' };
 const Q3_LABELS = { let_it_go: 'Let it go', voice_briefly: 'Voice it briefly, then move on', argue_it: 'Argue it', carry_into_plays: 'Carry it into the next few plays' };
@@ -8,6 +8,7 @@ const Q8_LABELS = { raise_with_group: 'Raise it right there with the group', pri
 const Q9_LABELS = { welcome_specifics: 'Welcome it and ask for specifics', listen_disagree: 'Listen but privately disagree', defensive_argue: 'Get defensive or argue', brush_off: 'Brush it off — I know my game' };
 
 const ALIGNMENT_COLOR = { aligned: '#22c55e', optimistic: '#f59332', gap: '#f87171', not_ratable: '#64748b' };
+const TAG_COLOR = { '': '#64748b', no_concerns: '#22c55e', worth_conversation: '#f59332', discuss_admin: '#f87171' };
 
 function row(label, value) {
   return `<div class="py-3 border-b border-admin-border/40 last:border-0">
@@ -28,8 +29,27 @@ function tierRow(label, selfTier, actualRating) {
   </div>`;
 }
 
-export function adminAssessmentReviewBody({ assessment: a, signup, rating } = {}) {
+function tagPill(tag) {
+  const color = TAG_COLOR[tag] || TAG_COLOR[''];
+  return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap">${escHtml(REVIEW_TAG_LABELS[tag] || 'Not reviewed')}</span>`;
+}
+
+function votePill(vote) {
+  if (vote === 'yes') return `<span style="color:#22c55e;font-weight:700;font-size:11px">&#10003; Yes</span>`;
+  if (vote === 'no')  return `<span style="color:#f87171;font-weight:700;font-size:11px">&#10007; No</span>`;
+  return `<span style="color:#64748b;font-size:11px">Undecided</span>`;
+}
+
+function fmtDate(ts) {
+  return ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+}
+
+// reviews: assessment_admin_reviews rows for this assessment, oldest first.
+// myReview: the logged-in admin's own row (or null if they haven't reviewed yet) — pre-fills
+// the form so re-opening the page to edit shows what you already said, not a blank slate.
+export function adminAssessmentReviewBody({ assessment: a, signup, rating, reviews = [], myReview = null } = {}) {
   const name = signup?.full_name || a.player_id || 'Unknown player';
+  const summary = summarizeReviews(reviews);
 
   const sectionA = `
     ${row('Why are you playing this season?', escHtml(a.q1_why_playing))}
@@ -49,12 +69,33 @@ export function adminAssessmentReviewBody({ assessment: a, signup, rating } = {}
     ${tierRow('Overall game vs. the league', a.self_overall, rating?.overall ?? null)}
   `;
 
+  const reviewsList = reviews.length === 0
+    ? `<div class="text-[13px] text-slate-500 py-2">No admin has reviewed this yet.</div>`
+    : reviews.map(r => `
+    <div class="py-3 border-b border-admin-border/40 last:border-0">
+      <div class="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
+        <span class="text-[13px] font-semibold text-slate-200">${escHtml(r.reviewer_name || 'Admin')}</span>
+        <div class="flex items-center gap-2">
+          ${tagPill(r.tag)}
+          ${votePill(r.vote)}
+          <span class="text-[10px] text-slate-600">${fmtDate(r.updated_at)}</span>
+        </div>
+      </div>
+      ${r.note ? `<div class="text-[12px] text-slate-400 leading-relaxed">${escHtml(r.note)}</div>` : ''}
+    </div>`).join('');
+
   const tagOptions = [
     ['', 'Not reviewed'],
     ['no_concerns', 'No concerns'],
     ['worth_conversation', 'Worth a conversation'],
     ['discuss_admin', 'Discuss with admin team'],
-  ].map(([val, label]) => `<option value="${val}" ${a.admin_tag === val ? 'selected' : ''}>${label}</option>`).join('');
+  ].map(([val, label]) => `<option value="${val}" ${(myReview?.tag ?? '') === val ? 'selected' : ''}>${label}</option>`).join('');
+
+  const voteOptions = [
+    ['', 'Undecided'],
+    ['yes', 'Yes, confirm'],
+    ['no', 'No, hold off'],
+  ].map(([val, label]) => `<label class="check check--radio" style="display:inline-flex;margin-right:16px"><input type="radio" name="my-vote" value="${val}" ${(myReview?.vote ?? '') === val ? 'checked' : ''}> ${label}</label>`).join('');
 
   return `
 <div style="max-width:760px">
@@ -74,16 +115,31 @@ export function adminAssessmentReviewBody({ assessment: a, signup, rating } = {}
     ${sectionB}
   </div>
 
+  <div class="bg-admin-surface border border-admin-border rounded-lg p-5 mb-4">
+    <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Admin Reviews <span class="text-slate-600 font-normal normal-case">(${reviews.length})</span></div>
+      <div class="flex items-center gap-3">
+        ${tagPill(summary.tag)}
+        <span class="text-[11px] text-slate-500">${summary.yes}&#10003; &middot; ${summary.no}&#10007;</span>
+      </div>
+    </div>
+    ${reviewsList}
+  </div>
+
   <div class="bg-admin-surface border border-admin-border rounded-lg p-5">
-    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Admin Review</div>
+    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">${myReview ? 'Edit Your Review' : 'Add Your Review'}</div>
     <div class="flex flex-col gap-3">
       <div>
         <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">Tag</label>
         <select id="tag-select" class="admin-input w-full">${tagOptions}</select>
       </div>
       <div>
+        <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">Vote to confirm <span class="font-normal text-slate-600">(a guide for the group, not a gate — Confirm/Reject still works regardless)</span></label>
+        <div>${voteOptions}</div>
+      </div>
+      <div>
         <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">Private note <span class="font-normal text-slate-600">(never shown to the player)</span></label>
-        <textarea id="tag-note" rows="3" class="admin-input w-full resize-none">${escHtml(a.admin_note || '')}</textarea>
+        <textarea id="tag-note" rows="3" class="admin-input w-full resize-none">${escHtml(myReview?.note || '')}</textarea>
       </div>
       <div class="flex items-center gap-3">
         <button id="tag-save-btn" class="agm-new-btn">Save Review</button>
@@ -98,15 +154,20 @@ export function adminAssessmentReviewBody({ assessment: a, signup, rating } = {}
   document.getElementById('tag-save-btn').addEventListener('click', async function () {
     var msg = document.getElementById('tag-save-msg');
     msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+    var voteEl = document.querySelector('input[name="my-vote"]:checked');
     try {
-      var r = await fetch('/admin/season/assessments/${escHtml(a.id)}/tag', {
+      var r = await fetch('/admin/season/assessments/${escHtml(a.id)}/review', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag: document.getElementById('tag-select').value, note: document.getElementById('tag-note').value })
+        body: JSON.stringify({
+          tag: document.getElementById('tag-select').value,
+          vote: voteEl ? voteEl.value : '',
+          note: document.getElementById('tag-note').value,
+        })
       });
       if (!r.ok) throw new Error();
       msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+      setTimeout(function () { location.reload(); }, 500);
     } catch (e) { msg.style.color = '#f87171'; msg.textContent = 'Error.'; }
-    setTimeout(function () { msg.textContent = ''; }, 2500);
   });
 })();
 </script>`;
