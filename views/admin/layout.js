@@ -68,7 +68,8 @@ const NAV_GROUPS = [
   {
     label: 'Members',
     items: [
-      { href: '/admin/users', label: 'Users', icon: 'users' },
+      { href: '/admin/users',       label: 'Users',      icon: 'users' },
+      { href: '/admin/team-heads', label: 'Team Heads', icon: 'shield' },
     ],
   },
   {
@@ -90,7 +91,6 @@ const NAV_GROUPS = [
     items: [
       { href: '/admin/fines',            label: 'Cases',      icon: 'shield', exact: true },
       { href: '/admin/fines/categories', label: 'Categories', icon: 'ledger' },
-      { href: '/admin/fines/heads',      label: 'Team Heads', icon: 'users' },
     ],
   },
   {

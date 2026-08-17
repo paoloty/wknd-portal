@@ -46,7 +46,7 @@ import {
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
   getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
   getGameById, getGameDetailStats, getGameStats,
-  getPlayerWithTeam, getPlayerById, getTeamById,
+  getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
   getPlayerCareerHighs, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
   getPlayerStatsByType,
@@ -148,9 +148,11 @@ import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisComplet
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
-import { adminFinesListBody, adminFineCaseBody, adminFineCategoriesBody, adminFineHeadsBody } from './views/admin/fines.js';
+import { adminFinesListBody, adminFineCaseBody, adminFineCategoriesBody } from './views/admin/fines.js';
+import { adminTeamHeadsBody } from './views/admin/team-heads.js';
 import { adminRatingsBody } from './views/admin/ratings.js';
 import { finesPage } from './views/fines.js';
+import { teamHeadPage } from './views/team-head.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -7589,6 +7591,36 @@ app.post('/fines/:id/vote', requireHead, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
+// Read-only — deliberately no write actions (no recording payments, no editing balances).
+// Season fee status is derived from the same transaction_ledger the admin Ledger reads, just
+// collapsed to a 3-state summary (paid/partial/owing) rather than exposing peso amounts or
+// transaction history to a non-admin account.
+app.get('/team', requireHead, (req, res) => {
+  const season = getPortalCurrentSeason();
+  const balances = new Map(getSeasonBalances(season).map(r => [r.player_id, r]));
+
+  const teams = getHeadTeamIds(req.session.playerPlayerId).map(teamId => {
+    const team = getTeamById(teamId);
+    const roster = getPlayersByTeam(teamId).map(player => {
+      const bal = balances.get(player.id);
+      let status = 'not_charged';
+      if (bal && bal.charged > 0) {
+        if (bal.balance <= 0) status = 'paid';
+        else if (bal.paid > 0) status = 'partial';
+        else status = 'owing';
+      }
+      return { player, status };
+    });
+    return { team, roster };
+  }).filter(t => t.team);
+
+  res.send(renderPage(req, {
+    title: 'My Team — WKND Basketball',
+    currentPath: '/team',
+    body: teamHeadPage({ teams, season }),
+  }));
+});
+
 // ── Admin: Papawis ──────────────────────────────────────────────────────────────
 app.get('/admin/papawis', requireAuth, (req, res) => {
   const games = getPapawisGames();
@@ -7963,19 +7995,23 @@ app.post('/admin/fines/categories/:id/toggle', requireAuth, express.json(), (req
   res.json({ ok: true, active: !category.active });
 });
 
-app.get('/admin/fines/heads', requireAuth, (req, res) => {
+// Moved out of /admin/fines/* now that a head also gates /team (payments status) — kept a
+// GET redirect from the old path since it was linked from nav/bookmarks for a while.
+app.get('/admin/fines/heads', requireAuth, (req, res) => res.redirect('/admin/team-heads'));
+
+app.get('/admin/team-heads', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
-    title: 'Team Heads', currentPath: '/admin/fines/heads',
-    body: adminFineHeadsBody({ heads: getAllTeamHeads(), teams: getAllTeams(), players: getAllPlayers() }),
+    title: 'Team Heads', currentPath: '/admin/team-heads',
+    body: adminTeamHeadsBody({ heads: getAllTeamHeads(), teams: getAllTeams(), players: getAllPlayers() }),
   }));
 });
-app.post('/admin/fines/heads', requireAuth, express.json(), (req, res) => {
+app.post('/admin/team-heads', requireAuth, express.json(), (req, res) => {
   const { teamId, playerId } = req.body || {};
   if (!teamId || !playerId) return res.status(400).json({ error: 'Team and player are required.' });
   addTeamHead(teamId, playerId);
   res.json({ ok: true });
 });
-app.post('/admin/fines/heads/:id/revoke', requireAuth, (req, res) => {
+app.post('/admin/team-heads/:id/revoke', requireAuth, (req, res) => {
   removeTeamHead(req.params.id);
   res.json({ ok: true });
 });

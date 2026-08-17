@@ -106,9 +106,12 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   // is computed once per request in server.js' renderPage(), not looked up here.
   const myAccountItems = [
     { href: '/me', label: 'My Profile', active: onOwnProfile },
-    ...(isHead ? [{ href: '/fines', label: 'Fines', active: currentPath.startsWith('/fines') }] : []),
+    ...(isHead ? [
+      { href: '/team',  label: 'My Team', active: currentPath.startsWith('/team') },
+      { href: '/fines', label: 'Fines',   active: currentPath.startsWith('/fines') },
+    ] : []),
   ];
-  const myAccountDropdown = dropdown('My Account', myAccountItems, [], onOwnProfile || (isHead && currentPath.startsWith('/fines')));
+  const myAccountDropdown = dropdown('My Account', myAccountItems, [], onOwnProfile || (isHead && (currentPath.startsWith('/fines') || currentPath.startsWith('/team'))));
 
   // Bell sits right after My Account (not before it) — folded into authLink itself
   // rather than inserted as a separate element at the nav render sites, so it always
