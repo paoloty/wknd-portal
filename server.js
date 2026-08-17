@@ -6840,6 +6840,7 @@ import { adminSeasonBody }     from './views/admin/season.js';
 import { adminWaitlistBody }   from './views/admin/season-waitlist.js';
 import { adminSignupDetailBody } from './views/admin/season-signup-detail.js';
 import { adminReturningBody }  from './views/admin/season-returning.js';
+import { adminCommentsBody }   from './views/admin/season-comments.js';
 import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
 import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
 import { adminLivenessListBody } from './views/admin/liveness-list.js';
@@ -6972,6 +6973,21 @@ app.get('/admin/season/returning', requireAuth, (req, res) => {
     title: 'Returning Players',
     currentPath: '/admin/season/returning',
     body: adminReturningBody({ prevSeason, sigSeason, players }),
+  }));
+});
+
+app.get('/admin/season/comments', requireAuth, (req, res) => {
+  const sigSeason = getSetting('signup_target_season', '');
+  if (!sigSeason) return res.redirect('/admin/season');
+
+  const signups = getSeasonSignups(sigSeason)
+    .filter(s => s.comments && s.comments.trim())
+    .sort((a, b) => b.created_at - a.created_at);
+
+  res.send(renderAdminPage(req, {
+    title: 'Signup Comments',
+    currentPath: '/admin/season/comments',
+    body: adminCommentsBody({ sigSeason, signups }),
   }));
 });
 

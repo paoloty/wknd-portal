@@ -4,6 +4,7 @@ const IC_CHECK = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" st
 const IC_LIST  = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="4" x2="11" y2="4"/><line x1="2" y1="7" x2="11" y2="7"/><line x1="2" y1="10" x2="7" y2="10"/></svg>`;
 const IC_PLAY  = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 2 11 6.5 3 11" fill="currentColor" stroke="none"/></svg>`;
 const IC_USERS = `<svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="4.5" r="2"/><path d="M1 12c0-2.21 1.79-4 4-4"/><circle cx="10.5" cy="5" r="2.5"/><path d="M6 13c0-2.485 2.015-4.5 4.5-4.5S15 10.515 15 13"/></svg>`;
+const IC_COMMENT = `<svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 3.5h12v7h-8L2 13V10.5h-.5z"/></svg>`;
 
 export function adminSeasonBody({
   sigSeason = '', sigOpen = false, deadline = '', portalSeason = '', autoSeason = 3,
@@ -204,6 +205,7 @@ export function adminSeasonBody({
       </div>
     </div>
     <div class="flex items-center gap-2">
+      <a href="/admin/season/comments" class="admin-btn inline-flex items-center gap-1.5">${IC_COMMENT} Comments</a>
       <a href="/admin/season/returning" class="admin-btn inline-flex items-center gap-1.5">${IC_USERS} Returning Players</a>
       <a href="/admin/season/waitlist" class="agm-new-btn inline-flex items-center gap-1.5">${IC_LIST} View Waitlist</a>
     </div>

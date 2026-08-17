@@ -470,14 +470,14 @@ ${stylesBlock}`;
               <label for="q1_why_playing">Why are you playing this season? <span class="req">*</span></label>
               <textarea id="q1_why_playing" class="field__input" name="q1_why_playing" rows="2" data-required="1" data-step="${STEP.mindset}" data-minlen="10">${escHtml(prefill.q1_why_playing || '')}</textarea>
             </div>
-            <div class="field">
+            <div class="field" data-field="q2_losing_badly">
               <label>How do you handle it when the team is losing badly? <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="stay_engaged" ${checked('q2_losing_badly', 'stay_engaged')}> Stay engaged</label>
               <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="go_quiet" ${checked('q2_losing_badly', 'go_quiet')}> Go quiet</label>
               <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="frustrated_vocal" ${checked('q2_losing_badly', 'frustrated_vocal')}> Get frustrated and vocal</label>
               <label class="check check--radio"><input type="radio" name="q2_losing_badly" value="take_over" ${checked('q2_losing_badly', 'take_over')}> Try to take over</label>
             </div>
-            <div class="field">
+            <div class="field" data-field="q3_bad_ref_call">
               <label>How do you usually react to a bad call from the ref? <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="q3_bad_ref_call" value="let_it_go" ${checked('q3_bad_ref_call', 'let_it_go')}> Let it go</label>
               <label class="check check--radio"><input type="radio" name="q3_bad_ref_call" value="voice_briefly" ${checked('q3_bad_ref_call', 'voice_briefly')}> Voice it briefly, then move on</label>
@@ -488,7 +488,7 @@ ${stylesBlock}`;
               <label>Rate how you handle a heated moment with a teammate mid-game <span class="req">*</span></label>
               ${scaleCells('q4_heated_teammate', 'Handle it poorly', 'Handle it well')}
             </div>
-            <div class="field">
+            <div class="field" data-field="q8_disagreement_style">
               <label>When you disagree with a team decision (a rotation, a tactical call, playing time), what do you actually do? <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="raise_with_group" ${checked('q8_disagreement_style', 'raise_with_group')}> Raise it right there with the group</label>
               <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="private_after" ${checked('q8_disagreement_style', 'private_after')}> Pull the coach or captain aside privately after</label>
@@ -496,13 +496,13 @@ ${stylesBlock}`;
               <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="put_in_writing" ${checked('q8_disagreement_style', 'put_in_writing')}> Put it in writing — text, group chat — so there's a record</label>
               <label class="check check--radio"><input type="radio" name="q8_disagreement_style" value="sit_on_it" ${checked('q8_disagreement_style', 'sit_on_it')}> Sit on it and let it build</label>
             </div>
-            <div class="field">
+            <div class="field" data-field="q5_feedback_style">
               <label>How do you prefer to receive feedback from a coach/captain? <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="direct" ${checked('q5_feedback_style', 'direct')}> Direct, in the moment</label>
               <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="private" ${checked('q5_feedback_style', 'private')}> Private, after the game</label>
               <label class="check check--radio"><input type="radio" name="q5_feedback_style" value="written" ${checked('q5_feedback_style', 'written')}> Written</label>
             </div>
-            <div class="field">
+            <div class="field" data-field="q9_reaction_to_criticism">
               <label>If a coach or captain told you a specific part of your game (shooting, defense, IQ, etc.) needs real work, how would you react? <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="q9_reaction_to_criticism" value="welcome_specifics" ${checked('q9_reaction_to_criticism', 'welcome_specifics')}> Welcome it and ask for specifics</label>
               <label class="check check--radio"><input type="radio" name="q9_reaction_to_criticism" value="listen_disagree" ${checked('q9_reaction_to_criticism', 'listen_disagree')}> Listen but privately disagree</label>
@@ -563,7 +563,7 @@ ${stylesBlock}`;
         </button>
         <div class="acc-body">
           <div class="acc-body-inner">
-            <div class="field">
+            <div class="field" data-field="team_pref">
               <label>You played for <strong>${escHtml(returning.team.name)}</strong> last season (Season ${escHtml(String(returning.prevSeason))}) <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="team_pref" value="stick" ${checked('team_pref', 'stick')}> Stick with ${escHtml(returning.team.name)} for Season ${escHtml(String(sigSeason))}</label>
               <label class="check check--radio"><input type="radio" name="team_pref" value="reshuffle" ${checked('team_pref', 'reshuffle')}> I'm open to being shuffled onto a different team</label>
@@ -687,7 +687,7 @@ ${stylesBlock}`;
         </button>
         <div class="acc-body">
           <div class="acc-body-inner">
-            <div class="field">
+            <div class="field" data-field="reshuffle_vote">
               <label>Would you support a full league shuffle for Season ${escHtml(String(sigSeason))}? <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="reshuffle_vote" value="yes" ${checked('reshuffle_vote', 'yes')}> Yes, I'm open to a full shuffle</label>
               <label class="check check--radio"><input type="radio" name="reshuffle_vote" value="no" ${checked('reshuffle_vote', 'no')}> No, keep teams mostly as-is</label>
@@ -717,7 +717,7 @@ ${stylesBlock}`;
               <input type="checkbox" name="quota_ack" value="1" ${prefill.quota_ack === '1' ? 'checked' : ''}>
               <span>I understand the season fee shown above will be charged to my account once my spot is confirmed and the season starts. <span class="req">*</span></span>
             </label>
-            <div class="field">
+            <div class="field" data-field="payment_plan">
               <label>Payment Plan <span class="req">*</span></label>
               <label class="check check--radio"><input type="radio" name="payment_plan" value="full" ${checked('payment_plan', 'full')}> Pay in full upfront</label>
               <label class="check check--radio"><input type="radio" name="payment_plan" value="installment" ${checked('payment_plan', 'installment')}> Request an installment plan</label>
@@ -1105,6 +1105,21 @@ ${stylesBlock}
     err.textContent = msg || '';
   }
 
+  // .check is a flex row (checkbox + label text side by side) — fieldError()'s default of
+  // appending into the field's own parent would land the message beside the checkbox text
+  // instead of below it, so this inserts as a sibling after the whole <label class="check">
+  // the same way radioGroupError does for a pick-grid.
+  function checkboxError(el, msg) {
+    var label = el.parentElement;
+    var err = label.nextElementSibling;
+    if (!err || !err.classList || !err.classList.contains('reg-field-error')) {
+      err = document.createElement('div');
+      err.className = 'reg-field-error';
+      label.after(err);
+    }
+    err.textContent = msg || '';
+  }
+
   function validateStep(n) {
     var ok = true;
     var textFields = form.querySelectorAll('[data-step="' + n + '"][data-required]');
@@ -1130,27 +1145,39 @@ ${stylesBlock}
     }
     if (n == STEP.mindset) {
       ['q2_losing_badly', 'q3_bad_ref_call', 'q4_heated_teammate', 'q8_disagreement_style', 'q5_feedback_style', 'q9_reaction_to_criticism', 'q6_benched_comfort'].forEach(function (name) {
-        if (!checkedVal(name)) ok = false;
+        var has = !!checkedVal(name);
+        radioGroupError(form, name, has ? '' : 'This one is not optional.');
+        if (!has) ok = false;
       });
     }
     if (n == STEP.selfAssess) {
       ['self_scoring', 'self_defense', 'self_overall'].forEach(function (name) {
-        if (!checkedVal(name)) ok = false;
+        var has = !!checkedVal(name);
+        radioGroupError(form, name, has ? '' : 'This one is not optional.');
+        if (!has) ok = false;
       });
     }
     if (STEP.teamPref && n == STEP.teamPref) {
-      if (!checkedVal('team_pref')) ok = false;
+      var hasTeamPref = !!checkedVal('team_pref');
+      radioGroupError(form, 'team_pref', hasTeamPref ? '' : 'This one is not optional.');
+      if (!hasTeamPref) ok = false;
     }
     if (n == STEP.reshuffle) {
-      if (!checkedVal('reshuffle_vote')) ok = false;
+      var hasReshuffle = !!checkedVal('reshuffle_vote');
+      radioGroupError(form, 'reshuffle_vote', hasReshuffle ? '' : 'This one is not optional.');
+      if (!hasReshuffle) ok = false;
     }
     if (n == STEP.fee) {
       var ackEl = form.querySelector('[name="quota_ack"]');
+      checkboxError(ackEl, ackEl.checked ? '' : 'This one is not optional.');
       if (!ackEl.checked) ok = false;
-      if (!checkedVal('payment_plan')) ok = false;
+      var hasPlan = !!checkedVal('payment_plan');
+      radioGroupError(form, 'payment_plan', hasPlan ? '' : 'This one is not optional.');
+      if (!hasPlan) ok = false;
     }
     if (n == STEP.waiver) {
       var waiverAgreeEl = form.querySelector('[name="waiver_agree"]');
+      checkboxError(waiverAgreeEl, waiverAgreeEl.checked ? '' : 'This one is not optional.');
       if (!waiverAgreeEl.checked) ok = false;
     }
     if (n == STEP.contact) {
@@ -1173,6 +1200,20 @@ ${stylesBlock}
     return ok;
   }
 
+  // A step can run long (the mindset step alone has 7 questions) — the invalid one is often
+  // scrolled out of view by the time someone reaches the Continue button at the bottom, so a
+  // validation failure with no scroll reads as nothing happening at all. Recenter on whichever
+  // error actually blocked them, wherever in the step it lives.
+  function scrollToFirstError(n) {
+    var stepEl = form.querySelector('.acc-item[data-item="' + n + '"]');
+    if (!stepEl) return;
+    var candidates = Array.prototype.slice.call(stepEl.querySelectorAll('.reg-field-error, #lv-error'));
+    var target = candidates.filter(function (e) { return e.textContent && e.textContent.trim(); })[0]
+      || stepEl.querySelector('.reg-invalid')
+      || stepEl;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   form.querySelectorAll('[data-toggle]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var n = btn.dataset.toggle;
@@ -1184,7 +1225,7 @@ ${stylesBlock}
   form.querySelectorAll('[data-continue]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var n = btn.dataset.continue;
-      if (!validateStep(parseInt(n, 10))) return;
+      if (!validateStep(parseInt(n, 10))) { scrollToFirstError(n); return; }
       summarize(n);
       state[n] = 'done';
       var next = String(parseInt(n, 10) + 1);
@@ -1205,7 +1246,7 @@ ${stylesBlock}
   });
 
   form.addEventListener('submit', function (e) {
-    if (!validateStep(totalSteps)) e.preventDefault();
+    if (!validateStep(totalSteps)) { e.preventDefault(); scrollToFirstError(totalSteps); }
   });
 
   form.addEventListener('change', function (e) {
@@ -1214,10 +1255,25 @@ ${stylesBlock}
     }
   });
 
+  // Clears whichever error the field/radio-group/checkbox left behind. Text fields and
+  // checkboxes park their error inside/after their own parent; a radio's error instead lives
+  // as a sibling of the [data-field] wrapper the whole group shares (see radioGroupError), so
+  // that one needs its own lookup rather than e.target's immediate parent.
   form.addEventListener('input', function (e) {
-    var err = e.target.parentElement && e.target.parentElement.querySelector('.reg-field-error');
-    if (err) err.textContent = '';
-    e.target.classList.remove('reg-invalid');
+    var t = e.target;
+    var err = t.parentElement && t.parentElement.querySelector('.reg-field-error');
+    if (err) { err.textContent = ''; }
+    else if (t.type === 'checkbox' && t.parentElement && t.parentElement.nextElementSibling) {
+      var sib = t.parentElement.nextElementSibling;
+      if (sib.classList && sib.classList.contains('reg-field-error')) sib.textContent = '';
+    }
+    t.classList.remove('reg-invalid');
+
+    if (t.type === 'radio') {
+      var wrap = t.closest('[data-field]');
+      var rgErr = wrap && wrap.parentElement && wrap.parentElement.querySelector('.reg-field-error.rg-' + t.name);
+      if (rgErr) rgErr.textContent = '';
+    }
   });
 
   render();
