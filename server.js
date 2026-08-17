@@ -7269,7 +7269,11 @@ app.get('/admin/season/teams/sandbox', requireAuth, (req, res) => {
   let players;
   if (source === 'waitlist') {
     players = getSeasonSignupsWithStats(season)
-      .filter(s => s.status === 'confirmed')
+      // Sandbox is scratch space for experimenting with team splits before anyone's actually
+      // confirmed — waitlisted signups are fair game here even though the real Team Builder
+      // (season-teams.js's confirmedPlayers filter) only pools confirmed ones. Rejected/
+      // withdrawn stay excluded since those are explicitly out of consideration.
+      .filter(s => s.status === 'confirmed' || s.status === 'waitlisted')
       .map(s => ({
         id:           s.id,
         full_name:    signupDisplayName(s) || s.email || s.id,
@@ -7312,7 +7316,7 @@ app.get('/admin/season/teams/sandbox', requireAuth, (req, res) => {
   // Build source option lists
   const gameSeasons    = getGameSeasons();   // ['3','2','1'] newest-first
   const signupSeasons  = getSignupStatsBySeason()
-    .filter(s => s.confirmed > 0)
+    .filter(s => s.confirmed > 0 || s.waitlisted > 0)
     .map(s => s.season);
 
   const teams      = getSeasonTeams('sandbox');
