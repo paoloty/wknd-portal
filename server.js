@@ -89,12 +89,13 @@ import {
   getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
   createPapawisGame, joinPapawisGame, cancelPapawisSignup,
   adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
-  completePapawisGame, cancelPapawisGame, deletePapawisGame,
+  completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
   lockPapawisSignups, unlockPapawisSignups,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
+  getPapawisCourtById, updatePapawisCourtImage,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
   getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
@@ -7447,6 +7448,13 @@ app.get('/papawis', (req, res) => {
     renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
   );
   const games = getPapawisGames();
+  // Location is free text on the game, matched to a court by name — same lookup the admin
+  // "Close out" calculator uses for its rate default. No match, or a matched court with no
+  // photo on file, both just mean the card falls back to its plain (no-banner) layout.
+  for (const g of games) {
+    const court = getPapawisCourtByName(g.location);
+    g.court_image_id = court?.image_url ? court.id : null;
+  }
   const signupsByGame = Object.fromEntries(games.map(g => [g.id, getPapawisSignups(g.id)]));
   const viewerPlayerId = req.session?.playerPlayerId || null;
   const isLoggedIn = !!req.session?.playerRegId;
@@ -7662,6 +7670,30 @@ app.post('/admin/papawis/courts/:id/toggle', requireAuth, express.json(), (req, 
   setPapawisCourtActive(req.params.id, !!active);
   res.json({ ok: true });
 });
+// Landscape banner crop (not the square "fit inside" players.picture_url gets from
+// compressSourceImage) — this is what renders behind the title bar on a Papawis session card.
+app.post('/admin/papawis/courts/:id/photo', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Not found' });
+  const dataUrl = String(req.body.dataUrl || '');
+  if (!dataUrl.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image data' });
+  const buf = parseDataUrl(dataUrl);
+  if (!buf) return res.status(400).json({ error: 'Invalid image data' });
+  try {
+    const out = await sharp(buf).rotate().resize(800, 400, { fit: 'cover', position: 'attention' }).jpeg({ quality: 78, progressive: true }).toBuffer();
+    updatePapawisCourtImage(court.id, 'data:image/jpeg;base64,' + out.toString('base64'));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[papawis court photo]', e.message);
+    res.status(500).json({ error: 'Could not process image.' });
+  }
+});
+// Same data:-URI-in-a-column storage as player photos — sendPlayerPhotoUrl is generic over
+// the url string, no player-specific logic, so it's reused as-is here.
+app.get('/api/papawis-court/:id/photo', async (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  await sendPlayerPhotoUrl(res, court?.image_url);
+});
 
 app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
   const { title, date, start_time, end_time, location, max_slots, open_days_before } = req.body;
@@ -7874,6 +7906,25 @@ app.post('/admin/papawis/:id/signups/reorder', requireAuth, express.json(), (req
   res.json({ ok: true });
 });
 
+// Saves the "Close out" calculator's breakdown without completing/charging — lets an admin
+// lock in a court-rate/referee estimate as soon as they know it (e.g. right after booking the
+// court), well before the game happens. That saved actual_total is what estimatedPapawisPrice()
+// then quotes in the pre-game reminder/team-assigned emails instead of the generic guess.
+app.post('/admin/papawis/:id/estimate', requireAuth, express.json(), (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.status !== 'open') return res.status(400).json({ error: 'Only open sessions can be updated here.' });
+  savePapawisEstimate(req.params.id, {
+    courtRate:    req.body.court_rate != null ? Number(req.body.court_rate) : null,
+    hours:        req.body.hours != null ? Number(req.body.hours) : null,
+    hasReferee:   !!req.body.has_referee,
+    refereeRate:  req.body.referee_rate != null ? Number(req.body.referee_rate) : null,
+    actualTotal:  req.body.actual_total != null ? Number(req.body.actual_total) : null,
+    minPerPlayer: req.body.min_per_player != null ? Number(req.body.min_per_player) : null,
+  });
+  res.json({ ok: true });
+});
+
 app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
@@ -7885,7 +7936,7 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
     courtRate:    req.body.court_rate != null ? Number(req.body.court_rate) : null,
     hours:        req.body.hours != null ? Number(req.body.hours) : null,
     hasReferee:   !!req.body.has_referee,
-    refereeFee:   req.body.referee_fee != null ? Number(req.body.referee_fee) : null,
+    refereeRate:  req.body.referee_rate != null ? Number(req.body.referee_rate) : null,
     actualTotal:  req.body.actual_total != null ? Number(req.body.actual_total) : null,
     minPerPlayer: req.body.min_per_player != null ? Number(req.body.min_per_player) : null,
   };

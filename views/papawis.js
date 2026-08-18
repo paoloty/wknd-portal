@@ -304,13 +304,27 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
   }
 
   const cardStateClass = isJoined ? ' pw-card--joined' : signupOpen ? ' pw-card--open' : '';
+  // Court's photo, matched by (free-text) location name server-side — see the /papawis route.
+  // No match, or a matched court with nothing uploaded yet, both just mean no banner — and in
+  // that case the status badge/location stay exactly where they've always been (titlebar/meta
+  // line) rather than left floating with nothing to sit on.
+  const hasPhoto = !!game.court_image_id;
+  const photoBanner = hasPhoto
+    ? `<div class="pw-photo">
+        <img src="/api/papawis-court/${escHtml(game.court_image_id)}/photo" alt="" loading="lazy">
+        <div class="pw-photo-scrim"></div>
+        <span class="pw-photo-status">${statusBadge}</span>
+        ${game.location ? `<div class="pw-photo-loc"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.7"/></svg><span class="pw-photo-loc-text">${escHtml(game.location)}</span></div>` : ''}
+      </div>`
+    : '';
   return `<article id="pw-game-${escHtml(game.id)}" class="pw-card${cardStateClass}${cancelledUpcoming ? ' pw-card--cancelled-alert' : ''}" data-game-id="${escHtml(game.id)}">
+    ${photoBanner}
     <div class="pw-card-titlebar">
       <div class="pw-card-name">${escHtml(game.title || 'Papawis')}</div>
-      ${statusBadge}
+      ${hasPhoto ? '' : statusBadge}
     </div>
     <div class="pw-card-body">
-      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${game.location ? ` · ${escHtml(game.location)}` : ''}</div>
+      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${(!hasPhoto && game.location) ? ` · ${escHtml(game.location)}` : ''}</div>
 
       <div class="pw-meter-row">
         <span class="pw-meter-label">SLOTS</span>
@@ -413,6 +427,13 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
 .pw-card--open { border-color: rgba(245,147,50,.35); box-shadow: 0 0 0 1px rgba(245,147,50,.06), 0 12px 32px -12px rgba(245,147,50,.2); }
 .pw-card--joined { border-color: rgba(52,211,153,.4); box-shadow: 0 0 0 1px rgba(52,211,153,.08), 0 12px 32px -12px rgba(52,211,153,.25); }
 .pw-card--cancelled-alert { border-color: rgba(248,113,113,.4); box-shadow: 0 0 0 1px rgba(248,113,113,.08), 0 12px 32px -12px rgba(248,113,113,.25); }
+.pw-photo { position: relative; height: 140px; flex-shrink: 0; overflow: hidden; background: linear-gradient(155deg, #2a3346 0%, #171d29 46%, #0c0f16 100%); }
+.pw-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pw-photo-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,9,16,0) 45%, rgba(6,9,16,.55) 100%); }
+.pw-photo-status { position: absolute; top: 10px; right: 10px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.5)); }
+.pw-photo-loc { position: absolute; left: 14px; bottom: 10px; right: 14px; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #f4f6f9; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+.pw-photo-loc svg { flex-shrink: 0; opacity: .95; }
+.pw-photo-loc-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pw-card-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 18px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
 .pw-card--open .pw-card-titlebar { background: rgba(245,147,50,.05); border-bottom-color: rgba(245,147,50,.2); }
 .pw-card--joined .pw-card-titlebar { background: rgba(52,211,153,.06); border-bottom-color: rgba(52,211,153,.22); }

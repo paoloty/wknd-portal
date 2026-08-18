@@ -328,15 +328,21 @@ export function adminPapawisListBody({ games = [], papawisRemindersEnabled = fal
 }
 
 // ── Detail / manage ───────────────────────────────────────────────────────────
-// 20 slots has historically settled on a flat ₱270/player rate; smaller turnouts scale
-// off a fixed ₱4,200 court budget instead, rounded to the nearest ₱10 so the number is
-// still easy to collect in cash. Always just a starting point in the (editable) input —
-// never charged as-is without the admin looking at it first.
+// Last-resort fallback only, for when neither a court rate nor session hours are known at
+// all (no court match, no start/end time) — everywhere else now prefers estimateTotal()
+// below. 20 slots has historically settled on a flat ₱270/player rate; smaller turnouts scale
+// off a fixed ₱4,200 court budget instead, rounded to the nearest ₱10.
 export function defaultPapawisPrice(confirmedCount) {
   if (!confirmedCount) return null;
   if (confirmedCount === 20) return 270;
-  return Math.round((4200 / confirmedCount) / 10) * 10;
+  return roundTo10(4200 / confirmedCount);
 }
+
+// The standing default whenever there's a referee — ₱/hr, same pricing shape as a court.
+// Only ever a starting point in an (editable) input; nothing here charges anyone on its own.
+export const REFEREE_RATE_DEFAULT = 500;
+
+export function roundTo10(n) { return Math.round(n / 10) * 10; }
 
 // "18:00" / "20:30" → 2.5. Null if either is missing or unparseable — the Hours field just
 // starts blank in that case rather than guessing.
@@ -350,6 +356,35 @@ function hoursBetween(start, end) {
   return Math.round(((b - a) / 60) * 4) / 4; // nearest quarter-hour
 }
 
+// Court cost + (optionally) referee cost, both ₱/hr × hours, rounded to the nearest ₱10.
+// Null if there's not enough to compute from (no rate, or no hours).
+function estimateTotal({ rate, hours, hasReferee, refereeRate }) {
+  if (!rate || !hours) return null;
+  const court = rate * hours;
+  const ref = hasReferee ? (refereeRate || REFEREE_RATE_DEFAULT) * hours : 0;
+  return roundTo10(court + ref);
+}
+
+// Whether nothing has been explicitly set on this game yet (via "Save details" or "Confirm &
+// charge") — while true, a referee is *assumed* present at the standing ₱500/hr default; once
+// an admin has saved anything (even "no referee"), that saved choice is used as-is instead.
+function hasSavedPapawisAmount(game) { return game?.actual_total != null; }
+
+// Used by the pre-game reminder/team-assigned emails (lib/papawis-notify.js) as well as the
+// Manage page itself — same "court + referee, rounded to ₱10" default the panel shows,
+// preferring whatever's actually been saved on the game. courtRateFallback is a fresh
+// location→court rate lookup, used only when the game itself has no saved rate yet.
+export function estimatedPapawisPrice(game, confirmedCount, courtRateFallback = null) {
+  const saved = hasSavedPapawisAmount(game);
+  const rate    = game?.court_rate_per_hour || courtRateFallback || null;
+  const hours   = game?.session_hours || hoursBetween(game?.start_time, game?.end_time);
+  const hasRef  = saved ? !!game?.has_referee : true;
+  const refRate = game?.referee_rate_per_hour || REFEREE_RATE_DEFAULT;
+  const total = estimateTotal({ rate, hours, hasReferee: hasRef, refereeRate: refRate });
+  if (total && confirmedCount) return roundTo10(total / confirmedCount);
+  return defaultPapawisPrice(confirmedCount);
+}
+
 export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
@@ -361,12 +396,20 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   // Messenger"), independent of the automated reminder-email setting. While locked, the
   // whole roster/teams editing surface is swapped for a static summary table.
   const isLocked    = !!game.signups_locked_at;
-  // "Close out" calculator defaults — a real court rate × the session's scheduled duration
-  // beats the generic budget-split guess whenever a court match is on file; falls back to the
-  // old heuristic (defaultPapawisPrice) when it isn't, same as before this calculator existed.
-  const defaultHours = hoursBetween(game.start_time, game.end_time);
-  const defaultPrice = (courtRate && defaultHours && confirmed.length)
-    ? Math.round((courtRate * defaultHours) / confirmed.length)
+  // "Close out" calculator defaults, in priority order: whatever an admin already saved on
+  // this game (via "Save details", possibly days before the game even happened) beats a fresh
+  // court-rate match, which beats the old headcount-only heuristic (defaultPapawisPrice).
+  // Referee defaults to assumed-present at ₱500/hr until something's actually been saved —
+  // "if there's no amount set, always use court rate + referee rate" — after that, whatever
+  // was saved (including an explicit "no referee") wins.
+  const savedAmount   = hasSavedPapawisAmount(game);
+  const defaultRate   = game.court_rate_per_hour || courtRate || null;
+  const defaultHours  = game.session_hours || hoursBetween(game.start_time, game.end_time);
+  const defaultHasRef = savedAmount ? !!game.has_referee : true;
+  const defaultRefRate = game.referee_rate_per_hour || REFEREE_RATE_DEFAULT;
+  const defaultTotal  = estimateTotal({ rate: defaultRate, hours: defaultHours, hasReferee: defaultHasRef, refereeRate: defaultRefRate });
+  const defaultPrice  = (defaultTotal && confirmed.length)
+    ? roundTo10(defaultTotal / confirmed.length)
     : defaultPapawisPrice(confirmed.length);
   // Admin can build/edit teams whenever — this only controls what the "Teams" panel
   // tells them about whether players can currently see the split (see the matching
@@ -534,7 +577,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="admin-field-label">Court rate (₱/hr)</label>
-            <input type="number" id="pw-court-rate" class="admin-input" min="0" step="1" placeholder="e.g. 700" ${courtRate ? `value="${courtRate}"` : ''}>
+            <input type="number" id="pw-court-rate" class="admin-input" min="0" step="1" placeholder="e.g. 700" ${defaultRate ? `value="${defaultRate}"` : ''}>
           </div>
           <div>
             <label class="admin-field-label">Hours</label>
@@ -543,27 +586,33 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         </div>
 
         <label class="flex items-center gap-2 text-xs text-slate-300">
-          <input type="checkbox" id="pw-has-referee" class="accent-amber-400"> Referee for this session
+          <input type="checkbox" id="pw-has-referee" class="accent-amber-400" ${defaultHasRef ? 'checked' : ''}> Referee for this session
         </label>
-        <div id="pw-referee-fee-wrap" style="display:none">
-          <label class="admin-field-label">Referee fee (₱)</label>
-          <input type="number" id="pw-referee-fee" class="admin-input" min="0" step="1" placeholder="e.g. 500">
+        <div id="pw-referee-rate-wrap" style="display:${defaultHasRef ? '' : 'none'}">
+          <label class="admin-field-label">Referee rate (₱/hr)</label>
+          <input type="number" id="pw-referee-rate" class="admin-input" min="0" step="1" placeholder="e.g. 500" value="${defaultRefRate}">
         </div>
 
         <div>
           <label class="admin-field-label">Minimum per player (₱) <span class="text-slate-600 font-normal">optional</span></label>
-          <input type="number" id="pw-min-price" class="admin-input" min="0" step="1" placeholder="e.g. 150">
+          <input type="number" id="pw-min-price" class="admin-input" min="0" step="1" placeholder="e.g. 150" ${game.min_per_player ? `value="${game.min_per_player}"` : ''}>
         </div>
 
         <div class="bg-black/20 border border-admin-border rounded-md p-3 flex flex-col gap-1.5 text-xs">
           <div class="flex items-center justify-between text-slate-400"><span>Court cost</span><span id="pw-calc-court">₱0</span></div>
-          <div class="flex items-center justify-between text-slate-400" id="pw-calc-ref-row" style="display:none"><span>Referee fee</span><span id="pw-calc-ref">₱0</span></div>
+          <div class="flex items-center justify-between text-slate-400" id="pw-calc-ref-row" style="display:${defaultHasRef ? '' : 'none'}"><span>Referee cost</span><span id="pw-calc-ref">₱0</span></div>
           <div class="flex items-center justify-between text-slate-200 font-semibold pt-1.5 border-t border-admin-border mt-0.5"><span>Actual total</span><span id="pw-calc-total">₱0</span></div>
           <div class="flex items-center justify-between text-slate-500"><span>÷ ${confirmed.length || 0} players</span><span id="pw-calc-raw">₱0 / player</span></div>
         </div>
 
-        <div>
-          <label class="admin-field-label">Price per player <span class="text-slate-600 font-normal">(final — adjust freely)</span></label>
+        <div class="flex items-center gap-3">
+          <button class="admin-btn" id="pw-save-estimate-btn">Save details</button>
+          <span id="pw-estimate-msg" class="text-xs text-slate-500"></span>
+        </div>
+        <p class="text-[11px] text-slate-600 leading-relaxed -mt-1.5">Saves the rate/hours/referee/minimum above so the pre-game reminder email can quote this real estimate instead of a generic guess. Doesn't charge anyone.</p>
+
+        <div class="pt-1 border-t border-admin-border">
+          <label class="admin-field-label mt-2">Price per player <span class="text-slate-600 font-normal">(final — adjust freely)</span></label>
           <input type="number" id="pw-price" class="admin-input" placeholder="e.g. 250" min="0" step="1" ${defaultPrice ? `value="${defaultPrice}"` : ''}>
         </div>
         <div id="pw-complete-msg" class="text-xs text-error" style="display:none"></div>
@@ -578,7 +627,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         <div>
           <div class="text-2xl font-extrabold font-saira text-brand">₱${Number(game.price_per_player || 0).toLocaleString()}</div>
           <div class="text-xs text-slate-500 mt-1">per player · ${confirmed.length} charged</div>
-          ${game.actual_total ? `<div class="text-[11px] text-slate-600 mt-2 leading-relaxed">₱${Number(game.court_rate_per_hour || 0).toLocaleString()}/hr &times; ${game.session_hours || 0}h${game.has_referee ? ` + ₱${Number(game.referee_fee || 0).toLocaleString()} ref` : ''} = ₱${Number(game.actual_total).toLocaleString()} total${game.min_per_player ? ` &middot; ₱${Number(game.min_per_player).toLocaleString()} min/player` : ''}</div>` : ''}
+          ${game.actual_total ? `<div class="text-[11px] text-slate-600 mt-2 leading-relaxed">₱${Number(game.court_rate_per_hour || 0).toLocaleString()}/hr &times; ${game.session_hours || 0}h${game.has_referee ? ` + ₱${Number(game.referee_rate_per_hour || 0).toLocaleString()}/hr &times; ${game.session_hours || 0}h ref` : ''} = ₱${Number(game.actual_total).toLocaleString()} total${game.min_per_player ? ` &middot; ₱${Number(game.min_per_player).toLocaleString()} min/player` : ''}</div>` : ''}
           <div class="text-xs mt-2 ${confirmed.every(s => s.paid_at) && confirmed.length ? 'text-emerald-400' : 'text-slate-500'}">${confirmed.filter(s => s.paid_at).length}/${confirmed.length} paid</div>
         </div>
         <div class="pt-2 border-t border-admin-border">
@@ -983,12 +1032,14 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
 
   // Close-out calculator — recomputes on every input change and keeps writing its result
   // into #pw-price, which stays a plain editable field so a manual nudge right before
-  // clicking Confirm still works exactly like it always has.
+  // clicking Confirm still works exactly like it always has. Every money figure here rounds
+  // to the nearest ₱10, same as the server-side default.
+  function roundTo10(n) { return Math.round(n / 10) * 10; }
   var courtRateEl  = document.getElementById('pw-court-rate');
   var hoursEl       = document.getElementById('pw-hours');
   var hasRefEl      = document.getElementById('pw-has-referee');
-  var refFeeWrap    = document.getElementById('pw-referee-fee-wrap');
-  var refFeeEl      = document.getElementById('pw-referee-fee');
+  var refRateWrap   = document.getElementById('pw-referee-rate-wrap');
+  var refRateEl     = document.getElementById('pw-referee-rate');
   var minPriceEl    = document.getElementById('pw-min-price');
   var priceEl       = document.getElementById('pw-price');
   var confirmedCount = ${confirmed.length};
@@ -998,30 +1049,59 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     var rate    = Number(courtRateEl.value) || 0;
     var hours   = Number(hoursEl.value) || 0;
     var hasRef  = hasRefEl.checked;
-    var refFee  = hasRef ? (Number(refFeeEl.value) || 0) : 0;
+    var refRate = hasRef ? (Number(refRateEl.value) || 0) : 0;
     var minPrice = Number(minPriceEl.value) || 0;
     var courtCost = rate * hours;
-    var total = courtCost + refFee;
-    var raw = confirmedCount > 0 ? total / confirmedCount : 0;
+    var refCost = refRate * hours;
+    var total = roundTo10(courtCost + refCost);
+    var raw = confirmedCount > 0 ? roundTo10(total / confirmedCount) : 0;
     var final = Math.max(minPrice, raw);
 
-    document.getElementById('pw-calc-court').textContent = '₱' + Math.round(courtCost).toLocaleString();
-    document.getElementById('pw-calc-ref').textContent = '₱' + Math.round(refFee).toLocaleString();
-    document.getElementById('pw-calc-total').textContent = '₱' + Math.round(total).toLocaleString();
-    document.getElementById('pw-calc-raw').textContent = '₱' + Math.round(raw).toLocaleString() + ' / player';
-    if (final > 0) priceEl.value = Math.round(final);
+    document.getElementById('pw-calc-court').textContent = '₱' + roundTo10(courtCost).toLocaleString();
+    document.getElementById('pw-calc-ref').textContent = '₱' + roundTo10(refCost).toLocaleString();
+    document.getElementById('pw-calc-total').textContent = '₱' + total.toLocaleString();
+    document.getElementById('pw-calc-raw').textContent = '₱' + raw.toLocaleString() + ' / player';
+    if (final > 0) priceEl.value = roundTo10(final);
   }
 
   if (courtRateEl) {
-    [courtRateEl, hoursEl, refFeeEl, minPriceEl].forEach(function(el) {
+    [courtRateEl, hoursEl, refRateEl, minPriceEl].forEach(function(el) {
       el.addEventListener('input', recalcCloseOut);
     });
     hasRefEl.addEventListener('change', function() {
-      refFeeWrap.style.display = hasRefEl.checked ? '' : 'none';
+      refRateWrap.style.display = hasRefEl.checked ? '' : 'none';
       document.getElementById('pw-calc-ref-row').style.display = hasRefEl.checked ? '' : 'none';
       recalcCloseOut();
     });
     recalcCloseOut();
+  }
+
+  var saveEstimateBtn = document.getElementById('pw-save-estimate-btn');
+  if (saveEstimateBtn) {
+    saveEstimateBtn.addEventListener('click', function() {
+      var msg = document.getElementById('pw-estimate-msg');
+      msg.style.color = 'var(--text-muted)'; msg.textContent = 'Saving…';
+      saveEstimateBtn.disabled = true;
+      var actualTotal = roundTo10((Number(courtRateEl.value) || 0) * (Number(hoursEl.value) || 0) + (hasRefEl.checked ? (Number(refRateEl.value) || 0) * (Number(hoursEl.value) || 0) : 0));
+      fetch('/admin/papawis/' + gameId + '/estimate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          court_rate:   courtRateEl.value ? Number(courtRateEl.value) : null,
+          hours:        hoursEl.value ? Number(hoursEl.value) : null,
+          has_referee:  hasRefEl.checked,
+          referee_rate: hasRefEl.checked && refRateEl.value ? Number(refRateEl.value) : null,
+          actual_total: actualTotal,
+          min_per_player: minPriceEl.value ? Number(minPriceEl.value) : null,
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        saveEstimateBtn.disabled = false;
+        if (d.ok) { msg.style.color = '#22c55e'; msg.textContent = 'Saved.'; }
+        else { msg.style.color = '#f87171'; msg.textContent = d.error || 'Failed.'; }
+      })
+      .catch(function() { saveEstimateBtn.disabled = false; msg.style.color = '#f87171'; msg.textContent = 'Network error.'; });
+    });
   }
 
   var completeBtn = document.getElementById('pw-complete-btn');
@@ -1040,8 +1120,8 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
           court_rate:   courtRateEl.value ? Number(courtRateEl.value) : null,
           hours:        hoursEl.value ? Number(hoursEl.value) : null,
           has_referee:  hasRefEl.checked,
-          referee_fee:  hasRefEl.checked && refFeeEl.value ? Number(refFeeEl.value) : null,
-          actual_total: (Number(courtRateEl.value) || 0) * (Number(hoursEl.value) || 0) + (hasRefEl.checked ? (Number(refFeeEl.value) || 0) : 0),
+          referee_rate: hasRefEl.checked && refRateEl.value ? Number(refRateEl.value) : null,
+          actual_total: roundTo10((Number(courtRateEl.value) || 0) * (Number(hoursEl.value) || 0) + (hasRefEl.checked ? (Number(refRateEl.value) || 0) * (Number(hoursEl.value) || 0) : 0)),
           min_per_player: minPriceEl.value ? Number(minPriceEl.value) : null,
         })
       })
