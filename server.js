@@ -7743,14 +7743,15 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
     }
   }
 
-  // Real per-court rate beats the generic ₱4,200-budget guess in defaultPapawisPrice() when
-  // the game's (free-text) location happens to match a known court by name.
-  const courtPrice = getPapawisCourtByName(game.location)?.price_per_player || null;
+  // Feeds the "Close out" calculator when the game's (free-text) location happens to match a
+  // known court by name — its hourly rate becomes the calculator's starting point instead of
+  // an empty field.
+  const courtRate = getPapawisCourtByName(game.location)?.price_per_hour || null;
 
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtPrice }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate }),
   }));
 });
 
@@ -7878,6 +7879,16 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
   if (!game) return res.status(404).json({ error: 'Not found.' });
   const price = Number(req.body.price_per_player);
   if (!price || price <= 0) return res.status(400).json({ error: 'Enter a valid price per player.' });
+  // Calculator breakdown — record-keeping only (see completePapawisGame), doesn't affect the
+  // actual charge below, which always uses the (admin-confirmed, possibly hand-edited) price.
+  const breakdown = {
+    courtRate:    req.body.court_rate != null ? Number(req.body.court_rate) : null,
+    hours:        req.body.hours != null ? Number(req.body.hours) : null,
+    hasReferee:   !!req.body.has_referee,
+    refereeFee:   req.body.referee_fee != null ? Number(req.body.referee_fee) : null,
+    actualTotal:  req.body.actual_total != null ? Number(req.body.actual_total) : null,
+    minPerPlayer: req.body.min_per_player != null ? Number(req.body.min_per_player) : null,
+  };
   const confirmed = getPapawisSignups(req.params.id).filter(s => s.status === 'confirmed');
   const today = manilaTodayStr();
   for (const s of confirmed) {
@@ -7896,7 +7907,7 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
     });
     notifyLedgerEvent({ playerId: s.player_id, type: 'charge', amount: price, notes: chargeNotes });
   }
-  completePapawisGame(req.params.id, price);
+  completePapawisGame(req.params.id, price, breakdown);
   res.json({ ok: true, charged: confirmed.length });
   if (getSetting('papawis_reminders_enabled', '0') === '1') {
     sendPapawisCompletionEmails(req.params.id, price).then(({ sent, errors }) => {
