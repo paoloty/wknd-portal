@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt } from './utils.js';
 import { scoreTicker } from './ticker.js';
 import { highlightsSidebar } from './home.js';
@@ -69,7 +69,7 @@ function gameRow(game, { commentsEnabled = false, social = { commentsCount: 0, r
       ${scoreInline}
     </div>
     <h3 class="game-row__title">${escHtml(cleanTitle)}</h3>
-    ${body && !isFinal ? `<p class="game-row__excerpt">${escHtml(body.length > 160 ? body.slice(0, 160) + '…' : body)}</p>` : ''}
+    ${body && !isFinal ? `<p class="game-row__excerpt">${escHtml(body.length > 110 ? body.slice(0, 110) + '…' : body)}</p>` : ''}
     <div class="game-row__footer">
       ${cta}
       ${gameRowActions(game, commentsEnabled, social)}
@@ -79,12 +79,12 @@ function gameRow(game, { commentsEnabled = false, social = { commentsCount: 0, r
 }
 
 // One delegated listener for the whole list rather than one per row — mirrors the
-// react/share handlers in views/game.js (gameTabsScript), just scoped to .game-list and
+// react/share handlers in views/game.js (gameTabsScript), just scoped to .games-grid and
 // keyed off data-game-id instead of a single page-level gameId.
 function gameListScript() {
   return `<script>
 (function() {
-  var list = document.querySelector('.game-list');
+  var list = document.querySelector('.games-grid');
   if (!list) return;
 
   list.addEventListener('click', function(e) {
@@ -137,21 +137,22 @@ export function gamesPage({ games, highlights = [], commentsEnabled = false, soc
     .slice(0, 5);
   const tickerGames = [...upcomingGames, ...completedGames];
 
-  const rows = completedGames.length
+  const cards = completedGames.length
     ? completedGames.map(g => gameRow(g, {
         commentsEnabled,
         social: socialByGame[g.id] || { commentsCount: 0, reactCount: 0, reacted: false },
       })).join('\n    ')
     : `<div class="card game-list__empty">No games yet.</div>`;
 
-  return `<div class="games-layout">
+  return `<div class="page-content">
+${pageHeader({ title: 'Games', description: 'Every result this season — box scores, recaps, and Player of the Game spotlights.' })}
+
+<div class="games-layout">
   <div class="games-main">
-    <div class="card game-list">
-      <div class="card-label">GAME LOG</div>
-      ${rows}
-    </div>
+    ${completedGames.length ? `<div class="games-grid">${cards}</div>` : cards}
   </div>
-  ${highlightsSidebar(highlights, { limit: 10, seeAllLink: false })}
+  ${highlightsSidebar(highlights, { limit: 4, seeAllLink: true })}
+</div>
 </div>
 ${completedGames.length ? gameListScript() : ''}`;
 }

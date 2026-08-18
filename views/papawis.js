@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 import { playerLink, playerAvatar, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials } from './utils.js';
 
 // Capped low enough that avatars + the "+N" bubble always fit inside the card on a
@@ -389,10 +389,7 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
   }).join('');
 
   return `<div class="page-content">
-    <div class="pw-page-header">
-      <h1 class="pw-page-header__title">Papawis</h1>
-      <p class="pw-page-header__sub">Pickup games with limited slots. First come, first served — everyone after the cap lands on the waitlist and gets bumped in automatically if a spot opens.</p>
-    </div>
+    ${pageHeader({ title: 'Papawis', description: 'Pickup games with limited slots. First come, first served — everyone after the cap lands on the waitlist and gets bumped in automatically if a spot opens.' })}
 
     ${games.length ? `<div class="pw-grid">${cards}</div>` : ''}
   </div>
@@ -408,9 +405,6 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
   </div>
 
 <style>
-.pw-page-header { padding: 4px 0 28px; }
-.pw-page-header__title { font-size: clamp(28px, 4vw, 38px); font-weight: 800; letter-spacing: -.02em; color: var(--text-primary); margin: 0; }
-.pw-page-header__sub { margin-top: 8px; font-size: 14px; color: var(--text-muted); max-width: 68ch; }
 /* auto-fill (not auto-fit) keeps every column's width fixed across the whole grid, so a
    lone card on a trailing row sits at the same width as its siblings above instead of
    stretching to fill the leftover row space — the row just ends early instead. */

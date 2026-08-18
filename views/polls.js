@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 
 const TIER_LABEL = { admins: 'Admins', heads: 'Team Heads', players: 'All Players' };
 export const ICON_CHECK = `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.3l3 3 6-6.6"/></svg>`;
@@ -59,18 +59,12 @@ export function pollsPage({ polls = [] } = {}) {
     : polls.map(pollCard).join('');
 
   return `<div class="page-content">
-  <div class="plp-page-header">
-    <h1 class="plp-page-header__title">League Polls</h1>
-    <p class="plp-page-header__sub">Quick votes on what's happening around the league. Who can see the results and who can vote can differ per poll — check the line under each question.</p>
-  </div>
+  ${pageHeader({ title: 'League Polls', description: "Quick votes on what's happening around the league. Who can see the results and who can vote can differ per poll — check the line under each question." })}
 
   ${polls.length ? `<div class="plp-grid">${cards}</div>` : cards}
 </div>
 
 <style>
-.plp-page-header { padding: 4px 0 28px; }
-.plp-page-header__title { font-size: clamp(28px, 4vw, 38px); font-weight: 800; letter-spacing: -.02em; color: var(--text); margin: 0; }
-.plp-page-header__sub { margin-top: 8px; font-size: 14px; color: var(--text-muted); max-width: 68ch; }
 /* Same auto-fill (not auto-fit) pattern as Papawis's .pw-grid — every column stays a fixed
    width across the whole grid, so a lone trailing card doesn't stretch to fill the row. */
 .plp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }

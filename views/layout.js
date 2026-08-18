@@ -349,6 +349,20 @@ export function escHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// Standard page hero — title + description, optionally a right-aligned actions slot
+// (e.g. Fines' "Report Incident" button). title/description are always author-written
+// static copy, never DB/user content, so callers pass raw strings — same convention the
+// three pre-existing per-page copies of this (Papawis, Polls, Fines) already used.
+export function pageHeader({ title, description = '', actions = '' }) {
+  return `<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">${title}</h1>
+    ${description ? `<p class="page-header__sub">${description}</p>` : ''}
+  </div>
+  ${actions ? `<div class="page-header__actions">${actions}</div>` : ''}
+</div>`;
+}
+
 export function teamChip(teamName, teamColors) {
   const color = teamColors[teamName?.toUpperCase()] || '#4a5263';
   const isLight = teamName?.toUpperCase() === 'WHITE';

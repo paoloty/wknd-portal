@@ -3180,26 +3180,34 @@ a.player-link:hover { color: var(--amber); }
 }
 .games-main { display: flex; flex-direction: column; }
 
-/* ── Game list ──────────────────────────────────────────────────────────── */
-.game-list { display: flex; flex-direction: column; margin-top: 0; }
+/* ── Games grid ─────────────────────────────────────────────────────────── */
+/* auto-fill (not auto-fit) — same reasoning as the Papawis/Polls/Fines grids: every
+   column keeps a fixed width across the whole grid, so a lone trailing card doesn't
+   stretch to fill the row, it just ends the row early. */
+.games-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+@media (max-width: 640px) {
+  .games-grid { grid-template-columns: 1fr; }
+}
 .game-list__empty { padding: 20px; color: var(--text-subtle); font-size: 13px; }
 
-/* ── Game row (article card) ────────────────────────────────────────────── */
+/* ── Game card ──────────────────────────────────────────────────────────── */
 .game-row {
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
   overflow: hidden;
-  border-top: 1px solid var(--border);
-  transition: background 0.15s;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  transition: border-color 0.15s, background 0.15s;
   position: relative;
 }
-.game-row:hover { background: rgba(255,255,255,0.03); }
+.game-row:hover { border-color: var(--text-muted); background: rgba(255,255,255,0.02); }
 /* Stretched-link pattern: the whole row is clickable via this invisible full-bleed <a>
    (z-index:1), while .game-row__actions sits above it (z-index:2) so its real buttons/
    links receive their own clicks instead of the row's — avoids nesting interactive
    elements inside an <a>, which is both invalid HTML and unreliable to click. */
 .game-row__link { position: absolute; inset: 0; z-index: 1; }
-.game-row__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.game-row__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
 .game-row__actions { position: relative; z-index: 2; display: flex; align-items: center; gap: 6px; }
 .game-row__action {
   display: inline-flex; align-items: center; gap: 5px;
@@ -3211,8 +3219,8 @@ a.player-link:hover { color: var(--amber); }
 .game-row__action.is-active { border-color: var(--amber); color: var(--amber); }
 
 .game-row__thumb {
-  width: 200px;
-  height: 200px;
+  width: 100%;
+  height: 180px;
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
@@ -3247,11 +3255,11 @@ a.player-link:hover { color: var(--amber); }
 
 .game-row__body {
   flex: 1;
-  padding: 18px 22px;
+  padding: 16px 18px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .game-row__meta {
   font-size: 11px;
@@ -3270,12 +3278,20 @@ a.player-link:hover { color: var(--amber); }
   color: var(--text);
   line-height: 1.35;
   margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .game-row__excerpt {
   font-size: 13px;
   line-height: 1.55;
   color: var(--text-muted);
   margin: 0 0 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .game-row__cta {
   display: inline-flex;
@@ -3316,6 +3332,15 @@ a.player-link:hover { color: var(--amber); }
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+/* ── Page header (shared) — the site-standard title+description hero used at the top of
+   Papawis, Polls, Fines, Games, and Highlights. Single source of truth: see
+   pageHeader() in views/layout.js. Not to be confused with .section-header below,
+   which labels a sub-section within a page, not the page itself. */
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 4px 0 28px; }
+.page-header__title { font-size: clamp(28px, 4vw, 38px); font-weight: 800; letter-spacing: -.02em; color: var(--text); margin: 0; }
+.page-header__sub { margin-top: 8px; font-size: 14px; color: var(--text-muted); max-width: 68ch; }
+.page-header__actions { flex-shrink: 0; }
 
 /* ── Section header (shared) ────────────────────────────────────────────── */
 .section-header {
@@ -3574,8 +3599,6 @@ a.player-link:hover { color: var(--amber); }
   .ca-item { padding: 8px 4px; }
   .ca-item:nth-child(n+6) { display: none; }
   .ca-grid { --ca-count: 5; }
-  .game-row { flex-direction: column; }
-  .game-row__thumb { width: 100%; height: 180px; }
 
   /* Registration mini */
   .reg-mini__text { display: none; }

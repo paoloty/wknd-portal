@@ -20,6 +20,7 @@ import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
 import { homePage } from './views/home.js';
 import { gamesPage } from './views/games.js';
+import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
@@ -5306,7 +5307,9 @@ app.get('/games', (req, res) => {
     !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
 
-  const highlights = buildHighlights(completedGames, playerMap, teamMap, 10);
+  // Trimmed to a teaser now that /highlights is the full browsing destination — the "See
+  // all" link on this widget points there, not back at this page.
+  const highlights = buildHighlights(completedGames, playerMap, teamMap, 4);
 
   const commentsEnabled = getSetting('comments_enabled', '0') === '1';
   let socialByGame = {};
@@ -5326,6 +5329,26 @@ app.get('/games', (req, res) => {
     title: 'Games — WKND Basketball League',
     currentPath: req.path,
     body: gamesPage({ games, highlights, commentsEnabled, socialByGame })
+  }));
+});
+
+app.get('/highlights', (req, res) => {
+  const players = getAllPlayers();
+  const teams = getAllTeams();
+  const games = byDate(getAllGames());
+  const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
+  const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
+  const completedGames = games.filter(g =>
+    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
+  );
+  // Uncapped (bounded only by how many completed games have a POTG writeup) — this page
+  // is the full browsing destination, unlike the small teaser count used elsewhere.
+  const highlights = buildHighlights(completedGames, playerMap, teamMap, completedGames.length);
+
+  res.send(renderPage(req, {
+    title: 'Player Highlights — WKND Basketball League',
+    currentPath: req.path,
+    body: highlightsPage({ highlights })
   }));
 });
 

@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 import { displayPlayerName } from './utils.js';
 
 function fmtDate(ms) {
@@ -83,13 +83,11 @@ export function finesPage({ open = [], resolved = [], votesByCase = {}, categori
   const resolvedRows = resolved.map(resolvedCaseRow).join('');
 
   return `<div class="page-content">
-  <div class="fn-page-header">
-    <div>
-      <h1 class="fn-page-header__title">Fines &amp; Conduct</h1>
-      <p class="fn-page-header__sub">Report incidents and vote on conduct cases. An admin makes the final call on every case, informed by the votes here.</p>
-    </div>
-    <button class="fn-btn fn-btn--primary" id="fn-open-report-btn">Report Incident</button>
-  </div>
+  ${pageHeader({
+    title: 'Fines &amp; Conduct',
+    description: 'Report incidents and vote on conduct cases. An admin makes the final call on every case, informed by the votes here.',
+    actions: '<button class="fn-btn fn-btn--primary" id="fn-open-report-btn">Report Incident</button>',
+  })}
 
   <div class="fn-tabs">
     <button type="button" class="fn-tab is-active" data-tab="open">Open (${open.length})</button>
@@ -107,9 +105,6 @@ export function finesPage({ open = [], resolved = [], votesByCase = {}, categori
 ${reportModal(players, categories)}
 
 <style>
-.fn-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 4px 0 28px; }
-.fn-page-header__title { font-size: clamp(26px, 4vw, 34px); font-weight: 800; letter-spacing: -.02em; color: var(--text); margin: 0; }
-.fn-page-header__sub { margin-top: 8px; font-size: 14px; color: var(--text-muted); max-width: 60ch; }
 .fn-empty { font-size: 14px; color: var(--text-muted); padding: 20px 0; }
 
 .fn-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }

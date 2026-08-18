@@ -196,7 +196,7 @@ export function highlightsSidebar(highlights, { limit = 4, seeAllLink = true } =
   });
 
   return `<div class="card sidebar">
-  <div class="card-label">PLAYER HIGHLIGHTS${seeAllLink && highlights.length > limit ? ' <a href="/games" class="card-label__more">See all</a>' : ''}</div>
+  <div class="card-label">PLAYER HIGHLIGHTS${seeAllLink && highlights.length > limit ? ' <a href="/highlights" class="card-label__more">See all</a>' : ''}</div>
   ${rows.join('\n  ')}
 </div>`;
 }
