@@ -95,6 +95,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Polls',
+    items: [
+      { href: '/admin/polls', label: 'Manage', icon: 'standings', exact: true },
+    ],
+  },
+  {
     label: 'Visibility',
     items: [
       { href: '/admin/visibility', label: 'Visibility', icon: 'visibility', exact: true },

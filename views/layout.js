@@ -103,15 +103,18 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
 
   // Groups "My Profile" with head/coach-only features (Fines today, more later per
   // Paolo) under one dropdown rather than piling standalone links into the nav — isHead
-  // is computed once per request in server.js' renderPage(), not looked up here.
+  // is computed once per request in server.js' renderPage(), not looked up here. Polls is
+  // the first item here open to every player, not just heads — visibility per-poll is
+  // handled server-side (/polls), the nav link itself is just "you're logged in".
   const myAccountItems = [
     { href: '/me', label: 'My Profile', active: onOwnProfile },
+    { href: '/polls', label: 'Polls', active: currentPath.startsWith('/polls') },
     ...(isHead ? [
       { href: '/team',  label: 'My Team', active: currentPath.startsWith('/team') },
       { href: '/fines', label: 'Fines',   active: currentPath.startsWith('/fines') },
     ] : []),
   ];
-  const myAccountDropdown = dropdown('My Account', myAccountItems, [], onOwnProfile || (isHead && (currentPath.startsWith('/fines') || currentPath.startsWith('/team'))));
+  const myAccountDropdown = dropdown('My Account', myAccountItems, [], onOwnProfile || currentPath.startsWith('/polls') || (isHead && (currentPath.startsWith('/fines') || currentPath.startsWith('/team'))));
 
   // Bell sits right after My Account (not before it) — folded into authLink itself
   // rather than inserted as a separate element at the nav render sites, so it always

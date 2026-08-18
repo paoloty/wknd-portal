@@ -2,6 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, formatDate, truncate, initials } from './utils.js';
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
+import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -990,7 +991,115 @@ function coachNoteCard(coachNote) {
 // been confirmed yet" or "this got voided," same distinction admin's ledger view makes.
 const TX_STATUS_LABEL = { pending: 'Pending', voided: 'Voided' };
 
-function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransactions = [] }) {
+// Votable in place, same as the Messenger-style /polls page (views/polls.js) — a click
+// POSTs to the shared /polls/:id/vote endpoint and updates fills/checkmark/count in place,
+// no page reload. Buttons stay disabled (no data-action) whenever the poll is closed or
+// this viewer's eligibility tier can't vote, so the interactive state always matches what
+// the server would actually accept. latestPoll is pre-filtered server-side to the most
+// recent poll this viewer's visibility tier qualifies to see.
+function pollSidebarCard(poll) {
+  if (!poll) return '';
+  const isOpen = poll.status === 'open';
+  const clickable = poll.canVote && isOpen;
+  const counts = poll.options.map(() => 0);
+  for (const v of poll.votes) if (counts[v.option_index] !== undefined) counts[v.option_index]++;
+  const total = counts.reduce((a, b) => a + b, 0);
+  const myIndex = poll.myVote ? poll.myVote.option_index : -1;
+
+  const optionRows = poll.options.map((opt, i) => {
+    const pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
+    const mine = i === myIndex;
+    const attrs = clickable ? `data-action="vote" data-option="${i}"` : 'disabled';
+    return `
+      <button type="button" class="mp-poll-option${mine ? ' mp-poll-option--mine' : ''}" ${attrs}>
+        <span class="mp-poll-option__fill" style="width:${pct}%"></span>
+        <span class="mp-poll-option__row">
+          <span class="mp-poll-option__text">${mine ? `<span class="mp-poll-check-pop">${POLL_ICON_CHECK}</span>` : ''}<span class="mp-poll-option__label">${escHtml(opt)}</span></span>
+          <span class="mp-poll-option__pct">${pct}%</span>
+        </span>
+      </button>`;
+  }).join('');
+
+  const statusNote = !poll.canVote ? 'Not open to you' : !isOpen ? 'Voting closed' : '';
+
+  const script = clickable ? `
+<script>
+(function() {
+  var CHECK_SVG = ${JSON.stringify(POLL_ICON_CHECK)};
+  var group = document.getElementById('mp-poll-options');
+  if (!group) return;
+  var pollId = group.dataset.poll;
+  var msg = document.getElementById('mp-poll-vote-msg');
+  var totalEl = document.getElementById('mp-poll-total');
+  var buttons = group.querySelectorAll('.mp-poll-option');
+
+  function updateRow(btn, count, pct, isMine) {
+    var fill = btn.querySelector('.mp-poll-option__fill');
+    var text = btn.querySelector('.mp-poll-option__text');
+    var pctEl = btn.querySelector('.mp-poll-option__pct');
+    fill.style.width = pct + '%';
+    pctEl.textContent = pct + '%';
+    btn.classList.toggle('mp-poll-option--mine', isMine);
+    var existing = text.querySelector('.mp-poll-check-pop');
+    if (existing) existing.remove();
+    if (isMine) {
+      var span = document.createElement('span');
+      span.className = 'mp-poll-check-pop';
+      span.innerHTML = CHECK_SVG;
+      text.insertBefore(span, text.firstChild);
+    }
+  }
+
+  Array.prototype.forEach.call(buttons, function(btn) {
+    btn.addEventListener('click', function() {
+      var optionIndex = Number(btn.dataset.option);
+      Array.prototype.forEach.call(buttons, function(b) { b.disabled = true; });
+      if (msg) { msg.style.color = 'var(--text-muted)'; msg.textContent = 'Saving…'; }
+      fetch('/polls/' + pollId + '/vote', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ option_index: optionIndex }),
+      })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) throw new Error(res.j.error || 'Failed.');
+        var counts = res.j.counts, total = res.j.total, myOption = res.j.myOption;
+        Array.prototype.forEach.call(buttons, function(b) {
+          var i = Number(b.dataset.option);
+          var pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
+          updateRow(b, counts[i], pct, i === myOption);
+        });
+        if (totalEl) totalEl.textContent = total + ' vote' + (total === 1 ? '' : 's');
+        if (msg) msg.textContent = '';
+        Array.prototype.forEach.call(buttons, function(b) { b.disabled = false; });
+      })
+      .catch(function(e) {
+        if (msg) { msg.style.color = '#f87171'; msg.textContent = e.message; }
+        Array.prototype.forEach.call(buttons, function(b) { b.disabled = false; });
+      });
+    });
+  });
+})();
+</script>` : '';
+
+  return `<div class="card">
+    <div class="card-label" style="display:flex;align-items:center;justify-content:space-between">
+      <span>LATEST POLL</span>
+      <span class="mp-poll-badge ${isOpen ? 'mp-poll-badge--open' : 'mp-poll-badge--closed'}">${isOpen ? 'Open' : 'Closed'}</span>
+    </div>
+    <div class="mp-poll">
+      <a href="/polls#poll-${escHtml(poll.id)}" class="mp-poll__q">${escHtml(poll.question)}</a>
+      ${poll.description ? `<p class="mp-poll__desc">${escHtml(poll.description)}</p>` : ''}
+      <div class="mp-poll-options" id="mp-poll-options" data-poll="${escHtml(poll.id)}">${optionRows}</div>
+      <div class="mp-poll__meta">
+        <span id="mp-poll-total">${total} vote${total === 1 ? '' : 's'}</span>
+        ${statusNote ? `<span>&middot; ${statusNote}</span>` : ''}
+      </div>
+      <a href="/polls" class="mp-poll__viewall">View all polls →</a>
+    </div>
+  </div>${script}`;
+}
+
+function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransactions = [], latestPoll = null }) {
   // Most-recent-first, capped — this is a glance-level "why do I owe this" list, not a
   // full statement; the admin ledger view is the source of truth for everything.
   const breakdownRows = balanceTransactions.slice(0, 8).map(tx => {
@@ -1067,8 +1176,10 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransac
     </div>
   </div>` : '';
 
-  if (!balanceHtml && !papawisHtml) return '';
-  return `<div class="mp-sidebar">${balanceHtml}${papawisHtml}</div>`;
+  const pollHtml = pollSidebarCard(latestPoll);
+
+  if (!balanceHtml && !papawisHtml && !pollHtml) return '';
+  return `<div class="mp-sidebar">${balanceHtml}${papawisHtml}${pollHtml}</div>`;
 }
 
 // ── Peer ratings (roast-style player-to-player ratings) ────────────────────────
@@ -1231,7 +1342,7 @@ function ratingFeedCard(feed) {
 // ── Main export ───────────────────────────────────────────────────────────────
 export function playerPage({
   player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false,
-  fbLinked = null, isOwnProfile = false, balanceAmount = 0, balanceTransactions = [], papawisGames = [], coachNote = null,
+  fbLinked = null, isOwnProfile = false, balanceAmount = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
   canReport = false, reportCategories = [], reportOtherCategoryId = '',
@@ -1239,7 +1350,7 @@ export function playerPage({
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
   const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
-  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions }) : '';
+  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 
   const peerRatingsHtml = peerRatingsEnabled ? `

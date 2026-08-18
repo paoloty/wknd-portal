@@ -108,6 +108,7 @@ import {
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
+  createLeaguePoll, getAllLeaguePolls, getLeaguePollById, setLeaguePollStatus, getLeaguePollVotes, getMyLeaguePollVote, castLeaguePollVote,
   getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
   getReportableFineCategories, getOtherFineCategory,
   createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer, hasOpenPlayerReport,
@@ -156,6 +157,8 @@ import { adminTeamHeadsBody } from './views/admin/team-heads.js';
 import { adminRatingsBody } from './views/admin/ratings.js';
 import { finesPage } from './views/fines.js';
 import { teamHeadPage } from './views/team-head.js';
+import { pollsPage } from './views/polls.js';
+import { adminPollsBody } from './views/admin/polls.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -2085,6 +2088,42 @@ function currentAdminActor(req) {
 }
 function currentHeadActor(req) {
   return { type: 'head', id: req.session.playerPlayerId, name: req.session.playerName || 'Team Head' };
+}
+
+// One identity resolver for League Polls, used from both /admin/polls (reachable by the
+// shared super-admin login, which has no player identity at all) and /polls (reachable only
+// by an actual logged-in player). Looks up the real player name via getPlayerById rather than
+// trusting req.session.playerName, which (see currentHeadActor above) is only ever set for
+// elevated player-admins — a plain head or regular player would otherwise show up as blank.
+function currentPollVoterIdentity(req) {
+  if (req.session?.playerPlayerId) {
+    const player = getPlayerById(req.session.playerPlayerId);
+    return {
+      id: req.session.playerPlayerId,
+      name: player ? displayPlayerName(player.name) : (req.session.playerName || 'Player'),
+      isAdmin: !!req.session.isAdmin,
+      isHead: getHeadTeamIds(req.session.playerPlayerId).length > 0,
+    };
+  }
+  if (req.session?.isAdmin) return { id: 'super_admin', name: 'Super Admin', isAdmin: true, isHead: false };
+  return null;
+}
+// Tiers cascade upward: admins qualify for every tier, heads qualify for 'heads' and
+// 'players', a plain player only qualifies for 'players'. Same rule used for both the
+// visibility check (can this viewer see the poll) and the eligibility check (can they vote).
+function pollTierQualifies(tier, identity) {
+  if (!identity) return false;
+  if (identity.isAdmin) return true;
+  if (tier === 'players') return true;
+  if (tier === 'heads') return identity.isHead;
+  return false; // tier === 'admins', and identity isn't one
+}
+// /polls is open to any logged-in player or admin — a wider gate than requireHead, since
+// the whole point of the 'players' visibility tier is "everyone with an account," not just
+// heads/admins.
+function requirePollAccess(req, res, next) {
+  if (currentPollVoterIdentity(req)) return next();
+  res.redirect(loginUrl(req));
 }
 
 // Looked up fresh per request (not session-cached) so a super admin revoking this flag
@@ -6141,6 +6180,7 @@ app.get('/players/:ref', async (req, res) => {
   const isOwnProfile = !!req.session?.playerPlayerId && resolved.id === req.session.playerPlayerId;
   let balanceAmount = 0, balanceTransactions = [], papawisGames = [];
   let coachNote = null;
+  let latestPoll = null;
   if (isOwnProfile) {
     balanceAmount = getPlayerFinancials(resolved.id)?.current_balance ?? 0;
     // Own-profile breakdown is intentionally the same read-only transaction list admin sees
@@ -6148,6 +6188,16 @@ app.get('/players/:ref', async (req, res) => {
     balanceTransactions = balanceAmount > 0 ? getPlayerTransactions(resolved.id) : [];
     papawisGames  = getPapawisGamesForPlayer(resolved.id);
     coachNote     = await getOrGenerateCoachNote(resolved.id, player, totals, gameLogs);
+
+    // getAllLeaguePolls() is already ORDER BY created_at DESC, so the first one this
+    // viewer's visibility tier qualifies for is the latest appropriate one.
+    const pollIdentity = currentPollVoterIdentity(req);
+    const qualifyingPoll = pollIdentity ? getAllLeaguePolls().find(p => pollTierQualifies(p.visibility, pollIdentity)) : null;
+    if (qualifyingPoll) {
+      const votes = getLeaguePollVotes(qualifyingPoll.id);
+      const myVote = getMyLeaguePollVote(qualifyingPoll.id, pollIdentity.id);
+      latestPoll = { ...qualifyingPoll, votes, myVote, canVote: pollTierQualifies(qualifyingPoll.voter_eligibility, pollIdentity) };
+    }
   }
 
   const peerSeason = getPortalCurrentSeason();
@@ -6189,7 +6239,7 @@ app.get('/players/:ref', async (req, res) => {
     metaTags: buildPlayerOgTags(req, player, totals),
     body: playerPage({
       player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection,
-      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, balanceTransactions, papawisGames, coachNote,
+      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, balanceTransactions, papawisGames, coachNote, latestPoll,
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
       viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
@@ -7633,6 +7683,92 @@ app.get('/team', requireHead, (req, res) => {
     currentPath: '/team',
     body: teamHeadPage({ teams, season }),
   }));
+});
+
+// ── League Polls: player-facing surface ──────────────────────────────────────────
+// Same identity split as Fines/Team — reachable by any logged-in player (requirePollAccess),
+// not the admin session. Polls are filtered to whatever this viewer's tier can see; voting is
+// gated separately by voter_eligibility, which can be a narrower tier than visibility.
+app.get('/polls', requirePollAccess, (req, res) => {
+  const identity = currentPollVoterIdentity(req);
+  const polls = getAllLeaguePolls()
+    .filter(p => pollTierQualifies(p.visibility, identity))
+    .map(p => {
+      const votes = getLeaguePollVotes(p.id);
+      const myVote = getMyLeaguePollVote(p.id, identity.id);
+      return { ...p, votes, myVote, canVote: pollTierQualifies(p.voter_eligibility, identity) };
+    });
+  res.send(renderPage(req, {
+    title: 'League Polls — WKND Basketball',
+    currentPath: '/polls',
+    body: pollsPage({ polls }),
+  }));
+});
+
+// Returns the fresh tally so the client can update the fill bars/checkmark in place — see
+// pollsPage's script (views/polls.js), which never does a full page reload after voting.
+function pollTally(poll, votes) {
+  const counts = poll.options.map(() => 0);
+  for (const v of votes) if (counts[v.option_index] !== undefined) counts[v.option_index]++;
+  return { counts, total: counts.reduce((a, b) => a + b, 0) };
+}
+
+app.post('/polls/:id/vote', requirePollAccess, express.json(), (req, res) => {
+  const identity = currentPollVoterIdentity(req);
+  const poll = getLeaguePollById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'Not found.' });
+  if (poll.status !== 'open') return res.status(400).json({ error: 'This poll is closed.' });
+  if (!pollTierQualifies(poll.voter_eligibility, identity)) return res.status(403).json({ error: 'You\'re not eligible to vote in this poll.' });
+  const optionIndex = Number(req.body?.option_index);
+  if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= poll.options.length) {
+    return res.status(400).json({ error: 'Invalid option.' });
+  }
+  castLeaguePollVote(poll.id, identity.id, identity.name, optionIndex);
+  const { counts, total } = pollTally(poll, getLeaguePollVotes(poll.id));
+  res.json({ ok: true, counts, total, myOption: optionIndex });
+});
+
+// ── Admin: League Polls ───────────────────────────────────────────────────────────
+// Also reachable by the shared super-admin login (no player identity at all), which is why
+// admin-tier voting has to happen here rather than only on /polls.
+app.get('/admin/polls', requireAuth, (req, res) => {
+  const polls = getAllLeaguePolls().map(p => ({ ...p, votes: getLeaguePollVotes(p.id) }));
+  res.send(renderAdminPage(req, {
+    title: 'League Polls',
+    currentPath: '/admin/polls',
+    body: adminPollsBody({ polls }),
+  }));
+});
+app.post('/admin/polls', requireAuth, express.json(), (req, res) => {
+  const { question, description, options, visibility, voter_eligibility } = req.body || {};
+  const cleanOptions = Array.isArray(options) ? options.map(o => String(o || '').trim()).filter(Boolean) : [];
+  if (!String(question || '').trim()) return res.status(400).json({ error: 'Question is required.' });
+  if (cleanOptions.length < 2) return res.status(400).json({ error: 'At least 2 options are required.' });
+  if (!['admins', 'heads', 'players'].includes(visibility)) return res.status(400).json({ error: 'Invalid visibility.' });
+  if (!['admins', 'heads', 'players'].includes(voter_eligibility)) return res.status(400).json({ error: 'Invalid voter eligibility.' });
+  const actor = currentAdminActor(req);
+  const id = createLeaguePoll({ question, description, options: cleanOptions, visibility, voterEligibility: voter_eligibility, createdBy: actor.name });
+  res.json({ ok: true, id });
+});
+app.post('/admin/polls/:id/status', requireAuth, express.json(), (req, res) => {
+  const poll = getLeaguePollById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'Not found.' });
+  const status = req.body?.status;
+  if (!['open', 'closed'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
+  setLeaguePollStatus(poll.id, status);
+  res.json({ ok: true });
+});
+app.post('/admin/polls/:id/vote', requireAuth, express.json(), (req, res) => {
+  const poll = getLeaguePollById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'Not found.' });
+  if (poll.status !== 'open') return res.status(400).json({ error: 'This poll is closed.' });
+  const actor = currentAdminActor(req);
+  const optionIndex = Number(req.body?.option_index);
+  if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= poll.options.length) {
+    return res.status(400).json({ error: 'Invalid option.' });
+  }
+  castLeaguePollVote(poll.id, actor.id, actor.name, optionIndex);
+  res.json({ ok: true });
 });
 
 // ── Admin: Papawis ──────────────────────────────────────────────────────────────
