@@ -94,6 +94,7 @@ import {
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
   lockPapawisSignups, unlockPapawisSignups,
+  addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
   getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
@@ -143,6 +144,7 @@ import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
+import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail } from './lib/papawis-notify.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
@@ -7632,8 +7634,33 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisListBody({ games, papawisRemindersEnabled }),
+    body: adminPapawisListBody({ games, papawisRemindersEnabled, courts: getActivePapawisCourts() }),
   }));
+});
+
+app.get('/admin/papawis/courts', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'Papawis Courts',
+    currentPath: '/admin/papawis/courts',
+    body: adminPapawisCourtsBody({ courts: getAllPapawisCourts() }),
+  }));
+});
+app.post('/admin/papawis/courts', requireAuth, express.json(), (req, res) => {
+  const { name, price } = req.body || {};
+  if (!String(name || '').trim()) return res.status(400).json({ error: 'Court name is required.' });
+  const id = addPapawisCourt(name, price);
+  res.json({ ok: true, id });
+});
+app.post('/admin/papawis/courts/:id', requireAuth, express.json(), (req, res) => {
+  const { name, price } = req.body || {};
+  if (!String(name || '').trim()) return res.status(400).json({ error: 'Court name is required.' });
+  updatePapawisCourt(req.params.id, name, price);
+  res.json({ ok: true });
+});
+app.post('/admin/papawis/courts/:id/toggle', requireAuth, express.json(), (req, res) => {
+  const { active } = req.body || {};
+  setPapawisCourtActive(req.params.id, !!active);
+  res.json({ ok: true });
 });
 
 app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
@@ -7716,10 +7743,14 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
     }
   }
 
+  // Real per-court rate beats the generic ₱4,200-budget guess in defaultPapawisPrice() when
+  // the game's (free-text) location happens to match a known court by name.
+  const courtPrice = getPapawisCourtByName(game.location)?.price_per_player || null;
+
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtPrice }),
   }));
 });
 

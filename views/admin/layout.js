@@ -54,6 +54,7 @@ const NAV_GROUPS = [
     label: 'Papawis',
     items: [
       { href: '/admin/papawis',          label: 'Manage',   icon: 'papawis', exact: true },
+      { href: '/admin/papawis/courts',   label: 'Courts',   icon: 'site' },
       { href: '/admin/papawis/activity', label: 'Activity', icon: 'activity' },
     ],
   },

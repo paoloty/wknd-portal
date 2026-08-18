@@ -3,19 +3,6 @@ import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow } from '../u
 import { CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from '../papawis.js';
 import { parseHeightCm } from '../../lib/papawis-teams.js';
 
-const PAPAWIS_LOCATIONS = [
-  'Cloverleaf Basketball Court, Makati',
-  'Gatorade Hoops Center, Mandaluyong',
-  'Gameville Ball Park, Mandaluyong',
-  'Dumlao Sports Center, Mandaluyong',
-  'Reyes Gym Basketball Court, Mandaluyong',
-  'Activate Hoop Arena, Pasig',
-  'The Upper Deck Sports Center, Pasig',
-  'G Court, Mandaluyong',
-  'Meralco Basketball Gym, Pasig',
-  'Philsports Arena Basketball Court, Pasig',
-];
-
 const ICON_CHEVRON_L = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
 const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
 const ICON_PLUS      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
@@ -143,7 +130,7 @@ function statusBadge(game) {
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
-export function adminPapawisListBody({ games = [], papawisRemindersEnabled = false } = {}) {
+export function adminPapawisListBody({ games = [], papawisRemindersEnabled = false, courts = [] } = {}) {
   const rows = games.map(g => `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}</td>
       <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(g.title || 'Papawis')}</td>
@@ -161,6 +148,7 @@ export function adminPapawisListBody({ games = [], papawisRemindersEnabled = fal
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Papawis</h2>
   <div class="flex items-center gap-2">
     <a href="/admin/visibility" class="admin-btn">Visibility</a>
+    <a href="/admin/papawis/courts" class="admin-btn">Courts</a>
     <a href="/admin/papawis/activity" class="admin-btn">Activity Log</a>
     <button class="agm-new-btn" id="pw-new-btn">${ICON_PLUS} New Papawis</button>
   </div>
@@ -218,7 +206,7 @@ export function adminPapawisListBody({ games = [], papawisRemindersEnabled = fal
         <label class="agm-modal-label">Location</label>
         <select id="pw-location-select" class="agm-modal-select">
           <option value="">Select location…</option>
-          ${PAPAWIS_LOCATIONS.map(loc => `<option value="${escHtml(loc)}">${escHtml(loc)}</option>`).join('')}
+          ${courts.map(c => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`).join('')}
           <option value="__other__">Others</option>
         </select>
       </div>
@@ -350,7 +338,7 @@ export function defaultPapawisPrice(confirmedCount) {
   return Math.round((4200 / confirmedCount) / 10) * 10;
 }
 
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {} } = {}) {
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtPrice = null } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const isOpen      = game.status === 'open';
@@ -361,7 +349,9 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   // Messenger"), independent of the automated reminder-email setting. While locked, the
   // whole roster/teams editing surface is swapped for a static summary table.
   const isLocked    = !!game.signups_locked_at;
-  const defaultPrice = defaultPapawisPrice(confirmed.length);
+  // A real per-court rate (looked up server-side by matching game.location against a known
+  // court) beats the generic budget-split guess whenever one's on file.
+  const defaultPrice = courtPrice || defaultPapawisPrice(confirmed.length);
   // Admin can build/edit teams whenever — this only controls what the "Teams" panel
   // tells them about whether players can currently see the split (see the matching
   // showTeams gate in rosterModalBody, views/papawis.js).
