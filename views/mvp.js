@@ -1,6 +1,5 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 import { displayPlayerName, teamColor, initials } from './utils.js';
-import { highlightsSidebar } from './home.js';
 
 const RANK_LABELS = ['', 'FRONTRUNNER', 'CLOSE SECOND', 'IN THE MIX', 'DARK HORSE', 'DARK HORSE', 'DARK HORSE', 'DARK HORSE', 'DARK HORSE'];
 
@@ -12,254 +11,115 @@ const BADGE_COLORS = [
   { bg: '#374151', text: '#9ca3af' }, // 4+ — DARK HORSE  (slate)
 ];
 
-function tsPct(r) {
-  const d = 2 * (r.fga + 0.44 * r.fta);
-  return d > 0 ? r.pts / d : 0;
+// Admin-only, hidden once playoffs lock every writeup — reused verbatim on both the hero
+// and compact tail rows (regenScript below binds to every .mvp-regen-btn regardless of
+// which tier it's rendered in).
+function regenBtn(playerId, season, isAdmin, playoffsStarted, { absolute = false } = {}) {
+  if (!isAdmin || playoffsStarted) return '';
+  const pos = absolute
+    ? 'position:absolute;top:10px;right:10px;z-index:2;'
+    : 'position:relative;height:22px;';
+  return `<button class="mvp-regen-btn" data-pid="${escHtml(String(playerId))}" data-season="${escHtml(String(season))}" title="Regenerate writeup" style="${pos}background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);color:#94a3b8;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">↺</button>`;
 }
 
-function standingsSidebar(teams, games, season) {
-  const regularGames = (games || []).filter(g =>
-    g.game_type === 'regular' && !g.under_review && g.season === season &&
-    (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
-
-  const rows = (teams || []).map(team => {
-    let w = 0, l = 0, pf = 0, pa = 0;
-    for (const g of regularGames) {
-      const isA = g.team_a_id === team.id;
-      const isB = g.team_b_id === team.id;
-      if (!isA && !isB) continue;
-      const tf = isA ? Number(g.team_a_score) : Number(g.team_b_score);
-      const ta = isA ? Number(g.team_b_score) : Number(g.team_a_score);
-      pf += tf; pa += ta;
-      if (tf > ta) w++; else l++;
-    }
-    return { team, wins: w, losses: l, quo: pa > 0 ? pf / pa : 0 };
-  });
-
-  rows.sort((a, b) => b.wins - a.wins || b.quo - a.quo);
-
-  const head = `<div class="standings-row standings-row--head">
-  <div class="standings-cell standings-cell--seed"></div>
-  <div class="standings-cell standings-cell--team">TEAM</div>
-  <div class="standings-cell standings-cell--num standings-cell--w st-std">W</div>
-  <div class="standings-cell standings-cell--num standings-cell--l st-std">L</div>
-</div>`;
-
-  const rowsHtml = rows.map((r, i) => {
-    const color = teamColor(r.team.name);
-    const seed  = i + 1;
-    const seedClass = seed <= 2 ? 'seed--top' : 'seed--mid';
-    return `<div class="standings-row${i === 0 ? ' standings-row--first' : ''}" style="--tc-color:${color}">
-  <div class="standings-cell standings-cell--seed">
-    <span class="standings-seed ${seedClass}">${seed}</span>
-  </div>
-  <div class="standings-cell standings-cell--team">
-    <span class="team-dot" style="background:${color}"></span>
-    <span class="standings-team-name">${escHtml(r.team.name.toUpperCase())}</span>
-  </div>
-  <div class="standings-cell standings-cell--num standings-cell--w st-std">${r.wins}</div>
-  <div class="standings-cell standings-cell--num standings-cell--l st-std">${r.losses}</div>
-</div>`;
-  }).join('');
-
-  return `<div class="card sidebar mvp-standings-sidebar" style="padding:0;overflow:hidden">
-  <div class="card-label">STANDINGS <a href="/standings" class="card-label__more">Full table</a></div>
-  <div class="standings-scroll">
-    ${head}
-    ${rowsHtml}
-  </div>
-</div>`;
-}
-
-function mvpLadderSidebar(candidates) {
-  const top = candidates.slice(0, 10);
-
-  const head = `<div class="mvp-sb-row mvp-sb-row--head">
-  <span class="mvp-sb-rank"></span>
-  <span class="mvp-sb-name" style="font-size:10px;font-weight:700;letter-spacing:0.05em;color:var(--text-muted)">PLAYER</span>
-  <span class="mvp-sb-num">PER</span>
-  <span class="mvp-sb-num">TS%</span>
-  <span class="mvp-sb-score" style="color:var(--text-muted);font-weight:700">SCR</span>
-</div>`;
-
-  const rowsHtml = top.map((c, i) => {
-    const rank   = i + 1;
-    const name   = displayPlayerName(c.player.name);
-    const color  = teamColor(c.stats.team_name);
-    const href   = `/players/${encodeURIComponent(String(c.player.id))}`;
-    const gp     = c.stats.gp || 1;
-    const s      = c.stats;
-    const per    = (s.pts + 0.4*s.fgm - 0.7*s.fga - 0.4*s.ftmiss + 0.7*s.reb + s.stl + 0.7*s.ast + 0.7*s.blk - s.tov) / gp;
-    const tsDenom = 2 * (s.fga + 0.44 * s.fta);
-    const ts     = tsDenom > 0 ? Math.round(s.pts / tsDenom * 100) + '%' : '—';
-    const score  = c.mvpScore.toFixed(1);
-    const badge  = BADGE_COLORS[rank] || BADGE_COLORS[4];
-    return `<a href="${href}" class="mvp-sb-row${rank === 1 ? ' mvp-sb-row--first' : ''}" style="--bc:${badge.bg}">
-  <span class="mvp-sb-rank">${rank}</span>
-  <span class="mvp-sb-name">
-    <span class="team-dot" style="background:${color};flex-shrink:0"></span>
-    <span class="mvp-sb-name-text">${escHtml(name)}</span>
-  </span>
-  <span class="mvp-sb-num mvp-sb-cell--r">${per.toFixed(1)}</span>
-  <span class="mvp-sb-num mvp-sb-cell--r">${ts}</span>
-  <span class="mvp-sb-score mvp-sb-cell--r">${score}</span>
-</a>`;
-  }).join('\n');
-
-  return `<div class="card sidebar" style="padding:0;overflow:hidden">
-  <div class="card-label">MVP LADDER</div>
-  <div class="mvp-sb-table">
-    ${head}
-    ${rowsHtml}
-  </div>
-</div>`;
-}
-
-function categoryLeadersSidebar(leagueStats) {
-  if (!leagueStats || !leagueStats.length) return '';
-
-  const calcPer = s => (s.pts + 0.4*s.fgm - 0.7*s.fga - 0.4*s.ftmiss + 0.7*s.reb + s.stl + 0.7*s.ast + 0.7*s.blk - s.tov) / (s.gp || 1);
-
-  const cats = [
-    { label: 'PTS', fn: s => s.pts / (s.gp||1), fmt: v => v.toFixed(1) },
-    { label: 'REB', fn: s => s.reb / (s.gp||1), fmt: v => v.toFixed(1) },
-    { label: 'AST', fn: s => s.ast / (s.gp||1), fmt: v => v.toFixed(1) },
-    { label: 'STL', fn: s => s.stl / (s.gp||1), fmt: v => v.toFixed(1) },
-    { label: 'TS%', fn: s => { const d = 2*(s.fga + 0.44*s.fta); return d > 0 ? s.pts/d : 0; }, fmt: v => Math.round(v*100)+'%' },
-    { label: 'PER', fn: calcPer, fmt: v => v.toFixed(1) },
-  ];
-
-  const rows = cats.map(cat => {
-    const best = [...leagueStats].sort((a, b) => cat.fn(b.stats) - cat.fn(a.stats))[0];
-    if (!best) return '';
-    const name  = displayPlayerName(best.player.name);
-    const color = teamColor(best.stats.team_name);
-    const val   = cat.fmt(cat.fn(best.stats));
-    return `<div class="mvp-cl-row">
-  <span class="mvp-cl-cat">${cat.label}</span>
-  <span class="mvp-cl-player">
-    <span class="team-dot" style="background:${color};flex-shrink:0"></span>
-    <span class="mvp-cl-name">${escHtml(name)}</span>
-  </span>
-  <span class="mvp-cl-val">${escHtml(val)}</span>
-</div>`;
-  }).join('');
-
-  return `<div class="card sidebar" style="padding:0;overflow:hidden">
-  <div class="card-label">STAT LEADERS</div>
-  ${rows}
-</div>`;
-}
-
-function top3ComparisonSidebar(candidates) {
-  const seen = new Set();
-  const top3 = [];
-  for (const c of candidates) {
-    const team = c.stats.team_name;
-    if (!seen.has(team)) { seen.add(team); top3.push(c); }
-    if (top3.length === 3) break;
-  }
-  if (top3.length < 2) return '';
-
-  const lastName = fullName => {
-    const parts = displayPlayerName(fullName).split(' ');
-    return parts[parts.length - 1];
-  };
-
-  const cats = [
-    { label: 'PPG', fn: (s) => (s.pts/(s.gp||1)).toFixed(1) },
-    { label: 'RPG', fn: (s) => (s.reb/(s.gp||1)).toFixed(1) },
-    { label: 'APG', fn: (s) => (s.ast/(s.gp||1)).toFixed(1) },
-    { label: 'TS%', fn: (s) => { const d = 2*(s.fga + 0.44*s.fta); return d > 0 ? Math.round(s.pts/d*100)+'%' : '—'; } },
-    { label: 'SCR', fn: (s, c) => c.mvpScore.toFixed(1) },
-  ];
-
-  const head = `<div class="mvp-cmp-row mvp-cmp-row--head">
-  <span class="mvp-cmp-label"></span>
-  ${top3.map((c, i) => `<span class="mvp-cmp-name${i===0?' mvp-cmp-name--gold':''}">${escHtml(lastName(c.player.name))}</span>`).join('')}
-</div>`;
-
-  const dataRows = cats.map(cat => {
-    const vals = top3.map(c => cat.fn(c.stats, c));
-    const nums = vals.map(v => parseFloat(v));
-    const max  = Math.max(...nums.filter(n => !isNaN(n)));
-    return `<div class="mvp-cmp-row">
-  <span class="mvp-cmp-label">${cat.label}</span>
-  ${vals.map((v, i) => `<span class="mvp-cmp-val${parseFloat(v) === max ? ' mvp-cmp-val--hi' : ''}">${v}</span>`).join('')}
-</div>`;
-  }).join('');
-
-  return `<div class="card sidebar" style="padding:0;overflow:hidden">
-  <div class="card-label">TEAM FRONTRUNNERS</div>
-  ${head}
-  ${dataRows}
-</div>`;
-}
-
-function mvpRow(c, rank, isAdmin, season, playoffsStarted = false) {
+// ── Hero row (pinned, top 3 — Frontrunner/Close Second/In the Mix) ─────────────
+// Same awd-hero-row family the Awards page uses for its own spotlight winners (see
+// views/awards.js) — reused directly rather than duplicated, since this is now the shared
+// "spotlight winner" component across both pages. Score is folded into the stats line
+// (awd-hero-row has no dedicated score-pill slot the way the old .mvp-row did).
+function mvpHeroRow(c, rank, isAdmin, season, playoffsStarted) {
   const { player, stats, mvpScore, writeup } = c;
   const name  = displayPlayerName(player.name);
   const color = teamColor(stats.team_name);
   const label = RANK_LABELS[rank] || 'CONTENDER';
   const badge = BADGE_COLORS[rank] || BADGE_COLORS[4];
-  const rankStr = String(rank).padStart(2, '0');
   const init  = initials(player.name);
   const href  = `/players/${encodeURIComponent(String(player.id))}`;
+  const gp    = stats.gp || 1;
+  const statsLine = `${mvpScore.toFixed(1)} SCORE · ${(stats.pts/gp).toFixed(1)} PPG · ${(stats.reb/gp).toFixed(1)} RPG · ${(stats.ast/gp).toFixed(1)} APG`;
 
-  const link = `<a href="${href}" class="mvp-row" style="--tc:${color};--bc:${badge.bg};--bt:${badge.text}">
-  <div class="mvp-row__pills">
-    <span class="mvp-row__score" style="color:${badge.bg}">${mvpScore.toFixed(1)}</span>
-    <span class="mvp-row__badge" style="background:${badge.bg};color:${badge.text}">${label}</span>
-  </div>
-  <div class="mvp-row__thumb">
-    <div class="mvp-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
-    <img src="/api/player/${encodeURIComponent(String(player.id))}/photo" alt="" loading="lazy" class="mvp-row__thumb-img" onerror="this.style.display='none'">
-    <div class="mvp-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
-    <span class="mvp-row__rank">${rankStr}</span>
-  </div>
-  <div class="mvp-row__body">
-    <div class="mvp-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
-    ${writeup
-      ? `<p class="mvp-row__article">${escHtml(writeup)}</p>`
-      : `<p class="mvp-row__article mvp-row__article--pending">Analysis generating…</p>`}
-    <span class="mvp-row__cta">FULL STATS <span>→</span></span>
-  </div>
-</a>`;
-
-  if (!isAdmin || playoffsStarted) return link;
-  return `<div style="position:relative">
-  ${link}
-  <button class="mvp-regen-btn" data-pid="${escHtml(String(player.id))}" data-season="${escHtml(String(season))}" title="Regenerate writeup" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);color:#94a3b8;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;z-index:2">↺</button>
+  return `<div class="awd-hero-wrap">
+  <a href="${href}" class="awd-hero-row">
+    <div class="awd-hero-row__thumb">
+      <div class="awd-hero-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
+      <img class="awd-hero-row__thumb-img" src="/api/player/${encodeURIComponent(String(player.id))}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+      <div class="awd-hero-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
+    </div>
+    <div class="awd-hero-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
+      <span class="awd-hero-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(label)}</span>
+      <div class="awd-hero-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
+      <p class="awd-hero-row__stats">${escHtml(statsLine)}</p>
+      ${writeup
+        ? `<p class="awd-hero-row__article">${escHtml(writeup)}</p>`
+        : `<p class="awd-hero-row__article" style="opacity:.6">Analysis generating…</p>`}
+      <span class="awd-hero-row__cta">Full stats <span>&rarr;</span></span>
+    </div>
+  </a>
+  ${regenBtn(player.id, season, isAdmin, playoffsStarted, { absolute: true })}
 </div>`;
 }
 
-export function mvpPage({ candidates = [], season, totalGames, seasonGames, highlights = [], teams = [], games = [], leagueStats = [], isAdmin = false, playoffsStarted = false }) {
-  const ladderSidebar  = candidates.length ? mvpLadderSidebar(candidates) : '';
-  const catLeaders     = categoryLeadersSidebar(leagueStats);
-  const top3           = top3ComparisonSidebar(candidates);
-  const recentStandouts = highlights.length ? highlightsSidebar(highlights, { limit: 3, seeAllLink: false }) : '';
-  // const standingsSide = standingsSidebar(teams, games, season);
-  const sidebarHtml    = `<div style="display:flex;flex-direction:column;gap:24px;min-width:0">${ladderSidebar}${catLeaders}${top3}${recentStandouts}</div>`;
+// ── Ranked row (compact tail — everyone past the top 3) ────────────────────────
+// Same awd-rank-row family Awards uses for its roster/leaderboard tabs — the long dark-horse
+// pack reads as a scannable list instead of 7-10 more full-size spotlight cards. Chip shows
+// the numeric rank (the "DARK HORSE" label is identical for all of them past #3, so it
+// wouldn't tell the admin anything a repeated badge doesn't already).
+function mvpRankRow(c, rank, isAdmin, season, playoffsStarted) {
+  const { player, stats, mvpScore, writeup } = c;
+  const name  = displayPlayerName(player.name);
+  const color = teamColor(stats.team_name);
+  const init  = initials(player.name);
+  const href  = `/players/${encodeURIComponent(String(player.id))}`;
+  const dark  = BADGE_COLORS[4];
 
+  const toggle = writeup
+    ? `<button type="button" class="awd-rank-row__toggle" data-action="toggle-writeup" aria-expanded="false" aria-label="Read writeup">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>`
+    : '';
+  const writeupPanel = writeup ? `<div class="awd-rank-writeup" hidden><p>${escHtml(writeup)}</p></div>` : '';
+
+  return `<div class="awd-rank-row">
+  <a href="${href}" class="awd-rank-row__link" aria-label="${escHtml(name)}"></a>
+  <span class="awd-rank-row__avatar" style="border-color:${color}">
+    <span class="font-condensed">${escHtml(init)}</span>
+    <img class="awd-rank-row__avatar-img" src="/api/player/${encodeURIComponent(String(player.id))}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+  </span>
+  <span class="awd-rank-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</span>
+  <span class="awd-rank-row__chip" style="background:${dark.bg};color:${dark.text}">#${rank}</span>
+  <span class="awd-rank-row__stat">${mvpScore.toFixed(1)}</span>
+  ${regenBtn(player.id, season, isAdmin, playoffsStarted)}
+  ${toggle}
+</div>
+${writeupPanel}`;
+}
+
+export function mvpPage({ candidates = [], season, totalGames, seasonGames, isAdmin = false, playoffsStarted = false }) {
   if (!candidates.length) {
-    return `<div class="games-layout">
-  <div class="games-main">
-    <div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">No games played yet this season.</div>
-  </div>
-  ${sidebarHtml}
+    return `<div class="page-content">
+${pageHeader({ title: 'MVP Race', description: 'Tracking the top MVP candidates as the season unfolds.' })}
+  <div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">No games played yet this season.</div>
 </div>`;
   }
 
   const hasAllWriteups = candidates.every(c => c.writeup);
+  const heroCandidates = candidates.slice(0, 3);
+  const restCandidates = candidates.slice(3);
 
   const regenAllBtn = isAdmin && !playoffsStarted
-    ? `<button id="mvp-regen-all" data-season="${escHtml(String(season))}" style="background:transparent;border:1px solid rgba(255,255,255,.12);color:#64748b;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;margin-left:auto">↺ Regenerate All</button>`
+    ? `<button id="mvp-regen-all" data-season="${escHtml(String(season))}" style="background:transparent;border:1px solid rgba(255,255,255,.12);color:#64748b;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer">↺ Regenerate All</button>`
     : '';
-
   const finalBadge = playoffsStarted
-    ? `<span style="margin-left:auto;font-size:10px;font-weight:700;letter-spacing:1px;color:#f59332;background:rgba(245,147,50,.12);border:1px solid rgba(245,147,50,.25);border-radius:4px;padding:2px 8px">SEASON FINAL</span>`
+    ? `<span style="font-size:10px;font-weight:700;letter-spacing:1px;color:#f59332;background:rgba(245,147,50,.12);border:1px solid rgba(245,147,50,.25);border-radius:4px;padding:2px 8px">SEASON FINAL</span>`
     : '';
+  const actions = [regenAllBtn, finalBadge].filter(Boolean).join(' ');
+
+  const heroSection = `<div class="awd-hero-section">${heroCandidates.map((c, i) => mvpHeroRow(c, i + 1, isAdmin, season, playoffsStarted)).join('')}</div>`;
+
+  const restSection = restCandidates.length ? `
+  <div class="card" style="padding:0;overflow:hidden;margin-top:16px">
+    <div class="awd-rank-list">${restCandidates.map((c, i) => mvpRankRow(c, i + 4, isAdmin, season, playoffsStarted)).join('')}</div>
+  </div>` : '';
 
   const regenScript = isAdmin ? `
 <script>
@@ -283,16 +143,32 @@ export function mvpPage({ candidates = [], season, totalGames, seasonGames, high
 })();
 </script>` : '';
 
-  return `<div class="games-layout">
-  <div class="games-main">
-    <div class="card mvp-list">
-      <div class="card-label" style="display:flex;align-items:center;gap:8px">MVP LADDER &nbsp;·&nbsp; Season ${escHtml(String(season))} &nbsp;·&nbsp; ${escHtml(String(totalGames))}/${escHtml(String(seasonGames * 2))} games${regenAllBtn}${finalBadge}</div>
-      ${candidates.map((c, i) => mvpRow(c, i + 1, isAdmin, season, playoffsStarted)).join('\n      ')}
-    </div>
-  </div>
-  ${sidebarHtml}
-</div>
+  const toggleScript = `<script>
+(function() {
+  document.querySelectorAll('.awd-rank-row__toggle').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var row = btn.closest('.awd-rank-row');
+      var panel = row && row.nextElementSibling;
+      if (!panel || !panel.classList.contains('awd-rank-writeup')) return;
+      var expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      panel.hidden = expanded;
+      row.classList.toggle('is-expanded', !expanded);
+    });
+  });
+})();
+</script>`;
 
+  return `<div class="page-content">
+${pageHeader({
+    title: playoffsStarted ? `Season ${season} MVP Race — Final` : 'MVP Race',
+    description: `Season ${season} · ${totalGames}/${seasonGames * 2} games played`,
+    actions,
+  })}
+  ${heroSection}
+  ${restSection}
+</div>
 ${!hasAllWriteups && !playoffsStarted ? `<script>setTimeout(function(){ location.reload(); }, 8000);</script>` : ''}
+${toggleScript}
 ${regenScript}`;
 }

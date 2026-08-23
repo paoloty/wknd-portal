@@ -117,7 +117,9 @@ function teamMatchTable(lightRows, darkRows) {
 
 function rosterModalBody(signups, { showTeams = false } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
-  const waitlist  = signups.filter(s => s.status === 'waitlist');
+  // 'pending' (probationary, held for deposit confirmation) reads to the public as just
+  // another kind of waiting — see joinPapawisGame() in lib/portal-db.js.
+  const waitlist  = signups.filter(s => s.status === 'waitlist' || s.status === 'pending');
   const hasTeams  = showTeams && confirmed.some(s => s.team === 'light' || s.team === 'dark');
 
   const confirmedHtml = !confirmed.length
@@ -276,6 +278,9 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
              <button class="pw-btn pw-btn--danger-ghost" data-action="cancel" data-game="${escHtml(game.id)}">Cancel my spot</button>`
           : `<button class="pw-btn pw-btn--disabled" disabled>Cancel my spot</button>
              <div class="pw-hint">${ICON_LOCK} Cancellation window closed ${CUTOFF_DAYS} days before game day — message an admin if you can't make it.</div>`;
+      } else if (effectiveViewerSignup.status === 'pending') {
+        actionHtml = `<div class="pw-status-line"><span class="pw-dot"></span> You're listed — waiting on an admin to confirm your deposit</div>
+          <button class="pw-btn pw-btn--ghost" data-action="cancel" data-game="${escHtml(game.id)}">Leave list</button>`;
       } else {
         actionHtml = `<div class="pw-status-line"><span class="pw-dot"></span> You're on the waitlist — you'll be confirmed automatically if a spot opens</div>
           <button class="pw-btn pw-btn--ghost" data-action="cancel" data-game="${escHtml(game.id)}">Leave waitlist</button>`;

@@ -385,9 +385,46 @@ export function estimatedPapawisPrice(game, confirmedCount, courtRateFallback = 
   return defaultPapawisPrice(confirmedCount);
 }
 
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null } = {}) {
+// Framed as "how many papawis games worth of buffer" rather than a raw peso figure — each
+// preset is a multiple of the floor (highest price among the last few completed sessions,
+// see getMaxPapawisPrice), so the admin is picking a number of games, not eyeballing an
+// amount. No history yet (minDeposit null) falls back to a few flat guesses with no
+// game-count detail — there's no floor yet to divide by.
+function depositPresets(minDeposit) {
+  if (!minDeposit) return [200, 250, 300].map(amount => ({ amount, detail: '' }));
+  return [1, 2, 3].map(n => ({ amount: minDeposit * n, detail: `${n} papawis game${n > 1 ? 's' : ''}` }));
+}
+
+// A probationary player's signup, held out of the confirmed/waitlist flow until an admin
+// confirms their deposit — see promotePapawisPendingSignup() in lib/portal-db.js.
+function pendingRow(s, minDeposit) {
+  const name = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
+  const presets = depositPresets(minDeposit);
+  const options = presets.map(p =>
+    `<option value="${p.amount}">₱${p.amount.toLocaleString()}${p.detail ? ' — ' + p.detail : ''}</option>`
+  ).join('');
+  return `<li class="pw-row" data-id="${escHtml(s.id)}">
+    <div class="pw-row__info">
+      <div class="pw-row__name">${escHtml(name)}</div>
+      <div class="pw-row__meta">Awaiting deposit confirmation</div>
+    </div>
+    <div class="pw-row__actions" style="align-items:center">
+      <select class="admin-input" style="width:210px" data-deposit-select="${escHtml(s.id)}">
+        ${options}
+        <option value="__other__">Other…</option>
+      </select>
+      <input type="number" min="${minDeposit || 0}" step="1" placeholder="₱ amount" class="admin-input" style="width:100px;display:none" data-deposit-amount="${escHtml(s.id)}">
+      <span class="text-[11px] text-slate-500" data-deposit-detail="${escHtml(s.id)}" style="display:none"></span>
+      <button class="admin-btn admin-btn--sm admin-btn--success" data-confirm-deposit="${escHtml(s.id)}">Confirm &amp; list</button>
+      <button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>
+    </div>
+  </li>`;
+}
+
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null, minDeposit = null } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
+  const pending   = signups.filter(s => s.status === 'pending');
   const isOpen      = game.status === 'open';
   const isCompleted = game.status === 'completed';
   const isCancelled = game.status === 'cancelled';
@@ -515,6 +552,18 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         </ul>
       </div>
     </div>
+
+    ${pending.length ? `
+    <div class="pw-panel bg-admin-surface border border-amber-500/30 rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-amber-400">Pending Deposit — ${pending.length}</span>
+        <p class="text-[11px] text-slate-500 mt-0.5">On the probation list — held here until you confirm their deposit, then they move into Confirmed/Waitlist by whatever's actually open.</p>
+      </div>
+      <ul class="pw-list" id="pw-list-pending">
+        ${pending.map(s => pendingRow(s, minDeposit)).join('')}
+      </ul>
+    </div>
+    ` : ''}
 
     ${!isCompleted && !isCancelled ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg" style="overflow:visible">
@@ -656,6 +705,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   var gameId = ${JSON.stringify(game.id)};
   var players = ${JSON.stringify(playerList)};
   var isCompleted = ${JSON.stringify(isCompleted)};
+  var minDeposit = ${JSON.stringify(minDeposit || 0)};
 
   // ── Copy for Messenger ────────────────────────────────────────────────
   var gcMeta = ${JSON.stringify({
@@ -946,6 +996,54 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
       fetch('/admin/papawis/' + gameId + '/remove/' + sid, { method: 'POST' })
         .then(function(r) { return r.json(); })
         .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Failed'); btn.disabled = false; } })
+        .catch(function() { alert('Network error'); btn.disabled = false; });
+    });
+  });
+
+  // Live "N papawis games" hint while typing a custom amount — mirrors the wording already
+  // baked into the preset option labels, so "Other" reads just as clearly as picking a preset.
+  function pwDepositDetailText(amount) {
+    if (!minDeposit || !amount) return '';
+    var n = Math.round((amount / minDeposit) * 10) / 10;
+    return '≈ ' + n + ' papawis game' + (n === 1 ? '' : 's');
+  }
+  document.querySelectorAll('[data-deposit-select]').forEach(function(sel) {
+    var sid = sel.dataset.depositSelect;
+    var input = document.querySelector('[data-deposit-amount="' + sid + '"]');
+    var detail = document.querySelector('[data-deposit-detail="' + sid + '"]');
+    sel.addEventListener('change', function() {
+      var isOther = sel.value === '__other__';
+      if (input) input.style.display = isOther ? '' : 'none';
+      if (detail) detail.style.display = isOther ? '' : 'none';
+      if (isOther && input) input.focus();
+    });
+    if (input) {
+      input.addEventListener('input', function() {
+        if (detail) detail.textContent = pwDepositDetailText(Number(input.value) || 0);
+      });
+    }
+  });
+
+  document.querySelectorAll('[data-confirm-deposit]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var sid = btn.dataset.confirmDeposit;
+      var select = document.querySelector('[data-deposit-select="' + sid + '"]');
+      var amountInput = document.querySelector('[data-deposit-amount="' + sid + '"]');
+      var amount = select && select.value !== '__other__'
+        ? Number(select.value) || 0
+        : (amountInput ? Number(amountInput.value) || 0 : 0);
+      if (minDeposit && amount < minDeposit) {
+        alert('Deposit must be at least ₱' + minDeposit + ' — the highest papawis price on record.');
+        return;
+      }
+      if (!confirm(amount > 0 ? 'Confirm a ₱' + amount + ' deposit and list this player?' : 'List this player without recording a deposit amount?')) return;
+      btn.disabled = true;
+      fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/confirm-deposit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amount })
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not confirm.'); btn.disabled = false; } })
         .catch(function() { alert('Network error'); btn.disabled = false; });
     });
   });

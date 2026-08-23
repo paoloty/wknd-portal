@@ -63,7 +63,7 @@ import {
   getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
   getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
-  getGameSeasons, setPlayerStatus, setPlayerTeam, setPlayerNumber,
+  getGameSeasons, setPlayerStatus, setPlayerTeam, setPlayerNumber, setPlayerPapawisProbation,
   getCompareCache, setCompareCache, incrementCompareViews, getCompareAnalytics,
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
@@ -88,7 +88,7 @@ import {
   createPlayer, mergeRegistrationIntoPlayer, playerHasActivity, deletePlayer,
   getSeasonStandings, getPlayoffGames,
   getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
-  createPapawisGame, joinPapawisGame, cancelPapawisSignup,
+  createPapawisGame, joinPapawisGame, cancelPapawisSignup, promotePapawisPendingSignup, getMaxPapawisPrice,
   adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
@@ -4085,6 +4085,13 @@ app.post('/admin/players/:id/team', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/admin/players/:id/papawis-probation', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  setPlayerPapawisProbation(player.id, !!req.body?.on, req.body?.note || '');
+  res.json({ ok: true });
+});
+
 app.post('/admin/players/:id/ratings', requireAuth, express.json(), (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).json({ error: 'Not found' });
@@ -5670,12 +5677,6 @@ app.get('/awards', (req, res) => {
   const season = Number(req.query.season) || Number(currentSeason) || 3;
   const awards = getSeasonAwards(season);
   const availableSeasons = getAwardSeasons();
-  const leagueStats = getSeasonPlayerStats(season);
-  // Use same candidate source as /mvp so both ladders show identical players and scores.
-  const mvpCandidates = getMvpCandidates(season)
-    .map(s => ({ ...s, mvpScore: computeMvpScore(s) }))
-    .filter(s => s.gp >= 1)
-    .sort((a, b) => b.mvpScore - a.mvpScore);
   const visibleSections = new Set(AWARD_SECTION_KEYS.filter(k => getSetting(`award_show_${k}`, '0') !== '0'));
   const articles = Object.fromEntries(AWARD_SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
   for (const award of awards) {
@@ -5687,7 +5688,7 @@ app.get('/awards', (req, res) => {
   res.send(renderPage(req, {
     title: `Season ${season} Awards — WKND Basketball`,
     currentPath: '/awards',
-    body: awardsPage({ awards, season, availableSeasons, visibleSections, articles, leagueStats, mvpCandidates }),
+    body: awardsPage({ awards, season, availableSeasons, visibleSections, articles }),
   }));
 });
 
@@ -5932,15 +5933,10 @@ app.get('/mvp', async (req, res) => {
   const raw = getMvpCandidates(currentSeason);
   const totalGames = getTotalSeasonGamesForMvp(currentSeason);
 
-  const allPlayers = getAllPlayers();
-  const allTeams   = getAllTeams();
   const allGames   = byDate(getAllGames());
-  const playerMap  = Object.fromEntries(allPlayers.map(p => [p.id, p]));
-  const teamMap    = Object.fromEntries(allTeams.map(t => [t.id, t]));
   const completedGames = allGames.filter(g =>
     !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
-  const highlights = buildHighlights(completedGames, playerMap, teamMap, 10);
 
   // Team records from regular complete games — used in AI writeups so the W-L is the team's
   // actual record, not the individual player's personal participation record.
@@ -6037,10 +6033,6 @@ ${name} stats:\n${rankLines}`;
       season: currentSeason,
       totalGames,
       seasonGames: SEASON_GAMES_PER_TEAM,
-      highlights,
-      teams: allTeams,
-      games: completedGames,
-      leagueStats: allQualified,
       isAdmin: !!req.session?.isAdmin,
       playoffsStarted,
     }),
@@ -7580,8 +7572,9 @@ app.post('/papawis/:id/join', (req, res) => {
   if ((fin?.current_balance ?? 0) > 0) {
     return res.status(403).json({ error: "You have an outstanding balance — clear it with an admin before joining." });
   }
+  const isProbation = !!getPlayerById(playerId)?.papawis_probation;
   const signupId = randomBytes(6).toString('hex');
-  const result = joinPapawisGame(req.params.id, playerId, signupId);
+  const result = joinPapawisGame(req.params.id, playerId, signupId, isProbation);
   if (result.error === 'not_found')      return res.status(404).json({ error: 'Game not found.' });
   if (result.error === 'not_open')       return res.status(400).json({ error: 'Sign-ups for this game are not open yet.' });
   if (result.error === 'passed')         return res.status(400).json({ error: 'This game has already happened — sign-ups are closed.' });
@@ -7938,11 +7931,12 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   // known court by name — its hourly rate becomes the calculator's starting point instead of
   // an empty field.
   const courtRate = getPapawisCourtByName(game.location)?.price_per_hour || null;
+  const minDeposit = getMaxPapawisPrice();
 
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate, minDeposit }),
   }));
 });
 
@@ -8046,6 +8040,46 @@ app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
     if (game) notifyPapawisPromotion(game, result.promoted);
   }
   res.json({ ok: true });
+});
+
+// Admin verified a probationary player's deposit (outside the app — Messenger, cash, etc.)
+// — records it as a real ledger credit, same recordTransaction() shape the "Mark Paid"
+// route already uses, then promotes the held 'pending' signup into confirmed/waitlist per
+// current capacity. Deliberately not gated by papawisLockCheck: like Mark Paid, this is a
+// financial confirmation, not a roster-shape edit.
+app.post('/admin/papawis/:id/signups/:signupId/confirm-deposit', requireAuth, express.json(), (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  const signup = getPapawisSignupById(req.params.signupId);
+  if (!signup || signup.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
+  if (signup.status !== 'pending') return res.status(400).json({ error: 'Not pending.' });
+  const amount = Number(req.body?.amount) || 0;
+  // Never trust the client's floor — re-derive it here so a stale page (or a direct API
+  // call) can't slip a deposit in under the real historical minimum.
+  const minDeposit = getMaxPapawisPrice();
+  if (minDeposit && amount < minDeposit) {
+    return res.status(400).json({ error: `Deposit must be at least ₱${minDeposit.toLocaleString()} — the highest papawis price on record.` });
+  }
+  if (amount > 0) {
+    recordTransaction({
+      id: randomBytes(6).toString('hex'), player_id: signup.player_id, amount, type: 'payment',
+      payment_method: '', date: manilaTodayStr(), status: 'confirmed',
+      notes: `Papawis deposit — ${game.title || 'Pickup game'} (${game.date})`,
+      reference_no: game.id, season: '', category: 'Papawis Deposit',
+    });
+  }
+  const result = promotePapawisPendingSignup(signup.id);
+  if (result.error) return res.status(400).json({ error: 'Could not confirm.' });
+  if (result.status === 'confirmed') {
+    createNotification({
+      playerId: signup.player_id,
+      type: 'papawis_promoted',
+      title: `You're confirmed for ${game.title || 'Papawis'}!`,
+      body: 'Your deposit was confirmed and you have a spot.',
+      link: `/papawis#pw-game-${game.id}`,
+    });
+  }
+  res.json({ ok: true, status: result.status });
 });
 
 app.post('/admin/papawis/:id/signups/:signupId/status', requireAuth, express.json(), (req, res) => {

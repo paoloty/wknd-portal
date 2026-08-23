@@ -5562,6 +5562,120 @@ a.player-link:hover { color: var(--amber); }
 .awd-season-tab:hover { color: var(--text); border-color: #334155; }
 .awd-season-tab.is-active { background: var(--amber-dim); border-color: rgba(245,147,50,.4); color: var(--amber); }
 
+/* ── Hero rows (pinned, always-visible spotlight winners) ──────────────────── */
+/* Shared "spotlight winner" component: photo-left row, gradient body, top badge pill.
+   Originally built for the Awards page, now reused as-is by the MVP race page's top-3
+   hero tier (views/mvp.js) — see .awd-rank-row below for the matching compact-list half
+   of the same pattern, also shared by both pages. */
+.awd-hero-section { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+.awd-hero-wrap { position: relative; }
+.awd-hero-row {
+  display: flex; align-items: stretch;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+  overflow: hidden; text-decoration: none; color: inherit;
+  transition: border-color .12s, background .12s;
+}
+.awd-hero-row:hover { border-color: var(--text-muted); }
+
+.awd-hero-row__thumb { width: 140px; height: 140px; flex-shrink: 0; overflow: hidden; position: relative; background: var(--bg); }
+.awd-hero-row__thumb-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.awd-hero-row__thumb-placeholder .font-condensed { font-size: 30px; font-weight: 800; color: var(--border); }
+/* Player photos here are action/candid shots, not tight headshots — cover alone left too
+   much ceiling/background above a small-looking subject. A modest zoom (scale) crops that
+   dead space out while object-position keeps the crop anchored on the upper body/face
+   rather than drifting to the true vertical center of the source photo.
+   Targeted by its own class (not a bare `img` descendant selector) with an explicit
+   max-width override — the site-wide `img, svg { max-width: 100% }` reset (top of this
+   file) was fighting the absolute-positioned width:100%, leaving the photo sized to less
+   than the full 140x140 box instead of covering it. */
+.awd-hero-row__thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: cover; object-position: center 15%; transform: scale(1.2); transform-origin: center 15%; display: block; }
+.awd-hero-row__thumb-flare { position: absolute; inset: 0; }
+
+.awd-hero-row__body { flex: 1; min-width: 0; padding: 16px 22px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+.awd-hero-row__badge { align-self: flex-start; font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; margin-bottom: 2px; }
+.awd-hero-row__name { display: flex; align-items: center; gap: 7px; font-size: 16px; font-weight: 700; color: var(--text); }
+.awd-hero-row__stats { margin: 2px 0 0; font-size: 12.5px; font-weight: 700; letter-spacing: .02em; color: var(--amber); }
+.awd-hero-row__article { margin: 4px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
+.awd-hero-row__cta { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; color: var(--amber); opacity: .3; transition: opacity .15s; }
+.awd-hero-row:hover .awd-hero-row__cta { opacity: 1; }
+
+.awd-share-btn {
+  position: absolute; bottom: 10px; right: 10px; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border);
+  background: rgba(13,20,36,.85); color: var(--text-muted);
+  cursor: pointer; opacity: 0; transition: opacity .15s, background .15s, color .15s;
+}
+.awd-hero-wrap:hover .awd-share-btn { opacity: 1; }
+.awd-share-btn:hover { background: var(--surface); color: #e2e8f0; border-color: #2e4066; }
+
+@media (max-width: 640px) {
+  .awd-hero-row { flex-direction: column; }
+  .awd-hero-row__thumb { width: 100%; height: 160px; }
+}
+
+/* ── Award tabs (roster/leaderboard groups) ────────────────────────────────── */
+/* Share button lives in this same row now (one per tab, only the active one visible —
+   toggled in lockstep with .awd-tab-panel by the same click handler) rather than on its
+   own line under the tabs. The row itself never wraps: .awd-tabs scrolls horizontally if
+   the labels don't all fit, while .awd-tabs-share is flex-shrink:0 so the icon stays
+   pinned at the right edge instead of dropping onto its own line. */
+.awd-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: nowrap; }
+.awd-tabs { display: flex; gap: 22px; flex-wrap: nowrap; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.awd-tabs::-webkit-scrollbar { display: none; }
+.awd-tab { flex-shrink: 0; white-space: nowrap; padding: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.awd-tab:hover { color: var(--text); }
+.awd-tab.is-active { color: var(--amber); border-bottom-color: var(--amber); }
+.awd-tabs-share { display: flex; align-items: center; flex-shrink: 0; margin-bottom: 6px; }
+
+/* Compact ranked row — small avatar, name (leftmost, leads the scan, shrinks/ellipsizes
+   first), then a chip (position/award label on Awards, numeric rank on the MVP race page —
+   see views/mvp.js), then the stat value, then an optional writeup-toggle chevron. Shared
+   by both pages. Flex with explicit nowrap rather than CSS grid — grid's "auto" columns
+   can't shrink below their own content width, which let a long stat line (e.g. "15.5 PPG ·
+   3.2 RPG · 1.3 APG") push the row wider than its container on narrow screens; flex lets
+   every fixed-content item declare flex-shrink:0 while only the name absorbs the squeeze.
+   Stretched-link pattern (same as .game-row__link in views/games.js): the row itself is a
+   <div>, not an <a>, with an invisible full-bleed link at z-index:1 so the toggle button
+   can be a real interactive element (z-index:2) instead of nesting <button> inside <a>. */
+.awd-rank-list { display: flex; flex-direction: column; }
+.awd-rank-row {
+  position: relative;
+  display: flex; align-items: center; flex-wrap: nowrap; gap: 12px;
+  padding: 10px 18px; border-top: 1px solid var(--border);
+  color: inherit; transition: background .12s;
+}
+.awd-rank-row:first-child { border-top: none; }
+.awd-rank-row:hover { background: rgba(255,255,255,.03); }
+.awd-rank-row__link { position: absolute; inset: 0; z-index: 1; }
+.awd-rank-row__avatar { position: relative; width: 32px; height: 32px; border-radius: 50%; border: 2px solid; background: #181d28; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.awd-rank-row__avatar .font-condensed { font-size: 12px; color: #cdd3de; }
+.awd-rank-row__avatar-img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: cover; }
+.awd-rank-row__name { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--text); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.awd-rank-row__chip { flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; padding: 3px 7px; border-radius: 5px; white-space: nowrap; }
+.awd-rank-row__stat { flex-shrink: 0; font-size: 12.5px; font-weight: 700; color: var(--amber); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.awd-rank-row__toggle {
+  position: relative; z-index: 2; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.awd-rank-row__toggle:hover { background: var(--surface); color: var(--text); }
+.awd-rank-row__toggle svg { transition: transform .15s ease; }
+.awd-rank-row.is-expanded .awd-rank-row__toggle svg { transform: rotate(180deg); }
+.awd-rank-row.is-expanded { background: rgba(255,255,255,.02); }
+
+.awd-rank-writeup { padding: 2px 18px 14px 62px; background: rgba(255,255,255,.02); }
+.awd-rank-writeup p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
+
+@media (max-width: 480px) {
+  .awd-rank-row { gap: 8px; padding: 9px 14px; }
+  .awd-rank-row__chip { display: none; }
+  .awd-rank-row__stat { font-size: 11.5px; }
+  .awd-rank-writeup { padding-left: 14px; }
+}
+
 /* Hero cards — MVP & DPOY */
 .awd-hero {
   border-radius: var(--radius); border: 1px solid var(--border);

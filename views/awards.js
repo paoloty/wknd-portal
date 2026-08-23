@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 import { displayPlayerName, teamColor, initials } from './utils.js';
 
 // ── Award badge config ────────────────────────────────────────────────────────
@@ -18,13 +18,14 @@ const AWARD_BADGE = {
   finals_mvp:      { label: 'FINALS MVP',       bg: '#ef4444', text: '#fff'    },
 };
 
-const GROUPS = [
-  { label: 'Season Awards',            types: ['mvp', 'dpoy', 'finals_mvp'],                                                                             shareKey: null          },
-  { label: 'Champions',               types: ['champion'],                                                                                                shareKey: null          },
-  { label: 'All WKND 1st Team',       types: ['all_wknd_1'],                                                                                              shareKey: 'all_wknd_1'  },
-  { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],                                                                                              shareKey: 'all_wknd_2'  },
-  { label: 'All WKND Defensive Team', types: ['all_wknd_def'],                                                                                            shareKey: 'all_wknd_def' },
-  { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'], shareKey: 'stat-leaders' },
+// Roster/leaderboard groups — each becomes a tab with a compact ranked list. (Season
+// MVP/DPOY/Finals MVP/Champion are the single-winner spotlight awards and are pinned above
+// these tabs as full hero rows instead — see heroRows in awardsPage below.)
+const TABS = [
+  { key: 'all_wknd_1',   label: 'All-WKND 1st Team',       types: ['all_wknd_1'],   shareKey: 'all_wknd_1'   },
+  { key: 'all_wknd_2',   label: 'All-WKND 2nd Team',       types: ['all_wknd_2'],   shareKey: 'all_wknd_2'   },
+  { key: 'all_wknd_def', label: 'All-WKND Defensive Team', types: ['all_wknd_def'], shareKey: 'all_wknd_def' },
+  { key: 'stat_leaders', label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'], shareKey: 'stat-leaders' },
 ];
 
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
@@ -32,29 +33,6 @@ const POSITION_ORDER = Object.fromEntries(POSITIONS.map((p, i) => [p, i]));
 const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def', 'champion']);
 
 // ── Stat helpers ──────────────────────────────────────────────────────────────
-function norm(p) {
-  const gp     = p.games_played || 1;
-  const fgm    = (p.fg2m || 0) + (p.fg3m || 0);
-  const fga    = fgm + (p.fg2m_miss || 0) + (p.fg3m_miss || 0);
-  const fta    = (p.ftm || 0) + (p.ft_miss || 0);
-  const ftmiss = p.ft_miss || 0;
-  const tov    = p.turnover || 0;
-  const per    = (p.pts + 0.4*fgm - 0.7*fga - 0.4*ftmiss + 0.7*p.reb + p.stl + 0.7*p.ast + 0.7*p.blk - tov) / gp;
-  const tsDenom = 2 * (fga + 0.44 * fta);
-  const ts      = tsDenom > 0 ? p.pts / tsDenom : 0;
-  const base    = p.pts/gp + (p.reb/gp)*0.8 + (p.ast/gp)*0.9 + (p.stl/gp)*1.5 + (p.blk/gp)*2 - (tov/gp);
-  let effMult = 1.00;
-  if (tsDenom > 0) {
-    if      (ts >= 0.70) effMult = 1.20;
-    else if (ts >= 0.60) effMult = 1.10;
-    else if (ts >= 0.50) effMult = 1.00;
-    else if (ts >= 0.40) effMult = 0.85;
-    else                 effMult = 0.70;
-  }
-  const mvpScore = base * effMult;
-  return { ...p, gp, fgm, fga, fta, ftmiss, tov, per, ts, mvpScore };
-}
-
 function statLine(row, type) {
   const gp  = row.games_played || 1;
   const avg = v => v != null ? (v / gp).toFixed(1) : null;
@@ -73,179 +51,80 @@ function statLine(row, type) {
   return parts.filter(Boolean).join(' · ');
 }
 
-// ── Award row (main content) ──────────────────────────────────────────────────
-function awardRow(row, type, article, season) {
+// ── Hero row (pinned, always visible) ──────────────────────────────────────────
+// Season MVP/DPOY/Finals MVP/Champion — one spotlight-sized row per winner, photo-left.
+// This .awd-hero-row family is now the shared "spotlight winner" component — the MVP race
+// page (views/mvp.js) reuses it for its own top-3 hero tier rather than duplicating it.
+function heroRow(row, type, article, season) {
   const name  = displayPlayerName(row.player_name || '');
   const color = teamColor(String(row.team_name || '').toUpperCase());
   const init  = initials(row.player_name || '');
   const badge = AWARD_BADGE[type] || { label: type.toUpperCase(), bg: '#f59332', text: '#10141d' };
   const href  = `/players/${encodeURIComponent(row.player_id)}`;
   const stats = statLine(row, type);
-  const pos   = POSITIONS.includes(row.notes) ? row.notes : null;
   const shareHref = `/awards/share/${encodeURIComponent(season)}/${encodeURIComponent(type)}/${encodeURIComponent(row.player_id)}`;
 
-  return `<div class="mvp-row-wrap">
-  <a href="${href}" class="mvp-row" style="--tc:${color};--bc:${badge.bg};--bt:${badge.text}">
-    <div class="mvp-row__pills">
-      <span class="mvp-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(badge.label)}</span>
+  return `<div class="awd-hero-wrap">
+  <a href="${href}" class="awd-hero-row">
+    <div class="awd-hero-row__thumb">
+      <div class="awd-hero-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
+      <img class="awd-hero-row__thumb-img" src="/api/player/${encodeURIComponent(row.player_id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+      <div class="awd-hero-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
     </div>
-    <div class="mvp-row__thumb">
-      <div class="mvp-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
-      <img src="/api/player/${encodeURIComponent(row.player_id)}/photo" alt="${escHtml(name)}" loading="lazy" class="mvp-row__thumb-img" onerror="this.style.display='none'">
-      <div class="mvp-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
-      ${pos ? `<span class="mvp-row__rank" style="background:${badge.bg};color:${badge.text};font-size:13px">${escHtml(pos)}</span>` : ''}
-    </div>
-    <div class="mvp-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
-      <div class="mvp-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
-      ${stats   ? `<p class="mvp-row__article">${escHtml(stats)}</p>` : ''}
-      ${article ? `<p class="mvp-row__article" style="margin-top:6px;opacity:.75">${escHtml(article)}</p>` : ''}
-      <span class="mvp-row__cta">FULL STATS <span>→</span></span>
+    <div class="awd-hero-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
+      <span class="awd-hero-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(badge.label)}</span>
+      <div class="awd-hero-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
+      ${stats   ? `<p class="awd-hero-row__stats">${escHtml(stats)}</p>` : ''}
+      ${article ? `<p class="awd-hero-row__article">${escHtml(article)}</p>` : ''}
+      <span class="awd-hero-row__cta">Full stats <span>&rarr;</span></span>
     </div>
   </a>
-  <button type="button" class="mvp-share-btn" onclick="wkndShareFb('${shareHref}',this)" aria-label="Copy share link">
+  <button type="button" class="awd-share-btn" onclick="wkndShareFb('${shareHref}',this)" aria-label="Copy share link">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
   </button>
 </div>`;
 }
 
-// ── Sidebars ──────────────────────────────────────────────────────────────────
-function mvpLadderSidebar(mvpCandidates) {
-  if (!mvpCandidates?.length) return '';
-  // mvpCandidates are pre-scored and pre-sorted by server using computeMvpScore (same as /mvp page).
-  const top = mvpCandidates.slice(0, 10).map(s => {
-    const gp      = s.gp || 1;
-    const fgm     = (s.fgm ?? 0);
-    const fga     = (s.fga ?? 0);
-    const fta     = (s.fta ?? 0);
-    const ftmiss  = (s.ftmiss ?? 0);
-    const tov     = (s.tov ?? 0);
-    const per     = (s.pts + 0.4*fgm - 0.7*fga - 0.4*ftmiss + 0.7*s.reb + s.stl + 0.7*s.ast + 0.7*s.blk - tov) / gp;
-    const tsDenom = 2 * (fga + 0.44 * fta);
-    const ts      = tsDenom > 0 ? s.pts / tsDenom : 0;
-    return { ...s, gp, per, ts };
-  });
+// ── Ranked row (tab content) ───────────────────────────────────────────────────
+// Compact single-line row for roster/leaderboard groups — leading chip shows position
+// (All-WKND rows) or falls back to the award label (Stat Leaders, which don't have one).
+// The row itself is a "stretched link" to the player's profile (see .awd-rank-row__link,
+// same trick as .game-row__link in views/games.js) rather than an <a> wrapping everything,
+// specifically so the writeup toggle button can be a real interactive element instead of
+// nesting a <button> inside an <a> (invalid HTML, unreliable clicks). Rows with no writeup
+// just render without the toggle/panel — nothing to expand.
+function rankRow(row, type, article) {
+  const name  = displayPlayerName(row.player_name || '');
+  const color = teamColor(String(row.team_name || '').toUpperCase());
+  const badge = AWARD_BADGE[type] || { label: type.toUpperCase(), bg: '#f59332', text: '#10141d' };
+  const href  = `/players/${encodeURIComponent(row.player_id)}`;
+  const stats = statLine(row, type);
+  const pos   = POSITIONS.includes(row.notes) ? row.notes : null;
+  const chip  = pos || badge.label;
 
-  const head = `<div class="mvp-sb-row mvp-sb-row--head">
-  <span class="mvp-sb-rank"></span>
-  <span class="mvp-sb-name" style="font-size:10px;font-weight:700;letter-spacing:0.05em;color:var(--text-muted)">PLAYER</span>
-  <span class="mvp-sb-num">PER</span>
-  <span class="mvp-sb-num">TS%</span>
-  <span class="mvp-sb-score" style="color:var(--text-muted);font-weight:700">SCR</span>
-</div>`;
+  const toggle = article
+    ? `<button type="button" class="awd-rank-row__toggle" data-action="toggle-writeup" aria-expanded="false" aria-label="Read writeup">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>`
+    : '';
+  const writeup = article ? `<div class="awd-rank-writeup" hidden><p>${escHtml(article)}</p></div>` : '';
 
-  const rows = top.map((p, i) => {
-    const rank  = i + 1;
-    const name  = displayPlayerName(p.name);
-    const color = teamColor(p.team_name);
-    const href  = `/players/${encodeURIComponent(p.id)}`;
-    const bc    = rank === 1 ? '#f59332' : rank <= 3 ? '#3b82f6' : '#374151';
-    return `<a href="${href}" class="mvp-sb-row${rank === 1 ? ' mvp-sb-row--first' : ''}" style="--bc:${bc}">
-  <span class="mvp-sb-rank">${rank}</span>
-  <span class="mvp-sb-name">
-    <span class="team-dot" style="background:${color};flex-shrink:0"></span>
-    <span class="mvp-sb-name-text">${escHtml(name)}</span>
+  return `<div class="awd-rank-row">
+  <a href="${href}" class="awd-rank-row__link" aria-label="${escHtml(name)}"></a>
+  <span class="awd-rank-row__avatar" style="border-color:${color}">
+    <span class="font-condensed">${escHtml(initials(row.player_name || ''))}</span>
+    <img class="awd-rank-row__avatar-img" src="/api/player/${encodeURIComponent(row.player_id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
   </span>
-  <span class="mvp-sb-num mvp-sb-cell--r">${p.per.toFixed(1)}</span>
-  <span class="mvp-sb-num mvp-sb-cell--r">${Math.round(p.ts * 100)}%</span>
-  <span class="mvp-sb-score mvp-sb-cell--r">${p.mvpScore.toFixed(1)}</span>
-</a>`;
-  }).join('\n');
-
-  return `<div class="card sidebar" style="padding:0;overflow:hidden">
-  <div class="card-label">MVP LADDER <a href="/mvp" class="card-label__more">Full race</a></div>
-  <div class="mvp-sb-table">${head}${rows}</div>
-</div>`;
-}
-
-function defensiveSidebar(leagueStats) {
-  if (!leagueStats?.length) return '';
-  const top = leagueStats.map(norm)
-    .sort((a, b) => (b.stl * 1.5 + b.blk * 2) / b.gp - (a.stl * 1.5 + a.blk * 2) / a.gp)
-    .slice(0, 10);
-
-  const head = `<div class="mvp-sb-row mvp-sb-row--head">
-  <span class="mvp-sb-rank"></span>
-  <span class="mvp-sb-name" style="font-size:10px;font-weight:700;letter-spacing:0.05em;color:var(--text-muted)">PLAYER</span>
-  <span class="mvp-sb-num">SPG</span>
-  <span class="mvp-sb-num">BPG</span>
-  <span class="mvp-sb-score" style="color:var(--text-muted);font-weight:700">DEF</span>
-</div>`;
-
-  const rows = top.map((p, i) => {
-    const rank  = i + 1;
-    const name  = displayPlayerName(p.name);
-    const color = teamColor(p.team_name);
-    const href  = `/players/${encodeURIComponent(p.id)}`;
-    const bc    = rank === 1 ? '#3b82f6' : rank <= 3 ? '#8b5cf6' : '#374151';
-    return `<a href="${href}" class="mvp-sb-row${rank === 1 ? ' mvp-sb-row--first' : ''}" style="--bc:${bc}">
-  <span class="mvp-sb-rank">${rank}</span>
-  <span class="mvp-sb-name">
-    <span class="team-dot" style="background:${color};flex-shrink:0"></span>
-    <span class="mvp-sb-name-text">${escHtml(name)}</span>
-  </span>
-  <span class="mvp-sb-num mvp-sb-cell--r">${(p.stl/p.gp).toFixed(1)}</span>
-  <span class="mvp-sb-num mvp-sb-cell--r">${(p.blk/p.gp).toFixed(1)}</span>
-  <span class="mvp-sb-score mvp-sb-cell--r">${((p.stl*1.5+p.blk*2)/p.gp).toFixed(1)}</span>
-</a>`;
-  }).join('\n');
-
-  return `<div class="card sidebar" style="padding:0;overflow:hidden">
-  <div class="card-label">DEFENSIVE LEADERS</div>
-  <div class="mvp-sb-table">${head}${rows}</div>
-</div>`;
-}
-
-function statTopTenSidebar(leagueStats, { title, sortFn, valLabel, valFn, valFmt, secLabel, secFn, secFmt }) {
-  if (!leagueStats?.length) return '';
-  const top = leagueStats.map(norm).sort((a, b) => sortFn(b) - sortFn(a)).slice(0, 10);
-
-  const head = `<div class="mvp-sb-row mvp-sb-row--head">
-  <span class="mvp-sb-rank"></span>
-  <span class="mvp-sb-name" style="font-size:10px;font-weight:700;letter-spacing:0.05em;color:var(--text-muted)">PLAYER</span>
-  ${secLabel ? `<span class="mvp-sb-num">${secLabel}</span>` : ''}
-  <span class="mvp-sb-score" style="color:var(--text-muted);font-weight:700">${valLabel}</span>
-</div>`;
-
-  const rows = top.map((p, i) => {
-    const rank  = i + 1;
-    const name  = displayPlayerName(p.name);
-    const color = teamColor(p.team_name);
-    const href  = `/players/${encodeURIComponent(p.id)}`;
-    const bc    = rank === 1 ? '#f59332' : rank <= 3 ? '#3b82f6' : '#374151';
-    return `<a href="${href}" class="mvp-sb-row${rank === 1 ? ' mvp-sb-row--first' : ''}" style="--bc:${bc}">
-  <span class="mvp-sb-rank">${rank}</span>
-  <span class="mvp-sb-name">
-    <span class="team-dot" style="background:${color};flex-shrink:0"></span>
-    <span class="mvp-sb-name-text">${escHtml(name)}</span>
-  </span>
-  ${secLabel ? `<span class="mvp-sb-num mvp-sb-cell--r">${escHtml(secFmt(secFn(p)))}</span>` : ''}
-  <span class="mvp-sb-score mvp-sb-cell--r">${escHtml(valFmt(valFn(p)))}</span>
-</a>`;
-  }).join('\n');
-
-  return `<div class="card sidebar" style="padding:0;overflow:hidden">
-  <div class="card-label">${escHtml(title)}</div>
-  <div class="mvp-sb-table">${head}${rows}</div>
-</div>`;
-}
-
-function statLeadersSidebars(leagueStats) {
-  if (!leagueStats?.length) return '';
-  const f1    = v => v.toFixed(1);
-  const gp    = p => p.gp;
-  const gpFmt = v => String(v);
-
-  const cats = [
-    { title: 'SCORING LEADERS',  valLabel: 'PPG', sortFn: p => p.pts/p.gp, valFn: p => p.pts/p.gp, valFmt: f1, secLabel: 'GP', secFn: gp, secFmt: gpFmt },
-    { title: 'REBOUNDS LEADERS', valLabel: 'RPG', sortFn: p => p.reb/p.gp, valFn: p => p.reb/p.gp, valFmt: f1, secLabel: 'GP', secFn: gp, secFmt: gpFmt },
-    { title: 'ASSISTS LEADERS',  valLabel: 'APG', sortFn: p => p.ast/p.gp, valFn: p => p.ast/p.gp, valFmt: f1, secLabel: 'GP', secFn: gp, secFmt: gpFmt },
-  ];
-
-  return cats.map(cat => statTopTenSidebar(leagueStats, cat)).join('\n');
+  <span class="awd-rank-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</span>
+  <span class="awd-rank-row__chip" style="background:${badge.bg};color:${badge.text}">${escHtml(chip)}</span>
+  <span class="awd-rank-row__stat">${escHtml(stats)}</span>
+  ${toggle}
+</div>
+${writeup}`;
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function awardsPage({ awards = [], season, availableSeasons = [], visibleSections = new Set(), articles = {}, leagueStats = [], mvpCandidates = [] }) {
+export function awardsPage({ awards = [], season, availableSeasons = [], visibleSections = new Set(), articles = {} }) {
   const byType = {};
   for (const row of awards) (byType[row.award_type] ??= []).push(row);
 
@@ -261,58 +140,67 @@ export function awardsPage({ awards = [], season, availableSeasons = [], visible
       ).join('')}</div>`
     : '';
 
-  const sidebarHtml = `<div style="display:flex;flex-direction:column;gap:16px;min-width:0">
-  ${mvpLadderSidebar(mvpCandidates)}
-  ${defensiveSidebar(leagueStats)}
-  ${statLeadersSidebars(leagueStats)}
-</div>`;
-
-  const hasAny = GROUPS.some(({ types }) =>
-    types.some(t => visibleSections.has(t) && byType[t]?.length)
-  );
-
-  if (!hasAny) {
-    return `<div class="games-layout">
-  <div class="games-main">
-    ${seasonSelector}
-    <div class="card" style="padding:60px 24px;text-align:center;color:var(--text-muted)">
-      Awards have not been announced yet. Check back soon.
-    </div>
-  </div>
-  ${sidebarHtml}
-</div>`;
+  // Hero section: mvp, dpoy, finals_mvp in that order, then every champion (a full roster,
+  // not a single winner) — each still gets its own spotlight row rather than being
+  // compressed into a list, since celebrating the champions is the point of the section.
+  const heroRows = [];
+  for (const type of ['mvp', 'dpoy', 'finals_mvp']) {
+    if (!visibleSections.has(type) || !byType[type]?.length) continue;
+    heroRows.push(...byType[type].map((row, i) => heroRow(row, type, i === 0 ? (articles[type] || '') : '', season)));
+  }
+  if (visibleSections.has('champion') && byType.champion?.length) {
+    heroRows.push(...byType.champion.map(row => heroRow(row, 'champion', articles[`champion_${row.player_id}`] || '', season)));
   }
 
-  const STAT_LEADER_TYPES = new Set(['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader']);
-
-  const groupCards = GROUPS.map(({ label, types, shareKey }) => {
-    const isStatGroup = types.every(t => STAT_LEADER_TYPES.has(t));
-    const statGroupVisible = isStatGroup && types.some(t => visibleSections.has(t));
-
-    const rows = types.flatMap(type => {
-      const visible = isStatGroup ? statGroupVisible : visibleSections.has(type);
-      if (!visible || !byType[type]?.length) return [];
+  const tabsWithContent = TABS.map(tab => {
+    const isStatGroup = tab.key === 'stat_leaders';
+    const groupVisible = isStatGroup ? tab.types.some(t => visibleSections.has(t)) : visibleSections.has(tab.types[0]);
+    const rows = tab.types.flatMap(type => {
+      if (!groupVisible || !byType[type]?.length) return [];
       const isTeam = TEAM_AWARD_TYPES.has(type);
       return byType[type].map((row, i) => {
         const article = isTeam
           ? (articles[`${type}_${row.player_id}`] || '')
           : (i === 0 ? (articles[type] || '') : '');
-        return awardRow(row, type, article, season);
+        return rankRow(row, type, article);
       });
     });
-    if (!rows.length) return '';
+    return { ...tab, rows };
+  }).filter(t => t.rows.length);
 
-    const teamShareBtn = shareKey
-      ? `<button type="button" class="mvp-card-share-btn" onclick="wkndShareFb('/awards/share/${encodeURIComponent(season)}/${encodeURIComponent(shareKey)}',this)" aria-label="Copy share link">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        </button>`
-      : '';
-
-    return `<div class="card mvp-list" style="margin-bottom:16px">
-  <div class="card-label">${escHtml(label.toUpperCase())}${teamShareBtn}</div>
-  ${rows.join('\n')}
+  if (!heroRows.length && !tabsWithContent.length) {
+    return `<div class="page-content">
+${pageHeader({ title: 'Awards', description: 'Season honors, All-WKND teams, and statistical leaders.' })}
+  ${seasonSelector}
+  <div class="card" style="padding:60px 24px;text-align:center;color:var(--text-muted)">
+    Awards have not been announced yet. Check back soon.
+  </div>
 </div>`;
-  }).join('');
+  }
+
+  const heroSection = heroRows.length ? `<div class="awd-hero-section">${heroRows.join('')}</div>` : '';
+
+  const shareBtnHtml = (shareKey) => shareKey
+    ? `<button type="button" class="mvp-card-share-btn" onclick="wkndShareFb('/awards/share/${encodeURIComponent(season)}/${encodeURIComponent(shareKey)}',this)" aria-label="Copy share link">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      </button>`
+    : '';
+
+  const tabsSection = tabsWithContent.length ? `
+  <div class="awd-tabs-row">
+    <div class="awd-tabs">
+      ${tabsWithContent.map((t, i) => `<button type="button" class="awd-tab${i === 0 ? ' is-active' : ''}" data-tab="${t.key}">${escHtml(t.label)} (${t.rows.length})</button>`).join('')}
+    </div>
+    <div class="awd-tabs-share">
+      ${tabsWithContent.map((t, i) => `<span data-share-for="${t.key}"${i === 0 ? '' : ' hidden'}>${shareBtnHtml(t.shareKey)}</span>`).join('')}
+    </div>
+  </div>
+  ${tabsWithContent.map((t, i) => `
+  <div class="awd-tab-panel" data-panel="${t.key}"${i === 0 ? '' : ' hidden'}>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="awd-rank-list">${t.rows.join('')}</div>
+    </div>
+  </div>`).join('')}` : '';
 
   const shareScript = `<script>
 function wkndShareFb(path, btn) {
@@ -328,17 +216,36 @@ function wkndShareFb(path, btn) {
       window.prompt('Copy this link and paste into Facebook:', url);
     });
 }
+(function() {
+  document.querySelectorAll('.awd-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.awd-tab').forEach(function(t) { t.classList.remove('is-active'); });
+      tab.classList.add('is-active');
+      var target = tab.dataset.tab;
+      document.querySelectorAll('.awd-tab-panel').forEach(function(p) { p.hidden = p.dataset.panel !== target; });
+      document.querySelectorAll('.awd-tabs-share [data-share-for]').forEach(function(s) { s.hidden = s.dataset.shareFor !== target; });
+    });
+  });
+
+  document.querySelectorAll('.awd-rank-row__toggle').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var row = btn.closest('.awd-rank-row');
+      var panel = row && row.nextElementSibling;
+      if (!panel || !panel.classList.contains('awd-rank-writeup')) return;
+      var expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      panel.hidden = expanded;
+      row.classList.toggle('is-expanded', !expanded);
+    });
+  });
+})();
 </script>`;
 
-  return `<div class="games-layout">
-  <div class="games-main">
-    ${seasonSelector}
-    ${groupCards}
-  </div>
-  ${sidebarHtml}
+  return `<div class="page-content">
+${pageHeader({ title: 'Awards', description: 'Season honors, All-WKND teams, and statistical leaders.' })}
+  ${seasonSelector}
+  ${heroSection}
+  ${tabsSection}
 </div>
 ${shareScript}`;
 }
-
-
-

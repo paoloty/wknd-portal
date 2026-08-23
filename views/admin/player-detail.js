@@ -215,6 +215,21 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
     </div>
 
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Papawis Probation</div>
+      <div class="p-4">
+        <label class="flex items-center gap-2 text-xs text-slate-300">
+          <input type="checkbox" id="val-papawis-probation" class="accent-amber-400"${player.papawis_probation ? ' checked' : ''}>
+          On probation — joining Papawis holds them pending a deposit instead of a normal slot
+        </label>
+        <textarea id="val-papawis-probation-note" class="admin-input mt-2" rows="2" placeholder="Reason (optional) — e.g. new player, late payment last time">${escHtml(player.papawis_probation_note || '')}</textarea>
+        <div class="flex items-center gap-2 mt-2">
+          <button type="button" class="admin-btn admin-btn--sm" id="plr-probation-save">Save</button>
+          <span id="plr-probation-msg" class="text-[11px] text-slate-500"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="flex items-center justify-between px-4 py-3 border-b border-admin-border">
         <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Ratings</span>
         <button id="plr-recompute" class="admin-btn admin-btn--sm">${ICON_RECOMPUTE} Recompute</button>
@@ -489,6 +504,29 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       msg.textContent = err.message;
     } finally { btn.disabled = false; btn.innerHTML = origHtml; }
   });
+
+  // ── Papawis probation save (own button — not part of the bulk bio save) ────
+  var probBtn = document.getElementById('plr-probation-save');
+  if (probBtn) {
+    probBtn.addEventListener('click', function() {
+      var msg = document.getElementById('plr-probation-msg');
+      probBtn.disabled = true; msg.style.color = 'var(--text-muted)'; msg.textContent = 'Saving…';
+      fetch('/admin/players/' + PLAYER_ID + '/papawis-probation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          on: document.getElementById('val-papawis-probation').checked,
+          note: document.getElementById('val-papawis-probation-note').value,
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        probBtn.disabled = false;
+        if (d.ok) { msg.style.color = '#22c55e'; msg.textContent = 'Saved.'; }
+        else { msg.style.color = '#f87171'; msg.textContent = d.error || 'Failed.'; }
+      })
+      .catch(function() { probBtn.disabled = false; msg.style.color = '#f87171'; msg.textContent = 'Network error.'; });
+    });
+  }
 
   // ── Ratings overrides save ────────────────────────────────────────────────
   document.getElementById('ratings-form').addEventListener('submit', async function(e) {
