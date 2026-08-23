@@ -1454,11 +1454,17 @@ ${unassigned.length ? `<div class="mt-4">
 }
 
 // ── Activity (global feed + frequent cancellers) ─────────────────────────────
-export function adminPapawisActivityBody({ activity = [], cancellers = [] } = {}) {
+export function adminPapawisActivityBody({ activity = [], cancellers = [], regulars = [] } = {}) {
   const cancellerRow = (c) => `<tr class="border-b border-admin-border/50 last:border-b-0">
       <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(c.player_name))}</td>
       <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.team_name || '—')}</td>
       <td class="px-4 py-2.5 text-sm text-slate-300 font-saira text-right">${c.cancel_count}</td>
+    </tr>`;
+
+  const regularRow = (r) => `<tr class="border-b border-admin-border/50 last:border-b-0">
+      <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(r.player_name))}</td>
+      <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(r.team_name || '—')}</td>
+      <td class="px-4 py-2.5 text-sm text-slate-300 font-saira text-right">${r.games_played}</td>
     </tr>`;
 
   return `
@@ -1478,13 +1484,24 @@ export function adminPapawisActivityBody({ activity = [], cancellers = [] } = {}
     </table>` : '<div class="px-4 py-8 text-center text-sm text-slate-500">No activity yet.</div>'}
   </div>
 
-  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Frequent Cancellers</div>
-    <table class="w-full border-collapse">
-      <tbody>
-        ${cancellers.length ? cancellers.map(cancellerRow).join('') : '<tr><td class="px-4 py-8 text-center text-sm text-slate-500">No repeat cancellers yet.</td></tr>'}
-      </tbody>
-    </table>
+  <div class="flex flex-col gap-5">
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Regulars <span class="normal-case font-normal text-slate-600">— confirmed in 5+ of the last 10</span></div>
+      <table class="w-full border-collapse">
+        <tbody>
+          ${regulars.length ? regulars.map(regularRow).join('') : '<tr><td class="px-4 py-8 text-center text-sm text-slate-500">No regulars yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Frequent Cancellers</div>
+      <table class="w-full border-collapse">
+        <tbody>
+          ${cancellers.length ? cancellers.map(cancellerRow).join('') : '<tr><td class="px-4 py-8 text-center text-sm text-slate-500">No repeat cancellers yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
   </div>
 
 </div>`;

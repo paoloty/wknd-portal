@@ -92,7 +92,7 @@ import {
   getPendingPapawisSignupsForPlayer, getUnconfirmedPapawisDeposit,
   adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate,
-  logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
+  logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
   lockPapawisSignups, unlockPapawisSignups,
@@ -7960,6 +7960,7 @@ app.get('/admin/papawis/activity', requireAuth, (req, res) => {
     body: adminPapawisActivityBody({
       activity: getAllPapawisActivity(200),
       cancellers: getFrequentPapawisCancellers(),
+      regulars: getFrequentPapawisPlayers(),
     }),
   }));
 });
