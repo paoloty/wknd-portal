@@ -35,7 +35,7 @@ import { privacyPage, termsPage } from './views/legal.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
-import { teamColor, displayPlayerName, manilaTodayStr, initials, signupDisplayName } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, initials, signupDisplayName, PAYMENT_CATEGORIES } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -89,6 +89,7 @@ import {
   getSeasonStandings, getPlayoffGames,
   getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
   createPapawisGame, joinPapawisGame, cancelPapawisSignup, promotePapawisPendingSignup, getMaxPapawisPrice,
+  getPendingPapawisSignupsForPlayer, getUnconfirmedPapawisDeposit,
   adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers,
@@ -1435,6 +1436,31 @@ function balanceReminderBar(amount) {
 </script>`;
 }
 
+// Same dismiss-in-session pattern as balanceReminderBar — reappears on the next fresh
+// login rather than being silenced forever. This is deliberately a *separate* bar/dismiss
+// key from the balance one (not folded into it) since a player can be on probation with
+// zero outstanding balance, and dismissing one shouldn't dismiss the other.
+function probationReminderBar() {
+  return `<div class="balance-bar" id="probation-bar" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3)">
+  <div class="balance-bar__inner">
+    <span class="balance-bar__text"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4.2v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg> Your account is on <strong>Papawis probation</strong> — you'll be held on a waiting list until a deposit is confirmed.</span>
+    <a href="/settle-balance?category=${encodeURIComponent('Papawis Deposit')}" class="balance-bar__cta">Submit deposit</a>
+    <button class="balance-bar__close" id="probation-bar-close" type="button" aria-label="Dismiss">✕</button>
+  </div>
+</div>
+<script>
+(function() {
+  var bar = document.getElementById('probation-bar');
+  var closeBtn = document.getElementById('probation-bar-close');
+  if (!bar || !closeBtn) return;
+  closeBtn.addEventListener('click', function() {
+    fetch('/probation-bar/dismiss', { method: 'POST' }).catch(function() {});
+    bar.style.display = 'none';
+  });
+})();
+</script>`;
+}
+
 // Shown site-wide (even on minimal-header pages — unlike the other banners, this one
 // exists for safety/clarity, not conversion, so it should never be able to disappear)
 // whenever a super admin is viewing the site through /admin/impersonate/:playerId. No
@@ -1525,9 +1551,19 @@ function renderPage(req, opts) {
     }
   }
 
+  // Probation reminder — same skip conditions as the balance bar (own profile already has
+  // the non-dismissable probation card, /settle-balance is already the destination it'd
+  // point at) plus its own independent session-dismiss flag.
+  let probationBarHtml = '';
+  if (!opts.minimalHeader && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface && !req.session.probationBarDismissed) {
+    if (getPlayerById(req.session.playerPlayerId)?.papawis_probation) {
+      probationBarHtml = probationReminderBar();
+    }
+  }
+
   const impersonatingHtml = req.session?.impersonating ? impersonationBanner(req.session.impersonatingPlayerName || 'this player') : '';
 
-  const body = impersonatingHtml + balanceBarHtml + bannerHtml + (opts.body || '');
+  const body = impersonatingHtml + balanceBarHtml + probationBarHtml + bannerHtml + (opts.body || '');
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -2673,6 +2709,12 @@ app.post('/balance-bar/dismiss', express.json(), (req, res) => {
   const amount = Number(req.body?.amount);
   if (!Number.isFinite(amount)) return res.status(400).end();
   req.session.balanceBarDismissedAmount = amount;
+  res.json({ ok: true });
+});
+
+app.post('/probation-bar/dismiss', (req, res) => {
+  if (!req.session?.playerRegId) return res.status(401).end();
+  req.session.probationBarDismissed = true;
   res.json({ ok: true });
 });
 
@@ -3909,6 +3951,23 @@ app.post('/admin/ledger/transaction/:id/confirm', requireAuth, express.json(), (
   const ok = confirmTransaction(req.params.id);
   if (!ok) return res.status(400).json({ error: 'Transaction not found or not pending.' });
   if (tx) notifyLedgerEvent({ playerId: tx.player_id, type: tx.type, amount: tx.amount, notes: tx.notes });
+  // A probation deposit can be confirmed from here instead of the Papawis admin page (which
+  // scopes to one signup) — this route only knows the player, so promote every signup of
+  // theirs still held on 'pending', not just one.
+  if (tx && tx.category === 'Papawis Deposit' && tx.type === 'payment') {
+    for (const signup of getPendingPapawisSignupsForPlayer(tx.player_id)) {
+      const result = promotePapawisPendingSignup(signup.id);
+      if (result.status === 'confirmed') {
+        const game = getPapawisGame(signup.game_id);
+        if (game) createNotification({
+          playerId: signup.player_id, type: 'papawis_promoted',
+          title: `You're confirmed for ${game.title || 'Papawis'}!`,
+          body: 'Your deposit was confirmed and you have a spot.',
+          link: `/papawis#pw-game-${game.id}`,
+        });
+      }
+    }
+  }
   res.json({ ok: true });
 });
 
@@ -6842,6 +6901,15 @@ import { settleBalancePage } from './views/settle-balance.js';
 app.get('/settle-balance', (req, res) => {
   if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.redirect(loginUrl(req));
   const fin = getPlayerFinancials(req.session.playerPlayerId);
+  // Only trust an exact PAYMENT_CATEGORIES match — anything else falls through to the
+  // plain "— select —" default rather than silently pre-selecting nothing useful.
+  const presetCategory = PAYMENT_CATEGORIES.includes(req.query.category) ? req.query.category : '';
+  // Deposit deep-link (see the probation notice / balance bar) arrives with no balance to
+  // fall back on — probationary players usually owe nothing yet — so default the amount to
+  // the current papawis deposit floor instead of leaving it blank.
+  const presetAmount = presetCategory === 'Papawis Deposit' && !(fin?.current_balance > 0)
+    ? getMaxPapawisPrice()
+    : null;
   res.send(renderPage(req, {
     title: 'Settle Balance — WKND Basketball',
     currentPath: '/settle-balance',
@@ -6852,6 +6920,9 @@ app.get('/settle-balance', (req, res) => {
       hasQr: !!getSetting('gcash_qr_payload', ''),
       activeSeason: getPortalCurrentSeason(),
       success: req.query.submitted === '1',
+      presetCategory,
+      presetAmount,
+      minDeposit: getMaxPapawisPrice(),
     }),
   }));
 });
@@ -7572,7 +7643,15 @@ app.post('/papawis/:id/join', (req, res) => {
   if ((fin?.current_balance ?? 0) > 0) {
     return res.status(403).json({ error: "You have an outstanding balance — clear it with an admin before joining." });
   }
-  const isProbation = !!getPlayerById(playerId)?.papawis_probation;
+  // A probationary player with enough standing credit already on file (from a previous
+  // deposit) skips the hold entirely — the floor is already covered, so there's nothing
+  // left to wait on. Re-checked fresh on every join: once that credit's spent on a game's
+  // charge, the next join goes back to pending until they top up again. No floor yet
+  // (getMaxPapawisPrice() null — nothing completed to base one on) means nothing's proven
+  // safe yet, so it falls back to still holding them rather than treating any credit as enough.
+  const minDeposit = getMaxPapawisPrice();
+  const hasCoveringCredit = minDeposit != null && (fin?.current_balance ?? 0) <= -minDeposit;
+  const isProbation = !!getPlayerById(playerId)?.papawis_probation && !hasCoveringCredit;
   const signupId = randomBytes(6).toString('hex');
   const result = joinPapawisGame(req.params.id, playerId, signupId, isProbation);
   if (result.error === 'not_found')      return res.status(404).json({ error: 'Game not found.' });
@@ -7933,10 +8012,19 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   const courtRate = getPapawisCourtByName(game.location)?.price_per_hour || null;
   const minDeposit = getMaxPapawisPrice();
 
+  // A pending (probationary) signup's player may have already submitted a deposit through
+  // /settle-balance — surfaced here so "Confirm & list" can reuse that exact transaction
+  // instead of recording a second, duplicate payment.
+  let unconfirmedDepositByPlayer = {};
+  for (const pid of [...new Set(signups.filter(s => s.status === 'pending').map(s => s.player_id))]) {
+    const tx = getUnconfirmedPapawisDeposit(pid);
+    if (tx) unconfirmedDepositByPlayer[pid] = tx;
+  }
+
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate, minDeposit }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer }),
   }));
 });
 
@@ -8042,31 +8130,47 @@ app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Admin verified a probationary player's deposit (outside the app — Messenger, cash, etc.)
-// — records it as a real ledger credit, same recordTransaction() shape the "Mark Paid"
-// route already uses, then promotes the held 'pending' signup into confirmed/waitlist per
-// current capacity. Deliberately not gated by papawisLockCheck: like Mark Paid, this is a
-// financial confirmation, not a roster-shape edit.
+// Admin confirms a probationary player's deposit, either (a) one they submitted themselves
+// through /settle-balance — tx_id given, reuses that exact pending transaction so it isn't
+// double-recorded — or (b) one arranged outside the app (Messenger, cash) — amount given,
+// records a fresh confirmed transaction, same recordTransaction() shape the "Mark Paid"
+// route already uses. Either way, promotes the held 'pending' signup into confirmed/
+// waitlist per current capacity. Deliberately not gated by papawisLockCheck: like Mark
+// Paid, this is a financial confirmation, not a roster-shape edit.
 app.post('/admin/papawis/:id/signups/:signupId/confirm-deposit', requireAuth, express.json(), (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
   const signup = getPapawisSignupById(req.params.signupId);
   if (!signup || signup.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
   if (signup.status !== 'pending') return res.status(400).json({ error: 'Not pending.' });
-  const amount = Number(req.body?.amount) || 0;
   // Never trust the client's floor — re-derive it here so a stale page (or a direct API
   // call) can't slip a deposit in under the real historical minimum.
   const minDeposit = getMaxPapawisPrice();
-  if (minDeposit && amount < minDeposit) {
-    return res.status(400).json({ error: `Deposit must be at least ₱${minDeposit.toLocaleString()} — the highest papawis price on record.` });
-  }
-  if (amount > 0) {
-    recordTransaction({
-      id: randomBytes(6).toString('hex'), player_id: signup.player_id, amount, type: 'payment',
-      payment_method: '', date: manilaTodayStr(), status: 'confirmed',
-      notes: `Papawis deposit — ${game.title || 'Pickup game'} (${game.date})`,
-      reference_no: game.id, season: '', category: 'Papawis Deposit',
-    });
+
+  const txId = req.body?.tx_id ? String(req.body.tx_id) : '';
+  if (txId) {
+    const tx = getTransactionById(txId);
+    if (!tx || tx.player_id !== signup.player_id || tx.status !== 'pending' || tx.category !== 'Papawis Deposit') {
+      return res.status(400).json({ error: 'That submitted deposit is no longer available — refresh and try again.' });
+    }
+    if (minDeposit && tx.amount < minDeposit) {
+      return res.status(400).json({ error: `Their submitted amount (₱${tx.amount.toLocaleString()}) is below the ₱${minDeposit.toLocaleString()} minimum — ask them to top up, or confirm a different amount manually.` });
+    }
+    if (!confirmTransaction(txId)) return res.status(400).json({ error: 'Could not confirm that payment.' });
+    notifyLedgerEvent({ playerId: tx.player_id, type: 'payment', amount: tx.amount, notes: tx.notes });
+  } else {
+    const amount = Number(req.body?.amount) || 0;
+    if (minDeposit && amount < minDeposit) {
+      return res.status(400).json({ error: `Deposit must be at least ₱${minDeposit.toLocaleString()} — the highest papawis price on record.` });
+    }
+    if (amount > 0) {
+      recordTransaction({
+        id: randomBytes(6).toString('hex'), player_id: signup.player_id, amount, type: 'payment',
+        payment_method: '', date: manilaTodayStr(), status: 'confirmed',
+        notes: `Papawis deposit — ${game.title || 'Pickup game'} (${game.date})`,
+        reference_no: game.id, season: '', category: 'Papawis Deposit',
+      });
+    }
   }
   const result = promotePapawisPendingSignup(signup.id);
   if (result.error) return res.status(400).json({ error: 'Could not confirm.' });
@@ -8150,6 +8254,15 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
       reference_no: game.id, season: '', category: 'Papawis',
     });
     notifyLedgerEvent({ playerId: s.player_id, type: 'charge', amount: price, notes: chargeNotes });
+    // Auto-settle from existing credit — if this player (or a guest's sponsor) already had
+    // enough credit on file to absorb the charge, that money already covers it; no separate
+    // payment to collect, so there's nothing for "Mark Paid" to wait on. A charge that only
+    // partially draws down credit leaves a real balance owed, same as today — this only
+    // fires when the charge is fully covered.
+    const finAfterCharge = getPlayerFinancials(s.player_id);
+    if ((finAfterCharge?.current_balance ?? 0) <= 0) {
+      markPapawisSignupPaid(s.id, '');
+    }
   }
   completePapawisGame(req.params.id, price, breakdown);
   res.json({ ok: true, charged: confirmed.length });

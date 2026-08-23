@@ -1,5 +1,5 @@
 import { escHtml } from '../layout.js';
-import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow } from '../utils.js';
+import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow, depositPresets } from '../utils.js';
 import { CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from '../papawis.js';
 import { parseHeightCm } from '../../lib/papawis-teams.js';
 
@@ -385,30 +385,21 @@ export function estimatedPapawisPrice(game, confirmedCount, courtRateFallback = 
   return defaultPapawisPrice(confirmedCount);
 }
 
-// Framed as "how many papawis games worth of buffer" rather than a raw peso figure — each
-// preset is a multiple of the floor (highest price among the last few completed sessions,
-// see getMaxPapawisPrice), so the admin is picking a number of games, not eyeballing an
-// amount. No history yet (minDeposit null) falls back to a few flat guesses with no
-// game-count detail — there's no floor yet to divide by.
-function depositPresets(minDeposit) {
-  if (!minDeposit) return [200, 250, 300].map(amount => ({ amount, detail: '' }));
-  return [1, 2, 3].map(n => ({ amount: minDeposit * n, detail: `${n} papawis game${n > 1 ? 's' : ''}` }));
-}
-
 // A probationary player's signup, held out of the confirmed/waitlist flow until an admin
 // confirms their deposit — see promotePapawisPendingSignup() in lib/portal-db.js.
-function pendingRow(s, minDeposit) {
+// submittedTx: an existing pending /settle-balance transaction from this player (category
+// 'Papawis Deposit', see getUnconfirmedPapawisDeposit) — when present, confirming reuses
+// that exact transaction instead of recording a second, duplicate payment. Admin can still
+// fall back to the manual picker (e.g. the player actually paid a different amount than
+// what they typed into settle-balance).
+function pendingRow(s, minDeposit, submittedTx) {
   const name = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
   const presets = depositPresets(minDeposit);
   const options = presets.map(p =>
     `<option value="${p.amount}">₱${p.amount.toLocaleString()}${p.detail ? ' — ' + p.detail : ''}</option>`
   ).join('');
-  return `<li class="pw-row" data-id="${escHtml(s.id)}">
-    <div class="pw-row__info">
-      <div class="pw-row__name">${escHtml(name)}</div>
-      <div class="pw-row__meta">Awaiting deposit confirmation</div>
-    </div>
-    <div class="pw-row__actions" style="align-items:center">
+
+  const manualPicker = `<div class="flex flex-wrap gap-2 items-center" data-manual-deposit="${escHtml(s.id)}"${submittedTx ? ' hidden' : ''}>
       <select class="admin-input" style="width:210px" data-deposit-select="${escHtml(s.id)}">
         ${options}
         <option value="__other__">Other…</option>
@@ -416,12 +407,30 @@ function pendingRow(s, minDeposit) {
       <input type="number" min="${minDeposit || 0}" step="1" placeholder="₱ amount" class="admin-input" style="width:100px;display:none" data-deposit-amount="${escHtml(s.id)}">
       <span class="text-[11px] text-slate-500" data-deposit-detail="${escHtml(s.id)}" style="display:none"></span>
       <button class="admin-btn admin-btn--sm admin-btn--success" data-confirm-deposit="${escHtml(s.id)}">Confirm &amp; list</button>
+    </div>`;
+
+  const submittedBlock = submittedTx ? `<div class="flex flex-col gap-1 items-start" data-submitted-deposit="${escHtml(s.id)}">
+      <span class="text-[11px] text-emerald-400 leading-snug">Submitted ₱${Number(submittedTx.amount).toLocaleString()} via ${escHtml(submittedTx.payment_method || 'settle-balance')}${submittedTx.reference_no ? ` · ref ${escHtml(submittedTx.reference_no)}` : ''} — pending review</span>
+      <div class="flex gap-2 items-center">
+        <button class="admin-btn admin-btn--sm admin-btn--success" data-confirm-deposit-tx="${escHtml(s.id)}" data-tx-id="${escHtml(submittedTx.id)}">Confirm &amp; list</button>
+        <button type="button" class="text-[11px] text-slate-500 underline" data-show-manual-deposit="${escHtml(s.id)}">or enter a different amount</button>
+      </div>
+    </div>` : '';
+
+  return `<li class="pw-row" data-id="${escHtml(s.id)}">
+    <div class="pw-row__info">
+      <div class="pw-row__name">${escHtml(name)}</div>
+      <div class="pw-row__meta">Awaiting deposit confirmation</div>
+    </div>
+    <div class="pw-row__actions flex-col items-start gap-2" style="align-items:flex-start">
+      ${submittedBlock}
+      ${manualPicker}
       <button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>
     </div>
   </li>`;
 }
 
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null, minDeposit = null } = {}) {
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {} } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const pending   = signups.filter(s => s.status === 'pending');
@@ -560,7 +569,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
         <p class="text-[11px] text-slate-500 mt-0.5">On the probation list — held here until you confirm their deposit, then they move into Confirmed/Waitlist by whatever's actually open.</p>
       </div>
       <ul class="pw-list" id="pw-list-pending">
-        ${pending.map(s => pendingRow(s, minDeposit)).join('')}
+        ${pending.map(s => pendingRow(s, minDeposit, unconfirmedDepositByPlayer[s.player_id] || null)).join('')}
       </ul>
     </div>
     ` : ''}
@@ -1041,6 +1050,31 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
       fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/confirm-deposit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: amount })
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not confirm.'); btn.disabled = false; } })
+        .catch(function() { alert('Network error'); btn.disabled = false; });
+    });
+  });
+
+  document.querySelectorAll('[data-show-manual-deposit]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var sid = btn.dataset.showManualDeposit;
+      var submitted = document.querySelector('[data-submitted-deposit="' + sid + '"]');
+      var manual = document.querySelector('[data-manual-deposit="' + sid + '"]');
+      if (submitted) submitted.hidden = true;
+      if (manual) manual.hidden = false;
+    });
+  });
+
+  document.querySelectorAll('[data-confirm-deposit-tx]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var sid = btn.dataset.confirmDepositTx, txId = btn.dataset.txId;
+      if (!confirm('Confirm this submitted deposit and list the player?')) return;
+      btn.disabled = true;
+      fetch('/admin/papawis/' + gameId + '/signups/' + sid + '/confirm-deposit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tx_id: txId })
       })
         .then(function(r) { return r.json(); })
         .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Could not confirm.'); btn.disabled = false; } })

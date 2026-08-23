@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { PAYMENT_CATEGORIES } from './utils.js';
+import { PAYMENT_CATEGORIES, depositPresets } from './utils.js';
 
 const PAYMENT_METHODS = ['GCash', 'Bank Transfer', 'Cash', 'Other'];
 
@@ -34,6 +34,13 @@ const SB_STYLES = `<style>
 .sb-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .sb-season-hint { margin: -6px 0 16px; font-size: 12px; color: var(--amber); }
 .sb-season-hint strong { color: var(--text); }
+/* #sb-amount-field stacks a select + input + hint that .login-field was never designed to
+   hold more than one of (it normally wraps a single field) — the select/input/hint sit
+   flush against each other with zero gap without this. #sb-deposit-hint reuses
+   .sb-season-hint's look but not its -6px top margin, which was tuned for sitting after a
+   whole field *row*, not nested inside one field alongside its own input. */
+#sb-amount-field #sb-deposit-select { margin-bottom: 8px; }
+#sb-amount-field #sb-deposit-hint { margin: 6px 0 0; }
 /* Fixed height regardless of the uploaded image's own dimensions — the form's layout
    shouldn't jump around based on whatever screenshot someone picks. */
 .sb-preview-wrap { margin-top: 10px; height: 180px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
@@ -56,7 +63,7 @@ const SB_STYLES = `<style>
 }
 </style>`;
 
-export function settleBalancePage({ balance = 0, gcashName = '', gcashNumber = '', hasQr = false, activeSeason = '', success = false, error = '' } = {}) {
+export function settleBalancePage({ balance = 0, gcashName = '', gcashNumber = '', hasQr = false, activeSeason = '', success = false, error = '', presetCategory = '', presetAmount = null, minDeposit = null } = {}) {
   if (success) {
     return `<div class="page-content sb-page">
   <div class="sb-success">
@@ -112,15 +119,22 @@ ${SB_STYLES}`;
         ${error ? `<div class="login-error">${escHtml(error)}</div>` : ''}
         <form id="sb-form" class="sb-form">
           <div class="sb-field-row">
-            <div class="login-field">
-              <label for="sb-amount">Amount Paid (₱) <span class="reg-req">*</span></label>
-              <input id="sb-amount" class="login-field__input" type="number" name="amount" min="1" step="0.01" value="${balance > 0 ? escHtml(String(balance)) : ''}" required>
+            <div class="login-field" id="sb-amount-field">
+              <label for="sb-amount" id="sb-amount-label">Amount Paid (₱) <span class="reg-req">*</span></label>
+              <select id="sb-deposit-select" class="login-field__input" style="display:none">
+                ${depositPresets(minDeposit).map(p =>
+                  `<option value="${p.amount}">₱${p.amount.toLocaleString()}${p.detail ? ' — ' + p.detail : ''}</option>`
+                ).join('')}
+                <option value="__other__">Other…</option>
+              </select>
+              <input id="sb-amount" class="login-field__input" type="number" name="amount" min="1" step="0.01" value="${presetAmount != null ? escHtml(String(presetAmount)) : (balance > 0 ? escHtml(String(balance)) : '')}" required>
+              <p id="sb-deposit-hint" class="sb-season-hint" style="display:none"></p>
             </div>
             <div class="login-field">
               <label for="sb-category">What's this for <span class="reg-req">*</span></label>
               <select id="sb-category" class="login-field__input" name="category" required>
                 <option value="">— select —</option>
-                ${PAYMENT_CATEGORIES.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('')}
+                ${PAYMENT_CATEGORIES.map(c => `<option value="${escHtml(c)}"${c === presetCategory ? ' selected' : ''}>${escHtml(c)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -162,6 +176,53 @@ ${SB_STYLES}
   categorySelect.addEventListener('change', function() {
     seasonHint.style.display = categorySelect.value === 'Season Fee' ? 'block' : 'none';
   });
+
+  // Papawis Deposit gets the same "N papawis games" preset picker as the admin's Pending
+  // Deposit panel (views/admin/papawis.js) instead of a bare number field — same
+  // depositPresets() list, same floor, same "Other" free-entry fallback. #sb-amount stays
+  // the actual submitted field throughout; the select just writes into it.
+  var depositSelect = document.getElementById('sb-deposit-select');
+  var amountInput   = document.getElementById('sb-amount');
+  var amountLabel   = document.getElementById('sb-amount-label');
+  var depositHint   = document.getElementById('sb-deposit-hint');
+  var minDeposit    = ${JSON.stringify(minDeposit || 0)};
+
+  function depositHintText(amount) {
+    if (!minDeposit || !amount) return '';
+    var n = Math.round((amount / minDeposit) * 10) / 10;
+    return '≈ ' + n + ' papawis game' + (n === 1 ? '' : 's');
+  }
+
+  function syncDepositUI() {
+    var isDeposit = categorySelect.value === 'Papawis Deposit';
+    depositSelect.style.display = isDeposit ? '' : 'none';
+    amountLabel.innerHTML = (isDeposit ? 'Deposit Amount' : 'Amount Paid') + ' (₱) <span class="reg-req">*</span>';
+    if (!isDeposit) {
+      amountInput.style.display = '';
+      depositHint.style.display = 'none';
+      return;
+    }
+    var isOther = depositSelect.value === '__other__';
+    amountInput.style.display = isOther ? '' : 'none';
+    if (isOther) {
+      var hint = depositHintText(Number(amountInput.value) || 0);
+      depositHint.textContent = hint;
+      depositHint.style.display = hint ? 'block' : 'none';
+    } else {
+      amountInput.value = depositSelect.value;
+      depositHint.style.display = 'none';
+    }
+  }
+  categorySelect.addEventListener('change', syncDepositUI);
+  depositSelect.addEventListener('change', syncDepositUI);
+  amountInput.addEventListener('input', function() {
+    if (categorySelect.value === 'Papawis Deposit' && depositSelect.value === '__other__') {
+      var hint = depositHintText(Number(amountInput.value) || 0);
+      depositHint.textContent = hint;
+      depositHint.style.display = hint ? 'block' : 'none';
+    }
+  });
+  syncDepositUI();
 
   var fileInput = document.getElementById('sb-screenshot');
   var preview = document.getElementById('sb-screenshot-preview');

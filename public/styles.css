@@ -2585,6 +2585,35 @@ a.player-link:hover { color: var(--amber); }
 .mp-balance-card__cta { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 700; color: #fbbf77; text-decoration: none; }
 .mp-balance-card__cta:hover { text-decoration: underline; }
 
+/* Same weight/placement as .mp-balance-card but green — a positive balance is money in the
+   player's favor, not a debt, and shouldn't borrow the "you owe money" amber. */
+.mp-credit-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 16px 18px; margin-bottom: 16px;
+  background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.28); border-top: 2px solid #4ade80;
+  border-radius: var(--radius);
+  color: #86efac;
+}
+.mp-credit-card svg { flex-shrink: 0; margin-top: 2px; }
+.mp-credit-card__title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #86efac; }
+.mp-credit-card__amount { font-size: 22px; font-weight: 800; color: #4ade80; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.mp-credit-card__note { font-size: 12px; line-height: 1.5; color: #bbf7d0; margin-top: 4px; }
+
+/* Same weight/placement as .mp-balance-card but blue, not amber — this isn't "you owe
+   money," it's an account-status notice, and the color needs to say so at a glance. */
+.mp-probation-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 16px 18px; margin-bottom: 16px;
+  background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.28); border-top: 2px solid #60a5fa;
+  border-radius: var(--radius);
+  color: #93c5fd;
+}
+.mp-probation-card svg { flex-shrink: 0; margin-top: 2px; }
+.mp-probation-card__title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #93c5fd; }
+.mp-probation-card__body { font-size: 12.5px; line-height: 1.5; color: #bfdbfe; margin-top: 4px; }
+.mp-probation-card__cta { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 700; color: #93c5fd; text-decoration: none; }
+.mp-probation-card__cta:hover { text-decoration: underline; }
+
 .mp-balance-group__toggle {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; background: none; border: none; cursor: pointer;
@@ -5577,7 +5606,12 @@ a.player-link:hover { color: var(--amber); }
 }
 .awd-hero-row:hover { border-color: var(--text-muted); }
 
-.awd-hero-row__thumb { width: 140px; height: 140px; flex-shrink: 0; overflow: hidden; position: relative; background: var(--bg); }
+/* min-height, not height: the row is align-items:stretch, so when the article text wraps
+   to more lines than fit in 140px, the row (and body) grow taller — a fixed height here
+   would leave the thumb short of the row's actual height, showing the card's background
+   as a gap below the photo. min-height lets it stretch to match while still never going
+   below 140px on a short article. */
+.awd-hero-row__thumb { width: 140px; min-height: 140px; flex-shrink: 0; overflow: hidden; position: relative; background: var(--bg); }
 .awd-hero-row__thumb-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .awd-hero-row__thumb-placeholder .font-condensed { font-size: 30px; font-weight: 800; color: var(--border); }
 /* Player photos here are action/candid shots, not tight headshots — cover alone left too

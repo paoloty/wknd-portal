@@ -10,10 +10,21 @@ export const TEAM_COLORS = {
 
 // Shared between the admin ledger's manual-entry form and the player-facing settle-balance
 // form, so a category picked by a player matches exactly what admin sees/filters by.
-export const PAYMENT_CATEGORIES = ['Season Fee', 'Game Fee', 'Papawis', 'Penalty', 'Equipment', 'Other'];
+export const PAYMENT_CATEGORIES = ['Season Fee', 'Game Fee', 'Papawis', 'Papawis Deposit', 'Penalty', 'Equipment', 'Other'];
 
 export function teamColor(name) {
   return TEAM_COLORS[String(name || '').toUpperCase()] || '#4a5263';
+}
+
+// Shared by the admin Papawis "Pending Deposit" panel and the player-facing settle-balance
+// form — framed as "how many papawis games worth of buffer" rather than a raw peso figure,
+// so both surfaces present the same set of amounts the same way. Each preset is a multiple
+// of the floor (highest price among the last few completed sessions, see
+// getMaxPapawisPrice in lib/portal-db.js). No history yet (minDeposit null) falls back to a
+// few flat guesses with no game-count detail — there's no floor yet to divide by.
+export function depositPresets(minDeposit) {
+  if (!minDeposit) return [200, 250, 300].map(amount => ({ amount, detail: '' }));
+  return [1, 2, 3].map(n => ({ amount: minDeposit * n, detail: `${n} papawis game${n > 1 ? 's' : ''}` }));
 }
 
 // Quill (the WYSIWYG editor used for Posts and Game Recaps) tends to leave

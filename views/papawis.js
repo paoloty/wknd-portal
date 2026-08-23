@@ -279,7 +279,8 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
           : `<button class="pw-btn pw-btn--disabled" disabled>Cancel my spot</button>
              <div class="pw-hint">${ICON_LOCK} Cancellation window closed ${CUTOFF_DAYS} days before game day — message an admin if you can't make it.</div>`;
       } else if (effectiveViewerSignup.status === 'pending') {
-        actionHtml = `<div class="pw-status-line"><span class="pw-dot"></span> You're listed — waiting on an admin to confirm your deposit</div>
+        actionHtml = `<div class="pw-hint pw-hint--warn">${ICON_LOCK} You're listed, but held until an admin confirms a deposit from you.</div>
+          <a href="/settle-balance?category=${encodeURIComponent('Papawis Deposit')}" class="pw-btn pw-btn--primary">Submit deposit</a>
           <button class="pw-btn pw-btn--ghost" data-action="cancel" data-game="${escHtml(game.id)}">Leave list</button>`;
       } else {
         actionHtml = `<div class="pw-status-line"><span class="pw-dot"></span> You're on the waitlist — you'll be confirmed automatically if a spot opens</div>

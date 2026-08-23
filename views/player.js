@@ -1099,7 +1099,7 @@ function pollSidebarCard(poll) {
   </div>${script}`;
 }
 
-function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransactions = [], latestPoll = null }) {
+function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransactions = [], latestPoll = null, papawisProbation = false }) {
   // Most-recent-first, capped — this is a glance-level "why do I owe this" list, not a
   // full statement; the admin ledger view is the source of truth for everything.
   const breakdownRows = balanceTransactions.slice(0, 8).map(tx => {
@@ -1154,6 +1154,34 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransac
     ${historyToggleHtml}
   </div>` : '';
 
+  // Credit on file — current_balance can go negative (e.g. a Papawis deposit that hasn't
+  // been drawn down by a charge yet), which the balance card above never surfaced at all
+  // since it only renders for balanceAmount > 0. No transaction history here (that's the
+  // bigger, still-unbuilt "why do I have this" list) — just the number, framed positively
+  // rather than as a variant of the "you owe money" card.
+  const creditHtml = balanceAmount < 0 ? `
+  <div class="mp-credit-card">
+    <svg width="18" height="18" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 7h9M7 2.5v9"/></svg>
+    <div>
+      <div class="mp-credit-card__title">Credit on file</div>
+      <div class="mp-credit-card__amount">₱${Number(-balanceAmount).toLocaleString()}</div>
+      <div class="mp-credit-card__note">Applies automatically to your next charge (e.g. a Papawis game).</div>
+    </div>
+  </div>` : '';
+
+  // Papawis probation — non-dismissable, mirrors the balance card's weight/placement but in
+  // a distinct blue so it doesn't read as "you owe money" (see also the sitewide
+  // probationReminderBar in server.js, which links here for anyone who missed this card).
+  const probationHtml = papawisProbation ? `
+  <div class="mp-probation-card">
+    <svg width="18" height="18" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="6"/><path d="M7 4v3.3"/><circle cx="7" cy="9.8" r=".2" fill="currentColor"/></svg>
+    <div>
+      <div class="mp-probation-card__title">Papawis Probation</div>
+      <div class="mp-probation-card__body">You'll be held on a waiting list when you join a papawis game until an admin confirms a deposit from you.</div>
+      <a href="/settle-balance?category=${encodeURIComponent('Papawis Deposit')}" class="mp-probation-card__cta">Submit a deposit →</a>
+    </div>
+  </div>` : '';
+
   const papawisHtml = papawisGames.length ? `
   <div class="card">
     <div class="card-label">YOUR PAPAWIS</div>
@@ -1178,8 +1206,8 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransac
 
   const pollHtml = pollSidebarCard(latestPoll);
 
-  if (!balanceHtml && !papawisHtml && !pollHtml) return '';
-  return `<div class="mp-sidebar">${balanceHtml}${papawisHtml}${pollHtml}</div>`;
+  if (!balanceHtml && !creditHtml && !probationHtml && !papawisHtml && !pollHtml) return '';
+  return `<div class="mp-sidebar">${balanceHtml}${creditHtml}${probationHtml}${papawisHtml}${pollHtml}</div>`;
 }
 
 // ── Peer ratings (roast-style player-to-player ratings) ────────────────────────
@@ -1350,7 +1378,7 @@ export function playerPage({
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
   const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
-  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll }) : '';
+  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 
   const peerRatingsHtml = peerRatingsEnabled ? `
