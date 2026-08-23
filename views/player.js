@@ -1373,12 +1373,16 @@ export function playerPage({
   fbLinked = null, isOwnProfile = false, balanceAmount = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
-  canReport = false, reportCategories = [], reportOtherCategoryId = '',
+  canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null,
 }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
   const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
-  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation }) : '';
+  // Suppress the probation notice once they already have enough credit on file to cover the
+  // floor — same hasCoveringCredit check the join route uses (server.js) to skip the hold
+  // itself, so the card can't tell them to deposit when they've already effectively done so.
+  const probationCovered = minDeposit != null && balanceAmount <= -minDeposit;
+  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation && !probationCovered }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 
   const peerRatingsHtml = peerRatingsEnabled ? `

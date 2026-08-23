@@ -1553,11 +1553,16 @@ function renderPage(req, opts) {
 
   // Probation reminder — same skip conditions as the balance bar (own profile already has
   // the non-dismissable probation card, /settle-balance is already the destination it'd
-  // point at) plus its own independent session-dismiss flag.
+  // point at) plus its own independent session-dismiss flag, plus suppressed entirely once
+  // existing credit already covers the floor — same hasCoveringCredit check the join route
+  // uses to skip the hold itself (server.js /papawis/:id/join), so the bar can't nag them to
+  // deposit when they've already effectively done so.
   let probationBarHtml = '';
   if (!opts.minimalHeader && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface && !req.session.probationBarDismissed) {
     if (getPlayerById(req.session.playerPlayerId)?.papawis_probation) {
-      probationBarHtml = probationReminderBar();
+      const minDep = getMaxPapawisPrice();
+      const covered = minDep != null && (getPlayerFinancials(req.session.playerPlayerId)?.current_balance ?? 0) <= -minDep;
+      if (!covered) probationBarHtml = probationReminderBar();
     }
   }
 
@@ -6314,6 +6319,7 @@ app.get('/players/:ref', async (req, res) => {
     body: playerPage({
       player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection,
       isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, balanceTransactions, papawisGames, coachNote, latestPoll,
+      minDeposit: isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null,
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
       viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
