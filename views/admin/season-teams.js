@@ -362,11 +362,36 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
       : zone.querySelector('.player-tbody');
   }
 
+  // Finds the row whose vertical midpoint the pointer is currently above, so a drop lands
+  // wherever it visually looks like it should instead of always jumping to the end of the
+  // list — same technique as the papawis admin roster board (views/admin/papawis.js).
+  function rowAfterPoint(tbody, y) {
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr.player-row')).filter(function(r) { return r !== dragging; });
+    var closest = null, closestOffset = -Infinity;
+    rows.forEach(function(r) {
+      var box = r.getBoundingClientRect();
+      var offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = r; }
+    });
+    return closest;
+  }
+
   function bindZone(zone) {
     zone.addEventListener('dragover', function(e) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       zone.classList.add('drag-over');
+      if (!dragging) return;
+      var tbody = getTbody(zone);
+      if (!tbody) return;
+      // Reorders live as the pointer moves — moving the dragged row into place here (rather
+      // than waiting for drop) is what makes a mid-list drop actually land where the pointer
+      // is, and also what carries the row across zones as it crosses a boundary.
+      var hint = tbody.querySelector('tr.drop-hint');
+      if (hint) hint.remove();
+      var after = rowAfterPoint(tbody, e.clientY);
+      if (after == null) tbody.appendChild(dragging);
+      else tbody.insertBefore(dragging, after);
     });
     zone.addEventListener('dragleave', function(e) {
       if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
@@ -380,9 +405,9 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
       var tbody  = getTbody(zone);
       if (!tbody) return;
 
-      var hint = tbody.querySelector('tr.drop-hint');
-      if (hint) hint.remove();
-
+      // dragover already moved the row into its final position — drop just finishes the
+      // styling/bookkeeping, it doesn't re-place the row (appendChild here would undo
+      // whatever mid-list position the pointer actually dropped it at).
       var accentTd = dragging.querySelector('td:first-child');
       if (accentTd) {
         if (isPool) {
@@ -396,7 +421,6 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
 
       if (isPool) dragging.style.display = '';
       dragging.style.opacity = '';
-      tbody.appendChild(dragging);
 
       restoreHints();
       updateAllTeamStats();

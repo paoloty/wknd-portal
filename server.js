@@ -91,7 +91,7 @@ import {
   createPapawisGame, joinPapawisGame, cancelPapawisSignup, promotePapawisPendingSignup, getMaxPapawisPrice,
   getPendingPapawisSignupsForPlayer, getUnconfirmedPapawisDeposit,
   adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
-  completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate,
+  completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
@@ -8031,7 +8031,7 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts() }),
   }));
 });
 
@@ -8207,6 +8207,18 @@ app.post('/admin/papawis/:id/signups/reorder', requireAuth, express.json(), (req
   const status = req.body.status === 'confirmed' ? 'confirmed' : 'waitlist';
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string') : [];
   reorderPapawisSignups(req.params.id, status, ids);
+  res.json({ ok: true });
+});
+
+// Changes the court/venue on an already-created game — only offered while it's still open
+// (a completed/cancelled game's location is historical record, not something to correct).
+// Free text either way, same as creation: picking a known court just fills in its name,
+// "Others" (or anything typed) is stored as-is.
+app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.status !== 'open') return res.status(400).json({ error: 'Only an open papawis can have its location changed.' });
+  setPapawisGameLocation(req.params.id, req.body?.location);
   res.json({ ok: true });
 });
 

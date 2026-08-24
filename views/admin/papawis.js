@@ -430,7 +430,7 @@ function pendingRow(s, minDeposit, submittedTx) {
   </li>`;
 }
 
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {} } = {}) {
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [] } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const pending   = signups.filter(s => s.status === 'pending');
@@ -511,7 +511,9 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   <div class="agm-game-header__meta">
     <span>${fmtDate(game.date)}</span>
     ${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? `<span class="agm-sep">·</span><span>${escHtml(t)}</span>` : ''; })()}
-    ${game.location ? `<span class="agm-sep">·</span><span>${escHtml(game.location)}</span>` : ''}
+    <span class="agm-sep">·</span>
+    <span>${game.location ? escHtml(game.location) : 'No location set'}</span>
+    ${isOpen ? `<button id="pw-edit-location-btn" type="button" class="agm-view-link" style="background:none;border:none;cursor:pointer;padding:0">✎ Edit</button>` : ''}
     <span class="agm-sep">·</span>
     ${statusBadge(game)}
     ${isScheduled ? `<span class="text-xs text-slate-500">Sign-ups open ${fmtDate(addDaysStr(game.date, -game.open_days_before))}, 8:00 AM</span>` : ''}
@@ -520,6 +522,38 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ${isOpen ? `<button id="pw-lock-btn" type="button" class="admin-btn admin-btn--sm" data-locked="${isLocked ? '1' : '0'}">${isLocked ? '🔓 Unlock Roster' : '🔒 Lock Roster'}</button>` : ''}
   </div>
 </div>
+
+${isOpen ? (() => {
+  const isKnownCourt = courts.some(c => c.name === game.location);
+  return `
+<div class="agm-modal-backdrop" id="pw-location-modal-backdrop" hidden>
+  <div class="agm-modal">
+    <div class="agm-modal-header">
+      <h3 class="agm-modal-title">Change Location</h3>
+      <button class="agm-modal-close" id="pw-location-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="agm-modal-body">
+      <div class="agm-modal-field">
+        <label class="agm-modal-label">Location</label>
+        <select id="pw-location-select-edit" class="agm-modal-select">
+          <option value="">Select location…</option>
+          ${courts.map(c => `<option value="${escHtml(c.name)}"${c.name === game.location ? ' selected' : ''}>${escHtml(c.name)}</option>`).join('')}
+          <option value="__other__"${!isKnownCourt && game.location ? ' selected' : ''}>Others</option>
+        </select>
+      </div>
+      <div class="agm-modal-field" id="pw-location-other-wrap-edit"${isKnownCourt || !game.location ? ' hidden' : ''}>
+        <label class="agm-modal-label">Other location</label>
+        <input type="text" id="pw-location-other-edit" class="agm-modal-input" placeholder="Enter location" value="${!isKnownCourt ? escHtml(game.location || '') : ''}">
+      </div>
+      <p class="agm-modal-err" id="pw-location-err" hidden></p>
+    </div>
+    <div class="agm-modal-footer">
+      <button class="agm-new-btn agm-new-btn--ghost" id="pw-location-modal-cancel">${ICON_X} Cancel</button>
+      <button class="agm-new-btn" id="pw-location-save-btn">${ICON_CHECK} Save</button>
+    </div>
+  </div>
+</div>`;
+})() : ''}
 
 <div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_320px] items-start">
 
@@ -807,6 +841,44 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     lines.push('');
     lines.push('💸 After the game, you can settle up anytime through your Portal account — totally optional, you can always just send payment straight to an admin instead.');
     return lines.join('\\n');
+  }
+
+  var locationBackdrop = document.getElementById('pw-location-modal-backdrop');
+  var editLocationBtn = document.getElementById('pw-edit-location-btn');
+  if (editLocationBtn && locationBackdrop) {
+    var locationErrEl = document.getElementById('pw-location-err');
+    var locationSelectEdit = document.getElementById('pw-location-select-edit');
+    var locationOtherWrapEdit = document.getElementById('pw-location-other-wrap-edit');
+    var locationOtherEdit = document.getElementById('pw-location-other-edit');
+
+    function openLocationModal() { locationBackdrop.hidden = false; locationSelectEdit.focus(); }
+    function closeLocationModal() { locationBackdrop.hidden = true; locationErrEl.hidden = true; }
+    editLocationBtn.addEventListener('click', openLocationModal);
+    document.getElementById('pw-location-modal-close').addEventListener('click', closeLocationModal);
+    document.getElementById('pw-location-modal-cancel').addEventListener('click', closeLocationModal);
+    locationBackdrop.addEventListener('click', function(e) { if (e.target === locationBackdrop) closeLocationModal(); });
+    locationSelectEdit.addEventListener('change', function() {
+      locationOtherWrapEdit.hidden = locationSelectEdit.value !== '__other__';
+    });
+
+    document.getElementById('pw-location-save-btn').addEventListener('click', function() {
+      var newLocation = locationSelectEdit.value === '__other__'
+        ? locationOtherEdit.value.trim()
+        : locationSelectEdit.value;
+      var btn = this;
+      var orig = btn.innerHTML;
+      btn.disabled = true; btn.textContent = 'Saving…';
+      fetch('/admin/papawis/' + gameId + '/location', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location: newLocation })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) { window.location.reload(); }
+        else { locationErrEl.textContent = d.error || 'Failed to save.'; locationErrEl.hidden = false; btn.disabled = false; btn.innerHTML = orig; }
+      })
+      .catch(function() { locationErrEl.textContent = 'Network error.'; locationErrEl.hidden = false; btn.disabled = false; btn.innerHTML = orig; });
+    });
   }
 
   var lockBtn = document.getElementById('pw-lock-btn');
