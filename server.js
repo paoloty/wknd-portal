@@ -81,6 +81,7 @@ import {
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, relinkRegistrationPlayer, setWaiverAgreement,
+  setRegistrationAdminSections, getRegistrationAdminSections,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
   setRegistrationAdmin, insertAdminLog, getAdminLogs, getAdminLogsForUser, updateRegBirthday,
@@ -141,7 +142,7 @@ import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
 import { adminCoachNotesBody } from './views/admin/coach-notes.js';
-import { adminLayout } from './views/admin/layout.js';
+import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage } from './views/mvp.js';
@@ -1626,7 +1627,7 @@ function applySeoOverrideTags(metaTags, override, effectiveTitle, origin) {
 }
 
 function renderAdminPage(req, opts) {
-  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, ...opts });
+  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: getAdminAllowedSections(req), ...opts });
 }
 
 function formatName(raw) {
@@ -2092,10 +2093,33 @@ function loginUrl(req) {
   return '/login?next=' + encodeURIComponent(req.originalUrl);
 }
 
+// null = unrestricted (the true super-admin login always, plus every elevated player-admin
+// before this feature existed / with nothing explicitly set). Otherwise an array of
+// ADMIN_SECTIONS keys — see registrations.admin_sections in lib/portal-db.js.
+function getAdminAllowedSections(req) {
+  if (!req.session?.isAdmin || !req.session?.isElevatedPlayer) return null;
+  return getRegistrationAdminSections(getRegistration(req.session.playerRegId));
+}
+
 function requireAuth(req, res, next) {
-  if (req.session?.isAdmin) return next();
-  if (req.session?.playerRegId) return res.redirect('/me');
-  res.redirect(loginUrl(req));
+  if (!req.session?.isAdmin) {
+    if (req.session?.playerRegId) return res.redirect('/me');
+    return res.redirect(loginUrl(req));
+  }
+  const allowed = getAdminAllowedSections(req);
+  if (allowed) {
+    const section = sectionForPath(req.path);
+    // A path outside every defined section (shared/cross-cutting routes like
+    // /admin/site/settings, /admin/impersonate/:id) is left ungated — trying to reclassify
+    // every such route per-section risks breaking something a restricted admin legitimately
+    // needs inside a section they DO have (e.g. the Papawis reminders toggle posts to the
+    // generic /admin/site/settings, not /admin/papawis/...).
+    if (section && !allowed.includes(section.key)) {
+      const target = firstAllowedAdminUrl(allowed);
+      if (target && target !== req.path) return res.redirect(target);
+    }
+  }
+  next();
 }
 
 function requireSuperAdmin(req, res, next) {
@@ -3118,6 +3142,21 @@ app.post('/admin/users/:id/toggle-sensitive', requireSuperAdmin, express.json(),
   res.json({ ok: true, can_view_sensitive: !reg.can_view_sensitive });
 });
 
+// Restricts an elevated player-admin to only the given admin-nav sections (e.g. Papawis
+// only) — empty/omitted sections clears the restriction back to full access. Superadmin-only
+// (an admin can't touch their own scope), and only meaningful for an is_admin user — the
+// true super-admin login has no registrations row here to restrict in the first place.
+app.post('/admin/users/:id/sections', requireSuperAdmin, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  if (!reg.is_admin) return res.status(400).json({ error: 'User must be an admin first.' });
+  const sections = Array.isArray(req.body?.sections) ? req.body.sections : [];
+  const validKeys = new Set(ADMIN_SECTIONS.map(s => s.key));
+  if (sections.some(s => !validKeys.has(s))) return res.status(400).json({ error: 'Unknown section.' });
+  setRegistrationAdminSections(reg.id, sections);
+  res.json({ ok: true, sections });
+});
+
 app.get('/admin/coach-notes', requireAuth, (req, res) => {
   const analyses = getAllCoachAnalyses();
   res.send(renderAdminPage(req, {
@@ -3129,12 +3168,12 @@ app.get('/admin/coach-notes', requireAuth, (req, res) => {
 
 app.get('/admin/privileges', requireSuperAdmin, (req, res) => {
   const registrations = getAllRegistrations();
-  const admins     = registrations.filter(r => r.is_admin);
+  const admins     = registrations.filter(r => r.is_admin).map(r => ({ ...r, adminSections: getRegistrationAdminSections(r) }));
   const candidates = registrations.filter(r => r.status === 'approved' && !r.is_admin);
   res.send(renderAdminPage(req, {
     title: 'Admin Privileges',
     currentPath: '/admin/privileges',
-    body: adminPrivilegesBody({ admins, candidates }),
+    body: adminPrivilegesBody({ admins, candidates, sections: ADMIN_SECTIONS }),
   }));
 });
 

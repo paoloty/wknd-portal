@@ -108,6 +108,43 @@ const NAV_GROUPS = [
   },
 ];
 
+function slugifyGroupLabel(label) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+// Derived from NAV_GROUPS itself (not a separately-maintained list) so the sections an admin
+// can be restricted to and the nav they actually see can never drift apart. SUPER_ADMIN_NAV
+// is deliberately excluded — those routes stay gated by requireSuperAdmin regardless of any
+// section list, since an elevated player-admin (the only kind this restricts) can never be
+// the true super admin anyway and would never reach them.
+export const ADMIN_SECTIONS = NAV_GROUPS.map(g => ({
+  key: slugifyGroupLabel(g.label),
+  label: g.label,
+  prefixes: g.items.map(i => i.href),
+}));
+
+// Boundary-safe prefix match — an href of "/admin/season" must not match "/admin/seasons".
+function pathInSection(path, section) {
+  return section.prefixes.some(href => path === href || path.startsWith(href + '/'));
+}
+
+// The section a given request path falls under, or null if it doesn't belong to any of
+// them (shared/cross-cutting routes like /admin/site/settings, /admin/impersonate/:id —
+// left ungated by section restrictions on purpose, see requireAuth in server.js).
+export function sectionForPath(path) {
+  return ADMIN_SECTIONS.find(s => pathInSection(path, s)) || null;
+}
+
+// Where to send a restricted admin who hit a page outside their allowed sections — the
+// first (in canonical NAV_GROUPS order, not whatever order they happen to be stored in)
+// section they're actually allowed into. '/admin' as an absolute last resort only, for a
+// pathologically broken/stale section list that matches nothing real.
+export function firstAllowedAdminUrl(allowedSections) {
+  if (!allowedSections || !allowedSections.length) return '/admin';
+  const section = ADMIN_SECTIONS.find(s => allowedSections.includes(s.key));
+  return section?.prefixes[0] || '/admin';
+}
+
 const SUPER_ADMIN_NAV = [
   {
     label: 'Super Admin',
@@ -120,10 +157,17 @@ const SUPER_ADMIN_NAV = [
   },
 ];
 
-export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '', isSuperAdmin = true }) {
+export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null }) {
   const v = cssVer ? `?v=${cssVer}` : '';
 
-  const allNavGroups = isSuperAdmin ? [...NAV_GROUPS, ...SUPER_ADMIN_NAV] : NAV_GROUPS;
+  // allowedSections null = unrestricted (every admin before this feature existed, and the
+  // true super admin always) — otherwise hide whichever nav groups aren't in the list, so a
+  // restricted admin never even sees a link to a section they can't open (requireAuth in
+  // server.js is what actually blocks it; this just keeps the sidebar honest about that).
+  const baseNavGroups = allowedSections
+    ? NAV_GROUPS.filter(g => allowedSections.includes(slugifyGroupLabel(g.label)))
+    : NAV_GROUPS;
+  const allNavGroups = isSuperAdmin ? [...baseNavGroups, ...SUPER_ADMIN_NAV] : baseNavGroups;
   const navHtml = allNavGroups.map(({ label, items }, gi) => {
     const itemsHtml = items.map(({ href, label: lbl, icon, exact, soon }) => {
       const active = exact ? currentPath === href : currentPath.startsWith(href);
