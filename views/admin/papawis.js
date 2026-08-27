@@ -381,8 +381,12 @@ export function estimatedPapawisPrice(game, confirmedCount, courtRateFallback = 
   const hasRef  = saved ? !!game?.has_referee : true;
   const refRate = game?.referee_rate_per_hour || REFEREE_RATE_DEFAULT;
   const total = estimateTotal({ rate, hours, hasReferee: hasRef, refereeRate: refRate });
-  if (total && confirmedCount) return roundTo10(total / confirmedCount);
-  return defaultPapawisPrice(confirmedCount);
+  const raw = (total && confirmedCount) ? roundTo10(total / confirmedCount) : defaultPapawisPrice(confirmedCount);
+  if (raw == null) return null;
+  // Same floor the admin's own live calculator applies (recalcCloseOut, in this page's own
+  // script below) — a saved min_per_player should win here too, otherwise the pre-game
+  // reminder email quotes a lower number than what Close Out will actually charge.
+  return game?.min_per_player ? Math.max(raw, roundTo10(game.min_per_player)) : raw;
 }
 
 // A probationary player's signup, held out of the confirmed/waitlist flow until an admin
