@@ -25,8 +25,8 @@ function rosterRow(p, teamColor, viewerIsHead) {
     : initials(p.name);
 
   let numberSlot;
-  if (!p.isNew || p.number) {
-    numberSlot = numberChip(p.number || '—');
+  if (p.number) {
+    numberSlot = numberChip(p.number);
   } else if (viewerIsHead) {
     numberSlot = `
       <form class="mt-num-form" data-signup-id="${escHtml(p.signupId)}">
@@ -44,8 +44,9 @@ function rosterRow(p, teamColor, viewerIsHead) {
     <div class="mt-row__info">
       <div class="mt-row__name">
         ${escHtml(p.name)}
-        ${p.isNew  ? `<span class="mt-badge mt-badge--new">NEW</span>` : ''}
-        ${p.isHead ? `<span class="mt-badge mt-badge--head">TEAM HEAD</span>` : ''}
+        ${p.isNew    ? `<span class="mt-badge mt-badge--new">NEW</span>` : ''}
+        ${p.isTraded ? `<span class="mt-badge mt-badge--traded">TRADED</span>` : ''}
+        ${p.isHead   ? `<span class="mt-badge mt-badge--head">TEAM HEAD</span>` : ''}
       </div>
       ${positions.length ? `<div class="mt-row__pos">${positions.map(escHtml).join(' · ')}</div>` : ''}
     </div>
@@ -80,7 +81,7 @@ export function myTeamPage({ notPublished = false, notAssigned = false, team = n
     </div>
     <p class="mt-intro">
       Season ${escHtml(String(season))} team preview — rosters aren't final until the season officially starts.
-      ${viewerIsHead ? ' As team head, you can fill in jersey numbers for new players below.' : ''}
+      ${viewerIsHead ? ' As team head, you can fill in jersey numbers for new players, and for traded players whose old number is already taken here, below.' : ''}
     </p>
     <div class="card mt-card">
       <div class="mt-roster">${rows}</div>
@@ -101,6 +102,7 @@ export function myTeamPage({ notPublished = false, notAssigned = false, team = n
 .mt-row__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 .mt-badge { font-size: 8.5px; font-weight: 800; letter-spacing: .06em; padding: 1px 5px; border-radius: 3px; line-height: 1.5; }
 .mt-badge--new { background: #22c55e18; color: #22c55e; border: 1px solid #22c55e33; }
+.mt-badge--traded { background: #3b82f618; color: #3b82f6; border: 1px solid #3b82f633; }
 .mt-badge--head { background: #f5933218; color: var(--amber); border: 1px solid #f5933233; }
 .mt-chip { font-size: 11px; font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 3px 10px; white-space: nowrap; }
 .mt-chip--num { font-family: 'Saira Condensed', sans-serif; font-weight: 700; }

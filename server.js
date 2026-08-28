@@ -12,7 +12,7 @@ import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import CleanCSS from 'clean-css';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail } from './lib/mailer.js';
+import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail } from './lib/mailer.js';
 import { detectBogusFlags } from './lib/registration-flags.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import sharp from 'sharp';
@@ -78,6 +78,7 @@ import {
   playerPlayedSeason, getPlayerCurrentTeam,
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber,
+  setJerseyRequestToken, getSeasonSignupByJerseyToken, submitJerseyDetails,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, relinkRegistrationPlayer, setWaiverAgreement,
@@ -161,6 +162,7 @@ import { adminRatingsBody } from './views/admin/ratings.js';
 import { finesPage } from './views/fines.js';
 import { teamHeadPage } from './views/team-head.js';
 import { myTeamPage } from './views/my-team.js';
+import { jerseyRequestPage } from './views/jersey-request.js';
 import { pollsPage } from './views/polls.js';
 import { adminPollsBody } from './views/admin/polls.js';
 
@@ -1399,6 +1401,32 @@ function memberSignupBanner(season) {
 </div>`;
 }
 
+function draftTeamBanner(season) {
+  return `<div class="member-signup-banner">
+  <div class="member-signup-banner__copy">
+    <span class="member-signup-banner__pill">
+      <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
+      Season ${escHtml(String(season))} Teams
+    </span>
+    <span class="member-signup-banner__msg">Next season's team rosters are up.</span>
+  </div>
+  <a href="/my-team" class="member-signup-banner__cta">See your team →</a>
+</div>`;
+}
+
+function jerseyRequestBanner() {
+  return `<div class="member-signup-banner">
+  <div class="member-signup-banner__copy">
+    <span class="member-signup-banner__pill">
+      <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
+      Jersey Details Needed
+    </span>
+    <span class="member-signup-banner__msg">Fill in your jersey size and number before jerseys are ordered.</span>
+  </div>
+  <a href="/jersey-request/mine" class="member-signup-banner__cta">Fill it in →</a>
+</div>`;
+}
+
 function regMiniBanner() {
   const { pill, message, cta } = pickRegistrationBannerMessage();
   return `<div class="reg-mini">
@@ -1532,10 +1560,39 @@ function renderPage(req, opts) {
     }
   }
 
+  // Draft team preview banner — shown to any signed-up player once admin has published
+  // next season's draft rosters (see /admin/season/teams/publish), so they don't have to
+  // stumble onto /my-team's URL by luck. Mutually exclusive with showSignupBanner: you can
+  // only have a roster assignment if you already have a signup.
+  let showDraftTeamBanner = false, draftTeamSeason = '';
+  if (isPlayer && !req.session?.isAdmin && opts.currentPath !== '/my-team') {
+    const sigSeason = getSetting('signup_target_season', '');
+    if (sigSeason && getSetting('season_roster_published', '') === sigSeason) {
+      const signup = getSeasonSignup(req.session.playerRegId, sigSeason);
+      if (signup && getSeasonRoster(sigSeason).some(r => r.signup_id === signup.id)) {
+        showDraftTeamBanner = true;
+        draftTeamSeason = sigSeason;
+      }
+    }
+  }
+
+  // Jersey-request reminder — shown to any player admin has sent a jersey request to
+  // (see /admin/season-signups/:id/request-jersey) who hasn't submitted yet, so a missed
+  // email or dismissed notification isn't the only way to rediscover it. Outranks the draft
+  // team banner below: it's an explicit ask from admin, not a general "come look" nudge.
+  let showJerseyRequestBanner = false;
+  if (isPlayer && !req.session?.isAdmin && !opts.currentPath?.startsWith('/jersey-request')) {
+    const sigSeason = getSetting('signup_target_season', '');
+    if (sigSeason) {
+      const signup = getSeasonSignup(req.session.playerRegId, sigSeason);
+      if (signup?.jersey_requested_at && !signup.jersey_submitted_at) showJerseyRequestBanner = true;
+    }
+  }
+
   // Focused auth-style pages (register, login, season-signup, set-password) skip
   // every site-wide banner/ticker/balance-reminder — none of it is relevant on the
   // page that IS the CTA those banners would otherwise point at.
-  const bannerHtml = opts.minimalHeader ? '' : (showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showMini ? regMiniBanner() : ''));
+  const bannerHtml = opts.minimalHeader ? '' : (showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showJerseyRequestBanner ? jerseyRequestBanner() : (showDraftTeamBanner ? draftTeamBanner(draftTeamSeason) : (showMini ? regMiniBanner() : ''))));
 
   // Balance reminder — shown site-wide to a player with an outstanding balance, on top of
   // whatever other banner is already showing. Dismissal is per-amount and lives in the
@@ -7601,7 +7658,15 @@ app.get('/admin/season/teams/charge-preview', requireAuth, (req, res) => {
     return { name: p.full_name || '—', total: `₱${total.toLocaleString()}` };
   });
 
-  res.json({ lines, grand_total: `₱${grandTotal.toLocaleString()}` });
+  // Non-blocking heads-up for the Start Season modal — how many new/traded players
+  // (see buildTeamRosterView) haven't submitted jersey details yet, across every team.
+  const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(season);
+  const jerseyPending = seasonTeams.reduce((sum, team) => {
+    const roster = buildTeamRosterView(team, rosterRows, liveTeams, allHeads);
+    return sum + roster.filter(p => p.needsJersey && !p.jerseySubmittedAt).length;
+  }, 0);
+
+  res.json({ lines, grand_total: `₱${grandTotal.toLocaleString()}`, jersey_pending: jerseyPending });
 });
 
 app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, res) => {
@@ -7888,32 +7953,88 @@ function resolveMyTeamContext(season) {
   return { seasonTeams, rosterRows, liveTeams, allHeads };
 }
 
+function liveTeamForSeasonTeam(team, liveTeams) {
+  if (!team) return null;
+  return liveTeams.find(t => t.name.trim().toUpperCase() === team.name.trim().toUpperCase()) || null;
+}
+
 function headPlayerIdsForSeasonTeam(team, liveTeams, allHeads) {
-  if (!team) return new Set();
-  const liveTeam = liveTeams.find(t => t.name.trim().toUpperCase() === team.name.trim().toUpperCase());
+  const liveTeam = liveTeamForSeasonTeam(team, liveTeams);
   if (!liveTeam) return new Set();
   return new Set(allHeads.filter(h => h.team_id === liveTeam.id).map(h => h.player_id));
 }
 
-// Shared by /my-team (a single team, for the logged-in viewer) and the admin preview at
-// /admin/season/teams/preview (every team at once) — same shape either way so the admin
-// view is a faithful mirror of what a head actually sees, not a re-derivation of it.
+// Shared by /my-team (a single team, for the logged-in viewer), POST /my-team/number
+// (validating a write), and the admin preview at /admin/season/teams/preview (every team
+// at once) — same shape everywhere so none of them can drift out of sync with each other.
+//
+// Three kinds of roster member, in order of how "locked" their number is:
+//   - stayed:  has a live player_id, same live team as this draft team    → number fixed
+//   - traded:  has a live player_id, but a DIFFERENT live team            → number fixed
+//              UNLESS it collides with a "stayed" (or already-resolved) teammate's number,
+//              in which case *they* (not the incumbent) need a new one — being traded alone
+//              doesn't require a new jersey, only an actual conflict does
+//   - new:     no live player_id at all                                  → always needs one
+// A number is only ever "needed" (editable) for new/traded members, and only when it
+// actually collides with someone else on the same team.
 function buildTeamRosterView(team, rosterRows, liveTeams, allHeads) {
   const teammates     = rosterRows.filter(r => r.team_id === team.id);
+  const liveTeam      = liveTeamForSeasonTeam(team, liveTeams);
   const headPlayerIds = headPlayerIdsForSeasonTeam(team, liveTeams, allHeads);
-  return teammates.map(r => {
+
+  const raw = teammates.map(r => {
     const isNew      = !r.player_id;
     const livePlayer = !isNew ? getPlayerById(r.player_id) : null;
+    const isTraded   = !isNew && !!liveTeam && livePlayer?.team_id !== liveTeam.id;
     return {
       signupId:     r.signup_id,
       name:         displayPlayerName(r.full_name),
       positions:    r.positions,
       isNew,
+      isTraded,
       isHead:       !isNew && headPlayerIds.has(r.player_id),
       jerseyTop:    r.jersey_top,
       jerseyShorts: r.jersey_shorts,
-      number:       isNew ? (r.jersey_number || '') : (livePlayer?.number || ''),
+      jerseyName:   r.jersey_name,
+      pockets:      !!r.pockets,
+      shortsNotes:  r.jersey_shorts_notes || '',
       pictureUrl:   livePlayer?.picture_url || '',
+      requestedAt:  r.jersey_requested_at || 0,
+      submittedAt:  r.jersey_submitted_at || 0,
+      // A head-entered replacement (for a new player, or a traded one resolving a
+      // conflict) always wins once set; otherwise fall back to whatever's already on file.
+      currentNumber: r.jersey_number || livePlayer?.number || '',
+    };
+  });
+
+  const counts = {};
+  raw.forEach(p => { if (p.currentNumber) counts[p.currentNumber] = (counts[p.currentNumber] || 0) + 1; });
+
+  return raw.map(p => {
+    const isFlexible     = p.isNew || p.isTraded;
+    const needsNewNumber = isFlexible && !!p.currentNumber && counts[p.currentNumber] > 1;
+    return {
+      signupId:     p.signupId,
+      name:         p.name,
+      positions:    p.positions,
+      isNew:        p.isNew,
+      isTraded:     p.isTraded,
+      isHead:       p.isHead,
+      jerseyTop:    p.jerseyTop,
+      jerseyShorts: p.jerseyShorts,
+      jerseyName:   p.jerseyName,
+      pockets:      p.pockets,
+      shortsNotes:  p.shortsNotes,
+      pictureUrl:   p.pictureUrl,
+      needsNewNumber,
+      number:       needsNewNumber ? '' : p.currentNumber,
+      // "Needs jersey" (size + number + printed name) applies to anyone who isn't a
+      // simple stayed-and-unchanged player — new to the league, or moved teams — regardless
+      // of whether their number happens to conflict. Drives the admin "Request Jersey
+      // Details" button and the (non-blocking) Start Season warning.
+      needsJersey:      isFlexible,
+      jerseyRequestedAt: p.requestedAt,
+      jerseySubmittedAt: p.submittedAt,
     };
   });
 }
@@ -7966,24 +8087,208 @@ app.post('/my-team/number', express.json(), (req, res) => {
   const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(season);
   const target = rosterRows.find(r => r.signup_id === req.body?.signupId);
   if (!target) return res.status(404).json({ error: 'Player not found on any roster.' });
-  if (target.player_id) return res.status(400).json({ error: 'This player already has an official number.' });
 
-  const team         = seasonTeams.find(t => t.id === target.team_id);
+  const team = seasonTeams.find(t => t.id === target.team_id);
   const headPlayerIds = headPlayerIdsForSeasonTeam(team, liveTeams, allHeads);
   if (!req.session.playerPlayerId || !headPlayerIds.has(req.session.playerPlayerId)) {
     return res.status(403).json({ error: "Only this team's head can set jersey numbers." });
   }
 
-  const taken = rosterRows
-    .filter(r => r.team_id === target.team_id && r.signup_id !== target.signup_id)
-    .some(r => {
-      const existing = r.player_id ? getPlayerById(r.player_id)?.number : r.jersey_number;
-      return existing !== undefined && existing !== null && existing !== '' && Number(existing) === Number(num);
-    });
+  // Recompute the same view a head actually sees — only a new player or a traded player
+  // with a genuine conflict is allowed to get a number written here; anyone already
+  // resolved (a stayed player, or a traded player whose old number is still free) is
+  // rejected even if someone tampers with the request directly.
+  const computed   = buildTeamRosterView(team, rosterRows, liveTeams, allHeads);
+  const targetView = computed.find(p => p.signupId === target.signup_id);
+  if (!targetView?.needsNewNumber) {
+    return res.status(400).json({ error: 'This player does not need a new number.' });
+  }
+
+  const taken = computed.some(p => p.signupId !== target.signup_id && p.number && Number(p.number) === Number(num));
   if (taken) return res.status(400).json({ error: `#${Number(num)} is already taken on this team.` });
 
   setSeasonSignupJerseyNumber(target.signup_id, num);
   res.json({ ok: true, number: num });
+});
+
+// ── Jersey-request flow: admin sends, player self-serves ─────────────────────────
+// Manually triggered by admin per player (see /admin/season/teams/preview) — a second
+// path onto the same jersey_number/jersey_top/jersey_shorts/pockets columns /my-team's
+// head flow writes, this time filled in by the player themselves via an emailed,
+// unauthenticated tokenized link (same pattern as /set-password's pw_token).
+app.post('/admin/season-signups/:id/request-jersey', requireAuth, express.json(), (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Signup not found.' });
+  const reg = getRegistration(signup.reg_id);
+  if (!reg?.email) return res.status(400).json({ error: 'No email on file for this registrant.' });
+
+  const token = randomBytes(32).toString('hex');
+  setJerseyRequestToken(signup.id, token, Date.now() + 60 * 24 * 60 * 60 * 1000);
+
+  const proto   = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+  const host    = req.headers['x-forwarded-host'] || req.headers.host;
+  const formUrl = `${proto}://${host}/jersey-request?token=${token}`;
+  const name    = displayPlayerName(reg.full_name) || reg.email;
+
+  // Season-4 team name for display context in the email/notification, if assigned yet.
+  const rosterRows = getSeasonRoster(signup.season);
+  const myRow      = rosterRows.find(r => r.signup_id === signup.id);
+  const teamName   = myRow ? (getSeasonTeams(signup.season).find(t => t.id === myRow.team_id)?.name || '') : '';
+
+  if (reg.player_id) {
+    createNotification({
+      playerId: reg.player_id,
+      type:     'jersey_request',
+      title:    'Jersey details needed',
+      body:     'Fill in your jersey size, number, and printed name before jerseys are ordered.',
+      link:     `/jersey-request?token=${token}`,
+    });
+  }
+  sendMail({ to: reg.email, ...jerseyRequestEmail({ name, formUrl, teamName }) }).catch(e => console.error('[mailer]', e.message));
+
+  res.json({ ok: true });
+});
+
+app.get('/jersey-request', (req, res) => {
+  const { token = '' } = req.query;
+  const signup = token ? getSeasonSignupByJerseyToken(token) : null;
+  if (!signup) {
+    return res.status(400).send(renderPage(req, {
+      title: 'Invalid Link — WKND Basketball', currentPath: '', ticker: '',
+      body: jerseyRequestPage({ invalid: true }),
+    }));
+  }
+
+  const rosterRows = getSeasonRoster(signup.season);
+  const myRow      = rosterRows.find(r => r.signup_id === signup.id);
+  const teamName   = myRow ? (getSeasonTeams(signup.season).find(t => t.id === myRow.team_id)?.name || '') : '';
+  const name       = displayPlayerName(signup.full_name) || '';
+
+  // Jersey cost is billed separately from the season quota (see Start Season's charge
+  // step) — shown here purely so the player knows what they're about to be on the hook
+  // for, computed with the exact same function that does the real charging later.
+  const jerseyPricing = {
+    topPrice:      Number(getSetting('jersey_top_price', '0')) || 0,
+    shortPrice:    Number(getSetting('jersey_short_price', '0')) || 0,
+    surchargeStep: Number(getSetting('jersey_surcharge_step', '50')) || 0,
+    pocketsPrice:  Number(getSetting('jersey_pockets_price', '100')) || 0,
+  };
+
+  res.send(renderPage(req, {
+    title: 'Jersey Details — WKND Basketball', currentPath: '', ticker: '',
+    body: jerseyRequestPage({
+      token, name, teamName, jerseyPricing,
+      prefill: {
+        jersey_name:   signup.jersey_name,
+        jersey_number: signup.jersey_number,
+        jersey_top:    signup.jersey_top,
+        jersey_shorts: signup.jersey_shorts,
+        pockets:       !!signup.pockets,
+        jersey_shorts_notes: signup.jersey_shorts_notes,
+      },
+    }),
+  }));
+});
+
+app.post('/jersey-request', express.urlencoded({ extended: false }), (req, res) => {
+  const { token = '', jersey_name = '', jersey_number = '', jersey_top = '', jersey_shorts = '', pockets = '', jersey_shorts_notes = '' } = req.body;
+  const signup = token ? getSeasonSignupByJerseyToken(token) : null;
+
+  const jerseyPricing = {
+    topPrice:      Number(getSetting('jersey_top_price', '0')) || 0,
+    shortPrice:    Number(getSetting('jersey_short_price', '0')) || 0,
+    surchargeStep: Number(getSetting('jersey_surcharge_step', '50')) || 0,
+    pocketsPrice:  Number(getSetting('jersey_pockets_price', '100')) || 0,
+  };
+  const renderErr = (error, prefill) => res.status(400).send(renderPage(req, {
+    title: 'Jersey Details — WKND Basketball', currentPath: '', ticker: '',
+    body: jerseyRequestPage({ token, error, prefill, jerseyPricing }),
+  }));
+
+  if (!signup) {
+    return res.status(400).send(renderPage(req, {
+      title: 'Invalid Link — WKND Basketball', currentPath: '', ticker: '',
+      body: jerseyRequestPage({ invalid: true }),
+    }));
+  }
+
+  const prefill = { jersey_name, jersey_number, jersey_top, jersey_shorts, pockets: !!pockets, jersey_shorts_notes };
+  const num = jersey_number.trim();
+  if (!jersey_name.trim())            return renderErr('Enter the name to print on the jersey.', prefill);
+  if (!num)                            return renderErr('Enter a jersey number.', prefill);
+  if (!/^\d{1,2}$/.test(num))          return renderErr('Jersey number must be 0-99.', prefill);
+  if (!JERSEY_SIZES.includes(jersey_top)) return renderErr('Pick a jersey top size.', prefill);
+  if (jersey_shorts && !JERSEY_SIZES.includes(jersey_shorts)) return renderErr('Pick a valid shorts size.', prefill);
+
+  // Same team-scoped duplicate check /my-team/number uses for the head-edit path — a
+  // player can pick any number here too, but not one already spoken for on their team.
+  {
+    const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(signup.season);
+    const myRow = rosterRows.find(r => r.signup_id === signup.id);
+    const team  = myRow ? seasonTeams.find(t => t.id === myRow.team_id) : null;
+    if (team) {
+      const computed = buildTeamRosterView(team, rosterRows, liveTeams, allHeads);
+      const taken = computed.some(p => p.signupId !== signup.id && p.number && Number(p.number) === Number(num));
+      if (taken) return renderErr(`#${Number(num)} is already taken on your team.`, prefill);
+    }
+  }
+
+  submitJerseyDetails(signup.id, {
+    number: num, top: jersey_top, shorts: jersey_shorts, pockets: !!pockets,
+    jerseyName: jersey_name.trim().slice(0, 20), shortsNotes: jersey_shorts_notes.trim().slice(0, 200),
+  });
+
+  res.send(renderPage(req, {
+    title: 'Jersey Details — WKND Basketball', currentPath: '', ticker: '',
+    body: jerseyRequestPage({ submitted: true }),
+  }));
+});
+
+// Stable authenticated link for the site-wide reminder banner (see jerseyRequestBanner in
+// renderPage) — resolves to whatever token is currently valid for this player's season
+// signup, so the banner never points at a token that's gone stale after a Resend.
+app.get('/jersey-request/mine', (req, res) => {
+  if (!req.session?.playerRegId) return res.redirect('/login?next=' + encodeURIComponent('/jersey-request/mine'));
+  const season = getSetting('signup_target_season', '');
+  const signup = season ? getSeasonSignup(req.session.playerRegId, season) : null;
+  if (!signup?.jersey_request_token || signup.jersey_request_token_exp <= Date.now()) return res.redirect('/me');
+  res.redirect(`/jersey-request?token=${signup.jersey_request_token}`);
+});
+
+// CSV export for handing off to whoever prints the jerseys — sorted by team, then name.
+// Defaults to only rows this flow has actually touched (requested or submitted), since
+// stayed players who never asked for a resize already have a jersey and don't need a
+// re-order; pass ?all=1 to include everyone on the roster regardless.
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+app.get('/admin/season/teams/export-jerseys', requireAuth, (req, res) => {
+  const season = req.query.season || getSetting('signup_target_season', '');
+  if (!season) return res.status(400).send('No active season.');
+  const includeAll = req.query.all === '1';
+
+  const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(season);
+  const rows = [['Team', 'Player', 'Jersey Name', 'Number', 'Top Size', 'Shorts Size', 'Pockets', 'Shorts Notes', 'Status', 'Jersey Request']];
+  seasonTeams.forEach(team => {
+    const roster = buildTeamRosterView(team, rosterRows, liveTeams, allHeads)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    roster.forEach(p => {
+      const touched = p.jerseyRequestedAt || p.jerseySubmittedAt;
+      if (!includeAll && !touched) return;
+      rows.push([
+        team.name, p.name, p.jerseyName || '', p.number || '', p.jerseyTop || '', p.jerseyShorts || '',
+        p.pockets ? 'Yes' : 'No', p.shortsNotes || '',
+        p.isNew ? 'New' : (p.isTraded ? 'Traded' : 'Stayed'),
+        p.jerseySubmittedAt ? 'Submitted' : (p.jerseyRequestedAt ? 'Requested' : ''),
+      ]);
+    });
+  });
+
+  const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="jersey-orders-season-${season}${includeAll ? '-all' : ''}.csv"`);
+  res.send(csv);
 });
 
 // ── League Polls: player-facing surface ──────────────────────────────────────────

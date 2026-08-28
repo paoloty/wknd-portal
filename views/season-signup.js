@@ -1,15 +1,9 @@
 import { escHtml } from './layout.js';
-import { SIZES } from '../lib/season-pricing.js';
+import { SIZES, SIZE_CHART } from '../lib/season-pricing.js';
 import { TIERS, TIER_LABELS } from '../lib/assessment-scoring.js';
 
 const STATUS_LABEL = { waitlisted: 'Waitlisted', confirmed: 'Confirmed', rejected: 'Not Selected' };
 const STATUS_COLOR = { waitlisted: '#f59332', confirmed: '#22c55e', rejected: '#64748b' };
-
-// Chest/length (top) and hips/length (shorts), in inches, per size.
-const SIZE_CHART = {
-  top:    { XS: [19, 27], S: [20, 28], M: [21, 29], L: [22, 30], XL: [23, 31], '2XL': [24, 32], '3XL': [25, 33], '4XL': [26, 34], '5XL': [27, 36] },
-  shorts: { XS: [21, 19], S: [22, 20], M: [23, 21], L: [24, 22], XL: [25, 23], '2XL': [26, 24], '3XL': [27, 25], '4XL': [28, 26], '5XL': [29, 27] },
-};
 
 const fmtMoney = v => (v ? `₱${Number(v).toLocaleString()}` : '');
 

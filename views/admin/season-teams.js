@@ -276,7 +276,8 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
       <li>Charge season fee + jersey costs to each confirmed player</li>
       <li>Lock the team draft — rosters can't be changed</li>
     </ul>
-    <div id="modal-charge-preview" class="bg-admin-surface2 border border-admin-border rounded-lg px-4 py-3 mb-5 text-[12px] text-slate-500">Loading charge preview…</div>
+    <div id="modal-charge-preview" class="bg-admin-surface2 border border-admin-border rounded-lg px-4 py-3 mb-3 text-[12px] text-slate-500">Loading charge preview…</div>
+    <div id="modal-jersey-warning" class="hidden text-[12px] px-3 py-2 mb-5 rounded-lg" style="background:#f5933218;color:#f59332;border:1px solid #f5933233"></div>
     <div class="flex gap-2.5 justify-end">
       <button id="modal-cancel" class="bg-transparent border border-admin-border text-slate-400 text-[13px] font-semibold rounded-md px-4 py-2 cursor-pointer">Cancel</button>
       <button id="modal-confirm" class="bg-green-500 text-admin-bg text-[13px] font-bold border-0 rounded-md px-4 py-2 cursor-pointer">Confirm &amp; Start</button>
@@ -760,7 +761,9 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
   if (startBtn) startBtn.addEventListener('click', async function() {
     modal.classList.remove('hidden'); modal.classList.add('flex');
     var preview = document.getElementById('modal-charge-preview');
+    var warning = document.getElementById('modal-jersey-warning');
     preview.textContent = 'Loading…';
+    warning.classList.add('hidden');
     try {
       var r = await fetch('/admin/season/teams/charge-preview?season=' + encodeURIComponent(SEASON));
       var d = await r.json();
@@ -770,6 +773,11 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
         }).join('') + '<div class="flex justify-between pt-2 mt-2 border-t border-admin-border font-bold text-slate-100"><span>Total</span><span>' + d.grand_total + '</span></div>';
       } else {
         preview.textContent = 'No confirmed players with charges.';
+      }
+      // Heads-up only — doesn't block starting the season, admin decides whether to wait.
+      if (d.jersey_pending) {
+        warning.textContent = '⚠ ' + d.jersey_pending + ' new/traded player' + (d.jersey_pending === 1 ? '' : 's') + " haven't submitted jersey details yet (see Head View).";
+        warning.classList.remove('hidden');
       }
     } catch(e) { preview.textContent = 'Could not load preview.'; }
   });
