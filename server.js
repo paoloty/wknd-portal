@@ -8149,6 +8149,37 @@ app.post('/admin/season-signups/:id/request-jersey', requireAuth, express.json()
   res.json({ ok: true });
 });
 
+// Lets admin fill in or correct jersey details directly, for a player who can't be reached
+// or whose submission needs a fix — same write path and validation as the player's own
+// /jersey-request form, just triggered from the admin session instead of a mailed token.
+app.post('/admin/season-signups/:id/jersey-details', requireAuth, express.json(), (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Signup not found.' });
+
+  const { jersey_name = '', jersey_number = '', jersey_top = '', jersey_shorts = '', pockets = false, jersey_shorts_notes = '' } = req.body || {};
+  const num = String(jersey_number).trim();
+  if (!jersey_name.trim())                return res.status(400).json({ error: 'Enter the name to print on the jersey.' });
+  if (!num)                                return res.status(400).json({ error: 'Enter a jersey number.' });
+  if (!/^\d{1,2}$/.test(num))              return res.status(400).json({ error: 'Jersey number must be 0-99.' });
+  if (!JERSEY_SIZES.includes(jersey_top))  return res.status(400).json({ error: 'Pick a valid jersey top size.' });
+  if (jersey_shorts && !JERSEY_SIZES.includes(jersey_shorts)) return res.status(400).json({ error: 'Pick a valid shorts size.' });
+
+  const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(signup.season);
+  const myRow = rosterRows.find(r => r.signup_id === signup.id);
+  const team  = myRow ? seasonTeams.find(t => t.id === myRow.team_id) : null;
+  if (team) {
+    const computed = buildTeamRosterView(team, rosterRows, liveTeams, allHeads);
+    const taken = computed.some(p => p.signupId !== signup.id && p.number && Number(p.number) === Number(num));
+    if (taken) return res.status(400).json({ error: `#${Number(num)} is already taken on this team.` });
+  }
+
+  submitJerseyDetails(signup.id, {
+    number: num, top: jersey_top, shorts: jersey_shorts, pockets: !!pockets,
+    jerseyName: jersey_name.trim().slice(0, 20), shortsNotes: jersey_shorts_notes.trim().slice(0, 200),
+  });
+  res.json({ ok: true });
+});
+
 app.get('/jersey-request', (req, res) => {
   const { token = '' } = req.query;
   const signup = token ? getSeasonSignupByJerseyToken(token) : null;
