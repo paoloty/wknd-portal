@@ -7400,6 +7400,7 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   const teams       = getSeasonTeams(sigSeason);
   const rosterRows  = getSeasonRoster(sigSeason);
   const draftStatus = getSetting('season_draft_status', '');
+  const leagueTeams = getAllTeams();
 
   // Build rosterMap: teamId → [player objects]
   const signupById = Object.fromEntries(players.map(p => [p.id, p]));
@@ -7414,7 +7415,7 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Team Builder',
     currentPath: '/admin/season/teams',
-    body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus }),
+    body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus, leagueTeams }),
   }));
 });
 
@@ -7425,6 +7426,20 @@ app.post('/admin/season/teams/create', requireAuth, express.json(), (req, res) =
   const teams = getSeasonTeams(season);
   upsertSeasonTeam(id, season, name.trim(), color || '#f59332', teams.length);
   res.json({ ok: true, id });
+});
+
+// Seeds season_teams from the live league teams (Blue/Maroon/White/Black) as a starting
+// template — only offered while the draft has no teams yet, so it can't clobber an
+// in-progress build.
+app.post('/admin/season/teams/seed-from-league', requireAuth, express.json(), (req, res) => {
+  const { season } = req.body || {};
+  if (!season) return res.status(400).json({ error: 'season required' });
+  if (getSeasonTeams(season).length) return res.status(400).json({ error: 'This season already has teams.' });
+  getAllTeams().forEach((t, i) => {
+    const id = `st_${Date.now()}_${randomBytes(4).toString('hex')}`;
+    upsertSeasonTeam(id, season, t.name, t.color, i);
+  });
+  res.json({ ok: true });
 });
 
 app.post('/admin/season/teams/:id/delete', requireAuth, express.json(), (req, res) => {

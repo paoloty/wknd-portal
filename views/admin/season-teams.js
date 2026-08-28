@@ -115,7 +115,7 @@ function teamColumn(team, players) {
   </div>`;
 }
 
-export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null } = {}) {
+export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null, leagueTeams = [] } = {}) {
   const confirmedPlayers = players.filter(p => p.status === 'confirmed');
 
   const assignedIds = new Set(
@@ -211,7 +211,16 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
   <!-- Teams grid -->
   ${teams.length > 0
     ? `<div id="teams-board">${teamCols}</div>`
-    : `<div id="teams-board" class="border-2 border-dashed border-admin-border rounded-xl p-10 text-center text-slate-700 text-[13px] mb-4">Add a team above to get started.</div>`}
+    : `<div id="teams-board" class="border-2 border-dashed border-admin-border rounded-xl p-10 text-center mb-4">
+        <p class="text-slate-700 text-[13px] m-0 mb-3">Add a team above to get started.</p>
+        ${!isSandbox && leagueTeams.length > 0 ? `
+        <div class="flex flex-col items-center gap-2.5">
+          <div class="flex items-center gap-1.5">
+            ${leagueTeams.map(t => `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" style="background:${escHtml(t.color)}1a;color:${escHtml(t.color)};border:1px solid ${escHtml(t.color)}33">${escHtml(t.name)}</span>`).join('')}
+          </div>
+          <button id="seed-league-btn" class="agm-new-btn">Use These ${leagueTeams.length} Teams</button>
+        </div>` : ''}
+      </div>`}
 
   <!-- Unassigned pool -->
   <div class="mt-6 pt-5 border-t border-admin-border">
@@ -543,6 +552,20 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
       if (!r.ok) throw new Error();
       location.reload();
     } catch(e) { addTeamBtn.disabled = false; addTeamBtn.textContent = '+ Add Team'; alert('Error creating team.'); }
+  });
+
+  // ── Seed from league teams ──────────────────────────────────────────────
+  var seedBtn = document.getElementById('seed-league-btn');
+  if (seedBtn) seedBtn.addEventListener('click', async function() {
+    seedBtn.disabled = true; seedBtn.textContent = 'Loading…';
+    try {
+      var r = await fetch('/admin/season/teams/seed-from-league', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ season: SEASON }),
+      });
+      if (!r.ok) throw new Error();
+      location.reload();
+    } catch(e) { seedBtn.disabled = false; seedBtn.textContent = 'Use These Teams'; alert('Error loading league teams.'); }
   });
 
   // ── Delete team ───────────────────────────────────────────────────────────
