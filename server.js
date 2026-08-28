@@ -78,7 +78,7 @@ import {
   playerPlayedSeason, getPlayerCurrentTeam,
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber,
-  setJerseyRequestToken, getSeasonSignupByJerseyToken, submitJerseyDetails,
+  setJerseyRequestToken, getSeasonSignupByJerseyToken, submitJerseyDetails, setSeasonSignupShorts,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, relinkRegistrationPlayer, setWaiverAgreement,
@@ -7798,6 +7798,15 @@ app.post('/papawis/:id/join', (req, res) => {
     return res.status(401).json({ error: 'Please log in to join.' });
   }
   const playerId = req.session.playerPlayerId;
+  // Deleting a player's account (deletePlayer()) never touches the session store, so a
+  // browser that was already logged in stays "logged in" against a player_id that no
+  // longer exists. Without this check that stale session could still join a game — the
+  // resulting signup has a dangling player_id, is invisible to every roster query (they
+  // all inner-join players), yet still counts toward the game's confirmed slots. Force
+  // a fresh login instead of letting the join through.
+  if (!getPlayerById(playerId)) {
+    return req.session.destroy(() => res.status(401).json({ error: 'Your session has expired. Please log in again.' }));
+  }
   const fin = getPlayerFinancials(playerId);
   if ((fin?.current_balance ?? 0) > 0) {
     return res.status(403).json({ error: "You have an outstanding balance — clear it with an admin before joining." });
@@ -8178,6 +8187,20 @@ app.post('/admin/season-signups/:id/jersey-details', requireAuth, express.json()
     jerseyName: jersey_name.trim().slice(0, 20), shortsNotes: jersey_shorts_notes.trim().slice(0, 200),
   });
   res.json({ ok: true });
+});
+
+// Quick add/remove for shorts only — the player-facing size picker defaults to "None" and
+// players keep missing it or picking it by mistake, so admin needs a one-click fix that
+// doesn't demand re-entering name/number the way the full jersey-details edit does.
+app.post('/admin/season-signups/:id/shorts', requireAuth, express.json(), (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Signup not found.' });
+
+  const { jersey_shorts = '', pockets = false, jersey_shorts_notes = '' } = req.body || {};
+  if (jersey_shorts && !JERSEY_SIZES.includes(jersey_shorts)) return res.status(400).json({ error: 'Pick a valid shorts size.' });
+
+  setSeasonSignupShorts(signup.id, { shorts: jersey_shorts, pockets: !!pockets, shortsNotes: jersey_shorts_notes.trim().slice(0, 200) });
+  res.json({ ok: true, shorts: jersey_shorts, pockets: !!pockets });
 });
 
 app.get('/jersey-request', (req, res) => {
