@@ -115,7 +115,7 @@ function teamColumn(team, players) {
   </div>`;
 }
 
-export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null, leagueTeams = [] } = {}) {
+export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null, leagueTeams = [], rosterPublished = false } = {}) {
   const confirmedPlayers = players.filter(p => p.status === 'confirmed');
 
   const assignedIds = new Set(
@@ -192,6 +192,14 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
     </div>
     <div class="flex items-center gap-2 flex-wrap">
       ${isStarted ? `<span class="text-[11px] font-bold px-3 py-1 rounded-full" style="background:#22c55e1a;color:#22c55e;border:1px solid #22c55e33">SEASON STARTED</span>` : ''}
+      ${!isSandbox ? `<a href="/admin/season/teams/preview" class="text-[12px] font-semibold px-3.5 py-1.5 rounded-md no-underline bg-transparent border border-admin-border text-slate-400 hover:text-slate-200">👁 Head View</a>` : ''}
+      ${!isSandbox ? `<button id="publish-roster-btn" class="text-[11px] font-bold px-3 py-1 rounded-full cursor-pointer" data-published="${rosterPublished ? '1' : '0'}"
+          style="${rosterPublished
+            ? 'background:#22c55e1a;color:#22c55e;border:1px solid #22c55e33'
+            : 'background:transparent;color:#64748b;border:1px solid #334155'}"
+          title="Controls visibility on the public /my-team page — separate from Start Season">
+          ${rosterPublished ? '● Published to Players' : '○ Not Published'}
+        </button>` : ''}
       <button id="auto-balance-btn" class="agm-new-btn" ${isStarted ? 'disabled' : ''}>⚡ Auto-Balance</button>
       <button id="save-draft-btn" class="agm-new-btn" ${isStarted ? 'disabled' : ''}>${isSandbox ? 'Save' : 'Save Draft'}</button>
       ${!isStarted && !isSandbox ? `<button id="start-season-btn" class="text-[12px] font-bold px-4 py-1.5 rounded-md border-0 cursor-pointer bg-green-500 text-admin-bg">Start Season →</button>` : ''}
@@ -552,6 +560,21 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
       if (!r.ok) throw new Error();
       location.reload();
     } catch(e) { addTeamBtn.disabled = false; addTeamBtn.textContent = '+ Add Team'; alert('Error creating team.'); }
+  });
+
+  // ── Publish toggle ───────────────────────────────────────────────────────
+  var publishBtn = document.getElementById('publish-roster-btn');
+  if (publishBtn) publishBtn.addEventListener('click', async function() {
+    var next = publishBtn.dataset.published !== '1';
+    publishBtn.disabled = true;
+    try {
+      var r = await fetch('/admin/season/teams/publish', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ season: SEASON, published: next }),
+      });
+      if (!r.ok) throw new Error();
+      location.reload();
+    } catch(e) { publishBtn.disabled = false; alert('Error updating publish state.'); }
   });
 
   // ── Seed from league teams ──────────────────────────────────────────────

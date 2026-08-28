@@ -5,7 +5,7 @@ function headRow(h) {
   return `<tr class="border-b border-admin-border/40 last:border-0">
     <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(displayPlayerName(h.player_name))}</td>
     <td class="px-4 py-3 text-xs text-slate-500">${escHtml(h.team_name)}</td>
-    <td class="px-4 py-3 text-right"><button class="admin-btn admin-btn--sm admin-btn--danger" onclick="revokeHead('${escHtml(h.id)}', ${JSON.stringify(displayPlayerName(h.player_name))})">Revoke</button></td>
+    <td class="px-4 py-3 text-right"><button class="admin-btn admin-btn--sm admin-btn--danger" onclick="revokeHead('${escHtml(h.id)}', ${escHtml(JSON.stringify(displayPlayerName(h.player_name)))})">Revoke</button></td>
   </tr>`;
 }
 

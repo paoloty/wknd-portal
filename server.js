@@ -77,7 +77,7 @@ import {
   upsertAssessmentReview, getAssessmentReviews, getAssessmentReviewsBySeason, deleteAssessmentReview,
   playerPlayedSeason, getPlayerCurrentTeam,
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
-  getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats,
+  getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, relinkRegistrationPlayer, setWaiverAgreement,
@@ -160,6 +160,7 @@ import { adminTeamHeadsBody } from './views/admin/team-heads.js';
 import { adminRatingsBody } from './views/admin/ratings.js';
 import { finesPage } from './views/fines.js';
 import { teamHeadPage } from './views/team-head.js';
+import { myTeamPage } from './views/my-team.js';
 import { pollsPage } from './views/polls.js';
 import { adminPollsBody } from './views/admin/polls.js';
 
@@ -7033,6 +7034,7 @@ import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
 import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
 import { adminLivenessListBody } from './views/admin/liveness-list.js';
 import { adminSeasonTeamsBody } from './views/admin/season-teams.js';
+import { adminSeasonTeamsPreviewBody } from './views/admin/season-teams-preview.js';
 
 app.get('/admin/seasons', requireAuth, (req, res) => {
   const gameCounts   = getGameCountsBySeason();
@@ -7401,6 +7403,7 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   const rosterRows  = getSeasonRoster(sigSeason);
   const draftStatus = getSetting('season_draft_status', '');
   const leagueTeams = getAllTeams();
+  const rosterPublished = getSetting('season_roster_published', '') === sigSeason;
 
   // Build rosterMap: teamId → [player objects]
   const signupById = Object.fromEntries(players.map(p => [p.id, p]));
@@ -7415,7 +7418,38 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Team Builder',
     currentPath: '/admin/season/teams',
-    body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus, leagueTeams }),
+    body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus, leagueTeams, rosterPublished }),
+  }));
+});
+
+// Lets rosters (and, for team heads, jersey-number entry) show up on the public /my-team
+// page before the season officially starts — independent of "Start Season", which locks
+// the draft and charges fees. Toggle only, no other side effects.
+app.post('/admin/season/teams/publish', requireAuth, express.json(), (req, res) => {
+  const { season, published } = req.body || {};
+  if (!season) return res.status(400).json({ error: 'season required' });
+  setSetting('season_roster_published', published ? String(season) : '');
+  res.json({ ok: true });
+});
+
+// Read-only mirror of what a team head sees on /my-team, for every team at once — lets
+// admin check progress (sizes/numbers filled in, who's still missing one) without having
+// to impersonate each head individually.
+app.get('/admin/season/teams/preview', requireAuth, (req, res) => {
+  const sigSeason = getSetting('signup_target_season', '');
+  if (!sigSeason) return res.redirect('/admin/season');
+
+  const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(sigSeason);
+  const rosterPublished  = getSetting('season_roster_published', '') === sigSeason;
+  const teamsWithRosters = seasonTeams.map(team => ({
+    team,
+    roster: buildTeamRosterView(team, rosterRows, liveTeams, allHeads),
+  }));
+
+  res.send(renderAdminPage(req, {
+    title: 'Team Preview — Head View',
+    currentPath: '/admin/season/teams',
+    body: adminSeasonTeamsPreviewBody({ sigSeason, teamsWithRosters, rosterPublished }),
   }));
 });
 
@@ -7838,6 +7872,118 @@ app.get('/team', requireHead, (req, res) => {
     currentPath: '/team',
     body: teamHeadPage({ teams, season }),
   }));
+});
+
+// ── Pre-season "My Team" preview ─────────────────────────────────────────────────
+// Draft rosters (season_teams/season_roster) are portal-only and independent of both the
+// live teams/players tables and of "Start Season" — this just surfaces them to registrants
+// once an admin publishes them from the Team Builder, ahead of the season officially
+// starting. Team heads additionally get to fill in jersey numbers for brand-new players
+// (no player_id yet) — see POST /my-team/number below.
+function resolveMyTeamContext(season) {
+  const seasonTeams = getSeasonTeams(season);
+  const rosterRows  = getSeasonRoster(season);
+  const liveTeams   = getAllTeams();
+  const allHeads    = getAllTeamHeads();
+  return { seasonTeams, rosterRows, liveTeams, allHeads };
+}
+
+function headPlayerIdsForSeasonTeam(team, liveTeams, allHeads) {
+  if (!team) return new Set();
+  const liveTeam = liveTeams.find(t => t.name.trim().toUpperCase() === team.name.trim().toUpperCase());
+  if (!liveTeam) return new Set();
+  return new Set(allHeads.filter(h => h.team_id === liveTeam.id).map(h => h.player_id));
+}
+
+// Shared by /my-team (a single team, for the logged-in viewer) and the admin preview at
+// /admin/season/teams/preview (every team at once) — same shape either way so the admin
+// view is a faithful mirror of what a head actually sees, not a re-derivation of it.
+function buildTeamRosterView(team, rosterRows, liveTeams, allHeads) {
+  const teammates     = rosterRows.filter(r => r.team_id === team.id);
+  const headPlayerIds = headPlayerIdsForSeasonTeam(team, liveTeams, allHeads);
+  return teammates.map(r => {
+    const isNew      = !r.player_id;
+    const livePlayer = !isNew ? getPlayerById(r.player_id) : null;
+    return {
+      signupId:     r.signup_id,
+      name:         displayPlayerName(r.full_name),
+      positions:    r.positions,
+      isNew,
+      isHead:       !isNew && headPlayerIds.has(r.player_id),
+      jerseyTop:    r.jersey_top,
+      jerseyShorts: r.jersey_shorts,
+      number:       isNew ? (r.jersey_number || '') : (livePlayer?.number || ''),
+      pictureUrl:   livePlayer?.picture_url || '',
+    };
+  });
+}
+
+app.get('/my-team', (req, res) => {
+  if (!req.session?.playerRegId) return res.redirect('/login?next=' + encodeURIComponent('/my-team'));
+
+  const season    = getSetting('signup_target_season', '');
+  const published = season && getSetting('season_roster_published', '') === season;
+  if (!published) {
+    return res.send(renderPage(req, {
+      title: 'My Team — WKND Basketball', currentPath: '/my-team',
+      body: myTeamPage({ notPublished: true }),
+    }));
+  }
+
+  const signup = getSeasonSignup(req.session.playerRegId, season);
+  const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(season);
+  const myRow = signup ? rosterRows.find(r => r.reg_id === req.session.playerRegId) : null;
+
+  if (!signup || !myRow) {
+    return res.send(renderPage(req, {
+      title: 'My Team — WKND Basketball', currentPath: '/my-team',
+      body: myTeamPage({ notAssigned: true, season }),
+    }));
+  }
+
+  const team          = seasonTeams.find(t => t.id === myRow.team_id);
+  const headPlayerIds = headPlayerIdsForSeasonTeam(team, liveTeams, allHeads);
+  const viewerIsHead  = !!req.session.playerPlayerId && headPlayerIds.has(req.session.playerPlayerId);
+  const roster        = buildTeamRosterView(team, rosterRows, liveTeams, allHeads);
+
+  res.send(renderPage(req, {
+    title: 'My Team — WKND Basketball', currentPath: '/my-team',
+    body: myTeamPage({ team, roster, season, viewerIsHead }),
+  }));
+});
+
+app.post('/my-team/number', express.json(), (req, res) => {
+  if (!req.session?.playerRegId) return res.status(401).json({ error: 'Not logged in.' });
+
+  const num = String(req.body?.number || '').trim();
+  if (!/^\d{1,2}$/.test(num)) return res.status(400).json({ error: 'Enter a number from 0-99.' });
+
+  const season = getSetting('signup_target_season', '');
+  if (!season || getSetting('season_roster_published', '') !== season) {
+    return res.status(400).json({ error: 'Rosters are not published yet.' });
+  }
+
+  const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(season);
+  const target = rosterRows.find(r => r.signup_id === req.body?.signupId);
+  if (!target) return res.status(404).json({ error: 'Player not found on any roster.' });
+  if (target.player_id) return res.status(400).json({ error: 'This player already has an official number.' });
+
+  const team         = seasonTeams.find(t => t.id === target.team_id);
+  const headPlayerIds = headPlayerIdsForSeasonTeam(team, liveTeams, allHeads);
+  if (!req.session.playerPlayerId || !headPlayerIds.has(req.session.playerPlayerId)) {
+    return res.status(403).json({ error: "Only this team's head can set jersey numbers." });
+  }
+
+  const taken = rosterRows
+    .filter(r => r.team_id === target.team_id && r.signup_id !== target.signup_id)
+    .some(r => {
+      const existing = r.player_id ? getPlayerById(r.player_id)?.number : r.jersey_number;
+      return existing !== undefined && existing !== null && existing !== '' && Number(existing) === Number(num);
+    });
+  if (taken) return res.status(400).json({ error: `#${Number(num)} is already taken on this team.` });
+
+  setSeasonSignupJerseyNumber(target.signup_id, num);
+  res.json({ ok: true, number: num });
 });
 
 // ── League Polls: player-facing surface ──────────────────────────────────────────
