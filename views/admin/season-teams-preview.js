@@ -264,7 +264,7 @@ ${teamsWithRosters.length === 0
   }
   function numberBadgeHtml(number) {
     return number
-      ? '<span class="text-xs font-bold px-2 py-0.5 rounded" style="background:#1e293b;color:#e2e8f0;font-family:\'Saira Condensed\',sans-serif">#' + escHtmlJs(number) + '</span>'
+      ? '<span class="text-xs font-bold px-2 py-0.5 rounded" style="background:#1e293b;color:#e2e8f0;font-family:\\'Saira Condensed\\',sans-serif">#' + escHtmlJs(number) + '</span>'
       : pill('#f87171', 'PENDING');
   }
   var SIZES = ${JSON.stringify(SIZES)};
