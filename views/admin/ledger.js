@@ -131,7 +131,7 @@ export function playerFinancialSection(fin, transactions, playerName, playerId) 
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(tx.date)}</td>
       <td class="px-4 py-3 text-xs" style="color:${tx.type==='charge'?'#ef4444':'#22c55e'}">${tx.type === 'charge' ? 'Charge' : 'Payment'}</td>
       <td class="px-4 py-3 text-sm font-semibold" style="color:${tx.type === 'charge' ? '#ef4444' : '#22c55e'}">${fmt(tx.amount)}</td>
-      <td class="px-4 py-3 text-sm text-slate-300">${escHtml(tx.notes || '—')}</td>
+      <td class="px-4 py-3 text-sm text-slate-300">${escHtml(tx.notes || '—')}${tx.reference_no ? `<div class="text-[10px] text-slate-500 mt-0.5">Ref: ${escHtml(tx.reference_no)}</div>` : ''}</td>
       <td class="px-4 py-3">${statusBadge(tx.status)}</td>
     </tr>`).join('')
     : `<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-slate-500">No transactions yet.</td></tr>`;
@@ -197,7 +197,12 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
     const sbal    = balMap[p.id];
     const bal     = Number(sbal?.balance ?? 0);
     const paid    = Number(sbal?.paid ?? 0);
-    const pending = Number(sbal?.pending_count ?? txByPlayer[p.id]?.filter(t => t.status === 'pending').length ?? 0);
+    const pendingTx = (txByPlayer[p.id] || []).filter(t => t.status === 'pending');
+    const pending = Number(sbal?.pending_count ?? pendingTx.length ?? 0);
+    // The single most recent pending transaction's own reference number (not just any
+    // pending one) — the thing admin actually needs to eyeball right here to match a
+    // payment against a bank/GCash statement, without opening the full per-player ledger.
+    const pendingRef = pendingTx[0]?.reference_no || '';
     const balKey  = bal > 0 ? 'owed' : 'settled';
     const balLabel = bal === 0 ? 'Settled' : fmt(Math.abs(bal));
     const lastActivity = lastActivityMap[p.id] || '';
@@ -223,7 +228,9 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
         ${quota ? quotaBar(paid, quota) : ''}
       </td>
       <td class="px-4 py-3">
-        ${pending > 0 ? `<span class="agm-badge agm-badge--amber">${pending} pending</span>` : `<span class="text-slate-600 text-xs">–</span>`}
+        ${pending > 0
+          ? `<span class="agm-badge agm-badge--amber">${pending} pending</span>${pendingRef ? `<div class="text-[10px] text-slate-500 mt-0.5">Ref: ${escHtml(pendingRef)}</div>` : ''}`
+          : `<span class="text-slate-600 text-xs">–</span>`}
       </td>
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(lastActivity)}</td>
       <td class="px-4 py-3 text-right">
