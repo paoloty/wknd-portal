@@ -13,7 +13,21 @@ function parsePositions(raw) {
   try { return JSON.parse(raw || '[]'); } catch { return []; }
 }
 
-function playerRow(p, status, teamColor) {
+// Amount paid against the flat season quota — same paid/quota concept the admin Ledger's
+// own quota bar uses, not the player's full charged total (which can run higher once
+// jersey top/shorts are added on top of the base quota).
+function quotaProgress(paid, quota) {
+  if (!quota) return '';
+  const pct   = Math.min(100, Math.round((paid / quota) * 100));
+  const color = pct >= 100 ? '#22c55e' : pct >= 50 ? '#f59332' : '#f87171';
+  return `
+    <div class="th-row__quota">
+      <span class="th-row__quota-amt">₱${paid.toLocaleString()} / ₱${quota.toLocaleString()}</span>
+      <div class="th-row__quota-bar"><div style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+}
+
+function playerRow(p, status, paid, quota, teamColor) {
   const positions = parsePositions(p.positions);
   return `
   <div class="th-row">
@@ -21,16 +35,18 @@ function playerRow(p, status, teamColor) {
     <div class="th-row__info">
       ${playerLink(p.id, p.name, { className: 'th-row__name' })}
       ${positions.length ? `<div class="th-row__pos">${positions.map(pos => escHtml(pos)).join(' · ')}</div>` : ''}
+      ${status !== 'not_charged' ? quotaProgress(paid, quota) : ''}
     </div>
     ${statusPill(status)}
   </div>`;
 }
 
-// teams: [{ team: { id, name, color }, roster: [{ player, status }] }]
+// teams: [{ team: { id, name, color }, roster: [{ player, status, paid }] }]
 // status per player is one of 'paid' | 'partial' | 'owing' | 'not_charged' (the last meaning
 // no season fee charge exists yet for them — deliberately distinct from 'owing' so a head
-// doesn't read "not yet billed" as "won't pay").
-export function teamHeadPage({ teams = [], season = '' } = {}) {
+// doesn't read "not yet billed" as "won't pay"). paid/quota progress is only shown once
+// they've actually been charged (not_charged has nothing to show progress against yet).
+export function teamHeadPage({ teams = [], season = '', quota = 0 } = {}) {
   if (teams.length === 0) {
     return `<div class="page-content">
       <div class="card" style="padding:32px;text-align:center;color:var(--text-muted)">You're not currently set as a head for any team.</div>
@@ -41,7 +57,7 @@ export function teamHeadPage({ teams = [], season = '' } = {}) {
     const paidCount = roster.filter(r => r.status === 'paid').length;
     const rows = roster.length === 0
       ? `<div class="th-empty">No active players on this roster yet.</div>`
-      : roster.map(r => playerRow(r.player, r.status, team.color || '#64748b')).join('');
+      : roster.map(r => playerRow(r.player, r.status, r.paid, quota, team.color || '#64748b')).join('');
     return `
     <div class="card th-team-card">
       <div class="section-header th-team-card__header">
@@ -75,6 +91,10 @@ export function teamHeadPage({ teams = [], season = '' } = {}) {
 .th-row__info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .th-row__name { font-size: 13.5px; font-weight: 700; }
 .th-row__pos { font-size: 10.5px; color: var(--text-muted); font-weight: 600; letter-spacing: .03em; }
+.th-row__quota { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.th-row__quota-amt { font-size: 10.5px; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.th-row__quota-bar { flex: 1; max-width: 90px; height: 4px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.th-row__quota-bar div { height: 100%; border-radius: 99px; }
 @media (max-width: 560px) {
   .th-avatar { width: 30px; height: 30px; }
 }

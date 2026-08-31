@@ -8116,12 +8116,14 @@ app.post('/fines/:id/vote', requireHead, express.json(), (req, res) => {
 });
 
 // Read-only — deliberately no write actions (no recording payments, no editing balances).
-// Season fee status is derived from the same transaction_ledger the admin Ledger reads, just
-// collapsed to a 3-state summary (paid/partial/owing) rather than exposing peso amounts or
-// transaction history to a non-admin account.
+// Season fee status/progress is derived from the same transaction_ledger the admin Ledger
+// reads. Amount paid vs the flat season quota IS shown here (peso figures against the
+// season quota specifically, not full transaction history) — an explicit call to let heads
+// see real progress, not just a paid/partial/owing label.
 app.get('/team', requireHead, (req, res) => {
   const season = getPortalCurrentSeason();
   const balances = new Map(getSeasonBalances(season).map(r => [r.player_id, r]));
+  const quota = season ? getSeasonQuota(season) : 0;
 
   const teams = getHeadTeamIds(req.session.playerPlayerId).map(teamId => {
     const team = getTeamById(teamId);
@@ -8133,7 +8135,7 @@ app.get('/team', requireHead, (req, res) => {
         else if (bal.paid > 0) status = 'partial';
         else status = 'owing';
       }
-      return { player, status };
+      return { player, status, paid: Number(bal?.paid ?? 0) };
     });
     return { team, roster };
   }).filter(t => t.team);
@@ -8141,7 +8143,7 @@ app.get('/team', requireHead, (req, res) => {
   res.send(renderPage(req, {
     title: 'My Team — WKND Basketball',
     currentPath: '/team',
-    body: teamHeadPage({ teams, season }),
+    body: teamHeadPage({ teams, season, quota }),
   }));
 });
 
