@@ -1370,7 +1370,7 @@ function ratingFeedCard(feed) {
 // ── Main export ───────────────────────────────────────────────────────────────
 export function playerPage({
   player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false,
-  fbLinked = null, isOwnProfile = false, balanceAmount = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null,
+  fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
   canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null,
@@ -1381,7 +1381,9 @@ export function playerPage({
   // Suppress the probation notice once they already have enough credit on file to cover the
   // floor — same hasCoveringCredit check the join route uses (server.js) to skip the hold
   // itself, so the card can't tell them to deposit when they've already effectively done so.
-  const probationCovered = minDeposit != null && balanceAmount <= -minDeposit;
+  // Scoped to the Papawis-only balance, not the whole-account one — an unrelated season fee
+  // balance shouldn't keep the probation notice showing.
+  const probationCovered = minDeposit != null && papawisBalance <= -minDeposit;
   const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation && !probationCovered }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
 

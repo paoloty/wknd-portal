@@ -40,7 +40,7 @@ import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
   recordTransaction, confirmTransaction, deleteTransaction, setTransactionCategory,
-  getPlayerFinancials, getPlayerTransactions, getPlayerTransactionsBySeason,
+  getPlayerFinancials, getPlayerPapawisBalance, getPlayerTransactions, getPlayerTransactionsBySeason,
   getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
@@ -1622,7 +1622,7 @@ function renderPage(req, opts) {
   if (!opts.minimalHeader && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface && !req.session.probationBarDismissed) {
     if (getPlayerById(req.session.playerPlayerId)?.papawis_probation) {
       const minDep = getMaxPapawisPrice();
-      const covered = minDep != null && (getPlayerFinancials(req.session.playerPlayerId)?.current_balance ?? 0) <= -minDep;
+      const covered = minDep != null && getPlayerPapawisBalance(req.session.playerPlayerId) <= -minDep;
       if (!covered) probationBarHtml = probationReminderBar();
     }
   }
@@ -6356,11 +6356,12 @@ app.get('/players/:ref', async (req, res) => {
   }
 
   const isOwnProfile = !!req.session?.playerPlayerId && resolved.id === req.session.playerPlayerId;
-  let balanceAmount = 0, balanceTransactions = [], papawisGames = [];
+  let balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [];
   let coachNote = null;
   let latestPoll = null;
   if (isOwnProfile) {
     balanceAmount = getPlayerFinancials(resolved.id)?.current_balance ?? 0;
+    papawisBalance = getPlayerPapawisBalance(resolved.id);
     // Own-profile breakdown is intentionally the same read-only transaction list admin sees
     // (getPlayerTransactions) — no separate query, no separate source of truth to drift.
     balanceTransactions = balanceAmount > 0 ? getPlayerTransactions(resolved.id) : [];
@@ -6417,7 +6418,7 @@ app.get('/players/:ref', async (req, res) => {
     metaTags: buildPlayerOgTags(req, player, totals),
     body: playerPage({
       player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection,
-      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, balanceTransactions, papawisGames, coachNote, latestPoll,
+      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisBalance, balanceTransactions, papawisGames, coachNote, latestPoll,
       minDeposit: isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null,
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
@@ -7945,8 +7946,7 @@ app.get('/papawis', (req, res) => {
   const isLoggedIn = !!req.session?.playerRegId;
   let hasBalance = false;
   if (viewerPlayerId) {
-    const fin = getPlayerFinancials(viewerPlayerId);
-    hasBalance = (fin?.current_balance ?? 0) > 0;
+    hasBalance = getPlayerPapawisBalance(viewerPlayerId) > 0;
   }
 
   const origin = getRequestOrigin(req);
@@ -7997,9 +7997,11 @@ app.post('/papawis/:id/join', (req, res) => {
   if (!getPlayerById(playerId)) {
     return req.session.destroy(() => res.status(401).json({ error: 'Your session has expired. Please log in again.' }));
   }
-  const fin = getPlayerFinancials(playerId);
-  if ((fin?.current_balance ?? 0) > 0) {
-    return res.status(403).json({ error: "You have an outstanding balance — clear it with an admin before joining." });
+  // Scoped to Papawis-only charges/payments — a season fee or other non-Papawis balance
+  // shouldn't block signing up for a pickup game.
+  const papawisBalance = getPlayerPapawisBalance(playerId);
+  if (papawisBalance > 0) {
+    return res.status(403).json({ error: "You have an outstanding Papawis balance — clear it with an admin before joining." });
   }
   // A probationary player with enough standing credit already on file (from a previous
   // deposit) skips the hold entirely — the floor is already covered, so there's nothing
@@ -8008,7 +8010,7 @@ app.post('/papawis/:id/join', (req, res) => {
   // (getMaxPapawisPrice() null — nothing completed to base one on) means nothing's proven
   // safe yet, so it falls back to still holding them rather than treating any credit as enough.
   const minDeposit = getMaxPapawisPrice();
-  const hasCoveringCredit = minDeposit != null && (fin?.current_balance ?? 0) <= -minDeposit;
+  const hasCoveringCredit = minDeposit != null && papawisBalance <= -minDeposit;
   const isProbation = !!getPlayerById(playerId)?.papawis_probation && !hasCoveringCredit;
   const signupId = randomBytes(6).toString('hex');
   const result = joinPapawisGame(req.params.id, playerId, signupId, isProbation);
@@ -9041,8 +9043,7 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
     // payment to collect, so there's nothing for "Mark Paid" to wait on. A charge that only
     // partially draws down credit leaves a real balance owed, same as today — this only
     // fires when the charge is fully covered.
-    const finAfterCharge = getPlayerFinancials(s.player_id);
-    if ((finAfterCharge?.current_balance ?? 0) <= 0) {
+    if (getPlayerPapawisBalance(s.player_id) <= 0) {
       markPapawisSignupPaid(s.id, '');
     }
   }
