@@ -70,7 +70,7 @@ import {
   getMvpWriteup, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
-  insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, updateSignupTeamPref, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup,
+  insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, updateSignupTeamPref, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup, removeFromSeasonRoster,
   upsertLivenessCapture, getLivenessCaptureByRegId, getLivenessCaptureById, getAllLivenessCaptures, deleteLivenessCapture,
   updateRegistrationContact,
   insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, getAssessmentsBySeason, getLatestPlayerRating,
@@ -7432,6 +7432,7 @@ app.post('/admin/season/signups/:id/reject', requireAuth, express.json(), (req, 
   const signup = getSeasonSignupById(req.params.id);
   if (!signup) return res.status(404).json({ error: 'Not found' });
   updateSeasonSignupStatus(signup.id, 'rejected', req.body?.notes ?? '');
+  removeFromSeasonRoster(signup.id);
   res.json({ ok: true });
 });
 
@@ -7470,7 +7471,7 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   const rosterMap  = {};
   for (const row of rosterRows) {
     const player = signupById[row.signup_id];
-    if (!player) continue;
+    if (!player || player.status !== 'confirmed') continue;
     if (!rosterMap[row.team_id]) rosterMap[row.team_id] = [];
     rosterMap[row.team_id].push(player);
   }
@@ -8163,7 +8164,7 @@ function headPlayerIdsForSeasonTeam(team, liveTeams, allHeads) {
 // A number is only ever "needed" (editable) for new/traded members, and only when it
 // actually collides with someone else on the same team.
 function buildTeamRosterView(team, rosterRows, liveTeams, allHeads) {
-  const teammates     = rosterRows.filter(r => r.team_id === team.id);
+  const teammates     = rosterRows.filter(r => r.team_id === team.id && r.status === 'confirmed');
   const liveTeam      = liveTeamForSeasonTeam(team, liveTeams);
   const headPlayerIds = headPlayerIdsForSeasonTeam(team, liveTeams, allHeads);
 
