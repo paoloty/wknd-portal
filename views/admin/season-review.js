@@ -266,7 +266,9 @@ ${rows.length === 0
       banner.className = 'mb-4 px-4 py-3 rounded-lg text-[12.5px]';
       banner.style.background = '#22c55e1a'; banner.style.color = '#22c55e'; banner.style.border = '1px solid #22c55e33';
       var summary = '✓ Season started — ' + d.charged + ' player' + (d.charged === 1 ? '' : 's') + ' charged, ' +
-        d.teams_synced + ' team' + (d.teams_synced === 1 ? '' : 's') + ' synced, ' + d.emails_sent + ' email' + (d.emails_sent === 1 ? '' : 's') + ' sent.';
+        d.teams_synced + ' team' + (d.teams_synced === 1 ? '' : 's') + ' synced, ' +
+        d.teams_cleared + ' player' + (d.teams_cleared === 1 ? '' : 's') + ' removed from their old team, ' +
+        d.emails_sent + ' email' + (d.emails_sent === 1 ? '' : 's') + ' sent.';
       var html = '<div>' + summary + '</div>';
       if (d.email_errors && d.email_errors.length) {
         html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #22c55e33">' +

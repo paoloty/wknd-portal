@@ -7831,14 +7831,27 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   // historical game/stat record already carries its own point-in-time team snapshot
   // (games.team_a_id, game_player_stats.team_id), so this can't rewrite the past.
   let teamsSynced = 0;
+  const confirmedPlayerIds = new Set();
   for (const row of chargeRows) {
     if (!row.playerId) continue;
+    confirmedPlayerIds.add(row.playerId);
     const seasonTeam = teamById[teamBySignup[row.signupId] || ''];
     if (!seasonTeam) continue;
     const liveTeam = liveTeams.find(t => t.name.trim().toUpperCase() === seasonTeam.name.trim().toUpperCase());
     if (!liveTeam) continue;
     setPlayerTeam(row.playerId, liveTeam.id);
     teamsSynced++;
+  }
+
+  // Anyone who didn't make this season's confirmed roster — never signed up, waitlisted,
+  // rejected, withdrew — shouldn't still show up as "on" whatever team they were on before.
+  // Only touches players who currently have a team_id set, so it's a no-op for anyone
+  // already off a team.
+  let teamsCleared = 0;
+  for (const player of getAllPlayers()) {
+    if (!player.team_id || confirmedPlayerIds.has(player.id)) continue;
+    setPlayerTeam(player.id, '');
+    teamsCleared++;
   }
 
   // Email confirmed players — itemized breakdown of exactly what they were charged,
@@ -7872,7 +7885,7 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   setSetting('season_signup_open', '0');
 
   res.json({
-    ok: true, charged: chargedCount, teams_synced: teamsSynced,
+    ok: true, charged: chargedCount, teams_synced: teamsSynced, teams_cleared: teamsCleared,
     emails_sent: chargeRows.length + notSelected.length, email_errors: emailErrors,
   });
 });
