@@ -2,8 +2,12 @@ import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
 import { scoreTicker } from './ticker.js';
 
-function buildStandings(teams, games) {
-  const currentSeason = games
+function buildStandings(teams, games, season) {
+  // season comes from the portal's declared current season (server.js's
+  // getPortalCurrentSeason()) — falls back to the games-derived max only if that's ever
+  // unset, so a season with zero games yet still shows its own (empty) standings instead
+  // of silently reusing the last season that actually had games.
+  const currentSeason = season != null ? Number(season) : games
     .filter(g => g.game_type === 'regular' && !g.under_review)
     .reduce((max, g) => (g.season > max ? g.season : max), null);
 
@@ -132,8 +136,8 @@ function teamStatCharts(rows, teamStats) {
 
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function standingsPage({ teams, games, highlights = [], teamStats = [] }) {
-  const { rows, currentSeason } = buildStandings(teams, games);
+export function standingsPage({ teams, games, highlights = [], teamStats = [], season = null }) {
+  const { rows, currentSeason } = buildStandings(teams, games, season);
   const matrix = h2hMatrix(teams, games, currentSeason);
 
   const tableRows = rows.map((r, i) => {

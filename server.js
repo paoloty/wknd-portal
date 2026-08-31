@@ -2078,9 +2078,9 @@ function extractQuarterScores(game) {
   return scores;
 }
 
-function buildLeaderPlayers() {
-  const players = getLeaders();
-  const records = getTeamRecords();
+function buildLeaderPlayers(season) {
+  const players = getLeaders(season);
+  const records = getTeamRecords(season);
   const recordMap = Object.fromEntries(records.map(r => [r.team_id, r]));
   return players.map(p => ({ ...p, team_wins: recordMap[p.team_id]?.wins ?? 0, team_losses: recordMap[p.team_id]?.losses ?? 0 }));
 }
@@ -4359,7 +4359,7 @@ app.get('/', (req, res) => {
   );
 
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
-  const leaderPlayers = buildLeaderPlayers();
+  const leaderPlayers = buildLeaderPlayers(getPortalCurrentSeason());
 
   const isHomepageLoggedIn = !!req.session?.isAdmin || !!req.session?.playerRegId;
   const regBanner = !isHomepageLoggedIn && getSetting('reg_open', '0') === '1'
@@ -4748,7 +4748,7 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
   const standB = standings.find(s => s.id === teamB.id);
   const h2h = getHeadToHeadRecord(teamA.id, teamB.id);
 
-  const topPlayers = teamId => getLeaders()
+  const topPlayers = teamId => getLeaders(season)
     .filter(p => p.team_id === teamId && p.games_played > 0)
     .map(p => ({ ...p, ppg: p.pts / p.games_played }))
     .sort((a, b) => b.ppg - a.ppg)
@@ -5090,7 +5090,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   const pbpFiltered = filterPbpForRecap(log); // chronological order Q1→Q4
 
   // Derive notable DNPs: gp >= 3 AND (ppg >= 8 OR top-2 scorer on team)
-  const allLeaders = getLeaders();
+  const allLeaders = getLeaders(game.season);
   const teamTopScorers = {};
   for (const p of allLeaders) {
     if (!teamTopScorers[p.team_id]) teamTopScorers[p.team_id] = [];
@@ -5532,11 +5532,12 @@ app.get('/standings', (req, res) => {
     !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
   );
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
-  const teamStats = getTeamSeasonStats();
+  const season = getPortalCurrentSeason();
+  const teamStats = getTeamSeasonStats(season);
   res.send(renderPage(req, {
     title: 'Standings — WKND Basketball League',
     currentPath: req.path,
-    body: standingsPage({ teams, games, highlights, teamStats })
+    body: standingsPage({ teams, games, highlights, teamStats, season })
   }));
 });
 
@@ -5648,7 +5649,7 @@ app.post('/api/leaders/share', (req, res) => {
   } else if (mode === 'roast') {
     const cat        = ROAST_CATS.find(c => c.id === category_id);
     const fmt        = cat?.fmt || (v => v.toFixed(1));
-    const allPlayers = buildLeaderPlayers();
+    const allPlayers = buildLeaderPlayers(season);
     leaderPlayer     = allPlayers.find(p => p.id === player_id);
     top10 = cat
       ? allPlayers
@@ -5670,7 +5671,7 @@ app.post('/api/leaders/share', (req, res) => {
     const cat        = allCats.find(c => c.id === category_id);
     const defaultFmt = mode === 'pg' ? fmtPerGame : fmtTotals;
     const fmt        = cat?.fmt || defaultFmt;
-    const allPlayers = buildLeaderPlayers();
+    const allPlayers = buildLeaderPlayers(season);
     leaderPlayer     = allPlayers.find(p => p.id === player_id);
     top10 = cat
       ? allPlayers
@@ -6203,9 +6204,9 @@ ${name} stats:\n${rankLines}`;
 });
 
 app.get('/leaders', (req, res) => {
-  const players        = buildLeaderPlayers();
-  const playoffPlayers = getPlayoffLeaders();
   const season         = getPortalCurrentSeason();
+  const players        = buildLeaderPlayers(season);
+  const playoffPlayers = getPlayoffLeaders(season);
   const gameRecords    = getGameRecords();
   const weekNum        = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
   const asOfLabel      = weekNum ? `S${season} · WK ${weekNum}` : '';
@@ -6217,8 +6218,8 @@ app.get('/leaders', (req, res) => {
 });
 
 app.get('/roast', (req, res) => {
-  const players  = buildLeaderPlayers();
   const season   = getPortalCurrentSeason();
+  const players  = buildLeaderPlayers(season);
   const origin           = getRequestOrigin(req);
   const roastUrl         = `${origin}/roast`;
   const roastDesc        = `The flip side of the leaders board. Season ${season || ''} worst performers, funniest stat disasters, and dubious awards — only on WKND Basketball.`;
@@ -6245,7 +6246,7 @@ app.get('/roast', (req, res) => {
 
 app.get('/teams', (req, res) => {
   const teams   = getAllTeams();
-  const records = getTeamRecords();
+  const records = getTeamRecords(getPortalCurrentSeason());
   const players = getPlayersWithRatings('');
 
   const recordMap    = Object.fromEntries(records.map(r => [r.team_id, r]));
