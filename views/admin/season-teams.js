@@ -202,7 +202,7 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
         </button>` : ''}
       <button id="auto-balance-btn" class="agm-new-btn" ${isStarted ? 'disabled' : ''}>⚡ Auto-Balance</button>
       <button id="save-draft-btn" class="agm-new-btn" ${isStarted ? 'disabled' : ''}>${isSandbox ? 'Save' : 'Save Draft'}</button>
-      ${!isStarted && !isSandbox ? `<button id="start-season-btn" class="text-[12px] font-bold px-4 py-1.5 rounded-md border-0 cursor-pointer bg-green-500 text-admin-bg">Start Season →</button>` : ''}
+      ${!isStarted && !isSandbox ? `<button id="review-start-btn" class="text-[12px] font-bold px-4 py-1.5 rounded-md border-0 cursor-pointer bg-green-500 text-admin-bg">Review &amp; Start Season →</button>` : ''}
       ${isSandbox ? `<button id="clear-sandbox-btn" class="text-[12px] font-semibold px-3.5 py-1.5 rounded-md cursor-pointer bg-transparent border border-admin-border text-slate-500 hover:text-slate-300">Clear</button>` : ''}
       <span id="builder-msg" class="text-[11px]"></span>
     </div>
@@ -265,26 +265,6 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
   </div>
 </div>
 
-<!-- Start Season Modal -->
-<div id="start-modal" class="hidden fixed inset-0 z-50 items-center justify-center" style="background:rgba(0,0,0,.75)">
-  <div class="bg-admin-surface border border-admin-border rounded-xl p-8 max-w-lg w-[90%] shadow-2xl">
-    <h2 class="m-0 mb-3 text-lg font-extrabold text-slate-100">Start Season ${escHtml(String(sigSeason))}?</h2>
-    <p class="text-[13px] text-slate-400 m-0 mb-3 leading-relaxed">This will:</p>
-    <ul class="text-[13px] text-slate-400 m-0 mb-5 pl-5 leading-loose">
-      <li>Email confirmed players that they made it</li>
-      <li>Email unselected players that they didn't</li>
-      <li>Charge season fee + jersey costs to each confirmed player</li>
-      <li>Lock the team draft — rosters can't be changed</li>
-    </ul>
-    <div id="modal-charge-preview" class="bg-admin-surface2 border border-admin-border rounded-lg px-4 py-3 mb-3 text-[12px] text-slate-500">Loading charge preview…</div>
-    <div id="modal-jersey-warning" class="hidden text-[12px] px-3 py-2 mb-5 rounded-lg" style="background:#f5933218;color:#f59332;border:1px solid #f5933233"></div>
-    <div class="flex gap-2.5 justify-end">
-      <button id="modal-cancel" class="bg-transparent border border-admin-border text-slate-400 text-[13px] font-semibold rounded-md px-4 py-2 cursor-pointer">Cancel</button>
-      <button id="modal-confirm" class="bg-green-500 text-admin-bg text-[13px] font-bold border-0 rounded-md px-4 py-2 cursor-pointer">Confirm &amp; Start</button>
-    </div>
-    <p id="modal-error" class="text-error text-[12px] mt-2 text-right min-h-[16px] m-0"></p>
-  </div>
-</div>
 
 <script>
 (function() {
@@ -752,58 +732,23 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
     } catch(e) { clearBtn.disabled = false; clearBtn.textContent = 'Clear'; alert('Error.'); }
   });
 
-  // ── Start Season modal ────────────────────────────────────────────────────
-  var startBtn  = document.getElementById('start-season-btn');
-  var modal     = document.getElementById('start-modal');
-  var cancelBtn = document.getElementById('modal-cancel');
-  var confBtn   = document.getElementById('modal-confirm');
-
-  if (startBtn) startBtn.addEventListener('click', async function() {
-    modal.classList.remove('hidden'); modal.classList.add('flex');
-    var preview = document.getElementById('modal-charge-preview');
-    var warning = document.getElementById('modal-jersey-warning');
-    preview.textContent = 'Loading…';
-    warning.classList.add('hidden');
+  // ── Review & Start Season ────────────────────────────────────────────────
+  // The actual charge/email/lock action now lives on its own page
+  // (/admin/season/teams/review) — this just makes sure whatever's currently
+  // dragged around here is saved before navigating there, so the review screen
+  // reflects the live board state, not whatever was last explicitly saved.
+  var reviewBtn = document.getElementById('review-start-btn');
+  if (reviewBtn) reviewBtn.addEventListener('click', async function() {
+    reviewBtn.disabled = true; reviewBtn.textContent = 'Saving…';
     try {
-      var r = await fetch('/admin/season/teams/charge-preview?season=' + encodeURIComponent(SEASON));
-      var d = await r.json();
-      if (d.lines && d.lines.length) {
-        preview.innerHTML = d.lines.map(function(l) {
-          return '<div class="flex justify-between py-0.5"><span class="text-slate-400">' + l.name + '</span><span class="text-slate-200 font-semibold">' + l.total + '</span></div>';
-        }).join('') + '<div class="flex justify-between pt-2 mt-2 border-t border-admin-border font-bold text-slate-100"><span>Total</span><span>' + d.grand_total + '</span></div>';
-      } else {
-        preview.textContent = 'No confirmed players with charges.';
-      }
-      // Heads-up only — doesn't block starting the season, admin decides whether to wait.
-      if (d.jersey_pending) {
-        warning.textContent = '⚠ ' + d.jersey_pending + ' new/traded player' + (d.jersey_pending === 1 ? '' : 's') + " haven't submitted jersey details yet (see Head View).";
-        warning.classList.remove('hidden');
-      }
-    } catch(e) { preview.textContent = 'Could not load preview.'; }
-  });
-
-  if (cancelBtn) cancelBtn.addEventListener('click', function() { modal.classList.add('hidden'); modal.classList.remove('flex'); });
-  modal.addEventListener('click', function(e) { if (e.target === modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); } });
-
-  if (confBtn) confBtn.addEventListener('click', async function() {
-    var errEl = document.getElementById('modal-error');
-    errEl.textContent = '';
-    confBtn.disabled = true; confBtn.textContent = 'Starting…';
-    await fetch('/admin/season/teams/save', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ season: SEASON, teams: buildTeamUpdates(), assignments: buildAssignments() }),
-    });
-    try {
-      var r = await fetch('/admin/season/teams/start', {
+      await fetch('/admin/season/teams/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: SEASON }),
+        body: JSON.stringify({ season: SEASON, teams: buildTeamUpdates(), assignments: buildAssignments() }),
       });
-      var d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Error');
-      location.reload();
-    } catch(e) {
-      errEl.textContent = e.message;
-      confBtn.disabled = false; confBtn.textContent = 'Confirm & Start';
+      window.location.href = '/admin/season/teams/review';
+    } catch (e) {
+      reviewBtn.disabled = false; reviewBtn.textContent = 'Review & Start Season →';
+      alert('Could not save the draft before continuing — try again.');
     }
   });
 

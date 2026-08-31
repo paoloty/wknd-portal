@@ -79,6 +79,7 @@ import {
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber,
   setJerseyRequestToken, getSeasonSignupByJerseyToken, submitJerseyDetails, setSeasonSignupShorts,
+  setSeasonSignupChargeAdjustments,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
   getPortalCurrentSeason,
   insertRegistration, getAllRegistrations, getRegistration, getRegistrationByEmail, getRegistrationByPlayerId, updateRegistration, relinkRegistrationPlayer, setWaiverAgreement,
@@ -109,6 +110,7 @@ import {
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
+  getReusablePapawisPayments, getPapawisSignupsByTxId,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
@@ -6686,7 +6688,7 @@ app.post('/register', (req, res) => {
 
 // ── Season Signup (member-facing) ─────────────────────────────────────────────
 import { seasonSignupPage } from './views/season-signup.js';
-import { SIZES as JERSEY_SIZES, computeJerseyTotal } from './lib/season-pricing.js';
+import { SIZES as JERSEY_SIZES, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
 
 // Capacity bar shown on the public signup form — still driven by real confirmed-signup
 // counts, just padded so it reads as "filling up" from the start instead of looking dead
@@ -7092,6 +7094,7 @@ import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
 import { adminLivenessListBody } from './views/admin/liveness-list.js';
 import { adminSeasonTeamsBody } from './views/admin/season-teams.js';
 import { adminSeasonTeamsPreviewBody } from './views/admin/season-teams-preview.js';
+import { adminSeasonReviewBody } from './views/admin/season-review.js';
 
 app.get('/admin/seasons', requireAuth, (req, res) => {
   const gameCounts   = getGameCountsBySeason();
@@ -7669,58 +7672,191 @@ app.get('/admin/season/teams/charge-preview', requireAuth, (req, res) => {
   res.json({ lines, grand_total: `₱${grandTotal.toLocaleString()}`, jersey_pending: jerseyPending });
 });
 
+// Shared by GET /admin/season/teams/review and POST /admin/season/teams/start — same math
+// in both places, so what admin reviews on screen is exactly what gets charged a moment
+// later. topAmount/shortsAmount already come out zeroed if that item's excluded, so callers
+// never need to re-check the exclusion flags themselves.
+function buildChargeReviewRows(season) {
+  const quotaAmount   = Number(getSetting('season_quota_amount', '0')) || 0;
+  const topPrice      = Number(getSetting('jersey_top_price', '0')) || 0;
+  const shortPrice    = Number(getSetting('jersey_short_price', '0')) || 0;
+  const surchargeStep = Number(getSetting('jersey_surcharge_step', '50')) || 0;
+  const pocketsPrice  = Number(getSetting('jersey_pockets_price', '100')) || 0;
+
+  const confirmed = getSeasonSignupsWithStats(season).filter(p => p.status === 'confirmed');
+
+  const rows = confirmed.map(p => {
+    const breakdown = computeJerseyBreakdown({
+      topPrice, shortPrice, jerseyTop: p.jersey_top, jerseyShorts: p.jersey_shorts,
+      pockets: !!p.pockets, pocketsPrice, surchargeStep,
+    });
+    const topAmount    = p.jersey_top_excluded    ? 0 : breakdown.topAmount;
+    const shortsAmount = p.jersey_shorts_excluded ? 0 : breakdown.shortsAmount;
+    const extraAmount  = Number(p.extra_charge_amount) || 0;
+    return {
+      signupId:  p.id,
+      name:      displayPlayerName(p.full_name),
+      email:     p.email || '',
+      playerId:  p.player_id || '',
+      teamId:    p.assigned_team_id || '',
+      jerseyTop: p.jersey_top || '', jerseyShorts: p.jersey_shorts || '', pockets: !!p.pockets,
+      quotaAmount,
+      topAmount, topExcluded: !!p.jersey_top_excluded,
+      shortsAmount, shortsExcluded: !!p.jersey_shorts_excluded,
+      extraAmount, extraLabel: p.extra_charge_label || '',
+      total: quotaAmount + topAmount + shortsAmount + extraAmount,
+    };
+  });
+
+  return { rows, quotaAmount };
+}
+
+app.get('/admin/season/teams/review', requireAuth, (req, res) => {
+  const sigSeason = getSetting('signup_target_season', '');
+  if (!sigSeason) return res.redirect('/admin/season');
+  if (getSetting('season_draft_status', '') === 'started') return res.redirect('/admin/season/teams');
+
+  const teams = getSeasonTeams(sigSeason);
+  const teamById = Object.fromEntries(teams.map(t => [t.id, t]));
+  const { rows } = buildChargeReviewRows(sigSeason);
+  rows.forEach(r => { r.teamName = teamById[r.teamId]?.name || ''; });
+
+  const notSelected = getSeasonSignupsWithStats(sigSeason)
+    .filter(p => p.status !== 'confirmed')
+    .map(p => ({ name: displayPlayerName(p.full_name), status: p.status }));
+
+  res.send(renderAdminPage(req, {
+    title: 'Review & Start Season',
+    currentPath: '/admin/season/teams',
+    body: adminSeasonReviewBody({ sigSeason, rows, notSelected }),
+  }));
+});
+
+// Same math as the review screen, exported as a CSV for reconciling against actual
+// GCash/bank receipts after the fact.
+app.get('/admin/season/teams/export-charges', requireAuth, (req, res) => {
+  const season = req.query.season || getSetting('signup_target_season', '');
+  if (!season) return res.status(400).send('No active season.');
+
+  const teams = getSeasonTeams(season);
+  const teamById = Object.fromEntries(teams.map(t => [t.id, t]));
+  const { rows } = buildChargeReviewRows(season);
+
+  const csvRows = [['Player', 'Team', 'Quota', 'Jersey Top', 'Jersey Shorts', 'Extra Label', 'Extra Amount', 'Total', 'Has Account']];
+  rows
+    .slice()
+    .sort((a, b) => (teamById[a.teamId]?.name || '').localeCompare(teamById[b.teamId]?.name || '') || a.name.localeCompare(b.name))
+    .forEach(r => {
+      csvRows.push([
+        r.name, teamById[r.teamId]?.name || '', r.quotaAmount,
+        r.topExcluded ? 0 : r.topAmount, r.shortsExcluded ? 0 : r.shortsAmount,
+        r.extraLabel, r.extraAmount, r.total, r.playerId ? 'Yes' : 'No — not charged automatically',
+      ]);
+    });
+
+  const csv = csvRows.map(row => row.map(csvCell).join(',')).join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="season-${season}-charges.csv"`);
+  res.send(csv);
+});
+
+app.post('/admin/season-signups/:id/charge-adjustments', requireAuth, express.json(), (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Signup not found.' });
+  const { top_excluded = false, shorts_excluded = false, extra_amount = 0, extra_label = '' } = req.body || {};
+  const amount = Number(extra_amount) || 0;
+  setSeasonSignupChargeAdjustments(signup.id, {
+    topExcluded: !!top_excluded, shortsExcluded: !!shorts_excluded,
+    extraAmount: amount, extraLabel: String(extra_label || '').trim().slice(0, 80),
+  });
+  res.json({ ok: true });
+});
+
 app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, res) => {
   const season = (req.body?.season || getSetting('signup_target_season', '')).toString();
   if (!season) return res.status(400).json({ error: 'season required' });
+  // Guards against a double-charge: two open tabs, a slow response retried, or the client
+  // button re-enabling somehow all end up calling this route twice for the same season. The
+  // client already disables the button after one click, but that's not a real safeguard —
+  // this is the one that actually matters, since this route charges real money.
+  if (getSetting('season_draft_status', '') === 'started') {
+    return res.status(400).json({ error: 'This season has already been started — charges were already applied.' });
+  }
 
-  const quotaAmount    = Number(getSetting('season_quota_amount', '0')) || 0;
-  const topPrice       = Number(getSetting('jersey_top_price', '0')) || 0;
-  const shortPrice     = Number(getSetting('jersey_short_price', '0')) || 0;
-  const surchargeStep  = Number(getSetting('jersey_surcharge_step', '50')) || 0;
-  const pocketsPrice   = Number(getSetting('jersey_pockets_price', '100')) || 0;
+  const quotaAmount = Number(getSetting('season_quota_amount', '0')) || 0;
   // Snapshot the fee into season_quotas so Ledger/Finance collection-rate reporting
   // for this season tracks against what players were actually charged, without a
   // separate manual entry step.
   setSeasonQuota(season, quotaAmount);
+
   const teams        = getSeasonTeams(season);
   const teamById     = Object.fromEntries(teams.map(t => [t.id, t]));
   const rosterRows   = getSeasonRoster(season);
   const teamBySignup = Object.fromEntries(rosterRows.map(r => [r.signup_id, r.team_id]));
+  const liveTeams    = getAllTeams();
 
   const allSignups   = getSeasonSignupsWithStats(season);
-  const confirmed    = allSignups.filter(p => p.status === 'confirmed');
   const notSelected  = allSignups.filter(p => p.status !== 'confirmed');
+  const { rows: chargeRows } = buildChargeReviewRows(season);
+  const chargeById   = Object.fromEntries(chargeRows.map(r => [r.signupId, r]));
 
   const today = new Date().toISOString().split('T')[0];
 
-  // Charge confirmed players
-  for (const p of confirmed) {
-    if (!p.player_id) continue;
-    const charge = quotaAmount + computeJerseyTotal({
-      topPrice, shortPrice, jerseyTop: p.jersey_top, jerseyShorts: p.jersey_shorts,
-      pockets: !!p.pockets, pocketsPrice, surchargeStep,
-    });
-    if (charge > 0) {
+  // Charge confirmed players — respects whatever top/shorts exclusions and extra
+  // charge/discount admin set on the review screen.
+  let chargedCount = 0;
+  for (const row of chargeRows) {
+    if (!row.playerId) continue;
+    if (row.total > 0) {
       const txId = randomBytes(6).toString('hex');
-      const chargeNotes = `Season ${season} fee (jersey top${p.jersey_shorts ? ' + shorts' : ''})`;
+      const parts = [];
+      if (row.topAmount)    parts.push('jersey top');
+      if (row.shortsAmount) parts.push('shorts');
+      if (row.extraAmount)  parts.push(row.extraLabel || (row.extraAmount < 0 ? 'discount' : 'add-on'));
+      const chargeNotes = `Season ${season} fee${parts.length ? ` (${parts.join(' + ')})` : ''}`;
       recordTransaction({
-        id: txId, player_id: p.player_id, amount: charge, type: 'charge',
+        id: txId, player_id: row.playerId, amount: row.total, type: 'charge',
         payment_method: '', date: today, status: 'confirmed',
         notes: chargeNotes,
         reference_no: '', season, category: 'season_fee',
       });
-      notifyLedgerEvent({ playerId: p.player_id, type: 'charge', amount: charge, notes: chargeNotes });
+      notifyLedgerEvent({ playerId: row.playerId, type: 'charge', amount: row.total, notes: chargeNotes });
     }
+    chargedCount++;
   }
 
-  // Email confirmed players
+  // Sync the finalized draft roster onto the live players table — only ever affects
+  // current-state displays (team pages, standings' "who's on this team now"); every
+  // historical game/stat record already carries its own point-in-time team snapshot
+  // (games.team_a_id, game_player_stats.team_id), so this can't rewrite the past.
+  let teamsSynced = 0;
+  for (const row of chargeRows) {
+    if (!row.playerId) continue;
+    const seasonTeam = teamById[teamBySignup[row.signupId] || ''];
+    if (!seasonTeam) continue;
+    const liveTeam = liveTeams.find(t => t.name.trim().toUpperCase() === seasonTeam.name.trim().toUpperCase());
+    if (!liveTeam) continue;
+    setPlayerTeam(row.playerId, liveTeam.id);
+    teamsSynced++;
+  }
+
+  // Email confirmed players — itemized breakdown of exactly what they were charged,
+  // matching the review screen line for line.
   const emailErrors = [];
-  for (const p of confirmed) {
+  for (const p of allSignups.filter(p => p.status === 'confirmed')) {
     if (!p.email) continue;
+    const row = chargeById[p.id];
     const teamName = teamById[teamBySignup[p.id] || '']?.name || '';
     try {
-      await sendMail({ to: p.email, ...seasonQualifiedEmail({ name: p.full_name, season, teamName }) });
-    } catch(e) { emailErrors.push(p.email); }
+      await sendMail({ to: p.email, ...seasonQualifiedEmail({
+        name: p.full_name, season, teamName,
+        quotaAmount: row?.quotaAmount || 0,
+        topAmount: row?.topAmount || 0, jerseyTop: row?.jerseyTop || '',
+        shortsAmount: row?.shortsAmount || 0, jerseyShorts: row?.jerseyShorts || '', pockets: !!row?.pockets,
+        extraAmount: row?.extraAmount || 0, extraLabel: row?.extraLabel || '',
+        total: row?.total ?? quotaAmount,
+      }) });
+    } catch(e) { emailErrors.push({ email: p.email, signupId: p.id, kind: 'confirmed' }); }
   }
 
   // Email not-selected players
@@ -7728,13 +7864,53 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
     if (!p.email) continue;
     try {
       await sendMail({ to: p.email, ...seasonNotSelectedEmail({ name: p.full_name, season }) });
-    } catch(e) { emailErrors.push(p.email); }
+    } catch(e) { emailErrors.push({ email: p.email, signupId: p.id, kind: 'not_selected' }); }
   }
 
   setSetting('season_draft_status', 'started');
   setSetting('season_signup_open', '0');
 
-  res.json({ ok: true, charged: confirmed.filter(p => p.player_id).length, emails_sent: confirmed.length + notSelected.length, email_errors: emailErrors });
+  res.json({
+    ok: true, charged: chargedCount, teams_synced: teamsSynced,
+    emails_sent: chargeRows.length + notSelected.length, email_errors: emailErrors,
+  });
+});
+
+// Retries a single Start Season email that failed — deliberately not gated behind
+// season_draft_status, since this is exactly what's needed right after Start Season already
+// ran and locked the draft. Recomputes the same breakdown buildChargeReviewRows produced at
+// charge time rather than trusting anything from the client.
+app.post('/admin/season-signups/:id/resend-season-email', requireAuth, express.json(), async (req, res) => {
+  const signup = getSeasonSignupById(req.params.id);
+  if (!signup) return res.status(404).json({ error: 'Signup not found.' });
+  const reg = getRegistration(signup.reg_id);
+  if (!reg?.email) return res.status(400).json({ error: 'No email on file for this registrant.' });
+
+  const season = signup.season;
+  try {
+    if (signup.status === 'confirmed') {
+      const teams = getSeasonTeams(season);
+      const teamById = Object.fromEntries(teams.map(t => [t.id, t]));
+      const rosterRows = getSeasonRoster(season);
+      const teamBySignup = Object.fromEntries(rosterRows.map(r => [r.signup_id, r.team_id]));
+      const { rows } = buildChargeReviewRows(season);
+      const row = rows.find(r => r.signupId === signup.id);
+      const teamName = teamById[teamBySignup[signup.id] || '']?.name || '';
+      await sendMail({ to: reg.email, ...seasonQualifiedEmail({
+        name: reg.full_name, season, teamName,
+        quotaAmount: row?.quotaAmount || 0,
+        topAmount: row?.topAmount || 0, jerseyTop: row?.jerseyTop || '',
+        shortsAmount: row?.shortsAmount || 0, jerseyShorts: row?.jerseyShorts || '', pockets: !!row?.pockets,
+        extraAmount: row?.extraAmount || 0, extraLabel: row?.extraLabel || '',
+        total: row?.total ?? 0,
+      }) });
+    } else {
+      await sendMail({ to: reg.email, ...seasonNotSelectedEmail({ name: reg.full_name, season }) });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to send — try again.' });
+  }
 });
 
 // ── Papawis (pickup games) ─────────────────────────────────────────────────────
@@ -8563,12 +8739,26 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   // game is completed (paid tracking doesn't mean anything before that). One lookup per
   // distinct unpaid player rather than per signup row, since a sponsor + their guest slot
   // share the same player_id and would otherwise re-run the same query twice.
+  //
+  // Both lists are filtered to payments dated on/after this game's date — a payment from
+  // before this game existed almost certainly belongs to an earlier game that was never
+  // properly linked, not this one, and showing it as a "match" here was actively misleading.
+  //
+  // reusableByPlayer covers "one payment, two games" — e.g. two games back-to-back, paid in
+  // one lump sum on the second game's day: the payment is already linked to the earlier
+  // game's signup, and this surfaces it as a candidate to *also* link here. The actual
+  // guard — that the combined price of every game it ends up covering equals what was
+  // actually paid — is enforced server-side in the link-payment route below, not here;
+  // this is just the candidate list.
   let unlinkedByPlayer = {};
+  let reusableByPlayer = {};
   if (game.status === 'completed') {
     const unpaidPlayerIds = [...new Set(signups.filter(s => s.status === 'confirmed' && !s.paid_at).map(s => s.player_id))];
     for (const pid of unpaidPlayerIds) {
-      const candidates = getUnlinkedPapawisPayments(pid);
-      if (candidates.length) unlinkedByPlayer[pid] = candidates;
+      const unlinked = getUnlinkedPapawisPayments(pid).filter(c => c.date >= game.date);
+      if (unlinked.length) unlinkedByPlayer[pid] = unlinked;
+      const reusable = getReusablePapawisPayments(pid).filter(c => c.date >= game.date);
+      if (reusable.length) reusableByPlayer[pid] = reusable;
     }
   }
 
@@ -8590,7 +8780,7 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts() }),
+    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, reusableByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts() }),
   }));
 });
 
@@ -8893,9 +9083,15 @@ app.post('/admin/papawis/:id/signups/:signupId/paid', requireAuth, express.json(
 // /settle-balance, or an admin entered directly in the ledger) as this signup's paid
 // evidence — unlike the /paid route above, this never creates a new transaction. tx_id
 // comes from the client rather than re-deriving "the" candidate server-side, but is
-// re-validated against the live unlinked-candidates list right before accepting it, so a
-// stale suggestion (e.g. two browser tabs, or someone else already linked it) can't slip
-// through between when the page rendered and when this fires.
+// re-validated right before accepting it (that it's really this player's confirmed papawis
+// payment), so a stale suggestion (two browser tabs, or someone else already acted on it)
+// can't slip through between when the page rendered and when this fires.
+//
+// A payment already linked to another signup is allowed to be linked again — "one payment,
+// two games" (e.g. two games back-to-back, paid in one lump sum on the second game's day)
+// — but only when the combined price_per_player of every game it would then cover exactly
+// equals what was actually paid. Otherwise a payment could get silently stretched across
+// more games than it really settled.
 app.post('/admin/papawis/:id/signups/:signupId/link-payment', requireAuth, express.json(), (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
@@ -8905,8 +9101,21 @@ app.post('/admin/papawis/:id/signups/:signupId/link-payment', requireAuth, expre
   if (signup.paid_at) return res.status(400).json({ error: 'Already marked paid.' });
 
   const txId = String(req.body.tx_id || '');
-  const stillValid = getUnlinkedPapawisPayments(signup.player_id).some(c => c.id === txId);
-  if (!stillValid) return res.status(400).json({ error: 'That payment is no longer available to link — refresh and try again.' });
+  const tx = getTransactionById(txId);
+  const isPlayersConfirmedPapawisPayment = tx && tx.player_id === signup.player_id
+    && tx.type === 'payment' && tx.status === 'confirmed' && String(tx.category || '').toLowerCase() === 'papawis';
+  if (!isPlayersConfirmedPapawisPayment) return res.status(400).json({ error: 'That payment is no longer available to link — refresh and try again.' });
+
+  const alreadyLinked = getPapawisSignupsByTxId(txId);
+  if (alreadyLinked.length) {
+    const linkedTotal = alreadyLinked.reduce((sum, s) => sum + (Number(getPapawisGame(s.game_id)?.price_per_player) || 0), 0);
+    const combined = linkedTotal + (Number(game.price_per_player) || 0);
+    if (combined !== Number(tx.amount)) {
+      return res.status(400).json({
+        error: `This payment (₱${Number(tx.amount).toLocaleString()}) doesn't match the combined price of the games it would cover (₱${combined.toLocaleString()}).`,
+      });
+    }
+  }
 
   markPapawisSignupPaid(signup.id, txId);
   res.json({ ok: true });

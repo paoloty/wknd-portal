@@ -74,18 +74,38 @@ function papawisTeamLabel(team) {
 // ledger out of sync — see the /admin/papawis/:id/signups/:signupId/paid route, which
 // voids the exact transaction this created rather than guessing which one to reverse.
 //
-// candidates = getUnlinkedPapawisPayments(s.player_id), passed down from the route — a
-// player who already paid through /settle-balance (or was entered directly in the ledger)
-// shows up here instead of silently staying "Unpaid" forever. Exactly one candidate gets a
-// one-click Link suggestion (adopts that existing transaction, creates nothing new);
-// more than one is genuinely ambiguous, so that just points at the ledger instead of
-// guessing which payment belongs to this game.
-function paidStatusHtml(s, candidates = []) {
+// candidates = getUnlinkedPapawisPayments(s.player_id), reusable = getReusablePapawisPayments(s.player_id),
+// both passed down from the route and both already filtered there to payments dated on/after
+// this game (a payment from before this game existed almost certainly belongs to an earlier,
+// never-properly-linked game, not this one).
+//
+// candidates (never linked to anything yet) — a player who already paid through
+// /settle-balance (or was entered directly in the ledger) shows up here instead of silently
+// staying "Unpaid" forever. Exactly one candidate gets a one-click Link suggestion (adopts
+// that existing transaction, creates nothing new); more than one is genuinely ambiguous, so
+// that just points at the ledger instead of guessing which payment belongs to this game.
+//
+// reusable (already linked to a *different* signup) — "one payment, two games": two games
+// back-to-back, paid in one lump sum on the second game's day. Shown as its own suggestion,
+// labeled with which game it's already covering, so linking it here doesn't look like a
+// fresh unexplained match. The actual amount-matching guard (combined price of every game it
+// ends up covering must equal what was paid) is enforced server-side when Link is clicked.
+function reuseSuggestionsHtml(s, reusable) {
+  if (!reusable.length) return '';
+  return reusable.map(c => `
+    <div class="text-[11px] text-sky-400 leading-snug">
+      Also covers: ₱${Number(c.amount).toLocaleString()} paid ${escHtml(fmtDate(c.date))} — already linked to <em>${escHtml(c.linked_game_title || 'another game')}</em>
+      <button type="button" class="admin-btn admin-btn--sm admin-btn--success" style="margin-left:4px" data-link-payment="${escHtml(s.id)}" data-tx-id="${escHtml(c.id)}">Link here too</button>
+    </div>`).join('');
+}
+
+function paidStatusHtml(s, candidates = [], reusable = []) {
   if (s.status !== 'confirmed') return '<span class="text-slate-600">—</span>';
   if (s.paid_at) {
     return `<button type="button" class="agm-badge agm-badge--green" data-unmark-paid="${escHtml(s.id)}" style="border:none;cursor:pointer;font:inherit">Paid ✓</button>`;
   }
   const markPaidBtn = (label) => `<button type="button" class="admin-btn admin-btn--sm admin-btn--success" data-mark-paid="${escHtml(s.id)}">${label}</button>`;
+  const reuseHtml = reuseSuggestionsHtml(s, reusable);
   if (candidates.length === 1) {
     const c = candidates[0];
     return `<div class="flex flex-col gap-1 items-start">
@@ -95,12 +115,21 @@ function paidStatusHtml(s, candidates = []) {
         <button type="button" class="admin-btn admin-btn--sm admin-btn--success" data-link-payment="${escHtml(s.id)}" data-tx-id="${escHtml(c.id)}">Link</button>
         ${markPaidBtn('Mark Paid instead')}
       </div>
+      ${reuseHtml}
     </div>`;
   }
   if (candidates.length > 1) {
     return `<div class="flex flex-col gap-1 items-start">
       <span class="agm-badge agm-badge--amber">Unpaid</span>
       <a href="/admin/ledger/${escHtml(s.player_id)}" target="_blank" class="text-[11px] text-amber-400 leading-snug">⚠ ${candidates.length} unconfirmed papawis payments — check ledger</a>
+      ${markPaidBtn('Mark Paid')}
+      ${reuseHtml}
+    </div>`;
+  }
+  if (reuseHtml) {
+    return `<div class="flex flex-col gap-1 items-start">
+      <span class="agm-badge agm-badge--amber">Unpaid</span>
+      ${reuseHtml}
       ${markPaidBtn('Mark Paid')}
     </div>`;
   }
@@ -110,14 +139,14 @@ function paidStatusHtml(s, candidates = []) {
 // Read-only stand-in for the interactive confirmed/waitlist board once a roster is
 // locked — a plain table is simpler and less error-prone than trying to keep half the
 // drag/move affordances alive on a list that shouldn't actually change anymore.
-function lockedSummaryRow(s, { showPaid = false, unlinkedByPlayer = {} } = {}) {
+function lockedSummaryRow(s, { showPaid = false, unlinkedByPlayer = {}, reusableByPlayer = {} } = {}) {
   const rawName = s.guest_name ? s.guest_name : displayPlayerName(s.player_name);
   const name = escHtml(rawName);
   return `<tr class="border-b border-admin-border/50 last:border-b-0" data-status="${s.status}" data-name="${escHtml(rawName)}" data-paid="${s.paid_at ? '1' : '0'}">
     <td class="px-4 py-2.5 text-sm font-medium text-slate-200">${name}${s.guest_name ? ' <span class="text-xs text-slate-500">(guest)</span>' : ''}</td>
     <td class="px-4 py-2.5 text-xs">${s.status === 'confirmed' ? '<span class="agm-badge agm-badge--green">Confirmed</span>' : '<span class="agm-badge agm-badge--amber">Waitlist</span>'}</td>
     <td class="px-4 py-2.5 text-xs text-slate-400">${papawisTeamLabel(s.team)}</td>
-    ${showPaid ? `<td class="px-4 py-2.5 text-xs">${paidStatusHtml(s, unlinkedByPlayer[s.player_id] || [])}</td>` : ''}
+    ${showPaid ? `<td class="px-4 py-2.5 text-xs">${paidStatusHtml(s, unlinkedByPlayer[s.player_id] || [], reusableByPlayer[s.player_id] || [])}</td>` : ''}
   </tr>`;
 }
 
@@ -434,7 +463,7 @@ function pendingRow(s, minDeposit, submittedTx) {
   </li>`;
 }
 
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [] } = {}) {
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, reusableByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [] } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const pending   = signups.filter(s => s.status === 'pending');
@@ -499,7 +528,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
           ? `<button class="pw-move-btn pw-move-btn--confirm" data-move="${escHtml(s.id)}" data-to="confirmed" ${isConfirmedFull ? 'disabled title="Confirmed is full"' : ''}>${ICON_CHEVRON_UP} Confirm</button>`
           : `<button class="pw-move-btn" data-move="${escHtml(s.id)}" data-to="waitlist">${ICON_CHEVRON_DOWN} Waitlist</button>`}
         <button class="admin-btn admin-btn--sm admin-btn--danger" data-remove="${escHtml(s.id)}">Remove</button>
-      </div>` : isCompleted && s.status === 'confirmed' ? `<div class="pw-row__actions">${paidStatusHtml(s, unlinkedByPlayer[s.player_id] || [])}</div>` : ''}
+      </div>` : isCompleted && s.status === 'confirmed' ? `<div class="pw-row__actions">${paidStatusHtml(s, unlinkedByPlayer[s.player_id] || [], reusableByPlayer[s.player_id] || [])}</div>` : ''}
     </li>`;
   };
 
@@ -576,7 +605,7 @@ ${isOpen ? (() => {
           ${isCompleted ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Paid</th>` : ''}
         </tr></thead>
         <tbody id="pw-locked-body">
-          ${[...confirmed, ...waitlist].map(s => lockedSummaryRow(s, { showPaid: isCompleted, unlinkedByPlayer })).join('') || `<tr><td colspan="${isCompleted ? 4 : 3}" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
+          ${[...confirmed, ...waitlist].map(s => lockedSummaryRow(s, { showPaid: isCompleted, unlinkedByPlayer, reusableByPlayer })).join('') || `<tr><td colspan="${isCompleted ? 4 : 3}" class="px-4 py-8 text-center text-sm text-slate-500">No one signed up.</td></tr>`}
         </tbody>
       </table>
     </div>
