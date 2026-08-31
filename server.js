@@ -6300,11 +6300,15 @@ app.get('/teams/:ref', (req, res) => {
 });
 
 app.get('/players', (req, res) => {
-  const players = getAllPlayers();
+  const isAdmin = !!req.session?.isAdmin;
+  // Public directory only — an inactive (archived) player shouldn't appear here, matching
+  // every other roster view (/teams, team-head roster, awards picker, etc). Admins still
+  // see everyone, since they're the ones who'd need to find and reactivate one.
+  const players = getAllPlayers().filter(p => isAdmin || p.status !== 'inactive');
   res.send(renderPage(req, {
     title: 'Players — WKND Basketball League',
     currentPath: req.path,
-    body: playersPage({ players, isAdmin: !!req.session?.isAdmin })
+    body: playersPage({ players, isAdmin })
   }));
 });
 
