@@ -46,6 +46,7 @@ export function adminVisibilityBody({
   papawisEnabled = false,
   postsEnabled = false,
   commentsEnabled = false,
+  marketplaceEnabled = false,
   peerRatingsEnabled = false,
   playerReportsEnabled = false,
   awardsEnabled = true,
@@ -74,6 +75,11 @@ export function adminVisibilityBody({
         id: 'vis-papawis-enabled', dataKey: 'papawis_enabled', checked: papawisEnabled, msgId: 'vis-msg-papawis_enabled',
         label: 'Papawis',
         sub: `Pickup game sign-ups (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/papawis</code>). Management stays available either way.`,
+      })}
+      ${featureRow({
+        id: 'vis-marketplace-enabled', dataKey: 'marketplace_enabled', checked: marketplaceEnabled, msgId: 'vis-msg-marketplace_enabled',
+        label: 'Marketplace',
+        sub: `Admin group-buy listings (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/marketplace</code>). Management stays available either way.`,
       })}
       ${featureRow({
         id: 'vis-posts-enabled', dataKey: 'posts_enabled', checked: postsEnabled, msgId: 'vis-msg-posts_enabled',
@@ -142,6 +148,7 @@ export function adminVisibilityBody({
   }
 
   bindToggle('vis-papawis-enabled',  'papawis_enabled',   'vis-msg-papawis_enabled');
+  bindToggle('vis-marketplace-enabled', 'marketplace_enabled', 'vis-msg-marketplace_enabled');
   bindToggle('vis-posts-enabled',    'posts_enabled',     'vis-msg-posts_enabled');
   bindToggle('vis-comments-enabled', 'comments_enabled',  'vis-msg-comments_enabled');
   bindToggle('vis-peer-ratings-enabled', 'peer_ratings_enabled', 'vis-msg-peer_ratings_enabled');

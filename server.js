@@ -3966,6 +3966,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
     currentPath: '/admin/visibility',
     body: adminVisibilityBody({
       papawisEnabled:  getSetting('papawis_enabled', '0') === '1',
+      marketplaceEnabled: getSetting('marketplace_enabled', '0') === '1',
       postsEnabled:    getSetting('posts_enabled', '0') === '1',
       commentsEnabled: getSetting('comments_enabled', '0') === '1',
       peerRatingsEnabled: getSetting('peer_ratings_enabled', '0') === '1',
@@ -3979,7 +3980,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
