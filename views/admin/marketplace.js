@@ -12,6 +12,80 @@ function statusBadge(status) {
   return `<span class="agm-badge agm-badge--amber">Open</span>`;
 }
 
+function parseJsonArray(raw) {
+  try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
+}
+
+// Up to 4 slots — a filled slot shows the photo + Remove; an empty slot is a file-picker
+// tile. Same FileReader → dataUrl → fetch POST pattern as the Papawis court photo upload
+// (views/admin/papawis-courts.js), generalized with an index for multiple slots.
+function photoManager(listingId, photos) {
+  const slots = [0, 1, 2, 3].map(i => {
+    const has = !!photos[i];
+    return `<div class="mkt-photo-slot" data-index="${i}">
+      ${has
+        ? `<img src="/api/marketplace/${escHtml(listingId)}/photo/${i}?t=${Date.now()}" alt="">
+           <button type="button" class="mkt-photo-remove" data-remove-index="${i}">&times;</button>`
+        : `<label class="mkt-photo-add">
+             ${ICON_PLUS}
+             <input type="file" accept="image/*" data-upload-index="${i}" hidden>
+           </label>`}
+    </div>`;
+  }).join('');
+  return `
+<div class="bg-admin-surface border border-admin-border rounded-lg p-5 mb-5">
+  <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Photos <span class="font-normal normal-case text-slate-600">(up to 4)</span></div>
+  <div class="mkt-photo-grid" id="mkt-photo-grid">${slots}</div>
+  <p class="agm-modal-err" id="mkt-photo-err" style="margin-top:8px" hidden></p>
+</div>
+<style>
+.mkt-photo-grid { display: grid; grid-template-columns: repeat(4, 90px); gap: 10px; }
+.mkt-photo-slot { position: relative; width: 90px; height: 90px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); }
+.mkt-photo-slot img { width: 100%; height: 100%; object-fit: cover; }
+.mkt-photo-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(0,0,0,.65); color: #fff; font-size: 13px; line-height: 1; cursor: pointer; }
+.mkt-photo-add { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: rgba(255,255,255,.35); background: rgba(255,255,255,.02); }
+.mkt-photo-add:hover { background: rgba(255,255,255,.05); color: rgba(255,255,255,.5); }
+</style>
+<script>
+(function() {
+  var grid = document.getElementById('mkt-photo-grid');
+  var err  = document.getElementById('mkt-photo-err');
+  var listingId = ${JSON.stringify(listingId)};
+  grid.addEventListener('change', function(e) {
+    var input = e.target.closest('input[data-upload-index]');
+    if (!input || !input.files[0]) return;
+    var index = input.dataset.uploadIndex;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      fetch('/admin/marketplace/' + listingId + '/photo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: ev.target.result, index: index }),
+      })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) throw new Error(res.j.error || 'Upload failed.');
+        window.location.reload();
+      })
+      .catch(function(ex) { err.textContent = ex.message; err.hidden = false; });
+    };
+    reader.readAsDataURL(input.files[0]);
+  });
+  grid.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-remove-index]');
+    if (!btn) return;
+    if (!confirm('Remove this photo?')) return;
+    fetch('/admin/marketplace/' + listingId + '/photo/' + btn.dataset.removeIndex, { method: 'DELETE' })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) throw new Error(res.j.error || 'Failed to remove.');
+        window.location.reload();
+      })
+      .catch(function(ex) { err.textContent = ex.message; err.hidden = false; });
+  });
+})();
+</script>`;
+}
+
 export function adminMarketplaceListBody({ listings = [], countsById = {} } = {}) {
   const rows = listings.map(l => {
     const count = countsById[l.id] || 0;
@@ -153,6 +227,8 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
   ${listing.status === 'charged' ? '<span class="agm-badge agm-badge--green">Charged</span>' : listing.status === 'cancelled' ? '<span class="agm-badge agm-badge--gray">Cancelled</span>' : '<span class="agm-badge agm-badge--amber">Open</span>'}
 </div>
 <p class="text-sm text-slate-400 mb-5">${fmtPeso(listing.price)} per buyer &middot; min ${listing.min_buyers} buyers</p>
+
+${photoManager(listing.id, parseJsonArray(listing.photos))}
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
   <table class="w-full border-collapse">
