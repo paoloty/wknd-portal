@@ -70,10 +70,19 @@ export function marketplaceListingPage({ listing, committedCount = 0, commitment
   const meetsFloor = committedCount >= listing.min_buyers;
   const isOpen = listing.status === 'open' || listing.status === 'active';
 
+  // Horizontal scroll-snap carousel (swipeable) with edge fades — same wrapper pattern as
+  // the jersey-request size picker (views/jersey-request.js's pickScroll) — plus a
+  // thumbnail strip below that jumps the carousel to that photo and tracks which one's active.
   const gallery = photos.length
     ? `<div class="mkt-gallery card">
-        <div class="mkt-gallery__main"><img src="/api/marketplace/${escHtml(listing.id)}/photo/0" alt=""></div>
-        ${photos.length > 1 ? `<div class="mkt-gallery__thumbs">${photos.map((_, i) => `<img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt="">`).join('')}</div>` : ''}
+        <div class="mkt-gallery__scroll-wrap">
+          <div class="mkt-gallery__main" id="mkt-gallery-main">
+            ${photos.map((_, i) => `<div class="mkt-gallery__slide" data-index="${i}"><img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt=""></div>`).join('')}
+          </div>
+          <div class="mkt-fade mkt-fade--l"></div>
+          <div class="mkt-fade mkt-fade--r"></div>
+        </div>
+        ${photos.length > 1 ? `<div class="mkt-gallery__thumbs">${photos.map((_, i) => `<button type="button" class="mkt-gallery__thumb${i === 0 ? ' is-active' : ''}" data-thumb-index="${i}"><img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt=""></button>`).join('')}</div>` : ''}
       </div>`
     : `<div class="mkt-gallery mkt-gallery--empty card">No photos yet</div>`;
 
@@ -106,7 +115,6 @@ export function marketplaceListingPage({ listing, committedCount = 0, commitment
 <div class="mkt-detail-layout">
   <div class="mkt-detail-left">
     ${gallery}
-    ${descCard}
   </div>
   <div class="mkt-detail-right">
     <div class="card mkt-info-card">
@@ -119,6 +127,7 @@ export function marketplaceListingPage({ listing, committedCount = 0, commitment
       <div class="mkt-detail__action">${actionHtml}</div>
       <p class="mkt-err" id="mkt-err" hidden></p>
     </div>
+    ${descCard}
   </div>
 </div>
 </div>
@@ -152,6 +161,37 @@ ${STYLE}
         if (!r.ok) throw new Error(j.error || 'Failed to cancel.');
         window.location.reload();
       } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    });
+  }
+
+  // Gallery carousel: swipe/scroll through slides, thumbnail click jumps + highlights,
+  // edge fades track scroll position — same show-only-when-there's-more-that-way logic as
+  // the jersey-request size picker.
+  var main = document.getElementById('mkt-gallery-main');
+  if (main) {
+    var wrap  = main.closest('.mkt-gallery__scroll-wrap');
+    var left  = wrap.querySelector('.mkt-fade--l');
+    var right = wrap.querySelector('.mkt-fade--r');
+    var thumbs = document.querySelectorAll('.mkt-gallery__thumb');
+
+    function updateFades() {
+      var max = main.scrollWidth - main.clientWidth;
+      left.classList.toggle('is-visible', main.scrollLeft > 4);
+      right.classList.toggle('is-visible', main.scrollLeft < max - 4);
+    }
+    function updateActiveThumb() {
+      var index = Math.round(main.scrollLeft / main.clientWidth);
+      thumbs.forEach(function(t) { t.classList.toggle('is-active', Number(t.dataset.thumbIndex) === index); });
+    }
+    main.addEventListener('scroll', function() { updateFades(); updateActiveThumb(); }, { passive: true });
+    window.addEventListener('resize', updateFades);
+    updateFades();
+
+    thumbs.forEach(function(t) {
+      t.addEventListener('click', function() {
+        var index = Number(t.dataset.thumbIndex);
+        main.scrollTo({ left: index * main.clientWidth, behavior: 'smooth' });
+      });
     });
   }
 })();
@@ -193,10 +233,24 @@ const STYLE = `<style>
 
 .mkt-gallery { padding: 0; overflow: hidden; }
 .mkt-gallery--empty { padding: 40px; text-align: center; color: var(--text-subtle); font-size: 13px; }
-.mkt-gallery__main { width: 100%; aspect-ratio: 1; background: var(--bg); }
-.mkt-gallery__main img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt-gallery__scroll-wrap { position: relative; }
+.mkt-gallery__main {
+  display: flex; width: 100%; aspect-ratio: 1; background: var(--bg);
+  overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; touch-action: pan-x;
+  scrollbar-width: none;
+}
+.mkt-gallery__main::-webkit-scrollbar { display: none; }
+.mkt-gallery__slide { flex: 0 0 100%; scroll-snap-align: start; }
+.mkt-gallery__slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt-fade { position: absolute; top: 0; bottom: 0; width: 40px; pointer-events: none; opacity: 0; transition: opacity .15s; }
+.mkt-fade--l { left: 0; background: linear-gradient(to right, rgba(0,0,0,.35) 0%, transparent 100%); }
+.mkt-fade--r { right: 0; background: linear-gradient(to left, rgba(0,0,0,.35) 0%, transparent 100%); }
+.mkt-fade.is-visible { opacity: 1; }
 .mkt-gallery__thumbs { display: flex; gap: 8px; padding: 10px; overflow-x: auto; }
-.mkt-gallery__thumbs img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+.mkt-gallery__thumb { flex-shrink: 0; padding: 0; border: 2px solid transparent; border-radius: 8px; cursor: pointer; background: none; line-height: 0; opacity: .55; transition: opacity .15s, border-color .15s; }
+.mkt-gallery__thumb:hover { opacity: .85; }
+.mkt-gallery__thumb.is-active { opacity: 1; border-color: var(--amber); }
+.mkt-gallery__thumb img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; display: block; }
 .mkt-desc-card { padding: 18px 20px; }
 .mkt-desc-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--text-subtle); margin-bottom: 8px; text-transform: uppercase; }
 .mkt-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
