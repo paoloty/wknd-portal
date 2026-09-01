@@ -46,6 +46,10 @@ import {
   commitToMarketplaceListing, getActiveMarketplaceCommitment, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
   getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged,
   setRegistrationMarketplaceChargeAccess,
+  getMarketplaceListingComments, getMarketplaceCommentById, getMarketplaceCommentWithMeta,
+  addMarketplaceComment, deleteMarketplaceComment, toggleMarketplaceCommentReaction,
+  getReactedMarketplaceCommentIdsForPlayer, getMarketplaceCommentCounts,
+  toggleMarketplaceListingReaction, getMarketplaceListingReactionState, getMarketplaceListingReactionCounts,
   getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
@@ -105,7 +109,7 @@ import {
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
   lockPapawisSignups, unlockPapawisSignups,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
-  getPapawisCourtById, updatePapawisCourtImage,
+  getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
   getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
@@ -115,7 +119,7 @@ import {
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
-  getReusablePapawisPayments, getPapawisSignupsByTxId,
+  getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
@@ -158,7 +162,7 @@ import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
 import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
-import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody } from './views/admin/marketplace.js';
+import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody, adminMarketplaceEditBody } from './views/admin/marketplace.js';
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail } from './lib/papawis-notify.js';
@@ -6713,7 +6717,7 @@ app.post('/register', (req, res) => {
 
 // ── Season Signup (member-facing) ─────────────────────────────────────────────
 import { seasonSignupPage } from './views/season-signup.js';
-import { SIZES as JERSEY_SIZES, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
+import { SIZES as JERSEY_SIZES, SIZE_CHART, sizeSurcharge, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
 
 // Capacity bar shown on the public signup form — still driven by real confirmed-signup
 // counts, just padded so it reads as "filling up" from the start instead of looking dead
@@ -8660,10 +8664,29 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
   // every pending payment tied to Papawis, across every game, surfaced in one place instead
   // of admin having to open each game (or the whole Ledger) to spot them.
   const pendingPayments = getPendingTransactions().filter(t => /^papawis/i.test(t.category || ''));
+
+  // Every confirmed-but-never-paid slot on a completed game, across every game — distinct
+  // from pendingPayments above (that's a submitted payment awaiting confirmation; this is a
+  // charge with no payment on file at all yet). Same possible-match/reuse suggestion lookup
+  // the per-game detail page uses, just keyed by player once and reused across all of that
+  // player's unpaid rows rather than one lookup per game.
+  const unpaidSignups = getAllUnpaidCompletedPapawisSignups();
+  const unpaidUnlinkedByPlayer = {};
+  const unpaidReusableByPlayer = {};
+  for (const pid of new Set(unpaidSignups.map(s => s.player_id))) {
+    const unlinked = getUnlinkedPapawisPayments(pid);
+    if (unlinked.length) unpaidUnlinkedByPlayer[pid] = unlinked;
+    const reusable = getReusablePapawisPayments(pid);
+    if (reusable.length) unpaidReusableByPlayer[pid] = reusable;
+  }
+
   res.send(renderAdminPage(req, {
     title: 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisListBody({ games, papawisRemindersEnabled, courts: getActivePapawisCourts(), pendingPayments }),
+    body: adminPapawisListBody({
+      games, papawisRemindersEnabled, courts: getActivePapawisCourts(), pendingPayments,
+      unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer,
+    }),
   }));
 });
 
@@ -8679,6 +8702,21 @@ app.post('/admin/papawis/courts', requireAuth, express.json(), (req, res) => {
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Court name is required.' });
   const id = addPapawisCourt(name, price);
   res.json({ ok: true, id });
+});
+// Registered before the /:id route below — otherwise Express would match this path as
+// POST /admin/papawis/courts/:id with id="reorder" (the same class of bug the marketplace
+// route ordering was fixed for earlier). body.order is every court id (active + inactive —
+// the admin Courts page lists both) in its new order, validated as an exact permutation of
+// the current full set before writing.
+app.post('/admin/papawis/courts/reorder', requireAuth, express.json(), (req, res) => {
+  const currentIds = getAllPapawisCourts().map(c => c.id);
+  const order = Array.isArray(req.body.order) ? req.body.order.map(String) : [];
+  const isValidPermutation = order.length === currentIds.length
+    && new Set(order).size === currentIds.length
+    && order.every(id => currentIds.includes(id));
+  if (!isValidPermutation) return res.status(400).json({ error: 'Invalid court order.' });
+  reorderPapawisCourts(order);
+  res.json({ ok: true });
 });
 app.post('/admin/papawis/courts/:id', requireAuth, express.json(), (req, res) => {
   const { name, price } = req.body || {};
@@ -9202,12 +9240,17 @@ app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Marketplace (Phase 1: admin group-buy listings) ──────────────────────────────
+// ── Marketplace (admin group-buy listings) ──────────────────────────────────────
 // A listing's variant_options holds an array of independent, named groups — e.g. a jersey
 // listing might need both "Jersey Size" and "Shorts Size" picked separately. Each group:
-// { label: string, options: string[] }. A commitment's variant column stores one JSON
-// object keyed by group label, e.g. {"Jersey Size":"M","Shorts Size":"L"} — '{}'/'' for a
-// listing with no groups defined (the plain "just commit, nothing to pick" case).
+// { label, options, sizeChartKind: 'top'|'shorts'|'', surchargeStep: number }.
+// sizeChartKind, if set, shows the same chest/length or hips/length measurement reference
+// used on the season-signup/jersey-request forms (lib/season-pricing.js's SIZE_CHART) next
+// to that group's picker — only makes sense when options are real jersey/shorts sizes.
+// surchargeStep, if >0, adds sizeSurcharge()'s tiered 2XL+ surcharge to that group's
+// selection, same formula the season jersey pricing already uses. A commitment's variant
+// column stores one JSON object keyed by group label, e.g.
+// {"Jersey Size":"M","Shorts Size":"L"} — '{}'/'' for a listing with no groups defined.
 function normalizeVariantGroups(raw) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set();
@@ -9217,7 +9260,9 @@ function normalizeVariantGroups(raw) {
     const options = Array.isArray(g?.options) ? g.options.map(o => String(o || '').trim()).filter(Boolean) : [];
     if (!label || !options.length || seen.has(label)) continue;
     seen.add(label);
-    groups.push({ label, options });
+    const sizeChartKind = ['top', 'shorts'].includes(g?.sizeChartKind) ? g.sizeChartKind : '';
+    const surchargeStep = Math.max(0, Number(g?.surchargeStep) || 0);
+    groups.push({ label, options, sizeChartKind, surchargeStep });
   }
   return groups;
 }
@@ -9229,21 +9274,41 @@ function formatVariantSelections(variantJson) {
   return parts.join(', ');
 }
 
+// Sum of each surcharge-enabled group's per-size surcharge for a given set of selections —
+// same sizeSurcharge() formula as season jersey pricing, just applied per-group instead of
+// hardcoded to top/shorts. A group with surchargeStep=0 (the default) never adds anything.
+function computeVariantSurcharge(variantGroups, selections) {
+  let total = 0;
+  for (const g of variantGroups) {
+    if (!g.surchargeStep) continue;
+    total += sizeSurcharge(selections[g.label] || '', g.surchargeStep);
+  }
+  return total;
+}
+
 // Shared by the charge-preview GET and the real trigger-charge POST, so what admin
 // previews and what actually gets charged can never diverge — same principle as
 // buildChargeReviewRows for Start Season.
 function buildMarketplaceChargeRows(listingId) {
   const listing = getMarketplaceListingById(listingId);
   if (!listing) return { listing: null, rows: [] };
+  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'));
   const commitments = getMarketplaceCommitments(listingId, 'committed');
-  const rows = commitments.map(c => ({
-    commitmentId: c.id,
-    playerId: c.player_id,
-    playerName: displayPlayerName(c.player_name),
-    variant: c.variant,
-    variantLabel: formatVariantSelections(c.variant),
-    amount: Number(listing.price) || 0,
-  }));
+  const basePrice = Number(listing.price) || 0;
+  const rows = commitments.map(c => {
+    let selections = {};
+    try { selections = JSON.parse(c.variant || '{}'); } catch { selections = {}; }
+    const surcharge = computeVariantSurcharge(variantGroups, selections);
+    return {
+      commitmentId: c.id,
+      playerId: c.player_id,
+      playerName: displayPlayerName(c.player_name),
+      variant: c.variant,
+      variantLabel: formatVariantSelections(c.variant),
+      basePrice, surcharge,
+      amount: basePrice + surcharge,
+    };
+  });
   return { listing, rows };
 }
 
@@ -9292,13 +9357,34 @@ app.get('/admin/marketplace/:id', requireAuth, (req, res) => {
   }));
   // A charged listing's commitments have already flipped to status='charged' — show those
   // instead of 'committed' so admin can still see who was actually charged, not an empty list.
+  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'));
+  const basePrice = Number(listing.price) || 0;
   const commitments = getMarketplaceCommitments(listing.id, listing.status === 'charged' ? 'charged' : 'committed')
-    .map(c => ({ ...c, variantLabel: formatVariantSelections(c.variant) }));
+    .map(c => {
+      let selections = {};
+      try { selections = JSON.parse(c.variant || '{}'); } catch { selections = {}; }
+      const surcharge = computeVariantSurcharge(variantGroups, selections);
+      return { ...c, variantLabel: formatVariantSelections(c.variant), amount: basePrice + surcharge, surcharge };
+    });
   const canTrigger = !req.session?.isElevatedPlayer || !!getRegistration(req.session.playerRegId)?.can_charge_marketplace;
   res.send(renderAdminPage(req, {
     title: listing.title,
     currentPath: '/admin/marketplace',
-    body: adminMarketplaceDetailBody({ listing, commitments, canTrigger }),
+    body: adminMarketplaceDetailBody({ listing, commitments, canTrigger, variantGroups, jerseySizes: JERSEY_SIZES }),
+  }));
+});
+
+app.get('/admin/marketplace/:id/edit', requireAuth, (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing || listing.type !== 'group_buy') return res.status(404).send(renderAdminPage(req, {
+    title: 'Not Found', currentPath: '/admin/marketplace',
+    body: '<p style="padding:40px;color:var(--text-muted)">Listing not found.</p>',
+  }));
+  if (listing.status !== 'open' && listing.status !== 'active') return res.redirect(`/admin/marketplace/${listing.id}`);
+  res.send(renderAdminPage(req, {
+    title: `Edit — ${listing.title}`,
+    currentPath: '/admin/marketplace',
+    body: adminMarketplaceEditBody({ listing, jerseySizes: JERSEY_SIZES }),
   }));
 });
 
@@ -9317,24 +9403,35 @@ app.post('/admin/marketplace/:id', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/admin/marketplace/:id/photo', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+const MARKETPLACE_MAX_PHOTOS = 10;
+
+// Bulk upload — admin selects any number of files at once, each is resized/processed and
+// appended to the listing's existing photo array (never replaces it), capped at
+// MARKETPLACE_MAX_PHOTOS total. Silently drops whatever doesn't fit past the cap rather than
+// erroring the whole batch, since "upload 12, keep the first available slots" is more useful
+// than making the admin recount and re-select.
+app.post('/admin/marketplace/:id/photos', requireAuth, express.json({ limit: '40mb' }), async (req, res) => {
   const listing = getMarketplaceListingById(req.params.id);
   if (!listing) return res.status(404).json({ error: 'Not found.' });
-  const dataUrl = String(req.body.dataUrl || '');
-  const index = Math.max(0, Math.min(3, Number(req.body.index) || 0));
-  if (!dataUrl.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image data' });
-  const buf = parseDataUrl(dataUrl);
-  if (!buf) return res.status(400).json({ error: 'Invalid image data' });
+  const dataUrls = Array.isArray(req.body.dataUrls) ? req.body.dataUrls : [];
+  if (!dataUrls.length) return res.status(400).json({ error: 'No images provided.' });
+  let photos = [];
+  try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
+  const room = MARKETPLACE_MAX_PHOTOS - photos.length;
+  if (room <= 0) return res.status(400).json({ error: `Already at the ${MARKETPLACE_MAX_PHOTOS}-photo limit.` });
   try {
-    const out = await sharp(buf).rotate().resize(1000, 1000, { fit: 'inside' }).jpeg({ quality: 80, progressive: true }).toBuffer();
-    let photos = [];
-    try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
-    photos[index] = 'data:image/jpeg;base64,' + out.toString('base64');
+    for (const dataUrl of dataUrls.slice(0, room)) {
+      if (!String(dataUrl).startsWith('data:image/')) continue;
+      const buf = parseDataUrl(dataUrl);
+      if (!buf) continue;
+      const out = await sharp(buf).rotate().resize(1000, 1000, { fit: 'inside' }).jpeg({ quality: 80, progressive: true }).toBuffer();
+      photos.push('data:image/jpeg;base64,' + out.toString('base64'));
+    }
     setMarketplaceListingPhotos(listing.id, photos);
-    res.json({ ok: true });
+    res.json({ ok: true, count: photos.length });
   } catch (e) {
-    console.error('[marketplace photo]', e.message);
-    res.status(500).json({ error: 'Could not process image.' });
+    console.error('[marketplace photos]', e.message);
+    res.status(500).json({ error: 'Could not process images.' });
   }
 });
 
@@ -9347,6 +9444,23 @@ app.delete('/admin/marketplace/:id/photo/:index', requireAuth, (req, res) => {
   if (Number.isNaN(index) || index < 0 || index >= photos.length) return res.status(400).json({ error: 'Invalid index.' });
   photos.splice(index, 1);
   setMarketplaceListingPhotos(listing.id, photos);
+  res.json({ ok: true });
+});
+
+// Reorders in place — body.order is a permutation of the current indices (e.g. [2,0,1] on a
+// 3-photo listing), never new image data, so a drag-drop reorder in the admin UI costs one
+// small JSON request instead of re-uploading anything.
+app.post('/admin/marketplace/:id/photos/reorder', requireAuth, express.json(), (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  let photos = [];
+  try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
+  const order = Array.isArray(req.body.order) ? req.body.order.map(Number) : [];
+  const isValidPermutation = order.length === photos.length
+    && new Set(order).size === photos.length
+    && order.every(i => Number.isInteger(i) && i >= 0 && i < photos.length);
+  if (!isValidPermutation) return res.status(400).json({ error: 'Invalid photo order.' });
+  setMarketplaceListingPhotos(listing.id, order.map(i => photos[i]));
   res.json({ ok: true });
 });
 
@@ -9413,6 +9527,22 @@ app.delete('/admin/marketplace/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// A "round 2" of the same group buy — same title/description/price/variants/photos, fresh
+// listing with zero commitments, ready to go again. Only offered once a listing is charged
+// (see the view) — an open one should just keep collecting commitments, not get duplicated.
+app.post('/admin/marketplace/:id/relaunch', requireAuth, express.json(), (req, res) => {
+  const source = getMarketplaceListingById(req.params.id);
+  if (!source) return res.status(404).json({ error: 'Not found.' });
+  const regId = req.session?.isElevatedPlayer ? req.session.playerRegId : '';
+  const id = createMarketplaceListing({
+    type: 'group_buy', createdByRegId: regId || '', title: source.title, description: source.description,
+    price: source.price, minBuyers: source.min_buyers,
+    variantOptions: normalizeVariantGroups(JSON.parse(source.variant_options || '[]')),
+    photos: JSON.parse(source.photos || '[]'),
+  });
+  res.json({ ok: true, id });
+});
+
 app.post('/admin/users/:id/toggle-marketplace-charge', requireSuperAdmin, express.json(), (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
@@ -9433,10 +9563,13 @@ app.get('/marketplace', (req, res) => {
   const committedById = viewerPlayerId
     ? Object.fromEntries(listings.map(l => [l.id, !!getActiveMarketplaceCommitment(l.id, viewerPlayerId)]))
     : {};
+  const listingIds = listings.map(l => l.id);
+  const commentCountsById = getMarketplaceCommentCounts(listingIds);
+  const reactionCountsById = getMarketplaceListingReactionCounts(listingIds);
   res.send(renderPage(req, {
     title: 'Marketplace — WKND Basketball League',
     currentPath: req.path,
-    body: marketplacePage({ listings, countsById, committedById, isLoggedIn: !!req.session?.playerRegId }),
+    body: marketplacePage({ listings, countsById, committedById, commentCountsById, reactionCountsById, isLoggedIn: !!req.session?.playerRegId }),
   }));
 });
 
@@ -9452,10 +9585,17 @@ app.get('/marketplace/:id', (req, res) => {
   const rawCommitment = viewerPlayerId ? getActiveMarketplaceCommitment(listing.id, viewerPlayerId) : null;
   const commitment = rawCommitment ? { ...rawCommitment, variantLabel: formatVariantSelections(rawCommitment.variant) } : null;
   const committedCount = countActiveMarketplaceCommitments(listing.id);
+  const comments = getMarketplaceListingComments(listing.id);
+  const reactedIds = getReactedMarketplaceCommentIdsForPlayer(comments.map(c => c.id), viewerPlayerId);
+  const listingReaction = getMarketplaceListingReactionState(listing.id, viewerPlayerId);
   res.send(renderPage(req, {
     title: `${listing.title} — Marketplace`,
     currentPath: '/marketplace',
-    body: marketplaceListingPage({ listing, committedCount, commitment, isLoggedIn: !!req.session?.playerRegId }),
+    body: marketplaceListingPage({
+      listing, committedCount, commitment, isLoggedIn: !!req.session?.playerRegId,
+      comments, reactedIds, listingReaction,
+      isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'marketplace'),
+    }),
   }));
 });
 
@@ -9492,6 +9632,84 @@ app.post('/marketplace/:id/cancel-commitment', (req, res) => {
   if (!commitment) return res.status(400).json({ error: "You don't have an active commitment on this listing." });
   if (listing.status === 'charged') return res.status(400).json({ error: 'This listing has already been charged — contact an admin.' });
   cancelMarketplaceCommitment(commitment.id);
+  res.json({ ok: true });
+});
+
+// ── Marketplace comments + reactions ─────────────────────────────────────────────
+// Exact parallel of the /games/:id/comments routes above — no @mention pool here since
+// marketplace listings don't have a "who played" list to mention. New-comment notifications
+// go to everyone with an active commitment on the listing (the marketplace analog of
+// "everyone who played in this game"), not the whole site.
+app.post('/marketplace/:id/comments', express.json(), (req, res) => {
+  if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Log in to comment.' });
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  const body = String(req.body?.body || '').trim().slice(0, 500);
+  if (!body) return res.status(400).json({ error: "Comment can't be empty." });
+  const id = addMarketplaceComment({ listingId: listing.id, playerId, body });
+  const saved = getMarketplaceCommentWithMeta(id);
+  broadcastToMarketplaceListing(listing.id, {
+    type: 'comment:new',
+    comment: {
+      id: saved.id,
+      player_id: saved.player_id,
+      body: saved.body,
+      created_at: saved.created_at,
+      displayName: displayPlayerName(saved.player_name),
+      initials: initials(saved.player_name),
+      photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo`,
+      color: teamColor(saved.team_name || ''),
+    },
+  });
+
+  const commenterName = displayPlayerName(saved.player_name);
+  const listingLink = `/marketplace/${listing.id}`;
+  const committedPlayerIds = new Set(getMarketplaceCommitments(listing.id, 'committed').map(c => c.player_id));
+  committedPlayerIds.forEach(pid => {
+    if (pid === playerId) return;
+    createNotification({
+      playerId: pid,
+      type: 'marketplace_comment',
+      title: `New comment on ${listing.title}`,
+      body: `${commenterName}: ${body.length > 100 ? body.slice(0, 100) + '…' : body}`,
+      link: listingLink,
+    });
+  });
+
+  res.json({ ok: true, id });
+});
+
+app.post('/marketplace/:id/comments/:commentId/react', express.json(), (req, res) => {
+  if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Log in to react.' });
+  const comment = getMarketplaceCommentById(req.params.commentId);
+  if (!comment || comment.listing_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
+  const result = toggleMarketplaceCommentReaction(comment.id, playerId);
+  broadcastToMarketplaceListing(comment.listing_id, { type: 'comment:react', id: comment.id, count: result.count });
+  res.json({ ok: true, ...result });
+});
+
+// Page-level "like this listing" reaction, same shape as /games/:id/react.
+app.post('/marketplace/:id/react', express.json(), (req, res) => {
+  if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Log in to react.' });
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  const result = toggleMarketplaceListingReaction(listing.id, playerId);
+  broadcastToMarketplaceListing(listing.id, { type: 'listing:react', count: result.count });
+  res.json({ ok: true, ...result });
+});
+
+app.delete('/marketplace/:id/comments/:commentId', (req, res) => {
+  if (!isAdminWithSection(req, 'marketplace')) return res.status(403).json({ error: 'Admins only.' });
+  const comment = getMarketplaceCommentById(req.params.commentId);
+  if (!comment || comment.listing_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
+  deleteMarketplaceComment(comment.id);
+  broadcastToMarketplaceListing(comment.listing_id, { type: 'comment:delete', id: comment.id });
   res.json({ ok: true });
 });
 
@@ -9710,6 +9928,20 @@ function broadcastToGame(gameId, payload) {
   }
 }
 
+// Same room-per-entity pattern as gameCommentRooms — a third parallel Map rather than a
+// generic "comment rooms" abstraction, consistent with this codebase's stated preference
+// for parallel per-feature structures over shared/polymorphic ones (see the game_reactions
+// comment in lib/portal-db.js).
+const marketplaceCommentRooms = new Map(); // listingId -> Set<WebSocket>
+function broadcastToMarketplaceListing(listingId, payload) {
+  const room = marketplaceCommentRooms.get(listingId);
+  if (!room || !room.size) return;
+  const msg = JSON.stringify(payload);
+  for (const ws of room) {
+    if (ws.readyState === ws.OPEN) ws.send(msg);
+  }
+}
+
 // One room per liveness-check token — the desktop browser that generated the QR code
 // connects here and waits; the phone that scanned it never connects to this socket at all,
 // it just POSTs the capture over plain HTTP (see /season-signup/liveness/:token/capture)
@@ -9740,6 +9972,21 @@ server.on('upgrade', (req, socket, head) => {
       ws.on('close', () => {
         const room = gameCommentRooms.get(gameId);
         if (room) { room.delete(ws); if (!room.size) gameCommentRooms.delete(gameId); }
+      });
+    });
+    return;
+  }
+
+  const marketplaceCommentsMatch = pathname.match(/^\/ws\/marketplace\/([^/]+)\/comments$/);
+  if (marketplaceCommentsMatch) {
+    if (getSetting('marketplace_enabled', '0') !== '1') { socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const listingId = decodeURIComponent(marketplaceCommentsMatch[1]);
+      if (!marketplaceCommentRooms.has(listingId)) marketplaceCommentRooms.set(listingId, new Set());
+      marketplaceCommentRooms.get(listingId).add(ws);
+      ws.on('close', () => {
+        const room = marketplaceCommentRooms.get(listingId);
+        if (room) { room.delete(ws); if (!room.size) marketplaceCommentRooms.delete(listingId); }
       });
     });
     return;

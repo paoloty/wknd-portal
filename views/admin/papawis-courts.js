@@ -10,10 +10,13 @@ function courtThumb(c) {
     : `<div class="court-thumb" style="width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.16);color:#475569">${ICON_PHOTO}</div>`;
 }
 
+const ICON_GRIP = `<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><circle cx="3" cy="2.5" r="1"/><circle cx="9" cy="2.5" r="1"/><circle cx="3" cy="6" r="1"/><circle cx="9" cy="6" r="1"/><circle cx="3" cy="9.5" r="1"/><circle cx="9" cy="9.5" r="1"/></svg>`;
+
 function courtRow(c) {
-  return `<tr class="border-b border-admin-border/40 last:border-0" data-id="${escHtml(c.id)}">
+  return `<tr class="border-b border-admin-border/40 last:border-0 court-row" data-id="${escHtml(c.id)}" draggable="true">
     <td class="px-4 py-3">
       <div class="flex items-center gap-3">
+        <span class="court-row__grip" aria-hidden="true">${ICON_GRIP}</span>
         ${courtThumb(c)}
         <span class="text-sm font-medium text-slate-200">${escHtml(c.name)}</span>
       </div>
@@ -35,7 +38,7 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <div>
     <h2 class="text-xl font-bold tracking-tight text-slate-100">Courts</h2>
-    <p class="text-sm text-slate-500 mt-0.5">Backs the location picker on New Papawis, and pre-fills the "Close out" calculator's court rate when a session's location matches a court by name.</p>
+    <p class="text-sm text-slate-500 mt-0.5">Backs the location picker on New Papawis, and pre-fills the "Close out" calculator's court rate when a session's location matches a court by name. Drag a row's grip to reorder — this is what the location dropdown lists in.</p>
   </div>
   <div class="flex items-center gap-2">
     <a href="/admin/papawis" class="admin-btn">&larr; Back to Papawis</a>
@@ -53,9 +56,16 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Status</th>
           <th class="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500">Actions</th>
         </tr></thead>
-        <tbody>${courts.map(courtRow).join('')}</tbody>
+        <tbody id="courts-tbody">${courts.map(courtRow).join('')}</tbody>
       </table>`}
 </div>
+
+<style>
+.court-row { cursor: grab; }
+.court-row:active { cursor: grabbing; }
+.court-row.is-dragging { opacity: .35; }
+.court-row__grip { color: #475569; flex-shrink: 0; }
+</style>
 
 <div class="agm-modal-backdrop" id="court-modal-backdrop" hidden>
   <div class="agm-modal">
@@ -181,5 +191,46 @@ window.toggleCourt = async function(id, active) {
     location.reload();
   } catch (e) { alert(e.message); }
 };
+
+// Drag-drop reorder — same insertBefore-on-dragover pattern as the marketplace admin photo
+// manager, adapted for a vertical row list: the drop position is decided by the cursor's Y
+// position against the target row's vertical midpoint (above half = insert before it, below
+// half = after) instead of X. dragend reads the resulting DOM order back out as court ids
+// and persists it in one request.
+(function() {
+  var tbody = document.getElementById('courts-tbody');
+  if (!tbody) return;
+  var dragEl = null;
+
+  tbody.addEventListener('dragstart', function(e) {
+    var row = e.target.closest('.court-row');
+    if (!row) { e.preventDefault(); return; }
+    dragEl = row;
+    row.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  tbody.addEventListener('dragover', function(e) {
+    if (!dragEl) return;
+    e.preventDefault();
+    var target = e.target.closest('.court-row');
+    if (!target || target === dragEl) return;
+    var rect = target.getBoundingClientRect();
+    var before = (e.clientY - rect.top) < rect.height / 2;
+    tbody.insertBefore(dragEl, before ? target : target.nextSibling);
+  });
+  tbody.addEventListener('dragend', function() {
+    if (!dragEl) return;
+    dragEl.classList.remove('is-dragging');
+    dragEl = null;
+    var order = Array.prototype.map.call(tbody.querySelectorAll('.court-row'), function(el) { return el.dataset.id; });
+    fetch('/admin/papawis/courts/reorder', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: order }),
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) { if (!res.ok) { alert(res.j.error || 'Failed to reorder.'); location.reload(); } })
+      .catch(function() { alert('Network error'); location.reload(); });
+  });
+})();
 </script>`;
 }

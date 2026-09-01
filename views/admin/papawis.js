@@ -174,7 +174,57 @@ function pendingPaymentRow(t) {
     </tr>`;
 }
 
-export function adminPapawisListBody({ games = [], papawisRemindersEnabled = false, courts = [], pendingPayments = [] } = {}) {
+// One row per unpaid confirmed slot — a flat cross-game list (not grouped per player) so
+// each row can carry its own game's Mark Paid/Link actions independently; a player with
+// dues on three different games just shows up as three rows, each actionable on its own.
+// data-game-id on the row (not the buttons) is what lets the shared paidStatusHtml() markup
+// — built for a single-game page where the game id is one page-wide JS variable — work here
+// too, where every row can belong to a different game: the click handler below just walks
+// up to the row to find which game a given button's request belongs to.
+function unpaidSignupRow(s, unlinkedByPlayer, reusableByPlayer) {
+  const candidates = (unlinkedByPlayer[s.player_id] || []).filter(c => c.date >= s.game_date);
+  const reusable = (reusableByPlayer[s.player_id] || []).filter(c => c.date >= s.game_date);
+  return `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors" data-game-id="${escHtml(s.game_id)}">
+    <td class="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">${fmtDate(s.game_date)}</td>
+    <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(s.player_name))}${s.guest_name ? `<span class="text-xs text-slate-500"> — guest: ${escHtml(s.guest_name)}</span>` : ''}</td>
+    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(s.game_title || 'Papawis')}</td>
+    <td class="px-4 py-2.5 text-sm font-semibold text-slate-200">₱${Number(s.price_per_player || 0).toLocaleString()}</td>
+    <td class="px-4 py-2.5">${paidStatusHtml(s, candidates, reusable)}</td>
+  </tr>`;
+}
+
+function unpaidPapawisSection(unpaidSignups, unlinkedByPlayer, reusableByPlayer) {
+  if (!unpaidSignups.length) return '';
+  const total = unpaidSignups.reduce((sum, s) => sum + (Number(s.price_per_player) || 0), 0);
+  return `
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-5">
+  <div class="px-5 py-3 border-b border-admin-border flex items-center justify-between">
+    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Unpaid — Completed Games</span>
+    <span class="agm-badge agm-badge--amber">${unpaidSignups.length} unpaid &middot; ₱${total.toLocaleString()}</span>
+  </div>
+  <div class="overflow-auto">
+    <table class="w-full border-collapse has-col-dividers has-freeze-col">
+      <thead>
+        <tr>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Date</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Game</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Amount</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Status</th>
+        </tr>
+      </thead>
+      <tbody id="pw-unpaid-tbody">
+        ${unpaidSignups.map(s => unpaidSignupRow(s, unlinkedByPlayer, reusableByPlayer)).join('')}
+      </tbody>
+    </table>
+  </div>
+</div>`;
+}
+
+export function adminPapawisListBody({
+  games = [], papawisRemindersEnabled = false, courts = [], pendingPayments = [],
+  unpaidSignups = [], unpaidUnlinkedByPlayer = {}, unpaidReusableByPlayer = {},
+} = {}) {
   const rows = games.map(g => `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}</td>
       <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(g.title || 'Papawis')}</td>
@@ -296,6 +346,7 @@ export function adminPapawisListBody({ games = [], papawisRemindersEnabled = fal
   </div>
 </div>
 
+${unpaidPapawisSection(unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer)}
 ${pendingSection}
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
@@ -420,6 +471,42 @@ ${pendingSection}
       removePendingRow(id);
     } catch(err) { alert(err.message); }
   };
+
+  // ── Unpaid — Completed Games ──────────────────────────────────────────────
+  // Same Mark Paid / Link buttons paidStatusHtml() renders on the per-game detail page, but
+  // this table spans many games at once, so there's no single page-wide gameId to fetch
+  // against — each click walks up to its own <tr data-game-id> to find the right one.
+  var unpaidTbody = document.getElementById('pw-unpaid-tbody');
+  if (unpaidTbody) {
+    unpaidTbody.addEventListener('click', function(e) {
+      var row = e.target.closest('tr[data-game-id]');
+      if (!row) return;
+      var gid = row.dataset.gameId;
+
+      var markBtn = e.target.closest('[data-mark-paid]');
+      if (markBtn) {
+        markBtn.disabled = true;
+        fetch('/admin/papawis/' + gid + '/signups/' + markBtn.dataset.markPaid + '/paid', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paid: true }),
+        })
+          .then(function(r) { return r.json(); })
+          .then(function(d) { if (d.ok) window.location.reload(); else { alert(d.error || 'Could not update.'); markBtn.disabled = false; } })
+          .catch(function() { alert('Network error'); markBtn.disabled = false; });
+        return;
+      }
+
+      var linkBtn = e.target.closest('[data-link-payment]');
+      if (linkBtn) {
+        linkBtn.disabled = true;
+        fetch('/admin/papawis/' + gid + '/signups/' + linkBtn.dataset.linkPayment + '/link-payment', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tx_id: linkBtn.dataset.txId }),
+        })
+          .then(function(r) { return r.json(); })
+          .then(function(d) { if (d.ok) window.location.reload(); else { alert(d.error || 'Could not link.'); linkBtn.disabled = false; } })
+          .catch(function() { alert('Network error'); linkBtn.disabled = false; });
+      }
+    });
+  }
 })();
 </script>`;
 }
