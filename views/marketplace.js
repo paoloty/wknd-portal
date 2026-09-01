@@ -1,9 +1,22 @@
 import { escHtml, pageHeader } from './layout.js';
 
+const ICON_CHEVRON_L = `<svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
+const ICON_CHEVRON_R = `<svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2.5l4 4.5-4 4.5"/></svg>`;
+
 function fmtPeso(n) { return '₱' + Number(n || 0).toLocaleString(); }
 
 function parseJsonArray(raw) {
   try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
+}
+
+// Same red/amber/green-at-threshold convention as the admin Ledger's quotaBar and the
+// team-head quota progress bar — visually capped at 100% even though committedCount can
+// keep climbing past min_buyers (the threshold is a floor, not a cap).
+function progressBar(count, min) {
+  if (!min) return '';
+  const pct = Math.min(100, Math.round((count / min) * 100));
+  const color = pct >= 100 ? '#22c55e' : pct >= 50 ? '#f59332' : '#f87171';
+  return `<div class="mkt-progress-bar"><div style="width:${pct}%;background:${color}"></div></div>`;
 }
 
 // Cell renderer for a variant/size picker — visually modeled on the jersey-request size
@@ -40,6 +53,7 @@ function listingCard(listing, { committedCount = 0, committed = false } = {}) {
     </div>
     <h3 class="mkt-row__title">${escHtml(cleanTitle)}</h3>
     <div class="mkt-row__price">${fmtPeso(listing.price)}</div>
+    ${progressBar(committedCount, listing.min_buyers)}
     <div class="mkt-row__footer">
       <span class="mkt-row__count${meetsFloor ? ' is-met' : ''}">${committedCount} committed <span class="mkt-row__count-min">&middot; min ${listing.min_buyers}</span></span>
       <span class="mkt-row__cta">VIEW <span>&rarr;</span></span>
@@ -81,6 +95,9 @@ export function marketplaceListingPage({ listing, committedCount = 0, commitment
           </div>
           <div class="mkt-fade mkt-fade--l"></div>
           <div class="mkt-fade mkt-fade--r"></div>
+          ${photos.length > 1 ? `
+          <button type="button" class="mkt-gallery__arrow mkt-gallery__arrow--l" id="mkt-gallery-prev" aria-label="Previous photo">${ICON_CHEVRON_L}</button>
+          <button type="button" class="mkt-gallery__arrow mkt-gallery__arrow--r" id="mkt-gallery-next" aria-label="Next photo">${ICON_CHEVRON_R}</button>` : ''}
         </div>
         ${photos.length > 1 ? `<div class="mkt-gallery__thumbs">${photos.map((_, i) => `<button type="button" class="mkt-gallery__thumb${i === 0 ? ' is-active' : ''}" data-thumb-index="${i}"><img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt=""></button>`).join('')}</div>` : ''}
       </div>`
@@ -123,6 +140,7 @@ export function marketplaceListingPage({ listing, committedCount = 0, commitment
       <div class="mkt-detail__progress">
         <span class="mkt-detail__count${meetsFloor ? ' is-met' : ''}">${committedCount} committed</span>
         <span class="mkt-detail__min">needs at least ${listing.min_buyers} to proceed</span>
+        ${progressBar(committedCount, listing.min_buyers)}
       </div>
       <div class="mkt-detail__action">${actionHtml}</div>
       <p class="mkt-err" id="mkt-err" hidden></p>
@@ -172,26 +190,38 @@ ${STYLE}
     var wrap  = main.closest('.mkt-gallery__scroll-wrap');
     var left  = wrap.querySelector('.mkt-fade--l');
     var right = wrap.querySelector('.mkt-fade--r');
+    var prevBtn = document.getElementById('mkt-gallery-prev');
+    var nextBtn = document.getElementById('mkt-gallery-next');
     var thumbs = document.querySelectorAll('.mkt-gallery__thumb');
+    var slideCount = document.querySelectorAll('.mkt-gallery__slide').length;
 
+    function currentIndex() { return Math.round(main.scrollLeft / main.clientWidth); }
+    function goTo(index) {
+      index = Math.max(0, Math.min(slideCount - 1, index));
+      main.scrollTo({ left: index * main.clientWidth, behavior: 'smooth' });
+    }
     function updateFades() {
       var max = main.scrollWidth - main.clientWidth;
-      left.classList.toggle('is-visible', main.scrollLeft > 4);
-      right.classList.toggle('is-visible', main.scrollLeft < max - 4);
+      var hasMoreLeft  = main.scrollLeft > 4;
+      var hasMoreRight = main.scrollLeft < max - 4;
+      left.classList.toggle('is-visible', hasMoreLeft);
+      right.classList.toggle('is-visible', hasMoreRight);
+      if (prevBtn) prevBtn.classList.toggle('is-visible', hasMoreLeft);
+      if (nextBtn) nextBtn.classList.toggle('is-visible', hasMoreRight);
     }
     function updateActiveThumb() {
-      var index = Math.round(main.scrollLeft / main.clientWidth);
+      var index = currentIndex();
       thumbs.forEach(function(t) { t.classList.toggle('is-active', Number(t.dataset.thumbIndex) === index); });
     }
     main.addEventListener('scroll', function() { updateFades(); updateActiveThumb(); }, { passive: true });
     window.addEventListener('resize', updateFades);
     updateFades();
 
+    if (prevBtn) prevBtn.addEventListener('click', function() { goTo(currentIndex() - 1); });
+    if (nextBtn) nextBtn.addEventListener('click', function() { goTo(currentIndex() + 1); });
+
     thumbs.forEach(function(t) {
-      t.addEventListener('click', function() {
-        var index = Number(t.dataset.thumbIndex);
-        main.scrollTo({ left: index * main.clientWidth, behavior: 'smooth' });
-      });
+      t.addEventListener('click', function() { goTo(Number(t.dataset.thumbIndex)); });
     });
   }
 })();
@@ -219,6 +249,8 @@ const STYLE = `<style>
 .mkt-row__meta { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: var(--text-subtle); margin-bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mkt-row__title { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
 .mkt-row__price { font-family: 'Saira Condensed', sans-serif; font-size: 22px; color: var(--amber); font-weight: 700; }
+.mkt-progress-bar { height: 4px; background: var(--border); border-radius: 99px; overflow: hidden; margin: 8px 0; }
+.mkt-progress-bar div { height: 100%; border-radius: 99px; transition: width .2s; }
 .mkt-row__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; }
 .mkt-row__count { font-size: 11.5px; color: var(--text-muted); }
 .mkt-row__count.is-met { color: #22c55e; font-weight: 700; }
@@ -246,6 +278,16 @@ const STYLE = `<style>
 .mkt-fade--l { left: 0; background: linear-gradient(to right, rgba(0,0,0,.35) 0%, transparent 100%); }
 .mkt-fade--r { right: 0; background: linear-gradient(to left, rgba(0,0,0,.35) 0%, transparent 100%); }
 .mkt-fade.is-visible { opacity: 1; }
+.mkt-gallery__arrow {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(0,0,0,.5); color: #fff; display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity .15s, background .15s;
+}
+.mkt-gallery__arrow.is-visible { opacity: 1; pointer-events: auto; }
+.mkt-gallery__arrow:hover { background: rgba(0,0,0,.75); }
+.mkt-gallery__arrow--l { left: 10px; }
+.mkt-gallery__arrow--r { right: 10px; }
 .mkt-gallery__thumbs { display: flex; gap: 8px; padding: 10px; overflow-x: auto; }
 .mkt-gallery__thumb { flex-shrink: 0; padding: 0; border: 2px solid transparent; border-radius: 8px; cursor: pointer; background: none; line-height: 0; opacity: .55; transition: opacity .15s, border-color .15s; }
 .mkt-gallery__thumb:hover { opacity: .85; }
