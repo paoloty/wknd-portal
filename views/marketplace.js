@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 
 function fmtPeso(n) { return '₱' + Number(n || 0).toLocaleString(); }
 
@@ -19,46 +19,67 @@ function variantPicker(options, name, selected = '') {
   return `<div class="mkt-pick-scroll">${cells}</div>`;
 }
 
+// ── Listing card (games-list-row style: thumbnail on top, body below, stretched-link) ──
 function listingCard(listing, { committedCount = 0, committed = false } = {}) {
   const photos = parseJsonArray(listing.photos);
-  const cover = photos[0] || '';
+  const hasCover = !!photos[0];
   const meetsFloor = committedCount >= listing.min_buyers;
-  return `
-  <a href="/marketplace/${escHtml(listing.id)}" class="mkt-card">
-    <div class="mkt-card__photo" style="${cover ? `background-image:url('/api/marketplace/${escHtml(listing.id)}/photo/0')` : ''}">
-      ${cover ? '' : '<span class="mkt-card__photo-placeholder">No photo</span>'}
+  const cleanTitle = listing.title.slice(0, 120);
+
+  return `<article class="mkt-row">
+  <a href="/marketplace/${escHtml(listing.id)}" class="mkt-row__link" aria-label="${escHtml(cleanTitle)}"></a>
+  <div class="mkt-row__thumb">
+    ${hasCover
+      ? `<img src="/api/marketplace/${escHtml(listing.id)}/photo/0" alt="" class="mkt-row__thumb-img">`
+      : `<div class="mkt-row__thumb-placeholder">No photo</div>`}
+  </div>
+  <div class="mkt-row__body">
+    <div class="mkt-row__meta">
+      GROUP BUY
+      ${committed ? '<span class="badge-playoff" style="background:#22c55e26;color:#22c55e;border-color:#22c55e55">YOU’RE IN</span>' : ''}
     </div>
-    <div class="mkt-card__body">
-      <div class="mkt-card__title">${escHtml(listing.title)}</div>
-      <div class="mkt-card__price">${fmtPeso(listing.price)}</div>
-      <div class="mkt-card__progress">
-        <span class="mkt-card__count${meetsFloor ? ' is-met' : ''}">${committedCount} committed</span>
-        <span class="mkt-card__min">min ${listing.min_buyers}</span>
-      </div>
-      ${committed ? '<span class="mkt-card__badge">You’re in</span>' : ''}
+    <h3 class="mkt-row__title">${escHtml(cleanTitle)}</h3>
+    <div class="mkt-row__price">${fmtPeso(listing.price)}</div>
+    <div class="mkt-row__footer">
+      <span class="mkt-row__count${meetsFloor ? ' is-met' : ''}">${committedCount} committed <span class="mkt-row__count-min">&middot; min ${listing.min_buyers}</span></span>
+      <span class="mkt-row__cta">VIEW <span>&rarr;</span></span>
     </div>
-  </a>`;
+  </div>
+</article>`;
 }
 
 export function marketplacePage({ listings = [], countsById = {}, committedById = {}, isLoggedIn = false } = {}) {
-  const cards = listings.map(l => listingCard(l, { committedCount: countsById[l.id] || 0, committed: !!committedById[l.id] })).join('');
-  return `<div class="container"><div class="page-content">
-    <div class="section-header">
-      <h2>Marketplace</h2>
-    </div>
-    <p class="mkt-intro">Group buys for jerseys and merch — commit to join, admin charges everyone once enough players are in.</p>
-    <div class="mkt-grid">
-      ${cards || '<div class="mkt-empty">Nothing up for grabs right now.</div>'}
-    </div>
-  </div></div>
-  ${STYLE}`;
+  const cards = listings.length
+    ? listings.map(l => listingCard(l, { committedCount: countsById[l.id] || 0, committed: !!committedById[l.id] })).join('\n    ')
+    : `<div class="card mkt-empty">No group buys open right now.</div>`;
+
+  return `<div class="page-content">
+${pageHeader({ title: 'Marketplace', description: 'Group buys for jerseys and merch — commit to join, admin charges everyone once enough players are in.' })}
+
+<div class="mkt-main">
+  ${listings.length ? `<div class="mkt-grid">${cards}</div>` : cards}
+</div>
+</div>
+${STYLE}`;
 }
 
+// ── Listing detail (games-detail-layout style: left = media/content, right = info stack) ──
 export function marketplaceListingPage({ listing, committedCount = 0, commitment = null, isLoggedIn = false } = {}) {
   const photos = parseJsonArray(listing.photos);
   const variantOptions = parseJsonArray(listing.variant_options);
   const meetsFloor = committedCount >= listing.min_buyers;
   const isOpen = listing.status === 'open' || listing.status === 'active';
+
+  const gallery = photos.length
+    ? `<div class="mkt-gallery card">
+        <div class="mkt-gallery__main"><img src="/api/marketplace/${escHtml(listing.id)}/photo/0" alt=""></div>
+        ${photos.length > 1 ? `<div class="mkt-gallery__thumbs">${photos.map((_, i) => `<img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt="">`).join('')}</div>` : ''}
+      </div>`
+    : `<div class="mkt-gallery mkt-gallery--empty card">No photos yet</div>`;
+
+  const descCard = listing.description
+    ? `<div class="card mkt-desc-card"><div class="mkt-desc-label">Details</div><p class="mkt-desc">${escHtml(listing.description)}</p></div>`
+    : '';
 
   let actionHtml;
   if (listing.status === 'charged') {
@@ -81,84 +102,114 @@ export function marketplaceListingPage({ listing, committedCount = 0, commitment
     actionHtml = `<div class="mkt-hint">Not accepting commitments right now.</div>`;
   }
 
-  const photoGallery = photos.length
-    ? `<div class="mkt-gallery">${photos.map((_, i) => `<img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt="">`).join('')}</div>`
-    : '';
-
-  return `<div class="container"><div class="page-content">
-    <div class="mkt-detail card card--lg">
-      ${photoGallery}
+  return `<div class="page-content">
+<div class="mkt-detail-layout">
+  <div class="mkt-detail-left">
+    ${gallery}
+    ${descCard}
+  </div>
+  <div class="mkt-detail-right">
+    <div class="card mkt-info-card">
       <h1 class="mkt-detail__title">${escHtml(listing.title)}</h1>
       <div class="mkt-detail__price">${fmtPeso(listing.price)}</div>
-      ${listing.description ? `<p class="mkt-detail__desc">${escHtml(listing.description)}</p>` : ''}
       <div class="mkt-detail__progress">
         <span class="mkt-detail__count${meetsFloor ? ' is-met' : ''}">${committedCount} committed</span>
-        <span class="mkt-detail__min">— needs at least ${listing.min_buyers} to proceed</span>
+        <span class="mkt-detail__min">needs at least ${listing.min_buyers} to proceed</span>
       </div>
       <div class="mkt-detail__action">${actionHtml}</div>
       <p class="mkt-err" id="mkt-err" hidden></p>
     </div>
-  </div></div>
-  ${STYLE}
-  <script>
-  (function() {
-    var form = document.getElementById('mkt-commit-form');
-    var err  = document.getElementById('mkt-err');
-    if (form) {
-      form.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        var variant = (form.querySelector('input[name=variant]:checked') || {}).value || '';
-        try {
-          var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/commit')}, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ variant: variant }),
-          });
-          var j = await r.json();
-          if (!r.ok) throw new Error(j.error || 'Failed to commit.');
-          window.location.reload();
-        } catch (ex) { err.textContent = ex.message; err.hidden = false; }
-      });
-    }
-    var cancelBtn = document.getElementById('mkt-cancel-btn');
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', async function() {
-        if (!confirm('Cancel your commitment to this listing?')) return;
-        try {
-          var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/cancel-commitment')}, { method: 'POST' });
-          var j = await r.json();
-          if (!r.ok) throw new Error(j.error || 'Failed to cancel.');
-          window.location.reload();
-        } catch (ex) { err.textContent = ex.message; err.hidden = false; }
-      });
-    }
-  })();
-  </script>`;
+  </div>
+</div>
+</div>
+${STYLE}
+<script>
+(function() {
+  var form = document.getElementById('mkt-commit-form');
+  var err  = document.getElementById('mkt-err');
+  if (form) {
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var variant = (form.querySelector('input[name=variant]:checked') || {}).value || '';
+      try {
+        var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/commit')}, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ variant: variant }),
+        });
+        var j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Failed to commit.');
+        window.location.reload();
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    });
+  }
+  var cancelBtn = document.getElementById('mkt-cancel-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async function() {
+      if (!confirm('Cancel your commitment to this listing?')) return;
+      try {
+        var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/cancel-commitment')}, { method: 'POST' });
+        var j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Failed to cancel.');
+        window.location.reload();
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    });
+  }
+})();
+</script>`;
 }
 
 const STYLE = `<style>
-.mkt-intro { font-size: 12.5px; color: var(--text-muted); margin: 0 0 20px; line-height: 1.5; max-width: 560px; }
-.mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-.mkt-empty { font-size: 13px; color: var(--text-muted); font-style: italic; padding: 20px 0; grid-column: 1 / -1; }
-.mkt-card { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; text-decoration: none; color: inherit; transition: border-color .15s; }
-.mkt-card:hover { border-color: var(--amber); }
-.mkt-card__photo { height: 130px; background: var(--bg) center/cover no-repeat; display: flex; align-items: center; justify-content: center; }
-.mkt-card__photo-placeholder { font-size: 11px; color: var(--text-muted); }
-.mkt-card__body { padding: 12px 14px; }
-.mkt-card__title { font-weight: 700; font-size: 13.5px; margin-bottom: 3px; }
-.mkt-card__price { font-family: 'Saira Condensed', sans-serif; font-size: 18px; color: var(--amber); font-weight: 700; }
-.mkt-card__progress { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 10.5px; color: var(--text-muted); }
-.mkt-card__count.is-met { color: #22c55e; font-weight: 700; }
-.mkt-card__badge { display: inline-block; margin-top: 8px; font-size: 10px; font-weight: 700; color: #22c55e; background: #22c55e1a; border: 1px solid #22c55e44; border-radius: 10px; padding: 2px 8px; }
-.mkt-detail { padding: 22px 24px; max-width: 560px; }
-.mkt-detail__title { font-size: 20px; margin: 0 0 4px; }
-.mkt-detail__price { font-family: 'Saira Condensed', sans-serif; font-size: 26px; color: var(--amber); font-weight: 700; margin-bottom: 10px; }
-.mkt-detail__desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
-.mkt-detail__progress { font-size: 12px; color: var(--text-muted); margin: 14px 0; }
-.mkt-detail__count.is-met { color: #22c55e; font-weight: 700; }
-.mkt-detail__action { margin-top: 10px; }
-.mkt-gallery { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 14px; }
-.mkt-gallery img { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); flex-shrink: 0; }
-.mkt-btn { display: inline-block; border-radius: 10px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; text-decoration: none; }
+/* ── List page — mirrors .games-grid / .game-row ─────────────────────────── */
+.mkt-main { display: flex; flex-direction: column; }
+.mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+@media (max-width: 640px) { .mkt-grid { grid-template-columns: 1fr; } }
+.mkt-empty { padding: 20px; color: var(--text-subtle); font-size: 13px; }
+
+.mkt-row {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+  transition: border-color 0.15s, background 0.15s; position: relative;
+}
+.mkt-row:hover { border-color: var(--text-muted); background: rgba(255,255,255,0.02); }
+.mkt-row__link { position: absolute; inset: 0; z-index: 1; }
+.mkt-row__thumb { width: 100%; height: 180px; flex-shrink: 0; overflow: hidden; background: var(--bg); }
+.mkt-row__thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt-row__thumb-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-subtle); font-size: 11px; }
+.mkt-row__body { flex: 1; padding: 16px 18px; min-width: 0; display: flex; flex-direction: column; }
+.mkt-row__meta { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: var(--text-subtle); margin-bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mkt-row__title { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+.mkt-row__price { font-family: 'Saira Condensed', sans-serif; font-size: 22px; color: var(--amber); font-weight: 700; }
+.mkt-row__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; }
+.mkt-row__count { font-size: 11.5px; color: var(--text-muted); }
+.mkt-row__count.is-met { color: #22c55e; font-weight: 700; }
+.mkt-row__count-min { color: var(--text-subtle); }
+.mkt-row__cta { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--amber); }
+
+/* ── Detail page — mirrors .game-detail-layout ───────────────────────────── */
+.mkt-detail-layout { display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; margin-bottom: 40px; }
+.mkt-detail-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.mkt-detail-right { display: flex; flex-direction: column; gap: 14px; }
+@media (max-width: 860px) { .mkt-detail-layout { grid-template-columns: 1fr; } }
+
+.mkt-gallery { padding: 0; overflow: hidden; }
+.mkt-gallery--empty { padding: 40px; text-align: center; color: var(--text-subtle); font-size: 13px; }
+.mkt-gallery__main { width: 100%; aspect-ratio: 1; background: var(--bg); }
+.mkt-gallery__main img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt-gallery__thumbs { display: flex; gap: 8px; padding: 10px; overflow-x: auto; }
+.mkt-gallery__thumbs img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+.mkt-desc-card { padding: 18px 20px; }
+.mkt-desc-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--text-subtle); margin-bottom: 8px; text-transform: uppercase; }
+.mkt-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+.mkt-info-card { position: sticky; top: 90px; padding: 20px; }
+.mkt-detail__title { font-size: 19px; margin: 0 0 4px; color: var(--text); }
+.mkt-detail__price { font-family: 'Saira Condensed', sans-serif; font-size: 26px; color: var(--amber); font-weight: 700; margin-bottom: 12px; }
+.mkt-detail__progress { font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; margin: 14px 0; padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.mkt-detail__count { font-weight: 700; color: var(--text); }
+.mkt-detail__count.is-met { color: #22c55e; }
+.mkt-detail__min { color: var(--text-subtle); }
+.mkt-detail__action { margin-top: 4px; }
+.mkt-btn { display: inline-block; border-radius: 10px; padding: 11px 18px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; text-decoration: none; text-align: center; width: 100%; box-sizing: border-box; }
 .mkt-btn--primary { background: var(--amber); color: #1a1000; }
 .mkt-btn--ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 .mkt-hint { font-size: 12.5px; color: var(--text-muted); margin-bottom: 10px; }
