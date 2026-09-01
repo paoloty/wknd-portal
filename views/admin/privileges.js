@@ -23,6 +23,11 @@ export function adminPrivilegesBody({ admins = [], candidates = [], sections = [
       ${a.can_view_sensitive ? '👁 Sensitive Data: On' : '🚫 Sensitive Data: Off'}
     </button>
   </td>
+  <td class="px-4 py-3 whitespace-nowrap">
+    <button onclick="toggleMarketplaceCharge('${escHtml(a.id)}', ${JSON.stringify(a.full_name)})" class="admin-btn admin-btn--sm ${a.can_charge_marketplace ? 'admin-btn--success' : 'admin-btn--muted'}">
+      ${a.can_charge_marketplace ? '🛒 Marketplace Charges: On' : '🚫 Marketplace Charges: Off'}
+    </button>
+  </td>
   <td class="px-4 py-3 text-right whitespace-nowrap">
     <a href="/admin/users/${escHtml(a.id)}" class="admin-btn admin-btn--sm no-underline mr-2">${ICON_EXTERNAL} Review</a>
     <button onclick="revokeAdmin('${escHtml(a.id)}', ${JSON.stringify(a.full_name)})" class="admin-btn admin-btn--sm admin-btn--danger">${ICON_SHIELD_OFF} Revoke</button>
@@ -154,6 +159,18 @@ export function adminPrivilegesBody({ admins = [], candidates = [], sections = [
     if (!confirm("Toggle sensitive-data access (email, phone, emergency contact, birthday) for " + name + "?")) return;
     try {
       var resp = await fetch('/admin/users/' + id + '/toggle-sensitive', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      var j = await resp.json();
+      if (!resp.ok) throw new Error(j.error || 'Failed');
+      location.reload();
+    } catch(e) { alert(e.message); }
+  };
+
+  window.toggleMarketplaceCharge = async function(id, name) {
+    if (!confirm("Toggle the ability to trigger marketplace group-buy charges for " + name + "?")) return;
+    try {
+      var resp = await fetch('/admin/users/' + id + '/toggle-marketplace-charge', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
       });
       var j = await resp.json();

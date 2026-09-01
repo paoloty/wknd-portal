@@ -59,6 +59,13 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Marketplace',
+    items: [
+      { href: '/admin/marketplace',     label: 'Listings',      icon: 'wallet', exact: true },
+      { href: '/admin/marketplace/new', label: 'New Group Buy', icon: 'games' },
+    ],
+  },
+  {
     label: 'Finance',
     items: [
       { href: '/admin/finance',        label: 'Overview', icon: 'finance', exact: true },
@@ -123,16 +130,26 @@ export const ADMIN_SECTIONS = NAV_GROUPS.map(g => ({
   prefixes: g.items.map(i => i.href),
 }));
 
-// Boundary-safe prefix match — an href of "/admin/season" must not match "/admin/seasons".
-function pathInSection(path, section) {
-  return section.prefixes.some(href => path === href || path.startsWith(href + '/'));
-}
-
 // The section a given request path falls under, or null if it doesn't belong to any of
 // them (shared/cross-cutting routes like /admin/site/settings, /admin/impersonate/:id —
 // left ungated by section restrictions on purpose, see requireAuth in server.js).
+//
+// Longest-matching-prefix wins, not first-in-NAV_GROUPS-order — Overview's href is the bare
+// "/admin", which is technically a prefix of every other admin path too. Picking the first
+// array match would make every nested route (e.g. /admin/marketplace/:id/trigger-charge)
+// resolve to "overview" instead of its real section, silently defeating admin_sections for
+// anyone restricted away from Overview trying to reach any nested page in their own section.
 export function sectionForPath(path) {
-  return ADMIN_SECTIONS.find(s => pathInSection(path, s)) || null;
+  let best = null;
+  let bestLen = -1;
+  for (const s of ADMIN_SECTIONS) {
+    for (const href of s.prefixes) {
+      if (path === href || path.startsWith(href + '/')) {
+        if (href.length > bestLen) { best = s; bestLen = href.length; }
+      }
+    }
+  }
+  return best;
 }
 
 // Where to send a restricted admin who hit a page outside their allowed sections — the

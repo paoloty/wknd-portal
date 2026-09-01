@@ -35,12 +35,17 @@ import { privacyPage, termsPage } from './views/legal.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
-import { teamColor, displayPlayerName, manilaTodayStr, initials, signupDisplayName, PAYMENT_CATEGORIES } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
   recordTransaction, confirmTransaction, deleteTransaction, setTransactionCategory,
   getPlayerFinancials, getPlayerPapawisBalance, hasUnpaidCompletedPapawis, getPlayerTransactions, getPlayerTransactionsBySeason,
+  createMarketplaceListing, getMarketplaceListingById, getMarketplaceListings, updateMarketplaceListing,
+  setMarketplaceListingStatus, setMarketplaceListingPhotos, markMarketplaceListingCharged, deleteMarketplaceListing,
+  commitToMarketplaceListing, getActiveMarketplaceCommitment, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
+  getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged,
+  setRegistrationMarketplaceChargeAccess,
   getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
@@ -152,6 +157,8 @@ import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
+import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
+import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody } from './views/admin/marketplace.js';
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail } from './lib/papawis-notify.js';
@@ -1256,6 +1263,7 @@ function getFeatureFlags() {
     comments: getSetting('comments_enabled', '0') === '1',
     peerRatings: getSetting('peer_ratings_enabled', '0') === '1',
     playerReports: getSetting('player_reports_enabled', '0') === '1',
+    marketplace: getSetting('marketplace_enabled', '0') === '1',
   };
 }
 
@@ -2159,6 +2167,16 @@ function loginUrl(req) {
 function getAdminAllowedSections(req) {
   if (!req.session?.isAdmin || !req.session?.isElevatedPlayer) return null;
   return getRegistrationAdminSections(getRegistration(req.session.playerRegId));
+}
+
+// For routes outside /admin/* that requireAuth's automatic section-redirect never reaches
+// (e.g. DELETE /games/:id/comments/:id, the player-profile financial section) but that
+// should still be off-limits to an admin restricted to a different section, like a
+// marketplace-only shop-admin.
+function isAdminWithSection(req, sectionKey) {
+  if (!req.session?.isAdmin) return false;
+  const allowed = getAdminAllowedSections(req);
+  return !allowed || allowed.includes(sectionKey);
 }
 
 function requireAuth(req, res, next) {
@@ -4545,7 +4563,7 @@ app.get('/games/:ref', (req, res) => {
     body: gamePage({
       game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap,
       commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
-      currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin,
+      currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
     })
   }));
 });
@@ -4654,7 +4672,7 @@ app.post('/games/:id/react', express.json(), (req, res) => {
 });
 
 app.delete('/games/:id/comments/:commentId', (req, res) => {
-  if (!req.session?.isAdmin) return res.status(403).json({ error: 'Admins only.' });
+  if (!isAdminWithSection(req, 'games-stats')) return res.status(403).json({ error: 'Admins only.' });
   const comment = getCommentById(req.params.commentId);
   if (!comment || comment.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
   deleteGameComment(comment.id);
@@ -6350,7 +6368,7 @@ app.get('/players/:ref', async (req, res) => {
   const displayName = displayPlayerName(player.name);
 
   let financialSection = '';
-  if (req.session?.isAdmin) {
+  if (isAdminWithSection(req, 'finance')) {
     const fin = getPlayerFinancials(resolved.id);
     const txs = getPlayerTransactions(resolved.id);
     const allPlayers = getAllPlayers();
@@ -9180,6 +9198,263 @@ app.post('/admin/papawis/:id/cancel', requireAuth, (req, res) => {
 
 app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
   deletePapawisGame(req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Marketplace (Phase 1: admin group-buy listings) ──────────────────────────────
+// Shared by the charge-preview GET and the real trigger-charge POST, so what admin
+// previews and what actually gets charged can never diverge — same principle as
+// buildChargeReviewRows for Start Season.
+function buildMarketplaceChargeRows(listingId) {
+  const listing = getMarketplaceListingById(listingId);
+  if (!listing) return { listing: null, rows: [] };
+  const commitments = getMarketplaceCommitments(listingId, 'committed');
+  const rows = commitments.map(c => ({
+    commitmentId: c.id,
+    playerId: c.player_id,
+    playerName: displayPlayerName(c.player_name),
+    variant: c.variant,
+    amount: Number(listing.price) || 0,
+  }));
+  return { listing, rows };
+}
+
+app.get('/admin/marketplace', requireAuth, (req, res) => {
+  const listings = getMarketplaceListings({ type: 'group_buy' });
+  // A charged listing's commitments are no longer status='committed' — show the final charged
+  // count for those instead of the (now permanently 0) active-commitment count.
+  const countsById = Object.fromEntries(listings.map(l => [
+    l.id,
+    l.status === 'charged' ? getMarketplaceCommitments(l.id, 'charged').length : countActiveMarketplaceCommitments(l.id),
+  ]));
+  res.send(renderAdminPage(req, {
+    title: 'Marketplace',
+    currentPath: '/admin/marketplace',
+    body: adminMarketplaceListBody({ listings, countsById }),
+  }));
+});
+
+app.get('/admin/marketplace/new', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'New Group Buy',
+    currentPath: '/admin/marketplace/new',
+    body: adminMarketplaceNewBody({ jerseySizes: JERSEY_SIZES }),
+  }));
+});
+
+app.post('/admin/marketplace', requireAuth, express.json(), (req, res) => {
+  const { title, description = '', price, min_buyers, variant_options = [] } = req.body || {};
+  const priceNum = Number(price);
+  const minBuyers = Number(min_buyers);
+  if (!title || Number.isNaN(priceNum) || priceNum <= 0) return res.status(400).json({ error: 'Title and a price above 0 are required.' });
+  if (Number.isNaN(minBuyers) || minBuyers < 1) return res.status(400).json({ error: 'Minimum buyers must be at least 1.' });
+  const regId = req.session?.isElevatedPlayer ? req.session.playerRegId : '';
+  const id = createMarketplaceListing({
+    type: 'group_buy', createdByRegId: regId || '', title, description,
+    price: priceNum, minBuyers, variantOptions: Array.isArray(variant_options) ? variant_options.filter(Boolean) : [],
+  });
+  res.json({ ok: true, id });
+});
+
+app.get('/admin/marketplace/:id', requireAuth, (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing || listing.type !== 'group_buy') return res.status(404).send(renderAdminPage(req, {
+    title: 'Not Found', currentPath: '/admin/marketplace',
+    body: '<p style="padding:40px;color:var(--text-muted)">Listing not found.</p>',
+  }));
+  // A charged listing's commitments have already flipped to status='charged' — show those
+  // instead of 'committed' so admin can still see who was actually charged, not an empty list.
+  const commitments = getMarketplaceCommitments(listing.id, listing.status === 'charged' ? 'charged' : 'committed');
+  const canTrigger = !req.session?.isElevatedPlayer || !!getRegistration(req.session.playerRegId)?.can_charge_marketplace;
+  res.send(renderAdminPage(req, {
+    title: listing.title,
+    currentPath: '/admin/marketplace',
+    body: adminMarketplaceDetailBody({ listing, commitments, canTrigger }),
+  }));
+});
+
+app.post('/admin/marketplace/:id', requireAuth, express.json(), (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  if (listing.status !== 'open' && listing.status !== 'active') return res.status(400).json({ error: 'Only an open listing can be edited.' });
+  const { title, description = '', price, min_buyers, variant_options = [] } = req.body || {};
+  const priceNum = Number(price);
+  const minBuyers = Number(min_buyers);
+  if (!title || Number.isNaN(priceNum) || priceNum <= 0) return res.status(400).json({ error: 'Title and a price above 0 are required.' });
+  updateMarketplaceListing(listing.id, {
+    title, description, price: priceNum, minBuyers,
+    variantOptions: Array.isArray(variant_options) ? variant_options.filter(Boolean) : [],
+  });
+  res.json({ ok: true });
+});
+
+app.post('/admin/marketplace/:id/photo', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  const dataUrl = String(req.body.dataUrl || '');
+  const index = Math.max(0, Math.min(3, Number(req.body.index) || 0));
+  if (!dataUrl.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image data' });
+  const buf = parseDataUrl(dataUrl);
+  if (!buf) return res.status(400).json({ error: 'Invalid image data' });
+  try {
+    const out = await sharp(buf).rotate().resize(1000, 1000, { fit: 'inside' }).jpeg({ quality: 80, progressive: true }).toBuffer();
+    let photos = [];
+    try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
+    photos[index] = 'data:image/jpeg;base64,' + out.toString('base64');
+    setMarketplaceListingPhotos(listing.id, photos);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[marketplace photo]', e.message);
+    res.status(500).json({ error: 'Could not process image.' });
+  }
+});
+
+app.delete('/admin/marketplace/:id/photo/:index', requireAuth, (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  let photos = [];
+  try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
+  const index = Number(req.params.index);
+  if (Number.isNaN(index) || index < 0 || index >= photos.length) return res.status(400).json({ error: 'Invalid index.' });
+  photos.splice(index, 1);
+  setMarketplaceListingPhotos(listing.id, photos);
+  res.json({ ok: true });
+});
+
+// Same data:-URI-in-a-column storage as player photos — sendPlayerPhotoUrl is generic over
+// the url string, no player-specific logic, so it's reused as-is here.
+app.get('/api/marketplace/:id/photo/:index', async (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  let photos = [];
+  try { photos = JSON.parse(listing?.photos || '[]'); } catch { photos = []; }
+  await sendPlayerPhotoUrl(res, photos[Number(req.params.index)]);
+});
+
+app.get('/admin/marketplace/:id/charge-preview', requireAuth, (req, res) => {
+  const { listing, rows } = buildMarketplaceChargeRows(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  res.json({ ok: true, minBuyers: listing.min_buyers, committedCount: rows.length, meetsThreshold: rows.length >= listing.min_buyers, rows, total });
+});
+
+app.post('/admin/marketplace/:id/trigger-charge', requireAuth, express.json(), (req, res) => {
+  if (!isAdminWithSection(req, 'marketplace')) return res.status(403).json({ error: 'Not authorized.' });
+  if (req.session?.isElevatedPlayer && !getRegistration(req.session.playerRegId)?.can_charge_marketplace) {
+    return res.status(403).json({ error: 'You are not authorized to trigger marketplace charges.' });
+  }
+  const { listing, rows } = buildMarketplaceChargeRows(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  // Idempotency guard — copied from Start Season's pattern, not Papawis close-out's (which
+  // is missing this check and can double-charge on a retry/double-click).
+  if (listing.status !== 'open' && listing.status !== 'active') {
+    return res.status(400).json({ error: 'This listing has already been charged or is no longer open.' });
+  }
+  if (rows.length < listing.min_buyers) {
+    return res.status(400).json({ error: `Needs at least ${listing.min_buyers} committed buyers to trigger (currently ${rows.length}).` });
+  }
+  const today = manilaTodayStr();
+  const actorName = req.session?.isElevatedPlayer ? (req.session.playerName || 'admin') : 'super';
+  for (const row of rows) {
+    const txId = randomBytes(6).toString('hex');
+    const chargeNotes = `Marketplace — ${listing.title}${row.variant ? ` (${row.variant})` : ''}`;
+    recordTransaction({
+      id: txId, player_id: row.playerId, amount: row.amount, type: 'charge',
+      payment_method: '', date: today, status: 'confirmed',
+      notes: chargeNotes, reference_no: listing.id, season: '', category: MARKETPLACE_CATEGORY,
+    });
+    notifyLedgerEvent({ playerId: row.playerId, type: 'charge', amount: row.amount, notes: chargeNotes });
+    markMarketplaceCommitmentCharged(row.commitmentId, txId);
+  }
+  markMarketplaceListingCharged(listing.id, actorName);
+  res.json({ ok: true, charged: rows.length });
+});
+
+app.post('/admin/marketplace/:id/cancel', requireAuth, (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  setMarketplaceListingStatus(listing.id, 'cancelled');
+  res.json({ ok: true });
+});
+
+app.delete('/admin/marketplace/:id', requireAuth, (req, res) => {
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  if (listing.status === 'charged') return res.status(400).json({ error: 'A charged listing cannot be deleted.' });
+  deleteMarketplaceListing(listing.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/toggle-marketplace-charge', requireSuperAdmin, express.json(), (req, res) => {
+  const reg = getRegistration(req.params.id);
+  if (!reg) return res.status(404).json({ error: 'Not found' });
+  if (!reg.is_admin) return res.status(400).json({ error: 'User must be an admin first.' });
+  setRegistrationMarketplaceChargeAccess(reg.id, !reg.can_charge_marketplace);
+  res.json({ ok: true, can_charge_marketplace: !reg.can_charge_marketplace });
+});
+
+// ── Marketplace: player-facing (Phase 1: browsing + committing to group buys) ───────
+app.get('/marketplace', (req, res) => {
+  if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).send(renderPage(req, {
+    title: 'Not Found', currentPath: '/marketplace', body: comingSoonPage({ label: 'Marketplace', description: 'Not available yet.' }),
+  }));
+  const listings = getMarketplaceListings({ type: 'group_buy', status: 'open' })
+    .concat(getMarketplaceListings({ type: 'group_buy', status: 'active' }));
+  const viewerPlayerId = req.session?.playerPlayerId || null;
+  const countsById = Object.fromEntries(listings.map(l => [l.id, countActiveMarketplaceCommitments(l.id)]));
+  const committedById = viewerPlayerId
+    ? Object.fromEntries(listings.map(l => [l.id, !!getActiveMarketplaceCommitment(l.id, viewerPlayerId)]))
+    : {};
+  res.send(renderPage(req, {
+    title: 'Marketplace — WKND Basketball League',
+    currentPath: req.path,
+    body: marketplacePage({ listings, countsById, committedById, isLoggedIn: !!req.session?.playerRegId }),
+  }));
+});
+
+app.get('/marketplace/:id', (req, res) => {
+  if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).send(renderPage(req, {
+    title: 'Not Found', currentPath: '/marketplace', body: comingSoonPage({ label: 'Marketplace', description: 'Not available yet.' }),
+  }));
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).send(renderPage(req, {
+    title: 'Not Found', currentPath: '/marketplace', body: comingSoonPage({ label: 'Listing Not Found', description: 'This listing could not be found.' }),
+  }));
+  const viewerPlayerId = req.session?.playerPlayerId || null;
+  const commitment = viewerPlayerId ? getActiveMarketplaceCommitment(listing.id, viewerPlayerId) : null;
+  const committedCount = countActiveMarketplaceCommitments(listing.id);
+  res.send(renderPage(req, {
+    title: `${listing.title} — Marketplace`,
+    currentPath: '/marketplace',
+    body: marketplaceListingPage({ listing, committedCount, commitment, isLoggedIn: !!req.session?.playerRegId }),
+  }));
+});
+
+app.post('/marketplace/:id/commit', express.json(), (req, res) => {
+  if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Please log in to commit.' });
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing || listing.type !== 'group_buy') return res.status(404).json({ error: 'Not found.' });
+  if (listing.status !== 'open' && listing.status !== 'active') return res.status(400).json({ error: 'This listing is no longer accepting commitments.' });
+  if (getActiveMarketplaceCommitment(listing.id, playerId)) return res.status(400).json({ error: "You're already committed to this listing." });
+  let variantOptions = [];
+  try { variantOptions = JSON.parse(listing.variant_options || '[]'); } catch { variantOptions = []; }
+  const variant = String(req.body?.variant || '');
+  if (variantOptions.length && !variantOptions.includes(variant)) return res.status(400).json({ error: 'Please pick a valid option.' });
+  commitToMarketplaceListing(listing.id, playerId, variant);
+  res.json({ ok: true });
+});
+
+app.post('/marketplace/:id/cancel-commitment', (req, res) => {
+  if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  const playerId = req.session?.playerPlayerId;
+  if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Please log in.' });
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  const commitment = getActiveMarketplaceCommitment(listing.id, playerId);
+  if (!commitment) return res.status(400).json({ error: "You don't have an active commitment on this listing." });
+  if (listing.status === 'charged') return res.status(400).json({ error: 'This listing has already been charged — contact an admin.' });
+  cancelMarketplaceCommitment(commitment.id);
   res.json({ ok: true });
 });
 

@@ -10,7 +10,10 @@ export const TEAM_COLORS = {
 
 // Shared between the admin ledger's manual-entry form and the player-facing settle-balance
 // form, so a category picked by a player matches exactly what admin sees/filters by.
-export const PAYMENT_CATEGORIES = ['Season Fee', 'Game Fee', 'Papawis', 'Papawis Deposit', 'Penalty', 'Equipment', 'Other'];
+export const PAYMENT_CATEGORIES = ['Season Fee', 'Game Fee', 'Papawis', 'Papawis Deposit', 'Marketplace', 'Penalty', 'Equipment', 'Other'];
+// The exact category string every marketplace charge must use — referenced, never hand-typed
+// a second time, after the 'Papawis' vs 'papawis' casing mismatch once broke balance queries.
+export const MARKETPLACE_CATEGORY = 'Marketplace';
 
 export function teamColor(name) {
   return TEAM_COLORS[String(name || '').toUpperCase()] || '#4a5263';
