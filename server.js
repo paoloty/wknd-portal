@@ -8634,10 +8634,14 @@ app.post('/admin/polls/:id/vote', requireAuth, express.json(), (req, res) => {
 app.get('/admin/papawis', requireAuth, (req, res) => {
   const games = getPapawisGames();
   const papawisRemindersEnabled = getSetting('papawis_reminders_enabled', '0') === '1';
+  // Same "Papawis" / "Papawis Deposit" category convention getPlayerPapawisBalance uses —
+  // every pending payment tied to Papawis, across every game, surfaced in one place instead
+  // of admin having to open each game (or the whole Ledger) to spot them.
+  const pendingPayments = getPendingTransactions().filter(t => /^papawis/i.test(t.category || ''));
   res.send(renderAdminPage(req, {
     title: 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisListBody({ games, papawisRemindersEnabled, courts: getActivePapawisCourts() }),
+    body: adminPapawisListBody({ games, papawisRemindersEnabled, courts: getActivePapawisCourts(), pendingPayments }),
   }));
 });
 

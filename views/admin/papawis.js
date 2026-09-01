@@ -159,7 +159,22 @@ function statusBadge(game) {
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
-export function adminPapawisListBody({ games = [], papawisRemindersEnabled = false, courts = [] } = {}) {
+function pendingPaymentRow(t) {
+  const label = /deposit/i.test(t.category || '') ? 'Deposit' : 'Game';
+  return `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors" id="pw-pending-row-${escHtml(t.id)}">
+      <td class="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">${fmtDate(t.date)}</td>
+      <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(t.player_name || ''))}</td>
+      <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(label)}</td>
+      <td class="px-4 py-2.5 text-sm font-semibold text-slate-200">₱${Number(t.amount).toLocaleString()}</td>
+      <td class="px-4 py-2.5 text-xs text-slate-500">${t.reference_no ? escHtml(t.reference_no) : '—'}</td>
+      <td class="px-4 py-2.5 text-right whitespace-nowrap">
+        <button type="button" class="agm-badge agm-badge--green" style="border:none;cursor:pointer;font:inherit" onclick="pwConfirmPending('${escHtml(t.id)}')">Confirm</button>
+        <button type="button" class="agm-badge agm-badge--gray" style="border:none;cursor:pointer;font:inherit;margin-left:6px" onclick="pwVoidPending('${escHtml(t.id)}')">Void</button>
+      </td>
+    </tr>`;
+}
+
+export function adminPapawisListBody({ games = [], papawisRemindersEnabled = false, courts = [], pendingPayments = [] } = {}) {
   const rows = games.map(g => `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}</td>
       <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(g.title || 'Papawis')}</td>
@@ -171,6 +186,31 @@ export function adminPapawisListBody({ games = [], papawisRemindersEnabled = fal
         <a href="/admin/papawis/${escHtml(g.id)}" class="agm-edit-link">Manage ${ICON_CHEVRON_R}</a>
       </td>
     </tr>`).join('');
+
+  const pendingSection = pendingPayments.length ? `
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-5">
+  <div class="px-5 py-3 border-b border-admin-border flex items-center justify-between">
+    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Pending Papawis Payments</span>
+    <span class="agm-badge agm-badge--amber">${pendingPayments.length} pending</span>
+  </div>
+  <div class="overflow-auto">
+    <table class="w-full border-collapse">
+      <thead>
+        <tr>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Date</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">For</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Amount</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Reference</th>
+          <th class="px-4 py-2.5 border-b border-admin-border"></th>
+        </tr>
+      </thead>
+      <tbody id="pw-pending-tbody">
+        ${pendingPayments.map(pendingPaymentRow).join('')}
+      </tbody>
+    </table>
+  </div>
+</div>` : '';
 
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -255,6 +295,8 @@ export function adminPapawisListBody({ games = [], papawisRemindersEnabled = fal
     </div>
   </div>
 </div>
+
+${pendingSection}
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
   <table class="w-full border-collapse has-col-dividers has-freeze-col">
@@ -352,6 +394,32 @@ export function adminPapawisListBody({ games = [], papawisRemindersEnabled = fal
     })
     .catch(function() { errEl.textContent = 'Network error.'; errEl.hidden = false; btn.disabled = false; btn.innerHTML = orig; });
   });
+
+  // ── Pending Papawis payments ──────────────────────────────────────────────
+  function removePendingRow(id) {
+    var row = document.getElementById('pw-pending-row-' + id);
+    if (row) row.remove();
+  }
+  window.pwConfirmPending = async function(id) {
+    if (!confirm('Mark this payment as confirmed?')) return;
+    try {
+      var r = await fetch('/admin/ledger/transaction/' + id + '/confirm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Failed');
+      removePendingRow(id);
+    } catch(err) { alert(err.message); }
+  };
+  window.pwVoidPending = async function(id) {
+    if (!confirm('Void this payment? It will be kept in history but reversed.')) return;
+    try {
+      var r = await fetch('/admin/ledger/transaction/' + id + '/void', { method: 'POST' });
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Failed');
+      removePendingRow(id);
+    } catch(err) { alert(err.message); }
+  };
 })();
 </script>`;
 }
