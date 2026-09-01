@@ -152,11 +152,13 @@ export function adminMarketplaceNewBody({ jerseySizes = [] } = {}) {
     </div>
   </div>
   <div class="mb-4">
-    <div class="flex items-center justify-between mb-1">
-      <label class="admin-field-label">Size / variant options <span class="font-normal text-slate-500">(optional, one per line)</span></label>
-      <button type="button" id="mkt-jersey-sizes-btn" class="text-[11px] text-brand hover:underline">Use standard jersey sizes</button>
+    <label class="admin-field-label">Variants <span class="font-normal text-slate-500">(optional — add one group per thing a buyer needs to pick, e.g. Jersey Size and Shorts Size separately)</span></label>
+    <div id="mkt-variant-groups" class="mt-2" style="display:flex;flex-direction:column;gap:10px"></div>
+    <div class="flex items-center gap-2 mt-2">
+      <button type="button" id="mkt-add-jersey-size" class="text-[11px] text-brand hover:underline">+ Jersey Size</button>
+      <button type="button" id="mkt-add-shorts-size" class="text-[11px] text-brand hover:underline">+ Shorts Size</button>
+      <button type="button" id="mkt-add-custom-variant" class="text-[11px] text-brand hover:underline">+ Custom variant</button>
     </div>
-    <textarea name="variant_options" id="mkt-variant-options" class="admin-input mt-1" rows="4" placeholder="Small&#10;Medium&#10;Large"></textarea>
   </div>
   <p class="agm-modal-err" id="mkt-err" hidden></p>
   <button type="submit" class="admin-btn">Create Listing</button>
@@ -165,14 +167,36 @@ export function adminMarketplaceNewBody({ jerseySizes = [] } = {}) {
 <script>
 (function() {
   var sizes = ${JSON.stringify(jerseySizes)};
-  document.getElementById('mkt-jersey-sizes-btn').addEventListener('click', function() {
-    document.getElementById('mkt-variant-options').value = sizes.join('\\n');
-  });
+  var groupsWrap = document.getElementById('mkt-variant-groups');
+
+  function addGroup(label, optionsText) {
+    var row = document.createElement('div');
+    row.className = 'mkt-variant-group-row';
+    row.style.cssText = 'border:1px solid var(--admin-border,#243044);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px';
+    row.innerHTML =
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<input type="text" class="admin-input mkt-variant-label" placeholder="Group name — e.g. Jersey Size" style="flex:1" value="' + (label || '').replace(/"/g, '&quot;') + '">' +
+        '<button type="button" class="mkt-variant-remove" style="color:#f87171;background:none;border:none;cursor:pointer;font-size:16px;line-height:1;padding:4px 6px">&times;</button>' +
+      '</div>' +
+      '<textarea class="admin-input mkt-variant-options-text" rows="3" placeholder="One option per line — e.g. Small / Medium / Large">' + (optionsText || '') + '</textarea>';
+    row.querySelector('.mkt-variant-remove').addEventListener('click', function() { row.remove(); });
+    groupsWrap.appendChild(row);
+  }
+
+  document.getElementById('mkt-add-jersey-size').addEventListener('click', function() { addGroup('Jersey Size', sizes.join('\\n')); });
+  document.getElementById('mkt-add-shorts-size').addEventListener('click', function() { addGroup('Shorts Size', sizes.join('\\n')); });
+  document.getElementById('mkt-add-custom-variant').addEventListener('click', function() { addGroup('', ''); });
+
   document.getElementById('mkt-new-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var f = e.target;
     var err = document.getElementById('mkt-err');
-    var variantRaw = f.variant_options.value.split('\\n').map(function(s){ return s.trim(); }).filter(Boolean);
+    var variantGroups = [];
+    groupsWrap.querySelectorAll('.mkt-variant-group-row').forEach(function(row) {
+      var label = row.querySelector('.mkt-variant-label').value.trim();
+      var options = row.querySelector('.mkt-variant-options-text').value.split('\\n').map(function(s){ return s.trim(); }).filter(Boolean);
+      if (label && options.length) variantGroups.push({ label: label, options: options });
+    });
     var btn = f.querySelector('button[type=submit]');
     btn.disabled = true;
     try {
@@ -180,7 +204,7 @@ export function adminMarketplaceNewBody({ jerseySizes = [] } = {}) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: f.title.value.trim(), description: f.description.value.trim(),
-          price: f.price.value, min_buyers: f.min_buyers.value, variant_options: variantRaw,
+          price: f.price.value, min_buyers: f.min_buyers.value, variant_options: variantGroups,
         }),
       });
       var j = await r.json();
@@ -200,7 +224,7 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
 
   const rows = commitments.map(c => `<tr class="border-b border-admin-border/50 last:border-b-0">
     <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(c.player_name))}</td>
-    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.variant || '—')}</td>
+    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.variantLabel || '—')}</td>
     <td class="px-4 py-2.5 text-xs text-slate-500">${new Date(c.committed_at).toLocaleDateString()}</td>
   </tr>`).join('');
 

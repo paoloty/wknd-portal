@@ -9203,6 +9203,32 @@ app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
 });
 
 // ── Marketplace (Phase 1: admin group-buy listings) ──────────────────────────────
+// A listing's variant_options holds an array of independent, named groups — e.g. a jersey
+// listing might need both "Jersey Size" and "Shorts Size" picked separately. Each group:
+// { label: string, options: string[] }. A commitment's variant column stores one JSON
+// object keyed by group label, e.g. {"Jersey Size":"M","Shorts Size":"L"} — '{}'/'' for a
+// listing with no groups defined (the plain "just commit, nothing to pick" case).
+function normalizeVariantGroups(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const groups = [];
+  for (const g of raw) {
+    const label = String(g?.label || '').trim();
+    const options = Array.isArray(g?.options) ? g.options.map(o => String(o || '').trim()).filter(Boolean) : [];
+    if (!label || !options.length || seen.has(label)) continue;
+    seen.add(label);
+    groups.push({ label, options });
+  }
+  return groups;
+}
+
+function formatVariantSelections(variantJson) {
+  let obj = {};
+  try { obj = JSON.parse(variantJson || '{}'); } catch { obj = {}; }
+  const parts = Object.entries(obj).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+  return parts.join(', ');
+}
+
 // Shared by the charge-preview GET and the real trigger-charge POST, so what admin
 // previews and what actually gets charged can never diverge — same principle as
 // buildChargeReviewRows for Start Season.
@@ -9215,6 +9241,7 @@ function buildMarketplaceChargeRows(listingId) {
     playerId: c.player_id,
     playerName: displayPlayerName(c.player_name),
     variant: c.variant,
+    variantLabel: formatVariantSelections(c.variant),
     amount: Number(listing.price) || 0,
   }));
   return { listing, rows };
@@ -9252,7 +9279,7 @@ app.post('/admin/marketplace', requireAuth, express.json(), (req, res) => {
   const regId = req.session?.isElevatedPlayer ? req.session.playerRegId : '';
   const id = createMarketplaceListing({
     type: 'group_buy', createdByRegId: regId || '', title, description,
-    price: priceNum, minBuyers, variantOptions: Array.isArray(variant_options) ? variant_options.filter(Boolean) : [],
+    price: priceNum, minBuyers, variantOptions: normalizeVariantGroups(variant_options),
   });
   res.json({ ok: true, id });
 });
@@ -9265,7 +9292,8 @@ app.get('/admin/marketplace/:id', requireAuth, (req, res) => {
   }));
   // A charged listing's commitments have already flipped to status='charged' — show those
   // instead of 'committed' so admin can still see who was actually charged, not an empty list.
-  const commitments = getMarketplaceCommitments(listing.id, listing.status === 'charged' ? 'charged' : 'committed');
+  const commitments = getMarketplaceCommitments(listing.id, listing.status === 'charged' ? 'charged' : 'committed')
+    .map(c => ({ ...c, variantLabel: formatVariantSelections(c.variant) }));
   const canTrigger = !req.session?.isElevatedPlayer || !!getRegistration(req.session.playerRegId)?.can_charge_marketplace;
   res.send(renderAdminPage(req, {
     title: listing.title,
@@ -9284,7 +9312,7 @@ app.post('/admin/marketplace/:id', requireAuth, express.json(), (req, res) => {
   if (!title || Number.isNaN(priceNum) || priceNum <= 0) return res.status(400).json({ error: 'Title and a price above 0 are required.' });
   updateMarketplaceListing(listing.id, {
     title, description, price: priceNum, minBuyers,
-    variantOptions: Array.isArray(variant_options) ? variant_options.filter(Boolean) : [],
+    variantOptions: normalizeVariantGroups(variant_options),
   });
   res.json({ ok: true });
 });
@@ -9357,7 +9385,7 @@ app.post('/admin/marketplace/:id/trigger-charge', requireAuth, express.json(), (
   const actorName = req.session?.isElevatedPlayer ? (req.session.playerName || 'admin') : 'super';
   for (const row of rows) {
     const txId = randomBytes(6).toString('hex');
-    const chargeNotes = `Marketplace — ${listing.title}${row.variant ? ` (${row.variant})` : ''}`;
+    const chargeNotes = `Marketplace — ${listing.title}${row.variantLabel ? ` (${row.variantLabel})` : ''}`;
     recordTransaction({
       id: txId, player_id: row.playerId, amount: row.amount, type: 'charge',
       payment_method: '', date: today, status: 'confirmed',
@@ -9421,7 +9449,8 @@ app.get('/marketplace/:id', (req, res) => {
     title: 'Not Found', currentPath: '/marketplace', body: comingSoonPage({ label: 'Listing Not Found', description: 'This listing could not be found.' }),
   }));
   const viewerPlayerId = req.session?.playerPlayerId || null;
-  const commitment = viewerPlayerId ? getActiveMarketplaceCommitment(listing.id, viewerPlayerId) : null;
+  const rawCommitment = viewerPlayerId ? getActiveMarketplaceCommitment(listing.id, viewerPlayerId) : null;
+  const commitment = rawCommitment ? { ...rawCommitment, variantLabel: formatVariantSelections(rawCommitment.variant) } : null;
   const committedCount = countActiveMarketplaceCommitments(listing.id);
   res.send(renderPage(req, {
     title: `${listing.title} — Marketplace`,
@@ -9438,11 +9467,18 @@ app.post('/marketplace/:id/commit', express.json(), (req, res) => {
   if (!listing || listing.type !== 'group_buy') return res.status(404).json({ error: 'Not found.' });
   if (listing.status !== 'open' && listing.status !== 'active') return res.status(400).json({ error: 'This listing is no longer accepting commitments.' });
   if (getActiveMarketplaceCommitment(listing.id, playerId)) return res.status(400).json({ error: "You're already committed to this listing." });
-  let variantOptions = [];
-  try { variantOptions = JSON.parse(listing.variant_options || '[]'); } catch { variantOptions = []; }
-  const variant = String(req.body?.variant || '');
-  if (variantOptions.length && !variantOptions.includes(variant)) return res.status(400).json({ error: 'Please pick a valid option.' });
-  commitToMarketplaceListing(listing.id, playerId, variant);
+  let variantGroups = [];
+  try { variantGroups = JSON.parse(listing.variant_options || '[]'); } catch { variantGroups = []; }
+  // One required selection per group — e.g. a jersey listing needs both "Jersey Size" and
+  // "Shorts Size" picked, not just one flat option.
+  const selections = (req.body && typeof req.body.variants === 'object' && req.body.variants) || {};
+  const resolved = {};
+  for (const group of variantGroups) {
+    const picked = String(selections[group.label] || '');
+    if (!group.options.includes(picked)) return res.status(400).json({ error: `Please pick a ${group.label}.` });
+    resolved[group.label] = picked;
+  }
+  commitToMarketplaceListing(listing.id, playerId, JSON.stringify(resolved));
   res.json({ ok: true });
 });
 

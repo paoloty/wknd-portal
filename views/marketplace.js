@@ -19,17 +19,30 @@ function progressBar(count, min) {
   return `<div class="mkt-progress-bar"><div style="width:${pct}%;background:${color}"></div></div>`;
 }
 
-// Cell renderer for a variant/size picker — visually modeled on the jersey-request size
-// grid (views/jersey-request.js), but label-only: no measurement subtitle, since that's
-// jersey-chest/hip-specific and meaningless for a generic merch item.
-function variantPicker(options, name, selected = '') {
-  if (!options.length) return '';
+// Cell renderer for one variant group's picker — visually modeled on the jersey-request
+// size grid (views/jersey-request.js), but label-only: no measurement subtitle, since
+// that's jersey-chest/hip-specific and meaningless for a generic merch item. The radio
+// `name` is namespaced per group (variant__<label>) so multiple independent groups on the
+// same form (e.g. Jersey Size + Shorts Size) never collide.
+function variantPicker(options, groupLabel, selected = '') {
   const cells = options.map(opt => `
     <label class="mkt-pick-cell${selected === opt ? ' is-selected' : ''}">
-      <input type="radio" name="${escHtml(name)}" value="${escHtml(opt)}" ${selected === opt ? 'checked' : ''}>
+      <input type="radio" name="${escHtml('variant__' + groupLabel)}" value="${escHtml(opt)}" ${selected === opt ? 'checked' : ''}>
       <span class="mkt-pick-cell__label">${escHtml(opt)}</span>
     </label>`).join('');
   return `<div class="mkt-pick-scroll">${cells}</div>`;
+}
+
+// One heading + picker per group — a jersey group-buy might need both a Jersey Size and a
+// Shorts Size selected independently, or a merch listing might need a Color and a
+// Condition. groups: [{ label, options }]. selections: { [label]: currentValue }.
+function variantGroupsHtml(groups, selections = {}) {
+  if (!groups.length) return '';
+  return groups.map(g => `
+    <div class="mkt-variant-group">
+      <div class="mkt-variant-group__label">${escHtml(g.label)}</div>
+      ${variantPicker(g.options, g.label, selections[g.label] || '')}
+    </div>`).join('');
 }
 
 // ── Listing card (games-list-row style: thumbnail on top, body below, stretched-link) ──
@@ -80,7 +93,7 @@ ${STYLE}`;
 // ── Listing detail (games-detail-layout style: left = media/content, right = info stack) ──
 export function marketplaceListingPage({ listing, committedCount = 0, commitment = null, isLoggedIn = false } = {}) {
   const photos = parseJsonArray(listing.photos);
-  const variantOptions = parseJsonArray(listing.variant_options);
+  const variantGroups = parseJsonArray(listing.variant_options);
   const meetsFloor = committedCount >= listing.min_buyers;
   const isOpen = listing.status === 'open' || listing.status === 'active';
 
@@ -116,12 +129,12 @@ export function marketplaceListingPage({ listing, committedCount = 0, commitment
     actionHtml = `<a href="/login?next=${encodeURIComponent('/marketplace/' + listing.id)}" class="mkt-btn mkt-btn--primary">Log in to commit</a>`;
   } else if (commitment) {
     actionHtml = `
-      <div class="mkt-hint mkt-hint--in">You're committed${commitment.variant ? ` — ${escHtml(commitment.variant)}` : ''}.</div>
+      <div class="mkt-hint mkt-hint--in">You're committed${commitment.variantLabel ? ` — ${escHtml(commitment.variantLabel)}` : ''}.</div>
       <button type="button" class="mkt-btn mkt-btn--ghost" id="mkt-cancel-btn">Cancel commitment</button>`;
   } else if (isOpen) {
     actionHtml = `
       <form id="mkt-commit-form">
-        ${variantPicker(variantOptions, 'variant')}
+        ${variantGroupsHtml(variantGroups)}
         <button type="submit" class="mkt-btn mkt-btn--primary">Commit — ${fmtPeso(listing.price)}</button>
       </form>`;
   } else {
@@ -157,11 +170,14 @@ ${STYLE}
   if (form) {
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
-      var variant = (form.querySelector('input[name=variant]:checked') || {}).value || '';
+      var variants = {};
+      form.querySelectorAll('input[name^="variant__"]:checked').forEach(function(input) {
+        variants[input.name.slice('variant__'.length)] = input.value;
+      });
       try {
         var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/commit')}, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ variant: variant }),
+          body: JSON.stringify({ variants: variants }),
         });
         var j = await r.json();
         if (!r.ok) throw new Error(j.error || 'Failed to commit.');
@@ -311,6 +327,8 @@ const STYLE = `<style>
 .mkt-hint { font-size: 12.5px; color: var(--text-muted); margin-bottom: 10px; }
 .mkt-hint--in { color: #22c55e; font-weight: 600; }
 .mkt-err { color: #f87171; font-size: 12px; margin-top: 8px; }
+.mkt-variant-group { margin-bottom: 4px; }
+.mkt-variant-group__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 6px; }
 .mkt-pick-scroll { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 12px; }
 .mkt-pick-cell { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; cursor: pointer; flex-shrink: 0; }
 .mkt-pick-cell input { position: absolute; opacity: 0; pointer-events: none; }
