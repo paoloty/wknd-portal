@@ -40,7 +40,7 @@ import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
   recordTransaction, confirmTransaction, deleteTransaction, setTransactionCategory,
-  getPlayerFinancials, getPlayerPapawisBalance, getPlayerTransactions, getPlayerTransactionsBySeason,
+  getPlayerFinancials, getPlayerPapawisBalance, hasUnpaidCompletedPapawis, getPlayerTransactions, getPlayerTransactionsBySeason,
   getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
@@ -7951,7 +7951,7 @@ app.get('/papawis', (req, res) => {
   const isLoggedIn = !!req.session?.playerRegId;
   let hasBalance = false;
   if (viewerPlayerId) {
-    hasBalance = getPlayerPapawisBalance(viewerPlayerId) > 0;
+    hasBalance = hasUnpaidCompletedPapawis(viewerPlayerId);
   }
 
   const origin = getRequestOrigin(req);
@@ -8002,12 +8002,15 @@ app.post('/papawis/:id/join', (req, res) => {
   if (!getPlayerById(playerId)) {
     return req.session.destroy(() => res.status(401).json({ error: 'Your session has expired. Please log in again.' }));
   }
-  // Scoped to Papawis-only charges/payments — a season fee or other non-Papawis balance
-  // shouldn't block signing up for a pickup game.
-  const papawisBalance = getPlayerPapawisBalance(playerId);
-  if (papawisBalance > 0) {
-    return res.status(403).json({ error: "You have an outstanding Papawis balance — clear it with an admin before joining." });
+  // Blocks on a specific unpaid slot from an already-closed-out game, not a netted ledger
+  // balance — a season fee or other non-Papawis balance was already excluded before this,
+  // but even within Papawis a netted balance could read <= 0 (one game's overpayment
+  // offsetting another's unpaid charge) while a real, concrete debt still sits unreconciled
+  // on one specific game. This checks the same paid_at admin actually sets via "Mark Paid".
+  if (hasUnpaidCompletedPapawis(playerId)) {
+    return res.status(403).json({ error: "You have an unpaid Papawis game — clear it with an admin before joining." });
   }
+  const papawisBalance = getPlayerPapawisBalance(playerId);
   // A probationary player with enough standing credit already on file (from a previous
   // deposit) skips the hold entirely — the floor is already covered, so there's nothing
   // left to wait on. Re-checked fresh on every join: once that credit's spent on a game's

@@ -297,7 +297,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
     } else if (!isLoggedIn) {
       actionHtml = `<a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--primary">Log in to join</a>`;
     } else if (hasBalance) {
-      actionHtml = `<div class="pw-hint pw-hint--warn">${ICON_LOCK} You have an outstanding balance — clear it with an admin before joining.</div>`;
+      actionHtml = `<div class="pw-hint pw-hint--warn">${ICON_LOCK} You have an unpaid Papawis game — clear it with an admin before joining.</div>`;
     } else {
       actionHtml = isFull
         ? `<button class="pw-btn pw-btn--ghost" data-action="join" data-game="${escHtml(game.id)}">Join waitlist</button>`
