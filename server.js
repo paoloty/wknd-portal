@@ -1415,19 +1415,6 @@ function memberSignupBanner(season) {
 </div>`;
 }
 
-function draftTeamBanner(season) {
-  return `<div class="member-signup-banner">
-  <div class="member-signup-banner__copy">
-    <span class="member-signup-banner__pill">
-      <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-      Season ${escHtml(String(season))} Teams
-    </span>
-    <span class="member-signup-banner__msg">Next season's team rosters are up.</span>
-  </div>
-  <a href="/my-team" class="member-signup-banner__cta">See your team →</a>
-</div>`;
-}
-
 function jerseyRequestBanner() {
   return `<div class="member-signup-banner">
   <div class="member-signup-banner__copy">
@@ -1574,26 +1561,9 @@ function renderPage(req, opts) {
     }
   }
 
-  // Draft team preview banner — shown to any signed-up player once admin has published
-  // next season's draft rosters (see /admin/season/teams/publish), so they don't have to
-  // stumble onto /my-team's URL by luck. Mutually exclusive with showSignupBanner: you can
-  // only have a roster assignment if you already have a signup.
-  let showDraftTeamBanner = false, draftTeamSeason = '';
-  if (isPlayer && !req.session?.isAdmin && opts.currentPath !== '/my-team') {
-    const sigSeason = getSetting('signup_target_season', '');
-    if (sigSeason && getSetting('season_roster_published', '') === sigSeason) {
-      const signup = getSeasonSignup(req.session.playerRegId, sigSeason);
-      if (signup && getSeasonRoster(sigSeason).some(r => r.signup_id === signup.id)) {
-        showDraftTeamBanner = true;
-        draftTeamSeason = sigSeason;
-      }
-    }
-  }
-
   // Jersey-request reminder — shown to any player admin has sent a jersey request to
   // (see /admin/season-signups/:id/request-jersey) who hasn't submitted yet, so a missed
-  // email or dismissed notification isn't the only way to rediscover it. Outranks the draft
-  // team banner below: it's an explicit ask from admin, not a general "come look" nudge.
+  // email or dismissed notification isn't the only way to rediscover it.
   let showJerseyRequestBanner = false;
   if (isPlayer && !req.session?.isAdmin && !opts.currentPath?.startsWith('/jersey-request')) {
     const sigSeason = getSetting('signup_target_season', '');
@@ -1606,7 +1576,7 @@ function renderPage(req, opts) {
   // Focused auth-style pages (register, login, season-signup, set-password) skip
   // every site-wide banner/ticker/balance-reminder — none of it is relevant on the
   // page that IS the CTA those banners would otherwise point at.
-  const bannerHtml = opts.minimalHeader ? '' : (showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showJerseyRequestBanner ? jerseyRequestBanner() : (showDraftTeamBanner ? draftTeamBanner(draftTeamSeason) : (showMini ? regMiniBanner() : ''))));
+  const bannerHtml = opts.minimalHeader ? '' : (showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showJerseyRequestBanner ? jerseyRequestBanner() : (showMini ? regMiniBanner() : '')));
 
   // Balance reminder — shown site-wide to a player with an outstanding balance, on top of
   // whatever other banner is already showing. Dismissal is per-amount and lives in the
@@ -2095,6 +2065,45 @@ function buildLeaderPlayers(season) {
   const records = getTeamRecords(season);
   const recordMap = Object.fromEntries(records.map(r => [r.team_id, r]));
   return players.map(p => ({ ...p, team_wins: recordMap[p.team_id]?.wins ?? 0, team_losses: recordMap[p.team_id]?.losses ?? 0 }));
+}
+
+// Homepage fallback for the League Leaders carousel during the gap between a new season's
+// roster being drafted and its first game being recorded (getLeaders() has nothing to show
+// yet — games_played is 0 for everyone). "Moved" is read off the live players.team_id, not
+// season_roster's own player_id (every roster row already has a player_id by the time a
+// season starts — new registrants get a real players row well before this point — so that
+// field can't tell new from returning anymore). Comparing against players.team_id still can,
+// since that only gets synced to match once the season actually starts being played:
+//   - no live team at all  → genuinely new to the league
+//   - live team differs    → moved from that team to this one
+//   - live team matches    → unchanged, not a "mover", excluded
+function buildRosterMovers(season) {
+  if (!season) return [];
+  const seasonTeams = getSeasonTeams(season);
+  const seasonTeamById = Object.fromEntries(seasonTeams.map(t => [t.id, t]));
+  const rosterRows = getSeasonRoster(season).filter(r => r.status === 'confirmed');
+  const liveTeams = getAllTeams();
+  const liveTeamById = Object.fromEntries(liveTeams.map(t => [t.id, t]));
+
+  const movers = [];
+  for (const row of rosterRows) {
+    const seasonTeam = seasonTeamById[row.team_id];
+    if (!seasonTeam || !row.player_id) continue;
+    const player = getPlayerById(row.player_id);
+    if (!player) continue;
+    const liveTeam = player.team_id ? liveTeamById[player.team_id] : null;
+    if (liveTeam && liveTeam.name.trim().toUpperCase() === seasonTeam.name.trim().toUpperCase()) continue; // unchanged
+    let positions = [];
+    try { positions = JSON.parse(row.positions || '[]'); } catch { positions = []; }
+    movers.push({
+      id: row.player_id,
+      name: row.full_name,
+      position: positions[0] || '',
+      teamName: seasonTeam.name,
+      fromTeamName: liveTeam ? liveTeam.name : '',
+    });
+  }
+  return movers;
 }
 
 // Resolves a URL ref (pretty slug OR raw entity ID) to a canonical entity ID.
@@ -4383,6 +4392,10 @@ app.get('/', (req, res) => {
 
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
   const leaderPlayers = buildLeaderPlayers(getPortalCurrentSeason());
+  // Only worth the extra queries when there's nothing for the leaders carousel to show —
+  // see buildRosterMovers' own comment for why this fires specifically right after a new
+  // season's roster goes up but before it has any recorded games.
+  const rosterMovers = leaderPlayers.length ? [] : buildRosterMovers(getSetting('signup_target_season', ''));
 
   const isHomepageLoggedIn = !!req.session?.isAdmin || !!req.session?.playerRegId;
   const regBanner = !isHomepageLoggedIn && getSetting('reg_open', '0') === '1'
@@ -4453,7 +4466,7 @@ app.get('/', (req, res) => {
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, leaderPlayers, regBanner, signupBanner, posts: homePosts, awardsGallery })
+    body: homePage({ teams, players, games, highlights, leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery })
   }));
 });
 
@@ -7122,7 +7135,6 @@ import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
 import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
 import { adminLivenessListBody } from './views/admin/liveness-list.js';
 import { adminSeasonTeamsBody } from './views/admin/season-teams.js';
-import { adminSeasonTeamsPreviewBody } from './views/admin/season-teams-preview.js';
 import { adminSeasonReviewBody } from './views/admin/season-review.js';
 
 app.get('/admin/seasons', requireAuth, (req, res) => {
@@ -7522,26 +7534,6 @@ app.post('/admin/season/teams/publish', requireAuth, express.json(), (req, res) 
   res.json({ ok: true });
 });
 
-// Read-only mirror of what a team head sees on /my-team, for every team at once — lets
-// admin check progress (sizes/numbers filled in, who's still missing one) without having
-// to impersonate each head individually.
-app.get('/admin/season/teams/preview', requireAuth, (req, res) => {
-  const sigSeason = getSetting('signup_target_season', '');
-  if (!sigSeason) return res.redirect('/admin/season');
-
-  const { seasonTeams, rosterRows, liveTeams, allHeads } = resolveMyTeamContext(sigSeason);
-  const rosterPublished  = getSetting('season_roster_published', '') === sigSeason;
-  const teamsWithRosters = seasonTeams.map(team => ({
-    team,
-    roster: buildTeamRosterView(team, rosterRows, liveTeams, allHeads),
-  }));
-
-  res.send(renderAdminPage(req, {
-    title: 'Team Preview — Head View',
-    currentPath: '/admin/season/teams',
-    body: adminSeasonTeamsPreviewBody({ sigSeason, teamsWithRosters, rosterPublished }),
-  }));
-});
 
 app.post('/admin/season/teams/create', requireAuth, express.json(), (req, res) => {
   const { season, name, color } = req.body || {};
@@ -8198,9 +8190,8 @@ function headPlayerIdsForSeasonTeam(team, liveTeams, allHeads) {
   return new Set(allHeads.filter(h => h.team_id === liveTeam.id).map(h => h.player_id));
 }
 
-// Shared by /my-team (a single team, for the logged-in viewer), POST /my-team/number
-// (validating a write), and the admin preview at /admin/season/teams/preview (every team
-// at once) — same shape everywhere so none of them can drift out of sync with each other.
+// Shared by /my-team (a single team, for the logged-in viewer) and POST /my-team/number
+// (validating a write) — same shape in both places so they can't drift out of sync.
 //
 // Three kinds of roster member, in order of how "locked" their number is:
 //   - stayed:  has a live player_id, same live team as this draft team    → number fixed
@@ -8346,10 +8337,10 @@ app.post('/my-team/number', express.json(), (req, res) => {
 });
 
 // ── Jersey-request flow: admin sends, player self-serves ─────────────────────────
-// Manually triggered by admin per player (see /admin/season/teams/preview) — a second
-// path onto the same jersey_number/jersey_top/jersey_shorts/pockets columns /my-team's
-// head flow writes, this time filled in by the player themselves via an emailed,
-// unauthenticated tokenized link (same pattern as /set-password's pw_token).
+// Manually triggered by admin per player from Season Signups — a second path onto the
+// same jersey_number/jersey_top/jersey_shorts/pockets columns /my-team's head flow writes,
+// this time filled in by the player themselves via an emailed, unauthenticated tokenized
+// link (same pattern as /set-password's pw_token).
 app.post('/admin/season-signups/:id/request-jersey', requireAuth, express.json(), (req, res) => {
   const signup = getSeasonSignupById(req.params.id);
   if (!signup) return res.status(404).json({ error: 'Signup not found.' });

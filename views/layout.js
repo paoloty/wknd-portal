@@ -110,15 +110,12 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   const myAccountItems = [
     { href: '/me', label: 'My Profile', active: onOwnProfile },
     { href: '/polls', label: 'Polls', active: currentPath.startsWith('/polls') },
-    // Open to every player, not just heads — visibility of the content itself (published or
-    // not, assigned or not) is handled server-side (/my-team), same pattern as Polls above.
-    { href: '/my-team', label: 'Team Preview', active: currentPath.startsWith('/my-team') },
     ...(isHead ? [
       { href: '/team',  label: 'My Team', active: currentPath.startsWith('/team') },
       { href: '/fines', label: 'Fines',   active: currentPath.startsWith('/fines') },
     ] : []),
   ];
-  const myAccountDropdown = dropdown('My Account', myAccountItems, [], onOwnProfile || currentPath.startsWith('/polls') || currentPath.startsWith('/my-team') || (isHead && (currentPath.startsWith('/fines') || currentPath.startsWith('/team'))));
+  const myAccountDropdown = dropdown('My Account', myAccountItems, [], onOwnProfile || currentPath.startsWith('/polls') || (isHead && (currentPath.startsWith('/fines') || currentPath.startsWith('/team'))));
 
   // Bell sits right after My Account (not before it) — folded into authLink itself
   // rather than inserted as a separate element at the nav render sites, so it always

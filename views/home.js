@@ -245,15 +245,25 @@ function leagueLeaders(players) {
 </div>`;
   }).filter(Boolean);
 
+  return cardCarousel(cards);
+}
+
+// Shared by leagueLeaders and rosterMoversCarousel — both just build a list of .leader-card
+// divs and hand them to this wrapper for the actual carousel chrome (prev/next buttons,
+// auto-advance, infinite-loop scroll). Kept generic over card content on purpose: whatever
+// swaps in for the (currently empty) leaders slot should look and behave identically.
+function cardCarousel(cards) {
+  if (!cards.length) return '';
+
   const CHEVRON_L = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
   const CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 
   return `<div class="leaders-carousel">
-  <button class="lc-nav lc-nav--prev" aria-label="Previous leaders">${CHEVRON_L}</button>
+  <button class="lc-nav lc-nav--prev" aria-label="Previous">${CHEVRON_L}</button>
   <div class="lc-track">
     ${cards.join('\n    ')}
   </div>
-  <button class="lc-nav lc-nav--next" aria-label="Next leaders">${CHEVRON_R}</button>
+  <button class="lc-nav lc-nav--next" aria-label="Next">${CHEVRON_R}</button>
 </div>
 <script>(function(){
   var wrap = document.currentScript.previousElementSibling;
@@ -289,6 +299,35 @@ function leagueLeaders(players) {
 
   resetTimer();
 })()</script>`;
+}
+
+// ── New / Traded Players ────────────────────────────────────────────────────────
+// Same card shell as League Leaders (see cardCarousel above), shown in its place while a
+// freshly-drafted season has no games yet to produce real stat leaders from — the big
+// 42px number slot that normally holds a stat instead holds the player's position, since a
+// jersey number is rarely assigned yet this early. movers come from server.js's
+// buildRosterMovers(): { id, name, position, teamName, fromTeamName } — fromTeamName is ''
+// for a player genuinely new to the league (never had a team before).
+function rosterMoversCarousel(movers) {
+  if (!movers.length) return '';
+
+  const cards = movers.map((m, i) => {
+    const teamName = String(m.teamName || '').toUpperCase();
+    const color = teamColor(teamName);
+    const isLight = teamName === 'WHITE';
+    const isNew = !m.fromTeamName;
+
+    return `<div class="card leader-card" data-index="${i}">
+  <span class="leader-cat">${isNew ? 'NEW' : 'TRADED'}</span>
+  <span class="leader-title">${isNew ? 'New to the League' : `From ${escHtml(String(m.fromTeamName).toUpperCase())}`}</span>
+  ${playerAvatar(m.id, m.name, color, { className: 'leader-avatar', link: true })}
+  <span class="leader-name">${playerLink(m.id, m.name, { upper: true })}</span>
+  <span class="team-chip leader-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
+  <span class="font-condensed leader-stat">${escHtml(m.position || '—')}</span>
+</div>`;
+  });
+
+  return cardCarousel(cards);
 }
 
 // ── Registration Banner ───────────────────────────────────────────────────────
@@ -362,7 +401,7 @@ function latestPosts(posts) {
 </style>`;
 }
 
-export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
+export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -378,7 +417,7 @@ export function homePage({ teams, players, games, highlights = [], leaderPlayers
 
 ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerBig(signupBanner) : ''}
 
-${leagueLeaders(leaderPlayers)}
+${leagueLeaders(leaderPlayers) || rosterMoversCarousel(rosterMovers)}
 
 ${latestPosts(posts)}`;
 }

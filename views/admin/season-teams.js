@@ -192,7 +192,6 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
     </div>
     <div class="flex items-center gap-2 flex-wrap">
       ${isStarted ? `<span class="text-[11px] font-bold px-3 py-1 rounded-full" style="background:#22c55e1a;color:#22c55e;border:1px solid #22c55e33">SEASON STARTED</span>` : ''}
-      ${!isSandbox ? `<a href="/admin/season/teams/preview" class="text-[12px] font-semibold px-3.5 py-1.5 rounded-md no-underline bg-transparent border border-admin-border text-slate-400 hover:text-slate-200">👁 Head View</a>` : ''}
       ${!isSandbox ? `<button id="publish-roster-btn" class="text-[11px] font-bold px-3 py-1 rounded-full cursor-pointer" data-published="${rosterPublished ? '1' : '0'}"
           style="${rosterPublished
             ? 'background:#22c55e1a;color:#22c55e;border:1px solid #22c55e33'
