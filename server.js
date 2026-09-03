@@ -3986,6 +3986,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       playerReportsEnabled: getSetting('player_reports_enabled', '0') === '1',
       awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
+      homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
       sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
     }),
   }));
@@ -3993,7 +3994,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'home_show_roster_moves',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -4391,11 +4392,13 @@ app.get('/', (req, res) => {
   );
 
   const highlights = buildHighlights(completedGames, playerMap, teamMap);
-  const leaderPlayers = buildLeaderPlayers(getPortalCurrentSeason());
-  // Only worth the extra queries when there's nothing for the leaders carousel to show —
-  // see buildRosterMovers' own comment for why this fires specifically right after a new
-  // season's roster goes up but before it has any recorded games.
-  const rosterMovers = leaderPlayers.length ? [] : buildRosterMovers(getSetting('signup_target_season', '') || getLatestRosterSeason());
+  // Homepage carousel is admin-picked (Visibility → "Homepage: New/Traded"), not
+  // auto-detected — a season can have real games recorded and still be too early for
+  // leaders to feel meaningful, or an admin may just want to spotlight the new roster for a
+  // while regardless of what data exists. Only the chosen side's queries actually run.
+  const showRosterMoves = getSetting('home_show_roster_moves', '0') === '1';
+  const leaderPlayers = showRosterMoves ? [] : buildLeaderPlayers(getPortalCurrentSeason());
+  const rosterMovers = showRosterMoves ? buildRosterMovers(getSetting('signup_target_season', '') || getLatestRosterSeason()) : [];
 
   const isHomepageLoggedIn = !!req.session?.isAdmin || !!req.session?.playerRegId;
   const regBanner = !isHomepageLoggedIn && getSetting('reg_open', '0') === '1'

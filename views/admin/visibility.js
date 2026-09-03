@@ -51,6 +51,7 @@ export function adminVisibilityBody({
   playerReportsEnabled = false,
   awardsEnabled = true,
   mvpEnabled = true,
+  homeShowRosterMoves = false,
   sectionSettings = {},
 } = {}) {
   const sectionRows = AWARD_SECTIONS.map(({ key, label }) => sectionRow({ key, label, on: sectionSettings[key] !== '0' })).join('');
@@ -120,6 +121,11 @@ export function adminVisibilityBody({
         label: 'MVP Race',
         sub: `Season MVP ladder with AI-written player cases (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code>)`,
       })}
+      ${featureRow({
+        id: 'vis-home-roster-moves', dataKey: 'home_show_roster_moves', checked: homeShowRosterMoves, msgId: 'vis-msg-home_show_roster_moves',
+        label: 'Homepage: New/Traded',
+        sub: `Swaps the homepage's League Leaders carousel for a New/Traded Players one — for early in a season, before there's enough game data for real leaders. Off shows League Leaders as usual (empty if the current season has no games yet).`,
+      })}
     </tbody>
   </table>
 </div>
@@ -155,6 +161,7 @@ export function adminVisibilityBody({
   bindToggle('vis-player-reports-enabled', 'player_reports_enabled', 'vis-msg-player_reports_enabled');
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
+  bindToggle('vis-home-roster-moves', 'home_show_roster_moves', 'vis-msg-home_show_roster_moves');
 
   document.querySelectorAll('.vis-awards-child').forEach(function(input) {
     input.addEventListener('change', async function() {
