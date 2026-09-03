@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, pageHeader } from './layout.js';
 
 function parsePositions(raw) {
   try { return JSON.parse(raw || '[]'); } catch { return []; }
@@ -58,8 +58,11 @@ function rosterRow(p, teamColor, viewerIsHead) {
 }
 
 export function myTeamPage({ notPublished = false, notAssigned = false, team = null, roster = [], season = '', viewerIsHead = false } = {}) {
+  const header = pageHeader({ title: 'My Team', description: 'Your roster for the current season.' });
+
   if (notPublished) {
     return `<div class="page-content">
+      ${header}
       <div class="card" style="padding:32px;text-align:center;color:var(--text-muted)">
         Team assignments for next season haven't been published yet — check back soon.
       </div>
@@ -67,6 +70,7 @@ export function myTeamPage({ notPublished = false, notAssigned = false, team = n
   }
   if (notAssigned) {
     return `<div class="page-content">
+      ${header}
       <div class="card" style="padding:32px;text-align:center;color:var(--text-muted)">
         You're not on a team roster for Season ${escHtml(String(season))} yet.
       </div>
@@ -76,13 +80,8 @@ export function myTeamPage({ notPublished = false, notAssigned = false, team = n
   const rows = roster.map(p => rosterRow(p, team?.color, viewerIsHead)).join('');
 
   return `<div class="page-content">
-    <div class="section-header" style="margin-bottom:16px">
-      <h2><span class="team-dot" style="background:${escHtml(team?.color || '#64748b')}"></span> ${escHtml(team?.name || 'My Team')}</h2>
-    </div>
-    <p class="mt-intro">
-      Season ${escHtml(String(season))} team preview — rosters aren't final until the season officially starts.
-      ${viewerIsHead ? ' As team head, you can fill in jersey numbers for new players, and for traded players whose old number is already taken here, below.' : ''}
-    </p>
+    ${pageHeader({ title: 'My Team', description: `Season ${escHtml(String(season))} roster${team?.name ? ` — ${escHtml(team.name)}` : ''}.` })}
+    ${viewerIsHead ? `<p class="mt-intro">As team head, you can fill in jersey numbers for new players, and for traded players whose old number is already taken, below.</p>` : ''}
     <div class="card mt-card">
       <div class="mt-roster">${rows}</div>
     </div>
