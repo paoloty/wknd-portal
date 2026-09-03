@@ -86,7 +86,7 @@ import {
   upsertAssessmentReview, getAssessmentReviews, getAssessmentReviewsBySeason, deleteAssessmentReview,
   playerPlayedSeason, getPlayerCurrentTeam,
   getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
-  getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber,
+  getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber, getLatestRosterSeason,
   setJerseyRequestToken, getSeasonSignupByJerseyToken, submitJerseyDetails, setSeasonSignupShorts,
   setSeasonSignupChargeAdjustments,
   getGameCountsBySeason, getSignupStatsBySeason, getAllSeasonQuotas,
@@ -4395,7 +4395,7 @@ app.get('/', (req, res) => {
   // Only worth the extra queries when there's nothing for the leaders carousel to show —
   // see buildRosterMovers' own comment for why this fires specifically right after a new
   // season's roster goes up but before it has any recorded games.
-  const rosterMovers = leaderPlayers.length ? [] : buildRosterMovers(getSetting('signup_target_season', ''));
+  const rosterMovers = leaderPlayers.length ? [] : buildRosterMovers(getSetting('signup_target_season', '') || getLatestRosterSeason());
 
   const isHomepageLoggedIn = !!req.session?.isAdmin || !!req.session?.playerRegId;
   const regBanner = !isHomepageLoggedIn && getSetting('reg_open', '0') === '1'
