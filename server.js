@@ -2097,7 +2097,10 @@ function buildRosterMovers(season) {
     try { positions = JSON.parse(row.positions || '[]'); } catch { positions = []; }
     movers.push({
       id: row.player_id,
-      name: row.full_name,
+      // player.name (the site's one canonical display name, curated by admin) rather than
+      // row.full_name (whatever the registrant typed on their own signup form) — same source
+      // every other page on the site already uses for this player.
+      name: player.name,
       position: positions[0] || '',
       teamName: seasonTeam.name,
       fromTeamName: liveTeam ? liveTeam.name : '',

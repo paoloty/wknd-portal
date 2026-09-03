@@ -248,10 +248,11 @@ function leagueLeaders(players) {
   return cardCarousel(cards);
 }
 
-// Shared by leagueLeaders and rosterMoversCarousel — both just build a list of .leader-card
-// divs and hand them to this wrapper for the actual carousel chrome (prev/next buttons,
-// auto-advance, infinite-loop scroll). Kept generic over card content on purpose: whatever
-// swaps in for the (currently empty) leaders slot should look and behave identically.
+// Shared by leagueLeaders and rosterMoversCarousel — both just build a list of cards (each
+// carrying its own data-index) and hand them to this wrapper for the actual carousel chrome
+// (prev/next buttons, auto-advance, infinite-loop scroll). The card markup itself is free to
+// differ between the two (see .mover-card below) — this only cares that each top-level child
+// of the track has a data-index attribute.
 function cardCarousel(cards) {
   if (!cards.length) return '';
 
@@ -270,7 +271,7 @@ function cardCarousel(cards) {
   var track = wrap.querySelector('.lc-track');
   var btnP = wrap.querySelector('.lc-nav--prev');
   var btnN = wrap.querySelector('.lc-nav--next');
-  var origCards = Array.from(track.querySelectorAll('.leader-card'));
+  var origCards = Array.from(track.querySelectorAll('[data-index]'));
   var n = origCards.length;
   origCards.forEach(function(c){ track.appendChild(c.cloneNode(true)); });
   var current = 0;
@@ -302,32 +303,59 @@ function cardCarousel(cards) {
 }
 
 // ── New / Traded Players ────────────────────────────────────────────────────────
-// Same card shell as League Leaders (see cardCarousel above), shown in its place while a
-// freshly-drafted season has no games yet to produce real stat leaders from — the big
-// 42px number slot that normally holds a stat instead holds the player's position, since a
-// jersey number is rarely assigned yet this early. movers come from server.js's
-// buildRosterMovers(): { id, name, position, teamName, fromTeamName } — fromTeamName is ''
-// for a player genuinely new to the league (never had a team before).
+// Shown in League Leaders' place (see the admin Visibility switch) — its own card design
+// rather than a reskin of .leader-card, since the interesting fact here is a status (new to
+// the league / moved teams) and a team change, not a single stat number. The NEW/TRADED
+// badge is the same green/blue used for the same two states on /my-team's roster rows, and
+// a traded player's card shows the actual old-team → new-team transition rather than just
+// prose. movers come from server.js's buildRosterMovers(): { id, name, position, teamName,
+// fromTeamName } — fromTeamName is '' for a player genuinely new to the league.
+function teamPill(teamName) {
+  const upper = String(teamName || '').toUpperCase();
+  const color = teamColor(upper);
+  const isLight = upper === 'WHITE';
+  return `<span class="team-chip mover-pill" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(upper)}</span>`;
+}
+
 function rosterMoversCarousel(movers) {
   if (!movers.length) return '';
+  const DOT = `<svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>`;
+  const ARROW = `<svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8 1l4 4-4 4"/></svg>`;
 
   const cards = movers.map((m, i) => {
-    const teamName = String(m.teamName || '').toUpperCase();
-    const color = teamColor(teamName);
-    const isLight = teamName === 'WHITE';
     const isNew = !m.fromTeamName;
+    const avatarColor = teamColor(String(m.teamName || '').toUpperCase());
 
-    return `<div class="card leader-card" data-index="${i}">
-  <span class="leader-cat">${isNew ? 'NEW' : 'TRADED'}</span>
-  <span class="leader-title">${isNew ? 'New to the League' : `From ${escHtml(String(m.fromTeamName).toUpperCase())}`}</span>
-  ${playerAvatar(m.id, m.name, color, { className: 'leader-avatar', link: true })}
-  <span class="leader-name">${playerLink(m.id, m.name, { upper: true })}</span>
-  <span class="team-chip leader-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
-  <span class="font-condensed leader-stat">${escHtml(m.position || '—')}</span>
+    return `<div class="card mover-card" data-index="${i}">
+  <span class="mover-badge mover-badge--${isNew ? 'new' : 'traded'}">${DOT} ${isNew ? 'New' : 'Traded'}</span>
+  ${playerAvatar(m.id, m.name, avatarColor, { className: 'mover-avatar', link: true })}
+  <span class="mover-name">${playerLink(m.id, m.name, { upper: true })}</span>
+  <div class="mover-transition">
+    ${isNew ? '' : `${teamPill(m.fromTeamName)}<span class="mover-arrow">${ARROW}</span>`}
+    ${teamPill(m.teamName)}
+  </div>
+  <span class="font-condensed mover-pos">${escHtml(m.position || '—')}</span>
 </div>`;
   });
 
-  return cardCarousel(cards);
+  return cardCarousel(cards) + `<style>
+.mover-card { scroll-snap-align: start; flex-shrink: 0; width: calc((100% - 5 * 14px) / 6); padding: 20px 16px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.mover-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+.mover-badge--new { background: rgba(34,197,94,.1); color: #22c55e; border: 1px solid rgba(34,197,94,.3); }
+.mover-badge--traded { background: rgba(59,130,246,.1); color: #3b82f6; border: 1px solid rgba(59,130,246,.3); }
+.mover-avatar { width: 64px; height: 64px; border-radius: 50%; background: #181d28; border: 2px solid; display: flex; align-items: center; justify-content: center; margin-bottom: 13px; position: relative; overflow: hidden; }
+.mover-avatar .font-condensed { font-size: 26px; color: #cdd3de; }
+.mover-name { font-size: 13px; font-weight: 700; color: #f4f6fa; margin-bottom: 12px; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mover-transition { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+.mover-pill { align-self: center; }
+.mover-arrow { color: var(--text-subtle); display: flex; flex-shrink: 0; }
+.mover-pos { font-size: 34px; font-weight: 800; line-height: 1; color: var(--amber); }
+@media (max-width: 1100px) { .mover-card { width: calc((100% - 3 * 14px) / 4); } }
+@media (max-width: 640px) {
+  .mover-card { width: calc((100% - 2 * 14px) / 3); }
+  .mover-transition { flex-wrap: wrap; justify-content: center; }
+}
+</style>`;
 }
 
 // ── Registration Banner ───────────────────────────────────────────────────────
