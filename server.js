@@ -2082,8 +2082,19 @@ function buildRosterMovers(season) {
   const seasonTeams = getSeasonTeams(season);
   const seasonTeamById = Object.fromEntries(seasonTeams.map(t => [t.id, t]));
   const rosterRows = getSeasonRoster(season).filter(r => r.status === 'confirmed');
-  const liveTeams = getAllTeams();
-  const liveTeamById = Object.fromEntries(liveTeams.map(t => [t.id, t]));
+
+  // Compare against last season's own roster, not the live players table — once a season
+  // is started, players.team_id gets synced to match this season's roster (see the "Start
+  // Season" charge flow), which would make every player look "unchanged" here from that
+  // point on. Last season's roster is a fixed snapshot that isn't touched by that sync.
+  const prevSeason = String(Number(season) - 1);
+  const prevSeasonTeamById = Object.fromEntries(getSeasonTeams(prevSeason).map(t => [t.id, t]));
+  const prevTeamNameByPlayerId = {};
+  for (const row of getSeasonRoster(prevSeason)) {
+    if (row.status !== 'confirmed' || !row.player_id) continue;
+    const team = prevSeasonTeamById[row.team_id];
+    if (team) prevTeamNameByPlayerId[row.player_id] = team.name;
+  }
 
   const movers = [];
   for (const row of rosterRows) {
@@ -2091,8 +2102,8 @@ function buildRosterMovers(season) {
     if (!seasonTeam || !row.player_id) continue;
     const player = getPlayerById(row.player_id);
     if (!player) continue;
-    const liveTeam = player.team_id ? liveTeamById[player.team_id] : null;
-    if (liveTeam && liveTeam.name.trim().toUpperCase() === seasonTeam.name.trim().toUpperCase()) continue; // unchanged
+    const fromTeamName = prevTeamNameByPlayerId[row.player_id] || '';
+    if (fromTeamName && fromTeamName.trim().toUpperCase() === seasonTeam.name.trim().toUpperCase()) continue; // unchanged
     let positions = [];
     try { positions = JSON.parse(row.positions || '[]'); } catch { positions = []; }
     movers.push({
@@ -2103,7 +2114,7 @@ function buildRosterMovers(season) {
       name: player.name,
       position: positions[0] || '',
       teamName: seasonTeam.name,
-      fromTeamName: liveTeam ? liveTeam.name : '',
+      fromTeamName,
     });
   }
   return movers;
