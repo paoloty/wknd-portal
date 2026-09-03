@@ -56,7 +56,7 @@ import {
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
   getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
   getGameById, getGameDetailStats, getGameStats,
-  getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam,
+  getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam, getPlayerLastTeamIdBeforeSeason,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
   getPlayerCareerHighs, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
   getPlayerStatsByType,
@@ -2082,19 +2082,8 @@ function buildRosterMovers(season) {
   const seasonTeams = getSeasonTeams(season);
   const seasonTeamById = Object.fromEntries(seasonTeams.map(t => [t.id, t]));
   const rosterRows = getSeasonRoster(season).filter(r => r.status === 'confirmed');
-
-  // Compare against last season's own roster, not the live players table — once a season
-  // is started, players.team_id gets synced to match this season's roster (see the "Start
-  // Season" charge flow), which would make every player look "unchanged" here from that
-  // point on. Last season's roster is a fixed snapshot that isn't touched by that sync.
-  const prevSeason = String(Number(season) - 1);
-  const prevSeasonTeamById = Object.fromEntries(getSeasonTeams(prevSeason).map(t => [t.id, t]));
-  const prevTeamNameByPlayerId = {};
-  for (const row of getSeasonRoster(prevSeason)) {
-    if (row.status !== 'confirmed' || !row.player_id) continue;
-    const team = prevSeasonTeamById[row.team_id];
-    if (team) prevTeamNameByPlayerId[row.player_id] = team.name;
-  }
+  const liveTeams = getAllTeams();
+  const liveTeamById = Object.fromEntries(liveTeams.map(t => [t.id, t]));
 
   const movers = [];
   for (const row of rosterRows) {
@@ -2102,8 +2091,14 @@ function buildRosterMovers(season) {
     if (!seasonTeam || !row.player_id) continue;
     const player = getPlayerById(row.player_id);
     if (!player) continue;
-    const fromTeamName = prevTeamNameByPlayerId[row.player_id] || '';
-    if (fromTeamName && fromTeamName.trim().toUpperCase() === seasonTeam.name.trim().toUpperCase()) continue; // unchanged
+    // "Team as of their most recent actual game before this season" rather than the live
+    // players table — once a season is started, players.team_id already gets synced to
+    // match this season's roster (see the "Start Season" flow), which would make every
+    // player look "unchanged" here from that point on. Game history is untouched by that
+    // sync and, unlike season_roster, goes back to before the draft tool even existed.
+    const lastTeamId = getPlayerLastTeamIdBeforeSeason(row.player_id, season);
+    const lastTeam = lastTeamId ? liveTeamById[lastTeamId] : null;
+    if (lastTeam && lastTeam.name.trim().toUpperCase() === seasonTeam.name.trim().toUpperCase()) continue; // unchanged
     let positions = [];
     try { positions = JSON.parse(row.positions || '[]'); } catch { positions = []; }
     movers.push({
@@ -2114,7 +2109,7 @@ function buildRosterMovers(season) {
       name: player.name,
       position: positions[0] || '',
       teamName: seasonTeam.name,
-      fromTeamName,
+      fromTeamName: lastTeam ? lastTeam.name : '',
     });
   }
   return movers;
