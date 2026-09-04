@@ -702,6 +702,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     <span class="agm-sep">·</span>
     <span>${game.location ? escHtml(game.location) : 'No location set'}</span>
     ${isOpen ? `<button id="pw-edit-location-btn" type="button" class="agm-view-link" style="background:none;border:none;cursor:pointer;padding:0">✎ Edit</button>` : ''}
+    ${game.location && !courts.find(c => c.name === game.location)?.image_url ? `<button id="pw-refresh-map-btn" type="button" class="agm-view-link" style="background:none;border:none;cursor:pointer;padding:0">🔄 Refresh map</button><span id="pw-refresh-map-status" class="text-xs text-slate-500"></span>` : ''}
     <span class="agm-sep">·</span>
     ${statusBadge(game)}
     ${isScheduled ? `<span class="text-xs text-slate-500">Sign-ups open ${fmtDate(addDaysStr(game.date, -game.open_days_before))}, 8:00 AM</span>` : ''}
@@ -1066,6 +1067,27 @@ ${isOpen ? (() => {
         else { locationErrEl.textContent = d.error || 'Failed to save.'; locationErrEl.hidden = false; btn.disabled = false; btn.innerHTML = orig; }
       })
       .catch(function() { locationErrEl.textContent = 'Network error.'; locationErrEl.hidden = false; btn.disabled = false; btn.innerHTML = orig; });
+    });
+  }
+
+  var refreshMapBtn = document.getElementById('pw-refresh-map-btn');
+  if (refreshMapBtn) {
+    var refreshMapStatus = document.getElementById('pw-refresh-map-status');
+    refreshMapBtn.addEventListener('click', function() {
+      refreshMapBtn.disabled = true;
+      refreshMapStatus.style.color = 'var(--text-muted, #64748b)';
+      refreshMapStatus.textContent = 'Looking up…';
+      fetch('/admin/papawis/' + gameId + '/refresh-map', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          refreshMapBtn.disabled = false;
+          if (d.ok) { refreshMapStatus.style.color = '#22c55e'; refreshMapStatus.textContent = 'Map ready — refresh the public page to see it.'; }
+          else { refreshMapStatus.style.color = '#f87171'; refreshMapStatus.textContent = d.error || 'Failed.'; }
+        })
+        .catch(function() {
+          refreshMapBtn.disabled = false;
+          refreshMapStatus.style.color = '#f87171'; refreshMapStatus.textContent = 'Network error.';
+        });
     });
   }
 

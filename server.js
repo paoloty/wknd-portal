@@ -8033,22 +8033,27 @@ async function buildPapawisMapImage(lat, lon) {
 // and every later render just reads the cache with no network call at all. Called
 // fire-and-forget from GET /papawis below — never awaited there, so a location with no
 // cache entry yet simply shows no map banner for that one render and picks it up on the next.
+// Returns { ok, error } so the admin "Refresh map" button (below) can actually surface why a
+// given location failed — GET /papawis itself ignores the return value entirely.
 async function geocodePapawisLocation(text) {
   const query = String(text || '').trim();
-  if (!query) return;
+  if (!query) return { ok: false, error: 'No location set.' };
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
     const r = await fetch(url, {
       headers: { 'User-Agent': PAPAWIS_MAP_USER_AGENT },
       signal: AbortSignal.timeout(5000),
     });
-    if (!r.ok) return;
+    if (!r.ok) return { ok: false, error: `Map lookup failed (HTTP ${r.status}).` };
     const [hit] = await r.json();
-    if (!hit) return;
+    if (!hit) return { ok: false, error: 'No match found for this address.' };
     const lat = Number(hit.lat), lon = Number(hit.lon);
     const mapImage = await buildPapawisMapImage(lat, lon).catch(() => '');
     setPapawisLocationGeocode(query, lat, lon, mapImage);
-  } catch { /* best-effort — falls back to no banner until a later attempt succeeds */ }
+    return mapImage ? { ok: true } : { ok: false, error: 'Found the address, but the map image failed to build.' };
+  } catch (e) {
+    return { ok: false, error: e.name === 'TimeoutError' ? 'Map service timed out.' : 'Network error contacting map service.' };
+  }
 }
 
 // ── Papawis (pickup games) ─────────────────────────────────────────────────────
@@ -9163,6 +9168,18 @@ app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) 
   if (game.status !== 'open') return res.status(400).json({ error: 'Only an open papawis can have its location changed.' });
   setPapawisGameLocation(req.params.id, req.body?.location);
   res.json({ ok: true });
+});
+
+// Manual, synchronous retry of the map banner's geocode/composite step — GET /papawis only
+// ever fires this off in the background and silently gives up on failure, so there's no other
+// way to see *why* a given location isn't getting a map (bad/ambiguous address, the map
+// service being unreachable, etc). Always re-runs even if a cache entry already exists, so
+// it also doubles as "regenerate the map" if a location's address text gets corrected later.
+app.post('/admin/papawis/:id/refresh-map', requireAuth, async (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  const result = await geocodePapawisLocation(game.location);
+  res.json(result);
 });
 
 // Saves the "Close out" calculator's breakdown without completing/charging — lets an admin
