@@ -110,6 +110,7 @@ import {
   lockPapawisSignups, unlockPapawisSignups,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
+  getPapawisLocationGeocode, setPapawisLocationGeocode,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
   getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
@@ -7960,6 +7961,96 @@ app.post('/admin/season-signups/:id/resend-season-email', requireAuth, express.j
   }
 });
 
+const PAPAWIS_MAP_USER_AGENT = 'WKND-Basketball-Portal/1.0 (contact: paolo.ty@gmail.com)';
+const PAPAWIS_MAP_ZOOM = 15;
+const PAPAWIS_MAP_TILE = 256;
+const PAPAWIS_MAP_CROP_W = 512;
+const PAPAWIS_MAP_CROP_H = 240;
+
+// Standard slippy-map projection: fractional tile x/y a lon/lat falls at, at a given zoom.
+function lonLatToTileFrac(lon, lat, zoom) {
+  const n = 2 ** zoom;
+  const x = (lon + 180) / 360 * n;
+  const latRad = lat * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+  return { x, y };
+}
+
+async function fetchOsmTile(z, x, y) {
+  try {
+    const r = await fetch(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`, {
+      headers: { 'User-Agent': PAPAWIS_MAP_USER_AGENT },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return null;
+    return Buffer.from(await r.arrayBuffer());
+  } catch { return null; }
+}
+
+// Composites the 3x3 grid of raw OSM tiles around a point into one banner image, cropped
+// so the point sits dead-center regardless of where it falls within its own tile (a 3x3
+// grid guarantees the point is always in the middle tile, which leaves enough margin on
+// every side for a centered 512x240 crop — see the crop-bounds math below). This hits OSM's
+// own tile server rather than a third-party "static map" wrapper — the wrapper this
+// originally used (staticmap.openstreetmap.de) has gone offline — and only ever once per
+// unique venue, since the result is cached forever by the caller.
+async function buildPapawisMapImage(lat, lon) {
+  const z = PAPAWIS_MAP_ZOOM;
+  const { x: fx, y: fy } = lonLatToTileFrac(lon, lat, z);
+  const tileX = Math.floor(fx), tileY = Math.floor(fy);
+  const tiles = [];
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const buf = await fetchOsmTile(z, tileX + dx, tileY + dy);
+      if (buf) tiles.push({ input: buf, left: (dx + 1) * PAPAWIS_MAP_TILE, top: (dy + 1) * PAPAWIS_MAP_TILE });
+    }
+  }
+  if (!tiles.length) return '';
+  const canvasSize = PAPAWIS_MAP_TILE * 3;
+  const markerPxX = (fx - (tileX - 1)) * PAPAWIS_MAP_TILE;
+  const markerPxY = (fy - (tileY - 1)) * PAPAWIS_MAP_TILE;
+  const left = Math.max(0, Math.min(canvasSize - PAPAWIS_MAP_CROP_W, Math.round(markerPxX - PAPAWIS_MAP_CROP_W / 2)));
+  const top  = Math.max(0, Math.min(canvasSize - PAPAWIS_MAP_CROP_H, Math.round(markerPxY - PAPAWIS_MAP_CROP_H / 2)));
+  // Two separate sharp pipelines, not one chained call — sharp errors ("Image to composite
+  // must have same dimensions or smaller") when .extract() follows .composite() directly in
+  // the same pipeline, confirmed by testing; finalizing the composite to a buffer first and
+  // extracting from that in a fresh pipeline works.
+  const composited = await sharp({ create: { width: canvasSize, height: canvasSize, channels: 3, background: { r: 238, g: 238, b: 232 } } })
+    .composite(tiles)
+    .png()
+    .toBuffer();
+  const out = await sharp(composited)
+    .extract({ left, top, width: PAPAWIS_MAP_CROP_W, height: PAPAWIS_MAP_CROP_H })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  return 'data:image/jpeg;base64,' + out.toString('base64');
+}
+
+// Nominatim (OpenStreetMap's own geocoder) — free and keyless, but its usage policy
+// requires a descriptive User-Agent and forbids hammering it, so every result (coordinates
+// + the composited map image built from them) is cached in papawis_location_geocode
+// (lib/portal-db.js) keyed by the location text: a given venue is only ever looked up once,
+// and every later render just reads the cache with no network call at all. Called
+// fire-and-forget from GET /papawis below — never awaited there, so a location with no
+// cache entry yet simply shows no map banner for that one render and picks it up on the next.
+async function geocodePapawisLocation(text) {
+  const query = String(text || '').trim();
+  if (!query) return;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+    const r = await fetch(url, {
+      headers: { 'User-Agent': PAPAWIS_MAP_USER_AGENT },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return;
+    const [hit] = await r.json();
+    if (!hit) return;
+    const lat = Number(hit.lat), lon = Number(hit.lon);
+    const mapImage = await buildPapawisMapImage(lat, lon).catch(() => '');
+    setPapawisLocationGeocode(query, lat, lon, mapImage);
+  } catch { /* best-effort — falls back to no banner until a later attempt succeeds */ }
+}
+
 // ── Papawis (pickup games) ─────────────────────────────────────────────────────
 app.get('/papawis', (req, res) => {
   if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).send(
@@ -7968,10 +8059,16 @@ app.get('/papawis', (req, res) => {
   const games = getPapawisGames();
   // Location is free text on the game, matched to a court by name — same lookup the admin
   // "Close out" calculator uses for its rate default. No match, or a matched court with no
-  // photo on file, both just mean the card falls back to its plain (no-banner) layout.
+  // photo on file, both just mean the card falls back to a default map banner instead (or,
+  // if the location hasn't been geocoded yet either, the old plain no-banner layout).
   for (const g of games) {
     const court = getPapawisCourtByName(g.location);
     g.court_image_id = court?.image_url ? court.id : null;
+    if (!g.court_image_id && g.location) {
+      const cached = getPapawisLocationGeocode(g.location);
+      if (cached?.map_image) { g.has_map = true; }
+      else geocodePapawisLocation(g.location);
+    }
   }
   const signupsByGame = Object.fromEntries(games.map(g => [g.id, getPapawisSignups(g.id)]));
   const viewerPlayerId = req.session?.playerPlayerId || null;
@@ -8755,6 +8852,13 @@ app.post('/admin/papawis/courts/:id/photo', requireAuth, express.json({ limit: '
 app.get('/api/papawis-court/:id/photo', async (req, res) => {
   const court = getPapawisCourtById(req.params.id);
   await sendPlayerPhotoUrl(res, court?.image_url);
+});
+
+// A query param, not a path segment — a free-text location can contain '/' and other
+// characters that don't survive as an Express route param.
+app.get('/api/papawis-map/photo', async (req, res) => {
+  const cached = getPapawisLocationGeocode(req.query.loc || '');
+  await sendPlayerPhotoUrl(res, cached?.map_image);
 });
 
 app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {

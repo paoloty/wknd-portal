@@ -311,13 +311,23 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
 
   const cardStateClass = isJoined ? ' pw-card--joined' : signupOpen ? ' pw-card--open' : '';
   // Court's photo, matched by (free-text) location name server-side — see the /papawis route.
-  // No match, or a matched court with nothing uploaded yet, both just mean no banner — and in
-  // that case the status badge/location stay exactly where they've always been (titlebar/meta
-  // line) rather than left floating with nothing to sit on.
+  // No match, or a matched court with nothing uploaded yet, falls back to a dark map banner
+  // centered on the location instead (also geocoded server-side, best-effort — a location
+  // not geocoded yet just means no banner at all, same as the old behavior). Either way, once
+  // there's a banner the status badge/location move into it rather than sitting in the
+  // titlebar/meta line.
   const hasPhoto = !!game.court_image_id;
-  const photoBanner = hasPhoto
-    ? `<div class="pw-photo">
-        <img src="/api/papawis-court/${escHtml(game.court_image_id)}/photo" alt="" loading="lazy">
+  const hasMap = !hasPhoto && !!game.has_map;
+  const hasBanner = hasPhoto || hasMap;
+  const bannerImg = hasPhoto
+    ? `<img src="/api/papawis-court/${escHtml(game.court_image_id)}/photo" alt="" loading="lazy">`
+    : hasMap
+      ? `<img class="pw-photo-map-img" src="/api/papawis-map/photo?loc=${encodeURIComponent(game.location)}" alt="" loading="lazy">
+        <span class="pw-photo-map-pin"><svg width="26" height="26" viewBox="0 0 14 14" fill="currentColor"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.9" fill="#0c0f16"/></svg></span>`
+      : '';
+  const photoBanner = hasBanner
+    ? `<div class="pw-photo${hasMap ? ' pw-photo--map' : ''}">
+        ${bannerImg}
         <div class="pw-photo-scrim"></div>
         <span class="pw-photo-status">${statusBadge}</span>
         ${game.location ? `<div class="pw-photo-loc"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.7"/></svg><span class="pw-photo-loc-text">${escHtml(game.location)}</span></div>` : ''}
@@ -327,10 +337,10 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
     ${photoBanner}
     <div class="pw-card-titlebar">
       <div class="pw-card-name">${escHtml(game.title || 'Papawis')}</div>
-      ${hasPhoto ? '' : statusBadge}
+      ${hasBanner ? '' : statusBadge}
     </div>
     <div class="pw-card-body">
-      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${(!hasPhoto && game.location) ? ` · ${escHtml(game.location)}` : ''}</div>
+      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${(!hasBanner && game.location) ? ` · ${escHtml(game.location)}` : ''}</div>
 
       <div class="pw-meter-row">
         <span class="pw-meter-label">SLOTS</span>
@@ -433,6 +443,10 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
 .pw-photo-status { position: absolute; top: 10px; right: 10px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.5)); }
 .pw-photo-loc { position: absolute; left: 14px; bottom: 10px; right: 14px; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #f4f6f9; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
 .pw-photo-loc svg { flex-shrink: 0; opacity: .95; }
+/* Default banner when no court photo is on file — a plain (light) OSM map image, inverted
+   to fake a dark theme since no keyed dark-tile provider is wired up. */
+.pw-photo--map .pw-photo-map-img { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.85) saturate(.85); }
+.pw-photo-map-pin { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); color: var(--amber); filter: drop-shadow(0 2px 5px rgba(0,0,0,.5)); }
 .pw-photo-loc-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pw-card-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 18px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
 .pw-card--open .pw-card-titlebar { background: rgba(245,147,50,.05); border-bottom-color: rgba(245,147,50,.2); }
