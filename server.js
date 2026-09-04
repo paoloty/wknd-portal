@@ -8054,18 +8054,34 @@ async function buildPapawisMapImage(lat, lon) {
 // cache entry yet simply shows no map banner for that one render and picks it up on the next.
 // Returns { ok, error } so the admin "Refresh map" button (below) can actually surface why a
 // given location failed — GET /papawis itself ignores the return value entirely.
+async function nominatimSearch(query) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+  const r = await fetch(url, {
+    headers: { 'User-Agent': PAPAWIS_MAP_USER_AGENT },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!r.ok) return { error: `Map lookup failed (HTTP ${r.status}).` };
+  const [hit] = await r.json();
+  return hit ? { hit } : { error: 'No match found for this address.' };
+}
+
 async function geocodePapawisLocation(text) {
   const query = String(text || '').trim();
   if (!query) return { ok: false, error: 'No location set.' };
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
-    const r = await fetch(url, {
-      headers: { 'User-Agent': PAPAWIS_MAP_USER_AGENT },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!r.ok) return { ok: false, error: `Map lookup failed (HTTP ${r.status}).` };
-    const [hit] = await r.json();
-    if (!hit) return { ok: false, error: 'No match found for this address.' };
+    let { hit, error } = await nominatimSearch(query);
+    // Small/private venues — most courts here — are rarely mapped as their own point in
+    // OSM, so a literal search for "<venue name>, <city>" often finds nothing even though
+    // the city/area on its own resolves fine. Falling back to just the text after the last
+    // comma trades pinpoint accuracy for "an area-level map beats no map at all."
+    if (!hit) {
+      const lastComma = query.lastIndexOf(',');
+      const fallbackQuery = lastComma > -1 ? query.slice(lastComma + 1).trim() : '';
+      if (fallbackQuery && fallbackQuery !== query) {
+        ({ hit, error } = await nominatimSearch(fallbackQuery));
+      }
+    }
+    if (!hit) return { ok: false, error: error || 'No match found for this address.' };
     const lat = Number(hit.lat), lon = Number(hit.lon);
     const mapImage = await buildPapawisMapImage(lat, lon).catch(() => '');
     setPapawisLocationGeocode(query, lat, lon, mapImage);
