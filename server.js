@@ -8019,8 +8019,21 @@ async function buildPapawisMapImage(lat, lon) {
     .composite(tiles)
     .png()
     .toBuffer();
+  // Baked in here (not a client-side CSS filter) so the cached image itself already matches
+  // the site — grayscale strips OSM's own street-map colors, negate flips its light
+  // background dark, then tint recolors every pixel toward the site's navy (border token
+  // #1e293b-ish), so the result reads as "near-black navy background, muted slate roads"
+  // instead of a generic inverted map. .toColourspace('srgb') is required before the JPEG
+  // encode — without it, grayscale+tint's output colorspace renders solid black in some
+  // JPEG viewers despite having correct (bright) pixel data.
   const out = await sharp(composited)
     .extract({ left, top, width: PAPAWIS_MAP_CROP_W, height: PAPAWIS_MAP_CROP_H })
+    .grayscale()
+    .negate()
+    .linear(1.05, 10)
+    .tint({ r: 20, g: 50, b: 110 })
+    .modulate({ saturation: 1.6 })
+    .toColourspace('srgb')
     .jpeg({ quality: 80 })
     .toBuffer();
   return 'data:image/jpeg;base64,' + out.toString('base64');

@@ -447,9 +447,9 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
 .pw-photo-status { position: absolute; top: 10px; right: 10px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.5)); }
 .pw-photo-loc { position: absolute; left: 14px; bottom: 10px; right: 14px; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #f4f6f9; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
 .pw-photo-loc svg { flex-shrink: 0; opacity: .95; }
-/* Default banner when no court photo is on file — a plain (light) OSM map image, inverted
-   to fake a dark theme since no keyed dark-tile provider is wired up. */
-.pw-photo--map .pw-photo-map-img { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.85) saturate(.85); }
+/* Default banner when no court photo is on file — the dark navy recolor is already baked
+   into the cached image server-side (see buildPapawisMapImage in server.js), not a CSS
+   filter, so it matches the site's exact palette rather than a generic inverted map. */
 .pw-photo-map-pin { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); color: var(--amber); filter: drop-shadow(0 2px 5px rgba(0,0,0,.5)); }
 .pw-photo-loc-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
 .pw-photo-loc-text:hover { text-decoration: underline; }
