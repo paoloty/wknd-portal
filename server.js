@@ -8852,6 +8852,13 @@ app.post('/admin/papawis/courts/:id/photo', requireAuth, express.json({ limit: '
     res.status(500).json({ error: 'Could not process image.' });
   }
 });
+
+app.delete('/admin/papawis/courts/:id/photo', requireAuth, (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Not found' });
+  updatePapawisCourtImage(court.id, '');
+  res.json({ ok: true });
+});
 // Same data:-URI-in-a-column storage as player photos — sendPlayerPhotoUrl is generic over
 // the url string, no player-specific logic, so it's reused as-is here.
 app.get('/api/papawis-court/:id/photo', async (req, res) => {

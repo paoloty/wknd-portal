@@ -9,6 +9,10 @@ const PAD_TO_COUNT = 5;
 
 export const CUTOFF_DAYS = 3;
 
+function googleMapsUrl(location) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+}
+
 function fmtDate(d) {
   return d
     ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
@@ -330,7 +334,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
         ${bannerImg}
         <div class="pw-photo-scrim"></div>
         <span class="pw-photo-status">${statusBadge}</span>
-        ${game.location ? `<div class="pw-photo-loc"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.7"/></svg><span class="pw-photo-loc-text">${escHtml(game.location)}</span></div>` : ''}
+        ${game.location ? `<div class="pw-photo-loc"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.7"/></svg><a href="${googleMapsUrl(game.location)}" target="_blank" rel="noopener" class="pw-photo-loc-text">${escHtml(game.location)}</a></div>` : ''}
       </div>`
     : '';
   return `<article id="pw-game-${escHtml(game.id)}" class="pw-card${cardStateClass}${cancelledUpcoming ? ' pw-card--cancelled-alert' : ''}" data-game-id="${escHtml(game.id)}">
@@ -340,7 +344,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
       ${hasBanner ? '' : statusBadge}
     </div>
     <div class="pw-card-body">
-      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${(!hasBanner && game.location) ? ` · ${escHtml(game.location)}` : ''}</div>
+      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${(!hasBanner && game.location) ? ` · <a href="${googleMapsUrl(game.location)}" target="_blank" rel="noopener" class="pw-loc-link">${escHtml(game.location)}</a>` : ''}</div>
 
       <div class="pw-meter-row">
         <span class="pw-meter-label">SLOTS</span>
@@ -447,7 +451,10 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
    to fake a dark theme since no keyed dark-tile provider is wired up. */
 .pw-photo--map .pw-photo-map-img { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.85) saturate(.85); }
 .pw-photo-map-pin { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); color: var(--amber); filter: drop-shadow(0 2px 5px rgba(0,0,0,.5)); }
-.pw-photo-loc-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-photo-loc-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
+.pw-photo-loc-text:hover { text-decoration: underline; }
+.pw-loc-link { color: inherit; text-decoration: none; }
+.pw-loc-link:hover { text-decoration: underline; }
 .pw-card-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 18px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
 .pw-card--open .pw-card-titlebar { background: rgba(245,147,50,.05); border-bottom-color: rgba(245,147,50,.2); }
 .pw-card--joined .pw-card-titlebar { background: rgba(52,211,153,.06); border-bottom-color: rgba(52,211,153,.22); }

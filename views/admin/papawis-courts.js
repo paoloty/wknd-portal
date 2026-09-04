@@ -87,7 +87,10 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
         <label class="admin-field-label">Photo</label>
         <div id="court-photo-preview-wrap" style="display:none;position:relative;border-radius:10px;overflow:hidden;height:120px;background:linear-gradient(155deg,#303a50,#171d29 60%,#0c0f16)">
           <img id="court-photo-preview" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
-          <label for="court-photo-input" style="position:absolute;right:9px;bottom:9px;background:rgba(10,13,20,.72);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.18);color:#f4f6f9;font-size:10.5px;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer">Replace</label>
+          <div style="position:absolute;right:9px;bottom:9px;display:flex;gap:6px">
+            <button type="button" id="court-photo-remove-btn" style="background:rgba(10,13,20,.72);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.18);color:#f4f6f9;font-size:10.5px;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer">Remove</button>
+            <label for="court-photo-input" style="background:rgba(10,13,20,.72);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.18);color:#f4f6f9;font-size:10.5px;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer">Replace</label>
+          </div>
         </div>
         <label id="court-photo-dropzone" for="court-photo-input" style="display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px 12px;border:1.5px dashed rgba(255,255,255,.18);border-radius:10px;background:var(--surface-2,#161c29);cursor:pointer">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.55"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5.5-5.5L3 20"/></svg>
@@ -160,6 +163,20 @@ courtPhotoInput.addEventListener('change', function() {
     .catch(function(e) { courtPhotoMsg.style.color = '#f87171'; courtPhotoMsg.textContent = e.message; });
   };
   reader.readAsDataURL(file);
+});
+
+document.getElementById('court-photo-remove-btn').addEventListener('click', function() {
+  if (!currentCourtId || !confirm('Remove this court\\'s photo?')) return;
+  courtPhotoMsg.style.color = 'var(--text-muted)'; courtPhotoMsg.textContent = 'Removing…'; courtPhotoMsg.style.display = 'block';
+  fetch('/admin/papawis/courts/' + currentCourtId + '/photo', { method: 'DELETE' })
+    .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+    .then(function(res) {
+      if (!res.ok) throw new Error(res.j.error || 'Could not remove.');
+      courtPhotoPreview.src = '';
+      showCourtPhotoState(false);
+      courtPhotoMsg.style.display = 'none';
+    })
+    .catch(function(e) { courtPhotoMsg.style.color = '#f87171'; courtPhotoMsg.textContent = e.message; });
 });
 
 document.getElementById('court-submit-btn').addEventListener('click', async function() {
