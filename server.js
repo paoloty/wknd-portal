@@ -8023,11 +8023,17 @@ async function buildPapawisMapImage(lat, lon) {
   // the site — grayscale strips OSM's own street-map colors, negate flips its light
   // background dark, then tint recolors every pixel toward the site's navy (border token
   // #1e293b-ish), so the result reads as "near-black navy background, muted slate roads"
-  // instead of a generic inverted map. .toColourspace('srgb') is required before the JPEG
-  // encode — without it, grayscale+tint's output colorspace renders solid black in some
-  // JPEG viewers despite having correct (bright) pixel data.
+  // instead of a generic inverted map.
+  //
+  // .flatten() is required right before that chain: .composite() silently produces an RGBA
+  // (4-channel) buffer even though every input tile and the base canvas are opaque 3-channel
+  // — confirmed by testing — and running .tint() on that unflattened alpha channel corrupts
+  // the visible RGB data, collapsing the whole image to solid black for some crops (reliably
+  // reproduced against a real venue) while looking fine for others depending on their exact
+  // pixel content. Flattening drops the alpha and fixed it in every case tested.
   const out = await sharp(composited)
     .extract({ left, top, width: PAPAWIS_MAP_CROP_W, height: PAPAWIS_MAP_CROP_H })
+    .flatten({ background: { r: 238, g: 238, b: 232 } })
     .grayscale()
     .negate()
     .linear(1.05, 10)
