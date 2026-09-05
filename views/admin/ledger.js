@@ -196,7 +196,16 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
     const color   = teamColor(p.team_name);
     const sbal    = balMap[p.id];
     const bal     = Number(sbal?.balance ?? 0);
-    const paid    = Number(sbal?.paid ?? 0);
+    // balMap's own "paid" is always all-time (see the comment above), but the quota bar below
+    // is compared against one season's flat quota — mixing an all-time numerator with a
+    // season-specific denominator made anyone who'd played a prior season (and so had built up
+    // an all-time total already well past a single season's quota) show a maxed-out bar
+    // regardless of what they'd actually paid *this* season. Scope "paid" to the selected
+    // season instead, from the same already-season-filtered list the rest of this row uses.
+    const seasonPaid = (txByPlayer[p.id] || [])
+      .filter(t => t.status === 'confirmed' && t.type === 'payment')
+      .reduce((s, t) => s + t.amount, 0);
+    const paid    = season ? seasonPaid : Number(sbal?.paid ?? 0);
     const pendingTx = (txByPlayer[p.id] || []).filter(t => t.status === 'pending');
     const pending = Number(sbal?.pending_count ?? pendingTx.length ?? 0);
     // The single most recent pending transaction's own reference number (not just any
