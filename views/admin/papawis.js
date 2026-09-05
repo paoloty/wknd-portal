@@ -744,6 +744,10 @@ ${(() => {
           <input type="time" id="pw-end-time-edit" class="agm-modal-input" value="${escHtml(game.end_time || '')}">
         </div>
       </div>
+      <div class="agm-modal-field">
+        <label class="agm-modal-label">Max participants</label>
+        <input type="number" min="1" step="1" id="pw-max-slots-edit" class="agm-modal-input" value="${escHtml(String(game.max_slots || 10))}">
+      </div>
       <p class="agm-modal-err" id="pw-location-err" hidden></p>
     </div>
     <div class="agm-modal-footer">
@@ -1066,12 +1070,13 @@ ${(() => {
         : locationSelectEdit.value;
       var newStartTime = document.getElementById('pw-start-time-edit').value;
       var newEndTime = document.getElementById('pw-end-time-edit').value;
+      var newMaxSlots = Number(document.getElementById('pw-max-slots-edit').value) || 10;
       var btn = this;
       var orig = btn.innerHTML;
       btn.disabled = true; btn.textContent = 'Saving…';
       fetch('/admin/papawis/' + gameId + '/location', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location: newLocation, start_time: newStartTime, end_time: newEndTime })
+        body: JSON.stringify({ location: newLocation, start_time: newStartTime, end_time: newEndTime, max_slots: newMaxSlots })
       })
       .then(function(r) { return r.json(); })
       .then(function(d) {

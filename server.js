@@ -103,7 +103,7 @@ import {
   createPapawisGame, joinPapawisGame, cancelPapawisSignup, promotePapawisPendingSignup, getMaxPapawisPrice,
   getPendingPapawisSignupsForPlayer, getUnconfirmedPapawisDeposit,
   adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
-  completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime,
+  completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
@@ -9200,12 +9200,13 @@ app.post('/admin/papawis/:id/signups/reorder', requireAuth, express.json(), (req
   res.json({ ok: true });
 });
 
-// Changes the court/venue and/or start/end time on an already-created game — allowed
-// regardless of status (including completed/cancelled): a renamed court doesn't retroactively
-// update the free-text location already copied onto past games, so correcting old records to
-// match is a legitimate edit, not rewriting history. Location is free text either way, same
-// as creation: picking a known court just fills in its name, "Others" (or anything typed) is
-// stored as-is. Time fields are optional in the request — omitted ones are left untouched.
+// Changes the court/venue, start/end time, and/or max participants on an already-created
+// game — allowed regardless of status (including completed/cancelled): a renamed court
+// doesn't retroactively update the free-text location already copied onto past games, so
+// correcting old records to match is a legitimate edit, not rewriting history. Location is
+// free text either way, same as creation: picking a known court just fills in its name,
+// "Others" (or anything typed) is stored as-is. Every field is optional in the request —
+// omitted ones are left untouched.
 app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
@@ -9216,6 +9217,9 @@ app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) 
       req.body?.start_time !== undefined ? req.body.start_time : game.start_time,
       req.body?.end_time !== undefined ? req.body.end_time : game.end_time,
     );
+  }
+  if (req.body?.max_slots !== undefined) {
+    setPapawisGameMaxSlots(req.params.id, req.body.max_slots);
   }
   res.json({ ok: true });
 });
