@@ -348,7 +348,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
 
       <div class="pw-meter-row">
         <span class="pw-meter-label">SLOTS</span>
-        <span class="pw-meter-count">${confirmedCount}<small>/${game.max_slots}</small>${waitlistCount ? `<span class="pw-meter-wl"> · ${waitlistCount} waiting</span>` : ''}</span>
+        <span class="pw-meter-count">${confirmedCount}<small>/${game.max_slots}</small>${(waitlistCount && !isCompleted && !isCancelled) ? `<span class="pw-meter-wl"> · ${waitlistCount} waiting</span>` : ''}</span>
       </div>
       <div class="pw-meter${isFull ? ' pw-meter--full' : ''}"><span style="width:${Math.min(100, Math.round(confirmedCount / game.max_slots * 100))}%"></span></div>
 
