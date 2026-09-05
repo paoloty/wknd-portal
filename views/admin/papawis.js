@@ -701,7 +701,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? `<span class="agm-sep">·</span><span>${escHtml(t)}</span>` : ''; })()}
     <span class="agm-sep">·</span>
     <span>${game.location ? escHtml(game.location) : 'No location set'}</span>
-    ${isOpen ? `<button id="pw-edit-location-btn" type="button" class="agm-view-link" style="background:none;border:none;cursor:pointer;padding:0">✎ Edit</button>` : ''}
+    <button id="pw-edit-location-btn" type="button" class="agm-view-link" style="background:none;border:none;cursor:pointer;padding:0">✎ Edit</button>
     ${game.location && !courts.find(c => c.name === game.location)?.image_url ? `<button id="pw-refresh-map-btn" type="button" class="agm-view-link" style="background:none;border:none;cursor:pointer;padding:0">🔄 Refresh map</button><span id="pw-refresh-map-status" class="text-xs text-slate-500"></span>` : ''}
     <span class="agm-sep">·</span>
     ${statusBadge(game)}
@@ -712,13 +712,13 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
   </div>
 </div>
 
-${isOpen ? (() => {
+${(() => {
   const isKnownCourt = courts.some(c => c.name === game.location);
   return `
 <div class="agm-modal-backdrop" id="pw-location-modal-backdrop" hidden>
   <div class="agm-modal">
     <div class="agm-modal-header">
-      <h3 class="agm-modal-title">Change Location</h3>
+      <h3 class="agm-modal-title">Edit Details</h3>
       <button class="agm-modal-close" id="pw-location-modal-close" aria-label="Close">✕</button>
     </div>
     <div class="agm-modal-body">
@@ -734,6 +734,16 @@ ${isOpen ? (() => {
         <label class="agm-modal-label">Other location</label>
         <input type="text" id="pw-location-other-edit" class="agm-modal-input" placeholder="Enter location" value="${!isKnownCourt ? escHtml(game.location || '') : ''}">
       </div>
+      <div class="agm-modal-field" style="display:flex;gap:10px">
+        <div style="flex:1">
+          <label class="agm-modal-label">Start time</label>
+          <input type="time" id="pw-start-time-edit" class="agm-modal-input" value="${escHtml(game.start_time || '')}">
+        </div>
+        <div style="flex:1">
+          <label class="agm-modal-label">End time</label>
+          <input type="time" id="pw-end-time-edit" class="agm-modal-input" value="${escHtml(game.end_time || '')}">
+        </div>
+      </div>
       <p class="agm-modal-err" id="pw-location-err" hidden></p>
     </div>
     <div class="agm-modal-footer">
@@ -742,7 +752,7 @@ ${isOpen ? (() => {
     </div>
   </div>
 </div>`;
-})() : ''}
+})()}
 
 <div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_320px] items-start">
 
@@ -1054,12 +1064,14 @@ ${isOpen ? (() => {
       var newLocation = locationSelectEdit.value === '__other__'
         ? locationOtherEdit.value.trim()
         : locationSelectEdit.value;
+      var newStartTime = document.getElementById('pw-start-time-edit').value;
+      var newEndTime = document.getElementById('pw-end-time-edit').value;
       var btn = this;
       var orig = btn.innerHTML;
       btn.disabled = true; btn.textContent = 'Saving…';
       fetch('/admin/papawis/' + gameId + '/location', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location: newLocation })
+        body: JSON.stringify({ location: newLocation, start_time: newStartTime, end_time: newEndTime })
       })
       .then(function(r) { return r.json(); })
       .then(function(d) {
