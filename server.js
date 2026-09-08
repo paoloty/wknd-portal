@@ -5013,7 +5013,7 @@ const jsonLarge = express.json({ limit: '20mb' });
 app.get('/admin/games', requireAuth, (req, res) => {
   const games = getAllGames();
   const teams = getAllTeams();
-  const seasons = [...new Set(games.map(g => g.season).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  const seasons = [...new Set(games.map(g => g.season).filter(Boolean))].sort((a, b) => b - a);
   const currentSeason = getCurrentSeason()?.season ?? 1;
   res.send(renderAdminPage(req, {
     title: 'Games',
