@@ -331,6 +331,18 @@ export function marketplaceListingPage({
     ? commitments.reduce((sum, c) => sum + commitmentAmount(listing, variantGroups, c), 0)
     : listing.price;
 
+  // Reverse of any photo-backed group's optionPhotos (option -> photo index) — captions each
+  // masonry tile with the variant it represents so a buyer scanning the gallery can tell
+  // "Bucks" from "Chicago" without scrolling down to the picker first. If somehow more than
+  // one option ever maps to the same photo, the first one found wins.
+  const photoLabels = {};
+  for (const g of variantGroups) {
+    if (!g.photoBacked || !g.optionPhotos) continue;
+    for (const [opt, idx] of Object.entries(g.optionPhotos)) {
+      if (photoLabels[idx] == null) photoLabels[idx] = opt;
+    }
+  }
+
   // Desktop: masonry grid (up to 10 photos) filling the full left column, each tile at its
   // own natural aspect ratio rather than cropped into a uniform square — click any tile to
   // zoom into a full-screen lightbox. Mobile swaps to a simpler big-preview-on-top layout
@@ -341,7 +353,7 @@ export function marketplaceListingPage({
   // browser dedupes the shared photo URLs so this costs no extra network traffic.
   const gallery = photos.length
     ? `<div class="mkt-masonry" id="mkt-masonry">
-        ${photos.map((_, i) => `<div class="mkt-tile" data-index="${i}"><img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt="" loading="lazy"></div>`).join('')}
+        ${photos.map((_, i) => `<div class="mkt-tile" data-index="${i}"><img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt="" loading="lazy">${photoLabels[i] != null ? `<span class="mkt-tile__caption">${escHtml(photoLabels[i])}</span>` : ''}</div>`).join('')}
       </div>
       <div class="mkt-mobile-gallery" id="mkt-mobile-gallery">
         <button type="button" class="mkt-mobile-preview" id="mkt-mobile-preview" aria-label="Zoom photo">
@@ -429,7 +441,7 @@ export function marketplaceListingPage({
     <div class="mkt-card mkt-info-card">
       <div class="mkt-card-body">
         ${detailHeader}
-        <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> <span id="mkt-price-compare">${!commitments.length ? comparePriceHtml(listing, { size: 'detail' }) : ''}</span></div>
+        <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> <span class="mkt-price-compare" id="mkt-price-compare">${!commitments.length ? comparePriceHtml(listing, { size: 'detail' }) : ''}</span></div>
         ${meterBlock(committedCount, listing.min_buyers)}
         <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
           🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
@@ -751,14 +763,32 @@ ${STYLE}
       mobilePreview.addEventListener('click', function() { openLightbox(previewIndex); });
     }
 
+    // Every variant group's picker row scrolls horizontally (.mkt-pick-scroll), and a group
+    // with many options (Jersey Size XS–5XL, say) can leave the just-picked pill sitting
+    // outside the visible strip — 'nearest' only moves the row if the pill isn't already
+    // fully in view, so this never fights a pick that was already visible. Applies to every
+    // group (Team, Collar, Back, sizes — photo-backed or plain), not just photo ones.
+    if (form) {
+      form.addEventListener('change', function(e) {
+        var cell = e.target.closest && e.target.closest('.mkt-pick-cell');
+        if (cell && e.target.checked) cell.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      });
+    }
+
     // Photo-backed variant picker (see variantPicker's data-photo-index) — picking an
-    // option jumps the gallery straight to that exact photo, so e.g. picking "Red" visually
-    // confirms itself instead of leaving the buyer to hunt for it in the gallery above.
+    // option additionally jumps the gallery straight to that exact photo, so e.g. picking
+    // "Red" visually confirms itself instead of leaving the buyer to hunt for it above.
     if (form) {
       form.addEventListener('change', function(e) {
         var input = e.target.closest && e.target.closest('input[data-photo-index]');
         if (!input || !input.checked) return;
         var idx = Number(input.dataset.photoIndex);
+        // Desktop's masonry sits right beside the picker (visible without scrolling), but on
+        // mobile the gallery is stacked above the variant picker and gets scrolled out of
+        // view by the time a buyer reaches it — updating the preview image alone left them
+        // with no visible confirmation unless they scrolled back up manually. Both scrolls
+        // are harmless no-ops on whichever layout isn't currently shown (display:none
+        // elements don't scroll), so there's no need to branch on viewport width here.
         var tile = masonry && masonry.querySelector('.mkt-tile[data-index="' + idx + '"]');
         if (tile) {
           tile.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -766,6 +796,7 @@ ${STYLE}
           setTimeout(function() { tile.classList.remove('mkt-tile--flash'); }, 900);
         }
         if (idx !== previewIndex) showPreview(idx, idx > previewIndex ? 1 : -1);
+        if (mobilePreview) mobilePreview.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     }
   }
@@ -1043,7 +1074,7 @@ const STYLE = `<style>
    compare price, and savings pill all sit at different font sizes, and vertical-align's
    baseline-relative middle drifts noticeably once sizes diverge that much. Flex centers
    each piece on the same axis regardless of its own line-height. */
-.mkt-card-price { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-family: 'Saira Condensed', sans-serif; font-size: 22px; color: var(--amber); font-weight: 700; }
+.mkt-card-price { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-family: 'Saira Condensed', sans-serif; font-size: 22px; line-height: 1; color: var(--amber); font-weight: 700; }
 
 .mkt-badge { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
 .mkt-badge--open { background: rgba(245,147,50,.12); color: var(--amber); border: 1px solid rgba(245,147,50,.3); }
@@ -1086,6 +1117,16 @@ const STYLE = `<style>
 .mkt-tile:hover { border-color: rgba(245,147,50,.4); }
 .mkt-tile img { display: block; width: 100%; }
 .mkt-tile--flash { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(245,147,50,.35); transition: border-color .15s, box-shadow .15s; }
+/* Caption for a photo-backed variant's tile (see photoLabels) — hidden until hover so it
+   doesn't compete with the artwork at rest, revealed with the same scrim treatment as the
+   card grid's status badge for legibility over any photo. */
+.mkt-tile__caption {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 10px 8px;
+  background: linear-gradient(to top, rgba(2,8,23,.85), transparent);
+  color: #fff; font-size: 12.5px; font-weight: 700; text-align: center;
+  opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; pointer-events: none;
+}
+.mkt-tile:hover .mkt-tile__caption { opacity: 1; transform: translateY(0); }
 
 .mkt-mobile-gallery { display: none; }
 @media (max-width: 700px) {
@@ -1155,7 +1196,12 @@ const STYLE = `<style>
 .mkt-detail-header__top .mkt-badge { flex-shrink: 0; }
 .mkt-detail-desc { font-size: 13px; color: var(--text-muted); line-height: 1.55; margin: 6px 0 0; }
 
-.mkt-compare-price { font-family: 'Saira Condensed', sans-serif; font-size: 15px; color: var(--text-subtle); text-decoration: line-through; font-weight: 600; }
+/* Wraps the compare-price + savings-badge pair on the detail page (so live JS updates can
+   replace just this span, not the whole price line) — needs its own flex+gap since it's no
+   longer a direct child of .mkt-card-price's flex row, unlike the grid card's version where
+   the two spans sit right in that row and pick up its gap for free. */
+.mkt-price-compare:not(:empty) { display: inline-flex; align-items: center; gap: 6px; }
+.mkt-compare-price { font-family: 'Saira Condensed', sans-serif; font-size: 15px; line-height: 1; color: var(--text-subtle); text-decoration: line-through; font-weight: 600; }
 .mkt-compare-price--detail { font-size: 17px; }
 /* Explicit Archivo instead of inheriting .mkt-card-price's Saira Condensed — Saira Condensed
    is tuned for big standalone numerals (scores, prices) and its ascent/descent metrics sit
