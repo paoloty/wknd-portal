@@ -14,6 +14,7 @@ const AWARD_BADGE = {
   steals_leader:   { label: 'STEALS LEADER',    bg: '#f59332', text: '#10141d' },
   blocks_leader:   { label: 'BLOCKS LEADER',    bg: '#f59332', text: '#10141d' },
   three_pm_leader: { label: '3-PT LEADER',      bg: '#f59332', text: '#10141d' },
+  four_pm_leader:  { label: '4-PT LEADER',      bg: '#f59332', text: '#10141d' },
   champion:        { label: 'CHAMPION',         bg: '#facc15', text: '#10141d' },
   finals_mvp:      { label: 'FINALS MVP',       bg: '#ef4444', text: '#fff'    },
 };
@@ -25,7 +26,7 @@ const TABS = [
   { key: 'all_wknd_1',   label: 'All-WKND 1st Team',       types: ['all_wknd_1'],   shareKey: 'all_wknd_1'   },
   { key: 'all_wknd_2',   label: 'All-WKND 2nd Team',       types: ['all_wknd_2'],   shareKey: 'all_wknd_2'   },
   { key: 'all_wknd_def', label: 'All-WKND Defensive Team', types: ['all_wknd_def'], shareKey: 'all_wknd_def' },
-  { key: 'stat_leaders', label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'], shareKey: 'stat-leaders' },
+  { key: 'stat_leaders', label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader'], shareKey: 'stat-leaders' },
 ];
 
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
@@ -47,6 +48,7 @@ function statLine(row, type) {
     : type === 'steals_leader'   ? [avg(row.stl) && `${avg(row.stl)} SPG`]
     : type === 'blocks_leader'   ? [avg(row.blk) && `${avg(row.blk)} BPG`]
     : type === 'three_pm_leader' ? [avg(row.fg3m) && `${avg(row.fg3m)} 3PM`]
+    : type === 'four_pm_leader'  ? [avg(row.fg4m) && `${avg(row.fg4m)} 4PM`]
     : [];
   return parts.filter(Boolean).join(' · ');
 }

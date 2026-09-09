@@ -123,8 +123,8 @@ function shotPct(made, miss) {
   return Math.round(made / att * 100) + '%';
 }
 function calcPer(p) {
-  const fgm = Number(p.fg2m) + Number(p.fg3m);
-  const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss);
+  const fgm = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
+  const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
   const ftm = Number(p.ftm), fta = ftm + Number(p.ft_miss);
   return (
     Number(p.pts) + 0.4 * fgm - 0.7 * fga - 0.4 * (fta - ftm) +
@@ -174,16 +174,18 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
   const tot = {
     pts: sum('pts'), reb: sum('reb'), ast: sum('ast'),
     stl: sum('stl'), blk: sum('blk'), turnover: sum('turnover'),
-    fg2m: sum('fg2m'), fg3m: sum('fg3m'),
-    fg2m_miss: sum('fg2m_miss'), fg3m_miss: sum('fg3m_miss'),
+    fg2m: sum('fg2m'), fg3m: sum('fg3m'), fg4m: sum('fg4m'),
+    fg2m_miss: sum('fg2m_miss'), fg3m_miss: sum('fg3m_miss'), fg4m_miss: sum('fg4m_miss'),
     ftm: sum('ftm'), ft_miss: sum('ft_miss'),
   };
 
   const playerRow = (p) => {
-    const fgm  = Number(p.fg2m) + Number(p.fg3m);
-    const fgMs = Number(p.fg2m_miss) + Number(p.fg3m_miss);
+    const fgm  = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
+    const fgMs = Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
     const tpm  = Number(p.fg3m);
     const tpMs = Number(p.fg3m_miss);
+    const qpm  = Number(p.fg4m || 0);
+    const qpMs = Number(p.fg4m_miss || 0);
     const ftm  = Number(p.ftm);
     const ftMs = Number(p.ft_miss);
     return `<tr>
@@ -194,6 +196,9 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
       <td class="bs-stat">${tpm + tpMs ? tpm : '–'}</td>
       <td class="bs-stat">${tpm + tpMs ? tpm + tpMs : '–'}</td>
       <td class="bs-stat bs-pct">${shotPct(tpm, tpMs)}</td>
+      <td class="bs-stat">${qpm + qpMs ? qpm : '–'}</td>
+      <td class="bs-stat">${qpm + qpMs ? qpm + qpMs : '–'}</td>
+      <td class="bs-stat bs-pct">${shotPct(qpm, qpMs)}</td>
       <td class="bs-stat">${ftm + ftMs ? ftm : '–'}</td>
       <td class="bs-stat">${ftm + ftMs ? ftm + ftMs : '–'}</td>
       <td class="bs-stat bs-pct">${shotPct(ftm, ftMs)}</td>
@@ -207,9 +212,10 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
     </tr>`;
   };
 
-  const totFgm  = tot.fg2m + tot.fg3m;
-  const totFgMs = tot.fg2m_miss + tot.fg3m_miss;
+  const totFgm  = tot.fg2m + tot.fg3m + tot.fg4m;
+  const totFgMs = tot.fg2m_miss + tot.fg3m_miss + tot.fg4m_miss;
   const totTpMs = tot.fg3m_miss;
+  const totQpMs = tot.fg4m_miss;
   const totFtMs = tot.ft_miss;
 
   return `<div class="bs-block">
@@ -220,6 +226,7 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
           <th class="bs-name" rowspan="2">PLAYER</th>
           <th colspan="3" class="bs-group">FIELD GOALS</th>
           <th colspan="3" class="bs-group">3-POINTERS</th>
+          <th colspan="3" class="bs-group">4-POINTERS</th>
           <th colspan="3" class="bs-group">FREE THROWS</th>
           <th class="bs-stat" rowspan="2">REB</th>
           <th class="bs-stat" rowspan="2">AST</th>
@@ -239,12 +246,15 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
           <th class="bs-stat">M</th>
           <th class="bs-stat">A</th>
           <th class="bs-stat bs-pct">%</th>
+          <th class="bs-stat">M</th>
+          <th class="bs-stat">A</th>
+          <th class="bs-stat bs-pct">%</th>
         </tr>
       </thead>
       <tbody>
         ${sorted.map(playerRow).join('')}
         ${dnpPlayers.map(p => `<tr class="bs-dnp">
-          <td class="bs-dnp__cell" colspan="17">
+          <td class="bs-dnp__cell" colspan="20">
             ${playerLink(p.id, p.name)} <span class="dnp-pill">DNP</span>
           </td>
         </tr>`).join('')}
@@ -256,6 +266,9 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
           <td class="bs-stat">${tot.fg3m}</td>
           <td class="bs-stat">${tot.fg3m + totTpMs}</td>
           <td class="bs-stat bs-pct">${shotPct(tot.fg3m, totTpMs)}</td>
+          <td class="bs-stat">${tot.fg4m}</td>
+          <td class="bs-stat">${tot.fg4m + totQpMs}</td>
+          <td class="bs-stat bs-pct">${shotPct(tot.fg4m, totQpMs)}</td>
           <td class="bs-stat">${tot.ftm}</td>
           <td class="bs-stat">${tot.ftm + totFtMs}</td>
           <td class="bs-stat bs-pct">${shotPct(tot.ftm, totFtMs)}</td>
@@ -411,14 +424,15 @@ export function teamComparisonTab(game, stats) {
 
   const totals = (name) => {
     const pl = byTeam[name] || [];
-    const fg2m = sum(pl,'fg2m'), fg3m = sum(pl,'fg3m');
-    const fg2miss = sum(pl,'fg2m_miss'), fg3miss = sum(pl,'fg3m_miss');
-    const fgm = fg2m+fg3m, fgatt = fgm+fg2miss+fg3miss;
+    const fg2m = sum(pl,'fg2m'), fg3m = sum(pl,'fg3m'), fg4m = sum(pl,'fg4m');
+    const fg2miss = sum(pl,'fg2m_miss'), fg3miss = sum(pl,'fg3m_miss'), fg4miss = sum(pl,'fg4m_miss');
+    const fgm = fg2m+fg3m+fg4m, fgatt = fgm+fg2miss+fg3miss+fg4miss;
     const ftm = sum(pl,'ftm'), ftatt = ftm+sum(pl,'ft_miss');
     const threeatt = fg3m+fg3miss;
+    const fouratt = fg4m+fg4miss;
     return { pts: sum(pl,'pts'), reb: sum(pl,'reb'), ast: sum(pl,'ast'), stl: sum(pl,'stl'),
              blk: sum(pl,'blk'), to: sum(pl,'turnover'), pf: sum(pl,'pf'),
-             fgm, fgatt, fg3m, threeatt, ftm, ftatt };
+             fgm, fgatt, fg3m, threeatt, fg4m, fouratt, ftm, ftatt };
   };
 
   const tA = totals(nameA), tB = totals(nameB);
@@ -429,6 +443,8 @@ export function teamComparisonTab(game, stats) {
     { label: 'FG%',  dA: pct(tA.fgm,tA.fgatt),      dB: pct(tB.fgm,tB.fgatt),      cA: tA.fgatt>0?tA.fgm/tA.fgatt*100:0, cB: tB.fgatt>0?tB.fgm/tB.fgatt*100:0 },
     { label: '3PT',  dA: ma(tA.fg3m,tA.threeatt),   dB: ma(tB.fg3m,tB.threeatt),   cA: tA.fg3m, cB: tB.fg3m },
     { label: '3P%',  dA: pct(tA.fg3m,tA.threeatt),  dB: pct(tB.fg3m,tB.threeatt),  cA: tA.threeatt>0?tA.fg3m/tA.threeatt*100:0, cB: tB.threeatt>0?tB.fg3m/tB.threeatt*100:0 },
+    { label: '4PT',  dA: ma(tA.fg4m,tA.fouratt),    dB: ma(tB.fg4m,tB.fouratt),    cA: tA.fg4m, cB: tB.fg4m },
+    { label: '4P%',  dA: pct(tA.fg4m,tA.fouratt),   dB: pct(tB.fg4m,tB.fouratt),   cA: tA.fouratt>0?tA.fg4m/tA.fouratt*100:0, cB: tB.fouratt>0?tB.fg4m/tB.fouratt*100:0 },
     { label: 'FT',   dA: ma(tA.ftm,tA.ftatt),       dB: ma(tB.ftm,tB.ftatt),       cA: tA.ftm,  cB: tB.ftm },
     { label: 'REB',  dA: tA.reb,                    dB: tB.reb,                    cA: tA.reb,  cB: tB.reb },
     { label: 'AST',  dA: tA.ast,                    dB: tB.ast,                    cA: tA.ast,  cB: tB.ast },

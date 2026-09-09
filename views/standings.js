@@ -71,7 +71,7 @@ function h2hMatrix(teams, games, currentSeason) {
 
 // ── 1. Team Stat Charts (returns two grid HTML strings for pg/tot) ───────────
 function teamStatCharts(rows, teamStats) {
-  const empty    = { gp: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fg3m: 0, fgm: 0, fga: 0, fg3a: 0, ftm: 0, ft_miss: 0, turnover: 0, pf: 0 };
+  const empty    = { gp: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fg3m: 0, fg4m: 0, fgm: 0, fga: 0, fg3a: 0, fg4a: 0, ftm: 0, ft_miss: 0, turnover: 0, pf: 0 };
   const statsMap = Object.fromEntries(teamStats.map(t => [t.team_id, t]));
   const pct      = fn => v => (fn(v) * 100).toFixed(1) + '%';
 
@@ -82,8 +82,10 @@ function teamStatCharts(rows, teamStats) {
     { label: 'SPG', title: 'Steals Per Game',       fn: t => t.gp > 0 ? t.stl      / t.gp : 0, fmt: v => v.toFixed(1) },
     { label: 'BPG', title: 'Blocks Per Game',       fn: t => t.gp > 0 ? t.blk      / t.gp : 0, fmt: v => v.toFixed(1) },
     { label: '3PM', title: '3-Pointers Per Game',   fn: t => t.gp > 0 ? t.fg3m     / t.gp : 0, fmt: v => v.toFixed(1) },
+    { label: '4PM', title: '4-Pointers Per Game',   fn: t => t.gp > 0 ? t.fg4m     / t.gp : 0, fmt: v => v.toFixed(1) },
     { label: 'FG%', title: 'Field Goal %',          fn: t => t.fga  > 0 ? t.fgm  / t.fga  : 0, fmt: pct(v => v) },
     { label: '3P%', title: '3-Point %',             fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
+    { label: '4P%', title: '4-Point %',             fn: t => t.fg4a > 0 ? t.fg4m / t.fg4a : 0, fmt: pct(v => v) },
     { label: 'FT%', title: 'Free Throw %',          fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
     { label: 'FTM', title: 'FT Made Per Game',      fn: t => t.gp > 0 ? t.ftm      / t.gp : 0, fmt: v => v.toFixed(1) },
     { label: 'TO',  title: 'Turnovers Per Game',    fn: t => t.gp > 0 ? t.turnover / t.gp : 0, fmt: v => v.toFixed(1) },
@@ -96,8 +98,10 @@ function teamStatCharts(rows, teamStats) {
     { label: 'STL', title: 'Steals',          fn: t => t.stl,      fmt: v => String(Math.round(v)) },
     { label: 'BLK', title: 'Blocks',          fn: t => t.blk,      fmt: v => String(Math.round(v)) },
     { label: '3PM', title: '3-Pointers',      fn: t => t.fg3m,     fmt: v => String(Math.round(v)) },
+    { label: '4PM', title: '4-Pointers',      fn: t => t.fg4m,     fmt: v => String(Math.round(v)) },
     { label: 'FG%', title: 'Field Goal %',    fn: t => t.fga  > 0 ? t.fgm  / t.fga  : 0, fmt: pct(v => v) },
     { label: '3P%', title: '3-Point %',       fn: t => t.fg3a > 0 ? t.fg3m / t.fg3a : 0, fmt: pct(v => v) },
+    { label: '4P%', title: '4-Point %',       fn: t => t.fg4a > 0 ? t.fg4m / t.fg4a : 0, fmt: pct(v => v) },
     { label: 'FT%', title: 'Free Throw %',    fn: t => (t.ftm + t.ft_miss) > 0 ? t.ftm / (t.ftm + t.ft_miss) : 0, fmt: pct(v => v) },
     { label: 'FTM', title: 'FT Made',         fn: t => t.ftm,      fmt: v => String(Math.round(v)) },
     { label: 'TO',  title: 'Turnovers',       fn: t => t.turnover, fmt: v => String(Math.round(v)) },

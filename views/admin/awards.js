@@ -13,7 +13,7 @@ const SINGLE_PHOTO_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp']);
 // Every solo (one-player) award gets the per-row homepage toggle in playerRow(). Team/roster
 // awards (TEAM_TYPES, defined below) get an equivalent toggle at the group-card level instead,
 // since "show on homepage" is a per-award-type choice, not per-player, for those.
-const HOME_GALLERY_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp', 'scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader']);
+const HOME_GALLERY_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp', 'scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader']);
 
 const AWARD_LABELS = {
   mvp:             'Season MVP',
@@ -27,6 +27,7 @@ const AWARD_LABELS = {
   steals_leader:   'Steals Leader',
   blocks_leader:   'Blocks Leader',
   three_pm_leader: '3-Pointers Leader',
+  four_pm_leader:  '4-Pointers Leader',
   finals_mvp:      'Finals MVP',
 };
 
@@ -43,7 +44,7 @@ const AWARD_GROUPS = [
   { label: 'All WKND 1st Team',       types: ['all_wknd_1'],   graphicType: 'all_wknd_1',            col: 'pos'   },
   { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],   graphicType: 'all_wknd_2',            col: 'pos'   },
   { label: 'All WKND Defensive Team', types: ['all_wknd_def'], graphicType: 'all_wknd_def',          col: 'pos'   },
-  { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'], graphicType: 'stat-leaders', col: 'award' },
+  { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader'], graphicType: 'stat-leaders', col: 'award' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

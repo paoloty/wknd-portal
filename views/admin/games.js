@@ -410,8 +410,8 @@ function fmtFrac(made, miss) {
 // ── Game detail / edit ────────────────────────────────────────────────────────
 export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers = [], quarterScores = [] } = {}) {
   const perOf = (p) => {
-    const fgm = Number(p.fg2m) + Number(p.fg3m);
-    const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss);
+    const fgm = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
+    const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
     const ftm = Number(p.ftm), fta = ftm + Number(p.ft_miss);
     return Number(p.pts) + 0.4 * fgm - 0.7 * fga - 0.4 * (fta - ftm) +
       0.7 * Number(p.reb) + Number(p.stl) + 0.7 * Number(p.ast) +

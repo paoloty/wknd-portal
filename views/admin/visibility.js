@@ -12,6 +12,7 @@ const AWARD_SECTIONS = [
   { key: 'award_show_steals_leader',   label: 'Steals Leader' },
   { key: 'award_show_blocks_leader',   label: 'Blocks Leader' },
   { key: 'award_show_three_pm_leader', label: '3-Pointers Leader' },
+  { key: 'award_show_four_pm_leader',  label: '4-Pointers Leader' },
   { key: 'award_show_champion',        label: 'Champion' },
   { key: 'award_show_finals_mvp',      label: 'Finals MVP' },
 ];

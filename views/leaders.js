@@ -5,9 +5,9 @@ let _showDownload = false;
 
 // ── Shared PER formula — matches box score (game.js calcPer) ─────────────────
 // pts + 0.4×FGM - 0.7×FGA - 0.4×missedFT + 0.7×REB + STL + 0.7×AST + 0.7×BLK - TO
-const calcPer = (pts, fg2m, fg3m, fg2m_miss, fg3m_miss, ft_miss, reb, ast, stl, blk, to) => {
-  const fgm = fg2m + fg3m;
-  const fga = fgm + fg2m_miss + fg3m_miss;
+const calcPer = (pts, fg2m, fg3m, fg2m_miss, fg3m_miss, ft_miss, reb, ast, stl, blk, to, fg4m = 0, fg4m_miss = 0) => {
+  const fgm = fg2m + fg3m + fg4m;
+  const fga = fgm + fg2m_miss + fg3m_miss + fg4m_miss;
   return pts + 0.4*fgm - 0.7*fga - 0.4*ft_miss + 0.7*reb + stl + 0.7*ast + 0.7*blk - to;
 };
 
@@ -16,7 +16,7 @@ export const RECORD_CATS = [
   { id: 'pts',      label: 'PTS', title: 'Most Points',     fn: r => r.pts },
   {
     id: 'per', label: 'PER', title: 'Best PER',
-    fn: r => calcPer(r.pts||0, r.fg2m||0, r.fg3m||0, r.fg2m_miss||0, r.fg3m_miss||0, r.ft_miss||0, r.reb||0, r.ast||0, r.stl||0, r.blk||0, r.turnover||0),
+    fn: r => calcPer(r.pts||0, r.fg2m||0, r.fg3m||0, r.fg2m_miss||0, r.fg3m_miss||0, r.ft_miss||0, r.reb||0, r.ast||0, r.stl||0, r.blk||0, r.turnover||0, r.fg4m||0, r.fg4m_miss||0),
     fmt: v => v.toFixed(1),
   },
   { id: 'reb',      label: 'REB', title: 'Most Rebounds',   fn: r => r.reb },
@@ -24,16 +24,17 @@ export const RECORD_CATS = [
   { id: 'stl',      label: 'STL', title: 'Most Steals',     fn: r => r.stl },
   { id: 'blk',      label: 'BLK', title: 'Most Blocks',     fn: r => r.blk },
   { id: 'fg3m',     label: '3PM', title: 'Most 3-Pointers', fn: r => r.fg3m },
+  { id: 'fg4m',     label: '4PM', title: 'Most 4-Pointers', fn: r => r.fg4m },
   { id: 'ftm',      label: 'FTM', title: 'Most FT Made',    fn: r => r.ftm },
   {
     id: 'fgp', label: 'FG%', title: 'Best FG%',
-    fn: r => { const a = (r.fg2m||0)+(r.fg3m||0)+(r.fg2m_miss||0)+(r.fg3m_miss||0); return a >= 4 ? ((r.fg2m||0)+(r.fg3m||0)) / a : -1; },
+    fn: r => { const a = (r.fg2m||0)+(r.fg3m||0)+(r.fg4m||0)+(r.fg2m_miss||0)+(r.fg3m_miss||0)+(r.fg4m_miss||0); return a >= 4 ? ((r.fg2m||0)+(r.fg3m||0)+(r.fg4m||0)) / a : -1; },
     fmt: v => Math.round(v * 100) + '%', min: '4+ FGA',
   },
   {
     id: 'tsp', label: 'TS%', title: 'Best True Shooting',
     fn: r => {
-      const fga = (r.fg2m||0)+(r.fg3m||0)+(r.fg2m_miss||0)+(r.fg3m_miss||0);
+      const fga = (r.fg2m||0)+(r.fg3m||0)+(r.fg4m||0)+(r.fg2m_miss||0)+(r.fg3m_miss||0)+(r.fg4m_miss||0);
       const fta = (r.ftm||0)+(r.ft_miss||0);
       const d = 2 * (fga + 0.44 * fta);
       return fga >= 4 ? (r.pts||0) / d : -1;
@@ -44,6 +45,11 @@ export const RECORD_CATS = [
     id: 'fg3p', label: '3P%', title: 'Best 3PT%',
     fn: r => { const a = (r.fg3m||0)+(r.fg3m_miss||0); return a >= 2 ? (r.fg3m||0) / a : -1; },
     fmt: v => Math.round(v * 100) + '%', min: '2+ 3PA',
+  },
+  {
+    id: 'fg4p', label: '4P%', title: 'Best 4PT%',
+    fn: r => { const a = (r.fg4m||0)+(r.fg4m_miss||0); return a >= 2 ? (r.fg4m||0) / a : -1; },
+    fmt: v => Math.round(v * 100) + '%', min: '2+ 4PA',
   },
   {
     id: 'ftp', label: 'FT%', title: 'Best FT%',
@@ -76,8 +82,8 @@ export function recordContext(row) {
 }
 
 function gamePerScore(r) {
-  const fgm = (r.fg2m||0) + (r.fg3m||0);
-  const fga = fgm + (r.fg2m_miss||0) + (r.fg3m_miss||0);
+  const fgm = (r.fg2m||0) + (r.fg3m||0) + (r.fg4m||0);
+  const fga = fgm + (r.fg2m_miss||0) + (r.fg3m_miss||0) + (r.fg4m_miss||0);
   return (r.pts||0) + 0.4*fgm - 0.7*fga - 0.4*(r.ft_miss||0)
     + 0.7*(r.reb||0) + (r.stl||0) + 0.7*(r.ast||0)
     + 0.7*(r.blk||0) - (r.turnover||0);
@@ -152,7 +158,7 @@ export const PER_GAME = [
   { id: 'pts',      label: 'PPG', title: 'Scoring',        fn: p => p.pts      / p.games_played },
   {
     id: 'per', label: 'PER', title: 'Efficiency Rating',
-    fn: p => calcPer(p.pts, p.fg2m||0, p.fg3m||0, p.fg2m_miss||0, p.fg3m_miss||0, p.ft_miss||0, p.reb, p.ast, p.stl, p.blk, p.turnover) / p.games_played,
+    fn: p => calcPer(p.pts, p.fg2m||0, p.fg3m||0, p.fg2m_miss||0, p.fg3m_miss||0, p.ft_miss||0, p.reb, p.ast, p.stl, p.blk, p.turnover, p.fg4m||0, p.fg4m_miss||0) / p.games_played,
     fmt: v => v.toFixed(1),
   },
   { id: 'reb',      label: 'RPG', title: 'Rebounds',       fn: p => p.reb      / p.games_played },
@@ -161,13 +167,13 @@ export const PER_GAME = [
   { id: 'blk',      label: 'BPG', title: 'Blocks',         fn: p => p.blk      / p.games_played },
   {
     id: 'fgp', label: 'FG%', title: 'FG Efficiency',
-    fn: p => { const a = p.fg2m + p.fg3m + p.fg2m_miss + p.fg3m_miss; return a >= 10 ? (p.fg2m + p.fg3m) / a : -1; },
+    fn: p => { const a = p.fg2m + p.fg3m + (p.fg4m||0) + p.fg2m_miss + p.fg3m_miss + (p.fg4m_miss||0); return a >= 10 ? (p.fg2m + p.fg3m + (p.fg4m||0)) / a : -1; },
     fmt: v => (v * 100).toFixed(1) + '%', min: '10+ FGA',
   },
   {
     id: 'tsp', label: 'TS%', title: 'True Shooting',
     fn: p => {
-      const fga = p.fg2m + p.fg3m + p.fg2m_miss + p.fg3m_miss;
+      const fga = p.fg2m + p.fg3m + (p.fg4m||0) + p.fg2m_miss + p.fg3m_miss + (p.fg4m_miss||0);
       const fta = (p.ftm || 0) + (p.ft_miss || 0);
       const d = 2 * (fga + 0.44 * fta);
       return fga >= 10 ? p.pts / d : -1;
@@ -180,6 +186,12 @@ export const PER_GAME = [
     fmt: v => (v * 100).toFixed(1) + '%', min: '5+ 3PA',
   },
   { id: 'fg3m',     label: '3PM', title: '3-Pointers',     fn: p => p.fg3m     / p.games_played },
+  {
+    id: 'fg4p', label: '4P%', title: '4PT Efficiency',
+    fn: p => { const a = (p.fg4m||0) + (p.fg4m_miss||0); return a >= 5 ? (p.fg4m||0) / a : -1; },
+    fmt: v => (v * 100).toFixed(1) + '%', min: '5+ 4PA',
+  },
+  { id: 'fg4m',     label: '4PM', title: '4-Pointers',     fn: p => (p.fg4m||0) / p.games_played },
   {
     id: 'ftp', label: 'FT%', title: 'Free Throws',
     fn: p => { const a = p.ftm + p.ft_miss; return a >= 5 ? p.ftm / a : -1; },
@@ -194,13 +206,13 @@ export const TOTALS = [
   { id: 'pts',      label: 'PTS', title: 'Points',         fn: p => p.pts },
   {
     id: 'per', label: 'PER', title: 'Efficiency Rating',
-    fn: p => calcPer(p.pts, p.fg2m||0, p.fg3m||0, p.fg2m_miss||0, p.fg3m_miss||0, p.ft_miss||0, p.reb, p.ast, p.stl, p.blk, p.turnover),
+    fn: p => calcPer(p.pts, p.fg2m||0, p.fg3m||0, p.fg2m_miss||0, p.fg3m_miss||0, p.ft_miss||0, p.reb, p.ast, p.stl, p.blk, p.turnover, p.fg4m||0, p.fg4m_miss||0),
     fmt: v => v.toFixed(1),
   },
   {
     id: 'tsp', label: 'TS%', title: 'True Shooting',
     fn: p => {
-      const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0);
+      const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0);
       const fta = (p.ftm||0)+(p.ft_miss||0);
       const d = 2 * (fga + 0.44 * fta);
       return fga >= 10 ? p.pts / d : -1;
@@ -212,6 +224,7 @@ export const TOTALS = [
   { id: 'stl',      label: 'STL', title: 'Steals',         fn: p => p.stl },
   { id: 'blk',      label: 'BLK', title: 'Blocks',         fn: p => p.blk },
   { id: 'fg3m',     label: '3PM', title: '3-Pointers',     fn: p => p.fg3m },
+  { id: 'fg4m',     label: '4PM', title: '4-Pointers',     fn: p => p.fg4m || 0 },
   { id: 'ftm',      label: 'FTM', title: 'FT Made',        fn: p => p.ftm },
   { id: 'turnover', label: 'TO',  title: 'Turnovers',      fn: p => p.turnover },
   { id: 'pf',       label: 'PF',  title: 'Fouls',          fn: p => p.pf },

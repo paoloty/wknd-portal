@@ -23,9 +23,9 @@ export const ROAST_CATS = [
     title: 'The Passenger',
     sub: 'Lowest efficiency rating',
     fn: p => {
-      const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0);
+      const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0);
       if (p.games_played < 3 || fga < 10) return null;
-      const per = (p.pts||0) + 0.4*((p.fg2m||0)+(p.fg3m||0)) - 0.7*fga - 0.4*(p.ft_miss||0)
+      const per = (p.pts||0) + 0.4*((p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)) - 0.7*fga - 0.4*(p.ft_miss||0)
         + 0.7*(p.reb||0) + (p.stl||0) + 0.7*(p.ast||0) + 0.7*(p.blk||0) - (p.turnover||0);
       return per / p.games_played;
     },
@@ -66,8 +66,8 @@ export const ROAST_CATS = [
     title: 'Ice Cold',
     sub: 'Worst field goal percentage',
     fn: p => {
-      const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0);
-      return fga >= 10 && p.games_played >= 3 ? ((p.fg2m||0)+(p.fg3m||0)) / fga : null;
+      const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0);
+      return fga >= 10 && p.games_played >= 3 ? ((p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)) / fga : null;
     },
     fmt: v => Math.round(v * 100) + '%',
     asc: true,
@@ -93,7 +93,7 @@ export const ROAST_CATS = [
     sub: 'Most missed shots per game',
     fn: p => {
       if (p.games_played < 3) return null;
-      return ((p.fg2m_miss||0) + (p.fg3m_miss||0) + (p.ft_miss||0)) / p.games_played;
+      return ((p.fg2m_miss||0) + (p.fg3m_miss||0) + (p.fg4m_miss||0) + (p.ft_miss||0)) / p.games_played;
     },
     fmt: v => v.toFixed(1),
     asc: false,

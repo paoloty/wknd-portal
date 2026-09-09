@@ -43,14 +43,15 @@ function playerRow(p, isAdmin = false) {
   const spg = pergame(p.stl,      gp);
   const bpg = pergame(p.blk,      gp);
   const tpg = pergame(p.turnover, gp);
-  const fgp = pct(p.fg2m + p.fg3m, p.fg2m_miss + p.fg3m_miss);
+  const fgp = pct(p.fg2m + p.fg3m + (p.fg4m||0), p.fg2m_miss + p.fg3m_miss + (p.fg4m_miss||0));
   const tpp = pct(p.fg3m, p.fg3m_miss);
+  const qpp = pct(p.fg4m||0, p.fg4m_miss||0);
   const ftp = pct(p.ftm,  p.ft_miss);
 
   const d      = (v) => v !== null ? v.toFixed(4) : '0';
   const posKey = positions.map(pos => `|${pos}|`).join('');
 
-  return `<tr data-name="${escHtml(name.toLowerCase())}" data-team="${escHtml(teamName)}" data-pos="${escHtml(posKey)}" data-num="${p.number ? parseInt(p.number, 10) || 0 : 0}" data-gp="${gp}" data-ppg="${d(ppg)}" data-rpg="${d(rpg)}" data-apg="${d(apg)}" data-spg="${d(spg)}" data-bpg="${d(bpg)}" data-tpg="${d(tpg)}" data-fgp="${d(fgp)}" data-tpp="${d(tpp)}" data-ftp="${d(ftp)}" data-id="${escHtml(p.id)}" data-color="${escHtml(color)}" data-display-name="${escHtml(name)}">
+  return `<tr data-name="${escHtml(name.toLowerCase())}" data-team="${escHtml(teamName)}" data-pos="${escHtml(posKey)}" data-num="${p.number ? parseInt(p.number, 10) || 0 : 0}" data-gp="${gp}" data-ppg="${d(ppg)}" data-rpg="${d(rpg)}" data-apg="${d(apg)}" data-spg="${d(spg)}" data-bpg="${d(bpg)}" data-tpg="${d(tpg)}" data-fgp="${d(fgp)}" data-tpp="${d(tpp)}" data-qpp="${d(qpp)}" data-ftp="${d(ftp)}" data-id="${escHtml(p.id)}" data-color="${escHtml(color)}" data-display-name="${escHtml(name)}">
   <td class="pt-player">
     <a href="/players/${encodeURIComponent(p.id)}" class="pt-player-link">
       <div class="pt-avatar" style="border-color:${color}">
@@ -82,6 +83,7 @@ function playerRow(p, isAdmin = false) {
   <td class="pt-stat">${fmtPg(tpg)}</td>
   <td class="pt-stat pt-pct">${fmtPct(fgp)}</td>
   <td class="pt-stat pt-pct">${fmtPct(tpp)}</td>
+  <td class="pt-stat pt-pct">${fmtPct(qpp)}</td>
   <td class="pt-stat pt-pct">${fmtPct(ftp)}</td>
 </tr>`;
 }
@@ -155,6 +157,7 @@ export function playersPage({ players, isAdmin = false }) {
           <th class="pt-stat pt-sortable" data-col="tpg">TO</th>
           <th class="pt-stat pt-pct pt-sortable" data-col="fgp">FG%</th>
           <th class="pt-stat pt-pct pt-sortable" data-col="tpp">3P%</th>
+          <th class="pt-stat pt-pct pt-sortable" data-col="qpp">4P%</th>
           <th class="pt-stat pt-pct pt-sortable" data-col="ftp">FT%</th>
         </tr>
       </thead>
@@ -230,8 +233,8 @@ ${isAdmin ? `<div id="pt-edit-modal" style="display:none;position:fixed;inset:0;
   var sortCol = 'ppg', sortDir = -1;
   var selTeams = new Set(), selPos = new Set(), searchVal = '';
 
-  var isNum = { num:1, gp:1, ppg:1, rpg:1, apg:1, spg:1, bpg:1, tpg:1, fgp:1, tpp:1, ftp:1 };
-  var defDir = { name:1, gp:-1, ppg:-1, rpg:-1, apg:-1, spg:-1, bpg:-1, tpg:-1, fgp:-1, tpp:-1, ftp:-1 };
+  var isNum = { num:1, gp:1, ppg:1, rpg:1, apg:1, spg:1, bpg:1, tpg:1, fgp:1, tpp:1, qpp:1, ftp:1 };
+  var defDir = { name:1, gp:-1, ppg:-1, rpg:-1, apg:-1, spg:-1, bpg:-1, tpg:-1, fgp:-1, tpp:-1, qpp:-1, ftp:-1 };
 
   function update() {
     var visible = rows.filter(function(r) {
@@ -353,7 +356,7 @@ ${isAdmin ? `<div id="pt-edit-modal" style="display:none;position:fixed;inset:0;
   function fmtStat(val, col) {
     var v = parseFloat(val);
     if (!val || val === '0' || isNaN(v) || v === 0) return '—';
-    if (col === 'fgp' || col === 'tpp' || col === 'ftp') return Math.round(v * 100) + '%';
+    if (col === 'fgp' || col === 'tpp' || col === 'qpp' || col === 'ftp') return Math.round(v * 100) + '%';
     if (col === 'gp') return String(Math.round(v));
     return v.toFixed(1);
   }
@@ -434,6 +437,7 @@ ${isAdmin ? `<div id="pt-edit-modal" style="display:none;position:fixed;inset:0;
       { label: 'TO',  col: 'tpg' },
       { label: 'FG%', col: 'fgp' },
       { label: '3P%', col: 'tpp' },
+      { label: '4P%', col: 'qpp' },
       { label: 'FT%', col: 'ftp' },
       { label: 'GP',  col: 'gp'  },
     ];

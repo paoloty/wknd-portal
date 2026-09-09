@@ -755,6 +755,7 @@ const AWARD_OG_BADGE = {
   steals_leader:   { label: 'STEALS LEADER',            bg: '#f59332', text: '#10141d' },
   blocks_leader:   { label: 'BLOCKS LEADER',            bg: '#f59332', text: '#10141d' },
   three_pm_leader: { label: '3-PT LEADER',              bg: '#f59332', text: '#10141d' },
+  four_pm_leader:  { label: '4-PT LEADER',              bg: '#f59332', text: '#10141d' },
   champion:        { label: 'CHAMPION',                 bg: '#facc15', text: '#10141d' },
   finals_mvp:      { label: 'FINALS MVP',                bg: '#ef4444', text: '#fff'    },
 };
@@ -770,7 +771,7 @@ const ROSTER_AWARD_TYPES = new Set(['champion']);
 // across the admin, public, and settings routes.
 const AWARD_SECTION_KEYS = [
   'mvp', 'dpoy', 'all_wknd_1', 'all_wknd_2', 'all_wknd_def',
-  'scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader',
+  'scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader',
   'champion', 'finals_mvp',
 ];
 // MVP/DPOY normally show one hero photo; an admin can opt into a multi-column layout
@@ -808,6 +809,7 @@ function ogStatLine(row, type) {
     : type === 'steals_leader'   ? [avg(row.stl)  && `${avg(row.stl)} SPG`]
     : type === 'blocks_leader'   ? [avg(row.blk)  && `${avg(row.blk)} BPG`]
     : type === 'three_pm_leader' ? [row.fg3m != null && `${avg(row.fg3m)} 3PM`]
+    : type === 'four_pm_leader'  ? [row.fg4m != null && `${avg(row.fg4m)} 4PM`]
     : [];
   return parts.filter(Boolean).join('  ·  ');
 }
@@ -1153,7 +1155,7 @@ async function buildPlayerAwardOgPng(row, type, badge, season, { text = true } =
   return sharp(base).composite(layers).png({ compressionLevel: 7 }).toBuffer();
 }
 
-const STAT_LEADER_TYPES = ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader'];
+const STAT_LEADER_TYPES = ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader'];
 // All solo (one-player) award types vs. the team/roster ones — used to pick which hero-slide
 // shape (single photo + writeup vs. team strip graphic + no writeup) a homepage gallery
 // entry gets. Champion isn't in TEAM_AWARD_TYPES_OG (no public og-image route exists for it
@@ -1171,6 +1173,7 @@ function statLeaderValueUnit(row) {
     case 'steals_leader':   return { val: (row.stl  / gp).toFixed(1), unit: 'SPG' };
     case 'blocks_leader':   return { val: (row.blk  / gp).toFixed(1), unit: 'BPG' };
     case 'three_pm_leader': return { val: (row.fg3m / gp).toFixed(1), unit: '3PM' };
+    case 'four_pm_leader':  return { val: ((row.fg4m||0) / gp).toFixed(1), unit: '4PM' };
     default: return { val: '', unit: '' };
   }
 }
@@ -2035,8 +2038,8 @@ function derivePotgPlayerId(game, gameStats) {
   if (!eligible.length) return null;
 
   const perScore = (s) => {
-    const fgMade = Number(s.fg2m || 0) + Number(s.fg3m || 0);
-    const fgAtt  = fgMade + Number(s.fg2m_miss || 0) + Number(s.fg3m_miss || 0);
+    const fgMade = Number(s.fg2m || 0) + Number(s.fg3m || 0) + Number(s.fg4m || 0);
+    const fgAtt  = fgMade + Number(s.fg2m_miss || 0) + Number(s.fg3m_miss || 0) + Number(s.fg4m_miss || 0);
     const ftMade = Number(s.ftm || 0);
     const ftAtt  = ftMade + Number(s.ft_miss || 0);
     return (
@@ -2745,8 +2748,8 @@ app.get('/api/compare', async (req, res) => {
       totals: {
         gp: t?.games_played || 0, pts: t?.pts || 0, reb: t?.reb || 0,
         ast: t?.ast || 0, stl: t?.stl || 0, blk: t?.blk || 0, tov: t?.turnover || 0,
-        fg2m: t?.fg2m || 0, fg3m: t?.fg3m || 0, fg2m_miss: t?.fg2m_miss || 0,
-        fg3m_miss: t?.fg3m_miss || 0, ftm: t?.ftm || 0, ft_miss: t?.ft_miss || 0,
+        fg2m: t?.fg2m || 0, fg3m: t?.fg3m || 0, fg4m: t?.fg4m || 0, fg2m_miss: t?.fg2m_miss || 0,
+        fg3m_miss: t?.fg3m_miss || 0, fg4m_miss: t?.fg4m_miss || 0, ftm: t?.ftm || 0, ft_miss: t?.ft_miss || 0,
       },
     });
 
@@ -2762,8 +2765,8 @@ app.get('/api/compare', async (req, res) => {
     };
     const fgPct = (t) => {
       if (!t) return null;
-      const made = (t.fg2m || 0) + (t.fg3m || 0);
-      const att  = made + (t.fg2m_miss || 0) + (t.fg3m_miss || 0);
+      const made = (t.fg2m || 0) + (t.fg3m || 0) + (t.fg4m || 0);
+      const att  = made + (t.fg2m_miss || 0) + (t.fg3m_miss || 0) + (t.fg4m_miss || 0);
       return att > 0 ? Math.round(made / att * 100) + '%' : null;
     };
     const line = (p, t) => {
@@ -3435,7 +3438,7 @@ function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } 
 
   // Shooting efficiency multiplier — mirrors computeMvpScore so suggestions stay consistent.
   const tsMult = p => {
-    const fga   = (p.fg2m ?? 0) + (p.fg3m ?? 0) + (p.fg2m_miss ?? 0) + (p.fg3m_miss ?? 0);
+    const fga   = (p.fg2m ?? 0) + (p.fg3m ?? 0) + (p.fg4m ?? 0) + (p.fg2m_miss ?? 0) + (p.fg3m_miss ?? 0) + (p.fg4m_miss ?? 0);
     const fta   = (p.ftm ?? 0) + (p.ft_miss ?? 0);
     const denom = 2 * (fga + 0.44 * fta);
     const ts    = denom > 0 ? (p.pts ?? 0) / denom : 0;
@@ -3484,6 +3487,7 @@ function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } 
   const team2    = pickByPosition(byOvr, usedTeam);
 
   const tpm  = p => f(p.fg3m ?? 0, p.games_played);
+  const qpm  = p => f(p.fg4m ?? 0, p.games_played);
   const spg  = p => f(p.stl ?? 0, p.games_played);
   const bpg  = p => f(p.blk ?? 0, p.games_played);
 
@@ -3494,6 +3498,7 @@ function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } 
   const stealers   = sorted(spg);
   const blockers   = sorted(bpg);
   const threeShooters = sorted(tpm);
+  const fourShooters  = sorted(qpm);
   const mvpPlayer  = byOvr[0];
 
   // Defensive team: same position-based selection but ranked by dpg score.
@@ -3526,6 +3531,7 @@ function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } 
     steals_leader:   addLine(top(spg), stealers[0]     ? `${fmt1(spg(stealers[0]))} SPG`          : ''),
     blocks_leader:   addLine(top(bpg), blockers[0]     ? `${fmt1(bpg(blockers[0]))} BPG`          : ''),
     three_pm_leader: addLine(top(tpm), threeShooters[0]? `${fmt1(tpm(threeShooters[0]))} 3PM`     : ''),
+    four_pm_leader:  addLine(top(qpm), fourShooters[0]  ? `${fmt1(qpm(fourShooters[0]))} 4PM`     : ''),
     dpoy:            addLine(top(dpg), defenders[0]
       ? `${fmt1(f(defenders[0].stl, defenders[0].games_played))} SPG · ${fmt1(f(defenders[0].blk, defenders[0].games_played))} BPG` : ''),
     mvp: (() => {
@@ -3933,6 +3939,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     all_wknd_1: 'All WKND 1st Team', all_wknd_2: 'All WKND 2nd Team', all_wknd_def: 'All WKND Defensive Team',
     scoring_champ: 'Scoring Champion', assists_leader: 'Assists Leader', rebounds_leader: 'Rebounds Leader',
     steals_leader: 'Steals Leader', blocks_leader: 'Blocks Leader', three_pm_leader: '3-Pointers Leader',
+    four_pm_leader: '4-Pointers Leader',
     champion: 'Champion', finals_mvp: 'Finals MVP',
   };
   const TEAM_AWARD_TYPES = new Set(['all_wknd_1', 'all_wknd_2', 'all_wknd_def', 'champion']);
@@ -3946,22 +3953,25 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
   function buildStatLine(e) {
     const gp   = e.games_played || 1;
     const avg  = (v) => v != null ? (v / gp).toFixed(1) : null;
-    const fgm  = (e.fg2m || 0) + (e.fg3m || 0);
-    const fga  = fgm + (e.fg2m_miss || 0) + (e.fg3m_miss || 0);
+    const fgm  = (e.fg2m || 0) + (e.fg3m || 0) + (e.fg4m || 0);
+    const fga  = fgm + (e.fg2m_miss || 0) + (e.fg3m_miss || 0) + (e.fg4m_miss || 0);
     const tpm  = e.fg3m || 0;
     const tpa  = tpm + (e.fg3m_miss || 0);
+    const qpm  = e.fg4m || 0;
+    const qpa  = qpm + (e.fg4m_miss || 0);
     const ftm  = e.ftm  || 0;
     const fta  = ftm + (e.ft_miss || 0);
     const fgPct = fga  > 0 ? Math.round(fgm / fga * 100)  + '%' : null;
     const tpPct = tpa  > 0 ? Math.round(tpm / tpa * 100)  + '%' : null;
+    const qpPct = qpa  > 0 ? Math.round(qpm / qpa * 100)  + '%' : null;
     const ftPct = fta  > 0 ? Math.round(ftm / fta * 100)  + '%' : null;
     return {
       gp,
       ppg: avg(e.pts),  rpg: avg(e.reb),  apg: avg(e.ast),
       spg: avg(e.stl),  bpg: avg(e.blk),  topg: avg(e.turnover),
       totalPts: e.pts || 0, totalAst: e.ast || 0, totalReb: e.reb || 0,
-      totalStl: e.stl || 0, totalBlk: e.blk || 0, totalTpm: tpm,
-      fgPct, tpPct, ftPct,
+      totalStl: e.stl || 0, totalBlk: e.blk || 0, totalTpm: tpm, totalQpm: qpm,
+      fgPct, tpPct, qpPct, ftPct,
     };
   }
 
@@ -3991,6 +4001,8 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
         return `${s.bpg} BPG (${s.totalBlk} total blocks), ${base} over ${s.gp} regular-season games`;
       case 'three_pm_leader':
         return `${s.totalTpm} 3-pointers made (${(s.totalTpm / s.gp).toFixed(1)}/game)${s.tpPct ? `, ${s.tpPct} from three` : ''} over ${s.gp} regular-season games`;
+      case 'four_pm_leader':
+        return `${s.totalQpm} 4-pointers made (${(s.totalQpm / s.gp).toFixed(1)}/game)${s.qpPct ? `, ${s.qpPct} from four` : ''} over ${s.gp} regular-season games`;
       default:
         return `${base}${shooting ? `, ${shooting}` : ''} over ${s.gp} regular-season games`;
     }
@@ -5238,8 +5250,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   }).filter(Boolean).join('\n');
 
   const topPerformers = [...stats].sort((a, b) => b.pts - a.pts).slice(0, 6).map(p => {
-    const fgm = (p.fg2m|0) + (p.fg3m|0);
-    const fga = fgm + (p.fg2m_miss|0) + (p.fg3m_miss|0);
+    const fgm = (p.fg2m|0) + (p.fg3m|0) + (p.fg4m|0);
+    const fga = fgm + (p.fg2m_miss|0) + (p.fg3m_miss|0) + (p.fg4m_miss|0);
     const pct = fga > 0 ? ` (${Math.round(fgm/fga*100)}% FG)` : '';
     return `${displayPlayerName(p.name)} (${p.team_name}): ${p.pts}pts/${p.reb}reb/${p.ast}ast/${p.stl}stl/${p.blk}blk${pct}`;
   }).join('\n');
@@ -5247,8 +5259,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   const potgStat = potgId ? stats.find(s => s.player_id === potgId) : null;
   const potgLine = potgStat
     ? (() => {
-        const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0);
-        const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0);
+        const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0) + (potgStat.fg4m|0);
+        const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0) + (potgStat.fg4m_miss|0);
         const pct = fga > 0 ? ` (${Math.round(fgm/fga*100)}% FG)` : '';
         return `${displayPlayerName(potgStat.name)} (${potgStat.team_name}): ${potgStat.pts}pts/${potgStat.reb}reb/${potgStat.ast}ast${pct}`;
       })()
@@ -5342,8 +5354,8 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   const leagueRank  = getPlayerLeagueRank(potgId, game.season);
   const gameLogs    = getPlayerGameLog(potgId).slice(1, 7); // exclude current game
 
-  const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0);
-  const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0);
+  const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0) + (potgStat.fg4m|0);
+  const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0) + (potgStat.fg4m_miss|0);
   const fgPct = fga > 0 ? `${Math.round(fgm/fga*100)}%FG` : '';
 
   const careerHighFlags = [];
@@ -5451,9 +5463,9 @@ app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
   const g = payload.game;
   if (!g) return res.status(400).json({ error: 'Missing game data in export file.' });
 
-  const nameA = String(g.teamAName || '').toUpperCase();
-  const nameB = String(g.teamBName || '').toUpperCase();
-  if (nameA !== game.team_a_name.toUpperCase() || nameB !== game.team_b_name.toUpperCase()) {
+  const nameA = String(g.teamAName || '').trim().toUpperCase();
+  const nameB = String(g.teamBName || '').trim().toUpperCase();
+  if (nameA !== game.team_a_name.trim().toUpperCase() || nameB !== game.team_b_name.trim().toUpperCase()) {
     return res.status(400).json({
       error: `Team mismatch: export is ${g.teamAName} vs ${g.teamBName}, this game is ${game.team_a_name} vs ${game.team_b_name}.`
     });

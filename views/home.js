@@ -206,10 +206,11 @@ function leagueLeaders(players) {
   const active = players.filter(p => p.games_played > 0);
   if (!active.length) return '';
 
-  const fga = p => (p.fg2m||0)+(p.fg3m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0);
+  const fga = p => (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0);
   const tpa = p => (p.fg3m||0)+(p.fg3m_miss||0);
+  const qpa = p => (p.fg4m||0)+(p.fg4m_miss||0);
   const fta = p => (p.ftm||0)+(p.ft_miss||0);
-  const per = p => { const fgm = (p.fg2m||0)+(p.fg3m||0), fga = fgm+(p.fg2m_miss||0)+(p.fg3m_miss||0); return ((p.pts||0) + 0.4*fgm - 0.7*fga - 0.4*(p.ft_miss||0) + 0.7*(p.reb||0) + (p.stl||0) + 0.7*(p.ast||0) + 0.7*(p.blk||0) - (p.turnover||0)) / p.games_played; };
+  const per = p => { const fgm = (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0), fga = fgm+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0); return ((p.pts||0) + 0.4*fgm - 0.7*fga - 0.4*(p.ft_miss||0) + 0.7*(p.reb||0) + (p.stl||0) + 0.7*(p.ast||0) + 0.7*(p.blk||0) - (p.turnover||0)) / p.games_played; };
   const categories = [
     { label: 'PPG', title: 'Points',            sort: p => p.pts / p.games_played,                      fn: p => (p.pts / p.games_played).toFixed(1) },
     { label: 'PER', title: 'Efficiency Rating', sort: p => per(p),                                      fn: p => per(p).toFixed(1) },
@@ -217,9 +218,11 @@ function leagueLeaders(players) {
     { label: 'APG', title: 'Assists',           sort: p => p.ast / p.games_played,                      fn: p => (p.ast / p.games_played).toFixed(1) },
     { label: 'SPG', title: 'Steals',            sort: p => p.stl / p.games_played,                      fn: p => (p.stl / p.games_played).toFixed(1) },
     { label: 'BPG', title: 'Blocks',            sort: p => p.blk / p.games_played,                      fn: p => (p.blk / p.games_played).toFixed(1) },
-    { label: 'FG%', title: 'Field Goal %',      sort: p => fga(p) >= 10 ? (p.fg2m+p.fg3m)/fga(p) : -1, fn: p => Math.round((p.fg2m+p.fg3m)/fga(p)*100)+'%', minFilter: p => fga(p) >= 10 },
+    { label: 'FG%', title: 'Field Goal %',      sort: p => fga(p) >= 10 ? (p.fg2m+p.fg3m+(p.fg4m||0))/fga(p) : -1, fn: p => Math.round((p.fg2m+p.fg3m+(p.fg4m||0))/fga(p)*100)+'%', minFilter: p => fga(p) >= 10 },
     { label: '3P%', title: '3-Point %',         sort: p => tpa(p) >= 5  ? p.fg3m/tpa(p) : -1,          fn: p => Math.round(p.fg3m/tpa(p)*100)+'%',           minFilter: p => tpa(p) >= 5 },
     { label: '3PM', title: '3-Pointers',        sort: p => p.fg3m / p.games_played,                     fn: p => (p.fg3m / p.games_played).toFixed(1) },
+    { label: '4P%', title: '4-Point %',         sort: p => qpa(p) >= 5  ? (p.fg4m||0)/qpa(p) : -1,     fn: p => Math.round((p.fg4m||0)/qpa(p)*100)+'%',      minFilter: p => qpa(p) >= 5 },
+    { label: '4PM', title: '4-Pointers',        sort: p => (p.fg4m||0) / p.games_played,                fn: p => ((p.fg4m||0) / p.games_played).toFixed(1) },
     { label: 'FTM', title: 'Free Throws',       sort: p => p.ftm  / p.games_played,                     fn: p => (p.ftm  / p.games_played).toFixed(1) },
     { label: 'TO',  title: 'Turnovers',         sort: p => p.turnover / p.games_played,                 fn: p => (p.turnover / p.games_played).toFixed(1) },
     { label: 'FT%', title: 'Free Throw %',      sort: p => fta(p) >= 5  ? p.ftm/fta(p) : -1,           fn: p => Math.round(p.ftm/fta(p)*100)+'%',            minFilter: p => fta(p) >= 5 },

@@ -121,8 +121,9 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
 
   // ── Right column: career averages ──────────────────────────────────────────
   const gp = totals?.games_played || 0;
-  const fga  = (totals?.fg2m || 0) + (totals?.fg3m || 0) + (totals?.fg2m_miss || 0) + (totals?.fg3m_miss || 0);
+  const fga  = (totals?.fg2m || 0) + (totals?.fg3m || 0) + (totals?.fg4m || 0) + (totals?.fg2m_miss || 0) + (totals?.fg3m_miss || 0) + (totals?.fg4m_miss || 0);
   const tpa  = (totals?.fg3m || 0) + (totals?.fg3m_miss || 0);
+  const qpa  = (totals?.fg4m || 0) + (totals?.fg4m_miss || 0);
   const fta  = (totals?.ftm || 0) + (totals?.ft_miss || 0);
   const caStats = gp ? [
     { lbl: 'PPG', val: avg(totals.pts, gp) },
@@ -130,8 +131,9 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
     { lbl: 'APG', val: avg(totals.ast, gp) },
     { lbl: 'SPG', val: avg(totals.stl, gp) },
     { lbl: 'BPG', val: avg(totals.blk, gp) },
-    ...(fga  >= 10 ? [{ lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0)) }] : []),
+    ...(fga  >= 10 ? [{ lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0) + (totals.fg4m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0) + (totals.fg4m_miss || 0)) }] : []),
     ...(tpa  >= 5  ? [{ lbl: '3P%', val: pct(totals.fg3m, totals.fg3m_miss) }] : []),
+    ...(qpa  >= 5  ? [{ lbl: '4P%', val: pct(totals.fg4m || 0, totals.fg4m_miss || 0) }] : []),
     ...(fta  >= 5  ? [{ lbl: 'FT%', val: pct(totals.ftm, totals.ft_miss) }] : []),
   ].filter(s => s.val !== '0.0' && s.val !== '0%' && s.val !== '—').slice(0, 8) : [];
 
@@ -635,16 +637,19 @@ function gameLog(allRows, player, potgGameIds) {
       <td class="gl-date">${escHtml(formatDate(g.date))} <span class="dnp-pill">DNP</span></td>
       <td>${oppCell}</td>
       <td class="gl-result ${won ? 'gl-result--w' : 'gl-result--l'}">${won ? 'W' : 'L'} ${myScore}–${opScore}</td>
-      <td colspan="17" class="gl-stat">–</td>
+      <td colspan="20" class="gl-stat">–</td>
     </tr>`;
     }
 
-    const fgm  = (g.fg2m || 0) + (g.fg3m || 0);
-    const fgMs = (g.fg2m_miss || 0) + (g.fg3m_miss || 0);
+    const fgm  = (g.fg2m || 0) + (g.fg3m || 0) + (g.fg4m || 0);
+    const fgMs = (g.fg2m_miss || 0) + (g.fg3m_miss || 0) + (g.fg4m_miss || 0);
     const fga  = fgm + fgMs;
     const tpm  = g.fg3m || 0;
     const tpMs = g.fg3m_miss || 0;
     const tpa  = tpm + tpMs;
+    const qpm  = g.fg4m || 0;
+    const qpMs = g.fg4m_miss || 0;
+    const qpa  = qpm + qpMs;
     const ftm  = g.ftm || 0;
     const ftMs = g.ft_miss || 0;
     const fta  = ftm + ftMs;
@@ -664,6 +669,9 @@ function gameLog(allRows, player, potgGameIds) {
       <td class="gl-stat gl-group-start">${tpm}</td>
       <td class="gl-stat">${tpa}</td>
       <td class="gl-stat gl-pct">${pct(tpm, tpMs)}</td>
+      <td class="gl-stat gl-group-start">${qpm}</td>
+      <td class="gl-stat">${qpa}</td>
+      <td class="gl-stat gl-pct">${pct(qpm, qpMs)}</td>
       <td class="gl-stat gl-group-start">${ftm}</td>
       <td class="gl-stat">${fta}</td>
       <td class="gl-stat gl-pct">${pct(ftm, ftMs)}</td>
@@ -684,12 +692,15 @@ function gameLog(allRows, player, potgGameIds) {
     const sum  = k => played.reduce((t, g) => t + Number(g[k] || 0), 0);
     const gp   = played.length;
     const a    = k => (sum(k) / gp).toFixed(1);
-    const fgm  = sum('fg2m') + sum('fg3m');
-    const fgMs = sum('fg2m_miss') + sum('fg3m_miss');
+    const fgm  = sum('fg2m') + sum('fg3m') + sum('fg4m');
+    const fgMs = sum('fg2m_miss') + sum('fg3m_miss') + sum('fg4m_miss');
     const fga  = fgm + fgMs;
     const tpm  = sum('fg3m');
     const tpMs = sum('fg3m_miss');
     const tpa  = tpm + tpMs;
+    const qpm  = sum('fg4m');
+    const qpMs = sum('fg4m_miss');
+    const qpa  = qpm + qpMs;
     const ftm  = sum('ftm');
     const ftMs = sum('ft_miss');
     const fta  = ftm + ftMs;
@@ -701,6 +712,9 @@ function gameLog(allRows, player, potgGameIds) {
       <td class="gl-stat gl-group-start">${(tpm/gp).toFixed(1)}</td>
       <td class="gl-stat">${(tpa/gp).toFixed(1)}</td>
       <td class="gl-stat gl-pct">${pct(tpm, tpMs)}</td>
+      <td class="gl-stat gl-group-start">${(qpm/gp).toFixed(1)}</td>
+      <td class="gl-stat">${(qpa/gp).toFixed(1)}</td>
+      <td class="gl-stat gl-pct">${pct(qpm, qpMs)}</td>
       <td class="gl-stat gl-group-start">${(ftm/gp).toFixed(1)}</td>
       <td class="gl-stat">${(fta/gp).toFixed(1)}</td>
       <td class="gl-stat gl-pct">${pct(ftm, ftMs)}</td>
@@ -712,7 +726,7 @@ function gameLog(allRows, player, potgGameIds) {
       <td class="gl-stat">${a('pf')}</td>
       <td class="gl-stat">${a('pts')}</td>
       <td class="gl-stat gl-per">${(played.reduce((t, g) => {
-        const fgm = (g.fg2m||0)+(g.fg3m||0), fga = fgm+(g.fg2m_miss||0)+(g.fg3m_miss||0);
+        const fgm = (g.fg2m||0)+(g.fg3m||0)+(g.fg4m||0), fga = fgm+(g.fg2m_miss||0)+(g.fg3m_miss||0)+(g.fg4m_miss||0);
         const ftMs = g.ft_miss||0;
         return t + Number(g.pts)+0.4*fgm-0.7*fga-0.4*ftMs+0.7*Number(g.reb)+Number(g.stl)+0.7*Number(g.ast)+0.7*Number(g.blk)-Number(g.turnover);
       }, 0) / played.length).toFixed(1)}</td>
@@ -736,6 +750,7 @@ function gameLog(allRows, player, potgGameIds) {
           <th rowspan="2" class="gl-result">SCORE</th>
           <th colspan="3" class="gl-group">FIELD GOALS</th>
           <th colspan="3" class="gl-group">3-POINTERS</th>
+          <th colspan="3" class="gl-group">4-POINTERS</th>
           <th colspan="3" class="gl-group">FREE THROWS</th>
           <th rowspan="2" class="gl-stat">REB</th>
           <th rowspan="2" class="gl-stat">AST</th>
@@ -747,6 +762,9 @@ function gameLog(allRows, player, potgGameIds) {
           <th rowspan="2" class="gl-stat gl-per">PER</th>
         </tr>
         <tr class="gl-subhead">
+          <th class="gl-stat">M</th>
+          <th class="gl-stat">A</th>
+          <th class="gl-stat gl-pct">%</th>
           <th class="gl-stat">M</th>
           <th class="gl-stat">A</th>
           <th class="gl-stat gl-pct">%</th>
@@ -808,6 +826,7 @@ const AWARD_META = {
   steals_leader:   { label: 'Steals Leader',                 icon: '⚡', bg: '#f59332', text: '#10141d' },
   blocks_leader:   { label: 'Blocks Leader',                 icon: '🚫', bg: '#f59332', text: '#10141d' },
   three_pm_leader: { label: '3-Pointers Leader',             icon: '🏹', bg: '#f59332', text: '#10141d' },
+  four_pm_leader:  { label: '4-Pointers Leader',             icon: '🚀', bg: '#f59332', text: '#10141d' },
   champion:        { label: 'League Champion',                icon: '👑', bg: '#facc15', text: '#10141d' },
   finals_mvp:      { label: 'Finals MVP',                     icon: '🥇', bg: '#ef4444', text: '#fff'    },
 };
@@ -844,8 +863,9 @@ function statsTable(statsByType) {
   const { seasons, career } = statsByType;
   const hasPlayoffs = seasons.some(r => r.game_type === 'playoff');
 
-  const fgPct  = r => pct((r.fg2m || 0) + (r.fg3m || 0), (r.fg2m_miss || 0) + (r.fg3m_miss || 0));
+  const fgPct  = r => pct((r.fg2m || 0) + (r.fg3m || 0) + (r.fg4m || 0), (r.fg2m_miss || 0) + (r.fg3m_miss || 0) + (r.fg4m_miss || 0));
   const tpPct  = r => { const att = (r.fg3m || 0) + (r.fg3m_miss || 0); return att >= 3 ? pct(r.fg3m, r.fg3m_miss) : '—'; };
+  const qpPct  = r => { const att = (r.fg4m || 0) + (r.fg4m_miss || 0); return att >= 3 ? pct(r.fg4m || 0, r.fg4m_miss || 0) : '—'; };
   const ftPct  = r => { const att = (r.ftm || 0) + (r.ft_miss || 0); return att >= 3 ? pct(r.ftm, r.ft_miss) : '—'; };
 
   const statRow = (r, label, isBold = false, dimmed = false) => {
@@ -862,6 +882,7 @@ function statsTable(statsByType) {
       <td>${avg(r.blk, gp)}</td>
       <td>${fgPct(r)}</td>
       <td>${tpPct(r)}</td>
+      <td>${qpPct(r)}</td>
       <td>${ftPct(r)}</td>
     </tr>`;
   };
@@ -893,12 +914,12 @@ function statsTable(statsByType) {
   <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:'Archivo',sans-serif;text-align:center">
     <thead>
       <tr style="border-bottom:1px solid var(--border)">
-        ${th('')}${th('GP')}${th('PPG')}${th('RPG')}${th('APG')}${th('SPG')}${th('BPG')}${th('FG%')}${th('3P%')}${th('FT%')}
+        ${th('')}${th('GP')}${th('PPG')}${th('RPG')}${th('APG')}${th('SPG')}${th('BPG')}${th('FG%')}${th('3P%')}${th('4P%')}${th('FT%')}
       </tr>
     </thead>
     <tbody style="color:var(--text)">
       ${rows}
-      ${careerRow ? `<tr><td colspan="10" style="border-top:1px solid var(--border);padding:0"></td></tr>${careerRow}` : ''}
+      ${careerRow ? `<tr><td colspan="11" style="border-top:1px solid var(--border);padding:0"></td></tr>${careerRow}` : ''}
     </tbody>
   </table>
 </div>`;
@@ -1397,6 +1418,7 @@ export function playerPage({
 ${coachNoteHtml}
 <div class="game-detail-layout">
   <div class="game-detail-left">
+    ${statsTable(statsByType)}
     ${gameLog(gameLogs, player, potgGameIds)}
     ${peerRatingsHtml}
     ${fbCard}
