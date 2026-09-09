@@ -500,10 +500,12 @@ export function marketplaceListingPage({
         ${detailHeader}
         <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> <span class="mkt-price-compare" id="mkt-price-compare">${!commitments.length ? comparePriceHtml(listing, { size: 'detail' }) : ''}</span></div>
         ${meterBlock(committedCount, listing.min_buyers)}
-        ${avatarStack(committedPlayers)}
-        <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
-          🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
-        </button>
+        <div class="mkt-social-row">
+          ${avatarStack(committedPlayers)}
+          <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
+            🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
+          </button>
+        </div>
         <div class="mkt-detail__action">${actionHtml}</div>
         <p class="mkt-err" id="mkt-err" hidden></p>
       </div>
@@ -1401,6 +1403,11 @@ const STYLE = `<style>
 .mkt-jersey-notes { resize: vertical; min-height: 38px; margin-bottom: 12px; }
 
 .mkt-card-social { display: flex; gap: 10px; font-size: 11.5px; color: var(--text-muted); }
+
+/* Avatars left, like button right — same left/right split as the grid card's overlaid
+   avatar-stack/like-count pair, just laid out in the sidebar's plain flow here instead of
+   over a photo. Empty on both sides collapses cleanly since avatarStack returns ''. */
+.mkt-social-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
 /* ── Like button — inline on desktop, mirrors games' tabActionsBar react button; hidden at
    the same breakpoint the mobile floater takes over at, so it's never shown twice. ────── */
