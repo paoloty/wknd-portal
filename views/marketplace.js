@@ -246,20 +246,18 @@ export function marketplacePage({ listings = [], countsById = {}, committedById 
     // the specific option each card represents instead (see committedOptsById below).
     if (!variants) return [{ listing: l, cardOpts: { ...opts, committedPlayers: allCommittedPlayers } }];
     const committedOpts = committedOptsById[l.id];
-    return variants.map(v => {
-      // The meter's count has to match the avatar stack it sits above — both scoped to this
-      // exact variant, not the listing's total across every design. min_buyers stays the
-      // listing-wide threshold (that's still one shared production run), only the numerator
-      // narrows to what this specific card is actually showing.
-      const committedPlayers = allCommittedPlayers.filter(row => rowMatchesOpt(row, v.opt));
-      return {
-        listing: l,
-        cardOpts: {
-          ...opts, variant: v, committed: committedOpts ? committedOpts.has(v.opt) : false,
-          committedCount: committedPlayers.length, committedPlayers,
-        },
-      };
-    });
+    return variants.map(v => ({
+      listing: l,
+      cardOpts: {
+        // The meter (count/min_buyers) stays the shared listing-wide total on every exploded
+        // card — min_buyers is one threshold for the whole production run regardless of which
+        // design a buyer picks, so every variant card should read the same progress toward it
+        // (opts.committedCount already carries that). Only the avatar stack narrows to this
+        // specific option, since that's about who picked *this* design, not the shared total.
+        ...opts, variant: v, committed: committedOpts ? committedOpts.has(v.opt) : false,
+        committedPlayers: allCommittedPlayers.filter(row => rowMatchesOpt(row, v.opt)),
+      },
+    }));
   });
   cardEntries.sort((a, b) => (b.cardOpts.committed ? 1 : 0) - (a.cardOpts.committed ? 1 : 0));
   const cards = cardEntries.length
