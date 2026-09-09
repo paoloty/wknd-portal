@@ -189,10 +189,11 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
         <div class="mkt-photo-scrim"></div>
         <span class="mkt-photo-status">${badge}</span>
         ${avatars ? `<div class="mkt-photo-avatars">${avatars}</div>` : ''}
+        ${reactionCount ? `<span class="mkt-photo-likes">🔥 ${reactionCount}</span>` : ''}
       </div>`;
 
-  const social = (commentCount || reactionCount)
-    ? `<div class="mkt-card-social">${commentCount ? `<span>💬 ${commentCount}</span>` : ''}${reactionCount ? `<span>🔥 ${reactionCount}</span>` : ''}</div>`
+  const social = commentCount
+    ? `<div class="mkt-card-social"><span>💬 ${commentCount}</span></div>`
     : '';
 
   return `<article class="mkt-card">
@@ -1147,6 +1148,10 @@ const STYLE = `<style>
 .mkt-photo-status { position: absolute; top: 10px; right: 10px; z-index: 1; }
 .mkt-photo-status .mkt-badge { background: rgba(2,8,23,.72); backdrop-filter: blur(3px); border-color: rgba(255,255,255,.18); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 .mkt-photo-avatars { position: absolute; left: 10px; bottom: 10px; z-index: 1; }
+.mkt-photo-likes {
+  position: absolute; right: 10px; bottom: 10px; z-index: 1; display: flex; align-items: center; gap: 3px;
+  font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
 
 .mkt-card-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 18px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
 .mkt-card-name {
