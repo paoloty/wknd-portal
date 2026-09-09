@@ -16,30 +16,36 @@ function parseJsonArray(raw) {
   try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
 }
 
-const MARKETPLACE_MAX_PHOTOS = 10;
+// Mirrors the customer-facing strikethrough + savings treatment (views/marketplace.js's
+// comparePriceHtml) so admin sees the same "is this listing actually discounted" read —
+// only renders when compare_at_price is actually set and higher than the real price.
+function compareAmountHtml(listing) {
+  const compareAt = Number(listing.compare_at_price) || 0;
+  if (!compareAt || compareAt <= listing.price) return '';
+  const savings = compareAt - listing.price;
+  const pct = Math.round((savings / compareAt) * 100);
+  return ` <span class="line-through text-slate-500 font-normal">${fmtPeso(compareAt)}</span> <span class="text-[10px] text-green-400 font-semibold">Save ${fmtPeso(savings)} (${pct}%)</span>`;
+}
 
 // Existing photos as a removable thumbnail grid, plus one bulk add tile (multi-file picker)
 // that appends new uploads to the end of the array in a single request — replaces the old
 // fixed-4-slot-index model now that the player-facing gallery is an open masonry grid rather
 // than a max-4 carousel. Same FileReader → dataUrl → fetch POST pattern as the Papawis court
 // photo upload (views/admin/papawis-courts.js), batched into one array instead of one call
-// per file.
+// per file. No count cap — a photo-backed variant group can reasonably need more than a handful.
 function photoManager(listingId, photos) {
   const thumbs = photos.map((_, i) => `<div class="mkt-photo-slot" data-index="${i}" draggable="true">
       <img src="/api/marketplace/${escHtml(listingId)}/photo/${i}?t=${Date.now()}" alt="">
       <button type="button" class="mkt-photo-remove" data-remove-index="${i}">&times;</button>
     </div>`).join('');
-  const room = MARKETPLACE_MAX_PHOTOS - photos.length;
-  const addTile = room > 0
-    ? `<label class="mkt-photo-add">
+  const addTile = `<label class="mkt-photo-add">
          ${ICON_PLUS}
          <input type="file" accept="image/*" id="mkt-photo-input" multiple hidden>
-       </label>`
-    : `<div class="mkt-photo-add mkt-photo-add--full">Limit reached</div>`;
+       </label>`;
 
   return `
 <div class="bg-admin-surface border border-admin-border rounded-lg p-5 mb-5">
-  <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Photos <span class="font-normal normal-case text-slate-600">(${photos.length}/${MARKETPLACE_MAX_PHOTOS} — select multiple at once, drag to reorder)</span></div>
+  <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Photos <span class="font-normal normal-case text-slate-600">(${photos.length} — select multiple at once, drag to reorder)</span></div>
   <div class="mkt-photo-grid" id="mkt-photo-grid">${thumbs}${addTile}</div>
   <p class="agm-modal-err" id="mkt-photo-err" style="margin-top:8px" hidden></p>
 </div>
@@ -159,9 +165,10 @@ export function adminMarketplaceListBody({ listings = [], countsById = {} } = {}
   const rows = listings.map(l => {
     const count = countsById[l.id] || 0;
     const meets = count >= l.min_buyers;
-    return `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
+    return `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors" data-id="${escHtml(l.id)}">
+      <td class="px-4 py-3"><input type="checkbox" class="mkt-row-check accent-amber-400" data-id="${escHtml(l.id)}"></td>
       <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(l.title)}</td>
-      <td class="px-4 py-3 text-xs text-slate-500">${fmtPeso(l.price)}</td>
+      <td class="px-4 py-3 text-xs text-slate-500">${fmtPeso(l.price)}${compareAmountHtml(l)}</td>
       <td class="px-4 py-3 text-sm text-slate-300 font-saira">${count}<span class="text-slate-600">/${l.min_buyers} min</span>${meets ? ` <span class="text-[10px] text-green-400">✓ met</span>` : ''}</td>
       <td class="px-4 py-3">${statusBadge(l.status)}</td>
       <td class="px-4 py-3 text-right">
@@ -177,9 +184,18 @@ export function adminMarketplaceListBody({ listings = [], countsById = {} } = {}
 </div>
 
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
+  ${listings.length ? `<div class="px-4 py-2.5 border-b border-admin-border/40 flex items-center gap-3">
+    <label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+      <input type="checkbox" id="mkt-select-all" class="accent-amber-400"> Select all
+    </label>
+    <div class="ml-auto">
+      <button id="mkt-bulk-delete-btn" class="text-[11px] font-semibold text-rose-400 hover:text-rose-300 disabled:opacity-30" disabled>Delete Selected</button>
+    </div>
+  </div>` : ''}
   <table class="w-full border-collapse">
     <thead>
       <tr>
+        <th class="px-4 py-2.5 border-b border-admin-border"></th>
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Title</th>
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Price</th>
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Committed</th>
@@ -188,10 +204,50 @@ export function adminMarketplaceListBody({ listings = [], countsById = {} } = {}
       </tr>
     </thead>
     <tbody>
-      ${rows || '<tr><td colspan="5" class="px-4 py-10 text-center text-sm text-slate-500">No listings yet.</td></tr>'}
+      ${rows || '<tr><td colspan="6" class="px-4 py-10 text-center text-sm text-slate-500">No listings yet.</td></tr>'}
     </tbody>
   </table>
-</div>`;
+</div>
+<script>
+(function() {
+  var selectAll = document.getElementById('mkt-select-all');
+  var deleteBtn = document.getElementById('mkt-bulk-delete-btn');
+  if (!deleteBtn) return;
+  var checks = Array.prototype.slice.call(document.querySelectorAll('.mkt-row-check'));
+
+  function updateBtn() {
+    deleteBtn.disabled = document.querySelectorAll('.mkt-row-check:checked').length === 0;
+  }
+  if (selectAll) selectAll.addEventListener('change', function() {
+    checks.forEach(function(c) { c.checked = selectAll.checked; });
+    updateBtn();
+  });
+  checks.forEach(function(c) {
+    c.addEventListener('change', function() {
+      updateBtn();
+      if (selectAll) selectAll.checked = checks.every(function(x) { return x.checked; });
+    });
+  });
+
+  deleteBtn.addEventListener('click', async function() {
+    var ids = Array.prototype.filter.call(checks, function(c) { return c.checked; }).map(function(c) { return c.dataset.id; });
+    if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' listing' + (ids.length > 1 ? 's' : '') + '? This cannot be undone.')) return;
+    deleteBtn.disabled = true;
+    var origText = deleteBtn.textContent;
+    deleteBtn.textContent = 'Deleting…';
+    var results = await Promise.all(ids.map(function(id) {
+      return fetch('/admin/marketplace/' + id, { method: 'DELETE' })
+        .then(function(r) { return r.json().then(function(j) { return { id: id, ok: r.ok, error: j.error }; }); });
+    }));
+    var failed = results.filter(function(r) { return !r.ok; });
+    if (failed.length) {
+      alert('Could not delete ' + failed.length + ' listing' + (failed.length > 1 ? 's' : '') + ' (likely already charged): ' + failed.map(function(f) { return f.error || f.id; }).join(', '));
+    }
+    window.location.reload();
+  });
+})();
+</script>`;
 }
 
 // Shared by New and Edit — identical fields either way, just pre-filled + a different
@@ -201,6 +257,8 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
   const initialGroups = isEdit ? (() => { try { return JSON.parse(listing.variant_options || '[]'); } catch { return []; } })() : [];
   const submitUrl = isEdit ? `/admin/marketplace/${listing.id}` : '/admin/marketplace';
   const successUrl = isEdit ? `/admin/marketplace/${listing.id}` : null;
+  const listingId = isEdit ? listing.id : '';
+  const photoCount = isEdit ? (() => { try { return JSON.parse(listing.photos || '[]').length; } catch { return 0; } })() : 0;
 
   return `
 <form id="mkt-form" class="bg-admin-surface border border-admin-border rounded-lg p-5 max-w-lg">
@@ -223,6 +281,10 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
     </div>
   </div>
   <div class="mb-4">
+    <label class="admin-field-label">Compare-at price <span class="font-normal text-slate-500">(optional — shown struck through with the savings, e.g. the retail price this group buy undercuts. Leave blank or 0 if there's nothing to compare against.)</span></label>
+    <input type="number" name="compare_at_price" class="admin-input mt-1" min="0" step="1" value="${isEdit && listing.compare_at_price > 0 ? escHtml(String(listing.compare_at_price)) : ''}">
+  </div>
+  <div class="mb-4">
     <label class="admin-field-label">Variants <span class="font-normal text-slate-500">(optional — add one group per thing a buyer needs to pick, e.g. Jersey Size and Shorts Size separately)</span></label>
     <div id="mkt-variant-groups" class="mt-2" style="display:flex;flex-direction:column;gap:10px"></div>
     <div class="flex items-center gap-2 mt-2">
@@ -235,16 +297,77 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
   <button type="submit" class="admin-btn">${isEdit ? 'Save Changes' : 'Create Listing'}</button>
   ${isEdit ? `<a href="/admin/marketplace/${escHtml(listing.id)}" class="admin-btn admin-btn--sm admin-btn--muted ml-2">Cancel</a>` : ''}
 </form>
+<style>
+.mkt-photo-assign { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.mkt-photo-assign-row { display: flex; align-items: center; gap: 8px; }
+.mkt-photo-assign-label { font-size: 11px; color: var(--admin-muted,#7c8aa5); width: 90px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mkt-photo-assign-thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+.mkt-photo-pick { padding: 0; width: 36px; height: 36px; border-radius: 6px; overflow: hidden; border: 2px solid transparent; cursor: pointer; background: none; opacity: .55; transition: opacity .12s, border-color .12s; }
+.mkt-photo-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt-photo-pick:hover { opacity: .85; }
+.mkt-photo-pick.is-selected { border-color: var(--brand, #f59332); opacity: 1; }
+</style>
 
 <script>
 (function() {
   var sizes = ${JSON.stringify(jerseySizes)};
   var initialGroups = ${JSON.stringify(initialGroups)};
+  var listingId = ${JSON.stringify(listingId)};
+  var photoCount = ${JSON.stringify(photoCount)};
   var groupsWrap = document.getElementById('mkt-variant-groups');
 
-  function addGroup(label, optionsText, sizeChartKind, surchargeStep) {
+  // Rebuilds the per-option photo-assignment strip from whatever's currently in the
+  // options textarea, preserving any assignments already made for options that are still
+  // present (keyed by the option's own text, same as the server-side normalization).
+  // Rebuilds the per-option surcharge inputs from whatever's currently in the options
+  // textarea, preserving amounts already set for options that are still present — same
+  // keyed-by-value approach as renderPhotoAssign, just a number input instead of a thumbnail.
+  function renderSurchargeAssign(row) {
+    var wrap = row.querySelector('.mkt-variant-surcharge-assign');
+    var checked = row.querySelector('.mkt-variant-per-option-surcharge').checked;
+    wrap.hidden = !checked;
+    if (!checked) return;
+    var options = row.querySelector('.mkt-variant-options-text').value.split('\\n').map(function(s){ return s.trim(); }).filter(Boolean);
+    var existing = row._optionSurcharges || {};
+    wrap.innerHTML = options.map(function(opt) {
+      var esc = opt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g, '&quot;');
+      var val = existing[opt] || '';
+      return '<div class="mkt-photo-assign-row">' +
+        '<span class="mkt-photo-assign-label">' + esc + '</span>' +
+        '<input type="number" class="admin-input mkt-option-surcharge-input" data-opt="' + esc + '" min="0" step="1" placeholder="0" style="width:80px" value="' + val + '">' +
+      '</div>';
+    }).join('');
+  }
+
+  function renderPhotoAssign(row) {
+    var wrap = row.querySelector('.mkt-variant-photo-assign');
+    var checked = row.querySelector('.mkt-variant-photobacked').checked;
+    wrap.hidden = !checked;
+    if (!checked) return;
+    var options = row.querySelector('.mkt-variant-options-text').value.split('\\n').map(function(s){ return s.trim(); }).filter(Boolean);
+    var existing = row._optionPhotos || {};
+    if (!photoCount) {
+      wrap.innerHTML = '<p style="font-size:11px;color:var(--admin-muted,#7c8aa5)">Upload photos first (below), then come back here to assign them.</p>';
+      return;
+    }
+    wrap.innerHTML = options.map(function(opt) {
+      var thumbs = '';
+      for (var i = 0; i < photoCount; i++) {
+        var sel = existing[opt] === i ? ' is-selected' : '';
+        thumbs += '<button type="button" class="mkt-photo-pick' + sel + '" data-opt="' + opt.replace(/"/g, '&quot;') + '" data-photo-index="' + i + '">' +
+          '<img src="/api/marketplace/' + listingId + '/photo/' + i + '" alt="">' +
+        '</button>';
+      }
+      return '<div class="mkt-photo-assign-row"><span class="mkt-photo-assign-label">' + opt.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span><div class="mkt-photo-assign-thumbs">' + thumbs + '</div></div>';
+    }).join('');
+  }
+
+  function addGroup(label, optionsText, sizeChartKind, surchargeStep, photoBacked, optionPhotos, multiSelect, optionSurcharges) {
     var row = document.createElement('div');
     row.className = 'mkt-variant-group-row';
+    row._optionPhotos = optionPhotos || {};
+    row._optionSurcharges = optionSurcharges || {};
+    var perOptionSurcharge = !!(optionSurcharges && Object.keys(optionSurcharges).length);
     row.style.cssText = 'border:1px solid var(--admin-border,#243044);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px';
     row.innerHTML =
       '<div style="display:flex;gap:8px;align-items:center">' +
@@ -261,12 +384,44 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
         '</select>' +
         '<label style="font-size:11px;color:var(--admin-muted,#7c8aa5);white-space:nowrap;margin-left:6px">Surcharge/tier (2XL+):</label>' +
         '<input type="number" class="admin-input mkt-variant-surcharge" min="0" step="1" placeholder="0" style="flex:0 0 auto;width:80px" value="' + (surchargeStep || '') + '">' +
-      '</div>';
+      '</div>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--admin-muted,#7c8aa5)">' +
+        '<input type="checkbox" class="mkt-variant-photobacked"' + (photoBacked ? ' checked' : '') + '> Show as a photo picker (each option is one of the uploaded photos)' +
+      '</label>' +
+      '<div class="mkt-variant-photo-extra"' + (photoBacked ? '' : ' hidden') + '>' +
+        '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--admin-muted,#7c8aa5);margin-bottom:8px">' +
+          '<input type="checkbox" class="mkt-variant-multiselect"' + (multiSelect ? ' checked' : '') + '> Let buyers pick multiple (up to 3) — price multiplies by however many they pick' +
+        '</label>' +
+        '<div class="mkt-variant-photo-assign"></div>' +
+      '</div>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--admin-muted,#7c8aa5)">' +
+        '<input type="checkbox" class="mkt-variant-per-option-surcharge"' + (perOptionSurcharge ? ' checked' : '') + '> Per-option surcharge (e.g. Regular +0, NBA Cut +50)' +
+      '</label>' +
+      '<div class="mkt-variant-surcharge-assign"' + (perOptionSurcharge ? '' : ' hidden') + '></div>';
     row.querySelector('.mkt-variant-remove').addEventListener('click', function() { row.remove(); });
+    row.querySelector('.mkt-variant-photobacked').addEventListener('change', function() {
+      row.querySelector('.mkt-variant-photo-extra').hidden = !row.querySelector('.mkt-variant-photobacked').checked;
+      renderPhotoAssign(row);
+    });
+    row.querySelector('.mkt-variant-per-option-surcharge').addEventListener('change', function() { renderSurchargeAssign(row); });
+    row.querySelector('.mkt-variant-options-text').addEventListener('input', function() { renderPhotoAssign(row); renderSurchargeAssign(row); });
+    row.querySelector('.mkt-variant-photo-assign').addEventListener('click', function(e) {
+      var btn = e.target.closest('.mkt-photo-pick');
+      if (!btn) return;
+      row._optionPhotos[btn.dataset.opt] = Number(btn.dataset.photoIndex);
+      renderPhotoAssign(row);
+    });
+    row.querySelector('.mkt-variant-surcharge-assign').addEventListener('input', function(e) {
+      var input = e.target.closest('.mkt-option-surcharge-input');
+      if (!input) return;
+      row._optionSurcharges[input.dataset.opt] = Number(input.value) || 0;
+    });
     groupsWrap.appendChild(row);
+    if (photoBacked) renderPhotoAssign(row);
+    if (perOptionSurcharge) renderSurchargeAssign(row);
   }
 
-  initialGroups.forEach(function(g) { addGroup(g.label, (g.options || []).join('\\n'), g.sizeChartKind || '', g.surchargeStep || 0); });
+  initialGroups.forEach(function(g) { addGroup(g.label, (g.options || []).join('\\n'), g.sizeChartKind || '', g.surchargeStep || 0, g.photoBacked || false, g.optionPhotos || {}, g.multiSelect || false, g.optionSurcharges || {}); });
 
   document.getElementById('mkt-add-jersey-size').addEventListener('click', function() { addGroup('Jersey Size', sizes.join('\\n'), 'top', 0); });
   document.getElementById('mkt-add-shorts-size').addEventListener('click', function() { addGroup('Shorts Size', sizes.join('\\n'), 'shorts', 0); });
@@ -282,7 +437,9 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
       var options = row.querySelector('.mkt-variant-options-text').value.split('\\n').map(function(s){ return s.trim(); }).filter(Boolean);
       var sizeChartKind = row.querySelector('.mkt-variant-chart').value;
       var surchargeStep = Number(row.querySelector('.mkt-variant-surcharge').value) || 0;
-      if (label && options.length) variantGroups.push({ label: label, options: options, sizeChartKind: sizeChartKind, surchargeStep: surchargeStep });
+      var photoBacked = row.querySelector('.mkt-variant-photobacked').checked;
+      var multiSelect = row.querySelector('.mkt-variant-multiselect').checked;
+      if (label && options.length) variantGroups.push({ label: label, options: options, sizeChartKind: sizeChartKind, surchargeStep: surchargeStep, photoBacked: photoBacked, optionPhotos: row._optionPhotos || {}, multiSelect: multiSelect, optionSurcharges: row._optionSurcharges || {} });
     });
     var btn = f.querySelector('button[type=submit]');
     btn.disabled = true;
@@ -291,7 +448,7 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: f.title.value.trim(), description: f.description.value.trim(),
-          price: f.price.value, min_buyers: f.min_buyers.value, variant_options: variantGroups,
+          price: f.price.value, min_buyers: f.min_buyers.value, compare_at_price: f.compare_at_price.value, variant_options: variantGroups,
         }),
       });
       var j = await r.json();
@@ -327,16 +484,36 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
   const meets = commitments.length >= listing.min_buyers;
   const isOpen = listing.status === 'open' || listing.status === 'active';
   const isCharged = listing.status === 'charged';
-  const hasSurcharge = variantGroups.some(g => g.surchargeStep > 0);
+  const hasSurcharge = variantGroups.some(g => g.surchargeStep > 0 || (g.optionSurcharges && Object.keys(g.optionSurcharges).length));
+  const hasMultiSelect = variantGroups.some(g => g.multiSelect);
+  const showAmount = hasSurcharge || hasMultiSelect;
   const hasJersey = variantGroups.some(g => g.sizeChartKind === 'top');
+  const photoGroup = variantGroups.find(g => g.photoBacked);
 
-  const rows = commitments.map(c => `<tr class="border-b border-admin-border/50 last:border-b-0">
+  // Which exact photo(s) a commitment's photo-backed pick refers to — plural for a
+  // multi-select group (pick up to 3), so admin can see exactly which items were tagged to
+  // this buyer, not just an option label or a bare count.
+  function commitmentPhotoIndexes(c) {
+    if (!photoGroup) return [];
+    let selections = {};
+    try { selections = JSON.parse(c.variant || '{}'); } catch { selections = {}; }
+    const picked = selections[photoGroup.label];
+    const values = Array.isArray(picked) ? picked : [picked];
+    return values.map(v => photoGroup.optionPhotos?.[v]).filter(idx => Number.isInteger(idx));
+  }
+
+  const rows = commitments.map(c => {
+    const photoIdxs = commitmentPhotoIndexes(c);
+    const qty = Number(c.quantity) || 1;
+    return `<tr class="border-b border-admin-border/50 last:border-b-0">
     <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(c.player_name))}</td>
-    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.variantLabel || '—')}</td>
+    ${photoGroup ? `<td class="px-4 py-2.5"><div style="display:flex;gap:4px">${photoIdxs.length ? photoIdxs.map(idx => `<img src="/api/marketplace/${escHtml(listing.id)}/photo/${idx}" alt="" style="width:32px;height:32px;border-radius:6px;object-fit:cover;display:block">`).join('') : '—'}</div></td>` : ''}
+    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.variantLabel || '—')}${qty > 1 ? ` <span class="text-slate-400 font-semibold">×${qty}</span>` : ''}</td>
     ${hasJersey ? `<td class="px-4 py-2.5 text-xs text-slate-300"${c.notes ? ` title="${escHtml(c.notes)}"` : ''}>${c.custom_name ? `${escHtml(c.custom_name)} #${escHtml(c.custom_number)}` : '—'}${c.notes ? ' <span class="text-slate-500">📝</span>' : ''}</td>` : ''}
-    ${hasSurcharge ? `<td class="px-4 py-2.5 text-xs text-slate-300 font-semibold">${fmtPeso(c.amount)}${c.surcharge ? `<span class="text-slate-500 font-normal"> (+${fmtPeso(c.surcharge)})</span>` : ''}</td>` : ''}
+    ${showAmount ? `<td class="px-4 py-2.5 text-xs text-slate-300 font-semibold">${fmtPeso(c.amount)}${c.surcharge ? `<span class="text-slate-500 font-normal"> (+${fmtPeso(c.surcharge)} ea.)</span>` : ''}</td>` : ''}
     <td class="px-4 py-2.5 text-xs text-slate-500">${new Date(c.committed_at).toLocaleDateString()}</td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 
   const triggerSection = isOpen ? `
 <div class="bg-admin-surface border border-admin-border rounded-lg p-5 mt-5">
@@ -364,7 +541,7 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
     ${isCharged ? `<button type="button" id="mkt-relaunch-btn" class="admin-btn admin-btn--sm">Relaunch</button>` : ''}
   </div>
 </div>
-<p class="text-sm text-slate-400 mb-5">${fmtPeso(listing.price)} per buyer &middot; min ${listing.min_buyers} buyers</p>
+<p class="text-sm text-slate-400 mb-5">${fmtPeso(listing.price)}${compareAmountHtml(listing)} per buyer &middot; min ${listing.min_buyers} buyers</p>
 
 ${photoManager(listing.id, parseJsonArray(listing.photos))}
 
@@ -373,14 +550,15 @@ ${photoManager(listing.id, parseJsonArray(listing.photos))}
     <thead>
       <tr>
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player</th>
+        ${photoGroup ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Photo</th>` : ''}
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Variant</th>
         ${hasJersey ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Name / Number</th>` : ''}
-        ${hasSurcharge ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Amount</th>` : ''}
+        ${showAmount ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Amount</th>` : ''}
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Committed</th>
       </tr>
     </thead>
     <tbody>
-      ${rows || `<tr><td colspan="${2 + (hasJersey ? 1 : 0) + (hasSurcharge ? 1 : 0) + 1}" class="px-4 py-8 text-center text-sm text-slate-500">No commitments yet.</td></tr>`}
+      ${rows || `<tr><td colspan="${2 + (photoGroup ? 1 : 0) + (hasJersey ? 1 : 0) + (showAmount ? 1 : 0) + 1}" class="px-4 py-8 text-center text-sm text-slate-500">No commitments yet.</td></tr>`}
     </tbody>
   </table>
 </div>

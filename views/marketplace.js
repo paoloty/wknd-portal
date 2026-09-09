@@ -8,6 +8,10 @@ const ICON_BAG = `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" st
 
 function fmtPeso(n) { return '₱' + Number(n || 0).toLocaleString(); }
 
+// Mirrors server.js's MAX_MULTI_SELECT — a multi-select photo group lets a buyer pick up to
+// this many items, multiplying the commit price by however many they pick.
+const MAX_MULTI_SELECT = 3;
+
 function parseJsonArray(raw) {
   try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
 }
@@ -48,30 +52,51 @@ function meterBlock(count, min) {
 // live total can add it up client-side — the same tiered 2XL+ pricing used at charge time.
 // The radio `name` is namespaced per group (variant__<label>) so multiple independent
 // groups on the same form (e.g. Jersey Size + Shorts Size) never collide.
-function variantPicker(options, groupLabel, selected = '', sizeChartKind = '', surchargeStep = 0) {
+function variantPicker(options, groupLabel, selected = '', sizeChartKind = '', surchargeStep = 0, optionPhotos = null, listingId = '', multiSelect = false, optionSurcharges = null) {
+  const selectedSet = multiSelect ? new Set(Array.isArray(selected) ? selected : []) : null;
   const cells = options.map(opt => {
     const meas = sizeChartKind && SIZE_CHART[sizeChartKind]?.[opt];
-    const surcharge = surchargeStep ? sizeSurcharge(opt, surchargeStep) : 0;
+    // The tiered 2XL+ surcharge is shown on its pill since it's part of the size chart itself
+    // (buyers expect bigger sizes to cost more). A custom per-option surcharge (Regular vs.
+    // NBA Cut, say) still counts toward the total via data-surcharge below, just without
+    // cluttering every pill in a plain, non-size variant group with a price badge.
+    const stepSurcharge = surchargeStep ? sizeSurcharge(opt, surchargeStep) : 0;
+    const optionSurcharge = optionSurcharges ? (Number(optionSurcharges[opt]) || 0) : 0;
+    const surcharge = stepSurcharge + optionSurcharge;
+    // A photo-backed option shows its assigned photo as the cell itself — clicking it both
+    // selects the option (same input as every other group) and, via data-photo-index, tells
+    // the gallery/preview JS which photo to jump to, so picking "Red" visually confirms it.
+    const photoIdx = optionPhotos ? optionPhotos[opt] : null;
+    const thumb = photoIdx != null
+      ? `<span class="mkt-pick-cell__photo"><img src="/api/marketplace/${encodeURIComponent(listingId)}/photo/${photoIdx}" alt=""></span>`
+      : '';
+    const isChecked = multiSelect ? selectedSet.has(opt) : selected === opt;
+    // Multi-select uses checkboxes (pick up to MAX_MULTI_SELECT, price multiplies by however
+    // many) instead of the radio every other group uses — same name so the JS that reads
+    // "variant__<label>" values still finds them all, just via querySelectorAll instead of one.
     return `
-    <label class="mkt-pick-cell${selected === opt ? ' is-selected' : ''}">
-      <input type="radio" name="${escHtml('variant__' + groupLabel)}" value="${escHtml(opt)}" data-surcharge="${surcharge}" ${selected === opt ? 'checked' : ''}>
+    <label class="mkt-pick-cell${thumb ? ' mkt-pick-cell--photo' : ''}">
+      <input type="${multiSelect ? 'checkbox' : 'radio'}" name="${escHtml('variant__' + groupLabel)}" value="${escHtml(opt)}" data-surcharge="${surcharge}"${photoIdx != null ? ` data-photo-index="${photoIdx}"` : ''} ${isChecked ? 'checked' : ''}>
+      ${thumb}
       ${meas ? `<span class="mkt-pick-cell__meas">${meas[0]}&Prime; / ${meas[1]}&Prime;</span>` : ''}
       <span class="mkt-pick-cell__label">${escHtml(opt)}</span>
-      ${surcharge ? `<span class="mkt-pick-cell__surcharge">+${fmtPeso(surcharge)}</span>` : ''}
+      ${stepSurcharge ? `<span class="mkt-pick-cell__surcharge">+${fmtPeso(stepSurcharge)}</span>` : ''}
     </label>`;
   }).join('');
-  return `<div class="mkt-pick-scroll">${cells}</div>`;
+  return `<div class="mkt-pick-scroll"${multiSelect ? ` data-multiselect="${groupLabel.replace(/"/g,'&quot;')}" data-max="${MAX_MULTI_SELECT}"` : ''}>${cells}</div>`;
 }
 
 // One heading + picker per group — a jersey group-buy might need both a Jersey Size and a
 // Shorts Size selected independently, or a merch listing might need a Color and a
-// Condition. groups: [{ label, options, sizeChartKind, surchargeStep }]. selections: { [label]: currentValue }.
-function variantGroupsHtml(groups, selections = {}) {
+// Condition. groups: [{ label, options, sizeChartKind, surchargeStep, photoBacked, optionPhotos }].
+// selections: { [label]: currentValue }. listingId is only needed to build photo URLs for
+// photoBacked groups.
+function variantGroupsHtml(groups, selections = {}, listingId = '') {
   if (!groups.length) return '';
   return groups.map(g => `
     <div class="mkt-variant-group">
-      <div class="mkt-variant-group__label">${escHtml(g.label)}</div>
-      ${variantPicker(g.options, g.label, selections[g.label] || '', g.sizeChartKind || '', g.surchargeStep || 0)}
+      <div class="mkt-variant-group__label">${escHtml(g.label)}${g.multiSelect ? ` <span class="mkt-variant-group__hint">(pick up to ${MAX_MULTI_SELECT})</span>` : ''}</div>
+      ${variantPicker(g.options, g.label, selections[g.label] || (g.multiSelect ? [] : ''), g.sizeChartKind || '', g.surchargeStep || 0, g.photoBacked ? g.optionPhotos : null, listingId, g.multiSelect || false, g.optionSurcharges || null)}
     </div>`).join('');
 }
 
@@ -100,15 +125,49 @@ function jerseyCustomFieldsHtml(groups, custom = {}) {
 // cover — and always keeps the badge on it. The badge gets its own solid dark backdrop
 // (mkt-photo-status) independent of the badge's own state color, since a translucent
 // amber/green badge can wash out against a light-colored product photo.
-function listingCard(listing, { committedCount = 0, committed = false, commentCount = 0, reactionCount = 0 } = {}) {
+// Compare-at price is optional (0 = none) and only ever rendered when it's strictly higher
+// than the actual price — the admin form already enforces that at save time, but guard again
+// here since a listing's price can be edited after a compare-at price was set.
+function comparePriceHtml(listing, { size = '' } = {}) {
+  const compareAt = Number(listing.compare_at_price) || 0;
+  if (!compareAt || compareAt <= listing.price) return '';
+  const savings = compareAt - listing.price;
+  const pct = Math.round((savings / compareAt) * 100);
+  return `<span class="mkt-compare-price${size ? ` mkt-compare-price--${size}` : ''}">${fmtPeso(compareAt)}</span><span class="mkt-savings-badge">Save ${pct}%</span>`;
+}
+
+// A photo-backed variant group means each option IS effectively its own item (e.g. jersey
+// designs "Bucks"/"Chicago"/"Cleveland" pulled from one group buy) — browsing them as a
+// single generic card with a picker buried on the detail page undersells that. When a listing
+// has one, the grid explodes it into one card per option instead of one card for the whole
+// listing: each gets that option's own photo as its cover and "<option> - <listing title>" as
+// its name, and its link carries the option along so the detail page opens pre-selected on it
+// (see the `select` query param handling in marketplaceListingPage). At most one photo-backed
+// group is expected per listing (same assumption computeVariantQuantity makes); if more than
+// one somehow exists, only the first is used for exploding.
+function photoVariantOptions(listing) {
+  const groups = parseJsonArray(listing.variant_options);
+  const group = groups.find(g => g.photoBacked && g.optionPhotos && Object.keys(g.optionPhotos).length);
+  if (!group) return null;
+  const entries = group.options
+    .filter(opt => group.optionPhotos[opt] != null)
+    .map(opt => ({ group: group.label, opt, photoIndex: group.optionPhotos[opt] }));
+  return entries.length ? entries : null;
+}
+
+function listingCard(listing, { committedCount = 0, committed = false, commentCount = 0, reactionCount = 0, variant = null } = {}) {
   const photos = parseJsonArray(listing.photos);
-  const hasCover = !!photos[0];
-  const cleanTitle = listing.title.slice(0, 120);
+  const coverIndex = variant ? variant.photoIndex : 0;
+  const hasCover = !!photos[coverIndex];
+  const cleanTitle = (variant ? `${variant.opt} - ${listing.title}` : listing.title).slice(0, 120);
   const badge = statusBadge(listing, committed);
+  const href = variant
+    ? `/marketplace/${escHtml(listing.id)}?g=${encodeURIComponent(variant.group)}&o=${encodeURIComponent(variant.opt)}`
+    : `/marketplace/${escHtml(listing.id)}`;
 
   const photoBanner = `<div class="mkt-photo">
         ${hasCover
-          ? `<img src="/api/marketplace/${escHtml(listing.id)}/photo/0" alt="" loading="lazy">`
+          ? `<img src="/api/marketplace/${escHtml(listing.id)}/photo/${coverIndex}" alt="" loading="lazy">`
           : `<div class="mkt-photo-placeholder">${ICON_BAG}</div>`}
         <div class="mkt-photo-scrim"></div>
         <span class="mkt-photo-status">${badge}</span>
@@ -119,13 +178,13 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
     : '';
 
   return `<article class="mkt-card">
-  <a href="/marketplace/${escHtml(listing.id)}" class="mkt-card__link" aria-label="${escHtml(cleanTitle)}"></a>
+  <a href="${escHtml(href)}" class="mkt-card__link" aria-label="${escHtml(cleanTitle)}"></a>
   ${photoBanner}
   <div class="mkt-card-titlebar">
     <div class="mkt-card-name">${escHtml(cleanTitle)}</div>
   </div>
   <div class="mkt-card-body">
-    <div class="mkt-card-price">${fmtPeso(listing.price)}</div>
+    <div class="mkt-card-price">${fmtPeso(listing.price)} ${comparePriceHtml(listing, { size: 'card' })}</div>
     ${meterBlock(committedCount, listing.min_buyers)}
     <div class="mkt-foot">
       ${social}
@@ -137,10 +196,14 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
 
 export function marketplacePage({ listings = [], countsById = {}, committedById = {}, commentCountsById = {}, reactionCountsById = {}, isLoggedIn = false } = {}) {
   const cards = listings.length
-    ? listings.map(l => listingCard(l, {
-        committedCount: countsById[l.id] || 0, committed: !!committedById[l.id],
-        commentCount: commentCountsById[l.id] || 0, reactionCount: reactionCountsById[l.id] || 0,
-      })).join('\n    ')
+    ? listings.flatMap(l => {
+        const opts = {
+          committedCount: countsById[l.id] || 0, committed: !!committedById[l.id],
+          commentCount: commentCountsById[l.id] || 0, reactionCount: reactionCountsById[l.id] || 0,
+        };
+        const variants = photoVariantOptions(l);
+        return variants ? variants.map(v => listingCard(l, { ...opts, variant: v })) : [listingCard(l, opts)];
+      }).join('\n    ')
     : `<div class="mkt-card mkt-empty">No group buys open right now.</div>`;
 
   return `<div class="page-content">
@@ -225,12 +288,21 @@ function mobileFloater({ commentsCount, listingReaction }) {
 export function marketplaceListingPage({
   listing, committedCount = 0, commitment = null, isLoggedIn = false,
   comments = [], reactedIds = new Set(), listingReaction = { count: 0, reacted: false },
-  isPlayer = false, isAdmin = false,
+  isPlayer = false, isAdmin = false, preselect = null,
 } = {}) {
   const photos = parseJsonArray(listing.photos);
   const variantGroups = parseJsonArray(listing.variant_options);
   const isOpen = listing.status === 'open' || listing.status === 'active';
   const badge = statusBadge(listing, !!commitment);
+
+  // A card exploded out of a photo-backed variant group (see photoVariantOptions) links here
+  // with ?g=<group>&o=<option> so the detail page opens already scrolled to and selected on
+  // that exact option — otherwise clicking "Bucks - Test listing" would just land on the same
+  // generic page as every other variant, defeating the point of exploding them in the grid.
+  const preselectGroup = preselect && variantGroups.find(g => g.label === preselect.group);
+  const preselectOpt = preselectGroup && preselectGroup.options.includes(preselect.opt) ? preselect.opt : null;
+  const initialPhotoIndex = (preselectGroup && preselectOpt && preselectGroup.optionPhotos
+    && preselectGroup.optionPhotos[preselectOpt] != null) ? preselectGroup.optionPhotos[preselectOpt] : 0;
 
   // Once committed, the headline price should reflect what this player actually locked in
   // (base + any surcharge from their selection), not just the listing's base price — same
@@ -239,7 +311,9 @@ export function marketplaceListingPage({
   if (commitment) {
     let selections = {};
     try { selections = JSON.parse(commitment.variant || '{}'); } catch { selections = {}; }
-    const committedSurcharge = variantGroups.reduce((sum, g) => sum + (g.surchargeStep ? sizeSurcharge(selections[g.label] || '', g.surchargeStep) : 0), 0);
+    const committedSurcharge = variantGroups.reduce((sum, g) => sum
+      + (g.surchargeStep ? sizeSurcharge(selections[g.label] || '', g.surchargeStep) : 0)
+      + (g.optionSurcharges ? (Number(g.optionSurcharges[selections[g.label]]) || 0) : 0), 0);
     displayPrice = listing.price + committedSurcharge;
   }
 
@@ -258,11 +332,11 @@ export function marketplaceListingPage({
       <div class="mkt-mobile-gallery" id="mkt-mobile-gallery">
         <button type="button" class="mkt-mobile-preview" id="mkt-mobile-preview" aria-label="Zoom photo">
           <div class="mkt-mobile-preview-strip" id="mkt-mobile-preview-strip">
-            <img id="mkt-mobile-preview-img" src="/api/marketplace/${escHtml(listing.id)}/photo/0" alt="">
+            <img id="mkt-mobile-preview-img" src="/api/marketplace/${escHtml(listing.id)}/photo/${initialPhotoIndex}" alt="">
           </div>
         </button>
         ${photos.length > 1 ? `<div class="mkt-mobile-thumbs">
-          ${photos.map((_, i) => `<button type="button" class="mkt-mobile-thumb${i === 0 ? ' is-active' : ''}" data-thumb-index="${i}"><img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt="" loading="lazy"></button>`).join('')}
+          ${photos.map((_, i) => `<button type="button" class="mkt-mobile-thumb${i === initialPhotoIndex ? ' is-active' : ''}" data-thumb-index="${i}"><img src="/api/marketplace/${escHtml(listing.id)}/photo/${i}" alt="" loading="lazy"></button>`).join('')}
         </div>` : ''}
       </div>`
     : `<div class="mkt-gallery-empty"><div class="mkt-photo-placeholder">${ICON_BAG}</div><span>No photos yet</span></div>`;
@@ -279,9 +353,13 @@ export function marketplaceListingPage({
     ${photos.length > 1 ? `<span class="mkt-lightbox-counter" id="mkt-lightbox-counter"></span>` : ''}
   </div>` : '';
 
-  const descCard = listing.description
-    ? `<div class="mkt-card mkt-desc-card"><div class="mkt-desc-label">Details</div><p class="mkt-desc">${escHtml(listing.description)}</p></div>`
-    : '';
+  const detailHeader = `<div class="mkt-detail-header">
+    <div class="mkt-detail-header__top">
+      <h1 class="mkt-detail-title">${escHtml(listing.title)}</h1>
+      ${badge}
+    </div>
+    ${listing.description ? `<p class="mkt-detail-desc">${escHtml(listing.description)}</p>` : ''}
+  </div>`;
 
   let actionHtml;
   if (listing.status === 'charged') {
@@ -300,7 +378,7 @@ export function marketplaceListingPage({
   } else if (isOpen) {
     actionHtml = `
       <form id="mkt-commit-form" data-base-price="${listing.price}">
-        ${variantGroupsHtml(variantGroups)}
+        ${variantGroupsHtml(variantGroups, preselectOpt ? { [preselect.group]: preselectOpt } : {}, listing.id)}
         ${jerseyCustomFieldsHtml(variantGroups)}
         <button type="submit" class="mkt-btn mkt-btn--primary">Commit — <span id="mkt-commit-total">${fmtPeso(listing.price)}</span></button>
       </form>`;
@@ -315,12 +393,9 @@ export function marketplaceListingPage({
   </div>
   <div class="mkt-detail-right">
     <div class="mkt-card mkt-info-card">
-      <div class="mkt-card-titlebar">
-        <div class="mkt-card-name">${escHtml(listing.title)}</div>
-        ${badge}
-      </div>
       <div class="mkt-card-body">
-        <div class="mkt-card-price" id="mkt-price-display">${fmtPeso(displayPrice)}</div>
+        ${detailHeader}
+        <div class="mkt-card-price" id="mkt-price-display">${fmtPeso(displayPrice)} ${!commitment ? comparePriceHtml(listing, { size: 'detail' }) : ''}</div>
         ${meterBlock(committedCount, listing.min_buyers)}
         <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
           🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
@@ -329,7 +404,6 @@ export function marketplaceListingPage({
         <p class="mkt-err" id="mkt-err" hidden></p>
       </div>
     </div>
-    ${descCard}
   </div>
 </div>
 ${commentsSection({ listingId: listing.id, comments, reactedIds, isPlayer, isAdmin })}
@@ -345,12 +419,44 @@ ${STYLE}
     var totalEl = document.getElementById('mkt-commit-total');
     var priceDisplay = document.getElementById('mkt-price-display');
     var basePrice = Number(form.dataset.basePrice) || 0;
-    function recomputeTotal() {
-      var total = basePrice;
-      form.querySelectorAll('input[name^="variant__"]:checked').forEach(function(input) {
-        total += Number(input.dataset.surcharge) || 0;
+    var multiScrolls = form.querySelectorAll('.mkt-pick-scroll[data-multiselect]');
+
+    // Enforces the max-N cap per multi-select group by disabling the still-unchecked cells
+    // once N are already checked — clearer than letting a click silently fail.
+    function enforceMultiSelectCaps() {
+      multiScrolls.forEach(function(scroll) {
+        var max = Number(scroll.dataset.max) || 3;
+        var boxes = scroll.querySelectorAll('input[type="checkbox"]');
+        var checkedCount = scroll.querySelectorAll('input[type="checkbox"]:checked').length;
+        boxes.forEach(function(box) {
+          var atCap = checkedCount >= max && !box.checked;
+          box.disabled = atCap;
+          box.closest('.mkt-pick-cell').classList.toggle('is-disabled', atCap);
+        });
       });
-      var formatted = '₱' + total.toLocaleString();
+    }
+
+    // Quantity = however many are checked in a multi-select group (there's normally at most
+    // one such group per listing) — the commit price multiplies by this, same as the server
+    // does at charge time via computeVariantQuantity.
+    function currentQuantity() {
+      var q = 1;
+      multiScrolls.forEach(function(scroll) {
+        var n = scroll.querySelectorAll('input[type="checkbox"]:checked').length;
+        if (n > q) q = n;
+      });
+      return q;
+    }
+
+    function recomputeTotal() {
+      enforceMultiSelectCaps();
+      var unitPrice = basePrice;
+      form.querySelectorAll('input[name^="variant__"]:checked').forEach(function(input) {
+        unitPrice += Number(input.dataset.surcharge) || 0;
+      });
+      var qty = currentQuantity();
+      var total = unitPrice * qty;
+      var formatted = '₱' + total.toLocaleString() + (qty > 1 ? ' (' + qty + ' items)' : '');
       if (totalEl) totalEl.textContent = formatted;
       if (priceDisplay) priceDisplay.textContent = formatted;
     }
@@ -360,7 +466,12 @@ ${STYLE}
       e.preventDefault();
       var variants = {};
       form.querySelectorAll('input[name^="variant__"]:checked').forEach(function(input) {
-        variants[input.name.slice('variant__'.length)] = input.value;
+        var key = input.name.slice('variant__'.length);
+        if (input.type === 'checkbox') {
+          (variants[key] || (variants[key] = [])).push(input.value);
+        } else {
+          variants[key] = input.value;
+        }
       });
       var nameEl = document.getElementById('mkt-custom-name');
       var numEl  = document.getElementById('mkt-custom-number');
@@ -398,6 +509,16 @@ ${STYLE}
   // lightbox on click — prev/next cycle, Escape or a click on the backdrop closes it.
   // photoUrls mirrors the photo order 1:1 so any index (tile, thumb, or lightbox) lines up.
   var masonry = document.getElementById('mkt-masonry');
+  // Arrived here via an exploded variant card (?g=&o=) — jump straight to that option's
+  // photo so landing on the page visually confirms it's the same item just clicked in the grid.
+  if (${initialPhotoIndex} > 0 && masonry) {
+    var initialTile = masonry.querySelector('.mkt-tile[data-index="${initialPhotoIndex}"]');
+    if (initialTile) {
+      initialTile.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+      initialTile.classList.add('mkt-tile--flash');
+      setTimeout(function() { initialTile.classList.remove('mkt-tile--flash'); }, 1400);
+    }
+  }
   var lightboxEl = document.getElementById('mkt-lightbox');
   if (lightboxEl) {
     var lbImg = document.getElementById('mkt-lightbox-img');
@@ -474,7 +595,7 @@ ${STYLE}
     var mobileStrip = document.getElementById('mkt-mobile-preview-strip');
     var mobilePreviewImg = document.getElementById('mkt-mobile-preview-img');
     var mobileThumbs = document.querySelectorAll('.mkt-mobile-thumb');
-    var previewIndex = 0;
+    var previewIndex = ${initialPhotoIndex};
     function showPreview(index, direction) {
       previewIndex = index;
       slideTo(mobilePreviewImg, photoUrls[previewIndex], direction);
@@ -568,6 +689,24 @@ ${STYLE}
       });
     } else if (mobilePreview) {
       mobilePreview.addEventListener('click', function() { openLightbox(previewIndex); });
+    }
+
+    // Photo-backed variant picker (see variantPicker's data-photo-index) — picking an
+    // option jumps the gallery straight to that exact photo, so e.g. picking "Red" visually
+    // confirms itself instead of leaving the buyer to hunt for it in the gallery above.
+    if (form) {
+      form.addEventListener('change', function(e) {
+        var input = e.target.closest && e.target.closest('input[data-photo-index]');
+        if (!input || !input.checked) return;
+        var idx = Number(input.dataset.photoIndex);
+        var tile = masonry && masonry.querySelector('.mkt-tile[data-index="' + idx + '"]');
+        if (tile) {
+          tile.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+          tile.classList.add('mkt-tile--flash');
+          setTimeout(function() { tile.classList.remove('mkt-tile--flash'); }, 900);
+        }
+        if (idx !== previewIndex) showPreview(idx, idx > previewIndex ? 1 : -1);
+      });
     }
   }
 
@@ -835,16 +974,16 @@ const STYLE = `<style>
 .mkt-photo-status .mkt-badge { background: rgba(2,8,23,.72); backdrop-filter: blur(3px); border-color: rgba(255,255,255,.18); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 
 .mkt-card-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 18px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
-/* Reserve exactly 2 lines' height regardless of title length, so every card in a grid
-   row lines up the same whether its title is one line or two — a 3rd line clamps with
-   an ellipsis instead of growing the row and misaligning the cards next to it. */
 .mkt-card-name {
   font-size: 15px; font-weight: 700; letter-spacing: -.005em; color: var(--text-primary);
-  line-height: 1.3; min-height: 2.6em;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .mkt-card-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 18px; }
-.mkt-card-price { font-family: 'Saira Condensed', sans-serif; font-size: 22px; color: var(--amber); font-weight: 700; }
+/* Flex + align-items:center rather than vertical-align — the base price, struck-through
+   compare price, and savings pill all sit at different font sizes, and vertical-align's
+   baseline-relative middle drifts noticeably once sizes diverge that much. Flex centers
+   each piece on the same axis regardless of its own line-height. */
+.mkt-card-price { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-family: 'Saira Condensed', sans-serif; font-size: 22px; color: var(--amber); font-weight: 700; }
 
 .mkt-badge { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
 .mkt-badge--open { background: rgba(245,147,50,.12); color: var(--amber); border: 1px solid rgba(245,147,50,.3); }
@@ -886,6 +1025,7 @@ const STYLE = `<style>
 }
 .mkt-tile:hover { border-color: rgba(245,147,50,.4); }
 .mkt-tile img { display: block; width: 100%; }
+.mkt-tile--flash { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(245,147,50,.35); transition: border-color .15s, box-shadow .15s; }
 
 .mkt-mobile-gallery { display: none; }
 @media (max-width: 700px) {
@@ -941,12 +1081,39 @@ const STYLE = `<style>
   border: 1px solid rgba(255,255,255,.12);
 }
 
-.mkt-desc-card { padding: 18px 20px; }
 .mkt-desc-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--text-subtle); margin-bottom: 8px; text-transform: uppercase; }
 .mkt-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
 
+/* Title + description live at the top of the sticky sidebar "buy box" itself, right above
+   the price — one unified card instead of a separate titlebar/desc-card, so everything
+   about the listing (what it is, what it costs, how to commit) reads top-to-bottom in one place. */
+.mkt-detail-header { padding-bottom: 12px; margin-bottom: 2px; border-bottom: 1px solid var(--border); }
+.mkt-detail-header__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mkt-detail-title { font-size: 18px; font-weight: 800; letter-spacing: -.01em; color: var(--text-primary); margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-detail-header__top .mkt-badge { flex-shrink: 0; }
+.mkt-detail-desc { font-size: 13px; color: var(--text-muted); line-height: 1.55; margin: 6px 0 0; }
+
+.mkt-compare-price { font-family: 'Saira Condensed', sans-serif; font-size: 15px; color: var(--text-subtle); text-decoration: line-through; font-weight: 600; }
+.mkt-compare-price--detail { font-size: 17px; }
+/* Explicit Archivo instead of inheriting .mkt-card-price's Saira Condensed — Saira Condensed
+   is tuned for big standalone numerals (scores, prices) and its ascent/descent metrics sit
+   noticeably off-center at this small a size for a mixed letters+symbol label, which no
+   amount of flex/line-height tuning on our end can correct since it's baked into the font's
+   own vertical metrics. Archivo is the site's regular body font and centers cleanly here. */
+.mkt-savings-badge {
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1; height: 22px;
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 12px; font-weight: 700; color: #22c55e; background: rgba(52,211,153,.12);
+  border: 1px solid rgba(52,211,153,.3); border-radius: 99px; padding: 0 9px; box-sizing: border-box;
+}
+
 .mkt-info-card { position: sticky; top: 90px; }
 .mkt-detail__action { margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
+/* Scoped to the submit button itself rather than relying on the last variant group's own
+   margin — a bottom margin on that group can collapse against its last child's own margin
+   (the jersey notes textarea, say) and shrink to almost nothing, leaving the button looking
+   glued to whatever field happened to be last. */
+#mkt-commit-form button[type="submit"] { margin-top: 14px; }
 .mkt-btn { font-family: inherit; display: block; border-radius: 9px; padding: 10px 14px; font-size: 13.5px; font-weight: 700; cursor: pointer; border: 1px solid transparent; text-decoration: none; text-align: center; width: 100%; box-sizing: border-box; transition: opacity .12s, background .12s, border-color .12s; }
 .mkt-btn--primary { background: var(--amber); color: #020817; }
 .mkt-btn--primary:hover { opacity: .9; }
@@ -956,9 +1123,22 @@ const STYLE = `<style>
 .mkt-hint--in { color: #22c55e; font-weight: 600; }
 .mkt-hint__sub { margin-top: 4px; font-size: 12px; color: var(--text-muted); font-weight: 400; }
 .mkt-err { color: #f87171; font-size: 12px; margin-top: 8px; }
-.mkt-variant-group { margin-bottom: 4px; }
-.mkt-variant-group__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 6px; }
-.mkt-pick-scroll { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 12px; }
+/* A jersey listing can stack several groups in a row (Team, Jersey Size, Collar, Back) —
+   a thin top divider + generous padding on every group after the first keeps them reading
+   as distinct sections instead of running together into one wall of pills. */
+.mkt-variant-group { margin-bottom: 18px; }
+.mkt-variant-group:not(:first-child) { padding-top: 16px; border-top: 1px solid var(--border); }
+.mkt-variant-group:last-of-type { margin-bottom: 4px; }
+.mkt-variant-group__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 10px; }
+.mkt-variant-group__hint { font-weight: 400; text-transform: none; letter-spacing: normal; color: var(--text-muted); }
+.mkt-pick-cell.is-disabled { opacity: .35; pointer-events: none; }
+.mkt-pick-scroll {
+  display: flex; gap: 8px; overflow-x: auto; margin-bottom: 4px; padding-bottom: 8px;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.mkt-pick-scroll::-webkit-scrollbar { height: 5px; }
+.mkt-pick-scroll::-webkit-scrollbar-track { background: transparent; }
+.mkt-pick-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 .mkt-pick-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; cursor: pointer; flex-shrink: 0; }
 /* display:none (not opacity:0 + position:absolute) — matches jersey-request.js's pick-cell
    pattern. A hidden-but-still-focusable input stays in the browser's focus-triggered
@@ -966,10 +1146,17 @@ const STYLE = `<style>
    whole page sideways trying to bring an invisible, oddly-positioned element into view.
    display:none removes it from focus entirely — the label click still toggles it. */
 .mkt-pick-cell input { display: none; }
-.mkt-pick-cell.is-selected, .mkt-pick-cell:has(input:checked) { border-color: var(--amber); background: #f5933214; }
+/* Selection highlight is driven purely off the native :checked state, never a baked-in
+   class — a class set at SSR time for the initial pick would go stale the moment the buyer
+   clicks a different option (nothing removes it), leaving two cells lit at once. :has()
+   re-evaluates live as the radio/checkbox state changes, so it can never drift. */
+.mkt-pick-cell:has(input:checked) { border-color: var(--amber); background: #f5933214; }
 .mkt-pick-cell__meas { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mkt-pick-cell__label { font-size: 12.5px; font-weight: 700; }
 .mkt-pick-cell__surcharge { font-size: 10px; color: var(--amber); font-weight: 700; }
+.mkt-pick-cell--photo { padding: 6px; gap: 5px; }
+.mkt-pick-cell__photo { width: 64px; height: 64px; border-radius: 7px; overflow: hidden; }
+.mkt-pick-cell__photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .mkt-jersey-fields { display: flex; gap: 8px; margin-bottom: 8px; }
 .mkt-jersey-fields input:first-child { flex: 1; }

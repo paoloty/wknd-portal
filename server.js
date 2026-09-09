@@ -42,7 +42,7 @@ import {
   recordTransaction, confirmTransaction, deleteTransaction, setTransactionCategory,
   getPlayerFinancials, getPlayerPapawisBalance, hasUnpaidCompletedPapawis, getPlayerTransactions, getPlayerTransactionsBySeason,
   createMarketplaceListing, getMarketplaceListingById, getMarketplaceListings, updateMarketplaceListing,
-  setMarketplaceListingStatus, setMarketplaceListingPhotos, markMarketplaceListingCharged, deleteMarketplaceListing,
+  setMarketplaceListingStatus, setMarketplaceListingPhotos, setMarketplaceListingVariantOptions, markMarketplaceListingCharged, deleteMarketplaceListing,
   commitToMarketplaceListing, getActiveMarketplaceCommitment, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
   getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged,
   setRegistrationMarketplaceChargeAccess,
@@ -9484,7 +9484,7 @@ app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
 // ── Marketplace (admin group-buy listings) ──────────────────────────────────────
 // A listing's variant_options holds an array of independent, named groups — e.g. a jersey
 // listing might need both "Jersey Size" and "Shorts Size" picked separately. Each group:
-// { label, options, sizeChartKind: 'top'|'shorts'|'', surchargeStep: number }.
+// { label, options, sizeChartKind: 'top'|'shorts'|'', surchargeStep: number, optionSurcharges: {[option]: number} }.
 // sizeChartKind, if set, shows the same chest/length or hips/length measurement reference
 // used on the season-signup/jersey-request forms (lib/season-pricing.js's SIZE_CHART) next
 // to that group's picker — only makes sense when options are real jersey/shorts sizes.
@@ -9492,7 +9492,19 @@ app.delete('/admin/papawis/:id', requireAuth, (req, res) => {
 // selection, same formula the season jersey pricing already uses. A commitment's variant
 // column stores one JSON object keyed by group label, e.g.
 // {"Jersey Size":"M","Shorts Size":"L"} — '{}'/'' for a listing with no groups defined.
-function normalizeVariantGroups(raw) {
+// A multi-select photo group's selections are treated as "how many of this item" — capped
+// at 3 so "commit" doesn't quietly become an unbounded bulk order.
+const MAX_MULTI_SELECT = 3;
+
+// A compare-at price only means anything if it's actually higher than the real price —
+// otherwise there's no discount to show, so it's silently treated as "not set" (0) rather
+// than displaying a nonsensical or negative "savings".
+function parseCompareAtPrice(raw, price) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > price ? n : 0;
+}
+
+function normalizeVariantGroups(raw, photoCount = 0) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set();
   const groups = [];
@@ -9503,16 +9515,71 @@ function normalizeVariantGroups(raw) {
     seen.add(label);
     const sizeChartKind = ['top', 'shorts'].includes(g?.sizeChartKind) ? g.sizeChartKind : '';
     const surchargeStep = Math.max(0, Number(g?.surchargeStep) || 0);
-    groups.push({ label, options, sizeChartKind, surchargeStep });
+    // Keyed by the option's own string value rather than position, so it can't desync if
+    // options get reordered/edited later — a stale key for a since-removed option is just
+    // ignored below, never misattributed to whatever option now happens to sit at that index.
+    const photoBacked = !!g?.photoBacked;
+    const rawPhotos = (photoBacked && g?.optionPhotos && typeof g.optionPhotos === 'object') ? g.optionPhotos : {};
+    const optionPhotos = {};
+    for (const opt of options) {
+      const idx = Number(rawPhotos[opt]);
+      if (Number.isInteger(idx) && idx >= 0 && idx < photoCount) optionPhotos[opt] = idx;
+    }
+    // Flat per-option surcharge — independent of the tiered surchargeStep above (that one's
+    // formula-driven off sizeSurcharge() for jersey/shorts sizing; this is a plain admin-set
+    // amount per option, for things like a Jersey Type group where "NBA Cut" costs +50 over
+    // "Regular"). Keyed by option value for the same desync-safety reason as optionPhotos.
+    const rawSurcharges = (g?.optionSurcharges && typeof g.optionSurcharges === 'object') ? g.optionSurcharges : {};
+    const optionSurcharges = {};
+    for (const opt of options) {
+      const amt = Math.max(0, Number(rawSurcharges[opt]) || 0);
+      if (amt > 0) optionSurcharges[opt] = amt;
+    }
+    // Multi-select only makes sense for a photo catalog (pick up to MAX_MULTI_SELECT items,
+    // price multiplies by however many) — not for a plain size/color choice, where picking
+    // more than one option doesn't mean "buy more," it means "which one." Requiring
+    // photoBacked keeps that distinction enforced server-side, not just in the admin UI.
+    const multiSelect = photoBacked && !!g?.multiSelect;
+    groups.push({ label, options, sizeChartKind, surchargeStep, photoBacked, optionPhotos, multiSelect, optionSurcharges });
   }
   return groups;
+}
+
+// Re-points photo-backed variant options at their new photo indices after a delete or
+// reorder — remapFn(oldIndex) returns the new index, or null if that photo is gone.
+// Groups with no photoBacked options are returned untouched.
+function remapVariantOptionPhotos(variantGroups, remapFn) {
+  return variantGroups.map(g => {
+    if (!g.photoBacked || !g.optionPhotos) return g;
+    const optionPhotos = {};
+    for (const [opt, oldIdx] of Object.entries(g.optionPhotos)) {
+      const newIdx = remapFn(oldIdx);
+      if (newIdx != null) optionPhotos[opt] = newIdx;
+    }
+    return { ...g, optionPhotos };
+  });
 }
 
 function formatVariantSelections(variantJson) {
   let obj = {};
   try { obj = JSON.parse(variantJson || '{}'); } catch { obj = {}; }
-  const parts = Object.entries(obj).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+  const parts = Object.entries(obj).filter(([, v]) => v && (!Array.isArray(v) || v.length))
+    .map(([k, v]) => Array.isArray(v) ? `${k}: ${v.join(', ')} (×${v.length})` : `${k}: ${v}`);
   return parts.join(', ');
+}
+
+// A multi-select group's picks come back as an array (e.g. 3 chosen photos) rather than a
+// single value — the buyer is effectively committing to N units, so price multiplies by
+// however many they picked. At most one multi-select group is expected per listing; if
+// somehow more than one exists, the largest count wins rather than compounding them.
+function computeVariantQuantity(variantGroups, selections) {
+  let quantity = 1;
+  for (const g of variantGroups) {
+    if (!g.multiSelect) continue;
+    const picked = selections[g.label];
+    if (Array.isArray(picked) && picked.length > quantity) quantity = picked.length;
+  }
+  return quantity;
 }
 
 // Sum of each surcharge-enabled group's per-size surcharge for a given set of selections —
@@ -9521,8 +9588,9 @@ function formatVariantSelections(variantJson) {
 function computeVariantSurcharge(variantGroups, selections) {
   let total = 0;
   for (const g of variantGroups) {
-    if (!g.surchargeStep) continue;
-    total += sizeSurcharge(selections[g.label] || '', g.surchargeStep);
+    if (g.multiSelect) continue;
+    if (g.surchargeStep) total += sizeSurcharge(selections[g.label] || '', g.surchargeStep);
+    if (g.optionSurcharges) total += Number(g.optionSurcharges[selections[g.label]]) || 0;
   }
   return total;
 }
@@ -9533,21 +9601,22 @@ function computeVariantSurcharge(variantGroups, selections) {
 function buildMarketplaceChargeRows(listingId) {
   const listing = getMarketplaceListingById(listingId);
   if (!listing) return { listing: null, rows: [] };
-  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'));
+  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'), JSON.parse(listing.photos || '[]').length);
   const commitments = getMarketplaceCommitments(listingId, 'committed');
   const basePrice = Number(listing.price) || 0;
   const rows = commitments.map(c => {
     let selections = {};
     try { selections = JSON.parse(c.variant || '{}'); } catch { selections = {}; }
     const surcharge = computeVariantSurcharge(variantGroups, selections);
+    const quantity = computeVariantQuantity(variantGroups, selections);
     return {
       commitmentId: c.id,
       playerId: c.player_id,
       playerName: displayPlayerName(c.player_name),
       variant: c.variant,
       variantLabel: formatVariantSelections(c.variant),
-      basePrice, surcharge,
-      amount: basePrice + surcharge,
+      basePrice, surcharge, quantity,
+      amount: (basePrice + surcharge) * quantity,
     };
   });
   return { listing, rows };
@@ -9577,7 +9646,7 @@ app.get('/admin/marketplace/new', requireAuth, (req, res) => {
 });
 
 app.post('/admin/marketplace', requireAuth, express.json(), (req, res) => {
-  const { title, description = '', price, min_buyers, variant_options = [] } = req.body || {};
+  const { title, description = '', price, compare_at_price, min_buyers, variant_options = [] } = req.body || {};
   const priceNum = Number(price);
   const minBuyers = Number(min_buyers);
   if (!title || Number.isNaN(priceNum) || priceNum <= 0) return res.status(400).json({ error: 'Title and a price above 0 are required.' });
@@ -9585,7 +9654,8 @@ app.post('/admin/marketplace', requireAuth, express.json(), (req, res) => {
   const regId = req.session?.isElevatedPlayer ? req.session.playerRegId : '';
   const id = createMarketplaceListing({
     type: 'group_buy', createdByRegId: regId || '', title, description,
-    price: priceNum, minBuyers, variantOptions: normalizeVariantGroups(variant_options),
+    price: priceNum, compareAtPrice: parseCompareAtPrice(compare_at_price, priceNum),
+    minBuyers, variantOptions: normalizeVariantGroups(variant_options),
   });
   res.json({ ok: true, id });
 });
@@ -9598,14 +9668,15 @@ app.get('/admin/marketplace/:id', requireAuth, (req, res) => {
   }));
   // A charged listing's commitments have already flipped to status='charged' — show those
   // instead of 'committed' so admin can still see who was actually charged, not an empty list.
-  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'));
+  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'), JSON.parse(listing.photos || '[]').length);
   const basePrice = Number(listing.price) || 0;
   const commitments = getMarketplaceCommitments(listing.id, listing.status === 'charged' ? 'charged' : 'committed')
     .map(c => {
       let selections = {};
       try { selections = JSON.parse(c.variant || '{}'); } catch { selections = {}; }
       const surcharge = computeVariantSurcharge(variantGroups, selections);
-      return { ...c, variantLabel: formatVariantSelections(c.variant), amount: basePrice + surcharge, surcharge };
+      const quantity = computeVariantQuantity(variantGroups, selections);
+      return { ...c, variantLabel: formatVariantSelections(c.variant), amount: (basePrice + surcharge) * quantity, surcharge, quantity };
     });
   const canTrigger = !req.session?.isElevatedPlayer || !!getRegistration(req.session.playerRegId)?.can_charge_marketplace;
   res.send(renderAdminPage(req, {
@@ -9633,24 +9704,20 @@ app.post('/admin/marketplace/:id', requireAuth, express.json(), (req, res) => {
   const listing = getMarketplaceListingById(req.params.id);
   if (!listing) return res.status(404).json({ error: 'Not found.' });
   if (listing.status !== 'open' && listing.status !== 'active') return res.status(400).json({ error: 'Only an open listing can be edited.' });
-  const { title, description = '', price, min_buyers, variant_options = [] } = req.body || {};
+  const { title, description = '', price, compare_at_price, min_buyers, variant_options = [] } = req.body || {};
   const priceNum = Number(price);
   const minBuyers = Number(min_buyers);
   if (!title || Number.isNaN(priceNum) || priceNum <= 0) return res.status(400).json({ error: 'Title and a price above 0 are required.' });
   updateMarketplaceListing(listing.id, {
-    title, description, price: priceNum, minBuyers,
-    variantOptions: normalizeVariantGroups(variant_options),
+    title, description, price: priceNum, compareAtPrice: parseCompareAtPrice(compare_at_price, priceNum), minBuyers,
+    variantOptions: normalizeVariantGroups(variant_options, JSON.parse(listing.photos || '[]').length),
   });
   res.json({ ok: true });
 });
 
-const MARKETPLACE_MAX_PHOTOS = 10;
-
 // Bulk upload — admin selects any number of files at once, each is resized/processed and
-// appended to the listing's existing photo array (never replaces it), capped at
-// MARKETPLACE_MAX_PHOTOS total. Silently drops whatever doesn't fit past the cap rather than
-// erroring the whole batch, since "upload 12, keep the first available slots" is more useful
-// than making the admin recount and re-select.
+// appended to the listing's existing photo array (never replaces it). No count cap — a
+// photo-backed variant group (see optionPhotos) can reasonably need more than a handful.
 app.post('/admin/marketplace/:id/photos', requireAuth, express.json({ limit: '40mb' }), async (req, res) => {
   const listing = getMarketplaceListingById(req.params.id);
   if (!listing) return res.status(404).json({ error: 'Not found.' });
@@ -9658,14 +9725,16 @@ app.post('/admin/marketplace/:id/photos', requireAuth, express.json({ limit: '40
   if (!dataUrls.length) return res.status(400).json({ error: 'No images provided.' });
   let photos = [];
   try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
-  const room = MARKETPLACE_MAX_PHOTOS - photos.length;
-  if (room <= 0) return res.status(400).json({ error: `Already at the ${MARKETPLACE_MAX_PHOTOS}-photo limit.` });
   try {
-    for (const dataUrl of dataUrls.slice(0, room)) {
+    for (const dataUrl of dataUrls) {
       if (!String(dataUrl).startsWith('data:image/')) continue;
       const buf = parseDataUrl(dataUrl);
       if (!buf) continue;
-      const out = await sharp(buf).rotate().resize(1000, 1000, { fit: 'inside' }).jpeg({ quality: 80, progressive: true }).toBuffer();
+      // mozjpeg gets meaningfully smaller files than the default libjpeg encoder at the
+      // same visual quality (it's a better encoder, not a lower setting) — quality bumped
+      // to 85 since mozjpeg's efficiency absorbs that without ballooning file size.
+      // withoutEnlargement avoids upscaling (and softening) a photo already smaller than 1000px.
+      const out = await sharp(buf).rotate().resize(1000, 1000, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85, progressive: true, mozjpeg: true }).toBuffer();
       photos.push('data:image/jpeg;base64,' + out.toString('base64'));
     }
     setMarketplaceListingPhotos(listing.id, photos);
@@ -9685,6 +9754,9 @@ app.delete('/admin/marketplace/:id/photo/:index', requireAuth, (req, res) => {
   if (Number.isNaN(index) || index < 0 || index >= photos.length) return res.status(400).json({ error: 'Invalid index.' });
   photos.splice(index, 1);
   setMarketplaceListingPhotos(listing.id, photos);
+  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'), photos.length + 1);
+  const remapped = remapVariantOptionPhotos(variantGroups, old => old === index ? null : old > index ? old - 1 : old);
+  setMarketplaceListingVariantOptions(listing.id, remapped);
   res.json({ ok: true });
 });
 
@@ -9702,6 +9774,11 @@ app.post('/admin/marketplace/:id/photos/reorder', requireAuth, express.json(), (
     && order.every(i => Number.isInteger(i) && i >= 0 && i < photos.length);
   if (!isValidPermutation) return res.status(400).json({ error: 'Invalid photo order.' });
   setMarketplaceListingPhotos(listing.id, order.map(i => photos[i]));
+  // order[newIndex] = oldIndex, so the inverse tells us where each old index landed.
+  const oldToNew = new Map(order.map((oldIdx, newIdx) => [oldIdx, newIdx]));
+  const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'), photos.length);
+  const remapped = remapVariantOptionPhotos(variantGroups, old => oldToNew.has(old) ? oldToNew.get(old) : null);
+  setMarketplaceListingVariantOptions(listing.id, remapped);
   res.json({ ok: true });
 });
 
@@ -9777,8 +9854,8 @@ app.post('/admin/marketplace/:id/relaunch', requireAuth, express.json(), (req, r
   const regId = req.session?.isElevatedPlayer ? req.session.playerRegId : '';
   const id = createMarketplaceListing({
     type: 'group_buy', createdByRegId: regId || '', title: source.title, description: source.description,
-    price: source.price, minBuyers: source.min_buyers,
-    variantOptions: normalizeVariantGroups(JSON.parse(source.variant_options || '[]')),
+    price: source.price, compareAtPrice: source.compare_at_price, minBuyers: source.min_buyers,
+    variantOptions: normalizeVariantGroups(JSON.parse(source.variant_options || '[]'), JSON.parse(source.photos || '[]').length),
     photos: JSON.parse(source.photos || '[]'),
   });
   res.json({ ok: true, id });
@@ -9829,13 +9906,17 @@ app.get('/marketplace/:id', (req, res) => {
   const comments = getMarketplaceListingComments(listing.id);
   const reactedIds = getReactedMarketplaceCommentIdsForPlayer(comments.map(c => c.id), viewerPlayerId);
   const listingReaction = getMarketplaceListingReactionState(listing.id, viewerPlayerId);
+  // ?g=<group>&o=<option> arrives from a photo-backed variant card exploded out on the
+  // /marketplace grid (see photoVariantOptions in views/marketplace.js) — the view itself
+  // re-validates both against the listing's actual variant groups before trusting them.
+  const preselect = (req.query.g && req.query.o) ? { group: String(req.query.g), opt: String(req.query.o) } : null;
   res.send(renderPage(req, {
     title: `${listing.title} — Marketplace`,
     currentPath: '/marketplace',
     metaTags: buildMarketplaceOgTags(req, listing),
     body: marketplaceListingPage({
       listing, committedCount, commitment, isLoggedIn: !!req.session?.playerRegId,
-      comments, reactedIds, listingReaction,
+      comments, reactedIds, listingReaction, preselect,
       isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'marketplace'),
     }),
   }));
@@ -9856,9 +9937,21 @@ app.post('/marketplace/:id/commit', express.json(), (req, res) => {
   const selections = (req.body && typeof req.body.variants === 'object' && req.body.variants) || {};
   const resolved = {};
   for (const group of variantGroups) {
-    const picked = String(selections[group.label] || '');
-    if (!group.options.includes(picked)) return res.status(400).json({ error: `Please pick a ${group.label}.` });
-    resolved[group.label] = picked;
+    if (group.multiSelect) {
+      // Picking N photos here means "I want N of these" — the price multiplies by however
+      // many, so this needs at least 1 (never a silent free commitment) and no more than
+      // MAX_MULTI_SELECT (a "commit" isn't meant to become an unbounded bulk order).
+      const picked = Array.isArray(selections[group.label]) ? selections[group.label].map(String) : [];
+      const unique = [...new Set(picked)];
+      if (!unique.length) return res.status(400).json({ error: `Please pick at least one ${group.label}.` });
+      if (unique.length > MAX_MULTI_SELECT) return res.status(400).json({ error: `You can pick at most ${MAX_MULTI_SELECT} for ${group.label}.` });
+      if (!unique.every(v => group.options.includes(v))) return res.status(400).json({ error: `Please pick a valid ${group.label}.` });
+      resolved[group.label] = unique;
+    } else {
+      const picked = String(selections[group.label] || '');
+      if (!group.options.includes(picked)) return res.status(400).json({ error: `Please pick a ${group.label}.` });
+      resolved[group.label] = picked;
+    }
   }
   // A "top"-kind group is a jersey — anyone ordering one needs their name and number
   // printed on it. Required alongside the size pick, not optional, since there's no way
