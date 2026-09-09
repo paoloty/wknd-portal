@@ -51,6 +51,7 @@ import {
   getReactedMarketplaceCommentIdsForPlayer, getMarketplaceCommentCounts,
   toggleMarketplaceListingReaction, getMarketplaceListingReactionState, getMarketplaceListingReactionCounts,
   getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
+  getConfirmedSeasonPlayerIds,
   getSeasonQuota, setSeasonQuota, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
@@ -4018,7 +4019,13 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
 });
 
 app.get('/admin/ledger', requireAuth, (req, res) => {
-  const players  = getAllPlayers();
+  // Overview scopes to players actually rostered for the current season, not every
+  // player who has ever existed — a past-season player who never re-registered
+  // shouldn't pad the "who's here / what's outstanding" headline count. Their debt
+  // (if any) still lives in player_financials and remains reachable via their own
+  // /admin/ledger/:id page — this only trims who appears in the overview list/total.
+  const currentSeasonPlayerIds = getConfirmedSeasonPlayerIds(getPortalCurrentSeason());
+  const players  = getAllPlayers().filter(p => currentSeasonPlayerIds.has(p.id));
   const seasons  = getLedgerSeasons();
   const season   = req.query.season ?? '';
   const quota    = season ? getSeasonQuota(season) : 0;
