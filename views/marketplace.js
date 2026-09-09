@@ -218,15 +218,6 @@ const SORT_LABELS = {
   price_asc: 'Price: Low to High', price_desc: 'Price: High to Low',
 };
 
-// A committed row belongs to a specific exploded option if any of its own variant selections
-// include that option's value — mirrors the committedOptsById check server-side, just kept
-// per-row here since avatarStack needs the actual player rows, not just a yes/no Set.
-function rowMatchesOpt(row, opt) {
-  let selections = {};
-  try { selections = JSON.parse(row.variant || '{}'); } catch { selections = {}; }
-  return Object.values(selections).some(v => Array.isArray(v) ? v.includes(opt) : v === opt);
-}
-
 export function marketplacePage({ listings = [], countsById = {}, committedById = {}, committedOptsById = {}, committedPlayersById = {}, commentCountsById = {}, reactionCountsById = {}, isLoggedIn = false, sort = '' } = {}) {
   // Built as {listing, cardOpts} entries rather than rendered HTML directly, so "You're In"
   // cards can be pulled to the front afterward — a logged-in buyer's own commitments are more
@@ -249,13 +240,14 @@ export function marketplacePage({ listings = [], countsById = {}, committedById 
     return variants.map(v => ({
       listing: l,
       cardOpts: {
-        // The meter (count/min_buyers) stays the shared listing-wide total on every exploded
-        // card — min_buyers is one threshold for the whole production run regardless of which
-        // design a buyer picks, so every variant card should read the same progress toward it
-        // (opts.committedCount already carries that). Only the avatar stack narrows to this
-        // specific option, since that's about who picked *this* design, not the shared total.
+        // Both the meter (count/min_buyers) and the avatar stack stay the shared listing-wide
+        // totals on every exploded card — min_buyers is one threshold for the whole production
+        // run regardless of which design a buyer picks, so every variant card reads the same
+        // progress toward it and the same roster of who's in on that run (opts.committedCount
+        // and allCommittedPlayers already carry that). Only "You're In" narrows to this
+        // specific option, since that's about whether *this viewer* picked *this* design.
         ...opts, variant: v, committed: committedOpts ? committedOpts.has(v.opt) : false,
-        committedPlayers: allCommittedPlayers.filter(row => rowMatchesOpt(row, v.opt)),
+        committedPlayers: allCommittedPlayers,
       },
     }));
   });
