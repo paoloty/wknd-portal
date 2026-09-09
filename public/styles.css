@@ -943,11 +943,29 @@ body {
   justify-content: space-between;
   padding: 10px 12px 5px;
 }
+.ticker-date-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
 .ticker-date {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
   color: var(--text-subtle);
+}
+.ticker-season {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 .ticker-status {
   font-size: 9px;
@@ -3358,6 +3376,23 @@ a.player-link:hover { color: var(--amber); }
   letter-spacing: 0.1em;
   color: var(--amber);
   border: 1px solid rgba(245,147,50,0.4);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Season badge — purely informational (which season a game belongs to), so it
+   deliberately stays neutral/muted rather than using the amber accent, which is
+   reserved for notable status (playoff/finals/pending). ── */
+.badge-season {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
   padding: 2px 6px;
   border-radius: 4px;
 }

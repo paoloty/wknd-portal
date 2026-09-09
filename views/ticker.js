@@ -45,7 +45,7 @@ export function scoreTicker(games) {
   </div>`;
       return `<div class="card score-ticker__card ${cardCls}" style="--tc-a:${colorA};--tc-b:${colorB}">
   <div class="ticker-header">
-    <span class="ticker-date">${escHtml(formatDate(g.date))}</span>
+    <span class="ticker-date-group"><span class="ticker-date">${escHtml(formatDate(g.date))}</span><span class="ticker-season">S${escHtml(String(g.season))}</span></span>
     <span class="ticker-status ticker-status--upcoming">${badge}</span>
   </div>
   ${series}
@@ -72,7 +72,7 @@ export function scoreTicker(games) {
 
     return `<a href="/games/${encodeURIComponent(g.id)}" class="card score-ticker__card ${cardCls}" style="--tc-a:${colorA};--tc-b:${colorB}">
   <div class="ticker-header">
-    <span class="ticker-date">${escHtml(formatDate(g.date))}</span>
+    <span class="ticker-season">S${escHtml(String(g.season))}</span>
     <span class="ticker-status ticker-status--final">${badge}</span>
   </div>
   ${series}

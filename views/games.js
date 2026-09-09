@@ -65,7 +65,7 @@ function gameRow(game, { commentsEnabled = false, social = { commentsCount: 0, r
   <div class="game-row__thumb">${thumb}</div>
   <div class="game-row__body">
     <div class="game-row__meta">
-      ${escHtml(formatDate(game.date))}${isPlayoff ? ' <span class="badge-playoff">PLAYOFF</span>' : ''}${isFinals ? ' <span class="badge-playoff" style="background:var(--amber);color:#0a0e16;border-color:var(--amber)">FINALS</span>' : ''}${isFinal ? ' <span class="badge-playoff" style="background:rgba(59,130,246,.15);color:#60a5fa;border-color:#3b82f6">STATS PENDING</span>' : ''}
+      ${escHtml(formatDate(game.date))} <span class="badge-season">S${escHtml(String(game.season))}</span>${isPlayoff ? ' <span class="badge-playoff">PLAYOFF</span>' : ''}${isFinals ? ' <span class="badge-playoff" style="background:var(--amber);color:#0a0e16;border-color:var(--amber)">FINALS</span>' : ''}${isFinal ? ' <span class="badge-playoff" style="background:rgba(59,130,246,.15);color:#60a5fa;border-color:#3b82f6">STATS PENDING</span>' : ''}
       ${scoreInline}
     </div>
     <h3 class="game-row__title">${escHtml(cleanTitle)}</h3>
