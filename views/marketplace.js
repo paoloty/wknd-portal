@@ -530,6 +530,12 @@ ${STYLE}
     }
     form.addEventListener('change', recomputeTotal);
     recomputeTotal();
+    // A preselected option (arrived via ?g=&o= from an exploded variant card) is checked at
+    // render time, not via a live click — the picker-row and gallery scrolls below are both
+    // wired to the 'change' event, which never fires for that, so it needs its own scroll on
+    // load to land on the same already-selected pill instead of leaving it off-screen.
+    var preselectedCell = form.querySelector('.mkt-pick-cell:has(input:checked)');
+    if (preselectedCell) preselectedCell.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
       var variants = {};
