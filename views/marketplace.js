@@ -33,6 +33,22 @@ function statusBadge(listing, committed) {
 // mirrors Papawis's pw-meter-row/pw-meter (views/papawis.js), but keeps this threshold
 // coloring on the fill itself — min_buyers is a "will this actually happen" signal, unlike
 // Papawis's flat slot-fill meter.
+// Overlapping avatar stack — mirrors Papawis's pw-avatar-stack (views/papawis.js's
+// rosterSummary), minus the empty-slot padding (that's specifically about making a thin
+// roster card not look dead against a fixed max_slots; a group buy has no such visual
+// "this many spots" metaphor to fill). Capped with a "+N" overflow bubble past MAX_AVATARS.
+const MAX_AVATARS = 6;
+function avatarStack(rows) {
+  if (!rows.length) return '';
+  const shown = rows.slice(0, MAX_AVATARS);
+  const overflow = rows.length - shown.length;
+  const avatars = shown.map(r =>
+    playerAvatar(r.player_id, r.player_name, teamColor(r.team_name), { className: 'mkt-avatar' })
+  ).join('');
+  const moreBubble = overflow > 0 ? `<span class="mkt-avatar mkt-avatar--more">+${overflow}</span>` : '';
+  return `<div class="mkt-avatar-stack">${avatars}${moreBubble}</div>`;
+}
+
 function meterBlock(count, min) {
   if (!min) return '';
   const pct = Math.min(100, Math.round((count / min) * 100));
@@ -155,7 +171,7 @@ function photoVariantOptions(listing) {
   return entries.length ? entries : null;
 }
 
-function listingCard(listing, { committedCount = 0, committed = false, commentCount = 0, reactionCount = 0, variant = null } = {}) {
+function listingCard(listing, { committedCount = 0, committed = false, commentCount = 0, reactionCount = 0, variant = null, committedPlayers = [] } = {}) {
   const photos = parseJsonArray(listing.photos);
   const coverIndex = variant ? variant.photoIndex : 0;
   const hasCover = !!photos[coverIndex];
@@ -186,6 +202,7 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
   <div class="mkt-card-body">
     <div class="mkt-card-price">${fmtPeso(listing.price)} ${comparePriceHtml(listing, { size: 'card' })}</div>
     ${meterBlock(committedCount, listing.min_buyers)}
+    ${avatarStack(committedPlayers)}
     <div class="mkt-foot">
       ${social}
       <span class="mkt-btn mkt-btn--ghost">View listing <span aria-hidden="true">&rarr;</span></span>
@@ -194,20 +211,51 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
 </article>`;
 }
 
-export function marketplacePage({ listings = [], countsById = {}, committedById = {}, commentCountsById = {}, reactionCountsById = {}, isLoggedIn = false } = {}) {
+const SORT_LABELS = {
+  '': 'Newest', commits: 'Top Commits', views: 'Most Viewed',
+  price_asc: 'Price: Low to High', price_desc: 'Price: High to Low',
+};
+
+// A committed row belongs to a specific exploded option if any of its own variant selections
+// include that option's value — mirrors the committedOptsById check server-side, just kept
+// per-row here since avatarStack needs the actual player rows, not just a yes/no Set.
+function rowMatchesOpt(row, opt) {
+  let selections = {};
+  try { selections = JSON.parse(row.variant || '{}'); } catch { selections = {}; }
+  return Object.values(selections).some(v => Array.isArray(v) ? v.includes(opt) : v === opt);
+}
+
+export function marketplacePage({ listings = [], countsById = {}, committedById = {}, committedOptsById = {}, committedPlayersById = {}, commentCountsById = {}, reactionCountsById = {}, isLoggedIn = false, sort = '' } = {}) {
   const cards = listings.length
     ? listings.flatMap(l => {
         const opts = {
           committedCount: countsById[l.id] || 0, committed: !!committedById[l.id],
           commentCount: commentCountsById[l.id] || 0, reactionCount: reactionCountsById[l.id] || 0,
         };
+        const allCommittedPlayers = committedPlayersById[l.id] || [];
         const variants = photoVariantOptions(l);
-        return variants ? variants.map(v => listingCard(l, { ...opts, variant: v })) : [listingCard(l, opts)];
+        // Exploded cards share one listing.id, so a plain "does this player have any
+        // commitment on this listing" check would light up every variant's card the moment
+        // they'd committed to just one — this narrows "You're In" (and the avatar stack) to
+        // the specific option each card represents instead (see committedOptsById below).
+        if (!variants) return [listingCard(l, { ...opts, committedPlayers: allCommittedPlayers })];
+        const committedOpts = committedOptsById[l.id];
+        return variants.map(v => listingCard(l, {
+          ...opts, variant: v, committed: committedOpts ? committedOpts.has(v.opt) : false,
+          committedPlayers: allCommittedPlayers.filter(row => rowMatchesOpt(row, v.opt)),
+        }));
       }).join('\n    ')
     : `<div class="mkt-card mkt-empty">No group buys open right now.</div>`;
 
+  const sortSelect = `<label class="mkt-sort">
+    <span class="mkt-sort__label">Sort</span>
+    <select class="mkt-sort__select" onchange="location.href = '/marketplace' + (this.value ? '?sort=' + this.value : '')">
+      ${Object.entries(SORT_LABELS).map(([value, label]) => `<option value="${value}"${sort === value ? ' selected' : ''}>${label}</option>`).join('')}
+    </select>
+  </label>`;
+
   return `<div class="page-content">
-${pageHeader({ title: 'Marketplace', description: 'Group buys for jerseys and merch — commit to join, admin charges everyone once enough players are in.' })}
+${pageHeader({ title: 'Marketplace', description: 'Group buys for jerseys and merch — commit to join, admin charges everyone once enough players are in.', actions: listings.length ? sortSelect : '' })}
 
 <div class="mkt-main">
   ${listings.length ? `<div class="mkt-grid">${cards}</div>` : cards}
@@ -1051,6 +1099,14 @@ const STYLE = `<style>
    badge, titlebar, body. auto-fill (not auto-fit) keeps column width fixed across the grid
    so a lone trailing card doesn't stretch — same reasoning as .pw-grid. ─────────────────── */
 .mkt-main { display: flex; flex-direction: column; }
+
+.mkt-sort { display: flex; align-items: center; gap: 8px; }
+.mkt-sort__label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.mkt-sort__select {
+  font-family: inherit; font-size: 13px; font-weight: 600; color: var(--text-primary);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; cursor: pointer;
+}
+.mkt-sort__select:focus { outline: none; border-color: var(--amber); }
 .mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 @media (max-width: 640px) { .mkt-grid { grid-template-columns: 1fr; } .mkt-card { max-width: none; } }
 .mkt-empty { padding: 20px; color: var(--text-subtle); font-size: 13px; }
@@ -1096,6 +1152,15 @@ const STYLE = `<style>
 .mkt-meter > span { display: block; height: 100%; border-radius: 99px; transition: width .2s; }
 
 .mkt-foot { margin-top: auto; padding-top: 4px; }
+
+/* Overlapping avatar stack — mirrors Papawis's pw-avatar-stack/pw-avatar (views/papawis.js).
+   Not a link (unlike the comments-section avatar) since the whole card is already one big
+   overlay link to the listing; nesting another interactive element here would just fight it. */
+.mkt-avatar-stack { display: flex; flex-shrink: 0; }
+.mkt-avatar { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface); flex-shrink: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: rgba(255,255,255,.7); background: var(--bg); margin-left: -9px; }
+.mkt-avatar:first-child { margin-left: 0; }
+.mkt-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.mkt-avatar--more { background: var(--border); color: var(--text-muted); font-size: 9px; }
 
 /* ── Detail page — mirrors .game-detail-layout ───────────────────────────── */
 .mkt-detail-layout { display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; margin-bottom: 40px; }

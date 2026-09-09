@@ -43,6 +43,7 @@ import {
   getPlayerFinancials, getPlayerPapawisBalance, hasUnpaidCompletedPapawis, getPlayerTransactions, getPlayerTransactionsBySeason,
   createMarketplaceListing, getMarketplaceListingById, getMarketplaceListings, updateMarketplaceListing,
   setMarketplaceListingStatus, setMarketplaceListingPhotos, setMarketplaceListingVariantOptions, markMarketplaceListingCharged, deleteMarketplaceListing,
+  incrementMarketplaceListingViews,
   commitToMarketplaceListing, getActiveMarketplaceCommitment, getActiveMarketplaceCommitmentsForPlayer, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
   getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged,
   setRegistrationMarketplaceChargeAccess,
@@ -9877,17 +9878,51 @@ app.get('/marketplace', (req, res) => {
   const listings = getMarketplaceListings({ type: 'group_buy', status: 'open' })
     .concat(getMarketplaceListings({ type: 'group_buy', status: 'active' }));
   const viewerPlayerId = req.session?.playerPlayerId || null;
-  const countsById = Object.fromEntries(listings.map(l => [l.id, countActiveMarketplaceCommitments(l.id)]));
+  // Full committed rows (player name/photo/team, plus each row's own variant selections) —
+  // fetched once per listing and reused for both the committed count (its own .length, no
+  // separate COUNT query needed) and the card avatar stack below.
+  const committedPlayersById = Object.fromEntries(listings.map(l => [l.id, getMarketplaceCommitments(l.id, 'committed')]));
+  const countsById = Object.fromEntries(listings.map(l => [l.id, (committedPlayersById[l.id] || []).length]));
+  // Sort operates on listings, not the exploded per-variant cards — "most committed"/"most
+  // viewed" are inherently properties of the underlying group buy, not any one design pulled
+  // out of it, so this decides which listing's cluster of cards leads, not the order within it.
+  const sort = String(req.query.sort || '');
+  if (sort === 'commits') listings.sort((a, b) => (countsById[b.id] || 0) - (countsById[a.id] || 0));
+  else if (sort === 'views') listings.sort((a, b) => (b.view_count || 0) - (a.view_count || 0));
+  else if (sort === 'price_asc') listings.sort((a, b) => a.price - b.price);
+  else if (sort === 'price_desc') listings.sort((a, b) => b.price - a.price);
   const committedById = viewerPlayerId
     ? Object.fromEntries(listings.map(l => [l.id, !!getActiveMarketplaceCommitment(l.id, viewerPlayerId)]))
     : {};
+  // A photo-backed listing explodes into one grid card per option, all sharing the same
+  // listing.id — committedById above can only say "this player has some commitment on this
+  // listing," which would light up every exploded card at once. This instead collects the
+  // actual option value(s) they've committed to per listing, so each card's "You're In" only
+  // lights up for the specific variant it represents.
+  const committedOptsById = {};
+  if (viewerPlayerId) {
+    for (const l of listings) {
+      const rows = getActiveMarketplaceCommitmentsForPlayer(l.id, viewerPlayerId);
+      if (!rows.length) continue;
+      const opts = new Set();
+      for (const row of rows) {
+        let selections = {};
+        try { selections = JSON.parse(row.variant || '{}'); } catch { selections = {}; }
+        for (const v of Object.values(selections)) {
+          if (Array.isArray(v)) v.forEach(x => opts.add(x));
+          else if (v) opts.add(v);
+        }
+      }
+      committedOptsById[l.id] = opts;
+    }
+  }
   const listingIds = listings.map(l => l.id);
   const commentCountsById = getMarketplaceCommentCounts(listingIds);
   const reactionCountsById = getMarketplaceListingReactionCounts(listingIds);
   res.send(renderPage(req, {
     title: 'Marketplace — WKND Basketball League',
     currentPath: req.path,
-    body: marketplacePage({ listings, countsById, committedById, commentCountsById, reactionCountsById, isLoggedIn: !!req.session?.playerRegId }),
+    body: marketplacePage({ listings, countsById, committedById, committedOptsById, committedPlayersById, commentCountsById, reactionCountsById, isLoggedIn: !!req.session?.playerRegId, sort }),
   }));
 });
 
@@ -9899,6 +9934,7 @@ app.get('/marketplace/:id', (req, res) => {
   if (!listing) return res.status(404).send(renderPage(req, {
     title: 'Not Found', currentPath: '/marketplace', body: comingSoonPage({ label: 'Listing Not Found', description: 'This listing could not be found.' }),
   }));
+  incrementMarketplaceListingViews(listing.id);
   const viewerPlayerId = req.session?.playerPlayerId || null;
   const commitments = (viewerPlayerId ? getActiveMarketplaceCommitmentsForPlayer(listing.id, viewerPlayerId) : [])
     .map(c => ({ ...c, variantLabel: formatVariantSelections(c.variant) }));
