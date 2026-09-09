@@ -795,7 +795,7 @@ const STYLE = `<style>
 .mkt-grid .mkt-card:hover { border-color: rgba(245,147,50,.35); }
 .mkt-card__link { position: absolute; inset: 0; z-index: 1; }
 
-.mkt-photo { position: relative; height: 140px; flex-shrink: 0; overflow: hidden; background: linear-gradient(155deg, #2a3346 0%, #171d29 46%, #0c0f16 100%); }
+.mkt-photo { position: relative; aspect-ratio: 1 / 1; flex-shrink: 0; overflow: hidden; background: linear-gradient(155deg, #2a3346 0%, #171d29 46%, #0c0f16 100%); }
 .mkt-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .mkt-photo-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.18); }
 .mkt-photo-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,9,16,0) 45%, rgba(6,9,16,.55) 100%); }
@@ -806,7 +806,14 @@ const STYLE = `<style>
 .mkt-photo-status .mkt-badge { background: rgba(2,8,23,.72); backdrop-filter: blur(3px); border-color: rgba(255,255,255,.18); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 
 .mkt-card-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 18px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
-.mkt-card-name { font-size: 15px; font-weight: 700; letter-spacing: -.005em; color: var(--text-primary); }
+/* Reserve exactly 2 lines' height regardless of title length, so every card in a grid
+   row lines up the same whether its title is one line or two — a 3rd line clamps with
+   an ellipsis instead of growing the row and misaligning the cards next to it. */
+.mkt-card-name {
+  font-size: 15px; font-weight: 700; letter-spacing: -.005em; color: var(--text-primary);
+  line-height: 1.3; min-height: 2.6em;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
 .mkt-card-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 18px; }
 .mkt-card-price { font-family: 'Saira Condensed', sans-serif; font-size: 22px; color: var(--amber); font-weight: 700; }
 
