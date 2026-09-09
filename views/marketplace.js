@@ -593,6 +593,26 @@ ${STYLE}
     // load to land on the same already-selected pill instead of leaving it off-screen.
     var preselectedCell = form.querySelector('.mkt-pick-cell:has(input:checked)');
     if (preselectedCell) preselectedCell.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
+    // Submits the commit, optionally re-sending with confirmDuplicate once the buyer has
+    // explicitly said "yes, add it anyway" to the server's exact-duplicate warning (same
+    // options AND same name/number — a plain accidental double-add, not two different
+    // people wanting the same design, which the server never blocks).
+    async function submitCommit(payload) {
+      var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/commit')}, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      var j = await r.json();
+      if (!r.ok) {
+        if (j.duplicate && !payload.confirmDuplicate) {
+          if (confirm((j.error || 'You already have an identical order.') + ' Add it anyway?')) {
+            return submitCommit(Object.assign({}, payload, { confirmDuplicate: true }));
+          }
+          return;
+        }
+        throw new Error(j.error || 'Failed to commit.');
+      }
+      window.location.reload();
+    }
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
       var variants = {};
@@ -608,18 +628,12 @@ ${STYLE}
       var numEl  = document.getElementById('mkt-custom-number');
       var noteEl = document.getElementById('mkt-custom-notes');
       try {
-        var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/commit')}, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            variants: variants,
-            customName: nameEl ? nameEl.value : '',
-            customNumber: numEl ? numEl.value : '',
-            notes: noteEl ? noteEl.value : '',
-          }),
+        await submitCommit({
+          variants: variants,
+          customName: nameEl ? nameEl.value : '',
+          customNumber: numEl ? numEl.value : '',
+          notes: noteEl ? noteEl.value : '',
         });
-        var j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'Failed to commit.');
-        window.location.reload();
       } catch (ex) { err.textContent = ex.message; err.hidden = false; }
     });
   }

@@ -9561,6 +9561,23 @@ function remapVariantOptionPhotos(variantGroups, remapFn) {
   });
 }
 
+// Exact-duplicate check for the commit route's confirm-before-adding-again warning — same
+// set of groups, same value(s) per group. Array-valued (multiSelect) groups compare by
+// sorted content so pick order never matters, only which options were actually chosen.
+function variantSelectionsEqual(a, b) {
+  const keysA = Object.keys(a), keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every(k => {
+    const va = a[k], vb = b[k];
+    if (Array.isArray(va) || Array.isArray(vb)) {
+      if (!Array.isArray(va) || !Array.isArray(vb) || va.length !== vb.length) return false;
+      const sa = [...va].sort(), sb = [...vb].sort();
+      return sa.every((v, i) => v === sb[i]);
+    }
+    return va === vb;
+  });
+}
+
 function formatVariantSelections(variantJson) {
   let obj = {};
   try { obj = JSON.parse(variantJson || '{}'); } catch { obj = {}; }
@@ -10003,6 +10020,24 @@ app.post('/marketplace/:id/commit', express.json(), (req, res) => {
     notes        = String(req.body?.notes || '').trim().slice(0, 200);
     if (!customName)   return res.status(400).json({ error: 'Please enter the name for your jersey.' });
     if (!customNumber) return res.status(400).json({ error: 'Please enter your jersey number.' });
+  }
+  // Multiple commitments per player are allowed on purpose (see above), but an exact repeat —
+  // same options AND same name/number — is almost always an accidental double-add rather than
+  // a real second order, so it gets a confirm-to-proceed warning instead of a silent duplicate
+  // or a hard block. Two different people wanting the identical size/design is fine and never
+  // blocked, since their name/number won't match.
+  if (!req.body?.confirmDuplicate) {
+    const existing = getActiveMarketplaceCommitmentsForPlayer(listing.id, playerId);
+    const isDuplicate = existing.some(c => {
+      let sel = {};
+      try { sel = JSON.parse(c.variant || '{}'); } catch { sel = {}; }
+      return variantSelectionsEqual(sel, resolved)
+        && String(c.custom_name || '').trim().toLowerCase() === customName.toLowerCase()
+        && String(c.custom_number || '').trim() === customNumber;
+    });
+    if (isDuplicate) {
+      return res.status(409).json({ duplicate: true, error: "You already have an identical order on this listing — same options and name/number." });
+    }
   }
   commitToMarketplaceListing(listing.id, playerId, JSON.stringify(resolved), { customName, customNumber, notes });
   res.json({ ok: true });
