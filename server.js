@@ -342,6 +342,50 @@ function buildGameOgTags(req, game) {
   return tags.join('\n  ');
 }
 
+function buildMarketplaceOgTags(req, listing) {
+  const origin = getRequestOrigin(req);
+  const title  = listing.title;
+  const url    = `${origin}/marketplace/${encodeURIComponent(listing.id)}`;
+  const desc   = firstParagraph(listing.description) || 'Check out this item on the WKND Basketball League Marketplace.';
+  let photos = [];
+  try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
+  const img = photos[0] ? `${origin}/api/marketplace/${encodeURIComponent(listing.id)}/photo/0` : null;
+
+  const tags = [
+    `<meta name="description" content="${escAttr(desc)}">`,
+    `<link rel="canonical" href="${escAttr(url)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:url" content="${escAttr(url)}">`,
+  ];
+
+  if (img) {
+    tags.push(
+      `<meta property="og:image" content="${escAttr(img)}">`,
+      `<meta property="og:image:secure_url" content="${escAttr(img)}">`,
+      `<meta property="og:image:alt" content="${escAttr(title)}">`,
+    );
+  }
+
+  tags.push(
+    `<meta name="twitter:card" content="${img ? 'summary_large_image' : 'summary'}">`,
+    `<meta name="twitter:title" content="${escAttr(title)}">`,
+    `<meta name="twitter:description" content="${escAttr(desc)}">`,
+  );
+
+  if (img) {
+    tags.push(
+      `<meta name="twitter:image" content="${escAttr(img)}">`,
+      `<meta name="twitter:image:alt" content="${escAttr(title)}">`,
+    );
+  }
+
+  return tags.join('\n  ');
+}
+
 function buildPostOgTags(req, post) {
   const origin = getRequestOrigin(req);
   const url    = `${origin}/posts/${encodeURIComponent(post.slug)}`;
@@ -9776,6 +9820,7 @@ app.get('/marketplace/:id', (req, res) => {
   res.send(renderPage(req, {
     title: `${listing.title} — Marketplace`,
     currentPath: '/marketplace',
+    metaTags: buildMarketplaceOgTags(req, listing),
     body: marketplaceListingPage({
       listing, committedCount, commitment, isLoggedIn: !!req.session?.playerRegId,
       comments, reactedIds, listingReaction,
