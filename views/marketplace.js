@@ -363,7 +363,7 @@ function commitmentAmount(listing, variantGroups, commitment) {
 }
 
 export function marketplaceListingPage({
-  listing, committedCount = 0, commitments = [], isLoggedIn = false,
+  listing, committedCount = 0, commitments = [], committedPlayers = [], isLoggedIn = false,
   comments = [], reactedIds = new Set(), listingReaction = { count: 0, reacted: false },
   isPlayer = false, isAdmin = false, preselect = null,
 } = {}) {
@@ -500,6 +500,7 @@ export function marketplaceListingPage({
         ${detailHeader}
         <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> <span class="mkt-price-compare" id="mkt-price-compare">${!commitments.length ? comparePriceHtml(listing, { size: 'detail' }) : ''}</span></div>
         ${meterBlock(committedCount, listing.min_buyers)}
+        ${avatarStack(committedPlayers)}
         <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
           🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
         </button>

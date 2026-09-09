@@ -9955,7 +9955,8 @@ app.get('/marketplace/:id', (req, res) => {
   const viewerPlayerId = req.session?.playerPlayerId || null;
   const commitments = (viewerPlayerId ? getActiveMarketplaceCommitmentsForPlayer(listing.id, viewerPlayerId) : [])
     .map(c => ({ ...c, variantLabel: formatVariantSelections(c.variant) }));
-  const committedCount = countActiveMarketplaceCommitments(listing.id);
+  const committedPlayers = getMarketplaceCommitments(listing.id, 'committed');
+  const committedCount = committedPlayers.length;
   const comments = getMarketplaceListingComments(listing.id);
   const reactedIds = getReactedMarketplaceCommentIdsForPlayer(comments.map(c => c.id), viewerPlayerId);
   const listingReaction = getMarketplaceListingReactionState(listing.id, viewerPlayerId);
@@ -9968,7 +9969,7 @@ app.get('/marketplace/:id', (req, res) => {
     currentPath: '/marketplace',
     metaTags: buildMarketplaceOgTags(req, listing),
     body: marketplaceListingPage({
-      listing, committedCount, commitments, isLoggedIn: !!req.session?.playerRegId,
+      listing, committedCount, commitments, committedPlayers, isLoggedIn: !!req.session?.playerRegId,
       comments, reactedIds, listingReaction, preselect,
       isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'marketplace'),
     }),
