@@ -43,7 +43,7 @@ import {
   getPlayerFinancials, getPlayerPapawisBalance, hasUnpaidCompletedPapawis, getPlayerTransactions, getPlayerTransactionsBySeason,
   createMarketplaceListing, getMarketplaceListingById, getMarketplaceListings, updateMarketplaceListing,
   setMarketplaceListingStatus, setMarketplaceListingPhotos, setMarketplaceListingVariantOptions, markMarketplaceListingCharged, deleteMarketplaceListing,
-  commitToMarketplaceListing, getActiveMarketplaceCommitment, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
+  commitToMarketplaceListing, getActiveMarketplaceCommitment, getActiveMarketplaceCommitmentsForPlayer, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
   getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged,
   setRegistrationMarketplaceChargeAccess,
   getMarketplaceListingComments, getMarketplaceCommentById, getMarketplaceCommentWithMeta,
@@ -9900,8 +9900,8 @@ app.get('/marketplace/:id', (req, res) => {
     title: 'Not Found', currentPath: '/marketplace', body: comingSoonPage({ label: 'Listing Not Found', description: 'This listing could not be found.' }),
   }));
   const viewerPlayerId = req.session?.playerPlayerId || null;
-  const rawCommitment = viewerPlayerId ? getActiveMarketplaceCommitment(listing.id, viewerPlayerId) : null;
-  const commitment = rawCommitment ? { ...rawCommitment, variantLabel: formatVariantSelections(rawCommitment.variant) } : null;
+  const commitments = (viewerPlayerId ? getActiveMarketplaceCommitmentsForPlayer(listing.id, viewerPlayerId) : [])
+    .map(c => ({ ...c, variantLabel: formatVariantSelections(c.variant) }));
   const committedCount = countActiveMarketplaceCommitments(listing.id);
   const comments = getMarketplaceListingComments(listing.id);
   const reactedIds = getReactedMarketplaceCommentIdsForPlayer(comments.map(c => c.id), viewerPlayerId);
@@ -9915,7 +9915,7 @@ app.get('/marketplace/:id', (req, res) => {
     currentPath: '/marketplace',
     metaTags: buildMarketplaceOgTags(req, listing),
     body: marketplaceListingPage({
-      listing, committedCount, commitment, isLoggedIn: !!req.session?.playerRegId,
+      listing, committedCount, commitments, isLoggedIn: !!req.session?.playerRegId,
       comments, reactedIds, listingReaction, preselect,
       isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'marketplace'),
     }),
@@ -9929,7 +9929,10 @@ app.post('/marketplace/:id/commit', express.json(), (req, res) => {
   const listing = getMarketplaceListingById(req.params.id);
   if (!listing || listing.type !== 'group_buy') return res.status(404).json({ error: 'Not found.' });
   if (listing.status !== 'open' && listing.status !== 'active') return res.status(400).json({ error: 'This listing is no longer accepting commitments.' });
-  if (getActiveMarketplaceCommitment(listing.id, playerId)) return res.status(400).json({ error: "You're already committed to this listing." });
+  // No cap on how many times a player commits to the same listing — a photo-backed group
+  // (see photoVariantOptions in views/marketplace.js) explodes each design into its own
+  // grid card specifically so a buyer can order more than one, e.g. a Bucks jersey AND a
+  // Chicago jersey, each landing as its own line item/commitment row.
   let variantGroups = [];
   try { variantGroups = JSON.parse(listing.variant_options || '[]'); } catch { variantGroups = []; }
   // One required selection per group — e.g. a jersey listing needs both "Jersey Size" and
@@ -9969,14 +9972,20 @@ app.post('/marketplace/:id/commit', express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/marketplace/:id/cancel-commitment', (req, res) => {
+app.post('/marketplace/:id/cancel-commitment', express.json(), (req, res) => {
   if (getSetting('marketplace_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
   const playerId = req.session?.playerPlayerId;
   if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Please log in.' });
   const listing = getMarketplaceListingById(req.params.id);
   if (!listing) return res.status(404).json({ error: 'Not found.' });
-  const commitment = getActiveMarketplaceCommitment(listing.id, playerId);
-  if (!commitment) return res.status(400).json({ error: "You don't have an active commitment on this listing." });
+  // A player can hold several commitments on the same listing now, so the one to cancel
+  // must be named explicitly — falls back to "the" one for old clients/requests with no
+  // commitmentId, matching the pre-multi-commit behavior when a player only ever had one.
+  const requestedId = req.body?.commitmentId ? String(req.body.commitmentId) : null;
+  const commitment = requestedId ? getMarketplaceCommitmentById(requestedId) : getActiveMarketplaceCommitment(listing.id, playerId);
+  if (!commitment || commitment.listing_id !== listing.id || commitment.player_id !== playerId || commitment.status !== 'committed') {
+    return res.status(400).json({ error: "You don't have an active commitment matching that." });
+  }
   if (listing.status === 'charged') return res.status(400).json({ error: 'This listing has already been charged — contact an admin.' });
   cancelMarketplaceCommitment(commitment.id);
   res.json({ ok: true });

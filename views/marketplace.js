@@ -285,15 +285,35 @@ function mobileFloater({ commentsCount, listingReaction }) {
 }
 
 // ── Listing detail (games-detail-layout style: left = media/content, right = info stack) ──
+// One commitment's own charge amount — base price plus whatever its own selections add
+// (tiered size surcharge, per-option surcharge, multi-select quantity) — mirrors server.js's
+// computeVariantSurcharge/computeVariantQuantity + buildMarketplaceChargeRows's
+// (basePrice + surcharge) * quantity formula, since a buyer can now hold several of these
+// per listing and each one's amount is independent of the others.
+function commitmentAmount(listing, variantGroups, commitment) {
+  let selections = {};
+  try { selections = JSON.parse(commitment.variant || '{}'); } catch { selections = {}; }
+  const surcharge = variantGroups.reduce((sum, g) => sum
+    + (g.surchargeStep ? sizeSurcharge(selections[g.label] || '', g.surchargeStep) : 0)
+    + (g.optionSurcharges ? (Number(g.optionSurcharges[selections[g.label]]) || 0) : 0), 0);
+  let quantity = 1;
+  for (const g of variantGroups) {
+    if (!g.multiSelect) continue;
+    const picked = selections[g.label];
+    if (Array.isArray(picked) && picked.length > quantity) quantity = picked.length;
+  }
+  return (listing.price + surcharge) * quantity;
+}
+
 export function marketplaceListingPage({
-  listing, committedCount = 0, commitment = null, isLoggedIn = false,
+  listing, committedCount = 0, commitments = [], isLoggedIn = false,
   comments = [], reactedIds = new Set(), listingReaction = { count: 0, reacted: false },
   isPlayer = false, isAdmin = false, preselect = null,
 } = {}) {
   const photos = parseJsonArray(listing.photos);
   const variantGroups = parseJsonArray(listing.variant_options);
   const isOpen = listing.status === 'open' || listing.status === 'active';
-  const badge = statusBadge(listing, !!commitment);
+  const badge = statusBadge(listing, !!commitments.length);
 
   // A card exploded out of a photo-backed variant group (see photoVariantOptions) links here
   // with ?g=<group>&o=<option> so the detail page opens already scrolled to and selected on
@@ -304,18 +324,12 @@ export function marketplaceListingPage({
   const initialPhotoIndex = (preselectGroup && preselectOpt && preselectGroup.optionPhotos
     && preselectGroup.optionPhotos[preselectOpt] != null) ? preselectGroup.optionPhotos[preselectOpt] : 0;
 
-  // Once committed, the headline price should reflect what this player actually locked in
-  // (base + any surcharge from their selection), not just the listing's base price — same
-  // number the admin's charge preview will show for them.
-  let displayPrice = listing.price;
-  if (commitment) {
-    let selections = {};
-    try { selections = JSON.parse(commitment.variant || '{}'); } catch { selections = {}; }
-    const committedSurcharge = variantGroups.reduce((sum, g) => sum
-      + (g.surchargeStep ? sizeSurcharge(selections[g.label] || '', g.surchargeStep) : 0)
-      + (g.optionSurcharges ? (Number(g.optionSurcharges[selections[g.label]]) || 0) : 0), 0);
-    displayPrice = listing.price + committedSurcharge;
-  }
+  // Once a player has at least one commitment, the headline price becomes the running total
+  // of everything they've ordered so far (each item priced independently via
+  // commitmentAmount), not just the listing's base price.
+  const displayPrice = commitments.length
+    ? commitments.reduce((sum, c) => sum + commitmentAmount(listing, variantGroups, c), 0)
+    : listing.price;
 
   // Desktop: masonry grid (up to 10 photos) filling the full left column, each tile at its
   // own natural aspect ratio rather than cropped into a uniform square — click any tile to
@@ -361,30 +375,50 @@ export function marketplaceListingPage({
     ${listing.description ? `<p class="mkt-detail-desc">${escHtml(listing.description)}</p>` : ''}
   </div>`;
 
-  let actionHtml;
+  // A player's existing commitments render as removable order-list rows regardless of which
+  // status branch below applies — even once the listing's charged/closed, they should still
+  // be able to see what they ordered (just without a Remove button at that point).
+  const canRemove = isOpen && listing.status !== 'charged';
+  const orderList = commitments.length ? `
+    <div class="mkt-order-list">
+      ${commitments.map(c => {
+        const jerseyLine = c.custom_name
+          ? `<div class="mkt-order-item__sub">${escHtml(c.custom_name)} #${escHtml(c.custom_number)}${c.notes ? ` · ${escHtml(c.notes)}` : ''}</div>`
+          : '';
+        return `
+        <div class="mkt-order-item">
+          <div class="mkt-order-item__main">
+            <div class="mkt-order-item__label">${c.variantLabel ? escHtml(c.variantLabel) : 'Your order'}</div>
+            ${jerseyLine}
+          </div>
+          <div class="mkt-order-item__price">${fmtPeso(commitmentAmount(listing, variantGroups, c))}</div>
+          ${canRemove ? `<button type="button" class="mkt-order-item__remove" data-cancel-id="${escHtml(c.id)}" aria-label="Remove this item">&times;</button>` : ''}
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  let statusHtml;
   if (listing.status === 'charged') {
-    actionHtml = `<div class="mkt-hint">This group buy has already been charged and closed.</div>`;
+    statusHtml = `<div class="mkt-hint">This group buy has already been charged and closed.</div>`;
   } else if (listing.status === 'cancelled') {
-    actionHtml = `<div class="mkt-hint">This listing was cancelled.</div>`;
+    statusHtml = `<div class="mkt-hint">This listing was cancelled.</div>`;
   } else if (!isLoggedIn) {
-    actionHtml = `<a href="/login?next=${encodeURIComponent('/marketplace/' + listing.id)}" class="mkt-btn mkt-btn--primary">Log in to commit</a>`;
-  } else if (commitment) {
-    const jerseyLine = commitment.custom_name
-      ? `<div class="mkt-hint__sub">${escHtml(commitment.custom_name)} #${escHtml(commitment.custom_number)}${commitment.notes ? ` · ${escHtml(commitment.notes)}` : ''}</div>`
-      : '';
-    actionHtml = `
-      <div class="mkt-hint mkt-hint--in">You're committed${commitment.variantLabel ? ` — ${escHtml(commitment.variantLabel)}` : ''}.${jerseyLine}</div>
-      <button type="button" class="mkt-btn mkt-btn--ghost" id="mkt-cancel-btn">Cancel commitment</button>`;
+    statusHtml = `<a href="/login?next=${encodeURIComponent('/marketplace/' + listing.id)}" class="mkt-btn mkt-btn--primary">Log in to commit</a>`;
   } else if (isOpen) {
-    actionHtml = `
-      <form id="mkt-commit-form" data-base-price="${listing.price}">
+    // The form always renders when open, even after the player already has commitments —
+    // exploded photo-backed variants (see photoVariantOptions) mean a buyer legitimately
+    // wants to order more than one design, so "commit" here means "add to order," not
+    // "replace my one and only pick."
+    statusHtml = `
+      <form id="mkt-commit-form" data-base-price="${listing.price}" data-compare-at-price="${commitments.length ? 0 : (Number(listing.compare_at_price) || 0)}">
         ${variantGroupsHtml(variantGroups, preselectOpt ? { [preselect.group]: preselectOpt } : {}, listing.id)}
         ${jerseyCustomFieldsHtml(variantGroups)}
-        <button type="submit" class="mkt-btn mkt-btn--primary">Commit — <span id="mkt-commit-total">${fmtPeso(listing.price)}</span></button>
+        <button type="submit" class="mkt-btn mkt-btn--primary">${commitments.length ? 'Add to order' : 'Commit'} — <span id="mkt-commit-total">${fmtPeso(listing.price)}</span></button>
       </form>`;
   } else {
-    actionHtml = `<div class="mkt-hint">Not accepting commitments right now.</div>`;
+    statusHtml = `<div class="mkt-hint">Not accepting commitments right now.</div>`;
   }
+  const actionHtml = orderList + statusHtml;
 
   return `<div class="page-content">
 <div class="mkt-detail-layout">
@@ -395,7 +429,7 @@ export function marketplaceListingPage({
     <div class="mkt-card mkt-info-card">
       <div class="mkt-card-body">
         ${detailHeader}
-        <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> ${!commitment ? comparePriceHtml(listing, { size: 'detail' }) : ''}</div>
+        <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> <span id="mkt-price-compare">${!commitments.length ? comparePriceHtml(listing, { size: 'detail' }) : ''}</span></div>
         ${meterBlock(committedCount, listing.min_buyers)}
         <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
           🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
@@ -422,7 +456,9 @@ ${STYLE}
     // comparePriceHtml), which has nothing to do with the live surcharge total and would
     // get wiped out if this just clobbered the container's full innerHTML/textContent.
     var priceDisplay = document.getElementById('mkt-price-amount');
+    var compareDisplay = document.getElementById('mkt-price-compare');
     var basePrice = Number(form.dataset.basePrice) || 0;
+    var compareAtPrice = Number(form.dataset.compareAtPrice) || 0;
     var multiScrolls = form.querySelectorAll('.mkt-pick-scroll[data-multiselect]');
 
     // Enforces the max-N cap per multi-select group by disabling the still-unchecked cells
@@ -452,17 +488,33 @@ ${STYLE}
       return q;
     }
 
+    // The compare-at price scales by the same surcharge as the real price so the flat peso
+    // savings stays constant no matter which variant is picked (only the percentage moves,
+    // same as it would for any retailer bumping both an item's price and its "was" price by
+    // the same amount for a pricier trim) — mirrors comparePriceHtml's server-side math.
+    function updateCompareBadge(unitPrice, surcharge) {
+      if (!compareDisplay) return;
+      if (!compareAtPrice || compareAtPrice <= basePrice) { compareDisplay.innerHTML = ''; return; }
+      var compareUnit = compareAtPrice + surcharge;
+      var savings = compareUnit - unitPrice;
+      var pct = Math.round((savings / compareUnit) * 100);
+      compareDisplay.innerHTML = '<span class="mkt-compare-price mkt-compare-price--detail">₱' + compareUnit.toLocaleString() + '</span>' +
+        '<span class="mkt-savings-badge">Save ' + pct + '%</span>';
+    }
+
     function recomputeTotal() {
       enforceMultiSelectCaps();
-      var unitPrice = basePrice;
+      var surcharge = 0;
       form.querySelectorAll('input[name^="variant__"]:checked').forEach(function(input) {
-        unitPrice += Number(input.dataset.surcharge) || 0;
+        surcharge += Number(input.dataset.surcharge) || 0;
       });
+      var unitPrice = basePrice + surcharge;
       var qty = currentQuantity();
       var total = unitPrice * qty;
       var formatted = '₱' + total.toLocaleString() + (qty > 1 ? ' (' + qty + ' items)' : '');
       if (totalEl) totalEl.textContent = formatted;
       if (priceDisplay) priceDisplay.textContent = formatted;
+      updateCompareBadge(unitPrice, surcharge);
     }
     form.addEventListener('change', recomputeTotal);
     recomputeTotal();
@@ -496,18 +548,22 @@ ${STYLE}
       } catch (ex) { err.textContent = ex.message; err.hidden = false; }
     });
   }
-  var cancelBtn = document.getElementById('mkt-cancel-btn');
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', async function() {
-      if (!confirm('Cancel your commitment to this listing?')) return;
+  // A player can have several order-list rows now (see photoVariantOptions/commitments),
+  // each with its own Remove button — delegated so it works for however many render.
+  document.querySelectorAll('.mkt-order-item__remove').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      if (!confirm('Remove this item from your order?')) return;
       try {
-        var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/cancel-commitment')}, { method: 'POST' });
+        var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/cancel-commitment')}, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commitmentId: btn.dataset.cancelId }),
+        });
         var j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'Failed to cancel.');
+        if (!r.ok) throw new Error(j.error || 'Failed to remove.');
         window.location.reload();
-      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+      } catch (ex) { if (err) { err.textContent = ex.message; err.hidden = false; } }
     });
-  }
+  });
 
   // Masonry tiles (desktop) and the big preview (mobile) both open the same full-screen
   // lightbox on click — prev/next cycle, Escape or a click on the backdrop closes it.
@@ -1093,7 +1149,9 @@ const STYLE = `<style>
    about the listing (what it is, what it costs, how to commit) reads top-to-bottom in one place. */
 .mkt-detail-header { padding-bottom: 12px; margin-bottom: 2px; border-bottom: 1px solid var(--border); }
 .mkt-detail-header__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.mkt-detail-title { font-size: 18px; font-weight: 800; letter-spacing: -.01em; color: var(--text-primary); margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Full title, wraps freely — unlike the grid card's single-line ellipsis, the detail page
+   has room and nothing else competing for the line, so there's no reason to clip it here. */
+.mkt-detail-title { font-size: 18px; font-weight: 800; letter-spacing: -.01em; color: var(--text-primary); margin: 0; min-width: 0; }
 .mkt-detail-header__top .mkt-badge { flex-shrink: 0; }
 .mkt-detail-desc { font-size: 13px; color: var(--text-muted); line-height: 1.55; margin: 6px 0 0; }
 
@@ -1126,6 +1184,25 @@ const STYLE = `<style>
 .mkt-hint { font-size: 12.5px; color: var(--text-muted); }
 .mkt-hint--in { color: #22c55e; font-weight: 600; }
 .mkt-hint__sub { margin-top: 4px; font-size: 12px; color: var(--text-muted); font-weight: 400; }
+
+/* Order list — one row per commitment a player already holds on this listing. A photo-backed
+   variant group can be re-committed to under different options (see photoVariantOptions),
+   so this reads as a small running cart rather than a single "you're in" line. */
+.mkt-order-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.mkt-order-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(52,211,153,.25);
+  background: rgba(52,211,153,.06); border-radius: 9px;
+}
+.mkt-order-item__main { flex: 1; min-width: 0; }
+.mkt-order-item__label { font-size: 12.5px; font-weight: 700; color: #22c55e; }
+.mkt-order-item__sub { margin-top: 2px; font-size: 11.5px; color: var(--text-muted); }
+.mkt-order-item__price { font-family: 'Saira Condensed', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-primary); flex-shrink: 0; }
+.mkt-order-item__remove {
+  flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255,255,255,.06); color: var(--text-muted); font-size: 13px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; transition: background .12s, color .12s;
+}
+.mkt-order-item__remove:hover { background: rgba(248,113,113,.15); color: #f87171; }
 .mkt-err { color: #f87171; font-size: 12px; margin-top: 8px; }
 /* A jersey listing can stack several groups in a row (Team, Jersey Size, Collar, Back) —
    a thin top divider + generous padding on every group after the first keeps them reading
