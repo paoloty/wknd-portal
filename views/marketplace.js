@@ -395,7 +395,7 @@ export function marketplaceListingPage({
     <div class="mkt-card mkt-info-card">
       <div class="mkt-card-body">
         ${detailHeader}
-        <div class="mkt-card-price" id="mkt-price-display">${fmtPeso(displayPrice)} ${!commitment ? comparePriceHtml(listing, { size: 'detail' }) : ''}</div>
+        <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> ${!commitment ? comparePriceHtml(listing, { size: 'detail' }) : ''}</div>
         ${meterBlock(committedCount, listing.min_buyers)}
         <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
           🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
@@ -417,7 +417,11 @@ ${STYLE}
   var err  = document.getElementById('mkt-err');
   if (form) {
     var totalEl = document.getElementById('mkt-commit-total');
-    var priceDisplay = document.getElementById('mkt-price-display');
+    // Targets the amount span specifically, not the whole #mkt-price-display container —
+    // that container also holds the static compare-at-price/savings markup (see
+    // comparePriceHtml), which has nothing to do with the live surcharge total and would
+    // get wiped out if this just clobbered the container's full innerHTML/textContent.
+    var priceDisplay = document.getElementById('mkt-price-amount');
     var basePrice = Number(form.dataset.basePrice) || 0;
     var multiScrolls = form.querySelectorAll('.mkt-pick-scroll[data-multiselect]');
 
