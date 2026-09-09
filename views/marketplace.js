@@ -75,6 +75,23 @@ function variantGroupsHtml(groups, selections = {}) {
     </div>`).join('');
 }
 
+// A "top"-kind variant group means this listing is a jersey — the buyer needs to specify
+// what goes on it. Name + number are required (no way to fulfill a blank jersey); the note
+// is optional, for anything else that doesn't fit a dropdown (placement, fit, etc). Mirrors
+// the jersey-request page's own name/number inputs (views/jersey-request.js) for consistency.
+function jerseyCustomFieldsHtml(groups, custom = {}) {
+  if (!groups.some(g => g.sizeChartKind === 'top')) return '';
+  return `
+    <div class="mkt-variant-group">
+      <div class="mkt-variant-group__label">Name &amp; Number</div>
+      <div class="mkt-jersey-fields">
+        <input type="text" id="mkt-custom-name" maxlength="20" placeholder="Name on jersey" value="${escHtml(custom.customName || '')}" required>
+        <input type="text" id="mkt-custom-number" inputmode="numeric" maxlength="2" placeholder="0-99" value="${escHtml(custom.customNumber || '')}" required>
+      </div>
+      <textarea id="mkt-custom-notes" class="mkt-jersey-notes" maxlength="200" placeholder="Notes (optional)">${escHtml(custom.notes || '')}</textarea>
+    </div>`;
+}
+
 // ── Listing card — mirrors Papawis's pw-card (views/papawis.js): photo banner with scrim +
 // overlaid status badge, titlebar, body with price + meter, footer CTA. Unlike Papawis
 // (which just omits the photo banner when there's nothing uploaded — fine for courts, where
@@ -274,13 +291,17 @@ export function marketplaceListingPage({
   } else if (!isLoggedIn) {
     actionHtml = `<a href="/login?next=${encodeURIComponent('/marketplace/' + listing.id)}" class="mkt-btn mkt-btn--primary">Log in to commit</a>`;
   } else if (commitment) {
+    const jerseyLine = commitment.custom_name
+      ? `<div class="mkt-hint__sub">${escHtml(commitment.custom_name)} #${escHtml(commitment.custom_number)}${commitment.notes ? ` · ${escHtml(commitment.notes)}` : ''}</div>`
+      : '';
     actionHtml = `
-      <div class="mkt-hint mkt-hint--in">You're committed${commitment.variantLabel ? ` — ${escHtml(commitment.variantLabel)}` : ''}.</div>
+      <div class="mkt-hint mkt-hint--in">You're committed${commitment.variantLabel ? ` — ${escHtml(commitment.variantLabel)}` : ''}.${jerseyLine}</div>
       <button type="button" class="mkt-btn mkt-btn--ghost" id="mkt-cancel-btn">Cancel commitment</button>`;
   } else if (isOpen) {
     actionHtml = `
       <form id="mkt-commit-form" data-base-price="${listing.price}">
         ${variantGroupsHtml(variantGroups)}
+        ${jerseyCustomFieldsHtml(variantGroups)}
         <button type="submit" class="mkt-btn mkt-btn--primary">Commit — <span id="mkt-commit-total">${fmtPeso(listing.price)}</span></button>
       </form>`;
   } else {
@@ -341,10 +362,18 @@ ${STYLE}
       form.querySelectorAll('input[name^="variant__"]:checked').forEach(function(input) {
         variants[input.name.slice('variant__'.length)] = input.value;
       });
+      var nameEl = document.getElementById('mkt-custom-name');
+      var numEl  = document.getElementById('mkt-custom-number');
+      var noteEl = document.getElementById('mkt-custom-notes');
       try {
         var r = await fetch(${JSON.stringify('/marketplace/' + listing.id + '/commit')}, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ variants: variants }),
+          body: JSON.stringify({
+            variants: variants,
+            customName: nameEl ? nameEl.value : '',
+            customNumber: numEl ? numEl.value : '',
+            notes: noteEl ? noteEl.value : '',
+          }),
         });
         var j = await r.json();
         if (!r.ok) throw new Error(j.error || 'Failed to commit.');
@@ -925,6 +954,7 @@ const STYLE = `<style>
 .mkt-btn--ghost:hover { border-color: var(--text-muted); }
 .mkt-hint { font-size: 12.5px; color: var(--text-muted); }
 .mkt-hint--in { color: #22c55e; font-weight: 600; }
+.mkt-hint__sub { margin-top: 4px; font-size: 12px; color: var(--text-muted); font-weight: 400; }
 .mkt-err { color: #f87171; font-size: 12px; margin-top: 8px; }
 .mkt-variant-group { margin-bottom: 4px; }
 .mkt-variant-group__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 6px; }
@@ -940,6 +970,18 @@ const STYLE = `<style>
 .mkt-pick-cell__meas { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mkt-pick-cell__label { font-size: 12.5px; font-weight: 700; }
 .mkt-pick-cell__surcharge { font-size: 10px; color: var(--amber); font-weight: 700; }
+
+.mkt-jersey-fields { display: flex; gap: 8px; margin-bottom: 8px; }
+.mkt-jersey-fields input:first-child { flex: 1; }
+.mkt-jersey-fields input:last-child { width: 64px; flex-shrink: 0; }
+.mkt-jersey-fields input, .mkt-jersey-notes {
+  display: block; width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 11px; font-size: 13.5px; color: var(--text);
+  font-family: inherit; outline: none; transition: border-color .15s;
+}
+.mkt-jersey-fields input:focus, .mkt-jersey-notes:focus { border-color: var(--amber); }
+.mkt-jersey-fields input::placeholder, .mkt-jersey-notes::placeholder { color: var(--text-muted); opacity: .5; }
+.mkt-jersey-notes { resize: vertical; min-height: 38px; margin-bottom: 12px; }
 
 .mkt-card-social { display: flex; gap: 10px; font-size: 11.5px; color: var(--text-muted); }
 

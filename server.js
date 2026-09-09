@@ -9848,7 +9848,19 @@ app.post('/marketplace/:id/commit', express.json(), (req, res) => {
     if (!group.options.includes(picked)) return res.status(400).json({ error: `Please pick a ${group.label}.` });
     resolved[group.label] = picked;
   }
-  commitToMarketplaceListing(listing.id, playerId, JSON.stringify(resolved));
+  // A "top"-kind group is a jersey — anyone ordering one needs their name and number
+  // printed on it. Required alongside the size pick, not optional, since there's no way
+  // to fulfill a blank jersey; an optional note covers anything else (fit, placement, etc).
+  const isJerseyOrder = variantGroups.some(g => g.sizeChartKind === 'top');
+  let customName = '', customNumber = '', notes = '';
+  if (isJerseyOrder) {
+    customName   = String(req.body?.customName || '').trim().slice(0, 20);
+    customNumber = String(req.body?.customNumber || '').trim().slice(0, 2);
+    notes        = String(req.body?.notes || '').trim().slice(0, 200);
+    if (!customName)   return res.status(400).json({ error: 'Please enter the name for your jersey.' });
+    if (!customNumber) return res.status(400).json({ error: 'Please enter your jersey number.' });
+  }
+  commitToMarketplaceListing(listing.id, playerId, JSON.stringify(resolved), { customName, customNumber, notes });
   res.json({ ok: true });
 });
 

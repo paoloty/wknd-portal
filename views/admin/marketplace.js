@@ -328,10 +328,12 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
   const isOpen = listing.status === 'open' || listing.status === 'active';
   const isCharged = listing.status === 'charged';
   const hasSurcharge = variantGroups.some(g => g.surchargeStep > 0);
+  const hasJersey = variantGroups.some(g => g.sizeChartKind === 'top');
 
   const rows = commitments.map(c => `<tr class="border-b border-admin-border/50 last:border-b-0">
     <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(c.player_name))}</td>
     <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.variantLabel || '—')}</td>
+    ${hasJersey ? `<td class="px-4 py-2.5 text-xs text-slate-300"${c.notes ? ` title="${escHtml(c.notes)}"` : ''}>${c.custom_name ? `${escHtml(c.custom_name)} #${escHtml(c.custom_number)}` : '—'}${c.notes ? ' <span class="text-slate-500">📝</span>' : ''}</td>` : ''}
     ${hasSurcharge ? `<td class="px-4 py-2.5 text-xs text-slate-300 font-semibold">${fmtPeso(c.amount)}${c.surcharge ? `<span class="text-slate-500 font-normal"> (+${fmtPeso(c.surcharge)})</span>` : ''}</td>` : ''}
     <td class="px-4 py-2.5 text-xs text-slate-500">${new Date(c.committed_at).toLocaleDateString()}</td>
   </tr>`).join('');
@@ -372,12 +374,13 @@ ${photoManager(listing.id, parseJsonArray(listing.photos))}
       <tr>
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player</th>
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Variant</th>
+        ${hasJersey ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Name / Number</th>` : ''}
         ${hasSurcharge ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Amount</th>` : ''}
         <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Committed</th>
       </tr>
     </thead>
     <tbody>
-      ${rows || `<tr><td colspan="${hasSurcharge ? 4 : 3}" class="px-4 py-8 text-center text-sm text-slate-500">No commitments yet.</td></tr>`}
+      ${rows || `<tr><td colspan="${2 + (hasJersey ? 1 : 0) + (hasSurcharge ? 1 : 0) + 1}" class="px-4 py-8 text-center text-sm text-slate-500">No commitments yet.</td></tr>`}
     </tbody>
   </table>
 </div>
