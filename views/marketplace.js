@@ -181,12 +181,14 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
     ? `/marketplace/${escHtml(listing.id)}?g=${encodeURIComponent(variant.group)}&o=${encodeURIComponent(variant.opt)}`
     : `/marketplace/${escHtml(listing.id)}`;
 
+  const avatars = avatarStack(committedPlayers);
   const photoBanner = `<div class="mkt-photo">
         ${hasCover
           ? `<img src="/api/marketplace/${escHtml(listing.id)}/photo/${coverIndex}" alt="" loading="lazy">`
           : `<div class="mkt-photo-placeholder">${ICON_BAG}</div>`}
         <div class="mkt-photo-scrim"></div>
         <span class="mkt-photo-status">${badge}</span>
+        ${avatars ? `<div class="mkt-photo-avatars">${avatars}</div>` : ''}
       </div>`;
 
   const social = (commentCount || reactionCount)
@@ -202,7 +204,6 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
   <div class="mkt-card-body">
     <div class="mkt-card-price">${fmtPeso(listing.price)} ${comparePriceHtml(listing, { size: 'card' })}</div>
     ${meterBlock(committedCount, listing.min_buyers)}
-    ${avatarStack(committedPlayers)}
     <div class="mkt-foot">
       ${social}
       <span class="mkt-btn mkt-btn--ghost">View listing <span aria-hidden="true">&rarr;</span></span>
@@ -226,25 +227,42 @@ function rowMatchesOpt(row, opt) {
 }
 
 export function marketplacePage({ listings = [], countsById = {}, committedById = {}, committedOptsById = {}, committedPlayersById = {}, commentCountsById = {}, reactionCountsById = {}, isLoggedIn = false, sort = '' } = {}) {
-  const cards = listings.length
-    ? listings.flatMap(l => {
-        const opts = {
-          committedCount: countsById[l.id] || 0, committed: !!committedById[l.id],
-          commentCount: commentCountsById[l.id] || 0, reactionCount: reactionCountsById[l.id] || 0,
-        };
-        const allCommittedPlayers = committedPlayersById[l.id] || [];
-        const variants = photoVariantOptions(l);
-        // Exploded cards share one listing.id, so a plain "does this player have any
-        // commitment on this listing" check would light up every variant's card the moment
-        // they'd committed to just one — this narrows "You're In" (and the avatar stack) to
-        // the specific option each card represents instead (see committedOptsById below).
-        if (!variants) return [listingCard(l, { ...opts, committedPlayers: allCommittedPlayers })];
-        const committedOpts = committedOptsById[l.id];
-        return variants.map(v => listingCard(l, {
+  // Built as {listing, cardOpts} entries rather than rendered HTML directly, so "You're In"
+  // cards can be pulled to the front afterward — a logged-in buyer's own commitments are more
+  // useful to see first than whatever the chosen sort (newest/price/etc.) would otherwise
+  // place them at. Array.prototype.sort is stable, so this only reorders on the committed
+  // flag and leaves everything else exactly where the sort put it.
+  const cardEntries = listings.flatMap(l => {
+    const opts = {
+      committedCount: countsById[l.id] || 0, committed: !!committedById[l.id],
+      commentCount: commentCountsById[l.id] || 0, reactionCount: reactionCountsById[l.id] || 0,
+    };
+    const allCommittedPlayers = committedPlayersById[l.id] || [];
+    const variants = photoVariantOptions(l);
+    // Exploded cards share one listing.id, so a plain "does this player have any
+    // commitment on this listing" check would light up every variant's card the moment
+    // they'd committed to just one — this narrows "You're In" (and the avatar stack) to
+    // the specific option each card represents instead (see committedOptsById below).
+    if (!variants) return [{ listing: l, cardOpts: { ...opts, committedPlayers: allCommittedPlayers } }];
+    const committedOpts = committedOptsById[l.id];
+    return variants.map(v => {
+      // The meter's count has to match the avatar stack it sits above — both scoped to this
+      // exact variant, not the listing's total across every design. min_buyers stays the
+      // listing-wide threshold (that's still one shared production run), only the numerator
+      // narrows to what this specific card is actually showing.
+      const committedPlayers = allCommittedPlayers.filter(row => rowMatchesOpt(row, v.opt));
+      return {
+        listing: l,
+        cardOpts: {
           ...opts, variant: v, committed: committedOpts ? committedOpts.has(v.opt) : false,
-          committedPlayers: allCommittedPlayers.filter(row => rowMatchesOpt(row, v.opt)),
-        }));
-      }).join('\n    ')
+          committedCount: committedPlayers.length, committedPlayers,
+        },
+      };
+    });
+  });
+  cardEntries.sort((a, b) => (b.cardOpts.committed ? 1 : 0) - (a.cardOpts.committed ? 1 : 0));
+  const cards = cardEntries.length
+    ? cardEntries.map(({ listing, cardOpts }) => listingCard(listing, cardOpts)).join('\n    ')
     : `<div class="mkt-card mkt-empty">No group buys open right now.</div>`;
 
   const sortSelect = `<label class="mkt-sort">
@@ -1119,12 +1137,16 @@ const STYLE = `<style>
 .mkt-photo { position: relative; aspect-ratio: 1 / 1; flex-shrink: 0; overflow: hidden; background: linear-gradient(155deg, #2a3346 0%, #171d29 46%, #0c0f16 100%); }
 .mkt-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .mkt-photo-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.18); }
-.mkt-photo-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,9,16,0) 45%, rgba(6,9,16,.55) 100%); }
+/* Darkened a bit further down than a pure legibility-for-the-badge scrim would need, since
+   the avatar stack now also sits in this same bottom strip and small circles need more
+   contrast against a busy photo than the badge's own solid backdrop ever required. */
+.mkt-photo-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,9,16,0) 45%, rgba(6,9,16,.72) 100%); }
 /* Solid dark backdrop independent of the badge's own state color — a translucent
    amber/green badge (fine against the titlebar) can wash out against a light product
    photo, so the photo-overlaid badge always gets its own contrast-guaranteed background. */
-.mkt-photo-status { position: absolute; top: 10px; right: 10px; }
+.mkt-photo-status { position: absolute; top: 10px; right: 10px; z-index: 1; }
 .mkt-photo-status .mkt-badge { background: rgba(2,8,23,.72); backdrop-filter: blur(3px); border-color: rgba(255,255,255,.18); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.mkt-photo-avatars { position: absolute; left: 10px; bottom: 10px; z-index: 1; }
 
 .mkt-card-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 18px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); }
 .mkt-card-name {
