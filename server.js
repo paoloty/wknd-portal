@@ -44,6 +44,7 @@ import {
   createMarketplaceListing, getMarketplaceListingById, getMarketplaceListings, updateMarketplaceListing,
   setMarketplaceListingStatus, setMarketplaceListingPhotos, setMarketplaceListingVariantOptions, markMarketplaceListingCharged, deleteMarketplaceListing,
   incrementMarketplaceListingViews,
+  createMarketplaceListingGroup, getMarketplaceListingGroups, getMarketplaceListingGroupById, getGroupCommittedPlayers,
   commitToMarketplaceListing, getActiveMarketplaceCommitment, getActiveMarketplaceCommitmentsForPlayer, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
   getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged,
   setRegistrationMarketplaceChargeAccess,
@@ -9505,6 +9506,22 @@ function parseCompareAtPrice(raw, price) {
   return Number.isFinite(n) && n > price ? n : 0;
 }
 
+// Resolves a listing form's "Shared goal" field to a goal_group_id: '' (no group), an
+// existing group's id (validated to actually exist — a stale/tampered id is just treated as
+// no group rather than silently pooling with nothing), or '__new__' with new_group_label/
+// new_group_min_buyers to create one on the spot. Returns null on validation failure so the
+// caller can respond 400 with a specific message.
+function resolveGoalGroupId(body) {
+  const raw = String(body?.goal_group_id || '');
+  if (!raw) return '';
+  if (raw !== '__new__') return getMarketplaceListingGroupById(raw) ? raw : '';
+  const label = String(body?.new_group_label || '').trim().slice(0, 80);
+  const minBuyers = Number(body?.new_group_min_buyers);
+  if (!label) return null;
+  if (!Number.isFinite(minBuyers) || minBuyers < 1) return null;
+  return createMarketplaceListingGroup({ label, minBuyers });
+}
+
 function normalizeVariantGroups(raw, photoCount = 0) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set();
@@ -9642,16 +9659,29 @@ function buildMarketplaceChargeRows(listingId) {
 
 app.get('/admin/marketplace', requireAuth, (req, res) => {
   const listings = getMarketplaceListings({ type: 'group_buy' });
+  // A grouped listing's own min_buyers is 0 (enforced at save time) — show the group's
+  // threshold instead so the list reads sensibly rather than "X/0 min."
+  const groupCache = {};
+  const effectiveListings = listings.map(l => {
+    if (!l.goal_group_id) return l;
+    if (!(l.goal_group_id in groupCache)) groupCache[l.goal_group_id] = getMarketplaceListingGroupById(l.goal_group_id);
+    const group = groupCache[l.goal_group_id];
+    return group ? { ...l, min_buyers: group.min_buyers } : l;
+  });
   // A charged listing's commitments are no longer status='committed' — show the final charged
-  // count for those instead of the (now permanently 0) active-commitment count.
-  const countsById = Object.fromEntries(listings.map(l => [
+  // count for those instead of the (now permanently 0) active-commitment count. An
+  // open/active grouped listing shows the group's pooled count, not just its own.
+  const countsById = Object.fromEntries(effectiveListings.map(l => [
     l.id,
-    l.status === 'charged' ? getMarketplaceCommitments(l.id, 'charged').length : countActiveMarketplaceCommitments(l.id),
+    l.status === 'charged' ? getMarketplaceCommitments(l.id, 'charged').length
+      : l.goal_group_id ? getGroupCommittedPlayers(l.goal_group_id).length
+      : countActiveMarketplaceCommitments(l.id),
   ]));
+  const groupLabelById = Object.fromEntries(Object.entries(groupCache).filter(([, g]) => g).map(([id, g]) => [id, g.label]));
   res.send(renderAdminPage(req, {
     title: 'Marketplace',
     currentPath: '/admin/marketplace',
-    body: adminMarketplaceListBody({ listings, countsById }),
+    body: adminMarketplaceListBody({ listings: effectiveListings, countsById, groupLabelById }),
   }));
 });
 
@@ -9659,7 +9689,7 @@ app.get('/admin/marketplace/new', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'New Group Buy',
     currentPath: '/admin/marketplace/new',
-    body: adminMarketplaceNewBody({ jerseySizes: JERSEY_SIZES }),
+    body: adminMarketplaceNewBody({ jerseySizes: JERSEY_SIZES, groups: getMarketplaceListingGroups() }),
   }));
 });
 
@@ -9668,12 +9698,16 @@ app.post('/admin/marketplace', requireAuth, express.json(), (req, res) => {
   const priceNum = Number(price);
   const minBuyers = Number(min_buyers);
   if (!title || Number.isNaN(priceNum) || priceNum <= 0) return res.status(400).json({ error: 'Title and a price above 0 are required.' });
-  if (Number.isNaN(minBuyers) || minBuyers < 1) return res.status(400).json({ error: 'Minimum buyers must be at least 1.' });
+  const goalGroupId = resolveGoalGroupId(req.body);
+  if (goalGroupId === null) return res.status(400).json({ error: 'Please name the shared goal and set its minimum buyers.' });
+  // The listing's own threshold only matters when it isn't pooling with a shared goal —
+  // grouped listings read the group's min_buyers instead (see the marketplace routes).
+  if (!goalGroupId && (Number.isNaN(minBuyers) || minBuyers < 1)) return res.status(400).json({ error: 'Minimum buyers must be at least 1.' });
   const regId = req.session?.isElevatedPlayer ? req.session.playerRegId : '';
   const id = createMarketplaceListing({
     type: 'group_buy', createdByRegId: regId || '', title, description,
     price: priceNum, compareAtPrice: parseCompareAtPrice(compare_at_price, priceNum),
-    minBuyers, variantOptions: normalizeVariantGroups(variant_options),
+    minBuyers: goalGroupId ? 0 : minBuyers, variantOptions: normalizeVariantGroups(variant_options), goalGroupId,
   });
   res.json({ ok: true, id });
 });
@@ -9697,10 +9731,13 @@ app.get('/admin/marketplace/:id', requireAuth, (req, res) => {
       return { ...c, variantLabel: formatVariantSelections(c.variant), amount: (basePrice + surcharge) * quantity, surcharge, quantity };
     });
   const canTrigger = !req.session?.isElevatedPlayer || !!getRegistration(req.session.playerRegId)?.can_charge_marketplace;
+  const group = listing.goal_group_id ? getMarketplaceListingGroupById(listing.goal_group_id) : null;
+  const effectiveListing = group ? { ...listing, min_buyers: group.min_buyers } : listing;
+  const thresholdCommittedCount = group ? getGroupCommittedPlayers(listing.goal_group_id).length : null;
   res.send(renderAdminPage(req, {
     title: listing.title,
     currentPath: '/admin/marketplace',
-    body: adminMarketplaceDetailBody({ listing, commitments, canTrigger, variantGroups, jerseySizes: JERSEY_SIZES }),
+    body: adminMarketplaceDetailBody({ listing: effectiveListing, commitments, canTrigger, variantGroups, thresholdCommittedCount, jerseySizes: JERSEY_SIZES }),
   }));
 });
 
@@ -9714,7 +9751,7 @@ app.get('/admin/marketplace/:id/edit', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: `Edit — ${listing.title}`,
     currentPath: '/admin/marketplace',
-    body: adminMarketplaceEditBody({ listing, jerseySizes: JERSEY_SIZES }),
+    body: adminMarketplaceEditBody({ listing, jerseySizes: JERSEY_SIZES, groups: getMarketplaceListingGroups() }),
   }));
 });
 
@@ -9726,9 +9763,13 @@ app.post('/admin/marketplace/:id', requireAuth, express.json(), (req, res) => {
   const priceNum = Number(price);
   const minBuyers = Number(min_buyers);
   if (!title || Number.isNaN(priceNum) || priceNum <= 0) return res.status(400).json({ error: 'Title and a price above 0 are required.' });
+  const goalGroupId = resolveGoalGroupId(req.body);
+  if (goalGroupId === null) return res.status(400).json({ error: 'Please name the shared goal and set its minimum buyers.' });
+  if (!goalGroupId && (Number.isNaN(minBuyers) || minBuyers < 1)) return res.status(400).json({ error: 'Minimum buyers must be at least 1.' });
   updateMarketplaceListing(listing.id, {
-    title, description, price: priceNum, compareAtPrice: parseCompareAtPrice(compare_at_price, priceNum), minBuyers,
-    variantOptions: normalizeVariantGroups(variant_options, JSON.parse(listing.photos || '[]').length),
+    title, description, price: priceNum, compareAtPrice: parseCompareAtPrice(compare_at_price, priceNum),
+    minBuyers: goalGroupId ? 0 : minBuyers,
+    variantOptions: normalizeVariantGroups(variant_options, JSON.parse(listing.photos || '[]').length), goalGroupId,
   });
   res.json({ ok: true });
 });
@@ -9809,11 +9850,23 @@ app.get('/api/marketplace/:id/photo/:index', async (req, res) => {
   await sendPlayerPhotoUrl(res, photos[Number(req.params.index)]);
 });
 
+// A grouped listing's own min_buyers is 0 (enforced at save time) — the real threshold to
+// check against is the group's, compared against the group's total commitment count, not
+// just this one listing's rows (which is what actually gets charged; the threshold decides
+// *whether* to, the rows decide *who and how much*).
+function effectiveThreshold(listing, listingCommittedCount) {
+  if (!listing.goal_group_id) return { minBuyers: listing.min_buyers, committedCount: listingCommittedCount };
+  const group = getMarketplaceListingGroupById(listing.goal_group_id);
+  if (!group) return { minBuyers: listing.min_buyers, committedCount: listingCommittedCount };
+  return { minBuyers: group.min_buyers, committedCount: getGroupCommittedPlayers(listing.goal_group_id).length };
+}
+
 app.get('/admin/marketplace/:id/charge-preview', requireAuth, (req, res) => {
   const { listing, rows } = buildMarketplaceChargeRows(req.params.id);
   if (!listing) return res.status(404).json({ error: 'Not found.' });
   const total = rows.reduce((s, r) => s + r.amount, 0);
-  res.json({ ok: true, minBuyers: listing.min_buyers, committedCount: rows.length, meetsThreshold: rows.length >= listing.min_buyers, rows, total });
+  const { minBuyers, committedCount } = effectiveThreshold(listing, rows.length);
+  res.json({ ok: true, minBuyers, committedCount, meetsThreshold: committedCount >= minBuyers, rows, total });
 });
 
 app.post('/admin/marketplace/:id/trigger-charge', requireAuth, express.json(), (req, res) => {
@@ -9828,8 +9881,9 @@ app.post('/admin/marketplace/:id/trigger-charge', requireAuth, express.json(), (
   if (listing.status !== 'open' && listing.status !== 'active') {
     return res.status(400).json({ error: 'This listing has already been charged or is no longer open.' });
   }
-  if (rows.length < listing.min_buyers) {
-    return res.status(400).json({ error: `Needs at least ${listing.min_buyers} committed buyers to trigger (currently ${rows.length}).` });
+  const { minBuyers, committedCount } = effectiveThreshold(listing, rows.length);
+  if (committedCount < minBuyers) {
+    return res.status(400).json({ error: `Needs at least ${minBuyers} committed buyers to trigger (currently ${committedCount}).` });
   }
   const today = manilaTodayStr();
   const actorName = req.session?.isElevatedPlayer ? (req.session.playerName || 'admin') : 'super';
@@ -9897,28 +9951,41 @@ app.get('/marketplace', (req, res) => {
   const viewerPlayerId = req.session?.playerPlayerId || null;
   // Full committed rows (player name/photo/team, plus each row's own variant selections) —
   // fetched once per listing and reused for both the committed count (its own .length, no
-  // separate COUNT query needed) and the card avatar stack below.
-  const committedPlayersById = Object.fromEntries(listings.map(l => [l.id, getMarketplaceCommitments(l.id, 'committed')]));
-  const countsById = Object.fromEntries(listings.map(l => [l.id, (committedPlayersById[l.id] || []).length]));
+  // separate COUNT query needed) and the card avatar stack below. A listing sharing a
+  // goal_group_id pools these with every other listing in the group instead (see
+  // getGroupCommittedPlayers) — its own min_buyers is 0 in that case (enforced at save time),
+  // so the effective listing rendered downstream gets the group's threshold swapped in.
+  const groupCache = {};
+  const effectiveListings = listings.map(l => {
+    if (!l.goal_group_id) return l;
+    if (!(l.goal_group_id in groupCache)) groupCache[l.goal_group_id] = getMarketplaceListingGroupById(l.goal_group_id);
+    const group = groupCache[l.goal_group_id];
+    return group ? { ...l, min_buyers: group.min_buyers } : l;
+  });
+  const committedPlayersById = Object.fromEntries(effectiveListings.map(l => [
+    l.id, l.goal_group_id ? getGroupCommittedPlayers(l.goal_group_id) : getMarketplaceCommitments(l.id, 'committed'),
+  ]));
+  const countsById = Object.fromEntries(effectiveListings.map(l => [l.id, (committedPlayersById[l.id] || []).length]));
   // Sort operates on listings, not the exploded per-variant cards — "most committed"/"most
   // viewed" are inherently properties of the underlying group buy, not any one design pulled
   // out of it, so this decides which listing's cluster of cards leads, not the order within it.
   const sort = String(req.query.sort || '');
-  if (sort === 'commits') listings.sort((a, b) => (countsById[b.id] || 0) - (countsById[a.id] || 0));
-  else if (sort === 'views') listings.sort((a, b) => (b.view_count || 0) - (a.view_count || 0));
-  else if (sort === 'price_asc') listings.sort((a, b) => a.price - b.price);
-  else if (sort === 'price_desc') listings.sort((a, b) => b.price - a.price);
+  if (sort === 'commits') effectiveListings.sort((a, b) => (countsById[b.id] || 0) - (countsById[a.id] || 0));
+  else if (sort === 'views') effectiveListings.sort((a, b) => (b.view_count || 0) - (a.view_count || 0));
+  else if (sort === 'price_asc') effectiveListings.sort((a, b) => a.price - b.price);
+  else if (sort === 'price_desc') effectiveListings.sort((a, b) => b.price - a.price);
   const committedById = viewerPlayerId
-    ? Object.fromEntries(listings.map(l => [l.id, !!getActiveMarketplaceCommitment(l.id, viewerPlayerId)]))
+    ? Object.fromEntries(effectiveListings.map(l => [l.id, !!getActiveMarketplaceCommitment(l.id, viewerPlayerId)]))
     : {};
   // A photo-backed listing explodes into one grid card per option, all sharing the same
   // listing.id — committedById above can only say "this player has some commitment on this
   // listing," which would light up every exploded card at once. This instead collects the
   // actual option value(s) they've committed to per listing, so each card's "You're In" only
-  // lights up for the specific variant it represents.
+  // lights up for the specific variant it represents. (Unrelated to goal-group pooling —
+  // this is always about this one listing's own options, group or no group.)
   const committedOptsById = {};
   if (viewerPlayerId) {
-    for (const l of listings) {
+    for (const l of effectiveListings) {
       const rows = getActiveMarketplaceCommitmentsForPlayer(l.id, viewerPlayerId);
       if (!rows.length) continue;
       const opts = new Set();
@@ -9933,13 +10000,13 @@ app.get('/marketplace', (req, res) => {
       committedOptsById[l.id] = opts;
     }
   }
-  const listingIds = listings.map(l => l.id);
+  const listingIds = effectiveListings.map(l => l.id);
   const commentCountsById = getMarketplaceCommentCounts(listingIds);
   const reactionCountsById = getMarketplaceListingReactionCounts(listingIds);
   res.send(renderPage(req, {
     title: 'Marketplace — WKND Basketball League',
     currentPath: req.path,
-    body: marketplacePage({ listings, countsById, committedById, committedOptsById, committedPlayersById, commentCountsById, reactionCountsById, isLoggedIn: !!req.session?.playerRegId, sort }),
+    body: marketplacePage({ listings: effectiveListings, countsById, committedById, committedOptsById, committedPlayersById, commentCountsById, reactionCountsById, isLoggedIn: !!req.session?.playerRegId, sort }),
   }));
 });
 
@@ -9955,7 +10022,14 @@ app.get('/marketplace/:id', (req, res) => {
   const viewerPlayerId = req.session?.playerPlayerId || null;
   const commitments = (viewerPlayerId ? getActiveMarketplaceCommitmentsForPlayer(listing.id, viewerPlayerId) : [])
     .map(c => ({ ...c, variantLabel: formatVariantSelections(c.variant) }));
-  const committedPlayers = getMarketplaceCommitments(listing.id, 'committed');
+  // A listing sharing a goal_group_id pools its committed roster/threshold with every other
+  // listing in the group (see /marketplace above) — its own min_buyers is 0 in that case
+  // (enforced at save time), so the group's threshold is swapped in for display here too.
+  const group = listing.goal_group_id ? getMarketplaceListingGroupById(listing.goal_group_id) : null;
+  const effectiveListing = group ? { ...listing, min_buyers: group.min_buyers } : listing;
+  const committedPlayers = listing.goal_group_id
+    ? getGroupCommittedPlayers(listing.goal_group_id)
+    : getMarketplaceCommitments(listing.id, 'committed');
   const committedCount = committedPlayers.length;
   const comments = getMarketplaceListingComments(listing.id);
   const reactedIds = getReactedMarketplaceCommentIdsForPlayer(comments.map(c => c.id), viewerPlayerId);
@@ -9969,7 +10043,7 @@ app.get('/marketplace/:id', (req, res) => {
     currentPath: '/marketplace',
     metaTags: buildMarketplaceOgTags(req, listing),
     body: marketplaceListingPage({
-      listing, committedCount, commitments, committedPlayers, isLoggedIn: !!req.session?.playerRegId,
+      listing: effectiveListing, committedCount, commitments, committedPlayers, isLoggedIn: !!req.session?.playerRegId,
       comments, reactedIds, listingReaction, preselect,
       isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'marketplace'),
     }),

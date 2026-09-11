@@ -161,13 +161,14 @@ function photoManager(listingId, photos) {
 </script>`;
 }
 
-export function adminMarketplaceListBody({ listings = [], countsById = {} } = {}) {
+export function adminMarketplaceListBody({ listings = [], countsById = {}, groupLabelById = {} } = {}) {
   const rows = listings.map(l => {
     const count = countsById[l.id] || 0;
     const meets = count >= l.min_buyers;
+    const groupLabel = l.goal_group_id ? groupLabelById[l.goal_group_id] : '';
     return `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors" data-id="${escHtml(l.id)}">
       <td class="px-4 py-3"><input type="checkbox" class="mkt-row-check accent-amber-400" data-id="${escHtml(l.id)}"></td>
-      <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(l.title)}</td>
+      <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(l.title)}${groupLabel ? ` <span class="text-[10px] font-normal text-sky-400" title="Pools its commit goal with other listings in this group">🔗 ${escHtml(groupLabel)}</span>` : ''}</td>
       <td class="px-4 py-3 text-xs text-slate-500">${fmtPeso(l.price)}${compareAmountHtml(l)}</td>
       <td class="px-4 py-3 text-sm text-slate-300 font-saira">${count}<span class="text-slate-600">/${l.min_buyers} min</span>${meets ? ` <span class="text-[10px] text-green-400">✓ met</span>` : ''}</td>
       <td class="px-4 py-3">${statusBadge(l.status)}</td>
@@ -252,13 +253,15 @@ export function adminMarketplaceListBody({ listings = [], countsById = {} } = {}
 
 // Shared by New and Edit — identical fields either way, just pre-filled + a different
 // submit target/success redirect. mode: 'new' | 'edit'.
-function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
+function marketplaceListingForm({ mode, listing = null, jerseySizes = [], groups = [] }) {
   const isEdit = mode === 'edit';
   const initialGroups = isEdit ? (() => { try { return JSON.parse(listing.variant_options || '[]'); } catch { return []; } })() : [];
   const submitUrl = isEdit ? `/admin/marketplace/${listing.id}` : '/admin/marketplace';
   const successUrl = isEdit ? `/admin/marketplace/${listing.id}` : null;
   const listingId = isEdit ? listing.id : '';
   const photoCount = isEdit ? (() => { try { return JSON.parse(listing.photos || '[]').length; } catch { return 0; } })() : 0;
+  const currentGroupId = isEdit ? (listing.goal_group_id || '') : '';
+  const isGrouped = !!currentGroupId;
 
   return `
 <form id="mkt-form" class="bg-admin-surface border border-admin-border rounded-lg p-5 max-w-lg">
@@ -275,9 +278,27 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
       <label class="admin-field-label">Price per buyer</label>
       <input type="number" name="price" class="admin-input mt-1" min="1" step="1" value="${isEdit ? escHtml(String(listing.price)) : ''}" required>
     </div>
-    <div>
+    <div id="mkt-min-buyers-field"${isGrouped ? ' hidden' : ''}>
       <label class="admin-field-label">Minimum buyers</label>
-      <input type="number" name="min_buyers" class="admin-input mt-1" min="1" step="1" value="${isEdit ? escHtml(String(listing.min_buyers)) : '15'}" required>
+      <input type="number" id="mkt-min-buyers-input" name="min_buyers" class="admin-input mt-1" min="1" step="1" value="${isEdit ? escHtml(String(listing.min_buyers)) : '15'}" ${isGrouped ? '' : 'required'}>
+    </div>
+  </div>
+  <div class="mb-4">
+    <label class="admin-field-label">Shared goal <span class="font-normal text-slate-500">(optional — link this listing to others so they pool one combined "committed" progress bar instead of each tracking its own; everything else about the listing stays independent)</span></label>
+    <select id="mkt-goal-group" name="goal_group_id" class="admin-input mt-1">
+      <option value="">No shared goal — use this listing's own minimum buyers</option>
+      ${groups.map(g => `<option value="${escHtml(g.id)}"${currentGroupId === g.id ? ' selected' : ''}>${escHtml(g.label)} (min ${g.min_buyers})</option>`).join('')}
+      <option value="__new__">+ Create new shared goal&hellip;</option>
+    </select>
+    <div id="mkt-new-group-fields" class="grid grid-cols-2 gap-3 mt-2" hidden>
+      <div>
+        <label class="admin-field-label">Goal name</label>
+        <input type="text" id="mkt-new-group-label" class="admin-input mt-1" placeholder="e.g. NBA City Edition Bundle">
+      </div>
+      <div>
+        <label class="admin-field-label">Shared minimum buyers</label>
+        <input type="number" id="mkt-new-group-min" class="admin-input mt-1" min="1" step="1" placeholder="15">
+      </div>
     </div>
   </div>
   <div class="mb-4">
@@ -427,6 +448,23 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
   document.getElementById('mkt-add-shorts-size').addEventListener('click', function() { addGroup('Shorts Size', sizes.join('\\n'), 'shorts', 0); });
   document.getElementById('mkt-add-custom-variant').addEventListener('click', function() { addGroup('', '', '', 0); });
 
+  // The listing's own "Minimum buyers" is meaningless once it's pooling with a shared goal
+  // (or about to create one) — hidden rather than just disabled so it doesn't read as a
+  // second, conflicting threshold sitting right next to the goal picker.
+  var goalGroupSelect = document.getElementById('mkt-goal-group');
+  var minBuyersField  = document.getElementById('mkt-min-buyers-field');
+  var minBuyersInput  = document.getElementById('mkt-min-buyers-input');
+  var newGroupFields  = document.getElementById('mkt-new-group-fields');
+  function syncGoalGroupUI() {
+    var val = goalGroupSelect.value;
+    var grouped = !!val;
+    minBuyersField.hidden = grouped;
+    minBuyersInput.required = !grouped;
+    newGroupFields.hidden = val !== '__new__';
+  }
+  goalGroupSelect.addEventListener('change', syncGoalGroupUI);
+  syncGoalGroupUI();
+
   document.getElementById('mkt-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var f = e.target;
@@ -448,7 +486,10 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: f.title.value.trim(), description: f.description.value.trim(),
-          price: f.price.value, min_buyers: f.min_buyers.value, compare_at_price: f.compare_at_price.value, variant_options: variantGroups,
+          price: f.price.value, min_buyers: minBuyersInput.value, compare_at_price: f.compare_at_price.value, variant_options: variantGroups,
+          goal_group_id: goalGroupSelect.value,
+          new_group_label: document.getElementById('mkt-new-group-label').value.trim(),
+          new_group_min_buyers: document.getElementById('mkt-new-group-min').value,
         }),
       });
       var j = await r.json();
@@ -462,26 +503,31 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [] }) {
 </script>`;
 }
 
-export function adminMarketplaceNewBody({ jerseySizes = [] } = {}) {
+export function adminMarketplaceNewBody({ jerseySizes = [], groups = [] } = {}) {
   return `
 <div class="mb-5">
   <a href="/admin/marketplace" class="text-xs text-slate-500 hover:text-slate-300">&larr; Back to Marketplace</a>
 </div>
 <h2 class="text-xl font-bold tracking-tight text-slate-100 mb-5">New Group Buy</h2>
-${marketplaceListingForm({ mode: 'new', jerseySizes })}`;
+${marketplaceListingForm({ mode: 'new', jerseySizes, groups })}`;
 }
 
-export function adminMarketplaceEditBody({ listing, jerseySizes = [] } = {}) {
+export function adminMarketplaceEditBody({ listing, jerseySizes = [], groups = [] } = {}) {
   return `
 <div class="mb-5">
   <a href="/admin/marketplace/${escHtml(listing.id)}" class="text-xs text-slate-500 hover:text-slate-300">&larr; Back to ${escHtml(listing.title)}</a>
 </div>
 <h2 class="text-xl font-bold tracking-tight text-slate-100 mb-5">Edit Group Buy</h2>
-${marketplaceListingForm({ mode: 'edit', listing, jerseySizes })}`;
+${marketplaceListingForm({ mode: 'edit', listing, jerseySizes, groups })}`;
 }
 
-export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigger = false, variantGroups = [] } = {}) {
-  const meets = commitments.length >= listing.min_buyers;
+export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigger = false, variantGroups = [], thresholdCommittedCount = null } = {}) {
+  // A grouped listing's threshold is pooled across every listing sharing its goal — passed
+  // in as thresholdCommittedCount when set, since commitments.length here is deliberately
+  // scoped to just this listing (it's what actually gets charged if triggered, not the
+  // group's combined roster).
+  const committedForThreshold = thresholdCommittedCount == null ? commitments.length : thresholdCommittedCount;
+  const meets = committedForThreshold >= listing.min_buyers;
   const isOpen = listing.status === 'open' || listing.status === 'active';
   const isCharged = listing.status === 'charged';
   const hasSurcharge = variantGroups.some(g => g.surchargeStep > 0 || (g.optionSurcharges && Object.keys(g.optionSurcharges).length));
@@ -520,8 +566,8 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
   <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Trigger Charge</div>
   <p class="text-xs text-slate-500 mb-3">
     ${meets
-      ? `Threshold met (${commitments.length}/${listing.min_buyers}). You can trigger the charge now, or keep waiting for more commitments — the threshold is a floor, not a cap.`
-      : `Needs at least ${listing.min_buyers} committed buyers before this can be triggered (currently ${commitments.length}).`}
+      ? `Threshold met (${committedForThreshold}/${listing.min_buyers}). You can trigger the charge now, or keep waiting for more commitments — the threshold is a floor, not a cap.`
+      : `Needs at least ${listing.min_buyers} committed buyers before this can be triggered (currently ${committedForThreshold}).`}
   </p>
   ${canTrigger
     ? `<button type="button" id="mkt-trigger-btn" class="admin-btn" ${meets ? '' : 'disabled'}>Charge ${commitments.length} Player${commitments.length === 1 ? '' : 's'} — ${fmtPeso(listing.price)} each</button>`
