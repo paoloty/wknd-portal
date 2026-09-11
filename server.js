@@ -75,7 +75,7 @@ import {
   getAwardPhotoOverridesForPlayer, deleteAwardPhotoOverridesFromSlot,
   getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
-  getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup,
+  getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup, getAllPlayerHeights,
   getGameSeasons, setPlayerStatus, setPlayerTeam, setPlayerNumber, setPlayerPapawisProbation,
   getCompareCache, setCompareCache, incrementCompareViews, getCompareAnalytics,
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
@@ -5695,11 +5695,9 @@ app.get('/api/roster', (req, res) => {
   const players = getAllPlayers();
   const season  = getPortalCurrentSeason();
 
-  const heightRows = portalDb.prepare(
-    `SELECT player_id, height FROM registrations WHERE player_id IS NOT NULL AND height IS NOT NULL AND height != '' ORDER BY created_at DESC`
-  ).all();
-  const heightMap = {};
-  for (const r of heightRows) if (!heightMap[r.player_id]) heightMap[r.player_id] = r.height;
+  // player_details is the canonical, admin-curated height — not the raw registrations table,
+  // which can go stale once an admin corrects a height directly (see computeSyncDiff above).
+  const heightMap = Object.fromEntries(getAllPlayerHeights().map(r => [r.player_id, r.height]));
 
   const fmtHeight = h => {
     const n = parseInt(h, 10);
