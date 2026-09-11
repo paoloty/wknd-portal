@@ -3624,7 +3624,7 @@ a.player-link:hover { color: var(--amber); }
 .gl-avg-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--text-muted); text-align: left !important; }
 .gl-avg-row .gl-stat { color: var(--text-subtle); }
 
-/* ── Season/career stats table ──────────────────────────────────────────── */
+/* ── Season/career stats table (mirrors .gl-table's sticky-first-column pattern) ────────── */
 .st-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .st-wrap::-webkit-scrollbar { display: none; }
 .st-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; text-align: center; }
@@ -3633,16 +3633,34 @@ a.player-link:hover { color: var(--amber); }
   color: var(--text-subtle); text-align: center;
   padding: 10px 8px; border-bottom: 1px solid var(--border);
 }
-.st-table thead th:first-child { text-align: left; padding-left: 4px; }
-.st-row td { padding: 9px 8px; border-bottom: 1px solid var(--border); color: var(--text); }
-.st-row td:first-child { text-align: left; padding-left: 4px; white-space: nowrap; font-size: 12px; color: var(--text-muted); }
+.st-table thead th:not(:first-child) { border-left: 1px solid var(--border); }
+.st-table thead th:first-child {
+  text-align: left; padding-left: 24px;
+  position: sticky; left: 0; z-index: 4; background: var(--surface);
+}
+.st-row td { padding: 9px 8px; border-bottom: 1px solid var(--border); color: var(--text); border-left: 1px solid var(--border); }
+.st-row td:first-child {
+  text-align: left; padding-left: 24px; white-space: nowrap; font-size: 12px; color: var(--text-muted);
+  border-left: none;
+  position: sticky; left: 0; z-index: 2; background: var(--surface);
+}
+.st-row td:first-child::after {
+  content: '';
+  position: absolute;
+  top: 0; right: -14px; bottom: 0;
+  width: 14px;
+  background: linear-gradient(to right, rgba(0,0,0,0.22), transparent);
+  pointer-events: none;
+}
 .st-row:hover td { background: rgba(255,255,255,0.03); }
+.st-row:hover td:first-child { background: var(--surface); }
 .st-career-row td {
   padding: 9px 8px; font-size: 13px; font-weight: 700; color: var(--text);
   background: rgba(255,255,255,0.02);
   border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
-.st-career-row td:first-child { text-align: left; padding-left: 4px; }
+.st-career-row td:first-child { text-align: left; padding-left: 24px; border-left: none; }
 .st-pct { color: var(--text-muted); font-size: 12px; }
 
 
