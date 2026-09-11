@@ -54,7 +54,7 @@ import {
   toggleMarketplaceListingReaction, getMarketplaceListingReactionState, getMarketplaceListingReactionCounts,
   getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getConfirmedSeasonPlayerIds,
-  getSeasonQuota, setSeasonQuota, voidTransaction,
+  getSeasonQuota, setSeasonQuota, getSeasonFeePaid, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
   getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
@@ -4236,6 +4236,10 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   // we collect this season," which only makes sense per team roster slot, so it counts only
   // confirmed players who've actually been assigned a team — not the full confirmed list above.
   const quotaPlayerCount = season ? players.filter(p => p.team_id).length : 0;
+  // And the quota-progress numerator has to match that same "season fee" framing — Papawis,
+  // Marketplace, etc. are real money in but aren't the season fee, so counting them here would
+  // show progress toward the target from payments that have nothing to do with it.
+  const quotaPaid = season ? getSeasonFeePaid(season) : 0;
   const pending = getPendingTransactions();
   const categoryTotals = season ? getCategoryTotals(season) : [];
   const teamTotals     = season ? getTeamTotals(season) : [];
@@ -4243,7 +4247,7 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Finance',
     currentPath: '/admin/finance',
-    body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, balMap, players, pending, categoryTotals, teamTotals, recentTx }),
+    body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, quotaPaid, balMap, players, pending, categoryTotals, teamTotals, recentTx }),
   }));
 });
 
