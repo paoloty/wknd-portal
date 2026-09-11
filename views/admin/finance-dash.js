@@ -29,7 +29,7 @@ function progressBar(value, max) {
   </div>`;
 }
 
-export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, quota = 0, balMap = {}, players = [], pending = [], categoryTotals = [], teamTotals = [], recentTx = [] } = {}) {
+export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, quota = 0, quotaPlayerCount = 0, balMap = {}, players = [], pending = [], categoryTotals = [], teamTotals = [], recentTx = [] } = {}) {
   const seasonPills = seasons.map(s =>
     `<a href="/admin/finance?season=${encodeURIComponent(s)}" class="agm-pill${s === season ? ' is-active' : ''}">${escHtml(s)}</a>`
   ).join('');
@@ -67,9 +67,9 @@ ${quota ? `
 <div class="${CARD} px-5 py-4 mb-5">
   <div class="flex items-center justify-between mb-1">
     <span class="text-[11px] font-bold uppercase tracking-widest text-slate-500">Season Quota Progress</span>
-    <span class="text-xs text-slate-500">${fmt(totalPaid)} of ${fmt(quota * totalPlayers)} target (${totalPlayers} × ${fmt(quota)})</span>
+    <span class="text-xs text-slate-500">${fmt(totalPaid)} of ${fmt(quota * quotaPlayerCount)} target (${quotaPlayerCount} × ${fmt(quota)})</span>
   </div>
-  ${progressBar(totalPaid, quota * totalPlayers)}
+  ${progressBar(totalPaid, quota * quotaPlayerCount)}
 </div>` : ''}` : '';
 
   // ── Pending rows

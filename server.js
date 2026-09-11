@@ -4223,11 +4223,17 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   const summary = season ? getSeasonSummary(season) : {};
   const quota   = season ? getSeasonQuota(season) : 0;
   const balMap  = season ? Object.fromEntries(getSeasonBalances(season).map(r => [r.player_id, r])) : {};
-  // The quota-progress target (players × quota) and "Players Settled" count only make sense
-  // against players actually confirmed for the season being viewed — not every player who's
-  // ever existed, which is what was inflating the target (see /admin/ledger's own scoping).
+  // "Players Settled" and every other player-driven number on this page (who owes, top
+  // outstanding, etc.) stay scoped to everyone actually confirmed for the season being
+  // viewed — not every player who's ever existed, which is what was inflating them (see
+  // /admin/ledger's own scoping) — a confirmed player without a team yet still owes money
+  // and still needs to be tracked here.
   const seasonPlayerIds = season ? getConfirmedSeasonPlayerIds(season) : null;
   const players = seasonPlayerIds ? getAllPlayers().filter(p => seasonPlayerIds.has(p.id)) : getAllPlayers();
+  // The quota-progress *target* (quota × count) is different: it's asking "how much should
+  // we collect this season," which only makes sense per team roster slot, so it counts only
+  // confirmed players who've actually been assigned a team — not the full confirmed list above.
+  const quotaPlayerCount = season ? players.filter(p => p.team_id).length : 0;
   const pending = getPendingTransactions();
   const categoryTotals = season ? getCategoryTotals(season) : [];
   const teamTotals     = season ? getTeamTotals(season) : [];
@@ -4235,7 +4241,7 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Finance',
     currentPath: '/admin/finance',
-    body: adminFinanceDashBody({ seasons, season, summary, quota, balMap, players, pending, categoryTotals, teamTotals, recentTx }),
+    body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, balMap, players, pending, categoryTotals, teamTotals, recentTx }),
   }));
 });
 
