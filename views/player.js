@@ -868,22 +868,22 @@ function statsTable(statsByType) {
   const qpPct  = r => { const att = (r.fg4m || 0) + (r.fg4m_miss || 0); return att >= 3 ? pct(r.fg4m || 0, r.fg4m_miss || 0) : '—'; };
   const ftPct  = r => { const att = (r.ftm || 0) + (r.ft_miss || 0); return att >= 3 ? pct(r.ftm, r.ft_miss) : '—'; };
 
-  const statRow = (r, label, isBold = false, dimmed = false) => {
+  const statRow = (r, label, isCareer = false) => {
     const gp = r.games_played || 0;
     if (!gp) return '';
-    const style = isBold ? ' style="font-weight:700;color:var(--text)"' : dimmed ? ' style="color:var(--text-muted)"' : '';
-    return `<tr${style}>
-      <td style="text-align:left;padding:7px 10px 7px 0;white-space:nowrap;font-size:12px">${escHtml(label)}</td>
+    const rowClass = isCareer ? 'st-career-row' : 'st-row';
+    return `<tr class="${rowClass}">
+      <td>${escHtml(label)}</td>
       <td>${gp}</td>
       <td>${avg(r.pts, gp)}</td>
       <td>${avg(r.reb, gp)}</td>
       <td>${avg(r.ast, gp)}</td>
       <td>${avg(r.stl, gp)}</td>
       <td>${avg(r.blk, gp)}</td>
-      <td>${fgPct(r)}</td>
-      <td>${tpPct(r)}</td>
-      <td>${qpPct(r)}</td>
-      <td>${ftPct(r)}</td>
+      <td class="st-pct">${fgPct(r)}</td>
+      <td class="st-pct">${tpPct(r)}</td>
+      <td class="st-pct">${qpPct(r)}</td>
+      <td class="st-pct">${ftPct(r)}</td>
     </tr>`;
   };
 
@@ -907,21 +907,21 @@ function statsTable(statsByType) {
 
   const careerRow = career?.games_played ? statRow(career, 'Career', true) : '';
 
-  const th = (label) => `<th style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;white-space:nowrap">${label}</th>`;
-
-  return `<div class="card" style="margin-bottom:20px;overflow-x:auto">
+  return `<div class="card" style="margin-bottom:20px">
   <div class="section-header"><h2>Stats</h2></div>
-  <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:'Archivo',sans-serif;text-align:center">
-    <thead>
-      <tr style="border-bottom:1px solid var(--border)">
-        ${th('')}${th('GP')}${th('PPG')}${th('RPG')}${th('APG')}${th('SPG')}${th('BPG')}${th('FG%')}${th('3P%')}${th('4P%')}${th('FT%')}
-      </tr>
-    </thead>
-    <tbody style="color:var(--text)">
-      ${rows}
-      ${careerRow ? `<tr><td colspan="11" style="border-top:1px solid var(--border);padding:0"></td></tr>${careerRow}` : ''}
-    </tbody>
-  </table>
+  <div class="st-wrap">
+    <table class="st-table">
+      <thead>
+        <tr>
+          <th></th><th>GP</th><th>PPG</th><th>RPG</th><th>APG</th><th>SPG</th><th>BPG</th><th>FG%</th><th>3P%</th><th>4P%</th><th>FT%</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+        ${careerRow}
+      </tbody>
+    </table>
+  </div>
 </div>`;
 }
 

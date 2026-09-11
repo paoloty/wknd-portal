@@ -58,6 +58,7 @@ import {
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
   getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
+  getLeadersAllTime, getLeaderSeasons,
   getGameById, getGameDetailStats, getGameStats,
   getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam, getPlayerLastTeamIdBeforeSeason,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
@@ -2112,10 +2113,17 @@ function extractQuarterScores(game) {
 }
 
 function buildLeaderPlayers(season) {
+  if (season === 'alltime') return buildLeaderPlayersAllTime();
   const players = getLeaders(season);
   const records = getTeamRecords(season);
   const recordMap = Object.fromEntries(records.map(r => [r.team_id, r]));
   return players.map(p => ({ ...p, team_wins: recordMap[p.team_id]?.wins ?? 0, team_losses: recordMap[p.team_id]?.losses ?? 0 }));
+}
+
+// Team win/loss records vary by season, so an all-time tiebreak using them wouldn't mean
+// anything consistent — leader ranking already falls back to games_played before this anyway.
+function buildLeaderPlayersAllTime() {
+  return getLeadersAllTime().map(p => ({ ...p, team_wins: 0, team_losses: 0 }));
 }
 
 // Homepage fallback for the League Leaders carousel during the gap between a new season's
@@ -5952,12 +5960,14 @@ function isPlayoffStarted(season) {
 }
 
 app.get('/awards', (req, res) => {
-  if (getSetting('awards_enabled', '1') === '0') return res.status(404).send(
-    renderPage(req, { title: 'Not Found', currentPath: '/awards', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
-  );
   const currentSeason = getPortalCurrentSeason();
   const season = Number(req.query.season) || Number(currentSeason) || 3;
   const awards = getSeasonAwards(season);
+  // awards_enabled hides the page while a new season has nothing decided yet, but a season
+  // that already has awards (e.g. a Facebook-shared link to a past season) should stay reachable.
+  if (getSetting('awards_enabled', '1') === '0' && !awards.length) return res.status(404).send(
+    renderPage(req, { title: 'Not Found', currentPath: '/awards', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
+  );
   const availableSeasons = getAwardSeasons();
   const visibleSections = new Set(AWARD_SECTION_KEYS.filter(k => getSetting(`award_show_${k}`, '0') !== '0'));
   const articles = Object.fromEntries(AWARD_SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
@@ -6207,13 +6217,16 @@ app.post('/admin/mvp/regenerate', requireAuth, express.json(), (req, res) => {
 });
 
 app.get('/mvp', async (req, res) => {
-  if (getSetting('mvp_race_enabled', '1') === '0') return res.status(404).send(
+  const currentSeason = getPortalCurrentSeason();
+  const season = Number(req.query.season) || Number(currentSeason) || 3;
+  const playoffsStarted = isPlayoffStarted(season);
+  const raw = getMvpCandidates(season);
+  const totalGames = getTotalSeasonGamesForMvp(season);
+  // mvp_race_enabled hides the page while a new season has no candidates yet, but a season
+  // that already has games played (e.g. a Facebook-shared link to a past season) should stay reachable.
+  if (getSetting('mvp_race_enabled', '1') === '0' && !raw.length) return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/mvp', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
   );
-  const currentSeason = getPortalCurrentSeason();
-  const playoffsStarted = isPlayoffStarted(currentSeason);
-  const raw = getMvpCandidates(currentSeason);
-  const totalGames = getTotalSeasonGamesForMvp(currentSeason);
 
   const allGames   = byDate(getAllGames());
   const completedGames = allGames.filter(g =>
@@ -6257,7 +6270,7 @@ app.get('/mvp', async (req, res) => {
   // Fetch or generate writeups for top candidates (locked once playoffs begin)
   const withWriteups = await Promise.all(scored.map(async c => {
     const statsKey = mvpStatsKey(c.stats);
-    const cached   = getMvpWriteup(c.player.id, currentSeason, statsKey);
+    const cached   = getMvpWriteup(c.player.id, season, statsKey);
     if (cached) return { ...c, writeup: cached };
     if (playoffsStarted) return { ...c, writeup: null };
 
@@ -6297,7 +6310,7 @@ Rules:
 ${name} stats:\n${rankLines}`;
 
       const { text } = await generateText(prompt, { maxTokens: 220, temperature: 0.75 });
-      setMvpWriteup(c.player.id, currentSeason, statsKey, text);
+      setMvpWriteup(c.player.id, season, statsKey, text);
       return { ...c, writeup: text };
     } catch {
       return { ...c, writeup: null };
@@ -6306,13 +6319,13 @@ ${name} stats:\n${rankLines}`;
 
   res.send(renderPage(req, {
     title: playoffsStarted
-      ? `Season ${currentSeason} MVP Race — Final — WKND Basketball League`
+      ? `Season ${season} MVP Race — Final — WKND Basketball League`
       : 'MVP Race — WKND Basketball League',
     currentPath: req.path,
-    metaTags: buildMvpOgTags(req, withWriteups, currentSeason),
+    metaTags: buildMvpOgTags(req, withWriteups, season),
     body: mvpPage({
       candidates: withWriteups,
-      season: currentSeason,
+      season,
       totalGames,
       seasonGames: SEASON_GAMES_PER_TEAM,
       isAdmin: !!req.session?.isAdmin,
@@ -6323,21 +6336,31 @@ ${name} stats:\n${rankLines}`;
 
 app.get('/leaders', (req, res) => {
   const season         = getPortalCurrentSeason();
-  const players        = buildLeaderPlayers(season);
   const playoffPlayers = getPlayoffLeaders(season);
   const gameRecords    = getGameRecords();
   const weekNum        = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
   const asOfLabel      = weekNum ? `S${season} · WK ${weekNum}` : '';
+
+  const leaderSeasons   = getLeaderSeasons();
+  const leadersBySeason = Object.fromEntries(leaderSeasons.map(s => [s, buildLeaderPlayers(s)]));
+  const leadersAllTime  = buildLeaderPlayersAllTime();
+
   res.send(renderPage(req, {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
-    body: leadersPage({ players, playoffPlayers, season: String(season || ''), gameRecords, currentSeason: season || 3, asOfLabel, isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) })
+    body: leadersPage({
+      playoffPlayers, gameRecords, currentSeason: season || 3, asOfLabel,
+      leaderSeasons, leadersBySeason, leadersAllTime,
+      isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId),
+    })
   }));
 });
 
 app.get('/roast', (req, res) => {
-  const season   = getPortalCurrentSeason();
-  const players  = buildLeaderPlayers(season);
+  const season          = getPortalCurrentSeason();
+  const leaderSeasons   = getLeaderSeasons();
+  const roastBySeason   = Object.fromEntries(leaderSeasons.map(s => [s, buildLeaderPlayers(s)]));
+  const roastAllTime    = buildLeaderPlayersAllTime();
   const origin           = getRequestOrigin(req);
   const roastUrl         = `${origin}/roast`;
   const roastDesc        = `The flip side of the leaders board. Season ${season || ''} worst performers, funniest stat disasters, and dubious awards — only on WKND Basketball.`;
@@ -6358,7 +6381,10 @@ app.get('/roast', (req, res) => {
     title: 'The Roast — WKND Basketball League',
     currentPath: req.path,
     metaTags: roastMetaTags,
-    body: roastPage({ players, season: String(season || ''), isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) }),
+    body: roastPage({
+      currentSeason: season || 3, leaderSeasons, roastBySeason, roastAllTime,
+      isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId),
+    }),
   }));
 });
 

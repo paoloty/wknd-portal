@@ -336,11 +336,47 @@ function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}
 </div>`;
 }
 
-export function leadersPage({ players, playoffPlayers = [], season = '', gameRecords = [], currentSeason = 3, asOfLabel = '', isLoggedIn = false }) {
+// Builds the "All Time" + per-season grids for a Per Game/Totals-style tab, sharing one
+// pattern with Records: every scope is pre-rendered and toggled client-side (no reload), so
+// share/download buttons keep working per panel regardless of which scope is showing.
+function buildScopedGrids(cats, defaultFmt, mode, allTimePlayers, leaderSeasons, playersBySeason) {
+  // season value baked into each panel's share button must match what /api/leaders/share expects
+  const panelsForScope = (players, seasonVal) => cats.map(cat => leaderPanel(cat, players, defaultFmt, { mode, season: seasonVal })).filter(Boolean).join('\n');
+  const allTimeHtml = panelsForScope(allTimePlayers, 'alltime');
+  const seasonHtml  = Object.fromEntries(leaderSeasons.map(s => [s, panelsForScope(playersBySeason[s] || [], String(s))]));
+  return { allTimeHtml, seasonHtml };
+}
+
+function scopedPillsHtml(prefix, leaderSeasons, defaultScopeId, hidden) {
+  const pillsHtml = leaderSeasons.map(s =>
+    `<button class="season-pill${defaultScopeId === 's' + s ? ' season-pill--active' : ''}" id="${prefix}-btn-s${s}" onclick="${prefix}SeasonSwitch('s${s}')">S${escHtml(String(s))}</button>`
+  ).join('');
+  return `<div class="leaders-season-pills" id="${prefix}-season-pills"${hidden ? ' style="display:none"' : ''}>
+        <button class="season-pill${defaultScopeId === 'alltime' ? ' season-pill--active' : ''}" id="${prefix}-btn-alltime" onclick="${prefix}SeasonSwitch('alltime')">All Time</button>
+        ${pillsHtml}
+      </div>`;
+}
+
+function scopedGridsBlock(prefix, allTimeHtml, seasonHtml, leaderSeasons, defaultScopeId) {
+  const seasonGridsHtml = leaderSeasons.map(s =>
+    `<div class="leaders-page-grid" id="${prefix}-grid-s${s}" style="${defaultScopeId === 's' + s ? '' : 'display:none'}">${seasonHtml[s]}</div>`
+  ).join('\n');
+  return `<div class="leaders-page-grid" id="${prefix}-grid-alltime" style="${defaultScopeId === 'alltime' ? '' : 'display:none'}">${allTimeHtml}</div>
+    ${seasonGridsHtml}`;
+}
+
+export function leadersPage({
+  playoffPlayers = [], gameRecords = [], currentSeason = 3, asOfLabel = '', isLoggedIn = false,
+  leaderSeasons = [], leadersBySeason = {}, leadersAllTime = [],
+}) {
   _showDownload = isLoggedIn;
-  const opts = s => ({ mode: s, season });
-  const pgPanels  = PER_GAME.map(cat => leaderPanel(cat, players, fmtPerGame, opts('pg'))).filter(Boolean).join('\n');
-  const totPanels = TOTALS.map(cat => leaderPanel(cat, players, fmtTotals, opts('tot'))).filter(Boolean).join('\n');
+  // Default to the current season's tab if it has leaders yet, otherwise fall back to All Time.
+  const defaultScopeId = leaderSeasons.map(String).includes(String(currentSeason)) ? 's' + currentSeason : 'alltime';
+
+  const pgGrids  = buildScopedGrids(PER_GAME, fmtPerGame, 'pg', leadersAllTime, leaderSeasons, leadersBySeason);
+  const totGrids = buildScopedGrids(TOTALS, fmtTotals, 'tot', leadersAllTime, leaderSeasons, leadersBySeason);
+
+  const opts = s => ({ mode: s, season: String(currentSeason) });
   const poPgPanels  = PER_GAME.map(cat => leaderPanel(cat, playoffPlayers, fmtPerGame, opts('po-pg'))).filter(Boolean).join('\n');
   const poTotPanels = TOTALS.map(cat => leaderPanel(cat, playoffPlayers, fmtTotals, opts('po-tot'))).filter(Boolean).join('\n');
   const hasPlayoffs = playoffPlayers.length > 0;
@@ -370,9 +406,15 @@ export function leadersPage({ players, playoffPlayers = [], season = '', gameRec
         <button class="season-pill season-pill--active" id="po-btn-pg" onclick="poSwitch('pg')">Per Game</button>
         <button class="season-pill" id="po-btn-tot" onclick="poSwitch('tot')">Totals</button>
       </div>` : ''}
+      ${scopedPillsHtml('pg', leaderSeasons, defaultScopeId, false)}
+      ${scopedPillsHtml('tot', leaderSeasons, defaultScopeId, true)}
     </div>
-    <div class="leaders-page-grid" id="leaders-grid-pg">${pgPanels}</div>
-    <div class="leaders-page-grid" id="leaders-grid-tot" style="display:none">${totPanels}</div>
+    <div id="leaders-grid-pg">
+      ${scopedGridsBlock('pg', pgGrids.allTimeHtml, pgGrids.seasonHtml, leaderSeasons, defaultScopeId)}
+    </div>
+    <div id="leaders-grid-tot" style="display:none">
+      ${scopedGridsBlock('tot', totGrids.allTimeHtml, totGrids.seasonHtml, leaderSeasons, defaultScopeId)}
+    </div>
     ${hasPlayoffs ? `<div id="leaders-grid-po" style="display:none">
       <div class="leaders-page-grid" id="leaders-grid-po-pg">${poPgPanels}</div>
       <div class="leaders-page-grid" id="leaders-grid-po-tot" style="display:none">${poTotPanels}</div>
@@ -384,6 +426,8 @@ export function leadersPage({ players, playoffPlayers = [], season = '', gameRec
     <script>
     var _recSeasons = ${JSON.stringify(recordSeasons)};
     var _allRecScopes = ['alltime'].concat(_recSeasons.map(function(s){ return 's'+s; }));
+    var _leaderSeasons = ${JSON.stringify(leaderSeasons)};
+    var _allLeaderScopes = ['alltime'].concat(_leaderSeasons.map(function(s){ return 's'+s; }));
     var _asOfLabel = '${escHtml(asOfLabel)}';
     var _hasPlayoffs = ${hasPlayoffs};
     function leadersSwitch(mode) {
@@ -397,6 +441,8 @@ export function leadersPage({ players, playoffPlayers = [], season = '', gameRec
       document.getElementById('leaders-season-pills').style.display = mode === 'rec' ? '' : 'none';
       var poPills = document.getElementById('leaders-po-pills');
       if (poPills) poPills.style.display = mode === 'po' ? '' : 'none';
+      document.getElementById('pg-season-pills').style.display = mode === 'pg' ? '' : 'none';
+      document.getElementById('tot-season-pills').style.display = mode === 'tot' ? '' : 'none';
     }
     function poSwitch(sub) {
       ['pg','tot'].forEach(function(s) {
@@ -410,6 +456,22 @@ export function leadersPage({ players, playoffPlayers = [], season = '', gameRec
       _allRecScopes.forEach(function(s) {
         var grid = document.getElementById('rec-grid-' + s);
         var btn  = document.getElementById('rec-btn-' + s);
+        if (grid) grid.style.display = s === scope ? '' : 'none';
+        if (btn)  btn.classList.toggle('season-pill--active', s === scope);
+      });
+    }
+    function pgSeasonSwitch(scope) {
+      _allLeaderScopes.forEach(function(s) {
+        var grid = document.getElementById('pg-grid-' + s);
+        var btn  = document.getElementById('pg-btn-' + s);
+        if (grid) grid.style.display = s === scope ? '' : 'none';
+        if (btn)  btn.classList.toggle('season-pill--active', s === scope);
+      });
+    }
+    function totSeasonSwitch(scope) {
+      _allLeaderScopes.forEach(function(s) {
+        var grid = document.getElementById('tot-grid-' + s);
+        var btn  = document.getElementById('tot-btn-' + s);
         if (grid) grid.style.display = s === scope ? '' : 'none';
         if (btn)  btn.classList.toggle('season-pill--active', s === scope);
       });

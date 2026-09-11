@@ -166,21 +166,48 @@ function roastPanel(cat, players, season) {
 </div>`;
 }
 
-export function roastPage({ players = [], season = '', isLoggedIn = false }) {
+export function roastPage({ currentSeason = 3, leaderSeasons = [], roastBySeason = {}, roastAllTime = [], isLoggedIn = false }) {
   _showDownload = isLoggedIn;
-  const panels = ROAST_CATS.map(cat => roastPanel(cat, players, season)).filter(Boolean).join('\n');
 
-  if (!panels) {
+  const panelsFor = (players, seasonVal) => ROAST_CATS.map(cat => roastPanel(cat, players, seasonVal)).filter(Boolean).join('\n');
+  const allTimePanels = panelsFor(roastAllTime, 'alltime');
+  const seasonPanels  = Object.fromEntries(leaderSeasons.map(s => [s, panelsFor(roastBySeason[s] || [], String(s))]));
+
+  if (!allTimePanels && !Object.values(seasonPanels).some(Boolean)) {
     return `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">Not enough data yet. Check back after a few games.</div>`;
   }
+
+  const defaultScopeId = leaderSeasons.map(String).includes(String(currentSeason)) ? 's' + currentSeason : 'alltime';
+
+  const pillsHtml = leaderSeasons.map(s =>
+    `<button class="season-pill${defaultScopeId === 's' + s ? ' season-pill--active' : ''}" id="roast-btn-s${s}" onclick="roastSeasonSwitch('s${s}')">S${escHtml(String(s))}</button>`
+  ).join('');
+  const seasonGridsHtml = leaderSeasons.map(s =>
+    `<div class="leaders-page-grid" id="roast-grid-s${s}" style="${defaultScopeId === 's' + s ? '' : 'display:none'}">${seasonPanels[s]}</div>`
+  ).join('\n');
 
   return `<div class="page-content">
   <div class="roast-header">
     <p class="roast-intro">The flip side of glory. Same stats, opposite podium.</p>
+    <div class="leaders-season-pills" id="roast-season-pills">
+      <button class="season-pill${defaultScopeId === 'alltime' ? ' season-pill--active' : ''}" id="roast-btn-alltime" onclick="roastSeasonSwitch('alltime')">All Time</button>
+      ${pillsHtml}
+    </div>
   </div>
-  <div class="leaders-page-grid">${panels}</div>
+  <div class="leaders-page-grid" id="roast-grid-alltime" style="${defaultScopeId === 'alltime' ? '' : 'display:none'}">${allTimePanels}</div>
+  ${seasonGridsHtml}
   <script>
   var _asOfLabel = '';
+  var _leaderSeasons = ${JSON.stringify(leaderSeasons)};
+  var _allLeaderScopes = ['alltime'].concat(_leaderSeasons.map(function(s){ return 's'+s; }));
+  function roastSeasonSwitch(scope) {
+    _allLeaderScopes.forEach(function(s) {
+      var grid = document.getElementById('roast-grid-' + s);
+      var btn  = document.getElementById('roast-btn-' + s);
+      if (grid) grid.style.display = s === scope ? '' : 'none';
+      if (btn)  btn.classList.toggle('season-pill--active', s === scope);
+    });
+  }
   async function downloadLeader(btn) {
     if (btn._busy) return;
     btn._busy = true;
