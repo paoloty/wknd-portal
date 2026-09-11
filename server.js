@@ -4215,7 +4215,11 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   const summary = season ? getSeasonSummary(season) : {};
   const quota   = season ? getSeasonQuota(season) : 0;
   const balMap  = season ? Object.fromEntries(getSeasonBalances(season).map(r => [r.player_id, r])) : {};
-  const players = getAllPlayers();
+  // The quota-progress target (players × quota) and "Players Settled" count only make sense
+  // against players actually confirmed for the season being viewed — not every player who's
+  // ever existed, which is what was inflating the target (see /admin/ledger's own scoping).
+  const seasonPlayerIds = season ? getConfirmedSeasonPlayerIds(season) : null;
+  const players = seasonPlayerIds ? getAllPlayers().filter(p => seasonPlayerIds.has(p.id)) : getAllPlayers();
   const pending = getPendingTransactions();
   const categoryTotals = season ? getCategoryTotals(season) : [];
   const teamTotals     = season ? getTeamTotals(season) : [];
