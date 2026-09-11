@@ -4085,13 +4085,19 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
 });
 
 app.get('/admin/ledger', requireAuth, (req, res) => {
-  // Overview scopes to players actually rostered for the current season, not every
-  // player who has ever existed — a past-season player who never re-registered
-  // shouldn't pad the "who's here / what's outstanding" headline count. Their debt
-  // (if any) still lives in player_financials and remains reachable via their own
-  // /admin/ledger/:id page — this only trims who appears in the overview list/total.
+  // Balance is never season-scoped (see below) — always the true running balance
+  // (player_financials, via getAllBalances) regardless of which season pill is active. The
+  // season pills below only filter which transactions are listed, not what "balance" means.
+  const balMap   = Object.fromEntries(getAllBalances().map(r => [r.player_id, r]));
+  // Overview scopes to players actually rostered for the current season, plus anyone with
+  // real ledger history (e.g. a Papawis-only player who never registered this season but
+  // still has confirmed charges/payments) — a genuinely never-active past player still
+  // shouldn't pad the "who's here / what's outstanding" headline count, but someone with
+  // actual money on the books must stay reachable from this list, not just their own
+  // /admin/ledger/:id page, or there'd be no way to find them here at all.
   const currentSeasonPlayerIds = getConfirmedSeasonPlayerIds(getPortalCurrentSeason());
-  const players  = getAllPlayers().filter(p => currentSeasonPlayerIds.has(p.id));
+  const visiblePlayerIds = new Set([...currentSeasonPlayerIds, ...Object.keys(balMap)]);
+  const players  = getAllPlayers().filter(p => visiblePlayerIds.has(p.id));
   const seasons  = getLedgerSeasons();
   const season   = req.query.season ?? '';
   const quota    = season ? getSeasonQuota(season) : 0;
@@ -4103,10 +4109,6 @@ app.get('/admin/ledger', requireAuth, (req, res) => {
   // look like less was owed than actually was.
   const allSummary = getAllSummary();
   const summary  = season ? { ...getSeasonSummary(season), total_outstanding: allSummary.total_outstanding } : allSummary;
-  // Balance is never season-scoped, for the same reason — always the true running balance
-  // (player_financials, via getAllBalances) regardless of which season pill is active. The
-  // season pills below only filter which transactions are listed, not what "balance" means.
-  const balMap   = Object.fromEntries(getAllBalances().map(r => [r.player_id, r]));
   // Same "never season-scoped" reasoning as balance — see getLastTransactionDates.
   const lastActivityMap = getLastTransactionDates();
   const allTx    = season ? getAllTransactionsBySeason(season) : getAllTransactions();
