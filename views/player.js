@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, truncate, initials } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, truncate, initials, playerAvatar } from './utils.js';
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
@@ -1018,6 +1018,20 @@ const TX_STATUS_LABEL = { pending: 'Pending', voided: 'Voided' };
 // this viewer's eligibility tier can't vote, so the interactive state always matches what
 // the server would actually accept. latestPoll is pre-filtered server-side to the most
 // recent poll this viewer's visibility tier qualifies to see.
+// Overlapping avatar stack of who's voted — mirrors marketplace's avatarStack (views/marketplace.js),
+// capped the same way. Shows who participated, not what they picked — that stays aggregate-only here.
+const POLL_MAX_AVATARS = 8;
+function pollVoterAvatars(voterPlayers) {
+  if (!voterPlayers.length) return '';
+  const shown = voterPlayers.slice(0, POLL_MAX_AVATARS);
+  const overflow = voterPlayers.length - shown.length;
+  const avatars = shown.map(p =>
+    playerAvatar(p.id, p.name, teamColor(p.team_name), { className: 'mp-poll-avatar', link: true })
+  ).join('');
+  const moreBubble = overflow > 0 ? `<span class="mp-poll-avatar mp-poll-avatar--more">+${overflow}</span>` : '';
+  return `<div class="mp-poll-avatar-stack">${avatars}${moreBubble}</div>`;
+}
+
 function pollSidebarCard(poll) {
   if (!poll) return '';
   const isOpen = poll.status === 'open';
@@ -1111,6 +1125,7 @@ function pollSidebarCard(poll) {
       <a href="/polls#poll-${escHtml(poll.id)}" class="mp-poll__q">${escHtml(poll.question)}</a>
       ${poll.description ? `<p class="mp-poll__desc">${escHtml(poll.description)}</p>` : ''}
       <div class="mp-poll-options" id="mp-poll-options" data-poll="${escHtml(poll.id)}">${optionRows}</div>
+      ${pollVoterAvatars(poll.voterPlayers || [])}
       <div class="mp-poll__meta">
         <span id="mp-poll-total">${total} vote${total === 1 ? '' : 's'}</span>
         ${statusNote ? `<span>&middot; ${statusNote}</span>` : ''}

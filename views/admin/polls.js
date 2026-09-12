@@ -17,9 +17,17 @@ function tally(poll) {
 function pollCard(poll, { canManage = true } = {}) {
   const { counts, total } = tally(poll);
   const isOpen = poll.status === 'open';
+  // Who voted for which option, not just who voted at all — grouped per-option instead of
+  // one flat "everybody who voted" line, since which option someone picked is the actual
+  // information admin needs (e.g. to see if a specific head/tier is split on something).
+  const votersByOption = poll.options.map(() => []);
+  for (const v of poll.votes) {
+    if (votersByOption[v.option_index]) votersByOption[v.option_index].push(v.voter_name || 'Someone');
+  }
   const rows = poll.options.map((opt, i) => {
     const pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
     const color = BAR_COLORS[i % BAR_COLORS.length];
+    const names = votersByOption[i];
     return `
     <div class="py-1.5">
       <div class="flex items-center justify-between text-xs mb-1">
@@ -27,12 +35,9 @@ function pollCard(poll, { canManage = true } = {}) {
         <span class="text-slate-500" style="font-variant-numeric:tabular-nums">${counts[i]} &middot; ${pct}%</span>
       </div>
       <div class="h-1.5 rounded-full bg-admin-border/60 overflow-hidden"><div style="width:${pct}%;background:${color};height:100%;border-radius:99px"></div></div>
+      ${names.length ? `<div class="text-[10px] text-slate-600 mt-1 leading-relaxed">${names.map(n => escHtml(n)).join(', ')}</div>` : ''}
     </div>`;
   }).join('');
-
-  const voters = poll.votes.length
-    ? `<div class="text-[11px] text-slate-600 mt-2 truncate">Voted: ${poll.votes.map(v => escHtml(v.voter_name || 'Someone')).join(', ')}</div>`
-    : '';
 
   return `
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-4" data-poll-id="${escHtml(poll.id)}">
@@ -54,7 +59,6 @@ function pollCard(poll, { canManage = true } = {}) {
   <div class="p-4">
     ${rows}
     <div class="text-[10px] text-slate-600 mt-2">n=${total}</div>
-    ${voters}
   </div>
 </div>`;
 }

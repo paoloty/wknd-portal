@@ -6534,7 +6534,13 @@ app.get('/players/:ref', async (req, res) => {
     if (qualifyingPoll) {
       const votes = getLeaguePollVotes(qualifyingPoll.id);
       const myVote = getMyLeaguePollVote(qualifyingPoll.id, pollIdentity.id);
-      latestPoll = { ...qualifyingPoll, votes, myVote, canVote: pollTierQualifies(qualifyingPoll.voter_eligibility, pollIdentity) };
+      // 'super_admin' votes (the shared admin login, no player record) can't resolve to a
+      // player — skip those rather than let getPlayerWithTeam come back null into the stack.
+      const voterPlayers = votes
+        .filter(v => v.voter_id !== 'super_admin')
+        .map(v => getPlayerWithTeam(v.voter_id))
+        .filter(Boolean);
+      latestPoll = { ...qualifyingPoll, votes, myVote, canVote: pollTierQualifies(qualifyingPoll.voter_eligibility, pollIdentity), voterPlayers };
     }
   }
 
