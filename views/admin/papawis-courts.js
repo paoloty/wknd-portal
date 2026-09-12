@@ -18,13 +18,16 @@ function courtRow(c) {
       <div class="flex items-center gap-3">
         <span class="court-row__grip" aria-hidden="true">${ICON_GRIP}</span>
         ${courtThumb(c)}
-        <span class="text-sm font-medium text-slate-200">${escHtml(c.name)}</span>
+        <div>
+          <span class="text-sm font-medium text-slate-200">${escHtml(c.name)}</span>
+          ${c.address ? `<div class="text-xs text-slate-500">${escHtml(c.address)}</div>` : ''}
+        </div>
       </div>
     </td>
     <td class="px-4 py-3 text-sm font-saira text-brand">${c.price_per_hour > 0 ? peso(c.price_per_hour) + '/hr' : `<span class="text-slate-600 font-sans">Not set</span>`}</td>
     <td class="px-4 py-3">${c.active ? `<span class="agm-badge agm-badge--amber">Active</span>` : `<span class="agm-badge agm-badge--gray">Inactive</span>`}</td>
     <td class="px-4 py-3 text-right whitespace-nowrap">
-      <button class="admin-btn admin-btn--sm" onclick='openCourtModal(${JSON.stringify({ id: c.id, name: c.name, price: c.price_per_hour, hasPhoto: !!c.image_url }).replace(/'/g, '&#39;')})'>Edit</button>
+      <button class="admin-btn admin-btn--sm" onclick='openCourtModal(${JSON.stringify({ id: c.id, name: c.name, price: c.price_per_hour, address: c.address || '', hasPhoto: !!c.image_url }).replace(/'/g, '&#39;')})'>Edit</button>
       <button class="admin-btn admin-btn--sm ${c.active ? 'admin-btn--danger' : 'admin-btn--success'}" onclick="toggleCourt('${escHtml(c.id)}', ${c.active ? 'false' : 'true'})">${c.active ? 'Deactivate' : 'Activate'}</button>
     </td>
   </tr>`;
@@ -83,6 +86,11 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
         <label class="admin-field-label">Rate per hour (₱)</label>
         <input id="court-price" type="number" min="0" step="1" class="admin-input" placeholder="e.g. 700">
       </div>
+      <div>
+        <label class="admin-field-label">Address (optional)</label>
+        <input id="court-address" type="text" class="admin-input" placeholder="e.g. 123 Rizal St, Makati City">
+        <div class="text-xs text-slate-500 mt-1">Used to look up the map banner on Papawis cards. If left blank, the court name above is used instead — set this when the name alone doesn't pin the venue on a map.</div>
+      </div>
       <div id="court-photo-field" style="display:none">
         <label class="admin-field-label">Photo</label>
         <div id="court-photo-preview-wrap" style="display:none;position:relative;border-radius:10px;overflow:hidden;height:120px;background:linear-gradient(155deg,#303a50,#171d29 60%,#0c0f16)">
@@ -127,6 +135,7 @@ window.openCourtModal = function(court) {
   document.getElementById('court-id').value = court ? court.id : '';
   document.getElementById('court-name').value = court ? court.name : '';
   document.getElementById('court-price').value = court && court.price ? court.price : '';
+  document.getElementById('court-address').value = court ? (court.address || '') : '';
   document.getElementById('court-modal-msg').style.display = 'none';
   courtPhotoMsg.style.display = 'none';
   courtPhotoInput.value = '';
@@ -186,6 +195,7 @@ document.getElementById('court-submit-btn').addEventListener('click', async func
   var body = {
     name: document.getElementById('court-name').value.trim(),
     price: Number(document.getElementById('court-price').value) || 0,
+    address: document.getElementById('court-address').value.trim(),
   };
   if (!body.name) { msg.textContent = 'Court name is required.'; msg.style.display = 'block'; return; }
   var btn = this; btn.disabled = true;

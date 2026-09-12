@@ -326,7 +326,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
   const bannerImg = hasPhoto
     ? `<img src="/api/papawis-court/${escHtml(game.court_image_id)}/photo" alt="" loading="lazy">`
     : hasMap
-      ? `<img class="pw-photo-map-img" src="/api/papawis-map/photo?loc=${encodeURIComponent(game.location)}" alt="" loading="lazy">
+      ? `<img class="pw-photo-map-img" src="/api/papawis-map/photo?loc=${encodeURIComponent(game.map_query || game.location)}" alt="" loading="lazy">
         <span class="pw-photo-map-pin"><svg width="26" height="26" viewBox="0 0 14 14" fill="currentColor"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.9" fill="#0c0f16"/></svg></span>`
       : '';
   const photoBanner = hasBanner
@@ -334,7 +334,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
         ${bannerImg}
         <div class="pw-photo-scrim"></div>
         <span class="pw-photo-status">${statusBadge}</span>
-        ${game.location ? `<div class="pw-photo-loc"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.7"/></svg><a href="${googleMapsUrl(game.location)}" target="_blank" rel="noopener" class="pw-photo-loc-text">${escHtml(game.location)}</a></div>` : ''}
+        ${game.location ? `<div class="pw-photo-loc"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 13S12 8.5 12 5.5A5 5 0 0 0 2 5.5C2 8.5 7 13 7 13Z"/><circle cx="7" cy="5.5" r="1.7"/></svg><a href="${googleMapsUrl(game.map_query || game.location)}" target="_blank" rel="noopener" class="pw-photo-loc-text">${escHtml(game.location)}</a></div>` : ''}
       </div>`
     : '';
   return `<article id="pw-game-${escHtml(game.id)}" class="pw-card${cardStateClass}${cancelledUpcoming ? ' pw-card--cancelled-alert' : ''}" data-game-id="${escHtml(game.id)}">
@@ -344,7 +344,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
       ${hasBanner ? '' : statusBadge}
     </div>
     <div class="pw-card-body">
-      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${(!hasBanner && game.location) ? ` · <a href="${googleMapsUrl(game.location)}" target="_blank" rel="noopener" class="pw-loc-link">${escHtml(game.location)}</a>` : ''}</div>
+      <div class="pw-card-meta">${fmtDate(game.date)}${(() => { const t = formatTimeRange(game.start_time, game.end_time) || game.time_label; return t ? ` · ${escHtml(t)}` : ''; })()}${(!hasBanner && game.location) ? ` · <a href="${googleMapsUrl(game.map_query || game.location)}" target="_blank" rel="noopener" class="pw-loc-link">${escHtml(game.location)}</a>` : ''}</div>
 
       <div class="pw-meter-row">
         <span class="pw-meter-label">SLOTS</span>

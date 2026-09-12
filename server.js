@@ -8170,6 +8170,15 @@ async function nominatimSearch(query) {
   return hit ? { hit } : { error: 'No match found for this address.' };
 }
 
+// A game's location is free text and often names a small/private venue that Nominatim can't
+// resolve on its own (see the comma-fallback below). If that location matches a known court
+// (papawis_courts, matched by name) with a structured address on file, geocode that address
+// instead — otherwise fall back to geocoding the free text/title exactly as before.
+function papawisMapQuery(location) {
+  const court = getPapawisCourtByName(location);
+  return court?.address?.trim() || location;
+}
+
 async function geocodePapawisLocation(text) {
   const query = String(text || '').trim();
   if (!query) return { ok: false, error: 'No location set.' };
@@ -8209,10 +8218,11 @@ app.get('/papawis', (req, res) => {
   for (const g of games) {
     const court = getPapawisCourtByName(g.location);
     g.court_image_id = court?.image_url ? court.id : null;
+    g.map_query = court?.address?.trim() || g.location;
     if (!g.court_image_id && g.location) {
-      const cached = getPapawisLocationGeocode(g.location);
+      const cached = getPapawisLocationGeocode(g.map_query);
       if (cached?.map_image) { g.has_map = true; }
-      else geocodePapawisLocation(g.location);
+      else geocodePapawisLocation(g.map_query);
     }
   }
   const signupsByGame = Object.fromEntries(games.map(g => [g.id, getPapawisSignups(g.id)]));
@@ -8943,9 +8953,9 @@ app.get('/admin/papawis/courts', requireAuth, (req, res) => {
   }));
 });
 app.post('/admin/papawis/courts', requireAuth, express.json(), (req, res) => {
-  const { name, price } = req.body || {};
+  const { name, price, address } = req.body || {};
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Court name is required.' });
-  const id = addPapawisCourt(name, price);
+  const id = addPapawisCourt(name, price, address);
   res.json({ ok: true, id });
 });
 // Registered before the /:id route below — otherwise Express would match this path as
@@ -8964,9 +8974,9 @@ app.post('/admin/papawis/courts/reorder', requireAuth, express.json(), (req, res
   res.json({ ok: true });
 });
 app.post('/admin/papawis/courts/:id', requireAuth, express.json(), (req, res) => {
-  const { name, price } = req.body || {};
+  const { name, price, address } = req.body || {};
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Court name is required.' });
-  updatePapawisCourt(req.params.id, name, price);
+  updatePapawisCourt(req.params.id, name, price, address);
   res.json({ ok: true });
 });
 app.post('/admin/papawis/courts/:id/toggle', requireAuth, express.json(), (req, res) => {
@@ -9337,7 +9347,7 @@ app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) 
 app.post('/admin/papawis/:id/refresh-map', requireAuth, async (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
-  const result = await geocodePapawisLocation(game.location);
+  const result = await geocodePapawisLocation(papawisMapQuery(game.location));
   res.json(result);
 });
 
