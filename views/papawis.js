@@ -296,7 +296,7 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
     } else if (isPassedClosed) {
       actionHtml = `<button class="pw-btn pw-btn--placeholder" disabled>Sign-ups closed</button>`;
     } else if (!isLoggedIn) {
-      const priceSuffix = game.price_per_head ? ` — ₱${game.price_per_head}/head` : '';
+      const priceSuffix = game.price_per_head ? ` — ₱${game.price_per_head}` : '';
       const claimLabel = (isFull ? 'Claim a Waitlist Spot' : 'Claim a Slot') + priceSuffix;
       actionHtml = `<a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--primary">${escHtml(claimLabel)}</a>`;
     } else if (hasBalance) {
