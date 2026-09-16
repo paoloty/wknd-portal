@@ -182,8 +182,11 @@ export function roastPage({ currentSeason = 3, leaderSeasons = [], roastBySeason
   const pillsHtml = leaderSeasons.map(s =>
     `<button class="season-pill${defaultScopeId === 's' + s ? ' season-pill--active' : ''}" id="roast-btn-s${s}" onclick="roastSeasonSwitch('s${s}')">S${escHtml(String(s))}</button>`
   ).join('');
+  // Every category needs a handful of games (3+ GP) before a single one qualifies, so a
+  // season with games logged but too few played so far renders zero panels — without this,
+  // that tab would just be a blank grid with no explanation.
   const seasonGridsHtml = leaderSeasons.map(s =>
-    `<div class="leaders-page-grid" id="roast-grid-s${s}" style="${defaultScopeId === 's' + s ? '' : 'display:none'}">${seasonPanels[s]}</div>`
+    `<div class="leaders-page-grid" id="roast-grid-s${s}" style="${defaultScopeId === 's' + s ? '' : 'display:none'}">${seasonPanels[s] || `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">Not enough games played yet this season. Check back after a few more.</div>`}</div>`
   ).join('\n');
 
   return `<div class="page-content">

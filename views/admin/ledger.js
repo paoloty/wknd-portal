@@ -518,14 +518,14 @@ ${summaryStrip}
     var lines = ['WKND League — ' + (currentSeason || 'All Time') + ' Balance Summary', ''];
     document.querySelectorAll('#lgr-tbody .agm-row').forEach(function(r) {
       if (r.style.display === 'none') return;
-      var name = r.querySelector('span.text-sm')?.textContent?.trim() || '';
+      var name = r.querySelector('span.text-xs.text-slate-200')?.textContent?.trim() || '';
       var bal  = r.querySelector('td:nth-child(2)')?.firstChild?.textContent?.trim() || '';
       if (name) lines.push(name + ' — ' + bal);
     });
     navigator.clipboard.writeText(lines.join('\\n')).then(function() {
       var btn = document.getElementById('lgr-export-btn');
       btn.textContent = '✓ Copied';
-      setTimeout(function(){ btn.innerHTML = '${ICON_COPY} Copy Summary'; }, 2000);
+      setTimeout(function(){ btn.innerHTML = '${ICON_COPY} Copy'; }, 2000);
     });
   });
 })();
