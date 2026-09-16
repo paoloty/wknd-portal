@@ -107,6 +107,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
       <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
       <div class="player-hero__meta">${metaParts}</div>
       ${isOwnProfile ? `
+      <div class="player-hero__bio-label">Intro</div>
       <div class="player-hero__bio-block" id="bio-block">
         <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you.">${escHtml(bio)}</textarea>
         <button type="button" class="player-hero__bio-edit-btn" id="bio-edit-btn" aria-label="Edit intro" title="Edit intro">✎</button>
@@ -114,7 +115,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
           <button type="button" class="player-hero__bio-icon-btn" id="bio-cancel" aria-label="Cancel" title="Cancel">✕</button>
           <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
         </div>
-      </div>` : (bio ? `<p class="player-hero__bio">${escHtml(bio)}</p>` : '')}
+      </div>` : (bio ? `<div class="player-hero__bio-label">Intro</div><p class="player-hero__bio">${escHtml(bio)}</p>` : '')}
       ${canReport ? reportPlayerSection(player, reportCategories, reportOtherCategoryId) : ''}
     </div>
   </div>`;

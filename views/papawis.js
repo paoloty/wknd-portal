@@ -188,9 +188,6 @@ function rosterSummary(signups, game, { isLoggedIn }) {
   const seeAllLabel = game.status === 'completed' ? 'See who played'
     : isCancelled ? 'See who was listed'
     : 'See all players';
-  const loginLabel = game.status === 'completed' ? "Log in to see who played"
-    : isCancelled ? 'Log in to see who was listed'
-    : "Log in to see who's playing";
 
   if (!isLoggedIn) {
     if (!confirmed.length && !padCount) return emptyText;
@@ -206,7 +203,7 @@ function rosterSummary(signups, game, { isLoggedIn }) {
         ${avatarStack}
         ${previewText ? `<p class="pw-names">${escHtml(previewText)}</p>` : ''}
       </div>
-      <a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--ghost">${escHtml(loginLabel)}</a>`;
+      <a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--ghost">${escHtml(seeAllLabel)}</a>`;
   }
 
   if (!confirmed.length && !padCount) {
@@ -299,7 +296,9 @@ function gameCard(game, signups, { viewerPlayerId, viewerSignup, hasBalance, isL
     } else if (isPassedClosed) {
       actionHtml = `<button class="pw-btn pw-btn--placeholder" disabled>Sign-ups closed</button>`;
     } else if (!isLoggedIn) {
-      actionHtml = `<a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--primary">Log in to join</a>`;
+      const priceSuffix = game.price_per_head ? ` — ₱${game.price_per_head}/head` : '';
+      const claimLabel = (isFull ? 'Claim a Waitlist Spot' : 'Claim a Slot') + priceSuffix;
+      actionHtml = `<a href="/login?next=/papawis&ref=papawis" class="pw-btn pw-btn--primary">${escHtml(claimLabel)}</a>`;
     } else if (hasBalance) {
       actionHtml = `<div class="pw-hint pw-hint--warn">${ICON_LOCK} You have an unpaid Papawis game — clear it with an admin before joining.</div>`;
     } else {

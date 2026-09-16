@@ -110,7 +110,7 @@ import {
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   getPapawisGamesForPlayer,
-  getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam,
+  getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
   lockPapawisSignups, unlockPapawisSignups,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
@@ -165,7 +165,7 @@ import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
-import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody } from './views/admin/papawis.js';
+import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody, estimatedPapawisPrice } from './views/admin/papawis.js';
 import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
 import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody, adminMarketplaceEditBody } from './views/admin/marketplace.js';
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
@@ -8225,6 +8225,11 @@ app.get('/papawis', (req, res) => {
     const court = getPapawisCourtByName(g.location);
     g.court_image_id = court?.image_url ? court.id : null;
     g.map_query = court?.address?.trim() || g.location;
+    // Same estimate the pre-game reminder email quotes (lib/papawis-notify.js) — shown on
+    // the join button itself so a not-yet-logged-in visitor sees the likely per-head cost
+    // before being asked to log in at all.
+    const courtRateFallback = g.court_rate_per_hour ? null : (court?.price_per_hour || null);
+    g.price_per_head = estimatedPapawisPrice(g, getPapawisConfirmedCount(g.id), courtRateFallback);
     if (!g.court_image_id && g.location) {
       const cached = getPapawisLocationGeocode(g.map_query);
       if (cached?.map_image) { g.has_map = true; }

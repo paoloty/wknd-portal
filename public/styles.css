@@ -3503,6 +3503,11 @@ a.player-link:hover { color: var(--amber); }
 .player-hero__pos { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .player-hero__bio { margin-top: 10px; font-size: 14px; color: var(--text-muted); line-height: 1.6; }
 .player-hero__bio--placeholder { font-style: italic; opacity: .7; }
+/* A player's self-written blurb reads as a stray, unexplained line without this — see the
+   bio block below for the own-profile equivalent. */
+.player-hero__bio-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); opacity: .65; margin-top: 10px; }
+.player-hero__bio-label + .player-hero__bio,
+.player-hero__bio-label + .player-hero__bio-block { margin-top: 2px; }
 .player-hero__no-stats { font-size: 13px; color: var(--text-muted); margin: 0; }
 
 /* Self-service intro edit (own profile only) — in-place, no layout shift */
