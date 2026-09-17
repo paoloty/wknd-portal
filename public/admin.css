@@ -933,13 +933,21 @@ select.admin-input {
   cursor: grab;
 }
 .pwt-row.is-dragging { opacity: .35; }
+/* Touch drag has no native browser drag-image the way mouse dragstart does — the row itself
+   is the only visual, so it stays fully opaque and gets its own "picked up" treatment instead
+   of the fade-in-place the native drag leaves behind at the source slot. */
+.pwt-row.is-dragging.is-touch-dragging { opacity: 1; position: relative; z-index: 2; box-shadow: 0 8px 20px rgba(0,0,0,.4); background: rgba(255,255,255,.05); }
 /* Both columns now sit on a dark tint rather than solid white/black (see .pwt-col--light
    above), so both need light text — the dark #0f172a this used to be for the white
    background would be unreadable against a mostly-dark backdrop now. */
 .pwt-col--light .pwt-row,
 .pwt-col--dark  .pwt-row { border-bottom: 1px solid rgba(255,255,255,.06); color: #e2e8f0; }
 .pwt-row:last-child { border-bottom: none; }
-.pwt-row__handle { font-size: 13px; line-height: 1; flex-shrink: 0; user-select: none; opacity: .5; }
+/* touch-action: none stops the browser starting its own scroll gesture the moment a finger
+   lands here, so pointermove events keep coming to our own drag handler instead. Padding +
+   equal negative margin grows the actual tap target well past the tiny glyph without shifting
+   surrounding row content. */
+.pwt-row__handle { font-size: 13px; line-height: 1; flex-shrink: 0; user-select: none; opacity: .5; touch-action: none; padding: 10px 8px; margin: -10px -8px; }
 .pwt-row__info { flex: 1; min-width: 0; }
 .pwt-row__name { font-size: 13px; font-weight: 600; }
 .pwt-row__name .pwt-row__guest-tag { font-size: 10px; font-weight: 500; opacity: .6; }

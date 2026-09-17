@@ -1709,6 +1709,33 @@ ${unassigned.length ? `<div class="mt-4">
     }).catch(function() {});
   }
 
+  // Shared by both the native (mouse) drop handler below and the touch drag handler —
+  // the row is already sitting in its final spot in the DOM (dragover/pointermove already
+  // moved it there), so this only needs to persist that result and, if it crossed into a
+  // different team, tell the server about the assignment.
+  function pwtCommitDrop(list) {
+    if (!draggingRow) return;
+    list.classList.remove('is-drag-over');
+    var toTeam = list.dataset.team;
+    var sid = draggingRow.dataset.id;
+    if (draggingFrom === toTeam) {
+      if (toTeam) pwtPersistOrder(toTeam); // dropping within "Unassigned" isn't a real state
+      return;
+    }
+    draggingRow.dataset.team = toTeam;
+    if (!toTeam) return; // dropped into the "Unassigned" bucket isn't a real state — ignore
+    fetch('/admin/papawis/' + gameId + '/teams/assign', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signup_id: sid, team: toTeam })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.ok) { alert(d.error || 'Could not move.'); location.reload(); return; }
+      pwtPersistOrder(toTeam); // also save the drop position within the new team
+    })
+    .catch(function() { alert('Network error'); location.reload(); });
+  }
+
   lists.forEach(function(list) {
     list.addEventListener('dragover', function(e) {
       if (!draggingRow) return;
@@ -1725,27 +1752,53 @@ ${unassigned.length ? `<div class="mt-4">
     });
     list.addEventListener('drop', function(e) {
       e.preventDefault();
-      if (!draggingRow) return;
-      list.classList.remove('is-drag-over');
-      var toTeam = list.dataset.team;
-      var sid = draggingRow.dataset.id;
-      // Row is already at the right spot in the DOM (dragover moved it) — just persist.
-      if (draggingFrom === toTeam) {
-        if (toTeam) pwtPersistOrder(toTeam); // dropping within "Unassigned" isn't a real state
-        return;
+      pwtCommitDrop(list);
+    });
+  });
+
+  // Touch/pen drag — the native HTML5 drag-and-drop API above only ever fires for mouse
+  // input, so on a phone none of dragstart/dragover/drop fire at all and the row just isn't
+  // draggable. Pointer Events cover touch too, so this re-implements the same "pick up,
+  // live-reorder as you move, drop" flow on top of those instead, scoped to the small grip
+  // handle only (not the whole row) so a normal touch-scroll through a long roster still
+  // works everywhere else on the card.
+  document.querySelectorAll('.pwt-row__handle').forEach(function(handle) {
+    handle.addEventListener('pointerdown', function(e) {
+      if (e.pointerType === 'mouse') return; // mouse already has its own native drag above
+      var row = handle.closest('.pwt-row');
+      if (!row) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      draggingRow = row;
+      draggingFrom = row.dataset.team;
+      row.classList.add('is-dragging', 'is-touch-dragging');
+
+      function onMove(ev) {
+        if (ev.pointerId !== e.pointerId) return;
+        var el = document.elementFromPoint(ev.clientX, ev.clientY);
+        var list = el && el.closest('.pwt-list');
+        if (!list) return;
+        lists.forEach(function(l) { l.classList.toggle('is-drag-over', l === list); });
+        var empty = list.querySelector('.pwt-list__empty');
+        if (empty) empty.remove();
+        var after = pwtRowAfterPoint(list, ev.clientY);
+        if (after == null) list.appendChild(row);
+        else list.insertBefore(row, after);
       }
-      draggingRow.dataset.team = toTeam;
-      if (!toTeam) return; // dropped into the "Unassigned" bucket isn't a real state — ignore
-      fetch('/admin/papawis/' + gameId + '/teams/assign', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signup_id: sid, team: toTeam })
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (!d.ok) { alert(d.error || 'Could not move.'); location.reload(); return; }
-        pwtPersistOrder(toTeam); // also save the drop position within the new team
-      })
-      .catch(function() { alert('Network error'); location.reload(); });
+      function onUp(ev) {
+        if (ev.pointerId !== e.pointerId) return;
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        row.classList.remove('is-dragging', 'is-touch-dragging');
+        var finalList = row.closest('.pwt-list');
+        if (finalList) pwtCommitDrop(finalList);
+        else lists.forEach(function(l) { l.classList.remove('is-drag-over'); });
+        draggingRow = null; draggingFrom = null;
+      }
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
     });
   });
 })();
