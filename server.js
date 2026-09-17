@@ -4159,9 +4159,15 @@ app.post('/admin/ledger/transaction', requireAuth, express.json(), (req, res) =>
   if (isNaN(parsed) || parsed <= 0) return res.status(400).json({ error: 'Amount must be a positive number.' });
   if (!['payment', 'charge'].includes(type)) return res.status(400).json({ error: 'Invalid transaction type.' });
   if (!['confirmed', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
+  // A Papawis Deposit is never recorded confirmed directly, even if the admin picked that in
+  // the form — the deposit-confirm flow (POST .../confirm-deposit and the ledger confirm
+  // route above) is what actually promotes the player's held 'pending' signup into
+  // confirmed/waitlist. Recording it confirmed here would show a confirmed deposit on the
+  // ledger while their signup stays stuck pending forever, silently.
+  const finalStatus = category === 'Papawis Deposit' ? 'pending' : status;
   const id = randomBytes(6).toString('hex');
-  recordTransaction({ id, player_id, amount: parsed, type, payment_method: payment_method || '', date, status, notes: notes || '', reference_no: reference_no || '', season: season || '', category: category || '' });
-  if (status === 'confirmed') notifyLedgerEvent({ playerId: player_id, type, amount: parsed, notes });
+  recordTransaction({ id, player_id, amount: parsed, type, payment_method: payment_method || '', date, status: finalStatus, notes: notes || '', reference_no: reference_no || '', season: season || '', category: category || '' });
+  if (finalStatus === 'confirmed') notifyLedgerEvent({ playerId: player_id, type, amount: parsed, notes });
   res.json({ ok: true, id });
 });
 
