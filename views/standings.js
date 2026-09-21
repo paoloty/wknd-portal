@@ -39,6 +39,24 @@ function buildStandings(teams, games, season) {
     return qB - qA;
   });
 
+  // A two-team tie on wins is broken by head-to-head this season (the grid rendered below
+  // already shows this exact per-pair record to the viewer) before falling back to the
+  // quotient order above; a three-or-more-team tie skips head-to-head entirely — a
+  // round-robin among 3+ teams can be circular (A beat B, B beat C, C beat A) or incomplete
+  // — and keeps the quotient order as-is.
+  const matrix = h2hMatrix(teams, games, currentSeason);
+  let i = 0;
+  while (i < rows.length) {
+    let j = i + 1;
+    while (j < rows.length && rows[j].w === rows[i].w) j++;
+    if (j - i === 2) {
+      const a = rows[i], b = rows[j - 1];
+      const rec = matrix[a.team.id][b.team.id]; // a's record against b
+      if (rec.l > rec.w) { rows[i] = b; rows[j - 1] = a; } // b beat a more often this season
+    }
+    i = j;
+  }
+
   const leader = rows[0];
   rows.forEach(r => {
     r.pct  = r.gp > 0 ? r.w / r.gp : 0;

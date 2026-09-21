@@ -95,22 +95,47 @@ function matchupCard({ highSeed, highNum, lowSeed, lowNum, games, format, isFina
 </div>`;
 }
 
+// Canonical, order-independent key for a team pair — used to look a pair up in an h2h map
+// regardless of which order the two teams were passed in when the map was built.
+export function pairKey(teamAId, teamBId) { return [teamAId, teamBId].sort().join('|'); }
+
 // Wins first, point-differential quotient (pf/pa) as tiebreak, top 4 make the bracket.
 // Exported so anything needing to know seeding (e.g. the ticker's "twice to beat"
 // clinch detection) uses the exact same order as the bracket itself.
-export function computeSeeds(standings) {
-  return [...standings]
-    .sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      const qA = Number(a.pa) > 0 ? Number(a.pf) / Number(a.pa) : 0;
-      const qB = Number(b.pa) > 0 ? Number(b.pf) / Number(b.pa) : 0;
-      return qB - qA;
-    })
-    .slice(0, 4);
+//
+// h2h (optional): a plain { [pairKey]: { teamAId, teamBId, teamAWins, teamBWins } } map,
+// built by the caller (this file has no DB access) via getHeadToHeadRecordForSeason for
+// every pair in `standings`. Same rule as getSeasonStandings' own point-diff tiebreak: a
+// two-team tie on wins is broken by who won their season series before falling back to the
+// quotient the sort below already applied; three-or-more-team ties skip head-to-head
+// entirely (can be circular/incomplete) and keep the quotient order.
+export function computeSeeds(standings, h2h = {}) {
+  const sorted = [...standings].sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    const qA = Number(a.pa) > 0 ? Number(a.pf) / Number(a.pa) : 0;
+    const qB = Number(b.pa) > 0 ? Number(b.pf) / Number(b.pa) : 0;
+    return qB - qA;
+  });
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i + 1;
+    while (j < sorted.length && sorted[j].wins === sorted[i].wins) j++;
+    if (j - i === 2) {
+      const a = sorted[i], b = sorted[j - 1];
+      const rec = h2h[pairKey(a.id, b.id)];
+      if (rec) {
+        const aWins = rec.teamAId === a.id ? rec.teamAWins : rec.teamBWins;
+        const bWins = rec.teamAId === b.id ? rec.teamAWins : rec.teamBWins;
+        if (bWins > aWins) { sorted[i] = b; sorted[j - 1] = a; }
+      }
+    }
+    i = j;
+  }
+  return sorted.slice(0, 4);
 }
 
-export function playoffsPage({ standings, games, season }) {
-  const seeds = computeSeeds(standings);
+export function playoffsPage({ standings, games, season, h2h = {} }) {
+  const seeds = computeSeeds(standings, h2h);
 
   const semiGames   = games.filter(g => g.game_type === 'playoff');
   const finalsGames = games.filter(g => g.game_type === 'finals');

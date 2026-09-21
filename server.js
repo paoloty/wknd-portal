@@ -25,7 +25,7 @@ import { gamePage } from './views/game.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
-import { playoffsPage, computeSeeds } from './views/playoffs.js';
+import { playoffsPage, computeSeeds, pairKey } from './views/playoffs.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
@@ -117,7 +117,7 @@ import {
   getPapawisLocationGeocode, setPapawisLocationGeocode,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
-  getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord,
+  getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord, getHeadToHeadRecordForSeason,
   getSeoOverride, getAllSeoOverrides, upsertSeoOverride, deleteSeoOverride,
   getGameComments, getCommentById, getCommentWithMeta, addGameComment, deleteGameComment,
   toggleCommentReaction, getReactedCommentIdsForPlayer,
@@ -1271,6 +1271,21 @@ async function buildStatLeadersOgPng(rows, season) {
 
 const _awardOgCache = new Map();
 
+// computeSeeds (views/playoffs.js) has no DB access of its own, so its head-to-head
+// tiebreaker needs this prefetched as plain data — every pair among a small (4-team) league
+// is cheap enough to just fetch upfront rather than figuring out in advance which pairs will
+// actually end up tied on wins.
+function buildSeasonH2HMap(standings, season) {
+  const map = {};
+  for (let x = 0; x < standings.length; x++) {
+    for (let y = x + 1; y < standings.length; y++) {
+      const a = standings[x], b = standings[y];
+      map[pairKey(a.id, b.id)] = getHeadToHeadRecordForSeason(a.id, b.id, season);
+    }
+  }
+  return map;
+}
+
 function buildTicker() {
   const games = getTickerGames();
   if (!games.length) return '';
@@ -1280,7 +1295,10 @@ function buildTicker() {
   // standings, so compute them once per season actually needed instead of per game.
   const seedsBySeason = new Map();
   const seedsFor = (season) => {
-    if (!seedsBySeason.has(season)) seedsBySeason.set(season, computeSeeds(getSeasonStandings(season)));
+    if (!seedsBySeason.has(season)) {
+      const standings = getSeasonStandings(season);
+      seedsBySeason.set(season, computeSeeds(standings, buildSeasonH2HMap(standings, season)));
+    }
     return seedsBySeason.get(season);
   };
 
@@ -5689,10 +5707,11 @@ app.get('/playoffs', (req, res) => {
   const season = getPortalCurrentSeason();
   const standings = getSeasonStandings(season);
   const games = getPlayoffGames(season);
+  const h2h = buildSeasonH2HMap(standings, season);
   res.send(renderPage(req, {
     title: 'Playoffs — WKND Basketball League',
     currentPath: req.path,
-    body: playoffsPage({ standings, games, season })
+    body: playoffsPage({ standings, games, season, h2h })
   }));
 });
 
