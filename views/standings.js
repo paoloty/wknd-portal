@@ -52,7 +52,13 @@ function buildStandings(teams, games, season) {
     if (j - i === 2) {
       const a = rows[i], b = rows[j - 1];
       const rec = matrix[a.team.id][b.team.id]; // a's record against b
-      if (rec.l > rec.w) { rows[i] = b; rows[j - 1] = a; } // b beat a more often this season
+      if (rec.l > rec.w) {
+        // Tag the promoted team with the exact record that moved it up, so the standings
+        // row can explain itself instead of just silently landing in an order the plain
+        // win/quotient columns wouldn't predict.
+        b.h2hNote = { opponent: a.team.name, w: rec.l, l: rec.w };
+        rows[i] = b; rows[j - 1] = a;
+      }
     }
     i = j;
   }
@@ -187,6 +193,7 @@ export function standingsPage({ teams, games, highlights = [], teamStats = [], s
     <span class="team-dot" style="background:${color}"></span>
     <span class="standings-team-name">${escHtml(r.team.name.toUpperCase())}</span>
     ${seed <= 2 ? '<span class="standings-badge">2×</span>' : ''}
+    ${r.h2hNote ? `<span class="standings-h2h-tag" title="Ranked ahead of ${escHtml(r.h2hNote.opponent.toUpperCase())} on head-to-head record">vs ${escHtml(r.h2hNote.opponent.toUpperCase())} ${r.h2hNote.w}-${r.h2hNote.l}</span>` : ''}
   </div>
   <div class="standings-cell standings-cell--num standings-cell--w st-std">${r.w}</div>
   <div class="standings-cell standings-cell--num standings-cell--l st-std">${r.l}</div>

@@ -1838,6 +1838,20 @@ body {
 }
 .standings-team-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .standings-badge { flex-shrink: 0; }
+/* Explains an order the plain win/quotient columns alone wouldn't predict — a neutral slate
+   tone (not amber) so it doesn't read as another "made the playoffs" signal like .standings-badge. */
+.standings-h2h-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 /* Team badge for stat panels (no player avatar) */
 .st-team-badge {
   width: 36px; height: 36px; border-radius: 50%;
