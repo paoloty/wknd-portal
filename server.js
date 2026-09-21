@@ -31,7 +31,8 @@ import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
 import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
-import { privacyPage, termsPage } from './views/legal.js';
+import { privacyPage, termsPage, rulesPage } from './views/legal.js';
+import { fineSchedulePage } from './views/fine-schedule.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
@@ -216,6 +217,11 @@ const PORTAL_ADMIN_USER = process.env.PORTAL_ADMIN_USER || 'admin';
 const PORTAL_ADMIN_PASS = process.env.PORTAL_ADMIN_PASS || '';
 const SESSION_SECRET    = process.env.SESSION_SECRET || randomBytes(32).toString('hex');
 const ROSTER_API_KEY    = process.env.ROSTER_API_KEY || '';
+// CONTACT_EMAIL is the one source of truth for "the" league email — everything else below
+// that needs an address (admin payment alerts, the Nominatim API contact string) falls back
+// to it instead of hardcoding its own separate copy of the same literal.
+const CONTACT_EMAIL      = process.env.CONTACT_EMAIL || 'pao@wkndbasketball.com';
+const ADMIN_NOTIFY_EMAIL = process.env.ADMIN_NOTIFY_EMAIL || CONTACT_EMAIL;
 const COVER_LOGO_PATH   = path.join(__dirname, 'wknd-logo.png');
 const COVER_SVG_FONT    = 'Noto Sans, DejaVu Sans, Liberation Sans, Arial, sans-serif';
 
@@ -6738,7 +6744,7 @@ app.get('/privacy', (req, res) => {
   res.send(renderPage(req, {
     title: 'Privacy Policy — WKND Basketball',
     currentPath: '/privacy',
-    body: privacyPage(),
+    body: privacyPage(CONTACT_EMAIL),
   }));
 });
 
@@ -6746,7 +6752,28 @@ app.get('/terms', (req, res) => {
   res.send(renderPage(req, {
     title: 'Terms of Service — WKND Basketball',
     currentPath: '/terms',
-    body: termsPage(),
+    body: termsPage(CONTACT_EMAIL),
+  }));
+});
+
+app.get('/rules', (req, res) => {
+  res.send(renderPage(req, {
+    title: 'League Rules — WKND Basketball League',
+    currentPath: '/rules',
+    body: rulesPage(CONTACT_EMAIL),
+  }));
+});
+
+// Public, read-only reference version of the fine schedule an admin manages at /admin/fines —
+// no login required, unlike the team-head-only case-management tool at /fines. Excludes the
+// $0 catch-all categories ("Other/Pending" etc.) — those aren't fines with a set amount, they're
+// admin-review buckets, so listing them here as "penalties" would be misleading.
+app.get('/rules/fines', (req, res) => {
+  const categories = getActiveFineCategories().filter(c => c.amount > 0);
+  res.send(renderPage(req, {
+    title: 'League Fines — WKND Basketball League',
+    currentPath: '/rules/fines',
+    body: fineSchedulePage({ categories }),
   }));
 });
 
@@ -7260,7 +7287,7 @@ app.post('/settle-balance', express.json({ limit: '20mb' }), async (req, res) =>
 
   const origin = getRequestOrigin(req);
   sendMail({
-    to: 'paolo.ty@gmail.com',
+    to: ADMIN_NOTIFY_EMAIL,
     attachments: [{ filename: 'payment-screenshot.jpg', content: screenshotDataUrl.split(',')[1] }],
     ...paymentSubmittedEmail({
       playerName: displayName, amount: amt, paymentMethod: payment_method.trim(),
@@ -8097,7 +8124,7 @@ app.post('/admin/season-signups/:id/resend-season-email', requireAuth, express.j
   }
 });
 
-const PAPAWIS_MAP_USER_AGENT = 'WKND-Basketball-Portal/1.0 (contact: paolo.ty@gmail.com)';
+const PAPAWIS_MAP_USER_AGENT = `WKND-Basketball-Portal/1.0 (contact: ${CONTACT_EMAIL})`;
 const PAPAWIS_MAP_ZOOM = 15;
 const PAPAWIS_MAP_TILE = 256;
 const PAPAWIS_MAP_CROP_W = 512;

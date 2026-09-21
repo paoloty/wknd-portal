@@ -327,6 +327,11 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
             ${features.awards  !== false ? `<a href="/awards">Season Awards</a>` : ''}
             ${features.mvpRace !== false ? `<a href="/mvp">MVP Race</a>`         : ''}
           </div>` : ''}
+          <div class="site-footer__group">
+            <span class="site-footer__group-title">League</span>
+            <a href="/rules">League Rules</a>
+            <a href="/rules/fines">League Fines</a>
+          </div>
         </div>
       </div>
       <div class="site-footer__bottom">

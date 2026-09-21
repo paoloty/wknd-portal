@@ -86,7 +86,7 @@ export function finesPage({ open = [], resolved = [], votesByCase = {}, categori
   ${pageHeader({
     title: 'Fines &amp; Conduct',
     description: 'Report incidents and vote on conduct cases. An admin makes the final call on every case, informed by the votes here.',
-    actions: '<button class="fn-btn fn-btn--primary" id="fn-open-report-btn">Report Incident</button>',
+    actions: '<a class="fn-btn" href="/rules/fines" target="_blank" rel="noopener">View Public Schedule</a><button class="fn-btn fn-btn--primary" id="fn-open-report-btn">Report Incident</button>',
   })}
 
   <div class="fn-tabs">

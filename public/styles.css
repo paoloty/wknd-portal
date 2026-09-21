@@ -6150,3 +6150,27 @@ a.player-link:hover { color: var(--amber); }
   .rater-row { grid-template-columns: 1fr; gap: 2px; }
   .rater-row__score, .rater-row__time { text-align: left; }
 }
+
+/* ── League Fines (public schedule, views/fine-schedule.js) ─────────────────── */
+.fine-tiers { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.fine-tier { display: grid; grid-template-columns: auto 1fr; gap: 4px 20px; align-items: start; padding: 20px 22px; }
+.fine-tier__amount {
+  grid-row: 1 / 3;
+  font-family: 'Saira Condensed', system-ui, sans-serif;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  font-size: 32px;
+  color: var(--amber);
+  line-height: 1;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+.fine-tier__name { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; margin: 0; }
+.fine-tier__desc { font-size: 13px; color: var(--text-muted); line-height: 1.55; margin: 4px 0 10px; }
+.fine-tier__examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.fine-chip { font-size: 11.5px; color: var(--text-muted); background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 999px; padding: 3px 11px; white-space: nowrap; }
+.fine-footnote { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; margin-top: 20px; }
+@media (max-width: 480px) {
+  .fine-tier { grid-template-columns: 1fr; }
+  .fine-tier__amount { grid-row: auto; font-size: 28px; }
+}

@@ -1,7 +1,9 @@
 import { escHtml } from './layout.js';
 
-const SITE_NAME    = 'WKND Basketball League';
-const CONTACT_EMAIL = 'wkndbasketball@gmail.com';
+const SITE_NAME = 'WKND Basketball League';
+// Fallback only — server.js passes the real address (CONTACT_EMAIL env var) into every page
+// below, keeping this view free of its own env/config reads.
+const DEFAULT_CONTACT_EMAIL = 'pao@wkndbasketball.com';
 
 function legalPage(title, sections) {
   const body = sections.map(({ heading, content }) => `
@@ -23,7 +25,8 @@ function legalPage(title, sections) {
 </div>`;
 }
 
-export function privacyPage() {
+export function privacyPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
+  const CONTACT_EMAIL = contactEmail;
   return legalPage('Privacy Policy', [
     {
       heading: 'Overview',
@@ -78,7 +81,59 @@ export function privacyPage() {
   ]);
 }
 
-export function termsPage() {
+export function rulesPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
+  const CONTACT_EMAIL = contactEmail;
+  return legalPage('League Rules', [
+    {
+      heading: 'The Short Version',
+      content: `<p>${escHtml(SITE_NAME)} plays under FIBA's rules as its foundation. What's below isn't the FIBA rulebook copy-pasted — it's our own plain-language rundown of how a game actually runs here, including the house rules layered on top.</p>`,
+    },
+    {
+      heading: 'Game Format',
+      content: `<p>Games are 4 quarters of 12 minutes.</p>
+      <p><strong>Pasarella (1st half only):</strong> at the 6-minute mark of both Q1 and Q2, every team must swap out all 5 players on the court for a full lineup change — not a spot substitution. Once that lineup is locked in, no further subs are allowed for the rest of that segment, with one exception: an injury. A player subbed out for injury is done for the rest of the game — they can't check back in later, even if they recover.</p>
+      <p>The 2nd half (Q3 and Q4) reverts to normal, unrestricted substitutions.</p>`,
+    },
+    {
+      heading: 'Overtime',
+      content: `<p>A tied game goes to a single 5-minute overtime period, decided by whoever's ahead when the clock hits zero. Pasarella does not apply in overtime — substitutions are free the whole period.</p>`,
+    },
+    {
+      heading: 'Scoring',
+      content: `<p>Standard 2 and 3-point scoring applies everywhere. On courts with a 4-point line marked, a shot from beyond it is worth 4 — we use the same distance the PBA introduced for its Governors' Cup, 27 feet (about 8.2m) from the rim. Courts without that line marked simply play with a 3-point max, no 4-point shot available that game.</p>`,
+    },
+    {
+      heading: 'Fouls & Free Throws',
+      content: `<p>FIBA's foul rules apply: 5 personal fouls disqualifies a player for the rest of the game. On team fouls, the bonus kicks in starting on a team's 5th foul of the quarter — every non-shooting foul after that sends the other team to the line for 2 free throws.</p>
+      <p>Technical and flagrant fouls carry their standard FIBA on-court consequences (free throws, possession, and ejection for a Flagrant 2). For the monetary penalty that comes with them, see the <a href="/rules/fines">League Fines</a> page.</p>`,
+    },
+    {
+      heading: 'Timeouts',
+      content: `<p>FIBA's standard allotment: 2 timeouts in the first half, 3 in the second (only 2 of those 3 can be used in the final 2 minutes of the 4th quarter), and 1 per overtime period.</p>`,
+    },
+    {
+      heading: 'Shot Clock',
+      content: `<p>24 seconds per possession, resetting to 14 after an offensive rebound — FIBA standard.</p>`,
+    },
+    {
+      heading: 'Roster & Eligibility',
+      content: `<p>${escHtml(SITE_NAME)} is exclusive to its members, not an open registration league — it's capped at exactly 4 teams by design, built to stay a tight community where people actually know each other rather than an anonymous open league.</p>
+      <p>A team roster can carry 12-15 players, but only 12 may be dressed and eligible to play in any single game.</p>`,
+    },
+    {
+      heading: 'Playoffs',
+      content: `<p>The top 4 teams by regular-season record make the bracket, seeded by wins — ties broken by head-to-head record first (when it's exactly two teams tied), then point-differential.</p>
+      <p>Semifinals are <strong>twice to beat</strong>: the higher seed only needs one win to advance, while the lower seed needs two. The <strong>Championship Finals are best-of-3</strong>, first to 2 wins.</p>`,
+    },
+    {
+      heading: 'Questions',
+      content: `<p>Anything not covered here, or a call you want clarified? Reach us at <a href="mailto:${escHtml(CONTACT_EMAIL)}">${escHtml(CONTACT_EMAIL)}</a>.</p>`,
+    },
+  ]);
+}
+
+export function termsPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
+  const CONTACT_EMAIL = contactEmail;
   return legalPage('Terms of Service', [
     {
       heading: 'Acceptance',
