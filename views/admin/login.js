@@ -26,6 +26,7 @@ export function adminLoginBody({ error = '', ref = '', next = '' } = {}) {
           <input type="checkbox" name="remember" value="1">
           <span>Keep me logged in for 30 days</span>
         </label>
+        <a href="/forgot-password" class="login-forgot">Forgot password?</a>
       </div>
       <button class="login-submit" type="submit">SIGN IN</button>
     </form>

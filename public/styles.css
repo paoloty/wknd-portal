@@ -446,7 +446,9 @@ body {
 .login-field__input:focus { border-color: var(--amber); }
 .login-field__input::placeholder { color: var(--text-muted); opacity: .5; }
 .login-field__input option { background: #0d1424; }
-.login-remember { margin-bottom: 20px; }
+.login-remember { margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.login-forgot { font-size: 13px; color: var(--amber); text-decoration: none; white-space: nowrap; }
+.login-forgot:hover { text-decoration: underline; }
 .login-check {
   display: flex;
   align-items: center;

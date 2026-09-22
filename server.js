@@ -15,6 +15,7 @@ import { parseWriteup } from './lib/writeup.js';
 import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail } from './lib/mailer.js';
 import { detectBogusFlags } from './lib/registration-flags.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
+import { forgotPasswordPage, forgotPasswordSentPage } from './views/forgot-password.js';
 import sharp from 'sharp';
 import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
@@ -2996,6 +2997,66 @@ app.post('/set-password', express.urlencoded({ extended: false }), async (req, r
     method: 'POST', path: '/set-password', details: { event: 'password_set', email: reg.email },
   });
   res.send(renderPage(req, { title: 'Password Set — WKND Basketball', currentPath: '', ticker: '', body: setPasswordDonePage() }));
+});
+
+app.get('/forgot-password', (req, res) => {
+  res.send(renderPage(req, { title: 'Forgot Password — WKND Basketball', currentPath: '', ticker: '', body: forgotPasswordPage() }));
+});
+
+// Simple in-memory per-email cooldown (not IP-based — a real attacker rotates IPs trivially,
+// but this stops the common case of someone impatiently mashing submit) so this public,
+// unauthenticated, sendMail()-triggering endpoint can't be used to spam one inbox. No DB
+// persistence needed, same "ephemeral Map" pattern as the liveness QR tokens elsewhere.
+const forgotPasswordCooldowns = new Map(); // email (lowercase) -> ms timestamp of last send
+const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000;
+
+// Gate on who the PUBLIC form is allowed to email — deliberately narrower than the admin-only
+// /admin/users/:id/send-reset action, which trusts the admin's judgment instead of a status
+// check. registrations.status is one of 'pending' | 'approved' | 'rejected' (no other values
+// exist in the schema):
+//   - 'pending'  → never approved yet, nothing to reset. Excludes "never activated."
+//   - 'rejected' → explicitly excluded.
+//   - 'approved' but reg.password_hash is empty → approved, but never completed initial
+//     setup (never clicked their original invite link) — "forgot password" implies you HAD
+//     one, so this isn't that flow. Admin can still resend the original invite manually.
+// Every rejected case here still renders the exact same generic "if an account exists..."
+// response as a real match — silently withholding the email, not surfacing a different
+// message, so this check itself can't become a new way to probe which emails are registered.
+function canSelfServiceResetPassword(reg) {
+  return !!(reg && reg.status === 'approved' && reg.email && reg.password_hash);
+}
+
+app.post('/forgot-password', express.urlencoded({ extended: false }), async (req, res) => {
+  const email = String(req.body?.email || '').trim();
+  const renderSent = () => res.send(renderPage(req, {
+    title: 'Check Your Email — WKND Basketball', currentPath: '', ticker: '', body: forgotPasswordSentPage(),
+  }));
+  if (!email) {
+    return res.status(400).send(renderPage(req, {
+      title: 'Forgot Password — WKND Basketball', currentPath: '', ticker: '',
+      body: forgotPasswordPage({ error: 'Enter your email address.' }),
+    }));
+  }
+
+  // Same response either way from here on, regardless of what's actually found below —
+  // confirming or denying a match would let anyone probe which emails are registered.
+  const key = email.toLowerCase();
+  const lastSent = forgotPasswordCooldowns.get(key);
+  if (lastSent && Date.now() - lastSent < FORGOT_PASSWORD_COOLDOWN_MS) return renderSent();
+
+  const reg = getRegistrationByEmail(email);
+  if (canSelfServiceResetPassword(reg)) {
+    forgotPasswordCooldowns.set(key, Date.now());
+    const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
+    const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
+    sendMail({ to: reg.email, ...resetPasswordEmail({ name, setPasswordUrl, isReset: !!reg.password_hash }) })
+      .catch(e => console.error('[mailer]', e.message));
+    insertAdminLog({
+      actor: reg.full_name || reg.email, actorType: 'player',
+      method: 'POST', path: '/forgot-password', details: { event: 'self_service_reset_requested', email: reg.email },
+    });
+  }
+  renderSent();
 });
 
 // ── Facebook OAuth ────────────────────────────────────────────────────────────
