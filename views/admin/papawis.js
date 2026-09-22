@@ -567,10 +567,10 @@ export function estimatedPapawisPrice(game, confirmedCount, courtRateFallback = 
   const total = estimateTotal({ rate, hours, hasReferee: hasRef, refereeRate: refRate });
   const raw = (total && confirmedCount) ? roundTo10(total / confirmedCount) : defaultPapawisPrice(confirmedCount);
   if (raw == null) return null;
-  // Same floor the admin's own live calculator applies (recalcCloseOut, in this page's own
+  // Same override the admin's own live calculator applies (recalcCloseOut, in this page's own
   // script below) — a saved min_per_player should win here too, otherwise the pre-game
-  // reminder email quotes a lower number than what Close Out will actually charge.
-  return game?.min_per_player ? Math.max(raw, roundTo10(game.min_per_player)) : raw;
+  // reminder email quotes a different number than what Close Out will actually charge.
+  return game?.min_per_player ? roundTo10(game.min_per_player) : raw;
 }
 
 // A probationary player's signup, held out of the confirmed/waitlist flow until an admin
@@ -1486,7 +1486,7 @@ ${(() => {
     var refCost = refRate * hours;
     var total = roundTo10(courtCost + refCost);
     var raw = confirmedCount > 0 ? roundTo10(total / confirmedCount) : 0;
-    var final = Math.max(minPrice, raw);
+    var final = minPrice > 0 ? minPrice : raw;
 
     document.getElementById('pw-calc-court').textContent = '₱' + roundTo10(courtCost).toLocaleString();
     document.getElementById('pw-calc-ref').textContent = '₱' + roundTo10(refCost).toLocaleString();
