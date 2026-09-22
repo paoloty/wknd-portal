@@ -93,6 +93,14 @@ export function papawisSignupOpensAtMs(game) {
   return new Date(`${openDateStr}T08:00:00+08:00`).getTime();
 }
 
+// Current hour-of-day in Manila (0-23), same pure-epoch-math approach as manilaTodayStr —
+// no Intl/ICU tzdata dependency. Used to keep unattended/scheduled sends (not anything an
+// admin deliberately triggers by hand) out of the middle of the night.
+export function manilaHourNow() {
+  const d = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return d.getUTCHours();
+}
+
 export function isPapawisSignupOpenNow(game) {
   const opensAt = papawisSignupOpensAtMs(game);
   return opensAt === null || Date.now() >= opensAt;

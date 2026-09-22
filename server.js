@@ -37,7 +37,7 @@ import { fineSchedulePage } from './views/fine-schedule.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
-import { teamColor, displayPlayerName, manilaTodayStr, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -172,7 +172,7 @@ import { marketplacePage, marketplaceListingPage } from './views/marketplace.js'
 import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody, adminMarketplaceEditBody } from './views/admin/marketplace.js';
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
-import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail } from './lib/papawis-notify.js';
+import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
@@ -9449,18 +9449,37 @@ app.post('/admin/papawis/:id/signups/reorder', requireAuth, express.json(), (req
 app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
+
+  const newLocation = req.body?.location !== undefined ? String(req.body.location || '').trim() : game.location;
+  const newStart = req.body?.start_time !== undefined ? req.body.start_time : game.start_time;
+  const newEnd   = req.body?.end_time !== undefined ? req.body.end_time : game.end_time;
+  const locationChanged = newLocation !== game.location;
+  const timeChanged = newStart !== game.start_time || newEnd !== game.end_time;
+
   setPapawisGameLocation(req.params.id, req.body?.location);
   if (req.body?.start_time !== undefined || req.body?.end_time !== undefined) {
-    setPapawisGameTime(
-      req.params.id,
-      req.body?.start_time !== undefined ? req.body.start_time : game.start_time,
-      req.body?.end_time !== undefined ? req.body.end_time : game.end_time,
-    );
+    setPapawisGameTime(req.params.id, newStart, newEnd);
   }
   if (req.body?.max_slots !== undefined) {
     setPapawisGameMaxSlots(req.params.id, req.body.max_slots);
   }
   res.json({ ok: true });
+
+  // Only worth telling players about a correction on a game they can still act on — not a
+  // retroactive fix to a completed/cancelled game's historical record (see the comment above
+  // this route). Reuses the same reminders on/off gate as the rest of Papawis email so this
+  // can't fire for real until that's deliberately switched on in /admin/site.
+  if (game.status === 'open' && (locationChanged || timeChanged) && getSetting('papawis_reminders_enabled', '0') === '1') {
+    const changeLines = [];
+    if (locationChanged) changeLines.push(`New location: ${newLocation || 'TBD'}`);
+    if (timeChanged) {
+      const range = formatTimeRange(newStart, newEnd);
+      if (range) changeLines.push(`New time: ${range}`);
+    }
+    sendPapawisUpdateEmails(req.params.id, changeLines).catch(err => {
+      console.error('[papawis] update-notify error:', err.message);
+    });
+  }
 });
 
 // Manual, synchronous retry of the map banner's geocode/composite step — GET /papawis only
@@ -10575,8 +10594,19 @@ app.post('/admin/fines/:id/force-escalation', requireSuperAdmin, express.json(),
 // this runs unconditionally at every boot, so without the gate a plain server restart
 // with real credentials loaded would silently mass-email everyone currently due.
 const PAPAWIS_REMINDER_CHECK_MS = 60 * 60 * 1000;
+// Unattended sends only — nothing an admin deliberately triggers by hand (cancel, location/
+// time edits, close-out) is held back by this; those still go out immediately regardless of
+// the hour. A signup that goes "due" at 2 AM just waits for the next in-window hourly tick,
+// since reminder_sent_at staying NULL means nothing is lost, only delayed.
+const PAPAWIS_QUIET_HOURS_START = 9;  // 9:00 AM Manila
+const PAPAWIS_QUIET_HOURS_END   = 21; // 9:00 PM Manila
+function isPapawisSendWindowOpen() {
+  const hour = manilaHourNow();
+  return hour >= PAPAWIS_QUIET_HOURS_START && hour < PAPAWIS_QUIET_HOURS_END;
+}
 function runPapawisReminders() {
   if (getSetting('papawis_reminders_enabled', '0') !== '1') return;
+  if (!isPapawisSendWindowOpen()) return;
   sendPapawisReminders(PAPAWIS_CUTOFF_DAYS).then(({ sent, errors }) => {
     if (sent || errors.length) console.log(`[papawis] reminders: ${sent} sent, ${errors.length} failed`);
   }).catch(e => console.error('[papawis] reminder scan failed:', e.message));
