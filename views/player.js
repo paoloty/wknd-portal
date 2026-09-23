@@ -1469,7 +1469,7 @@ function badgeShowcase(badges) {
   </div>` : '';
 
   return `<div class="card badge-showcase">
-  <div class="card-label">BADGES <span class="card-label__count">${lead.earned.length} EARNED &mdash; SEASON ${escHtml(String(lead.season))}</span></div>
+  <div class="card-label">BADGES <span class="card-label__count">${lead.earned.length} EARNED &mdash; SEASON ${escHtml(String(lead.season))}</span><a href="/badges" class="card-label__link" style="margin-left:auto">All badges &rarr;</a></div>
   ${badgeSeasonRow(lead, { withLabel: false })}
   ${olderHtml}
   <script>

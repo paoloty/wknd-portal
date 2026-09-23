@@ -3437,18 +3437,30 @@ a.player-link:hover { color: var(--amber); }
 .page-header__actions { flex-shrink: 0; }
 
 /* ── Section header (shared) ────────────────────────────────────────────── */
+/* Sitewide section heading — was a small muted eyebrow (11px uppercase), upgraded to real
+   heading weight since on several pages (badges, team roster/games) this label + its
+   optional trailing note/link IS the page's structure, not a caption sitting on top of
+   content that already has its own hero/stats establishing hierarchy. Pages that set their
+   own .section-header margin locally (e.g. team-detail.js) still override that one property
+   — border/typography here apply everywhere. */
 .section-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin: 32px 0 16px;
 }
+/* :first-child would miss this on any page using pageHeader() — that renders its own
+   .page-header div right before the first section, so this one is never actually the first
+   child of its parent. Target that adjacency directly instead. */
+.page-header + .section-header { margin-top: 8px; }
 .section-header h2 {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--text-muted);
-  text-transform: uppercase;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
   margin: 0;
 }
 
@@ -5992,6 +6004,29 @@ a.player-link:hover { color: var(--amber); }
   .badge-medal { width: 72px; }
   .badge-medal__ring { width: 60px; height: 60px; }
   .badge-medal__inner svg { width: 26px; height: 26px; }
+}
+
+/* ── /badges specs page ───────────────────────────────────────────────────── */
+.bd-category-count { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-subtle); white-space: nowrap; }
+.bd-category-blurb { font-size: 13.5px; color: var(--text-muted); line-height: 1.55; max-width: 60ch; margin: 12px 0 18px; }
+.bd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.bd-spec-card { display: flex; gap: 16px; align-items: flex-start; padding: 20px; }
+.bd-spec-card__ring { flex-shrink: 0; margin-bottom: 0; width: 64px; height: 64px; }
+.bd-spec-card__ring .badge-medal__inner svg { width: 28px; height: 28px; }
+.bd-spec-card__body { min-width: 0; }
+.bd-spec-card__name { font-size: 15px; font-weight: 700; margin: 0 0 5px; }
+.bd-spec-card__desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; margin: 0; }
+.bd-spec__tiers { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.bd-spec__tier { font-size: 11px; font-weight: 700; }
+.bd-spec__tier--bronze { color: var(--bronze); }
+.bd-spec__tier--silver { color: var(--silver); }
+.bd-spec__tier--gold   { color: var(--amber); }
+
+@media (max-width: 480px) {
+  .bd-grid { grid-template-columns: 1fr; }
+  .bd-spec-card { padding: 16px; gap: 12px; }
+  .bd-spec-card__ring { width: 52px; height: 52px; }
+  .bd-spec-card__ring .badge-medal__inner svg { width: 22px; height: 22px; }
 }
 
 @media (max-width: 900px) {

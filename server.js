@@ -169,6 +169,7 @@ import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
+import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody, estimatedPapawisPrice } from './views/admin/papawis.js';
 import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
@@ -6105,6 +6106,17 @@ app.get('/awards', (req, res) => {
     title: `Season ${season} Awards — WKND Basketball`,
     currentPath: '/awards',
     body: awardsPage({ awards, season, availableSeasons, visibleSections, articles }),
+  }));
+});
+
+// Specs/rules reference — every badge, what it takes to earn it, tier thresholds. No
+// per-player data (that's the player profile's job); this page never changes without a
+// code change, so no DB query at all.
+app.get('/badges', (req, res) => {
+  res.send(renderPage(req, {
+    title: 'Badges — WKND Basketball',
+    currentPath: '/badges',
+    body: badgesPage(),
   }));
 });
 
