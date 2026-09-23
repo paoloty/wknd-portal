@@ -134,7 +134,7 @@ import {
   getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
   getReportableFineCategories, getOtherFineCategory,
   createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer, hasOpenPlayerReport,
-  getFineVotesForCase, castFineVote, resolveFineCase,
+  getFineVotesForCase, castFineVote, resolveFineCase, markFineCasePaid, markFineCaseUnpaid, getFineCollectionSummary,
   getEscalationVotesForCase, castEscalationVote, getTotalAdminCount, recomputeEscalation, forceEscalationDecision,
   getPeerRating, getPeerRatingsForRatee, upsertPeerRating, getOrAssignPlayerAlias,
   getAllPeerRatings, getPeerRatingSeasons,
@@ -10478,7 +10478,7 @@ app.get('/admin/fines', requireAuth, (req, res) => {
     .sort((a, b) => (b.resolved_at || 0) - (a.resolved_at || 0));
   res.send(renderAdminPage(req, {
     title: 'Fines', currentPath: '/admin/fines',
-    body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories() }),
+    body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories(), summary: getFineCollectionSummary() }),
   }));
 });
 app.post('/admin/fines', requireAuth, express.json(), (req, res) => {
@@ -10539,6 +10539,36 @@ app.post('/admin/fines/:id/resolve', requireAuth, express.json(), (req, res) => 
     link: '/me',
   });
   res.json({ ok: true, approved: !!approved });
+});
+
+// Paid tracking, same shape as Papawis' per-signup "Mark Paid" (/admin/papawis/:id/signups/
+// :signupId/paid): the shared ledger only rolls up one running balance per player, so it
+// can't tell you whether THIS fine specifically got settled if the player has other charges
+// too. Marking paid records a real type:'payment' transaction so the ledger/balance stay
+// accurate; un-marking voids that exact transaction rather than searching for one to reverse.
+app.post('/admin/fines/:id/paid', requireAuth, express.json(), (req, res) => {
+  const kase = getFineCase(req.params.id);
+  if (!kase) return res.status(404).json({ error: 'Not found.' });
+  if (kase.status !== 'approved') return res.status(400).json({ error: 'Only an approved (charged) fine can be marked paid.' });
+
+  const markPaid = req.body?.paid !== false;
+  if (markPaid) {
+    if (!kase.paid_at) {
+      const txId = randomBytes(6).toString('hex');
+      const notes = `Fine payment — ${kase.category_label}`;
+      recordTransaction({
+        id: txId, player_id: kase.player_id, amount: kase.amount, type: 'payment',
+        payment_method: '', date: manilaTodayStr(), status: 'confirmed',
+        notes, reference_no: kase.id, season: '', category: 'Penalty',
+      });
+      notifyLedgerEvent({ playerId: kase.player_id, type: 'payment', amount: kase.amount, notes });
+      markFineCasePaid(kase.id, txId);
+    }
+  } else {
+    if (kase.paid_tx_id) voidTransaction(kase.paid_tx_id);
+    markFineCaseUnpaid(kase.id);
+  }
+  res.json({ ok: true });
 });
 
 // Notifies the reporting player their report didn't move forward — the accused is never

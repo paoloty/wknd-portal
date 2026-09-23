@@ -14,6 +14,22 @@ function statusBadge(status) {
   return `<span class="agm-badge agm-badge--amber">Open</span>`;
 }
 
+// Only an approved (i.e. actually charged) case has anything to be paid — everything else
+// shows a dash rather than an "Unpaid" that implies money is owed when none was ever charged.
+function paidBadge(c) {
+  if (c.status !== 'approved') return `<span class="text-slate-700">—</span>`;
+  return c.paid_at
+    ? `<span class="agm-badge agm-badge--green">Paid</span>`
+    : `<span class="agm-badge agm-badge--amber">Unpaid</span>`;
+}
+
+function statTile(label, value, color = '#e2e8f0') {
+  return `<div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4">
+    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">${escHtml(label)}</div>
+    <div class="text-xl font-bold font-saira" style="color:${color}">${value}</div>
+  </div>`;
+}
+
 function reportModal(players, categories) {
   const playersData = JSON.stringify(players.map(p => ({ id: p.id, name: displayPlayerName(p.name) }))).replace(/</g, '\\u003c');
   const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}" data-amount="${c.amount}">${escHtml(c.label)} (${peso(c.amount)})</option>`).join('');
@@ -116,12 +132,22 @@ function caseRow(c, base) {
     <td class="px-4 py-3 text-sm font-saira text-brand">${peso(c.amount)}</td>
     <td class="px-4 py-3 text-xs text-slate-500">${escHtml(c.reported_by_name)} (${c.reported_by_type})</td>
     <td class="px-4 py-3">${statusBadge(c.status)}</td>
+    <td class="px-4 py-3">${paidBadge(c)}</td>
     <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(c.created_at)}</td>
     <td class="px-4 py-3 text-right"><a href="${base}/${escHtml(c.id)}" class="agm-edit-link">Review</a></td>
   </tr>`;
 }
 
-export function adminFinesListBody({ pendingAdmin = [], open = [], resolved = [], players = [], categories = [] } = {}) {
+export function adminFinesListBody({ pendingAdmin = [], open = [], resolved = [], players = [], categories = [], summary = null } = {}) {
+  const s = summary || { caseCount: 0, paidCount: 0, totalFined: 0, totalPaid: 0, totalOutstanding: 0 };
+  const summaryStrip = `
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+  ${statTile('Total Fined', peso(s.totalFined))}
+  ${statTile('Collected', peso(s.totalPaid), '#22c55e')}
+  ${statTile('Outstanding', peso(s.totalOutstanding), s.totalOutstanding > 0 ? '#f59332' : '#e2e8f0')}
+  ${statTile('Fines Paid', `${s.paidCount} <span class="text-sm text-slate-500">/ ${s.caseCount}</span>`)}
+</div>`;
+
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <div>
@@ -134,6 +160,8 @@ export function adminFinesListBody({ pendingAdmin = [], open = [], resolved = []
     <button class="agm-new-btn" onclick="openFineModal()">Report Incident</button>
   </div>
 </div>
+
+${summaryStrip}
 
 ${pendingAdmin.length ? `
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-6">
@@ -334,13 +362,32 @@ window.forceEscalation = async function(escalate) {
       ` : `
       <p class="text-sm text-slate-300">Resolved by <strong>${escHtml(c.resolved_by_name)}</strong> on ${fmtDate(c.resolved_at)}.</p>
       ${c.resolution_note ? `<p class="text-xs text-slate-500 mt-2">${escHtml(c.resolution_note)}</p>` : ''}
-      ${c.status === 'approved' ? `<p class="text-xs text-emerald-400 mt-3">Charged ${peso(c.amount)} to the player's ledger.</p>` : ''}
+      ${c.status === 'approved' ? `
+      <p class="text-xs text-emerald-400 mt-3">Charged ${peso(c.amount)} to the player's ledger.</p>
+      <div class="flex items-center gap-2 mt-3 pt-3" style="border-top:1px solid var(--border-2)">
+        ${paidBadge(c)}
+        ${c.paid_at ? `<span class="text-xs text-slate-500">${fmtDate(c.paid_at)}</span>` : ''}
+        <button class="admin-btn admin-btn--sm ${c.paid_at ? '' : 'admin-btn--success'}" style="margin-left:auto" onclick="markFinePaid(${c.paid_at ? 'false' : 'true'})">${c.paid_at ? 'Mark Unpaid' : 'Mark Paid'}</button>
+      </div>
+      ` : ''}
       `}
     </div>
   </div>
 </div>
 
 <script>
+window.markFinePaid = async function(paid) {
+  var btn = event.target; btn.disabled = true;
+  try {
+    var r = await fetch('/admin/fines/${escHtml(c.id)}/paid', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paid: paid }),
+    });
+    var j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Failed');
+    location.reload();
+  } catch (e) { alert(e.message); btn.disabled = false; }
+};
 window.castVote = async function(vote) {
   var btn = event.target; btn.disabled = true;
   try {
