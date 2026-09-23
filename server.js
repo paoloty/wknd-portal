@@ -5604,6 +5604,8 @@ app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
       dnpPlayerIds,
       playerStats:     (typeof g.playerStats === 'object' && g.playerStats) ? g.playerStats : {},
       season:          game.season,
+      teamATeamTurnovers: Number(g.teamATeamTurnovers || 0),
+      teamBTeamTurnovers: Number(g.teamBTeamTurnovers || 0),
     });
     console.log(`[import] done in ${Date.now() - t0}ms`);
     res.json({ ok: true, teamAScore: Number(g.teamAScore), teamBScore: Number(g.teamBScore) });

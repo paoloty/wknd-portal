@@ -461,7 +461,7 @@ export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers
       : '';
 
   // Shared portal tab data
-  const { byTeam, dnpByTeam, winner } = buildBoxScoreData(game, stats, dnpPlayers);
+  const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
   const nameA = game.team_a_name.toUpperCase();
   const nameB = game.team_b_name.toUpperCase();
 
@@ -554,10 +554,10 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
       </div>
       ${!isFinal ? `
       <div id="adm-tab-bst-a" class="game-tabs__body game-tabs__body--hidden">
-        ${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner)}
+        ${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner, teamTurnovers)}
       </div>
       <div id="adm-tab-bst-b" class="game-tabs__body game-tabs__body--hidden">
-        ${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner)}
+        ${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner, teamTurnovers)}
       </div>
       <div id="adm-tab-leaders" class="game-tabs__body game-tabs__body--hidden">
         ${gameLeadersTab(game, stats)}

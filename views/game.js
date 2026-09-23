@@ -166,7 +166,7 @@ function lineScore(game, quarterScores = []) {
 </div>`;
 }
 
-export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
+export function teamBoxScore(players, teamName, isWinner, dnpPlayers = [], teamTurnovers = 0) {
   const color = teamColor(teamName);
   const sorted = [...players].sort((a, b) => Number(calcPer(b)) - Number(calcPer(a)));
 
@@ -178,6 +178,7 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
     fg2m_miss: sum('fg2m_miss'), fg3m_miss: sum('fg3m_miss'), fg4m_miss: sum('fg4m_miss'),
     ftm: sum('ftm'), ft_miss: sum('ft_miss'),
   };
+  const teamTotalTurnovers = tot.turnover + (Number(teamTurnovers) || 0);
 
   const playerRow = (p) => {
     const fgm  = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
@@ -276,13 +277,14 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = []) {
           <td class="bs-stat">${tot.ast}</td>
           <td class="bs-stat">${tot.stl}</td>
           <td class="bs-stat">${tot.blk}</td>
-          <td class="bs-stat">${tot.turnover}</td>
+          <td class="bs-stat">${teamTotalTurnovers}</td>
           <td class="bs-stat bs-pts">${tot.pts}</td>
           <td class="bs-stat bs-per">–</td>
         </tr>
       </tbody>
     </table>
   </div>
+  ${teamTurnovers > 0 ? `<div class="bs-team-to-note">Includes ${teamTurnovers} team turnover${teamTurnovers === 1 ? '' : 's'} (shot clock, etc.) not charged to a player.</div>` : ''}
 </div>`;
 }
 
@@ -305,15 +307,22 @@ export function buildBoxScoreData(game, stats, dnpPlayers = []) {
     dnpByTeam[teamName].push({ id: p.id, name: displayPlayerName(p.name || '') });
   }
 
+  // Turnovers charged to the team as a whole (shot clock violations, etc.),
+  // not to any player — kept separate from per-player stats.
+  const teamTurnovers = {
+    [String(game.team_a_name || '').toUpperCase()]: Number(game.team_a_to_team) || 0,
+    [String(game.team_b_name || '').toUpperCase()]: Number(game.team_b_to_team) || 0,
+  };
+
   const winner = winnerName.toUpperCase();
-  return { byTeam, dnpByTeam, winner };
+  return { byTeam, dnpByTeam, winner, teamTurnovers };
 }
 
-export function teamBoxScoreTab(teamName, byTeam, dnpByTeam, winner) {
+export function teamBoxScoreTab(teamName, byTeam, dnpByTeam, winner, teamTurnovers = {}) {
   const n = teamName.toUpperCase();
   const players = byTeam[n] || [];
   return `<div class="boxscore-tab">
-  ${teamBoxScore(players, n, n === winner, dnpByTeam[n] || [])}
+  ${teamBoxScore(players, n, n === winner, dnpByTeam[n] || [], teamTurnovers[n] || 0)}
 </div>`;
 }
 
@@ -1171,7 +1180,7 @@ ${gameTabsStyles()}
 ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
   }
 
-  const { byTeam, dnpByTeam, winner } = buildBoxScoreData(game, stats, dnpPlayers);
+  const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
   const nameA = game.team_a_name.toUpperCase();
   const nameB = game.team_b_name.toUpperCase();
   const tabIdA = 'bs-' + nameA.replace(/\s+/g, '-');
@@ -1194,8 +1203,8 @@ ${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
     ${actions}
   </div>
   <div id="tab-recap" class="game-tabs__body${commentsIsDefault ? ' game-tabs__body--hidden' : ''}">${recapTab(game)}</div>
-  <div id="tab-${tabIdA}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner)}</div>
-  <div id="tab-${tabIdB}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner)}</div>
+  <div id="tab-${tabIdA}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner, teamTurnovers)}</div>
+  <div id="tab-${tabIdB}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner, teamTurnovers)}</div>
   <div id="tab-leaders" class="game-tabs__body game-tabs__body--hidden">${gameLeadersTab(game, stats)}</div>
   <div id="tab-comparison" class="game-tabs__body game-tabs__body--hidden">${teamComparisonTab(game, stats)}</div>
   <div id="tab-linescore" class="game-tabs__body game-tabs__body--hidden">${lineScoreTab(game, quarterScores)}</div>

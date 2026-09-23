@@ -3046,6 +3046,7 @@ a.player-link:hover { color: var(--amber); }
 /* ── Box score ──────────────────────────────────────────────────────────── */
 .bs-block { padding: 16px 0 0; }
 .bs-block + .bs-block { border-top: 1px solid var(--border); }
+.bs-team-to-note { font-size: 11px; color: var(--text-muted); padding: 8px 20px 4px; }
 .bs-team-header {
   font-size: 11px;
   font-weight: 800;
