@@ -908,8 +908,8 @@ function statsTable(statsByType) {
 
   const careerRow = career?.games_played ? statRow(career, 'Career', true) : '';
 
-  return `<div class="card" style="margin-bottom:20px">
-  <div class="section-header"><h2>Stats</h2></div>
+  return `<div class="card" style="margin-bottom:20px;overflow:hidden">
+  <div class="card-label">STATS</div>
   <div class="st-wrap">
     <table class="st-table">
       <thead>
