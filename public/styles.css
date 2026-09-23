@@ -1706,6 +1706,31 @@ body {
 .leader-chip { margin-bottom: 14px; margin-left: auto; margin-right: auto; }
 .leader-stat { font-size: 42px; font-weight: 800; line-height: 1; color: var(--amber); }
 
+/* Bigger + a static glare, for the team page's fixed top row only (see leagueLeaders'
+   prominent option) — same card, same children, just visually heavier so it reads as "the
+   important row" against the plainer carousel cards elsewhere. */
+.leader-card--prominent { position: relative; overflow: hidden; padding: 26px 16px 24px; }
+.leader-card--prominent::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 120% 60% at 50% -10%, var(--lc-color, var(--amber)), transparent 65%);
+  opacity: 0.18; pointer-events: none;
+}
+.leader-card--prominent::after {
+  content: ''; position: absolute; top: -70%; left: -25%; width: 55%; height: 240%;
+  background: linear-gradient(115deg, transparent 42%, rgba(255,255,255,.09) 48%, rgba(255,255,255,.16) 50%, rgba(255,255,255,.09) 52%, transparent 58%);
+  pointer-events: none;
+}
+.leader-card--prominent .leader-avatar { width: 96px; height: 96px; margin-bottom: 16px; position: relative; z-index: 1; }
+.leader-card--prominent .leader-avatar .font-condensed { font-size: 36px; }
+.leader-card--prominent .leader-name { font-size: 14px; position: relative; z-index: 1; }
+.leader-card--prominent .leader-stat { font-size: 50px; position: relative; z-index: 1; }
+
+@media (max-width: 640px) {
+  .leader-card--prominent .leader-avatar { width: 72px; height: 72px; }
+  .leader-card--prominent .leader-avatar .font-condensed { font-size: 28px; }
+  .leader-card--prominent .leader-stat { font-size: 38px; }
+}
+
 /* ── Standings page ─────────────────────────────────────────────────────── */
 .standings-dual {
   display: grid;

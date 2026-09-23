@@ -160,7 +160,7 @@ export function teamDetailPage({
   // fixed, non-scrolling row under "Team Leaders", and everything else — skip:6 keeps it
   // from repeating those same 6 — as the homepage's auto-advancing carousel further down,
   // under "More Leaders".
-  const leadersTopHtml = leagueLeaders(leaders, { showTeamChip: false, limit: 6, carousel: false });
+  const leadersTopHtml = leagueLeaders(leaders, { showTeamChip: false, limit: 6, carousel: false, prominent: true });
   const leadersCarouselHtml = leagueLeaders(leaders, { showTeamChip: false, skip: 6, carousel: true });
   const noLeadersHtml = `<div class="card" style="padding:24px;text-align:center;color:var(--text-muted)">No stats yet for Season ${escHtml(String(statsSeason))}.</div>`;
 

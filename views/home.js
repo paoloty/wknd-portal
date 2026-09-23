@@ -209,8 +209,10 @@ export function highlightsSidebar(highlights, { limit = 4, seeAllLink = true } =
 // limit:6 for a fixed, non-scrolling top row (.leader-card's own width math is already "6
 // across" for exactly this), and again with skip:6 for a carousel of everything else, so
 // the two don't repeat the same 6 categories. carousel:false skips the auto-advancing
-// carousel chrome for a static wrap-friendly grid.
-export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = null, carousel = true } = {}) {
+// carousel chrome for a static wrap-friendly grid. prominent:true is the same card, just
+// bigger (avatar/stat) with a team-color glare — used for that fixed top row only, so it
+// doesn't compete with the plainer carousel cards.
+export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = null, carousel = true, prominent = false } = {}) {
   const active = players.filter(p => p.games_played > 0);
   if (!active.length) return '';
 
@@ -247,7 +249,7 @@ export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = 
     const color = teamColor(teamName);
     const isLight = teamName === 'WHITE';
 
-    return `<div class="card leader-card" data-index="${i}">
+    return `<div class="card leader-card${prominent ? ' leader-card--prominent' : ''}" data-index="${i}"${prominent ? ` style="--lc-color:${color}"` : ''}>
   <span class="leader-cat">${cat.label}</span>
   <span class="leader-title">${escHtml(cat.title)}</span>
   ${playerAvatar(leader.id, leader.name, color, { className: 'leader-avatar', link: true })}
