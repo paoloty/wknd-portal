@@ -82,6 +82,38 @@ function rosterRow(p, v, avgs) {
 </tr>`;
 }
 
+// ── Category rank cards ──────────────────────────────────────────────────────
+// A continuous green→amber→red hue instead of a discrete "1st/last only" color — every
+// rank in between reads as somewhere on that spectrum instead of unremarkable gray.
+function rankGlowHue(rank, total) {
+  if (total <= 1) return 142;
+  const t = (rank - 1) / (total - 1); // 0 = best, 1 = worst
+  return Math.round(142 - t * 142); // 142deg (green) down to 0deg (red)
+}
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function rankCard(c) {
+  const hue = rankGlowHue(c.rank, c.totalTeams);
+  const borderColor = `hsla(${hue},65%,50%,0.55)`;
+  const textColor = `hsl(${hue},65%,60%)`;
+  return `<div class="td-rank-card" style="--td-rank-border:${borderColor}">
+    <span class="td-rank-card__label">${escHtml(c.label)}</span>
+    <span class="td-rank-card__value font-condensed" style="color:${textColor}">${escHtml(c.valueDisplay)}${c.unit ? `<span class="td-rank-card__unit">${escHtml(c.unit)}</span>` : ''}</span>
+    <span class="td-rank-card__word">${ordinal(c.rank)}</span>
+  </div>`;
+}
+
+// The first 4 cards (fixed: Scoring/Rebounding/Assists/Defense) plus 2 more that vary by
+// team — see computeTeamRankCards in lib/team-ranks.js for how those last 2 get picked.
+function rankCardsRow(rankCards) {
+  if (!rankCards.length) return '';
+  return `<div class="td-ranks">${rankCards.map(rankCard).join('')}</div>`;
+}
+
 // ── Recent form (last 5 completed results) ─────────────────────────────────────
 function formPill(game, teamId) {
   const isA = game.team_a_id === teamId;
@@ -93,7 +125,7 @@ function formPill(game, teamId) {
 
 export function teamDetailPage({
   team, color, record, currentSeason, statsSeason,
-  avgOvr, avgOff, avgDef, pointsFor = 0, pointsAgainst = 0,
+  avgOvr, avgOff, avgDef, pointsFor = 0, pointsAgainst = 0, rankCards = [],
   roster = [], leaders = [], games = [],
 }) {
   const wins = record?.wins ?? 0;
@@ -121,11 +153,16 @@ export function teamDetailPage({
     ? `<div class="td-hero__diff">${pointsFor} PF · ${pointsAgainst} PA · <span style="color:${diff >= 0 ? '#22c55e' : '#f87171'}">${diff >= 0 ? '+' : ''}${diff}</span></div>`
     : '';
 
-  // Same card design + carousel as the homepage's League Leaders widget, just handed a
-  // pool pre-filtered to this team's roster — team chip dropped since every card in a
-  // single-team pool would repeat the identical chip.
-  const leadersHtml = leagueLeaders(leaders, { showTeamChip: false })
-    || `<div class="card" style="padding:24px;text-align:center;color:var(--text-muted)">No stats yet for Season ${escHtml(String(statsSeason))}.</div>`;
+  // Same card design as the homepage's League Leaders widget, just handed a pool
+  // pre-filtered to this team's roster — team chip dropped since every card in a
+  // single-team pool would repeat the identical chip. Split in two, rendered in two
+  // different places on the page (see below): the top 6 (priority-ordered) categories as a
+  // fixed, non-scrolling row under "Team Leaders", and everything else — skip:6 keeps it
+  // from repeating those same 6 — as the homepage's auto-advancing carousel further down,
+  // under "More Leaders".
+  const leadersTopHtml = leagueLeaders(leaders, { showTeamChip: false, limit: 6, carousel: false });
+  const leadersCarouselHtml = leagueLeaders(leaders, { showTeamChip: false, skip: 6, carousel: true });
+  const noLeadersHtml = `<div class="card" style="padding:24px;text-align:center;color:var(--text-muted)">No stats yet for Season ${escHtml(String(statsSeason))}.</div>`;
 
   const gamesHtml = completed.length
     ? completed.map(g => gameRow(g)).join('\n')
@@ -164,8 +201,10 @@ export function teamDetailPage({
     </div>
   </div>
 
+  ${rankCardsRow(rankCards)}
+
   <div class="section-header"><h2>Team Leaders</h2>${statsSeason !== String(currentSeason) ? `<span class="td-season-note">Season ${escHtml(String(statsSeason))}</span>` : ''}</div>
-  ${leadersHtml}
+  ${leadersTopHtml || noLeadersHtml}
 
   <div class="section-header"><h2>Roster</h2></div>
   <div class="card pt-card">
@@ -192,6 +231,8 @@ export function teamDetailPage({
       </table>
     </div>
   </div>
+
+  ${leadersCarouselHtml ? `<div class="section-header"><h2>More Leaders</h2></div>\n  ${leadersCarouselHtml}` : ''}
 
   <div class="section-header"><h2>Games</h2></div>
   <div class="games-grid">${gamesHtml}</div>
@@ -237,6 +278,25 @@ ${completed.length || upcoming.length ? gameListScript() : ''}
 .td-hero__stats .tm-stat__lbl { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; color: var(--text-muted); text-transform: uppercase; }
 
 .td-season-note { font-size: 11.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+
+/* This page stacks the fixed top-6 leaders row directly above the carousel of the rest —
+   .leaders-grid carries no margin of its own (the homepage never follows it with anything),
+   so give it one here. */
+.leaders-grid { margin-bottom: 14px; }
+
+/* ── Category rank cards ──────────────────────────────────────────────────── */
+.td-ranks { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 8px; }
+.td-rank-card {
+  position: relative; background: var(--surface); border: 1px solid var(--td-rank-border, var(--border)); border-radius: var(--radius-lg);
+  padding: 28px 14px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+}
+.td-rank-card__label { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.td-rank-card__value { font-size: 32px; font-weight: 800; line-height: 1; }
+.td-rank-card__unit { font-size: 13px; font-weight: 700; margin-left: 3px; opacity: .75; }
+.td-rank-card__word { font-size: 11px; font-weight: 700; letter-spacing: .03em; color: var(--text-muted); text-transform: uppercase; }
+
+@media (max-width: 900px) { .td-ranks { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 480px) { .td-ranks { grid-template-columns: repeat(2, 1fr); } }
 
 /* This page's own .section-header instances only — scoped to this template's own <style>
    block, not a global override — the base rule in public/styles.css carries no margin of

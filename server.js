@@ -60,7 +60,7 @@ import {
   getSeasonQuota, setSeasonQuota, getSeasonFeePaid, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover,
-  getTeamSeasonStats, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
+  getTeamSeasonStats, getTeamPointsForAgainst, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
   getLeadersAllTime, getLeaderSeasons,
   getGameById, getGameDetailStats, getGameStats,
   getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam, getPlayerLastTeamIdBeforeSeason,
@@ -147,6 +147,7 @@ import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges } from './lib/badges.js';
+import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
 import { adminAwardsBody } from './views/admin/awards.js';
@@ -6639,6 +6640,13 @@ app.get('/teams/:ref', (req, res) => {
   // has since drifted from a season's roster (see the /teams grouping caveat).
   const leaders = getLeaders(statsSeason).filter(p => p.team_id === team.id);
 
+  // Category rank cards — how this team stacks up leaguewide, statsSeason (not currentSeason)
+  // so it's consistent with the roster/leaders numbers above rather than a fallback season
+  // mismatch. Needs every team's totals, not just this one, to actually rank against.
+  const pfPaByTeam = Object.fromEntries(getTeamPointsForAgainst(statsSeason).map(r => [r.team_id, r]));
+  const allTeamsStats = getTeamSeasonStats(statsSeason).map(s => ({ ...s, ...(pfPaByTeam[s.team_id] || { points_for: 0, points_against: 0 }) }));
+  const rankCards = computeTeamRankCards(team.id, allTeamsStats);
+
   const teamGames = byDate(getAllGames()).filter(g => g.team_a_id === team.id || g.team_b_id === team.id);
 
   // Points for/against — scoped to the live current season (same games the record above
@@ -6660,7 +6668,7 @@ app.get('/teams/:ref', (req, res) => {
     metaTags: buildTeamOgTags(req, team),
     body: teamDetailPage({
       team, color, record, currentSeason, statsSeason,
-      avgOvr, avgOff, avgDef, pointsFor, pointsAgainst,
+      avgOvr, avgOff, avgDef, pointsFor, pointsAgainst, rankCards,
       roster: rosterWithStats, leaders, games: teamGames,
     }),
   }));

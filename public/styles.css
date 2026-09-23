@@ -1661,6 +1661,10 @@ body {
   scrollbar-width: none;
 }
 .lc-track::-webkit-scrollbar { display: none; }
+/* Static, non-scrolling alternative to .lc-track (see leagueLeaders' carousel:false) — same
+   .leader-card children, just wrapping instead of scrolling. Its width math already assumes
+   6 across, so a full row of 6 fills exactly; fewer wrap onto their own row at that width. */
+.leaders-grid { display: flex; flex-wrap: wrap; gap: 14px; }
 .leader-card {
   scroll-snap-align: start;
   flex-shrink: 0;

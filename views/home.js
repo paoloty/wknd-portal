@@ -204,8 +204,13 @@ export function highlightsSidebar(highlights, { limit = 4, seeAllLink = true } =
 // ── League Leaders ────────────────────────────────────────────────────────────
 // Exported so other pages (e.g. team detail) can reuse the exact same card design
 // and carousel against a pre-filtered player pool. showTeamChip is dropped for
-// single-team pools, where every card would repeat the same identical chip.
-export function leagueLeaders(players, { showTeamChip = true } = {}) {
+// single-team pools, where every card would repeat the same identical chip. skip/limit
+// slice the (priority-ordered) categories — team-detail.js calls this twice: once with
+// limit:6 for a fixed, non-scrolling top row (.leader-card's own width math is already "6
+// across" for exactly this), and again with skip:6 for a carousel of everything else, so
+// the two don't repeat the same 6 categories. carousel:false skips the auto-advancing
+// carousel chrome for a static wrap-friendly grid.
+export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = null, carousel = true } = {}) {
   const active = players.filter(p => p.games_played > 0);
   if (!active.length) return '';
 
@@ -231,7 +236,8 @@ export function leagueLeaders(players, { showTeamChip = true } = {}) {
     { label: 'FT%', title: 'Free Throw %',      sort: p => fta(p) >= 5  ? p.ftm/fta(p) : -1,           fn: p => Math.round(p.ftm/fta(p)*100)+'%',            minFilter: p => fta(p) >= 5 },
   ];
 
-  const cards = categories.map((cat, i) => {
+  const useCategories = categories.slice(skip, limit != null ? skip + limit : undefined);
+  const cards = useCategories.map((cat, i) => {
     const pool = cat.minFilter ? active.filter(cat.minFilter) : active;
     const leader = pool.filter(p => cat.sort(p) > 0)
       .sort((a, b) => cat.sort(b) - cat.sort(a) || b.games_played - a.games_played)[0];
@@ -251,6 +257,7 @@ export function leagueLeaders(players, { showTeamChip = true } = {}) {
 </div>`;
   }).filter(Boolean);
 
+  if (!carousel) return cards.length ? `<div class="leaders-grid">${cards.join('\n')}</div>` : '';
   return cardCarousel(cards);
 }
 
