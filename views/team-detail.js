@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials } from './utils.js';
+import { teamColor, displayPlayerName, initials, formatDate } from './utils.js';
 import { gameRow, gameListScript } from './games.js';
 import { leagueLeaders } from './home.js';
 
@@ -8,15 +8,51 @@ function parsePositions(raw) {
 }
 
 // ── Roster row ────────────────────────────────────────────────────────────────
-function rosterRow(p) {
+// A raw box-score number means little on its own in a small rec league — coloring is
+// relative to this roster's own average for that stat, not a fixed benchmark: notably
+// above average is green ("outstanding"), notably below is red, in between stays neutral.
+// Turnovers flip the direction, since fewer is the good outcome there.
+const POS_COLOR = '#22c55e';
+const NEG_COLOR = '#f87171';
+const HIGH_RATIO = 1.15;
+const LOW_RATIO  = 0.7;
+
+function computePlayerStatValues(p) {
+  const s = p.seasonStats;
+  const gp = s?.games_played || 0;
+  if (!gp) return null;
+  const pg = total => (total || 0) / gp;
+  const pct = (made, miss) => {
+    const att = (made || 0) + (miss || 0);
+    return att > 0 ? (made / att) * 100 : null;
+  };
+  return {
+    ppg: pg(s.pts), rpg: pg(s.reb), apg: pg(s.ast), spg: pg(s.stl), bpg: pg(s.blk), to: pg(s.turnover),
+    fgp: pct((s.fg2m || 0) + (s.fg3m || 0) + (s.fg4m || 0), (s.fg2m_miss || 0) + (s.fg3m_miss || 0) + (s.fg4m_miss || 0)),
+    tpp: pct(s.fg3m, s.fg3m_miss),
+    ftp: pct(s.ftm, s.ft_miss),
+  };
+}
+
+function statTd(value, avg, { negative = false, fmt = v => v.toFixed(1) } = {}) {
+  if (value == null) return `<td class="pt-stat">—</td>`;
+  let color = null;
+  if (avg != null && avg > 0) {
+    const ratio = value / avg;
+    if (negative) color = ratio <= LOW_RATIO ? POS_COLOR : ratio >= HIGH_RATIO ? NEG_COLOR : null;
+    else           color = ratio >= HIGH_RATIO ? POS_COLOR : ratio <= LOW_RATIO ? NEG_COLOR : null;
+  }
+  return `<td class="pt-stat"${color ? ` style="color:${color}"` : ''}>${fmt(value)}</td>`;
+}
+
+function rosterRow(p, v, avgs) {
   const name = displayPlayerName(p.name);
   const parts = name.trim().split(' ');
   const firstName = escHtml(parts[0] || '');
   const lastName = escHtml(parts.slice(1).join(' ') || '');
   const positions = parsePositions(p.positions);
-  const s = p.seasonStats;
-  const gp = s?.games_played || 0;
-  const pg = (total) => gp > 0 ? (total / gp).toFixed(1) : '—';
+  const gp = p.seasonStats?.games_played || 0;
+  const pctFmt = v => Math.round(v) + '%';
 
   return `<tr>
   <td class="pt-player">
@@ -34,9 +70,15 @@ function rosterRow(p) {
   <td class="pt-num">${p.number ? escHtml(String(p.number)) : '—'}</td>
   <td class="pt-pos">${positions.length ? escHtml(positions.slice(0, 2).join(' · ')) : '—'}</td>
   <td class="pt-stat">${gp || '—'}</td>
-  <td class="pt-stat">${s ? pg(s.pts) : '—'}</td>
-  <td class="pt-stat">${s ? pg(s.reb) : '—'}</td>
-  <td class="pt-stat">${s ? pg(s.ast) : '—'}</td>
+  ${statTd(v?.ppg, avgs.ppg)}
+  ${statTd(v?.rpg, avgs.rpg)}
+  ${statTd(v?.apg, avgs.apg)}
+  ${statTd(v?.spg, avgs.spg)}
+  ${statTd(v?.bpg, avgs.bpg)}
+  ${statTd(v?.to, avgs.to, { negative: true })}
+  ${statTd(v?.fgp, avgs.fgp, { fmt: pctFmt })}
+  ${statTd(v?.tpp, avgs.tpp, { fmt: pctFmt })}
+  ${statTd(v?.ftp, avgs.ftp, { fmt: pctFmt })}
 </tr>`;
 }
 
@@ -51,7 +93,8 @@ function formPill(game, teamId) {
 
 export function teamDetailPage({
   team, color, record, currentSeason, statsSeason,
-  avgOvr, avgOff, avgDef, roster = [], leaders = [], games = [],
+  avgOvr, avgOff, avgDef, pointsFor = 0, pointsAgainst = 0,
+  roster = [], leaders = [], games = [],
 }) {
   const wins = record?.wins ?? 0;
   const losses = record?.losses ?? 0;
@@ -60,6 +103,23 @@ export function teamDetailPage({
   const completed = games.filter(g => !g.scheduled && (Number(g.team_a_score) + Number(g.team_b_score)) > 0);
   const upcoming = games.filter(g => g.scheduled);
   const recentForm = completed.slice(0, 5).map(g => formPill(g, team.id)).join('');
+
+  // Earliest-dated scheduled game, not upcoming[0] — `games` (and so `upcoming`) is sorted
+  // newest-first for the completed list's sake, which for future dates puts the furthest-out
+  // game first rather than the soonest one.
+  const nextGame = upcoming.length
+    ? [...upcoming].sort((a, b) => new Date(a.date) - new Date(b.date))[0]
+    : null;
+  const nextGameHtml = nextGame ? (() => {
+    const isA = nextGame.team_a_id === team.id;
+    const oppName = isA ? nextGame.team_b_name : nextGame.team_a_name;
+    return `<div class="td-hero__next">NEXT <span class="td-hero__next-opp">vs ${escHtml(oppName)}</span> · ${escHtml(formatDate(nextGame.date))}</div>`;
+  })() : '';
+
+  const diff = pointsFor - pointsAgainst;
+  const diffHtml = (pointsFor > 0 || pointsAgainst > 0)
+    ? `<div class="td-hero__diff">${pointsFor} PF · ${pointsAgainst} PA · <span style="color:${diff >= 0 ? '#22c55e' : '#f87171'}">${diff >= 0 ? '+' : ''}${diff}</span></div>`
+    : '';
 
   // Same card design + carousel as the homepage's League Leaders widget, just handed a
   // pool pre-filtered to this team's roster — team chip dropped since every card in a
@@ -75,8 +135,14 @@ export function teamDetailPage({
     ? `<div class="section-header"><h2>Upcoming</h2></div>
   <div class="games-grid">${upcoming.map(g => gameRow(g)).join('\n')}</div>` : '';
 
-  const rosterHtml = roster.length
-    ? roster.map(rosterRow).join('\n')
+  const rosterEntries = roster.map(p => ({ p, v: computePlayerStatValues(p) }));
+  const STAT_KEYS = ['ppg', 'rpg', 'apg', 'spg', 'bpg', 'to', 'fgp', 'tpp', 'ftp'];
+  const avgs = Object.fromEntries(STAT_KEYS.map(key => {
+    const vals = rosterEntries.map(e => e.v?.[key]).filter(x => x != null);
+    return [key, vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null];
+  }));
+  const rosterHtml = rosterEntries.length
+    ? rosterEntries.map(({ p, v }) => rosterRow(p, v, avgs)).join('\n')
     : `<div style="padding:24px;text-align:center;color:var(--text-muted)">No players currently on this roster.</div>`;
 
   return `<div class="page-content">
@@ -88,6 +154,8 @@ export function teamDetailPage({
         <span class="td-hero__season">Season ${escHtml(String(currentSeason))}</span>
         ${recentForm ? `<div class="td-form">${recentForm}</div>` : ''}
       </div>
+      ${diffHtml}
+      ${nextGameHtml}
     </div>
     <div class="td-hero__stats">
       <div class="tm-stat"><span class="tm-stat__val font-condensed">${avgOff ?? '—'}</span><span class="tm-stat__lbl">OFF</span></div>
@@ -112,6 +180,12 @@ export function teamDetailPage({
             <th class="pt-stat">PPG</th>
             <th class="pt-stat">RPG</th>
             <th class="pt-stat">APG</th>
+            <th class="pt-stat">SPG</th>
+            <th class="pt-stat">BPG</th>
+            <th class="pt-stat">TO</th>
+            <th class="pt-stat pt-pct">FG%</th>
+            <th class="pt-stat pt-pct">3P%</th>
+            <th class="pt-stat pt-pct">FT%</th>
           </tr>
         </thead>
         <tbody>${rosterHtml}</tbody>
@@ -148,6 +222,9 @@ ${completed.length || upcoming.length ? gameListScript() : ''}
 .td-hero__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .td-hero__record { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
 .td-hero__season { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+.td-hero__diff { margin-top: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.td-hero__next { margin-top: 6px; font-size: 12.5px; font-weight: 700; color: var(--amber); letter-spacing: .02em; }
+.td-hero__next-opp { color: var(--text); font-weight: 700; }
 .td-form { display: flex; gap: 4px; }
 .td-form__pill { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 5px; font-size: 10.5px; font-weight: 800; }
 .td-form__pill--w { background: rgba(34,197,94,.15); color: #22c55e; }
