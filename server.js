@@ -37,6 +37,7 @@ import { fineSchedulePage } from './views/fine-schedule.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
+import { teamDetailPage } from './views/team-detail.js';
 import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
@@ -6494,8 +6495,10 @@ app.get('/roast', (req, res) => {
 
 app.get('/teams', (req, res) => {
   const teams   = getAllTeams();
-  const records = getTeamRecords(getPortalCurrentSeason());
+  const season  = getPortalCurrentSeason();
+  const records = getTeamRecords(season);
   const players = getPlayersWithRatings('');
+  const allGames = byDate(getAllGames());
 
   const recordMap    = Object.fromEntries(records.map(r => [r.team_id, r]));
   const teamIdByName = Object.fromEntries(teams.map(t => [t.name.toUpperCase(), t.id]));
@@ -6511,6 +6514,24 @@ app.get('/teams', (req, res) => {
 
   const avgOf = (arr, fn) => arr.length ? Math.round(arr.reduce((s, p) => s + fn(p), 0) / arr.length) : null;
 
+  // Streak reads off the same last-5 games already fetched for the form pills — counts
+  // consecutive same-result games from the most recent one, so it caps at 5 even if the
+  // real streak runs longer (acceptable: this is a quick-glance card stat, not the
+  // standings page's authoritative number).
+  const computeStreak = (games, teamId) => {
+    if (!games.length) return null;
+    const results = games.map(g => {
+      const isA = g.team_a_id === teamId;
+      const my  = Number(isA ? g.team_a_score : g.team_b_score);
+      const opp = Number(isA ? g.team_b_score : g.team_a_score);
+      return my > opp;
+    });
+    const won = results[0];
+    let count = 0;
+    for (const r of results) { if (r === won) count++; else break; }
+    return { won, count };
+  };
+
   const teamData = teams.map(t => {
     const plrs  = playersByTeam[t.id] || [];
     const rated = plrs.filter(p => p.eff_overall != null);
@@ -6518,8 +6539,27 @@ app.get('/teams', (req, res) => {
     const avgOff = avgOf(rated, p => Math.round(((p.eff_scoring ?? 0) + (p.eff_shooting ?? 0)) / 2));
     const avgDef = avgOf(rated, p => p.eff_defense);
     const rec    = recordMap[t.id] ?? null;
-    return { ...t, wins: rec?.wins ?? null, losses: rec?.losses ?? null, avgOvr, avgOff, avgDef, rosterCount: plrs.length };
+    const recentGames = allGames
+      .filter(g => !g.scheduled && (Number(g.team_a_score) + Number(g.team_b_score)) > 0 && (g.team_a_id === t.id || g.team_b_id === t.id))
+      .slice(0, 5);
+    const wins   = rec?.wins ?? 0;
+    const losses = rec?.losses ?? 0;
+    return {
+      ...t, wins, losses, avgOvr, avgOff, avgDef, rosterCount: plrs.length, recentGames,
+      streak: computeStreak(recentGames, t.id),
+    };
   });
+
+  // Rank by win% (games played at all beats none), tiebreak by raw win count — computed
+  // after the map above since it needs every team's record to compare against.
+  const ranked = [...teamData].sort((a, b) => {
+    const gpA = a.wins + a.losses, gpB = b.wins + b.losses;
+    const wpA = gpA > 0 ? a.wins / gpA : -1;
+    const wpB = gpB > 0 ? b.wins / gpB : -1;
+    return wpB - wpA || b.wins - a.wins;
+  });
+  const rankById = Object.fromEntries(ranked.map((t, i) => [t.id, i + 1]));
+  for (const t of teamData) t.rank = rankById[t.id];
 
   res.send(renderPage(req, {
     title: 'Teams — WKND Basketball League',
@@ -6540,11 +6580,53 @@ app.get('/teams/:ref', (req, res) => {
   if (resolved.slug) return res.redirect(302, `/teams/${resolved.slug}`);
 
   const team = getTeamById(resolved.id);
+  const color = teamColor(team.name);
+  const currentSeason = getPortalCurrentSeason();
+  const record = getTeamRecords(currentSeason).find(r => r.team_id === team.id) || null;
+
+  // Numbers reflect whichever season actually has games recorded — falls back off the live
+  // "current" season during the gap between a new season's roster being drafted and its
+  // first game being played (same gap buildRosterMovers/leadersPage's own defaultScopeId
+  // already handle), rather than showing an all-zero page.
+  const gameSeasons  = getGameSeasons();
+  const statsSeason  = gameSeasons.includes(String(currentSeason)) ? String(currentSeason) : (gameSeasons[0] || String(currentSeason));
+
+  // Roster + career ratings — same source /teams' index cards use, so the OVR shown here
+  // matches the team card's avgOvr composition. Grouped by team NAME (not team_id, which
+  // this query doesn't expose) same as the /teams index route does.
+  const teamNameUpper = String(team.name).toUpperCase();
+  const roster = getPlayersWithRatings('')
+    .filter(p => p.status === 'active' && String(p.team_name || '').toUpperCase() === teamNameUpper)
+    .sort((a, b) => (b.eff_overall ?? -1) - (a.eff_overall ?? -1));
+
+  const seasonStatsMap = Object.fromEntries(
+    getSeasonPlayerStats(statsSeason).filter(p => p.team_id === team.id).map(p => [p.id, p])
+  );
+  const rosterWithStats = roster.map(p => ({ ...p, seasonStats: seasonStatsMap[p.id] || null }));
+
+  const avgOf = (arr, fn) => arr.length ? Math.round(arr.reduce((s, p) => s + fn(p), 0) / arr.length) : null;
+  const ratedRoster = roster.filter(p => p.eff_overall != null);
+  const avgOvr = avgOf(ratedRoster, p => p.eff_overall);
+  const avgOff = avgOf(ratedRoster, p => Math.round(((p.eff_scoring ?? 0) + (p.eff_shooting ?? 0)) / 2));
+  const avgDef = avgOf(ratedRoster, p => p.eff_defense);
+
+  // Team leaders — same pool shape the homepage's League Leaders widget takes, just
+  // pre-filtered to this team. getLeaders() resolves each player to the team they actually
+  // played for that season (withSeasonTeam), so this stays correct even when live team_id
+  // has since drifted from a season's roster (see the /teams grouping caveat).
+  const leaders = getLeaders(statsSeason).filter(p => p.team_id === team.id);
+
+  const teamGames = byDate(getAllGames()).filter(g => g.team_a_id === team.id || g.team_b_id === team.id);
+
   res.send(renderPage(req, {
-    title: `${String(team.name).toUpperCase()} — WKND Basketball`,
+    title: `${teamNameUpper} — WKND Basketball`,
     currentPath: '/teams',
     metaTags: buildTeamOgTags(req, team),
-    body: comingSoonPage({ label: team.name, description: 'Team rosters, stats, and season averages are on their way.' })
+    body: teamDetailPage({
+      team, color, record, currentSeason, statsSeason,
+      avgOvr, avgOff, avgDef,
+      roster: rosterWithStats, leaders, games: teamGames,
+    }),
   }));
 });
 

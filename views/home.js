@@ -202,7 +202,10 @@ export function highlightsSidebar(highlights, { limit = 4, seeAllLink = true } =
 }
 
 // ── League Leaders ────────────────────────────────────────────────────────────
-function leagueLeaders(players) {
+// Exported so other pages (e.g. team detail) can reuse the exact same card design
+// and carousel against a pre-filtered player pool. showTeamChip is dropped for
+// single-team pools, where every card would repeat the same identical chip.
+export function leagueLeaders(players, { showTeamChip = true } = {}) {
   const active = players.filter(p => p.games_played > 0);
   if (!active.length) return '';
 
@@ -243,7 +246,7 @@ function leagueLeaders(players) {
   <span class="leader-title">${escHtml(cat.title)}</span>
   ${playerAvatar(leader.id, leader.name, color, { className: 'leader-avatar', link: true })}
   <span class="leader-name">${playerLink(leader.id, leader.name, { upper: true })}</span>
-  <span class="team-chip leader-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
+  ${showTeamChip ? `<span class="team-chip leader-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>` : ''}
   <span class="font-condensed leader-stat">${escHtml(cat.fn(leader))}</span>
 </div>`;
   }).filter(Boolean);

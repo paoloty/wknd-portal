@@ -23,7 +23,9 @@ function gameRowActions(game, commentsEnabled, social) {
 }
 
 // ── Game row (article-list style) ─────────────────────────────────────────────
-function gameRow(game, { commentsEnabled = false, social = { commentsCount: 0, reactCount: 0, reacted: false } } = {}) {
+// Exported so other pages (e.g. team detail) can reuse the exact same row/list
+// markup and click-delegation script for a filtered subset of games.
+export function gameRow(game, { commentsEnabled = false, social = { commentsCount: 0, reactCount: 0, reacted: false } } = {}) {
   const scoreA = Number(game.team_a_score);
   const scoreB = Number(game.team_b_score);
   const winA = scoreA > scoreB;
@@ -81,7 +83,7 @@ function gameRow(game, { commentsEnabled = false, social = { commentsCount: 0, r
 // One delegated listener for the whole list rather than one per row — mirrors the
 // react/share handlers in views/game.js (gameTabsScript), just scoped to .games-grid and
 // keyed off data-game-id instead of a single page-level gameId.
-function gameListScript() {
+export function gameListScript() {
   return `<script>
 (function() {
   var list = document.querySelector('.games-grid');
