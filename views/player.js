@@ -3,6 +3,7 @@ import { teamColor, displayPlayerName, formatDate, truncate, initials, playerAva
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
+import { BADGE_ICONS } from '../lib/badges.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -843,7 +844,7 @@ function awardsSection(awards) {
   const rows = Object.keys(bySeason).sort((a, b) => b - a).map(s => {
     const badges = bySeason[s].map(a => {
       const meta = AWARD_META[a.award_type] || { label: a.award_type, icon: '', bg: '#f59332', text: '#10141d' };
-      return `<span class="player-award-badge" style="background:${meta.bg}22;color:${meta.bg};border-color:${meta.bg}55">${meta.icon ? `<span style="font-style:normal">${meta.icon}</span>` : ''}${escHtml(meta.label)}</span>`;
+      return `<span class="player-award-badge" style="background:${meta.bg}22;color:${meta.bg};border-color:${meta.bg}55">${meta.icon ? `<span class="player-award-badge__icon">${meta.icon}</span>` : ''}${escHtml(meta.label)}</span>`;
     }).join('');
     return `<div class="player-award-season">
       <div class="player-award-season__label">Season ${escHtml(String(s))}</div>
@@ -908,7 +909,7 @@ function statsTable(statsByType) {
 
   const careerRow = career?.games_played ? statRow(career, 'Career', true) : '';
 
-  return `<div class="card" style="margin-bottom:20px;overflow:hidden">
+  return `<div class="card" style="overflow:hidden">
   <div class="card-label">STATS</div>
   <div class="st-wrap">
     <table class="st-table">
@@ -1404,13 +1405,151 @@ function ratingFeedCard(feed) {
 </div>`;
 }
 
+// ── Badges ────────────────────────────────────────────────────────────────────
+function badgeIconSvg(key) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${BADGE_ICONS[key] || BADGE_ICONS.basketball}</svg>`;
+}
+
+const BADGE_TIER_RANK = { legendary: 0, gold: 1, silver: 2, bronze: 3 };
+const badgeRank = b => b.kind === 'legendary' ? BADGE_TIER_RANK.legendary : (b.tier ? BADGE_TIER_RANK[b.tier] : 4);
+
+function badgeMedal(b, hasLegendary) {
+  const ringClass = b.kind === 'legendary' ? 'badge-medal__ring--legendary' : (b.tier ? `badge-medal__ring--${b.tier}` : 'badge-medal__ring--feat');
+  // Legendary is the only kind that still carries text (the spin that otherwise sets it
+  // apart from a plain gold ring disappears under prefers-reduced-motion). That line only
+  // needs to exist — and only costs vertical space — when this season's row actually has
+  // one; with nobody having earned a Legendary badge league-wide yet, that's effectively never.
+  const tierLabel = b.kind === 'legendary'
+    ? `<div class="badge-medal__tier badge-medal__tier--legendary">Legendary</div>`
+    : (hasLegendary ? `<div class="badge-medal__tier">&nbsp;</div>` : '');
+  return `<div class="badge-medal" title="${escHtml(b.name)}">
+      <div class="badge-medal__ring ${ringClass}"><div class="badge-medal__inner">${badgeIconSvg(b.icon)}</div></div>
+      ${tierLabel}
+      <div class="badge-medal__name">${escHtml(b.name)}</div>
+      <div class="badge-medal__meta">${escHtml(b.meta)}</div>
+    </div>`;
+}
+
+const BADGE_CHEVRON_L = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+const BADGE_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+// .badge-scroll wrapper matches the score ticker's prev/next + edge-fade mechanics (see
+// .ticker-wrap) — the actual scroll/button wiring is one shared script in badgeShowcase
+// below, scoped to whichever .badge-scroll elements exist in the card at the time it runs.
+function badgeSeasonRow(entry, { withLabel }) {
+  const sorted = [...entry.earned].sort((a, b) => badgeRank(a) - badgeRank(b));
+  const hasLegendary = sorted.some(b => b.kind === 'legendary');
+  return `${withLabel ? `<div class="badge-season-label">Season ${escHtml(String(entry.season))}</div>` : ''}
+  <div class="badge-scroll">
+    <button type="button" class="badge-scroll__nav badge-scroll__nav--prev" aria-label="Scroll left">${BADGE_CHEVRON_L}</button>
+    <div class="badge-showcase__row">${sorted.map(b => badgeMedal(b, hasLegendary)).join('')}</div>
+    <button type="button" class="badge-scroll__nav badge-scroll__nav--next" aria-label="Scroll right">${BADGE_CHEVRON_R}</button>
+  </div>`;
+}
+
+// Full-width, public — sits right under the hero, above Coach's Note. Only shows badges
+// already earned; a not-yet-earned teaser lives in nextUpWidget below instead, gated to the
+// player themselves (a public trophy case shouldn't show what you haven't won).
+//
+// badges.seasons is every regular season with at least one earned badge, most recent first.
+// The most recent leads, expanded; anything older sits behind a "show previous seasons"
+// toggle — a career could span many seasons, and this keeps the profile from growing
+// unbounded while still making past achievements reachable, not deleted.
+function badgeShowcase(badges) {
+  const seasons = badges?.seasons || [];
+  if (!seasons.length) return '';
+  const [lead, ...older] = seasons;
+
+  const olderHtml = older.length ? `
+  <button type="button" class="badge-showcase__toggle" id="badge-prev-toggle" aria-expanded="false">
+    Show ${older.length} previous season${older.length > 1 ? 's' : ''} &darr;
+  </button>
+  <div class="badge-showcase__prev" id="badge-prev-seasons" hidden>
+    ${older.map(entry => badgeSeasonRow(entry, { withLabel: true })).join('')}
+  </div>` : '';
+
+  return `<div class="card badge-showcase">
+  <div class="card-label">BADGES <span class="card-label__count">${lead.earned.length} EARNED &mdash; SEASON ${escHtml(String(lead.season))}</span></div>
+  ${badgeSeasonRow(lead, { withLabel: false })}
+  ${olderHtml}
+  <script>
+  (function() {
+    var card = document.currentScript.closest('.badge-showcase');
+    if (!card) return;
+
+    // A .badge-scroll starts life inside a still-hidden previous-seasons panel, so its
+    // scrollWidth reads as 0 until that panel is unhidden — wireScroll() is safe to call
+    // repeatedly (both up front for the always-visible lead row, and again after the toggle
+    // reveals the rest) since it just re-measures and re-toggles classes each time.
+    function wireScroll(wrap) {
+      var track = wrap.querySelector('.badge-showcase__row');
+      var btnP = wrap.querySelector('.badge-scroll__nav--prev');
+      var btnN = wrap.querySelector('.badge-scroll__nav--next');
+      if (!track || wrap.dataset.wired) return;
+      wrap.dataset.wired = '1';
+      var STEP = 130;
+      function update() {
+        var max = track.scrollWidth - track.clientWidth;
+        if (max <= 4) { wrap.classList.add('at-start', 'at-end'); return; }
+        wrap.classList.toggle('at-start', track.scrollLeft < 4);
+        wrap.classList.toggle('at-end', track.scrollLeft > max - 4);
+      }
+      track.addEventListener('scroll', update, { passive: true });
+      window.addEventListener('resize', update);
+      btnP.addEventListener('click', function() { track.scrollBy({ left: -STEP, behavior: 'smooth' }); });
+      btnN.addEventListener('click', function() { track.scrollBy({ left: STEP, behavior: 'smooth' }); });
+      update();
+    }
+
+    function wireAll() { card.querySelectorAll('.badge-scroll').forEach(wireScroll); }
+    wireAll();
+
+    var toggleBtn = document.getElementById('badge-prev-toggle');
+    var panel = document.getElementById('badge-prev-seasons');
+    if (toggleBtn && panel) {
+      toggleBtn.addEventListener('click', function() {
+        var open = panel.hidden;
+        panel.hidden = !open;
+        toggleBtn.setAttribute('aria-expanded', String(open));
+        toggleBtn.innerHTML = open ? 'Hide previous seasons &uarr;' : 'Show ${older.length} previous season${older.length > 1 ? 's' : ''} &darr;';
+        if (open) wireAll();
+      });
+    }
+  })();
+  <\/script>
+</div>`;
+}
+
+// Sidebar, owner-only (same isOwnProfile gate as Coach's Note) — a locked-badge progress
+// teaser. Never shown to other visitors; showing what you haven't earned yet is motivation
+// for you, not something worth broadcasting on your public profile.
+function nextUpWidget(pending) {
+  if (!pending?.length) return '';
+  // Rate badges (have a real progress bar) are more actionable than the flavor-only
+  // legendary ones, so they lead — capped at 2 so this stays a teaser, not a checklist.
+  const picked = [...pending].sort((a, b) => (a.kind === 'rate' ? 0 : 1) - (b.kind === 'rate' ? 0 : 1)).slice(0, 2);
+  const row = b => `<div class="next-up-row">
+    <div class="next-up-row__icon${b.kind === 'legendary' ? ' next-up-row__icon--legendary' : ''}">${badgeIconSvg(b.icon)}</div>
+    <div class="next-up-row__body">
+      <div class="next-up-row__name">${escHtml(b.name)}</div>
+      <div class="next-up-row__meta">${escHtml(b.meta)}</div>
+      ${b.progress != null ? `<div class="next-up-row__bar"><div class="next-up-row__bar-fill" style="width:${Math.round(b.progress * 100)}%"></div></div>` : ''}
+    </div>
+  </div>`;
+  return `<div class="card">
+  <div class="card-label">NEXT UP</div>
+  ${picked.map(row).join('')}
+  <div class="next-up__foot">Only you see this &mdash; same as Coach's Note.</div>
+</div>`;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 export function playerPage({
   player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false,
   fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
-  canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null,
+  canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null, badges = null,
 }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
@@ -1423,6 +1562,7 @@ export function playerPage({
   const probationCovered = minDeposit != null && papawisBalance <= -minDeposit;
   const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation && !probationCovered }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
+  const nextUpHtml = isOwnProfile ? nextUpWidget(badges?.pending) : '';
 
   const peerRatingsHtml = peerRatingsEnabled ? `
     ${canRate ? rateThisPlayerCard(player.id, viewerExistingRating, viewerCooldownActive, viewerCooldownUntil) : ''}
@@ -1431,6 +1571,7 @@ export function playerPage({
   const ratingSnapshotHtml = peerRatingsEnabled ? communityRatingsCard(peerRatingSummary, isOwnProfile) : '';
 
   return `${heroSection(player, totals, isAdmin, isOwnProfile, canReport, reportCategories, reportOtherCategoryId)}
+${badgeShowcase(badges)}
 ${coachNoteHtml}
 <div class="game-detail-layout">
   <div class="game-detail-left">
@@ -1441,6 +1582,7 @@ ${coachNoteHtml}
   </div>
   <div class="game-detail-right">
     ${sidebarHtml}
+    ${nextUpHtml}
     ${ratingSnapshotHtml}
     ${awardsSection(awards)}
     ${potgWriteups(potgGames, player)}

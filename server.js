@@ -66,6 +66,7 @@ import {
   getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam, getPlayerLastTeamIdBeforeSeason,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
   getPlayerCareerHighs, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
+  getTeamGamesCount,
   getPlayerStatsByType,
   upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
   getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame,
@@ -145,6 +146,7 @@ import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summariz
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
+import { computeSeasonBadges } from './lib/badges.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
 import { adminAwardsBody } from './views/admin/awards.js';
@@ -2198,6 +2200,23 @@ function buildRosterMovers(season) {
     });
   }
   return movers;
+}
+
+// Standings rank by win% (any games played beats none), tiebreak by raw win count.
+// Shared by /teams (all four cards) and /teams/:ref (single team's rank badge) so the
+// number always agrees between the two pages.
+function rankTeamsByRecord(teams, recordMap) {
+  const withWl = teams.map(t => {
+    const rec = recordMap[t.id] ?? null;
+    return { id: t.id, wins: rec?.wins ?? 0, losses: rec?.losses ?? 0 };
+  });
+  const ranked = [...withWl].sort((a, b) => {
+    const gpA = a.wins + a.losses, gpB = b.wins + b.losses;
+    const wpA = gpA > 0 ? a.wins / gpA : -1;
+    const wpB = gpB > 0 ? b.wins / gpB : -1;
+    return wpB - wpA || b.wins - a.wins;
+  });
+  return Object.fromEntries(ranked.map((t, i) => [t.id, i + 1]));
 }
 
 // Resolves a URL ref (pretty slug OR raw entity ID) to a canonical entity ID.
@@ -6550,15 +6569,7 @@ app.get('/teams', (req, res) => {
     };
   });
 
-  // Rank by win% (games played at all beats none), tiebreak by raw win count — computed
-  // after the map above since it needs every team's record to compare against.
-  const ranked = [...teamData].sort((a, b) => {
-    const gpA = a.wins + a.losses, gpB = b.wins + b.losses;
-    const wpA = gpA > 0 ? a.wins / gpA : -1;
-    const wpB = gpB > 0 ? b.wins / gpB : -1;
-    return wpB - wpA || b.wins - a.wins;
-  });
-  const rankById = Object.fromEntries(ranked.map((t, i) => [t.id, i + 1]));
+  const rankById = rankTeamsByRecord(teams, recordMap);
   for (const t of teamData) t.rank = rankById[t.id];
 
   res.send(renderPage(req, {
@@ -6618,13 +6629,26 @@ app.get('/teams/:ref', (req, res) => {
 
   const teamGames = byDate(getAllGames()).filter(g => g.team_a_id === team.id || g.team_b_id === team.id);
 
+  // Points for/against — scoped to the live current season (same games the record above
+  // comes from), not statsSeason's fallback, so everything in the hero row stays about the
+  // same season rather than mixing a live 0-0 record with a fallback season's scoring.
+  let pointsFor = 0, pointsAgainst = 0;
+  for (const g of teamGames) {
+    if (g.scheduled || String(g.season) !== String(currentSeason)) continue;
+    const scoreSum = Number(g.team_a_score) + Number(g.team_b_score);
+    if (!(scoreSum > 0)) continue;
+    const isA = g.team_a_id === team.id;
+    pointsFor     += Number(isA ? g.team_a_score : g.team_b_score);
+    pointsAgainst += Number(isA ? g.team_b_score : g.team_a_score);
+  }
+
   res.send(renderPage(req, {
     title: `${teamNameUpper} — WKND Basketball`,
     currentPath: '/teams',
     metaTags: buildTeamOgTags(req, team),
     body: teamDetailPage({
       team, color, record, currentSeason, statsSeason,
-      avgOvr, avgOff, avgDef,
+      avgOvr, avgOff, avgDef, pointsFor, pointsAgainst,
       roster: rosterWithStats, leaders, games: teamGames,
     }),
   }));
@@ -6678,6 +6702,35 @@ app.get('/players/:ref', async (req, res) => {
   const careerHighs = getPlayerCareerHighs(resolved.id);
   const awards      = getPlayerAwards(resolved.id);
   const displayName = displayPlayerName(player.name);
+
+  // Badges — season-scoped, re-earnable each season, computed fresh at render time (no
+  // stored table yet). One result per regular season the player has stats for, so a
+  // multi-season player's profile can show past seasons' badges alongside the current one.
+  //
+  // Deliberately getCurrentSeason() (MAX season with completed games), not
+  // getPortalCurrentSeason() — the latter follows the admin's `portal_season` override,
+  // which points at the season open for registration and can outrun what's actually been
+  // played. Badges are about on-court results, so they should track the season that has box
+  // scores, not the one being registered for.
+  //
+  // Iron Man's denominator uses the team the player actually played for THAT season (read
+  // off the game log's own player_team_id, not player.team_id) since a player can switch
+  // teams between seasons — using their current team would count a past season's games
+  // against the wrong roster.
+  const badgeCurrentSeason = getCurrentSeason()?.season ?? 3;
+  const badgesAllSeasons = statsByType.seasons
+    .filter(r => r.game_type === 'regular')
+    .map(r => {
+      const seasonGames = gameLogs.filter(g => String(g.season) === String(r.season) && g.game_type === 'regular' && g.status === 'played');
+      const seasonTeamId = seasonGames[0]?.player_team_id || player.team_id;
+      const teamGamesPlayed = seasonTeamId ? getTeamGamesCount(seasonTeamId, r.season) : 0;
+      return { season: r.season, ...computeSeasonBadges(r, seasonGames, teamGamesPlayed) };
+    })
+    .sort((a, b) => Number(b.season) - Number(a.season));
+  const badges = {
+    seasons: badgesAllSeasons.filter(s => s.earned.length > 0),
+    pending: badgesAllSeasons.find(s => String(s.season) === String(badgeCurrentSeason))?.pending || [],
+  };
 
   let financialSection = '';
   if (isAdminWithSection(req, 'finance')) {
@@ -6758,7 +6811,7 @@ app.get('/players/:ref', async (req, res) => {
     isOwnProfile,
     metaTags: buildPlayerOgTags(req, player, totals),
     body: playerPage({
-      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection,
+      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, badges,
       isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisBalance, balanceTransactions, papawisGames, coachNote, latestPoll,
       minDeposit: isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null,
       peerRatingsEnabled: getFeatureFlags().peerRatings,

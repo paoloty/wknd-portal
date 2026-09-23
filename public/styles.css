@@ -8,6 +8,12 @@
   --text-subtle: #5b6475;
   --amber:       #f59332;
   --amber-dim:   rgba(245,147,50,0.15);
+  --amber-deep:  #7a4a1f;
+  --bronze:      #c9854f;
+  --bronze-deep: #6b4423;
+  --silver:      #c7d0da;
+  --silver-deep: #4b5563;
+  --surface-2:   #161c29;
   --radius-sm:   9px;
   --radius:      14px;
   --radius-lg:   18px;
@@ -3162,6 +3168,7 @@ a.player-link:hover { color: var(--amber); }
   opacity: 0.8;
 }
 .card-label__more:hover { opacity: 1; }
+.card-label__count { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: var(--amber); }
 
 /* ── POTG card ──────────────────────────────────────────────────────────── */
 .potg-card { padding: 0; }
@@ -5882,7 +5889,110 @@ a.player-link:hover { color: var(--amber); }
 .player-award-season { padding: 10px 18px; border-bottom: 1px solid var(--border); }
 .player-award-season:last-child { border-bottom: none; padding-bottom: 14px; }
 .player-award-season__label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
-.player-award-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; border: 1px solid transparent; border-radius: 6px; padding: 3px 9px; margin: 2px 4px 2px 0; }
+.player-award-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; line-height: 1; border: 1px solid transparent; border-radius: 6px; padding: 6px 9px; margin: 2px 4px 2px 0; }
+.player-award-badge__icon { display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-style: normal; }
+
+/* ── Badge showcase (player profile, full width, public) ────────────────── */
+.badge-showcase { margin-bottom: 20px; }
+.badge-showcase__empty { padding: 18px; font-size: 13px; color: var(--text-muted); }
+
+/* Scroll wrapper: edge fades + prev/next nav, same mechanics as .ticker-wrap, but fading to
+   the card's --surface instead of the page's --bg since this sits inside a .card. Both the
+   fades and the buttons on a given side disappear via .at-start/.at-end — and a row with
+   nothing to scroll gets both classes at once, hiding everything. */
+.badge-scroll { position: relative; }
+.badge-scroll::before,
+.badge-scroll::after {
+  content: ''; position: absolute; top: 0; bottom: 8px; width: 40px;
+  pointer-events: none; z-index: 2; transition: opacity 0.25s;
+}
+.badge-scroll::before { left: 0;  background: linear-gradient(to right, var(--surface), transparent); }
+.badge-scroll::after  { right: 0; background: linear-gradient(to left,  var(--surface), transparent); }
+.badge-scroll.at-start::before { opacity: 0; }
+.badge-scroll.at-end::after    { opacity: 0; }
+.badge-scroll__nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 50%;
+  color: var(--text-muted); cursor: pointer; padding: 0;
+  transition: opacity 0.25s, color 0.15s, border-color 0.15s;
+}
+.badge-scroll__nav:hover { color: var(--text); border-color: #334155; }
+.badge-scroll__nav--prev { left: 8px; }
+.badge-scroll__nav--next { right: 8px; }
+.badge-scroll.at-start .badge-scroll__nav--prev { opacity: 0; pointer-events: none; }
+.badge-scroll.at-end   .badge-scroll__nav--next { opacity: 0; pointer-events: none; }
+
+.badge-showcase__row {
+  display: flex; gap: 22px; flex-wrap: nowrap; padding: 22px 18px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.badge-showcase__row::-webkit-scrollbar { display: none; }
+.badge-season-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-muted); padding: 14px 18px 0;
+}
+.badge-showcase__toggle {
+  display: block; width: 100%; text-align: left; background: none; border: none; border-top: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: var(--amber); cursor: pointer; padding: 12px 18px;
+}
+.badge-showcase__toggle:hover { opacity: .85; }
+.badge-showcase__prev .badge-season-label:first-child { padding-top: 4px; }
+.badge-showcase__prev .badge-season-label:not(:first-child) { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 16px; }
+.badge-medal { display: flex; flex-direction: column; align-items: center; text-align: center; width: 92px; flex-shrink: 0; }
+.badge-medal__ring { width: 76px; height: 76px; border-radius: 50%; padding: 4px; margin-bottom: 10px; }
+.badge-medal__ring--gold   { background: conic-gradient(from -40deg, var(--amber-deep), var(--amber), var(--amber-deep) 60%, #ffc677 85%, var(--amber-deep)); }
+.badge-medal__ring--silver { background: conic-gradient(from -40deg, var(--silver-deep), var(--silver), var(--silver-deep) 60%, var(--silver) 85%, var(--silver-deep)); }
+.badge-medal__ring--bronze { background: conic-gradient(from -40deg, var(--bronze-deep), var(--bronze), var(--bronze-deep) 60%, var(--bronze) 85%, var(--bronze-deep)); }
+.badge-medal__ring--feat   { background: var(--text-subtle); }
+.badge-medal__ring--legendary {
+  background: conic-gradient(var(--amber-deep), var(--amber), #ffc677, var(--amber), var(--amber-deep));
+  animation: badge-medal-spin 5s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .badge-medal__ring--legendary { animation: none; } }
+@keyframes badge-medal-spin { to { transform: rotate(360deg); } }
+.badge-medal__inner {
+  width: 100%; height: 100%; border-radius: 50%; background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.4), inset 0 2px 6px rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+}
+.badge-medal__inner svg { width: 32px; height: 32px; }
+.badge-medal__ring--gold .badge-medal__inner svg      { color: var(--amber); }
+.badge-medal__ring--silver .badge-medal__inner svg    { color: var(--silver); }
+.badge-medal__ring--bronze .badge-medal__inner svg    { color: var(--bronze); }
+.badge-medal__ring--feat .badge-medal__inner svg      { color: var(--text-muted); }
+.badge-medal__ring--legendary .badge-medal__inner svg { color: var(--amber); }
+.badge-medal__tier { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 2px; }
+.badge-medal__tier--gold      { color: var(--amber); }
+.badge-medal__tier--silver    { color: var(--silver); }
+.badge-medal__tier--bronze    { color: var(--bronze); }
+.badge-medal__tier--legendary { color: var(--amber); }
+.badge-medal__name { font-size: 12px; font-weight: 700; line-height: 1.25; }
+.badge-medal__meta { font-size: 10.5px; color: var(--text-subtle); margin-top: 1px; }
+
+/* ── Next Up (player profile sidebar, owner-only) ────────────────────────── */
+.next-up__foot { padding: 6px 18px 12px; font-size: 10.5px; color: var(--text-subtle); font-style: italic; }
+.next-up-row { display: flex; align-items: center; gap: 10px; padding: 9px 18px; }
+.next-up-row + .next-up-row { border-top: 1px dashed var(--border); }
+.next-up-row__icon {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  background: var(--surface-2); border: 1px dashed var(--text-subtle);
+  display: flex; align-items: center; justify-content: center; opacity: .6;
+}
+.next-up-row__icon svg { width: 13px; height: 13px; color: var(--text-muted); }
+.next-up-row__icon--legendary { border-color: var(--amber-deep); }
+.next-up-row__body { min-width: 0; flex: 1; }
+.next-up-row__name { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+.next-up-row__meta { font-size: 11px; color: var(--text-subtle); margin-top: 1px; }
+.next-up-row__bar { height: 3px; border-radius: 2px; background: var(--border); margin-top: 5px; overflow: hidden; }
+.next-up-row__bar-fill { height: 100%; background: var(--text-subtle); border-radius: 2px; }
+
+@media (max-width: 480px) {
+  .badge-showcase__row { gap: 14px; padding: 18px 14px; }
+  .badge-medal { width: 72px; }
+  .badge-medal__ring { width: 60px; height: 60px; }
+  .badge-medal__inner svg { width: 26px; height: 26px; }
+}
 
 @media (max-width: 900px) {
   .awd-team-grid { grid-template-columns: repeat(3, 1fr); }
