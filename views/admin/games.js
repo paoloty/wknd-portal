@@ -1,6 +1,6 @@
 import { escHtml } from '../layout.js';
-import { displayPlayerName, teamColor } from '../utils.js';
-import { buildBoxScoreData, teamBoxScoreTab, gameLeadersTab, teamComparisonTab, lineScoreTab } from '../game.js';
+import { displayPlayerName, teamColor, playerLink } from '../utils.js';
+import { buildBoxScoreData, gameLeadersTab, teamComparisonTab, lineScoreTab } from '../game.js';
 
 const ICON_IMPORT    = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v7.5M4.5 6L7 8.5 9.5 6"/><path d="M2 10v1.5A1.5 1.5 0 0 0 3.5 13h7A1.5 1.5 0 0 0 12 11.5V10"/></svg>`;
 const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
@@ -407,8 +407,182 @@ function fmtFrac(made, miss) {
   return att === 0 ? '—' : `${made}/${att}`;
 }
 
+// ── Admin-only editable box score (not used on the public site) ─────────────
+// Same visual table as the public teamBoxScore() in views/game.js (reuses its bs-* CSS
+// classes), but each row has an Edit toggle. Editing swaps that row's static numbers for
+// inputs in place and tints the row to mark it as live; Save diffs against the row's original
+// values and only PATCHes the fields that actually changed via
+// /admin/games/:id/stats/:playerId, one request per changed field (each becomes its own
+// Stat Correction History entry).
+//
+// Unlike the public table, the first shot group here is "2-POINTERS" (raw fg2m/fg2m_miss)
+// rather than "FIELD GOALS" (fg2m+fg3m+fg4m combined) — editing a *combined* made/attempt
+// count would be ambiguous to turn back into the three underlying columns, so the admin
+// table shows all four shot types (2/3/4/FT) as their own raw, directly-editable group.
+const EDIT_ICON  = `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 1.5l3 3-8 8-3.5 1 1-3.5z"/></svg>`;
+const SAVE_ICON  = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
+const CANCEL_ICON = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
+
+const inputStyle = 'width:30px;background:transparent;border:none;border-bottom:1px dashed var(--amber, #f59332);color:inherit;font:inherit;text-align:center;padding:0;display:none';
+
+function shotGroupCells(stat, made, miss) {
+  const att = made + miss;
+  const pct = att ? Math.round(made / att * 100) + '%' : '–';
+  return `<td class="bs-stat">
+      <span class="v-s">${made || '–'}</span><input class="v-i" type="number" min="0" step="1" data-role="made" data-stat="${stat}" value="${made}" style="${inputStyle}">
+    </td>
+    <td class="bs-stat">
+      <span class="v-s">${att || '–'}</span><input class="v-i" type="number" min="0" step="1" data-role="att" data-stat="${stat}" value="${att}" style="${inputStyle}">
+    </td>
+    <td class="bs-stat bs-pct"><span class="v-pct" data-stat="${stat}">${pct}</span></td>`;
+}
+
+function countCell(field, value) {
+  return `<td class="bs-stat">
+    <span class="v-s">${Number(value) || 0}</span><input class="v-i" type="number" min="0" step="1" data-field="${field}" value="${Number(value) || 0}" style="${inputStyle}">
+  </td>`;
+}
+
+function perOf(p) {
+  const fgm = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
+  const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
+  const ftm = Number(p.ftm), fta = ftm + Number(p.ft_miss);
+  return (Number(p.pts) + 0.4 * fgm - 0.7 * fga - 0.4 * (fta - ftm) +
+    0.7 * Number(p.reb) + Number(p.stl) + 0.7 * Number(p.ast) +
+    0.7 * Number(p.blk) - Number(p.turnover)).toFixed(1);
+}
+
+function editableRow(p, gameId) {
+  const pid = escHtml(p.player_id);
+  const orig = {
+    fg2m: Number(p.fg2m) || 0, fg2m_miss: Number(p.fg2m_miss) || 0,
+    fg3m: Number(p.fg3m) || 0, fg3m_miss: Number(p.fg3m_miss) || 0,
+    fg4m: Number(p.fg4m) || 0, fg4m_miss: Number(p.fg4m_miss) || 0,
+    ftm: Number(p.ftm) || 0, ft_miss: Number(p.ft_miss) || 0,
+    reb: Number(p.reb) || 0, ast: Number(p.ast) || 0, stl: Number(p.stl) || 0,
+    blk: Number(p.blk) || 0, turnover: Number(p.turnover) || 0, pts: Number(p.pts) || 0,
+  };
+  return `<tr class="bs-edit-row" data-game-id="${escHtml(gameId)}" data-player-id="${pid}" data-orig='${escHtml(JSON.stringify(orig))}'>
+      <td class="bs-name">${playerLink(p.player_id, p.name || '')}</td>
+      ${shotGroupCells('fg2', orig.fg2m, orig.fg2m_miss)}
+      ${shotGroupCells('fg3', orig.fg3m, orig.fg3m_miss)}
+      ${shotGroupCells('fg4', orig.fg4m, orig.fg4m_miss)}
+      ${shotGroupCells('ft', orig.ftm, orig.ft_miss)}
+      ${countCell('reb', orig.reb)}
+      ${countCell('ast', orig.ast)}
+      ${countCell('stl', orig.stl)}
+      ${countCell('blk', orig.blk)}
+      ${countCell('turnover', orig.turnover)}
+      <td class="bs-stat bs-pts"><span class="v-pts">${orig.pts}</span></td>
+      <td class="bs-stat bs-per"><span class="v-per">${perOf(orig)}</span></td>
+      <td class="bs-stat bs-edit-actions">
+        <button type="button" class="bs-act bs-act-edit" title="Edit">${EDIT_ICON}</button>
+        <button type="button" class="bs-act bs-act-save" title="Save" style="display:none">${SAVE_ICON}</button>
+        <button type="button" class="bs-act bs-act-cancel" title="Cancel" style="display:none">${CANCEL_ICON}</button>
+      </td>
+    </tr>`;
+}
+
+export function adminInlineBoxScore(players, teamName, gameId, dnpPlayers = [], teamTurnovers = 0) {
+  const n = teamName.toUpperCase();
+  if (!players.length) return `<p class="tabs-empty">No stats for ${escHtml(n)}.</p>`;
+  const sorted = [...players].sort((a, b) => Number(b.pts) - Number(a.pts));
+
+  const sum = (key) => sorted.reduce((s, p) => s + Number(p[key] || 0), 0);
+  const tot = {
+    fg2m: sum('fg2m'), fg2m_miss: sum('fg2m_miss'), fg3m: sum('fg3m'), fg3m_miss: sum('fg3m_miss'),
+    fg4m: sum('fg4m'), fg4m_miss: sum('fg4m_miss'), ftm: sum('ftm'), ft_miss: sum('ft_miss'),
+    reb: sum('reb'), ast: sum('ast'), stl: sum('stl'), blk: sum('blk'), turnover: sum('turnover'), pts: sum('pts'),
+  };
+  const teamTotalTurnovers = tot.turnover + (Number(teamTurnovers) || 0);
+  const pctOf = (m, ms) => (m + ms) ? Math.round(m / (m + ms) * 100) + '%' : '–';
+
+  return `<div class="bs-block">
+  <div class="bs-scroll">
+    <table class="bs-table">
+      <thead>
+        <tr>
+          <th class="bs-name" rowspan="2">PLAYER</th>
+          <th colspan="3" class="bs-group">2-POINTERS</th>
+          <th colspan="3" class="bs-group">3-POINTERS</th>
+          <th colspan="3" class="bs-group">4-POINTERS</th>
+          <th colspan="3" class="bs-group">FREE THROWS</th>
+          <th class="bs-stat" rowspan="2">REB</th>
+          <th class="bs-stat" rowspan="2">AST</th>
+          <th class="bs-stat" rowspan="2">STL</th>
+          <th class="bs-stat" rowspan="2">BLK</th>
+          <th class="bs-stat" rowspan="2">TO</th>
+          <th class="bs-stat bs-pts" rowspan="2">PTS</th>
+          <th class="bs-stat bs-per" rowspan="2">PER</th>
+          <th class="bs-stat" rowspan="2" style="width:50px">EDIT</th>
+        </tr>
+        <tr class="bs-subhead">
+          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
+          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
+          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
+          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted.map(p => editableRow(p, gameId)).join('')}
+        ${dnpPlayers.map(p => `<tr class="bs-dnp">
+          <td class="bs-dnp__cell" colspan="21">
+            ${playerLink(p.id, p.name)} <span class="dnp-pill">DNP</span>
+          </td>
+        </tr>`).join('')}
+        <tr class="bs-totals">
+          <td class="bs-name">TEAM</td>
+          <td class="bs-stat">${tot.fg2m}</td><td class="bs-stat">${tot.fg2m + tot.fg2m_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.fg2m, tot.fg2m_miss)}</td>
+          <td class="bs-stat">${tot.fg3m}</td><td class="bs-stat">${tot.fg3m + tot.fg3m_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.fg3m, tot.fg3m_miss)}</td>
+          <td class="bs-stat">${tot.fg4m}</td><td class="bs-stat">${tot.fg4m + tot.fg4m_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.fg4m, tot.fg4m_miss)}</td>
+          <td class="bs-stat">${tot.ftm}</td><td class="bs-stat">${tot.ftm + tot.ft_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.ftm, tot.ft_miss)}</td>
+          <td class="bs-stat">${tot.reb}</td>
+          <td class="bs-stat">${tot.ast}</td>
+          <td class="bs-stat">${tot.stl}</td>
+          <td class="bs-stat">${tot.blk}</td>
+          <td class="bs-stat">${teamTotalTurnovers}</td>
+          <td class="bs-stat bs-pts">${tot.pts}</td>
+          <td class="bs-stat bs-per">–</td>
+          <td class="bs-stat"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  ${teamTurnovers > 0 ? `<div class="bs-team-to-note">Includes ${teamTurnovers} team turnover${teamTurnovers === 1 ? '' : 's'} (shot clock, etc.) not charged to a player.</div>` : ''}
+</div>`;
+}
+
+function statCorrectionsCard(statCorrections, players) {
+  const nameById = Object.fromEntries(players.map(p => [p.id, displayPlayerName(p.name || '')]));
+  // The shared /admin audit middleware logs every mutating request regardless of outcome, so a
+  // rejected edit (unknown/non-editable field, 400) lands here too. Those never reached
+  // updateGamePlayerStat, so old_value was never stamped onto the body — use its presence to
+  // filter out failed attempts and only show corrections that actually wrote to the DB.
+  const applied = statCorrections.filter(log => {
+    try { return 'old_value' in JSON.parse(log.details || '{}'); } catch { return false; }
+  });
+  if (!applied.length) return '';
+  const rows = applied.slice(0, 20).map(log => {
+    const details = JSON.parse(log.details);
+    const m = log.path.match(/\/stats\/([^/]+)$/);
+    const playerName = nameById[m?.[1]] || m?.[1] || 'Unknown player';
+    const when = new Date(log.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return `<div class="text-xs text-slate-400 py-1.5 border-b border-admin-border/50 last:border-b-0">
+      <span class="text-slate-200 font-medium">${escHtml(playerName)}</span>
+      · ${escHtml(String(details.field || ''))}:
+      <span class="text-slate-500">${escHtml(String(details.old_value ?? '—'))}</span> →
+      <b class="text-slate-200">${escHtml(String(details.value ?? ''))}</b>
+      <div class="text-[10px] text-slate-600 mt-0.5">${escHtml(log.actor)} · ${when}</div>
+    </div>`;
+  }).join('');
+  return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Stat Correction History</div>
+    <div class="p-4">${rows}</div>
+  </div>`;
+}
+
 // ── Game detail / edit ────────────────────────────────────────────────────────
-export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers = [], quarterScores = [] } = {}) {
+export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [] } = {}) {
   const perOf = (p) => {
     const fgm = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
     const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
@@ -554,10 +728,10 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
       </div>
       ${!isFinal ? `
       <div id="adm-tab-bst-a" class="game-tabs__body game-tabs__body--hidden">
-        ${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner, teamTurnovers)}
+        ${adminInlineBoxScore(byTeam[nameA] || [], nameA, game.id, dnpByTeam[nameA] || [], teamTurnovers[nameA] || 0)}
       </div>
       <div id="adm-tab-bst-b" class="game-tabs__body game-tabs__body--hidden">
-        ${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner, teamTurnovers)}
+        ${adminInlineBoxScore(byTeam[nameB] || [], nameB, game.id, dnpByTeam[nameB] || [], teamTurnovers[nameB] || 0)}
       </div>
       <div id="adm-tab-leaders" class="game-tabs__body game-tabs__body--hidden">
         ${gameLeadersTab(game, stats)}
@@ -641,6 +815,8 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
       </div>
     </div>
     ` : ''}
+
+    ${!isScheduled && !isFinal ? statCorrectionsCard(statCorrections, players) : ''}
 
     <div class="pt-1">
       <button id="agm-delete-btn" class="admin-btn admin-btn--danger">${ICON_TRASH} Delete game</button>
@@ -772,6 +948,124 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
       document.getElementById('adm-tab-' + btn.dataset.gtab).classList.remove('game-tabs__body--hidden');
     });
   }
+
+  // ── Inline box score editing ────────────────────────────────────────────────
+  var EDIT_ROW_BG = 'rgba(245,147,50,0.08)';
+
+  function setRowMode(tr, editing) {
+    tr.querySelectorAll('.v-s').forEach(function(el) { el.style.display = editing ? 'none' : ''; });
+    tr.querySelectorAll('.v-i').forEach(function(el) { el.style.display = editing ? 'inline-block' : 'none'; });
+    tr.querySelector('.bs-act-edit').style.display   = editing ? 'none' : '';
+    tr.querySelector('.bs-act-save').style.display   = editing ? '' : 'none';
+    tr.querySelector('.bs-act-cancel').style.display = editing ? '' : 'none';
+    tr.style.background = editing ? EDIT_ROW_BG : '';
+    var nameCell = tr.querySelector('.bs-name');
+    if (nameCell) nameCell.style.background = editing ? EDIT_ROW_BG : '';
+  }
+
+  function resetRowInputs(tr, orig) {
+    tr.querySelectorAll('.v-i[data-stat]').forEach(function(inp) {
+      var stat = inp.dataset.stat, role = inp.dataset.role;
+      var madeField = stat === 'ft' ? 'ftm' : stat + 'm';
+      var missField = stat === 'ft' ? 'ft_miss' : stat + 'm_miss';
+      inp.value = role === 'made' ? orig[madeField] : (orig[madeField] + orig[missField]);
+    });
+    tr.querySelectorAll('.v-i[data-field]').forEach(function(inp) {
+      inp.value = orig[inp.dataset.field];
+    });
+  }
+
+  function perFromOrig(o) {
+    var fgm = o.fg2m + o.fg3m + o.fg4m, fga = fgm + o.fg2m_miss + o.fg3m_miss + o.fg4m_miss;
+    var fta = o.ftm + o.ft_miss;
+    return (o.pts + 0.4*fgm - 0.7*fga - 0.4*(fta - o.ftm) + 0.7*o.reb + o.stl + 0.7*o.ast + 0.7*o.blk - o.turnover).toFixed(1);
+  }
+
+  function collectRowChanges(tr, orig) {
+    var changes = {};
+    ['fg2', 'fg3', 'fg4', 'ft'].forEach(function(stat) {
+      var madeField = stat === 'ft' ? 'ftm' : stat + 'm';
+      var missField = stat === 'ft' ? 'ft_miss' : stat + 'm_miss';
+      var madeInp = tr.querySelector('.v-i[data-role="made"][data-stat="' + stat + '"]');
+      var attInp  = tr.querySelector('.v-i[data-role="att"][data-stat="' + stat + '"]');
+      var made = Math.max(0, parseInt(madeInp.value, 10) || 0);
+      var att  = Math.max(0, parseInt(attInp.value, 10) || 0);
+      var miss = Math.max(0, att - made);
+      if (made !== orig[madeField]) changes[madeField] = made;
+      if (miss !== orig[missField]) changes[missField] = miss;
+    });
+    ['reb', 'ast', 'stl', 'blk', 'turnover'].forEach(function(field) {
+      var inp = tr.querySelector('.v-i[data-field="' + field + '"]');
+      var val = Math.max(0, parseInt(inp.value, 10) || 0);
+      if (val !== orig[field]) changes[field] = val;
+    });
+    return changes;
+  }
+
+  document.querySelectorAll('.bs-edit-row').forEach(function(tr) {
+    var gameId = tr.dataset.gameId, playerId = tr.dataset.playerId;
+
+    tr.querySelector('.bs-act-edit').addEventListener('click', function() {
+      setRowMode(tr, true);
+    });
+
+    tr.querySelector('.bs-act-cancel').addEventListener('click', function() {
+      resetRowInputs(tr, JSON.parse(tr.dataset.orig));
+      setRowMode(tr, false);
+    });
+
+    tr.querySelector('.bs-act-save').addEventListener('click', async function() {
+      var saveBtn = this;
+      var orig = JSON.parse(tr.dataset.orig);
+      var changes = collectRowChanges(tr, orig);
+      if (!Object.keys(changes).length) { setRowMode(tr, false); return; }
+
+      saveBtn.disabled = true;
+      var next = Object.assign({}, orig);
+      var lastPts = orig.pts;
+      try {
+        for (var field in changes) {
+          var r = await fetch('/admin/games/' + gameId + '/stats/' + playerId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field: field, value: changes[field] }),
+          });
+          var data = await r.json();
+          if (data.error) throw new Error(data.error);
+          next[field] = changes[field];
+          lastPts = data.pts;
+        }
+        next.pts = lastPts;
+        tr.dataset.orig = JSON.stringify(next);
+
+        // Refresh this row's static M/A/% cells, REB..TO, PTS and PER from the new totals.
+        ['fg2', 'fg3', 'fg4', 'ft'].forEach(function(stat) {
+          var madeField = stat === 'ft' ? 'ftm' : stat + 'm';
+          var missField = stat === 'ft' ? 'ft_miss' : stat + 'm_miss';
+          var made = next[madeField], att = next[madeField] + next[missField];
+          var madeInp = tr.querySelector('.v-i[data-role="made"][data-stat="' + stat + '"]');
+          var attInp  = tr.querySelector('.v-i[data-role="att"][data-stat="' + stat + '"]');
+          madeInp.value = made; attInp.value = att;
+          madeInp.previousElementSibling.textContent = made || '–';
+          attInp.previousElementSibling.textContent = att || '–';
+          var pctEl = tr.querySelector('.v-pct[data-stat="' + stat + '"]');
+          pctEl.textContent = att ? Math.round(made / att * 100) + '%' : '–';
+        });
+        ['reb', 'ast', 'stl', 'blk', 'turnover'].forEach(function(field) {
+          var inp = tr.querySelector('.v-i[data-field="' + field + '"]');
+          inp.value = next[field];
+          inp.previousElementSibling.textContent = next[field] || 0;
+        });
+        tr.querySelector('.v-pts').textContent = next.pts;
+        tr.querySelector('.v-per').textContent = perFromOrig(next);
+        setRowMode(tr, false);
+      } catch (e) {
+        alert(e.message || 'Save failed. Check your connection and try again.');
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+  });
 
   document.getElementById('agm-delete-btn').addEventListener('click', async function() {
     if (!confirm('Delete this game? This will also remove all player stats and cannot be undone.')) return;

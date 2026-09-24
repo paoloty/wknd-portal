@@ -73,6 +73,7 @@ import {
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, markGameFinal, setGameOvertime, createGame,
+  getGamePlayerStat, updateGamePlayerStat, getStatCorrectionsForGame, EDITABLE_STAT_FIELDS,
   updatePlayerPhoto, updatePlayer,
   getPlayerPhotoOriginal, updatePlayerPhotoOriginal,
   getAwardPhotoOverrides, upsertAwardPhotoOverride, deleteAwardPhotoOverride,
@@ -5252,10 +5253,11 @@ app.get('/admin/games/:id', requireAuth, (req, res) => {
   const stats = getGameDetailStats(game.id);
   const dnpPlayers = getGameDnpPlayers(game.id);
   const quarterScores = extractQuarterScores(game);
+  const statCorrections = getStatCorrectionsForGame(game.id);
   res.send(renderAdminPage(req, {
     title: `${game.team_a_name} vs ${game.team_b_name}`,
     currentPath: '/admin/games',
-    body: adminGameDetailBody({ game, players, stats, dnpPlayers, quarterScores }),
+    body: adminGameDetailBody({ game, players, stats, dnpPlayers, quarterScores, statCorrections }),
   }));
 });
 
@@ -5310,6 +5312,23 @@ app.post('/admin/games/:id/save', requireAuth, jsonSmall, (req, res) => {
     date:                 b.date             !== undefined ? String(b.date)              : game.date,
   });
   res.json({ ok: true });
+});
+
+// One-field correction to an already-imported box score line (e.g. fixing a mistyped rebound
+// count) without re-importing the whole game. old_value is read server-side, not trusted from
+// the client, and stamped onto req.body before responding so the generic admin-action logger
+// at the top of this file (which reads req.body on res 'finish') records a self-describing
+// "field: old -> new" entry instead of just the new value.
+app.post('/admin/games/:id/stats/:playerId', requireAuth, jsonSmall, (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  const { field, value } = req.body || {};
+  if (!EDITABLE_STAT_FIELDS.has(field)) return res.status(400).json({ error: 'Invalid stat field' });
+  const existing = getGamePlayerStat(game.id, req.params.playerId);
+  if (!existing) return res.status(404).json({ error: 'No stat line for this player in this game' });
+  req.body.old_value = existing[field];
+  const updated = updateGamePlayerStat(game.id, req.params.playerId, field, value);
+  res.json({ ok: true, pts: updated.pts });
 });
 
 app.post('/admin/games/:id/recap', requireAuth, jsonSmall, (req, res) => {
