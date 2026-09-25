@@ -54,6 +54,199 @@ function scoreCard(game, colorA, colorB) {
 </div>`;
 }
 
+// ── "Share My Stats" banner + modal ──────────────────────────────────────────
+// Only rendered when the viewer's own player_id has a stat row in this game
+// (gamePage computes myStat from currentPlayerId) — the PNG endpoint re-checks
+// the session server-side too, so this is a UI gate, not the real one.
+function shareStatsBanner(game, stat) {
+  const pts   = Number(stat.pts) || 0;
+  const reb   = Number(stat.reb) || 0;
+  const ast   = Number(stat.ast) || 0;
+  const color = escHtml(stat.team_color || '#f59332');
+  const gameId = escHtml(game.id);
+
+  const alignIcon = (kind) => {
+    const lines = kind === 'left'
+      ? ['3 4 21 4', '3 10 15 10', '3 16 19 16']
+      : kind === 'right'
+        ? ['3 4 21 4', '9 10 21 10', '5 16 21 16']
+        : ['3 4 21 4', '6 10 18 10', '4 16 20 16'];
+    return `<svg viewBox="0 0 24 20" width="20" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${lines.map(pts => {
+      const [x1, y1, x2, y2] = pts.split(' ');
+      return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    }).join('')}</svg>`;
+  };
+  const iconSave  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
+  const iconCopy  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
+  const iconShare = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`;
+
+  return `<div class="share-stats-banner card" style="--ssb-color:${color}">
+  <div class="share-stats-banner__info">
+    <span class="share-stats-banner__eyebrow">YOUR LINE</span>
+    <span class="share-stats-banner__stats">${pts} PTS · ${reb} REB · ${ast} AST</span>
+  </div>
+  <button type="button" class="share-stats-banner__btn" id="ssc-open-btn">Share My Stats</button>
+</div>
+
+<div class="pcp-backdrop" id="ssc-backdrop" hidden>
+  <div class="pcp-modal ssc-modal">
+    <div class="pcp-modal__header">
+      <span class="pcp-modal__title">Share My Stats</span>
+      <button class="pcp-modal__close" id="ssc-close">&#x2715;</button>
+    </div>
+    <div class="ssc-preview">
+      <div class="ssc-spinner" id="ssc-spinner"></div>
+      <img id="ssc-img" alt="Your stat card" hidden>
+    </div>
+    <div class="ssc-aligns" role="tablist" aria-label="Card position">
+      <button type="button" class="ssc-align-btn" data-align="left" title="Left">${alignIcon('left')}</button>
+      <button type="button" class="ssc-align-btn is-active" data-align="center" title="Center">${alignIcon('center')}</button>
+      <button type="button" class="ssc-align-btn" data-align="right" title="Right">${alignIcon('right')}</button>
+    </div>
+    <div id="ssc-msg" class="ssc-msg" hidden></div>
+    <div class="ssc-actions">
+      <button type="button" class="ssc-action-btn" id="ssc-save">${iconSave}<span>Save</span></button>
+      <button type="button" class="ssc-action-btn" id="ssc-copy">${iconCopy}<span>Copy</span></button>
+      <button type="button" class="ssc-action-btn ssc-action-btn--primary" id="ssc-share">${iconShare}<span>Share</span></button>
+    </div>
+  </div>
+</div>
+
+<style>
+.share-stats-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-top: 3px solid var(--ssb-color); }
+.share-stats-banner__info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.share-stats-banner__eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--text-muted); }
+.share-stats-banner__stats { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.share-stats-banner__btn { flex-shrink: 0; padding: 10px 18px; border-radius: var(--radius-sm); background: var(--amber); border: none; color: #0a0e16; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity .12s; }
+.share-stats-banner__btn:hover { opacity: .88; }
+
+.ssc-modal { max-width: 360px; }
+.ssc-preview {
+  position: relative; aspect-ratio: 1080 / 1920; display: flex; align-items: center; justify-content: center;
+  background-color: #1a1a1a;
+  background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+  background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+}
+.ssc-preview img { width: 100%; height: 100%; object-fit: contain; }
+.ssc-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
+@keyframes ssc-spin { to { transform: rotate(360deg); } }
+.ssc-aligns { display: flex; gap: 8px; padding: 12px 16px 0; justify-content: center; }
+.ssc-align-btn { display: flex; align-items: center; justify-content: center; width: 44px; height: 36px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; transition: background .12s, color .12s; }
+.ssc-align-btn:hover { color: var(--text); }
+.ssc-align-btn.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
+.ssc-msg { padding: 8px 16px 0; font-size: 12px; color: var(--text-muted); text-align: center; }
+.ssc-actions { display: flex; gap: 8px; padding: 14px 16px; }
+.ssc-action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: var(--radius-sm); background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s; }
+.ssc-action-btn:hover { background: rgba(255,255,255,0.1); }
+.ssc-action-btn--primary { background: var(--amber); border-color: transparent; color: #0a0e16; }
+.ssc-action-btn--primary:hover { opacity: .88; background: var(--amber); }
+</style>
+
+<script>
+(function() {
+  var GAME_ID  = '${gameId}';
+  var openBtn  = document.getElementById('ssc-open-btn');
+  var backdrop = document.getElementById('ssc-backdrop');
+  var closeBtn = document.getElementById('ssc-close');
+  var img      = document.getElementById('ssc-img');
+  var spinner  = document.getElementById('ssc-spinner');
+  var msg      = document.getElementById('ssc-msg');
+  var saveBtn  = document.getElementById('ssc-save');
+  var copyBtn  = document.getElementById('ssc-copy');
+  var shareBtn = document.getElementById('ssc-share');
+  var alignBtns = Array.prototype.slice.call(document.querySelectorAll('.ssc-align-btn'));
+  var cache = {};
+  var pending = {};
+  var align = 'center';
+
+  function showMsg(text) { msg.textContent = text; msg.hidden = false; }
+  function clearMsg() { msg.hidden = true; msg.textContent = ''; }
+
+  // Tracks in-flight requests per alignment (not one shared flag) so switching
+  // tabs while a fetch is still pending doesn't strand the newly-picked tab
+  // waiting on a "loading" flag that belongs to a different alignment.
+  function ensureLoaded(a) {
+    if (cache[a] || pending[a]) return;
+    pending[a] = true;
+    fetch('/api/games/' + GAME_ID + '/my-stat-card.png?align=' + a)
+      .then(function(r) { if (!r.ok) throw new Error('failed'); return r.blob(); })
+      .then(function(b) {
+        cache[a] = { blob: b, url: URL.createObjectURL(b) };
+        if (a === align) render();
+      })
+      .catch(function() {
+        if (a === align) { spinner.hidden = true; showMsg('Could not load your stat card. Please try again.'); }
+      })
+      .then(function() { pending[a] = false; }, function() { pending[a] = false; });
+  }
+
+  function render() {
+    var entry = cache[align];
+    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align); return; }
+    img.src = entry.url;
+    img.hidden = false;
+    spinner.hidden = true;
+  }
+
+  function open() {
+    backdrop.hidden = false;
+    clearMsg();
+    render();
+  }
+  function close() { backdrop.hidden = true; }
+
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
+
+  alignBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      align = btn.getAttribute('data-align');
+      alignBtns.forEach(function(b) { b.classList.toggle('is-active', b === btn); });
+      clearMsg();
+      render();
+    });
+  });
+
+  saveBtn.addEventListener('click', function() {
+    var entry = cache[align];
+    if (!entry) return;
+    var a = document.createElement('a');
+    a.href = entry.url;
+    a.download = 'wknd-game-' + GAME_ID + '-stats.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+
+  copyBtn.addEventListener('click', function() {
+    var entry = cache[align];
+    if (!entry) return;
+    clearMsg();
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      showMsg('Copy is not supported in this browser. Use Save instead.');
+      return;
+    }
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': entry.blob })])
+      .then(function() { showMsg('Copied to clipboard.'); })
+      .catch(function() { showMsg('Could not copy. Try Save instead.'); });
+  });
+
+  shareBtn.addEventListener('click', function() {
+    var entry = cache[align];
+    if (!entry) return;
+    clearMsg();
+    var file = new File([entry.blob], 'wknd-game-stats.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'My Stats — WKND Basketball' }).catch(function() {});
+    } else {
+      showMsg('Sharing is not supported in this browser. Use Save instead.');
+    }
+  });
+})();
+</script>`;
+}
+
 // ── Game Recap tab ────────────────────────────────────────────────────────────
 function renderWriteup(writeup) {
   const s = String(writeup || '').trim();
@@ -1372,10 +1565,11 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
   </div>`;
 }
 
-export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], isPlayer = false, isAdmin = false }) {
+export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
+  const myStat = currentPlayerId ? stats.find(s => s.player_id === currentPlayerId) : null;
 
   const completedGames = allGames
     .filter(g => g.status === 'final' || g.status === 'complete')
@@ -1392,6 +1586,7 @@ export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterSc
     ${gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers, isPlayer, isAdmin })}
   </div>
   <div class="game-detail-right">
+    ${myStat ? shareStatsBanner(game, myStat) : ''}
     ${scoreCard(game, colorA, colorB)}
     ${potgCard(potgStat, game.potg_writeup)}
     ${topPerformers(stats, potgPlayerId)}

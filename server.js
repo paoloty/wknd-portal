@@ -138,6 +138,7 @@ import {
   getReportableFineCategories, getOtherFineCategory,
   createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer, hasOpenPlayerReport,
   getFineVotesForCase, castFineVote, resolveFineCase, markFineCasePaid, markFineCaseUnpaid, getFineCollectionSummary,
+  getPlayerSuspensionStatus,
   getEscalationVotesForCase, castEscalationVote, getTotalAdminCount, recomputeEscalation, forceEscalationDecision,
   getPeerRating, getPeerRatingsForRatee, upsertPeerRating, getOrAssignPlayerAlias,
   getAllPeerRatings, getPeerRatingSeasons,
@@ -2490,6 +2491,157 @@ function parseDataUrl(dataUrl) {
   return match ? Buffer.from(match[2], 'base64') : null;
 }
 
+// Rough glyph-width estimate for our bold sans stack — good enough to size pills
+// and lay out multi-piece rows without a real text-measurement engine available
+// server-side. Always over-pads slightly on purpose (better a little loose than
+// clipped).
+function estTextW(text, fontSize, letterSpacing = 0) {
+  const s = String(text ?? '');
+  return s.length * fontSize * 0.62 + Math.max(0, s.length - 1) * letterSpacing;
+}
+
+// ── "Share My Stats" story card — vertical 1080×1920 PNG for one player's line in
+// one game. Fully transparent canvas, no card/panel background at all — just the
+// text, numbers and pills floating directly on it, the way Strava's story stickers
+// work, meant to sit over whatever photo/video the player already picked for their
+// Instagram Story. `align` (left/center/right) shifts EVERY row's own alignment,
+// not just its position, so it behaves like a real text/content-align control.
+// Same SVG-string + sharp pipeline as generateLeaderSvg/generateGameCoverPng above.
+async function generateGameStatCardPng(game, stat, align = 'center') {
+  const W = 1080, H = 1920;
+  const SAFE_X0 = 90, SAFE_X1 = 990; // left/right safe-zone edges content aligns to
+  const posX  = align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 : W / 2;
+  const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+  // Left edge for a fixed-width box (pill, stat group, logo) anchored the same way.
+  const boxX = (w) => align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 - w : (W - w) / 2;
+
+  const teams      = getAllTeams();
+  const isTeamA    = stat.team_id === game.team_a_id;
+  const myTeamName = String(stat.team_name || '').toUpperCase();
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const oppTeamId   = isTeamA ? game.team_b_id : game.team_a_id;
+  const oppColor    = escXml(teams.find(t => t.id === oppTeamId)?.color || '#64748b');
+  const myColor     = escXml(stat.team_color || '#f59332');
+  const chipTextColor = myTeamName === 'WHITE' ? '#10141d' : '#fff';
+
+  const myScore  = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const ot = Number(game.overtime) || 0;
+  const finalLabel = ot === 0 ? 'FINAL' : ot === 1 ? 'FINAL/OT' : `FINAL/OT${ot}`;
+  const dateStr = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  const leagueLabel = `SEASON ${game.season || ''}${game.game_type === 'playoff' ? ' · PLAYOFFS' : ''}`;
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  const nameFontSz  = displayName.length > 20 ? 44 : displayName.length > 14 ? 56 : 68;
+  const ptsVal      = Number(stat.pts) || 0;
+  const ptsFontSz   = String(ptsVal).length >= 3 ? 200 : 240;
+
+  // Team chip — sized off the FULL chip text (name + number), not just the team
+  // name, and the FINAL pill off its own full text — both with generous padding
+  // so the label never gets clipped by an under-sized pill.
+  const chipText  = `${myTeamName} · #${stat.number ?? ''}`;
+  const chipW     = Math.max(150, Math.round(estTextW(chipText, 19, 2) + 72));
+  const chipX     = boxX(chipW);
+  const finalText = `${finalLabel} · ${myScore}-${oppScore}`;
+  const pillW     = Math.max(170, Math.round(estTextW(finalText, 22, 2) + 72));
+  const pillX     = boxX(pillW);
+
+  const secondary = [
+    { label: 'REB', val: Number(stat.reb) || 0 },
+    { label: 'AST', val: Number(stat.ast) || 0 },
+    { label: 'STL', val: Number(stat.stl) || 0 },
+    { label: 'BLK', val: Number(stat.blk) || 0 },
+  ];
+  const colPitch  = 170, groupW = colPitch * secondary.length;
+  const groupLeft = boxX(groupW);
+  const secondaryCols = secondary.map((s, i) => {
+    const cx = groupLeft + colPitch * i + colPitch / 2;
+    return `<text x="${cx}" y="1156" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="76" font-weight="900" fill="#f59332" filter="url(#txt)">${s.val}</text>
+  <text x="${cx}" y="1202" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="18" font-weight="700" letter-spacing="3" fill="#e2e8f0" filter="url(#txt)">${s.label}</text>`;
+  }).join('\n');
+
+  // Matchup row (dot + team name + "VS" + dot + team name) is a multi-piece inline
+  // group with no single text-anchor to lean on, so it's laid out manually:
+  // estimate each piece's width, then lay left-to-right from a start x that itself
+  // depends on align (boxX with the row's total estimated width).
+  const dotD = 14, tinyGap = 10, bigGap = 22;
+  const nameFsz = 22, vsFsz = 18;
+  const w1 = estTextW(myTeamName, nameFsz), wVs = estTextW('VS', vsFsz), w2 = estTextW(oppTeamName, nameFsz);
+  const matchupW = dotD + tinyGap + w1 + bigGap + wVs + bigGap + dotD + tinyGap + w2;
+  let mx = boxX(matchupW);
+  const dot1Cx = mx + dotD / 2; mx += dotD + tinyGap;
+  const name1X = mx; mx += w1 + bigGap;
+  const vsX    = mx; mx += wVs + bigGap;
+  const dot2Cx = mx + dotD / 2; mx += dotD + tinyGap;
+  const name2X = mx;
+
+  // Fully transparent canvas — no panel behind any of this, so it reads as a
+  // sticker over whatever photo/video the player already picked for their story.
+  // Every text/shape gets a soft drop shadow (`#txt`) since there's no dark card
+  // backing it for contrast anymore — legibility now depends entirely on that.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="7" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <text x="${posX}" y="346" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" fill="#ffffff" filter="url(#txt)">${displayName}</text>
+
+  <rect x="${chipX}" y="391" width="${chipW}" height="50" rx="25" fill="${myColor}" filter="url(#txt)"/>
+  <text x="${chipX + chipW / 2}" y="424" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="19" font-weight="800" letter-spacing="2" fill="${chipTextColor}">${escXml(chipText)}</text>
+
+  <text x="${posX}" y="506" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" letter-spacing="3" fill="#e2e8f0" filter="url(#txt)">${escXml(leagueLabel)}</text>
+
+  <line x1="${SAFE_X0}" y1="566" x2="${SAFE_X1}" y2="566" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <text x="${posX}" y="846" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${ptsFontSz}" font-weight="900" fill="#f59332" filter="url(#txt)">${ptsVal}</text>
+  <text x="${posX}" y="912" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="30" font-weight="700" letter-spacing="6" fill="#e2e8f0" filter="url(#txt)">POINTS</text>
+
+  <line x1="${SAFE_X0}" y1="996" x2="${SAFE_X1}" y2="996" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  ${secondaryCols}
+
+  <line x1="${SAFE_X0}" y1="1316" x2="${SAFE_X1}" y2="1316" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <circle cx="${dot1Cx}" cy="1426" r="7" fill="${myColor}" filter="url(#txt)"/>
+  <text x="${name1X}" y="1432" font-family="${COVER_SVG_FONT}" font-size="${nameFsz}" font-weight="700" fill="#ffffff" filter="url(#txt)">${escXml(myTeamName)}</text>
+  <text x="${vsX}" y="1432" font-family="${COVER_SVG_FONT}" font-size="${vsFsz}" fill="#e2e8f0" filter="url(#txt)">VS</text>
+  <circle cx="${dot2Cx}" cy="1426" r="7" fill="${oppColor}" filter="url(#txt)"/>
+  <text x="${name2X}" y="1432" font-family="${COVER_SVG_FONT}" font-size="${nameFsz}" font-weight="700" fill="#ffffff" filter="url(#txt)">${escXml(oppTeamName)}</text>
+
+  <rect x="${pillX}" y="1486" width="${pillW}" height="56" rx="28" fill="#f59332" filter="url(#txt)"/>
+  <text x="${pillX + pillW / 2}" y="1522" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="22" font-weight="800" letter-spacing="2" fill="#10141d">${escXml(finalText)}</text>
+
+  <text x="${posX}" y="1606" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="16" fill="#e2e8f0" filter="url(#txt)">${escXml(dateStr)}</text>
+
+  <text x="${posX}" y="1780" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" letter-spacing="4" fill="#e2e8f0" filter="url(#txt)">WKNDBASKETBALL.COM</text>
+</svg>`;
+
+  const svgLayer = await sharp(Buffer.from(svg), { density: 144 })
+    .resize(W, H)
+    .png()
+    .toBuffer();
+  const base = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  const layers = [{ input: svgLayer, top: 0, left: 0 }];
+
+  try {
+    if (existsSync(COVER_LOGO_PATH)) {
+      const logo = await sharp(COVER_LOGO_PATH)
+        .ensureAlpha()
+        .resize({ width: 200, height: 56, fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      const meta = await sharp(logo).metadata();
+      layers.push({ input: logo, left: Math.round(boxX(meta.width || 200)), top: 104 });
+    }
+  } catch {}
+
+  return sharp(base).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+}
+
 async function generateGameCoverPng(game, potgStat, bgDataUrl) {
   const W = 1200, H = 630;
 
@@ -4800,6 +4952,28 @@ app.get('/games/:ref', (req, res) => {
       currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
     })
   }));
+});
+
+// Story-style share card for one player's own line in one game — gated to the
+// logged-in player who actually played in it, same pattern as /me/writeup (keyed
+// off the session, no ownership param to spoof).
+app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.status(401).end();
+  const game = getGameById(req.params.id);
+  if (!game || game.under_review) return res.status(404).end();
+  const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
+  if (!stat) return res.status(404).end();
+  const align = ['left', 'center', 'right'].includes(req.query.align) ? req.query.align : 'center';
+  try {
+    const png = await generateGameStatCardPng(game, stat, align);
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'private, max-age=60');
+    res.end(png);
+  } catch (err) {
+    console.error('my-stat-card.png error', err);
+    res.status(500).end();
+  }
 });
 
 // ── Game comments + reactions ───────────────────────────────────────────────────
@@ -10595,17 +10769,23 @@ app.get('/admin/fines/categories', requireAuth, (req, res) => {
   }));
 });
 app.post('/admin/fines/categories', requireAuth, express.json(), (req, res) => {
-  const { label, amount, description = '', examples = [] } = req.body || {};
+  const { label, amount, description = '', examples = [], points = 0, minSuspensionGames = 0 } = req.body || {};
   const amt = Number(amount);
+  const pts = Number(points) || 0;
+  const minGames = Number(minSuspensionGames) || 0;
   if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
-  const id = createFineCategory({ label, amount: amt, description, examples: Array.isArray(examples) ? examples : [] });
+  if (pts < 0 || minGames < 0) return res.status(400).json({ error: 'Points and suspension games must be 0 or more.' });
+  const id = createFineCategory({ label, amount: amt, description, examples: Array.isArray(examples) ? examples : [], points: pts, minSuspensionGames: minGames });
   res.json({ ok: true, id });
 });
 app.post('/admin/fines/categories/:id', requireAuth, express.json(), (req, res) => {
-  const { label, amount, description = '', examples = [] } = req.body || {};
+  const { label, amount, description = '', examples = [], points = 0, minSuspensionGames = 0 } = req.body || {};
   const amt = Number(amount);
+  const pts = Number(points) || 0;
+  const minGames = Number(minSuspensionGames) || 0;
   if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
-  updateFineCategory(req.params.id, { label, amount: amt, description, examples: Array.isArray(examples) ? examples : [] });
+  if (pts < 0 || minGames < 0) return res.status(400).json({ error: 'Points and suspension games must be 0 or more.' });
+  updateFineCategory(req.params.id, { label, amount: amt, description, examples: Array.isArray(examples) ? examples : [], points: pts, minSuspensionGames: minGames });
   res.json({ ok: true });
 });
 app.post('/admin/fines/categories/:id/toggle', requireAuth, express.json(), (req, res) => {
@@ -10675,6 +10855,7 @@ app.get('/admin/fines/:id', requireAuth, (req, res) => {
       case: kase, votes: getFineVotesForCase(kase.id), player: getPlayerWithTeam(kase.player_id),
       escalationVotes: getEscalationVotesForCase(kase.id), totalAdmins: getTotalAdminCount(),
       viewerAdminId: currentAdminActor(req).id, isSuperAdmin,
+      suspension: getPlayerSuspensionStatus(kase.player_id, kase.season || getPortalCurrentSeason()),
     }),
   }));
 });
