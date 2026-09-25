@@ -32,7 +32,7 @@ function statTile(label, value, color = '#e2e8f0') {
 
 function reportModal(players, categories) {
   const playersData = JSON.stringify(players.map(p => ({ id: p.id, name: displayPlayerName(p.name) }))).replace(/</g, '\\u003c');
-  const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}" data-amount="${c.amount}">${escHtml(c.label)} (${peso(c.amount)})</option>`).join('');
+  const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}" data-amount="${c.amount}">${escHtml(c.label)} (${peso(c.amount)}${c.points ? ` · ${c.points}pt` : ''})</option>`).join('');
   return `
 <div class="agm-modal-backdrop" id="fine-modal-backdrop" hidden>
   <div class="agm-modal">
@@ -129,7 +129,7 @@ function caseRow(c, base) {
   return `<tr class="border-b border-admin-border/40 last:border-0 hover:bg-white/[.015] transition-colors">
     <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(displayPlayerName(c.player_name))}</td>
     <td class="px-4 py-3 text-xs text-slate-400">${escHtml(c.category_label)}</td>
-    <td class="px-4 py-3 text-sm font-saira text-brand">${peso(c.amount)}</td>
+    <td class="px-4 py-3 text-sm font-saira text-brand">${peso(c.amount)}${c.points ? ` <span class="text-xs text-slate-500 font-sans">(${c.points}pt)</span>` : ''}</td>
     <td class="px-4 py-3 text-xs text-slate-500">${escHtml(c.reported_by_name)} (${c.reported_by_type})</td>
     <td class="px-4 py-3">${statusBadge(c.status)}</td>
     <td class="px-4 py-3">${paidBadge(c)}</td>
@@ -212,7 +212,31 @@ const descriptionCard = c => `<div class="bg-admin-surface border border-admin-b
   <p class="text-xs text-slate-600 mt-3">Reported by ${escHtml(c.reported_by_name)} (${c.reported_by_type}) · ${fmtDate(c.created_at)}</p>
 </div>`;
 
-export function adminFineCaseBody({ case: c, votes = [], player, escalationVotes = [], totalAdmins = 0, viewerAdminId = '', isSuperAdmin = false } = {}) {
+// Shown on every case-detail page regardless of status — gives the admin the player's
+// full season picture (not just this one case) before they vote or resolve. Purely
+// informational (see getPlayerSuspensionStatus in lib/portal-db.js): nothing here blocks
+// anything automatically, an admin still has to act on it.
+function suspensionSummaryCard(s) {
+  if (!s) return '';
+  const color = s.needsReview ? '#f87171' : s.gamesSuspended > 0 ? '#f59332' : '#64748b';
+  const label = s.needsReview ? 'League Review' : s.gamesSuspended > 0 ? `${s.gamesSuspended} game${s.gamesSuspended === 1 ? '' : 's'}` : 'None';
+  return `<div class="bg-admin-surface border border-admin-border rounded-lg p-5">
+    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Season Conduct Points</div>
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-2xl font-bold font-saira text-slate-100">${s.activePoints}<span class="text-sm text-slate-500 font-sans"> pts</span></div>
+        <div class="text-xs text-slate-500 mt-0.5">from approved fines this season</div>
+      </div>
+      <div class="text-right">
+        <div class="text-lg font-bold font-saira" style="color:${color}">${label}</div>
+        <div class="text-xs text-slate-500 mt-0.5">suspension</div>
+      </div>
+    </div>
+    ${s.categoryFloor > 0 ? `<p class="text-xs text-slate-500 mt-3 pt-3" style="border-top:1px solid var(--border-2)">Includes a mandatory ${s.categoryFloor}-game floor from a category charged this season.</p>` : ''}
+  </div>`;
+}
+
+export function adminFineCaseBody({ case: c, votes = [], player, escalationVotes = [], totalAdmins = 0, viewerAdminId = '', isSuperAdmin = false, suspension = null } = {}) {
   const header = `
 <div class="mb-5">
   <a href="/admin/fines" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Fines</a>
@@ -220,7 +244,7 @@ export function adminFineCaseBody({ case: c, votes = [], player, escalationVotes
     <h2 class="text-xl font-bold tracking-tight text-slate-100">${escHtml(displayPlayerName(c.player_name))}</h2>
     ${statusBadge(c.status)}
   </div>
-  <p class="text-sm text-slate-500 mt-1">${escHtml(c.category_label)} · <span class="text-brand font-saira">${peso(c.amount)}</span>${player?.team_name ? ` · ${escHtml(player.team_name)}` : ''}</p>
+  <p class="text-sm text-slate-500 mt-1">${escHtml(c.category_label)} · <span class="text-brand font-saira">${peso(c.amount)}</span>${c.points ? ` · ${c.points} pt${c.points === 1 ? '' : 's'}` : ''}${player?.team_name ? ` · ${escHtml(player.team_name)}` : ''}</p>
 </div>`;
 
   // ── Player-submitted, awaiting an admin escalation vote ────────────────────────
@@ -252,18 +276,21 @@ export function adminFineCaseBody({ case: c, votes = [], player, escalationVotes
     </div>
   </div>
 
-  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" style="position:sticky;top:24px">
-    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation</div>
-    <div class="p-4">
-      <p class="text-xs text-slate-500 leading-relaxed">A player filed this report directly. Once a majority of admins vote to escalate, it moves to team heads for a recommendation — you still have final say after that, same as any other case.</p>
-      ${isSuperAdmin ? `
-      <div class="mt-4 pt-4" style="border-top:1px solid var(--border-2)">
-        <p class="text-[11px] text-slate-600 mb-2">Super admin override — use if the vote has stalled.</p>
-        <div class="flex flex-col gap-2">
-          <button class="admin-btn admin-btn--block" onclick="forceEscalation(true)">Force Escalate</button>
-          <button class="admin-btn admin-btn--danger admin-btn--block" onclick="forceEscalation(false)">Force Dismiss</button>
-        </div>
-      </div>` : ''}
+  <div class="flex flex-col gap-5" style="position:sticky;top:24px">
+    ${suspensionSummaryCard(suspension)}
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation</div>
+      <div class="p-4">
+        <p class="text-xs text-slate-500 leading-relaxed">A player filed this report directly. Once a majority of admins vote to escalate, it moves to team heads for a recommendation — you still have final say after that, same as any other case.</p>
+        ${isSuperAdmin ? `
+        <div class="mt-4 pt-4" style="border-top:1px solid var(--border-2)">
+          <p class="text-[11px] text-slate-600 mb-2">Super admin override — use if the vote has stalled.</p>
+          <div class="flex flex-col gap-2">
+            <button class="admin-btn admin-btn--block" onclick="forceEscalation(true)">Force Escalate</button>
+            <button class="admin-btn admin-btn--danger admin-btn--block" onclick="forceEscalation(false)">Force Dismiss</button>
+          </div>
+        </div>` : ''}
+      </div>
     </div>
   </div>
 </div>
@@ -312,11 +339,14 @@ window.forceEscalation = async function(escalate) {
     </div>
   </div>
 
-  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" style="position:sticky;top:24px">
+  <div class="flex flex-col gap-5" style="position:sticky;top:24px">
+    ${suspensionSummaryCard(suspension)}
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
     <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Resolution</div>
     <div class="p-4">
       <p class="text-sm text-slate-300">${c.resolution_note ? escHtml(c.resolution_note) : `Dismissed by admin vote — ${dismissCount} dismiss vs ${escalateCount} escalate.`}</p>
       <p class="text-xs text-slate-600 mt-2">Never reached team heads. The reporting player was notified.</p>
+    </div>
     </div>
   </div>
 </div>`;
@@ -349,11 +379,13 @@ window.forceEscalation = async function(escalate) {
     </div>` : ''}
   </div>
 
-  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" style="position:sticky;top:24px">
+  <div class="flex flex-col gap-5" style="position:sticky;top:24px">
+    ${suspensionSummaryCard(suspension)}
+    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
     <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">${isOpen ? 'Resolve' : 'Resolution'}</div>
     <div class="p-4">
       ${isOpen ? `
-      <p class="text-xs text-slate-500 mb-3 leading-relaxed">The vote tally above is guidance — the final call is yours. Approving charges ${peso(c.amount)} to the player's ledger (category: Penalty) and notifies them.</p>
+      <p class="text-xs text-slate-500 mb-3 leading-relaxed">The vote tally above is guidance — the final call is yours. Approving charges ${peso(c.amount)}${c.points ? ` and adds ${c.points} conduct point${c.points === 1 ? '' : 's'}` : ''} to the player's record (category: Penalty) and notifies them.</p>
       <textarea id="resolve-note" class="admin-input mb-3" rows="2" placeholder="Optional resolution note…"></textarea>
       <div class="flex flex-col gap-2">
         <button class="agm-new-btn" onclick="resolveCase(true)">Approve &amp; Charge ${peso(c.amount)}</button>
@@ -363,7 +395,7 @@ window.forceEscalation = async function(escalate) {
       <p class="text-sm text-slate-300">Resolved by <strong>${escHtml(c.resolved_by_name)}</strong> on ${fmtDate(c.resolved_at)}.</p>
       ${c.resolution_note ? `<p class="text-xs text-slate-500 mt-2">${escHtml(c.resolution_note)}</p>` : ''}
       ${c.status === 'approved' ? `
-      <p class="text-xs text-emerald-400 mt-3">Charged ${peso(c.amount)} to the player's ledger.</p>
+      <p class="text-xs text-emerald-400 mt-3">Charged ${peso(c.amount)}${c.points ? ` · ${c.points} pt${c.points === 1 ? '' : 's'}` : ''} to the player's record.</p>
       <div class="flex items-center gap-2 mt-3 pt-3" style="border-top:1px solid var(--border-2)">
         ${paidBadge(c)}
         ${c.paid_at ? `<span class="text-xs text-slate-500">${fmtDate(c.paid_at)}</span>` : ''}
@@ -371,6 +403,7 @@ window.forceEscalation = async function(escalate) {
       </div>
       ` : ''}
       `}
+    </div>
     </div>
   </div>
 </div>
@@ -426,11 +459,13 @@ function categoryRow(c) {
   return `<tr class="border-b border-admin-border/40 last:border-0" data-id="${escHtml(c.id)}">
     <td class="px-4 py-3 text-sm font-medium text-slate-200 align-top">${escHtml(c.label)}</td>
     <td class="px-4 py-3 text-sm font-saira text-brand align-top">${peso(c.amount)}</td>
+    <td class="px-4 py-3 text-sm font-saira text-slate-200 align-top">${c.points || 0}</td>
+    <td class="px-4 py-3 text-xs text-slate-400 align-top">${c.min_suspension_games > 0 ? `${c.min_suspension_games} game${c.min_suspension_games === 1 ? '' : 's'}` : `<span class="text-slate-600">—</span>`}</td>
     <td class="px-4 py-3 text-xs text-slate-400 max-w-xs align-top">${c.description ? escHtml(c.description) : `<span class="text-slate-600">—</span>`}</td>
     <td class="px-4 py-3 max-w-sm align-top">${examplePillsDisplay(c.examples) || `<span class="text-xs text-slate-600">—</span>`}</td>
     <td class="px-4 py-3 align-top">${c.active ? `<span class="agm-badge agm-badge--amber">Active</span>` : `<span class="agm-badge agm-badge--gray">Inactive</span>`}</td>
     <td class="px-4 py-3 text-right whitespace-nowrap align-top">
-      <button class="admin-btn admin-btn--sm" onclick='openCategoryModal(${JSON.stringify({ id: c.id, label: c.label, amount: c.amount, description: c.description, examples: c.examples }).replace(/'/g, '&#39;')})'>Edit</button>
+      <button class="admin-btn admin-btn--sm" onclick='openCategoryModal(${JSON.stringify({ id: c.id, label: c.label, amount: c.amount, description: c.description, examples: c.examples, points: c.points, minSuspensionGames: c.min_suspension_games }).replace(/'/g, '&#39;')})'>Edit</button>
       <button class="admin-btn admin-btn--sm ${c.active ? 'admin-btn--danger' : 'admin-btn--success'}" onclick="toggleCategory('${escHtml(c.id)}')">${c.active ? 'Deactivate' : 'Activate'}</button>
     </td>
   </tr>`;
@@ -456,6 +491,8 @@ export function adminFineCategoriesBody({ categories = [] } = {}) {
         <thead><tr class="border-b border-admin-border">
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Category</th>
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Amount</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Points</th>
+          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Min. Suspension</th>
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Description</th>
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Examples</th>
           <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Status</th>
@@ -481,6 +518,17 @@ export function adminFineCategoriesBody({ categories = [] } = {}) {
         <label class="admin-field-label">Amount (₱)</label>
         <input id="cat-amount" type="number" min="0" step="1" class="admin-input" placeholder="0 for a reference-only, non-fineable category">
       </div>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1">
+          <label class="admin-field-label">Conduct Points</label>
+          <input id="cat-points" type="number" min="0" step="1" class="admin-input" placeholder="0">
+        </div>
+        <div style="flex:1">
+          <label class="admin-field-label">Min. Suspension (games)</label>
+          <input id="cat-min-suspension" type="number" min="0" step="1" class="admin-input" placeholder="0">
+        </div>
+      </div>
+      <p class="text-[11px] text-slate-600" style="margin-top:-6px">Points accumulate toward the season suspension tiers. Min. suspension is a mandatory floor for this category alone, regardless of points.</p>
       <div>
         <label class="admin-field-label">Description</label>
         <textarea id="cat-description" class="admin-input" rows="2" placeholder="One sentence describing this category…"></textarea>
@@ -542,6 +590,8 @@ window.openCategoryModal = function(cat) {
   document.getElementById('cat-id').value = cat ? cat.id : '';
   document.getElementById('cat-label').value = cat ? cat.label : '';
   document.getElementById('cat-amount').value = cat ? cat.amount : '';
+  document.getElementById('cat-points').value = cat ? (cat.points || 0) : '';
+  document.getElementById('cat-min-suspension').value = cat ? (cat.minSuspensionGames || 0) : '';
   document.getElementById('cat-description').value = cat ? (cat.description || '') : '';
   catExamples = cat && Array.isArray(cat.examples) ? cat.examples.slice() : [];
   renderCatExamplePills();
@@ -560,6 +610,8 @@ document.getElementById('cat-submit-btn').addEventListener('click', async functi
   var body = {
     label: document.getElementById('cat-label').value.trim(),
     amount: Number(document.getElementById('cat-amount').value),
+    points: Number(document.getElementById('cat-points').value) || 0,
+    minSuspensionGames: Number(document.getElementById('cat-min-suspension').value) || 0,
     description: document.getElementById('cat-description').value.trim(),
     examples: examples,
   };

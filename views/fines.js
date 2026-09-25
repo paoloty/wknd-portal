@@ -20,7 +20,7 @@ function openCaseCard(c, votes, viewerId) {
     <div class="fn-card__top">
       <div>
         <div class="fn-card__player">${escHtml(displayPlayerName(c.player_name))}</div>
-        <div class="fn-card__meta">${escHtml(c.category_label)} · <span class="fn-amount">${peso(c.amount)}</span></div>
+        <div class="fn-card__meta">${escHtml(c.category_label)} · <span class="fn-amount">${peso(c.amount)}</span>${c.points ? ` · ${c.points} pt${c.points === 1 ? '' : 's'}` : ''}</div>
       </div>
       ${statusPill(c.status)}
     </div>
@@ -51,7 +51,7 @@ function resolvedCaseRow(c) {
 
 function reportModal(players, categories) {
   const playersData = JSON.stringify(players.map(p => ({ id: p.id, name: displayPlayerName(p.name) }))).replace(/</g, '\\u003c');
-  const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}">${escHtml(c.label)} (${peso(c.amount)})</option>`).join('');
+  const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}">${escHtml(c.label)} (${peso(c.amount)}${c.points ? ` · ${c.points}pt` : ''})</option>`).join('');
   return `
 <div class="fn-modal-backdrop" id="fn-modal-backdrop" hidden>
   <div class="fn-modal">
