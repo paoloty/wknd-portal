@@ -161,6 +161,14 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         nav.querySelectorAll('a').forEach(function(a){
           a.addEventListener('click', function(){ setOpen(false); });
         });
+        // Mobile Safari/Chrome restore this exact page (DOM, scroll position, inline
+        // styles) from bfcache on back/forward navigation instead of reloading it. If the
+        // menu was left open at that point (closing it only runs via the hamburger or a
+        // nav link click, never via the browser's own back/forward button), the restored
+        // page comes back with body.style.overflow still 'hidden' — trapping the scroll
+        // position wherever it was and making the header/hamburger unreachable. Force-close
+        // on every pageshow (not just persisted ones) since it's a harmless no-op otherwise.
+        window.addEventListener('pageshow', function(){ setOpen(false); });
         // Dropdown (Games/Stats/Awards) toggle + click-outside-close, delegated
         // on document rather than scoped to one nav element — minimalHeader
         // pages render TWO separate nav copies (an inline one in the desktop
