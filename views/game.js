@@ -120,9 +120,19 @@ function shareStatsBanner(game, stat) {
 .share-stats-banner__btn { flex-shrink: 0; padding: 10px 18px; border-radius: var(--radius-sm); background: var(--amber); border: none; color: #0a0e16; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity .12s; }
 .share-stats-banner__btn:hover { opacity: .88; }
 
-.ssc-modal { max-width: 360px; }
+/* overflow-y: auto (not the shared .pcp-modal's overflow: hidden) is a safety net for
+   short viewports — the height-driven sizing below should make the whole modal fit
+   without scrolling on virtually any phone, but a tall system font size or unusual
+   browser chrome shouldn't be able to strand the action row off-screen. */
+.ssc-modal { max-width: 360px; overflow-y: auto; }
 .ssc-preview {
   position: relative; aspect-ratio: 1080 / 1920; display: flex; align-items: center; justify-content: center;
+  /* Sized from height, not width: 100% — a 9:16 box that always fills the modal's width
+     runs 600px+ tall on a narrow phone, which used to push the Save/Copy/Share row past
+     the modal's max-height and get clipped. Driving size from height (capped to a share
+     of the viewport) and letting width follow the aspect ratio keeps the whole modal,
+     buttons included, on-screen. */
+  height: min(46dvh, 400px); max-width: 100%; width: auto; margin: 0 auto;
   background-color: #1a1a1a;
   background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
   background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0;
