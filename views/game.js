@@ -62,8 +62,40 @@ function shareStatsBanner(game, stat) {
   const pts   = Number(stat.pts) || 0;
   const reb   = Number(stat.reb) || 0;
   const ast   = Number(stat.ast) || 0;
+  const stl   = Number(stat.stl) || 0;
+  const blk   = Number(stat.blk) || 0;
   const color = escHtml(stat.team_color || '#f59332');
   const gameId = escHtml(game.id);
+
+  // Personalizes the "Highlight" dropdown to this player's own box score rather
+  // than always offering the same fixed list — only the categories they actually
+  // did something in show up, ranked best-first, so a big rebounding night leads
+  // with REB instead of burying it under an untouched PTS/AST/STL/BLK menu.
+  // Falls back to the standard 5 (even at zero) if nothing stood out at all, so
+  // the menu is never empty or oddly short for a quiet game.
+  const CORE = [
+    { key: 'pts', label: 'Points',   val: pts },
+    { key: 'reb', label: 'Rebounds', val: reb },
+    { key: 'ast', label: 'Assists',  val: ast },
+    { key: 'stl', label: 'Steals',   val: stl },
+    { key: 'blk', label: 'Blocks',   val: blk },
+  ];
+  const coreNonZero = CORE.filter(c => c.val > 0).sort((a, b) => b.val - a.val);
+  const statList = coreNonZero.length ? coreNonZero.slice() : CORE.slice();
+
+  const fg3m = Number(stat.fg3m) || 0;
+  if (fg3m > 0) statList.push({ key: 'fg3m', label: '3-Pointers Made', val: fg3m });
+
+  const fgm = (Number(stat.fg2m) || 0) + (Number(stat.fg3m) || 0);
+  const fga = fgm + (Number(stat.fg2m_miss) || 0) + (Number(stat.fg3m_miss) || 0);
+  if (fga > 0) {
+    const fgpct = Math.round((fgm / fga) * 100);
+    // Only worth flexing a decent shooting night — a 20% night isn't a "highlight".
+    if (fgpct >= 40) statList.push({ key: 'fgpct', label: 'Field Goal %', val: fgpct });
+  }
+
+  const statOptionsHtml = statList.map((s, i) => `<li role="option" class="ssc-stat-option${i === 0 ? ' is-active' : ''}" data-stat="${s.key}" aria-selected="${i === 0 ? 'true' : 'false'}">Highlight: ${escHtml(s.label)}</li>`).join('\n');
+  const initialStatLabel = `Highlight: ${escHtml(statList[0].label)}`;
 
   const alignIcon = (kind) => {
     const lines = kind === 'left'
@@ -88,9 +120,9 @@ function shareStatsBanner(game, stat) {
   <button type="button" class="share-stats-banner__btn" id="ssc-open-btn">Share My Stats</button>
 </div>
 
-<div class="pcp-backdrop" id="ssc-backdrop" hidden>
+<div class="pcp-backdrop ssc-backdrop" id="ssc-backdrop" hidden>
   <div class="pcp-modal ssc-modal">
-    <div class="pcp-modal__header">
+    <div class="pcp-modal__header ssc-header">
       <span class="pcp-modal__title">Share My Stats</span>
       <button class="pcp-modal__close" id="ssc-close">&#x2715;</button>
     </div>
@@ -98,16 +130,29 @@ function shareStatsBanner(game, stat) {
       <div class="ssc-spinner" id="ssc-spinner"></div>
       <img id="ssc-img" alt="Your stat card" hidden>
     </div>
-    <div class="ssc-aligns" role="tablist" aria-label="Card position">
-      <button type="button" class="ssc-align-btn" data-align="left" title="Left">${alignIcon('left')}</button>
-      <button type="button" class="ssc-align-btn is-active" data-align="center" title="Center">${alignIcon('center')}</button>
-      <button type="button" class="ssc-align-btn" data-align="right" title="Right">${alignIcon('right')}</button>
-    </div>
-    <div id="ssc-msg" class="ssc-msg" hidden></div>
-    <div class="ssc-actions">
-      <button type="button" class="ssc-action-btn" id="ssc-save">${iconSave}<span>Save</span></button>
-      <button type="button" class="ssc-action-btn" id="ssc-copy">${iconCopy}<span>Copy</span></button>
-      <button type="button" class="ssc-action-btn ssc-action-btn--primary" id="ssc-share">${iconShare}<span>Share</span></button>
+    <div class="ssc-controls">
+      <div class="ssc-controls__row">
+        <div class="ssc-aligns" role="tablist" aria-label="Card position">
+          <button type="button" class="ssc-align-btn" data-align="left" title="Left">${alignIcon('left')}</button>
+          <button type="button" class="ssc-align-btn is-active" data-align="center" title="Center">${alignIcon('center')}</button>
+          <button type="button" class="ssc-align-btn" data-align="right" title="Right">${alignIcon('right')}</button>
+        </div>
+        <div class="ssc-stat-dropdown" id="ssc-stat-dropdown">
+          <button type="button" class="ssc-stat-trigger" id="ssc-stat-trigger" aria-haspopup="listbox" aria-expanded="false">
+            <span id="ssc-stat-trigger-label">${initialStatLabel}</span>
+            <svg class="ssc-stat-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <ul class="ssc-stat-menu" id="ssc-stat-menu" role="listbox" aria-label="Highlighted stat" hidden>
+            ${statOptionsHtml}
+          </ul>
+        </div>
+      </div>
+      <div id="ssc-msg" class="ssc-msg" hidden></div>
+      <div class="ssc-actions">
+        <button type="button" class="ssc-action-btn" id="ssc-save">${iconSave}<span>Save</span></button>
+        <button type="button" class="ssc-action-btn" id="ssc-copy">${iconCopy}<span>Copy</span></button>
+        <button type="button" class="ssc-action-btn ssc-action-btn--primary" id="ssc-share">${iconShare}<span>Share</span></button>
+      </div>
     </div>
   </div>
 </div>
@@ -147,16 +192,44 @@ function shareStatsBanner(game, stat) {
   .ssc-modal { max-width: 460px; }
   .ssc-preview { height: min(70dvh, 760px); }
 }
+/* Below 640px, the modal takes over the whole screen instead of floating as a
+   small card — the preview fills the viewport and the header/controls float on
+   top of it (gradient-backed for legibility over an arbitrary photo), the way a
+   real story editor works, instead of squeezing everything into a ~400px box. */
+@media (max-width: 639px) {
+  .ssc-backdrop { padding: 0; }
+  .ssc-modal { position: fixed; inset: 0; max-width: none; width: 100vw; height: 100dvh; border-radius: 0; }
+  .ssc-preview { position: absolute; inset: 0; height: auto; max-width: none; width: auto; margin: 0; }
+  .ssc-preview img { object-fit: contain; }
+  .ssc-header { position: relative; z-index: 2; background: linear-gradient(to bottom, rgba(0,0,0,.7), transparent); border-bottom: none; }
+  .ssc-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding-top: 32px; background: linear-gradient(to top, rgba(0,0,0,.82) 40%, transparent); }
+}
 .ssc-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
 @keyframes ssc-spin { to { transform: rotate(360deg); } }
-.ssc-aligns { display: flex; gap: 8px; padding: 12px 16px 0; justify-content: center; }
-.ssc-align-btn { display: flex; align-items: center; justify-content: center; width: 44px; height: 36px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; transition: background .12s, color .12s; }
+.ssc-controls__row { display: flex; align-items: center; gap: 10px; padding: 12px 16px 0; }
+.ssc-aligns { display: flex; gap: 8px; flex-shrink: 0; }
+.ssc-align-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 36px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text-muted); cursor: pointer; transition: background .12s, color .12s; }
 .ssc-align-btn:hover { color: var(--text); }
 .ssc-align-btn.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
+.ssc-stat-dropdown { position: relative; flex: 1; min-width: 0; }
+.ssc-stat-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px; height: 36px; padding: 0 10px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.ssc-stat-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssc-stat-chevron { flex-shrink: 0; transition: transform .12s; }
+.ssc-stat-trigger[aria-expanded="true"] .ssc-stat-chevron { transform: rotate(180deg); }
+.ssc-stat-menu {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 5;
+  margin: 0; padding: 6px; list-style: none; max-height: 240px; overflow-y: auto;
+  background: #12182a; border: 1px solid rgba(255,255,255,0.16); border-radius: var(--radius-sm);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+}
+.ssc-stat-menu[hidden] { display: none; }
+.ssc-stat-option { padding: 9px 10px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+.ssc-stat-option:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.ssc-stat-option.is-active { background: var(--amber); color: #0a0e16; }
 .ssc-msg { padding: 8px 16px 0; font-size: 12px; color: var(--text-muted); text-align: center; }
 .ssc-actions { display: flex; gap: 8px; padding: 14px 16px; }
-.ssc-action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: var(--radius-sm); background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s; }
-.ssc-action-btn:hover { background: rgba(255,255,255,0.1); }
+.ssc-action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s; }
+.ssc-action-btn:hover { background: rgba(255,255,255,0.18); }
 .ssc-action-btn--primary { background: var(--amber); border-color: transparent; color: #0a0e16; }
 .ssc-action-btn--primary:hover { opacity: .88; background: var(--amber); }
 </style>
@@ -173,35 +246,86 @@ function shareStatsBanner(game, stat) {
   var saveBtn  = document.getElementById('ssc-save');
   var copyBtn  = document.getElementById('ssc-copy');
   var shareBtn = document.getElementById('ssc-share');
-  var alignBtns = Array.prototype.slice.call(document.querySelectorAll('.ssc-align-btn'));
+  var alignBtns    = Array.prototype.slice.call(document.querySelectorAll('.ssc-align-btn'));
+  var statDropdown = document.getElementById('ssc-stat-dropdown');
+  var statTrigger  = document.getElementById('ssc-stat-trigger');
+  var statTriggerLabel = document.getElementById('ssc-stat-trigger-label');
+  var statMenu     = document.getElementById('ssc-stat-menu');
+  var statOptions  = Array.prototype.slice.call(document.querySelectorAll('.ssc-stat-option'));
   var cache = {};
   var pending = {};
   var align = 'center';
+  // The server already picked and marked the best opening option (personalized
+  // to this player's own box score — see shareStatsBanner in game.js) — just
+  // read whichever option it marked active instead of recomputing a default.
+  var heroStat = (statOptions.filter(function(o) { return o.classList.contains('is-active'); })[0] || statOptions[0]).getAttribute('data-stat');
+
+  function selectStatOption(key) {
+    var opt = statOptions.filter(function(o) { return o.getAttribute('data-stat') === key; })[0];
+    if (!opt) return;
+    statOptions.forEach(function(o) {
+      var active = o === opt;
+      o.classList.toggle('is-active', active);
+      o.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    statTriggerLabel.textContent = opt.textContent;
+  }
+
+  function closeStatMenu() {
+    statMenu.hidden = true;
+    statTrigger.setAttribute('aria-expanded', 'false');
+  }
+  function openStatMenu() {
+    statMenu.hidden = false;
+    statTrigger.setAttribute('aria-expanded', 'true');
+  }
+  statTrigger.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (statMenu.hidden) openStatMenu(); else closeStatMenu();
+  });
+  statOptions.forEach(function(opt) {
+    opt.addEventListener('click', function() {
+      heroStat = opt.getAttribute('data-stat');
+      selectStatOption(heroStat);
+      closeStatMenu();
+      clearMsg();
+      render();
+    });
+  });
+  document.addEventListener('click', function(e) {
+    if (!statDropdown.contains(e.target)) closeStatMenu();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeStatMenu();
+  });
+
+  function cacheKey(a, s) { return a + '|' + s; }
 
   function showMsg(text) { msg.textContent = text; msg.hidden = false; }
   function clearMsg() { msg.hidden = true; msg.textContent = ''; }
 
-  // Tracks in-flight requests per alignment (not one shared flag) so switching
-  // tabs while a fetch is still pending doesn't strand the newly-picked tab
-  // waiting on a "loading" flag that belongs to a different alignment.
-  function ensureLoaded(a) {
-    if (cache[a] || pending[a]) return;
-    pending[a] = true;
-    fetch('/api/games/' + GAME_ID + '/my-stat-card.png?align=' + a)
+  // Tracks in-flight requests per align+stat combo (not one shared flag) so
+  // switching tabs while a fetch is still pending doesn't strand the
+  // newly-picked combo waiting on a "loading" flag that belongs to another one.
+  function ensureLoaded(a, s) {
+    var key = cacheKey(a, s);
+    if (cache[key] || pending[key]) return;
+    pending[key] = true;
+    fetch('/api/games/' + GAME_ID + '/my-stat-card.png?align=' + a + '&stat=' + s)
       .then(function(r) { if (!r.ok) throw new Error('failed'); return r.blob(); })
       .then(function(b) {
-        cache[a] = { blob: b, url: URL.createObjectURL(b) };
-        if (a === align) render();
+        cache[key] = { blob: b, url: URL.createObjectURL(b) };
+        if (key === cacheKey(align, heroStat)) render();
       })
       .catch(function() {
-        if (a === align) { spinner.hidden = true; showMsg('Could not load your stat card. Please try again.'); }
+        if (key === cacheKey(align, heroStat)) { spinner.hidden = true; showMsg('Could not load your stat card. Please try again.'); }
       })
-      .then(function() { pending[a] = false; }, function() { pending[a] = false; });
+      .then(function() { pending[key] = false; }, function() { pending[key] = false; });
   }
 
   function render() {
-    var entry = cache[align];
-    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align); return; }
+    var entry = cache[cacheKey(align, heroStat)];
+    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align, heroStat); return; }
     img.src = entry.url;
     img.hidden = false;
     spinner.hidden = true;
@@ -228,7 +352,7 @@ function shareStatsBanner(game, stat) {
   });
 
   saveBtn.addEventListener('click', function() {
-    var entry = cache[align];
+    var entry = cache[cacheKey(align, heroStat)];
     if (!entry) return;
     var a = document.createElement('a');
     a.href = entry.url;
@@ -239,7 +363,7 @@ function shareStatsBanner(game, stat) {
   });
 
   copyBtn.addEventListener('click', function() {
-    var entry = cache[align];
+    var entry = cache[cacheKey(align, heroStat)];
     if (!entry) return;
     clearMsg();
     if (!navigator.clipboard || !window.ClipboardItem) {
@@ -252,7 +376,7 @@ function shareStatsBanner(game, stat) {
   });
 
   shareBtn.addEventListener('click', function() {
-    var entry = cache[align];
+    var entry = cache[cacheKey(align, heroStat)];
     if (!entry) return;
     clearMsg();
     var file = new File([entry.blob], 'wknd-game-stats.png', { type: 'image/png' });

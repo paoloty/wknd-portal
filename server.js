@@ -2508,8 +2508,45 @@ function estTextW(text, fontSize, letterSpacing = 0) {
 // compact/tight so most of that photo stays visible. `align` (left/center/right)
 // shifts EVERY row's own alignment, not just position — a real content-align control.
 // Same SVG-string + sharp pipeline as generateLeaderSvg/generateGameCoverPng above.
-async function generateGameStatCardPng(game, stat, align = 'center') {
+// The stat categories a player can pick as their card's hero number. The first
+// 5 ("core") are also always what fills the secondary row — picking one of the
+// last two (3PM, FG%) as hero still shows the top 4 core stats underneath, it
+// just doesn't remove one of them to make room (see SHARE_STAT_CORE_KEYS below).
+const SHARE_STAT_DEFS = [
+  { key: 'pts',   short: 'PTS', long: 'POINTS' },
+  { key: 'reb',   short: 'REB', long: 'REBOUNDS' },
+  { key: 'ast',   short: 'AST', long: 'ASSISTS' },
+  { key: 'stl',   short: 'STL', long: 'STEALS' },
+  { key: 'blk',   short: 'BLK', long: 'BLOCKS' },
+  { key: 'fg3m',  short: '3PM', long: '3-POINTERS MADE' },
+  { key: 'fgpct', short: 'FG%', long: 'FIELD GOAL %' },
+];
+const SHARE_STAT_CORE_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk'];
+
+function shareStatValue(stat, key) {
+  if (key === 'fg3m') return Number(stat.fg3m) || 0;
+  if (key === 'fgpct') {
+    const fgm = (Number(stat.fg2m) || 0) + (Number(stat.fg3m) || 0);
+    const fga = fgm + (Number(stat.fg2m_miss) || 0) + (Number(stat.fg3m_miss) || 0);
+    return fga > 0 ? Math.round((fgm / fga) * 100) : 0;
+  }
+  return Number(stat[key]) || 0;
+}
+function shareStatDisplay(stat, key) {
+  const val = shareStatValue(stat, key);
+  return key === 'fgpct' ? `${val}%` : String(val);
+}
+
+async function generateGameStatCardPng(game, stat, align = 'center', heroKey = 'pts') {
   const W = 1080, H = 1920;
+  const heroDef = SHARE_STAT_DEFS.find(d => d.key === heroKey) || SHARE_STAT_DEFS[0];
+  // Always the top 4 CORE stats minus the hero (if it's one of them) — so
+  // picking a bonus stat like 3PM as hero still shows PTS/REB/AST/STL below it
+  // rather than needing a 5th slot.
+  const secondaryDefs = SHARE_STAT_CORE_KEYS
+    .filter(k => k !== heroDef.key)
+    .slice(0, 4)
+    .map(k => SHARE_STAT_DEFS.find(d => d.key === k));
   const SAFE_X0 = 90, SAFE_X1 = 990; // left/right safe-zone edges content aligns to
   const posX  = align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 : W / 2;
   const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
@@ -2531,8 +2568,8 @@ async function generateGameStatCardPng(game, stat, align = 'center') {
 
   const displayName = escXml(formatName(stat.name || '').toUpperCase());
   const nameFontSz  = displayName.length > 20 ? 40 : displayName.length > 14 ? 48 : 56;
-  const ptsVal      = Number(stat.pts) || 0;
-  const ptsFontSz   = String(ptsVal).length >= 3 ? 190 : 220;
+  const heroDisplay = shareStatDisplay(stat, heroDef.key);
+  const heroFontSz  = heroDisplay.length >= 3 ? 190 : 220;
 
   // Team chip — sized off the FULL chip text (name + number), not just the team
   // name — otherwise the number suffix clips past an under-sized pill. Font bumped
@@ -2548,19 +2585,19 @@ async function generateGameStatCardPng(game, stat, align = 'center') {
 
   const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
 
-  // "POINTS" centers under the PTS number's own estimated width, not under `posX`
-  // the way every other row does — with left/right align, anchoring both at the
-  // same edge left the (usually much narrower) number sitting off to one side of
-  // the label instead of centered above it.
-  const ptsNumW   = estTextW(String(ptsVal), ptsFontSz);
-  const ptsLabelCx = anchor === 'start' ? posX + ptsNumW / 2 : anchor === 'end' ? posX - ptsNumW / 2 : posX;
+  // The hero label centers under the hero number's own estimated width, not under
+  // `posX` the way every other row does — with left/right align, anchoring both at
+  // the same edge left the (usually much narrower) number sitting off to one side
+  // of the label instead of centered above it.
+  const heroNumW   = estTextW(heroDisplay, heroFontSz);
+  const heroLabelCx = anchor === 'start' ? posX + heroNumW / 2 : anchor === 'end' ? posX - heroNumW / 2 : posX;
 
-  const secondary = [
-    { label: 'REB', val: Number(stat.reb) || 0 },
-    { label: 'AST', val: Number(stat.ast) || 0 },
-    { label: 'STL', val: Number(stat.stl) || 0 },
-    { label: 'BLK', val: Number(stat.blk) || 0 },
-  ];
+  // Ranked best-to-worst by value, not fixed PTS>REB>AST>STL>BLK order — so
+  // whichever of the remaining 4 categories this player was next-best at reads
+  // left-to-right, same "most outstanding first" idea as the hero pick itself.
+  const secondary = secondaryDefs
+    .map(d => ({ label: d.short, val: shareStatValue(stat, d.key) }))
+    .sort((a, b) => b.val - a.val);
   const colPitch  = 150, groupW = colPitch * secondary.length;
   const groupLeft = boxX(groupW);
   const secondaryCols = secondary.map((s, i) => {
@@ -2613,8 +2650,8 @@ async function generateGameStatCardPng(game, stat, align = 'center') {
 
   <text x="${posX}" y="826" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="17" font-weight="600" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
 
-  <text x="${posX}" y="1030" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${ptsFontSz}" font-weight="900" fill="#f59332" stroke="#100701" stroke-width="8" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${ptsVal}</text>
-  <text x="${ptsLabelCx}" y="1078" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="26" font-weight="700" letter-spacing="5" fill="#f1f5f9" filter="url(#txt)">POINTS</text>
+  <text x="${posX}" y="1030" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${heroFontSz}" font-weight="900" fill="#f59332" stroke="#100701" stroke-width="8" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${heroDisplay}</text>
+  <text x="${heroLabelCx}" y="1078" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="26" font-weight="700" letter-spacing="5" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
 
   ${secondaryCols}
 
@@ -4968,8 +5005,9 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
   if (!stat) return res.status(404).end();
   const align = ['left', 'center', 'right'].includes(req.query.align) ? req.query.align : 'center';
+  const heroKey = SHARE_STAT_DEFS.some(d => d.key === req.query.stat) ? req.query.stat : 'pts';
   try {
-    const png = await generateGameStatCardPng(game, stat, align);
+    const png = await generateGameStatCardPng(game, stat, align, heroKey);
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'private, max-age=60');
     res.end(png);
