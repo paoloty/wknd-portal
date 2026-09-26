@@ -2497,15 +2497,16 @@ function parseDataUrl(dataUrl) {
 // clipped).
 function estTextW(text, fontSize, letterSpacing = 0) {
   const s = String(text ?? '');
-  return s.length * fontSize * 0.62 + Math.max(0, s.length - 1) * letterSpacing;
+  return s.length * fontSize * 0.7 + Math.max(0, s.length - 1) * letterSpacing;
 }
 
 // ── "Share My Stats" story card — vertical 1080×1920 PNG for one player's line in
-// one game. Fully transparent canvas, no card/panel background at all — just the
-// text, numbers and pills floating directly on it, the way Strava's story stickers
-// work, meant to sit over whatever photo/video the player already picked for their
-// Instagram Story. `align` (left/center/right) shifts EVERY row's own alignment,
-// not just its position, so it behaves like a real text/content-align control.
+// one game. Fully transparent canvas, no card/panel background — just text, numbers
+// and pills floating directly on it (a soft amber glow + text-stroke carry contrast
+// instead of a panel), the way Strava's story stickers work: dropped over whatever
+// photo/video the player already picked for their Instagram Story, and deliberately
+// compact/tight so most of that photo stays visible. `align` (left/center/right)
+// shifts EVERY row's own alignment, not just position — a real content-align control.
 // Same SVG-string + sharp pipeline as generateLeaderSvg/generateGameCoverPng above.
 async function generateGameStatCardPng(game, stat, align = 'center') {
   const W = 1080, H = 1920;
@@ -2515,38 +2516,44 @@ async function generateGameStatCardPng(game, stat, align = 'center') {
   // Left edge for a fixed-width box (pill, stat group, logo) anchored the same way.
   const boxX = (w) => align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 - w : (W - w) / 2;
 
-  const teams      = getAllTeams();
   const isTeamA    = stat.team_id === game.team_a_id;
   const myTeamName = String(stat.team_name || '').toUpperCase();
   const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
-  const oppTeamId   = isTeamA ? game.team_b_id : game.team_a_id;
-  const oppColor    = escXml(teams.find(t => t.id === oppTeamId)?.color || '#64748b');
-  const myColor     = escXml(stat.team_color || '#f59332');
+  const myColor    = escXml(stat.team_color || '#f59332');
   const chipTextColor = myTeamName === 'WHITE' ? '#10141d' : '#fff';
 
   const myScore  = Number(isTeamA ? game.team_a_score : game.team_b_score);
   const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
-  const ot = Number(game.overtime) || 0;
-  const finalLabel = ot === 0 ? 'FINAL' : ot === 1 ? 'FINAL/OT' : `FINAL/OT${ot}`;
-  const dateStr = game.date
-    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const won      = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const leagueLabel = `SEASON ${game.season || ''}${game.game_type === 'playoff' ? ' · PLAYOFFS' : ''}`;
 
   const displayName = escXml(formatName(stat.name || '').toUpperCase());
-  const nameFontSz  = displayName.length > 20 ? 44 : displayName.length > 14 ? 56 : 68;
+  const nameFontSz  = displayName.length > 20 ? 40 : displayName.length > 14 ? 48 : 56;
   const ptsVal      = Number(stat.pts) || 0;
-  const ptsFontSz   = String(ptsVal).length >= 3 ? 200 : 240;
+  const ptsFontSz   = String(ptsVal).length >= 3 ? 190 : 220;
 
   // Team chip — sized off the FULL chip text (name + number), not just the team
-  // name, and the FINAL pill off its own full text — both with generous padding
-  // so the label never gets clipped by an under-sized pill.
-  const chipText  = `${myTeamName} · #${stat.number ?? ''}`;
-  const chipW     = Math.max(150, Math.round(estTextW(chipText, 19, 2) + 72));
-  const chipX     = boxX(chipW);
-  const finalText = `${finalLabel} · ${myScore}-${oppScore}`;
-  const pillW     = Math.max(170, Math.round(estTextW(finalText, 22, 2) + 72));
-  const pillX     = boxX(pillW);
+  // name — otherwise the number suffix clips past an under-sized pill. Font bumped
+  // from 17→20 (it read as too small/hard to make out at a glance) with the pill's
+  // own height and padding grown to match.
+  const chipText   = `${myTeamName} · #${stat.number ?? ''}`;
+  const chipFsz    = 20;
+  const chipH      = 46;
+  const chipW      = Math.max(160, Math.round(estTextW(chipText, chipFsz, 2) + 76));
+  const chipX      = boxX(chipW);
+  const chipTop    = 746;
+  const chipTextY  = chipTop + chipH / 2 + 7;
+
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+
+  // "POINTS" centers under the PTS number's own estimated width, not under `posX`
+  // the way every other row does — with left/right align, anchoring both at the
+  // same edge left the (usually much narrower) number sitting off to one side of
+  // the label instead of centered above it.
+  const ptsNumW   = estTextW(String(ptsVal), ptsFontSz);
+  const ptsLabelCx = anchor === 'start' ? posX + ptsNumW / 2 : anchor === 'end' ? posX - ptsNumW / 2 : posX;
 
   const secondary = [
     { label: 'REB', val: Number(stat.reb) || 0 },
@@ -2554,70 +2561,66 @@ async function generateGameStatCardPng(game, stat, align = 'center') {
     { label: 'STL', val: Number(stat.stl) || 0 },
     { label: 'BLK', val: Number(stat.blk) || 0 },
   ];
-  const colPitch  = 170, groupW = colPitch * secondary.length;
+  const colPitch  = 150, groupW = colPitch * secondary.length;
   const groupLeft = boxX(groupW);
   const secondaryCols = secondary.map((s, i) => {
     const cx = groupLeft + colPitch * i + colPitch / 2;
-    return `<text x="${cx}" y="1156" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="76" font-weight="900" fill="#f59332" filter="url(#txt)">${s.val}</text>
-  <text x="${cx}" y="1202" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="18" font-weight="700" letter-spacing="3" fill="#e2e8f0" filter="url(#txt)">${s.label}</text>`;
+    return `<text x="${cx}" y="1148" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="58" font-weight="900" fill="#f59332" stroke="#000" stroke-width="6" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${s.val}</text>
+  <text x="${cx}" y="1182" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" letter-spacing="2.5" fill="#f1f5f9" filter="url(#txt)">${s.label}</text>`;
   }).join('\n');
 
-  // Matchup row (dot + team name + "VS" + dot + team name) is a multi-piece inline
-  // group with no single text-anchor to lean on, so it's laid out manually:
-  // estimate each piece's width, then lay left-to-right from a start x that itself
-  // depends on align (boxX with the row's total estimated width).
-  const dotD = 14, tinyGap = 10, bigGap = 22;
-  const nameFsz = 22, vsFsz = 18;
-  const w1 = estTextW(myTeamName, nameFsz), wVs = estTextW('VS', vsFsz), w2 = estTextW(oppTeamName, nameFsz);
-  const matchupW = dotD + tinyGap + w1 + bigGap + wVs + bigGap + dotD + tinyGap + w2;
-  let mx = boxX(matchupW);
-  const dot1Cx = mx + dotD / 2; mx += dotD + tinyGap;
-  const name1X = mx; mx += w1 + bigGap;
-  const vsX    = mx; mx += wVs + bigGap;
-  const dot2Cx = mx + dotD / 2; mx += dotD + tinyGap;
-  const name2X = mx;
+  // Brand handle pill — width accounts for the dot+gap PREFIX before the text
+  // starts, not just the text itself (that prefix was eating into what was
+  // supposed to be the pill's right-side padding). Right padding is kept a
+  // bit larger than the left dot-inset on purpose: the dot itself already reads
+  // as "space" on the left, so equal raw numbers there looked lopsided.
+  const handleText = '@WKNDBASKETBALL';
+  const handleFsz  = 20;
+  const handleH    = 54;
+  const dotR = 7, dotLeftInset = 22, dotToText = 18, rightPad = 34;
+  const prefixW     = dotLeftInset + dotR * 2 + dotToText;
+  const handleW     = Math.max(230, Math.round(prefixW + estTextW(handleText, handleFsz, 1.5) + rightPad));
+  const handleX     = boxX(handleW);
+  const handleTop   = 1232;
+  const dotCx       = handleX + dotLeftInset + dotR;
+  const dotCy       = handleTop + handleH / 2;
+  const handleTextX = handleX + prefixW;
+  const handleTextY = handleTop + handleH / 2 + 7;
 
-  // Fully transparent canvas — no panel behind any of this, so it reads as a
-  // sticker over whatever photo/video the player already picked for their story.
-  // Every text/shape gets a soft drop shadow (`#txt`) since there's no dark card
-  // backing it for contrast anymore — legibility now depends entirely on that.
+  // Fully transparent canvas — no panel behind any of this. A soft drop shadow
+  // (`#txt`) plus a stroke on the biggest numbers carry legibility instead.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>
     <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="2" stdDeviation="7" flood-color="#000000" flood-opacity="0.6"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.65"/>
+    </filter>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59332" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#f59332" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#f59332" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="34"/>
     </filter>
   </defs>
 
-  <text x="${posX}" y="346" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" fill="#ffffff" filter="url(#txt)">${displayName}</text>
+  <ellipse cx="${posX}" cy="953" rx="250" ry="190" fill="url(#glow)" filter="url(#blur)"/>
 
-  <rect x="${chipX}" y="391" width="${chipW}" height="50" rx="25" fill="${myColor}" filter="url(#txt)"/>
-  <text x="${chipX + chipW / 2}" y="424" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="19" font-weight="800" letter-spacing="2" fill="${chipTextColor}">${escXml(chipText)}</text>
+  <text x="${posX}" y="704" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" fill="#ffffff" stroke="#000" stroke-width="5" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
 
-  <text x="${posX}" y="506" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" letter-spacing="3" fill="#e2e8f0" filter="url(#txt)">${escXml(leagueLabel)}</text>
+  <rect x="${chipX}" y="${chipTop}" width="${chipW}" height="${chipH}" rx="${chipH / 2}" fill="${myColor}" filter="url(#txt)"/>
+  <text x="${chipX + chipW / 2}" y="${chipTextY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="${chipFsz}" font-weight="800" letter-spacing="1.5" fill="${chipTextColor}">${escXml(chipText)}</text>
 
-  <line x1="${SAFE_X0}" y1="566" x2="${SAFE_X1}" y2="566" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+  <text x="${posX}" y="826" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="17" font-weight="600" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
 
-  <text x="${posX}" y="846" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${ptsFontSz}" font-weight="900" fill="#f59332" filter="url(#txt)">${ptsVal}</text>
-  <text x="${posX}" y="912" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="30" font-weight="700" letter-spacing="6" fill="#e2e8f0" filter="url(#txt)">POINTS</text>
-
-  <line x1="${SAFE_X0}" y1="996" x2="${SAFE_X1}" y2="996" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+  <text x="${posX}" y="1030" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${ptsFontSz}" font-weight="900" fill="#f59332" stroke="#100701" stroke-width="8" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${ptsVal}</text>
+  <text x="${ptsLabelCx}" y="1078" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="26" font-weight="700" letter-spacing="5" fill="#f1f5f9" filter="url(#txt)">POINTS</text>
 
   ${secondaryCols}
 
-  <line x1="${SAFE_X0}" y1="1316" x2="${SAFE_X1}" y2="1316" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
-
-  <circle cx="${dot1Cx}" cy="1426" r="7" fill="${myColor}" filter="url(#txt)"/>
-  <text x="${name1X}" y="1432" font-family="${COVER_SVG_FONT}" font-size="${nameFsz}" font-weight="700" fill="#ffffff" filter="url(#txt)">${escXml(myTeamName)}</text>
-  <text x="${vsX}" y="1432" font-family="${COVER_SVG_FONT}" font-size="${vsFsz}" fill="#e2e8f0" filter="url(#txt)">VS</text>
-  <circle cx="${dot2Cx}" cy="1426" r="7" fill="${oppColor}" filter="url(#txt)"/>
-  <text x="${name2X}" y="1432" font-family="${COVER_SVG_FONT}" font-size="${nameFsz}" font-weight="700" fill="#ffffff" filter="url(#txt)">${escXml(oppTeamName)}</text>
-
-  <rect x="${pillX}" y="1486" width="${pillW}" height="56" rx="28" fill="#f59332" filter="url(#txt)"/>
-  <text x="${pillX + pillW / 2}" y="1522" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="22" font-weight="800" letter-spacing="2" fill="#10141d">${escXml(finalText)}</text>
-
-  <text x="${posX}" y="1606" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="16" fill="#e2e8f0" filter="url(#txt)">${escXml(dateStr)}</text>
-
-  <text x="${posX}" y="1780" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" letter-spacing="4" fill="#e2e8f0" filter="url(#txt)">WKNDBASKETBALL.COM</text>
+  <rect x="${handleX}" y="${handleTop}" width="${handleW}" height="${handleH}" rx="${handleH / 2}" fill="#0b1220" fill-opacity="0.55" stroke="#f59332" stroke-width="1.5" filter="url(#txt)"/>
+  <circle cx="${dotCx}" cy="${dotCy}" r="${dotR}" fill="#f59332"/>
+  <text x="${handleTextX}" y="${handleTextY}" font-family="${COVER_SVG_FONT}" font-size="${handleFsz}" font-weight="800" letter-spacing="1.5" fill="#ffffff">${handleText}</text>
 </svg>`;
 
   const svgLayer = await sharp(Buffer.from(svg), { density: 144 })
@@ -2631,11 +2634,11 @@ async function generateGameStatCardPng(game, stat, align = 'center') {
     if (existsSync(COVER_LOGO_PATH)) {
       const logo = await sharp(COVER_LOGO_PATH)
         .ensureAlpha()
-        .resize({ width: 200, height: 56, fit: 'inside', withoutEnlargement: true })
+        .resize({ width: 150, height: 42, fit: 'inside', withoutEnlargement: true })
         .png()
         .toBuffer();
       const meta = await sharp(logo).metadata();
-      layers.push({ input: logo, left: Math.round(boxX(meta.width || 200)), top: 104 });
+      layers.push({ input: logo, left: Math.round(boxX(meta.width || 150)), top: 580 });
     }
   } catch {}
 

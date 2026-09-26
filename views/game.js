@@ -138,6 +138,15 @@ function shareStatsBanner(game, stat) {
   background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0;
 }
 .ssc-preview img { width: 100%; height: 100%; object-fit: contain; }
+/* Desktop/tablet gets a bigger ceiling than the mobile-safe defaults above — a
+   phone viewport's dvh is scarce and shared with browser chrome, but a desktop
+   window has plenty of both width and height to spare, so the fixed 400px cap
+   above (sized for the tightest phones) left it looking tiny. Gated on width,
+   not just height, so a short phone in landscape doesn't get the bigger cap. */
+@media (min-width: 640px) {
+  .ssc-modal { max-width: 460px; }
+  .ssc-preview { height: min(70dvh, 760px); }
+}
 .ssc-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
 @keyframes ssc-spin { to { transform: rotate(360deg); } }
 .ssc-aligns { display: flex; gap: 8px; padding: 12px 16px 0; justify-content: center; }
