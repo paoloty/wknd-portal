@@ -176,8 +176,11 @@ function shareStatsBanner(game, stat) {
      runs 600px+ tall on a narrow phone, which used to push the Save/Copy/Share row past
      the modal's max-height and get clipped. Driving size from height (capped to a share
      of the viewport) and letting width follow the aspect ratio keeps the whole modal,
-     buttons included, on-screen. */
-  height: min(46dvh, 400px); max-width: 100%; width: auto; margin: 0 auto;
+     buttons included, on-screen. align-self: center overrides the modal's own
+     align-items: stretch (its default, from the shared .pcp-modal class) — without it
+     this box silently stretches to the modal's full width instead of the narrow,
+     aspect-ratio-driven shape these values are trying to produce. */
+  height: min(46dvh, 400px); max-width: 100%; width: auto; margin: 0 auto; align-self: center;
   background-color: #1a1a1a;
   background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
   background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0;
@@ -198,13 +201,27 @@ function shareStatsBanner(game, stat) {
    real story editor works, instead of squeezing everything into a ~400px box. */
 @media (max-width: 639px) {
   .ssc-backdrop { padding: 0; }
-  .ssc-modal { position: fixed; inset: 0; max-width: none; width: 100vw; height: 100dvh; border-radius: 0; }
+  /* max-height: none overrides the shared .pcp-modal class's own max-height:
+     90dvh (public/styles.css) — every OTHER modal on the site wants that cap
+     (so it never touches the screen edges), but this one is deliberately going
+     full-screen, and that inherited 90dvh cap was exactly the bug: it left a
+     10%-of-screen gap at the bottom with the page peeking through beneath the
+     action row. inset: 0 alone (no explicit width/height) is also the more
+     robust way to size a fixed full-screen element than 100vw/100dvh, which can
+     lose to inset by a hair depending on how a given browser resolves dvh. */
+  .ssc-modal { position: fixed; inset: 0; max-width: none; max-height: none; border-radius: 0; }
   .ssc-preview { position: absolute; inset: 0; height: auto; max-width: none; width: auto; margin: 0; }
   .ssc-preview img { object-fit: contain; }
-  .ssc-header { position: relative; z-index: 2; background: linear-gradient(to bottom, rgba(0,0,0,.7), transparent); border-bottom: none; }
-  .ssc-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding-top: 32px; background: linear-gradient(to top, rgba(0,0,0,.82) 40%, transparent); }
+  /* Safe-area padding so the edge-to-edge header/controls don't sit under a
+     notch/Dynamic Island or the home-indicator gesture bar on iPhones — a no-op
+     (env() resolves to 0) on devices without either. */
+  .ssc-header { position: relative; z-index: 2; padding-top: env(safe-area-inset-top); background: linear-gradient(to bottom, rgba(0,0,0,.7), transparent); border-bottom: none; }
+  .ssc-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding-top: 32px; padding-bottom: env(safe-area-inset-bottom); background: linear-gradient(to top, rgba(0,0,0,.82) 40%, transparent); }
 }
-.ssc-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
+/* Absolutely positioned against .ssc-preview (position: relative/absolute in every
+   mode) rather than relying on the preview's flex centering — keeps it dead-center
+   regardless of how that box ends up sized/stretched. */
+.ssc-spinner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
 @keyframes ssc-spin { to { transform: rotate(360deg); } }
 .ssc-controls__row { display: flex; align-items: center; gap: 10px; padding: 12px 16px 0; }
 .ssc-aligns { display: flex; gap: 8px; flex-shrink: 0; }
