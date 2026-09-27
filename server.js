@@ -116,7 +116,7 @@ import {
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
-  lockPapawisSignups, unlockPapawisSignups,
+  lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
   getPapawisLocationGeocode, setPapawisLocationGeocode,
@@ -9593,6 +9593,16 @@ app.post('/admin/papawis/:id/unlock', requireAuth, (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
   unlockPapawisSignups(game.id);
+  res.json({ ok: true });
+});
+
+// Toggles the same open_days_before field the creation form sets once — previously that
+// was a one-time choice with no way to change it after the session existed. Fixed at 6
+// days when turning it on, matching the creation form's own hardcoded default.
+app.post('/admin/papawis/:id/toggle-countdown', requireAuth, (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  setPapawisOpenDelay(game.id, game.open_days_before ? null : 6);
   res.json({ ok: true });
 });
 

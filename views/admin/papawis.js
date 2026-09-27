@@ -709,6 +709,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     <a href="/papawis" target="_blank" class="agm-view-link">View on site ↗</a>
     <button id="pw-copy-messenger" type="button" class="admin-btn admin-btn--sm">${isCompleted ? '📋 Copy Payment Status' : '📋 Copy for Messenger'}</button>
     ${isOpen ? `<button id="pw-lock-btn" type="button" class="admin-btn admin-btn--sm" data-locked="${isLocked ? '1' : '0'}">${isLocked ? '🔓 Unlock Roster' : '🔒 Lock Roster'}</button>` : ''}
+    ${isOpen ? `<button id="pw-countdown-btn" type="button" class="admin-btn admin-btn--sm" data-delay="${game.open_days_before ? '1' : '0'}">${game.open_days_before ? '⏱ Disable Countdown' : '⏱ Enable Countdown'}</button>` : ''}
   </div>
 </div>
 
@@ -1121,6 +1122,22 @@ ${(() => {
         .then(function(r) { return r.json(); })
         .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Failed'); lockBtn.disabled = false; } })
         .catch(function() { alert('Network error'); lockBtn.disabled = false; });
+    });
+  }
+
+  var countdownBtn = document.getElementById('pw-countdown-btn');
+  if (countdownBtn) {
+    countdownBtn.addEventListener('click', function() {
+      var hasDelay = countdownBtn.dataset.delay === '1';
+      var msg = hasDelay
+        ? 'Disable the countdown? Sign-ups open immediately.'
+        : 'Enable the countdown? Sign-ups will hold back until 8:00 AM, 6 days before game day.';
+      if (!confirm(msg)) return;
+      countdownBtn.disabled = true;
+      fetch('/admin/papawis/' + gameId + '/toggle-countdown', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) location.reload(); else { alert(d.error || 'Failed'); countdownBtn.disabled = false; } })
+        .catch(function() { alert('Network error'); countdownBtn.disabled = false; });
     });
   }
 
