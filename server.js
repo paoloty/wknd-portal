@@ -148,7 +148,7 @@ import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summariz
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
-import { computeSeasonBadges } from './lib/badges.js';
+import { computeSeasonBadges, statCatCount } from './lib/badges.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
@@ -2500,6 +2500,18 @@ function estTextW(text, fontSize, letterSpacing = 0) {
   return s.length * fontSize * 0.7 + Math.max(0, s.length - 1) * letterSpacing;
 }
 
+// Digits render narrower than the 0.7/char average `estTextW` uses for general
+// text (which over-pads on purpose for sizing pills/boxes) — using that same
+// factor to CENTER a label under a number visibly drifted it off-center, since
+// the number's real width was smaller than assumed. Tighter, digit-specific
+// estimate for that one job.
+function estDigitTextW(text, fontSize) {
+  const s = String(text ?? '');
+  let w = 0;
+  for (const ch of s) w += fontSize * (ch === '%' ? 0.64 : 0.58);
+  return w;
+}
+
 // ── "Share My Stats" story card — vertical 1080×1920 PNG for one player's line in
 // one game. Fully transparent canvas, no card/panel background — just text, numbers
 // and pills floating directly on it (a soft amber glow + text-stroke carry contrast
@@ -2523,6 +2535,24 @@ const SHARE_STAT_DEFS = [
 ];
 const SHARE_STAT_CORE_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk'];
 
+// Curated accent choices for the share card only — NOT a general UI accent
+// (the site-wide accent stays amber-only per the design system). Each preset
+// pairs its own legible text color for the ribbon/badge, the same {bg, text}
+// convention already used by AWARD_OG_BADGE above, since a few of these read
+// better with white text than the default's dark navy.
+const SHARE_ACCENT_PRESETS = {
+  amber:  { bg: '#f59332', text: '#0a0e16' },
+  red:    { bg: '#ef4444', text: '#ffffff' },
+  blue:   { bg: '#3b82f6', text: '#ffffff' },
+  green:  { bg: '#22c55e', text: '#0a0e16' },
+  purple: { bg: '#a78bfa', text: '#0a0e16' },
+  pink:   { bg: '#f472b6', text: '#0a0e16' },
+  cyan:   { bg: '#22d3ee', text: '#0a0e16' },
+};
+function resolveAccent(key) {
+  return SHARE_ACCENT_PRESETS[key] || SHARE_ACCENT_PRESETS.amber;
+}
+
 function shareStatValue(stat, key) {
   if (key === 'fg3m') return Number(stat.fg3m) || 0;
   if (key === 'fgpct') {
@@ -2537,8 +2567,31 @@ function shareStatDisplay(stat, key) {
   return key === 'fgpct' ? `${val}%` : String(val);
 }
 
-async function generateGameStatCardPng(game, stat, align = 'center', heroKey = 'pts') {
+// Priority order matches "most impressive first": a triple-double outranks a
+// double-double, which outranks a plain career high. Career-high check mirrors
+// the exact `stat.X >= careerHighs.X && stat.X > 0` pattern already used for the
+// POTG writeup prompt (career highs are computed as MAX() over ALL games
+// including this one, so "this game IS (one of) the max" is what >= tests for).
+function achievementRibbonText(stat, careerHighs) {
+  const cats = statCatCount(stat);
+  if (cats >= 3) return 'TRIPLE-DOUBLE';
+  if (cats >= 2) return 'DOUBLE-DOUBLE';
+  if (careerHighs) {
+    const hiKeys = SHARE_STAT_CORE_KEYS.filter(k => {
+      const v = Number(stat[k]) || 0;
+      return v > 0 && v >= (Number(careerHighs[k]) || 0);
+    });
+    if (hiKeys.length) {
+      const shorts = hiKeys.map(k => SHARE_STAT_DEFS.find(d => d.key === k).short);
+      return `CAREER HIGH ${shorts.join('/')}`;
+    }
+  }
+  return '';
+}
+
+async function generateGameStatCardPng(game, stat, align = 'center', heroKey = 'pts', opts = {}) {
   const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
   const heroDef = SHARE_STAT_DEFS.find(d => d.key === heroKey) || SHARE_STAT_DEFS[0];
   // Always the top 4 CORE stats minus the hero (if it's one of them) — so
   // picking a bonus stat like 3PM as hero still shows PTS/REB/AST/STL below it
@@ -2552,6 +2605,14 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
   // Left edge for a fixed-width box (pill, stat group, logo) anchored the same way.
   const boxX = (w) => align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 - w : (W - w) / 2;
+
+  // Achievement ribbon (badge toggle) and season-average delta (comparison layout)
+  // are both additive rows on top of the same skeleton, not a separate template
+  // each — they're just extra entries in the row sequence below.
+  const badgeText = opts.badge
+    ? achievementRibbonText(stat, getPlayerCareerHighs(stat.player_id))
+    : '';
+  const hasCmp = typeof opts.comparisonAvg === 'number' && isFinite(opts.comparisonAvg);
 
   const isTeamA    = stat.team_id === game.team_a_id;
   const myTeamName = String(stat.team_name || '').toUpperCase();
@@ -2580,16 +2641,28 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   const chipH      = 46;
   const chipW      = Math.max(160, Math.round(estTextW(chipText, chipFsz, 2) + 76));
   const chipX      = boxX(chipW);
-  const chipTop    = 746;
-  const chipTextY  = chipTop + chipH / 2 + 7;
 
   const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+
+  const ribbonFsz  = 22;
+  const ribbonH    = 40;
+  // Padding matches the team-chip pill's own +76 convention above — a
+  // fully-rounded pill needs more flat clearance than a plain rect since the
+  // end caps themselves eat into it; a flatter +56 read as too tight.
+  const ribbonW    = Math.round(estTextW(badgeText, ribbonFsz, 1.5) + 76);
+  const ribbonX    = boxX(ribbonW);
+
+  const heroValNum   = shareStatValue(stat, heroDef.key);
+  const cmpAvgDisplay = hasCmp ? (heroDef.key === 'fgpct' ? `${Math.round(opts.comparisonAvg)}%` : opts.comparisonAvg.toFixed(1)) : '';
+  const cmpDelta      = hasCmp ? heroValNum - opts.comparisonAvg : 0;
+  const cmpDeltaDisplay = hasCmp ? `${cmpDelta >= 0 ? '+' : ''}${cmpDelta.toFixed(1)}` : '';
+  const comparisonLine = hasCmp ? `${cmpDeltaDisplay} VS YOUR ${cmpAvgDisplay} SEASON AVG` : '';
 
   // The hero label centers under the hero number's own estimated width, not under
   // `posX` the way every other row does — with left/right align, anchoring both at
   // the same edge left the (usually much narrower) number sitting off to one side
   // of the label instead of centered above it.
-  const heroNumW   = estTextW(heroDisplay, heroFontSz);
+  const heroNumW   = estDigitTextW(heroDisplay, heroFontSz);
   const heroLabelCx = anchor === 'start' ? posX + heroNumW / 2 : anchor === 'end' ? posX - heroNumW / 2 : posX;
 
   // Ranked best-to-worst by value, not fixed PTS>REB>AST>STL>BLK order — so
@@ -2600,11 +2673,6 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
     .sort((a, b) => b.val - a.val);
   const colPitch  = 150, groupW = colPitch * secondary.length;
   const groupLeft = boxX(groupW);
-  const secondaryCols = secondary.map((s, i) => {
-    const cx = groupLeft + colPitch * i + colPitch / 2;
-    return `<text x="${cx}" y="1148" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="58" font-weight="900" fill="#f59332" stroke="#000" stroke-width="6" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${s.val}</text>
-  <text x="${cx}" y="1182" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" letter-spacing="2.5" fill="#f1f5f9" filter="url(#txt)">${s.label}</text>`;
-  }).join('\n');
 
   // Brand handle pill — width accounts for the dot+gap PREFIX before the text
   // starts, not just the text itself (that prefix was eating into what was
@@ -2614,15 +2682,67 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   const handleText = '@WKNDBASKETBALL';
   const handleFsz  = 20;
   const handleH    = 54;
-  const dotR = 7, dotLeftInset = 22, dotToText = 18, rightPad = 34;
+  const dotR = 7, dotLeftInset = 22, dotToText = 10, rightPad = 34;
   const prefixW     = dotLeftInset + dotR * 2 + dotToText;
-  const handleW     = Math.max(230, Math.round(prefixW + estTextW(handleText, handleFsz, 1.5) + rightPad));
+  const handleTextW = handleText.length * handleFsz * 0.66 + (handleText.length - 1) * 1.5;
+  const handleW     = Math.max(230, Math.round(prefixW + handleTextW + rightPad));
   const handleX     = boxX(handleW);
-  const handleTop   = 1232;
+
+  // ── Vertical rhythm: every row is placed by a single running cursor with one
+  // uniform GAP between rows (instead of hand-picked absolute offsets per row,
+  // which drifted out of sync with each other as rows got added/removed for the
+  // badge/comparison options — same GAP is reused by generateGameStatGridPng).
+  const GAP = 34;
+  const cap = (fontSize) => fontSize * 0.73; // approx cap-height for this bold sans stack
+  let cursor = 580 + 42 + GAP; // logo top (580) + its box height (42)
+
+  let ribbonTop = null, ribbonTextY = null;
+  if (badgeText) {
+    ribbonTop = cursor;
+    ribbonTextY = ribbonTop + ribbonH / 2 + 7;
+    cursor = ribbonTop + ribbonH + GAP;
+  }
+
+  const nameY = cursor + cap(nameFontSz);
+  cursor = nameY + GAP;
+
+  const chipTop   = cursor;
+  const chipTextY = chipTop + chipH / 2 + 7;
+  cursor = chipTop + chipH + GAP;
+
+  const contextY = cursor + cap(17);
+  cursor = contextY + GAP;
+
+  const glowCy = cursor + cap(heroFontSz) / 2;
+  const heroY  = cursor + cap(heroFontSz);
+  cursor = heroY + GAP;
+
+  const heroLabelY = cursor + cap(26);
+  cursor = heroLabelY + GAP;
+
+  let comparisonY = null;
+  if (hasCmp) {
+    comparisonY = cursor + cap(20);
+    cursor = comparisonY + GAP;
+  }
+
+  const secondaryY = cursor + cap(58);
+  cursor = secondaryY + GAP;
+
+  const secondaryLabelY = cursor + cap(15);
+  cursor = secondaryLabelY + GAP;
+
+  const handleTop = cursor;
   const dotCx       = handleX + dotLeftInset + dotR;
   const dotCy       = handleTop + handleH / 2;
   const handleTextX = handleX + prefixW;
   const handleTextY = handleTop + handleH / 2 + 7;
+
+  const secondaryCols = secondary.map((s, i) => {
+    const cx = groupLeft + colPitch * i + colPitch / 2;
+    return `<text x="${cx}" y="${secondaryY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="58" font-weight="900" fill="${accent.bg}" stroke="#000" stroke-width="6" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${s.val}</text>
+  <text x="${cx}" y="${secondaryLabelY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" letter-spacing="2.5" fill="#f1f5f9" filter="url(#txt)">${s.label}</text>`;
+  }).join('\n');
 
   // Fully transparent canvas — no panel behind any of this. A soft drop shadow
   // (`#txt`) plus a stroke on the biggest numbers carry legibility instead.
@@ -2632,31 +2752,36 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
       <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.65"/>
     </filter>
     <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#f59332" stop-opacity="0.55"/>
-      <stop offset="60%" stop-color="#f59332" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="#f59332" stop-opacity="0"/>
+      <stop offset="0%" stop-color="${accent.bg}" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="${accent.bg}" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="${accent.bg}" stop-opacity="0"/>
     </radialGradient>
     <filter id="blur" x="-100%" y="-100%" width="300%" height="300%">
       <feGaussianBlur stdDeviation="34"/>
     </filter>
   </defs>
 
-  <ellipse cx="${posX}" cy="953" rx="250" ry="190" fill="url(#glow)" filter="url(#blur)"/>
+  <ellipse cx="${posX}" cy="${glowCy}" rx="250" ry="190" fill="url(#glow)" filter="url(#blur)"/>
 
-  <text x="${posX}" y="704" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" fill="#ffffff" stroke="#000" stroke-width="5" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
+  ${badgeText ? `<rect x="${ribbonX}" y="${ribbonTop}" width="${ribbonW}" height="${ribbonH}" rx="${ribbonH / 2}" fill="${accent.bg}" filter="url(#txt)"/>
+  <text x="${ribbonX + ribbonW / 2}" y="${ribbonTextY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="${ribbonFsz}" font-weight="800" letter-spacing="1.5" fill="${accent.text}">${escXml(badgeText)}</text>` : ''}
+
+  <text x="${posX}" y="${nameY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" letter-spacing="2" fill="#ffffff" stroke="#000" stroke-width="5" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
 
   <rect x="${chipX}" y="${chipTop}" width="${chipW}" height="${chipH}" rx="${chipH / 2}" fill="${myColor}" filter="url(#txt)"/>
   <text x="${chipX + chipW / 2}" y="${chipTextY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="${chipFsz}" font-weight="800" letter-spacing="1.5" fill="${chipTextColor}">${escXml(chipText)}</text>
 
-  <text x="${posX}" y="826" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="17" font-weight="600" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
+  <text x="${posX}" y="${contextY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="17" font-weight="600" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
 
-  <text x="${posX}" y="1030" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${heroFontSz}" font-weight="900" fill="#f59332" stroke="#100701" stroke-width="8" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${heroDisplay}</text>
-  <text x="${heroLabelCx}" y="1078" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="26" font-weight="700" letter-spacing="5" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
+  <text x="${posX}" y="${heroY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${heroFontSz}" font-weight="900" fill="${accent.bg}" stroke="#100701" stroke-width="8" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${heroDisplay}</text>
+  <text x="${heroLabelCx}" y="${heroLabelY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="26" font-weight="700" letter-spacing="5" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
+
+  ${hasCmp ? `<text x="${posX}" y="${comparisonY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="20" font-weight="700" letter-spacing="1" fill="#f1f5f9" filter="url(#txt)">${escXml(comparisonLine)}</text>` : ''}
 
   ${secondaryCols}
 
-  <rect x="${handleX}" y="${handleTop}" width="${handleW}" height="${handleH}" rx="${handleH / 2}" fill="#0b1220" fill-opacity="0.55" stroke="#f59332" stroke-width="1.5" filter="url(#txt)"/>
-  <circle cx="${dotCx}" cy="${dotCy}" r="${dotR}" fill="#f59332"/>
+  <rect x="${handleX}" y="${handleTop}" width="${handleW}" height="${handleH}" rx="${handleH / 2}" fill="#0b1220" fill-opacity="0.55" stroke="${accent.bg}" stroke-width="1.5" filter="url(#txt)"/>
+  <circle cx="${dotCx}" cy="${dotCy}" r="${dotR}" fill="${accent.bg}"/>
   <text x="${handleTextX}" y="${handleTextY}" font-family="${COVER_SVG_FONT}" font-size="${handleFsz}" font-weight="800" letter-spacing="1.5" fill="#ffffff">${handleText}</text>
 </svg>`;
 
@@ -2680,6 +2805,230 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   } catch {}
 
   return sharp(base).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Full stat grid" layout — no single hero, every core category shown at the
+// same visual weight (PTS/REB/AST/STL/BLK + FG%), for a good all-around game
+// where no one stat is the obvious standout. Same header/handle conventions as
+// generateGameStatCardPng but its own template below the context line, since
+// there's no hero number to build a layout around.
+async function generateGameStatGridPng(game, stat, align = 'center', opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const SAFE_X0 = 90, SAFE_X1 = 990;
+  const posX  = align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 : W / 2;
+  const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+  const boxX = (w) => align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 - w : (W - w) / 2;
+
+  const isTeamA    = stat.team_id === game.team_a_id;
+  const myTeamName = String(stat.team_name || '').toUpperCase();
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myColor    = escXml(stat.team_color || '#f59332');
+  const chipTextColor = myTeamName === 'WHITE' ? '#10141d' : '#fff';
+
+  const myScore  = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won      = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  const nameFontSz  = displayName.length > 20 ? 40 : displayName.length > 14 ? 48 : 56;
+
+  const chipText   = `${myTeamName} · #${stat.number ?? ''}`;
+  const chipFsz    = 20;
+  const chipH      = 46;
+  const chipW      = Math.max(160, Math.round(estTextW(chipText, chipFsz, 2) + 76));
+  const chipX      = boxX(chipW);
+
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+
+  // Fixed box-score order (not "best stat first" like the default template's
+  // secondary row) — this layout's whole point is an even, familiar box-score
+  // read, not a highlight ranking.
+  const GRID_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk', 'fgpct'];
+  const cells = GRID_KEYS.map(k => ({
+    label: SHARE_STAT_DEFS.find(d => d.key === k).short,
+    val:   shareStatDisplay(stat, k),
+  }));
+  const colPitch  = 300, groupW = colPitch * 3;
+  const groupLeft = boxX(groupW);
+
+  const handleText = '@WKNDBASKETBALL';
+  const handleFsz  = 20;
+  const handleH    = 54;
+  const dotR = 7, dotLeftInset = 22, dotToText = 10, rightPad = 34;
+  const prefixW     = dotLeftInset + dotR * 2 + dotToText;
+  const handleTextW = handleText.length * handleFsz * 0.66 + (handleText.length - 1) * 1.5;
+  const handleW     = Math.max(230, Math.round(prefixW + handleTextW + rightPad));
+  const handleX     = boxX(handleW);
+
+  // Same uniform-GAP row cursor as generateGameStatCardPng — see its comment.
+  const GAP = 34;
+  const cap = (fontSize) => fontSize * 0.73;
+  let cursor = 580 + 42 + GAP;
+
+  const nameY = cursor + cap(nameFontSz);
+  cursor = nameY + GAP;
+
+  const chipTop   = cursor;
+  const chipTextY = chipTop + chipH / 2 + 7;
+  cursor = chipTop + chipH + GAP;
+
+  const contextY = cursor + cap(17);
+  cursor = contextY + GAP;
+
+  const row1Y = cursor + cap(68);
+  cursor = row1Y + GAP;
+  const row1LabelY = cursor + cap(16);
+  cursor = row1LabelY + GAP;
+  const row2Y = cursor + cap(68);
+  cursor = row2Y + GAP;
+  const row2LabelY = cursor + cap(16);
+  cursor = row2LabelY + GAP;
+
+  const glowCy = (row1Y + row2LabelY) / 2;
+  const handleTop = cursor;
+  const dotCx       = handleX + dotLeftInset + dotR;
+  const dotCy       = handleTop + handleH / 2;
+  const handleTextX = handleX + prefixW;
+  const handleTextY = handleTop + handleH / 2 + 7;
+
+  const gridCells = cells.map((c, i) => {
+    const col = i % 3, row = Math.floor(i / 3);
+    const cx  = groupLeft + colPitch * col + colPitch / 2;
+    const vy  = row === 0 ? row1Y : row2Y;
+    const ly  = row === 0 ? row1LabelY : row2LabelY;
+    return `<text x="${cx}" y="${vy}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="68" font-weight="900" fill="${accent.bg}" stroke="#000" stroke-width="6" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${c.val}</text>
+  <text x="${cx}" y="${ly}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" letter-spacing="2.5" fill="#f1f5f9" filter="url(#txt)">${c.label}</text>`;
+  }).join('\n');
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.65"/>
+    </filter>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="${accent.bg}" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="${accent.bg}" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="${accent.bg}" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+
+  <ellipse cx="${posX}" cy="${glowCy}" rx="320" ry="260" fill="url(#glow)" filter="url(#blur)"/>
+
+  <text x="${posX}" y="${nameY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" letter-spacing="2" fill="#ffffff" stroke="#000" stroke-width="5" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
+
+  <rect x="${chipX}" y="${chipTop}" width="${chipW}" height="${chipH}" rx="${chipH / 2}" fill="${myColor}" filter="url(#txt)"/>
+  <text x="${chipX + chipW / 2}" y="${chipTextY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="${chipFsz}" font-weight="800" letter-spacing="1.5" fill="${chipTextColor}">${escXml(chipText)}</text>
+
+  <text x="${posX}" y="${contextY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="17" font-weight="600" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
+
+  ${gridCells}
+
+  <rect x="${handleX}" y="${handleTop}" width="${handleW}" height="${handleH}" rx="${handleH / 2}" fill="#0b1220" fill-opacity="0.55" stroke="${accent.bg}" stroke-width="1.5" filter="url(#txt)"/>
+  <circle cx="${dotCx}" cy="${dotCy}" r="${dotR}" fill="${accent.bg}"/>
+  <text x="${handleTextX}" y="${handleTextY}" font-family="${COVER_SVG_FONT}" font-size="${handleFsz}" font-weight="800" letter-spacing="1.5" fill="#ffffff">${handleText}</text>
+</svg>`;
+
+  const svgLayer = await sharp(Buffer.from(svg), { density: 144 })
+    .resize(W, H)
+    .png()
+    .toBuffer();
+  const base = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  const layers = [{ input: svgLayer, top: 0, left: 0 }];
+
+  try {
+    if (existsSync(COVER_LOGO_PATH)) {
+      const logo = await sharp(COVER_LOGO_PATH)
+        .ensureAlpha()
+        .resize({ width: 150, height: 42, fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      const meta = await sharp(logo).metadata();
+      layers.push({ input: logo, left: Math.round(boxX(meta.width || 150)), top: 580 });
+    }
+  } catch {}
+
+  return sharp(base).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Minimal corner sticker" layout — a small single-stat badge meant to be
+// dropped in one corner of a photo/video (closer to a real Strava sticker)
+// rather than spanning the whole frame. Anchored to whichever corner is picked;
+// top corners lay out top-to-bottom from a fixed top margin, bottom corners lay
+// out bottom-to-top from a fixed bottom margin, so the block always hugs the
+// edge it's pinned to. No logo watermark (kept deliberately tiny/minimal).
+async function generateGameStatStickerPng(game, stat, corner = 'tl', heroKey = 'pts', opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const heroDef = SHARE_STAT_DEFS.find(d => d.key === heroKey) || SHARE_STAT_DEFS[0];
+  const EDGE_X = 64, TOP_Y = 170, BOTTOM_Y = 1750;
+  const isRight  = corner === 'tr' || corner === 'br';
+  const isBottom = corner === 'bl' || corner === 'br';
+  const x       = isRight ? W - EDGE_X : EDGE_X;
+  const anchor  = isRight ? 'end' : 'start';
+  const pillX   = (w) => isRight ? x - w : x;
+
+  const myTeamName = String(stat.team_name || '').toUpperCase();
+  const myColor    = escXml(stat.team_color || '#f59332');
+  const chipTextColor = myTeamName === 'WHITE' ? '#10141d' : '#fff';
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  const nameFontSz  = displayName.length > 18 ? 32 : 38;
+  const heroDisplay = shareStatDisplay(stat, heroDef.key);
+  const heroFontSz  = 120;
+
+  const chipText = `${myTeamName} · #${stat.number ?? ''}`;
+  const chipFsz  = 15, chipH = 32;
+  const chipW    = Math.max(120, Math.round(estTextW(chipText, chipFsz, 1.5) + 44));
+  const chipXpos = pillX(chipW);
+
+  const handleText = '@WKNDBASKETBALL';
+  const handleFsz  = 14;
+
+  let chipTop, nameY, heroY, heroLabelY, handleY;
+  if (!isBottom) {
+    chipTop    = TOP_Y;
+    nameY      = chipTop + chipH + 40;
+    heroY      = nameY + 132;
+    heroLabelY = heroY + 30;
+    handleY    = heroLabelY + 46;
+  } else {
+    handleY    = BOTTOM_Y;
+    heroLabelY = handleY - 46;
+    heroY      = heroLabelY - 30;
+    nameY      = heroY - 132;
+    chipTop    = nameY - chipH - 40;
+  }
+  const chipTextY = chipTop + chipH / 2 + 5;
+  const heroNumW  = estDigitTextW(heroDisplay, heroFontSz);
+  const heroLabelCx = anchor === 'start' ? x + heroNumW / 2 : x - heroNumW / 2;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#000000" flood-opacity="0.7"/>
+    </filter>
+  </defs>
+
+  <rect x="${chipXpos}" y="${chipTop}" width="${chipW}" height="${chipH}" rx="${chipH / 2}" fill="${myColor}" filter="url(#txt)"/>
+  <text x="${chipXpos + chipW / 2}" y="${chipTextY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="${chipFsz}" font-weight="800" letter-spacing="1.2" fill="${chipTextColor}">${escXml(chipText)}</text>
+
+  <text x="${x}" y="${nameY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" letter-spacing="1.5" fill="#ffffff" stroke="#000" stroke-width="4" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
+
+  <text x="${x}" y="${heroY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${heroFontSz}" font-weight="900" fill="${accent.bg}" stroke="#100701" stroke-width="6" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${heroDisplay}</text>
+  <text x="${heroLabelCx}" y="${heroLabelY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="18" font-weight="700" letter-spacing="4" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
+
+  <text x="${x}" y="${handleY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${handleFsz}" font-weight="800" letter-spacing="1.2" fill="${accent.bg}" filter="url(#txt)">${handleText}</text>
+</svg>`;
+
+  const svgLayer = await sharp(Buffer.from(svg), { density: 144 }).resize(W, H).png().toBuffer();
+  const base = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  return sharp(base).composite([{ input: svgLayer, top: 0, left: 0 }]).png({ compressionLevel: 9 }).toBuffer();
 }
 
 async function generateGameCoverPng(game, potgStat, bgDataUrl) {
@@ -5004,10 +5353,30 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   if (!game || game.under_review) return res.status(404).end();
   const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
   if (!stat) return res.status(404).end();
-  const align = ['left', 'center', 'right'].includes(req.query.align) ? req.query.align : 'center';
+  const layout  = ['default', 'grid', 'sticker', 'comparison'].includes(req.query.layout) ? req.query.layout : 'default';
+  const align   = ['left', 'center', 'right'].includes(req.query.align) ? req.query.align : 'center';
+  const corner  = ['tl', 'tr', 'bl', 'br'].includes(req.query.corner) ? req.query.corner : 'tl';
   const heroKey = SHARE_STAT_DEFS.some(d => d.key === req.query.stat) ? req.query.stat : 'pts';
+  const badge   = req.query.badge === '1';
+  const accent  = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.query.accent) ? req.query.accent : 'amber';
   try {
-    const png = await generateGameStatCardPng(game, stat, align, heroKey);
+    let png;
+    if (layout === 'grid') {
+      png = await generateGameStatGridPng(game, stat, align, { accent });
+    } else if (layout === 'sticker') {
+      png = await generateGameStatStickerPng(game, stat, corner, heroKey, { accent });
+    } else {
+      const opts = { badge, accent };
+      if (layout === 'comparison') {
+        // Season average (this season, including the game being shared) for
+        // whichever stat is the hero — same field shape as getGameDetailStats
+        // rows, so shareStatValue works unmodified against season-log rows too.
+        const seasonGames = getPlayerGameLog(playerId).filter(g => g.season === game.season && g.status === 'played');
+        const vals = seasonGames.map(g => shareStatValue(g, heroKey));
+        opts.comparisonAvg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      }
+      png = await generateGameStatCardPng(game, stat, align, heroKey, opts);
+    }
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'private, max-age=60');
     res.end(png);

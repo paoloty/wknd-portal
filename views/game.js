@@ -108,7 +108,7 @@ function shareStatsBanner(game, stat) {
       return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
     }).join('')}</svg>`;
   };
-  const iconSave  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
+  const iconSave  =`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
   const iconCopy  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
   const iconShare = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`;
 
@@ -131,6 +131,13 @@ function shareStatsBanner(game, stat) {
       <img id="ssc-img" alt="Your stat card" hidden>
     </div>
     <div class="ssc-controls">
+      <div class="ssc-controls__row ssc-layouts" role="tablist" aria-label="Card layout">
+        <button type="button" class="ssc-layout-btn is-active" data-layout="default">Default</button>
+        <button type="button" class="ssc-layout-btn" data-layout="grid">Stat Grid</button>
+        <!-- Sticker layout hidden for now (temporary product call) — server route
+             and generateGameStatStickerPng still work, just no UI entry point. -->
+        <button type="button" class="ssc-layout-btn" data-layout="comparison">vs Avg</button>
+      </div>
       <div class="ssc-controls__row">
         <div class="ssc-aligns" role="tablist" aria-label="Card position">
           <button type="button" class="ssc-align-btn" data-align="left" title="Left">${alignIcon('left')}</button>
@@ -146,6 +153,21 @@ function shareStatsBanner(game, stat) {
             ${statOptionsHtml}
           </ul>
         </div>
+      </div>
+      <div class="ssc-controls__row ssc-swatches" role="tablist" aria-label="Accent color">
+        <button type="button" class="ssc-swatch-btn is-active" data-accent="amber" title="Amber" style="--swatch:#f59332"></button>
+        <button type="button" class="ssc-swatch-btn" data-accent="red" title="Red" style="--swatch:#ef4444"></button>
+        <button type="button" class="ssc-swatch-btn" data-accent="blue" title="Blue" style="--swatch:#3b82f6"></button>
+        <button type="button" class="ssc-swatch-btn" data-accent="green" title="Green" style="--swatch:#22c55e"></button>
+        <button type="button" class="ssc-swatch-btn" data-accent="purple" title="Purple" style="--swatch:#a78bfa"></button>
+        <button type="button" class="ssc-swatch-btn" data-accent="pink" title="Pink" style="--swatch:#f472b6"></button>
+        <button type="button" class="ssc-swatch-btn" data-accent="cyan" title="Cyan" style="--swatch:#22d3ee"></button>
+      </div>
+      <div class="ssc-controls__row" id="ssc-badge-row">
+        <button type="button" class="ssc-badge-toggle" id="ssc-badge-toggle" aria-pressed="false">
+          <span class="ssc-badge-toggle__switch"></span>
+          Achievement badge
+        </button>
       </div>
       <div id="ssc-msg" class="ssc-msg" hidden></div>
       <div class="ssc-actions">
@@ -222,12 +244,29 @@ function shareStatsBanner(game, stat) {
    mode) rather than relying on the preview's flex centering — keeps it dead-center
    regardless of how that box ends up sized/stretched. */
 .ssc-spinner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
-@keyframes ssc-spin { to { transform: rotate(360deg); } }
+@keyframes ssc-spin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
 .ssc-controls__row { display: flex; align-items: center; gap: 10px; padding: 12px 16px 0; }
+.ssc-controls__row[hidden] { display: none; }
+.ssc-layouts { flex-wrap: wrap; }
+.ssc-layout-btn { padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; }
+.ssc-layout-btn:hover { color: var(--text); }
+.ssc-layout-btn.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
 .ssc-aligns { display: flex; gap: 8px; flex-shrink: 0; }
+.ssc-aligns[hidden] { display: none; }
 .ssc-align-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 36px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text-muted); cursor: pointer; transition: background .12s, color .12s; }
 .ssc-align-btn:hover { color: var(--text); }
 .ssc-align-btn.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
+.ssc-swatches { gap: 10px; flex-wrap: wrap; }
+.ssc-swatch-btn { width: 26px; height: 26px; border-radius: 50%; background: var(--swatch); border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); transition: transform .12s, border-color .12s; }
+.ssc-swatch-btn:hover { transform: scale(1.1); }
+.ssc-swatch-btn.is-active { border-color: #fff; }
+.ssc-badge-toggle { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 4px 0; color: var(--text-muted); font-size: 13px; font-weight: 600; cursor: pointer; }
+.ssc-badge-toggle:hover { color: var(--text); }
+.ssc-badge-toggle__switch { position: relative; width: 34px; height: 20px; border-radius: 999px; background: rgba(255,255,255,0.16); transition: background .12s; flex-shrink: 0; }
+.ssc-badge-toggle__switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .12s; }
+.ssc-badge-toggle[aria-pressed="true"] .ssc-badge-toggle__switch { background: var(--amber); }
+.ssc-badge-toggle[aria-pressed="true"] .ssc-badge-toggle__switch::after { transform: translateX(14px); }
+.ssc-badge-toggle[aria-pressed="true"] { color: var(--text); }
 .ssc-stat-dropdown { position: relative; flex: 1; min-width: 0; }
 .ssc-stat-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px; height: 36px; padding: 0 10px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
 .ssc-stat-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -263,19 +302,43 @@ function shareStatsBanner(game, stat) {
   var saveBtn  = document.getElementById('ssc-save');
   var copyBtn  = document.getElementById('ssc-copy');
   var shareBtn = document.getElementById('ssc-share');
+  var layoutBtns   = Array.prototype.slice.call(document.querySelectorAll('.ssc-layout-btn'));
+  var alignsWrap   = document.querySelector('.ssc-aligns');
   var alignBtns    = Array.prototype.slice.call(document.querySelectorAll('.ssc-align-btn'));
   var statDropdown = document.getElementById('ssc-stat-dropdown');
   var statTrigger  = document.getElementById('ssc-stat-trigger');
   var statTriggerLabel = document.getElementById('ssc-stat-trigger-label');
   var statMenu     = document.getElementById('ssc-stat-menu');
   var statOptions  = Array.prototype.slice.call(document.querySelectorAll('.ssc-stat-option'));
+  var badgeRow     = document.getElementById('ssc-badge-row');
+  var badgeToggle  = document.getElementById('ssc-badge-toggle');
+  var swatchBtns   = Array.prototype.slice.call(document.querySelectorAll('.ssc-swatch-btn'));
   var cache = {};
   var pending = {};
+  var layout = 'default';
   var align = 'center';
+  var badgeOn = false;
+  var accent = 'amber';
   // The server already picked and marked the best opening option (personalized
   // to this player's own box score — see shareStatsBanner in game.js) — just
   // read whichever option it marked active instead of recomputing a default.
   var heroStat = (statOptions.filter(function(o) { return o.classList.contains('is-active'); })[0] || statOptions[0]).getAttribute('data-stat');
+
+  // Each layout only cares about a subset of the controls — grid has no hero
+  // stat and is always centered (its 3-column layout doesn't read well shifted
+  // to an edge), badge only applies to default/comparison. Keeps every
+  // control's visibility (and the cache key / fetch URL below) in sync with
+  // whichever layout is currently selected.
+  function syncControlsForLayout() {
+    alignsWrap.hidden = layout === 'grid';
+    statDropdown.hidden = layout === 'grid';
+    badgeRow.hidden = !(layout === 'default' || layout === 'comparison');
+  }
+  syncControlsForLayout();
+
+  // Grid ignores whatever align is currently selected and always renders
+  // centered — this is what actually goes in the cache key / fetch URL.
+  function effectiveAlign() { return layout === 'grid' ? 'center' : align; }
 
   function selectStatOption(key) {
     var opt = statOptions.filter(function(o) { return o.getAttribute('data-stat') === key; })[0];
@@ -316,33 +379,51 @@ function shareStatsBanner(game, stat) {
     if (e.key === 'Escape') closeStatMenu();
   });
 
-  function cacheKey(a, s) { return a + '|' + s; }
+  // Only the params a given layout actually renders differently on are part of
+  // its identity — e.g. grid ignores the hero stat, so switching it while
+  // hidden shouldn't fetch a "new" combo that looks pixel-identical.
+  function cacheKey(l, a, s, b, c) {
+    return [
+      l,
+      a,
+      l === 'grid' ? '' : s,
+      (l === 'default' || l === 'comparison') ? (b ? '1' : '0') : '',
+      c,
+    ].join('|');
+  }
+  function buildUrl(l, a, s, b, c) {
+    var params = ['layout=' + encodeURIComponent(l), 'align=' + encodeURIComponent(a), 'accent=' + encodeURIComponent(c)];
+    if (l !== 'grid') params.push('stat=' + encodeURIComponent(s));
+    if (l === 'default' || l === 'comparison') params.push('badge=' + (b ? '1' : '0'));
+    return '/api/games/' + GAME_ID + '/my-stat-card.png?' + params.join('&');
+  }
+  function currentKey() { return cacheKey(layout, effectiveAlign(), heroStat, badgeOn, accent); }
 
   function showMsg(text) { msg.textContent = text; msg.hidden = false; }
   function clearMsg() { msg.hidden = true; msg.textContent = ''; }
 
-  // Tracks in-flight requests per align+stat combo (not one shared flag) so
-  // switching tabs while a fetch is still pending doesn't strand the
-  // newly-picked combo waiting on a "loading" flag that belongs to another one.
-  function ensureLoaded(a, s) {
-    var key = cacheKey(a, s);
+  // Tracks in-flight requests per combo (not one shared flag) so switching
+  // controls while a fetch is still pending doesn't strand the newly-picked
+  // combo waiting on a "loading" flag that belongs to another one.
+  function ensureLoaded(l, a, s, b, c) {
+    var key = cacheKey(l, a, s, b, c);
     if (cache[key] || pending[key]) return;
     pending[key] = true;
-    fetch('/api/games/' + GAME_ID + '/my-stat-card.png?align=' + a + '&stat=' + s)
+    fetch(buildUrl(l, a, s, b, c))
       .then(function(r) { if (!r.ok) throw new Error('failed'); return r.blob(); })
-      .then(function(b) {
-        cache[key] = { blob: b, url: URL.createObjectURL(b) };
-        if (key === cacheKey(align, heroStat)) render();
+      .then(function(res) {
+        cache[key] = { blob: res, url: URL.createObjectURL(res) };
+        if (key === currentKey()) render();
       })
       .catch(function() {
-        if (key === cacheKey(align, heroStat)) { spinner.hidden = true; showMsg('Could not load your stat card. Please try again.'); }
+        if (key === currentKey()) { spinner.hidden = true; showMsg('Could not load your stat card. Please try again.'); }
       })
       .then(function() { pending[key] = false; }, function() { pending[key] = false; });
   }
 
   function render() {
-    var entry = cache[cacheKey(align, heroStat)];
-    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align, heroStat); return; }
+    var entry = cache[currentKey()];
+    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(layout, effectiveAlign(), heroStat, badgeOn, accent); return; }
     img.src = entry.url;
     img.hidden = false;
     spinner.hidden = true;
@@ -359,6 +440,16 @@ function shareStatsBanner(game, stat) {
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
 
+  layoutBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      layout = btn.getAttribute('data-layout');
+      layoutBtns.forEach(function(b) { b.classList.toggle('is-active', b === btn); });
+      syncControlsForLayout();
+      clearMsg();
+      render();
+    });
+  });
+
   alignBtns.forEach(function(btn) {
     btn.addEventListener('click', function() {
       align = btn.getAttribute('data-align');
@@ -368,8 +459,24 @@ function shareStatsBanner(game, stat) {
     });
   });
 
+  badgeToggle.addEventListener('click', function() {
+    badgeOn = !badgeOn;
+    badgeToggle.setAttribute('aria-pressed', badgeOn ? 'true' : 'false');
+    clearMsg();
+    render();
+  });
+
+  swatchBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      accent = btn.getAttribute('data-accent');
+      swatchBtns.forEach(function(b) { b.classList.toggle('is-active', b === btn); });
+      clearMsg();
+      render();
+    });
+  });
+
   saveBtn.addEventListener('click', function() {
-    var entry = cache[cacheKey(align, heroStat)];
+    var entry = cache[currentKey()];
     if (!entry) return;
     var a = document.createElement('a');
     a.href = entry.url;
@@ -380,7 +487,7 @@ function shareStatsBanner(game, stat) {
   });
 
   copyBtn.addEventListener('click', function() {
-    var entry = cache[cacheKey(align, heroStat)];
+    var entry = cache[currentKey()];
     if (!entry) return;
     clearMsg();
     if (!navigator.clipboard || !window.ClipboardItem) {
@@ -393,7 +500,7 @@ function shareStatsBanner(game, stat) {
   });
 
   shareBtn.addEventListener('click', function() {
-    var entry = cache[cacheKey(align, heroStat)];
+    var entry = cache[currentKey()];
     if (!entry) return;
     clearMsg();
     var file = new File([entry.blob], 'wknd-game-stats.png', { type: 'image/png' });
