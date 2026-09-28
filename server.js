@@ -2500,18 +2500,6 @@ function estTextW(text, fontSize, letterSpacing = 0) {
   return s.length * fontSize * 0.7 + Math.max(0, s.length - 1) * letterSpacing;
 }
 
-// Digits render narrower than the 0.7/char average `estTextW` uses for general
-// text (which over-pads on purpose for sizing pills/boxes) — using that same
-// factor to CENTER a label under a number visibly drifted it off-center, since
-// the number's real width was smaller than assumed. Tighter, digit-specific
-// estimate for that one job.
-function estDigitTextW(text, fontSize) {
-  const s = String(text ?? '');
-  let w = 0;
-  for (const ch of s) w += fontSize * (ch === '%' ? 0.64 : 0.58);
-  return w;
-}
-
 // ── "Share My Stats" story card — vertical 1080×1920 PNG for one player's line in
 // one game. Fully transparent canvas, no card/panel background — just text, numbers
 // and pills floating directly on it (a soft amber glow + text-stroke carry contrast
@@ -2658,13 +2646,6 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   const cmpDeltaDisplay = hasCmp ? `${cmpDelta >= 0 ? '+' : ''}${cmpDelta.toFixed(1)}` : '';
   const comparisonLine = hasCmp ? `${cmpDeltaDisplay} VS YOUR ${cmpAvgDisplay} SEASON AVG` : '';
 
-  // The hero label centers under the hero number's own estimated width, not under
-  // `posX` the way every other row does — with left/right align, anchoring both at
-  // the same edge left the (usually much narrower) number sitting off to one side
-  // of the label instead of centered above it.
-  const heroNumW   = estDigitTextW(heroDisplay, heroFontSz);
-  const heroLabelCx = anchor === 'start' ? posX + heroNumW / 2 : anchor === 'end' ? posX - heroNumW / 2 : posX;
-
   // Ranked best-to-worst by value, not fixed PTS>REB>AST>STL>BLK order — so
   // whichever of the remaining 4 categories this player was next-best at reads
   // left-to-right, same "most outstanding first" idea as the hero pick itself.
@@ -2774,7 +2755,7 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   <text x="${posX}" y="${contextY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="17" font-weight="600" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
 
   <text x="${posX}" y="${heroY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${heroFontSz}" font-weight="900" fill="${accent.bg}" stroke="#100701" stroke-width="8" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${heroDisplay}</text>
-  <text x="${heroLabelCx}" y="${heroLabelY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="26" font-weight="700" letter-spacing="5" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
+  <text x="${posX}" y="${heroLabelY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="26" font-weight="700" letter-spacing="5" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
 
   ${hasCmp ? `<text x="${posX}" y="${comparisonY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="20" font-weight="700" letter-spacing="1" fill="#f1f5f9" filter="url(#txt)">${escXml(comparisonLine)}</text>` : ''}
 
@@ -3005,8 +2986,6 @@ async function generateGameStatStickerPng(game, stat, corner = 'tl', heroKey = '
     chipTop    = nameY - chipH - 40;
   }
   const chipTextY = chipTop + chipH / 2 + 5;
-  const heroNumW  = estDigitTextW(heroDisplay, heroFontSz);
-  const heroLabelCx = anchor === 'start' ? x + heroNumW / 2 : x - heroNumW / 2;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>
@@ -3021,7 +3000,7 @@ async function generateGameStatStickerPng(game, stat, corner = 'tl', heroKey = '
   <text x="${x}" y="${nameY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="800" letter-spacing="1.5" fill="#ffffff" stroke="#000" stroke-width="4" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
 
   <text x="${x}" y="${heroY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${heroFontSz}" font-weight="900" fill="${accent.bg}" stroke="#100701" stroke-width="6" stroke-opacity="0.45" paint-order="stroke fill" filter="url(#txt)">${heroDisplay}</text>
-  <text x="${heroLabelCx}" y="${heroLabelY}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="18" font-weight="700" letter-spacing="4" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
+  <text x="${x}" y="${heroLabelY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="18" font-weight="700" letter-spacing="4" fill="#f1f5f9" filter="url(#txt)">${heroDef.long}</text>
 
   <text x="${x}" y="${handleY}" text-anchor="${anchor}" font-family="${COVER_SVG_FONT}" font-size="${handleFsz}" font-weight="800" letter-spacing="1.2" fill="${accent.bg}" filter="url(#txt)">${handleText}</text>
 </svg>`;

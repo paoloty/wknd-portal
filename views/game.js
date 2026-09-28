@@ -421,12 +421,24 @@ function shareStatsBanner(game, stat) {
       .then(function() { pending[key] = false; }, function() { pending[key] = false; });
   }
 
+  // Each render is only ~200-250ms server-side, but every swatch click still
+  // paid a full fetch since nothing was pre-warmed — quietly loads the other
+  // accent colors for the combo just shown, in the background, so a follow-up
+  // color click resolves from cache instead of waiting on the network again.
+  var ACCENT_KEYS = ['amber', 'red', 'blue', 'green', 'purple', 'pink', 'cyan'];
+  function prefetchOtherAccents(l, a, s, b, current) {
+    ACCENT_KEYS.forEach(function(c) {
+      if (c !== current) ensureLoaded(l, a, s, b, c);
+    });
+  }
+
   function render() {
     var entry = cache[currentKey()];
     if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(layout, effectiveAlign(), heroStat, badgeOn, accent); return; }
     img.src = entry.url;
     img.hidden = false;
     spinner.hidden = true;
+    prefetchOtherAccents(layout, effectiveAlign(), heroStat, badgeOn, accent);
   }
 
   function open() {
