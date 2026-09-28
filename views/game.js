@@ -218,9 +218,16 @@ function shareStatsBanner(game, stat) {
   .ssc-preview { height: min(70dvh, 760px); }
 }
 /* Below 640px, the modal takes over the whole screen instead of floating as a
-   small card — the preview fills the viewport and the header/controls float on
-   top of it (gradient-backed for legibility over an arbitrary photo), the way a
-   real story editor works, instead of squeezing everything into a ~400px box. */
+   small card. Previously the preview filled the entire viewport with the
+   header/controls floating on top of it (gradient-backed, story-editor style)
+   — but this preview is just a checkerboard, not a real photo, so a taller
+   controls panel (more rows added since) just ate into that overlap with no
+   way for the art to know its available space had shrunk, leaving the art
+   sitting too close to the controls or too far from them depending on how
+   much content the controls row happened to have. A real stacked flex column
+   — header, then art, then controls, each getting genuine layout space —
+   keeps the art centered in whatever room is actually left over, and (via
+   overflow:hidden on the modal) means the sheet never scrolls either. */
 @media (max-width: 639px) {
   .ssc-backdrop { padding: 0; }
   /* max-height: none overrides the shared .pcp-modal class's own max-height:
@@ -231,22 +238,22 @@ function shareStatsBanner(game, stat) {
      action row. inset: 0 alone (no explicit width/height) is also the more
      robust way to size a fixed full-screen element than 100vw/100dvh, which can
      lose to inset by a hair depending on how a given browser resolves dvh. */
-  .ssc-modal { position: fixed; inset: 0; max-width: none; max-height: none; border-radius: 0; }
-  .ssc-preview { position: absolute; inset: 0; height: auto; max-width: none; width: auto; margin: 0; }
-  /* object-position: top (not the default center) — the header/controls float
-     ON TOP of this full-bleed box rather than sharing flow space with it, and
-     the card's own art only fills roughly the top 40% of the 1080x1920 canvas
-     (the rest is deliberately transparent so a real photo shows through there).
-     Centering the whole tall canvas in the full viewport pushed the art up and
-     left a big dead checkered gap before the controls; anchoring to the top
-     puts the art right under the header and tucks that blank tail behind the
-     controls' gradient overlay instead of leaving it as visible empty space. */
-  .ssc-preview img { object-fit: contain; object-position: top; }
+  /* overflow: hidden overrides this file's own base .ssc-modal rule above
+     (overflow-y: auto) — flex-direction/display themselves already come from
+     the shared .pcp-modal class (public/styles.css), no need to restate them. */
+  .ssc-modal { position: fixed; inset: 0; max-width: none; max-height: none; border-radius: 0; overflow: hidden; }
+  /* flex: 1 + min-height: 0 — takes exactly whatever room is left after the
+     header and controls claim their own (content-driven) heights, instead of
+     assuming a fixed viewport share. min-height: 0 is the part that's easy to
+     forget: without it a flex child won't shrink below its content size, and
+     an aspect-ratio'd/large image would blow the column out and force a
+     scrollbar right back in. */
+  .ssc-preview { position: relative; flex: 1; min-height: 0; height: auto; max-width: none; width: 100%; margin: 0; }
   /* Safe-area padding so the edge-to-edge header/controls don't sit under a
      notch/Dynamic Island or the home-indicator gesture bar on iPhones — a no-op
      (env() resolves to 0) on devices without either. */
-  .ssc-header { position: relative; z-index: 2; padding-top: env(safe-area-inset-top); background: linear-gradient(to bottom, rgba(0,0,0,.7), transparent); border-bottom: none; }
-  .ssc-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding-top: 32px; padding-bottom: env(safe-area-inset-bottom); background: linear-gradient(to top, rgba(0,0,0,.82) 40%, transparent); }
+  .ssc-header { flex-shrink: 0; padding-top: env(safe-area-inset-top); }
+  .ssc-controls { flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
 }
 /* Absolutely positioned against .ssc-preview (position: relative/absolute in every
    mode) rather than relying on the preview's flex centering — keeps it dead-center
