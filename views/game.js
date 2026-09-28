@@ -233,7 +233,15 @@ function shareStatsBanner(game, stat) {
      lose to inset by a hair depending on how a given browser resolves dvh. */
   .ssc-modal { position: fixed; inset: 0; max-width: none; max-height: none; border-radius: 0; }
   .ssc-preview { position: absolute; inset: 0; height: auto; max-width: none; width: auto; margin: 0; }
-  .ssc-preview img { object-fit: contain; }
+  /* object-position: top (not the default center) — the header/controls float
+     ON TOP of this full-bleed box rather than sharing flow space with it, and
+     the card's own art only fills roughly the top 40% of the 1080x1920 canvas
+     (the rest is deliberately transparent so a real photo shows through there).
+     Centering the whole tall canvas in the full viewport pushed the art up and
+     left a big dead checkered gap before the controls; anchoring to the top
+     puts the art right under the header and tucks that blank tail behind the
+     controls' gradient overlay instead of leaving it as visible empty space. */
+  .ssc-preview img { object-fit: contain; object-position: top; }
   /* Safe-area padding so the edge-to-edge header/controls don't sit under a
      notch/Dynamic Island or the home-indicator gesture bar on iPhones — a no-op
      (env() resolves to 0) on devices without either. */
