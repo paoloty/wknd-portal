@@ -248,7 +248,16 @@ function shareStatsBanner(game, stat) {
      forget: without it a flex child won't shrink below its content size, and
      an aspect-ratio'd/large image would blow the column out and force a
      scrollbar right back in. */
-  .ssc-preview { position: relative; flex: 1; min-height: 0; height: auto; max-width: none; width: 100%; margin: 0; }
+  .ssc-preview { position: relative; flex: 1; min-height: 0; height: auto; max-width: none; width: 100%; margin: 0; overflow: hidden; }
+  /* The card's own art only fills roughly the top third of the 1080x1920
+     canvas (deliberately — the rest stays transparent for a real photo), so
+     even a correctly-centered, non-letterboxed preview still reads as "mostly
+     empty, tiny card in the middle." This is a display-only zoom on the
+     <img> element — scale() is a paint-time transform, it never touches the
+     underlying image data, so Save/Copy/Share still send the exact, unscaled
+     PNG. overflow: hidden above crops the zoomed-in overflow at the preview
+     box's own edges instead of spilling into the header/controls. */
+  .ssc-preview img { transform: scale(1.5); }
   /* Safe-area padding so the edge-to-edge header/controls don't sit under a
      notch/Dynamic Island or the home-indicator gesture bar on iPhones — a no-op
      (env() resolves to 0) on devices without either. */
