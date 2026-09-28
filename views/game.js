@@ -424,16 +424,30 @@ function shareStatsBanner(game, stat) {
     var key = cacheKey(l, a, s, b, c);
     if (cache[key] || pending[key]) return;
     pending[key] = true;
-    fetch(buildUrl(l, a, s, b, c))
+    // A request that just hangs (flaky mobile network, a stalled response)
+    // used to leave pending[key] stuck true forever with nothing to catch
+    // or reject it — the spinner never cleared, and closing/reopening the
+    // modal or re-picking the same control silently no-op'd instead of
+    // retrying, since both checks above still saw pending===true. Aborting
+    // after 20s (generous headroom over the ~200-250ms this normally takes)
+    // forces the promise chain to settle either way, so pending[key] always
+    // gets reset and a retry can actually go out.
+    var timedOut = false;
+    var controller = new AbortController();
+    var timer = setTimeout(function() { timedOut = true; controller.abort(); }, 20000);
+    fetch(buildUrl(l, a, s, b, c), { signal: controller.signal })
       .then(function(r) { if (!r.ok) throw new Error('failed'); return r.blob(); })
       .then(function(res) {
         cache[key] = { blob: res, url: URL.createObjectURL(res) };
         if (key === currentKey()) render();
       })
       .catch(function() {
-        if (key === currentKey()) { spinner.hidden = true; showMsg('Could not load your stat card. Please try again.'); }
+        if (key === currentKey()) {
+          spinner.hidden = true;
+          showMsg(timedOut ? 'Taking too long to load. Please try again.' : 'Could not load your stat card. Please try again.');
+        }
       })
-      .then(function() { pending[key] = false; }, function() { pending[key] = false; });
+      .then(function() { clearTimeout(timer); pending[key] = false; }, function() { clearTimeout(timer); pending[key] = false; });
   }
 
   // Each render is only ~200-250ms server-side, but every swatch click still
