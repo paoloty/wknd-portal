@@ -298,6 +298,7 @@ function shareStatsBanner(game, stat) {
 .ssc-stat-option:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 .ssc-stat-option.is-active { background: var(--amber); color: #0a0e16; }
 .ssc-msg { padding: 8px 16px 0; font-size: 12px; color: var(--text-muted); text-align: center; }
+.ssc-msg--retry { color: var(--amber); font-weight: 700; text-decoration: underline; cursor: pointer; }
 .ssc-actions { display: flex; gap: 8px; padding: 14px 16px; }
 .ssc-action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s; }
 .ssc-action-btn:hover { background: rgba(255,255,255,0.18); }
@@ -414,8 +415,23 @@ function shareStatsBanner(game, stat) {
   }
   function currentKey() { return cacheKey(layout, effectiveAlign(), heroStat, badgeOn, accent); }
 
-  function showMsg(text) { msg.textContent = text; msg.hidden = false; }
-  function clearMsg() { msg.hidden = true; msg.textContent = ''; }
+  // retry: true marks this message as tappable-to-retry (load failures only —
+  // "Copied to clipboard" etc. shouldn't be clickable). Re-clicking an
+  // already-active control is the "obvious" retry, but a control that's
+  // already selected doesn't look clickable to re-try — making the error
+  // message itself the retry action means there's always a guaranteed,
+  // discoverable way to re-fire the request for whatever's currently picked.
+  function showMsg(text, retry) {
+    msg.textContent = text;
+    msg.hidden = false;
+    msg.classList.toggle('ssc-msg--retry', !!retry);
+  }
+  function clearMsg() { msg.hidden = true; msg.textContent = ''; msg.classList.remove('ssc-msg--retry'); }
+  msg.addEventListener('click', function() {
+    if (!msg.classList.contains('ssc-msg--retry')) return;
+    clearMsg();
+    render();
+  });
 
   // Tracks in-flight requests per combo (not one shared flag) so switching
   // controls while a fetch is still pending doesn't strand the newly-picked
@@ -444,7 +460,7 @@ function shareStatsBanner(game, stat) {
       .catch(function() {
         if (key === currentKey()) {
           spinner.hidden = true;
-          showMsg(timedOut ? 'Taking too long to load. Please try again.' : 'Could not load your stat card. Please try again.');
+          showMsg(timedOut ? 'Taking too long to load. Tap to retry.' : 'Could not load your stat card. Tap to retry.', true);
         }
       })
       .then(function() { clearTimeout(timer); pending[key] = false; }, function() { clearTimeout(timer); pending[key] = false; });
