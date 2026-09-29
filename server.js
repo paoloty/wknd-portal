@@ -3118,6 +3118,25 @@ function pickBestShootingStats(stat) {
   return candidates.filter(c => chosen.includes(c));
 }
 
+// Defense-in-depth for every template that builds one flat stat list by
+// combining a count-stat source with pickBestShootingStats (Bottom, Stacked,
+// Premium) — keeps the first occurrence of a given label and drops any
+// repeat. This exact bug happened once already (Premium briefly iterated
+// SHARE_STAT_DEFS's full 7 entries, including its 'fgpct' one, so field goal
+// % rendered twice — see that fix's own history), so this isn't purely
+// theoretical: a future edit to GAUGES_FOCUS_DEFS/SHARE_STAT_DEFS/whatever
+// feeds one of these lists could reintroduce the same class of bug, and this
+// makes it fail safe (silently drop the repeat) instead of visibly doubling
+// a stat on the actual card.
+function dedupeStatsByLabel(list) {
+  const seen = new Set();
+  return list.filter(s => {
+    if (seen.has(s.label)) return false;
+    seen.add(s.label);
+    return true;
+  });
+}
+
 async function generateGameStatGaugesPng(game, stat, align = 'center', focus = 'all', opts = {}) {
   const W = 1080, H = 1920;
   const accent = resolveAccent(opts.accent);
@@ -3387,6 +3406,7 @@ async function generateGameStatNewsPng(game, stat, focus = 'all', opts = {}) {
   if (showGauges) {
     pickBestShootingStats(stat).forEach(g => deckStats.push({ value: g.pct, label: g.shortLabel, isPct: true }));
   }
+  deckStats = dedupeStatsByLabel(deckStats);
 
   // "Hide Zeros" drops a 0-value count stat or a no-attempts (null) shooting
   // stat entirely instead of printing "0 AST" or a dash — a dash reads fine
@@ -3490,6 +3510,7 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
   if (showGauges) {
     pickBestShootingStats(stat).forEach(g => rows.push({ label: g.label, value: g.pct, isPct: true }));
   }
+  rows = dedupeStatsByLabel(rows);
   // "Hide Zeros" drops a 0-value stat row or a no-attempts (null) shooting
   // row entirely rather than showing "0 ASSISTS" or a dashed bar — falls back
   // to the unfiltered list rather than ever rendering an empty sheet.
@@ -3662,11 +3683,17 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   // pick-3-by-category (see this function's own comment for why) — then the
   // best-of-4 shooting stats appended after, unranked among themselves since
   // they're already in a fixed, deliberate display order (see
-  // pickBestShootingStats).
+  // pickBestShootingStats). Excludes SHARE_STAT_DEFS's own 'fgpct' entry (used
+  // elsewhere for the Default family's hero-stat picker) — leaving it in
+  // double-counted field goal % here: once mislabeled as a plain count
+  // (sorted numerically alongside real counts, no null/no-attempt handling),
+  // and again correctly from pickBestShootingStats below.
   let STATS = SHARE_STAT_DEFS
+    .filter(def => def.key !== 'fgpct')
     .map(def => ({ label: def.short, value: shareStatValue(stat, def.key), isPct: false }))
     .sort((a, b) => b.value - a.value);
   pickBestShootingStats(stat).forEach(g => STATS.push({ label: `${g.shortLabel}%`, value: g.pct, isPct: true }));
+  STATS = dedupeStatsByLabel(STATS);
   if (opts.hideZeros) {
     const filtered = STATS.filter(s => s.isPct ? s.value !== null : s.value !== 0);
     if (filtered.length) STATS = filtered;
