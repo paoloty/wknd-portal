@@ -54,6 +54,9 @@ export function adminVisibilityBody({
   mvpEnabled = true,
   homeShowRosterMoves = false,
   sectionSettings = {},
+  templateBottomPublic = false,
+  templateStackedPublic = false,
+  templatePremiumPublic = false,
 } = {}) {
   const sectionRows = AWARD_SECTIONS.map(({ key, label }) => sectionRow({ key, label, on: sectionSettings[key] !== '0' })).join('');
 
@@ -128,6 +131,26 @@ export function adminVisibilityBody({
         sub: `Swaps the homepage's League Leaders carousel for a New/Traded Players one — for early in a season, before there's enough game data for real leaders. Off shows League Leaders as usual (empty if the current season has no games yet).`,
       })}
     </tbody>
+    <tbody>
+      <tr><td colspan="3" class="admin-td" style="padding:8px 16px 4px;border-bottom:none">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-600">Share My Stats — Template release</span>
+      </td></tr>
+      ${featureRow({
+        id: 'vis-template-bottom-public', dataKey: 'template_bottom_public', checked: templateBottomPublic, msgId: 'vis-msg-template_bottom_public',
+        label: 'Bottom Template',
+        sub: `Left/Center/Right are always available. Bottom, Stacked, and Premium are each released separately — any admin account can preview all of them regardless of these switches.`,
+      })}
+      ${featureRow({
+        id: 'vis-template-stacked-public', dataKey: 'template_stacked_public', checked: templateStackedPublic, msgId: 'vis-msg-template_stacked_public',
+        label: 'Stacked Template',
+        sub: `Single-column stat-sheet layout.`,
+      })}
+      ${featureRow({
+        id: 'vis-template-premium-public', dataKey: 'template_premium_public', checked: templatePremiumPublic, msgId: 'vis-msg-template_premium_public',
+        label: 'Premium Template',
+        sub: `Broadcast-graphic style — a different visual theme from the other templates.`,
+      })}
+    </tbody>
   </table>
 </div>
 
@@ -163,6 +186,9 @@ export function adminVisibilityBody({
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
   bindToggle('vis-home-roster-moves', 'home_show_roster_moves', 'vis-msg-home_show_roster_moves');
+  bindToggle('vis-template-bottom-public', 'template_bottom_public', 'vis-msg-template_bottom_public');
+  bindToggle('vis-template-stacked-public', 'template_stacked_public', 'vis-msg-template_stacked_public');
+  bindToggle('vis-template-premium-public', 'template_premium_public', 'vis-msg-template_premium_public');
 
   document.querySelectorAll('.vis-awards-child').forEach(function(input) {
     input.addEventListener('change', async function() {

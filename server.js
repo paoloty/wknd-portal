@@ -6,7 +6,7 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
-import { statSync, existsSync, unlinkSync, readFileSync } from 'fs';
+import { statSync, existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import express from 'express';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
@@ -114,6 +114,7 @@ import {
   adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
+  logShareCardAction, getAllShareCardLog,
   getPapawisGamesForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
@@ -159,6 +160,7 @@ import { adminUsersBody }       from './views/admin/users.js';
 import { adminUserDetailBody }  from './views/admin/user-detail.js';
 import { adminPrivilegesBody }  from './views/admin/privileges.js';
 import { adminLogsPage }        from './views/admin/logs.js';
+import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
@@ -232,6 +234,26 @@ const CONTACT_EMAIL      = process.env.CONTACT_EMAIL || 'pao@wkndbasketball.com'
 const ADMIN_NOTIFY_EMAIL = process.env.ADMIN_NOTIFY_EMAIL || CONTACT_EMAIL;
 const COVER_LOGO_PATH   = path.join(__dirname, 'wknd-logo.png');
 const COVER_SVG_FONT    = 'Noto Sans, DejaVu Sans, Liberation Sans, Arial, sans-serif';
+
+// Registers assets/fonts/ (Archivo + Saira Condensed, downloaded from Google Fonts — the
+// site's own brand fonts, see the Design System section of CLAUDE.md) with the fontconfig
+// that sharp's bundled libvips uses for SVG text rendering. The browser-facing pages load
+// these from Google Fonts via a <link>, but that doesn't help here: PNG generation renders
+// SVG server-side through librsvg/Pango, which only sees fonts fontconfig knows about, not
+// anything loaded by a browser stylesheet. Done once at startup (fontconfig's own font list
+// is scanned lazily on first use, so this only has to run before the first PNG request, not
+// before sharp is imported) rather than embedding the font data in every generated SVG,
+// which would add the same large base64 payload to every single request.
+try {
+  const fontsDir = path.join(__dirname, 'assets', 'fonts');
+  const fcCacheDir = path.join(os.tmpdir(), 'wknd-fontconfig-cache');
+  mkdirSync(fcCacheDir, { recursive: true });
+  const fcConfPath = path.join(os.tmpdir(), 'wknd-fonts.conf');
+  writeFileSync(fcConfPath, `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n  <dir>${fontsDir}</dir>\n  <cachedir>${fcCacheDir}</cachedir>\n</fontconfig>\n`);
+  process.env.FONTCONFIG_FILE = fcConfPath;
+} catch (err) {
+  console.error('Custom font registration failed, PNG generation will fall back to COVER_SVG_FONT', err);
+}
 
 function checkCredentials(user, pass) {
   try {
@@ -2541,11 +2563,31 @@ function resolveAccent(key) {
   return SHARE_ACCENT_PRESETS[key] || SHARE_ACCENT_PRESETS.amber;
 }
 
+// Left/Center/Right are always public. Every other Stravagant template
+// (Bottom/Stacked/Premium) is release-gated per-template via a
+// `template_<key>_public` site_settings flag (admin-toggleable on
+// /admin/visibility, off by default), UNLESS the viewer's own session is
+// admin-capable — an admin-flagged player sees and can use every template
+// regardless of what's been released yet, so the team can preview upcoming
+// ones before flipping them on for everyone. Checked both when deciding
+// whether to offer a template in the dropdown at all (views/game.js) and
+// again in the PNG route itself, so an option can't be unlocked by just
+// hand-editing the URL once it's known to exist.
+const STRAVAGANT_GATED_TEMPLATES = ['bottom', 'stacked', 'premium'];
+function isStravagantTemplateUnlocked(templateKey, req) {
+  if (!STRAVAGANT_GATED_TEMPLATES.includes(templateKey)) return true;
+  if (isAdminWithSection(req, 'games-stats')) return true;
+  return getSetting(`template_${templateKey}_public`, '0') === '1';
+}
+
 function shareStatValue(stat, key) {
   if (key === 'fg3m') return Number(stat.fg3m) || 0;
   if (key === 'fgpct') {
-    const fgm = (Number(stat.fg2m) || 0) + (Number(stat.fg3m) || 0);
-    const fga = fgm + (Number(stat.fg2m_miss) || 0) + (Number(stat.fg3m_miss) || 0);
+    // Includes fg4m — overall field goal % must count every make/miss
+    // regardless of shot value, same convention as the site's own leader/team
+    // FG% queries in lib/portal-db.js (SUM(fg2m+fg3m+fg4m) etc).
+    const fgm = (Number(stat.fg2m) || 0) + (Number(stat.fg3m) || 0) + (Number(stat.fg4m) || 0);
+    const fga = fgm + (Number(stat.fg2m_miss) || 0) + (Number(stat.fg3m_miss) || 0) + (Number(stat.fg4m_miss) || 0);
     return fga > 0 ? Math.round((fgm / fga) * 100) : 0;
   }
   return Number(stat[key]) || 0;
@@ -3008,6 +3050,723 @@ async function generateGameStatStickerPng(game, stat, corner = 'tl', heroKey = '
   const svgLayer = await sharp(Buffer.from(svg), { density: 144 }).resize(W, H).png().toBuffer();
   const base = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   return sharp(base).composite([{ input: svgLayer, top: 0, left: 0 }]).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Gauges" layout — a transparent overlay sticker, same "drop over your own
+// photo/video" mechanic as the three templates above (no logo either way, this
+// one just never had one). Built from a mocked-up reference (a "by the
+// numbers" infographic style): faded diagonal accent ticks, name + underline +
+// matchup context + team chip header shared byte-for-byte across all three
+// alignments (buildHeader below — only the anchor/x position differs, never
+// font size or which rows exist, after an earlier version let left/right
+// quietly drift smaller than center), a 3-stat "focus" row (which categories
+// depends on opts.focus), and an optional ring-gauge row below it (opts.gauges,
+// default on) showing the best 3 of 4 possible shooting-% categories now that
+// 4-point shots exist — see the attempt-ranked selection further down. When
+// gauges are off, the numbers row scales up to fill the space instead of
+// leaving a gap.
+// Because there's no guaranteed dark background underneath anymore, every
+// element needs to hold up against an unknown photo: text gets the same
+// stroke + drop-shadow (`#txt`) treatment as the other templates, the gauge's
+// unfilled track is translucent white instead of a fixed dark slate (which
+// could disappear against a dark photo), and a soft accent glow (`#glow`/
+// `#blur`) sits behind the stat rows for contrast, same idea as the hero
+// number's glow in generateGameStatCardPng. `align` shifts the whole block's
+// x-anchor; content is then vertically centered as one group so it isn't
+// top-heavy. No "Hide Zeros" support here (unlike Bottom/Stacked) — the
+// dashed ring already reads as an intentional "no attempts" state sitting in
+// its own fixed slot, whereas dropping one of these fixed 3-column slots
+// would mean re-centering the remaining columns, which isn't worth the
+// complexity for what the ring already communicates cleanly on its own.
+const GAUGES_FOCUS_DEFS = {
+  all:     { keys: ['pts', 'reb', 'ast'], labels: ['POINTS', 'REBOUNDS', 'ASSISTS'] },
+  offense: { keys: ['pts', 'ast', 'fg3m'], labels: ['POINTS', 'ASSISTS', 'THREES MADE'] },
+  defense: { keys: ['reb', 'stl', 'blk'], labels: ['REBOUNDS', 'STEALS', 'BLOCKS'] },
+};
+// Translucent white, not a fixed dark hex — this ring sits over an unknown
+// photo now, and a fixed dark slate track could disappear entirely against a
+// dark photo. White-at-low-opacity plus the drop-shadow filter reads
+// consistently against both light and dark backgrounds.
+const GAUGES_TRACK_COLOR = '#ffffff';
+function gaugesPct(made, att) { return att > 0 ? Math.round((made / att) * 100) : null; }
+
+// Ranks the 4 possible shooting-% categories (now that 4-point shots exist)
+// by attempt volume and returns whichever 3 are most meaningful — a
+// percentage backed by more shots says more than one on a couple of token
+// attempts. Ties (most commonly: everyone at 0 attempts before any 4s are
+// taken) fall back to a fixed priority so the default game still shows
+// today's familiar FG%/3PT%/FT% trio unchanged. Display order stays the fixed
+// canonical progression (overall → 3PT → 4PT → FT) among whichever 3
+// survived, so the row doesn't reshuffle game-to-game just because attempt
+// counts changed. Shared by every "Default" template variant that shows a
+// shooting readout (gauges grid, stacked list, news deck).
+function pickBestShootingStats(stat) {
+  const fg2mVal = Number(stat.fg2m) || 0, fg2Miss = Number(stat.fg2m_miss) || 0;
+  const fg3mVal = Number(stat.fg3m) || 0, fg3Miss = Number(stat.fg3m_miss) || 0;
+  const fg4mVal = Number(stat.fg4m) || 0, fg4Miss = Number(stat.fg4m_miss) || 0;
+  const ftmVal  = Number(stat.ftm) || 0,  ftMiss  = Number(stat.ft_miss) || 0;
+  const fgMade = fg2mVal + fg3mVal + fg4mVal, fgAtt = fgMade + fg2Miss + fg3Miss + fg4Miss;
+  const candidates = [
+    { label: 'FIELD GOAL %', shortLabel: 'FG', pct: gaugesPct(fgMade, fgAtt), att: fgAtt, priority: 0 },
+    { label: '3-POINT %', shortLabel: '3PT', pct: gaugesPct(fg3mVal, fg3mVal + fg3Miss), att: fg3mVal + fg3Miss, priority: 2 },
+    { label: '4-POINT %', shortLabel: '4PT', pct: gaugesPct(fg4mVal, fg4mVal + fg4Miss), att: fg4mVal + fg4Miss, priority: 3 },
+    { label: 'FREE THROW %', shortLabel: 'FT', pct: gaugesPct(ftmVal, ftmVal + ftMiss), att: ftmVal + ftMiss, priority: 1 },
+  ];
+  const chosen = candidates.slice()
+    .sort((a, b) => b.att - a.att || a.priority - b.priority)
+    .slice(0, 3);
+  return candidates.filter(c => chosen.includes(c));
+}
+
+async function generateGameStatGaugesPng(game, stat, align = 'center', focus = 'all', opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const font = COVER_SVG_FONT;
+  const SAFE_X0 = 90, SAFE_X1 = 990;
+  const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+  const posX = align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 : W / 2;
+  const boxX = (w) => align === 'left' ? SAFE_X0 : align === 'right' ? SAFE_X1 - w : (W - w) / 2;
+
+  // Matches the real site's .team-chip convention (padding: 3px 8px @
+  // font-size 9.5px, ~0.84x ratio) — the one standard used for every pill on
+  // this card, chip and handle alike.
+  const pillPad = (fsz) => Math.round(fsz * 0.84);
+  const textWidth = (str, fsz) => String(str).length * fsz * 0.72;
+
+  const isTeamA    = stat.team_id === game.team_a_id;
+  const myTeamName = String(stat.team_name || '').toUpperCase();
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myColor    = escXml(stat.team_color || accent.bg);
+  const chipTextColor = myTeamName === 'WHITE' ? '#10141d' : '#fff';
+  const myScore  = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won      = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  const nameFsz = displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const chipText = `${myTeamName} · #${stat.number ?? ''}`;
+  const chipFsz = 20, chipH = 46;
+
+  const HEADER = { barW: 220, barH: 8 };
+  const GAP = {
+    safeTop: 220, ticksToName: 34, nameToBar: 24, barToContext: 44,
+    contextToChip: 40, chipToNumbers: 56, numLabelGap: 30,
+    numbersToGauges: 64, gaugeLabelGap: 36, gaugesToHandle: 70,
+    numbersToHandleSolo: 90, // gauges off: numbers row goes straight to the handle pill
+  };
+
+  function ticksSvg(startX, y) {
+    const n = 11, mid = (n - 1) / 2;
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      const x = startX + i * 20;
+      const opacity = (0.4 + 0.6 * (1 - Math.abs(i - mid) / mid)).toFixed(2);
+      out += `<line x1="${x}" y1="${y + 14}" x2="${x + 8}" y2="${y - 14}" stroke="${accent.bg}" stroke-width="4" stroke-linecap="round" opacity="${opacity}" filter="url(#txt)"/>`;
+    }
+    return out;
+  }
+  const ticksWidth = 10 * 20 + 8;
+
+  function buildHeader() {
+    const ticksStartX = align === 'left' ? posX : align === 'right' ? posX - ticksWidth : posX - ticksWidth / 2;
+    const ticksY = GAP.safeTop;
+    const nameY = ticksY + GAP.ticksToName + nameFsz * 0.78;
+    const barY  = nameY + GAP.nameToBar;
+    const barX  = align === 'left' ? posX : align === 'right' ? posX - HEADER.barW : posX - HEADER.barW / 2;
+    const contextY = barY + GAP.barToContext;
+    const chipTopY = contextY + GAP.contextToChip;
+    const chipPad  = pillPad(chipFsz);
+    const chipW    = textWidth(chipText, chipFsz) + chipPad * 2;
+    const chipX    = align === 'left' ? posX : align === 'right' ? posX - chipW : posX - chipW / 2;
+    const chipBottomY = chipTopY + chipH;
+
+    const svg = `
+    ${ticksSvg(ticksStartX, ticksY)}
+    <text x="${posX}" y="${nameY}" text-anchor="${anchor}" font-family="${font}" font-size="${nameFsz}" font-weight="900" fill="#ffffff" stroke="#000" stroke-width="5" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
+    <rect x="${barX}" y="${barY}" width="${HEADER.barW}" height="${HEADER.barH}" fill="${accent.bg}" filter="url(#txt)"/>
+    <text x="${posX}" y="${contextY}" text-anchor="${anchor}" font-family="${font}" font-size="17" font-weight="700" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
+    <rect x="${chipX}" y="${chipTopY}" width="${chipW}" height="${chipH}" rx="${chipH / 2}" fill="${myColor}" filter="url(#txt)"/>
+    <text x="${chipX + chipW / 2}" y="${chipTopY + chipH / 2 + chipFsz * 0.35}" text-anchor="middle" font-family="${font}" font-size="${chipFsz}" font-weight="800" fill="${chipTextColor}">${escXml(chipText)}</text>`;
+
+    return { svg, ticksY, chipBottomY };
+  }
+
+  function numberCol(cx, value, label, fsz, baseY, labelY) {
+    return `<text x="${cx}" y="${baseY}" text-anchor="middle" font-family="${font}" font-size="${fsz}" font-weight="900" fill="${accent.bg}" stroke="#000" stroke-width="5" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${value}</text>
+    <text x="${cx}" y="${labelY}" text-anchor="middle" font-family="${font}" font-size="${fsz * 0.19}" font-weight="700" letter-spacing="1.5" fill="#ffffff" filter="url(#txt)">${escXml(label)}</text>`;
+  }
+
+  function gaugeCol(cx, cy, r, pct, label, labelY, numFsz, labelFsz) {
+    const c = 2 * Math.PI * r;
+    const dash = pct === null ? 0 : (pct / 100) * c;
+    const track = pct === null
+      ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${GAUGES_TRACK_COLOR}" stroke-width="10" stroke-opacity="0.35" stroke-dasharray="4 8" filter="url(#txt)"/>`
+      : `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${GAUGES_TRACK_COLOR}" stroke-width="10" stroke-opacity="0.3" filter="url(#txt)"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${accent.bg}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${dash} ${c - dash}" transform="rotate(-90 ${cx} ${cy})" filter="url(#txt)"/>`;
+    return `${track}
+    <text x="${cx}" y="${cy + numFsz * 0.35}" text-anchor="middle" font-family="${font}" font-size="${numFsz}" font-weight="900" fill="#ffffff" fill-opacity="${pct === null ? '0.55' : '1'}" stroke="#000" stroke-width="3" stroke-opacity="0.25" paint-order="stroke fill" filter="url(#txt)">${pct === null ? '—' : pct}</text>
+    <text x="${cx}" y="${labelY}" text-anchor="middle" font-family="${font}" font-size="${labelFsz}" font-weight="700" letter-spacing="1.2" fill="#ffffff" filter="url(#txt)">${escXml(label)}</text>`;
+  }
+
+  function handlePillSvg(y) {
+    const fsz = 21, text = '@WKNDBASKETBALL', dotR = 6;
+    const pad = pillPad(fsz);
+    const innerW = dotR * 2 + 14 + textWidth(text, fsz);
+    const w = innerW + pad * 2;
+    const h = fsz + pad * 1.4;
+    const x = align === 'left' ? posX : align === 'right' ? posX - w : posX - w / 2;
+    return {
+      svg: `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${h / 2}" fill="#0b1220" fill-opacity="0.55" stroke="${accent.bg}" stroke-width="2"/>
+    <circle cx="${x + pad + dotR}" cy="${y + h / 2}" r="${dotR}" fill="${accent.bg}"/>
+    <text x="${x + pad + dotR * 2 + 14}" y="${y + h / 2 + fsz * 0.35}" font-family="${font}" font-size="${fsz}" font-weight="800" fill="#ffffff">${text}</text>`,
+      h,
+    };
+  }
+
+  const { svg: headerSvg, ticksY, chipBottomY } = buildHeader();
+
+  const isCenter = align === 'center';
+  const showGauges = opts.gauges !== false;
+  // Numbers alone read as sparse in the space normally shared with the gauge
+  // row, so they scale up ~1.5x when gauges are off instead of just leaving
+  // the reclaimed space empty.
+  const numberFsz = isCenter ? (showGauges ? 88 : 132) : (showGauges ? 68 : 102);
+  const gaugeR    = isCenter ? 78 : 60;
+  let centers;
+  if (isCenter) {
+    const colPitch = 300;
+    centers = [posX - colPitch, posX, posX + colPitch];
+  } else {
+    const colSpan = 460;
+    const blockLeft = align === 'left' ? SAFE_X0 : SAFE_X1 - colSpan;
+    centers = [0, 1, 2].map(i => blockLeft + colSpan / 6 + i * (colSpan / 3));
+  }
+
+  const focusDef = GAUGES_FOCUS_DEFS[focus] || GAUGES_FOCUS_DEFS.all;
+  const numBaseY = chipBottomY + GAP.chipToNumbers + numberFsz * 0.78;
+  const numLabelY = numBaseY + GAP.numLabelGap;
+
+  const numbers = focusDef.keys.map((key, i) =>
+    numberCol(centers[i], shareStatValue(stat, key), focusDef.labels[i], numberFsz, numBaseY, numLabelY)
+  ).join('\n');
+
+  let gauges = '', gaugeLabelY = numLabelY, handleY;
+  if (showGauges) {
+    const gaugeCy = numLabelY + GAP.numbersToGauges + gaugeR;
+    gaugeLabelY = gaugeCy + gaugeR + GAP.gaugeLabelGap;
+    handleY = gaugeLabelY + GAP.gaugesToHandle;
+
+    const gaugeDefs = pickBestShootingStats(stat);
+    const gaugeNumFsz = isCenter ? 46 : 36, gaugeLabelFsz = isCenter ? 17 : 14;
+    gauges = gaugeDefs.map((g, i) =>
+      gaugeCol(centers[i], gaugeCy, gaugeR, g.pct, g.label, gaugeLabelY, gaugeNumFsz, gaugeLabelFsz)
+    ).join('\n');
+  } else {
+    handleY = numLabelY + GAP.numbersToHandleSolo;
+  }
+
+  const { svg: handleSvg, h: handleH } = handlePillSvg(handleY);
+
+  const contentTop = ticksY - 14;
+  const contentBottom = handleY + handleH;
+  const vshift = H / 2 - (contentTop + contentBottom) / 2;
+  // Soft accent glow centered on the stat row(s) — identical convention to the
+  // hero number's glow in generateGameStatCardPng/generateGameStatGridPng: a
+  // transparent card has no guaranteed contrast against whatever photo ends up
+  // underneath it, so this gives the busiest part of the card some built-in
+  // separation from the background regardless of the photo's own brightness.
+  const glowCy = (numBaseY + gaugeLabelY) / 2 + vshift;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="${accent.bg}" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="${accent.bg}" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="${accent.bg}" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+  <ellipse cx="${posX}" cy="${glowCy}" rx="360" ry="300" fill="url(#glow)" filter="url(#blur)"/>
+  <g transform="translate(0, ${vshift})">
+    ${headerSvg}
+    ${numbers}
+    ${gauges}
+    ${handleSvg}
+  </g>
+</svg>`;
+
+  // Higher supersampling than the other templates' density:144 (1.5x) — this
+  // layout leans on thinner strokes and smaller type (the ticks, gauge rings,
+  // 14-17px labels) than the bigger/bolder shapes those use, so it benefits
+  // more from extra anti-aliasing headroom before the final downsize to 1080x1920.
+  return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Bottom" — the fifth "Default"-family template: a broadcast lower-third /
+// news-chyron treatment (solid gradient plate instead of relying on glow/
+// shadow alone for contrast, everything left-aligned instead of centered, a
+// compact single-line stat "deck" instead of a grid or gauges) — but the
+// header itself follows the SAME order and GAP values as the rest of the
+// "Default" family (name → underline → context → chip, using
+// GAP.nameToBar/barToContext/contextToChip verbatim, context as plain text
+// with no tag background) rather than its own bespoke rhythm, so it still
+// reads as a sibling of Left/Center/Right instead of a different theme that
+// happens to share a dropdown. No diagonal ticks or accent rule up top here —
+// an earlier version had a solid bar there standing in for them, but it just
+// duplicated the underline bar right below the name. No left/right/center
+// variants — a chyron is always bottom-anchored.
+async function generateGameStatNewsPng(game, stat, focus = 'all', opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const font = COVER_SVG_FONT;
+  const SAFE_X0 = 90, SAFE_X1 = 990;
+
+  const pillPad = (fsz) => Math.round(fsz * 0.84);
+  const textWidth = (str, fsz) => String(str).length * fsz * 0.72;
+
+  const isTeamA    = stat.team_id === game.team_a_id;
+  const myTeamName = String(stat.team_name || '').toUpperCase();
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myColor    = escXml(stat.team_color || accent.bg);
+  const chipTextColor = myTeamName === 'WHITE' ? '#10141d' : '#fff';
+  const myScore  = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won      = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  // Left-aligned single line with no wrap, so long names need to shrink more
+  // aggressively than the centered grid's name does — an extra floor tier
+  // beyond the grid's own, since this headline has no wrap to fall back on.
+  const nameFsz = displayName.length > 30 ? 36 : displayName.length > 24 ? 44 : displayName.length > 18 ? 58 : displayName.length > 13 ? 70 : 84;
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextFsz = 17;
+  const chipText = `${myTeamName} · #${stat.number ?? ''}`;
+  const chipFsz = 20, chipH = 46;
+
+  // Same GAP tokens as generateGameStatGaugesPng's header — this is the part
+  // that has to match the rest of the family, not reinvent its own spacing.
+  // No ticks-equivalent element up top anymore (a plain solid bar there just
+  // duplicated the underline bar right below the name), so headerTop is a
+  // single top-clearance value feeding straight into the name, not a
+  // ticksToName gap after some other element.
+  const GAP = { nameToBar: 24, barToContext: 44, contextToChip: 40, chipToDeck: 56, deckToHandle: 70 };
+
+  const plateTop = 1250;
+  const headerTop = plateTop + 110;
+
+  const nameY = headerTop + nameFsz * 0.78;
+  const barY  = nameY + GAP.nameToBar;
+  const barW  = 220, barH = 8;
+  // Plain text, no tag background — matches how Left/Center/Right present
+  // their own context line, instead of a broadcast-style colored kicker tag.
+  const contextY = barY + GAP.barToContext;
+
+  const chipY = contextY + GAP.contextToChip;
+  const chipPad = pillPad(chipFsz);
+  const chipW = textWidth(chipText, chipFsz) + chipPad * 2;
+
+  const deckY = chipY + chipH + GAP.chipToDeck;
+  const showGauges = opts.gauges !== false;
+  const focusDef = GAUGES_FOCUS_DEFS[focus] || GAUGES_FOCUS_DEFS.all;
+  let deckStats = focusDef.keys.map((key, i) => {
+    const def = SHARE_STAT_DEFS.find(d => d.key === key);
+    return { value: shareStatValue(stat, key), label: def ? def.short : focusDef.labels[i], isPct: false };
+  });
+  if (showGauges) {
+    pickBestShootingStats(stat).forEach(g => deckStats.push({ value: g.pct, label: g.shortLabel, isPct: true }));
+  }
+
+  // "Hide Zeros" drops a 0-value count stat or a no-attempts (null) shooting
+  // stat entirely instead of printing "0 AST" or a dash — a dash reads fine
+  // inside a ring gauge (it's still occupying a deliberate visual slot) but
+  // looks like filler in a plain inline text line. Falls back to the
+  // unfiltered list rather than ever rendering a blank deck.
+  if (opts.hideZeros) {
+    const filtered = deckStats.filter(d => d.isPct ? d.value !== null : d.value !== 0);
+    if (filtered.length) deckStats = filtered;
+  }
+
+  // Fewer items read as sparse at the original size, so the deck scales up
+  // the same way the numbers row does elsewhere when gauges are off — this
+  // isn't only for Hide Zeros, it applies whenever the deck ends up shorter
+  // (e.g. gauges off leaves just the 3 focus stats).
+  const deckTier = deckStats.length <= 3 ? { val: 46, label: 22, gap: 44 }
+    : deckStats.length <= 5 ? { val: 38, label: 19, gap: 40 }
+    : { val: 32, label: 17, gap: 36 };
+  const deckValFsz = deckTier.val, deckLabelFsz = deckTier.label, deckGap = deckTier.gap;
+  function deckStat(x, value, label, isPct) {
+    const display = isPct ? (value === null ? '—' : `${value}%`) : value;
+    const valW = textWidth(String(display), deckValFsz) * 1.1;
+    const labelW = textWidth(label, deckLabelFsz);
+    return {
+      svg: `<text x="${x}" y="${deckY}" font-family="${font}" font-size="${deckValFsz}" font-weight="900" fill="${value === null ? '#ffffff' : accent.bg}" fill-opacity="${value === null ? '0.55' : '1'}">${display}</text>
+      <text x="${x + valW + 10}" y="${deckY}" font-family="${font}" font-size="${deckLabelFsz}" font-weight="700" letter-spacing="1" fill="#c3cbd8">${escXml(label)}</text>`,
+      width: valW + 10 + labelW,
+    };
+  }
+  let cursor = SAFE_X0;
+  const deckSvgs = deckStats.map((d) => {
+    const item = deckStat(cursor, d.value, d.label, d.isPct);
+    cursor += item.width + deckGap;
+    return item.svg;
+  });
+
+  const handleY = deckY + GAP.deckToHandle;
+  const handleFsz = 19, handleText = '@WKNDBASKETBALL', dotR = 6;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#020817" stop-opacity="0"/>
+      <stop offset="55%" stop-color="#020817" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.96"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="${plateTop}" width="${W}" height="${H - plateTop}" fill="url(#plate)"/>
+  <text x="${SAFE_X0}" y="${nameY}" font-family="${font}" font-size="${nameFsz}" font-weight="900" fill="#ffffff">${displayName}</text>
+  <rect x="${SAFE_X0}" y="${barY}" width="${barW}" height="${barH}" fill="${accent.bg}"/>
+  <text x="${SAFE_X0}" y="${contextY}" font-family="${font}" font-size="${contextFsz}" font-weight="700" fill="#e2e8f0">${contextText}</text>
+  <rect x="${SAFE_X0}" y="${chipY}" width="${chipW}" height="${chipH}" rx="${chipH / 2}" fill="${myColor}"/>
+  <text x="${SAFE_X0 + chipW / 2}" y="${chipY + chipH / 2 + chipFsz * 0.35}" text-anchor="middle" font-family="${font}" font-size="${chipFsz}" font-weight="800" fill="${chipTextColor}">${escXml(chipText)}</text>
+  ${deckSvgs.join('\n')}
+  <circle cx="${SAFE_X0 + dotR}" cy="${handleY - handleFsz * 0.35}" r="${dotR}" fill="${accent.bg}"/>
+  <text x="${SAFE_X0 + dotR * 2 + 10}" y="${handleY}" font-family="${font}" font-size="${handleFsz}" font-weight="700" letter-spacing="1" fill="#8b98ab">${handleText}</text>
+</svg>`;
+
+  return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Stacked" — the fourth "Default"-family template: a single-column stat-sheet
+// list instead of a grid. A 3-column layout doesn't un-fold cleanly into one
+// column, so this isn't a re-flow of generateGameStatGaugesPng's grid — each
+// focus stat gets its own full-width row (label left, big number right), and
+// each shooting-% stat gets the same row shape plus a thin horizontal progress
+// bar standing in for the circular gauge (the ring's fill-amount cue still
+// needs to exist somehow once it's not a ring). Always center-anchored — this
+// template doesn't have its own left/right variants.
+async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const font = COVER_SVG_FONT;
+  const SAFE_X0 = 90, SAFE_X1 = 990;
+  const posX = W / 2, anchor = 'middle';
+
+  const pillPad = (fsz) => Math.round(fsz * 0.84);
+  const textWidth = (str, fsz) => String(str).length * fsz * 0.72;
+
+  const isTeamA    = stat.team_id === game.team_a_id;
+  const myTeamName = String(stat.team_name || '').toUpperCase();
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myColor    = escXml(stat.team_color || accent.bg);
+  const chipTextColor = myTeamName === 'WHITE' ? '#10141d' : '#fff';
+  const myScore  = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won      = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  const nameFsz = displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const chipText = `${myTeamName} · #${stat.number ?? ''}`;
+  const chipFsz = 20, chipH = 46;
+
+  const showGauges = opts.gauges !== false;
+  const focusDef = GAUGES_FOCUS_DEFS[focus] || GAUGES_FOCUS_DEFS.all;
+  let rows = focusDef.keys.map((key, i) => ({ label: focusDef.labels[i], value: shareStatValue(stat, key), isPct: false }));
+  if (showGauges) {
+    pickBestShootingStats(stat).forEach(g => rows.push({ label: g.label, value: g.pct, isPct: true }));
+  }
+  // "Hide Zeros" drops a 0-value stat row or a no-attempts (null) shooting
+  // row entirely rather than showing "0 ASSISTS" or a dashed bar — falls back
+  // to the unfiltered list rather than ever rendering an empty sheet.
+  if (opts.hideZeros) {
+    const filtered = rows.filter(r => r.isPct ? r.value !== null : r.value !== 0);
+    if (filtered.length) rows = filtered;
+  }
+
+  // Rows scale up the fewer of them there are — same instinct as the grid
+  // template's bigger numbers with gauges off, generalized so it also kicks
+  // in whenever Hide Zeros thins the list, not just when gauges are off.
+  const rowTier = rows.length <= 3 ? { row: 132, val: 72, label: 26 }
+    : rows.length <= 5 ? { row: 112, val: 64, label: 24 }
+    : { row: 96, val: 56, label: 22 };
+  const rowH = rowTier.row, valueFsz = rowTier.val, labelFsz = rowTier.label;
+
+  function ticksSvg(startX, y) {
+    const n = 11, mid = (n - 1) / 2;
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      const x = startX + i * 20;
+      const opacity = (0.4 + 0.6 * (1 - Math.abs(i - mid) / mid)).toFixed(2);
+      out += `<line x1="${x}" y1="${y + 14}" x2="${x + 8}" y2="${y - 14}" stroke="${accent.bg}" stroke-width="4" stroke-linecap="round" opacity="${opacity}" filter="url(#txt)"/>`;
+    }
+    return out;
+  }
+  const ticksWidth = 10 * 20 + 8;
+
+  const GAP = { safeTop: 220, ticksToName: 34, nameToBar: 24, barToContext: 44, contextToChip: 40, chipToList: 70, listToHandle: 60 };
+
+  const ticksY = GAP.safeTop;
+  const nameY = ticksY + GAP.ticksToName + nameFsz * 0.78;
+  const barY  = nameY + GAP.nameToBar;
+  const barW  = 220, barH = 8;
+  const contextY = barY + GAP.barToContext;
+  const chipTopY = contextY + GAP.contextToChip;
+  const chipPad  = pillPad(chipFsz);
+  const chipW    = textWidth(chipText, chipFsz) + chipPad * 2;
+  const chipBottomY = chipTopY + chipH;
+
+  const headerSvg = `
+  ${ticksSvg(posX - ticksWidth / 2, ticksY)}
+  <text x="${posX}" y="${nameY}" text-anchor="${anchor}" font-family="${font}" font-size="${nameFsz}" font-weight="900" fill="#ffffff" stroke="#000" stroke-width="5" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayName}</text>
+  <rect x="${posX - barW / 2}" y="${barY}" width="${barW}" height="${barH}" fill="${accent.bg}" filter="url(#txt)"/>
+  <text x="${posX}" y="${contextY}" text-anchor="${anchor}" font-family="${font}" font-size="17" font-weight="700" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
+  <rect x="${posX - chipW / 2}" y="${chipTopY}" width="${chipW}" height="${chipH}" rx="${chipH / 2}" fill="${myColor}" filter="url(#txt)"/>
+  <text x="${posX}" y="${chipTopY + chipH / 2 + chipFsz * 0.35}" text-anchor="middle" font-family="${font}" font-size="${chipFsz}" font-weight="800" fill="${chipTextColor}">${escXml(chipText)}</text>`;
+
+  function statRow(y, label, value, isPct) {
+    const baseline = y + rowH / 2 + valueFsz * 0.32;
+    const displayValue = isPct ? (value === null ? '—' : `${value}%`) : value;
+    // Percentage rows use the progress bar itself as the row's bottom
+    // marker instead of also drawing the plain divider every other row
+    // gets — the two stacked right on top of each other read as a
+    // redundant "double bar" rather than one clean row-end.
+    let bottomMarker;
+    if (isPct) {
+      const barY2 = y + rowH - 10, barTrackW = SAFE_X1 - SAFE_X0;
+      const fillW = value === null ? 0 : barTrackW * (value / 100);
+      bottomMarker = `<rect x="${SAFE_X0}" y="${barY2}" width="${barTrackW}" height="6" rx="3" fill="#ffffff" fill-opacity="0.18" filter="url(#txt)"/>
+      ${value !== null ? `<rect x="${SAFE_X0}" y="${barY2}" width="${fillW}" height="6" rx="3" fill="${accent.bg}" filter="url(#txt)"/>` : ''}`;
+    } else {
+      bottomMarker = `<line x1="${SAFE_X0}" y1="${y + rowH}" x2="${SAFE_X1}" y2="${y + rowH}" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>`;
+    }
+    return `
+    <text x="${SAFE_X0}" y="${baseline}" font-family="${font}" font-size="${labelFsz}" font-weight="700" letter-spacing="1.5" fill="#e2e8f0" filter="url(#txt)">${escXml(label)}</text>
+    <text x="${SAFE_X1}" y="${baseline}" text-anchor="end" font-family="${font}" font-size="${valueFsz}" font-weight="900" fill="${value === null ? '#ffffff' : accent.bg}" fill-opacity="${value === null ? '0.55' : '1'}" stroke="#000" stroke-width="4" stroke-opacity="0.3" paint-order="stroke fill" filter="url(#txt)">${displayValue}</text>
+    ${bottomMarker}`;
+  }
+
+  const listTop = chipBottomY + GAP.chipToList;
+  const rowsSvg = rows.map((r, i) => statRow(listTop + i * rowH, r.label, r.value, r.isPct)).join('\n');
+  const listBottom = listTop + rows.length * rowH;
+
+  const handleY = listBottom + GAP.listToHandle;
+  const handleFsz = 21, handleText = '@WKNDBASKETBALL', dotR = 6;
+  const handlePad = pillPad(handleFsz);
+  const handleInnerW = dotR * 2 + 14 + textWidth(handleText, handleFsz);
+  const handleW = handleInnerW + handlePad * 2, handleH = handleFsz + handlePad * 1.4;
+  const handleSvg = `<rect x="${posX - handleW / 2}" y="${handleY}" width="${handleW}" height="${handleH}" rx="${handleH / 2}" fill="#0b1220" fill-opacity="0.55" stroke="${accent.bg}" stroke-width="2"/>
+  <circle cx="${posX - handleW / 2 + handlePad + dotR}" cy="${handleY + handleH / 2}" r="${dotR}" fill="${accent.bg}"/>
+  <text x="${posX - handleW / 2 + handlePad + dotR * 2 + 14}" y="${handleY + handleH / 2 + handleFsz * 0.35}" font-family="${font}" font-size="${handleFsz}" font-weight="800" fill="#ffffff">${handleText}</text>`;
+
+  const contentTop = ticksY - 14;
+  const contentBottom = handleY + handleH;
+  const vshift = H / 2 - (contentTop + contentBottom) / 2;
+  const glowCy = (chipBottomY + listBottom) / 2 + vshift;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="${accent.bg}" stop-opacity="0.4"/>
+      <stop offset="60%" stop-color="${accent.bg}" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="${accent.bg}" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+  <ellipse cx="${posX}" cy="${glowCy}" rx="380" ry="${(listBottom - chipBottomY) / 2 + 60}" fill="url(#glow)" filter="url(#blur)"/>
+  <g transform="translate(0, ${vshift})">
+    ${headerSvg}
+    ${rowsSvg}
+    ${handleSvg}
+  </g>
+</svg>`;
+
+  return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Premium" — a deliberately different theme from the "Default" family above
+// (Left/Center/Right/Bottom/Stacked all share one visual language; this one
+// doesn't). Broadcast-graphic composition: the whole content cluster (rotated
+// player name + accent line, stat rows, context line, handle, and the WKND
+// watermark itself) lives on the LEFT and is anchored to the BOTTOM of the
+// canvas, built upward from the handle line rather than down from a fixed top
+// offset. The rotated name and the accent line share one column
+// ("PLAYER NAME ------"): the line covers the height of the stats +
+// context/handle block MINUS the name's own span, so it stops right where the
+// name begins instead of running back through it. WKND (not "POTG" — this
+// card is any player's line, not just the player of the game, so that label
+// would be wrong here anyway) is rotated with the rest of the column and
+// stretched via textLength to exactly cover the height of the stats,
+// centered behind the numbers. Stat selection is its own thing, not
+// Bottom/Stacked's Focus-driven pick: all 6 common count stats are shown,
+// ranked highest value to lowest, then the best-of-4 shooting pick adds up to
+// 3 more (9 max) — there was room for the extra 3 once the layout tightened
+// up, and showing everything ranked is more useful here than picking 3 by
+// category. `focus` is accepted (the route always passes it) but genuinely
+// unused — same "control stays visible but has nothing to affect" pattern as
+// Stacked already ignoring alignment. Hide Zeros still drops any zero/no-
+// attempt entry same as everywhere else. Still a transparent overlay like
+// every other template (no baked-in photo) — a left-to-right dark gradient
+// scrim stands in for a photo's own contrast. Accent only touches the
+// watermark stroke and the line — never the (deliberately plain white)
+// numbers. Release-gated like Bottom/Stacked — see
+// isStravagantTemplateUnlocked.
+async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const font = COVER_SVG_FONT;
+  // Premium-only typographic departure from the rest of the family (which all use
+  // COVER_SVG_FONT throughout): the big stat numbers in the site's own numerals font
+  // (Saira Condensed), their small labels in the site's own body font (Archivo) — see
+  // the Design System section of CLAUDE.md. Both fall back to COVER_SVG_FONT so a card
+  // still renders correctly wherever the custom fonts aren't registered with the
+  // server's font engine (see the fontconfig setup near __dirname above) rather than
+  // falling through to an ugly system default.
+  const valueFont = `'Saira Condensed', ${font}`;
+  const labelFont = `'Archivo', ${font}`;
+
+  const isTeamA = stat.team_id === game.team_a_id;
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myScore = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const handleText = `@WKNDBASKETBALL · #${stat.number ?? ''}`;
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  const nameFsz = displayName.length > 20 ? 28 : displayName.length > 14 ? 32 : 36;
+
+  // All 6 common count stats, ranked highest value to lowest — not Focus's
+  // pick-3-by-category (see this function's own comment for why) — then the
+  // best-of-4 shooting stats appended after, unranked among themselves since
+  // they're already in a fixed, deliberate display order (see
+  // pickBestShootingStats).
+  let STATS = SHARE_STAT_DEFS
+    .map(def => ({ label: def.short, value: shareStatValue(stat, def.key), isPct: false }))
+    .sort((a, b) => b.value - a.value);
+  pickBestShootingStats(stat).forEach(g => STATS.push({ label: `${g.shortLabel}%`, value: g.pct, isPct: true }));
+  if (opts.hideZeros) {
+    const filtered = STATS.filter(s => s.isPct ? s.value !== null : s.value !== 0);
+    if (filtered.length) STATS = filtered;
+  }
+
+  // Whole content cluster (name+line, stats, context, handle) lives on the
+  // left and is anchored to the bottom of the canvas, built upward from
+  // there instead of starting from a fixed top offset — mirrors how it
+  // reads: bottom-heaviest content (the handle) anchors first, everything
+  // else stacks above it.
+  const colX = 150; // stat numbers/labels + context/handle
+  const nameLineX = 90; // rotated name + accent line share this column
+
+  // Fewer rows (Hide Zeros, or no shooting attempts to add on top of the 6
+  // count stats) scale up the same way Bottom/Stacked do, instead of leaving
+  // the reclaimed space empty. Extra tiers below 5 exist because the max grew
+  // from 6 to 9 (all 6 count stats now, not Focus's pick-3) — the old
+  // 6-and-up bucket's sizing was tuned for exactly 6 and would crowd 9.
+  const tier = STATS.length <= 3 ? { row: 260, num: 100, label: 22 }
+    : STATS.length <= 5 ? { row: 220, num: 88, label: 20 }
+    : STATS.length <= 7 ? { row: 180, num: 72, label: 17 }
+    : { row: 150, num: 60, label: 15 };
+  const rowH = tier.row, numberFsz = tier.num, labelFsz = tier.label;
+
+  const bottomPad = 90;
+  const handleY = H - bottomPad;
+  const contextY = handleY - 40;
+  const lastLabelY = contextY - 70;
+  const startY = lastLabelY - (STATS.length - 1) * rowH - labelFsz - 20;
+
+  const rows = STATS.map((s, i) => {
+    const numY = startY + i * rowH;
+    const labelY = numY + labelFsz + 20;
+    const display = s.isPct ? (s.value === null ? '—' : s.value) : s.value;
+    return `<text x="${colX}" y="${numY}" font-family="${valueFont}" font-size="${numberFsz}" font-weight="900" fill="#ffffff" fill-opacity="${s.isPct && s.value === null ? '0.5' : '1'}" stroke="#000" stroke-width="4" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${display}</text>
+    <text x="${colX}" y="${labelY}" font-family="${labelFont}" font-size="${labelFsz}" font-weight="700" letter-spacing="3" fill="#c3cbd8" filter="url(#txt)">${escXml(s.label)}</text>`;
+  }).join('\n');
+
+  // Rotated elements: the text's own x/y must equal the rotation pivot —
+  // rotating around a point other than the text's own anchor swings it to a
+  // totally different location instead of pivoting it in place.
+  const nameX = nameLineX, nameY = handleY + 20;
+
+  // Accent line covers the remaining space above the name up to the stats —
+  // "PLAYER NAME ------" continuing on until it reaches the same level as
+  // the numbers, not just matching the name's own short height. A gap keeps
+  // it from touching the name, and it's centered on the name's actual glyph
+  // strokes rather than the text's baseline pivot: for rotated text the
+  // glyphs render on the ascender side of that pivot (i.e. offset to one
+  // side once rotated), so the visual center sits half a cap-height away
+  // from it, not at the pivot itself.
+  const statBlockTop = startY - numberFsz * 0.78;
+  const nameEstWidth = displayName.length * nameFsz * 0.58 + 7 * Math.max(0, displayName.length - 1);
+  const nameTop = nameY - nameEstWidth;
+  const lineGap = 44;
+  const lineX = nameX - (nameFsz * 0.72) / 2, lineTop = statBlockTop, lineBottom = nameTop - lineGap;
+
+  // WKND watermark: rotated, big, and pinned flush to the canvas's own
+  // bottom-left corner (not the stat block's) — "0 left" means the OUTER
+  // edge of the glyphs touches x=0, and since a font's cap-height sits above
+  // the baseline, the pivot x has to sit one cap-height in from the edge for
+  // that outer edge to land at 0. "0 bottom" means the pivot y (where the
+  // text starts, which becomes the BOTTOM after the rotation) sits right at
+  // the canvas bottom. Stretched via textLength to cover the full column —
+  // stats, the accent line, AND the player name below them — not just the
+  // stats on their own.
+  const wkndFont = `Georgia, 'Times New Roman', serif`;
+  const wkndFsz = 380;
+  const wkndSpan = nameY - statBlockTop;
+  const wkndCapHeight = wkndFsz * 0.72;
+  const wkndX = wkndCapHeight + 4;
+  const wkndY = H - 4;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="scrim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#020817" stop-opacity="0.90"/>
+      <stop offset="45%" stop-color="#020817" stop-opacity="0.66"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="400" height="${H}" fill="url(#scrim)"/>
+
+  <text x="${wkndX}" y="${wkndY}" transform="rotate(-90 ${wkndX} ${wkndY})" font-family="${wkndFont}" font-size="${wkndFsz}" font-weight="700" textLength="${wkndSpan}" lengthAdjust="spacing" fill="none" stroke="${accent.bg}" stroke-width="2.5" stroke-opacity="0.18">WKND</text>
+
+  <line x1="${lineX}" y1="${lineTop}" x2="${lineX}" y2="${lineBottom}" stroke="${accent.bg}" stroke-width="2" opacity="0.55"/>
+
+  <text x="${nameX}" y="${nameY}" transform="rotate(-90 ${nameX} ${nameY})" font-family="${font}" font-size="${nameFsz}" font-weight="800" letter-spacing="7" fill="#ffffff" filter="url(#txt)">${displayName}</text>
+
+  ${rows}
+
+  <text x="${colX}" y="${contextY}" font-family="${font}" font-size="19" font-weight="700" fill="#c3cbd8" filter="url(#txt)">${contextText}</text>
+  <text x="${colX}" y="${handleY}" font-family="${font}" font-size="16" font-weight="700" letter-spacing="1.5" fill="#8b98ab">${escXml(handleText)}</text>
+</svg>`;
+
+  return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
 }
 
 async function generateGameCoverPng(game, potgStat, bgDataUrl) {
@@ -3975,6 +4734,14 @@ app.get('/admin/logs', requireSuperAdmin, (req, res) => {
   }));
 });
 
+app.get('/admin/share-log', requireSuperAdmin, (req, res) => {
+  res.send(renderAdminPage(req, {
+    title: 'Share Card Log',
+    currentPath: '/admin/share-log',
+    body: adminShareCardLogPage({ logs: getAllShareCardLog(500) }),
+  }));
+});
+
 // ── DB sync (local-only UI + production export endpoint) ──────────────────
 
 // Production-side: exports DB to any caller with the correct key.
@@ -4693,6 +5460,9 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
       sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
+      templateBottomPublic: getSetting('template_bottom_public', '0') === '1',
+      templateStackedPublic: getSetting('template_stacked_public', '0') === '1',
+      templatePremiumPublic: getSetting('template_premium_public', '0') === '1',
     }),
   }));
 });
@@ -4700,6 +5470,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'home_show_roster_moves',
+    'template_bottom_public', 'template_stacked_public', 'template_premium_public',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -5318,6 +6089,7 @@ app.get('/games/:ref', (req, res) => {
       game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap,
       commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
       currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
+      unlockedTemplates: STRAVAGANT_GATED_TEMPLATES.filter(t => isStravagantTemplateUnlocked(t, req)),
     })
   }));
 });
@@ -5332,15 +6104,43 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   if (!game || game.under_review) return res.status(404).end();
   const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
   if (!stat) return res.status(404).end();
-  const layout  = ['default', 'grid', 'sticker', 'comparison'].includes(req.query.layout) ? req.query.layout : 'default';
-  const align   = ['left', 'center', 'right'].includes(req.query.align) ? req.query.align : 'center';
+  const layout  = ['default', 'grid', 'sticker', 'comparison', 'gauges'].includes(req.query.layout) ? req.query.layout : 'gauges';
+  // Template dropdown values — left/center/right share generateGameStatGaugesPng
+  // (its `align` param), while bottom/stacked are their own bespoke designs
+  // (generateGameStatNewsPng/generateGameStatStackedPng) rather than variants
+  // of the grid, so they're dispatched separately below despite living in the
+  // same "Template" control.
+  const rawAlign = ['left', 'center', 'right', 'bottom', 'stacked'].includes(req.query.align) ? req.query.align : 'center';
+  // Re-checked here, not just when building the Template dropdown, so a
+  // gated template can't be unlocked by hand-editing the URL once its
+  // existence is known — falls back to Center exactly like an invalid/
+  // missing align value already does above.
+  const align   = isStravagantTemplateUnlocked(rawAlign, req) ? rawAlign : 'center';
   const corner  = ['tl', 'tr', 'bl', 'br'].includes(req.query.corner) ? req.query.corner : 'tl';
   const heroKey = SHARE_STAT_DEFS.some(d => d.key === req.query.stat) ? req.query.stat : 'pts';
+  const focus   = ['all', 'offense', 'defense'].includes(req.query.focus) ? req.query.focus : 'all';
+  const gauges  = req.query.gauges !== '0';
+  // Only meaningful for Bottom/Stacked — the grid's dashed ring already
+  // handles "no attempts" cleanly, so this isn't wired into
+  // generateGameStatGaugesPng (see its own comment for why).
+  const hideZeros = req.query.hidezeros === '1';
   const badge   = req.query.badge === '1';
   const accent  = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.query.accent) ? req.query.accent : 'amber';
   try {
     let png;
-    if (layout === 'grid') {
+    if (req.query.align === 'premium' && isStravagantTemplateUnlocked('premium', req)) {
+      // Own branch ahead of the `layout` dispatch below — Premium isn't part
+      // of the "Default" family's layout/align matrix at all (it's never in
+      // the `rawAlign` whitelist above), so it needs its own gate check
+      // rather than falling out of the align/rawAlign fallback logic.
+      png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros });
+    } else if (layout === 'gauges' && align === 'bottom') {
+      png = await generateGameStatNewsPng(game, stat, focus, { accent, gauges, hideZeros });
+    } else if (layout === 'gauges' && align === 'stacked') {
+      png = await generateGameStatStackedPng(game, stat, focus, { accent, gauges, hideZeros });
+    } else if (layout === 'gauges') {
+      png = await generateGameStatGaugesPng(game, stat, align, focus, { accent, gauges });
+    } else if (layout === 'grid') {
       png = await generateGameStatGridPng(game, stat, align, { accent });
     } else if (layout === 'sticker') {
       png = await generateGameStatStickerPng(game, stat, corner, heroKey, { accent });
@@ -5363,6 +6163,46 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
     console.error('my-stat-card.png error', err);
     res.status(500).end();
   }
+});
+
+// Save/Copy/Share on the "Stravagant" stat card all happen entirely
+// client-side against an already-fetched PNG blob, so without this the
+// server (and admin) would have no idea a player ever actually used the
+// feature past opening the editor. Fire-and-forget from the client — logging
+// failure shouldn't block or surface an error for the save/copy/share the
+// player already completed. Same session-gated, no-spoofable-id pattern as
+// the PNG route above. In-memory per-(player+game+action) cooldown, not a DB
+// one — this is analytics, not something that needs race-proof correctness,
+// so a plain Map is enough to stop a rapid double-click from double-logging.
+const shareCardActionCooldowns = new Map(); // `${playerId}:${gameId}:${action}` -> ms timestamp
+const SHARE_CARD_ACTION_COOLDOWN_MS = 3000;
+app.post('/api/games/:id/stat-card-action', express.json(), (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.status(401).end();
+  const game = getGameById(req.params.id);
+  if (!game || game.under_review) return res.status(404).end();
+  const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
+  if (!stat) return res.status(404).end();
+
+  const action = ['save', 'copy', 'share'].includes(req.body?.action) ? req.body.action : null;
+  if (!action) return res.status(400).json({ error: 'Invalid action.' });
+
+  const cooldownKey = `${playerId}:${game.id}:${action}`;
+  const lastLogged = shareCardActionCooldowns.get(cooldownKey) || 0;
+  if (Date.now() - lastLogged < SHARE_CARD_ACTION_COOLDOWN_MS) return res.json({ ok: true });
+  shareCardActionCooldowns.set(cooldownKey, Date.now());
+
+  // Same whitelists as the PNG route — logged even when invalid/missing
+  // isn't worth failing the request over, just falls back like it does there.
+  const template = ['left', 'center', 'right', 'bottom', 'stacked'].includes(req.body?.template) ? req.body.template : '';
+  const focus    = ['all', 'offense', 'defense'].includes(req.body?.focus) ? req.body.focus : '';
+  const accent   = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.body?.accent) ? req.body.accent : '';
+
+  logShareCardAction({
+    gameId: game.id, playerId, playerName: formatName(stat.name || ''),
+    action, template, focus, accent,
+  });
+  res.json({ ok: true });
 });
 
 // ── Game comments + reactions ───────────────────────────────────────────────────

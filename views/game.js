@@ -58,56 +58,66 @@ function scoreCard(game, colorA, colorB) {
 // Only rendered when the viewer's own player_id has a stat row in this game
 // (gamePage computes myStat from currentPlayerId) — the PNG endpoint re-checks
 // the session server-side too, so this is a UI gate, not the real one.
-function shareStatsBanner(game, stat) {
+function shareStatsBanner(game, stat, unlockedTemplates = []) {
   const pts   = Number(stat.pts) || 0;
   const reb   = Number(stat.reb) || 0;
   const ast   = Number(stat.ast) || 0;
   const stl   = Number(stat.stl) || 0;
   const blk   = Number(stat.blk) || 0;
+  const fg3m  = Number(stat.fg3m) || 0;
   const color = escHtml(stat.team_color || '#f59332');
   const gameId = escHtml(game.id);
 
-  // Personalizes the "Highlight" dropdown to this player's own box score rather
-  // than always offering the same fixed list — only the categories they actually
-  // did something in show up, ranked best-first, so a big rebounding night leads
-  // with REB instead of burying it under an untouched PTS/AST/STL/BLK menu.
-  // Falls back to the standard 5 (even at zero) if nothing stood out at all, so
-  // the menu is never empty or oddly short for a quiet game.
-  const CORE = [
-    { key: 'pts', label: 'Points',   val: pts },
-    { key: 'reb', label: 'Rebounds', val: reb },
-    { key: 'ast', label: 'Assists',  val: ast },
-    { key: 'stl', label: 'Steals',   val: stl },
-    { key: 'blk', label: 'Blocks',   val: blk },
+  // Personalizes the default "Focus" pick to this player's own box score
+  // instead of always opening on All-Around — a rough offense-vs-defense
+  // signal (ast+3PM vs stl+blk), not a precise ranking, just enough that a
+  // defensive night doesn't default to a PTS/REB/AST row nobody asked for.
+  const offenseScore = ast + fg3m;
+  const defenseScore = stl + blk;
+  let defaultFocus = 'all';
+  if (defenseScore >= 4 && defenseScore > offenseScore) defaultFocus = 'defense';
+  else if (offenseScore >= 6) defaultFocus = 'offense';
+
+  // Left/Center/Right are always offered. Bottom/Stacked/Premium are each
+  // released independently (template_<key>_public in site_settings, toggled
+  // on /admin/visibility) — unlockedTemplates is server.js's
+  // isStravagantTemplateUnlocked() already applied per-template for this
+  // viewer, so an admin session sees all three regardless of what's actually
+  // been released yet, without this file needing to know that rule itself.
+  const TEMPLATE_OPTIONS = [
+    { key: 'left',   label: 'Left' },
+    { key: 'center', label: 'Center' },
+    { key: 'right',  label: 'Right' },
   ];
-  const coreNonZero = CORE.filter(c => c.val > 0).sort((a, b) => b.val - a.val);
-  const statList = coreNonZero.length ? coreNonZero.slice() : CORE.slice();
-
-  const fg3m = Number(stat.fg3m) || 0;
-  if (fg3m > 0) statList.push({ key: 'fg3m', label: '3-Pointers Made', val: fg3m });
-
-  const fgm = (Number(stat.fg2m) || 0) + (Number(stat.fg3m) || 0);
-  const fga = fgm + (Number(stat.fg2m_miss) || 0) + (Number(stat.fg3m_miss) || 0);
-  if (fga > 0) {
-    const fgpct = Math.round((fgm / fga) * 100);
-    // Only worth flexing a decent shooting night — a 20% night isn't a "highlight".
-    if (fgpct >= 40) statList.push({ key: 'fgpct', label: 'Field Goal %', val: fgpct });
+  if (unlockedTemplates.includes('bottom'))  TEMPLATE_OPTIONS.push({ key: 'bottom',  label: 'Bottom' });
+  if (unlockedTemplates.includes('stacked')) TEMPLATE_OPTIONS.push({ key: 'stacked', label: 'Stacked' });
+  // Premium respects Hide Zeros just like Bottom/Stacked, but ignores Focus
+  // (it ranks all 6 count stats by value instead of picking 3 by category),
+  // the Gauges toggle, and alignment — same "controls stay visible but some
+  // have nothing to affect" pattern as Stacked already ignoring alignment.
+  // See generateGameStatPremiumPng's own comment for why it's a different
+  // visual language entirely from the other templates.
+  if (unlockedTemplates.includes('premium')) TEMPLATE_OPTIONS.push({ key: 'premium', label: 'Premium' });
+  const FOCUS_OPTIONS = [
+    { key: 'all',     label: 'All-Around' },
+    { key: 'offense', label: 'Offense' },
+    { key: 'defense', label: 'Defense' },
+  ];
+  // Chip list shared by the Template and Focus sheet panels — a flat row of
+  // pill buttons instead of a dropdown menu, since these now live inside an
+  // already-open sheet rather than needing their own floating popover.
+  function chipList(options, activeKey) {
+    const active = options.find(o => o.key === activeKey) || options[0];
+    return options.map(o => `<button type="button" class="ssc-chip${o.key === active.key ? ' is-active' : ''}" data-value="${o.key}">${escHtml(o.label)}</button>`).join('\n');
   }
 
-  const statOptionsHtml = statList.map((s, i) => `<li role="option" class="ssc-stat-option${i === 0 ? ' is-active' : ''}" data-stat="${s.key}" aria-selected="${i === 0 ? 'true' : 'false'}">Highlight: ${escHtml(s.label)}</li>`).join('\n');
-  const initialStatLabel = `Highlight: ${escHtml(statList[0].label)}`;
+  const iconTemplate = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>`;
+  const iconFocus    = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>`;
+  // Mirrors iconSave's shape (below) but flipped — an up-arrow into a top bar
+  // instead of a down-arrow into a bottom one — so the two read as visual
+  // opposites (send out vs. bring in) despite living in different panels now.
+  const iconPublish  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9"/><path d="M7 14l5-5 5 5"/><path d="M5 3h14"/></svg>`;
 
-  const alignIcon = (kind) => {
-    const lines = kind === 'left'
-      ? ['3 4 21 4', '3 10 15 10', '3 16 19 16']
-      : kind === 'right'
-        ? ['3 4 21 4', '9 10 21 10', '5 16 21 16']
-        : ['3 4 21 4', '6 10 18 10', '4 16 20 16'];
-    return `<svg viewBox="0 0 24 20" width="20" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${lines.map(pts => {
-      const [x1, y1, x2, y2] = pts.split(' ');
-      return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
-    }).join('')}</svg>`;
-  };
   const iconSave  =`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
   const iconCopy  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
   const iconShare = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`;
@@ -131,50 +141,83 @@ function shareStatsBanner(game, stat) {
       <img id="ssc-img" alt="Your stat card" hidden>
     </div>
     <div class="ssc-controls">
-      <div class="ssc-controls__row ssc-layouts" role="tablist" aria-label="Card layout">
-        <button type="button" class="ssc-layout-btn is-active" data-layout="default">Default</button>
-        <button type="button" class="ssc-layout-btn" data-layout="grid">Stat Grid</button>
-        <!-- Sticker layout hidden for now (temporary product call) — server route
-             and generateGameStatStickerPng still work, just no UI entry point. -->
-        <button type="button" class="ssc-layout-btn" data-layout="comparison">vs Avg</button>
-      </div>
-      <div class="ssc-controls__row">
-        <div class="ssc-aligns" role="tablist" aria-label="Card position">
-          <button type="button" class="ssc-align-btn" data-align="left" title="Left">${alignIcon('left')}</button>
-          <button type="button" class="ssc-align-btn is-active" data-align="center" title="Center">${alignIcon('center')}</button>
-          <button type="button" class="ssc-align-btn" data-align="right" title="Right">${alignIcon('right')}</button>
-        </div>
-        <div class="ssc-stat-dropdown" id="ssc-stat-dropdown">
-          <button type="button" class="ssc-stat-trigger" id="ssc-stat-trigger" aria-haspopup="listbox" aria-expanded="false">
-            <span id="ssc-stat-trigger-label">${initialStatLabel}</span>
-            <svg class="ssc-stat-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
-          <ul class="ssc-stat-menu" id="ssc-stat-menu" role="listbox" aria-label="Highlighted stat" hidden>
-            ${statOptionsHtml}
-          </ul>
-        </div>
-      </div>
-      <div class="ssc-controls__row ssc-swatches" role="tablist" aria-label="Accent color">
-        <button type="button" class="ssc-swatch-btn is-active" data-accent="amber" title="Amber" style="--swatch:#f59332"></button>
-        <button type="button" class="ssc-swatch-btn" data-accent="red" title="Red" style="--swatch:#ef4444"></button>
-        <button type="button" class="ssc-swatch-btn" data-accent="blue" title="Blue" style="--swatch:#3b82f6"></button>
-        <button type="button" class="ssc-swatch-btn" data-accent="green" title="Green" style="--swatch:#22c55e"></button>
-        <button type="button" class="ssc-swatch-btn" data-accent="purple" title="Purple" style="--swatch:#a78bfa"></button>
-        <button type="button" class="ssc-swatch-btn" data-accent="pink" title="Pink" style="--swatch:#f472b6"></button>
-        <button type="button" class="ssc-swatch-btn" data-accent="cyan" title="Cyan" style="--swatch:#22d3ee"></button>
-      </div>
-      <div class="ssc-controls__row" id="ssc-badge-row">
-        <button type="button" class="ssc-badge-toggle" id="ssc-badge-toggle" aria-pressed="false">
-          <span class="ssc-badge-toggle__switch"></span>
-          Achievement badge
+      <!-- Compact, CapCut/Instagram-style toolbar: icon buttons instead of
+           always-visible dropdowns/swatches/action row, so the preview above
+           gets most of the modal's height by default. Tapping one slides the
+           matching panel up from directly below the toolbar (see .ssc-sheet's
+           grid-rows transition in the <style> below); tapping it again,
+           picking a Template/Focus chip, or tapping the preview all collapse
+           it back down — see the script for exactly which of those
+           auto-close. Save/Copy/Share live in Publish's panel rather than
+           floating over the art — that used to still sit on top of Bottom's
+           and Premium's own bottom-anchored content no matter which edge it
+           floated against; a sheet panel like every other tool doesn't have
+           that problem, since it only ever covers the (otherwise empty)
+           controls area, never the art itself. -->
+      <div class="ssc-toolbar">
+        <button type="button" class="ssc-tool-btn" id="ssc-tool-template" data-target="template">
+          ${iconTemplate}<span>Template</span>
+        </button>
+        <button type="button" class="ssc-tool-btn" id="ssc-tool-focus" data-target="focus">
+          ${iconFocus}<span>Focus</span>
+        </button>
+        <button type="button" class="ssc-tool-btn" id="ssc-tool-accent" data-target="accent">
+          <span class="ssc-tool-btn__dot" id="ssc-tool-accent-dot" style="--swatch:#f59332"></span><span>Style</span>
+        </button>
+        <button type="button" class="ssc-tool-btn" id="ssc-tool-publish" data-target="publish">
+          ${iconPublish}<span>Publish</span>
         </button>
       </div>
-      <div id="ssc-msg" class="ssc-msg" hidden></div>
-      <div class="ssc-actions">
-        <button type="button" class="ssc-action-btn" id="ssc-save">${iconSave}<span>Save</span></button>
-        <button type="button" class="ssc-action-btn" id="ssc-copy">${iconCopy}<span>Copy</span></button>
-        <button type="button" class="ssc-action-btn ssc-action-btn--primary" id="ssc-share">${iconShare}<span>Share</span></button>
+      <div class="ssc-sheet" id="ssc-sheet">
+        <div class="ssc-sheet__inner">
+          <!-- max-height + overflow-y:auto on each panel (not just this one) is
+               deliberate headroom for Template/Focus growing past what fits in
+               one unscrolled chip row — the sheet's own height still animates
+               smoothly via .ssc-sheet's grid-rows transition either way, since
+               that trick only cares about the panel's natural (possibly now
+               scrollable) content height, not each individual chip. -->
+          <div class="ssc-sheet__panel" id="ssc-panel-template">
+            <div class="ssc-chip-row">${chipList(TEMPLATE_OPTIONS, 'center')}</div>
+          </div>
+          <div class="ssc-sheet__panel" id="ssc-panel-focus" hidden>
+            <div class="ssc-chip-row">${chipList(FOCUS_OPTIONS, defaultFocus)}</div>
+          </div>
+          <div class="ssc-sheet__panel" id="ssc-panel-accent" hidden>
+            <!-- Toggles ride along with the swatches (not their own panel) — same
+                 "Style" grouping as before, just inside a sheet now instead of its
+                 own always-visible row. -->
+            <div class="ssc-accent-row">
+              <div class="ssc-swatches" role="tablist" aria-label="Accent color">
+                <button type="button" class="ssc-swatch-btn is-active" data-accent="amber" title="Amber" style="--swatch:#f59332"></button>
+                <button type="button" class="ssc-swatch-btn" data-accent="red" title="Red" style="--swatch:#ef4444"></button>
+                <button type="button" class="ssc-swatch-btn" data-accent="blue" title="Blue" style="--swatch:#3b82f6"></button>
+                <button type="button" class="ssc-swatch-btn" data-accent="green" title="Green" style="--swatch:#22c55e"></button>
+                <button type="button" class="ssc-swatch-btn" data-accent="purple" title="Purple" style="--swatch:#a78bfa"></button>
+                <button type="button" class="ssc-swatch-btn" data-accent="pink" title="Pink" style="--swatch:#f472b6"></button>
+                <button type="button" class="ssc-swatch-btn" data-accent="cyan" title="Cyan" style="--swatch:#22d3ee"></button>
+              </div>
+              <div class="ssc-toggle-group">
+                <button type="button" class="ssc-toggle" id="ssc-gauges-toggle" aria-pressed="true" title="Show shooting gauges">
+                  <span class="ssc-toggle__switch"></span>
+                  Gauges
+                </button>
+                <button type="button" class="ssc-toggle" id="ssc-hidezeros-toggle" aria-pressed="false" title="Hide stats with no attempts or a zero value">
+                  <span class="ssc-toggle__switch"></span>
+                  Hide Zeros
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="ssc-sheet__panel" id="ssc-panel-publish" hidden>
+            <div class="ssc-actions">
+              <button type="button" class="ssc-action-btn" id="ssc-save">${iconSave}<span>Save</span></button>
+              <button type="button" class="ssc-action-btn" id="ssc-copy">${iconCopy}<span>Copy</span></button>
+              <button type="button" class="ssc-action-btn ssc-action-btn--primary" id="ssc-share">${iconShare}<span>Share</span></button>
+            </div>
+          </div>
+        </div>
       </div>
+      <div id="ssc-msg" class="ssc-msg" hidden></div>
     </div>
   </div>
 </div>
@@ -203,6 +246,9 @@ function shareStatsBanner(game, stat) {
      this box silently stretches to the modal's full width instead of the narrow,
      aspect-ratio-driven shape these values are trying to produce. */
   height: min(46dvh, 400px); max-width: 100%; width: auto; margin: 0 auto; align-self: center;
+  /* Transparency checkerboard — the gauges card (like the other templates) is
+     a transparent overlay meant to sit over a photo/video the player picks
+     themselves, so this honestly represents what's see-through vs. drawn. */
   background-color: #1a1a1a;
   background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
   background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0;
@@ -249,15 +295,16 @@ function shareStatsBanner(game, stat) {
      an aspect-ratio'd/large image would blow the column out and force a
      scrollbar right back in. */
   .ssc-preview { position: relative; flex: 1; min-height: 0; height: auto; max-width: none; width: 100%; margin: 0; overflow: hidden; }
-  /* The card's own art only fills roughly the top third of the 1080x1920
-     canvas (deliberately — the rest stays transparent for a real photo), so
-     even a correctly-centered, non-letterboxed preview still reads as "mostly
-     empty, tiny card in the middle." This is a display-only zoom on the
-     <img> element — scale() is a paint-time transform, it never touches the
-     underlying image data, so Save/Copy/Share still send the exact, unscaled
-     PNG. overflow: hidden above crops the zoomed-in overflow at the preview
-     box's own edges instead of spilling into the header/controls. */
-  .ssc-preview img { transform: scale(1.5); }
+  /* object-fit: cover (not contain) here — these templates aren't full-bleed,
+     their content sits in one portion of the 1080x1920 canvas with
+     transparent space above/below by design (an overlay sticker, not a
+     poster), so "contain" just letterboxes the preview with empty margins on
+     whichever side the box's aspect ratio doesn't match. "cover" scales up
+     until the box is completely filled and crops the excess (equally off top
+     +bottom or left+right, centered) — this is a display-only crop, the
+     underlying image is untouched, so Save/Copy/Share still send the full,
+     uncropped PNG. */
+  .ssc-preview img { object-fit: cover; }
   /* Safe-area padding so the edge-to-edge header/controls don't sit under a
      notch/Dynamic Island or the home-indicator gesture bar on iPhones — a no-op
      (env() resolves to 0) on devices without either. */
@@ -269,46 +316,60 @@ function shareStatsBanner(game, stat) {
    regardless of how that box ends up sized/stretched. */
 .ssc-spinner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
 @keyframes ssc-spin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
-.ssc-controls__row { display: flex; align-items: center; gap: 10px; padding: 12px 16px 0; }
-.ssc-controls__row[hidden] { display: none; }
-.ssc-layouts { flex-wrap: wrap; }
-.ssc-layout-btn { padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; }
-.ssc-layout-btn:hover { color: var(--text); }
-.ssc-layout-btn.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
-.ssc-aligns { display: flex; gap: 8px; flex-shrink: 0; }
-.ssc-aligns[hidden] { display: none; }
-.ssc-align-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 36px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text-muted); cursor: pointer; transition: background .12s, color .12s; }
-.ssc-align-btn:hover { color: var(--text); }
-.ssc-align-btn.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
-.ssc-swatches { gap: 10px; flex-wrap: wrap; }
-.ssc-swatch-btn { width: 26px; height: 26px; border-radius: 50%; background: var(--swatch); border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); transition: transform .12s, border-color .12s; }
+/* Compact icon-row + slide-up sheet, replacing the old always-visible
+   dropdowns/swatches row — CapCut/Instagram-editor style, so the preview
+   above keeps most of the modal's height until a control is actually opened.
+   .ssc-sheet's grid-template-rows 0fr→1fr transition is what gives the "slide
+   up" feel without any JS height math: a 0fr row genuinely takes no space
+   (unlike max-height:0, it doesn't need a guessed cap), and animating to 1fr
+   lets it grow to its content's natural height. .ssc-sheet__inner's
+   overflow:hidden is required for that trick — a grid row can't clip its own
+   overflow during the transition otherwise. */
+.ssc-toolbar { display: flex; gap: 4px; padding: 10px 16px 0; }
+.ssc-tool-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: var(--radius-sm); background: none; border: 1px solid transparent; color: var(--text-muted); font-size: 11px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
+.ssc-tool-btn:hover { color: var(--text); }
+.ssc-tool-btn.is-active { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.16); color: var(--text); }
+.ssc-tool-btn__dot { width: 18px; height: 18px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.3); }
+.ssc-sheet { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease; }
+.ssc-sheet.is-open { grid-template-rows: 1fr; }
+.ssc-sheet__inner { overflow: hidden; min-height: 0; }
+/* max-height + overflow-y:auto is headroom for Template/Focus growing past
+   what fits in one unscrolled chip row — the panel's own scrollbar handles
+   the overflow instead of the whole modal growing (and, on desktop, instead
+   of .ssc-modal's own overflow-y:auto scrolling the toolbar/preview out of
+   view along with it). The grid-rows trick above still works the same either
+   way: it just animates to this capped height rather than an ever-growing
+   one once a panel has more content than fits. */
+.ssc-sheet__panel { padding: 12px 16px 2px; max-height: 200px; overflow-y: auto; }
+.ssc-sheet__panel[hidden] { display: none; }
+.ssc-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ssc-chip { padding: 8px 14px; border-radius: 999px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text-muted); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.ssc-chip:hover { color: var(--text); }
+.ssc-chip.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
+/* Single row, deliberately — swatches and toggles used to wrap onto their own
+   line on narrower phones once both were at full size. flex-wrap: nowrap
+   forces one line always; overflow-x: auto is the safety valve for whatever
+   width that still doesn't fit on (a scrollable row still reads as "one
+   line" — it just isn't all in view at once — whereas wrapping visibly
+   becomes two). Tightened swatch/toggle sizing (below) means that scroll
+   only actually kicks in on the narrowest phones; most widths show the whole
+   row without any cropping or scrolling at all. */
+.ssc-accent-row { display: flex; align-items: center; gap: 14px; flex-wrap: nowrap; overflow-x: auto; }
+.ssc-swatches { display: flex; gap: 7px; flex-shrink: 0; }
+.ssc-toggle-group { display: flex; gap: 10px; flex-shrink: 0; }
+.ssc-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 4px 0; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.ssc-toggle:hover { color: var(--text); }
+.ssc-toggle__switch { position: relative; width: 30px; height: 18px; border-radius: 999px; background: rgba(255,255,255,0.16); transition: background .12s; flex-shrink: 0; }
+.ssc-toggle__switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .12s; }
+.ssc-toggle[aria-pressed="true"] .ssc-toggle__switch { background: var(--amber); }
+.ssc-toggle[aria-pressed="true"] .ssc-toggle__switch::after { transform: translateX(12px); }
+.ssc-toggle[aria-pressed="true"] { color: var(--text); }
+.ssc-swatch-btn { width: 22px; height: 22px; border-radius: 50%; background: var(--swatch); border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); transition: transform .12s, border-color .12s; flex-shrink: 0; }
 .ssc-swatch-btn:hover { transform: scale(1.1); }
 .ssc-swatch-btn.is-active { border-color: #fff; }
-.ssc-badge-toggle { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 4px 0; color: var(--text-muted); font-size: 13px; font-weight: 600; cursor: pointer; }
-.ssc-badge-toggle:hover { color: var(--text); }
-.ssc-badge-toggle__switch { position: relative; width: 34px; height: 20px; border-radius: 999px; background: rgba(255,255,255,0.16); transition: background .12s; flex-shrink: 0; }
-.ssc-badge-toggle__switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .12s; }
-.ssc-badge-toggle[aria-pressed="true"] .ssc-badge-toggle__switch { background: var(--amber); }
-.ssc-badge-toggle[aria-pressed="true"] .ssc-badge-toggle__switch::after { transform: translateX(14px); }
-.ssc-badge-toggle[aria-pressed="true"] { color: var(--text); }
-.ssc-stat-dropdown { position: relative; flex: 1; min-width: 0; }
-.ssc-stat-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px; height: 36px; padding: 0 10px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
-.ssc-stat-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ssc-stat-chevron { flex-shrink: 0; transition: transform .12s; }
-.ssc-stat-trigger[aria-expanded="true"] .ssc-stat-chevron { transform: rotate(180deg); }
-.ssc-stat-menu {
-  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 5;
-  margin: 0; padding: 6px; list-style: none; max-height: 240px; overflow-y: auto;
-  background: #12182a; border: 1px solid rgba(255,255,255,0.16); border-radius: var(--radius-sm);
-  box-shadow: 0 12px 32px rgba(0,0,0,0.55);
-}
-.ssc-stat-menu[hidden] { display: none; }
-.ssc-stat-option { padding: 9px 10px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
-.ssc-stat-option:hover { background: rgba(255,255,255,0.08); color: var(--text); }
-.ssc-stat-option.is-active { background: var(--amber); color: #0a0e16; }
 .ssc-msg { padding: 8px 16px 0; font-size: 12px; color: var(--text-muted); text-align: center; }
 .ssc-msg--retry { color: var(--amber); font-weight: 700; text-decoration: underline; cursor: pointer; }
-.ssc-actions { display: flex; gap: 8px; padding: 14px 16px; }
+.ssc-actions { display: flex; gap: 8px; }
 .ssc-action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s; }
 .ssc-action-btn:hover { background: rgba(255,255,255,0.18); }
 .ssc-action-btn--primary { background: var(--amber); border-color: transparent; color: #0a0e16; }
@@ -327,102 +388,106 @@ function shareStatsBanner(game, stat) {
   var saveBtn  = document.getElementById('ssc-save');
   var copyBtn  = document.getElementById('ssc-copy');
   var shareBtn = document.getElementById('ssc-share');
-  var layoutBtns   = Array.prototype.slice.call(document.querySelectorAll('.ssc-layout-btn'));
-  var alignsWrap   = document.querySelector('.ssc-aligns');
-  var alignBtns    = Array.prototype.slice.call(document.querySelectorAll('.ssc-align-btn'));
-  var statDropdown = document.getElementById('ssc-stat-dropdown');
-  var statTrigger  = document.getElementById('ssc-stat-trigger');
-  var statTriggerLabel = document.getElementById('ssc-stat-trigger-label');
-  var statMenu     = document.getElementById('ssc-stat-menu');
-  var statOptions  = Array.prototype.slice.call(document.querySelectorAll('.ssc-stat-option'));
-  var badgeRow     = document.getElementById('ssc-badge-row');
-  var badgeToggle  = document.getElementById('ssc-badge-toggle');
   var swatchBtns   = Array.prototype.slice.call(document.querySelectorAll('.ssc-swatch-btn'));
+  var gaugesToggle = document.getElementById('ssc-gauges-toggle');
+  var hideZerosToggle = document.getElementById('ssc-hidezeros-toggle');
+  var accentDot    = document.getElementById('ssc-tool-accent-dot');
   var cache = {};
   var pending = {};
-  var layout = 'default';
   var align = 'center';
-  var badgeOn = false;
   var accent = 'amber';
-  // The server already picked and marked the best opening option (personalized
-  // to this player's own box score — see shareStatsBanner in game.js) — just
-  // read whichever option it marked active instead of recomputing a default.
-  var heroStat = (statOptions.filter(function(o) { return o.classList.contains('is-active'); })[0] || statOptions[0]).getAttribute('data-stat');
-
-  // Each layout only cares about a subset of the controls — grid has no hero
-  // stat and is always centered (its 3-column layout doesn't read well shifted
-  // to an edge), badge only applies to default/comparison. Keeps every
-  // control's visibility (and the cache key / fetch URL below) in sync with
-  // whichever layout is currently selected.
-  function syncControlsForLayout() {
-    alignsWrap.hidden = layout === 'grid';
-    statDropdown.hidden = layout === 'grid';
-    badgeRow.hidden = !(layout === 'default' || layout === 'comparison');
+  var gaugesOn = true;
+  var hideZerosOn = false;
+  // The server already picked and marked the best opening Focus chip
+  // (personalized to this player's own box score — see shareStatsBanner in
+  // game.js) — read whichever chip it marked active instead of recomputing.
+  function activeChipValue(panelId) {
+    var chip = document.querySelector('#' + panelId + ' .ssc-chip.is-active') || document.querySelector('#' + panelId + ' .ssc-chip');
+    return chip.getAttribute('data-value');
   }
-  syncControlsForLayout();
+  var focus = activeChipValue('ssc-panel-focus');
 
-  // Grid ignores whatever align is currently selected and always renders
-  // centered — this is what actually goes in the cache key / fetch URL.
-  function effectiveAlign() { return layout === 'grid' ? 'center' : align; }
-
-  function selectStatOption(key) {
-    var opt = statOptions.filter(function(o) { return o.getAttribute('data-stat') === key; })[0];
-    if (!opt) return;
-    statOptions.forEach(function(o) {
-      var active = o === opt;
-      o.classList.toggle('is-active', active);
-      o.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    statTriggerLabel.textContent = opt.textContent;
+  // Compact icon toolbar + slide-up sheet (CapCut/Instagram-editor style,
+  // replacing the old always-visible dropdowns/swatches) — only one panel
+  // shown at a time, sheet fully collapsed when nothing's open so the
+  // preview above keeps as much of the modal's height as possible.
+  var toolBtns = Array.prototype.slice.call(document.querySelectorAll('.ssc-tool-btn'));
+  var sheet    = document.getElementById('ssc-sheet');
+  var panels   = {
+    template: document.getElementById('ssc-panel-template'),
+    focus:    document.getElementById('ssc-panel-focus'),
+    accent:   document.getElementById('ssc-panel-accent'),
+    publish:  document.getElementById('ssc-panel-publish'),
+  };
+  var openTarget = null;
+  function closeSheet() {
+    sheet.classList.remove('is-open');
+    toolBtns.forEach(function(b) { b.classList.remove('is-active'); });
+    openTarget = null;
   }
-
-  function closeStatMenu() {
-    statMenu.hidden = true;
-    statTrigger.setAttribute('aria-expanded', 'false');
+  function openSheet(target) {
+    Object.keys(panels).forEach(function(k) { panels[k].hidden = k !== target; });
+    sheet.classList.add('is-open');
+    toolBtns.forEach(function(b) { b.classList.toggle('is-active', b.getAttribute('data-target') === target); });
+    openTarget = target;
   }
-  function openStatMenu() {
-    statMenu.hidden = false;
-    statTrigger.setAttribute('aria-expanded', 'true');
-  }
-  statTrigger.addEventListener('click', function(e) {
-    e.stopPropagation();
-    if (statMenu.hidden) openStatMenu(); else closeStatMenu();
-  });
-  statOptions.forEach(function(opt) {
-    opt.addEventListener('click', function() {
-      heroStat = opt.getAttribute('data-stat');
-      selectStatOption(heroStat);
-      closeStatMenu();
-      clearMsg();
-      render();
+  toolBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var target = btn.getAttribute('data-target');
+      if (openTarget === target) closeSheet(); else openSheet(target);
     });
   });
-  document.addEventListener('click', function(e) {
-    if (!statDropdown.contains(e.target)) closeStatMenu();
+  // Tapping the preview itself (not just the toolbar) is the other way to
+  // dismiss an open panel — the same "tap outside to close" instinct the old
+  // dropdown's document-click listener gave, scoped to the one place in this
+  // modal that isn't already an interactive control.
+  document.querySelector('.ssc-preview').addEventListener('click', function() {
+    if (openTarget) closeSheet();
   });
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeStatMenu();
+    if (e.key === 'Escape' && openTarget) closeSheet();
   });
 
-  // Only the params a given layout actually renders differently on are part of
-  // its identity — e.g. grid ignores the hero stat, so switching it while
-  // hidden shouldn't fetch a "new" combo that looks pixel-identical.
-  function cacheKey(l, a, s, b, c) {
-    return [
-      l,
-      a,
-      l === 'grid' ? '' : s,
-      (l === 'default' || l === 'comparison') ? (b ? '1' : '0') : '',
-      c,
-    ].join('|');
+  // Chip controller shared by the Template and Focus panels — Template/Focus
+  // auto-close the sheet on pick (single choice, quick in-and-out), but
+  // Accent's swatches/toggles don't (see their own listeners below) since
+  // trying a few colors in a row is the whole point of that panel.
+  function setupChips(panelId, onChange) {
+    var panel = panels[panelId];
+    var chips = Array.prototype.slice.call(panel.querySelectorAll('.ssc-chip'));
+    chips.forEach(function(chip) {
+      chip.addEventListener('click', function() {
+        chips.forEach(function(c) { c.classList.toggle('is-active', c === chip); });
+        clearMsg();
+        onChange(chip.getAttribute('data-value'));
+        closeSheet();
+      });
+    });
   }
-  function buildUrl(l, a, s, b, c) {
-    var params = ['layout=' + encodeURIComponent(l), 'align=' + encodeURIComponent(a), 'accent=' + encodeURIComponent(c)];
-    if (l !== 'grid') params.push('stat=' + encodeURIComponent(s));
-    if (l === 'default' || l === 'comparison') params.push('badge=' + (b ? '1' : '0'));
+  // The mobile full-screen preview crops to fill (object-fit: cover, set in
+  // this file's <style>) since these cards aren't full-bleed — their content
+  // sits in one region of the 1080x1920 canvas, not spread edge-to-edge. A
+  // symmetric center-crop is correct for every vertically-centered template,
+  // but Bottom's and Premium's content both hug the bottom edge (see
+  // generateGameStatPremiumPng's own comments), so centering the crop there
+  // would risk shaving into it from below while leaving untouched transparent
+  // space at the top. Anchoring the crop to the bottom for those two
+  // templates guarantees only the (empty) top gets cropped instead.
+  var BOTTOM_ANCHORED_TEMPLATES = ['bottom', 'premium'];
+  function applyPreviewCropAnchor() {
+    img.style.objectPosition = BOTTOM_ANCHORED_TEMPLATES.indexOf(align) !== -1 ? 'center bottom' : 'center center';
+  }
+  applyPreviewCropAnchor();
+
+  setupChips('template', function(v) { align = v; applyPreviewCropAnchor(); render(); });
+  setupChips('focus', function(v) { focus = v; render(); });
+
+  function cacheKey(a, f, c, g, hz) { return [a, f, c, g, hz].join('|'); }
+  function buildUrl(a, f, c, g, hz) {
+    var params = ['layout=gauges', 'align=' + encodeURIComponent(a), 'focus=' + encodeURIComponent(f), 'accent=' + encodeURIComponent(c), 'gauges=' + (g ? '1' : '0'), 'hidezeros=' + (hz ? '1' : '0')];
     return '/api/games/' + GAME_ID + '/my-stat-card.png?' + params.join('&');
   }
-  function currentKey() { return cacheKey(layout, effectiveAlign(), heroStat, badgeOn, accent); }
+  function currentKey() { return cacheKey(align, focus, accent, gaugesOn, hideZerosOn); }
 
   // retry: true marks this message as tappable-to-retry (load failures only —
   // "Copied to clipboard" etc. shouldn't be clickable). Re-clicking an
@@ -445,8 +510,8 @@ function shareStatsBanner(game, stat) {
   // Tracks in-flight requests per combo (not one shared flag) so switching
   // controls while a fetch is still pending doesn't strand the newly-picked
   // combo waiting on a "loading" flag that belongs to another one.
-  function ensureLoaded(l, a, s, b, c) {
-    var key = cacheKey(l, a, s, b, c);
+  function ensureLoaded(a, f, c, g, hz) {
+    var key = cacheKey(a, f, c, g, hz);
     if (cache[key] || pending[key]) return;
     pending[key] = true;
     // A request that just hangs (flaky mobile network, a stalled response)
@@ -460,7 +525,7 @@ function shareStatsBanner(game, stat) {
     var timedOut = false;
     var controller = new AbortController();
     var timer = setTimeout(function() { timedOut = true; controller.abort(); }, 20000);
-    fetch(buildUrl(l, a, s, b, c), { signal: controller.signal })
+    fetch(buildUrl(a, f, c, g, hz), { signal: controller.signal })
       .then(function(r) { if (!r.ok) throw new Error('failed'); return r.blob(); })
       .then(function(res) {
         cache[key] = { blob: res, url: URL.createObjectURL(res) };
@@ -480,23 +545,24 @@ function shareStatsBanner(game, stat) {
   // accent colors for the combo just shown, in the background, so a follow-up
   // color click resolves from cache instead of waiting on the network again.
   var ACCENT_KEYS = ['amber', 'red', 'blue', 'green', 'purple', 'pink', 'cyan'];
-  function prefetchOtherAccents(l, a, s, b, current) {
+  function prefetchOtherAccents(a, f, current, g, hz) {
     ACCENT_KEYS.forEach(function(c) {
-      if (c !== current) ensureLoaded(l, a, s, b, c);
+      if (c !== current) ensureLoaded(a, f, c, g, hz);
     });
   }
 
   function render() {
     var entry = cache[currentKey()];
-    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(layout, effectiveAlign(), heroStat, badgeOn, accent); return; }
+    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align, focus, accent, gaugesOn, hideZerosOn); return; }
     img.src = entry.url;
     img.hidden = false;
     spinner.hidden = true;
-    prefetchOtherAccents(layout, effectiveAlign(), heroStat, badgeOn, accent);
+    prefetchOtherAccents(align, focus, accent, gaugesOn, hideZerosOn);
   }
 
   function open() {
     backdrop.hidden = false;
+    closeSheet();
     clearMsg();
     render();
   }
@@ -506,40 +572,42 @@ function shareStatsBanner(game, stat) {
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
 
-  layoutBtns.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      layout = btn.getAttribute('data-layout');
-      layoutBtns.forEach(function(b) { b.classList.toggle('is-active', b === btn); });
-      syncControlsForLayout();
-      clearMsg();
-      render();
-    });
-  });
-
-  alignBtns.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      align = btn.getAttribute('data-align');
-      alignBtns.forEach(function(b) { b.classList.toggle('is-active', b === btn); });
-      clearMsg();
-      render();
-    });
-  });
-
-  badgeToggle.addEventListener('click', function() {
-    badgeOn = !badgeOn;
-    badgeToggle.setAttribute('aria-pressed', badgeOn ? 'true' : 'false');
-    clearMsg();
-    render();
-  });
-
   swatchBtns.forEach(function(btn) {
     btn.addEventListener('click', function() {
       accent = btn.getAttribute('data-accent');
       swatchBtns.forEach(function(b) { b.classList.toggle('is-active', b === btn); });
+      accentDot.style.setProperty('--swatch', btn.style.getPropertyValue('--swatch'));
       clearMsg();
       render();
     });
   });
+
+  gaugesToggle.addEventListener('click', function() {
+    gaugesOn = !gaugesOn;
+    gaugesToggle.setAttribute('aria-pressed', gaugesOn ? 'true' : 'false');
+    clearMsg();
+    render();
+  });
+
+  hideZerosToggle.addEventListener('click', function() {
+    hideZerosOn = !hideZerosOn;
+    hideZerosToggle.setAttribute('aria-pressed', hideZerosOn ? 'true' : 'false');
+    clearMsg();
+    render();
+  });
+
+  // Save/Copy/Share all happen entirely client-side against an
+  // already-fetched blob — without this ping, the server (and admin) would
+  // never know a player did anything past opening the editor. Fire-and-forget
+  // on purpose: a logging failure shouldn't surface an error for an action
+  // the player already completed successfully.
+  function logCardAction(action) {
+    fetch('/api/games/' + GAME_ID + '/stat-card-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, template: align, focus: focus, accent: accent }),
+    }).catch(function() {});
+  }
 
   saveBtn.addEventListener('click', function() {
     var entry = cache[currentKey()];
@@ -550,6 +618,7 @@ function shareStatsBanner(game, stat) {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    logCardAction('save');
   });
 
   copyBtn.addEventListener('click', function() {
@@ -561,7 +630,7 @@ function shareStatsBanner(game, stat) {
       return;
     }
     navigator.clipboard.write([new ClipboardItem({ 'image/png': entry.blob })])
-      .then(function() { showMsg('Copied to clipboard.'); })
+      .then(function() { showMsg('Copied to clipboard.'); logCardAction('copy'); })
       .catch(function() { showMsg('Could not copy. Try Save instead.'); });
   });
 
@@ -571,7 +640,13 @@ function shareStatsBanner(game, stat) {
     clearMsg();
     var file = new File([entry.blob], 'wknd-game-stats.png', { type: 'image/png' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file], title: 'My Stats — WKND Basketball' }).catch(function() {});
+      // Resolves on a completed share, but also on some browsers when the
+      // user just dismisses the share sheet — a false positive here is a
+      // much smaller problem than never counting a real share, so this
+      // isn't worth trying to distinguish.
+      navigator.share({ files: [file], title: 'My Stats — WKND Basketball' })
+        .then(function() { logCardAction('share'); })
+        .catch(function() {});
     } else {
       showMsg('Sharing is not supported in this browser. Use Save instead.');
     }
@@ -1898,7 +1973,7 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
   </div>`;
 }
 
-export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false }) {
+export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false, unlockedTemplates = [] }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
@@ -1919,7 +1994,7 @@ export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterSc
     ${gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers, isPlayer, isAdmin })}
   </div>
   <div class="game-detail-right">
-    ${myStat ? shareStatsBanner(game, myStat) : ''}
+    ${myStat ? shareStatsBanner(game, myStat, unlockedTemplates) : ''}
     ${scoreCard(game, colorA, colorB)}
     ${potgCard(potgStat, game.potg_writeup)}
     ${topPerformers(stats, potgPlayerId)}

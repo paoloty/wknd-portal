@@ -23,6 +23,7 @@ const IC = {
   external:  `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8"/><polyline points="9.5 1 13 1 13 4.5"/><line x1="7" y1="7" x2="13" y2="1"/></svg>`,
   signout:   `<svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3"/><path d="M10 10.5l3-3-3-3"/><line x1="13" y1="7.5" x2="6" y2="7.5"/></svg>`,
   chevron:   `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5L5 6l2.5-2.5"/></svg>`,
+  share:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11.5" cy="3" r="1.8"/><circle cx="3.5" cy="7.5" r="1.8"/><circle cx="11.5" cy="12" r="1.8"/><path d="M5.1 6.5l4.7-2.6M5.1 8.5l4.7 2.6"/></svg>`,
 };
 
 const NAV_GROUPS = [
@@ -168,6 +169,7 @@ const SUPER_ADMIN_NAV = [
     items: [
       { href: '/admin/privileges', label: 'Privileges', icon: 'shield' },
       { href: '/admin/logs', label: 'Action Logs', icon: 'ledger' },
+      { href: '/admin/share-log', label: 'Share Card Log', icon: 'share' },
       { href: '/admin/ratings', label: 'Community Ratings', icon: 'awards' },
       ...(process.env.NODE_ENV !== 'production' ? [{ href: '/admin/db', label: 'Sync DB', icon: 'finance' }] : []),
     ],
