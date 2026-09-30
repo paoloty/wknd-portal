@@ -244,12 +244,22 @@ const COVER_SVG_FONT    = 'Noto Sans, DejaVu Sans, Liberation Sans, Arial, sans-
 // is scanned lazily on first use, so this only has to run before the first PNG request, not
 // before sharp is imported) rather than embedding the font data in every generated SVG,
 // which would add the same large base64 payload to every single request.
+// FONTCONFIG_FILE doesn't ADD to fontconfig's normal search — it REPLACES the
+// whole config fontconfig would otherwise use. A file with only our own <dir>
+// (no reference back to the system's real config) doesn't just fail to add
+// Archivo/Saira Condensed on a server where this matters (Linux prod): it can
+// also make the system's own font directories invisible, silently changing
+// how the COVER_SVG_FONT fallback stack resolves everywhere else, not just on
+// this one template. <include ignore_missing="yes"> pulls the system's actual
+// config back in (the standard, documented way to *add* a font directory
+// rather than replace fontconfig's config outright) — ignore_missing means it
+// no-ops harmlessly on Windows, which has no /etc/fonts/fonts.conf at all.
 try {
   const fontsDir = path.join(__dirname, 'assets', 'fonts');
   const fcCacheDir = path.join(os.tmpdir(), 'wknd-fontconfig-cache');
   mkdirSync(fcCacheDir, { recursive: true });
   const fcConfPath = path.join(os.tmpdir(), 'wknd-fonts.conf');
-  writeFileSync(fcConfPath, `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n  <dir>${fontsDir}</dir>\n  <cachedir>${fcCacheDir}</cachedir>\n</fontconfig>\n`);
+  writeFileSync(fcConfPath, `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n  <dir>${fontsDir}</dir>\n  <cachedir>${fcCacheDir}</cachedir>\n</fontconfig>\n`);
   process.env.FONTCONFIG_FILE = fcConfPath;
 } catch (err) {
   console.error('Custom font registration failed, PNG generation will fall back to COVER_SVG_FONT', err);
