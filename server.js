@@ -3617,6 +3617,35 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
   return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
 }
 
+// Renders `text` alone, off-canvas, to measure its real rendered pixel width
+// at a given font/size/weight/letter-spacing via sharp's trim() — used by
+// Premium below instead of a char-count*fontsize guess. That guess (tried
+// first) used one flat ratio regardless of name length, which overestimates
+// short names at Premium's larger font tiers far more than long names at its
+// smaller ones (letter-spacing's fixed per-character contribution is a much
+// bigger fraction of a short string's total width), so a gap constant tuned
+// against one name length left a visibly oversized gap for others. Actually
+// measuring removes the guesswork entirely. Cheap: the rendered probe image
+// is tiny and thrown away immediately.
+async function measureTextWidth(text, { fontFamily, fontSize, fontWeight = 800, letterSpacing = 7 }) {
+  const canvasW = Math.ceil(text.length * fontSize * 1.3) + 200;
+  const canvasH = Math.ceil(fontSize * 2);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}">
+    <rect width="${canvasW}" height="${canvasH}" fill="#000000"/>
+    <text x="100" y="${Math.round(canvasH * 0.7)}" font-family="${fontFamily}" font-size="${fontSize}" font-weight="${fontWeight}" letter-spacing="${letterSpacing}" fill="#ffffff">${text}</text>
+  </svg>`;
+  try {
+    const { info } = await sharp(Buffer.from(svg), { density: 216 })
+      .trim({ background: '#000000', threshold: 10 })
+      .toBuffer({ resolveWithObject: true });
+    return info.width / (216 / 72); // trim already excludes the padding; just descale to user units
+  } catch {
+    // trim() throws on an all-background image (e.g. empty text) — fall back
+    // to the old rough guess rather than let card generation fail outright.
+    return text.length * fontSize * 0.64 + letterSpacing * Math.max(0, text.length - 1);
+  }
+}
+
 // "Premium" — a deliberately different theme from the "Default" family above
 // (Left/Center/Right/Bottom/Stacked all share one visual language; this one
 // doesn't). Broadcast-graphic composition: the whole content cluster (rotated
@@ -3718,20 +3747,49 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const rowH = tier.row, numberFsz = tier.num, labelFsz = tier.label;
   const heroNumberFsz = Math.round(numberFsz * 1.55);
 
+  // Baseline-to-baseline gap between a row's label and the NEXT row's
+  // number, reused below for every transition in the column (label-to-next-
+  // number between stat rows, hero-to-first-regular-row, AND last-row-to-
+  // pill) so the rhythm reads consistently instead of the pill having its
+  // own tighter, one-off gap above it.
+  const interRowGap = rowH - labelFsz - 20;
+
   const bottomPad = 90;
   const handleY = H - bottomPad;
+  // Rotated elements: the text's own x/y must equal the rotation pivot —
+  // rotating around a point other than the text's own anchor swings it to a
+  // totally different location instead of pivoting it in place. nameY sits
+  // exactly at handleY (not offset below it) so the rotated column's own
+  // bottom-most glyphs ("#<number>") land flush with the handle text's own
+  // baseline — neither string has descenders, so matching baselines here
+  // also matches their visible bottom edges.
+  const nameX = nameLineX, nameY = handleY;
   const contextY = handleY - 40;
-  const lastNumY = contextY - 100;
 
-  // Row Y-positions are built bottom-up across the REGULAR rows (everything
-  // but the hero, STATS[0]) first, then the hero is placed above them using
-  // the exact same label-to-next-number gap formula as every other
-  // consecutive pair of rows — so the hero (which uses a much bigger number
-  // but the same label size) doesn't end up with a mismatched, tighter gap
-  // to the row below it.
+  // Context pill: text is centered both axes (text-anchor + dominant-baseline)
+  // rather than left-aligned against a baseline calculation, so padding stays
+  // visually equal on both sides and the text stays vertically centered
+  // regardless of the width estimate's accuracy or this particular font's
+  // metrics.
+  const pillPadX = 8, pillH = 44;
+  const pillW = Math.round(contextText.length * 11.2 + pillPadX * 2);
+  const pillX = colX - pillPadX;
+  const pillY = contextY - pillH + 12;
+  const pillCx = pillX + pillW / 2;
+  const pillCy = pillY + pillH / 2;
+
+  // Row Y-positions are built bottom-up: the last stat row sits interRowGap
+  // above the pill's own top edge (the same gap used between every other
+  // pair of rows, so the last row doesn't read closer to the pill than any
+  // two stats read to each other), then the REGULAR rows (everything but
+  // the hero, STATS[0]) stack upward from there, then the hero goes above
+  // THEM using that identical gap formula too — so the hero (a much bigger
+  // number, but the same label size) doesn't end up with a mismatched,
+  // tighter gap to the row below it.
+  const lastLabelY = pillY - interRowGap;
+  const lastNumY = lastLabelY - labelFsz - 20;
   const regularStats = STATS.slice(1);
   const regularNumYs = regularStats.map((_, kFromBottom) => lastNumY - kFromBottom * rowH).reverse();
-  const interRowGap = rowH - labelFsz - 20;
   const heroLabelY = (regularNumYs[0] ?? lastNumY) - interRowGap;
   const heroNumY = heroLabelY - labelFsz - 20;
 
@@ -3747,11 +3805,6 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
     <text x="${colX}" y="${labelY}" font-family="${labelFont}" font-size="${labelFsz}" font-weight="700" letter-spacing="3" fill="#c3cbd8" filter="url(#txt)">${escXml(s.label)}</text>`;
   }).join('\n');
 
-  // Rotated elements: the text's own x/y must equal the rotation pivot —
-  // rotating around a point other than the text's own anchor swings it to a
-  // totally different location instead of pivoting it in place.
-  const nameX = nameLineX, nameY = handleY + 20;
-
   // Accent line covers the remaining space above the name up to the stats —
   // "PLAYER NAME ------" continuing on until it reaches the same level as
   // the hero number, not just matching the name's own short height. A gap
@@ -3759,17 +3812,15 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   // glyph strokes rather than the text's baseline pivot: for rotated text
   // the glyphs render on the ascender side of that pivot (i.e. offset to one
   // side once rotated), so the visual center sits half a cap-height away
-  // from it, not at the pivot itself. nameEstWidth (an estimate — the SVG
-  // renderer doesn't give us the real measured glyph run length up front)
-  // deliberately overestimates a plain char-count*fontsize product, because
-  // an estimate that runs too SHORT lets the line's computed end point land
-  // inside the name's real occupied space even when the gap constant looks
-  // fine on paper — verified empirically against actual rendered glyph
-  // extent, not just eyeballed.
+  // from it, not at the pivot itself. nameWidth is the name's real rendered
+  // pixel width (see measureTextWidth above) — a plain char-count*fontsize
+  // guess here overestimates by a very different amount depending on name
+  // length and font-size tier, which left a visibly oversized gap for short
+  // names even after a gap constant was tuned against a long one.
   const statBlockTop = heroNumY - heroNumberFsz * 0.78;
-  const nameEstWidth = displayName.length * nameFsz * 0.64 + 7 * Math.max(0, displayName.length - 1);
-  const nameTop = nameY - nameEstWidth;
-  const lineGap = 30;
+  const nameWidth = await measureTextWidth(displayName, { fontFamily: font, fontSize: nameFsz, fontWeight: 800, letterSpacing: 7 });
+  const nameTop = nameY - nameWidth;
+  const lineGap = 20;
   const lineX = nameX - (nameFsz * 0.72) / 2, lineTop = statBlockTop, lineBottom = nameTop - lineGap;
 
   // WKND watermark: rotated, big, and pinned flush to the canvas's own
@@ -3787,18 +3838,6 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const wkndCapHeight = wkndFsz * 0.72;
   const wkndX = wkndCapHeight + 4;
   const wkndY = H - 4;
-
-  // Context pill: text is centered both axes (text-anchor + dominant-baseline)
-  // rather than left-aligned against a baseline calculation, so padding stays
-  // visually equal on both sides and the text stays vertically centered
-  // regardless of the width estimate's accuracy or this particular font's
-  // metrics.
-  const pillPadX = 12, pillH = 44;
-  const pillW = Math.round(contextText.length * 11.2 + pillPadX * 2);
-  const pillX = colX - pillPadX;
-  const pillY = contextY - pillH + 12;
-  const pillCx = pillX + pillW / 2;
-  const pillCy = pillY + pillH / 2;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>
