@@ -867,7 +867,7 @@ function statsTable(statsByType) {
 
   const fgPct  = r => pct((r.fg2m || 0) + (r.fg3m || 0) + (r.fg4m || 0), (r.fg2m_miss || 0) + (r.fg3m_miss || 0) + (r.fg4m_miss || 0));
   const tpPct  = r => { const att = (r.fg3m || 0) + (r.fg3m_miss || 0); return att >= 3 ? pct(r.fg3m, r.fg3m_miss) : '—'; };
-  const qpPct  = r => { const att = (r.fg4m || 0) + (r.fg4m_miss || 0); return att >= 3 ? pct(r.fg4m || 0, r.fg4m_miss || 0) : '—'; };
+  const qpPct  = r => { const att = (r.fg4m || 0) + (r.fg4m_miss || 0); return att >= 1 ? pct(r.fg4m || 0, r.fg4m_miss || 0) : '—'; };
   const ftPct  = r => { const att = (r.ftm || 0) + (r.ft_miss || 0); return att >= 3 ? pct(r.ftm, r.ft_miss) : '—'; };
 
   const statRow = (r, label, isCareer = false) => {

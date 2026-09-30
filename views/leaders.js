@@ -48,8 +48,8 @@ export const RECORD_CATS = [
   },
   {
     id: 'fg4p', label: '4P%', title: 'Best 4PT%',
-    fn: r => { const a = (r.fg4m||0)+(r.fg4m_miss||0); return a >= 2 ? (r.fg4m||0) / a : -1; },
-    fmt: v => Math.round(v * 100) + '%', min: '2+ 4PA',
+    fn: r => { const a = (r.fg4m||0)+(r.fg4m_miss||0); return a >= 1 ? (r.fg4m||0) / a : -1; },
+    fmt: v => Math.round(v * 100) + '%', min: '1+ 4PA',
   },
   {
     id: 'ftp', label: 'FT%', title: 'Best FT%',
