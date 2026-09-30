@@ -188,8 +188,8 @@ export const PER_GAME = [
   { id: 'fg3m',     label: '3PM', title: '3-Pointers',     fn: p => p.fg3m     / p.games_played },
   {
     id: 'fg4p', label: '4P%', title: '4PT Efficiency',
-    fn: p => { const a = (p.fg4m||0) + (p.fg4m_miss||0); return a >= 2 ? (p.fg4m||0) / a : -1; },
-    fmt: v => (v * 100).toFixed(1) + '%', min: '2+ 4PA',
+    fn: p => { const a = (p.fg4m||0) + (p.fg4m_miss||0); return a >= 1 ? (p.fg4m||0) / a : -1; },
+    fmt: v => (v * 100).toFixed(1) + '%', min: '1+ 4PA',
   },
   { id: 'fg4m',     label: '4PM', title: '4-Pointers',     fn: p => (p.fg4m||0) / p.games_played },
   {

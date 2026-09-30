@@ -135,7 +135,7 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
     { lbl: 'BPG', val: avg(totals.blk, gp) },
     ...(fga  >= 10 ? [{ lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0) + (totals.fg4m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0) + (totals.fg4m_miss || 0)) }] : []),
     ...(tpa  >= 5  ? [{ lbl: '3P%', val: pct(totals.fg3m, totals.fg3m_miss) }] : []),
-    ...(qpa  >= 2  ? [{ lbl: '4P%', val: pct(totals.fg4m || 0, totals.fg4m_miss || 0) }] : []),
+    ...(qpa  >= 1  ? [{ lbl: '4P%', val: pct(totals.fg4m || 0, totals.fg4m_miss || 0) }] : []),
     ...(fta  >= 5  ? [{ lbl: 'FT%', val: pct(totals.ftm, totals.ft_miss) }] : []),
   ].filter(s => s.val !== '0.0' && s.val !== '0%' && s.val !== '—').slice(0, 8) : [];
 
