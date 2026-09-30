@@ -58,7 +58,7 @@ function scoreCard(game, colorA, colorB) {
 // Only rendered when the viewer's own player_id has a stat row in this game
 // (gamePage computes myStat from currentPlayerId) — the PNG endpoint re-checks
 // the session server-side too, so this is a UI gate, not the real one.
-function shareStatsBanner(game, stat, unlockedTemplates = []) {
+function shareStatsBanner(game, stat) {
   const pts   = Number(stat.pts) || 0;
   const reb   = Number(stat.reb) || 0;
   const ast   = Number(stat.ast) || 0;
@@ -78,26 +78,33 @@ function shareStatsBanner(game, stat, unlockedTemplates = []) {
   if (defenseScore >= 4 && defenseScore > offenseScore) defaultFocus = 'defense';
   else if (offenseScore >= 6) defaultFocus = 'offense';
 
-  // Left/Center/Right are always offered. Bottom/Stacked/Premium are each
-  // released independently (template_<key>_public in site_settings, toggled
-  // on /admin/visibility) — unlockedTemplates is server.js's
-  // isStravagantTemplateUnlocked() already applied per-template for this
-  // viewer, so an admin session sees all three regardless of what's actually
-  // been released yet, without this file needing to know that rule itself.
+  // All six are public now — no per-template release gating (there used to
+  // be a template_<key>_public site_settings flag per template, toggled on
+  // /admin/visibility, with an admin-only bypass; removed in favor of
+  // shipping everything live). Keys ('left'/'bottom'/etc.) are unchanged —
+  // only the labels shown here are new — since they're load-bearing:
+  // server.js's route dispatch, the PNG cache key, and stat-card-action
+  // logging all match on the key, not the label.
+  //
+  // Premium respects Hide Zeros just like Lower Third/Box Score, but ignores
+  // Focus (it ranks all 6 count stats by value instead of picking 3 by
+  // category), the Gauges toggle, and alignment — same "controls stay
+  // visible but some have nothing to affect" pattern as Box Score already
+  // ignoring alignment. See generateGameStatPremiumPng's own comment for why
+  // it's a different visual language entirely from the other templates.
+  //
+  // Card/Scoreboard/Hero are scoped and mocked up but not built — their
+  // names are settled so whoever builds them doesn't have to re-litigate
+  // naming, but they don't have generator functions yet, so they're
+  // deliberately NOT in this list until they do.
   const TEMPLATE_OPTIONS = [
-    { key: 'left',   label: 'Left' },
-    { key: 'center', label: 'Center' },
-    { key: 'right',  label: 'Right' },
+    { key: 'left',    label: 'Marquee Left' },
+    { key: 'center',  label: 'Marquee Center' },
+    { key: 'right',   label: 'Marquee Right' },
+    { key: 'bottom',  label: 'Lower Third' },
+    { key: 'stacked', label: 'Box Score' },
+    { key: 'premium', label: 'Premium' },
   ];
-  if (unlockedTemplates.includes('bottom'))  TEMPLATE_OPTIONS.push({ key: 'bottom',  label: 'Bottom' });
-  if (unlockedTemplates.includes('stacked')) TEMPLATE_OPTIONS.push({ key: 'stacked', label: 'Stacked' });
-  // Premium respects Hide Zeros just like Bottom/Stacked, but ignores Focus
-  // (it ranks all 6 count stats by value instead of picking 3 by category),
-  // the Gauges toggle, and alignment — same "controls stay visible but some
-  // have nothing to affect" pattern as Stacked already ignoring alignment.
-  // See generateGameStatPremiumPng's own comment for why it's a different
-  // visual language entirely from the other templates.
-  if (unlockedTemplates.includes('premium')) TEMPLATE_OPTIONS.push({ key: 'premium', label: 'Premium' });
   const FOCUS_OPTIONS = [
     { key: 'all',     label: 'All-Around' },
     { key: 'offense', label: 'Offense' },
@@ -1973,7 +1980,7 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
   </div>`;
 }
 
-export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false, unlockedTemplates = [] }) {
+export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
@@ -1994,7 +2001,7 @@ export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterSc
     ${gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers, isPlayer, isAdmin })}
   </div>
   <div class="game-detail-right">
-    ${myStat ? shareStatsBanner(game, myStat, unlockedTemplates) : ''}
+    ${myStat ? shareStatsBanner(game, myStat) : ''}
     ${scoreCard(game, colorA, colorB)}
     ${potgCard(potgStat, game.potg_writeup)}
     ${topPerformers(stats, potgPlayerId)}

@@ -2573,23 +2573,6 @@ function resolveAccent(key) {
   return SHARE_ACCENT_PRESETS[key] || SHARE_ACCENT_PRESETS.amber;
 }
 
-// Left/Center/Right are always public. Every other Stravagant template
-// (Bottom/Stacked/Premium) is release-gated per-template via a
-// `template_<key>_public` site_settings flag (admin-toggleable on
-// /admin/visibility, off by default), UNLESS the viewer's own session is
-// admin-capable — an admin-flagged player sees and can use every template
-// regardless of what's been released yet, so the team can preview upcoming
-// ones before flipping them on for everyone. Checked both when deciding
-// whether to offer a template in the dropdown at all (views/game.js) and
-// again in the PNG route itself, so an option can't be unlocked by just
-// hand-editing the URL once it's known to exist.
-const STRAVAGANT_GATED_TEMPLATES = ['bottom', 'stacked', 'premium'];
-function isStravagantTemplateUnlocked(templateKey, req) {
-  if (!STRAVAGANT_GATED_TEMPLATES.includes(templateKey)) return true;
-  if (isAdminWithSection(req, 'games-stats')) return true;
-  return getSetting(`template_${templateKey}_public`, '0') === '1';
-}
-
 function shareStatValue(stat, key) {
   if (key === 'fg3m') return Number(stat.fg3m) || 0;
   if (key === 'fgpct') {
@@ -3637,7 +3620,7 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
 // "Premium" — a deliberately different theme from the "Default" family above
 // (Left/Center/Right/Bottom/Stacked all share one visual language; this one
 // doesn't). Broadcast-graphic composition: the whole content cluster (rotated
-// player name + accent line, stat rows, context line, handle, and the WKND
+// player name + accent line, stat rows, context pill, handle, and the WKND
 // watermark itself) lives on the LEFT and is anchored to the BOTTOM of the
 // canvas, built upward from the handle line rather than down from a fixed top
 // offset. The rotated name and the accent line share one column
@@ -3657,10 +3640,10 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
 // Stacked already ignoring alignment. Hide Zeros still drops any zero/no-
 // attempt entry same as everywhere else. Still a transparent overlay like
 // every other template (no baked-in photo) — a left-to-right dark gradient
-// scrim stands in for a photo's own contrast. Accent only touches the
-// watermark stroke and the line — never the (deliberately plain white)
-// numbers. Release-gated like Bottom/Stacked — see
-// isStravagantTemplateUnlocked.
+// scrim + a warm radial glow stand in for a photo's own contrast. The single
+// highest stat gets a dedicated "hero" treatment (bigger, accent-colored,
+// glowing) — everywhere else, accent only touches the watermark stroke, the
+// line, and the context pill, never the (deliberately plain white) numbers.
 async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) {
   const W = 1080, H = 1920;
   const accent = resolveAccent(opts.accent);
@@ -3684,10 +3667,13 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
   const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
-  const handleText = `@WKNDBASKETBALL · #${stat.number ?? ''}`;
+  const handleText = `@WKNDBASKETBALL`;
 
-  const displayName = escXml(formatName(stat.name || '').toUpperCase());
-  const nameFsz = displayName.length > 20 ? 28 : displayName.length > 14 ? 32 : 36;
+  // Jersey number + a separator lead the rotated name now ("#34 · GIANNIS
+  // ...") since the handle line no longer carries the number itself.
+  const numberPrefix = `#${stat.number ?? ''} · `;
+  const displayName = escXml((numberPrefix + formatName(stat.name || '')).toUpperCase());
+  const nameFsz = displayName.length > 24 ? 34 : displayName.length > 18 ? 40 : 46;
 
   // All 6 common count stats, ranked highest value to lowest — not Focus's
   // pick-3-by-category (see this function's own comment for why) — then the
@@ -3721,21 +3707,40 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   // count stats) scale up the same way Bottom/Stacked do, instead of leaving
   // the reclaimed space empty. Extra tiers below 5 exist because the max grew
   // from 6 to 9 (all 6 count stats now, not Focus's pick-3) — the old
-  // 6-and-up bucket's sizing was tuned for exactly 6 and would crowd 9.
-  const tier = STATS.length <= 3 ? { row: 260, num: 100, label: 22 }
-    : STATS.length <= 5 ? { row: 220, num: 88, label: 20 }
-    : STATS.length <= 7 ? { row: 180, num: 72, label: 17 }
-    : { row: 150, num: 60, label: 15 };
+  // 6-and-up bucket's sizing was tuned for exactly 6 and would crowd 9. Every
+  // tier here is the original sizing scaled up by the same ratio the 8-9 row
+  // bucket was bumped by during the redesign, so the relative jump between
+  // tiers stays consistent.
+  const tier = STATS.length <= 3 ? { row: 274, num: 113, label: 25 }
+    : STATS.length <= 5 ? { row: 232, num: 100, label: 23 }
+    : STATS.length <= 7 ? { row: 190, num: 82, label: 19 }
+    : { row: 158, num: 68, label: 17 };
   const rowH = tier.row, numberFsz = tier.num, labelFsz = tier.label;
+  const heroNumberFsz = Math.round(numberFsz * 1.55);
 
   const bottomPad = 90;
   const handleY = H - bottomPad;
   const contextY = handleY - 40;
-  const lastLabelY = contextY - 70;
-  const startY = lastLabelY - (STATS.length - 1) * rowH - labelFsz - 20;
+  const lastNumY = contextY - 100;
 
-  const rows = STATS.map((s, i) => {
-    const numY = startY + i * rowH;
+  // Row Y-positions are built bottom-up across the REGULAR rows (everything
+  // but the hero, STATS[0]) first, then the hero is placed above them using
+  // the exact same label-to-next-number gap formula as every other
+  // consecutive pair of rows — so the hero (which uses a much bigger number
+  // but the same label size) doesn't end up with a mismatched, tighter gap
+  // to the row below it.
+  const regularStats = STATS.slice(1);
+  const regularNumYs = regularStats.map((_, kFromBottom) => lastNumY - kFromBottom * rowH).reverse();
+  const interRowGap = rowH - labelFsz - 20;
+  const heroLabelY = (regularNumYs[0] ?? lastNumY) - interRowGap;
+  const heroNumY = heroLabelY - labelFsz - 20;
+
+  const heroDisplay = STATS.length ? (STATS[0].isPct ? (STATS[0].value === null ? '—' : STATS[0].value) : STATS[0].value) : '';
+  const heroRow = STATS.length ? `<text x="${colX}" y="${heroNumY}" font-family="${valueFont}" font-size="${heroNumberFsz}" font-weight="900" fill="${accent.bg}" stroke="#000" stroke-width="4" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#glow)">${heroDisplay}</text>
+    <text x="${colX}" y="${heroLabelY}" font-family="${labelFont}" font-size="${labelFsz}" font-weight="700" letter-spacing="3" fill="#c3cbd8" filter="url(#txt)">${escXml(STATS[0].label)}</text>` : '';
+
+  const rows = regularStats.map((s, i) => {
+    const numY = regularNumYs[i];
     const labelY = numY + labelFsz + 20;
     const display = s.isPct ? (s.value === null ? '—' : s.value) : s.value;
     return `<text x="${colX}" y="${numY}" font-family="${valueFont}" font-size="${numberFsz}" font-weight="900" fill="#ffffff" fill-opacity="${s.isPct && s.value === null ? '0.5' : '1'}" stroke="#000" stroke-width="4" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${display}</text>
@@ -3749,16 +3754,22 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
 
   // Accent line covers the remaining space above the name up to the stats —
   // "PLAYER NAME ------" continuing on until it reaches the same level as
-  // the numbers, not just matching the name's own short height. A gap keeps
-  // it from touching the name, and it's centered on the name's actual glyph
-  // strokes rather than the text's baseline pivot: for rotated text the
-  // glyphs render on the ascender side of that pivot (i.e. offset to one
+  // the hero number, not just matching the name's own short height. A gap
+  // keeps it from touching the name, and it's centered on the name's actual
+  // glyph strokes rather than the text's baseline pivot: for rotated text
+  // the glyphs render on the ascender side of that pivot (i.e. offset to one
   // side once rotated), so the visual center sits half a cap-height away
-  // from it, not at the pivot itself.
-  const statBlockTop = startY - numberFsz * 0.78;
-  const nameEstWidth = displayName.length * nameFsz * 0.58 + 7 * Math.max(0, displayName.length - 1);
+  // from it, not at the pivot itself. nameEstWidth (an estimate — the SVG
+  // renderer doesn't give us the real measured glyph run length up front)
+  // deliberately overestimates a plain char-count*fontsize product, because
+  // an estimate that runs too SHORT lets the line's computed end point land
+  // inside the name's real occupied space even when the gap constant looks
+  // fine on paper — verified empirically against actual rendered glyph
+  // extent, not just eyeballed.
+  const statBlockTop = heroNumY - heroNumberFsz * 0.78;
+  const nameEstWidth = displayName.length * nameFsz * 0.64 + 7 * Math.max(0, displayName.length - 1);
   const nameTop = nameY - nameEstWidth;
-  const lineGap = 44;
+  const lineGap = 30;
   const lineX = nameX - (nameFsz * 0.72) / 2, lineTop = statBlockTop, lineBottom = nameTop - lineGap;
 
   // WKND watermark: rotated, big, and pinned flush to the canvas's own
@@ -3777,30 +3788,56 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const wkndX = wkndCapHeight + 4;
   const wkndY = H - 4;
 
+  // Context pill: text is centered both axes (text-anchor + dominant-baseline)
+  // rather than left-aligned against a baseline calculation, so padding stays
+  // visually equal on both sides and the text stays vertically centered
+  // regardless of the width estimate's accuracy or this particular font's
+  // metrics.
+  const pillPadX = 12, pillH = 44;
+  const pillW = Math.round(contextText.length * 11.2 + pillPadX * 2);
+  const pillX = colX - pillPadX;
+  const pillY = contextY - pillH + 12;
+  const pillCx = pillX + pillW / 2;
+  const pillCy = pillY + pillH / 2;
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>
     <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
       <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.55"/>
     </filter>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="0" stdDeviation="14" flood-color="${accent.bg}" flood-opacity="0.65"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
     <linearGradient id="scrim" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#020817" stop-opacity="0.90"/>
-      <stop offset="45%" stop-color="#020817" stop-opacity="0.66"/>
+      <stop offset="0%" stop-color="#020817" stop-opacity="0.92"/>
+      <stop offset="40%" stop-color="#020817" stop-opacity="0.72"/>
+      <stop offset="75%" stop-color="#020817" stop-opacity="0.25"/>
       <stop offset="100%" stop-color="#020817" stop-opacity="0"/>
     </linearGradient>
+    <radialGradient id="glowbg" cx="15%" cy="78%" r="55%">
+      <stop offset="0%" stop-color="${accent.bg}" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="${accent.bg}" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
-  <rect x="0" y="0" width="400" height="${H}" fill="url(#scrim)"/>
+  <rect x="0" y="0" width="480" height="${H}" fill="url(#scrim)"/>
+  <rect x="0" y="0" width="480" height="${H}" fill="url(#glowbg)"/>
 
-  <text x="${wkndX}" y="${wkndY}" transform="rotate(-90 ${wkndX} ${wkndY})" font-family="${wkndFont}" font-size="${wkndFsz}" font-weight="700" textLength="${wkndSpan}" lengthAdjust="spacing" fill="none" stroke="${accent.bg}" stroke-width="2.5" stroke-opacity="0.18">WKND</text>
+  <text x="${wkndX}" y="${wkndY}" transform="rotate(-90 ${wkndX} ${wkndY})" font-family="${wkndFont}" font-size="${wkndFsz}" font-weight="700" textLength="${wkndSpan}" lengthAdjust="spacing" fill="none" stroke="${accent.bg}" stroke-width="3" stroke-opacity="0.26">WKND</text>
 
   <line x1="${lineX}" y1="${lineTop}" x2="${lineX}" y2="${lineBottom}" stroke="${accent.bg}" stroke-width="2" opacity="0.55"/>
 
   <text x="${nameX}" y="${nameY}" transform="rotate(-90 ${nameX} ${nameY})" font-family="${font}" font-size="${nameFsz}" font-weight="800" letter-spacing="7" fill="#ffffff" filter="url(#txt)">${displayName}</text>
 
+  ${heroRow}
+
   ${rows}
 
-  <text x="${colX}" y="${contextY}" font-family="${font}" font-size="19" font-weight="700" fill="#c3cbd8" filter="url(#txt)">${contextText}</text>
-  <text x="${colX}" y="${handleY}" font-family="${font}" font-size="16" font-weight="700" letter-spacing="1.5" fill="#8b98ab">${escXml(handleText)}</text>
+  <rect x="${pillX}" y="${pillY}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="${accent.bg}"/>
+  <text x="${pillCx}" y="${pillCy}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="19" font-weight="700" fill="${accent.text}">${contextText}</text>
+
+  <text x="${colX}" y="${handleY}" font-family="${font}" font-size="18" font-weight="700" letter-spacing="1.5" fill="#c3cbd8">${escXml(handleText)}</text>
 </svg>`;
 
   return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
@@ -5497,9 +5534,6 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
       sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
-      templateBottomPublic: getSetting('template_bottom_public', '0') === '1',
-      templateStackedPublic: getSetting('template_stacked_public', '0') === '1',
-      templatePremiumPublic: getSetting('template_premium_public', '0') === '1',
     }),
   }));
 });
@@ -5507,7 +5541,6 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'home_show_roster_moves',
-    'template_bottom_public', 'template_stacked_public', 'template_premium_public',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -6126,7 +6159,6 @@ app.get('/games/:ref', (req, res) => {
       game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap,
       commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
       currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
-      unlockedTemplates: STRAVAGANT_GATED_TEMPLATES.filter(t => isStravagantTemplateUnlocked(t, req)),
     })
   }));
 });
@@ -6147,12 +6179,7 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   // (generateGameStatNewsPng/generateGameStatStackedPng) rather than variants
   // of the grid, so they're dispatched separately below despite living in the
   // same "Template" control.
-  const rawAlign = ['left', 'center', 'right', 'bottom', 'stacked'].includes(req.query.align) ? req.query.align : 'center';
-  // Re-checked here, not just when building the Template dropdown, so a
-  // gated template can't be unlocked by hand-editing the URL once its
-  // existence is known — falls back to Center exactly like an invalid/
-  // missing align value already does above.
-  const align   = isStravagantTemplateUnlocked(rawAlign, req) ? rawAlign : 'center';
+  const align   = ['left', 'center', 'right', 'bottom', 'stacked'].includes(req.query.align) ? req.query.align : 'center';
   const corner  = ['tl', 'tr', 'bl', 'br'].includes(req.query.corner) ? req.query.corner : 'tl';
   const heroKey = SHARE_STAT_DEFS.some(d => d.key === req.query.stat) ? req.query.stat : 'pts';
   const focus   = ['all', 'offense', 'defense'].includes(req.query.focus) ? req.query.focus : 'all';
@@ -6165,11 +6192,11 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   const accent  = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.query.accent) ? req.query.accent : 'amber';
   try {
     let png;
-    if (req.query.align === 'premium' && isStravagantTemplateUnlocked('premium', req)) {
+    if (req.query.align === 'premium') {
       // Own branch ahead of the `layout` dispatch below — Premium isn't part
       // of the "Default" family's layout/align matrix at all (it's never in
-      // the `rawAlign` whitelist above), so it needs its own gate check
-      // rather than falling out of the align/rawAlign fallback logic.
+      // the `align` whitelist above), so it needs its own check rather than
+      // falling out of that fallback logic.
       png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros });
     } else if (layout === 'gauges' && align === 'bottom') {
       png = await generateGameStatNewsPng(game, stat, focus, { accent, gauges, hideZeros });
