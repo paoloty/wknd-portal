@@ -149,7 +149,7 @@ import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summariz
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
-import { computeSeasonBadges, statCatCount } from './lib/badges.js';
+import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
@@ -3158,7 +3158,11 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
     : '';
 
   const displayName = escXml(formatName(stat.name || '').toUpperCase());
-  const nameFsz = displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
+  // Extra floor tiers below the original 40px — same reasoning as the
+  // Hero/Card/Scoreboard fix: untested until a name actually ran this
+  // long, at which point 40px alone ran off the canvas edge entirely.
+  const nameFsz = displayName.length > 34 ? 30 : displayName.length > 28 ? 34
+    : displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
   const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
@@ -3361,7 +3365,10 @@ async function generateGameStatNewsPng(game, stat, focus = 'all', opts = {}) {
   // Left-aligned single line with no wrap, so long names need to shrink more
   // aggressively than the centered grid's name does — an extra floor tier
   // beyond the grid's own, since this headline has no wrap to fall back on.
-  const nameFsz = displayName.length > 30 ? 36 : displayName.length > 24 ? 44 : displayName.length > 18 ? 58 : displayName.length > 13 ? 70 : 84;
+  // Even the 36px floor wasn't a true floor — an extreme (if currently
+  // hypothetical, no real roster name is this long) name at 36px still ran
+  // off the right edge, so there's now one tier below that too.
+  const nameFsz = displayName.length > 35 ? 28 : displayName.length > 30 ? 36 : displayName.length > 24 ? 44 : displayName.length > 18 ? 58 : displayName.length > 13 ? 70 : 84;
   const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
   const contextFsz = 17;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
@@ -3492,7 +3499,11 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
     : '';
 
   const displayName = escXml(formatName(stat.name || '').toUpperCase());
-  const nameFsz = displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
+  // Extra floor tiers below the original 40px — same reasoning as the
+  // Hero/Card/Scoreboard fix: untested until a name actually ran this
+  // long, at which point 40px alone ran off the canvas edge entirely.
+  const nameFsz = displayName.length > 34 ? 30 : displayName.length > 28 ? 34
+    : displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
   const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
@@ -3880,6 +3891,385 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
 </svg>`;
 
   return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Hero" — the fifth "Default"-family template (same COVER_SVG_FONT-only
+// typography and bottom-anchored plate convention as Bottom/Stacked, not
+// Premium's own broadcast theme): deliberately minimalist, one auto-picked
+// stat blown up as large as anything on any template, with generous empty
+// space above it instead of a multi-stat deck. Picks the single highest-
+// value count stat (same 6-stat pool as Premium, fgpct excluded — see that
+// function's own comment for why) rather than anything Focus-driven, since
+// there's only room for one number and "whatever this player did best"
+// reads better than a fixed category pick that might be their worst stat.
+async function generateGameStatHeroPng(game, stat, opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const font = COVER_SVG_FONT;
+  const SAFE_X0 = 90;
+
+  const isTeamA = stat.team_id === game.team_a_id;
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myScore = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const handleText = '@WKNDBASKETBALL';
+
+  const hero = SHARE_STAT_DEFS
+    .filter(def => def.key !== 'fgpct')
+    .map(def => ({ ...def, value: shareStatValue(stat, def.key) }))
+    .sort((a, b) => b.value - a.value)[0];
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  // Extra floor tiers below the original 40px — same "no wrap to fall back
+  // on" reasoning as generateGameStatNewsPng's own 5-tier ladder: a name past
+  // ~30 characters at 40px still ran off the right edge entirely untested
+  // until it was actually tried.
+  const nameFsz = displayName.length > 30 ? 30 : displayName.length > 24 ? 34
+    : displayName.length > 20 ? 40 : displayName.length > 14 ? 48 : 56;
+
+  const heroNumberFsz = 280, heroLabelFsz = 28;
+  const barW = 220, barH = 8;
+
+  // Bottom-up: the handle anchors first, everything else stacks above it —
+  // same pattern as every other template in this file, so reclaiming/losing
+  // vertical space (a longer name, a wider hero number) never leaves dead
+  // space or overflow at a fixed top offset.
+  const bottomPad = 90;
+  const handleY = H - bottomPad;
+  const contextY = handleY - 40;
+  const nameY = contextY - 68;
+  const barY = nameY + 24;
+  const heroLabelY = nameY - 160;
+  const heroNumberY = heroLabelY - heroLabelFsz - 20;
+  const plateTop = heroNumberY - heroNumberFsz * 0.85 - 40;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#020817" stop-opacity="0"/>
+      <stop offset="55%" stop-color="#020817" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#020817" stop-opacity="0.96"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="${plateTop}" width="${W}" height="${H - plateTop}" fill="url(#plate)"/>
+
+  <text x="${SAFE_X0}" y="${heroNumberY}" font-family="${font}" font-size="${heroNumberFsz}" font-weight="900" fill="${accent.bg}" filter="url(#txt)">${hero.value}</text>
+  <text x="${SAFE_X0}" y="${heroLabelY}" font-family="${font}" font-size="${heroLabelFsz}" font-weight="700" letter-spacing="8" fill="#c3cbd8" filter="url(#txt)">${escXml(hero.long)}</text>
+
+  <text x="${SAFE_X0}" y="${nameY}" font-family="${font}" font-size="${nameFsz}" font-weight="900" fill="#ffffff" filter="url(#txt)">${displayName}</text>
+  <rect x="${SAFE_X0}" y="${barY}" width="${barW}" height="${barH}" fill="${accent.bg}"/>
+
+  <text x="${SAFE_X0}" y="${contextY}" font-family="${font}" font-size="19" font-weight="700" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
+  <circle cx="${SAFE_X0 + 6}" cy="${handleY - 6}" r="6" fill="${accent.bg}"/>
+  <text x="${SAFE_X0 + 22}" y="${handleY}" font-family="${font}" font-size="18" font-weight="700" letter-spacing="1" fill="#8b98ab">${handleText}</text>
+</svg>`;
+
+  return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Card" — a portrait trading-card frame with a genuine transparent cutout
+// (an SVG mask, not just a decorative outline drawn over an opaque fill — a
+// dashed-border-only version of this shipped once already and it wasn't
+// actually see-through) for the player's own photo, framed by an opaque
+// header (name/number) and footer (curated stats/context/handle). The photo
+// window's height is DERIVED from the header/footer heights, not a fixed
+// number, so it always exactly fills whatever's left between them regardless
+// of card size. The MVP-style corner ribbon is clipped to the card's own
+// rounded silhouette (an explicit clipPath, not an accidental rounded-corner
+// overlap that only ever worked by coincidence) so it can't spill past the
+// card's own edge. opts.hideRibbon drops it entirely — passed by the route
+// when the Badge overlay is also being composited on top, since Badge's own
+// medal sits in that same corner and (being much bigger) ends up hiding the
+// ribbon almost completely anyway; the two also say overlapping things (both
+// are "look at this standout stat"), so suppressing the redundant one is the
+// right call, not just a collision workaround.
+async function generateGameStatTradingCardPng(game, stat, opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const font = COVER_SVG_FONT;
+
+  const isTeamA = stat.team_id === game.team_a_id;
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myScore = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const handleText = '@WKNDBASKETBALL';
+
+  const ranked = SHARE_STAT_DEFS
+    .filter(def => def.key !== 'fgpct')
+    .map(def => ({ ...def, value: shareStatValue(stat, def.key) }))
+    .sort((a, b) => b.value - a.value);
+  const hero = ranked[0];
+  // Curated: the top 4 by value — a trading card's back-of-card stat line is
+  // a handful of headline numbers, not the full 6-stat sheet Premium shows.
+  const curated = ranked.slice(0, 4);
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  // Same extra-floor-tier fix as Hero/Scoreboard — a name past ~30 characters
+  // at 40px ran straight off the card's right edge.
+  const nameFsz = displayName.length > 30 ? 28 : displayName.length > 24 ? 32
+    : displayName.length > 18 ? 40 : displayName.length > 13 ? 48 : 56;
+
+  const cardMargin = 50;
+  const cardX = cardMargin, cardY = cardMargin, cardW = W - cardMargin * 2, cardH = H - cardMargin * 2;
+  const cardR = 32;
+  const cardBottom = cardY + cardH;
+
+  const headerH = 210;
+  const footerH = 320;
+  const headerBottom = cardY + headerH;
+  const footerTop = cardBottom - footerH;
+  const windowY = headerBottom, windowH = footerTop - headerBottom;
+
+  const colCount = curated.length;
+  const colW = cardW / colCount;
+  const statNumFsz = 46, statLabelFsz = 16;
+  const statY = footerTop + 90;
+  const statLabelY = statY + statLabelFsz + 16;
+
+  const contextY = footerTop + 210;
+  const handleY = cardBottom - 34;
+
+  const ribbonText = `${hero.value} ${escXml(hero.short)}`;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <clipPath id="cardClip">
+      <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="${cardR}"/>
+    </clipPath>
+    <mask id="windowMask">
+      <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="${cardR}" fill="#fff"/>
+      <rect x="${cardX}" y="${windowY}" width="${cardW}" height="${windowH}" fill="#000"/>
+    </mask>
+  </defs>
+
+  <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="${cardR}" fill="#0d1424" fill-opacity="0.94" mask="url(#windowMask)"/>
+  <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="${cardR}" fill="none" stroke="${accent.bg}" stroke-width="3" stroke-opacity="0.7"/>
+
+  <line x1="${cardX}" y1="${windowY}" x2="${cardX + cardW}" y2="${windowY}" stroke="${accent.bg}" stroke-width="2" opacity="0.5"/>
+  <line x1="${cardX}" y1="${footerTop}" x2="${cardX + cardW}" y2="${footerTop}" stroke="${accent.bg}" stroke-width="2" opacity="0.5"/>
+
+  ${opts.hideRibbon ? '' : `<g clip-path="url(#cardClip)">
+    <g transform="translate(${cardX + cardW - 40}, ${cardY + 40}) rotate(45)">
+      <rect x="-140" y="-24" width="280" height="48" fill="${accent.bg}"/>
+      <text x="0" y="7" text-anchor="middle" font-family="${font}" font-size="22" font-weight="900" fill="${accent.text}">${ribbonText}</text>
+    </g>
+  </g>`}
+
+  <text x="${cardX + 36}" y="${cardY + 88}" font-family="${font}" font-size="${nameFsz}" font-weight="900" fill="#ffffff" filter="url(#txt)">${displayName}</text>
+  <text x="${cardX + 36}" y="${cardY + 88 + nameFsz * 0.62}" font-family="${font}" font-size="22" font-weight="700" letter-spacing="2" fill="${accent.bg}">#${stat.number ?? ''}</text>
+
+  ${curated.map((s, i) => {
+    const cx = cardX + colW * i + colW / 2;
+    return `<text x="${cx}" y="${statY}" text-anchor="middle" font-family="${font}" font-size="${statNumFsz}" font-weight="900" fill="#ffffff" filter="url(#txt)">${s.value}</text>
+    <text x="${cx}" y="${statLabelY}" text-anchor="middle" font-family="${font}" font-size="${statLabelFsz}" font-weight="700" letter-spacing="2" fill="#c3cbd8">${escXml(s.short)}</text>`;
+  }).join('\n')}
+
+  <text x="${cardX + cardW / 2}" y="${contextY}" text-anchor="middle" font-family="${font}" font-size="18" font-weight="700" fill="#c3cbd8">${contextText}</text>
+  <text x="${cardX + cardW / 2}" y="${handleY}" text-anchor="middle" font-family="${font}" font-size="16" font-weight="700" letter-spacing="1.5" fill="#8b98ab">${handleText}</text>
+</svg>`;
+
+  return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Scoreboard" — an arena-jumbotron-style tinted glass panel with the
+// PLAYER'S OWN stats as the hero content (not the game score — the name
+// deliberately evokes the venue graphic, not a literal box score readout).
+// The panel and its cells use opacity, not a solid fill (a first pass here
+// was fully opaque with zero photo transparency), so a photo shows through
+// both the margins and — tinted — behind the "glass" itself.
+async function generateGameStatScoreboardPng(game, stat, opts = {}) {
+  const W = 1080, H = 1920;
+  const accent = resolveAccent(opts.accent);
+  const font = COVER_SVG_FONT;
+
+  const isTeamA = stat.team_id === game.team_a_id;
+  const oppTeamName = String(isTeamA ? game.team_b_name : game.team_a_name || '').toUpperCase();
+  const myScore = Number(isTeamA ? game.team_a_score : game.team_b_score);
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score);
+  const won = myScore > oppScore;
+  const dateShort = game.date
+    ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const handleText = '@WKNDBASKETBALL';
+
+  const ranked = SHARE_STAT_DEFS
+    .filter(def => def.key !== 'fgpct')
+    .map(def => ({ ...def, value: shareStatValue(stat, def.key) }))
+    .sort((a, b) => b.value - a.value);
+  const hero = ranked[0];
+  const secondary = ranked.slice(1, 4);
+
+  const displayName = escXml(formatName(stat.name || '').toUpperCase());
+  // Same extra-floor-tier fix as Hero/Card — a 39-character name at 38px
+  // rendered with virtually zero margin to the canvas edge (center-anchored,
+  // so a slightly longer one would've overflowed both sides at once).
+  const nameFsz = displayName.length > 30 ? 26 : displayName.length > 24 ? 30
+    : displayName.length > 18 ? 38 : displayName.length > 13 ? 46 : 54;
+
+  const panelX = 60, panelW = W - 120;
+  const heroCellH = 420, secondaryRowH = 260;
+  const panelH = heroCellH + secondaryRowH;
+
+  const bottomPad = 90;
+  const handleY = H - bottomPad;
+  const contextY = handleY - 40;
+  const panelBottom = contextY - 40;
+  const panelTop = panelBottom - panelH;
+  const heroCellBottom = panelTop + heroCellH;
+
+  const headerBottom = panelTop - 40;
+  const nameY = headerBottom;
+  // Real gap from the name's own visual top (baseline minus its cap-height),
+  // not a flat multiple of nameFsz that undershot and let "#<number>" touch
+  // the name above it.
+  const nameVisualTop = nameY - nameFsz * 0.72;
+  const numberGap = 18;
+  const numberFsz = 26;
+  const numberY = nameVisualTop - numberGap;
+
+  const heroNumFsz = 150, heroLabelFsz = 24;
+  const heroNumY = panelTop + heroCellH / 2 + heroNumFsz * 0.32;
+  const heroLabelY = heroNumY + heroLabelFsz + 22;
+
+  const colW = panelW / secondary.length;
+  const secNumFsz = 58, secLabelFsz = 18;
+  const secNumY = heroCellBottom + secondaryRowH / 2 - 6;
+  const secLabelY = secNumY + secLabelFsz + 18;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect x="${panelX}" y="${panelTop}" width="${panelW}" height="${panelH}" rx="16" fill="#020817" opacity="0.72"/>
+  <rect x="${panelX}" y="${panelTop}" width="${panelW}" height="${heroCellH}" rx="16" fill="${accent.bg}" opacity="0.16"/>
+
+  <line x1="${panelX}" y1="${heroCellBottom}" x2="${panelX + panelW}" y2="${heroCellBottom}" stroke="${accent.bg}" stroke-width="2" opacity="0.6"/>
+  ${secondary.slice(1).map((_, i) => `<line x1="${panelX + colW * (i + 1)}" y1="${heroCellBottom}" x2="${panelX + colW * (i + 1)}" y2="${panelBottom}" stroke="${accent.bg}" stroke-width="2" opacity="0.4"/>`).join('\n')}
+  <rect x="${panelX}" y="${panelTop}" width="${panelW}" height="${panelH}" rx="16" fill="none" stroke="${accent.bg}" stroke-width="3" opacity="0.7"/>
+
+  <text x="${W / 2}" y="${numberY}" text-anchor="middle" font-family="${font}" font-size="${numberFsz}" font-weight="800" letter-spacing="2" fill="${accent.bg}" filter="url(#txt)">#${stat.number ?? ''}</text>
+  <text x="${W / 2}" y="${nameY}" text-anchor="middle" font-family="${font}" font-size="${nameFsz}" font-weight="900" fill="#ffffff" filter="url(#txt)">${displayName}</text>
+
+  <text x="${W / 2}" y="${heroNumY}" text-anchor="middle" font-family="${font}" font-size="${heroNumFsz}" font-weight="900" fill="#ffffff" filter="url(#txt)">${hero.value}</text>
+  <text x="${W / 2}" y="${heroLabelY}" text-anchor="middle" font-family="${font}" font-size="${heroLabelFsz}" font-weight="700" letter-spacing="6" fill="${accent.bg}" filter="url(#txt)">${escXml(hero.short)}</text>
+
+  ${secondary.map((s, i) => {
+    const cx = panelX + colW * i + colW / 2;
+    return `<text x="${cx}" y="${secNumY}" text-anchor="middle" font-family="${font}" font-size="${secNumFsz}" font-weight="900" fill="#ffffff" filter="url(#txt)">${s.value}</text>
+    <text x="${cx}" y="${secLabelY}" text-anchor="middle" font-family="${font}" font-size="${secLabelFsz}" font-weight="700" letter-spacing="2" fill="#c3cbd8">${escXml(s.short)}</text>`;
+  }).join('\n')}
+
+  <text x="${W / 2}" y="${contextY}" text-anchor="middle" font-family="${font}" font-size="19" font-weight="700" fill="#e2e8f0" filter="url(#txt)">${contextText}</text>
+  <text x="${W / 2}" y="${handleY}" text-anchor="middle" font-family="${font}" font-size="16" font-weight="700" letter-spacing="1.5" fill="#8b98ab">${handleText}</text>
+</svg>`;
+
+  return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// "Badge" — an ADD-ON toggle composited on top of whichever base template
+// was actually chosen (see the /api/games/:id/my-stat-card.png route below),
+// not a standalone template of its own. Reuses the app's own EXISTING
+// achievement logic (statCatCount/qualifyingCats from lib/badges.js,
+// achievementRibbonText + getPlayerCareerHighs already used by the POTG
+// card) rather than re-deriving double/triple-double or career-high
+// detection from scratch — same source of truth, so this can never disagree
+// with what the rest of the site already calls a double-double for this
+// player. Renders nothing (returns the base PNG untouched) when nothing
+// actually qualifies — same "omit the row" convention the existing
+// achievement ribbon already uses elsewhere, rather than inventing a
+// consolation "your top stat" callout that would make the toggle look like
+// it did something when the player didn't actually earn a badge this game.
+async function composeStravagantBadgeOverlay(basePng, stat, accent) {
+  const cats = statCatCount(stat);
+  const careerHighs = getPlayerCareerHighs(stat.player_id);
+  const qualifier = achievementRibbonText(stat, careerHighs);
+  if (!qualifier) return basePng;
+
+  const font = COVER_SVG_FONT;
+  const W = 1080, H = 1920;
+
+  // Double/triple-double: show the actual qualifying categories (whichever
+  // ones really hit double digits — could be STL+BLK, not just PTS+REB), not
+  // a fixed pair. Career High: show the specific stat(s) that set it, at
+  // their actual (possibly single-digit) value.
+  let medalStats;
+  if (cats >= 2) {
+    medalStats = qualifyingCats(stat).slice(0, 3).map(([key, label]) => ({ short: label, value: Number(stat[key]) || 0 }));
+  } else {
+    const hiKeys = SHARE_STAT_CORE_KEYS.filter(k => {
+      const v = Number(stat[k]) || 0;
+      return v > 0 && v >= (Number(careerHighs?.[k]) || 0);
+    });
+    medalStats = hiKeys.length
+      ? hiKeys.map(k => { const def = SHARE_STAT_DEFS.find(d => d.key === k); return { short: def.short, value: Number(stat[k]) || 0 }; })
+      : [{ short: 'PTS', value: Number(stat.pts) || 0 }]; // qualifier is non-empty here, so this fallback never actually triggers
+  }
+
+  const cx = 810, cy = 300, r = 150;
+  const ribbonY = cy + 46, ribbonH = 58;
+
+  const statCount = medalStats.length;
+  const statFsz = statCount >= 3 ? 40 : 54;
+  const labelFsz = statCount >= 3 ? 13 : 15;
+  const statY = cy - 30;
+  const labelY = statY + labelFsz + 12;
+  const spacing = statCount >= 3 ? 76 : 92;
+  const startX = cx - (spacing * (statCount - 1)) / 2;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <filter id="txt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <radialGradient id="medal" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffd27a"/>
+      <stop offset="55%" stop-color="${accent.bg}"/>
+      <stop offset="100%" stop-color="#c96a12"/>
+    </radialGradient>
+  </defs>
+
+  <circle cx="${cx}" cy="${cy}" r="${r + 10}" fill="#0d1424" opacity="0.5"/>
+  <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#medal)" stroke="#c96a12" stroke-width="4"/>
+  <circle cx="${cx}" cy="${cy}" r="${r - 18}" fill="none" stroke="#fff" stroke-width="2" opacity="0.35"/>
+
+  ${medalStats.map((s, i) => {
+    const x = startX + spacing * i;
+    return `<text x="${x}" y="${statY}" text-anchor="middle" font-family="${font}" font-size="${statFsz}" font-weight="900" fill="#1a1206">${s.value}</text>
+    <text x="${x}" y="${labelY}" text-anchor="middle" font-family="${font}" font-size="${labelFsz}" font-weight="800" letter-spacing="1" fill="#4a2f0a">${escXml(s.short)}</text>`;
+  }).join('\n')}
+
+  <!-- Straight banner, not curved text on a <textPath> — that never actually
+       rendered in this renderer the one time it was tried. -->
+  <g>
+    <polygon points="${cx - 175},${ribbonY} ${cx - 155},${ribbonY + ribbonH / 2} ${cx - 175},${ribbonY + ribbonH} ${cx - r + 6},${ribbonY + ribbonH} ${cx - r + 6},${ribbonY}" fill="#c96a12"/>
+    <polygon points="${cx + 175},${ribbonY} ${cx + 155},${ribbonY + ribbonH / 2} ${cx + 175},${ribbonY + ribbonH} ${cx + r - 6},${ribbonY + ribbonH} ${cx + r - 6},${ribbonY}" fill="#c96a12"/>
+    <rect x="${cx - r + 6}" y="${ribbonY}" width="${(r - 6) * 2}" height="${ribbonH}" fill="${accent.bg}"/>
+    <text x="${cx}" y="${ribbonY + ribbonH / 2 + 7}" text-anchor="middle" font-family="${font}" font-size="20" font-weight="900" letter-spacing="1" fill="${accent.text}" filter="url(#txt)">${escXml(qualifier)}</text>
+  </g>
+</svg>`;
+
+  const overlay = await sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png().toBuffer();
+  return sharp(basePng).composite([{ input: overlay, top: 0, left: 0 }]).png({ compressionLevel: 9 }).toBuffer();
 }
 
 async function generateGameCoverPng(game, potgStat, bgDataUrl) {
@@ -6237,6 +6627,20 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
       // the `align` whitelist above), so it needs its own check rather than
       // falling out of that fallback logic.
       png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros });
+    } else if (req.query.align === 'hero') {
+      // Same reasoning as Premium's own branch above — Hero isn't part of
+      // the align whitelist (it has no left/center/right variants), so it
+      // needs its own check ahead of that fallback logic too.
+      png = await generateGameStatHeroPng(game, stat, { accent });
+    } else if (req.query.align === 'card') {
+      // hideRibbon: Badge's own medal (composited below, after this big
+      // if/else) lands in the same corner as Card's built-in ribbon and
+      // would otherwise bury it — see generateGameStatTradingCardPng's own
+      // comment for why dropping the now-redundant one is correct, not a
+      // collision hack.
+      png = await generateGameStatTradingCardPng(game, stat, { accent, hideRibbon: badge });
+    } else if (req.query.align === 'scoreboard') {
+      png = await generateGameStatScoreboardPng(game, stat, { accent });
     } else if (layout === 'gauges' && align === 'bottom') {
       png = await generateGameStatNewsPng(game, stat, focus, { accent, gauges, hideZeros });
     } else if (layout === 'gauges' && align === 'stacked') {
@@ -6258,6 +6662,16 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
         opts.comparisonAvg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
       }
       png = await generateGameStatCardPng(game, stat, align, heroKey, opts);
+    }
+    // Badge is an add-on toggle applied to whichever template was just
+    // generated above, not a template of its own — composited as a
+    // post-processing step so every branch above gets it for free instead of
+    // each one needing its own copy of this logic. Skipped for the legacy
+    // default/comparison layout, which already renders its OWN achievement
+    // ribbon inline (via opts.badge, a few lines up) — running both here
+    // would draw it twice.
+    if (badge && layout !== 'default' && layout !== 'comparison') {
+      png = await composeStravagantBadgeOverlay(png, stat, resolveAccent(accent));
     }
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'private, max-age=60');

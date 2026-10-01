@@ -93,17 +93,20 @@ function shareStatsBanner(game, stat) {
   // ignoring alignment. See generateGameStatPremiumPng's own comment for why
   // it's a different visual language entirely from the other templates.
   //
-  // Card/Scoreboard/Hero are scoped and mocked up but not built — their
-  // names are settled so whoever builds them doesn't have to re-litigate
-  // naming, but they don't have generator functions yet, so they're
-  // deliberately NOT in this list until they do.
+  // Hero/Card/Scoreboard each ignore Focus/Gauges/Hide Zeros the same way
+  // Premium does (see generateGameStatPremiumPng's own comment) — each picks
+  // its own fixed stat set (Hero: single highest count stat; Card/Scoreboard:
+  // top 4/3 by value) rather than anything Focus-driven.
   const TEMPLATE_OPTIONS = [
-    { key: 'left',    label: 'Marquee Left' },
-    { key: 'center',  label: 'Marquee Center' },
-    { key: 'right',   label: 'Marquee Right' },
-    { key: 'bottom',  label: 'Lower Third' },
-    { key: 'stacked', label: 'Box Score' },
-    { key: 'premium', label: 'Premium' },
+    { key: 'left',       label: 'Marquee Left' },
+    { key: 'center',     label: 'Marquee Center' },
+    { key: 'right',      label: 'Marquee Right' },
+    { key: 'bottom',     label: 'Lower Third' },
+    { key: 'stacked',    label: 'Box Score' },
+    { key: 'premium',    label: 'Premium' },
+    { key: 'hero',       label: 'Hero' },
+    { key: 'card',       label: 'Card' },
+    { key: 'scoreboard', label: 'Scoreboard' },
   ];
   const FOCUS_OPTIONS = [
     { key: 'all',     label: 'All-Around' },
@@ -211,6 +214,16 @@ function shareStatsBanner(game, stat) {
                 <button type="button" class="ssc-toggle" id="ssc-hidezeros-toggle" aria-pressed="false" title="Hide stats with no attempts or a zero value">
                   <span class="ssc-toggle__switch"></span>
                   Hide Zeros
+                </button>
+                <!-- Add-on overlay, not a template of its own — composited onto
+                     whichever Template is picked (see composeStravagantBadgeOverlay
+                     in server.js). Off by default: it renders nothing at all for a
+                     game with no double-double/triple-double/career-high, so an
+                     "on" state that visibly does nothing most games would be a
+                     confusing default. -->
+                <button type="button" class="ssc-toggle" id="ssc-badge-toggle" aria-pressed="false" title="Add an achievement badge (double-double, triple-double, or career high) when this game earned one">
+                  <span class="ssc-toggle__switch"></span>
+                  Badge
                 </button>
               </div>
             </div>
@@ -398,6 +411,7 @@ function shareStatsBanner(game, stat) {
   var swatchBtns   = Array.prototype.slice.call(document.querySelectorAll('.ssc-swatch-btn'));
   var gaugesToggle = document.getElementById('ssc-gauges-toggle');
   var hideZerosToggle = document.getElementById('ssc-hidezeros-toggle');
+  var badgeToggle = document.getElementById('ssc-badge-toggle');
   var accentDot    = document.getElementById('ssc-tool-accent-dot');
   var cache = {};
   var pending = {};
@@ -405,6 +419,7 @@ function shareStatsBanner(game, stat) {
   var accent = 'amber';
   var gaugesOn = true;
   var hideZerosOn = false;
+  var badgeOn = false;
   // The server already picked and marked the best opening Focus chip
   // (personalized to this player's own box score — see shareStatsBanner in
   // game.js) — read whichever chip it marked active instead of recomputing.
@@ -480,7 +495,7 @@ function shareStatsBanner(game, stat) {
   // would risk shaving into it from below while leaving untouched transparent
   // space at the top. Anchoring the crop to the bottom for those two
   // templates guarantees only the (empty) top gets cropped instead.
-  var BOTTOM_ANCHORED_TEMPLATES = ['bottom', 'premium'];
+  var BOTTOM_ANCHORED_TEMPLATES = ['bottom', 'premium', 'hero', 'scoreboard'];
   function applyPreviewCropAnchor() {
     img.style.objectPosition = BOTTOM_ANCHORED_TEMPLATES.indexOf(align) !== -1 ? 'center bottom' : 'center center';
   }
@@ -489,12 +504,12 @@ function shareStatsBanner(game, stat) {
   setupChips('template', function(v) { align = v; applyPreviewCropAnchor(); render(); });
   setupChips('focus', function(v) { focus = v; render(); });
 
-  function cacheKey(a, f, c, g, hz) { return [a, f, c, g, hz].join('|'); }
-  function buildUrl(a, f, c, g, hz) {
-    var params = ['layout=gauges', 'align=' + encodeURIComponent(a), 'focus=' + encodeURIComponent(f), 'accent=' + encodeURIComponent(c), 'gauges=' + (g ? '1' : '0'), 'hidezeros=' + (hz ? '1' : '0')];
+  function cacheKey(a, f, c, g, hz, b) { return [a, f, c, g, hz, b].join('|'); }
+  function buildUrl(a, f, c, g, hz, b) {
+    var params = ['layout=gauges', 'align=' + encodeURIComponent(a), 'focus=' + encodeURIComponent(f), 'accent=' + encodeURIComponent(c), 'gauges=' + (g ? '1' : '0'), 'hidezeros=' + (hz ? '1' : '0'), 'badge=' + (b ? '1' : '0')];
     return '/api/games/' + GAME_ID + '/my-stat-card.png?' + params.join('&');
   }
-  function currentKey() { return cacheKey(align, focus, accent, gaugesOn, hideZerosOn); }
+  function currentKey() { return cacheKey(align, focus, accent, gaugesOn, hideZerosOn, badgeOn); }
 
   // retry: true marks this message as tappable-to-retry (load failures only —
   // "Copied to clipboard" etc. shouldn't be clickable). Re-clicking an
@@ -517,8 +532,8 @@ function shareStatsBanner(game, stat) {
   // Tracks in-flight requests per combo (not one shared flag) so switching
   // controls while a fetch is still pending doesn't strand the newly-picked
   // combo waiting on a "loading" flag that belongs to another one.
-  function ensureLoaded(a, f, c, g, hz) {
-    var key = cacheKey(a, f, c, g, hz);
+  function ensureLoaded(a, f, c, g, hz, b) {
+    var key = cacheKey(a, f, c, g, hz, b);
     if (cache[key] || pending[key]) return;
     pending[key] = true;
     // A request that just hangs (flaky mobile network, a stalled response)
@@ -532,7 +547,7 @@ function shareStatsBanner(game, stat) {
     var timedOut = false;
     var controller = new AbortController();
     var timer = setTimeout(function() { timedOut = true; controller.abort(); }, 20000);
-    fetch(buildUrl(a, f, c, g, hz), { signal: controller.signal })
+    fetch(buildUrl(a, f, c, g, hz, b), { signal: controller.signal })
       .then(function(r) { if (!r.ok) throw new Error('failed'); return r.blob(); })
       .then(function(res) {
         cache[key] = { blob: res, url: URL.createObjectURL(res) };
@@ -552,19 +567,19 @@ function shareStatsBanner(game, stat) {
   // accent colors for the combo just shown, in the background, so a follow-up
   // color click resolves from cache instead of waiting on the network again.
   var ACCENT_KEYS = ['amber', 'red', 'blue', 'green', 'purple', 'pink', 'cyan'];
-  function prefetchOtherAccents(a, f, current, g, hz) {
+  function prefetchOtherAccents(a, f, current, g, hz, b) {
     ACCENT_KEYS.forEach(function(c) {
-      if (c !== current) ensureLoaded(a, f, c, g, hz);
+      if (c !== current) ensureLoaded(a, f, c, g, hz, b);
     });
   }
 
   function render() {
     var entry = cache[currentKey()];
-    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align, focus, accent, gaugesOn, hideZerosOn); return; }
+    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align, focus, accent, gaugesOn, hideZerosOn, badgeOn); return; }
     img.src = entry.url;
     img.hidden = false;
     spinner.hidden = true;
-    prefetchOtherAccents(align, focus, accent, gaugesOn, hideZerosOn);
+    prefetchOtherAccents(align, focus, accent, gaugesOn, hideZerosOn, badgeOn);
   }
 
   function open() {
@@ -599,6 +614,13 @@ function shareStatsBanner(game, stat) {
   hideZerosToggle.addEventListener('click', function() {
     hideZerosOn = !hideZerosOn;
     hideZerosToggle.setAttribute('aria-pressed', hideZerosOn ? 'true' : 'false');
+    clearMsg();
+    render();
+  });
+
+  badgeToggle.addEventListener('click', function() {
+    badgeOn = !badgeOn;
+    badgeToggle.setAttribute('aria-pressed', badgeOn ? 'true' : 'false');
     clearMsg();
     render();
   });
