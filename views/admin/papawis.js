@@ -814,7 +814,10 @@ ${(() => {
 
     ${!isCompleted && !isCancelled ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg" style="overflow:visible">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Add a player or guest</div>
+      <div class="px-4 py-3 border-b border-admin-border flex items-center justify-between gap-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Add a player or guest</span>
+        <button class="admin-btn admin-btn--muted admin-btn--sm" id="pw-autofill-btn" title="Add known regulars who aren't already listed and don't have an unpaid Papawis balance">Autofill regulars</button>
+      </div>
       <div class="p-4 flex flex-col gap-3">
         <div>
           <label class="admin-field-label">Guest names <span class="normal-case font-normal text-slate-600">— optional, comma-separated. Leave blank to add the player below; fill in to add their guests (billed to them) instead.</span></label>
@@ -1452,6 +1455,35 @@ ${(() => {
           msg.textContent = 'Network error.';
           msg.className = 'text-xs mt-1.5 min-h-[16px] text-error';
         });
+    });
+  }
+
+  var autofillBtn = document.getElementById('pw-autofill-btn');
+  if (autofillBtn) {
+    autofillBtn.addEventListener('click', function() {
+      autofillBtn.disabled = true;
+      fetch('/admin/papawis/' + gameId + '/autofill-regulars', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.ok) { alert(d.error || 'Failed to autofill.'); autofillBtn.disabled = false; return; }
+          var confirmedAdded = d.added.filter(function(a) { return a.status === 'confirmed'; }).length;
+          var waitlistAdded = d.added.length - confirmedAdded;
+          var lines = ['Added ' + d.added.length + ' regular' + (d.added.length === 1 ? '' : 's') +
+            (d.added.length ? ' (' + confirmedAdded + ' confirmed, ' + waitlistAdded + ' waitlisted)' : '') + '.'];
+          if (d.skipped.length) {
+            var unpaid = d.skipped.filter(function(s) { return s.reason === 'unpaid'; }).length;
+            var probation = d.skipped.filter(function(s) { return s.reason === 'probation'; }).length;
+            var already = d.skipped.filter(function(s) { return s.reason === 'already_listed'; }).length;
+            var parts = [];
+            if (already) parts.push(already + ' already listed');
+            if (unpaid) parts.push(unpaid + ' with an unpaid balance');
+            if (probation) parts.push(probation + ' on probation');
+            lines.push('Skipped ' + d.skipped.length + ' (' + parts.join(', ') + ').');
+          }
+          alert(lines.join('\\n'));
+          location.reload();
+        })
+        .catch(function() { alert('Network error'); autofillBtn.disabled = false; });
     });
   }
 

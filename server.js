@@ -111,7 +111,7 @@ import {
   getPapawisGames, getPapawisGame, getPapawisSignups, getPapawisActiveSignupForPlayer, isPapawisSignupOpen,
   createPapawisGame, joinPapawisGame, cancelPapawisSignup, promotePapawisPendingSignup, getMaxPapawisPrice,
   getPendingPapawisSignupsForPlayer, getUnconfirmedPapawisDeposit,
-  adminAddPapawisSignup, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
+  adminAddPapawisSignup, autofillPapawisRegulars, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   logShareCardAction, getAllShareCardLog,
@@ -11459,6 +11459,16 @@ app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
     if (!result.error) added++;
   }
   res.json({ ok: true, added });
+});
+
+// Bulk-adds known regulars (same definition as the Papawis Activity page) who aren't
+// already on the roster, skipping anyone with a real unpaid Papawis debt or on probation —
+// see autofillPapawisRegulars() for why those two need a human decision instead.
+app.post('/admin/papawis/:id/autofill-regulars', requireAuth, (req, res) => {
+  if (!papawisLockCheck(req.params.id, res)) return;
+  const result = autofillPapawisRegulars(req.params.id);
+  if (result.error) return res.status(404).json({ error: 'Game not found.' });
+  res.json({ ok: true, added: result.added, skipped: result.skipped });
 });
 
 app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
