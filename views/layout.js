@@ -253,8 +253,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       </a>`
     : '';
   // Mega mode (mega_menu_enabled) swaps the whole bar for the "four groups" layout:
-  // Games / Stats / Awards / Community, each opening a full-width panel, and no top
-  // strip. Off, it's the two-tier bar with direct links and plain Stats/Awards dropdowns.
+  // Games / Stats / Awards / Community, each opening a full-width panel. Off, it's the
+  // bar with direct links and plain Stats/Awards dropdowns. The top strip shows in both.
   const megaMode = !!features.megaMenu;
   const barDropdown = (label, items, withFeature = false) => {
     if (!items.length) return '';
@@ -312,16 +312,9 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       features.posts ? barLink('/posts', 'Posts') : '',
     ].join('');
   const joinBtn = `<a href="/register" class="hbar__join"${joinLabel ? ` aria-label="${escHtml(joinLabel)}, join the community"` : ''}${currentPath === '/register' ? ' aria-current="page"' : ''}>${escHtml(joinLabel || 'Join the community')}</a>`;
-  // Mega mode has no top strip, so log in / sign out / admin move into the bar itself.
-  const barAccount = megaMode
-    ? [
-      isPlayer ? `${myAccountDropdown}${notificationBell}` : '',
-      isAdmin ? `<a href="/admin" class="hbar__text-link"${adminActive ? ' aria-current="page"' : ''}>Admin</a>` : '',
-      isPlayer || isAdmin
-        ? `<a href="/logout" class="hbar__text-link">Sign out</a>`
-        : `<a href="/login" class="hbar__text-link"${currentPath === '/login' ? ' aria-current="page"' : ''}>Log in</a>${joinBtn}`,
-    ].join('')
-    : isPlayer ? `${myAccountDropdown}${notificationBell}` : isAdmin ? '' : joinBtn;
+  // Log in / Admin / Sign out live in the top strip in both modes; the bar only carries
+  // Join (guests) or My Account + bell (players).
+  const barAccount = isPlayer ? `${myAccountDropdown}${notificationBell}` : isAdmin ? '' : joinBtn;
   const topStrip = `<div class="topstrip">
     <div class="container">
       <div class="topstrip__inner">
@@ -496,7 +489,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
     </footer>
   </div>` : `<div class="page-body">
-    ${megaMode ? '' : topStrip}
+    ${topStrip}
     <header class="site-header site-header--bar${megaMode ? ' site-header--mega' : ''}">
       <div class="container">
         <div class="site-header__inner">
