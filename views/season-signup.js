@@ -39,7 +39,7 @@ function shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, capacityPct
     </div>
     <div class="shell-brand-row">
       ${wkndLogo('site-header__logo shell-logo')}
-      <button class="site-nav__hamburger shell-hamburger" id="nav-toggle-sidebar" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+      <button class="site-nav__hamburger shell-hamburger" id="nav-toggle-sidebar" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
         <span class="site-nav__hamburger-line"></span>
         <span class="site-nav__hamburger-line"></span>
         <span class="site-nav__hamburger-line"></span>

@@ -15,7 +15,7 @@ export function wkndLogo(className = 'site-header__logo', href = '/') {
   return `<a href="${href}" class="wknd-logo ${className}" aria-label="WKND Basketball home">WKND${wkndBall()}</a>`;
 }
 
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0 }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -148,17 +148,95 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     ? `<a href="/register" class="site-header__join">Join</a>`
     : '';
 
-  // Shared by both header variants (full and minimal) — only one ever renders,
-  // both use the same #nav-toggle/#site-nav ids, so one script covers either.
-  // Two hamburger buttons can exist for minimalHeader pages — one in the
-  // header (desktop) and one in the sidebar (mobile, register.js) — only one
-  // is ever visually shown at a given width, but both stay wired to the same
-  // #site-nav overlay and stay in sync with each other regardless of which is
-  // visible, since resizing across the breakpoint shouldn't leave a stale
-  // open/closed icon state on the one that becomes visible next.
+  // Mobile drawer — its own markup rather than the desktop nav restyled: every link is
+  // visible at once in labelled sections (no accordions), with the account card, bell and
+  // head/admin shortcuts up top. Rendered once per page for both header variants; the
+  // hamburger(s) open it via navToggleScript below. The bell is a second copy of the same
+  // notificationBell markup, which the bell script already handles (class-based, not ids).
+  const mIcon = (paths) => `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+  const mIcons = {
+    home:      mIcon('<path d="M2.5 8L9 2.5 15.5 8v7a.5.5 0 0 1-.5.5h-3.5v-4.5h-5v4.5H3a.5.5 0 0 1-.5-.5z"/>'),
+    games:     mIcon('<rect x="2.5" y="3.5" width="13" height="12" rx="2"/><path d="M2.5 7.5h13M6 2v3M12 2v3"/>'),
+    standings: mIcon('<path d="M3 15V9M7 15V4M11 15V7M15 15V11"/>'),
+    playoffs:  mIcon('<path d="M2 3.5h4v4h4v4h4M2 14.5h4M10 7.5h4"/>'),
+    papawis:   mIcon('<circle cx="9" cy="9" r="6.5"/><path d="M2.5 9h13M9 2.5c2 2 2 11 0 13M9 2.5c-2 2-2 11 0 13"/>'),
+  };
+  const mLink = (href, label, icon = '') =>
+    `<a href="${href}" class="mnav__link"${isActive(href) ? ' aria-current="page"' : ''}>${icon}${label}</a>`;
+  const mChip = (href, label, active) =>
+    `<a href="${href}" class="mnav__chip"${active ? ' aria-current="page"' : ''}>${label}</a>`;
+  const mSection = (label, links, grid = false) => {
+    const html = links.filter(Boolean).join('');
+    return html ? `<div class="mnav__section"><span class="mnav__label">${label}</span>${grid ? `<div class="mnav__grid">${html}</div>` : html}</div>` : '';
+  };
+  const mClose = `<button type="button" class="mnav__icon-btn" data-mnav-close aria-label="Close menu"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l10 10M14 4L4 14"/></svg></button>`;
+
+  const mChips = [
+    isPlayer ? mChip('/polls', 'Polls', currentPath.startsWith('/polls')) : '',
+    isPlayer && isHead ? mChip('/team', 'My Team', currentPath.startsWith('/team')) : '',
+    isPlayer && isHead ? mChip('/fines', 'Fines', currentPath.startsWith('/fines')) : '',
+    isAdmin ? mChip('/admin', 'Admin', adminActive) : '',
+  ].join('');
+  const mAvatar = navPlayer?.photoUrl
+    ? `<span class="mnav__avatar"><img src="${escHtml(navPlayer.photoUrl)}" alt="" loading="lazy"></span>`
+    : `<span class="mnav__avatar" aria-hidden="true">${escHtml(navPlayer?.initials || '')}</span>`;
+  const mHead = isPlayer
+    ? `<div class="mnav__account">
+        <a href="/me" class="mnav__me"${onOwnProfile ? ' aria-current="page"' : ''}>${mAvatar}<span class="mnav__me-text"><span class="mnav__me-name">${escHtml(navPlayer?.name || 'My Profile')}</span><span class="mnav__me-sub">View my profile</span></span></a>
+        ${notificationBell}
+        ${mClose}
+      </div>
+      ${mChips ? `<div class="mnav__chips">${mChips}</div>` : ''}`
+    : `<div class="mnav__account">${wkndLogo('mnav__logo')}${mClose}</div>
+      ${isAdmin
+        ? `<div class="mnav__chips">${mChips}</div>`
+        : `<div class="mnav__auth"><a href="/login" class="mnav__btn"${currentPath === '/login' ? ' aria-current="page"' : ''}>Log in</a><a href="/register" class="mnav__btn mnav__btn--primary">${escHtml(joinLabel || 'Join the community')}</a></div>`}`;
+
+  const mobileNav = `<div class="mnav" id="mobile-nav">
+    <div class="mnav__backdrop" data-mnav-close></div>
+    <nav class="mnav__panel" aria-label="Main menu">
+      <div class="mnav__head">${mHead}</div>
+      <div class="mnav__body">
+        ${mSection('League', [
+          mLink('/', 'Home', mIcons.home),
+          mLink('/games', 'Games', mIcons.games),
+          mLink('/standings', 'Standings', mIcons.standings),
+          mLink('/playoffs', 'Playoffs', mIcons.playoffs),
+          features.papawis ? mLink('/papawis', 'Papawis', mIcons.papawis) : '',
+        ])}
+        ${mSection('Stats', [
+          mLink('/players', 'Players'),
+          mLink('/teams', 'Teams'),
+          mLink('/leaders', 'Leaders'),
+          mLink('/roast', 'The Roast'),
+        ], true)}
+        ${mSection('Awards &amp; more', [
+          features.mvpRace !== false ? mLink('/mvp', 'MVP Race') : '',
+          features.awards  !== false ? mLink('/awards', 'Season Awards') : '',
+          features.posts ? mLink('/posts', 'Posts') : '',
+          features.marketplace ? mLink('/marketplace', 'Marketplace') : '',
+        ], true)}
+      </div>
+      <div class="mnav__foot">
+        <div class="mnav__social">
+          <a href="https://www.facebook.com/wkndbasketball" target="_blank" rel="noopener" aria-label="Facebook"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
+          <a href="https://www.instagram.com/wknd.basketball" target="_blank" rel="noopener" aria-label="Instagram"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg></a>
+          <a href="https://www.youtube.com/@wkndbasketball" target="_blank" rel="noopener" aria-label="YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#10141d"/></svg></a>
+        </div>
+        ${isPlayer || isAdmin ? `<a href="/logout" class="mnav__signout">Sign out</a>` : ''}
+      </div>
+    </nav>
+  </div>`;
+
+  // Shared by both header variants (full and minimal) — only one ever renders, and
+  // both render mobileNav (#mobile-nav) right before this script, so one script covers
+  // either. Two hamburger buttons can exist for minimalHeader pages — one in the header
+  // and one in the sidebar (register.js / season-signup.js) — both open the same drawer
+  // and stay in sync, since resizing across the breakpoint shouldn't leave a stale
+  // open/closed state on whichever one becomes visible next.
   const navToggleScript = `<script>
       (function(){
-        var nav = document.getElementById('site-nav');
+        var nav = document.getElementById('mobile-nav');
         if (!nav) return;
         // Buttons are queried lazily (at click/toggle time, not once at script
         // load) since minimalHeader pages render a second hamburger inside the
@@ -166,26 +244,36 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         // upfront querySelectorAll here would run before that button exists
         // in the DOM yet and silently never attach a listener to it.
         function btns(){ return Array.prototype.slice.call(document.querySelectorAll('.site-nav__hamburger')); }
+        var lastTrigger = null;
         function setOpen(open){
-          nav.classList.toggle('site-nav--open', open);
+          var wasOpen = nav.classList.contains('mnav--open');
+          nav.classList.toggle('mnav--open', open);
           btns().forEach(function(b){
-            b.classList.toggle('site-nav__hamburger--open', open);
             b.setAttribute('aria-expanded', String(open));
-            b.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
           });
           document.body.style.overflow = open ? 'hidden' : '';
+          if (open && !wasOpen) {
+            var first = nav.querySelector('[data-mnav-close].mnav__icon-btn');
+            if (first) first.focus({ preventScroll: true });
+          } else if (!open && wasOpen && lastTrigger) {
+            lastTrigger.focus({ preventScroll: true });
+          }
         }
         document.addEventListener('click', function(e){
           var btn = e.target.closest && e.target.closest('.site-nav__hamburger');
-          if (btn) setOpen(!nav.classList.contains('site-nav--open'));
+          if (btn) { lastTrigger = btn; setOpen(!nav.classList.contains('mnav--open')); return; }
+          if (e.target.closest && e.target.closest('[data-mnav-close]')) setOpen(false);
+        });
+        document.addEventListener('keydown', function(e){
+          if (e.key === 'Escape' && nav.classList.contains('mnav--open')) setOpen(false);
         });
         nav.querySelectorAll('a').forEach(function(a){
           a.addEventListener('click', function(){ setOpen(false); });
         });
         // Mobile Safari/Chrome restore this exact page (DOM, scroll position, inline
         // styles) from bfcache on back/forward navigation instead of reloading it. If the
-        // menu was left open at that point (closing it only runs via the hamburger or a
-        // nav link click, never via the browser's own back/forward button), the restored
+        // menu was left open at that point (closing it only runs via the close button, the
+        // backdrop or a link click, never via the browser's own back/forward button), the restored
         // page comes back with body.style.overflow still 'hidden' — trapping the scroll
         // position wherever it was and making the header/hamburger unreachable. Force-close
         // on every pageshow (not just persisted ones) since it's a harmless no-op otherwise.
@@ -281,10 +369,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         ${authLink}
       </nav>
     </header>
-    <nav class="site-nav site-nav--overlay" id="site-nav">
-      ${nav}
-      ${authLink}
-    </nav>
+    ${mobileNav}
     ${navToggleScript}
     <div class="minimal-page__body">${body}</div>
     <footer class="site-footer--minimal">
@@ -300,13 +385,13 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       <div class="container">
         <div class="site-header__inner">
           ${wkndLogo()}
-          <nav class="site-nav" id="site-nav">
+          <nav class="site-nav">
             ${nav}
             ${authLink}
           </nav>
           <div class="site-header__actions">
             ${mobileJoin}
-            <button class="site-nav__hamburger" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+            <button class="site-nav__hamburger" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
               <span class="site-nav__hamburger-line"></span>
               <span class="site-nav__hamburger-line"></span>
               <span class="site-nav__hamburger-line"></span>
@@ -315,6 +400,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         </div>
       </div>
     </header>
+    ${mobileNav}
     ${navToggleScript}
     <div class="container">
       ${ticker}

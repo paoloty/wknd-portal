@@ -100,7 +100,7 @@ html { scroll-padding-top: 84px; }
    nav behind a toggle on a page that has plenty of width for it). On mobile
    this whole header disappears (.container is at its full-width breakpoint
    anyway) and the sidebar's own hamburger takes over instead, opening the
-   separate .site-nav--overlay sibling below. */
+   #mobile-nav drawer (see Mobile nav drawer below). */
 .site-header--minimal {
   position: sticky;
   top: 0;
@@ -120,32 +120,6 @@ html { scroll-padding-top: 84px; }
    overlay for the DEFAULT header's mobile nav; this one has no such rule of
    its own, so it would otherwise get swept up by that unrelated selector. */
 .site-header--minimal__nav { display: flex; align-items: center; gap: 30px; }
-/* This overlay is a sibling of .site-header--minimal now, not nested inside
-   it (a display:none ancestor would take the overlay down with it, and on
-   mobile the header IS display:none) — .site-nav--overlay is what it's
-   selected by instead, regardless of where it sits in the DOM. */
-.site-nav--overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 36px;
-  z-index: 100;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-.site-nav--overlay.site-nav--open { opacity: 1; pointer-events: auto; }
-.site-nav--overlay a { font-size: 20px; font-weight: 700; color: var(--text-muted); border-bottom: none; padding-bottom: 0; }
-.site-nav--overlay a[aria-current] { color: #fff; }
-.site-nav--overlay .site-nav__auth-pill { border-radius: 8px !important; }
-.site-nav--overlay .site-nav__auth-join,
-.site-nav--overlay .site-nav__auth-login { font-size: 15px !important; padding: 12px 28px !important; justify-content: center !important; }
-.site-nav--overlay .site-nav__login { display: flex !important; font-size: 15px !important; padding: 11px 28px !important; }
-.site-nav--overlay a.site-nav__join { font-size: 15px; padding: 11px 28px; margin-left: 0; }
 .site-header__inner {
   display: flex;
   align-items: center;
@@ -734,6 +708,158 @@ html { scroll-padding-top: 84px; }
 .site-nav__hamburger--open .site-nav__hamburger-line:nth-child(1) { transform: translateY(7px) rotate(45deg); }
 .site-nav__hamburger--open .site-nav__hamburger-line:nth-child(2) { opacity: 0; transform: scaleX(0); }
 .site-nav__hamburger--open .site-nav__hamburger-line:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* ── Mobile nav drawer ──────────────────────────────────────────────────── */
+/* Its own markup (views/layout.js mobileNav), not the desktop .site-nav restyled —
+   the drawer groups links into sections with nothing collapsed, which the desktop
+   dropdown structure can't express. Never media-scoped: only the hamburger (which is
+   itself hidden on desktop) can open it. visibility (delayed on close) keeps the closed
+   drawer's links out of the tab order without cutting the slide-out animation short. */
+.mnav {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  visibility: hidden;
+  transition: visibility 0s linear 0.25s;
+}
+.mnav--open { visibility: visible; transition-delay: 0s; }
+.mnav__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2,4,10,0.72);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.mnav--open .mnav__backdrop { opacity: 1; }
+.mnav__panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: min(332px, 86vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid rgba(255,255,255,0.08);
+  box-shadow: -24px 0 48px rgba(0,0,0,0.5);
+  padding-top: env(safe-area-inset-top, 0px);
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+}
+.mnav--open .mnav__panel { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .mnav__backdrop, .mnav__panel { transition: none; }
+}
+
+.mnav__head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.mnav__account { display: flex; align-items: center; gap: 10px; min-height: 42px; }
+.mnav__logo { font-size: 1.5rem; margin-right: auto; }
+.mnav__me { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.mnav__avatar {
+  width: 42px; height: 42px; flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--amber);
+  background: var(--surface-2);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Saira Condensed', system-ui, sans-serif;
+  font-weight: 800; font-size: 17px; color: var(--text);
+}
+.mnav__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.mnav__me-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.mnav__me-name { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mnav__me-sub { font-size: 12px; color: var(--text-muted); }
+.mnav__me[aria-current] .mnav__me-sub { color: var(--amber); }
+.mnav__icon-btn {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.mnav__icon-btn:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+/* The bell is the same .site-nav__notif component as the desktop header (same JS);
+   here its panel drops down across the whole drawer width instead of hanging off the
+   bell, so the wrapper gives up its own positioning to .mnav__head. */
+.mnav .site-nav__notif { position: static; }
+.mnav .site-nav__notif-trigger { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-2); color: var(--text); }
+.mnav .site-nav__notif-badge { border-color: var(--surface-2); }
+.mnav .site-nav__notif-panel { left: 12px; right: 12px; top: calc(100% - 6px); width: auto; max-width: none; max-height: 60vh; }
+
+.mnav__chips { display: flex; gap: 6px; }
+.mnav__chip {
+  flex: 1;
+  text-align: center;
+  font-size: 12.5px; font-weight: 600;
+  padding: 8px 0;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: #c3c9d4;
+  transition: color 0.15s, background 0.15s;
+}
+.mnav__chip:hover { color: #fff; }
+.mnav__chip[aria-current] { background: var(--amber-dim); color: var(--amber); }
+.mnav__auth { display: flex; gap: 8px; }
+.mnav__btn {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 14px; font-weight: 700; color: var(--text);
+  text-align: center;
+}
+.mnav__btn--primary { background: var(--amber); border-color: var(--amber); color: #0a0e16; }
+
+.mnav__body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mnav__section { display: flex; flex-direction: column; }
+.mnav__label {
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-subtle);
+  padding: 12px 10px 4px;
+}
+.mnav__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 4px; }
+.mnav__link {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 42px; padding: 0 10px;
+  border-radius: 9px;
+  font-size: 14.5px; font-weight: 600; color: #c3c9d4;
+  transition: background 0.15s, color 0.15s;
+}
+.mnav__link svg { flex-shrink: 0; color: var(--text-muted); }
+.mnav__link:hover { background: rgba(255,255,255,0.04); color: #fff; }
+.mnav__link[aria-current] { background: rgba(245,147,50,0.12); color: var(--amber); font-weight: 700; }
+.mnav__link[aria-current] svg { color: var(--amber); }
+
+.mnav__foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+}
+.mnav__social { display: flex; gap: 4px; margin-left: -10px; }
+.mnav__social a { display: flex; padding: 10px; color: var(--text-subtle); transition: color 0.15s; }
+.mnav__social a:hover { color: var(--text-muted); }
+.mnav__signout {
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.mnav__signout:hover { color: var(--text); }
 
 
 /* ── Card ───────────────────────────────────────────────────────────────── */
@@ -4193,97 +4319,10 @@ a.player-link:hover { color: var(--amber); }
   .reg-banner__headline { font-size: 17px; }
   .reg-banner__cta { width: 100%; justify-content: center; }
 
-  /* Mobile nav overlay */
+  /* Mobile nav — desktop links hide, the hamburger opens the #mobile-nav drawer instead */
   .site-nav__hamburger { display: flex; }
   .site-header__actions { display: flex; }
-  .site-nav a.site-nav__join { font-size: 15px; padding: 11px 28px; margin-left: 0; }
-  .site-nav {
-    position: fixed;
-    inset: 0;
-    background: var(--bg);
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 36px;
-    z-index: 100;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-  }
-  .site-nav--open { opacity: 1; pointer-events: auto; }
-  .site-nav a {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-muted);
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-  .site-nav a[aria-current] { color: #fff; border-bottom: none; }
-  .site-nav__auth-pill {
-    border-radius: 8px !important;
-  }
-  .site-nav__auth-join,
-  .site-nav__auth-login {
-    font-size: 15px !important;
-    padding: 12px 28px !important;
-    justify-content: center !important;
-  }
-  .site-nav__login {
-    display: flex !important;
-    font-size: 15px !important;
-    padding: 11px 28px !important;
-  }
-
-  /* Mobile dropdown — accordion */
-  .site-nav__dropdown { display: flex; flex-direction: column; align-items: center; }
-  .site-nav__dropdown-trigger {
-    display: flex;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-muted);
-    gap: 8px;
-    background: none;
-    border: none;
-    padding: 0;
-  }
-  .site-nav__dropdown.is-active .site-nav__dropdown-trigger { color: #fff; }
-  .site-nav__dropdown.is-open .site-nav__dropdown-trigger svg { transform: rotate(180deg); }
-  .site-nav__dropdown-menu {
-    display: none;
-    position: static;
-    transform: none;
-    padding: 16px 0 0;
-    min-width: unset;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    background: none;
-    box-shadow: none;
-  }
-  .site-nav__dropdown-menu::before { display: none; }
-  .site-nav__dropdown.is-open .site-nav__dropdown-menu { display: flex; }
-  .site-nav__dropdown-item {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-muted);
-    padding: 0;
-    border-radius: 0;
-    white-space: nowrap;
-    background: none !important;
-  }
-  .site-nav__dropdown-item.is-active { color: var(--amber); background: none !important; }
-
-  /* Notification bell — full-width static panel instead of a floating dropdown, same
-     treatment as the nav dropdowns above on the full-screen mobile overlay. */
-  .site-nav__notif-trigger { width: auto; height: auto; }
-  .site-nav__notif-panel {
-    display: none;
-    position: static;
-    margin-top: 12px;
-    width: 100%; max-width: 320px; max-height: 300px;
-    box-shadow: none;
-  }
-  .site-nav__notif.is-open .site-nav__notif-panel { display: block; }
+  .site-header:not(.site-header--minimal) .site-nav { display: none; }
 
   /* Players table */
   .pt-toolbar { gap: 10px; justify-content: flex-start; }

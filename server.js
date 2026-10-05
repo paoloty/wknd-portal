@@ -1792,7 +1792,21 @@ function renderPage(req, opts) {
     unreadNotificationCount = getUnreadNotificationCount(req.session.playerPlayerId);
   }
 
-  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features: getFeatureFlags(), origin, notifications, unreadNotificationCount, ...opts, title, body, metaTags });
+  // Account card at the top of the mobile drawer (views/layout.js mobileNav) — same
+  // versioned photo URL as buildPlayerOgTags, so a replaced photo isn't served stale.
+  let navPlayer = null;
+  if (isPlayer && req.session?.playerPlayerId) {
+    const p = getPlayerById(req.session.playerPlayerId);
+    if (p) {
+      const name = displayPlayerName(p.name);
+      const photoUrl = p.picture_url
+        ? `/api/player/${encodeURIComponent(p.id)}/photo?v=${createHash('sha1').update(p.picture_url.slice(0, 256)).digest('hex').slice(0, 8)}`
+        : null;
+      navPlayer = { name, initials: initials(name), photoUrl };
+    }
+  }
+
+  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features: getFeatureFlags(), origin, notifications, unreadNotificationCount, navPlayer, ...opts, title, body, metaTags });
 }
 
 // Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
