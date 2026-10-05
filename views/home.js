@@ -689,6 +689,93 @@ const NU_RENDER = {
   },
 };
 
+// ── Standings block (buildHomeStandings in server.js) ─────────────────────────
+// One tile per team in standings order: rank, W-L, last-5 form, point differential and an
+// optional one-line story flag. The headline is server-built HTML (team names escaped there
+// are plain team names from the DB, wrapped in <em> for the amber highlight).
+function standingsSection(standings) {
+  if (!standings || !standings.teams.length) return '';
+  const tiles = standings.teams.map(t => {
+    const form = t.form.map(r => `<b class="${r === 'W' ? 'is-w' : 'is-l'}">${r}</b>`).join('');
+    const diff = t.diff > 0 ? `+${t.diff}` : t.diff < 0 ? `−${Math.abs(t.diff)}` : '0';
+    return `<div class="st-team">
+      <span class="st-team__rank font-condensed">${t.rank}</span>
+      <span class="st-team__name"><span class="team-dot" style="background:${teamColor(t.name)}"></span>${escHtml(t.name)}</span>
+      <span class="st-team__wl font-condensed">${t.wins}-${t.losses}</span>
+      ${form ? `<span class="st-team__form" aria-label="Last ${t.form.length}: ${t.form.join(' ')}">${form}</span>` : ''}
+      <span class="st-team__diff">Diff <b class="${t.diff > 0 ? 'is-pos' : t.diff < 0 ? 'is-neg' : ''}">${diff}</b></span>
+      ${t.flag ? `<span class="st-team__flag">${escHtml(t.flag)}</span>` : ''}
+    </div>`;
+  }).join('\n    ');
+  return `<section class="home-standings" aria-labelledby="standings-heading">
+  <div class="section-header"><h2 id="standings-heading">Season ${escHtml(String(standings.season))} race</h2><a href="/standings" class="section-header__link">Full standings <span>&rarr;</span></a></div>
+  <div class="card st-card">
+    <p class="st-card__headline">${standings.headline}</p>
+    <div class="st-grid" style="--st-teams:${standings.teams.length}">
+    ${tiles}
+    </div>
+  </div>
+</section>`;
+}
+
+// ── "What you get" + closing CTA (guests only, while registration is open) ──────
+// Every card is something a newly approved member really gets — registering makes you a
+// community member with a player profile, not a league player, so league stats are framed
+// as "once you play". Cards for switched-off features (Papawis, marketplace, comments) drop out.
+const LOCK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
+
+function memberPerksSection(perks) {
+  if (!perks) return '';
+  const social = [perks.comments && 'comment on games', 'vote in polls', perks.marketplace && 'shop group-buy jerseys'].filter(Boolean);
+  const cards = [
+    {
+      title: 'Your own player profile',
+      text: 'Photo, intro and positions. Your stats fill in once you play in the league.',
+      preview: `<div class="mp-prev mp-prev--profile"><span class="mp-prev__avatar"></span><span class="mp-prev__lines"><i style="width:70%"></i><i style="width:45%"></i></span><span class="mp-prev__bars"><i style="height:45%"></i><i style="height:75%"></i><i style="height:60%"></i><i style="height:90%"></i><i style="height:70%"></i></span></div>`,
+    },
+    perks.papawis && {
+      title: 'Papawis open runs',
+      text: 'Grab a slot in weekend pickup games, or join the waitlist when it fills up.',
+      preview: `<div class="mp-prev mp-prev--slots">${'<i></i>'.repeat(12)}</div>`,
+    },
+    {
+      title: 'League season signups',
+      text: 'Members can sign up for the next league season as soon as it opens.',
+      preview: `<div class="mp-prev mp-prev--season"><span class="mp-prev__jersey"></span><span class="mp-prev__lines"><i style="width:60%"></i><i style="width:80%"></i></span></div>`,
+    },
+    {
+      title: 'Join the conversation',
+      text: `${social.join(', ').replace(/^./, c => c.toUpperCase())}, and get notified when it's about you.`,
+      preview: `<div class="mp-prev mp-prev--chat"><i style="width:75%"></i><i class="is-me" style="width:55%"></i><i style="width:65%"></i></div>`,
+    },
+  ].filter(Boolean);
+
+  return `<section class="home-perks" aria-labelledby="perks-heading">
+  <div class="section-header"><h2 id="perks-heading">What you get when you join</h2></div>
+  <div class="mp-grid" style="--mp-cards:${cards.length}">
+    ${cards.map(c => `<a href="/register" class="card mp-card">
+      <div class="mp-card__preview">${c.preview}<span class="mp-card__lock">${LOCK_ICON}</span></div>
+      <h3 class="mp-card__title">${escHtml(c.title)}</h3>
+      <p class="mp-card__text">${escHtml(c.text)}</p>
+    </a>`).join('\n    ')}
+  </div>
+</section>`;
+}
+
+function closingCta(msg) {
+  if (!msg) return '';
+  return `<section class="home-closer" aria-label="Join the WKND community">
+  <div class="home-closer__copy">
+    <h2 class="home-closer__headline">${escHtml(msg.headline || 'Ready na? The court is waiting.')}</h2>
+    <p class="home-closer__message">${escHtml(msg.message || 'Register now and join the next Papawis run.')}</p>
+  </div>
+  <div class="home-closer__actions">
+    <a href="/register" class="join-band__cta">${escHtml(msg.cta || 'Join the community')}</a>
+    ${msg.note ? `<span class="join-band__fine">${escHtml(msg.note)}</span>` : ''}
+  </div>
+</section>`;
+}
+
 // League Leaders carousel (or the admin-picked New/Traded one) under its own section
 // header, so it reads as its own block rather than trailing off the "Coming up" cards.
 function leadersSection(leaderPlayers, rosterMovers, season) {
@@ -742,7 +829,7 @@ function latestPosts(posts) {
 </style>`;
 }
 
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -760,7 +847,13 @@ ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerB
 
 ${nextUpSection(nextUp)}
 
+${standingsSection(standings)}
+
 ${leadersSection(leaderPlayers, rosterMovers, leaderSeason)}
 
-${latestPosts(posts)}`;
+${latestPosts(posts)}
+
+${memberPerksSection(memberPerks)}
+
+${closingCta(regCloser)}`;
 }

@@ -1637,6 +1637,84 @@ html { scroll-padding-top: 84px; }
 .section-header__link:hover { opacity: 0.85; }
 .home-leaders { margin: 8px 0 28px; }
 
+/* ── Homepage "What you get" + closing CTA (guests only) ─────────────────────── */
+.home-perks { margin: 8px 0 28px; }
+.mp-grid { display: grid; grid-template-columns: repeat(var(--mp-cards, 4), minmax(0, 1fr)); gap: 16px; }
+.mp-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-width: 0; color: inherit; transition: border-color 0.15s; }
+.mp-card:hover { border-color: rgba(245,147,50,0.35); }
+.mp-card:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.mp-card__preview { position: relative; height: 92px; border-radius: var(--radius-sm); background: var(--surface-2); overflow: hidden; }
+.mp-card__lock { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text); }
+.mp-card__lock svg { width: 22px; height: 22px; opacity: 0.85; }
+.mp-card__title { margin: 0; font-size: 14px; font-weight: 800; color: var(--text); }
+.mp-card__text { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-muted); }
+/* blurred fake previews behind the lock */
+.mp-prev { position: absolute; inset: 0; padding: 12px; filter: blur(3px); opacity: 0.7; }
+.mp-prev__lines { display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.mp-prev__lines i, .mp-prev--chat i { display: block; height: 7px; border-radius: 4px; background: rgba(255,255,255,0.2); }
+.mp-prev--profile { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto 1fr; gap: 8px 10px; }
+.mp-prev__avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--amber); }
+.mp-prev__bars { grid-column: 1 / -1; display: flex; align-items: flex-end; gap: 5px; height: 30px; }
+.mp-prev__bars i { flex: 1; border-radius: 2px 2px 0 0; background: var(--amber); }
+.mp-prev--slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; align-content: center; }
+.mp-prev--slots i { height: 22px; border-radius: 4px; background: var(--amber); }
+.mp-prev--slots i:nth-child(n+10) { background: rgba(255,255,255,0.15); }
+.mp-prev--season { display: flex; align-items: center; gap: 12px; }
+.mp-prev__jersey { width: 48px; height: 62px; border-radius: 8px 8px 6px 6px; background: linear-gradient(160deg, var(--amber), #7a4a1f); }
+.mp-prev--chat { display: flex; flex-direction: column; gap: 9px; justify-content: center; }
+.mp-prev--chat i { height: 14px; border-radius: 7px; }
+.mp-prev--chat i.is-me { align-self: flex-end; background: rgba(245,147,50,0.6); }
+
+.home-closer {
+  margin: 8px 0 0; padding: 26px 28px;
+  display: flex; align-items: center; justify-content: space-between; gap: 18px 32px; flex-wrap: wrap;
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--surface) 0%, #1a140c 100%);
+}
+.home-closer__copy { min-width: 0; flex: 1 1 320px; }
+.home-closer__headline { margin: 0 0 4px; font-size: 24px; font-weight: 800; line-height: 1.15; color: var(--text); text-wrap: balance; }
+.home-closer__message { margin: 0; max-width: 60ch; font-size: 14px; color: var(--text-muted); }
+.home-closer__actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+@media (max-width: 1100px) { .mp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .mp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .mp-card { padding: 14px; gap: 6px; }
+  .mp-card__preview { display: none; }
+  .mp-card__title { font-size: 13px; }
+  .mp-card__text { font-size: 12px; }
+  .home-closer { padding: 20px; }
+  .home-closer__actions { align-items: flex-start; }
+}
+
+/* ── Homepage standings block (views/home.js standingsSection) ─────────────── */
+.home-standings { margin: 8px 0 28px; }
+.st-card { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.st-card__headline { margin: 0; font-size: 17px; font-weight: 800; color: var(--text); text-wrap: balance; }
+.st-card__headline em { font-style: normal; color: var(--amber); }
+.st-grid { display: grid; grid-template-columns: repeat(var(--st-teams, 4), minmax(0, 1fr)); gap: 12px; }
+.st-team {
+  position: relative; min-width: 0;
+  padding: 14px; border-radius: var(--radius-sm); background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.st-team__rank { position: absolute; top: 12px; right: 14px; font-size: 15px; font-weight: 800; color: var(--text-subtle); }
+.st-team__name { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 800; letter-spacing: 0.06em; color: var(--text); }
+.st-team__wl { font-size: 40px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.st-team__form { display: flex; gap: 4px; }
+.st-team__form b {
+  width: 18px; height: 18px; border-radius: 4px;
+  display: grid; place-items: center; font-size: 10px; font-weight: 900;
+}
+.st-team__form .is-w { background: #3ecf8e; color: #0a0e16; }
+.st-team__form .is-l { background: var(--text-subtle); color: var(--text); }
+.st-team__diff { font-size: 12px; color: var(--text-muted); }
+.st-team__diff b { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.st-team__diff .is-pos { color: #3ecf8e; }
+.st-team__diff .is-neg { color: #e0707f; }
+.st-team__flag { font-size: 11px; font-weight: 700; color: var(--amber); }
+@media (max-width: 900px) { .st-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .st-team__wl { font-size: 32px; } .st-grid { gap: 8px; } }
+
 /* ── Homepage "Coming up" (views/home.js nextUpSection) ─────────────────────── */
 .nu-section { margin: 8px 0 28px; }
 .nu-grid {
@@ -1748,7 +1826,15 @@ html { scroll-padding-top: 84px; }
 }
 
 @media (max-width: 1100px) { .nu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px)  { .nu-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .nu-grid {
+    display: flex; gap: 12px;
+    overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+    margin-inline: -20px; padding-inline: 20px; scroll-padding-inline: 20px;
+  }
+  .nu-grid::-webkit-scrollbar { display: none; }
+  .nu-card { flex: 0 0 84%; scroll-snap-align: start; }
+}
 
 /* ── Join the community band (views/home.js registrationBanner) ─────────────── */
 .join-band {

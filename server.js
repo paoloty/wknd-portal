@@ -6467,6 +6467,7 @@ app.get('/', (req, res) => {
   const mvpRace = getSetting('mvp_race_enabled', '1') !== '0'
     ? buildHomeMvpRace(getPortalCurrentSeason(), completedGames)
     : null;
+  const standings = buildHomeStandings(getPortalCurrentSeason(), games);
   const nextUp = buildHomeNextUp({
     season: getPortalCurrentSeason(), players, games,
     isLoggedIn: !!req.session?.isAdmin || !!req.session?.playerRegId,
@@ -6483,6 +6484,19 @@ app.get('/', (req, res) => {
   const regBanner = !isHomepageLoggedIn && getSetting('reg_open', '0') === '1'
     ? { ...pickRegistrationBannerMessage(), stats: getCommunityStats() }
     : null;
+  // Bottom-of-page closer for guests: a second row from the same AI message pool, re-picked
+  // a few times so it doesn't repeat the banner's headline. "What you get" cards next to it
+  // only list features that are actually switched on.
+  let regCloser = null, memberPerks = null;
+  if (regBanner) {
+    regCloser = pickRegistrationBannerMessage();
+    for (let i = 0; i < 4 && regCloser?.headline === regBanner.headline; i++) regCloser = pickRegistrationBannerMessage();
+    memberPerks = {
+      papawis:     getSetting('papawis_enabled', '0') === '1',
+      marketplace: getSetting('marketplace_enabled', '0') === '1',
+      comments:    getSetting('comments_enabled', '0') === '1',
+    };
+  }
 
   let signupBanner = null;
   if (req.session?.playerRegId && !req.session?.isAdmin) {
@@ -6548,7 +6562,7 @@ app.get('/', (req, res) => {
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery })
+    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery })
   }));
 });
 
@@ -8440,6 +8454,68 @@ function buildHomeNextUp({ season, players, games, isLoggedIn }) {
   }
   const cards = [...fixed, ...extras];
   return cards.length ? { cards, isLoggedIn } : null;
+}
+
+// ── Homepage standings block ─────────────────────────────────────────────────
+// Same table and tiebreaks as /standings (getSeasonStandings: regular season, complete, not
+// under review), plus each team's last-5 form, current streak, a one-line flag when there's
+// a story (long streak, record vs point differential), and an auto headline for the race.
+function buildHomeStandings(season, games) {
+  if (!season) return null;
+  const rows = getSeasonStandings(season);
+  if (!rows.some(r => r.wins + r.losses > 0)) return null;
+
+  const played = games
+    .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && g.status === 'complete' && !g.under_review)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const results = {};
+  for (const g of played) {
+    const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
+    if (sa === sb) continue;
+    (results[g.team_a_id] ||= []).push(sa > sb ? 'W' : 'L');
+    (results[g.team_b_id] ||= []).push(sb > sa ? 'W' : 'L');
+  }
+
+  const teams = rows.map((r, i) => {
+    const res = results[r.id] || [];
+    let streak = 0;
+    for (let k = res.length - 1; k >= 0 && res[k] === res[res.length - 1]; k--) streak++;
+    const streakType = res[res.length - 1] || '';
+    let flag = '';
+    if (streak >= 3) flag = streakType === 'W' ? `Won ${streak} straight` : `Lost ${streak} straight`;
+    else if (r.wins < r.losses && r.point_diff > 0) flag = 'Better than their record';
+    else if (r.wins > r.losses && r.point_diff < 0) flag = 'Winning the close ones';
+    else if (streak === 2) flag = streakType === 'W' ? 'Won 2 straight' : 'Lost 2 straight';
+    return {
+      rank: i + 1, name: r.name, wins: r.wins, losses: r.losses, diff: r.point_diff,
+      form: res.slice(-5), flag,
+    };
+  });
+
+  // Headline: the single most interesting fact about the race right now.
+  const [first, second] = teams;
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  for (const t of teams) t.safeName = esc(t.name);
+  const unbeaten = teams.filter(t => t.losses === 0 && t.wins > 0);
+  const rest = teams.slice(1);
+  const restTied = rest.length > 1 && rest.every(t => t.wins === rest[0].wins && t.losses === rest[0].losses);
+  const rec = t => `${t.wins}-${t.losses}`;
+  let headline;
+  if (unbeaten.length === 1 && unbeaten[0] === first) {
+    headline = `<em>${first.safeName}</em> is the last unbeaten team${restTied ? `, and the other ${rest.length === 3 ? 'three' : rest.length} are tied at ${rec(rest[0])}` : ''}.`;
+  } else if (second && first.wins === second.wins && first.losses === second.losses) {
+    const tied = teams.filter(t => t.wins === first.wins && t.losses === first.losses);
+    headline = `${tied.map(t => `<em>${t.safeName}</em>`).join(tied.length === 2 ? ' and ' : ', ')} are tied for first at ${rec(first)}.`;
+  } else if (second) {
+    const gb = ((first.wins - second.wins) + (second.losses - first.losses)) / 2;
+    headline = `<em>${first.safeName}</em> leads at ${rec(first)}, ${gb} game${gb === 1 ? '' : 's'} ahead of ${second.safeName}.`;
+  } else {
+    headline = `<em>${first.safeName}</em> leads at ${rec(first)}.`;
+  }
+  const winless = teams.filter(t => t.wins === 0 && t.losses > 0);
+  if (winless.length === 1 && !restTied) headline += ` ${winless[0].safeName} is still looking for its first win.`;
+
+  return { season, headline, teams };
 }
 
 // Homepage MVP Race sidebar (stands in for Player Highlights while mvp_race_enabled is on).
