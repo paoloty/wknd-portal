@@ -53,6 +53,7 @@ export function adminVisibilityBody({
   awardsEnabled = true,
   mvpEnabled = true,
   homeShowRosterMoves = false,
+  megaMenuEnabled = false,
   nextUpCardOptions = [],
   nextUpCards = [],
   sectionSettings = {},
@@ -128,6 +129,11 @@ export function adminVisibilityBody({
         id: 'vis-mvp-enabled', dataKey: 'mvp_race_enabled', checked: mvpEnabled, msgId: 'vis-msg-mvp_race_enabled',
         label: 'MVP Race',
         sub: `Season MVP ladder with AI-written player cases (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code>)`,
+      })}
+      ${featureRow({
+        id: 'vis-mega-menu-enabled', dataKey: 'mega_menu_enabled', checked: megaMenuEnabled, msgId: 'vis-msg-mega_menu_enabled',
+        label: 'Mega menu',
+        sub: `Desktop header: Stats and Awards open as full-width panels with descriptions and the MVP frontrunner, instead of small dropdowns. Phones always use the side drawer.`,
       })}
       ${featureRow({
         id: 'vis-home-roster-moves', dataKey: 'home_show_roster_moves', checked: homeShowRosterMoves, msgId: 'vis-msg-home_show_roster_moves',

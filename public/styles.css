@@ -709,6 +709,160 @@ html { scroll-padding-top: 84px; }
 .site-nav__hamburger--open .site-nav__hamburger-line:nth-child(2) { opacity: 0; transform: scaleX(0); }
 .site-nav__hamburger--open .site-nav__hamburger-line:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
+/* ── Desktop header: top strip + bar (views/layout.js topStrip / barNav) ──── */
+.topstrip {
+  background: #070a10;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--text-muted);
+}
+.topstrip__inner { height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.topstrip__left, .topstrip__right { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.topstrip__season {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text); white-space: nowrap;
+}
+.topstrip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.topstrip__sep { width: 1px; height: 14px; background: rgba(255,255,255,0.1); flex-shrink: 0; }
+.topstrip__link { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.15s; }
+.topstrip__link:hover, .topstrip__link.is-active { color: var(--text); }
+.topstrip__link--strong { color: var(--text); }
+.topstrip__icon { display: flex; color: var(--text-muted); transition: color 0.15s; }
+.topstrip__icon:hover { color: var(--text); }
+
+.site-header.site-header--bar { padding: 0; }
+.site-header--bar .site-header__inner { height: 80px; align-items: stretch; gap: 40px; }
+.site-header--bar .site-header__logo { font-size: 2.5rem; align-self: center; }
+.site-header--bar .site-header__actions { align-self: center; }
+.hbar { flex: 1; align-items: stretch; gap: 0; min-width: 0; }
+.hbar .hbar__link {
+  display: flex; align-items: center; gap: 6px;
+  height: 100%; padding: 0 16px;
+  font-family: 'Saira Condensed', system-ui, sans-serif;
+  font-size: 18px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #a3abb9; white-space: nowrap;
+  border: none; border-radius: 0;
+  box-shadow: inset 0 -3px 0 transparent;
+  transition: color 0.15s, box-shadow 0.15s;
+}
+.hbar .hbar__link:hover,
+.hbar .site-nav__dropdown.is-open .hbar__link { color: #fff; }
+.hbar .hbar__link[aria-current] {
+  color: #fff;
+  box-shadow: inset 0 -3px 0 var(--amber);
+  background: linear-gradient(to top, rgba(245,147,50,0.10), rgba(245,147,50,0) 70%);
+}
+.hbar .site-nav__dropdown { display: flex; align-items: stretch; }
+.hbar__account { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+.hbar__account .site-nav__dropdown-trigger {
+  font-family: 'Saira Condensed', system-ui, sans-serif;
+  font-size: 16px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #a3abb9;
+}
+.hbar__join {
+  align-self: center;
+  font-family: 'Saira Condensed', system-ui, sans-serif;
+  font-size: 17px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--amber); color: #0a0e16;
+  padding: 11px 20px; border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.hbar__join:hover { opacity: 0.9; }
+.hbar__join:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+@media (max-width: 1360px) {
+  .site-header--bar .site-header__inner { gap: 28px; }
+  .site-header--bar .site-header__logo { font-size: 2.2rem; }
+  .hbar .hbar__link { padding: 0 11px; font-size: 16.5px; }
+}
+
+/* Mega menu (mega_menu_enabled) — the dropdown gives up its own positioning so the panel
+   anchors to the sticky header instead and spans the full width under the bar. */
+.site-nav__dropdown--mega { position: static; }
+.site-nav__dropdown-menu.mega {
+  left: 0; right: 0; top: 100%;
+  transform: none;
+  min-width: 0; padding: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 24px 48px rgba(0,0,0,0.45);
+}
+.site-nav__dropdown-menu.mega::before { display: none; }
+.site-nav__dropdown.is-open .site-nav__dropdown-menu.mega { display: block; }
+.mega__inner { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; padding: 28px 0 32px; }
+.mega__inner--solo { grid-template-columns: minmax(0, 1fr); }
+.mega__label {
+  display: block; margin-bottom: 14px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.mega__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.site-nav .mega__card {
+  display: flex; gap: 14px;
+  padding: 16px; border: none; border-radius: var(--radius);
+  color: inherit;
+  transition: background 0.15s;
+}
+.site-nav .mega__card:hover, .site-nav .mega__card.is-active { background: var(--surface-2); }
+.mega__icon {
+  width: 38px; height: 38px; flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--surface-2); color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.mega__card:hover .mega__icon, .mega__card.is-active .mega__icon { background: var(--amber-dim); color: var(--amber); }
+.mega__text { display: flex; flex-direction: column; gap: 3px; }
+.mega__title { font-size: 15px; font-weight: 700; color: var(--text); }
+.mega__desc { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+.site-nav .mega__feature {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 22px; border-radius: 16px;
+  background: var(--bg);
+  border: 1px solid rgba(245,147,50,0.35);
+  color: inherit;
+  transition: border-color 0.15s;
+}
+.site-nav .mega__feature:hover { border-color: var(--amber); }
+.mega__feature-head {
+  display: flex; justify-content: space-between;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mega__feature-lead { display: flex; align-items: center; gap: 14px; }
+.mega__feature-avatar {
+  width: 52px; height: 52px; flex-shrink: 0;
+  border-radius: 50%; border: 2px solid var(--amber);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 20px; color: var(--text);
+}
+.mega__feature-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mega__feature-badge {
+  align-self: flex-start;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #0a0e16; background: var(--amber);
+  padding: 3px 8px; border-radius: 5px;
+}
+.mega__feature-name { font-size: 17px; font-weight: 800; text-transform: uppercase; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mega__feature-score { font-size: 40px; line-height: 1; color: var(--amber); }
+.mega__feature-line { font-size: 13px; font-weight: 600; color: #a3abb9; }
+.mega__feature-cta { font-size: 13px; font-weight: 700; color: var(--amber); }
+
+/* Below 1100px the bar's links don't fit — the hamburger + drawer take over. */
+@media (max-width: 1100px) {
+  .site-header--bar .hbar, .hbar__account { display: none; }
+  .site-header--bar .site-header__actions { display: flex; }
+  .site-header--bar .site-nav__hamburger { display: flex; }
+  .site-header--bar .site-header__inner { height: 64px; }
+  .site-header--bar .site-header__logo { font-size: 1.8rem; }
+}
+@media (max-width: 640px) {
+  .topstrip { display: none; }
+}
+
 /* ── Mobile nav drawer ──────────────────────────────────────────────────── */
 /* Its own markup (views/layout.js mobileNav), not the desktop .site-nav restyled —
    the drawer groups links into sections with nothing collapsed, which the desktop

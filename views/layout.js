@@ -15,7 +15,7 @@ export function wkndLogo(className = 'site-header__logo', href = '/') {
   return `<a href="${href}" class="wknd-logo ${className}" aria-label="WKND Basketball home">WKND${wkndBall()}</a>`;
 }
 
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null, headerInfo = null }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -228,6 +228,91 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     </nav>
   </div>`;
 
+  // ── Desktop header (full layout only) ──────────────────────────────────────
+  // A thin top strip (season, next Papawis run, socials, log in/out) over a taller bar:
+  // the logo, condensed all-caps links with an amber underline on the current page, and
+  // Join / My Account + bell on the right. Most-used pages are direct links rather than
+  // dropdown items; Stats and Awards stay groups. With the mega_menu_enabled flag on
+  // (Admin → Visibility), those two groups open as full-width panels — same open/close
+  // script as every other dropdown, only the menu's markup and CSS differ.
+  const hdr = headerInfo || {};
+  const barLink = (href, label) =>
+    `<a href="${href}" class="hbar__link"${isActive(href) ? ' aria-current="page"' : ''}>${label}</a>`;
+  const megaCard = (href, label, desc, icon) =>
+    `<a href="${href}" class="mega__card${isActive(href) ? ' is-active' : ''}"><span class="mega__icon">${icon}</span><span class="mega__text"><span class="mega__title">${label}</span><span class="mega__desc">${desc}</span></span></a>`;
+  const megaFeature = hdr.mvpLead && features.mvpRace !== false
+    ? `<a href="/mvp" class="mega__feature">
+        <span class="mega__feature-head"><span>MVP Race</span><span>Season ${escHtml(String(hdr.season))}</span></span>
+        <span class="mega__feature-lead">
+          <span class="mega__feature-avatar">${escHtml(hdr.mvpLead.initials)}</span>
+          <span class="mega__feature-id"><span class="mega__feature-badge">Frontrunner</span><span class="mega__feature-name">${escHtml(hdr.mvpLead.name)}</span></span>
+          <span class="mega__feature-score font-condensed">${escHtml(hdr.mvpLead.score)}</span>
+        </span>
+        <span class="mega__feature-line">${escHtml(hdr.mvpLead.line)}</span>
+        <span class="mega__feature-cta">See the full race &rarr;</span>
+      </a>`
+    : '';
+  const barDropdown = (label, items, activeHrefs, megaCards) => {
+    const active = activeHrefs.some(h => isActive(h));
+    const chevron = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>`;
+    const menu = features.megaMenu
+      ? `<div class="site-nav__dropdown-menu mega"><div class="container"><div class="mega__inner${megaFeature ? '' : ' mega__inner--solo'}">
+          <div class="mega__col"><span class="mega__label">${label}</span><div class="mega__grid">${megaCards}</div></div>
+          ${megaFeature}
+        </div></div></div>`
+      : `<div class="site-nav__dropdown-menu">${items.map(({ href, label: lbl }) =>
+          `<a href="${href}" class="site-nav__dropdown-item${isActive(href) ? ' is-active' : ''}">${lbl}</a>`).join('')}</div>`;
+    return `<div class="site-nav__dropdown hbar__dd${features.megaMenu ? ' site-nav__dropdown--mega' : ''}${active ? ' is-active' : ''}">
+      <button type="button" class="site-nav__dropdown-trigger hbar__link"${active ? ' aria-current="page"' : ''}>${label} ${chevron}</button>
+      ${menu}
+    </div>`;
+  };
+  const statsItems = [
+    { href: '/players', label: 'Players',   desc: 'Profiles, season and career numbers', icon: mIcon('<circle cx="9" cy="6" r="3"/><path d="M3 16c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/>') },
+    { href: '/teams',   label: 'Teams',     desc: 'Rosters and team averages',           icon: mIcon('<path d="M9 2l6 2.5v4c0 3.5-2.6 6-6 7.5-3.4-1.5-6-4-6-7.5v-4z"/>') },
+    { href: '/leaders', label: 'Leaders',   desc: 'League leaders by stat category',     icon: mIcons.standings },
+    { href: '/roast',   label: 'The Roast', desc: 'Peer ratings, roast-style',           icon: mIcon('<path d="M9 2c1 2.5 4 4 4 8a4 4 0 0 1-8 0c0-2 1-3 1-3 .5 1.5 1.5 2 1.5 2C7.5 6 9 2 9 2z"/>') },
+  ];
+  const awardsItems = [
+    features.mvpRace !== false ? { href: '/mvp',    label: 'MVP Race',      desc: 'Who leads the season MVP ladder, week by week', icon: mIcon('<path d="M5 2.5h8v4a4 4 0 0 1-8 0z"/><path d="M5 4H2.5v1.5A2.5 2.5 0 0 0 5 8M13 4h2.5v1.5A2.5 2.5 0 0 1 13 8M9 10.5V13M6 15.5h6"/>') } : null,
+    features.awards  !== false ? { href: '/awards', label: 'Season Awards', desc: 'All-WKND teams, champions and season honours', icon: mIcon('<circle cx="9" cy="7" r="4.5"/><path d="M6.5 10.8L5.5 16 9 14l3.5 2-1-5.2"/>') } : null,
+  ].filter(Boolean);
+  const megaCardsFor = (items) => items.map(i => megaCard(i.href, i.label, i.desc, i.icon)).join('');
+
+  const barNav = [
+    barLink('/games', 'Games'),
+    barLink('/standings', 'Standings'),
+    hdr.playoffsStarted ? barLink('/playoffs', 'Playoffs') : '',
+    barDropdown('Stats', statsItems, statsItems.map(i => i.href), megaCardsFor(statsItems)),
+    awardsItems.length ? barDropdown('Awards', awardsItems, awardsItems.map(i => i.href), megaCardsFor(awardsItems)) : '',
+    features.papawis ? barLink('/papawis', 'Papawis') : '',
+    features.marketplace ? barLink('/marketplace', 'Marketplace') : '',
+    features.posts ? barLink('/posts', 'Posts') : '',
+  ].join('');
+  const barAccount = isPlayer
+    ? `${myAccountDropdown}${notificationBell}`
+    : isAdmin ? '' : `<a href="/register" class="hbar__join"${joinLabel ? ` aria-label="${escHtml(joinLabel)}, join the community"` : ''}${currentPath === '/register' ? ' aria-current="page"' : ''}>${escHtml(joinLabel || 'Join the community')}</a>`;
+  const topStrip = `<div class="topstrip">
+    <div class="container">
+      <div class="topstrip__inner">
+        <div class="topstrip__left">
+          ${hdr.season ? `<span class="topstrip__season"><span class="topstrip__dot" aria-hidden="true"></span>Season ${escHtml(String(hdr.season))}</span>` : ''}
+          ${hdr.nextPapawis ? `<span class="topstrip__sep" aria-hidden="true"></span><a href="/papawis" class="topstrip__link">Next Papawis run: ${escHtml(hdr.nextPapawis)}</a>` : ''}
+        </div>
+        <div class="topstrip__right">
+          <a href="https://www.facebook.com/wkndbasketball" class="topstrip__icon" target="_blank" rel="noopener" aria-label="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
+          <a href="https://www.instagram.com/wknd.basketball" class="topstrip__icon" target="_blank" rel="noopener" aria-label="Instagram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/></svg></a>
+          <a href="https://www.youtube.com/@wkndbasketball" class="topstrip__icon" target="_blank" rel="noopener" aria-label="YouTube"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#070a10"/></svg></a>
+          <span class="topstrip__sep" aria-hidden="true"></span>
+          ${isAdmin ? `<a href="/admin" class="topstrip__link${adminActive ? ' is-active' : ''}">Admin</a>` : ''}
+          ${isPlayer || isAdmin
+            ? `<a href="/logout" class="topstrip__link">Sign out</a>`
+            : `<a href="/login" class="topstrip__link topstrip__link--strong"${currentPath === '/login' ? ' aria-current="page"' : ''}>Log in</a>`}
+        </div>
+      </div>
+    </div>
+  </div>`;
+
   // Shared by both header variants (full and minimal) — only one ever renders, and
   // both render mobileNav (#mobile-nav) right before this script, so one script covers
   // either. Two hamburger buttons can exist for minimalHeader pages — one in the header
@@ -381,14 +466,13 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
     </footer>
   </div>` : `<div class="page-body">
-    <header class="site-header">
+    ${topStrip}
+    <header class="site-header site-header--bar">
       <div class="container">
         <div class="site-header__inner">
           ${wkndLogo()}
-          <nav class="site-nav">
-            ${nav}
-            ${authLink}
-          </nav>
+          <nav class="site-nav hbar" aria-label="Main">${barNav}</nav>
+          ${barAccount ? `<div class="hbar__account">${barAccount}</div>` : ''}
           <div class="site-header__actions">
             ${mobileJoin}
             <button class="site-nav__hamburger" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">

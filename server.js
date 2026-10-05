@@ -1432,7 +1432,50 @@ function getFeatureFlags() {
     peerRatings: getSetting('peer_ratings_enabled', '0') === '1',
     playerReports: getSetting('player_reports_enabled', '0') === '1',
     marketplace: getSetting('marketplace_enabled', '0') === '1',
+    megaMenu: getSetting('mega_menu_enabled', '0') === '1',
   };
+}
+
+// Data the desktop header shows on every page (views/layout.js): the current season and
+// next Papawis run for the top strip, whether playoffs have started (PLAYOFFS only gets a
+// top-level link once they have), and — only while the mega menu is on — the MVP
+// frontrunner for its featured card. Cached for a minute: it's per-pageview otherwise, and
+// none of it needs to be fresher than that.
+let headerInfoCache = { at: 0, megaMenu: null, value: null };
+function getHeaderInfo(features) {
+  const now = Date.now();
+  if (headerInfoCache.value && now - headerInfoCache.at < 60_000 && headerInfoCache.megaMenu === features.megaMenu) return headerInfoCache.value;
+  const season = getPortalCurrentSeason();
+  let nextPapawis = null;
+  if (features.papawis) {
+    const today = manilaTodayStr();
+    const next = getPapawisGames()
+      .filter(g => g.status !== 'cancelled' && g.status !== 'completed' && String(g.date) >= today)
+      .sort((a, b) => `${a.date}T${a.start_time || '00:00'}`.localeCompare(`${b.date}T${b.start_time || '00:00'}`))[0];
+    if (next) {
+      const day = new Date(`${next.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      nextPapawis = [day, next.time_label || formatTimeRange(next.start_time, ''), next.location].filter(Boolean).join(' · ');
+    }
+  }
+  let mvpLead = null;
+  if (features.megaMenu && features.mvpRace && season) {
+    const lead = getMvpCandidates(season)
+      .filter(s => s.gp >= 1)
+      .map(s => ({ s, score: computeMvpScore(s) }))
+      .sort((a, b) => b.score - a.score)[0];
+    if (lead) {
+      const gp = lead.s.gp;
+      mvpLead = {
+        name: displayPlayerName(lead.s.name),
+        initials: initials(displayPlayerName(lead.s.name)),
+        score: lead.score.toFixed(1),
+        line: `${(lead.s.pts / gp).toFixed(1)} PPG · ${(lead.s.reb / gp).toFixed(1)} RPG · ${(lead.s.ast / gp).toFixed(1)} APG · ${(lead.s.stl / gp).toFixed(1)} SPG`,
+      };
+    }
+  }
+  const value = { season, nextPapawis, playoffsStarted: !!(season && isPlayoffStarted(season)), mvpLead };
+  headerInfoCache = { at: now, megaMenu: features.megaMenu, value };
+  return value;
 }
 
 const BANNER_POOL_REFRESH_MS = 24 * 60 * 60 * 1000; // once a day per pool — a batch, not one call per pageview
@@ -1806,7 +1849,10 @@ function renderPage(req, opts) {
     }
   }
 
-  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features: getFeatureFlags(), origin, notifications, unreadNotificationCount, navPlayer, ...opts, title, body, metaTags });
+  const features = getFeatureFlags();
+  const headerInfo = opts.minimalHeader ? null : getHeaderInfo(features);
+
+  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features, headerInfo, origin, notifications, unreadNotificationCount, navPlayer, ...opts, title, body, metaTags });
 }
 
 // Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
@@ -6234,6 +6280,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
+      megaMenuEnabled: getSetting('mega_menu_enabled', '0') === '1',
       nextUpCardOptions: HOME_NEXTUP_CARDS,
       nextUpCards: [1, 2].map((n, i) => getSetting(`home_nextup_card_${n}`, HOME_NEXTUP_DEFAULTS[i])),
       sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
@@ -6243,7 +6290,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'home_show_roster_moves',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
