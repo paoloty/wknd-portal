@@ -148,6 +148,7 @@ import {
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './lib/ai.js';
+import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
@@ -155,6 +156,7 @@ import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
 import { adminAwardsBody } from './views/admin/awards.js';
 import { adminVisibilityBody } from './views/admin/visibility.js';
+import { adminAiWritingBody } from './views/admin/ai-writing.js';
 import { awardGraphicEditorBody } from './views/admin/award-graphic-editor.js';
 import { adminUsersBody }       from './views/admin/users.js';
 import { adminUserDetailBody }  from './views/admin/user-detail.js';
@@ -5944,7 +5946,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     : [t]);
   const currentKey = TEAM_AWARD_TYPES.has(award_type) && player_id ? `${award_type}_${player_id}` : award_type;
   const slot  = Math.max(0, articleKeys.indexOf(currentKey));
-  const voice = RECAP_VOICES[slot % RECAP_VOICES.length];
+  const voice = pickVoice('award', { slot });
   const otherOpenings = articleKeys
     .filter(k => k !== currentKey)
     .map(k => String(getSetting(`award_article_${k}_${season}`, '') || '').replace(/<[^>]+>/g, ' ').trim())
@@ -5956,11 +5958,11 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     `Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.`,
     `VOICE — ${voice.name}: ${voice.guide}`,
     otherOpenings.length ? `OPENING SENTENCES OF OTHER ARTICLES ON THIS AWARDS PAGE (yours must not resemble these):\n${otherOpenings.map(t => `  "${t}"`).join('\n')}` : '',
-    `FINAL REMINDER — write it in the ${voice.name} voice. Example of the voice (style only — do not copy its words or facts): "${voice.sample}"`,
+    `FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`,
   ].filter(Boolean).join('\n\n');
 
   try {
-    const result = await generateText(prompt, { maxTokens: 300, temperature: 0.9 });
+    const result = await generateText(prompt, { maxTokens: 300, temperature: aiTemperature() });
     if (!result?.text) throw new Error('No response');
     res.json({ text: result.text });
   } catch (e) {
@@ -5978,6 +5980,37 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
     currentPath: '/admin/visibility',
     body: adminVisibilityBody({
       papawisEnabled:  getSetting('papawis_enabled', '0') === '1',
+// ── AI Writing (voices / creativity for recaps, POTG, MVP race, award articles) ─
+app.get('/admin/ai-writing', requireAuth, (req, res) => {
+  // "Now:" hint per feature — what the next generation would use today. Recaps/POTG/MVP
+  // key off the season's latest game week; awards vary per article, so no single answer.
+  const season = getPortalCurrentSeason();
+  const latest = byDate(getAllGames())
+    .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && !g.scheduled)
+    .map(g => String(g.date).slice(0, 10)).sort().pop() || new Date().toISOString().slice(0, 10);
+  const currentVoices = Object.fromEntries(['recap', 'potg', 'mvp'].map(k => [k, pickVoice(k, { date: latest }).name]));
+  currentVoices.award = 'varies per article';
+  res.send(renderAdminPage(req, {
+    title: 'AI Writing',
+    currentPath: '/admin/ai-writing',
+    body: adminAiWritingBody({
+      config: getVoiceConfig(), features: AI_WRITING_FEATURES, creativityLevels: CREATIVITY_LEVELS,
+      currentVoices, limits: VOICE_LIMITS,
+    }),
+  }));
+});
+
+app.post('/admin/ai-writing', requireAuth, express.json({ limit: '100kb' }), (req, res) => {
+  const error = saveVoiceConfig(req.body);
+  if (error) return res.status(400).json({ error });
+  res.json({ ok: true });
+});
+
+app.post('/admin/ai-writing/reset', requireAuth, (req, res) => {
+  resetVoiceConfig();
+  res.json({ ok: true });
+});
+
       marketplaceEnabled: getSetting('marketplace_enabled', '0') === '1',
       postsEnabled:    getSetting('posts_enabled', '0') === '1',
       commentsEnabled: getSetting('comments_enabled', '0') === '1',
@@ -7284,23 +7317,9 @@ app.post('/admin/games/:id/recap', requireAuth, jsonSmall, (req, res) => {
 
 // ── Recap storyline ───────────────────────────────────────────────────────────
 // Recaps had gone formulaic ("X secured a win… Q1… Q2… Y was a key contributor") because
-// the prompt fixed one voice and one paragraph template. Each game week now gets one of
-// these voices (both games that week share it, next week sounds different), and the
-// prompt is handed pre-computed story hooks to lead with instead of a timeline to recite.
-const RECAP_VOICES = [
-  { name: 'Sports columnist', guide: 'Write like an opinionated newspaper sports columnist. Have a clear take on what this game meant and argue it. Punchy sentences, a strong lede, a closing line with some bite.', sample: 'Forget the scoreboard for a second — this game was decided the moment White stopped settling for jumpers.' },
-  { name: 'Stat nerd',        guide: 'Write like a stats-obsessed analyst who loves the one number that explains a game. Build the story around the runs, margins, and efficiency that decided it — but keep it readable, not a spreadsheet.', sample: 'Fifteen lead changes, thirteen ties, and exactly one stretch that mattered: a 12-0 burst in the third.' },
-  { name: 'Barbershop banter', guide: 'Write like friends breaking down the game afterwards — casual, playful, a little teasing. Light ribbing is fine; never mean, never mocking anyone personally.', sample: 'Somebody check on Maroon\'s first quarter, because it never showed up — eight points, total.' },
-  { name: 'Conyo hoops writer', guide: 'Write as a conyo rich kid from a Makati/BGC private school who is obsessed with this league but cannot really speak Tagalog. Mostly English, with Tagalog words dropped in a little awkwardly, the conyo way: "make + verb" constructions ("they made bawi," "he made agaw the ball"), particles like "naman," "kasi," "talaga," "diba," "pa," and fillers like "like," "literally," "super," "so," "I mean," "grabe," "nakakaloka." Most sentences should carry at least one conyo touch — aim for 8 or more across the recap, never just one or two. Keep the actual basketball facts precise. Never say the word "conyo" or describe the voice — just write in it. Playful and self-unaware, never mean, and never mocking anyone\'s background or class.', sample: 'Okay so like, Blue literally made takbo with a 21-0 run, diba? Maroon was so lost talaga, I can\'t even. And Vin? Grabe, he made agaw every loose ball pa, super nakakaloka. I mean, Maroon tried to make habol naman in the fourth, pero it was so late na kasi.' },
-];
-
-function recapVoiceForDate(dateStr) {
-  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z');
-  if (isNaN(d)) return RECAP_VOICES[0];
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // Monday of that week
-  const week = Math.floor(d.getTime() / (7 * 86400000));
-  return RECAP_VOICES[week % RECAP_VOICES.length];
-}
+// the prompt fixed one voice and one paragraph template. Voices now come from
+// lib/ai-voices.js (configurable at /admin/ai-writing), and the prompt is handed
+// pre-computed story hooks to lead with instead of a timeline to recite.
 
 // Rebuilds the running score from the raw game log (made shots are statField 'pts' with
 // the points as changeAmount; undo compensations included so corrections net out). Only
@@ -7515,7 +7534,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     .map(w => (w.body.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 160))
     .filter(Boolean);
 
-  const voice      = recapVoiceForDate(game.date);
+  const voice      = pickVoice('recap', { date: game.date });
   const storyHooks = recapStoryHooks(game, stats);
 
   const prompt = [
@@ -7591,11 +7610,11 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     ``,
     // Repeated last: buried at the top of a long prompt, the voice was getting ignored.
     `FINAL REMINDER — write the whole recap in the ${voice.name} voice: ${voice.guide}`,
-    `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"`,
+    voice.sample ? `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : '',
   ].filter(s => s !== null).join('\n');
 
   try {
-    const { text } = await generateText(prompt, { temperature: 0.9, maxTokens: 900 });
+    const { text } = await generateText(prompt, { temperature: aiTemperature(), maxTokens: 900 });
     res.json({ writeup: text });
   } catch (err) {
     console.error('generate-recap error:', err.message);
@@ -7631,7 +7650,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
 
   // Career highs now come from potgStoryHooks (as of this game's date, strictly greater) —
   // the old all-time MAX included this very game, so ">=" flagged nearly every POTG.
-  const voice      = recapVoiceForDate(game.date);
+  const voice      = pickVoice('potg', { date: game.date });
   const storyHooks = potgStoryHooks(game, stats, potgStat);
   const recentOpenings = getAllGames()
     .filter(g => g.potg_writeup && g.id !== game.id)
@@ -7679,11 +7698,11 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     prevLines.length ? `Recent games:\n${prevLines.join('\n')}` : 'Recent games: none on record.',
     ``,
     `FINAL REMINDER — write it in the ${voice.name} voice: ${voice.guide}`,
-    `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"`,
+    voice.sample ? `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : '',
   ].filter(Boolean).join('\n');
 
   try {
-    const { text } = await generateText(prompt, { temperature: 0.9, maxTokens: 300 });
+    const { text } = await generateText(prompt, { temperature: aiTemperature(), maxTokens: 300 });
     // Trim to max 3 sentences
     const sentences = text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean).slice(0, 3);
     res.json({ writeup: sentences.join(' ') });
@@ -8596,7 +8615,7 @@ app.get('/mvp', async (req, res) => {
   const latestGameDate = completedGames
     .filter(g => String(g.season) === String(season) && g.game_type === 'regular')
     .map(g => String(g.date).slice(0, 10)).sort().pop();
-  const mvpVoice = recapVoiceForDate(latestGameDate || new Date().toISOString().slice(0, 10));
+  const mvpVoice = pickVoice('mvp', { date: latestGameDate || new Date().toISOString().slice(0, 10) });
   const mvpRecentOpenings = getMvpWriteupsForSeason(season)
     .map(w => (String(w).split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140))
     .filter(Boolean).slice(0, 10);
@@ -8658,9 +8677,9 @@ ${mvpRecentOpenings.map(t => `  "${t}"`).join('\n')}` : ''}
 
 ${name} stats:\n${rankLines}
 
-FINAL REMINDER — write it in the ${mvpVoice.name} voice. Example of the voice (style only — do not copy its words or facts): "${mvpVoice.sample}"`;
+FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${mvpVoice.sample}"` : ''}`;
 
-      const { text } = await generateText(prompt, { maxTokens: 300, temperature: 0.9 });
+      const { text } = await generateText(prompt, { maxTokens: 300, temperature: aiTemperature() });
       setMvpWriteup(c.player.id, season, statsKey, text);
       return { ...c, writeup: text };
     } catch (err) {
