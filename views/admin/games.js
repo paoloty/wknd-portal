@@ -1,5 +1,5 @@
 import { escHtml } from '../layout.js';
-import { displayPlayerName, teamColor, playerLink } from '../utils.js';
+import { displayPlayerName, teamColor, playerLink, manilaTodayStr } from '../utils.js';
 import { buildBoxScoreData, gameLeadersTab, teamComparisonTab, lineScoreTab } from '../game.js';
 
 const ICON_IMPORT    = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v7.5M4.5 6L7 8.5 9.5 6"/><path d="M2 10v1.5A1.5 1.5 0 0 0 3.5 13h7A1.5 1.5 0 0 0 12 11.5V10"/></svg>`;
@@ -99,7 +99,16 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     `<option value="${escHtml(t.id)}">${escHtml(t.name)}</option>`
   ).join('');
 
-  const today = new Date().toISOString().slice(0, 10);
+  // New games default to the next game day — the coming Sunday (today, if it's Sunday) in
+  // Manila time — rather than today: creating Sunday's games midweek and forgetting to change
+  // the date used to save them under the day they were created. Still editable for playoffs
+  // or any off-day game.
+  const nextSunday = (() => {
+    const [y, m, d] = manilaTodayStr().split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d));
+    t.setUTCDate(t.getUTCDate() + ((7 - t.getUTCDay()) % 7));
+    return t.toISOString().slice(0, 10);
+  })();
 
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -119,7 +128,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
     <div class="agm-modal-body">
       <div class="agm-modal-field">
         <label class="agm-modal-label">Date</label>
-        <input type="date" id="ng-date" class="agm-modal-input" value="${today}">
+        <input type="date" id="ng-date" class="agm-modal-input" value="${nextSunday}">
       </div>
       <div class="agm-modal-field">
         <label class="agm-modal-label">Team A</label>
