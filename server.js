@@ -8028,6 +8028,27 @@ function mvpStatsKey(s) {
   return `v2_${s.gp}_${s.pts}_${s.reb}_${s.ast}_${s.fgm}_${s.fga}_${s.ftm}_${s.fta}_${s.wins}_${s.losses}`;
 }
 
+// Returns { playerId: rank } for the race as it stood before the latest game week, or null
+// when there is no earlier week to compare against. Players outside last week's pool are
+// absent from the map (rendered as NEW).
+function mvpPrevRanks(season, completedGames) {
+  const dates = completedGames
+    .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && g.status === 'complete' && g.date)
+    .map(g => String(g.date).slice(0, 10))
+    .sort();
+  if (!dates.length) return null;
+  const latest = new Date(dates[dates.length - 1] + 'T00:00:00Z');
+  latest.setUTCDate(latest.getUTCDate() - ((latest.getUTCDay() + 6) % 7)); // back to Monday
+  const weekStart = latest.toISOString().slice(0, 10);
+  if (!dates.some(d => d < weekStart)) return null;
+
+  const prev = getMvpCandidates(season, weekStart)
+    .filter(s => s.gp >= 1)
+    .map(s => ({ id: s.id, score: computeMvpScore(s) }))
+    .sort((a, b) => b.score - a.score);
+  return Object.fromEntries(prev.map((p, i) => [p.id, i + 1]));
+}
+
 function isPlayoffStarted(season) {
   return getPlayoffGames(String(season)).length > 0;
 }
@@ -8350,6 +8371,11 @@ app.get('/mvp', async (req, res) => {
   const scored = allQualified
     .sort((a, b) => b.mvpScore - a.mvpScore)
     .slice(0, 10);
+
+  // Last week's ranks for the up/down arrows: replay the race with every game from the
+  // latest game week (Mon–Sun) excluded. No prior week → no arrows.
+  const prevRanks = mvpPrevRanks(season, completedGames);
+  for (const c of scored) c.prevRank = prevRanks ? (prevRanks[c.player.id] ?? null) : undefined;
 
   // Fetch or generate writeups for top candidates (locked once playoffs begin)
   const withWriteups = await Promise.all(scored.map(async c => {

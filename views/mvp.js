@@ -22,6 +22,18 @@ function regenBtn(playerId, season, isAdmin, playoffsStarted, { absolute = false
   return `<button class="mvp-regen-btn" data-pid="${escHtml(String(playerId))}" data-season="${escHtml(String(season))}" title="Regenerate writeup" style="${pos}background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);color:#94a3b8;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">↺</button>`;
 }
 
+// Week-over-week movement pill. prevRank: undefined = no earlier week to compare (render
+// nothing), null = wasn't in last week's pool (NEW), number = last week's rank.
+function moveBadge(rank, prevRank) {
+  if (prevRank === undefined) return '';
+  if (prevRank === null) return `<span class="mvp-move mvp-move--new" title="New this week">NEW</span>`;
+  const delta = prevRank - rank;
+  const title = `Last week: #${prevRank}`;
+  if (delta > 0) return `<span class="mvp-move mvp-move--up" title="${title}">▲${delta}</span>`;
+  if (delta < 0) return `<span class="mvp-move mvp-move--down" title="${title}">▼${-delta}</span>`;
+  return `<span class="mvp-move mvp-move--same" title="${title}">–</span>`;
+}
+
 // ── Hero row (pinned, top 3 — Frontrunner/Close Second/In the Mix) ─────────────
 // Same awd-hero-row family the Awards page uses for its own spotlight winners (see
 // views/awards.js) — reused directly rather than duplicated, since this is now the shared
@@ -46,7 +58,10 @@ function mvpHeroRow(c, rank, isAdmin, season, playoffsStarted) {
       <div class="awd-hero-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
     </div>
     <div class="awd-hero-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
-      <span class="awd-hero-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(label)}</span>
+      <div class="mvp-hero-tags">
+        <span class="awd-hero-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(label)}</span>
+        ${moveBadge(rank, c.prevRank)}
+      </div>
       <div class="awd-hero-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
       <p class="awd-hero-row__stats">${escHtml(statsLine)}</p>
       ${writeup
@@ -87,6 +102,7 @@ function mvpRankRow(c, rank, isAdmin, season, playoffsStarted) {
   </span>
   <span class="awd-rank-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</span>
   <span class="awd-rank-row__chip" style="background:${dark.bg};color:${dark.text}">#${rank}</span>
+  ${moveBadge(rank, c.prevRank)}
   <span class="awd-rank-row__stat">${mvpScore.toFixed(1)}</span>
   ${regenBtn(player.id, season, isAdmin, playoffsStarted)}
   ${toggle}
