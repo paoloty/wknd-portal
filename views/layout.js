@@ -291,6 +291,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       <nav class="site-footer__legal">
         <a href="/privacy">Privacy Policy</a>
         <a href="/terms">Terms of Service</a>
+        <a href="#" data-cookie-settings hidden>Cookie Settings</a>
       </nav>
       <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
     </footer>
@@ -371,6 +372,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         <nav class="site-footer__legal">
           <a href="/privacy">Privacy Policy</a>
           <a href="/terms">Terms of Service</a>
+          <a href="#" data-cookie-settings hidden>Cookie Settings</a>
         </nav>
         <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
       </div>

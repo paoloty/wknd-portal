@@ -71,6 +71,7 @@ export function privacyPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
         <li>Access the personal data we hold about you.</li>
         <li>Request correction of inaccurate data.</li>
         <li>Request deletion of your data.</li>
+        <li>Accept or decline analytics cookies at any time via the <strong>Cookie Settings</strong> link in the site footer. Analytics cookies are not set until you accept.</li>
         <li>Opt out of Google Analytics by using the <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener">Google Analytics Opt-out Browser Add-on</a>.</li>
       </ul>`,
     },

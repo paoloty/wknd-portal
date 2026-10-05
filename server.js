@@ -295,19 +295,54 @@ function checkPlayerPassword(password, storedHash) {
   } catch { return false; }
 }
 
-function buildGaSnippet(req) {
+// Google Consent Mode v2: everything defaults to denied, so until a visitor accepts, gtag
+// only sends cookieless pings (no _ga cookies). The choice lives in localStorage under
+// 'wknd_consent' ('granted' | 'denied') and is re-applied on every page load before
+// 'config' runs. The banner is built client-side so it never flashes for someone who has
+// already chosen; any [data-cookie-settings] element (the footer link) re-opens it. The
+// admin layout doesn't load styles.css, so it passes banner:false and just inherits
+// whatever was chosen on the public site (same origin, same localStorage).
+function buildGaSnippet(req, { banner = true } = {}) {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0].toLowerCase();
   if (!GA_MEASUREMENT_ID || host !== 'wkndbasketball.com') return '';
   const safeId = GA_MEASUREMENT_ID.replace(/'/g, "\\'");
-  return [
-    `<script async src="https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}"></script>`,
+  const lines = [
     '<script>',
     '  window.dataLayer = window.dataLayer || [];',
     '  function gtag(){dataLayer.push(arguments);}',
+    "  var wkndConsent = null; try { wkndConsent = localStorage.getItem('wknd_consent'); } catch (e) {}",
+    "  gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied', wait_for_update: 500 });",
+    "  if (wkndConsent === 'granted') gtag('consent', 'update', { analytics_storage: 'granted' });",
     "  gtag('js', new Date());",
     `  gtag('config', '${safeId}');`,
     '</script>',
-  ].join('\n  ');
+    `<script async src="https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}"></script>`,
+  ];
+  if (banner) lines.push(
+    '<script>',
+    "  document.addEventListener('DOMContentLoaded', function () {",
+    "    var bar = document.createElement('div');",
+    "    bar.className = 'cookie-consent'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Cookie consent'); bar.hidden = true;",
+    "    bar.innerHTML = '<p class=\"cookie-consent__text\">We use Google Analytics cookies to see how the site is used. No ads, no selling your data. <a href=\"/privacy\">Privacy Policy</a></p>'",
+    "      + '<div class=\"cookie-consent__actions\"><button type=\"button\" class=\"cookie-consent__btn\" data-choice=\"denied\">Decline</button>'",
+    "      + '<button type=\"button\" class=\"cookie-consent__btn cookie-consent__btn--primary\" data-choice=\"granted\">Accept</button></div>';",
+    "    document.body.appendChild(bar);",
+    "    bar.addEventListener('click', function (e) {",
+    "      var choice = e.target.getAttribute && e.target.getAttribute('data-choice');",
+    "      if (!choice) return;",
+    "      try { localStorage.setItem('wknd_consent', choice); } catch (err) {}",
+    "      gtag('consent', 'update', { analytics_storage: choice });",
+    "      bar.hidden = true;",
+    "    });",
+    "    if (wkndConsent !== 'granted' && wkndConsent !== 'denied') bar.hidden = false;",
+    "    document.querySelectorAll('[data-cookie-settings]').forEach(function (el) {",
+    "      el.hidden = false;",
+    "      el.addEventListener('click', function (e) { e.preventDefault(); bar.hidden = false; });",
+    "    });",
+    '  });',
+    '</script>',
+  );
+  return lines.join('\n  ');
 }
 
 function getRequestOrigin(req) {
@@ -1804,7 +1839,7 @@ function applySeoOverrideTags(metaTags, override, effectiveTitle, origin) {
 }
 
 function renderAdminPage(req, opts) {
-  return adminLayout({ gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: getAdminAllowedSections(req), ...opts });
+  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: getAdminAllowedSections(req), ...opts });
 }
 
 function formatName(raw) {
