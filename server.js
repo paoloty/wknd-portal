@@ -12,8 +12,11 @@ import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import CleanCSS from 'clean-css';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, birthdayEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
-import { birthdaysAround, autoDraftBirthdays, birthdayFacts, birthdayStatRow, defaultBirthdayMessage, writeBirthdayMessage, birthdayLinks } from './lib/birthday.js';
+import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
+import {
+  birthdaysAround, runBirthdayAutomation, autoSendState, birthdayFacts, defaultBirthdayMessage, writeBirthdayMessage,
+  buildBirthdayEmail, sendBirthdayEmail, logBirthdayEventFor,
+} from './lib/birthday.js';
 import { detectBogusFlags } from './lib/registration-flags.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import { forgotPasswordPage, forgotPasswordSentPage } from './views/forgot-password.js';
@@ -145,8 +148,7 @@ import {
   getPeerRating, getPeerRatingsForRatee, upsertPeerRating, getOrAssignPlayerAlias,
   getAllPeerRatings, getPeerRatingSeasons,
   db as portalDb,
-  getBirthdayEmail, saveBirthdayDraft, claimBirthdaySend, finishBirthdaySend, releaseBirthdaySend,
-  getBirthdayEmailsForYears, getSentBirthdayEmails,
+  getBirthdayEmail, saveBirthdayDraft, getBirthdayEmailsForYears, getSentBirthdayEmails, getBirthdayLog,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -5010,9 +5012,10 @@ app.get('/admin', requireAuth, (req, res) => {
   let birthdays = [];
   if (isSuperAdmin) {
     // Only players who qualify (active in the last 3 months) are listed.
-    const list = birthdaysAround(today, { forward: 7 }).filter(e => e.activity?.active);
+    const list = birthdaysAround(today, { back: 7, forward: 7 }).filter(e => e.activity?.active);
     const drafts = getBirthdayEmailsForYears(list.map(e => e.year));
-    birthdays = list.map(e => ({ ...e, status: birthdayEmailStatus(e, drafts.get(`${e.player.id}:${e.year}`)) }));
+    const state = autoSendState();
+    birthdays = list.map(e => ({ ...e, status: birthdayEmailStatus(e, drafts.get(`${e.player.id}:${e.year}`), state) }));
   }
   res.send(renderAdminPage(req, {
     title: 'Dashboard',
@@ -5266,19 +5269,11 @@ app.get('/admin/share-log', requireSuperAdmin, (req, res) => {
   }));
 });
 
-// ── Birthday emails (manual for now: write → preview → test → send) ─────────
-
-function birthdayEmailFor(entry, facts, draft) {
-  return birthdayEmail({
-    firstName: entry.firstName,
-    belated: entry.inDays < 0,
-    number: entry.player.number || '',
-    stats: birthdayStatRow(facts),
-    opening: draft.opening,
-    closing: draft.closing,
-    ...birthdayLinks(entry.player),
-  });
-}
+// ── Birthday emails ──────────────────────────────────────────────────────────
+// Upcoming birthdays are fully automatic (lib/birthday.js runBirthdayAutomation: drafts
+// ahead of time, sends on the day). This page is for monitoring, the activity log, and
+// sending belated emails by hand. Manual writing/sending also opens for today's birthday
+// when automatic sending is paused, off on this server, or past its window for the day.
 
 // Only players within a week either side of their birthday can be acted on (the past week
 // for belated emails), and the year always comes from the server's own lookup, never the form.
@@ -5286,55 +5281,79 @@ function findBirthdayEntry(playerId) {
   return birthdaysAround(manilaTodayStr(), { back: 7, forward: 7 }).find(e => e.player.id === playerId) || null;
 }
 
+function birthdayManualAllowed(entry, state = autoSendState()) {
+  if (entry.inDays < 0) return true;
+  if (!state.on) return true;
+  return entry.inDays === 0 && state.windowPassed;
+}
+
 function birthdaysRedirect(res, playerId, { msg = '', error = '' } = {}) {
   const q = new URLSearchParams();
   if (msg) q.set('msg', msg);
   if (error) q.set('error', error);
-  res.redirect(`/admin/birthdays?${q}#p-${encodeURIComponent(playerId)}`);
+  res.redirect(`/admin/birthdays?${q}${playerId ? `#p-${encodeURIComponent(playerId)}` : ''}`);
 }
 
 app.get('/admin/birthdays', requireSuperAdmin, (req, res) => {
   const today = manilaTodayStr();
   const year = Number(today.slice(0, 4));
+  const state = autoSendState();
   // Players who don't qualify (no login, Papawis or game in 3 months) aren't listed at all.
   const all = birthdaysAround(today, { back: 7, forward: 7 }).filter(e => e.activity?.active);
   const drafts = getBirthdayEmailsForYears(all.map(e => e.year));
-  // Today and upcoming first, then the past week (most recent first) for belated sends.
-  const ordered = [...all.filter(e => e.inDays >= 0), ...all.filter(e => e.inDays < 0).reverse()];
+  // Today and upcoming first, then the past week (most recent first). Past birthdays only
+  // get a card while their belated email is still unsent; sent ones live in the table.
+  const ordered = [...all.filter(e => e.inDays >= 0), ...all.filter(e => e.inDays < 0).reverse()]
+    .filter(e => e.inDays >= 0 || drafts.get(`${e.player.id}:${e.year}`)?.status !== 'sent');
   const rows = ordered.map(entry => {
     const draft = drafts.get(`${entry.player.id}:${entry.year}`) || null;
-    const previewHtml = draft ? birthdayEmailFor(entry, birthdayFacts(entry), draft).html : null;
-    return { entry, draft, previewHtml };
+    const previewHtml = draft ? buildBirthdayEmail(entry, draft).html : null;
+    return { entry, draft, previewHtml, manual: birthdayManualAllowed(entry, state) };
   });
   res.send(renderAdminPage(req, {
     title: 'Birthdays',
     currentPath: '/admin/birthdays',
     body: adminBirthdaysBody({
-      all, rows, drafts, sent: getSentBirthdayEmails(year), year,
+      all, rows, drafts, sent: getSentBirthdayEmails(year), year, state, log: getBirthdayLog(100),
       msg: String(req.query.msg || ''), error: String(req.query.error || ''), testEmail: ADMIN_TEST_EMAIL,
     }),
   }));
 });
 
-app.post('/admin/birthdays/:playerId/generate', requireSuperAdmin, async (req, res) => {
+app.post('/admin/birthdays/auto-send', requireSuperAdmin, (req, res) => {
+  const on = req.body?.enabled === '1';
+  setSetting('birthday_auto_send', on ? '1' : '0');
+  birthdaysRedirect(res, '', { msg: on ? 'Automatic birthday emails turned on.' : 'Automatic birthday emails paused.' });
+});
+
+// Guards shared by the per-player write/send actions: the player must be in the window and
+// it must be a birthday an admin handles (belated, or today when automation isn't).
+function birthdayActionEntry(req, res) {
   const entry = findBirthdayEntry(req.params.playerId);
-  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  if (!entry) { birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday within a week of today.' }); return null; }
+  if (!birthdayManualAllowed(entry)) { birthdaysRedirect(res, entry.player.id, { error: `${entry.firstName}'s email is handled automatically.` }); return null; }
+  return entry;
+}
+
+app.post('/admin/birthdays/:playerId/generate', requireSuperAdmin, async (req, res) => {
+  const entry = birthdayActionEntry(req, res); if (!entry) return;
   const m = await writeBirthdayMessage(birthdayFacts(entry));
   if (!saveBirthdayDraft({ playerId: entry.player.id, year: entry.year, ...m })) {
     return birthdaysRedirect(res, entry.player.id, { error: 'Already sent, so the message can no longer change.' });
   }
+  logBirthdayEventFor(entry, 'drafted', `${m.source === 'ai' ? 'AI message' : 'Default message'} · ${m.note}`, 'admin');
   birthdaysRedirect(res, entry.player.id, m.source === 'ai'
     ? { msg: `AI message written for ${entry.firstName}.` }
     : { error: `Used the default message instead. ${m.note}` });
 });
 
 app.post('/admin/birthdays/:playerId/default', requireSuperAdmin, (req, res) => {
-  const entry = findBirthdayEntry(req.params.playerId);
-  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  const entry = birthdayActionEntry(req, res); if (!entry) return;
   const m = defaultBirthdayMessage(birthdayFacts(entry));
   if (!saveBirthdayDraft({ playerId: entry.player.id, year: entry.year, ...m, source: 'default', note: '' })) {
     return birthdaysRedirect(res, entry.player.id, { error: 'Already sent, so the message can no longer change.' });
   }
+  logBirthdayEventFor(entry, 'drafted', 'Default message', 'admin');
   birthdaysRedirect(res, entry.player.id, { msg: `Default message set for ${entry.firstName}.` });
 });
 
@@ -5348,26 +5367,29 @@ function saveBirthdayEdits(entry, body) {
   if (!opening) return draft;
   if (opening !== draft.opening || closing !== draft.closing) {
     saveBirthdayDraft({ playerId: entry.player.id, year: entry.year, opening, closing, source: 'edited', note: '' });
+    logBirthdayEventFor(entry, 'edited', '', 'admin');
   }
   return getBirthdayEmail(entry.player.id, entry.year);
 }
 
 app.post('/admin/birthdays/:playerId/save', requireSuperAdmin, (req, res) => {
-  const entry = findBirthdayEntry(req.params.playerId);
-  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  const entry = birthdayActionEntry(req, res); if (!entry) return;
   if (!String(req.body?.opening || '').trim()) return birthdaysRedirect(res, entry.player.id, { error: 'The opening can\'t be empty.' });
   saveBirthdayEdits(entry, req.body);
   birthdaysRedirect(res, entry.player.id, { msg: 'Saved.' });
 });
 
+// A test only goes to the admin inbox, so it's allowed for any listed birthday, automatic
+// ones included (it doesn't save edits for those, since their message isn't editable here).
 app.post('/admin/birthdays/:playerId/test', requireSuperAdmin, async (req, res) => {
   const entry = findBirthdayEntry(req.params.playerId);
-  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
-  const draft = saveBirthdayEdits(entry, req.body);
-  if (!draft) return birthdaysRedirect(res, entry.player.id, { error: 'Write a message first.' });
-  const { subject, html } = birthdayEmailFor(entry, birthdayFacts(entry), draft);
+  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday within a week of today.' });
+  const draft = birthdayManualAllowed(entry) ? saveBirthdayEdits(entry, req.body) : getBirthdayEmail(entry.player.id, entry.year);
+  if (!draft) return birthdaysRedirect(res, entry.player.id, { error: 'There\'s no message yet.' });
+  const { subject, html } = buildBirthdayEmail(entry, draft);
   try {
     if (!await sendMail({ to: ADMIN_TEST_EMAIL, subject: `[TEST] ${subject}`, html })) throw new Error("Email isn't configured (RESEND_API_KEY missing).");
+    logBirthdayEventFor(entry, 'test_sent', ADMIN_TEST_EMAIL, 'admin');
     birthdaysRedirect(res, entry.player.id, { msg: `Test sent to ${ADMIN_TEST_EMAIL}.` });
   } catch (e) {
     birthdaysRedirect(res, entry.player.id, { error: `Test failed: ${e.message}` });
@@ -5375,27 +5397,15 @@ app.post('/admin/birthdays/:playerId/test', requireSuperAdmin, async (req, res) 
 });
 
 app.post('/admin/birthdays/:playerId/send', requireSuperAdmin, async (req, res) => {
-  const entry = findBirthdayEntry(req.params.playerId);
-  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  const entry = birthdayActionEntry(req, res); if (!entry) return;
   if (entry.inDays > 0) return birthdaysRedirect(res, entry.player.id, { error: 'Birthday emails can only be sent on the birthday, or up to a week late.' });
   if (!entry.email) return birthdaysRedirect(res, entry.player.id, { error: 'No approved registration email on file.' });
   if (!entry.activity.active) return birthdaysRedirect(res, entry.player.id, { error: `${entry.firstName} hasn't logged in, joined Papawis or played a game in the last 3 months, so no birthday email.` });
-  saveBirthdayEdits(entry, req.body);
-  if (!claimBirthdaySend(entry.player.id, entry.year)) {
-    return birthdaysRedirect(res, entry.player.id, { error: 'Already sent (or being sent) this year.' });
-  }
-  const draft = getBirthdayEmail(entry.player.id, entry.year);
-  const { subject, html } = birthdayEmailFor(entry, birthdayFacts(entry), draft);
-  try {
-    // sendMail quietly skips (returns nothing) when email isn't configured; that must not
-    // be recorded as sent.
-    if (!await sendMail({ to: entry.email, subject, html })) throw new Error("Email isn't configured (RESEND_API_KEY missing).");
-    finishBirthdaySend(entry.player.id, entry.year, entry.email);
-    birthdaysRedirect(res, entry.player.id, { msg: `Birthday email sent to ${entry.firstName}.` });
-  } catch (e) {
-    releaseBirthdaySend(entry.player.id, entry.year);
-    birthdaysRedirect(res, entry.player.id, { error: `Send failed, nothing went out: ${e.message}` });
-  }
+  if (!saveBirthdayEdits(entry, req.body)) return birthdaysRedirect(res, entry.player.id, { error: 'Write a message first.' });
+  const r = await sendBirthdayEmail(entry, { actor: 'admin' });
+  birthdaysRedirect(res, entry.player.id, r.ok
+    ? { msg: `Birthday email sent to ${entry.firstName}.` }
+    : { error: `Send failed, nothing went out: ${r.error}` });
 });
 
 // ── DB sync (local-only UI + production export endpoint) ──────────────────
@@ -13466,18 +13476,18 @@ function runPapawisReminders() {
 runPapawisReminders();
 setInterval(runPapawisReminders, PAPAWIS_REMINDER_CHECK_MS);
 
-// Birthday drafts: hourly, write AI drafts for upcoming birthdays so they're ready to review
-// on /admin/birthdays (see autoDraftBirthdays in lib/birthday.js). Drafts only, never sends,
-// so it isn't behind a setting the way Papawis reminders are. The first run waits a minute
-// so it doesn't compete with startup.
-const BIRTHDAY_DRAFT_CHECK_MS = 60 * 60 * 1000;
-function runBirthdayDrafts() {
-  autoDraftBirthdays(manilaTodayStr()).then(({ written }) => {
-    if (written) console.log(`[birthdays] auto-drafted ${written} message${written === 1 ? '' : 's'}`);
-  }).catch(e => console.error('[birthdays] auto-draft failed:', e.message));
+// Birthday emails: hourly, write drafts for the coming week and send today's (see
+// runBirthdayAutomation in lib/birthday.js). Sending only happens on production, from 8 AM
+// Manila, and can be paused on /admin/birthdays. The first run waits a minute so it
+// doesn't compete with startup.
+const BIRTHDAY_AUTOMATION_CHECK_MS = 60 * 60 * 1000;
+function runBirthdayJobs() {
+  runBirthdayAutomation(manilaTodayStr()).then(({ drafted, sent, failed }) => {
+    if (drafted || sent || failed) console.log(`[birthdays] drafted ${drafted}, sent ${sent}, failed ${failed}`);
+  }).catch(e => console.error('[birthdays] automation failed:', e.message));
 }
-setTimeout(runBirthdayDrafts, 60 * 1000);
-setInterval(runBirthdayDrafts, BIRTHDAY_DRAFT_CHECK_MS);
+setTimeout(runBirthdayJobs, 60 * 1000);
+setInterval(runBirthdayJobs, BIRTHDAY_AUTOMATION_CHECK_MS);
 
 // ── Live game-comments WebSocket ────────────────────────────────────────────────
 // Scoped to one room per game (not a site-wide socket) — a client on /games/:id only

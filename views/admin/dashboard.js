@@ -153,7 +153,9 @@ export function adminDashboardBody({
   if (openFineCount > 0) alerts.push(alertPill('/admin/fines', 'error', openFineCount, `open fine case${openFineCount === 1 ? '' : 's'} awaiting a decision`));
   if (pendingCount > 0) alerts.push(alertPill('/admin/ledger', 'brand', pendingCount, `pending transaction${pendingCount === 1 ? '' : 's'} awaiting confirmation`));
   const birthdaysToAct = birthdays.filter(b => b.status.attention).length;
-  if (birthdaysToAct > 0) alerts.push(alertPill('/admin/birthdays', 'brand', birthdaysToAct, `birthday${birthdaysToAct === 1 ? '' : 's'} today, email not sent yet`));
+  // Upcoming birthdays, plus past-week ones only while their belated email still needs sending.
+  const shownBirthdays = birthdays.filter(b => b.inDays >= 0 || b.status.attention);
+  if (birthdaysToAct > 0) alerts.push(alertPill('/admin/birthdays', 'brand', birthdaysToAct, `birthday email${birthdaysToAct === 1 ? '' : 's'} to send by hand`));
   if (underReview > 0) alerts.push(alertPill('/admin/games', 'error', underReview, `game${underReview === 1 ? '' : 's'} under review`));
 
   return `
@@ -198,8 +200,8 @@ ${alerts.length ? `<div class="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">${a
     ${isSuperAdmin ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       ${panelHeader('Birthdays this week', '/admin/birthdays', 'Manage')}
       <div>
-        ${birthdays.length
-          ? birthdays.map(birthdayRow).join('')
+        ${shownBirthdays.length
+          ? shownBirthdays.map(birthdayRow).join('')
           : `<p class="px-4 py-8 text-center text-sm text-slate-500">No birthdays in the next 7 days.</p>`}
       </div>
     </div>` : ''}
