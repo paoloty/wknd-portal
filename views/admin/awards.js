@@ -15,7 +15,7 @@ const SINGLE_PHOTO_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp']);
 // since "show on homepage" is a per-award-type choice, not per-player, for those.
 const HOME_GALLERY_TYPES = new Set(['mvp', 'dpoy', 'finals_mvp', 'scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader']);
 
-const AWARD_LABELS = {
+export const AWARD_LABELS = {
   mvp:             'Season MVP',
   dpoy:            'Best Defender',
   all_wknd_1:      'All WKND 1st Team',

@@ -172,6 +172,7 @@ const SUPER_ADMIN_NAV = [
       { href: '/admin/privileges', label: 'Privileges', icon: 'shield' },
       { href: '/admin/logs', label: 'Action Logs', icon: 'ledger' },
       { href: '/admin/share-log', label: 'Share Card Log', icon: 'share' },
+      { href: '/admin/birthdays', label: 'Birthdays', icon: 'users' },
       { href: '/admin/ratings', label: 'Community Ratings', icon: 'awards' },
       ...(process.env.NODE_ENV !== 'production' ? [{ href: '/admin/db', label: 'Sync DB', icon: 'finance' }] : []),
     ],

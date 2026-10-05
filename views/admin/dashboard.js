@@ -1,4 +1,5 @@
 import { escHtml } from '../layout.js';
+import { fmtBirthdayWhen } from './birthdays.js';
 import { formatTimeRange } from '../utils.js';
 
 const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2.5L9 7l-4 4.5"/></svg>`;
@@ -83,6 +84,16 @@ function alertPill(href, color, count, label) {
   </a>`;
 }
 
+function birthdayRow(b) {
+  return `<a href="/admin/birthdays#p-${escHtml(b.player.id)}" class="flex items-center gap-3 px-4 py-2.5 border-b border-admin-border/50 last:border-b-0 text-sm no-underline hover:bg-white/[.02]">
+    <span class="min-w-0">
+      <span class="block truncate ${b.inDays === 0 ? 'text-brand font-semibold' : 'text-slate-200'}">${escHtml(b.fullName)}${b.age ? ` <span class="text-slate-500 font-normal">· turns ${b.age}</span>` : ''}</span>
+      <span class="block text-xs text-slate-500">${escHtml(fmtBirthdayWhen(b.inDays, b.date))}</span>
+    </span>
+    <span class="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wide" style="color:${b.status.color}">${escHtml(b.status.label)}</span>
+  </a>`;
+}
+
 function panelHeader(label, linkHref, linkLabel) {
   return `<div class="flex items-center justify-between px-4 py-3 border-b border-admin-border">
     <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${escHtml(label)}</span>
@@ -130,6 +141,7 @@ export function adminDashboardBody({
   players = [], teams = [], recentGames = [], upcoming = [],
   financeSummary = {}, pendingTx = [], underReview = 0, activePlayers = 0, gamesPlayed = 0,
   pendingUsers = 0, openFineCases = [], nextPapawis = null, isSuperAdmin = false, recentActivity = [],
+  birthdays = [],
 } = {}) {
   const totalOutstanding = Number(financeSummary.total_outstanding ?? 0);
   const pendingCount     = pendingTx.length;
@@ -140,6 +152,8 @@ export function adminDashboardBody({
   if (pendingUsers > 0) alerts.push(alertPill('/admin/users', 'brand', pendingUsers, `pending approval${pendingUsers === 1 ? '' : 's'}`));
   if (openFineCount > 0) alerts.push(alertPill('/admin/fines', 'error', openFineCount, `open fine case${openFineCount === 1 ? '' : 's'} awaiting a decision`));
   if (pendingCount > 0) alerts.push(alertPill('/admin/ledger', 'brand', pendingCount, `pending transaction${pendingCount === 1 ? '' : 's'} awaiting confirmation`));
+  const birthdaysToAct = birthdays.filter(b => b.status.attention).length;
+  if (birthdaysToAct > 0) alerts.push(alertPill('/admin/birthdays', 'brand', birthdaysToAct, `birthday${birthdaysToAct === 1 ? '' : 's'} today, email not sent yet`));
   if (underReview > 0) alerts.push(alertPill('/admin/games', 'error', underReview, `game${underReview === 1 ? '' : 's'} under review`));
 
   return `
@@ -180,6 +194,15 @@ ${alerts.length ? `<div class="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">${a
       ${panelHeader('Papawis', '/admin/papawis', 'Manage')}
       ${papawisSnapshot(nextPapawis)}
     </div>
+
+    ${isSuperAdmin ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      ${panelHeader('Birthdays this week', '/admin/birthdays', 'Manage')}
+      <div>
+        ${birthdays.length
+          ? birthdays.map(birthdayRow).join('')
+          : `<p class="px-4 py-8 text-center text-sm text-slate-500">No birthdays in the next 7 days.</p>`}
+      </div>
+    </div>` : ''}
 
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border">

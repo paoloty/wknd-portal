@@ -12,7 +12,8 @@ import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import CleanCSS from 'clean-css';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail } from './lib/mailer.js';
+import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, birthdayEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
+import { birthdaysAround, birthdayFacts, birthdayStatRow, defaultBirthdayMessage, writeBirthdayMessage, birthdayLinks } from './lib/birthday.js';
 import { detectBogusFlags } from './lib/registration-flags.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import { forgotPasswordPage, forgotPasswordSentPage } from './views/forgot-password.js';
@@ -144,6 +145,8 @@ import {
   getPeerRating, getPeerRatingsForRatee, upsertPeerRating, getOrAssignPlayerAlias,
   getAllPeerRatings, getPeerRatingSeasons,
   db as portalDb,
+  getBirthdayEmail, saveBirthdayDraft, claimBirthdaySend, finishBirthdaySend, releaseBirthdaySend,
+  getBirthdayEmailsForYears, getSentBirthdayEmails,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -163,6 +166,7 @@ import { adminUserDetailBody }  from './views/admin/user-detail.js';
 import { adminPrivilegesBody }  from './views/admin/privileges.js';
 import { adminLogsPage }        from './views/admin/logs.js';
 import { adminShareCardLogPage } from './views/admin/share-log.js';
+import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
@@ -4957,6 +4961,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
         if (existing.status !== 'approved') return res.redirect('/login?error=not_approved');
         req.session.playerRegId    = existing.id;
         req.session.playerPlayerId = existing.player_id;
+        setRegistrationLastLogin(existing.id);
         if (existing.is_admin) {
           req.session.isAdmin          = true;
           req.session.isElevatedPlayer = true;
@@ -5001,12 +5006,19 @@ app.get('/admin', requireAuth, (req, res) => {
     .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)[0] || null;
   const isSuperAdmin   = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   const recentActivity = isSuperAdmin ? getAdminLogs(8) : [];
+  // Birthdays (with ages) are super-admin only, same as /admin/birthdays.
+  let birthdays = [];
+  if (isSuperAdmin) {
+    const list = birthdaysAround(today, { forward: 7 });
+    const drafts = getBirthdayEmailsForYears(list.map(e => e.year));
+    birthdays = list.map(e => ({ ...e, status: birthdayEmailStatus(e, drafts.get(`${e.player.id}:${e.year}`)) }));
+  }
   res.send(renderAdminPage(req, {
     title: 'Dashboard',
     currentPath: '/admin',
     body: adminDashboardBody({
       players, teams, recentGames, upcoming, financeSummary, pendingTx, underReview, activePlayers, gamesPlayed,
-      pendingUsers, openFineCases, nextPapawis, isSuperAdmin, recentActivity,
+      pendingUsers, openFineCases, nextPapawis, isSuperAdmin, recentActivity, birthdays,
     }),
   }));
 });
@@ -5251,6 +5263,137 @@ app.get('/admin/share-log', requireSuperAdmin, (req, res) => {
     currentPath: '/admin/share-log',
     body: adminShareCardLogPage({ logs: getAllShareCardLog(500) }),
   }));
+});
+
+// ── Birthday emails (manual for now: write → preview → test → send) ─────────
+
+function birthdayEmailFor(entry, facts, draft) {
+  return birthdayEmail({
+    firstName: entry.firstName,
+    belated: entry.inDays < 0,
+    number: entry.player.number || '',
+    stats: birthdayStatRow(facts),
+    opening: draft.opening,
+    closing: draft.closing,
+    ...birthdayLinks(entry.player),
+  });
+}
+
+// Only players within a week either side of their birthday can be acted on (the past week
+// for belated emails), and the year always comes from the server's own lookup, never the form.
+function findBirthdayEntry(playerId) {
+  return birthdaysAround(manilaTodayStr(), { back: 7, forward: 7 }).find(e => e.player.id === playerId) || null;
+}
+
+function birthdaysRedirect(res, playerId, { msg = '', error = '' } = {}) {
+  const q = new URLSearchParams();
+  if (msg) q.set('msg', msg);
+  if (error) q.set('error', error);
+  res.redirect(`/admin/birthdays?${q}#p-${encodeURIComponent(playerId)}`);
+}
+
+app.get('/admin/birthdays', requireSuperAdmin, (req, res) => {
+  const today = manilaTodayStr();
+  const year = Number(today.slice(0, 4));
+  const all = birthdaysAround(today, { back: 7, forward: 7 });
+  const drafts = getBirthdayEmailsForYears(all.map(e => e.year));
+  // Today and upcoming first, then the past week (most recent first) for belated sends.
+  const ordered = [...all.filter(e => e.inDays >= 0), ...all.filter(e => e.inDays < 0).reverse()];
+  const rows = ordered.map(entry => {
+    const draft = drafts.get(`${entry.player.id}:${entry.year}`) || null;
+    const previewHtml = draft ? birthdayEmailFor(entry, birthdayFacts(entry), draft).html : null;
+    return { entry, draft, previewHtml };
+  });
+  res.send(renderAdminPage(req, {
+    title: 'Birthdays',
+    currentPath: '/admin/birthdays',
+    body: adminBirthdaysBody({
+      all, rows, drafts, sent: getSentBirthdayEmails(year), year,
+      msg: String(req.query.msg || ''), error: String(req.query.error || ''), testEmail: ADMIN_TEST_EMAIL,
+    }),
+  }));
+});
+
+app.post('/admin/birthdays/:playerId/generate', requireSuperAdmin, async (req, res) => {
+  const entry = findBirthdayEntry(req.params.playerId);
+  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  const m = await writeBirthdayMessage(birthdayFacts(entry));
+  if (!saveBirthdayDraft({ playerId: entry.player.id, year: entry.year, ...m })) {
+    return birthdaysRedirect(res, entry.player.id, { error: 'Already sent, so the message can no longer change.' });
+  }
+  birthdaysRedirect(res, entry.player.id, m.source === 'ai'
+    ? { msg: `AI message written for ${entry.firstName}.` }
+    : { error: `Used the default message instead. ${m.note}` });
+});
+
+app.post('/admin/birthdays/:playerId/default', requireSuperAdmin, (req, res) => {
+  const entry = findBirthdayEntry(req.params.playerId);
+  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  const m = defaultBirthdayMessage(birthdayFacts(entry));
+  if (!saveBirthdayDraft({ playerId: entry.player.id, year: entry.year, ...m, source: 'default', note: '' })) {
+    return birthdaysRedirect(res, entry.player.id, { error: 'Already sent, so the message can no longer change.' });
+  }
+  birthdaysRedirect(res, entry.player.id, { msg: `Default message set for ${entry.firstName}.` });
+});
+
+// Saves the textareas if they differ from the stored draft. Shared by save/test/send so
+// a test or send always uses exactly what's on screen.
+function saveBirthdayEdits(entry, body) {
+  const draft = getBirthdayEmail(entry.player.id, entry.year);
+  if (!draft || draft.status !== 'draft') return draft;
+  const opening = String(body?.opening ?? '').trim().slice(0, 1200);
+  const closing = String(body?.closing ?? '').trim().slice(0, 400);
+  if (!opening) return draft;
+  if (opening !== draft.opening || closing !== draft.closing) {
+    saveBirthdayDraft({ playerId: entry.player.id, year: entry.year, opening, closing, source: 'edited', note: '' });
+  }
+  return getBirthdayEmail(entry.player.id, entry.year);
+}
+
+app.post('/admin/birthdays/:playerId/save', requireSuperAdmin, (req, res) => {
+  const entry = findBirthdayEntry(req.params.playerId);
+  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  if (!String(req.body?.opening || '').trim()) return birthdaysRedirect(res, entry.player.id, { error: 'The opening can\'t be empty.' });
+  saveBirthdayEdits(entry, req.body);
+  birthdaysRedirect(res, entry.player.id, { msg: 'Saved.' });
+});
+
+app.post('/admin/birthdays/:playerId/test', requireSuperAdmin, async (req, res) => {
+  const entry = findBirthdayEntry(req.params.playerId);
+  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  const draft = saveBirthdayEdits(entry, req.body);
+  if (!draft) return birthdaysRedirect(res, entry.player.id, { error: 'Write a message first.' });
+  const { subject, html } = birthdayEmailFor(entry, birthdayFacts(entry), draft);
+  try {
+    if (!await sendMail({ to: ADMIN_TEST_EMAIL, subject: `[TEST] ${subject}`, html })) throw new Error("Email isn't configured (RESEND_API_KEY missing).");
+    birthdaysRedirect(res, entry.player.id, { msg: `Test sent to ${ADMIN_TEST_EMAIL}.` });
+  } catch (e) {
+    birthdaysRedirect(res, entry.player.id, { error: `Test failed: ${e.message}` });
+  }
+});
+
+app.post('/admin/birthdays/:playerId/send', requireSuperAdmin, async (req, res) => {
+  const entry = findBirthdayEntry(req.params.playerId);
+  if (!entry) return birthdaysRedirect(res, req.params.playerId, { error: 'That player has no birthday in the next 7 days.' });
+  if (entry.inDays > 0) return birthdaysRedirect(res, entry.player.id, { error: 'Birthday emails can only be sent on the birthday, or up to a week late.' });
+  if (!entry.email) return birthdaysRedirect(res, entry.player.id, { error: 'No approved registration email on file.' });
+  if (!entry.activity.active) return birthdaysRedirect(res, entry.player.id, { error: `${entry.firstName} hasn't logged in, joined Papawis or played a game in the last 3 months, so no birthday email.` });
+  saveBirthdayEdits(entry, req.body);
+  if (!claimBirthdaySend(entry.player.id, entry.year)) {
+    return birthdaysRedirect(res, entry.player.id, { error: 'Already sent (or being sent) this year.' });
+  }
+  const draft = getBirthdayEmail(entry.player.id, entry.year);
+  const { subject, html } = birthdayEmailFor(entry, birthdayFacts(entry), draft);
+  try {
+    // sendMail quietly skips (returns nothing) when email isn't configured; that must not
+    // be recorded as sent.
+    if (!await sendMail({ to: entry.email, subject, html })) throw new Error("Email isn't configured (RESEND_API_KEY missing).");
+    finishBirthdaySend(entry.player.id, entry.year, entry.email);
+    birthdaysRedirect(res, entry.player.id, { msg: `Birthday email sent to ${entry.firstName}.` });
+  } catch (e) {
+    releaseBirthdaySend(entry.player.id, entry.year);
+    birthdaysRedirect(res, entry.player.id, { error: `Send failed, nothing went out: ${e.message}` });
+  }
 });
 
 // ── DB sync (local-only UI + production export endpoint) ──────────────────
