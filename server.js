@@ -7266,13 +7266,14 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
 
   const stats      = getGameDetailStats(game.id);
   const potgId     = req.body?.player_id || game.manual_potg_player_id || derivePotgPlayerId(game, stats);
+  const adminNotes = String(req.body?.context || '').trim().slice(0, 1500);
   const dnpPlayers = getGameDnpPlayers(game.id);
   const qScores    = extractQuarterScores(game);
   const records    = getTeamRecordsAsOf(game.season, game.date);
   const recMap     = Object.fromEntries(records.map(r => [r.team_id, r]));
-  const prevMatch  = getPrevMatchup(game.id, game.team_a_id, game.team_b_id);
-  const streakA    = getTeamStreak(game.team_a_id, game.id);
-  const streakB    = getTeamStreak(game.team_b_id, game.id);
+  const prevMatch  = getPrevMatchup(game);
+  const streakA    = getTeamStreak(game.team_a_id, game);
+  const streakB    = getTeamStreak(game.team_b_id, game);
 
   // Filter PBP
   let log;
@@ -7380,7 +7381,10 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     [streakLine(game.team_a_name, streakA), streakLine(game.team_b_name, streakB)].filter(Boolean).join('\n') || '(no notable streaks)',
     ``,
     prevMatch
-      ? `PREVIOUS MATCHUP: ${prevMatch.team_a_name} ${prevMatch.team_a_score} – ${prevMatch.team_b_score} ${prevMatch.team_b_name} on ${prevMatch.date}`
+      ? `PREVIOUS MATCHUP: ${prevMatch.team_a_name} ${prevMatch.team_a_score} – ${prevMatch.team_b_score} ${prevMatch.team_b_name} on ${prevMatch.date}` +
+        (String(prevMatch.season) !== String(game.season)
+          ? ` (PREVIOUS SEASON — Season ${prevMatch.season}${prevMatch.game_type !== 'regular' ? ` ${prevMatch.game_type}` : ''}; does not affect this season's records)`
+          : '')
       : 'PREVIOUS MATCHUP: First meeting or no prior matchup found.',
     ``,
     `QUARTER-BY-QUARTER (running score):`,
@@ -7398,6 +7402,10 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     ``,
     `PLAY-BY-PLAY (chronological Q1→Q4, ${pbpFiltered.length} events):`,
     pbpText || '(no play-by-play data)',
+    adminNotes ? `` : '',
+    adminNotes
+      ? `ADMIN NOTES (from the league admin who was at the game — treat as factual context you may use, and follow any focus or tone requests. All other rules above still apply. If a note conflicts with the box score numbers, the box score wins.):\n${adminNotes}`
+      : '',
   ].filter(s => s !== null).join('\n');
 
   try {

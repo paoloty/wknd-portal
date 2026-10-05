@@ -5483,6 +5483,9 @@ a.player-link:hover { color: var(--amber); }
   padding: 8px 0; margin-bottom: 6px;
 }
 .agm-gen-bar--sm { padding: 6px 0 0; margin-bottom: 0; }
+.agm-gen-context { padding-top: 8px; }
+.agm-gen-context__hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); }
+.agm-textarea--short { min-height: 56px; }
 .agm-gen-btn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 6px 14px; border-radius: 7px;

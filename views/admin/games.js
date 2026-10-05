@@ -720,6 +720,10 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
         ` : ''}
       </div>
       <div id="adm-tab-recap" class="game-tabs__body adm-recap-body">
+        <div class="agm-gen-context">
+          <label class="admin-field-label" for="gen-recap-context">Extra context for AI <span class="agm-gen-context__hint">(optional, not saved)</span></label>
+          <textarea id="gen-recap-context" class="admin-input agm-textarea agm-textarea--short" rows="2" maxlength="1500" placeholder="e.g. Joel played through an ankle injury. First game back for Kix. Focus more on the defense in Q4."></textarea>
+        </div>
         <div class="agm-gen-bar">
           <button class="agm-gen-btn" id="btn-gen-recap">✦ Generate with AI</button>
           <span class="agm-gen-status" id="gen-recap-status"></span>
@@ -901,7 +905,8 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
       status.textContent = ''; status.className = 'agm-gen-status';
       try {
         var potgSel = document.getElementById('val-potg-player');
-        var r = await fetch('/admin/games/${id}/generate-recap', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ player_id: potgSel ? potgSel.value : null }) });
+        var ctxEl = document.getElementById('gen-recap-context');
+        var r = await fetch('/admin/games/${id}/generate-recap', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ player_id: potgSel ? potgSel.value : null, context: ctxEl ? ctxEl.value : '' }) });
         var j = await r.json();
         if (!r.ok) throw new Error(j.error || 'AI error');
         quill.clipboard.dangerouslyPasteHTML(
