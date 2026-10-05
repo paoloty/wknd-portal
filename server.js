@@ -13,7 +13,7 @@ import SqliteStore from 'better-sqlite3-session-store';
 import CleanCSS from 'clean-css';
 import { parseWriteup } from './lib/writeup.js';
 import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, birthdayEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
-import { birthdaysAround, birthdayFacts, birthdayStatRow, defaultBirthdayMessage, writeBirthdayMessage, birthdayLinks } from './lib/birthday.js';
+import { birthdaysAround, autoDraftBirthdays, birthdayFacts, birthdayStatRow, defaultBirthdayMessage, writeBirthdayMessage, birthdayLinks } from './lib/birthday.js';
 import { detectBogusFlags } from './lib/registration-flags.js';
 import { setPasswordPage, setPasswordDonePage } from './views/set-password.js';
 import { forgotPasswordPage, forgotPasswordSentPage } from './views/forgot-password.js';
@@ -5009,7 +5009,8 @@ app.get('/admin', requireAuth, (req, res) => {
   // Birthdays (with ages) are super-admin only, same as /admin/birthdays.
   let birthdays = [];
   if (isSuperAdmin) {
-    const list = birthdaysAround(today, { forward: 7 });
+    // Only players who qualify (active in the last 3 months) are listed.
+    const list = birthdaysAround(today, { forward: 7 }).filter(e => e.activity?.active);
     const drafts = getBirthdayEmailsForYears(list.map(e => e.year));
     birthdays = list.map(e => ({ ...e, status: birthdayEmailStatus(e, drafts.get(`${e.player.id}:${e.year}`)) }));
   }
@@ -5295,7 +5296,8 @@ function birthdaysRedirect(res, playerId, { msg = '', error = '' } = {}) {
 app.get('/admin/birthdays', requireSuperAdmin, (req, res) => {
   const today = manilaTodayStr();
   const year = Number(today.slice(0, 4));
-  const all = birthdaysAround(today, { back: 7, forward: 7 });
+  // Players who don't qualify (no login, Papawis or game in 3 months) aren't listed at all.
+  const all = birthdaysAround(today, { back: 7, forward: 7 }).filter(e => e.activity?.active);
   const drafts = getBirthdayEmailsForYears(all.map(e => e.year));
   // Today and upcoming first, then the past week (most recent first) for belated sends.
   const ordered = [...all.filter(e => e.inDays >= 0), ...all.filter(e => e.inDays < 0).reverse()];
@@ -13463,6 +13465,19 @@ function runPapawisReminders() {
 }
 runPapawisReminders();
 setInterval(runPapawisReminders, PAPAWIS_REMINDER_CHECK_MS);
+
+// Birthday drafts: hourly, write AI drafts for upcoming birthdays so they're ready to review
+// on /admin/birthdays (see autoDraftBirthdays in lib/birthday.js). Drafts only, never sends,
+// so it isn't behind a setting the way Papawis reminders are. The first run waits a minute
+// so it doesn't compete with startup.
+const BIRTHDAY_DRAFT_CHECK_MS = 60 * 60 * 1000;
+function runBirthdayDrafts() {
+  autoDraftBirthdays(manilaTodayStr()).then(({ written }) => {
+    if (written) console.log(`[birthdays] auto-drafted ${written} message${written === 1 ? '' : 's'}`);
+  }).catch(e => console.error('[birthdays] auto-draft failed:', e.message));
+}
+setTimeout(runBirthdayDrafts, 60 * 1000);
+setInterval(runBirthdayDrafts, BIRTHDAY_DRAFT_CHECK_MS);
 
 // ── Live game-comments WebSocket ────────────────────────────────────────────────
 // Scoped to one room per game (not a site-wide socket) — a client on /games/:id only

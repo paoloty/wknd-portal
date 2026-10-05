@@ -129,7 +129,7 @@ function birthdayCard({ entry, draft, previewHtml }, testEmail) {
     : `<form method="post" class="space-y-3">
         <label class="block">
           <span class="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Opening</span>
-          <textarea name="opening" id="opening-${pid}" rows="5" class="admin-input w-full" placeholder="Click “Write with AI” or “Use default” to start.">${escHtml(draft?.opening || '')}</textarea>
+          <textarea name="opening" id="opening-${pid}" rows="5" class="admin-input w-full" placeholder="A draft is written automatically within the hour. Or click “Write with AI” or “Use default” now.">${escHtml(draft?.opening || '')}</textarea>
         </label>
         <label class="block">
           <span class="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Closing line</span>
@@ -173,7 +173,7 @@ export function adminBirthdaysBody({ all = [], rows, drafts = new Map(), sent = 
   return `
 <div class="mb-6">
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Birthdays</h2>
-  <p class="text-xs text-slate-500 mt-0.5 max-w-2xl">Birthdays from the past week and the week ahead, with each player's age and whether their birthday email went out. Missed ones from the past week can still get a belated email, worded as late. Only players who logged in, joined Papawis or played a game in the last 3 months get one; everyone else is marked Skipped. Write the message with AI or use the default copy, check the preview, send yourself a test, then send it on the day. Nothing sends automatically. Ages are only shown here; the email never mentions them.</p>
+  <p class="text-xs text-slate-500 mt-0.5 max-w-2xl">Birthdays from the past week and the week ahead, with each player's age and whether their birthday email went out. Missed ones from the past week can still get a belated email, worded as late. Only players who logged in, joined Papawis or played a game in the last 3 months are listed; anyone else doesn't get a birthday email. Messages for the coming week are written by AI automatically (checked hourly) and rewritten if the player plays a game after that. Anything you write or edit yourself is never overwritten. Check the preview, send yourself a test, then send it on the day. Nothing sends automatically. Ages are only shown here; the email never mentions them.</p>
 </div>
 ${msg ? `<div class="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">${escHtml(msg)}</div>` : ''}
 ${error ? `<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">${escHtml(error)}</div>` : ''}
