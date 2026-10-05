@@ -1466,6 +1466,7 @@ function getHeaderInfo(features) {
     if (lead) {
       const gp = lead.s.gp;
       mvpLead = {
+        week: getSeasonLatestWeek(season)?.week ?? null,
         name: displayPlayerName(lead.s.name),
         initials: initials(displayPlayerName(lead.s.name)),
         score: lead.score.toFixed(1),

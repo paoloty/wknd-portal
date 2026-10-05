@@ -777,6 +777,36 @@ html { scroll-padding-top: 84px; }
   .hbar .hbar__link { padding: 0 11px; font-size: 16.5px; }
 }
 
+/* Mega mode header (mega_menu_enabled): no top strip, four sentence-case groups that
+   light up as pills, log in / sign out / admin as plain links in the bar. */
+.site-header--mega .site-header__inner { height: 84px; gap: 48px; align-items: center; }
+.site-header--mega .site-header__logo { font-size: 2.1rem; }
+.site-header--mega .hbar { align-items: center; gap: 6px; }
+.site-header--mega .hbar .site-nav__dropdown { align-items: center; }
+.site-header--mega .hbar .hbar__link {
+  height: auto; padding: 10px 14px; border-radius: var(--radius-sm);
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 15px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: #a3abb9; background: none; box-shadow: none;
+  transition: color 0.15s, background 0.15s;
+}
+.site-header--mega .hbar .hbar__link:hover { color: #fff; background: rgba(255,255,255,0.04); }
+.site-header--mega .hbar .hbar__link[aria-current] { color: #fff; background: none; box-shadow: none; }
+.site-header--mega .hbar .site-nav__dropdown.is-open .hbar__link { color: var(--amber); background: var(--surface-2); font-weight: 700; }
+.site-header--mega .hbar__account { gap: 22px; }
+.site-header--mega .hbar__account .site-nav__dropdown-trigger {
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+.hbar__text-link { font-size: 14px; font-weight: 600; color: #a3abb9; white-space: nowrap; transition: color 0.15s; }
+.hbar__text-link:hover, .hbar__text-link[aria-current] { color: var(--text); }
+.site-header--mega .hbar__join {
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 14px; font-weight: 700; letter-spacing: 0; text-transform: none;
+  padding: 12px 20px;
+}
+.mega__grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
 /* Mega menu (mega_menu_enabled) — the dropdown gives up its own positioning so the panel
    anchors to the sticky header instead and spans the full width under the bar. */
 .site-nav__dropdown--mega { position: static; }

@@ -242,7 +242,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     `<a href="${href}" class="mega__card${isActive(href) ? ' is-active' : ''}"><span class="mega__icon">${icon}</span><span class="mega__text"><span class="mega__title">${label}</span><span class="mega__desc">${desc}</span></span></a>`;
   const megaFeature = hdr.mvpLead && features.mvpRace !== false
     ? `<a href="/mvp" class="mega__feature">
-        <span class="mega__feature-head"><span>MVP Race</span><span>Season ${escHtml(String(hdr.season))}</span></span>
+        <span class="mega__feature-head"><span>MVP Race</span><span>S${escHtml(String(hdr.season))}${hdr.mvpLead.week ? ` · After week ${hdr.mvpLead.week}` : ''}</span></span>
         <span class="mega__feature-lead">
           <span class="mega__feature-avatar">${escHtml(hdr.mvpLead.initials)}</span>
           <span class="mega__feature-id"><span class="mega__feature-badge">Frontrunner</span><span class="mega__feature-name">${escHtml(hdr.mvpLead.name)}</span></span>
@@ -252,21 +252,32 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         <span class="mega__feature-cta">See the full race &rarr;</span>
       </a>`
     : '';
-  const barDropdown = (label, items, activeHrefs, megaCards) => {
-    const active = activeHrefs.some(h => isActive(h));
+  // Mega mode (mega_menu_enabled) swaps the whole bar for the "four groups" layout:
+  // Games / Stats / Awards / Community, each opening a full-width panel, and no top
+  // strip. Off, it's the two-tier bar with direct links and plain Stats/Awards dropdowns.
+  const megaMode = !!features.megaMenu;
+  const barDropdown = (label, items, withFeature = false) => {
+    if (!items.length) return '';
+    const active = items.some(i => isActive(i.href));
     const chevron = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>`;
-    const menu = features.megaMenu
-      ? `<div class="site-nav__dropdown-menu mega"><div class="container"><div class="mega__inner${megaFeature ? '' : ' mega__inner--solo'}">
-          <div class="mega__col"><span class="mega__label">${label}</span><div class="mega__grid">${megaCards}</div></div>
-          ${megaFeature}
+    const feature = withFeature ? megaFeature : '';
+    const menu = megaMode
+      ? `<div class="site-nav__dropdown-menu mega"><div class="container"><div class="mega__inner${feature ? '' : ' mega__inner--solo'}">
+          <div class="mega__col"><span class="mega__label">${label}</span><div class="mega__grid${feature ? '' : ' mega__grid--3'}">${items.map(i => megaCard(i.href, i.label, i.desc, i.icon)).join('')}</div></div>
+          ${feature}
         </div></div></div>`
       : `<div class="site-nav__dropdown-menu">${items.map(({ href, label: lbl }) =>
           `<a href="${href}" class="site-nav__dropdown-item${isActive(href) ? ' is-active' : ''}">${lbl}</a>`).join('')}</div>`;
-    return `<div class="site-nav__dropdown hbar__dd${features.megaMenu ? ' site-nav__dropdown--mega' : ''}${active ? ' is-active' : ''}">
+    return `<div class="site-nav__dropdown hbar__dd${megaMode ? ' site-nav__dropdown--mega' : ''}${active ? ' is-active' : ''}">
       <button type="button" class="site-nav__dropdown-trigger hbar__link"${active ? ' aria-current="page"' : ''}>${label} ${chevron}</button>
       ${menu}
     </div>`;
   };
+  const gamesItems = [
+    { href: '/games',     label: 'All Games', desc: 'Results, schedule and box scores', icon: mIcons.games },
+    { href: '/standings', label: 'Standings', desc: 'Season standings and records',     icon: mIcons.standings },
+    { href: '/playoffs',  label: 'Playoffs',  desc: 'Bracket and playoff series',       icon: mIcons.playoffs },
+  ];
   const statsItems = [
     { href: '/players', label: 'Players',   desc: 'Profiles, season and career numbers', icon: mIcon('<circle cx="9" cy="6" r="3"/><path d="M3 16c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/>') },
     { href: '/teams',   label: 'Teams',     desc: 'Rosters and team averages',           icon: mIcon('<path d="M9 2l6 2.5v4c0 3.5-2.6 6-6 7.5-3.4-1.5-6-4-6-7.5v-4z"/>') },
@@ -277,21 +288,40 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     features.mvpRace !== false ? { href: '/mvp',    label: 'MVP Race',      desc: 'Who leads the season MVP ladder, week by week', icon: mIcon('<path d="M5 2.5h8v4a4 4 0 0 1-8 0z"/><path d="M5 4H2.5v1.5A2.5 2.5 0 0 0 5 8M13 4h2.5v1.5A2.5 2.5 0 0 1 13 8M9 10.5V13M6 15.5h6"/>') } : null,
     features.awards  !== false ? { href: '/awards', label: 'Season Awards', desc: 'All-WKND teams, champions and season honours', icon: mIcon('<circle cx="9" cy="7" r="4.5"/><path d="M6.5 10.8L5.5 16 9 14l3.5 2-1-5.2"/>') } : null,
   ].filter(Boolean);
-  const megaCardsFor = (items) => items.map(i => megaCard(i.href, i.label, i.desc, i.icon)).join('');
+  const communityItems = [
+    features.papawis     ? { href: '/papawis',     label: 'Papawis',     desc: hdr.nextPapawis ? `Next run: ${escHtml(hdr.nextPapawis)}` : 'Pickup runs — sign up for the next one', icon: mIcons.papawis } : null,
+    features.marketplace ? { href: '/marketplace', label: 'Marketplace', desc: 'League group buys',                icon: mIcon('<path d="M3 6.5h12l-1 9H4z"/><path d="M6.5 6.5V5a2.5 2.5 0 0 1 5 0v1.5"/>') } : null,
+    features.posts       ? { href: '/posts',       label: 'Posts',       desc: 'League news and matchup previews', icon: mIcon('<rect x="3" y="2.5" width="12" height="13" rx="2"/><path d="M6 6.5h6M6 9.5h6M6 12.5h3"/>') } : null,
+  ].filter(Boolean);
 
-  const barNav = [
-    barLink('/games', 'Games'),
-    barLink('/standings', 'Standings'),
-    hdr.playoffsStarted ? barLink('/playoffs', 'Playoffs') : '',
-    barDropdown('Stats', statsItems, statsItems.map(i => i.href), megaCardsFor(statsItems)),
-    awardsItems.length ? barDropdown('Awards', awardsItems, awardsItems.map(i => i.href), megaCardsFor(awardsItems)) : '',
-    features.papawis ? barLink('/papawis', 'Papawis') : '',
-    features.marketplace ? barLink('/marketplace', 'Marketplace') : '',
-    features.posts ? barLink('/posts', 'Posts') : '',
-  ].join('');
-  const barAccount = isPlayer
-    ? `${myAccountDropdown}${notificationBell}`
-    : isAdmin ? '' : `<a href="/register" class="hbar__join"${joinLabel ? ` aria-label="${escHtml(joinLabel)}, join the community"` : ''}${currentPath === '/register' ? ' aria-current="page"' : ''}>${escHtml(joinLabel || 'Join the community')}</a>`;
+  const barNav = megaMode
+    ? [
+      barDropdown('Games', gamesItems),
+      barDropdown('Stats', statsItems, true),
+      barDropdown('Awards', awardsItems, true),
+      barDropdown('Community', communityItems),
+    ].join('')
+    : [
+      barLink('/games', 'Games'),
+      barLink('/standings', 'Standings'),
+      hdr.playoffsStarted ? barLink('/playoffs', 'Playoffs') : '',
+      barDropdown('Stats', statsItems),
+      barDropdown('Awards', awardsItems),
+      features.papawis ? barLink('/papawis', 'Papawis') : '',
+      features.marketplace ? barLink('/marketplace', 'Marketplace') : '',
+      features.posts ? barLink('/posts', 'Posts') : '',
+    ].join('');
+  const joinBtn = `<a href="/register" class="hbar__join"${joinLabel ? ` aria-label="${escHtml(joinLabel)}, join the community"` : ''}${currentPath === '/register' ? ' aria-current="page"' : ''}>${escHtml(joinLabel || 'Join the community')}</a>`;
+  // Mega mode has no top strip, so log in / sign out / admin move into the bar itself.
+  const barAccount = megaMode
+    ? [
+      isPlayer ? `${myAccountDropdown}${notificationBell}` : '',
+      isAdmin ? `<a href="/admin" class="hbar__text-link"${adminActive ? ' aria-current="page"' : ''}>Admin</a>` : '',
+      isPlayer || isAdmin
+        ? `<a href="/logout" class="hbar__text-link">Sign out</a>`
+        : `<a href="/login" class="hbar__text-link"${currentPath === '/login' ? ' aria-current="page"' : ''}>Log in</a>${joinBtn}`,
+    ].join('')
+    : isPlayer ? `${myAccountDropdown}${notificationBell}` : isAdmin ? '' : joinBtn;
   const topStrip = `<div class="topstrip">
     <div class="container">
       <div class="topstrip__inner">
@@ -466,8 +496,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
     </footer>
   </div>` : `<div class="page-body">
-    ${topStrip}
-    <header class="site-header site-header--bar">
+    ${megaMode ? '' : topStrip}
+    <header class="site-header site-header--bar${megaMode ? ' site-header--mega' : ''}">
       <div class="container">
         <div class="site-header__inner">
           ${wkndLogo()}
