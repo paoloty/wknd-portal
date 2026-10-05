@@ -149,6 +149,7 @@ import {
   getAllPeerRatings, getPeerRatingSeasons,
   db as portalDb,
   getBirthdayEmail, saveBirthdayDraft, getBirthdayEmailsForYears, getSentBirthdayEmails, getBirthdayLog,
+  papawisProbationHold, getPapawisSlotAlerts, cancelPapawisAnnounce, setPapawisEmailOptout,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -190,6 +191,10 @@ import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDeta
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
+import {
+  announcePapawisGame, queuePapawisSlotAlert, runPapawisBroadcasts, papawisBroadcastState, papawisAnnouncementPreview,
+  verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
+} from './lib/papawis-broadcast.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
@@ -6189,7 +6194,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'home_show_roster_moves',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'home_show_roster_moves',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -9481,6 +9486,7 @@ app.get('/players/:ref', async (req, res) => {
     body: playerPage({
       player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, badges,
       isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisBalance, balanceTransactions, papawisGames, coachNote, latestPoll,
+      papawisEmailsOn: isOwnProfile && req.session?.playerRegId ? !getRegistration(req.session.playerRegId)?.papawis_email_optout : null,
       minDeposit: isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null,
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
@@ -11195,6 +11201,65 @@ app.get('/papawis', (req, res) => {
   }));
 });
 
+// ── Papawis announcements, slot alerts, email opt-out (lib/papawis-broadcast.js) ──
+
+// "Announce to players" on the admin game page. Sends right away, or schedules for the
+// game's 8 AM sign-up open when sign-ups are delayed.
+app.post('/admin/papawis/:id/announce', requireAuth, express.json(), async (req, res) => {
+  try {
+    const result = await announcePapawisGame(req.params.id);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: `Announcement failed: ${e.message}` });
+  }
+});
+
+app.post('/admin/papawis/:id/announce/cancel', requireAuth, express.json(), (req, res) => {
+  res.json({ ok: cancelPapawisAnnounce(req.params.id) });
+});
+
+// Player's own toggle on My Profile.
+app.post('/me/papawis-emails', express.json(), (req, res) => {
+  if (!req.session?.playerRegId) return res.status(401).json({ error: 'Log in first.' });
+  if (req.session.impersonating) return res.status(403).json({ error: 'Read-only while viewing as a player.' });
+  setPapawisEmailOptout(req.session.playerRegId, !req.body?.on);
+  res.json({ ok: true, on: !!req.body?.on });
+});
+
+// Unsubscribe link in the emails. GET shows a confirm button (so link scanners that open
+// every URL in an email can't unsubscribe anyone); POST does it, for both that button and
+// Gmail's one-click unsubscribe (List-Unsubscribe-Post), which posts to the same URL.
+function papawisUnsubPage(req, { title, bodyHtml }) {
+  return renderPage(req, {
+    title, currentPath: '/papawis',
+    body: `<div class="container"><div class="page-content"><div class="card card--lg papawis-unsub">${bodyHtml}</div></div></div>`,
+  });
+}
+app.get('/papawis/emails/unsubscribe', (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyPapawisUnsubscribe(regId, token)) {
+    return res.status(400).send(papawisUnsubPage(req, { title: 'Link expired', bodyHtml: '<h1 class="papawis-unsub__title">This unsubscribe link isn\'t valid</h1><p class="papawis-unsub__text">Log in and turn off Papawis game alerts from your profile instead.</p>' }));
+  }
+  res.send(papawisUnsubPage(req, {
+    title: 'Unsubscribe',
+    bodyHtml: `<h1 class="papawis-unsub__title">Stop Papawis game alerts?</h1>
+      <p class="papawis-unsub__text">You won't get emails about new Papawis games or open slots. Reminders for games you've joined still come through.</p>
+      <form method="post" action="/papawis/emails/unsubscribe?r=${encodeURIComponent(regId)}&amp;t=${encodeURIComponent(token)}">
+        <button type="submit" class="pw-btn pw-btn--primary">Unsubscribe</button>
+      </form>`,
+  }));
+});
+app.post('/papawis/emails/unsubscribe', (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyPapawisUnsubscribe(regId, token)) return res.status(400).send('Invalid unsubscribe link.');
+  setPapawisEmailOptout(regId, true);
+  res.send(papawisUnsubPage(req, {
+    title: 'Unsubscribed',
+    bodyHtml: '<h1 class="papawis-unsub__title">You\'re unsubscribed</h1><p class="papawis-unsub__text">No more Papawis game alerts. You can turn them back on anytime from your profile.</p>',
+  }));
+});
+
 app.post('/papawis/:id/join', (req, res) => {
   if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
   if (!req.session?.playerRegId || !req.session?.playerPlayerId) {
@@ -11218,16 +11283,14 @@ app.post('/papawis/:id/join', (req, res) => {
   if (hasUnpaidCompletedPapawis(playerId)) {
     return res.status(403).json({ error: "You have an unpaid Papawis game — clear it with an admin before joining." });
   }
-  const papawisBalance = getPlayerPapawisBalance(playerId);
   // A probationary player with enough standing credit already on file (from a previous
   // deposit) skips the hold entirely — the floor is already covered, so there's nothing
   // left to wait on. Re-checked fresh on every join: once that credit's spent on a game's
   // charge, the next join goes back to pending until they top up again. No floor yet
   // (getMaxPapawisPrice() null — nothing completed to base one on) means nothing's proven
   // safe yet, so it falls back to still holding them rather than treating any credit as enough.
-  const minDeposit = getMaxPapawisPrice();
-  const hasCoveringCredit = minDeposit != null && papawisBalance <= -minDeposit;
-  const isProbation = !!getPlayerById(playerId)?.papawis_probation && !hasCoveringCredit;
+  // Shared with the announcement emails' "deposit needed" line (papawisProbationHold).
+  const isProbation = papawisProbationHold(playerId).hold;
   const signupId = randomBytes(6).toString('hex');
   const result = joinPapawisGame(req.params.id, playerId, signupId, isProbation);
   if (result.error === 'not_found')      return res.status(404).json({ error: 'Game not found.' });
@@ -11271,9 +11334,11 @@ app.post('/papawis/:id/cancel', (req, res) => {
       return res.status(403).json({ error: `Cancellation window closed ${PAPAWIS_CUTOFF_DAYS} days before game day — message an admin.` });
     }
   }
+  const wasFull = signup.status === 'confirmed' && getPapawisConfirmedCount(game.id) >= game.max_slots;
   const result = cancelPapawisSignup(signup.id);
   if (result.error) return res.status(400).json({ error: 'Could not cancel.' });
   notifyPapawisPromotion(game, result.promoted);
+  queuePapawisSlotAlert(game.id, { wasFull });
   res.json({ ok: true });
 });
 
@@ -11844,6 +11909,7 @@ app.post('/admin/polls/:id/vote', requireAuth, express.json(), (req, res) => {
 app.get('/admin/papawis', requireAuth, (req, res) => {
   const games = getPapawisGames();
   const papawisRemindersEnabled = getSetting('papawis_reminders_enabled', '0') === '1';
+  const papawisSlotAlertsEnabled = getSetting('papawis_slot_alerts_enabled', '0') === '1';
   // Same "Papawis" / "Papawis Deposit" category convention getPlayerPapawisBalance uses —
   // every pending payment tied to Papawis, across every game, surfaced in one place instead
   // of admin having to open each game (or the whole Ledger) to spot them.
@@ -11868,7 +11934,7 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
     title: 'Papawis',
     currentPath: '/admin/papawis',
     body: adminPapawisListBody({
-      games, papawisRemindersEnabled, courts: getActivePapawisCourts(), pendingPayments,
+      games, papawisRemindersEnabled, papawisSlotAlertsEnabled, courts: getActivePapawisCourts(), pendingPayments,
       unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer,
     }),
   }));
@@ -12075,7 +12141,15 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({ game, signups, players, activity, daysLeft, unlinkedByPlayer, reusableByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts() }),
+    body: adminPapawisDetailBody({
+      game, signups, players, activity, daysLeft, unlinkedByPlayer, reusableByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts(),
+      broadcast: {
+        state: papawisBroadcastState(),
+        preview: game.status === 'open' ? papawisAnnouncementPreview(game) : null,
+        alerts: getPapawisSlotAlerts(game.id),
+        regularsRule: `${REGULAR_MIN_GAMES} of the last ${REGULAR_WINDOW} games`,
+      },
+    }),
   }));
 });
 
@@ -12182,12 +12256,16 @@ app.post('/admin/papawis/:id/autofill-regulars', requireAuth, (req, res) => {
 
 app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
   if (!papawisLockCheck(req.params.id, res)) return;
+  const before = getPapawisSignupById(req.params.signupId);
+  const gameBefore = getPapawisGame(req.params.id);
+  const wasFull = before?.status === 'confirmed' && !!gameBefore && getPapawisConfirmedCount(gameBefore.id) >= gameBefore.max_slots;
   const result = adminRemovePapawisSignup(req.params.signupId);
   if (result.error) return res.status(400).json({ error: 'Could not remove.' });
   if (result.promoted) {
     const game = getPapawisGame(req.params.id);
     if (game) notifyPapawisPromotion(game, result.promoted);
   }
+  queuePapawisSlotAlert(req.params.id, { wasFull });
   res.json({ ok: true });
 });
 
@@ -13488,6 +13566,15 @@ function runBirthdayJobs() {
 }
 setTimeout(runBirthdayJobs, 60 * 1000);
 setInterval(runBirthdayJobs, BIRTHDAY_AUTOMATION_CHECK_MS);
+
+// Papawis announcements (scheduled for a delayed sign-up open) and slot-opened alerts.
+// Every minute, production only (see runPapawisBroadcasts in lib/papawis-broadcast.js).
+function runPapawisBroadcastJobs() {
+  runPapawisBroadcasts().then(({ announced, alerts }) => {
+    if (announced || alerts) console.log(`[papawis] broadcasts: ${announced} announcement(s), ${alerts} slot alert step(s)`);
+  }).catch(e => console.error('[papawis] broadcast run failed:', e.message));
+}
+setInterval(runPapawisBroadcastJobs, 60 * 1000);
 
 // ── Live game-comments WebSocket ────────────────────────────────────────────────
 // Scoped to one room per game (not a site-wide socket) — a client on /games/:id only

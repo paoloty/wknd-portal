@@ -38,6 +38,8 @@ const ACTIVITY_LABELS = {
   reminded:      { label: 'reminder emailed', color: 'text-sky-400' },
   cancel_notified: { label: 'notified of cancellation', color: 'text-red-400' },
   completion_notified: { label: 'sent payment receipt', color: 'text-sky-400' },
+  announced:     { label: 'sent new-game announcement', color: 'text-sky-400' },
+  slot_alerted:  { label: 'sent slot-opened alert', color: 'text-sky-400' },
 };
 
 // Shared between the per-game log (Game column hidden) and the global feed (shown).
@@ -222,7 +224,7 @@ function unpaidPapawisSection(unpaidSignups, unlinkedByPlayer, reusableByPlayer)
 }
 
 export function adminPapawisListBody({
-  games = [], papawisRemindersEnabled = false, courts = [], pendingPayments = [],
+  games = [], papawisRemindersEnabled = false, papawisSlotAlertsEnabled = false, courts = [], pendingPayments = [],
   unpaidSignups = [], unpaidUnlinkedByPlayer = {}, unpaidReusableByPlayer = {},
 } = {}) {
   const rows = games.map(g => `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
@@ -287,6 +289,17 @@ export function adminPapawisListBody({
       </label>
     </div>
     <span id="pw-reminders-msg" class="text-xs block mt-1 min-h-[16px]"></span>
+    <div class="flex items-center justify-between py-1 mt-2 pt-3 border-t border-admin-border">
+      <div>
+        <div class="text-[13px] font-semibold text-slate-200">Send slot-opened alerts</div>
+        <div class="text-xs text-slate-500 mt-0.5">Off by default. When a full game loses a player and nobody's waitlisted, emails regulars, then 30 min later anyone who viewed that game's player list. Live site only.</div>
+      </div>
+      <label class="site-toggle" title="Toggle slot-opened alerts">
+        <input type="checkbox" id="pw-toggle-slot-alerts" ${papawisSlotAlertsEnabled ? 'checked' : ''}>
+        <span class="site-toggle__track"></span>
+      </label>
+    </div>
+    <span id="pw-slot-alerts-msg" class="text-xs block mt-1 min-h-[16px]"></span>
   </div>
 </div>
 
@@ -391,6 +404,7 @@ ${pendingSection}
     });
   }
   bindToggle('pw-toggle-reminders', 'papawis_reminders_enabled', 'pw-reminders-msg');
+  bindToggle('pw-toggle-slot-alerts', 'papawis_slot_alerts_enabled', 'pw-slot-alerts-msg');
 
   var backdrop = document.getElementById('pw-modal-backdrop');
   function openModal() { backdrop.hidden = false; document.getElementById('pw-title').focus(); }
@@ -618,7 +632,95 @@ function pendingRow(s, minDeposit, submittedTx) {
   </li>`;
 }
 
-export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, reusableByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [] } = {}) {
+// "Announce to players" + slot-opened alert history for one game (lib/papawis-broadcast.js).
+function fmtStamp(ts) {
+  return new Date(ts).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+}
+function broadcastCard(game, broadcast) {
+  if (!broadcast) return '';
+  const { state, preview, alerts = [], regularsRule } = broadcast;
+  const isOpen = game.status === 'open';
+  const locked = !!game.signups_locked_at;
+  const now = Date.now();
+  const scheduled = game.announce_send_at && !game.announced_at && game.announce_send_at > now;
+
+  let announce = '';
+  if (isOpen) {
+    const reach = preview
+      ? `${preview.emailable} regular${preview.emailable === 1 ? '' : 's'} will be emailed`
+        + [preview.settle ? `${preview.settle} with an unpaid game` : '', preview.deposit ? `${preview.deposit} needing a deposit` : '',
+           preview.optedOut ? `${preview.optedOut} opted out (bell only)` : '', preview.noEmail ? `${preview.noEmail} with no email (bell only)` : '']
+          .filter(Boolean).map(x => ` · ${x}`).join('')
+      : '';
+    let status, button = '';
+    if (locked) {
+      status = 'Roster is locked, so there\'s nothing to announce.';
+    } else if (scheduled) {
+      status = `Scheduled for ${fmtStamp(game.announce_send_at)}, when sign-ups open.${state.production ? '' : ' Scheduled sends only run on the live site.'}`;
+      button = `<button type="button" class="admin-btn admin-btn--sm" id="pw-announce-cancel">Cancel scheduled announcement</button>`;
+    } else if (game.announced_at) {
+      status = `Announced ${fmtStamp(game.announced_at)}: ${game.announced_count} emailed.`;
+      button = `<button type="button" class="admin-btn admin-btn--sm" id="pw-announce-btn" data-again="1">Announce again</button>`;
+    } else {
+      status = 'Not announced yet.';
+      button = `<button type="button" class="agm-new-btn" id="pw-announce-btn">${game.open_days_before ? 'Announce at sign-up open' : 'Announce to players'}</button>`;
+    }
+    announce = `
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="min-w-0 flex-1">
+        <div class="text-[13px] font-semibold text-slate-200">New-game announcement</div>
+        <div class="text-xs text-slate-400 mt-0.5">${escHtml(status)}</div>
+        ${reach && !game.announced_at && !locked ? `<div class="text-xs text-slate-500 mt-0.5">${escHtml(reach)}. Regulars = played ${escHtml(regularsRule)}.</div>` : ''}
+      </div>
+      ${button}
+    </div>
+    <span id="pw-announce-msg" class="text-xs block min-h-[16px]"></span>`;
+  }
+
+  const groupText = (count, sentAt, label) => sentAt == null ? '' : count < 0 ? `${label}: skipped, slots filled first` : `${label}: ${count} emailed ${fmtStamp(sentAt)}`;
+  const alertRows = alerts.map(a => {
+    const parts = [
+      a.group1_sent_at == null ? `Regulars: sending ${fmtStamp(a.group1_at)}` : groupText(a.group1_count, a.group1_sent_at, 'Regulars'),
+      a.group2_at == null ? '' : a.group2_sent_at == null ? `Viewers: sending ${fmtStamp(a.group2_at)} if still open` : groupText(a.group2_count, a.group2_sent_at, 'Viewers'),
+    ].filter(Boolean);
+    return `<li class="text-xs text-slate-400 py-1"><span class="text-slate-300">${a.open_slots ? `${a.open_slots} slot${a.open_slots === 1 ? '' : 's'} opened` : 'Slot opened'} ${escHtml(fmtStamp(a.created_at))}</span> · ${escHtml(parts.join(' · '))}</li>`;
+  }).join('');
+  const alertsOff = !state.slotAlertsEnabled ? 'Slot-opened alerts are off (Papawis page → Notifications).' : !state.production ? 'Slot-opened alerts only send from the live site.' : '';
+  const alertsBlock = `
+    <div class="${announce ? 'mt-3 pt-3 border-t border-admin-border' : ''}">
+      <div class="text-[13px] font-semibold text-slate-200">Slot-opened alerts</div>
+      ${alertsOff ? `<div class="text-xs text-slate-500 mt-0.5">${escHtml(alertsOff)}</div>` : ''}
+      ${alertRows ? `<ul class="list-none m-0 p-0 mt-1">${alertRows}</ul>` : `<div class="text-xs text-slate-500 mt-0.5">None for this game.</div>`}
+    </div>`;
+
+  return `
+<div class="bg-admin-surface border border-admin-border rounded-lg p-4 mb-4" id="pw-broadcast-card">
+  ${announce}
+  ${alertsBlock}
+</div>
+<script>
+(function () {
+  var msg = document.getElementById('pw-announce-msg');
+  function post(url, btn, busy) {
+    btn.disabled = true; var label = btn.textContent; btn.textContent = busy;
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); return d; }); })
+      .then(function () { location.reload(); })
+      .catch(function (e) { btn.disabled = false; btn.textContent = label; if (msg) { msg.style.color = '#f87171'; msg.textContent = e.message; } });
+  }
+  var btn = document.getElementById('pw-announce-btn');
+  if (btn) btn.addEventListener('click', function () {
+    var q = btn.dataset.again ? 'Announce this game again? Regulars not on the roster get another email.' : 'Email the Papawis regulars about this game now?';
+    if (!confirm(q)) return;
+    post('/admin/papawis/${encodeURIComponent(game.id)}/announce', btn, 'Sending…');
+  });
+  var cancel = document.getElementById('pw-announce-cancel');
+  if (cancel) cancel.addEventListener('click', function () { post('/admin/papawis/${encodeURIComponent(game.id)}/announce/cancel', cancel, 'Cancelling…'); });
+})();
+</script>`;
+}
+
+export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, reusableByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [], broadcast = null } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
   const pending   = signups.filter(s => s.status === 'pending');
@@ -712,6 +814,7 @@ export function adminPapawisDetailBody({ game, signups = [], players = [], activ
     ${isOpen ? `<button id="pw-countdown-btn" type="button" class="admin-btn admin-btn--sm" data-delay="${game.open_days_before ? '1' : '0'}">${game.open_days_before ? '⏱ Disable Countdown' : '⏱ Enable Countdown'}</button>` : ''}
   </div>
 </div>
+${broadcastCard(game, broadcast)}
 
 ${(() => {
   const isKnownCourt = courts.some(c => c.name === game.location);

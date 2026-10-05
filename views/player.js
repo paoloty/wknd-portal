@@ -1137,7 +1137,7 @@ function pollSidebarCard(poll) {
   </div>${script}`;
 }
 
-function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransactions = [], latestPoll = null, papawisProbation = false }) {
+function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransactions = [], latestPoll = null, papawisProbation = false, papawisEmailsOn = null }) {
   // Most-recent-first, capped — this is a glance-level "why do I owe this" list, not a
   // full statement; the admin ledger view is the source of truth for everything.
   const breakdownRows = balanceTransactions.slice(0, 8).map(tx => {
@@ -1244,8 +1244,37 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransac
 
   const pollHtml = pollSidebarCard(latestPoll);
 
-  if (!balanceHtml && !creditHtml && !probationHtml && !papawisHtml && !pollHtml) return '';
-  return `<div class="mp-sidebar">${balanceHtml}${creditHtml}${probationHtml}${papawisHtml}${pollHtml}</div>`;
+  // Opt-out for the Papawis "new game" and "slot opened" emails (lib/papawis-broadcast.js).
+  // null = no account to attach it to (nothing rendered).
+  const emailPrefsHtml = papawisEmailsOn === null ? '' : `
+  <div class="card mp-prefs">
+    <div class="card-label">EMAILS</div>
+    <label class="mp-prefs__row" for="mp-papawis-emails">
+      <span class="mp-prefs__text">
+        <span class="mp-prefs__title">Papawis game alerts</span>
+        <span class="mp-prefs__hint">New games and open slots. Reminders for games you're in still come either way.</span>
+      </span>
+      <input type="checkbox" id="mp-papawis-emails" class="mp-prefs__toggle"${papawisEmailsOn ? ' checked' : ''}>
+    </label>
+    <span class="mp-prefs__msg" id="mp-papawis-emails-msg" aria-live="polite"></span>
+  </div>
+  <script>
+  (function () {
+    var box = document.getElementById('mp-papawis-emails');
+    var msg = document.getElementById('mp-papawis-emails-msg');
+    if (!box) return;
+    box.addEventListener('change', function () {
+      var on = box.checked;
+      msg.textContent = 'Saving…';
+      fetch('/me/papawis-emails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: on }) })
+        .then(function (r) { if (!r.ok) throw new Error(); msg.textContent = on ? 'You\'ll get Papawis game alerts.' : 'Papawis game alerts turned off.'; })
+        .catch(function () { box.checked = !on; msg.textContent = 'Couldn\'t save. Try again.'; });
+    });
+  })();
+  </script>`;
+
+  if (!balanceHtml && !creditHtml && !probationHtml && !papawisHtml && !pollHtml && !emailPrefsHtml) return '';
+  return `<div class="mp-sidebar">${balanceHtml}${creditHtml}${probationHtml}${papawisHtml}${pollHtml}${emailPrefsHtml}</div>`;
 }
 
 // ── Peer ratings (roast-style player-to-player ratings) ────────────────────────
@@ -1546,7 +1575,7 @@ function nextUpWidget(pending) {
 // ── Main export ───────────────────────────────────────────────────────────────
 export function playerPage({
   player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false,
-  fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null,
+  fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null, papawisEmailsOn = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
   canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null, badges = null,
@@ -1560,7 +1589,7 @@ export function playerPage({
   // Scoped to the Papawis-only balance, not the whole-account one — an unrelated season fee
   // balance shouldn't keep the probation notice showing.
   const probationCovered = minDeposit != null && papawisBalance <= -minDeposit;
-  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation && !probationCovered }) : '';
+  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation && !probationCovered, papawisEmailsOn }) : '';
   const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
   const nextUpHtml = isOwnProfile ? nextUpWidget(badges?.pending) : '';
 

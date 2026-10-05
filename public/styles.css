@@ -6772,3 +6772,17 @@ a.player-link:hover { color: var(--amber); }
   .fine-tier { grid-template-columns: 1fr; }
   .fine-tier__amount { grid-row: auto; font-size: 28px; }
 }
+
+/* My Profile: email preferences card (Papawis game alerts opt-out) */
+.mp-prefs__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 4px 20px 6px; cursor: pointer; }
+.mp-prefs__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mp-prefs__title { font-size: 13px; font-weight: 600; color: var(--text); }
+.mp-prefs__hint { font-size: 11.5px; line-height: 1.45; color: var(--text-muted); }
+.mp-prefs__toggle { flex: none; width: 18px; height: 18px; margin-top: 2px; accent-color: var(--amber); cursor: pointer; }
+.mp-prefs__msg { display: block; min-height: 16px; padding: 0 20px 14px; font-size: 11.5px; color: var(--text-muted); }
+
+/* Papawis email unsubscribe page */
+.papawis-unsub { max-width: 520px; margin: 48px auto; display: grid; gap: 12px; }
+.papawis-unsub__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--text); text-wrap: balance; }
+.papawis-unsub__text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-muted); }
+.papawis-unsub form { margin: 8px 0 0; }
