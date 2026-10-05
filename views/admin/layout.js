@@ -1,4 +1,4 @@
-import { escHtml } from '../layout.js';
+import { escHtml, wkndBall } from '../layout.js';
 
 const IC = {
   dashboard: `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="8.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="8.5" width="5" height="5" rx="1"/><rect x="8.5" y="8.5" width="5" height="5" rx="1"/></svg>`,
@@ -233,7 +233,7 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@1,900&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -267,8 +267,8 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
 
   <nav class="fixed top-0 left-0 bottom-0 w-60 bg-admin-surface border-r border-admin-border flex flex-col z-50 overflow-hidden -translate-x-full transition-transform duration-200 ease-out [&.is-open]:translate-x-0 md:translate-x-0 md:transition-none" id="admin-sidebar">
     <a href="/admin" class="flex items-center gap-2.5 px-4 h-14 border-b border-admin-border shrink-0 no-underline">
-      <span class="w-[30px] h-[30px] bg-brand rounded-[7px] flex items-center justify-center text-sm font-extrabold text-admin-bg shrink-0">W</span>
-      <span class="text-sm font-bold text-slate-100 leading-tight">WKND <em class="block not-italic text-[10px] font-medium text-slate-500 tracking-wide uppercase">Admin Console</em></span>
+      ${wkndBall('w-[26px] h-[26px] shrink-0')}
+      <span class="leading-tight"><span class="admin-wordmark text-[17px] text-slate-100">WKND</span><em class="block not-italic text-[10px] font-medium text-slate-500 tracking-wide uppercase">Admin Console</em></span>
     </a>
     <div class="flex-1 overflow-y-auto py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:w-0">${navHtml}</div>
     <div class="shrink-0 p-2 border-t border-admin-border flex flex-col gap-0.5">
@@ -288,7 +288,7 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
         <span class="block w-[18px] h-[1.5px] bg-slate-400 rounded-sm"></span>
         <span class="block w-[18px] h-[1.5px] bg-slate-400 rounded-sm"></span>
       </button>
-      <a href="/admin" class="text-sm font-bold text-slate-100 no-underline">WKND Admin</a>
+      <a href="/admin" class="flex items-center gap-1.5 no-underline"><span class="admin-wordmark text-[16px] text-slate-100">WKND</span>${wkndBall('w-[14px] h-[14px]')}<span class="text-xs font-medium text-slate-500 ml-1">Admin</span></a>
       <a href="/logout" class="text-xs text-slate-500 hover:text-error no-underline">Sign out</a>
     </header>
 

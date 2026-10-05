@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, wkndLogo } from './layout.js';
 import { playerAvatar } from './utils.js';
 
 // left/top are % positions on the court diagram (viewBox 0 0 300 280, hoop at the bottom)
@@ -29,7 +29,7 @@ export function registerPage({ error = null, success = false, prefill = {}, hype
       <a href="/" class="shell-back">&larr; Back to Home Court</a>
     </div>
     <div class="shell-brand-row">
-      <a href="/" class="site-header__logo-text shell-logo">WKND Basketball</a>
+      ${wkndLogo('site-header__logo shell-logo')}
       <button class="site-nav__hamburger shell-hamburger" id="nav-toggle-sidebar" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="site-nav__hamburger-line"></span>
         <span class="site-nav__hamburger-line"></span>

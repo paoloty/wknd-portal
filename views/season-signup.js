@@ -1,4 +1,4 @@
-import { escHtml } from './layout.js';
+import { escHtml, wkndLogo } from './layout.js';
 import { SIZES, SIZE_CHART } from '../lib/season-pricing.js';
 import { TIERS, TIER_LABELS } from '../lib/assessment-scoring.js';
 
@@ -38,7 +38,7 @@ function shellLeft({ sigSeason, deadline, seasonFormat, quotaAmount, capacityPct
       <a href="/me" class="shell-back">&larr; Back to My Profile</a>
     </div>
     <div class="shell-brand-row">
-      <a href="/" class="site-header__logo-text shell-logo">WKND Basketball</a>
+      ${wkndLogo('site-header__logo shell-logo')}
       <button class="site-nav__hamburger shell-hamburger" id="nav-toggle-sidebar" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="site-nav__hamburger-line"></span>
         <span class="site-nav__hamburger-line"></span>

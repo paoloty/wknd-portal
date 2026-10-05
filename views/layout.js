@@ -2,7 +2,20 @@ function fmtNotifTime(ms) {
   return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, origin = '', notifications = [], unreadNotificationCount = 0 }) {
+// "WKND" wordmark — Archivo 900 italic (thickened further with a same-color text stroke,
+// since 900 is Archivo's heaviest weight), tight tracking, and a small basketball as the
+// full stop. Shared by the main header and the register/season-signup sidebars so every
+// page shows the same mark. The ball on its own is also the favicon (public/favicon.svg)
+// and the admin console's brand mark.
+export function wkndBall(className = 'wknd-logo__ball') {
+  return `<svg class="${className}" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg>`;
+}
+
+export function wkndLogo(className = 'site-header__logo', href = '/') {
+  return `<a href="${href}" class="wknd-logo ${className}" aria-label="WKND Basketball home">WKND${wkndBall()}</a>`;
+}
+
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0 }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -125,7 +138,15 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     ? `${isPlayer ? `${myAccountDropdown}${notificationBell}` : ''}<div class="site-nav__auth-pill"><a href="/admin"${adminActive ? ' aria-current="page"' : ''} class="site-nav__auth-join">Admin</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/logout" class="site-nav__auth-login">Sign out</a></div>`
     : isPlayer
       ? `${myAccountDropdown}${notificationBell}<a href="/logout" class="site-nav__login">Sign out</a>`
-      : `<div class="site-nav__auth-pill"><a href="/register" class="site-nav__auth-join">Join</a><span class="site-nav__auth-sep" aria-hidden="true"></span><a href="/login" class="site-nav__auth-login">Login</a></div>`;
+      : `<a href="/login" class="site-nav__signin"${currentPath === '/login' ? ' aria-current="page"' : ''}>Log in</a><a href="/register" class="site-nav__join"${joinLabel ? ` aria-label="${escHtml(joinLabel)}, join the community"` : ''}${currentPath === '/register' ? ' aria-current="page"' : ''}>${escHtml(joinLabel || 'Join the community')}</a>`;
+
+  // Logged-out visitors on mobile get a Join button pinned in the header bar itself —
+  // the nav (and its Join link) only exists inside the hamburger overlay there, so
+  // without this a phone visitor never sees a way to register unless they open the menu.
+  // Hidden on /register itself, where it would just point at the current page.
+  const mobileJoin = !isAdmin && !isPlayer && currentPath !== '/register'
+    ? `<a href="/register" class="site-header__join">Join</a>`
+    : '';
 
   // Shared by both header variants (full and minimal) — only one ever renders,
   // both use the same #nav-toggle/#site-nav ids, so one script covers either.
@@ -248,7 +269,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   })}</script>` : ''}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Saira+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;1,900&family=Saira+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css${cssVer ? `?v=${cssVer}` : ''}">
   ${gaSnippet}
 </head>
@@ -274,23 +295,27 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
     </footer>
   </div>` : `<div class="page-body">
-    <div class="container">
-      <header class="site-header">
+    <header class="site-header">
+      <div class="container">
         <div class="site-header__inner">
-          <a href="/" class="site-header__logo-text">WKND Basketball</a>
+          ${wkndLogo()}
           <nav class="site-nav" id="site-nav">
             ${nav}
             ${authLink}
           </nav>
-          <button class="site-nav__hamburger" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
-            <span class="site-nav__hamburger-line"></span>
-            <span class="site-nav__hamburger-line"></span>
-            <span class="site-nav__hamburger-line"></span>
-          </button>
+          <div class="site-header__actions">
+            ${mobileJoin}
+            <button class="site-nav__hamburger" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+              <span class="site-nav__hamburger-line"></span>
+              <span class="site-nav__hamburger-line"></span>
+              <span class="site-nav__hamburger-line"></span>
+            </button>
+          </div>
         </div>
-      </header>
-      ${navToggleScript}
-      <div class="header-rule"></div>
+      </div>
+    </header>
+    ${navToggleScript}
+    <div class="container">
       ${ticker}
       ${body}
     </div>
@@ -299,7 +324,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     <div class="container">
       <div class="site-footer__inner">
         <div class="site-footer__brand">
-          <a href="/" class="site-footer__logo">WKND Basketball</a>
+          ${wkndLogo('site-footer__logo')}
           <span class="site-footer__tagline">Ball is life. Every weekend.</span>
           <div class="site-footer__social">
             <a href="https://www.facebook.com/wkndbasketball" class="site-footer__social-link" target="_blank" rel="noopener" aria-label="Facebook">

@@ -24,7 +24,7 @@ function regenBtn(playerId, season, isAdmin, playoffsStarted, { absolute = false
 
 // Week-over-week movement pill. prevRank: undefined = no earlier week to compare (render
 // nothing), null = wasn't in last week's pool (NEW), number = last week's rank.
-function moveBadge(rank, prevRank) {
+export function moveBadge(rank, prevRank) {
   if (prevRank === undefined) return '';
   if (prevRank === null) return `<span class="mvp-move mvp-move--new" title="New this week">NEW</span>`;
   const delta = prevRank - rank;

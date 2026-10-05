@@ -1574,3 +1574,14 @@ select.admin-input {
   .a-content { padding: 16px 12px 32px; }
   .agm-game-header__teams { flex-direction: column; gap: 6px; }
 }
+
+/* WKND wordmark in the admin sidebar / mobile header — same treatment as the public
+   site's .wknd-logo (Archivo 900 italic, thickened with a same-color stroke) */
+.admin-wordmark {
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-style: italic;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  -webkit-text-stroke: 0.02em currentColor;
+}

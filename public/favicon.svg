@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <rect width="64" height="64" rx="15" fill="#f59332"/>
-  <text x="32" y="34" text-anchor="middle" dominant-baseline="central"
-        font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="38"
-        fill="#020817">W</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="64" height="64">
+  <circle cx="50" cy="50" r="48" fill="#f59332"/>
+  <g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round">
+    <path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/>
+  </g>
 </svg>

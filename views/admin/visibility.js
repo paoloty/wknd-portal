@@ -53,8 +53,15 @@ export function adminVisibilityBody({
   awardsEnabled = true,
   mvpEnabled = true,
   homeShowRosterMoves = false,
+  nextUpCardOptions = [],
+  nextUpCards = [],
   sectionSettings = {},
 } = {}) {
+  // Two dropdowns for the homepage "Coming up" section's admin-picked cards (League and
+  // Papawis are always first). Saved through the same /admin/site/settings endpoint.
+  const nextUpSelect = (n) => `<select id="vis-nextup-${n}" data-key="home_nextup_card_${n}" class="vis-nextup-select bg-admin-bg border border-admin-border rounded-md text-xs text-slate-200 px-2 py-1.5">
+      ${nextUpCardOptions.map(o => `<option value="${escHtml(o.key)}"${nextUpCards[n - 1] === o.key ? ' selected' : ''}>${escHtml(o.label)}</option>`).join('')}
+    </select>`;
   const sectionRows = AWARD_SECTIONS.map(({ key, label }) => sectionRow({ key, label, on: sectionSettings[key] !== '0' })).join('');
 
   return `
@@ -127,6 +134,17 @@ export function adminVisibilityBody({
         label: 'Homepage: New/Traded',
         sub: `Swaps the homepage's League Leaders carousel for a New/Traded Players one — for early in a season, before there's enough game data for real leaders. Off shows League Leaders as usual (empty if the current season has no games yet).`,
       })}
+      <tr class="admin-table-row">
+        <td class="admin-td" style="font-weight:600;white-space:nowrap">Homepage: Coming up</td>
+        <td class="admin-td" style="color:var(--text-muted)">The 3rd and 4th cards in the homepage's "Coming up" row, after League and Papawis. If a picked card has nothing to show this week (no birthdays, no listings…), the next card that does fills in automatically.</td>
+        <td class="admin-td" style="text-align:right;white-space:nowrap">
+          <div class="flex flex-col items-end gap-1.5">
+            <label class="text-[11px] text-slate-500">Card 3 ${nextUpSelect(1)}</label>
+            <label class="text-[11px] text-slate-500">Card 4 ${nextUpSelect(2)}</label>
+          </div>
+          <span id="vis-msg-nextup" class="text-xs block mt-1 min-h-[14px]"></span>
+        </td>
+      </tr>
     </tbody>
   </table>
 </div>
@@ -163,6 +181,27 @@ export function adminVisibilityBody({
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
   bindToggle('vis-home-roster-moves', 'home_show_roster_moves', 'vis-msg-home_show_roster_moves');
+
+  document.querySelectorAll('.vis-nextup-select').forEach(function(sel) {
+    var prev = sel.value;
+    sel.addEventListener('change', async function() {
+      var msg = document.getElementById('vis-msg-nextup');
+      msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+      try {
+        var r = await fetch('/admin/site/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [this.dataset.key]: this.value })
+        });
+        if (!r.ok) throw new Error();
+        prev = this.value;
+        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+      } catch(e) {
+        msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+        this.value = prev;
+      }
+      setTimeout(function() { msg.textContent = ''; }, 2000);
+    });
+  });
 
   document.querySelectorAll('.vis-awards-child').forEach(function(input) {
     input.addEventListener('change', async function() {

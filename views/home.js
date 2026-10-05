@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink, manilaTodayStr } from './utils.js';
+import { moveBadge } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
 
@@ -163,6 +164,76 @@ function heroCarousel(games, awardItems = []) {
   dots.forEach(function(d, i){ d.onclick = function(){ manual(i); }; });
 
   schedule(AUTO_MS);
+})();
+</script>`;
+}
+
+// ── MVP Race Sidebar ──────────────────────────────────────────────────────────
+// Takes the Player Highlights slot next to the hero while the MVP Race is switched on
+// (buildHomeMvpRace in server.js). The leader gets a spotlight (photo, score, stat line,
+// start of the cached AI writeup); 2–5 are a compact ladder with week-over-week movement.
+// Movement badges reuse the /mvp page's .mvp-move styles so both read the same.
+function mvpRaceSidebar({ season, week, final, candidates }) {
+  const [lead, ...rest] = candidates;
+  const ls    = lead.stats;
+  const gp    = ls.gp || 1;
+  const color = teamColor(ls.team_name);
+  const href  = id => `/players/${encodeURIComponent(String(id))}`;
+  const when  = final ? `S${season} · FINAL` : week ? `S${season} · AFTER WEEK ${week}` : `S${season}`;
+  const writeup = String(lead.writeup || '').replace(/\*\*/g, '').trim();
+
+  const rowMove = (rank, prev) => {
+    if (prev === undefined) return '';
+    if (prev === null) return `<span class="mvp-move mvp-move--new" title="New this week">NEW</span>`;
+    const d = prev - rank;
+    if (d > 0) return `<span class="mvp-move mvp-move--up" title="Last week #${prev}">▲${d}</span>`;
+    if (d < 0) return `<span class="mvp-move mvp-move--down" title="Last week #${prev}">▼${-d}</span>`;
+    return `<span class="mvp-move mvp-move--same" title="Last week #${prev}">–</span>`;
+  };
+
+  const rows = rest.map((c, i) => {
+    const rank = i + 2;
+    return `<a href="${href(c.player.id)}" class="hmvp-row">
+    <span class="hmvp-row__rank font-condensed">${rank}</span>
+    <span class="hmvp-row__name"><span class="team-dot" style="background:${teamColor(c.stats.team_name)}"></span><span>${escHtml(displayPlayerName(c.player.name))}</span></span>
+    ${rowMove(rank, c.prevRank)}
+    <span class="hmvp-row__score font-condensed">${c.mvpScore.toFixed(1)}</span>
+  </a>`;
+  }).join('\n  ');
+
+  return `<div class="card sidebar hmvp-card">
+  <div class="card-label">MVP RACE <span class="hmvp-when">${escHtml(when)}</span></div>
+  <a href="${href(lead.player.id)}" class="hmvp-lead" style="background:linear-gradient(135deg,${color}12 0%,transparent 55%)">
+    <div class="hmvp-lead__head">
+      ${playerAvatar(lead.player.id, lead.player.name, color, { className: 'hmvp-avatar' })}
+      <div class="hmvp-lead__id">
+        <span class="hmvp-badge">FRONTRUNNER</span>
+        <span class="hmvp-lead__name"><span class="team-dot" style="background:${color}"></span>${escHtml(displayPlayerName(lead.player.name).toUpperCase())}</span>
+        <span class="hmvp-lead__move">${moveBadge(1, lead.prevRank)}</span>
+      </div>
+      <div class="hmvp-lead__score"><b class="font-condensed">${lead.mvpScore.toFixed(1)}</b><span>SCORE</span></div>
+    </div>
+    <div class="hmvp-lead__stats"><b>${(ls.pts / gp).toFixed(1)}</b> PPG · <b>${(ls.reb / gp).toFixed(1)}</b> RPG · <b>${(ls.ast / gp).toFixed(1)}</b> APG · <b>${(ls.stl / gp).toFixed(1)}</b> SPG</div>
+    ${writeup ? `<div class="hmvp-lead__body"><p>${escHtml(writeup)}</p></div>` : ''}
+  </a>
+  ${rows ? `<div class="hmvp-ladder">${rows}</div>` : ''}
+  <a href="/mvp" class="hmvp-foot">Full MVP race <span>&rarr;</span></a>
+</div>
+<script>
+// The writeup takes whatever height the card has left beside the hero, so the line clamp
+// is fitted to that space (whole lines + ellipsis) instead of a fixed count. The clamp sits
+// on the inner <p>: as a flex item the outer box can't be display:-webkit-box itself.
+(function(){
+  var box = document.querySelector('.hmvp-lead__body');
+  var p = box && box.querySelector('p');
+  if (!p) return;
+  function fit(){
+    var lh = parseFloat(getComputedStyle(p).lineHeight) || 18;
+    p.style.webkitLineClamp = String(Math.max(4, Math.floor(box.clientHeight / lh)));
+  }
+  fit();
+  window.addEventListener('resize', fit);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
 })();
 </script>`;
 }
@@ -374,26 +445,96 @@ function rosterMoversCarousel(movers) {
 }
 
 // ── Registration Banner ───────────────────────────────────────────────────────
-function registrationBanner({ pill, headline, message, cta }) {
-  return `<section class="reg-banner" aria-label="Membership Registration">
-  <div class="reg-banner__glow" aria-hidden="true"></div>
-  <div class="reg-banner__arc" aria-hidden="true"></div>
-  <div class="reg-banner__inner">
-    <div class="reg-banner__copy">
-      <div class="reg-banner__eyebrow">
-        <span class="reg-banner__pill">
-          <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-          ${escHtml(pill || 'Now Recruiting')}
-        </span>
-      </div>
-      <h2 class="reg-banner__headline">${escHtml(headline || 'Join the League.')}</h2>
-      <p class="reg-banner__deadline">${escHtml(message || 'Register now and claim your spot.')}</p>
+// Logged-out "Join the community" band (shown while reg_open is on). Top row: rotating
+// AI-written copy from the registration message pool, CTA + note on the right. Bottom row:
+// a full-width strip of 6 real numbers, a random pick per page view so repeat visitors see
+// the league from different angles, counting up from 0 when the strip scrolls into view. Each tile is tag / number / label, and labels are kept
+// short enough to stay on one line down to phone width — the "since Season N" qualifier
+// for league totals lives in the tag, not the label, so the totals never claim to be
+// all-time when the DB doesn't start at Season 1.
+function registrationBanner({ pill, headline, message, cta, note, stats = {} }) {
+  const fmt    = n => `<span class="js-count" data-count="${Number(n)}">${Number(n).toLocaleString('en-US')}</span>`;
+  const sinceS = stats.firstSeason > 1 ? `League · since S${stats.firstSeason}` : 'League';
+  const lp     = stats.lastPapawis;
+  const tile   = (kind, tag, n, label) => ({ kind, tag, n, label });
+  const pool   = [
+    stats.leaguePlayers  ? tile('league', 'League', fmt(stats.leaguePlayers), 'league players') : null,
+    stats.points         ? tile('league', sinceS, fmt(stats.points), 'points scored') : null,
+    stats.threes         ? tile('league', sinceS, fmt(stats.threes), 'threes made') : null,
+    stats.fours          ? tile('league', sinceS, fmt(stats.fours), '4-pointers made') : null,
+    stats.rebounds       ? tile('league', sinceS, fmt(stats.rebounds), 'rebounds grabbed') : null,
+    stats.assists        ? tile('league', sinceS, fmt(stats.assists), 'assists dished') : null,
+    stats.steals         ? tile('league', sinceS, fmt(stats.steals), 'steals') : null,
+    stats.gamesTracked   ? tile('league', 'League', fmt(stats.gamesTracked), 'games stat-tracked') : null,
+    stats.gamesOnYoutube ? tile('league', 'League', fmt(stats.gamesOnYoutube), 'games on YouTube') : null,
+    stats.members        ? tile('community', 'Community', fmt(stats.members), 'members') : null,
+    stats.papawisRuns    ? tile('papawis', 'Papawis', fmt(stats.papawisRuns), 'open runs played') : null,
+    stats.papawisSpots   ? tile('papawis', 'Papawis', fmt(stats.papawisSpots), 'spots played') : null,
+    stats.papawisPlayers ? tile('papawis', 'Papawis', fmt(stats.papawisPlayers), 'different players') : null,
+    stats.papawisCourts > 1 ? tile('papawis', 'Papawis', fmt(stats.papawisCourts), 'courts played at') : null,
+    lp && lp.max_slots && lp.confirmed
+      ? tile('papawis', lp.waitlist ? `Papawis · +${lp.waitlist} waitlist` : 'Papawis', `${fmt(lp.confirmed)}<small>/${lp.max_slots}</small>`, 'filled last run')
+      : null,
+  ].filter(Boolean);
+  // Fisher–Yates, then take 6
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const tiles = pool.slice(0, 6);
+
+  return `<section class="join-band" aria-label="Join the WKND community">
+  <div class="join-band__top">
+    <div class="join-band__copy">
+      <span class="join-band__pill">${escHtml(pill || 'Bagong Dating? 👀')}</span>
+      <h2 class="join-band__headline">${escHtml(headline || 'Join the community.')}</h2>
+      <p class="join-band__message">${escHtml(message || 'All skill levels welcome. Register to join Papawis runs and get your own stats page.')}</p>
     </div>
-    <a href="/register" class="reg-banner__cta">
-      ${escHtml(cta || 'Sign Me Up')} <span aria-hidden="true">→</span>
-    </a>
+    <div class="join-band__actions">
+      <a href="/register" class="join-band__cta">${escHtml(cta || 'Join the community')}</a>
+      <span class="join-band__fine">${escHtml(note || 'Takes a few minutes.')}</span>
+    </div>
   </div>
-</section>`;
+  ${tiles.length ? `<div class="join-band__stats" style="--tiles:${tiles.length}">
+    ${tiles.map(t => `<div class="join-band__stat"><span class="join-band__stat-tag join-band__stat-tag--${t.kind}">${escHtml(t.tag)}</span><span class="join-band__stat-n font-condensed">${t.n}</span><span class="join-band__stat-l">${escHtml(t.label)}</span></div>`).join('\n    ')}
+  </div>` : ''}
+</section>
+<script>
+// Count-up: each number runs 0 → its real value the first time the strip scrolls into
+// view. The real values are already in the HTML, so no-JS and reduced-motion visitors
+// just see the final numbers.
+(function(){
+  var strip = document.querySelector('.join-band__stats');
+  if (!strip || !('IntersectionObserver' in window)) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var els = Array.prototype.slice.call(strip.querySelectorAll('.js-count'));
+  var DURATION = 1400;
+  els.forEach(function(el){ el.textContent = '0'; });
+  function show(eased){
+    els.forEach(function(el){
+      var target = Number(el.getAttribute('data-count')) || 0;
+      el.textContent = Math.round(target * eased).toLocaleString('en-US');
+    });
+  }
+  function run(){
+    var start = performance.now(), done = false;
+    function frame(now){
+      if (done) return;
+      var t = Math.min(1, (now - start) / DURATION);
+      show(1 - Math.pow(1 - t, 3)); // easeOutCubic
+      if (t < 1) requestAnimationFrame(frame); else done = true;
+    }
+    requestAnimationFrame(frame);
+    // Safety net: if animation frames get throttled (background tab, power saving), still
+    // land on the real values when the animation should have finished.
+    setTimeout(function(){ if (!done) { done = true; show(1); } }, DURATION + 150);
+  }
+  var io = new IntersectionObserver(function(entries){
+    if (entries.some(function(e){ return e.isIntersecting; })) { io.disconnect(); run(); }
+  }, { threshold: 0.4 });
+  io.observe(strip);
+})();
+</script>`;
 }
 
 function memberSignupBannerBig({ season, headline, message, cta }) {
@@ -419,6 +560,162 @@ function memberSignupBannerBig({ season, headline, message, cta }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
+// ── Coming up (buildHomeNextUp in server.js) ──────────────────────────────────
+// Up to four cards: League + Papawis are fixed, the rest are admin-picked on
+// /admin/visibility. Each renderer gets that card's data and returns one <article>.
+function nuDayLabel(iso) {
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  if (!y) return '';
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+function nuDaysAway(iso) {
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  const [ty, tm, td] = manilaTodayStr().split('-').map(Number);
+  const n = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+  return n <= 0 ? 'Today' : n === 1 ? 'Tomorrow' : `In ${n} days`;
+}
+const nuPeso = n => `₱${Number(n).toLocaleString('en-US')}`;
+// "LASTNAME, Firstname" (how names are stored) → "Firstname L." — first name + last initial only.
+const nuShortName = raw => {
+  const parts = displayPlayerName(String(raw || '')).trim().split(/\s+/);
+  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || '';
+};
+function nuCard(kind, kicker, title, meta, body, foot) {
+  return `<article class="card nu-card nu-card--${kind}">
+    <div class="nu-card__head">
+      <span class="nu-card__kicker">${kicker}</span>
+      <h3 class="nu-card__title">${title}</h3>
+      ${meta ? `<span class="nu-card__meta">${meta}</span>` : ''}
+    </div>
+    <div class="nu-card__body">${body}</div>
+    ${foot ? `<div class="nu-card__foot">${foot}</div>` : ''}
+  </article>`;
+}
+
+const NU_RENDER = {
+  league(d) {
+    if (d.mode === 'upcoming') {
+      const rows = d.games.map(g => `<div class="nu-match">
+        <span class="nu-match__team"><span class="team-dot" style="background:${teamColor(g.a)}"></span>${escHtml(g.a)}${g.recA ? ` <em>${escHtml(g.recA)}</em>` : ''}</span>
+        <span class="nu-match__vs">vs</span>
+        <span class="nu-match__team nu-match__team--r">${g.recB ? `<em>${escHtml(g.recB)}</em> ` : ''}${escHtml(g.b)}<span class="team-dot" style="background:${teamColor(g.b)}"></span></span>
+      </div>`).join('');
+      return nuCard('league', `League · Season ${escHtml(String(d.season))}`, escHtml(nuDayLabel(d.date)),
+        `${escHtml(nuDaysAway(d.date))} · ${d.games.length} game${d.games.length === 1 ? '' : 's'}`,
+        rows, `<a href="/games" class="nu-card__link">All games <span>&rarr;</span></a>`);
+    }
+    const rows = d.games.map(g => {
+      const winA = g.scoreA > g.scoreB, winB = g.scoreB > g.scoreA;
+      return `<a href="/games/${encodeURIComponent(g.id)}" class="nu-match nu-match--result">
+        <span class="nu-match__team${winA ? ' is-win' : ''}"><span class="team-dot" style="background:${teamColor(g.a)}"></span>${escHtml(g.a)}</span>
+        <span class="nu-match__score font-condensed"><b${winA ? ' class="is-win"' : ''}>${g.scoreA}</b>–<b${winB ? ' class="is-win"' : ''}>${g.scoreB}</b></span>
+        <span class="nu-match__team nu-match__team--r${winB ? ' is-win' : ''}">${escHtml(g.b)}<span class="team-dot" style="background:${teamColor(g.b)}"></span></span>
+      </a>`;
+    }).join('');
+    return nuCard('league', `League · Latest results`, escHtml(nuDayLabel(d.date)),
+      'Next game day to be announced', rows, `<a href="/games" class="nu-card__link">All games <span>&rarr;</span></a>`);
+  },
+
+  papawis(d, { isLoggedIn }) {
+    if (d.empty) {
+      return nuCard('papawis', 'Papawis · Open run', 'Next run TBA',
+        'Weekend pickup games, all levels',
+        `<p class="nu-card__text">The next open run hasn't been posted yet. Check back soon.</p>`,
+        `<a href="/papawis" class="nu-card__link">See past runs <span>&rarr;</span></a>`);
+    }
+    const pct  = d.maxSlots ? Math.min(100, Math.round(d.confirmed / d.maxSlots * 100)) : 0;
+    const full = d.maxSlots && d.confirmed >= d.maxSlots;
+    const meta = [escHtml(nuDaysAway(d.date)), d.time && escHtml(d.time)].filter(Boolean).join(' · ');
+    const body = `${d.location ? `<p class="nu-card__text nu-card__text--loc">${escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}</p>` : ''}
+      ${d.maxSlots ? `<div class="nu-slots"><div class="nu-slots__bar"><i style="width:${pct}%"></i></div>
+      <div class="nu-slots__row"><span><b>${d.confirmed}/${d.maxSlots}</b> ${full ? 'full' : 'slots filled'}</span>${d.waitlist ? `<span class="nu-slots__wait">+${d.waitlist} waitlist</span>` : ''}</div></div>` : ''}
+      ${d.price != null ? `<p class="nu-card__price"><b>${nuPeso(d.price)}</b> per player</p>` : ''}`;
+    const foot = isLoggedIn
+      ? `<a href="/papawis" class="nu-card__cta">${full ? 'Join the waitlist' : 'Grab a slot'}</a>`
+      : `<a href="/register" class="nu-card__cta">Join to play</a>`;
+    return nuCard('papawis', 'Papawis · Open run', escHtml(nuDayLabel(d.date)), meta, body, foot);
+  },
+
+  marketplace(d) {
+    const rows = d.listings.map(l => `<a href="/marketplace/${encodeURIComponent(l.id)}" class="nu-item">
+      <span class="nu-item__thumb">${l.hasPhoto ? `<img src="/api/marketplace/${encodeURIComponent(l.id)}/photo/0" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>
+      <span class="nu-item__body"><span class="nu-item__title">${escHtml(l.title)}</span>
+      <span class="nu-item__price">${nuPeso(l.price)}${l.compareAt > l.price ? ` <s>${nuPeso(l.compareAt)}</s>` : ''}</span></span>
+    </a>`).join('');
+    return nuCard('marketplace', 'Marketplace', 'Fresh drops', 'Jerseys and gear from the community',
+      rows, `<a href="/marketplace" class="nu-card__link">Shop all <span>&rarr;</span></a>`);
+  },
+
+  birthdays(d) {
+    if (d.locked) {
+      return nuCard('birthdays', 'Birthdays', 'This week', '',
+        `<div class="nu-big"><span class="nu-big__n font-condensed">${d.total}</span><span class="nu-big__l">${d.total === 1 ? 'player celebrates' : 'players celebrate'} a birthday this week 🎂</span></div>`,
+        `<a href="/login" class="nu-card__link">Log in to see who <span>&rarr;</span></a>`);
+    }
+    const when = n => n === 0 ? 'Today 🎂' : n === 1 ? 'Tomorrow' : `In ${n} days`;
+    const rows = d.people.map(p => `<a href="/players/${encodeURIComponent(p.id)}" class="nu-person">
+      ${playerAvatar(p.id, p.name, teamColor(p.team), { className: 'nu-person__avatar' })}
+      <span class="nu-person__name">${escHtml(displayPlayerName(p.name))}</span>
+      <span class="nu-person__when${p.inDays === 0 ? ' is-today' : ''}">${when(p.inDays)}</span>
+    </a>`).join('');
+    return nuCard('birthdays', 'Birthdays', 'This week',
+      d.total > d.people.length ? `${d.total} players` : '', rows, '');
+  },
+
+  new_members(d, { isLoggedIn }) {
+    const chips = d.members.map(m => `<span class="nu-chip">${escHtml(nuShortName(m.name))}</span>`).join('');
+    return nuCard('new_members', 'Community', 'New this month',
+      `${d.total} new member${d.total === 1 ? '' : 's'} in the last 30 days`,
+      `<div class="nu-chips">${chips}</div>`,
+      isLoggedIn ? '' : `<a href="/register" class="nu-card__cta">Join them</a>`);
+  },
+
+  poll(d) {
+    if (d.locked) {
+      return nuCard('poll', 'Players are voting', 'A league poll is open', '',
+        `<div class="nu-big"><span class="nu-big__n font-condensed">${d.votes}</span><span class="nu-big__l">vote${d.votes === 1 ? '' : 's'} cast so far</span></div>`,
+        `<a href="/login" class="nu-card__link">Log in to vote <span>&rarr;</span></a>`);
+    }
+    const opts = (d.options || []).slice(0, 4).map(o => `<li>${escHtml(o)}</li>`).join('');
+    return nuCard('poll', 'Players are voting', escHtml(d.question), `${d.votes} vote${d.votes === 1 ? '' : 's'} so far`,
+      `<ul class="nu-poll">${opts}</ul>`, `<a href="/polls" class="nu-card__cta">Cast your vote</a>`);
+  },
+
+  video(d) {
+    return nuCard('video', 'Watch', `${escHtml(d.a)} ${d.scoreA}–${d.scoreB} ${escHtml(d.b)}`, escHtml(nuDayLabel(d.date)),
+      `<a href="/games/${encodeURIComponent(d.gameId)}" class="nu-video"><img src="https://img.youtube.com/vi/${encodeURIComponent(d.videoId)}/hqdefault.jpg" alt="" loading="lazy"><span class="nu-video__play" aria-hidden="true"></span></a>`,
+      `<a href="/games/${encodeURIComponent(d.gameId)}" class="nu-card__link">Full game <span>&rarr;</span></a>`);
+  },
+};
+
+// League Leaders carousel (or the admin-picked New/Traded one) under its own section
+// header, so it reads as its own block rather than trailing off the "Coming up" cards.
+function leadersSection(leaderPlayers, rosterMovers, season) {
+  const leaders = leagueLeaders(leaderPlayers);
+  if (leaders) {
+    return `<section class="home-leaders" aria-labelledby="leaders-heading">
+  <div class="section-header"><h2 id="leaders-heading">League leaders${season ? ` <span class="section-header__sub">Season ${escHtml(String(season))}</span>` : ''}</h2><a href="/leaders" class="section-header__link">All leaders <span>&rarr;</span></a></div>
+  ${leaders}
+</section>`;
+  }
+  const movers = rosterMoversCarousel(rosterMovers);
+  return movers ? `<section class="home-leaders" aria-labelledby="movers-heading">
+  <div class="section-header"><h2 id="movers-heading">New &amp; traded players</h2><a href="/players" class="section-header__link">All players <span>&rarr;</span></a></div>
+  ${movers}
+</section>` : '';
+}
+
+function nextUpSection(nextUp) {
+  if (!nextUp || !nextUp.cards.length) return '';
+  const cards = nextUp.cards.map(c => NU_RENDER[c.kind] ? NU_RENDER[c.kind](c.data, nextUp) : '').join('\n  ');
+  return `<section class="nu-section" aria-labelledby="nu-heading">
+  <div class="section-header"><h2 id="nu-heading">Coming up</h2></div>
+  <div class="nu-grid" style="--nu-cards:${nextUp.cards.length}">
+  ${cards}
+  </div>
+</section>`;
+}
+
 function latestPosts(posts) {
   if (!posts.length) return '';
   const rows = posts.slice(0, 3).map(p => {
@@ -444,7 +741,7 @@ function latestPosts(posts) {
 </style>`;
 }
 
-export function homePage({ teams, players, games, highlights = [], leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -455,12 +752,14 @@ export function homePage({ teams, players, games, highlights = [], leaderPlayers
 
   return `<div class="home-grid">
   ${heroCarousel(completedGames.slice(0, 4), awardsGallery)}
-  ${highlightsSidebar(highlights)}
+  ${mvpRace ? mvpRaceSidebar(mvpRace) : highlightsSidebar(highlights)}
 </div>
 
 ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerBig(signupBanner) : ''}
 
-${leagueLeaders(leaderPlayers) || rosterMoversCarousel(rosterMovers)}
+${nextUpSection(nextUp)}
+
+${leadersSection(leaderPlayers, rosterMovers, leaderSeason)}
 
 ${latestPosts(posts)}`;
 }
