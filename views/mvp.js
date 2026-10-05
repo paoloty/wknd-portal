@@ -18,7 +18,7 @@ function regenBtn(playerId, season, isAdmin, playoffsStarted, { absolute = false
   if (!isAdmin || playoffsStarted) return '';
   const pos = absolute
     ? 'position:absolute;top:10px;right:10px;z-index:2;'
-    : 'position:relative;height:22px;';
+    : 'position:relative;z-index:2;height:22px;'; // above the row's full-cover .awd-rank-row__link (z-index:1)
   return `<button class="mvp-regen-btn" data-pid="${escHtml(String(playerId))}" data-season="${escHtml(String(season))}" title="Regenerate writeup" style="${pos}background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);color:#94a3b8;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">↺</button>`;
 }
 
@@ -66,7 +66,7 @@ function mvpHeroRow(c, rank, isAdmin, season, playoffsStarted) {
       <p class="awd-hero-row__stats">${escHtml(statsLine)}</p>
       ${writeup
         ? `<p class="awd-hero-row__article">${escHtml(writeup)}</p>`
-        : `<p class="awd-hero-row__article" style="opacity:.6">Analysis generating…</p>`}
+        : isAdmin ? `<p class="awd-hero-row__article" style="opacity:.6">Writeup unavailable (AI provider error or quota). Try ↺ later.</p>` : ''}
       <span class="awd-hero-row__cta">Full stats <span>&rarr;</span></span>
     </div>
   </a>
@@ -118,7 +118,6 @@ ${pageHeader({ title: 'MVP Race', description: 'Tracking the top MVP candidates 
 </div>`;
   }
 
-  const hasAllWriteups = candidates.every(c => c.writeup);
   const heroCandidates = candidates.slice(0, 3);
   const restCandidates = candidates.slice(3);
 
@@ -184,7 +183,6 @@ ${pageHeader({
   ${heroSection}
   ${restSection}
 </div>
-${!hasAllWriteups && !playoffsStarted ? `<script>setTimeout(function(){ location.reload(); }, 8000);</script>` : ''}
 ${toggleScript}
 ${regenScript}`;
 }

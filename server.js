@@ -8049,6 +8049,20 @@ function mvpPrevRanks(season, completedGames) {
   return Object.fromEntries(prev.map((p, i) => [p.id, i + 1]));
 }
 
+// After an AI failure (usually provider quota), /mvp stops generating for a while so every
+// page view doesn't re-hit an exhausted quota across all fallback models.
+const MVP_AI_COOLDOWN_MS = 10 * 60 * 1000;
+let mvpAiCooldownUntil = 0;
+
+// Promise.all over items with at most `limit` callbacks running at once; preserves order.
+async function mapWithConcurrency(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 function isPlayoffStarted(season) {
   return getPlayoffGames(String(season)).length > 0;
 }
@@ -8318,6 +8332,7 @@ app.post('/admin/mvp/regenerate', requireAuth, express.json(), (req, res) => {
   }
   if (player_id) deleteMvpWriteupForPlayer(player_id, season);
   else           clearMvpWriteupSeason(season);
+  mvpAiCooldownUntil = 0; // an explicit admin regenerate always gets a fresh attempt
   res.json({ ok: true });
 });
 
@@ -8377,12 +8392,18 @@ app.get('/mvp', async (req, res) => {
   const prevRanks = mvpPrevRanks(season, completedGames);
   for (const c of scored) c.prevRank = prevRanks ? (prevRanks[c.player.id] ?? null) : undefined;
 
-  // Fetch or generate writeups for top candidates (locked once playoffs begin)
-  const withWriteups = await Promise.all(scored.map(async c => {
+  // Fetch or generate writeups for top candidates (locked once playoffs begin). At most 3
+  // AI calls in flight — firing all 10 at once after "Regenerate All" tripped Gemini's
+  // rate limit and pushed calls onto fallback models.
+  const withWriteups = await mapWithConcurrency(scored, 3, async (c, i) => {
+    const rank     = i + 1;
+    // Keyed on stats only: writeups regenerate when the player's stats change or on manual
+    // ↺, not when rank alone shifts (the rank line in the prompt is a snapshot at generation).
     const statsKey = mvpStatsKey(c.stats);
     const cached   = getMvpWriteup(c.player.id, season, statsKey);
     if (cached) return { ...c, writeup: cached };
     if (playoffsStarted) return { ...c, writeup: null };
+    if (Date.now() < mvpAiCooldownUntil) return { ...c, writeup: null };
 
     try {
       const gp  = c.stats.gp;
@@ -8399,12 +8420,17 @@ app.get('/mvp', async (req, res) => {
       const pid  = c.player.id;
 
       const rankLines = [
-        `PPG: ${ppg} (league rank #${rankPpg[pid]} of ${total})`,
-        `RPG: ${rpg} (league rank #${rankRpg[pid]} of ${total})`,
-        `APG: ${apg} (league rank #${rankApg[pid]} of ${total})`,
-        `SPG: ${spg} (league rank #${rankSpg[pid]} of ${total})`,
-        `TS%: ${ts} (league rank #${rankTs[pid]} of ${total})`,
+        `PPG: ${ppg} (league rank #${rankPpg[pid]} of ${total} players)`,
+        `RPG: ${rpg} (league rank #${rankRpg[pid]} of ${total} players)`,
+        `APG: ${apg} (league rank #${rankApg[pid]} of ${total} players)`,
+        `SPG: ${spg} (league rank #${rankSpg[pid]} of ${total} players)`,
+        `TS%: ${ts} (league rank #${rankTs[pid]} of ${total} players)`,
         `FG%: ${fg}, Record: ${wl}, GP: ${gp}, MVP Score: ${c.mvpScore.toFixed(1)}`,
+        `MVP Race position: #${rank} of ${scored.length}${
+          c.prevRank === undefined ? ' (first week of rankings)'
+          : c.prevRank === null    ? ' (new to the race this week, was outside the rankings last week)'
+          : c.prevRank === rank    ? ` (unchanged from last week's #${c.prevRank})`
+          : ` (last week: #${c.prevRank}, ${c.prevRank > rank ? 'up' : 'down'} ${Math.abs(c.prevRank - rank)} spot${Math.abs(c.prevRank - rank) === 1 ? '' : 's'})`}`,
       ].join('\n');
 
       const prompt = `You are a sharp basketball analyst covering WKND Basketball League, a recreational league. Write a 2-3 sentence MVP case for ${name} (${String(c.stats.team_name).toUpperCase()}) in the style of an ESPN MVP ladder entry. Be specific with numbers. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
@@ -8416,16 +8442,19 @@ Rules:
 - Lead with the most interesting or unusual thing about this player's case.
 - No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
 - ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
+- Work in their MVP Race position and how it moved since last week (climbing, slipping, holding steady, or newly entering) using the exact numbers below. Do not say who they passed or who passed them.
 
 ${name} stats:\n${rankLines}`;
 
       const { text } = await generateText(prompt, { maxTokens: 220, temperature: 0.75 });
       setMvpWriteup(c.player.id, season, statsKey, text);
       return { ...c, writeup: text };
-    } catch {
+    } catch (err) {
+      console.error(`MVP writeup failed for ${c.player.id}:`, err.message);
+      mvpAiCooldownUntil = Date.now() + MVP_AI_COOLDOWN_MS;
       return { ...c, writeup: null };
     }
-  }));
+  });
 
   res.send(renderPage(req, {
     title: playoffsStarted
