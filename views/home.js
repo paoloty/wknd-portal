@@ -626,13 +626,17 @@ const NU_RENDER = {
     const pct  = d.maxSlots ? Math.min(100, Math.round(d.confirmed / d.maxSlots * 100)) : 0;
     const full = d.maxSlots && d.confirmed >= d.maxSlots;
     const meta = [escHtml(nuDaysAway(d.date)), d.time && escHtml(d.time)].filter(Boolean).join(' · ');
-    const body = `${d.location ? `<p class="nu-card__text nu-card__text--loc">${escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}</p>` : ''}
+    const loc  = d.location ? `${escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}` : '';
+    const body = `${d.image
+        ? `<div class="nu-court${d.image.kind === 'map' ? ' nu-court--map' : ''}"><img src="${escHtml(d.image.src)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('nu-court--noimg')">${loc ? `<span class="nu-court__loc">${loc}</span>` : ''}</div>`
+        : loc ? `<p class="nu-card__text nu-card__text--loc">${loc}</p>` : ''}
       ${d.maxSlots ? `<div class="nu-slots"><div class="nu-slots__bar"><i style="width:${pct}%"></i></div>
       <div class="nu-slots__row"><span><b>${d.confirmed}/${d.maxSlots}</b> ${full ? 'full' : 'slots filled'}</span>${d.waitlist ? `<span class="nu-slots__wait">+${d.waitlist} waitlist</span>` : ''}</div></div>` : ''}
+      ${d.faces && d.faces.length ? `<div class="nu-faces" aria-label="${d.confirmed} players confirmed">${d.faces.map(f => playerAvatar(f.id, f.name, teamColor(f.team), { className: 'nu-face' })).join('')}${d.confirmed > d.faces.length ? `<span class="nu-face nu-face--more">+${d.confirmed - d.faces.length}</span>` : ''}</div>` : ''}
       ${d.price != null ? `<p class="nu-card__price"><b>${nuPeso(d.price)}</b> per player</p>` : ''}`;
     const foot = isLoggedIn
-      ? `<a href="/papawis" class="nu-card__cta">${full ? 'Join the waitlist' : 'Grab a slot'}</a>`
-      : `<a href="/register" class="nu-card__cta">Join to play</a>`;
+      ? `<a href="/papawis" class="nu-card__link">${full ? 'Join the waitlist' : 'Grab a slot'} <span>&rarr;</span></a>`
+      : `<a href="/register" class="nu-card__link">Join to play <span>&rarr;</span></a>`;
     return nuCard('papawis', 'Papawis · Open run', escHtml(nuDayLabel(d.date)), meta, body, foot);
   },
 
@@ -667,7 +671,7 @@ const NU_RENDER = {
     return nuCard('new_members', 'Community', 'New this month',
       `${d.total} new member${d.total === 1 ? '' : 's'} in the last 30 days`,
       `<div class="nu-chips">${chips}</div>`,
-      isLoggedIn ? '' : `<a href="/register" class="nu-card__cta">Join them</a>`);
+      isLoggedIn ? '' : `<a href="/register" class="nu-card__link">Join them <span>&rarr;</span></a>`);
   },
 
   poll(d) {
@@ -678,7 +682,7 @@ const NU_RENDER = {
     }
     const opts = (d.options || []).slice(0, 4).map(o => `<li>${escHtml(o)}</li>`).join('');
     return nuCard('poll', 'Players are voting', escHtml(d.question), `${d.votes} vote${d.votes === 1 ? '' : 's'} so far`,
-      `<ul class="nu-poll">${opts}</ul>`, `<a href="/polls" class="nu-card__cta">Cast your vote</a>`);
+      `<ul class="nu-poll">${opts}</ul>`, `<a href="/polls" class="nu-card__link">Cast your vote <span>&rarr;</span></a>`);
   },
 
   video(d) {
