@@ -8354,18 +8354,7 @@ function homeNextUpPapawis() {
   // Who's in — same confirmed list /papawis shows publicly (guests appear as their
   // sponsoring player's avatar there too). Only the first few are drawn; the rest are "+N".
   const confirmedSignups = getPapawisSignups(next.id).filter(s => s.status === 'confirmed');
-  // Court photo, matched by location name exactly like /papawis does; with no photo on file,
-  // the already-generated dark map banner for that location (cache only — the homepage never
-  // kicks off a geocode; /papawis does that).
-  const court    = next.location ? getPapawisCourtByName(next.location) : null;
-  const mapQuery = court?.address?.trim() || next.location || '';
-  const image = court?.image_url
-    ? { kind: 'photo', src: `/api/papawis-court/${encodeURIComponent(court.id)}/photo` }
-    : mapQuery && getPapawisLocationGeocode(mapQuery)?.map_image
-      ? { kind: 'map', src: `/api/papawis-map/photo?loc=${encodeURIComponent(mapQuery)}` }
-      : null;
   return {
-    image,
     faces: confirmedSignups.slice(0, 7).map(s => ({ id: s.player_id, name: s.player_name, team: s.team_name || '' })),
     date: next.date, time: formatTimeRange(next.start_time, next.end_time) || next.time_label || '',
     location: next.location || '', maxSlots: Number(next.max_slots) || 0,

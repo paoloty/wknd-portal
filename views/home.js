@@ -626,10 +626,7 @@ const NU_RENDER = {
     const pct  = d.maxSlots ? Math.min(100, Math.round(d.confirmed / d.maxSlots * 100)) : 0;
     const full = d.maxSlots && d.confirmed >= d.maxSlots;
     const meta = [escHtml(nuDaysAway(d.date)), d.time && escHtml(d.time)].filter(Boolean).join(' · ');
-    const loc  = d.location ? `${escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}` : '';
-    const body = `${d.image
-        ? `<div class="nu-court${d.image.kind === 'map' ? ' nu-court--map' : ''}"><img src="${escHtml(d.image.src)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('nu-court--noimg')">${loc ? `<span class="nu-court__loc">${loc}</span>` : ''}</div>`
-        : loc ? `<p class="nu-card__text nu-card__text--loc">${loc}</p>` : ''}
+    const body = `${d.location ? `<p class="nu-card__text nu-card__text--loc">${escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}</p>` : ''}
       ${d.maxSlots ? `<div class="nu-slots"><div class="nu-slots__bar"><i style="width:${pct}%"></i></div>
       <div class="nu-slots__row"><span><b>${d.confirmed}/${d.maxSlots}</b> ${full ? 'full' : 'slots filled'}</span>${d.waitlist ? `<span class="nu-slots__wait">+${d.waitlist} waitlist</span>` : ''}</div></div>` : ''}
       ${d.faces && d.faces.length ? `<div class="nu-faces" aria-label="${d.confirmed} players confirmed">${d.faces.map(f => playerAvatar(f.id, f.name, teamColor(f.team), { className: 'nu-face' })).join('')}${d.confirmed > d.faces.length ? `<span class="nu-face nu-face--more">+${d.confirmed - d.faces.length}</span>` : ''}</div>` : ''}
