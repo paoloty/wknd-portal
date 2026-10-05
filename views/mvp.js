@@ -28,10 +28,10 @@ function moveBadge(rank, prevRank) {
   if (prevRank === undefined) return '';
   if (prevRank === null) return `<span class="mvp-move mvp-move--new" title="New this week">NEW</span>`;
   const delta = prevRank - rank;
-  const title = `Last week: #${prevRank}`;
-  if (delta > 0) return `<span class="mvp-move mvp-move--up" title="${title}">▲${delta}</span>`;
-  if (delta < 0) return `<span class="mvp-move mvp-move--down" title="${title}">▼${-delta}</span>`;
-  return `<span class="mvp-move mvp-move--same" title="${title}">–</span>`;
+  const prev  = `<span class="mvp-move__prev">Last week #${prevRank}</span>`;
+  if (delta > 0) return `<span class="mvp-move mvp-move--up">▲${delta}</span>${prev}`;
+  if (delta < 0) return `<span class="mvp-move mvp-move--down">▼${-delta}</span>${prev}`;
+  return `<span class="mvp-move mvp-move--same">–</span>${prev}`;
 }
 
 // ── Hero row (pinned, top 3 — Frontrunner/Close Second/In the Mix) ─────────────

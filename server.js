@@ -8341,7 +8341,7 @@ app.get('/mvp', async (req, res) => {
   // Team records from regular complete games — used in AI writeups so the W-L is the team's
   // actual record, not the individual player's personal participation record.
   const teamRecords = {};
-  for (const g of completedGames.filter(g => g.game_type === 'regular')) {
+  for (const g of completedGames.filter(g => g.game_type === 'regular' && String(g.season) === String(season))) {
     const a = g.team_a_id, b = g.team_b_id;
     if (!teamRecords[a]) teamRecords[a] = { w: 0, l: 0 };
     if (!teamRecords[b]) teamRecords[b] = { w: 0, l: 0 };
