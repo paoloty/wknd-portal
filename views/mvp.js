@@ -40,10 +40,15 @@ function moveText(rank, prevRank, short = false) {
 
 // Initials sit underneath; the photo covers them once it loads and removes itself if it
 // 404s. Crop comes from the admin's MVP photo override (object-position + scale).
-function photo(c, cls) {
+function photo(c) {
   const p = c.photo || { url: `/api/player/${encodeURIComponent(String(c.player.id))}/photo`, x: 50, y: 50, zoom: 1 };
+  const m = p.phone || p;
+  // Desktop crop in --x/--y/--z, phone crop in --mx/--my/--mz (the stylesheet swaps them
+  // at the phone breakpoint); a different phone photo comes in through <picture>.
+  const vars = `--x:${p.x}%;--y:${p.y}%;--z:${p.zoom};--mx:${m.x}%;--my:${m.y}%;--mz:${m.zoom}`;
+  const img = `<img class="mvpx-img" src="${escHtml(p.url)}" alt="" loading="lazy" style="${vars}" onerror="this.remove()">`;
   return `<span class="mvpx-ph font-condensed" aria-hidden="true">${escHtml(initials(displayPlayerName(c.player.name)))}</span>
-    <img class="mvpx-img ${cls}" src="${escHtml(p.url)}" alt="" loading="lazy" style="object-position:${p.x}% ${p.y}%;transform:scale(${p.zoom});transform-origin:${p.x}% ${p.y}%" onerror="this.remove()">`;
+    ${m.url && m.url !== p.url ? `<picture><source media="(max-width: 720px)" srcset="${escHtml(m.url)}">${img}</picture>` : img}`;
 }
 
 function perGame(stats) {
@@ -77,7 +82,7 @@ function leadCard(c, ctx) {
   return `<div class="mvpx-admin-wrap">
   <a href="${href(c)}" class="mvpx-lead">
     <div class="mvpx-lead__photo">
-      ${photo(c, '')}
+      ${photo(c)}
       <span class="mvpx-lead__rank font-condensed">1</span>
     </div>
     <div class="mvpx-lead__body">
@@ -112,7 +117,7 @@ function chaserCard(c, rank, lead, ctx) {
   return `<div class="mvpx-admin-wrap">
   <a href="${href(c)}" class="mvpx-chaser">
     <div class="mvpx-chaser__photo">
-      ${photo(c, '')}
+      ${photo(c)}
       <span class="mvpx-chaser__rank font-condensed">${rank}</span>
     </div>
     <div class="mvpx-chaser__body">
@@ -149,7 +154,7 @@ function chaseRow(c, rank, lead, ctx) {
   <span class="mvpx-row__rank font-condensed">${rank}</span>
   <span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>
   <span class="mvpx-row__player">
-    <span class="mvpx-row__avatar" style="border-color:${color}">${photo(c, '')}</span>
+    <span class="mvpx-row__avatar" style="border-color:${color}">${photo(c)}</span>
     <span class="mvpx-row__name">${escHtml(name)}</span>
   </span>
   <span class="mvpx-num mvpx-col-ppg font-condensed">${pg.ppg}</span>
@@ -172,6 +177,11 @@ function photoDialog(season) {
     <div class="mvpx-dlg__head">
       <h2>MVP Race photo — <span data-dlg-name></span></h2>
       <button type="submit" value="cancel" class="mvpx-dlg__x" aria-label="Close">&times;</button>
+    </div>
+    <div class="mvpx-dlg__tabs" role="tablist" aria-label="Which screen">
+      <button type="button" role="tab" class="mvpx-dlg__tab" data-dlg-tab="desktop" aria-selected="true">Desktop</button>
+      <button type="button" role="tab" class="mvpx-dlg__tab" data-dlg-tab="phone" aria-selected="false">Phone</button>
+      <span class="mvpx-dlg__tab-note" data-dlg-note></span>
     </div>
     <div class="mvpx-dlg__body">
       <div class="mvpx-dlg__preview"><img data-dlg-preview alt="Preview"></div>
@@ -200,16 +210,28 @@ function photoDialog(season) {
   if (!dlg || typeof dlg.showModal !== 'function') return;
   var season = dlg.dataset.season;
   var $ = function (sel) { return dlg.querySelector(sel); };
-  var pv = $('[data-dlg-preview]'), opts = $('[data-dlg-opts]'), msg = $('[data-dlg-msg]');
-  var inX = $('[data-dlg-x]'), inY = $('[data-dlg-y]'), inZ = $('[data-dlg-zoom]');
-  var st = {};
+  var pv = $('[data-dlg-preview]'), opts = $('[data-dlg-opts]'), msg = $('[data-dlg-msg]'), note = $('[data-dlg-note]');
+  var inX = $('[data-dlg-x]'), inY = $('[data-dlg-y]'), inZ = $('[data-dlg-zoom]'), resetBtn = $('[data-dlg-reset]');
+  // st.d = desktop, st.m = phone. Phone 'same' shows whatever desktop currently shows.
+  var st = {}, data = null;
+  function side() { return st.tab === 'phone' ? st.m : st.d; }
+  function urlOf(s) { return s.source === 'same' ? st.d.url : s.url; }
   function paint() {
-    pv.src = st.url;
-    pv.style.objectPosition = st.x + '% ' + st.y + '%';
-    pv.style.transformOrigin = st.x + '% ' + st.y + '%';
-    pv.style.transform = 'scale(' + st.zoom + ')';
-    opts.querySelectorAll('.mvpx-dlg__opt').forEach(function (b) { b.classList.toggle('is-selected', b.dataset.key === st.source); });
+    var s = side();
+    dlg.classList.toggle('is-phone', st.tab === 'phone');
+    dlg.querySelectorAll('[data-dlg-tab]').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.dlgTab === st.tab)); });
+    note.textContent = st.tab === 'phone'
+      ? (st.mReset ? 'Phones will follow desktop (top-weighted crop).' : st.mSet || st.mTouched ? 'Phones use their own settings.' : 'Not set yet — phones follow desktop, cropped toward the top.')
+      : '';
+    resetBtn.textContent = st.tab === 'phone' ? 'Match desktop' : 'Use profile photo';
+    pv.src = urlOf(s);
+    pv.style.objectPosition = s.x + '% ' + s.y + '%';
+    pv.style.transformOrigin = s.x + '% ' + s.y + '%';
+    pv.style.transform = 'scale(' + s.zoom + ')';
+    inX.value = s.x; inY.value = s.y; inZ.value = s.zoom;
+    opts.querySelectorAll('.mvpx-dlg__opt').forEach(function (b) { b.classList.toggle('is-selected', b.dataset.key === s.source); });
   }
+  function touch() { if (st.tab === 'phone') { st.mTouched = true; st.mReset = false; } }
   function addOpt(key, label, url) {
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'mvpx-dlg__opt'; b.dataset.key = key;
@@ -217,11 +239,28 @@ function photoDialog(season) {
     img.onerror = function () { b.remove(); };
     var span = document.createElement('span'); span.textContent = label;
     b.appendChild(img); b.appendChild(span);
-    b.addEventListener('click', function () { st.source = key; st.url = url; st.dataUrl = null; paint(); });
+    b.addEventListener('click', function () { var s = side(); s.source = key; s.url = url; s.dataUrl = null; touch(); paint(); });
     opts.appendChild(b);
   }
+  function renderOpts() {
+    opts.innerHTML = '';
+    if (!data) return;
+    if (st.tab === 'phone') {
+      addOpt('same', 'Same as desktop', st.d.url);
+      if (data.phone.currentUrl) addOpt('current', 'Current phone photo', data.phone.currentUrl);
+    } else if (data.desktop.currentUrl) {
+      addOpt('current', 'Current MVP photo', data.desktop.currentUrl);
+    }
+    data.options.forEach(function (o) { addOpt(o.key, o.label, o.url); });
+    var s = side();
+    if (s.source === 'upload' && s.dataUrl) addOpt('upload', 'New upload', s.dataUrl);
+  }
+  function setTab(t) { st.tab = t; renderOpts(); paint(); }
   function open(pid, name) {
-    st = { pid: pid, source: 'profile', url: '', x: 50, y: 50, zoom: 1, dataUrl: null };
+    st = { pid: pid, tab: 'desktop', mTouched: false, mReset: false, mSet: false,
+      d: { source: 'profile', url: '', x: 50, y: 50, zoom: 1, dataUrl: null },
+      m: { source: 'same', url: '', x: 50, y: 25, zoom: 1, dataUrl: null } };
+    data = null;
     $('[data-dlg-name]').textContent = name;
     msg.textContent = '';
     opts.innerHTML = '<span class="mvpx-dlg__loading">Loading…</span>';
@@ -229,39 +268,42 @@ function photoDialog(season) {
     fetch('/admin/mvp/photo-options?season=' + encodeURIComponent(season) + '&player_id=' + encodeURIComponent(pid))
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        opts.innerHTML = '';
-        if (d.current.hasPhoto) addOpt('current', 'Current MVP photo', d.current.url);
-        d.options.forEach(function (o) { addOpt(o.key, o.label, o.url); });
-        st.source = d.current.hasPhoto ? 'current' : 'profile';
-        st.url = d.current.url; st.x = d.current.offset_x; st.y = d.current.offset_y; st.zoom = d.current.zoom;
-        inX.value = st.x; inY.value = st.y; inZ.value = st.zoom;
-        paint();
+        data = d;
+        var profile = d.options[0].url;
+        st.d = { source: d.desktop.source, url: d.desktop.currentUrl || profile, x: d.desktop.offset_x, y: d.desktop.offset_y, zoom: d.desktop.zoom, dataUrl: null };
+        st.m = { source: d.phone.source, url: d.phone.source === 'profile' ? profile : (d.phone.currentUrl || ''), x: d.phone.offset_x, y: d.phone.offset_y, zoom: d.phone.zoom, dataUrl: null };
+        st.mSet = d.phone.set;
+        setTab('desktop');
       })
       .catch(function () { opts.innerHTML = ''; msg.textContent = 'Could not load photos.'; });
   }
+  dlg.querySelectorAll('[data-dlg-tab]').forEach(function (t) { t.addEventListener('click', function () { setTab(t.dataset.dlgTab); }); });
   [[inX, 'x'], [inY, 'y'], [inZ, 'zoom']].forEach(function (p) {
-    p[0].addEventListener('input', function () { st[p[1]] = Number(this.value); paint(); });
+    p[0].addEventListener('input', function () { side()[p[1]] = Number(this.value); touch(); paint(); });
   });
   $('[data-dlg-file]').addEventListener('change', function () {
     var f = this.files && this.files[0];
     if (!f) return;
     var rd = new FileReader();
-    rd.onload = function () { st.source = 'upload'; st.dataUrl = rd.result; st.url = rd.result; paint(); };
+    rd.onload = function () { var s = side(); s.source = 'upload'; s.dataUrl = rd.result; s.url = rd.result; touch(); renderOpts(); paint(); };
     rd.readAsDataURL(f);
     this.value = '';
   });
-  $('[data-dlg-reset]').addEventListener('click', function () {
-    var prof = opts.querySelector('[data-key="profile"]');
-    st.source = 'profile'; st.dataUrl = null; st.x = 50; st.y = 50; st.zoom = 1;
-    st.url = prof ? prof.querySelector('img').src : st.url;
-    inX.value = 50; inY.value = 50; inZ.value = 1;
-    paint();
+  resetBtn.addEventListener('click', function () {
+    if (st.tab === 'phone') {
+      st.m = { source: 'same', url: '', x: st.d.x, y: Math.min(st.d.y, 25), zoom: st.d.zoom, dataUrl: null };
+      st.mReset = true; st.mTouched = false;
+    } else {
+      st.d = { source: 'profile', url: data ? data.options[0].url : st.d.url, x: 50, y: 50, zoom: 1, dataUrl: null };
+    }
+    renderOpts(); paint();
   });
+  function payload(s) { return { source: s.source, dataUrl: s.source === 'upload' ? s.dataUrl : null, offset_x: s.x, offset_y: s.y, zoom: s.zoom }; }
   $('[data-dlg-save]').addEventListener('click', function () {
     var btn = this; btn.disabled = true; msg.textContent = 'Saving…';
     fetch('/admin/mvp/photo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ season: season, player_id: st.pid, source: st.source, dataUrl: st.dataUrl, offset_x: st.x, offset_y: st.y, zoom: st.zoom })
+      body: JSON.stringify({ season: season, player_id: st.pid, desktop: payload(st.d), phone: st.mReset ? 'reset' : st.mTouched ? payload(st.m) : null })
     }).then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Save failed'); }); })
       .then(function () { location.reload(); })
       .catch(function (e) { msg.textContent = e.message; btn.disabled = false; });

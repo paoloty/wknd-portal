@@ -9057,11 +9057,16 @@ app.get('/awards/share/:season/:type/:playerId', (req, res) => {
 
 // ── MVP Race page photos ──────────────────────────────────────────────────────
 // Admin-picked photo per (season, player), stored in award_photo_overrides under
-// award_type 'mvp_race' (slot 0) — same table and crop model (offset_x/offset_y as
-// object-position %, zoom as scale) the award graphics use. No override, or an override
-// that only re-crops the profile photo, falls through to the player's profile photo.
+// award_type 'mvp_race' — same table and crop model (offset_x/offset_y as
+// object-position %, zoom as scale) the award graphics use. Slot 0 is desktop, slot 1
+// is the optional phone version: the cards change shape on phones (the #1 photo goes from
+// a tall portrait to a wide strip), so one crop can't suit both. Slot 1's photo_url is a
+// data URL (its own photo), '' (same photo as desktop) or 'profile' (the profile photo).
+const MVP_PHONE_DEFAULT_Y = 25; // faces sit high in most shots — favour the top on phones
+
 app.get('/api/mvp/:season/:playerId/photo', (req, res) => {
-  const row = getAwardPhotoOverridesForPlayer(Number(req.params.season), 'mvp_race', req.params.playerId)[0];
+  const slot = req.query.slot === '1' ? 1 : 0;
+  const row = getAwardPhotoOverridesForPlayer(Number(req.params.season), 'mvp_race', req.params.playerId)[slot];
   const buf = row?.photo_url ? parseDataUrl(row.photo_url) : null;
   if (!buf) return res.redirect(302, `/api/player/${encodeURIComponent(req.params.playerId)}/photo`);
   res.set('Content-Type', 'image/jpeg');
@@ -9070,13 +9075,19 @@ app.get('/api/mvp/:season/:playerId/photo', (req, res) => {
   res.send(buf);
 });
 
-function mvpPhoto(season, playerId, meta) {
+// What the page renders for one player: desktop photo + crop, and the phone ones (which
+// fall back to the desktop photo, re-cropped toward the top, until an admin sets them).
+function mvpPhoto(season, playerId, meta = {}) {
   const enc = encodeURIComponent(String(playerId));
+  const d = meta[0], m = meta[1];
+  const profileUrl = `/api/player/${enc}/photo`;
+  const url = d?.has_photo ? `/api/mvp/${season}/${enc}/photo?v=${d.updated_at}` : profileUrl;
+  const x = d ? d.offset_x : 50, y = d ? d.offset_y : 50, zoom = d ? d.zoom : 1;
   return {
-    url: meta?.has_photo ? `/api/mvp/${season}/${enc}/photo?v=${meta.updated_at}` : `/api/player/${enc}/photo`,
-    x: meta ? meta.offset_x : 50,
-    y: meta ? meta.offset_y : 50,
-    zoom: meta ? meta.zoom : 1,
+    url, x, y, zoom,
+    phone: m
+      ? { url: m.has_photo ? `/api/mvp/${season}/${enc}/photo?slot=1&v=${m.updated_at}` : m.is_profile ? profileUrl : url, x: m.offset_x, y: m.offset_y, zoom: m.zoom }
+      : { url, x, y: Math.min(y, MVP_PHONE_DEFAULT_Y), zoom },
   };
 }
 
@@ -9103,7 +9114,6 @@ app.get('/admin/mvp/photo-options', requireAuth, (req, res) => {
   const pid = String(req.query.player_id || '');
   if (!season || !pid) return res.status(400).json({ error: 'Missing season or player' });
   const enc = encodeURIComponent(pid);
-  const current = getAwardPhotoOverridesForPlayer(season, 'mvp_race', pid)[0] || null;
   const options = [{ key: 'profile', label: 'Profile photo', url: `/api/player/${enc}/photo` }];
   if (getPlayerPhotoOriginal(pid)) options.push({ key: 'original', label: 'Profile photo (uncropped)', url: `/admin/player-photo-original/${enc}` });
   for (const r of getPlayerAwardPhotoKeys(pid)) {
@@ -9114,46 +9124,79 @@ app.get('/admin/mvp/photo-options', requireAuth, (req, res) => {
       url: `/admin/award-photo/${r.season}/${encodeURIComponent(r.award_type)}/${enc}/${r.slot}`,
     });
   }
-  res.json({
-    options,
-    current: current
-      ? { hasPhoto: !!current.photo_url, url: current.photo_url ? `/api/mvp/${season}/${enc}/photo?v=${Date.now()}` : options[0].url, offset_x: current.offset_x, offset_y: current.offset_y, zoom: current.zoom }
-      : { hasPhoto: false, url: options[0].url, offset_x: 50, offset_y: 50, zoom: 1 },
-  });
+  const rows = getAwardPhotoOverridesForPlayer(season, 'mvp_race', pid);
+  const d = rows[0] || null, m = rows[1] || null;
+  const isData = (u) => typeof u === 'string' && u.startsWith('data:');
+  const now = Date.now();
+  const desktop = d
+    ? { source: isData(d.photo_url) ? 'current' : 'profile', currentUrl: isData(d.photo_url) ? `/api/mvp/${season}/${enc}/photo?v=${now}` : null, offset_x: d.offset_x, offset_y: d.offset_y, zoom: d.zoom }
+    : { source: 'profile', currentUrl: null, offset_x: 50, offset_y: 50, zoom: 1 };
+  const phone = m
+    ? { set: true, source: isData(m.photo_url) ? 'current' : m.photo_url === 'profile' ? 'profile' : 'same', currentUrl: isData(m.photo_url) ? `/api/mvp/${season}/${enc}/photo?slot=1&v=${now}` : null, offset_x: m.offset_x, offset_y: m.offset_y, zoom: m.zoom }
+    : { set: false, source: 'same', currentUrl: null, offset_x: desktop.offset_x, offset_y: Math.min(desktop.offset_y, MVP_PHONE_DEFAULT_Y), zoom: desktop.zoom };
+  res.json({ options, desktop, phone });
 });
 
-// source: 'current' (keep the saved MVP photo, re-crop only) | 'profile' | 'original' |
-// 'award:<season>:<type>:<slot>' (copy that graphic's photo) | 'upload' (dataUrl).
-app.post('/admin/mvp/photo', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+// Body: { season, player_id, desktop: {...}, phone: {...} | 'reset' | null }. Each side is
+// { source, dataUrl?, offset_x, offset_y, zoom } where source is 'current' (keep that
+// slot's saved photo, re-crop only) | 'profile' | 'original' |
+// 'award:<season>:<type>:<slot>' (copy that graphic's photo) | 'upload' (dataUrl), plus
+// 'same' (phone only: whatever photo desktop shows). phone null = leave it as it is;
+// 'reset' = drop it so phones go back to following desktop.
+app.post('/admin/mvp/photo', requireAuth, express.json({ limit: '40mb' }), async (req, res) => {
   const season = Number(req.body?.season);
   const pid = String(req.body?.player_id || '');
-  const source = String(req.body?.source || 'current');
   if (!season || !pid) return res.status(400).json({ error: 'Missing season or player' });
-
-  let photo_url = '';
-  if (source === 'current') {
-    photo_url = getAwardPhotoOverridesForPlayer(season, 'mvp_race', pid)[0]?.photo_url || '';
-  } else if (source === 'original') {
-    photo_url = getPlayerPhotoOriginal(pid) || '';
-  } else if (source.startsWith('award:')) {
-    const [, s, type, slot] = source.split(':');
-    photo_url = getAwardPhotoOverridesForPlayer(Number(s), type, pid)[Number(slot) || 0]?.photo_url || '';
-    if (!photo_url) return res.status(404).json({ error: 'That photo no longer exists.' });
-  } else if (source === 'upload') {
-    const buf = parseDataUrl(req.body?.dataUrl);
-    if (!buf) return res.status(400).json({ error: 'No image received.' });
-    try { photo_url = await compressSourceImage(buf); }
-    catch (err) { console.error('MVP photo compress error:', err); return res.status(400).json({ error: 'Could not read that image.' }); }
-  } // 'profile' → no stored photo, the profile photo shows through
-
+  const existing = getAwardPhotoOverridesForPlayer(season, 'mvp_race', pid);
   const clamp = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
-  const offset_x = clamp(req.body?.offset_x, 0, 100, 50);
-  const offset_y = clamp(req.body?.offset_y, 0, 100, 50);
-  const zoom = clamp(req.body?.zoom, 1, 3, 1);
-  if (!photo_url && Math.abs(offset_x - 50) < 0.5 && Math.abs(offset_y - 50) < 0.5 && Math.abs(zoom - 1) < 0.01) {
-    deleteAwardPhotoOverride(season, 'mvp_race', pid, 0);
-  } else {
-    upsertAwardPhotoOverride({ season, award_type: 'mvp_race', player_id: pid, slot: 0, offset_x, offset_y, zoom, photo_url });
+
+  async function resolvePhoto(side, slot) {
+    const source = String(side?.source || 'current');
+    if (source === 'current') return existing[slot]?.photo_url || '';
+    if (source === 'same') return '';
+    if (source === 'profile') return slot === 1 ? 'profile' : '';
+    if (source === 'original') return getPlayerPhotoOriginal(pid) || '';
+    if (source.startsWith('award:')) {
+      const [, s, type, sl] = source.split(':');
+      const url = getAwardPhotoOverridesForPlayer(Number(s), type, pid)[Number(sl) || 0]?.photo_url || '';
+      if (!url) throw new Error('That photo no longer exists.');
+      return url;
+    }
+    if (source === 'upload') {
+      const buf = parseDataUrl(side?.dataUrl);
+      if (!buf) throw new Error('No image received.');
+      try { return await compressSourceImage(buf); }
+      catch (err) { console.error('MVP photo compress error:', err); throw new Error('Could not read that image.'); }
+    }
+    return '';
+  }
+
+  try {
+    const desk = req.body?.desktop || {};
+    const photo_url = await resolvePhoto(desk, 0);
+    const offset_x = clamp(desk.offset_x, 0, 100, 50);
+    const offset_y = clamp(desk.offset_y, 0, 100, 50);
+    const zoom = clamp(desk.zoom, 1, 3, 1);
+    if (!photo_url && Math.abs(offset_x - 50) < 0.5 && Math.abs(offset_y - 50) < 0.5 && Math.abs(zoom - 1) < 0.01) {
+      deleteAwardPhotoOverride(season, 'mvp_race', pid, 0);
+    } else {
+      upsertAwardPhotoOverride({ season, award_type: 'mvp_race', player_id: pid, slot: 0, offset_x, offset_y, zoom, photo_url });
+    }
+
+    const phone = req.body?.phone;
+    if (phone === 'reset') {
+      deleteAwardPhotoOverride(season, 'mvp_race', pid, 1);
+    } else if (phone && typeof phone === 'object') {
+      upsertAwardPhotoOverride({
+        season, award_type: 'mvp_race', player_id: pid, slot: 1,
+        offset_x: clamp(phone.offset_x, 0, 100, 50),
+        offset_y: clamp(phone.offset_y, 0, 100, MVP_PHONE_DEFAULT_Y),
+        zoom: clamp(phone.zoom, 1, 3, 1),
+        photo_url: await resolvePhoto(phone, 1),
+      });
+    }
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Save failed.' });
   }
   res.json({ ok: true });
 });
