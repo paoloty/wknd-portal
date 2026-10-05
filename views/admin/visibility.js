@@ -187,6 +187,7 @@ export function adminVisibilityBody({
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
   bindToggle('vis-home-roster-moves', 'home_show_roster_moves', 'vis-msg-home_show_roster_moves');
+  bindToggle('vis-mega-menu-enabled', 'mega_menu_enabled', 'vis-msg-mega_menu_enabled');
 
   document.querySelectorAll('.vis-nextup-select').forEach(function(sel) {
     var prev = sel.value;
