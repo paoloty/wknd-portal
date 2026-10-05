@@ -1,29 +1,23 @@
-import { escHtml, pageHeader } from './layout.js';
+import { escHtml } from './layout.js';
 import { displayPlayerName, teamColor, initials } from './utils.js';
 
-const RANK_LABELS = ['', 'FRONTRUNNER', 'CLOSE SECOND', 'IN THE MIX', 'DARK HORSE', 'DARK HORSE', 'DARK HORSE', 'DARK HORSE', 'DARK HORSE'];
+const RANK_LABELS = ['', 'FRONTRUNNER', 'CLOSE SECOND', 'IN THE MIX'];
 
-const BADGE_COLORS = [
-  null,
-  { bg: '#f59332', text: '#10141d' }, // 1 — FRONTRUNNER  (amber)
-  { bg: '#3b82f6', text: '#fff' },    // 2 — CLOSE SECOND (blue)
-  { bg: '#8b5cf6', text: '#fff' },    // 3 — IN THE MIX   (purple)
-  { bg: '#374151', text: '#9ca3af' }, // 4+ — DARK HORSE  (slate)
-];
-
-// Admin-only, hidden once playoffs lock every writeup — reused verbatim on both the hero
-// and compact tail rows (regenScript below binds to every .mvp-regen-btn regardless of
-// which tier it's rendered in).
-function regenBtn(playerId, season, isAdmin, playoffsStarted, { absolute = false } = {}) {
+// Admin-only, hidden once playoffs lock every writeup.
+function regenBtn(playerId, season, isAdmin, playoffsStarted) {
   if (!isAdmin || playoffsStarted) return '';
-  const pos = absolute
-    ? 'position:absolute;top:10px;right:10px;z-index:2;'
-    : 'position:relative;z-index:2;height:22px;'; // above the row's full-cover .awd-rank-row__link (z-index:1)
-  return `<button class="mvp-regen-btn" data-pid="${escHtml(String(playerId))}" data-season="${escHtml(String(season))}" title="Regenerate writeup" style="${pos}background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);color:#94a3b8;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">↺</button>`;
+  return `<button type="button" class="mvpx-admin-btn mvp-regen-btn" data-pid="${escHtml(String(playerId))}" data-season="${escHtml(String(season))}" title="Regenerate writeup">↺</button>`;
+}
+
+// Admin-only photo picker trigger (dialog + script at the bottom of the page).
+function photoBtn(c, isAdmin) {
+  if (!isAdmin) return '';
+  return `<button type="button" class="mvpx-admin-btn mvpx-photo-btn" data-pid="${escHtml(String(c.player.id))}" data-name="${escHtml(displayPlayerName(c.player.name))}">Photo</button>`;
 }
 
 // Week-over-week movement pill. prevRank: undefined = no earlier week to compare (render
 // nothing), null = wasn't in last week's pool (NEW), number = last week's rank.
+// Also used by the homepage MVP card (views/home.js).
 export function moveBadge(rank, prevRank) {
   if (prevRank === undefined) return '';
   if (prevRank === null) return `<span class="mvp-move mvp-move--new" title="New this week">NEW</span>`;
@@ -34,155 +28,338 @@ export function moveBadge(rank, prevRank) {
   return `<span class="mvp-move mvp-move--same">–</span>${prev}`;
 }
 
-// ── Hero row (pinned, top 3 — Frontrunner/Close Second/In the Mix) ─────────────
-// Same awd-hero-row family the Awards page uses for its own spotlight winners (see
-// views/awards.js) — reused directly rather than duplicated, since this is now the shared
-// "spotlight winner" component across both pages. Score is folded into the stats line
-// (awd-hero-row has no dedicated score-pill slot the way the old .mvp-row did).
-function mvpHeroRow(c, rank, isAdmin, season, playoffsStarted) {
-  const { player, stats, mvpScore, writeup } = c;
-  const name  = displayPlayerName(player.name);
-  const color = teamColor(stats.team_name);
-  const label = RANK_LABELS[rank] || 'CONTENDER';
-  const badge = BADGE_COLORS[rank] || BADGE_COLORS[4];
-  const init  = initials(player.name);
-  const href  = `/players/${encodeURIComponent(String(player.id))}`;
-  const gp    = stats.gp || 1;
-  const statsLine = `${mvpScore.toFixed(1)} SCORE · ${(stats.pts/gp).toFixed(1)} PPG · ${(stats.reb/gp).toFixed(1)} RPG · ${(stats.ast/gp).toFixed(1)} APG`;
+// Movement as plain text: `short` for table cells, otherwise a sentence for the cards.
+function moveText(rank, prevRank, short = false) {
+  if (prevRank === undefined) return { text: '', cls: '' };
+  if (prevRank === null) return { text: short ? 'NEW' : 'New to the race this week', cls: 'is-new' };
+  const d = prevRank - rank;
+  if (d > 0) return { text: short ? `▲${d}` : `▲${d} from #${prevRank} last week`, cls: 'is-up' };
+  if (d < 0) return { text: short ? `▼${-d}` : `▼${-d} from #${prevRank} last week`, cls: 'is-down' };
+  return { text: short ? '–' : `Held #${rank} from last week`, cls: 'is-same' };
+}
 
-  return `<div class="awd-hero-wrap">
-  <a href="${href}" class="awd-hero-row">
-    <div class="awd-hero-row__thumb">
-      <div class="awd-hero-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
-      <img class="awd-hero-row__thumb-img" src="/api/player/${encodeURIComponent(String(player.id))}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
-      <div class="awd-hero-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
+// Initials sit underneath; the photo covers them once it loads and removes itself if it
+// 404s. Crop comes from the admin's MVP photo override (object-position + scale).
+function photo(c, cls) {
+  const p = c.photo || { url: `/api/player/${encodeURIComponent(String(c.player.id))}/photo`, x: 50, y: 50, zoom: 1 };
+  return `<span class="mvpx-ph font-condensed" aria-hidden="true">${escHtml(initials(displayPlayerName(c.player.name)))}</span>
+    <img class="mvpx-img ${cls}" src="${escHtml(p.url)}" alt="" loading="lazy" style="object-position:${p.x}% ${p.y}%;transform:scale(${p.zoom});transform-origin:${p.x}% ${p.y}%" onerror="this.remove()">`;
+}
+
+function perGame(stats) {
+  const gp = stats.gp || 1;
+  const tsDenom = 2 * ((stats.fga || 0) + 0.44 * (stats.fta || 0));
+  return {
+    ppg: (stats.pts / gp).toFixed(1),
+    rpg: (stats.reb / gp).toFixed(1),
+    apg: (stats.ast / gp).toFixed(1),
+    spg: (stats.stl / gp).toFixed(1),
+    ts:  tsDenom > 0 ? String(Math.round(stats.pts / tsDenom * 100)) : '—',
+  };
+}
+
+const href = (c) => `/players/${encodeURIComponent(String(c.player.id))}`;
+
+// ── #1 — the big card ─────────────────────────────────────────────────────────
+function leadCard(c, ctx) {
+  const name  = displayPlayerName(c.player.name);
+  const color = teamColor(c.stats.team_name);
+  const pg    = perGame(c.stats);
+  const move  = moveText(1, c.prevRank);
+  const rankNote = (r) => (r && r <= 5 ? `#${r} in league` : '');
+  const tiles = [
+    ['PPG', pg.ppg, rankNote(c.ranks?.ppg)],
+    ['RPG', pg.rpg, rankNote(c.ranks?.rpg)],
+    ['APG', pg.apg, rankNote(c.ranks?.apg)],
+    ['SPG', pg.spg, rankNote(c.ranks?.spg)],
+    ['TS%', pg.ts,  rankNote(c.ranks?.ts)],
+  ];
+  return `<div class="mvpx-admin-wrap">
+  <a href="${href(c)}" class="mvpx-lead">
+    <div class="mvpx-lead__photo">
+      ${photo(c, '')}
+      <span class="mvpx-lead__rank font-condensed">1</span>
     </div>
-    <div class="awd-hero-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
-      <div class="mvp-hero-tags">
-        <span class="awd-hero-row__badge" style="background:${badge.bg};color:${badge.text}">${escHtml(label)}</span>
-        ${moveBadge(rank, c.prevRank)}
+    <div class="mvpx-lead__body">
+      <div class="mvpx-lead__top">
+        <div class="mvpx-lead__id">
+          <span class="mvpx-tags"><span class="mvpx-badge mvpx-badge--solid">${RANK_LABELS[1]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
+          <span class="mvpx-lead__name">${escHtml(name)}</span>
+          <span class="mvpx-team"><span class="team-dot" style="background:${color}"></span>${escHtml(String(c.stats.team_name || '').toUpperCase())} · ${c.stats.gp} GP</span>
+        </div>
+        <div class="mvpx-lead__score"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><span>MVP score</span></div>
       </div>
-      <div class="awd-hero-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</div>
-      <p class="awd-hero-row__stats">${escHtml(statsLine)}</p>
-      ${writeup
-        ? `<p class="awd-hero-row__article">${escHtml(writeup)}</p>`
-        : isAdmin ? `<p class="awd-hero-row__article" style="opacity:.6">Writeup unavailable (AI provider error or quota). Try ↺ later.</p>` : ''}
-      <span class="awd-hero-row__cta">Full stats <span>&rarr;</span></span>
+      <div class="mvpx-tiles">
+        ${tiles.map(([k, v, note]) => `<div class="mvpx-tile"><b class="font-condensed">${v}</b><span>${k}</span>${note ? `<em>${note}</em>` : ''}</div>`).join('')}
+      </div>
+      ${c.writeup
+        ? `<p class="mvpx-writeup">${escHtml(c.writeup)}</p>`
+        : ctx.isAdmin ? `<p class="mvpx-writeup is-muted">Writeup unavailable (AI provider error or quota). Try ↺ later.</p>` : ''}
+      <span class="mvpx-cta">Full profile &rarr;</span>
     </div>
   </a>
-  ${regenBtn(player.id, season, isAdmin, playoffsStarted, { absolute: true })}
+  <div class="mvpx-admin">${photoBtn(c, ctx.isAdmin)}${regenBtn(c.player.id, ctx.season, ctx.isAdmin, ctx.playoffsStarted)}</div>
 </div>`;
 }
 
-// ── Ranked row (compact tail — everyone past the top 3) ────────────────────────
-// Same awd-rank-row family Awards uses for its roster/leaderboard tabs — the long dark-horse
-// pack reads as a scannable list instead of 7-10 more full-size spotlight cards. Chip shows
-// the numeric rank (the "DARK HORSE" label is identical for all of them past #3, so it
-// wouldn't tell the admin anything a repeated badge doesn't already).
-function mvpRankRow(c, rank, isAdmin, season, playoffsStarted) {
-  const { player, stats, mvpScore, writeup } = c;
-  const name  = displayPlayerName(player.name);
-  const color = teamColor(stats.team_name);
-  const init  = initials(player.name);
-  const href  = `/players/${encodeURIComponent(String(player.id))}`;
-  const dark  = BADGE_COLORS[4];
-
-  const toggle = writeup
-    ? `<button type="button" class="awd-rank-row__toggle" data-action="toggle-writeup" aria-expanded="false" aria-label="Read writeup">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>`
-    : '';
-  const writeupPanel = writeup ? `<div class="awd-rank-writeup" hidden><p>${escHtml(writeup)}</p></div>` : '';
-
-  return `<div class="awd-rank-row">
-  <a href="${href}" class="awd-rank-row__link" aria-label="${escHtml(name)}"></a>
-  <span class="awd-rank-row__avatar" style="border-color:${color}">
-    <span class="font-condensed">${escHtml(init)}</span>
-    <img class="awd-rank-row__avatar-img" src="/api/player/${encodeURIComponent(String(player.id))}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
-  </span>
-  <span class="awd-rank-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</span>
-  <span class="awd-rank-row__chip" style="background:${dark.bg};color:${dark.text}">#${rank}</span>
-  ${moveBadge(rank, c.prevRank)}
-  <span class="awd-rank-row__stat">${mvpScore.toFixed(1)}</span>
-  ${regenBtn(player.id, season, isAdmin, playoffsStarted)}
-  ${toggle}
-</div>
-${writeupPanel}`;
+// ── #2 and #3 ─────────────────────────────────────────────────────────────────
+function chaserCard(c, rank, lead, ctx) {
+  const name  = displayPlayerName(c.player.name);
+  const color = teamColor(c.stats.team_name);
+  const pg    = perGame(c.stats);
+  const move  = moveText(rank, c.prevRank);
+  const gap   = Math.max(0, lead.mvpScore - c.mvpScore).toFixed(1);
+  return `<div class="mvpx-admin-wrap">
+  <a href="${href(c)}" class="mvpx-chaser">
+    <div class="mvpx-chaser__photo">
+      ${photo(c, '')}
+      <span class="mvpx-chaser__rank font-condensed">${rank}</span>
+    </div>
+    <div class="mvpx-chaser__body">
+      <div class="mvpx-chaser__top">
+        <div class="mvpx-chaser__id">
+          <span class="mvpx-tags"><span class="mvpx-badge">${RANK_LABELS[rank]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
+          <span class="mvpx-chaser__name">${escHtml(name)}</span>
+          <span class="mvpx-team"><span class="team-dot" style="background:${color}"></span>${escHtml(String(c.stats.team_name || '').toUpperCase())} · ${c.stats.gp} GP</span>
+        </div>
+        <div class="mvpx-chaser__score"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><span>${gap} behind #1</span></div>
+      </div>
+      <span class="mvpx-line">${pg.ppg} PPG · ${pg.rpg} RPG · ${pg.apg} APG · ${pg.ts}${pg.ts === '—' ? '' : '%'} TS</span>
+      ${c.writeup
+        ? `<p class="mvpx-writeup mvpx-writeup--sm">${escHtml(c.writeup)}</p>`
+        : ctx.isAdmin ? `<p class="mvpx-writeup mvpx-writeup--sm is-muted">Writeup unavailable. Try ↺ later.</p>` : ''}
+    </div>
+  </a>
+  <div class="mvpx-admin">${photoBtn(c, ctx.isAdmin)}${regenBtn(c.player.id, ctx.season, ctx.isAdmin, ctx.playoffsStarted)}</div>
+</div>`;
 }
 
-export function mvpPage({ candidates = [], season, totalGames, seasonGames, isAdmin = false, playoffsStarted = false }) {
+// ── #4 onwards — the table ────────────────────────────────────────────────────
+function chaseRow(c, rank, lead, ctx) {
+  const name  = displayPlayerName(c.player.name);
+  const color = teamColor(c.stats.team_name);
+  const pg    = perGame(c.stats);
+  const move  = moveText(rank, c.prevRank, true);
+  const pct   = lead.mvpScore > 0 ? Math.max(4, Math.round(c.mvpScore / lead.mvpScore * 100)) : 0;
+  const toggle = c.writeup
+    ? `<button type="button" class="mvpx-toggle" aria-expanded="false" aria-label="Read ${escHtml(name)}'s MVP case"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>`
+    : '<span></span>';
+  return `<div class="mvpx-row">
+  <a href="${href(c)}" class="mvpx-row__link" aria-label="${escHtml(name)}"></a>
+  <span class="mvpx-row__rank font-condensed">${rank}</span>
+  <span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>
+  <span class="mvpx-row__player">
+    <span class="mvpx-row__avatar" style="border-color:${color}">${photo(c, '')}</span>
+    <span class="mvpx-row__name">${escHtml(name)}</span>
+  </span>
+  <span class="mvpx-num mvpx-col-ppg font-condensed">${pg.ppg}</span>
+  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.rpg}</span>
+  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.apg}</span>
+  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.spg}</span>
+  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.ts}</span>
+  <span class="mvpx-row__score">
+    <span class="mvpx-bar"><span style="width:${pct}%"></span></span>
+    <b class="font-condensed">${c.mvpScore.toFixed(1)}</b>
+  </span>
+  <span class="mvpx-row__tools">${photoBtn(c, ctx.isAdmin)}${regenBtn(c.player.id, ctx.season, ctx.isAdmin, ctx.playoffsStarted)}${toggle}</span>
+</div>
+${c.writeup ? `<div class="mvpx-row-writeup" hidden><p>${escHtml(c.writeup)}</p></div>` : ''}`;
+}
+
+function photoDialog(season) {
+  return `<dialog class="mvpx-dlg" id="mvpx-photo-dlg" data-season="${escHtml(String(season))}">
+  <form method="dialog" class="mvpx-dlg__form">
+    <div class="mvpx-dlg__head">
+      <h2>MVP Race photo — <span data-dlg-name></span></h2>
+      <button type="submit" value="cancel" class="mvpx-dlg__x" aria-label="Close">&times;</button>
+    </div>
+    <div class="mvpx-dlg__body">
+      <div class="mvpx-dlg__preview"><img data-dlg-preview alt="Preview"></div>
+      <div class="mvpx-dlg__side">
+        <span class="mvpx-dlg__label">Choose a photo</span>
+        <div class="mvpx-dlg__opts" data-dlg-opts><span class="mvpx-dlg__loading">Loading…</span></div>
+        <label class="mvpx-dlg__upload">Upload a new photo<input type="file" accept="image/*" data-dlg-file hidden></label>
+        <span class="mvpx-dlg__label">Position</span>
+        <label class="mvpx-dlg__range">Left / right<input type="range" min="0" max="100" step="1" data-dlg-x></label>
+        <label class="mvpx-dlg__range">Up / down<input type="range" min="0" max="100" step="1" data-dlg-y></label>
+        <label class="mvpx-dlg__range">Zoom<input type="range" min="1" max="3" step="0.05" data-dlg-zoom></label>
+      </div>
+    </div>
+    <p class="mvpx-dlg__msg" data-dlg-msg></p>
+    <div class="mvpx-dlg__actions">
+      <button type="button" class="mvpx-dlg__btn" data-dlg-reset>Use profile photo</button>
+      <span></span>
+      <button type="submit" value="cancel" class="mvpx-dlg__btn">Cancel</button>
+      <button type="button" class="mvpx-dlg__btn mvpx-dlg__btn--primary" data-dlg-save>Save</button>
+    </div>
+  </form>
+</dialog>
+<script>
+(function () {
+  var dlg = document.getElementById('mvpx-photo-dlg');
+  if (!dlg || typeof dlg.showModal !== 'function') return;
+  var season = dlg.dataset.season;
+  var $ = function (sel) { return dlg.querySelector(sel); };
+  var pv = $('[data-dlg-preview]'), opts = $('[data-dlg-opts]'), msg = $('[data-dlg-msg]');
+  var inX = $('[data-dlg-x]'), inY = $('[data-dlg-y]'), inZ = $('[data-dlg-zoom]');
+  var st = {};
+  function paint() {
+    pv.src = st.url;
+    pv.style.objectPosition = st.x + '% ' + st.y + '%';
+    pv.style.transformOrigin = st.x + '% ' + st.y + '%';
+    pv.style.transform = 'scale(' + st.zoom + ')';
+    opts.querySelectorAll('.mvpx-dlg__opt').forEach(function (b) { b.classList.toggle('is-selected', b.dataset.key === st.source); });
+  }
+  function addOpt(key, label, url) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'mvpx-dlg__opt'; b.dataset.key = key;
+    var img = document.createElement('img'); img.src = url; img.alt = ''; img.loading = 'lazy';
+    img.onerror = function () { b.remove(); };
+    var span = document.createElement('span'); span.textContent = label;
+    b.appendChild(img); b.appendChild(span);
+    b.addEventListener('click', function () { st.source = key; st.url = url; st.dataUrl = null; paint(); });
+    opts.appendChild(b);
+  }
+  function open(pid, name) {
+    st = { pid: pid, source: 'profile', url: '', x: 50, y: 50, zoom: 1, dataUrl: null };
+    $('[data-dlg-name]').textContent = name;
+    msg.textContent = '';
+    opts.innerHTML = '<span class="mvpx-dlg__loading">Loading…</span>';
+    dlg.showModal();
+    fetch('/admin/mvp/photo-options?season=' + encodeURIComponent(season) + '&player_id=' + encodeURIComponent(pid))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        opts.innerHTML = '';
+        if (d.current.hasPhoto) addOpt('current', 'Current MVP photo', d.current.url);
+        d.options.forEach(function (o) { addOpt(o.key, o.label, o.url); });
+        st.source = d.current.hasPhoto ? 'current' : 'profile';
+        st.url = d.current.url; st.x = d.current.offset_x; st.y = d.current.offset_y; st.zoom = d.current.zoom;
+        inX.value = st.x; inY.value = st.y; inZ.value = st.zoom;
+        paint();
+      })
+      .catch(function () { opts.innerHTML = ''; msg.textContent = 'Could not load photos.'; });
+  }
+  [[inX, 'x'], [inY, 'y'], [inZ, 'zoom']].forEach(function (p) {
+    p[0].addEventListener('input', function () { st[p[1]] = Number(this.value); paint(); });
+  });
+  $('[data-dlg-file]').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () { st.source = 'upload'; st.dataUrl = rd.result; st.url = rd.result; paint(); };
+    rd.readAsDataURL(f);
+    this.value = '';
+  });
+  $('[data-dlg-reset]').addEventListener('click', function () {
+    var prof = opts.querySelector('[data-key="profile"]');
+    st.source = 'profile'; st.dataUrl = null; st.x = 50; st.y = 50; st.zoom = 1;
+    st.url = prof ? prof.querySelector('img').src : st.url;
+    inX.value = 50; inY.value = 50; inZ.value = 1;
+    paint();
+  });
+  $('[data-dlg-save]').addEventListener('click', function () {
+    var btn = this; btn.disabled = true; msg.textContent = 'Saving…';
+    fetch('/admin/mvp/photo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ season: season, player_id: st.pid, source: st.source, dataUrl: st.dataUrl, offset_x: st.x, offset_y: st.y, zoom: st.zoom })
+    }).then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Save failed'); }); })
+      .then(function () { location.reload(); })
+      .catch(function (e) { msg.textContent = e.message; btn.disabled = false; });
+  });
+  document.querySelectorAll('.mvpx-photo-btn').forEach(function (b) {
+    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open(b.dataset.pid, b.dataset.name); });
+  });
+})();
+</script>`;
+}
+
+export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false }) {
+  const kicker = `Season ${escHtml(String(season))}${playoffsStarted ? ' · Final' : week ? ` · After week ${escHtml(String(week))}` : ''}`;
+  const head = (side = '') => `<header class="mvpx-head">
+    <div class="mvpx-head__main">
+      <span class="mvpx-kicker"><span class="mvpx-kicker__dot" aria-hidden="true"></span>${kicker}</span>
+      <h1 class="mvpx-title">MVP Race</h1>
+    </div>
+    ${side}
+  </header>`;
+
   if (!candidates.length) {
-    return `<div class="page-content">
-${pageHeader({ title: 'MVP Race', description: 'Tracking the top MVP candidates as the season unfolds.' })}
+    return `<div class="page-content mvpx">
+  ${head()}
   <div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">No games played yet this season.</div>
 </div>`;
   }
 
-  const heroCandidates = candidates.slice(0, 3);
-  const restCandidates = candidates.slice(3);
+  const totalSlots = seasonGames * 2;
+  const pct = totalSlots ? Math.min(100, Math.round(totalGames / totalSlots * 100)) : 0;
+  const side = `<div class="mvpx-head__side">
+    ${playoffsStarted
+      ? `<span class="mvpx-badge mvpx-badge--solid">Season final</span>`
+      : `<div class="mvpx-progress">
+          <span class="mvpx-progress__label"><span>Regular season</span><span><b>${totalGames}</b> of ${totalSlots} games</span></span>
+          <span class="mvpx-progress__bar"><span style="width:${pct}%"></span></span>
+        </div>`}
+    <details class="mvpx-how">
+      <summary>How the score works</summary>
+      <p>Per game: points + 0.8×rebounds + 0.9×assists + 1.5×steals + 2×blocks − turnovers. That's then scaled by shooting efficiency (true shooting %), team win rate, and games played, so a hot two-game stretch can't top a full season.</p>
+    </details>
+    ${isAdmin && !playoffsStarted ? `<button type="button" id="mvp-regen-all" class="mvpx-admin-btn" data-season="${escHtml(String(season))}">↺ Regenerate all</button>` : ''}
+  </div>`;
 
-  const regenAllBtn = isAdmin && !playoffsStarted
-    ? `<button id="mvp-regen-all" data-season="${escHtml(String(season))}" style="background:transparent;border:1px solid rgba(255,255,255,.12);color:#64748b;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer">↺ Regenerate All</button>`
-    : '';
-  const finalBadge = playoffsStarted
-    ? `<span style="font-size:10px;font-weight:700;letter-spacing:1px;color:#f59332;background:rgba(245,147,50,.12);border:1px solid rgba(245,147,50,.25);border-radius:4px;padding:2px 8px">SEASON FINAL</span>`
-    : '';
-  const actions = [regenAllBtn, finalBadge].filter(Boolean).join(' ');
+  const ctx = { isAdmin, season, playoffsStarted };
+  const lead = candidates[0];
+  const chasers = candidates.slice(1, 3);
+  const rest = candidates.slice(3);
 
-  const heroSection = `<div class="awd-hero-section">${heroCandidates.map((c, i) => mvpHeroRow(c, i + 1, isAdmin, season, playoffsStarted)).join('')}</div>`;
+  const chaseTable = rest.length ? `<section class="mvpx-chase card">
+    <div class="mvpx-chase__head"><span>The chase · #4–${rest.length + 3}</span><span class="mvpx-chase__hint">Per game · bar = score vs. #1</span></div>
+    <div class="mvpx-row mvpx-row--labels" aria-hidden="true">
+      <span>Rk</span><span></span><span>Player</span>
+      <span class="mvpx-num mvpx-col-ppg">PPG</span><span class="mvpx-num mvpx-col-opt">RPG</span><span class="mvpx-num mvpx-col-opt">APG</span><span class="mvpx-num mvpx-col-opt">SPG</span><span class="mvpx-num mvpx-col-opt">TS%</span>
+      <span class="mvpx-num">Score</span><span></span>
+    </div>
+    ${rest.map((c, i) => chaseRow(c, i + 4, lead, ctx)).join('')}
+  </section>` : '';
 
-  const restSection = restCandidates.length ? `
-  <div class="card" style="padding:0;overflow:hidden;margin-top:16px">
-    <div class="awd-rank-list">${restCandidates.map((c, i) => mvpRankRow(c, i + 4, isAdmin, season, playoffsStarted)).join('')}</div>
-  </div>` : '';
-
-  const regenScript = isAdmin ? `
+  const scripts = `<script>
+(function () {
+  document.querySelectorAll('.mvpx-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var row = btn.closest('.mvpx-row');
+      var panel = row && row.nextElementSibling;
+      if (!panel || !panel.classList.contains('mvpx-row-writeup')) return;
+      var open = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!open));
+      panel.hidden = open;
+      row.classList.toggle('is-expanded', !open);
+    });
+  });
+})();
+</script>${isAdmin ? `
 <script>
-(function() {
+(function () {
   async function regen(pid, season, btn) {
-    var orig = btn.innerHTML; btn.disabled = true; btn.textContent = '…';
+    btn.disabled = true; btn.textContent = '…';
     await fetch('/admin/mvp/regenerate', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(pid ? { player_id: pid, season } : { season })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pid ? { player_id: pid, season: season } : { season: season })
     });
     location.reload();
   }
-  document.querySelectorAll('.mvp-regen-btn').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.preventDefault(); e.stopPropagation();
-      regen(this.dataset.pid, this.dataset.season, this);
-    });
+  document.querySelectorAll('.mvp-regen-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); regen(this.dataset.pid, this.dataset.season, this); });
   });
   var all = document.getElementById('mvp-regen-all');
-  if (all) all.addEventListener('click', function() { regen(null, this.dataset.season, this); });
+  if (all) all.addEventListener('click', function () { regen(null, this.dataset.season, this); });
 })();
-</script>` : '';
+</script>
+${photoDialog(season)}` : ''}`;
 
-  const toggleScript = `<script>
-(function() {
-  document.querySelectorAll('.awd-rank-row__toggle').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var row = btn.closest('.awd-rank-row');
-      var panel = row && row.nextElementSibling;
-      if (!panel || !panel.classList.contains('awd-rank-writeup')) return;
-      var expanded = btn.getAttribute('aria-expanded') === 'true';
-      btn.setAttribute('aria-expanded', String(!expanded));
-      panel.hidden = expanded;
-      row.classList.toggle('is-expanded', !expanded);
-    });
-  });
-})();
-</script>`;
-
-  return `<div class="page-content">
-${pageHeader({
-    title: playoffsStarted ? `Season ${season} MVP Race — Final` : 'MVP Race',
-    description: `Season ${season} · ${totalGames}/${seasonGames * 2} games played`,
-    actions,
-  })}
-  ${heroSection}
-  ${restSection}
+  return `<div class="page-content mvpx">
+  ${head(side)}
+  ${leadCard(lead, ctx)}
+  ${chasers.length ? `<div class="mvpx-chasers">${chasers.map((c, i) => chaserCard(c, i + 2, lead, ctx)).join('')}</div>` : ''}
+  ${chaseTable}
 </div>
-${toggleScript}
-${regenScript}`;
+${scripts}`;
 }

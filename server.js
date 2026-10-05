@@ -81,7 +81,7 @@ import {
   updatePlayerPhoto, updatePlayer,
   getPlayerPhotoOriginal, updatePlayerPhotoOriginal,
   getAwardPhotoOverrides, upsertAwardPhotoOverride, deleteAwardPhotoOverride,
-  getAwardPhotoOverridesForPlayer, deleteAwardPhotoOverridesFromSlot,
+  getAwardPhotoOverridesForPlayer, deleteAwardPhotoOverridesFromSlot, getMvpPhotoMeta, getPlayerAwardPhotoKeys,
   getPrevMatchup, getTeamStreak, getPlayerLeagueRank, getPlayerSeasonStats,
   getPlayersWithRatings, getPlayerRating, upsertComputedRating, saveRatingOverrides,
   getStatsBySeason, getOnePlayerStats, upsertPlayerDetails, updatePlayerWriteup, getAllPlayerHeights,
@@ -9054,6 +9054,109 @@ app.get('/awards/share/:season/:type/:playerId', (req, res) => {
   }));
 });
 
+// ── MVP Race page photos ──────────────────────────────────────────────────────
+// Admin-picked photo per (season, player), stored in award_photo_overrides under
+// award_type 'mvp_race' (slot 0) — same table and crop model (offset_x/offset_y as
+// object-position %, zoom as scale) the award graphics use. No override, or an override
+// that only re-crops the profile photo, falls through to the player's profile photo.
+app.get('/api/mvp/:season/:playerId/photo', (req, res) => {
+  const row = getAwardPhotoOverridesForPlayer(Number(req.params.season), 'mvp_race', req.params.playerId)[0];
+  const buf = row?.photo_url ? parseDataUrl(row.photo_url) : null;
+  if (!buf) return res.redirect(302, `/api/player/${encodeURIComponent(req.params.playerId)}/photo`);
+  res.set('Content-Type', 'image/jpeg');
+  // Every page links this with ?v=<updated_at>, so a long cache is safe.
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(buf);
+});
+
+function mvpPhoto(season, playerId, meta) {
+  const enc = encodeURIComponent(String(playerId));
+  return {
+    url: meta?.has_photo ? `/api/mvp/${season}/${enc}/photo?v=${meta.updated_at}` : `/api/player/${enc}/photo`,
+    x: meta ? meta.offset_x : 50,
+    y: meta ? meta.offset_y : 50,
+    zoom: meta ? meta.zoom : 1,
+  };
+}
+
+// One uploaded award-graphic photo (any season/type/slot), for the picker's thumbnails.
+app.get('/admin/award-photo/:season/:type/:playerId/:slot', requireAuth, (req, res) => {
+  const row = getAwardPhotoOverridesForPlayer(Number(req.params.season), req.params.type, req.params.playerId)[Number(req.params.slot) || 0];
+  const buf = row?.photo_url ? parseDataUrl(row.photo_url) : null;
+  if (!buf) return res.status(404).end();
+  res.set('Content-Type', 'image/jpeg');
+  res.set('Cache-Control', 'private, max-age=300');
+  res.send(buf);
+});
+
+app.get('/admin/player-photo-original/:playerId', requireAuth, (req, res) => {
+  const buf = parseDataUrl(getPlayerPhotoOriginal(req.params.playerId));
+  if (!buf) return res.status(404).end();
+  res.set('Content-Type', 'image/jpeg');
+  res.set('Cache-Control', 'private, max-age=300');
+  res.send(buf);
+});
+
+app.get('/admin/mvp/photo-options', requireAuth, (req, res) => {
+  const season = Number(req.query.season);
+  const pid = String(req.query.player_id || '');
+  if (!season || !pid) return res.status(400).json({ error: 'Missing season or player' });
+  const enc = encodeURIComponent(pid);
+  const current = getAwardPhotoOverridesForPlayer(season, 'mvp_race', pid)[0] || null;
+  const options = [{ key: 'profile', label: 'Profile photo', url: `/api/player/${enc}/photo` }];
+  if (getPlayerPhotoOriginal(pid)) options.push({ key: 'original', label: 'Profile photo (uncropped)', url: `/admin/player-photo-original/${enc}` });
+  for (const r of getPlayerAwardPhotoKeys(pid)) {
+    if (r.award_type === 'mvp_race') continue;
+    options.push({
+      key: `award:${r.season}:${r.award_type}:${r.slot}`,
+      label: `S${r.season} ${(AWARD_OG_BADGE[r.award_type]?.label || r.award_type).toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}${r.slot ? ` #${r.slot + 1}` : ''}`,
+      url: `/admin/award-photo/${r.season}/${encodeURIComponent(r.award_type)}/${enc}/${r.slot}`,
+    });
+  }
+  res.json({
+    options,
+    current: current
+      ? { hasPhoto: !!current.photo_url, url: current.photo_url ? `/api/mvp/${season}/${enc}/photo?v=${Date.now()}` : options[0].url, offset_x: current.offset_x, offset_y: current.offset_y, zoom: current.zoom }
+      : { hasPhoto: false, url: options[0].url, offset_x: 50, offset_y: 50, zoom: 1 },
+  });
+});
+
+// source: 'current' (keep the saved MVP photo, re-crop only) | 'profile' | 'original' |
+// 'award:<season>:<type>:<slot>' (copy that graphic's photo) | 'upload' (dataUrl).
+app.post('/admin/mvp/photo', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const season = Number(req.body?.season);
+  const pid = String(req.body?.player_id || '');
+  const source = String(req.body?.source || 'current');
+  if (!season || !pid) return res.status(400).json({ error: 'Missing season or player' });
+
+  let photo_url = '';
+  if (source === 'current') {
+    photo_url = getAwardPhotoOverridesForPlayer(season, 'mvp_race', pid)[0]?.photo_url || '';
+  } else if (source === 'original') {
+    photo_url = getPlayerPhotoOriginal(pid) || '';
+  } else if (source.startsWith('award:')) {
+    const [, s, type, slot] = source.split(':');
+    photo_url = getAwardPhotoOverridesForPlayer(Number(s), type, pid)[Number(slot) || 0]?.photo_url || '';
+    if (!photo_url) return res.status(404).json({ error: 'That photo no longer exists.' });
+  } else if (source === 'upload') {
+    const buf = parseDataUrl(req.body?.dataUrl);
+    if (!buf) return res.status(400).json({ error: 'No image received.' });
+    try { photo_url = await compressSourceImage(buf); }
+    catch (err) { console.error('MVP photo compress error:', err); return res.status(400).json({ error: 'Could not read that image.' }); }
+  } // 'profile' → no stored photo, the profile photo shows through
+
+  const clamp = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
+  const offset_x = clamp(req.body?.offset_x, 0, 100, 50);
+  const offset_y = clamp(req.body?.offset_y, 0, 100, 50);
+  const zoom = clamp(req.body?.zoom, 1, 3, 1);
+  if (!photo_url && Math.abs(offset_x - 50) < 0.5 && Math.abs(offset_y - 50) < 0.5 && Math.abs(zoom - 1) < 0.01) {
+    deleteAwardPhotoOverride(season, 'mvp_race', pid, 0);
+  } else {
+    upsertAwardPhotoOverride({ season, award_type: 'mvp_race', player_id: pid, slot: 0, offset_x, offset_y, zoom, photo_url });
+  }
+  res.json({ ok: true });
+});
+
 app.post('/admin/mvp/regenerate', requireAuth, express.json(), (req, res) => {
   const { player_id, season } = req.body || {};
   const targetSeason = season || getCurrentSeason()?.season;
@@ -9203,6 +9306,7 @@ FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` 
     }
   });
 
+  const photoMeta = getMvpPhotoMeta(season);
   res.send(renderPage(req, {
     title: playoffsStarted
       ? `Season ${season} MVP Race — Final — WKND Basketball League`
@@ -9210,8 +9314,14 @@ FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` 
     currentPath: req.path,
     metaTags: buildMvpOgTags(req, withWriteups, season),
     body: mvpPage({
-      candidates: withWriteups,
+      candidates: withWriteups.map(c => ({
+        ...c,
+        ranks: { ppg: rankPpg[c.player.id], rpg: rankRpg[c.player.id], apg: rankApg[c.player.id], spg: rankSpg[c.player.id], ts: rankTs[c.player.id] },
+        photo: mvpPhoto(season, c.player.id, photoMeta[c.player.id]),
+      })),
+      leagueSize: total,
       season,
+      week: getSeasonLatestWeek(season)?.week ?? null,
       totalGames,
       seasonGames: SEASON_GAMES_PER_TEAM,
       isAdmin: !!req.session?.isAdmin,
