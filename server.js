@@ -65,7 +65,7 @@ import {
   getGameById, getGameDetailStats, getGameStats,
   getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam, getPlayerLastTeamIdBeforeSeason,
   getPlayerTotals, getPlayerGameLog, getPlayerPotgCandidates,
-  getPlayerCareerHighs, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
+  getPlayerCareerHighs, getPlayerCareerHighsBefore, getPlayerAwards, getSeasonAwards, getAwardSeasons, getGameDnpPlayers, getGameRecords,
   getTeamGamesCount,
   getPlayerStatsByType,
   upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
@@ -85,7 +85,7 @@ import {
   getCompareCache, setCompareCache, incrementCompareViews, getCompareAnalytics,
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
-  getMvpWriteup, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
+  getMvpWriteup, getMvpWriteupsForSeason, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
   insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, updateSignupTeamPref, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup, removeFromSeasonRoster,
@@ -147,7 +147,7 @@ import {
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
-import { generateText, generateJson, generateWithGemini, filterPbpForRecap, aiAvailable } from './lib/ai.js';
+import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
@@ -1406,7 +1406,7 @@ function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool
     const existing = getPool();
     const prompt = buildPrompt(existing);
     try {
-      const { text } = await generateWithGemini(prompt, { maxTokens: 1200, temperature: 1.05 });
+      const { text } = await generateText(prompt, { maxTokens: 1200, temperature: 1.05 });
       const minSlashes = fields.length - 1;
       const fresh = text
         .split('\n')
@@ -4636,7 +4636,7 @@ ${recentOpeners.map(o => `- "${o}"`).join('\n')}` : ''}
 ${line(pA, tA)}
 ${line(pB, tB)}`;
 
-    const { text, model } = await generateWithGemini(prompt, { maxTokens: 280, temperature: 0.92 });
+    const { text, model } = await generateText(prompt, { maxTokens: 280, temperature: 0.92 });
     if (text && text.length >= 40) setCompareCache(a, b, tA, tB, text, model);
     res.json({ writeup: text, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
   } catch (err) {
@@ -5923,7 +5923,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     if (!entry) return res.status(400).json({ error: 'Player not found in team award entries' });
     const statLine = buildContextLine(entry, award_type);
     const posNote  = entry.notes ? ` Selected as ${entry.notes}.` : '';
-    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Season stats: ${statLine}. Focus solely on what this player did to earn the honor — be vivid and specific, not generic. Do not mention teammates, other award recipients, or any other player. Write like a sports broadcaster. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Season stats: ${statLine}. Focus solely on what this player did to earn the honor — be vivid and specific, not generic. Do not mention teammates, other award recipients, or any other player. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
   } else {
     let context = '';
     if (entries.length === 1) {
@@ -5932,11 +5932,35 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     } else if (entries.length > 1) {
       context = `Winners: ${entries.map(e => `${e.player_name} (${e.team_name})`).join(', ')}.`;
     }
-    prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Write it like a sports broadcaster presenting the award — exciting, specific, and confident. No generic filler. Focus solely on the winner — do not mention other players, runners-up, or comparisons. Each article should feel distinct — vary the opening angle and tone from other award articles. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+    prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Exciting, specific, and confident. No generic filler. Focus solely on the winner — do not mention other players, runners-up, or comparisons. Each article should feel distinct — vary the opening angle and tone from other award articles. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
   }
 
+  // Same voice set as recaps/POTG. Awards come once a season, so instead of rotating by
+  // week, every article on the page gets a slot in a fixed order (sections, then each
+  // team-award honoree) and voices go round-robin — the page gets an even mix, and an
+  // article keeps its voice across regenerations.
+  const articleKeys = AWARD_SECTION_KEYS.flatMap(t => TEAM_AWARD_TYPES.has(t)
+    ? (byType[t] || []).filter(e => e.player_id).map(e => `${t}_${e.player_id}`)
+    : [t]);
+  const currentKey = TEAM_AWARD_TYPES.has(award_type) && player_id ? `${award_type}_${player_id}` : award_type;
+  const slot  = Math.max(0, articleKeys.indexOf(currentKey));
+  const voice = RECAP_VOICES[slot % RECAP_VOICES.length];
+  const otherOpenings = articleKeys
+    .filter(k => k !== currentKey)
+    .map(k => String(getSetting(`award_article_${k}_${season}`, '') || '').replace(/<[^>]+>/g, ' ').trim())
+    .map(t => (t.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140))
+    .filter(Boolean);
+  prompt = [
+    prompt,
+    `Every claim must come from the stats given. Plain text only. No markdown.`,
+    `Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.`,
+    `VOICE — ${voice.name}: ${voice.guide}`,
+    otherOpenings.length ? `OPENING SENTENCES OF OTHER ARTICLES ON THIS AWARDS PAGE (yours must not resemble these):\n${otherOpenings.map(t => `  "${t}"`).join('\n')}` : '',
+    `FINAL REMINDER — write it in the ${voice.name} voice. Example of the voice (style only — do not copy its words or facts): "${voice.sample}"`,
+  ].filter(Boolean).join('\n\n');
+
   try {
-    const result = await generateText(prompt, { max_tokens: 200 });
+    const result = await generateText(prompt, { maxTokens: 300, temperature: 0.9 });
     if (!result?.text) throw new Error('No response');
     res.json({ text: result.text });
   } catch (e) {
@@ -7258,6 +7282,137 @@ app.post('/admin/games/:id/recap', requireAuth, jsonSmall, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Recap storyline ───────────────────────────────────────────────────────────
+// Recaps had gone formulaic ("X secured a win… Q1… Q2… Y was a key contributor") because
+// the prompt fixed one voice and one paragraph template. Each game week now gets one of
+// these voices (both games that week share it, next week sounds different), and the
+// prompt is handed pre-computed story hooks to lead with instead of a timeline to recite.
+const RECAP_VOICES = [
+  { name: 'Sports columnist', guide: 'Write like an opinionated newspaper sports columnist. Have a clear take on what this game meant and argue it. Punchy sentences, a strong lede, a closing line with some bite.', sample: 'Forget the scoreboard for a second — this game was decided the moment White stopped settling for jumpers.' },
+  { name: 'Stat nerd',        guide: 'Write like a stats-obsessed analyst who loves the one number that explains a game. Build the story around the runs, margins, and efficiency that decided it — but keep it readable, not a spreadsheet.', sample: 'Fifteen lead changes, thirteen ties, and exactly one stretch that mattered: a 12-0 burst in the third.' },
+  { name: 'Barbershop banter', guide: 'Write like friends breaking down the game afterwards — casual, playful, a little teasing. Light ribbing is fine; never mean, never mocking anyone personally.', sample: 'Somebody check on Maroon\'s first quarter, because it never showed up — eight points, total.' },
+  { name: 'Conyo hoops writer', guide: 'Write as a conyo rich kid from a Makati/BGC private school who is obsessed with this league but cannot really speak Tagalog. Mostly English, with Tagalog words dropped in a little awkwardly, the conyo way: "make + verb" constructions ("they made bawi," "he made agaw the ball"), particles like "naman," "kasi," "talaga," "diba," "pa," and fillers like "like," "literally," "super," "so," "I mean," "grabe," "nakakaloka." Most sentences should carry at least one conyo touch — aim for 8 or more across the recap, never just one or two. Keep the actual basketball facts precise. Never say the word "conyo" or describe the voice — just write in it. Playful and self-unaware, never mean, and never mocking anyone\'s background or class.', sample: 'Okay so like, Blue literally made takbo with a 21-0 run, diba? Maroon was so lost talaga, I can\'t even. And Vin? Grabe, he made agaw every loose ball pa, super nakakaloka. I mean, Maroon tried to make habol naman in the fourth, pero it was so late na kasi.' },
+];
+
+function recapVoiceForDate(dateStr) {
+  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(d)) return RECAP_VOICES[0];
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // Monday of that week
+  const week = Math.floor(d.getTime() / (7 * 86400000));
+  return RECAP_VOICES[week % RECAP_VOICES.length];
+}
+
+// Rebuilds the running score from the raw game log (made shots are statField 'pts' with
+// the points as changeAmount; undo compensations included so corrections net out). Only
+// trusted when it lands exactly on the official final — otherwise returns null and the
+// recap simply skips run/lead-change hooks rather than state wrong numbers.
+function scoringTimeline(game) {
+  let log;
+  try { log = JSON.parse(game.game_log_json || '[]'); } catch { return null; }
+  const events = [];
+  let a = 0, b = 0;
+  for (const e of [...log].reverse()) {
+    if (e?.statField !== 'pts') continue;
+    const n = Number(e.changeAmount) || 0;
+    if (!n) continue;
+    if (e.isTeamA) a += n; else b += n;
+    events.push({ a, b, teamA: !!e.isTeamA, pts: n, quarter: e.quarter, clock: e.clockRemaining || '', playerId: e.playerId });
+  }
+  if (a !== Number(game.team_a_score) || b !== Number(game.team_b_score)) return null;
+  return events;
+}
+
+function recapStoryHooks(game, stats) {
+  const hooks = [];
+  const A = game.team_a_name, B = game.team_b_name;
+  const scoreA = Number(game.team_a_score), scoreB = Number(game.team_b_score);
+  const winnerIsA = scoreA > scoreB;
+  const qLabel = q => (q > 4 ? `OT${q - 4}` : `Q${q}`);
+
+  const tl = scoringTimeline(game);
+  if (tl && tl.length) {
+    // Largest lead for each side, lead changes, ties.
+    let maxA = 0, maxAAt = null, maxB = 0, maxBAt = null, leadChanges = 0, ties = 0, lastLeader = 0;
+    for (const ev of tl) {
+      const diff = ev.a - ev.b;
+      if (diff > maxA) { maxA = diff; maxAAt = ev; }
+      if (-diff > maxB) { maxB = -diff; maxBAt = ev; }
+      const leader = Math.sign(diff);
+      if (leader === 0 && lastLeader !== 0) ties++;
+      if (leader !== 0 && lastLeader !== 0 && leader !== lastLeader) leadChanges++;
+      if (leader !== 0) lastLeader = leader;
+    }
+    // Biggest unanswered run.
+    let best = null, cur = null;
+    for (const ev of tl) {
+      if (cur && cur.teamA === ev.teamA) { cur.pts += ev.pts; cur.end = ev; }
+      else { cur = { teamA: ev.teamA, pts: ev.pts, start: ev, end: ev }; }
+      if (!best || cur.pts > best.pts) best = { ...cur };
+    }
+    const winnerMaxDeficit = winnerIsA ? maxB : maxA;
+    if (winnerMaxDeficit >= 8) hooks.push(`COMEBACK: ${winnerIsA ? A : B} trailed by as many as ${winnerMaxDeficit} and still won.`);
+    const loserMaxLead = winnerIsA ? maxB : maxA;
+    const loserAt = winnerIsA ? maxBAt : maxAAt;
+    if (loserMaxLead >= 6 && winnerMaxDeficit < 8) hooks.push(`BLOWN LEAD: ${winnerIsA ? B : A} led by ${loserMaxLead} (${qLabel(loserAt.quarter)}) and lost.`);
+    if (best && best.pts >= 8) hooks.push(`BIGGEST RUN: ${best.teamA ? A : B} scored ${best.pts} unanswered points (${qLabel(best.start.quarter)} ${best.start.clock}${best.end.quarter !== best.start.quarter || best.end.clock !== best.start.clock ? ` to ${qLabel(best.end.quarter)} ${best.end.clock}` : ''}).`);
+    if (leadChanges >= 5) hooks.push(`SEESAW: ${leadChanges} lead changes and ${ties} ties.`);
+    const winnerMaxLead = winnerIsA ? maxA : maxB;
+    if (winnerMaxLead >= 20) hooks.push(`WIRE-TO-WIRE CONTROL: ${winnerIsA ? A : B} led by as many as ${winnerMaxLead}.`);
+  }
+
+  // Career / season-best individual nights (as of this game's date).
+  for (const p of [...stats].sort((x, y) => y.pts - x.pts).slice(0, 8)) {
+    const prior = getPlayerCareerHighsBefore(p.player_id, game.date);
+    if (!prior || prior.gp < 3) continue;
+    const name = displayPlayerName(p.name);
+    if (p.pts > (prior.pts ?? 0) && p.pts >= 12) hooks.push(`CAREER HIGH: ${name} scored ${p.pts}, topping a previous best of ${prior.pts}.`);
+    else if (p.reb > (prior.reb ?? 0) && p.reb >= 10) hooks.push(`CAREER HIGH: ${name} grabbed ${p.reb} rebounds (previous best ${prior.reb}).`);
+    else if (p.ast > (prior.ast ?? 0) && p.ast >= 7) hooks.push(`CAREER HIGH: ${name} dished ${p.ast} assists (previous best ${prior.ast}).`);
+    if (p.pts >= 10 && p.reb >= 10 && p.ast >= 10) hooks.push(`TRIPLE-DOUBLE: ${name} — ${p.pts}/${p.reb}/${p.ast}.`);
+  }
+
+  const margin = Math.abs(scoreA - scoreB);
+  if (margin <= 3) hooks.push(`NAIL-BITER: decided by ${margin}.`);
+  else if (margin >= 20) hooks.push(`ROUT: ${margin}-point margin.`);
+  return hooks;
+}
+
+// Player-specific hooks for the POTG spotlight, same idea as recapStoryHooks.
+function potgStoryHooks(game, stats, p) {
+  const hooks = [];
+  const qLabel = q => (q > 4 ? `OT${q - 4}` : `Q${q}`);
+
+  const prior = getPlayerCareerHighsBefore(p.player_id, game.date);
+  if (prior && prior.gp >= 3) {
+    if (p.pts > (prior.pts ?? 0) && p.pts >= 10) hooks.push(`CAREER HIGH: ${p.pts} points (previous best ${prior.pts}).`);
+    if (p.reb > (prior.reb ?? 0) && p.reb >= 8)  hooks.push(`CAREER HIGH: ${p.reb} rebounds (previous best ${prior.reb}).`);
+    if (p.ast > (prior.ast ?? 0) && p.ast >= 5)  hooks.push(`CAREER HIGH: ${p.ast} assists (previous best ${prior.ast}).`);
+  }
+  if (p.pts >= 10 && p.reb >= 10 && p.ast >= 10) hooks.push(`TRIPLE-DOUBLE: ${p.pts}/${p.reb}/${p.ast}.`);
+  else if ([p.pts, p.reb, p.ast].filter(v => v >= 10).length >= 2) hooks.push(`DOUBLE-DOUBLE.`);
+
+  // Season average comparison, from this season's games before this one.
+  const prev = getPlayerGameLog(p.player_id).filter(g => g.status === 'played' && String(g.season) === String(game.season) && g.date < game.date);
+  if (prev.length >= 2) {
+    const avg = prev.reduce((t, g) => t + (g.pts || 0), 0) / prev.length;
+    if (p.pts - avg >= 6) hooks.push(`BREAKOUT: ${p.pts} points vs a ${avg.toFixed(1)} average coming in.`);
+  }
+
+  const teamPts = stats.filter(s => s.team_id === p.team_id).reduce((t, s) => t + (s.pts || 0), 0);
+  if (teamPts > 0 && p.pts / teamPts >= 0.3) hooks.push(`SHARE: ${p.pts} of the team's ${teamPts} points (${Math.round(p.pts / teamPts * 100)}%).`);
+
+  // Late-game scoring from the play-by-play (only when the timeline is trustworthy).
+  const tl = scoringTimeline(game);
+  if (tl && tl.length) {
+    const lastQ = Math.max(...tl.map(e => e.quarter || 0));
+    const late = tl.filter(e => e.quarter === lastQ);
+    const mine = late.filter(e => e.playerId === p.player_id).reduce((t, e) => t + e.pts, 0);
+    const teamLate = late.filter(e => (e.teamA ? game.team_a_id : game.team_b_id) === p.team_id).reduce((t, e) => t + e.pts, 0);
+    if (mine >= 8) hooks.push(`CLOSER: ${mine} of the team's ${teamLate} points in ${qLabel(lastQ)}.`);
+  }
+  return hooks;
+}
+
 app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (req, res) => {
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const game = getGameById(req.params.id);
@@ -7321,7 +7476,10 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   const streakLine = (team, s) =>
     s.streak >= 2 ? `${team} is on a ${s.streak}-game ${s.type === 'W' ? 'winning' : 'losing'} streak.` : null;
 
-  const pbpText = pbpFiltered.slice(-200).map(e => {
+  // Last 60 events only — the story hooks already cover runs/leads across the whole game,
+  // and the full 200-line log pushed recaps past Groq's free-tier 8k tokens/minute.
+  const pbpRecent = pbpFiltered.slice(-60);
+  const pbpText = pbpRecent.map(e => {
     const q = e.quarter ? (e.quarter > 4 ? `OT${e.quarter - 4}` : `Q${e.quarter}`) : '?';
     const clk = e.clockRemaining ?? '';
     const txt = String(e.text || '').replace(/⚡/g, '').trim();
@@ -7345,30 +7503,49 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       })()
     : null;
 
-  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "fired on all cylinders," "gave it their all," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "nothing short of spectacular," "competitive matchup," "hard-fought," "gritty," "intense battle," "back-and-forth affair," "close contest," "dominant performance," "statement win," "impressive outing," "strong showing"';
+  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "fired on all cylinders," "gave it their all," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "nothing short of spectacular," "competitive matchup," "hard-fought," "gritty," "intense battle," "back-and-forth affair," "close contest," "dominant performance," "statement win," "impressive outing," "strong showing," "secured," "key contributor," "managed to," "ultimately," "momentum shifted," "throughout the game," "on both ends of the floor," "contributed," "led the way"';
 
   // Gather recent recap headlines to prevent repetition
-  const recentTitles = getAllGames()
+  const recentWriteups = getAllGames()
     .filter(g => g.game_writeup && g.id !== game.id)
     .slice(0, 10)
-    .map(g => parseWriteup(g.game_writeup).title)
+    .map(g => parseWriteup(g.game_writeup));
+  const recentTitles   = recentWriteups.map(w => w.title).filter(Boolean);
+  const recentOpenings = recentWriteups
+    .map(w => (w.body.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 160))
     .filter(Boolean);
 
+  const voice      = recapVoiceForDate(game.date);
+  const storyHooks = recapStoryHooks(game, stats);
+
   const prompt = [
-    `You are a local recreational basketball league writer — a community observer, not a broadcaster.`,
-    `Write a game recap for a WKND Basketball League game. Tone: grounded, conversational, direct. Not hype.`,
+    `You write game recaps for the WKND Basketball League, a recreational league with a tight community of players who read every recap.`,
+    `Tone: energetic and fun to read, with strong verbs and a real point of view — but every claim must come from the data below. Excitement comes from specifics, not adjectives.`,
     `Use ONLY the provided data. Do not invent quotes, events, or statistics.`,
     `Write plain text only. No markdown.`,
+    ``,
+    `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
+    ``,
+    `STORY HOOKS (computed from the play-by-play and stats — all verified):`,
+    storyHooks.length ? storyHooks.map(h => `- ${h}`).join('\n') : '- (no standout hooks — find the angle in the top performers or the standings)',
+    `Pick the single most compelling hook and OPEN the recap with it. Weave in one or two others if they fit. Do not list them.`,
+    `- History: you may mention the earlier meeting from the PREVIOUS MATCHUP data below, in your own words. Do not claim anything else about past seasons or playoffs.`,
+    `- Never copy the labeled data lines below (e.g. "PREVIOUS MATCHUP:", "TEAM RECORDS") into the recap — write everything as prose.`,
     ``,
     `STRICT RULES:`,
     `- Do NOT reference the crowd, audience, or spectators. The league has limited attendance.`,
     `- Stats shorthand: say "17 and 8" not "17 points and 8 rebounds." Use "pts/reb/ast" only when listing multiple players.`,
     `- Rotation/substitutions: mention only if directly relevant to a momentum shift. Do NOT describe lineup depth or patterns.`,
-    `- Output format: a one-line headline, then exactly 3 paragraphs minimum. Close games or playoff games get 4. Structure: (1) game flow/result, (2) key performers, (3) context/implications.`,
+    `- Output format: a one-line headline, then 3 paragraphs (4 for close or playoff games). There is no fixed paragraph order — let the story decide. Every recap must still cover the result, the standout performers, and what it means for the standings.`,
+    `- Do NOT narrate the game quarter by quarter ("In the first quarter… in the second…"). Use quarter scores only to support the story you are telling.`,
+    `- Vary sentence length. The first sentence should make someone want to read the second.`,
     `- HEADLINE RULES: Must name the winning team. Must reference something specific and factual from THIS game — a player's stat line, the winning margin, a lead that was blown, an OT finish, a streak broken. Max 10 words. Do NOT use a generic description of the game type. Do NOT start with "In a," "A," or the date.`,
     `- Banned words/phrases: ${CLICHE_BAN}`,
     recentTitles.length
       ? `- HEADLINES ALREADY USED IN RECENT RECAPS (do NOT repeat these patterns or use similar phrasing):\n${recentTitles.map(t => `  "${t}"`).join('\n')}`
+      : '',
+    recentOpenings.length
+      ? `- OPENING SENTENCES FROM RECENT RECAPS (your opening must not resemble any of these in structure or wording):\n${recentOpenings.map(t => `  "${t}"`).join('\n')}`
       : '',
     ``,
     `GAME: ${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}`,
@@ -7378,6 +7555,11 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     `TEAM RECORDS (entering this game):`,
     recordLineA || `${game.team_a_name}: record unavailable`,
     recordLineB || `${game.team_b_name}: record unavailable`,
+    ...(game.game_type === 'regular' && recA && recB ? [
+      `TEAM RECORDS (after this game — use these, do not do the math yourself):`,
+      `${game.team_a_name}: ${recA.wins + (scoreA > scoreB ? 1 : 0)}-${recA.losses + (scoreA < scoreB ? 1 : 0)}`,
+      `${game.team_b_name}: ${recB.wins + (scoreB > scoreA ? 1 : 0)}-${recB.losses + (scoreB < scoreA ? 1 : 0)}`,
+    ] : []),
     [streakLine(game.team_a_name, streakA), streakLine(game.team_b_name, streakB)].filter(Boolean).join('\n') || '(no notable streaks)',
     ``,
     prevMatch
@@ -7400,16 +7582,20 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       ? `NOTABLE ABSENCES (DNP this game):\n${notableDnps.map(d => `${d.name} (${d.team}): ${d.ppg} PPG avg over ${d.gp} games this season`).join('\n')}`
       : '',
     ``,
-    `PLAY-BY-PLAY (chronological Q1→Q4, ${pbpFiltered.length} events):`,
+    `PLAY-BY-PLAY (last ${pbpRecent.length} of ${pbpFiltered.length} events, chronological):`,
     pbpText || '(no play-by-play data)',
     adminNotes ? `` : '',
     adminNotes
       ? `ADMIN NOTES (from the league admin who was at the game — treat as factual context you may use, and follow any focus or tone requests. All other rules above still apply. If a note conflicts with the box score numbers, the box score wins.):\n${adminNotes}`
       : '',
+    ``,
+    // Repeated last: buried at the top of a long prompt, the voice was getting ignored.
+    `FINAL REMINDER — write the whole recap in the ${voice.name} voice: ${voice.guide}`,
+    `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"`,
   ].filter(s => s !== null).join('\n');
 
   try {
-    const { text } = await generateText(prompt, { temperature: 0.72, maxTokens: 900 });
+    const { text } = await generateText(prompt, { temperature: 0.9, maxTokens: 900 });
     res.json({ writeup: text });
   } catch (err) {
     console.error('generate-recap error:', err.message);
@@ -7435,7 +7621,6 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     ? scoreA > scoreB
     : scoreB > scoreA;
 
-  const careerHighs = getPlayerCareerHighs(potgId);
   const seasonStats = getPlayerSeasonStats(potgId, game.season);
   const leagueRank  = getPlayerLeagueRank(potgId, game.season);
   const gameLogs    = getPlayerGameLog(potgId).slice(1, 7); // exclude current game
@@ -7444,12 +7629,15 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0) + (potgStat.fg4m_miss|0);
   const fgPct = fga > 0 ? `${Math.round(fgm/fga*100)}%FG` : '';
 
-  const careerHighFlags = [];
-  if (careerHighs) {
-    if (potgStat.pts >= careerHighs.pts && potgStat.pts > 0) careerHighFlags.push('PTS');
-    if (potgStat.reb >= careerHighs.reb && potgStat.reb > 0) careerHighFlags.push('REB');
-    if (potgStat.ast >= careerHighs.ast && potgStat.ast > 0) careerHighFlags.push('AST');
-  }
+  // Career highs now come from potgStoryHooks (as of this game's date, strictly greater) —
+  // the old all-time MAX included this very game, so ">=" flagged nearly every POTG.
+  const voice      = recapVoiceForDate(game.date);
+  const storyHooks = potgStoryHooks(game, stats, potgStat);
+  const recentOpenings = getAllGames()
+    .filter(g => g.potg_writeup && g.id !== game.id)
+    .slice(0, 10)
+    .map(g => { const w = parseWriteup(g.potg_writeup); return (`${w.title} ${w.body}`.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140); })
+    .filter(Boolean);
 
   const seasonLine = seasonStats
     ? `Season averages (${seasonStats.games_played}GP): ${(seasonStats.pts/seasonStats.games_played).toFixed(1)}pts / ${(seasonStats.reb/seasonStats.games_played).toFixed(1)}reb / ${(seasonStats.ast/seasonStats.games_played).toFixed(1)}ast`
@@ -7461,13 +7649,20 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     return `${g.date} vs ${opp}: ${g.pts}pts/${g.reb}reb/${g.ast}ast`;
   });
 
-  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "showed up big," "came to play," "heart-pounding," "jaw-dropping"';
+  const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "key contributor," "effort," "outing," "stat line," "filled the stat sheet," "led the way"';
 
   const prompt = [
-    `You are writing a short player-of-the-game spotlight for a local recreational basketball league.`,
+    `You are writing a short player-of-the-game spotlight for the WKND Basketball League, a recreational league whose players read every word.`,
     `Write exactly 2–3 sentences. Plain text only. No markdown.`,
-    `Lead with what the player DID, not their name. (e.g., "A 22-point, 9-rebound effort..." not "John Smith had...")`,
-    `Scale the tone to performance magnitude: a 10-pt game gets a plain sentence; a 30-pt game gets more energy.`,
+    `Tone: energetic and specific — the excitement comes from the details, never from adjectives. Every claim must come from the data below.`,
+    ``,
+    `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
+    ``,
+    `STORY HOOKS (verified):`,
+    storyHooks.length ? storyHooks.map(h => `- ${h}`).join('\n') : '- (none — find the angle in the box score and the result)',
+    `Open with the most compelling hook. Do not open with the player's name, and do not open with a stat-line formula like "A 22-point, 9-rebound..." — vary the first sentence.`,
+    recentOpenings.length ? `OPENING SENTENCES FROM RECENT SPOTLIGHTS (yours must not resemble these):\n${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '',
+    ``,
     `Do NOT mention PER, advanced metrics, or formula names.`,
     `Do NOT reference the crowd or atmosphere.`,
     `Banned phrases: ${CLICHE_BAN}`,
@@ -7478,15 +7673,17 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     `PLAYER: ${displayPlayerName(potgStat.name)} (${potgStat.team_name})`,
     `This game: ${potgStat.pts}pts / ${potgStat.reb}reb / ${potgStat.ast}ast / ${potgStat.stl}stl / ${potgStat.blk}blk${fgPct ? ' / ' + fgPct : ''}`,
     `Player's team ${playerTeamWon ? 'WON' : 'LOST'} this game.`,
-    careerHighFlags.length ? `Career highs set this game: ${careerHighFlags.join(', ')}` : '',
     leagueRank ? `League rank in scoring: ${leagueRank}${leagueRank === 1 ? 'st' : leagueRank === 2 ? 'nd' : leagueRank === 3 ? 'rd' : 'th'} in the league` : '',
     seasonLine,
     ``,
     prevLines.length ? `Recent games:\n${prevLines.join('\n')}` : 'Recent games: none on record.',
+    ``,
+    `FINAL REMINDER — write it in the ${voice.name} voice: ${voice.guide}`,
+    `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"`,
   ].filter(Boolean).join('\n');
 
   try {
-    const { text } = await generateText(prompt, { temperature: 0.6, maxTokens: 160 });
+    const { text } = await generateText(prompt, { temperature: 0.9, maxTokens: 300 });
     // Trim to max 3 sentences
     const sentences = text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean).slice(0, 3);
     res.json({ writeup: sentences.join(' ') });
@@ -8395,6 +8592,15 @@ app.get('/mvp', async (req, res) => {
   // Fetch or generate writeups for top candidates (locked once playoffs begin). At most 3
   // AI calls in flight — firing all 10 at once after "Regenerate All" tripped Gemini's
   // rate limit and pushed calls onto fallback models.
+  // Same weekly voice as that week's recaps/POTG, keyed on the season's latest game date.
+  const latestGameDate = completedGames
+    .filter(g => String(g.season) === String(season) && g.game_type === 'regular')
+    .map(g => String(g.date).slice(0, 10)).sort().pop();
+  const mvpVoice = recapVoiceForDate(latestGameDate || new Date().toISOString().slice(0, 10));
+  const mvpRecentOpenings = getMvpWriteupsForSeason(season)
+    .map(w => (String(w).split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140))
+    .filter(Boolean).slice(0, 10);
+
   const withWriteups = await mapWithConcurrency(scored, 3, async (c, i) => {
     const rank     = i + 1;
     // Keyed on stats only: writeups regenerate when the player's stats change or on manual
@@ -8433,7 +8639,9 @@ app.get('/mvp', async (req, res) => {
           : ` (last week: #${c.prevRank}, ${c.prevRank > rank ? 'up' : 'down'} ${Math.abs(c.prevRank - rank)} spot${Math.abs(c.prevRank - rank) === 1 ? '' : 's'})`}`,
       ].join('\n');
 
-      const prompt = `You are a sharp basketball analyst covering WKND Basketball League, a recreational league. Write a 2-3 sentence MVP case for ${name} (${String(c.stats.team_name).toUpperCase()}) in the style of an ESPN MVP ladder entry. Be specific with numbers. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
+      const prompt = `You are covering the MVP race for the WKND Basketball League, a recreational league whose players read every word. Write a 2-3 sentence MVP case for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
+
+THIS WEEK'S VOICE — ${mvpVoice.name}: ${mvpVoice.guide}
 
 Rules:
 - Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
@@ -8443,10 +8651,16 @@ Rules:
 - No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
 - ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
 - Work in their MVP Race position and how it moved since last week (climbing, slipping, holding steady, or newly entering) using the exact numbers below. Do not say who they passed or who passed them.
+- Plain text only. No markdown.
+- Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.${mvpRecentOpenings.length ? `
+- OPENING SENTENCES FROM OTHER MVP WRITEUPS (yours must not resemble these):
+${mvpRecentOpenings.map(t => `  "${t}"`).join('\n')}` : ''}
 
-${name} stats:\n${rankLines}`;
+${name} stats:\n${rankLines}
 
-      const { text } = await generateText(prompt, { maxTokens: 220, temperature: 0.75 });
+FINAL REMINDER — write it in the ${mvpVoice.name} voice. Example of the voice (style only — do not copy its words or facts): "${mvpVoice.sample}"`;
+
+      const { text } = await generateText(prompt, { maxTokens: 300, temperature: 0.9 });
       setMvpWriteup(c.player.id, season, statsKey, text);
       return { ...c, writeup: text };
     } catch (err) {
@@ -8939,7 +9153,7 @@ async function getOrGenerateCoachNote(playerId, player, totals) {
       displayName, positions, totals, peerAverages,
       groupLabel: group === 'perimeter' ? 'PG/SG/SF' : 'PF/C',
       recentGames,
-    }, { primaryProvider: 'gemini' });
+    });
     saveCoachAnalysis({
       player_id: playerId, model: result.model || '', provider: result.provider || '',
       stat_snapshot: snapshot, analysis: result.analysis, focus_tag: result.focus_tag,
