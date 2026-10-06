@@ -362,7 +362,7 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
   const chasers = candidates.slice(1, 3);
   const rest = candidates.slice(3);
 
-  const chaseTable = rest.length ? `<section class="mvpx-chase card">
+  const chaseTable = rest.length ? `<section class="mvpx-chase card${isAdmin ? ' mvpx-chase--admin' : ''}">
     <div class="mvpx-chase__head"><span>The chase · #4–${rest.length + 3}</span><span class="mvpx-chase__hint">Per game · bar = score vs. #1</span></div>
     <div class="mvpx-row mvpx-row--labels" aria-hidden="true">
       <span>Rk</span><span></span><span>Player</span>

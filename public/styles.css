@@ -7167,7 +7167,9 @@ a.player-link:hover { color: var(--amber); }
 .mvpx-row {
   position: relative;
   display: grid;
-  grid-template-columns: 40px 40px minmax(0, 1.6fr) repeat(5, 56px) minmax(150px, 1.2fr) auto;
+  /* Every row (labels included) is its own grid, so the tools column needs a fixed
+     width — auto sized it to 0 in the label row and shifted every header label. */
+  grid-template-columns: 40px 40px minmax(0, 1.6fr) repeat(5, 56px) minmax(150px, 1.2fr) var(--mvpx-tools, 30px);
   align-items: center; column-gap: 12px;
   min-height: 60px; padding: 0 24px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -7188,6 +7190,8 @@ a.player-link:hover { color: var(--amber); }
 .mvpx-row__score b { width: 44px; text-align: right; font-size: 24px; font-weight: 800; color: var(--amber); }
 .mvpx-row__tools { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .mvpx-row__admin { display: flex; gap: 6px; }
+/* Admins have Photo + ↺ in the row too (desktop) */
+.mvpx-chase--admin { --mvpx-tools: 128px; }
 .mvpx-toggle { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
 .mvpx-toggle:hover { background: rgba(255,255,255,0.05); color: var(--text); }
 .mvpx-toggle svg { transition: transform 0.2s; }
@@ -7212,7 +7216,7 @@ a.player-link:hover { color: var(--amber); }
   .mvpx-chasers { grid-template-columns: minmax(0, 1fr); }
   .mvpx-chaser { grid-template-columns: 300px minmax(0, 1fr); }
   .mvpx-col-opt { display: none; }
-  .mvpx-row { grid-template-columns: 32px 36px minmax(0, 1fr) 48px minmax(110px, 0.8fr) auto; }
+  .mvpx-row { grid-template-columns: 32px 36px minmax(0, 1fr) 48px minmax(110px, 0.8fr) var(--mvpx-tools, 30px); }
   .mvpx-row-writeup { padding-left: 24px; }
 }
 @media (max-width: 720px) {
@@ -7253,7 +7257,7 @@ a.player-link:hover { color: var(--amber); }
   .mvpx-toggle--phone { visibility: visible; }
   .mvpx-row-writeup { padding: 14px 16px 18px; }
   .mvpx-chase__hint { display: none; }
-  .mvpx-row { grid-template-columns: 24px 30px minmax(0, 1fr) 44px auto; column-gap: 10px; padding: 0 14px; }
+  .mvpx-row { grid-template-columns: 24px 30px minmax(0, 1fr) 44px 30px; column-gap: 10px; padding: 0 14px; }
   .mvpx-col-ppg { display: none; }
   .mvpx-row__score .mvpx-bar { display: none; }
   .mvpx-row__avatar { width: 32px; height: 32px; }
