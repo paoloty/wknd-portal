@@ -271,9 +271,10 @@ function headToHead(table, games, sched, totalWeeks, colorOf) {
 </section>`;
 }
 
-function roadSoFar(weeks, next, isCurrent) {
+// One card per week, newest first, in a single horizontally scrolling row.
+function roadSoFar(weeks) {
   if (!weeks.length) return '';
-  const cards = weeks.map((w, i) => `<div class="stp-wk${i === weeks.length - 1 ? ' is-latest' : ''}">
+  const cards = [...weeks].reverse().map((w, i) => `<div class="stp-wk${i === 0 ? ' is-latest' : ''}">
     <div class="stp-wk__top"><span class="stp-kicker">Week ${w.n}</span><span class="stp-th">${w.dates.length > 1 ? `${fmtDay(w.dates[0])} – ${fmtDay(w.dates[w.dates.length - 1])}` : fmtDay(w.dates[0])}</span></div>
     <p class="stp-wk__head">${escHtml(w.headline)}</p>
     <div class="stp-wk__games">${w.games.map(g => `<a href="/games/${encodeURIComponent(g.id)}" class="stp-wk__game">
@@ -289,18 +290,10 @@ function roadSoFar(weeks, next, isCurrent) {
       <span class="font-condensed stp-wk__mv${t.mv > 0 ? ' is-up' : t.mv < 0 ? ' is-down' : ''}">${w.n === 1 ? '' : t.mv > 0 ? `▲${t.mv}` : t.mv < 0 ? `▼${-t.mv}` : '='}</span>
     </div>`).join('')}</div>
   </div>`).join('');
-  const nextCard = !isCurrent || !next ? '' : `<div class="stp-wk stp-wk--next">
-    <div class="stp-wk__top"><span class="stp-th">Week ${next.n}</span><span class="stp-th">Up next</span></div>
-    ${next.games.length
-      ? `<p class="stp-wk__head">${fmtDay(next.date)}</p><div class="stp-wk__games">${next.games.map(g => `<a href="/games/${encodeURIComponent(g.id)}" class="stp-wk__game is-sched">
-        <span><span class="team-dot" style="background:${g.ac}"></span>${escHtml(g.a)}</span><span class="stp-th">vs</span><span class="is-l">${escHtml(g.b)}<span class="team-dot" style="background:${g.bc}"></span></span>
-      </a>`).join('')}</div>`
-      : `<p class="stp-wk__head is-dim">Not scheduled yet</p><p class="stp-wk__note">The next results and table moves show up here.</p>`}
-  </div>`;
   return `<section class="stp-road" aria-labelledby="stp-road-h">
   <div class="section-header"><h2 id="stp-road-h">The road so far</h2></div>
-  <p class="stp-desc">What each week did to the table.</p>
-  <div class="stp-road__grid" id="stp-road">${cards}${nextCard}</div>
+  <p class="stp-desc">What each week did to the table, newest first.</p>
+  <div class="stp-road__grid">${cards}</div>
 </section>`;
 }
 
@@ -383,9 +376,6 @@ const SCRIPT = `<script>
       });
     });
   }
-  var road=document.getElementById('stp-road');
-  var latest=road&&road.querySelector('.stp-wk.is-latest');
-  if(latest&&road.scrollWidth>road.clientWidth)road.scrollLeft=latest.offsetLeft-road.offsetLeft-parseFloat(getComputedStyle(road).paddingLeft||0);
 })();
 </script>`;
 
@@ -471,7 +461,6 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
   });
 
   const sched = [...scheduled].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  const nextDay = sched[0] ? String(sched[0].date).slice(0, 10) : null;
   const expected = Math.max(played.length + sched.length, rows.length * (rows.length - 1));
   let schedWeek = week, schedStart = null;
   for (const g of sched) {
@@ -480,10 +469,6 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
     g.week = schedWeek;
   }
   const totalWeeks = Math.max(schedWeek, Math.ceil(expected / Math.max(1, Math.floor(rows.length / 2))));
-  const next = played.length < expected ? {
-    n: week + 1, date: nextDay,
-    games: nextDay ? sched.filter(g => String(g.date).slice(0, 10) === nextDay).map(g => ({ id: g.id, a: g.team_a_name, ac: colorOf(g.team_a_id), b: g.team_b_name, bc: colorOf(g.team_b_id) })) : [],
-  } : null;
 
   return `<div class="page-content stp">
   ${pageHead({ season, seasons, isCurrent, week, played: played.length, expected })}
@@ -493,7 +478,7 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
     ${playoffPicture(table, isCurrent)}
   </div>` : '<p class="stp-desc">No standings for this season yet.</p>'}
   ${headToHead(table, played, sched, totalWeeks, colorOf)}
-  ${roadSoFar(weeks, next, isCurrent)}
+  ${roadSoFar(weeks)}
   ${teamStats(table, teamStatsRows)}
 </div>
 ${SCRIPT}`;
