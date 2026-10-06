@@ -874,7 +874,7 @@ html { scroll-padding-top: 84px; }
   color: #0a0e16; background: var(--amber);
   padding: 3px 8px; border-radius: 5px;
 }
-.mega__feature-name { font-size: 17px; font-weight: 800; text-transform: uppercase; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mega__feature-name { font-size: 18px; font-weight: 900; font-style: italic; letter-spacing: -0.02em; text-transform: uppercase; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mega__feature-score { font-size: 40px; line-height: 1; color: var(--amber); }
 .mega__feature-line { font-size: 13px; font-weight: 600; color: #a3abb9; }
 .mega__feature-cta { font-size: 13px; font-weight: 700; color: var(--amber); }
@@ -1465,16 +1465,6 @@ html { scroll-padding-top: 84px; }
   z-index: 2;
   background: linear-gradient(180deg, rgba(10,14,22,0.55) 0%, rgba(10,14,22,0.15) 30%, rgba(10,14,22,0.55) 62%, rgba(10,14,22,0.96) 100%);
 }
-.hero-date {
-  position: absolute;
-  top: 18px;
-  left: 22px;
-  z-index: 3;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: rgba(255,255,255,0.55);
-}
 .hero-progress {
   position: absolute;
   bottom: 0; left: 0; right: 0;
@@ -1508,47 +1498,22 @@ html { scroll-padding-top: 84px; }
   cursor: pointer;
   transition: width 0.2s, background 0.2s;
 }
-.hero-scoreboard {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -58%);
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 46px;
+/* Chips (season / date / final) — same look as the Game headlines cards */
+.hero-chips { position: absolute; top: 20px; left: 24px; z-index: 4; display: flex; gap: 6px; }
+.hero-chip {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 6px 10px; border-radius: 6px;
+  color: var(--text); background: rgba(10,14,22,0.6);
 }
-.hero-team { text-align: center; }
-.hero-team__name {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: rgba(255,255,255,0.5);
-  margin-bottom: 6px;
-}
-.hero-team__name--winner { color: #fff; }
-.hero-team__score {
-  font-size: 118px;
-  font-weight: 800;
-  line-height: 0.9;
-  color: rgba(255,255,255,0.42);
-  text-shadow: 0 2px 20px rgba(0,0,0,0.9), 0 0 60px rgba(0,0,0,0.7);
-}
-.hero-team__score--winner { color: #fff; }
-.hero-divider { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.hero-divider__line { width: 1px; height: 46px; background: rgba(255,255,255,0.25); }
-.hero-divider__label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: rgba(255,255,255,0.55);
-}
-@media (max-width: 600px) {
-  .hero-scoreboard { gap: 24px; }
-  .hero-team__name { font-size: 11px; }
-  .hero-team__score { font-size: 64px; }
-  .hero-divider__line { height: 28px; }
-}
+.hero-chip--season { letter-spacing: 0.08em; color: #0a0e16; background: var(--amber); }
+.hero-chip--final { color: #0a0e16; background: var(--text); }
+/* Scoreboard: bottom-left above the headline, team dots, winner in white */
+.hero-score { display: flex; align-items: flex-end; gap: 22px; margin-bottom: 14px; }
+.hero-score__team { display: flex; flex-direction: column; gap: 4px; color: var(--text-muted); }
+.hero-score__team.is-win { color: #fff; }
+.hero-score__name { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; letter-spacing: 0.12em; }
+.hero-score__num { font-size: 96px; font-weight: 800; line-height: 0.82; font-variant-numeric: tabular-nums; text-shadow: 0 2px 20px rgba(0,0,0,0.6); }
+.hero-score__dash { font-size: 40px; font-weight: 800; line-height: 1; color: var(--text-subtle); padding-bottom: 14px; }
 .hero-content {
   position: absolute;
   bottom: 0;
@@ -1559,9 +1524,10 @@ html { scroll-padding-top: 84px; }
 }
 .hero-title {
   margin: 0 0 10px;
-  font-size: 23px;
-  font-weight: 700;
-  line-height: 1.25;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
   color: #fff;
   max-width: 90%;
   text-wrap: pretty;
@@ -1582,9 +1548,8 @@ html { scroll-padding-top: 84px; }
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.05em;
   color: var(--amber);
 }
 .hero-arrow {
@@ -1614,8 +1579,16 @@ html { scroll-padding-top: 84px; }
 /* flex column so the card matches the hero's height — the leader's spotlight takes the
    extra space (its writeup grows, clamped to whole lines by the script in mvpRaceSidebar)
    while the ladder and footer keep their natural height at the bottom */
-.hmvp-card { display: flex; flex-direction: column; }
-.hmvp-when { font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-subtle); }
+.hmvp-card {
+  display: flex; flex-direction: column;
+  border-color: rgba(245,147,50,0.35);
+  /* frontrunner's team-colour glare (--team), same as the /mvp and leader-board cards */
+  background:
+    radial-gradient(130% 70% at 0% 0%, color-mix(in srgb, var(--team) 16%, transparent) 0%, color-mix(in srgb, var(--team) 5%, transparent) 40%, transparent 70%),
+    var(--surface);
+}
+.hmvp-head { display: flex; justify-content: space-between; gap: 8px; padding: 18px 18px 0; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #a3abb9; }
+.hmvp-when { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; color: var(--text-subtle); }
 .hmvp-lead {
   flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; gap: 10px;
@@ -1624,9 +1597,9 @@ html { scroll-padding-top: 84px; }
   transition: background-color 0.15s;
 }
 .hmvp-lead:hover { background-color: rgba(255,255,255,0.025); }
-.hmvp-lead__head { display: flex; align-items: center; gap: 14px; }
+.hmvp-lead__head { display: flex; align-items: center; gap: 12px; }
 .hmvp-avatar {
-  width: 60px; height: 60px; flex-shrink: 0;
+  width: 56px; height: 56px; flex-shrink: 0;
   border-radius: 50%; border: 2px solid;
   background: #181d28;
   position: relative; overflow: hidden;
@@ -1640,17 +1613,26 @@ html { scroll-padding-top: 84px; }
   padding: 3px 8px; border-radius: 5px;
   background: var(--amber); color: #10141d;
 }
+/* Italic display name, as on the /mvp page — always one line (long names shrink, then ellipsis) */
 .hmvp-lead__name {
-  display: flex; align-items: center; gap: 7px; max-width: 100%;
-  font-size: 15px; font-weight: 800; letter-spacing: 0.02em; color: var(--text);
+  display: block; max-width: 100%;
+  font-style: italic; font-weight: 900; font-size: 22px; line-height: 1.05; letter-spacing: -0.02em; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.hmvp-lead__name.is-long { font-size: 18px; }
+.hmvp-lead__team { display: flex; align-items: center; gap: 6px; max-width: 100%; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); white-space: nowrap; overflow: hidden; }
 .hmvp-lead__move { display: flex; align-items: center; gap: 6px; }
 .hmvp-lead__score { flex-shrink: 0; text-align: right; }
-.hmvp-lead__score b { display: block; font-size: 34px; font-weight: 800; line-height: 1; color: var(--amber); font-variant-numeric: tabular-nums; }
+.hmvp-lead__score b { display: block; font-size: 40px; font-weight: 800; line-height: 1; color: var(--amber); font-variant-numeric: tabular-nums; }
 .hmvp-lead__score span { font-size: 9px; font-weight: 800; letter-spacing: 0.12em; color: var(--text-subtle); }
-.hmvp-lead__stats { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-muted); }
-.hmvp-lead__stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.hmvp-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.hmvp-tile { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 9px; background: var(--surface-2); }
+.hmvp-tile b { font-size: 20px; line-height: 1; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.hmvp-tile span { font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); }
+/* ladder movement: plain text, like the /mvp table */
+.hmvp-move { grid-column: 3; font-size: 11.5px; font-weight: 800; color: var(--text-subtle); white-space: nowrap; }
+.hmvp-move.is-up { color: #4ade80; }
+.hmvp-move.is-down { color: #f87171; }
 .hmvp-lead__body {
   flex: 1 1 0; min-height: 6em; /* 4 lines — what shows when stacked on mobile */
   overflow: hidden;
@@ -2096,7 +2078,7 @@ html { scroll-padding-top: 84px; }
 .nu-grid {
   display: grid;
   grid-template-columns: repeat(var(--nu-cards, 4), minmax(0, 1fr));
-  gap: 16px;
+  gap: 14px;
   align-items: stretch;
 }
 .nu-card { display: flex; flex-direction: column; min-width: 0; padding: 18px; gap: 14px; }
@@ -7391,4 +7373,163 @@ a.player-link:hover { color: var(--amber); }
   .mvpx-dlg__preview { margin: 0 auto; }
   .mvpx-dlg__actions { grid-template-columns: 1fr 1fr; }
   .mvpx-dlg__actions > span { display: none; }
+}
+
+/* ── Homepage blocks: shared rhythm (views/home.js) ──────────────────────────
+   Every homepage section below the hero: same outer spacing, standard .section-header,
+   cards on --radius with --border, 14px grid gaps, four across on desktop. */
+.home-section { margin: 8px 0 28px; }
+
+/* AI summary panel above Game headlines / Season race / League leaders */
+.hs-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin: 0 0 16px; }
+.st-card .hs-summary { margin: 0; }
+.hs-summary__copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 920px; }
+.hs-summary__kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+.hs-summary__headline { margin: 0; font-size: 24px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; color: var(--text); text-wrap: balance; }
+.hs-summary__headline em { font-style: normal; color: var(--amber); }
+.hs-summary__body { margin: 0; max-width: 72ch; font-size: 15px; line-height: 1.6; color: #b4bbc8; }
+.hs-summary__regen {
+  flex-shrink: 0;
+  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+  padding: 7px 11px; border-radius: 8px;
+  border: 1px dashed rgba(255,255,255,0.18); background: rgba(255,255,255,0.03);
+}
+.hs-summary__regen:hover { color: var(--text); border-color: rgba(245,147,50,0.6); }
+
+/* Game headlines: recap headline over the game's cover photo */
+.gh-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.gh-card {
+  position: relative; min-width: 0; min-height: 340px; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: space-between;
+  border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--surface); color: inherit;
+  transition: border-color 0.15s;
+}
+.gh-card:hover { border-color: rgba(255,255,255,0.18); }
+.gh-card:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.gh-card__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; transition: transform 0.4s ease; }
+.gh-card:hover .gh-card__img { transform: scale(1.03); }
+.gh-card.has-photo::before {
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(to top, rgba(10,14,22,0.97) 0%, rgba(10,14,22,0.88) 42%, rgba(10,14,22,0.35) 72%, rgba(10,14,22,0.15) 100%);
+}
+/* winning team's glare — the whole look on a card without a photo, a tint on one with */
+.gh-card::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(110% 70% at 0% 0%, color-mix(in srgb, var(--team) 20%, transparent) 0%, transparent 60%);
+}
+.gh-card__top, .gh-card__body { position: relative; z-index: 2; }
+.gh-card__top { display: flex; justify-content: space-between; gap: 8px; padding: 16px 18px 0; }
+.gh-card__date { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 9px; border-radius: 6px; }
+.gh-card__date { color: var(--text); background: rgba(10,14,22,0.6); }
+/* Headlines reach back past the hero's games, sometimes into last season — the pill says which */
+.gh-card__when { display: flex; gap: 6px; }
+.gh-card__season { font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; padding: 5px 8px; border-radius: 6px; color: #0a0e16; background: var(--amber); }
+.gh-card__body { display: flex; flex-direction: column; gap: 9px; padding: 0 18px 18px; }
+/* Split score bar: one half per team, the winner's half underlined in its colour (--side) */
+.gh-score {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center;
+  border-radius: 10px; overflow: hidden;
+  background: rgba(10,14,22,0.72); border: 1px solid rgba(255,255,255,0.1);
+}
+.gh-score__side { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; padding: 8px 12px; color: var(--text-muted); }
+.gh-score__side.is-win { color: #fff; box-shadow: inset 0 -3px 0 var(--side); }
+.gh-score__team { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; font-weight: 800; letter-spacing: 0.08em; white-space: nowrap; overflow: hidden; }
+.gh-score__num { font-size: 28px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
+.gh-score__final { padding: 0 8px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
+.gh-card__title { font-size: 17px; font-weight: 800; line-height: 1.22; letter-spacing: -0.01em; color: #fff; text-wrap: balance; }
+.gh-card__cta { font-size: 12.5px; font-weight: 700; color: var(--amber); }
+
+/* League leaders: top 3 per category, leader large */
+.lb-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.lb-card {
+  min-width: 0; display: flex; flex-direction: column; overflow: hidden;
+  border-radius: var(--radius); border: 1px solid var(--border);
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--team) 18%, transparent) 0%, color-mix(in srgb, var(--team) 6%, transparent) 40%, transparent 72%),
+    var(--surface);
+  transition: border-color 0.15s;
+}
+.lb-card:hover { border-color: rgba(255,255,255,0.14); }
+.lb-card__lead { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px 16px; color: inherit; }
+.lb-card__lead:focus-visible, .lb-card__alt:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; border-radius: var(--radius); }
+.lb-card__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.lb-card__title { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #a3abb9; }
+.lb-card__key { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-subtle); }
+.lb-card__row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lb-card__av {
+  position: relative; width: 52px; height: 52px; flex-shrink: 0;
+  border-radius: 50%; border: 2px solid; overflow: hidden;
+  background: #1f2633; display: grid; place-items: center;
+  font-size: 18px; font-weight: 800; color: #c3c9d4;
+}
+.lb-card__av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.lb-card__who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lb-card__name { font-size: 16px; font-weight: 800; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-card__lead:hover .lb-card__name { color: #fff; }
+.lb-card__team { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); }
+.lb-card__val { font-size: 44px; line-height: 0.9; font-weight: 800; color: var(--amber); font-variant-numeric: tabular-nums; }
+.lb-card__rest { margin-top: auto; padding: 4px 20px 8px; border-top: 1px solid var(--border); }
+.lb-card__alt { display: flex; align-items: center; gap: 10px; min-height: 38px; color: inherit; }
+.lb-card__rank { width: 14px; font-size: 16px; font-weight: 800; color: var(--text-subtle); }
+.lb-card__alt-name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: #c3c9d4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-card__alt:hover .lb-card__alt-name { color: #fff; }
+.lb-card__alt-val { font-size: 18px; font-weight: 700; color: #c3c9d4; font-variant-numeric: tabular-nums; }
+
+/* Latest posts */
+.hp-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.hp-card {
+  min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px;
+  border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface);
+  color: inherit; transition: border-color 0.15s;
+}
+.hp-card:hover { border-color: rgba(255,255,255,0.18); }
+.hp-card__date { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+.hp-card__title { font-size: 16px; font-weight: 800; line-height: 1.25; color: var(--text); }
+.hp-card__excerpt { font-size: 13px; line-height: 1.45; color: var(--text-muted); }
+.hp-card__cta { margin-top: auto; padding-top: 4px; font-size: 12.5px; font-weight: 700; color: var(--amber); }
+
+@media (max-width: 1100px) {
+  .gh-grid, .lb-grid, .hp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .hs-summary { flex-direction: column; gap: 10px; }
+  .hs-summary__headline { font-size: 20px; }
+  .hs-summary__body { font-size: 14px; }
+  /* Swipe rows on phones: the next card peeks in */
+  .gh-grid, .lb-grid {
+    display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory;
+    margin: 0 -20px; padding: 0 20px 4px; scroll-padding: 0 20px;
+    scrollbar-width: none;
+  }
+  .gh-grid::-webkit-scrollbar, .lb-grid::-webkit-scrollbar { display: none; }
+  .gh-card, .lb-card { flex: 0 0 82%; scroll-snap-align: start; }
+  .gh-card { min-height: 300px; }
+  /* compact score bar so full team names fit on a phone-width card */
+  .gh-score__side { padding: 7px 9px; gap: 4px; }
+  .gh-score__team { font-size: 10.5px; letter-spacing: 0.04em; gap: 5px; }
+  .gh-score__num { font-size: 24px; }
+  .gh-score { grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
+  .gh-score__final { font-size: 0; padding: 0; align-self: stretch; background: rgba(255,255,255,0.12); }
+  .lb-card__val { font-size: 34px; }
+  .lb-card__av { width: 46px; height: 46px; }
+  .lb-card__name { font-size: 15px; }
+  .lb-sub-extra { display: none; }
+  .hp-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
+
+/* Hero on phones: a 4:5 slide (was stuck at the 560px desktop minimum), just chips +
+   headline + "Read recap" — no scoreboard, excerpt or arrows (swipe changes slide). */
+@media (max-width: 900px) {
+  .home-grid { min-height: 0; }
+}
+@media (max-width: 720px) {
+  .hero-carousel { min-height: 0; height: auto; aspect-ratio: 4 / 5; }
+  .hero-chips { top: 14px; left: 14px; gap: 5px; }
+  .hero-chip { font-size: 10.5px; padding: 5px 8px; }
+  .hero-dots { top: 20px; right: 16px; }
+  .hero-score, .hero-excerpt, .hero-arrow { display: none; }
+  .hero-content { padding: 18px; }
+  .hero-title { font-size: 24px; max-width: 100%; }
+  .hero-cta { font-size: 13px; }
 }

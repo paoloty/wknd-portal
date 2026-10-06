@@ -24,36 +24,35 @@ function heroCarousel(games, awardItems = []) {
     const winB = scoreB > scoreA;
     const colorA = teamColor(game.team_a_name);
     const colorB = teamColor(game.team_b_name);
+    const winColor = winB ? colorB : colorA;
     const title = boldTitle(game.game_writeup) || `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
     const body = excerpt(game.game_writeup);
+    const day = new Date(`${String(game.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
     const bg = `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt=""></div>`
-    const flareOpacity = game.has_cover ? '44' : 'cc';
+    // Without a cover photo the winner's glare carries the slide, so it's stronger.
+    const flareOpacity = game.has_cover ? '2e' : '66';
+    const team = (name, score, win) => `<div class="hero-score__team${win ? ' is-win' : ''}">
+      <span class="hero-score__name"><span class="team-dot" style="background:${teamColor(name)}"></span>${escHtml(name)}</span>
+      <span class="hero-score__num font-condensed">${score}</span>
+    </div>`;
 
+    // Chips match the Game headlines cards; the scoreboard sits bottom-left above the
+    // headline (hidden on phones, where the 4:5 slide keeps just chips + headline).
     return `<div class="hero-slide${i === 0 ? ' hero-slide--active' : ''}">
   ${bg}
-  <div class="hero-flare" style="background:linear-gradient(135deg,${colorA}${flareOpacity} 0%,transparent 50%,${colorB}${flareOpacity} 100%)"></div>
+  <div class="hero-flare" style="background:radial-gradient(90% 70% at 0% 0%,${winColor}${flareOpacity} 0%,transparent 60%)"></div>
   <div class="hero-overlay"></div>
-  <div class="hero-date">${escHtml(formatDate(game.date))}</div>
-  <div class="hero-scoreboard">
-    <div class="hero-team">
-      <div class="hero-team__name${winA ? ' hero-team__name--winner' : ''}">${escHtml(game.team_a_name)}</div>
-      <div class="font-condensed hero-team__score${winA ? ' hero-team__score--winner' : ''}">${scoreA}</div>
-    </div>
-    <div class="hero-divider">
-      <div class="hero-divider__line"></div>
-      <span class="hero-divider__label">FINAL</span>
-      <div class="hero-divider__line"></div>
-    </div>
-    <div class="hero-team">
-      <div class="hero-team__name${winB ? ' hero-team__name--winner' : ''}">${escHtml(game.team_b_name)}</div>
-      <div class="font-condensed hero-team__score${winB ? ' hero-team__score--winner' : ''}">${scoreB}</div>
-    </div>
-  </div>
+  <div class="hero-chips">${game.season ? `<span class="hero-chip hero-chip--season">S${escHtml(String(game.season))}</span>` : ''}<span class="hero-chip">${escHtml(day)}</span><span class="hero-chip hero-chip--final">Final</span></div>
   <div class="hero-content">
+    <div class="hero-score">
+      ${team(game.team_a_name, scoreA, winA)}
+      <span class="hero-score__dash font-condensed">–</span>
+      ${team(game.team_b_name, scoreB, winB)}
+    </div>
     <h2 class="hero-title">${escHtml(title.slice(0, 120))}</h2>
     ${body ? `<p class="hero-excerpt">${escHtml(body.slice(0, 280))}</p>` : ''}
-    <a href="/games/${encodeURIComponent(game.id)}" class="hero-cta">FULL GAME RECAP <span>→</span></a>
+    <a href="/games/${encodeURIComponent(game.id)}" class="hero-cta">Read recap <span>&rarr;</span></a>
   </div>
 </div>`;
   });
@@ -71,10 +70,10 @@ function heroCarousel(games, awardItems = []) {
       return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
   <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt=""></div>
   <div class="hero-overlay"></div>
-  <div class="hero-date">${escHtml(it.label)}</div>
+  <div class="hero-chips"><span class="hero-chip hero-chip--season">${escHtml(it.label)}</span></div>
   <div class="hero-content">
     <h2 class="hero-title">${escHtml(it.title.toUpperCase())}</h2>
-    <a href="/awards" class="hero-cta">VIEW SEASON AWARDS <span>→</span></a>
+    <a href="/awards" class="hero-cta">View season awards <span>&rarr;</span></a>
   </div>
 </div>`;
     }
@@ -85,11 +84,11 @@ function heroCarousel(games, awardItems = []) {
     return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
   <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt=""></div>
   <div class="hero-overlay"></div>
-  <div class="hero-date">${escHtml(it.label)}</div>
+  <div class="hero-chips"><span class="hero-chip hero-chip--season">${escHtml(it.label)}</span></div>
   <div class="hero-content">
     <h2 class="hero-title">${escHtml(name)}</h2>
     ${writeup ? `<p class="hero-excerpt">${escHtml(writeup.slice(0, 280))}</p>` : ''}
-    <a href="/awards" class="hero-cta">VIEW SEASON AWARDS <span>→</span></a>
+    <a href="/awards" class="hero-cta">View season awards <span>&rarr;</span></a>
   </div>
 </div>`;
   });
@@ -162,6 +161,15 @@ function heroCarousel(games, awardItems = []) {
   document.getElementById('hero-prev').onclick = function(){ manual(cur - 1); };
   document.getElementById('hero-next').onclick = function(){ manual(cur + 1); };
   dots.forEach(function(d, i){ d.onclick = function(){ manual(i); }; });
+  // Phones hide the arrows — a horizontal swipe changes slide instead.
+  var sx = null, sy = null;
+  wrap.addEventListener('touchstart', function(e){ sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  wrap.addEventListener('touchend', function(e){
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    sx = sy = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) manual(cur + (dx < 0 ? 1 : -1));
+  });
 
   schedule(AUTO_MS);
 })();
@@ -170,9 +178,10 @@ function heroCarousel(games, awardItems = []) {
 
 // ── MVP Race Sidebar ──────────────────────────────────────────────────────────
 // Takes the Player Highlights slot next to the hero while the MVP Race is switched on
-// (buildHomeMvpRace in server.js). The leader gets a spotlight (photo, score, stat line,
-// start of the cached AI writeup); 2–5 are a compact ladder with week-over-week movement.
-// Movement badges reuse the /mvp page's .mvp-move styles so both read the same.
+// (buildHomeMvpRace in server.js). Styled like the /mvp page's frontrunner card: the
+// leader's team-colour glare (--team), photo, italic one-line name, big score, stat tiles
+// and the start of the cached AI writeup; 2–6 are a compact ladder with plain-text
+// week-over-week movement, the same rows as the homepage leader boards.
 function mvpRaceSidebar({ season, week, final, candidates }) {
   const [lead, ...rest] = candidates;
   const ls    = lead.stats;
@@ -181,14 +190,17 @@ function mvpRaceSidebar({ season, week, final, candidates }) {
   const href  = id => `/players/${encodeURIComponent(String(id))}`;
   const when  = final ? `S${season} · FINAL` : week ? `S${season} · AFTER WEEK ${week}` : `S${season}`;
   const writeup = String(lead.writeup || '').replace(/\*\*/g, '').trim();
+  const leadName = displayPlayerName(lead.player.name).toUpperCase();
+  const leadNote = lead.prevRank === 1 ? 'Held #1' : lead.prevRank === null ? 'New this week'
+    : lead.prevRank > 1 ? `Up from #${lead.prevRank}` : '';
 
   const rowMove = (rank, prev) => {
-    if (prev === undefined) return '';
-    if (prev === null) return `<span class="mvp-move mvp-move--new" title="New this week">NEW</span>`;
+    if (prev === undefined) return '<span></span>';
+    if (prev === null) return `<span class="hmvp-move is-up" title="New this week">NEW</span>`;
     const d = prev - rank;
-    if (d > 0) return `<span class="mvp-move mvp-move--up" title="Last week #${prev}">▲${d}</span>`;
-    if (d < 0) return `<span class="mvp-move mvp-move--down" title="Last week #${prev}">▼${-d}</span>`;
-    return `<span class="mvp-move mvp-move--same" title="Last week #${prev}">–</span>`;
+    if (d > 0) return `<span class="hmvp-move is-up" title="Last week #${prev}">▲${d}</span>`;
+    if (d < 0) return `<span class="hmvp-move is-down" title="Last week #${prev}">▼${-d}</span>`;
+    return `<span class="hmvp-move" title="Last week #${prev}">–</span>`;
   };
 
   const rows = rest.map((c, i) => {
@@ -201,19 +213,22 @@ function mvpRaceSidebar({ season, week, final, candidates }) {
   </a>`;
   }).join('\n  ');
 
-  return `<div class="card sidebar hmvp-card">
-  <div class="card-label">MVP RACE <span class="hmvp-when">${escHtml(when)}</span></div>
-  <a href="${href(lead.player.id)}" class="hmvp-lead" style="background:linear-gradient(135deg,${color}12 0%,transparent 55%)">
+  const tiles = [['PPG', ls.pts], ['RPG', ls.reb], ['APG', ls.ast], ['SPG', ls.stl]]
+    .map(([k, v]) => `<span class="hmvp-tile"><b class="font-condensed">${(v / gp).toFixed(1)}</b><span>${k}</span></span>`).join('');
+
+  return `<div class="card sidebar hmvp-card" style="--team:${color}">
+  <div class="hmvp-head"><span>MVP Race</span><span class="hmvp-when">${escHtml(when)}</span></div>
+  <a href="${href(lead.player.id)}" class="hmvp-lead">
     <div class="hmvp-lead__head">
-      ${playerAvatar(lead.player.id, lead.player.name, color, { className: 'hmvp-avatar' })}
+      ${playerAvatar(lead.player.id, lead.player.name, '#f59332', { className: 'hmvp-avatar' })}
       <div class="hmvp-lead__id">
         <span class="hmvp-badge">FRONTRUNNER</span>
-        <span class="hmvp-lead__name"><span class="team-dot" style="background:${color}"></span>${escHtml(displayPlayerName(lead.player.name).toUpperCase())}</span>
-        <span class="hmvp-lead__move">${moveBadge(1, lead.prevRank)}</span>
+        <span class="hmvp-lead__name${leadName.length > 16 ? ' is-long' : ''}">${escHtml(leadName)}</span>
+        <span class="hmvp-lead__team"><span class="team-dot" style="background:${color}"></span>${escHtml(String(ls.team_name || '').toUpperCase())}${leadNote ? ` · ${escHtml(leadNote)}` : ''}</span>
       </div>
       <div class="hmvp-lead__score"><b class="font-condensed">${lead.mvpScore.toFixed(1)}</b><span>SCORE</span></div>
     </div>
-    <div class="hmvp-lead__stats"><b>${(ls.pts / gp).toFixed(1)}</b> PPG · <b>${(ls.reb / gp).toFixed(1)}</b> RPG · <b>${(ls.ast / gp).toFixed(1)}</b> APG · <b>${(ls.stl / gp).toFixed(1)}</b> SPG</div>
+    <div class="hmvp-tiles">${tiles}</div>
     ${writeup ? `<div class="hmvp-lead__body"><p>${escHtml(writeup)}</p></div>` : ''}
   </a>
   ${rows ? `<div class="hmvp-ladder">${rows}</div>` : ''}
@@ -283,10 +298,9 @@ export function highlightsSidebar(highlights, { limit = 4, seeAllLink = true } =
 // carousel chrome for a static wrap-friendly grid. prominent:true is the same card, just
 // bigger (avatar/stat) with a team-color glare — used for that fixed top row only, so it
 // doesn't compete with the plainer carousel cards.
-export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = null, carousel = true, prominent = false } = {}) {
-  const active = players.filter(p => p.games_played > 0);
-  if (!active.length) return '';
-
+// Stat categories shared by leagueLeaders (team pages) and the homepage leader boards —
+// one place for the formulas and minimum-attempt filters.
+function leaderCategoryDefs() {
   const fga = p => (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0);
   const tpa = p => (p.fg3m||0)+(p.fg3m_miss||0);
   const qpa = p => (p.fg4m||0)+(p.fg4m_miss||0);
@@ -308,6 +322,34 @@ export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = 
     { label: 'TO',  title: 'Turnovers',         sort: p => p.turnover / p.games_played,                 fn: p => (p.turnover / p.games_played).toFixed(1) },
     { label: 'FT%', title: 'Free Throw %',      sort: p => fta(p) >= 5  ? p.ftm/fta(p) : -1,           fn: p => Math.round(p.ftm/fta(p)*100)+'%',            minFilter: p => fta(p) >= 5 },
   ];
+  return categories;
+}
+
+// Homepage leader boards: top 3 in each of the given categories (by label). Also fed to the
+// AI summary in server.js, so the summary only ever talks about what the cards show.
+const HOME_LEADER_CATS = [
+  ['PPG', 'Points'], ['RPG', 'Rebounds'], ['APG', 'Assists'], ['SPG', 'Steals'],
+  ['BPG', 'Blocks'], ['3PM', 'Threes made'], ['PER', 'Efficiency'], ['FG%', 'Field goal %'],
+];
+export function leaderBoards(players) {
+  const active = players.filter(p => p.games_played > 0);
+  if (!active.length) return [];
+  const defs = Object.fromEntries(leaderCategoryDefs().map(c => [c.label, c]));
+  return HOME_LEADER_CATS.map(([label, title]) => {
+    const cat = defs[label];
+    const pool = cat.minFilter ? active.filter(cat.minFilter) : active;
+    const top = pool.filter(p => cat.sort(p) > 0)
+      .sort((a, b) => cat.sort(b) - cat.sort(a) || b.games_played - a.games_played)
+      .slice(0, 3)
+      .map(p => ({ id: p.id, name: p.name, team: String(p.team_name || '').toUpperCase(), value: cat.fn(p) }));
+    return top.length ? { label, title, top } : null;
+  }).filter(Boolean);
+}
+
+export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = null, carousel = true, prominent = false } = {}) {
+  const active = players.filter(p => p.games_played > 0);
+  if (!active.length) return '';
+  const categories = leaderCategoryDefs();
 
   const useCategories = categories.slice(skip, limit != null ? skip + limit : undefined);
   const cards = useCategories.map((cat, i) => {
@@ -696,7 +738,7 @@ const NU_RENDER = {
 // the team's colour — a deliberate exception (Paolo's call) to team colours being for
 // dots/chips only; amber still marks the leader. The headline is server-built HTML (team
 // names escaped there are plain team names from the DB, wrapped in <em> for the amber highlight).
-function standingsSection(standings) {
+function standingsSection(standings, summary = null, isAdmin = false) {
   if (!standings || !standings.teams.length) return '';
   const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
   const tiles = standings.teams.map(t => {
@@ -731,10 +773,15 @@ function standingsSection(standings) {
       </span>
     </a>`;
   }).join('\n    ');
-  return `<section class="home-standings" aria-labelledby="standings-heading">
+  // The AI summary replaces the rule-based headline when there is one; the rule-based
+  // headline stays as the fallback (and admins also see the regenerate control).
+  const head = summary
+    ? summaryPanel(summary, 'standings', isAdmin)
+    : `<p class="st-card__headline">${standings.headline}</p>${isAdmin ? summaryPanel(null, 'standings', true) : ''}`;
+  return `<section class="home-section home-standings" aria-labelledby="standings-heading">
   <div class="section-header"><h2 id="standings-heading">Season ${escHtml(String(standings.season))} race</h2><a href="/standings" class="section-header__link">Full standings <span>&rarr;</span></a></div>
   <div class="st-card">
-    <p class="st-card__headline">${standings.headline}</p>
+    ${head}
     <div class="st-grid" style="--st-teams:${standings.teams.length}">
     ${tiles}
     </div>
@@ -774,7 +821,7 @@ function memberPerksSection(perks) {
     },
   ].filter(Boolean);
 
-  return `<section class="home-perks" aria-labelledby="perks-heading">
+  return `<section class="home-section home-perks" aria-labelledby="perks-heading">
   <div class="section-header"><h2 id="perks-heading">What you get when you join</h2></div>
   <div class="mp-grid" style="--mp-cards:${cards.length}">
     ${cards.map(c => `<a href="/register" class="card mp-card">
@@ -802,14 +849,99 @@ function closingCta(msg) {
 
 // League Leaders carousel (or the admin-picked New/Traded one) under its own section
 // header, so it reads as its own block rather than trailing off the "Coming up" cards.
-function leadersSection(leaderPlayers, rosterMovers, season) {
-  const leaders = leagueLeaders(leaderPlayers);
-  if (leaders) {
-    return `<section class="home-leaders" aria-labelledby="leaders-heading">
-  <div class="section-header"><h2 id="leaders-heading">League leaders${season ? ` <span class="section-header__sub">Season ${escHtml(String(season))}</span>` : ''}</h2><a href="/leaders" class="section-header__link">All leaders <span>&rarr;</span></a></div>
-  ${leaders}
+// ── AI summary panel (server.js buildHomeSummaries) ───────────────────────────
+// One per block: a kicker ("THE RACE · AFTER WEEK 4"), a generated headline where
+// **name** markers become amber highlights, and a sentence or two. Admins get a
+// regenerate button (and see a placeholder when nothing has been generated yet).
+function summaryPanel(s, block, isAdmin) {
+  if (!s && !isAdmin) return '';
+  const headline = s ? escHtml(s.headline).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>') : '';
+  const body = s?.body ? escHtml(s.body.replace(/\*\*/g, '')) : '';
+  return `<div class="hs-summary">
+    <div class="hs-summary__copy">
+      ${s
+        ? `<span class="hs-summary__kicker">${escHtml(s.kicker)}</span>
+      <p class="hs-summary__headline">${headline}</p>
+      ${body ? `<p class="hs-summary__body">${body}</p>` : ''}`
+        : `<span class="hs-summary__kicker">No summary yet — it's written after the next result, or regenerate it now</span>`}
+    </div>
+    ${isAdmin ? `<button type="button" class="hs-summary__regen" data-block="${escHtml(block)}">↺ Regenerate</button>` : ''}
+  </div>`;
+}
+
+// ── Game headlines (the 4 games before the hero's, recap headline over the cover photo) ──
+// Cards without a cover photo fall back to the same team-colour glare as the standings
+// tiles. The glare/tint is the winning team's colour.
+function headlinesSection(games, summary, isAdmin) {
+  if (!games.length) return '';
+  const cards = games.map(g => {
+    const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
+    const aWin = sa > sb;
+    const winner = aWin ? g.team_a_name : g.team_b_name;
+    const title = boldTitle(g.game_writeup) || `${g.team_a_name} ${sa}–${sb} ${g.team_b_name}`;
+    const day = new Date(`${String(g.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const dot = name => `<span class="team-dot" style="background:${teamColor(name)}"></span>`;
+    const win = w => (w ? ' is-win' : '');
+    // Split score bar: each half is one team, the winner's half underlined in its colour,
+    // FINAL in the middle.
+    return `<a href="/games/${encodeURIComponent(g.id)}" class="gh-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}">
+      ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${encodeURIComponent(g.id)}" alt="" loading="lazy">` : ''}
+      <span class="gh-card__top"><span class="gh-card__when">${g.season ? `<span class="gh-card__season">S${escHtml(String(g.season))}</span>` : ''}<span class="gh-card__date">${escHtml(day)}</span></span></span>
+      <span class="gh-card__body">
+        <span class="gh-score">
+          <span class="gh-score__side${win(aWin)}" style="--side:${teamColor(g.team_a_name)}"><span class="gh-score__team">${dot(g.team_a_name)}${escHtml(g.team_a_name)}</span><b class="gh-score__num font-condensed">${sa}</b></span>
+          <span class="gh-score__final">Final</span>
+          <span class="gh-score__side gh-score__side--b${win(!aWin)}" style="--side:${teamColor(g.team_b_name)}"><b class="gh-score__num font-condensed">${sb}</b><span class="gh-score__team">${escHtml(g.team_b_name)}${dot(g.team_b_name)}</span></span>
+        </span>
+        <span class="gh-card__title">${escHtml(title)}</span>
+        <span class="gh-card__cta">Read recap &rarr;</span>
+      </span>
+    </a>`;
+  }).join('\n    ');
+  return `<section class="home-section gh-section" aria-labelledby="gh-heading">
+  <div class="section-header"><h2 id="gh-heading">Game headlines</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
+  ${summaryPanel(summary, 'headlines', isAdmin)}
+  <div class="gh-grid">
+    ${cards}
+  </div>
 </section>`;
-  }
+}
+
+// ── League leaders: top 3 in 8 categories, leader large with the team-colour glare ──
+function leaderBoardsSection(boards, summary, season, isAdmin) {
+  const cards = boards.map(c => {
+    const lead = c.top[0];
+    const color = teamColor(lead.team);
+    const rest = c.top.slice(1).map((p, k) => `<a href="/players/${encodeURIComponent(String(p.id))}" class="lb-card__alt">
+        <span class="lb-card__rank font-condensed">${k + 2}</span>
+        <span class="team-dot" style="background:${teamColor(p.team)}"></span>
+        <span class="lb-card__alt-name">${escHtml(displayPlayerName(p.name))}</span>
+        <b class="lb-card__alt-val font-condensed">${escHtml(p.value)}</b>
+      </a>`).join('');
+    return `<div class="lb-card" style="--team:${color}">
+      <a href="/players/${encodeURIComponent(String(lead.id))}" class="lb-card__lead">
+        <span class="lb-card__head"><span class="lb-card__title">${escHtml(c.title)}</span><span class="lb-card__key">${escHtml(c.label)}</span></span>
+        <span class="lb-card__row">
+          ${playerAvatar(lead.id, lead.name, color, { className: 'lb-card__av' })}
+          <span class="lb-card__who"><span class="lb-card__name">${escHtml(displayPlayerName(lead.name))}</span><span class="lb-card__team"><span class="team-dot" style="background:${color}"></span>${escHtml(lead.team)}</span></span>
+          <b class="lb-card__val font-condensed">${escHtml(lead.value)}</b>
+        </span>
+      </a>
+      ${rest ? `<div class="lb-card__rest">${rest}</div>` : ''}
+    </div>`;
+  }).join('\n    ');
+  return `<section class="home-section home-leaders" aria-labelledby="leaders-heading">
+  <div class="section-header"><h2 id="leaders-heading">League leaders${season ? ` <span class="section-header__sub">Season ${escHtml(String(season))}<span class="lb-sub-extra"> · per game</span></span>` : ''}</h2><a href="/leaders" class="section-header__link">All leaders <span>&rarr;</span></a></div>
+  ${summaryPanel(summary, 'leaders', isAdmin)}
+  <div class="lb-grid">
+    ${cards}
+  </div>
+</section>`;
+}
+
+function leadersSection(leaderPlayers, rosterMovers, season, summary = null, isAdmin = false) {
+  const boards = leaderBoards(leaderPlayers);
+  if (boards.length) return leaderBoardsSection(boards, summary, season, isAdmin);
   const movers = rosterMoversCarousel(rosterMovers);
   return movers ? `<section class="home-leaders" aria-labelledby="movers-heading">
   <div class="section-header"><h2 id="movers-heading">New &amp; traded players</h2><a href="/players" class="section-header__link">All players <span>&rarr;</span></a></div>
@@ -820,7 +952,7 @@ function leadersSection(leaderPlayers, rosterMovers, season) {
 function nextUpSection(nextUp) {
   if (!nextUp || !nextUp.cards.length) return '';
   const cards = nextUp.cards.map(c => NU_RENDER[c.kind] ? NU_RENDER[c.kind](c.data, nextUp) : '').join('\n  ');
-  return `<section class="nu-section" aria-labelledby="nu-heading">
+  return `<section class="home-section nu-section" aria-labelledby="nu-heading">
   <div class="section-header"><h2 id="nu-heading">Coming up</h2></div>
   <div class="nu-grid" style="--nu-cards:${nextUp.cards.length}">
   ${cards}
@@ -828,39 +960,49 @@ function nextUpSection(nextUp) {
 </section>`;
 }
 
+// Same section header + card language as the rest of the homepage (was a one-off
+// "card-label" panel with its own inline styles).
 function latestPosts(posts) {
   if (!posts.length) return '';
-  const rows = posts.slice(0, 3).map(p => {
+  const cards = posts.slice(0, 4).map(p => {
     const body = excerpt(p.body_html.replace(/<[^>]+>/g, ' '));
-    return `<a href="/posts/${encodeURIComponent(p.slug)}" class="home-post-row">
-  <span class="home-post-row__meta">${p.publish_at ? escHtml(formatDate(new Date(p.publish_at).toISOString())) : ''}</span>
-  <h3 class="home-post-row__title">${escHtml(p.title)}</h3>
-  ${body ? `<p class="home-post-row__excerpt">${escHtml(body.length > 120 ? body.slice(0, 120) + '…' : body)}</p>` : ''}
-</a>`;
-  }).join('');
-
-  return `<div class="card" style="margin-top:24px">
-  <div class="card-label">LATEST POSTS<a href="/posts" class="card-label__more">See all</a></div>
-  <div class="home-posts">${rows}</div>
-</div>
-<style>
-  .home-posts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .home-post-row { display: block; padding: 18px; text-decoration: none; border-right: 1px solid var(--border); }
-  .home-post-row:last-child { border-right: none; }
-  .home-post-row__meta { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
-  .home-post-row__title { font-size: 15px; font-weight: 800; color: var(--text-primary); margin: 6px 0 4px; }
-  .home-post-row__excerpt { font-size: 12.5px; color: var(--text-muted); margin: 0; line-height: 1.45; }
-</style>`;
+    return `<a href="/posts/${encodeURIComponent(p.slug)}" class="hp-card">
+      <span class="hp-card__date">${p.publish_at ? escHtml(formatDate(new Date(p.publish_at).toISOString())) : ''}</span>
+      <span class="hp-card__title">${escHtml(p.title)}</span>
+      ${body ? `<span class="hp-card__excerpt">${escHtml(truncate(body, 120))}</span>` : ''}
+      <span class="hp-card__cta">Read post &rarr;</span>
+    </a>`;
+  }).join('\n    ');
+  return `<section class="home-section hp-section" aria-labelledby="posts-heading">
+  <div class="section-header"><h2 id="posts-heading">Latest posts</h2><a href="/posts" class="section-header__link">All posts <span>&rarr;</span></a></div>
+  <div class="hp-grid">
+    ${cards}
+  </div>
+</section>`;
 }
 
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [] }) {
+// Page order: hero → registration banner → game headlines → season race → league leaders
+// → posts → coming up → (guests) what you get + closing CTA. Game headlines are the four
+// recaps *before* the hero's four, so the two never show the same games.
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const upcomingGames = games
-    .filter(g => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score)) === 0)
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 5);
+  const headlineGames = completedGames.slice(4).filter(g => boldTitle(g.game_writeup)).slice(0, 4);
+
+  const regenScript = isAdmin ? `<script>
+(function () {
+  document.querySelectorAll('.hs-summary__regen').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = 'Writing…';
+      fetch('/admin/home-summary/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block: btn.dataset.block }) })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); }); })
+        .then(function () { location.reload(); })
+        .catch(function (e) { btn.disabled = false; btn.textContent = '↺ Regenerate'; alert(e.message); });
+    });
+  });
+})();
+</script>` : '';
 
   return `<div class="home-grid">
   ${heroCarousel(completedGames.slice(0, 4), awardsGallery)}
@@ -869,15 +1011,18 @@ export function homePage({ teams, players, games, highlights = [], mvpRace = nul
 
 ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerBig(signupBanner) : ''}
 
-${nextUpSection(nextUp)}
+${headlinesSection(headlineGames, summaries.headlines, isAdmin)}
 
-${standingsSection(standings)}
+${standingsSection(standings, summaries.standings, isAdmin)}
 
-${leadersSection(leaderPlayers, rosterMovers, leaderSeason)}
+${leadersSection(leaderPlayers, rosterMovers, leaderSeason, summaries.leaders, isAdmin)}
 
 ${latestPosts(posts)}
 
+${nextUpSection(nextUp)}
+
 ${memberPerksSection(memberPerks)}
 
-${closingCta(regCloser)}`;
+${closingCta(regCloser)}
+${regenScript}`;
 }

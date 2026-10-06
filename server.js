@@ -23,7 +23,7 @@ import { forgotPasswordPage, forgotPasswordSentPage } from './views/forgot-passw
 import sharp from 'sharp';
 import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
-import { homePage } from './views/home.js';
+import { homePage, leaderBoards } from './views/home.js';
 import { gamesPage } from './views/games.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
@@ -6766,6 +6766,13 @@ app.get('/', (req, res) => {
 
   const homePosts = getSetting('posts_enabled', '0') === '1' ? getPublicPosts() : [];
 
+  // AI summaries above Game headlines / Season race / League leaders (stale ones refresh
+  // in the background; see getHomeSummaries).
+  const summaries = getHomeSummaries(homeSummaryContext({
+    season: getPortalCurrentSeason(), games, standings,
+    boards: showRosterMoves ? [] : leaderBoards(leaderPlayers),
+  }));
+
   let awardsGallery = [];
   if (getSetting('awards_enabled', '1') !== '0') {
     const awardSeason = getPortalCurrentSeason();
@@ -6819,7 +6826,7 @@ app.get('/', (req, res) => {
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery })
+    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin })
   }));
 });
 
@@ -8791,6 +8798,201 @@ function buildHomeStandings(season, games) {
   return { season, headline, teams };
 }
 
+// ── Homepage AI summaries ─────────────────────────────────────────────────────
+// A generated headline + a sentence or two above Game headlines, Season race and League
+// leaders (views/home.js summaryPanel). Each block's facts reduce to a key; the stored
+// summary (site setting home_summary_<block>) is only shown while its key still matches,
+// so a new result makes it disappear rather than show stale claims. A missing/stale one is
+// regenerated in the background — never awaited by the page — at most one call in flight
+// per block, with a cooldown after an AI failure. Admins can force it from the homepage.
+const HOME_SUMMARY_BLOCKS = new Set(['headlines', 'standings', 'leaders']);
+const homeSummaryInFlight = new Set();
+let homeSummaryCooldownUntil = 0;
+const HOME_SUMMARY_COOLDOWN_MS = 10 * 60 * 1000;
+// Bump when the prompt changes so every stored summary is rewritten with the new one.
+const HOME_SUMMARY_VERSION = 4;
+
+function homeSummaryContext({ season, games, standings, boards }) {
+  const completed = games
+    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return { season, week: season ? (getSeasonLatestWeek(season)?.week ?? null) : null, completed, standings, boards };
+}
+
+function homeSummaryFacts(block, ctx) {
+  const after = ctx.week ? `AFTER WEEK ${ctx.week}` : `SEASON ${ctx.season}`;
+  const title = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  if (block === 'headlines') {
+    const day = ctx.completed[0] ? String(ctx.completed[0].date).slice(0, 10) : null;
+    if (!day) return null;
+    const dayGames = ctx.completed.filter(g => String(g.date).slice(0, 10) === day);
+    const dayLabel = new Date(`${day}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+    const lines = dayGames.map(g => {
+      const t = parseWriteup(g.game_writeup || '').title;
+      const aWin = Number(g.team_a_score) > Number(g.team_b_score);
+      const [w, l, ws, ls] = aWin ? [g.team_a_name, g.team_b_name, g.team_a_score, g.team_b_score] : [g.team_b_name, g.team_a_name, g.team_b_score, g.team_a_score];
+      return `- ${title(w)} beat ${title(l)} ${ws}-${ls}${g.game_type === 'playoff' ? ' (playoffs)' : ''}${t ? ` (recap headline: "${t}")` : ''}`;
+    });
+    const records = ctx.standings?.teams?.map(t => `${title(t.name)} ${t.wins}-${t.losses}${t.flag ? ` (${t.flag.toLowerCase()})` : ''}`).join(', ');
+    return {
+      key: `v${HOME_SUMMARY_VERSION}|h|${day}|${dayGames.map(g => `${g.id}:${g.team_a_score}-${g.team_b_score}`).join(',')}`,
+      kicker: `The story · After ${dayLabel} games`,
+      section: 'Game headlines',
+      facts: `Results on ${day}:\n${lines.join('\n')}${records ? `\nTeam records now: ${records}` : ''}`,
+      focus: 'Sum up what happened on this game day, leading with the most important result. Each game is a separate event — never connect one game\x27s result to another team\x27s streak or record.',
+    };
+  }
+  if (block === 'standings') {
+    const teams = ctx.standings?.teams;
+    if (!teams?.length) return null;
+    const lines = teams.map(t => `- ${t.rank}. ${title(t.name)} ${t.wins}-${t.losses}, ${t.gb > 0 ? `${t.gb} games back` : 'first place'}, point differential ${t.diff > 0 ? '+' : ''}${t.diff}, last results ${t.form.join('') || 'none'}${t.flag ? `, ${t.flag.toLowerCase()}` : ''}`);
+    return {
+      key: `v${HOME_SUMMARY_VERSION}|s|${ctx.season}|${teams.map(t => `${t.name}:${t.wins}-${t.losses}:${t.diff}`).join(',')}`,
+      kicker: `The race · ${after}`,
+      section: 'Season race (standings)',
+      facts: `Season ${ctx.season} standings:\n${lines.join('\n')}`,
+      focus: 'Describe the state of the standings race: who leads and by how much, and the most interesting story further down.',
+    };
+  }
+  if (block === 'leaders') {
+    const boards = ctx.boards || [];
+    if (!boards.length) return null;
+    const lines = boards.map(c => `- ${c.title} (${c.label}): ${c.top.map((p, i) => `${i + 1}. ${displayPlayerName(p.name)} (${title(p.team)}) ${p.value}`).join(', ')}`);
+    // The same facts regrouped per player, so "who shows up where" doesn't have to be
+    // inferred (that's where the model went wrong without it).
+    const byPlayer = new Map();
+    for (const c of boards) c.top.forEach((p, i) => {
+      const k = p.id;
+      if (!byPlayer.has(k)) byPlayer.set(k, { name: displayPlayerName(p.name), team: title(p.team), spots: [] });
+      byPlayer.get(k).spots.push(`#${i + 1} ${c.title.toLowerCase()}`);
+    });
+    const playerLines = [...byPlayer.values()].sort((a, b) => b.spots.length - a.spots.length)
+      .map(p => `- ${p.name} (${p.team}): ${p.spots.join(', ')}`);
+    return {
+      key: `v${HOME_SUMMARY_VERSION}|l|${ctx.season}|${boards.map(c => `${c.label}:${c.top.map(p => `${p.id}=${p.value}`).join('/')}`).join(',')}`,
+      kicker: `The leaders · ${after}`,
+      section: 'League leaders',
+      facts: `Season ${ctx.season} league leaders, per game, top 3 in each category:\n${lines.join('\n')}\n\nThe same, per player (only these placings exist):\n${playerLines.join('\n')}`,
+      focus: 'Pick the one or two most interesting leaderboard stories (e.g. who leads scoring, or a player who shows up in several categories). A player only "leads" a category where they are #1.',
+    };
+  }
+  return null;
+}
+
+async function generateHomeSummary(block, f) {
+  const voice = pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
+  let prompt = `You write the short headline and summary that sits above the "${f.section}" section on the WKND Basketball League homepage — a recreational league whose players read every word.
+
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+
+FACTS (the only things you may state):
+${f.facts}
+
+${f.focus}
+
+Rules:
+- headline: at most 70 characters, no trailing period. Wrap every team or player name in **double asterisks**, e.g. **White** or **Vin Salenga**. Team names in title case.
+- body: 1-2 sentences, at most 45 words, plain text — no asterisks, markdown or emoji.
+- Every number, record, ranking or streak must come straight from the facts. Don't invent stats, comparisons or history. Only mention a streak if the facts state it, and say whose streak it is exactly as the facts do.
+- If two facts seem to disagree, leave that detail out rather than guess.
+- Write finished copy only: no questions to yourself, no corrections, no notes or alternatives.
+- Don't mention the crowd, fans or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "dominates", "intrigues" or "showcase".`;
+  const schema = {
+    type: 'object',
+    properties: { headline: { type: 'string' }, body: { type: 'string' } },
+    required: ['headline', 'body'],
+  };
+  // Every number in the copy must appear in the facts — a cheap guard against invented
+  // stats. Up to two rewrites on a miss, then give up (the block just shows no summary).
+  const factNums = new Set((f.facts.match(/d+(?:.d+)?/g) || []));
+  const invented = text => (text.match(/d+(?:.d+)?/g) || []).filter(n => !factNums.has(n));
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Capped below the weekly creativity setting: these sit on the homepage as plain fact.
+    const { data } = await generateJson(prompt, schema, { temperature: Math.min(aiTemperature(), 0.6), maxTokens: 300 });
+    const headline = String(data.headline || '').trim().slice(0, 120);
+    const body = String(data.body || '').trim().slice(0, 400);
+    if (!headline) continue;
+    const bad = invented(`${headline} ${body}`);
+    if (bad.length) { console.warn(`Home summary (${block}) attempt ${attempt} used numbers not in the facts: ${bad.join(', ')}`); continue; }
+    // Second opinion at temperature 0: every claim checked against the same facts.
+    const problems = await factCheckHomeSummary(f, headline, body);
+    if (problems.length) {
+      console.warn(`Home summary (${block}) attempt ${attempt} failed the fact check: ${problems.join(' | ')}`);
+      prompt += `\n\nA previous draft was rejected for these errors — avoid them: ${problems.join('; ')}`;
+      continue;
+    }
+    setSetting(`home_summary_${block}`, JSON.stringify({ key: f.key, kicker: f.kicker, headline, body, at: Date.now() }));
+    return;
+  }
+  throw new Error('No summary passed the fact check');
+}
+
+// Returns the problems found ([] = every claim is supported by the facts).
+async function factCheckHomeSummary(f, headline, body) {
+  const prompt = `Check this homepage copy for a basketball league against the facts.
+
+COPY
+Headline: ${headline.replace(/\*\*/g, '')}
+Body: ${body}
+
+FACTS
+${f.facts}
+
+List every statement in the copy that the facts do not directly support: wrong numbers, wrong rankings, a player "leading" something they are not #1 in, or streaks and links between games that the facts don't state. Opinions and tone are fine. If everything is supported, return accurate=true and an empty problems list.`;
+  const schema = {
+    type: 'object',
+    properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
+    required: ['accurate', 'problems'],
+  };
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 300 });
+  if (data.accurate) return [];
+  const problems = (data.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
+  return problems.length ? problems : ['unspecified inaccuracy'];
+}
+
+// Current summaries for the page; kicks off background generation for any that are stale.
+function getHomeSummaries(ctx) {
+  const out = {};
+  for (const block of HOME_SUMMARY_BLOCKS) {
+    const f = homeSummaryFacts(block, ctx);
+    if (!f) continue;
+    let stored = null;
+    try { stored = JSON.parse(getSetting(`home_summary_${block}`, '') || 'null'); } catch {}
+    if (stored && stored.key === f.key) {
+      out[block] = { kicker: stored.kicker, headline: stored.headline, body: stored.body };
+    } else if (aiAvailable() && !homeSummaryInFlight.has(block) && Date.now() >= homeSummaryCooldownUntil) {
+      homeSummaryInFlight.add(block);
+      generateHomeSummary(block, f)
+        .catch(err => { console.error(`Home summary (${block}) failed:`, err.message); homeSummaryCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS; })
+        .finally(() => homeSummaryInFlight.delete(block));
+    }
+  }
+  return out;
+}
+
+app.post('/admin/home-summary/regenerate', requireAuth, express.json(), async (req, res) => {
+  const block = String(req.body?.block || '');
+  if (!HOME_SUMMARY_BLOCKS.has(block)) return res.status(400).json({ error: 'Unknown block' });
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const season = getPortalCurrentSeason();
+  const games = getAllGames();
+  const showRosterMoves = getSetting('home_show_roster_moves', '0') === '1';
+  const ctx = homeSummaryContext({
+    season, games,
+    standings: buildHomeStandings(season, games),
+    boards: showRosterMoves ? [] : leaderBoards(buildLeaderPlayers(season)),
+  });
+  const f = homeSummaryFacts(block, ctx);
+  if (!f) return res.status(400).json({ error: 'Nothing to summarise yet.' });
+  try {
+    await generateHomeSummary(block, f);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`Home summary (${block}) regenerate failed:`, err.message);
+    res.status(502).json({ error: 'The AI provider failed — try again in a bit.' });
+  }
+});
+
 // Homepage MVP Race sidebar (stands in for Player Highlights while mvp_race_enabled is on).
 // Same scoring, ordering and week-over-week movement as /mvp, but read-only on writeups:
 // only an already-cached one is shown for the leader — the homepage never triggers AI
@@ -8801,7 +9003,7 @@ function buildHomeMvpRace(season, completedGames) {
     .filter(s => s.gp >= 1)
     .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
     .sort((a, b) => b.mvpScore - a.mvpScore)
-    .slice(0, 5);
+    .slice(0, 6); // frontrunner + a #2–6 ladder in the homepage sidebar
   if (!top.length) return null;
 
   const prevRanks = mvpPrevRanks(season, completedGames);
