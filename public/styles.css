@@ -1237,188 +1237,95 @@ html { scroll-padding-top: 84px; }
 .legal-section__body strong { color: var(--text); font-weight: 600; }
 @media (max-width: 640px) { .legal-card { padding: 20px; } }
 
-/* ── Score ticker ───────────────────────────────────────────────────────── */
+/* ── Score ticker (views/ticker.js) ─────────────────────────────────────────
+   One slim strip: equal cells, each with a context ribbon on top (season/date, playoff
+   or finals state, OT) and the same two team rows underneath. The ribbon's colour does
+   the ranking — grey regular, soft amber next/playoffs, stronger amber finals, solid
+   amber + trophy for the title-clinching game. */
 .ticker-wrap {
   position: relative;
   margin-bottom: 30px;
 }
+/* edge fades sit inside the strip's border, fading into its surface */
 .ticker-wrap::before,
 .ticker-wrap::after {
   content: '';
   position: absolute;
-  top: 0; bottom: 4px;
-  width: 56px;
+  top: 1px; bottom: 1px;
+  width: 48px;
   pointer-events: none;
   z-index: 2;
   transition: opacity 0.25s;
 }
-.ticker-wrap::before { left: 0;  background: linear-gradient(to right, var(--bg), transparent); }
-.ticker-wrap::after  { right: 0; background: linear-gradient(to left,  var(--bg), transparent); }
+.ticker-wrap::before { left: 1px;  border-radius: var(--radius) 0 0 var(--radius); background: linear-gradient(to right, var(--surface), transparent); }
+.ticker-wrap::after  { right: 1px; border-radius: 0 var(--radius) var(--radius) 0; background: linear-gradient(to left,  var(--surface), transparent); }
 .ticker-wrap.at-start::before { opacity: 0; }
 .ticker-wrap.at-end::after   { opacity: 0; }
 .ticker-nav {
   position: absolute;
   top: 50%;
-  transform: translateY(calc(-50% - 2px));
+  transform: translateY(-50%);
   z-index: 3;
   width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border: 1px solid rgba(255,255,255,0.12);
   border-radius: 50%;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
   transition: opacity 0.25s, color 0.15s, border-color 0.15s;
 }
-.ticker-nav:hover { color: var(--text); border-color: #334155; }
-.ticker-nav--prev { left: 6px; }
-.ticker-nav--next { right: 6px; }
+.ticker-nav:hover { color: var(--text); border-color: rgba(255,255,255,0.25); }
+.ticker-nav--prev { left: 8px; }
+.ticker-nav--next { right: 8px; }
 .ticker-wrap.at-start .ticker-nav--prev { opacity: 0; pointer-events: none; }
 .ticker-wrap.at-end   .ticker-nav--next { opacity: 0; pointer-events: none; }
 .score-ticker {
   display: flex;
-  gap: 14px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding-bottom: 4px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 .score-ticker::-webkit-scrollbar { display: none; }
-.score-ticker__card {
-  min-width: 160px;
-  flex-shrink: 0;
+.tk-cell {
+  flex: 0 0 190px;
+  min-width: 0;
+  display: flex; flex-direction: column;
   scroll-snap-align: start;
-  padding: 0;
-  position: relative;
-  overflow: hidden;
-  transition: box-shadow 0.15s;
+  border-right: 1px solid var(--border);
+  color: inherit;
+  transition: background 0.15s;
 }
-.score-ticker__card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(to right, var(--tc-a) 50%, var(--tc-b) 50%);
+.tk-cell:last-child { border-right: none; }
+/* postseason ribbons carry the series state, so their cells are wider */
+.tk-cell--playoff, .tk-cell--finals, .tk-cell--champion { flex-basis: 250px; }
+a.tk-cell:hover { background: rgba(255,255,255,0.025); }
+a.tk-cell:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.tk-ribbon {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  height: 24px; padding: 0 12px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
+  color: var(--text-muted); background: #0d1119;
+  border-bottom: 1px solid var(--border);
 }
-.score-ticker__card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
-.ticker-card--upcoming { opacity: 0.5; cursor: default; }
-.ticker-card--upcoming:hover { box-shadow: none; }
-.ticker-score--tbd { color: var(--text-muted); }
-.ticker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px 5px;
-}
-.ticker-date-group {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.ticker-date {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: var(--text-subtle);
-}
-.ticker-season {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-.ticker-status {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-}
-.ticker-status--final { color: var(--text-subtle); }
-.ticker-status--upcoming {
-  color: var(--amber);
-  background: rgba(245,147,50,0.1);
-  padding: 2px 5px;
-  border-radius: 3px;
-}
-/* Reserved-height info slot on every ticker card (regular included, left empty there) —
-   playoff/finals cards use it for the series score so no card ever grows an extra line
-   relative to the rest of the strip. */
-.ticker-series {
-  height: 13px;
-  line-height: 13px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-align: center;
-  color: var(--amber);
-  opacity: 0.9;
-  padding: 0 12px 5px;
-}
-/* ── Playoff tier: full presence, no dimming, reused outline badge — deliberately
-   quieter than Finals (no border tint, no glow). ── */
-.ticker-card--playoff .ticker-status--upcoming,
-.ticker-card--playoff .ticker-status--final {
-  background: none;
-  border: 1px solid rgba(245,147,50,0.4);
-  color: var(--amber);
-}
-/* .ticker-status--final has no padding/radius by default (it's plain text normally) — the
-   tier overrides above/below give it a background or border, so it needs the same pill
-   padding .ticker-status--upcoming already had, or the text sits flush against the edge. */
-.ticker-card--playoff .ticker-status--final,
-.ticker-card--finals .ticker-status--final {
-  padding: 2px 5px;
-  border-radius: 3px;
-}
-/* ── Finals tier: "Etched / Ceremonial" — full amber border, faint diagonal sheen, no
-   top bar, trophy folded into the badge, uppercase tracked-out team names. ── */
-.ticker-card--finals {
-  border: 1.5px solid var(--amber);
-  background: linear-gradient(135deg, rgba(245,147,50,0.09) 0%, transparent 40%), var(--surface);
-}
-.ticker-card--finals::before { display: none; }
-.ticker-card--finals .ticker-status--upcoming,
-.ticker-card--finals .ticker-status--final {
-  background: var(--amber);
-  color: #14100a;
-  font-weight: 800;
-}
-.ticker-card--finals .ticker-team-name {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 10px;
-}
-.ticker-team-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 12px;
-  border-top: 1px solid var(--border);
-}
-.ticker-team { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.ticker-team-name {
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  font-weight: 600;
-  color: var(--text-subtle);
-  white-space: nowrap;
-}
-.ticker-score {
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--text-subtle);
-  flex-shrink: 0;
-}
-.ticker-row--win .ticker-team-name { color: var(--text); font-weight: 700; }
-.ticker-row--win .ticker-score     { color: #fff; font-size: 23px; font-weight: 800; }
+.tk-ribbon__left { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tk-ribbon__right { flex-shrink: 0; }
+.tk-trophy { flex-shrink: 0; }
+.tk-cell--next .tk-ribbon,
+.tk-cell--playoff .tk-ribbon { color: var(--amber); background: rgba(245,147,50,0.10); border-bottom-color: rgba(245,147,50,0.25); }
+.tk-cell--finals .tk-ribbon { color: var(--amber); background: rgba(245,147,50,0.16); border-bottom-color: rgba(245,147,50,0.35); }
+.tk-cell--champion .tk-ribbon { color: #0a0e16; background: var(--amber); border-bottom-color: var(--amber); }
+.tk-body { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px 12px; }
+.tk-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #7b8496; }
+.tk-row.is-win { color: #fff; }
+.tk-cell--next .tk-row { color: var(--text); }
+.tk-team { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; white-space: nowrap; overflow: hidden; }
+.tk-score { font-size: 21px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
 /* ── Home main grid (hero + sidebar) ────────────────────────────────────── */
 .home-grid {
@@ -1591,13 +1498,13 @@ html { scroll-padding-top: 84px; }
 .hmvp-when { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; color: var(--text-subtle); }
 .hmvp-lead {
   flex: 1 1 auto; min-height: 0;
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 20px 18px 18px;
   color: inherit; text-decoration: none;
   transition: background-color 0.15s;
 }
 .hmvp-lead:hover { background-color: rgba(255,255,255,0.025); }
-.hmvp-lead__head { display: flex; align-items: center; gap: 12px; }
+.hmvp-lead__head { display: flex; align-items: center; gap: 14px; }
 .hmvp-avatar {
   width: 56px; height: 56px; flex-shrink: 0;
   border-radius: 50%; border: 2px solid;
@@ -1607,7 +1514,8 @@ html { scroll-padding-top: 84px; }
 }
 .hmvp-avatar .font-condensed { font-size: 20px; font-weight: 800; color: #cdd3de; }
 .hmvp-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.hmvp-lead__id { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+/* badge, name and team line each get their own breathing room */
+.hmvp-lead__id { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
 .hmvp-badge {
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em;
   padding: 3px 8px; border-radius: 5px;
@@ -4536,7 +4444,8 @@ a.player-link:hover { color: var(--amber); }
   .leaders-page-grid { grid-template-columns: 1fr; }
   .leader-panel__stat { font-size: 28px; }
   .leader-panel__top .leader-avatar { width: 48px; height: 48px; }
-  .score-ticker__card { min-width: 148px; }
+  .tk-cell { flex-basis: 172px; }
+  .tk-cell--playoff, .tk-cell--finals, .tk-cell--champion { flex-basis: 232px; }
   .player-hero__avatar { width: 80px; height: 80px; font-size: 26px; }
   .player-avatar-replace { width: 26px; height: 26px; }
   .player-hero__name { font-size: 1.4rem; }
