@@ -7140,13 +7140,13 @@ a.player-link:hover { color: var(--amber); }
 .mvpx-chasers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 /* Photo runs full-bleed down the card's left edge, same as the #1 card */
 .mvpx-chaser {
-  display: grid; grid-template-columns: 190px minmax(0, 1fr); height: 100%; box-sizing: border-box;
+  display: grid; grid-template-columns: 260px minmax(0, 1fr); height: 100%; box-sizing: border-box;
   border-radius: 16px; overflow: hidden;
   background: var(--surface); border: 1px solid var(--border);
   color: inherit; transition: border-color 0.15s;
 }
 .mvpx-chaser:hover { border-color: rgba(245,147,50,0.45); }
-.mvpx-chaser__photo { position: relative; min-height: 220px; overflow: hidden; background: linear-gradient(160deg, #262b36 0%, var(--surface) 80%); }
+.mvpx-chaser__photo { position: relative; min-height: 240px; overflow: hidden; background: linear-gradient(160deg, #262b36 0%, var(--surface) 80%); }
 .mvpx-chaser__photo .mvpx-ph { font-size: 64px; }
 .mvpx-chaser__rank { position: absolute; top: 10px; left: 14px; z-index: 1; font-size: 44px; line-height: 1; font-weight: 800; color: var(--text); text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
 .mvpx-chaser__body { min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 10px; }
@@ -7200,6 +7200,7 @@ a.player-link:hover { color: var(--amber); }
   .mvpx-tile { padding: 12px; }
   .mvpx-tile b { font-size: 26px; }
   .mvpx-chasers { grid-template-columns: minmax(0, 1fr); }
+  .mvpx-chaser { grid-template-columns: 300px minmax(0, 1fr); }
   .mvpx-col-opt { display: none; }
   .mvpx-row { grid-template-columns: 32px 36px minmax(0, 1fr) 48px minmax(110px, 0.8fr) auto; }
   .mvpx-row-writeup { padding-left: 24px; }
@@ -7226,14 +7227,15 @@ a.player-link:hover { color: var(--amber); }
   .mvpx-tile span { font-size: 10px; letter-spacing: 0.08em; }
   .mvpx-tile em { display: none; }
   .mvpx-writeup { font-size: 14px; }
-  .mvpx-chaser { grid-template-columns: 112px minmax(0, 1fr); }
-  .mvpx-chaser__photo { min-height: 150px; }
+  /* Phones: photo on top, same as the #1 card */
+  .mvpx-chaser { grid-template-columns: minmax(0, 1fr); }
+  .mvpx-chaser__photo { min-height: 0; height: 200px; }
   .mvpx-chaser__photo .mvpx-ph { font-size: 36px; }
   .mvpx-chaser__body { padding: 16px; }
   .mvpx-chaser__top { flex-direction: column; gap: 8px; }
   .mvpx-chaser__score { flex-direction: row; align-items: baseline; gap: 8px; }
-  .mvpx-admin-wrap:has(.mvpx-admin-btn) .mvpx-chaser__top { padding-top: 30px; }
-  .mvpx-chaser__rank { font-size: 24px; }
+  .mvpx-admin-wrap:has(.mvpx-admin-btn) .mvpx-chaser__top { padding-top: 0; }
+  .mvpx-chaser__rank { font-size: 40px; top: 12px; left: 16px; }
   .mvpx-chaser__name { font-size: 21px; }
   .mvpx-chaser__score b { font-size: 34px; }
   .mvpx-chaser .mvpx-writeup { display: none; }
