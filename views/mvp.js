@@ -146,8 +146,14 @@ function chaseRow(c, rank, lead, ctx) {
   const pg    = perGame(c.stats);
   const move  = moveText(rank, c.prevRank, true);
   const pct   = lead.mvpScore > 0 ? Math.max(4, Math.round(c.mvpScore / lead.mvpScore * 100)) : 0;
-  const toggle = c.writeup
-    ? `<button type="button" class="mvpx-toggle" aria-expanded="false" aria-label="Read ${escHtml(name)}'s MVP case"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>`
+  // Admin Photo/↺ buttons sit in the row on desktop but would squeeze the name out on a
+  // phone, so a second copy lives in the expandable panel (shown there on phones only).
+  // An admin always gets the panel + toggle, even for a player with no writeup yet; the
+  // toggle is then phone-only, since on desktop the row already has the buttons.
+  const adminBtns = ctx.isAdmin ? `${photoBtn(c, true)}${regenBtn(c.player.id, ctx.season, true, ctx.playoffsStarted)}` : '';
+  const hasPanel = !!(c.writeup || adminBtns);
+  const toggle = hasPanel
+    ? `<button type="button" class="mvpx-toggle${c.writeup ? '' : ' mvpx-toggle--phone'}" aria-expanded="false" aria-label="${c.writeup ? `Read ${escHtml(name)}'s MVP case` : `Admin tools for ${escHtml(name)}`}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>`
     : '<span></span>';
   return `<div class="mvpx-row">
   <a href="${href(c)}" class="mvpx-row__link" aria-label="${escHtml(name)}"></a>
@@ -166,9 +172,12 @@ function chaseRow(c, rank, lead, ctx) {
     <span class="mvpx-bar"><span style="width:${pct}%"></span></span>
     <b class="font-condensed">${c.mvpScore.toFixed(1)}</b>
   </span>
-  <span class="mvpx-row__tools">${photoBtn(c, ctx.isAdmin)}${regenBtn(c.player.id, ctx.season, ctx.isAdmin, ctx.playoffsStarted)}${toggle}</span>
+  <span class="mvpx-row__tools">${adminBtns ? `<span class="mvpx-row__admin">${adminBtns}</span>` : ''}${toggle}</span>
 </div>
-${c.writeup ? `<div class="mvpx-row-writeup" hidden><p>${escHtml(c.writeup)}</p></div>` : ''}`;
+${hasPanel ? `<div class="mvpx-row-writeup" hidden>
+  ${c.writeup ? `<p>${escHtml(c.writeup)}</p>` : ''}
+  ${adminBtns ? `<div class="mvpx-row-writeup__admin">${adminBtns}</div>` : ''}
+</div>` : ''}`;
 }
 
 function photoDialog(season) {

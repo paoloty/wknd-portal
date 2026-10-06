@@ -7187,11 +7187,21 @@ a.player-link:hover { color: var(--amber); }
 .mvpx-row__score .mvpx-bar > span { background: rgba(245,147,50,0.7); }
 .mvpx-row__score b { width: 44px; text-align: right; font-size: 24px; font-weight: 800; color: var(--amber); }
 .mvpx-row__tools { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.mvpx-row__admin { display: flex; gap: 6px; }
 .mvpx-toggle { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
 .mvpx-toggle:hover { background: rgba(255,255,255,0.05); color: var(--text); }
 .mvpx-toggle svg { transition: transform 0.2s; }
 .mvpx-row.is-expanded .mvpx-toggle svg { transform: rotate(180deg); }
-.mvpx-row-writeup { padding: 4px 24px 18px 116px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.mvpx-row-writeup {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 10px 24px 20px 116px;
+  background: rgba(255,255,255,0.015);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.mvpx-row-writeup[hidden] { display: none; }
+/* Phone-only copies of the row admin buttons and their toggle (see chaseRow) */
+.mvpx-row-writeup__admin { display: none; gap: 6px; }
+.mvpx-toggle--phone { visibility: hidden; }
 .mvpx-row-writeup p { margin: 0; max-width: 760px; font-size: 13.5px; line-height: 1.6; color: var(--text-muted); }
 
 @media (max-width: 1100px) {
@@ -7238,7 +7248,10 @@ a.player-link:hover { color: var(--amber); }
   .mvpx-chaser__rank { font-size: 40px; top: 12px; left: 16px; }
   .mvpx-chaser__name { font-size: 21px; }
   .mvpx-chaser__score b { font-size: 34px; }
-  .mvpx-chaser .mvpx-writeup { display: none; }
+  .mvpx-row__admin { display: none; }
+  .mvpx-row-writeup__admin { display: flex; }
+  .mvpx-toggle--phone { visibility: visible; }
+  .mvpx-row-writeup { padding: 14px 16px 18px; }
   .mvpx-chase__hint { display: none; }
   .mvpx-row { grid-template-columns: 24px 30px minmax(0, 1fr) 44px auto; column-gap: 10px; padding: 0 14px; }
   .mvpx-col-ppg { display: none; }
