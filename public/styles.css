@@ -1616,14 +1616,14 @@ html { scroll-padding-top: 84px; }
 /* Italic display name, as on the /mvp page — always one line (long names shrink, then ellipsis) */
 .hmvp-lead__name {
   display: block; max-width: 100%;
-  font-style: italic; font-weight: 900; font-size: 22px; line-height: 1.05; letter-spacing: -0.02em; color: var(--text);
+  font-style: italic; font-weight: 900; font-size: 20px; line-height: 1.05; letter-spacing: -0.02em; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.hmvp-lead__name.is-long { font-size: 18px; }
+.hmvp-lead__name.is-long { font-size: 16px; }
 .hmvp-lead__team { display: flex; align-items: center; gap: 6px; max-width: 100%; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); white-space: nowrap; overflow: hidden; }
 .hmvp-lead__move { display: flex; align-items: center; gap: 6px; }
-.hmvp-lead__score { flex-shrink: 0; text-align: right; }
-.hmvp-lead__score b { display: block; font-size: 40px; font-weight: 800; line-height: 1; color: var(--amber); font-variant-numeric: tabular-nums; }
+.hmvp-lead__score { flex-shrink: 0; text-align: right; margin-left: 6px; }
+.hmvp-lead__score b { display: block; font-size: 36px; font-weight: 800; line-height: 1; color: var(--amber); font-variant-numeric: tabular-nums; }
 .hmvp-lead__score span { font-size: 9px; font-weight: 800; letter-spacing: 0.12em; color: var(--text-subtle); }
 .hmvp-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .hmvp-tile { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 9px; background: var(--surface-2); }
@@ -2043,6 +2043,9 @@ html { scroll-padding-top: 84px; }
   display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px;
 }
 .st-team__flag { font-size: 12.5px; font-weight: 700; color: var(--amber); }
+/* AI note (Season race summary) in place of the automatic label: note on top, link under */
+.st-team__foot--note { flex-direction: column; align-items: flex-start; gap: 8px; }
+.st-team__note { font-size: 13px; line-height: 1.45; color: #c3c9d4; }
 .st-team__cta { font-size: 12.5px; font-weight: 700; color: #a3abb9; white-space: nowrap; transition: color 0.15s; }
 .st-team:hover .st-team__cta { color: var(--text); }
 @media (max-width: 1200px) {
@@ -2068,6 +2071,7 @@ html { scroll-padding-top: 84px; }
   .st-team__roster { display: none; }
   .st-team__foot { padding-top: 8px; min-height: 30px; }
   .st-team__flag { font-size: 11px; line-height: 1.25; }
+  .st-team__note { font-size: 12px; line-height: 1.4; }
   .st-team__cta { font-size: 0; }
   .st-team__cta::after { content: '\2192'; font-size: 14px; }
 }
@@ -7426,17 +7430,13 @@ a.player-link:hover { color: var(--amber); }
 .gh-card__when { display: flex; gap: 6px; }
 .gh-card__season { font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; padding: 5px 8px; border-radius: 6px; color: #0a0e16; background: var(--amber); }
 .gh-card__body { display: flex; flex-direction: column; gap: 9px; padding: 0 18px 18px; }
-/* Split score bar: one half per team, the winner's half underlined in its colour (--side) */
-.gh-score {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center;
-  border-radius: 10px; overflow: hidden;
-  background: rgba(10,14,22,0.72); border: 1px solid rgba(255,255,255,0.1);
-}
-.gh-score__side { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; padding: 8px 12px; color: var(--text-muted); }
-.gh-score__side.is-win { color: #fff; box-shadow: inset 0 -3px 0 var(--side); }
-.gh-score__team { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; font-weight: 800; letter-spacing: 0.08em; white-space: nowrap; overflow: hidden; }
-.gh-score__num { font-size: 28px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
-.gh-score__final { padding: 0 8px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
+/* Scoreboard like the hero's, smaller: team name + dot over a big number, winner in white */
+.gh-score { display: flex; align-items: flex-end; gap: 12px; }
+.gh-score__team { display: flex; flex-direction: column; gap: 3px; min-width: 0; color: var(--text-muted); }
+.gh-score__team.is-win { color: #fff; }
+.gh-score__name { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; white-space: nowrap; }
+.gh-score__num { font-size: 44px; line-height: 0.82; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
+.gh-score__dash { font-size: 22px; line-height: 1; font-weight: 800; color: var(--text-subtle); padding-bottom: 6px; }
 .gh-card__title { font-size: 17px; font-weight: 800; line-height: 1.22; letter-spacing: -0.01em; color: #fff; text-wrap: balance; }
 .gh-card__cta { font-size: 12.5px; font-weight: 700; color: var(--amber); }
 
@@ -7465,10 +7465,14 @@ a.player-link:hover { color: var(--amber); }
 }
 .lb-card__av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .lb-card__who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.lb-card__name { font-size: 16px; font-weight: 800; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* full name always shows: long names wrap to a second line (clamped at two) instead of "…" */
+.lb-card__name { font-size: 16px; font-weight: 800; line-height: 1.2; color: var(--text); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lb-card__lead:hover .lb-card__name { color: #fff; }
+.lb-card__name.is-long { font-size: 15px; }
 .lb-card__team { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); }
 .lb-card__val { font-size: 44px; line-height: 0.9; font-weight: 800; color: var(--amber); font-variant-numeric: tabular-nums; }
+/* "+1.7 ahead of #2" — its own line under the leader row so it never squeezes the name */
+.lb-card__gap { margin-top: -6px; align-self: flex-end; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
 .lb-card__rest { margin-top: auto; padding: 4px 20px 8px; border-top: 1px solid var(--border); }
 .lb-card__alt { display: flex; align-items: center; gap: 10px; min-height: 38px; color: inherit; }
 .lb-card__rank { width: 14px; font-size: 16px; font-weight: 800; color: var(--text-subtle); }
@@ -7505,15 +7509,11 @@ a.player-link:hover { color: var(--amber); }
   .gh-grid::-webkit-scrollbar, .lb-grid::-webkit-scrollbar { display: none; }
   .gh-card, .lb-card { flex: 0 0 82%; scroll-snap-align: start; }
   .gh-card { min-height: 300px; }
-  /* compact score bar so full team names fit on a phone-width card */
-  .gh-score__side { padding: 7px 9px; gap: 4px; }
-  .gh-score__team { font-size: 10.5px; letter-spacing: 0.04em; gap: 5px; }
-  .gh-score__num { font-size: 24px; }
-  .gh-score { grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
-  .gh-score__final { font-size: 0; padding: 0; align-self: stretch; background: rgba(255,255,255,0.12); }
+  .gh-score__num { font-size: 38px; }
   .lb-card__val { font-size: 34px; }
   .lb-card__av { width: 46px; height: 46px; }
   .lb-card__name { font-size: 15px; }
+  .lb-card__name.is-long { font-size: 14px; }
   .lb-sub-extra { display: none; }
   .hp-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
 }

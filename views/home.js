@@ -342,7 +342,16 @@ export function leaderBoards(players) {
       .sort((a, b) => cat.sort(b) - cat.sort(a) || b.games_played - a.games_played)
       .slice(0, 3)
       .map(p => ({ id: p.id, name: p.name, team: String(p.team_name || '').toUpperCase(), value: cat.fn(p) }));
-    return top.length ? { label, title, top } : null;
+    if (!top.length) return null;
+    // "+1.7 ahead of #2" under the leader's number — from the displayed values, so the
+    // gap always matches what's on the card. Percent stats read in points.
+    let leadNote = '';
+    if (top[1]) {
+      const pct = top[0].value.endsWith('%');
+      const gap = parseFloat(top[0].value) - parseFloat(top[1].value);
+      leadNote = gap > 0.001 ? `+${pct ? Math.round(gap) + ' pts' : gap.toFixed(1)} ahead of #2` : 'Tied for #1';
+    }
+    return { label, title, top, leadNote };
   }).filter(Boolean);
 }
 
@@ -767,10 +776,19 @@ function standingsSection(standings, summary = null, isAdmin = false) {
         <span class="st-team__avs">${avatars}${more > 0 ? `<span class="st-team__av st-team__av--more">+${more}</span>` : ''}</span>
         <span class="st-team__count">${t.rosterCount} players</span>
       </span>` : ''}
-      <span class="st-team__foot">
+      ${(() => {
+        // AI note from the Season race summary when there is one; otherwise the automatic label.
+        const note = summary?.notes?.[String(t.name).toUpperCase()];
+        return note
+          ? `<span class="st-team__foot st-team__foot--note">
+        <span class="st-team__note">${escHtml(note)}</span>
+        <span class="st-team__cta">Team page &rarr;</span>
+      </span>`
+          : `<span class="st-team__foot">
         <span class="st-team__flag">${t.flag ? escHtml(t.flag) : ''}</span>
         <span class="st-team__cta">Team page &rarr;</span>
-      </span>
+      </span>`;
+      })()}
     </a>`;
   }).join('\n    ');
   // The AI summary replaces the rule-based headline when there is one; the rule-based
@@ -882,17 +900,14 @@ function headlinesSection(games, summary, isAdmin) {
     const day = new Date(`${String(g.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const dot = name => `<span class="team-dot" style="background:${teamColor(name)}"></span>`;
     const win = w => (w ? ' is-win' : '');
-    // Split score bar: each half is one team, the winner's half underlined in its colour,
-    // FINAL in the middle.
+    // Same scoreboard as the hero, scaled down: team name + dot over a big number, the
+    // winner in white.
+    const side = (name, score, w) => `<span class="gh-score__team${win(w)}"><span class="gh-score__name">${dot(name)}${escHtml(name)}</span><b class="gh-score__num font-condensed">${score}</b></span>`;
     return `<a href="/games/${encodeURIComponent(g.id)}" class="gh-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}">
       ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${encodeURIComponent(g.id)}" alt="" loading="lazy">` : ''}
       <span class="gh-card__top"><span class="gh-card__when">${g.season ? `<span class="gh-card__season">S${escHtml(String(g.season))}</span>` : ''}<span class="gh-card__date">${escHtml(day)}</span></span></span>
       <span class="gh-card__body">
-        <span class="gh-score">
-          <span class="gh-score__side${win(aWin)}" style="--side:${teamColor(g.team_a_name)}"><span class="gh-score__team">${dot(g.team_a_name)}${escHtml(g.team_a_name)}</span><b class="gh-score__num font-condensed">${sa}</b></span>
-          <span class="gh-score__final">Final</span>
-          <span class="gh-score__side gh-score__side--b${win(!aWin)}" style="--side:${teamColor(g.team_b_name)}"><b class="gh-score__num font-condensed">${sb}</b><span class="gh-score__team">${escHtml(g.team_b_name)}${dot(g.team_b_name)}</span></span>
-        </span>
+        <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>
         <span class="gh-card__title">${escHtml(title)}</span>
         <span class="gh-card__cta">Read recap &rarr;</span>
       </span>
@@ -923,9 +938,10 @@ function leaderBoardsSection(boards, summary, season, isAdmin) {
         <span class="lb-card__head"><span class="lb-card__title">${escHtml(c.title)}</span><span class="lb-card__key">${escHtml(c.label)}</span></span>
         <span class="lb-card__row">
           ${playerAvatar(lead.id, lead.name, color, { className: 'lb-card__av' })}
-          <span class="lb-card__who"><span class="lb-card__name">${escHtml(displayPlayerName(lead.name))}</span><span class="lb-card__team"><span class="team-dot" style="background:${color}"></span>${escHtml(lead.team)}</span></span>
+          <span class="lb-card__who"><span class="lb-card__name${displayPlayerName(lead.name).length > 15 ? ' is-long' : ''}">${escHtml(displayPlayerName(lead.name))}</span><span class="lb-card__team"><span class="team-dot" style="background:${color}"></span>${escHtml(lead.team)}</span></span>
           <b class="lb-card__val font-condensed">${escHtml(lead.value)}</b>
         </span>
+        ${c.leadNote ? `<span class="lb-card__gap">${escHtml(c.leadNote)}</span>` : ''}
       </a>
       ${rest ? `<div class="lb-card__rest">${rest}</div>` : ''}
     </div>`;

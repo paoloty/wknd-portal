@@ -8810,7 +8810,7 @@ const homeSummaryInFlight = new Set();
 let homeSummaryCooldownUntil = 0;
 const HOME_SUMMARY_COOLDOWN_MS = 10 * 60 * 1000;
 // Bump when the prompt changes so every stored summary is rewritten with the new one.
-const HOME_SUMMARY_VERSION = 4;
+const HOME_SUMMARY_VERSION = 7;
 
 function homeSummaryContext({ season, games, standings, boards }) {
   const completed = games
@@ -8852,6 +8852,7 @@ function homeSummaryFacts(block, ctx) {
       section: 'Season race (standings)',
       facts: `Season ${ctx.season} standings:\n${lines.join('\n')}`,
       focus: 'Describe the state of the standings race: who leads and by how much, and the most interesting story further down.',
+      notesFor: teams.map(t => title(t.name)),
     };
   }
   if (block === 'leaders') {
@@ -8895,50 +8896,72 @@ Rules:
 - body: 1-2 sentences, at most 45 words, plain text — no asterisks, markdown or emoji.
 - Every number, record, ranking or streak must come straight from the facts. Don't invent stats, comparisons or history. Only mention a streak if the facts state it, and say whose streak it is exactly as the facts do.
 - If two facts seem to disagree, leave that detail out rather than guess.
+- Never call anything a record, a first, a best-ever or a career high — the facts only cover this season's standings and leaderboards.
+- Season totals (record, point differential, per-game averages) describe the whole season; never attach them to a single game.
 - Write finished copy only: no questions to yourself, no corrections, no notes or alternatives.
 - Don't mention the crowd, fans or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "dominates", "intrigues" or "showcase".`;
+  // Season race also gets one short note per team card (f.notesFor = the team names).
+  if (f.notesFor) {
+    prompt += `\n- notes: exactly one note per team (${f.notesFor.join(', ')}), each one sentence of at most 12 words, plain text, about that team only — the most telling fact about its season so far. Don't start with the team's name.`;
+  }
   const schema = {
     type: 'object',
-    properties: { headline: { type: 'string' }, body: { type: 'string' } },
-    required: ['headline', 'body'],
+    properties: {
+      headline: { type: 'string' },
+      body: { type: 'string' },
+      // One required field per team (not a free-form list — models skipped that).
+      ...(f.notesFor ? { notes: { type: 'object', properties: Object.fromEntries(f.notesFor.map(t => [t, { type: 'string' }])), required: f.notesFor } } : {}),
+    },
+    required: ['headline', 'body', ...(f.notesFor ? ['notes'] : [])],
   };
   // Every number in the copy must appear in the facts — a cheap guard against invented
   // stats. Up to two rewrites on a miss, then give up (the block just shows no summary).
-  const factNums = new Set((f.facts.match(/d+(?:.d+)?/g) || []));
-  const invented = text => (text.match(/d+(?:.d+)?/g) || []).filter(n => !factNums.has(n));
+  const factNums = new Set((f.facts.match(/\d+(?:\.\d+)?/g) || []));
+  const invented = text => (text.match(/\d+(?:\.\d+)?/g) || []).filter(n => !factNums.has(n));
   for (let attempt = 1; attempt <= 3; attempt++) {
     // Capped below the weekly creativity setting: these sit on the homepage as plain fact.
-    const { data } = await generateJson(prompt, schema, { temperature: Math.min(aiTemperature(), 0.6), maxTokens: 300 });
+    const { data } = await generateJson(prompt, schema, { temperature: Math.min(aiTemperature(), 0.6), maxTokens: f.notesFor ? 500 : 300 });
     const headline = String(data.headline || '').trim().slice(0, 120);
     const body = String(data.body || '').trim().slice(0, 400);
     if (!headline) continue;
-    const bad = invented(`${headline} ${body}`);
+    // Notes keyed by upper-case team name; any team the model skipped just keeps its
+    // automatic label on the card.
+    const notes = {};
+    if (f.notesFor) {
+      for (const t of f.notesFor) {
+        const note = String(data.notes?.[t] || '').replace(/\*\*/g, '').trim().slice(0, 140);
+        if (note) notes[t.toUpperCase()] = note;
+      }
+      if (!Object.keys(notes).length) { console.warn(`Home summary (${block}) attempt ${attempt} returned no team notes`); continue; }
+    }
+    const noteText = Object.entries(notes).map(([t, n]) => `${t}: ${n}`).join('\n');
+    const bad = invented(`${headline} ${body} ${noteText}`);
     if (bad.length) { console.warn(`Home summary (${block}) attempt ${attempt} used numbers not in the facts: ${bad.join(', ')}`); continue; }
     // Second opinion at temperature 0: every claim checked against the same facts.
-    const problems = await factCheckHomeSummary(f, headline, body);
+    const problems = await factCheckHomeSummary(f, headline, body, noteText);
     if (problems.length) {
       console.warn(`Home summary (${block}) attempt ${attempt} failed the fact check: ${problems.join(' | ')}`);
       prompt += `\n\nA previous draft was rejected for these errors — avoid them: ${problems.join('; ')}`;
       continue;
     }
-    setSetting(`home_summary_${block}`, JSON.stringify({ key: f.key, kicker: f.kicker, headline, body, at: Date.now() }));
+    setSetting(`home_summary_${block}`, JSON.stringify({ key: f.key, kicker: f.kicker, headline, body, notes, at: Date.now() }));
     return;
   }
   throw new Error('No summary passed the fact check');
 }
 
 // Returns the problems found ([] = every claim is supported by the facts).
-async function factCheckHomeSummary(f, headline, body) {
+async function factCheckHomeSummary(f, headline, body, notes = '') {
   const prompt = `Check this homepage copy for a basketball league against the facts.
 
 COPY
 Headline: ${headline.replace(/\*\*/g, '')}
-Body: ${body}
+Body: ${body}${notes ? `\nPer-team notes:\n${notes}` : ''}
 
 FACTS
 ${f.facts}
 
-List every statement in the copy that the facts do not directly support: wrong numbers, wrong rankings, a player "leading" something they are not #1 in, or streaks and links between games that the facts don't state. Opinions and tone are fine. If everything is supported, return accurate=true and an empty problems list.`;
+List every statement in the copy that the facts do not directly support: wrong numbers, wrong rankings, a player "leading" something they are not #1 in, streaks and links between games that the facts don't state, anything called a "record" / "first" / "best-ever", or a season total presented as if it came from one game. Opinions and tone are fine. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = {
     type: 'object',
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
@@ -8959,7 +8982,7 @@ function getHomeSummaries(ctx) {
     let stored = null;
     try { stored = JSON.parse(getSetting(`home_summary_${block}`, '') || 'null'); } catch {}
     if (stored && stored.key === f.key) {
-      out[block] = { kicker: stored.kicker, headline: stored.headline, body: stored.body };
+      out[block] = { kicker: stored.kicker, headline: stored.headline, body: stored.body, notes: stored.notes || {} };
     } else if (aiAvailable() && !homeSummaryInFlight.has(block) && Date.now() >= homeSummaryCooldownUntil) {
       homeSummaryInFlight.add(block);
       generateHomeSummary(block, f)
