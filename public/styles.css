@@ -1292,8 +1292,9 @@ html { scroll-padding-top: 84px; }
   background: var(--surface);
 }
 .score-ticker::-webkit-scrollbar { display: none; }
+/* every game is the same compact width — postseason detail is kept short to fit */
 .tk-cell {
-  flex: 0 0 190px;
+  flex: 0 0 176px;
   min-width: 0;
   display: flex; flex-direction: column;
   scroll-snap-align: start;
@@ -1302,30 +1303,29 @@ html { scroll-padding-top: 84px; }
   transition: background 0.15s;
 }
 .tk-cell:last-child { border-right: none; }
-/* postseason ribbons carry the series state, so their cells are wider */
-.tk-cell--playoff, .tk-cell--finals, .tk-cell--champion { flex-basis: 250px; }
 a.tk-cell:hover { background: rgba(255,255,255,0.025); }
 a.tk-cell:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 .tk-ribbon {
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  height: 24px; padding: 0 12px;
+  height: 22px; padding: 0 10px;
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
   color: var(--text-muted); background: #0d1119;
   border-bottom: 1px solid var(--border);
 }
 .tk-ribbon__left { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tk-ribbon__right { flex-shrink: 0; }
+.tk-ribbon__right { flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
+.tk-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.35); }
 .tk-trophy { flex-shrink: 0; }
 .tk-cell--next .tk-ribbon,
 .tk-cell--playoff .tk-ribbon { color: var(--amber); background: rgba(245,147,50,0.10); border-bottom-color: rgba(245,147,50,0.25); }
 .tk-cell--finals .tk-ribbon { color: var(--amber); background: rgba(245,147,50,0.16); border-bottom-color: rgba(245,147,50,0.35); }
 .tk-cell--champion .tk-ribbon { color: #0a0e16; background: var(--amber); border-bottom-color: var(--amber); }
-.tk-body { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px 12px; }
+.tk-body { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 9px; }
 .tk-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #7b8496; }
 .tk-row.is-win { color: #fff; }
 .tk-cell--next .tk-row { color: var(--text); }
 .tk-team { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; white-space: nowrap; overflow: hidden; }
-.tk-score { font-size: 21px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.tk-score { font-size: 20px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
 /* ── Home main grid (hero + sidebar) ────────────────────────────────────── */
 .home-grid {
@@ -4444,8 +4444,6 @@ a.player-link:hover { color: var(--amber); }
   .leaders-page-grid { grid-template-columns: 1fr; }
   .leader-panel__stat { font-size: 28px; }
   .leader-panel__top .leader-avatar { width: 48px; height: 48px; }
-  .tk-cell { flex-basis: 172px; }
-  .tk-cell--playoff, .tk-cell--finals, .tk-cell--champion { flex-basis: 232px; }
   .player-hero__avatar { width: 80px; height: 80px; font-size: 26px; }
   .player-avatar-replace { width: 26px; height: 26px; }
   .player-hero__name { font-size: 1.4rem; }

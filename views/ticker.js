@@ -15,45 +15,36 @@ const TROPHY = `<svg class="tk-trophy" width="11" height="11" viewBox="0 0 18 18
 const shortDay = (date) => new Date(`${String(date).slice(0, 10)}T00:00:00`)
   .toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
 
-// Series state for the ribbon: "TIED 1–1" / "WHITE 2–1" / "WHITE ADVANCES" / "BEST OF 3".
-function seriesState(g, rec, scheduled) {
-  const { teamAWins, teamBWins, decided, winnerName } = rec;
-  if (decided && winnerName && !scheduled) {
-    return g.game_type === 'finals' ? null : `${String(winnerName).toUpperCase()} ADVANCES`;
-  }
-  if (teamAWins === 0 && teamBWins === 0) return g.game_type === 'finals' ? 'BEST OF 3' : '';
-  if (teamAWins === teamBWins) return `TIED ${teamAWins}–${teamBWins}`;
-  const leader = teamAWins > teamBWins ? g.team_a_name : g.team_b_name;
-  return `${String(leader).toUpperCase()} ${Math.max(teamAWins, teamBWins)}–${Math.min(teamAWins, teamBWins)}`;
-}
-
-// → { kind, left, right, trophy } for one game's ribbon.
+// Every cell is the same compact width, so a ribbon has to fit ~20 characters: the stage
+// goes on the left ("S3 FINALS · G2", "S3 PLAYOFFS") and the state on the right, where
+// the team is a coloured dot instead of a name ("●1–0", "●ADVANCES", "TIED 1–1", "OT").
+// → { kind, left, right, dot, trophy } for one game's ribbon.
 function ribbon(g, scheduled) {
   const s = `S${g.season}`;
   const ot = Number(g.overtime) || 0;
   const otLabel = ot === 0 ? '' : ot === 1 ? 'OT' : `${ot}OT`;
-  // Postseason ribbons already say what the game was, so their right side only flags OT —
-  // the room goes to the series state on the left.
-  const post = g.game_type === 'finals' || g.game_type === 'playoff';
-  const right = scheduled ? 'NEXT' : post ? otLabel : (otLabel ? `FINAL/${otLabel}` : 'FINAL');
   const rec = g.seriesRecord;
+  const withOt = text => [text, otLabel].filter(Boolean).join(' · ');
 
-  if (g.game_type === 'finals') {
-    if (!rec) return { kind: 'finals', left: `${s} FINALS · ${shortDay(g.date)}`, right };
-    const played = rec.teamAWins + rec.teamBWins;
+  if (g.game_type === 'finals' || g.game_type === 'playoff') {
+    const finals = g.game_type === 'finals';
+    const stage = finals ? `${s} FINALS` : `${s} PLAYOFFS`;
+    if (!rec) return { kind: finals ? 'finals' : 'playoff', left: stage, right: scheduled ? 'NEXT' : withOt('FINAL') };
+    const { teamAWins: a, teamBWins: b, decided, winnerName } = rec;
+    const played = a + b;
     const gameNo = scheduled ? played + 1 : played;
-    if (!scheduled && rec.decided && rec.winnerName) {
-      const w = Math.max(rec.teamAWins, rec.teamBWins), l = Math.min(rec.teamAWins, rec.teamBWins);
-      return { kind: 'champion', left: `${s} CHAMPIONS · ${String(rec.winnerName).toUpperCase()} ${w}–${l}`, right, trophy: true };
+    const leaderColor = a === b ? null : teamColor(a > b ? g.team_a_name : g.team_b_name);
+    const score = `${Math.max(a, b)}–${Math.min(a, b)}`;
+    if (!scheduled && decided && winnerName) {
+      return finals
+        ? { kind: 'champion', left: `${s} CHAMPIONS`, right: withOt(score), dot: teamColor(winnerName), trophy: true }
+        : { kind: 'playoff', left: stage, right: withOt('ADVANCES'), dot: teamColor(winnerName) };
     }
-    const state = seriesState(g, rec, scheduled);
-    return { kind: 'finals', left: [`${s} FINALS`, gameNo ? `G${gameNo}` : '', state].filter(Boolean).join(' · '), right };
+    const left = finals && gameNo ? `${stage} · G${gameNo}` : stage;
+    if (scheduled) return { kind: finals ? 'finals' : 'playoff', left, right: played ? (a === b ? `TIED ${score}` : score) : 'NEXT', dot: leaderColor };
+    return { kind: finals ? 'finals' : 'playoff', left, right: withOt(a === b ? `TIED ${score}` : score), dot: leaderColor };
   }
-  if (g.game_type === 'playoff') {
-    const state = rec ? seriesState(g, rec, scheduled) : '';
-    return { kind: 'playoff', left: [`${s} PLAYOFFS`, state || shortDay(g.date)].join(' · '), right };
-  }
-  return { kind: scheduled ? 'next' : 'regular', left: `${s} · ${shortDay(g.date)}`, right };
+  return { kind: scheduled ? 'next' : 'regular', left: `${s} · ${shortDay(g.date)}`, right: scheduled ? 'NEXT' : (otLabel ? `FINAL/${otLabel}` : 'FINAL') };
 }
 
 export function scoreTicker(games) {
@@ -71,7 +62,7 @@ export function scoreTicker(games) {
     const tag = scheduled ? 'div' : 'a';
     const href = scheduled ? '' : ` href="/games/${encodeURIComponent(g.id)}"`;
     return `<${tag}${href} class="tk-cell tk-cell--${r.kind}">
-    <span class="tk-ribbon" title="${escHtml([r.left, r.right].filter(Boolean).join(' · '))}"><span class="tk-ribbon__left">${r.trophy ? TROPHY : ''}${escHtml(r.left)}</span>${r.right ? `<span class="tk-ribbon__right">${escHtml(r.right)}</span>` : ''}</span>
+    <span class="tk-ribbon" title="${escHtml([r.left, r.right].filter(Boolean).join(' · '))}"><span class="tk-ribbon__left">${r.trophy ? TROPHY : ''}${escHtml(r.left)}</span>${r.right ? `<span class="tk-ribbon__right">${r.dot ? `<span class="tk-dot" style="background:${r.dot}"></span>` : ''}${escHtml(r.right)}</span>` : ''}</span>
     <span class="tk-body">
       ${row(g.team_a_name, sa, winA)}
       ${row(g.team_b_name, sb, winB)}
