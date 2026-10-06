@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
 import { statSync, existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import express from 'express';
+import { resendWebhookEnabled, verifyResendSignature, handleResendEvent } from './lib/resend-webhook.js';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import CleanCSS from 'clean-css';
@@ -150,6 +151,7 @@ import {
   db as portalDb,
   getBirthdayEmail, saveBirthdayDraft, getBirthdayEmailsForYears, getSentBirthdayEmails, getBirthdayLog,
   papawisProbationHold, getPapawisSlotAlerts, cancelPapawisAnnounce, setPapawisEmailOptout,
+  getEmailsForAddress, getLatestEmailsByRef, getLatestEmailForRef,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
@@ -2406,6 +2408,19 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
 }
 
 const app = express();
+
+// Registered before the session and body-parser middleware: the signature is computed over
+// the exact raw bytes, so this route needs the unparsed body, and Resend has no session.
+app.post('/webhooks/resend', express.raw({ type: '*/*', limit: '256kb' }), (req, res) => {
+  if (!resendWebhookEnabled) return res.status(503).json({ error: 'Webhook not configured.' });
+  const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+  if (!verifyResendSignature(raw, req.headers)) return res.status(401).json({ error: 'Invalid signature.' });
+  let event;
+  try { event = JSON.parse(raw); } catch { return res.status(400).json({ error: 'Invalid JSON.' }); }
+  try { handleResendEvent(event); }
+  catch (e) { console.error('[resend-webhook]', e.message); return res.status(500).json({ error: 'Failed.' }); }
+  res.json({ ok: true });
+});
 
 const SessionStore = SqliteStore(session);
 app.use(session({
@@ -4969,7 +4984,7 @@ app.post('/forgot-password', express.urlencoded({ extended: false }), async (req
     forgotPasswordCooldowns.set(key, Date.now());
     const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
     const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
-    sendMail({ to: reg.email, ...resetPasswordEmail({ name, setPasswordUrl, isReset: !!reg.password_hash }) })
+    sendMail({ to: reg.email, ref: reg.id, ...resetPasswordEmail({ name, setPasswordUrl, isReset: !!reg.password_hash }) })
       .catch(e => console.error('[mailer]', e.message));
     insertAdminLog({
       actor: reg.full_name || reg.email, actorType: 'player',
@@ -5137,7 +5152,7 @@ app.get('/admin/users', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Users',
     currentPath: '/admin/users',
-    body: adminUsersBody({ registrations: withFlags, canViewSensitive: canViewSensitiveData(req) }),
+    body: adminUsersBody({ registrations: withFlags, canViewSensitive: canViewSensitiveData(req), accountEmails: getLatestEmailsByRef(['approved', 'set_password']) }),
   }));
 });
 
@@ -5176,7 +5191,7 @@ app.get('/admin/users/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: reg.full_name,
     currentPath: '/admin/users',
-    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin, inSync, bogusFlags, canViewSensitive }),
+    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin, inSync, bogusFlags, canViewSensitive, emails: getEmailsForAddress(reg.email) }),
   }));
 });
 
@@ -5197,7 +5212,7 @@ app.post('/admin/users/:id/approve', requireAuth, express.json(), async (req, re
   if (reg.email) {
     const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
     const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
-    sendMail({ to: reg.email, ...approvedEmail({ name, setPasswordUrl }) }).catch(e => console.error('[mailer]', e.message));
+    sendMail({ to: reg.email, ref: reg.id, ...approvedEmail({ name, setPasswordUrl }) }).catch(e => console.error('[mailer]', e.message));
   }
   res.json({ ok: true });
 });
@@ -5228,7 +5243,7 @@ app.post('/admin/users/:id/create', requireAuth, express.json(), (req, res) => {
   if (reg.email) {
     const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
     const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
-    sendMail({ to: reg.email, ...approvedEmail({ name, setPasswordUrl }) }).catch(e => console.error('[mailer]', e.message));
+    sendMail({ to: reg.email, ref: reg.id, ...approvedEmail({ name, setPasswordUrl }) }).catch(e => console.error('[mailer]', e.message));
   }
   res.json({ ok: true, player_id: newPlayerId });
 });
@@ -5271,7 +5286,7 @@ app.post('/admin/users/:id/send-reset', requireAuth, express.json(), async (req,
   const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
   const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
   try {
-    await sendMail({ to: reg.email, ...resetPasswordEmail({ name, setPasswordUrl, isReset: !!reg.password_hash }) });
+    await sendMail({ to: reg.email, ref: reg.id, ...resetPasswordEmail({ name, setPasswordUrl, isReset: !!reg.password_hash }) });
   } catch (e) {
     console.error('[mailer]', e.message);
     return res.status(500).json({ error: 'Failed to send email.' });
@@ -5286,7 +5301,7 @@ app.post('/admin/users/:id/reject', requireAuth, express.json(), async (req, res
   updateRegistration(reg.id, { status: 'rejected', player_id: reg.player_id || '', notes });
   if (reg.email) {
     const name = (reg.full_name || reg.email).split(',')[1]?.trim() || reg.full_name || 'Player';
-    sendMail({ to: reg.email, ...rejectedEmail({ name, reason: notes }) }).catch(e => console.error('[mailer]', e.message));
+    sendMail({ to: reg.email, ref: reg.id, ...rejectedEmail({ name, reason: notes }) }).catch(e => console.error('[mailer]', e.message));
   }
   res.json({ ok: true });
 });
@@ -10892,7 +10907,7 @@ app.get('/admin/season/signups/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: displayPlayerName(signup.full_name || 'Signup'),
     currentPath: '/admin/season/waitlist',
-    body: adminSignupDetailBody({ signup, isSuperAdmin }),
+    body: adminSignupDetailBody({ signup, isSuperAdmin, seasonEmail: getLatestEmailForRef(['season_confirmed', 'season_not_selected'], signup.id) }),
   }));
 });
 
@@ -11444,7 +11459,7 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
     const row = chargeById[p.id];
     const teamName = teamById[teamBySignup[p.id] || '']?.name || '';
     try {
-      await sendMail({ to: p.email, ...seasonQualifiedEmail({
+      await sendMail({ to: p.email, ref: p.id, ...seasonQualifiedEmail({
         name: p.full_name, season, teamName,
         quotaAmount: row?.quotaAmount || 0,
         topAmount: row?.topAmount || 0, jerseyTop: row?.jerseyTop || '',
@@ -11459,7 +11474,7 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   for (const p of notSelected) {
     if (!p.email) continue;
     try {
-      await sendMail({ to: p.email, ...seasonNotSelectedEmail({ name: p.full_name, season }) });
+      await sendMail({ to: p.email, ref: p.id, ...seasonNotSelectedEmail({ name: p.full_name, season }) });
     } catch(e) { emailErrors.push({ email: p.email, signupId: p.id, kind: 'not_selected' }); }
   }
 
@@ -11492,7 +11507,7 @@ app.post('/admin/season-signups/:id/resend-season-email', requireAuth, express.j
       const { rows } = buildChargeReviewRows(season);
       const row = rows.find(r => r.signupId === signup.id);
       const teamName = teamById[teamBySignup[signup.id] || '']?.name || '';
-      await sendMail({ to: reg.email, ...seasonQualifiedEmail({
+      await sendMail({ to: reg.email, ref: signup.id, ...seasonQualifiedEmail({
         name: reg.full_name, season, teamName,
         quotaAmount: row?.quotaAmount || 0,
         topAmount: row?.topAmount || 0, jerseyTop: row?.jerseyTop || '',
@@ -11501,7 +11516,7 @@ app.post('/admin/season-signups/:id/resend-season-email', requireAuth, express.j
         total: row?.total ?? 0,
       }) });
     } else {
-      await sendMail({ to: reg.email, ...seasonNotSelectedEmail({ name: reg.full_name, season }) });
+      await sendMail({ to: reg.email, ref: signup.id, ...seasonNotSelectedEmail({ name: reg.full_name, season }) });
     }
     res.json({ ok: true });
   } catch (e) {
@@ -12140,7 +12155,7 @@ app.post('/admin/season-signups/:id/request-jersey', requireAuth, express.json()
       link:     `/jersey-request?token=${token}`,
     });
   }
-  sendMail({ to: reg.email, ...jerseyRequestEmail({ name, formUrl, teamName }) }).catch(e => console.error('[mailer]', e.message));
+  sendMail({ to: reg.email, ref: reg.id, ...jerseyRequestEmail({ name, formUrl, teamName }) }).catch(e => console.error('[mailer]', e.message));
 
   res.json({ ok: true });
 });

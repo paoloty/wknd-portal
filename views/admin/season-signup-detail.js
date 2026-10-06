@@ -1,4 +1,5 @@
 import { escHtml } from '../layout.js';
+import { emailStatusChip } from './email-status.js';
 import { displayPlayerName } from '../utils.js';
 import { REVIEW_TAG_LABELS } from '../../lib/assessment-scoring.js';
 
@@ -31,7 +32,9 @@ function field(label, value) {
 // The detail counterpart to the trimmed waitlist table — Jersey, Signed Up, and Assessment
 // dropped off the list view to keep it scannable, but nothing was actually removed from the
 // app: it all lives here, one click away via the member's name.
-export function adminSignupDetailBody({ signup, isSuperAdmin = false } = {}) {
+// seasonEmail: latest email_log row for this signup's Start Season email (confirmed or not
+// selected), or null if it hasn't gone out.
+export function adminSignupDetailBody({ signup, isSuperAdmin = false, seasonEmail = null } = {}) {
   const s = signup;
   const name = displayPlayerName(s.full_name || '—');
 
@@ -110,6 +113,7 @@ export function adminSignupDetailBody({ signup, isSuperAdmin = false } = {}) {
       ${field('Balance', balance)}
       ${field('Assessment', assessment)}
       ${field('Liveness Photo', liveness)}
+      ${seasonEmail ? field('Season Email', emailStatusChip(seasonEmail, { prefix: seasonEmail.kind === 'season_confirmed' ? "You're in" : 'Not selected' })) : ''}
     </dl>
     ${s.comments ? `<div class="mt-4 pt-4 border-t border-admin-border"><div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Comments</div><div class="text-sm text-slate-300 leading-relaxed">${escHtml(s.comments)}</div></div>` : ''}
   </div>

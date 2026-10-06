@@ -1,6 +1,7 @@
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
 import { maskEmail, maskPhone, maskName, maskBirthday } from '../../lib/sensitive-mask.js';
+import { emailActivityCard } from './email-status.js';
 
 const ICON_CHECK    = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
 const ICON_PLUS     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
@@ -63,7 +64,7 @@ function display(value, canViewSensitive, maskFn) {
   return canViewSensitive ? value : maskFn(value);
 }
 
-export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, isSuperAdmin = false, inSync = true, bogusFlags = [], canViewSensitive = true }) {
+export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, isSuperAdmin = false, inSync = true, bogusFlags = [], canViewSensitive = true, emails = [] }) {
   if (!reg) return `<div class="text-slate-500 text-sm">Registration not found.</div>`;
 
   let positions = [];
@@ -264,6 +265,8 @@ ${bogusFlags.length ? `
         </dl>
       </div>
     </div>
+
+    ${emailActivityCard(emails)}
 
   </div>
 

@@ -1,5 +1,6 @@
 import { escHtml } from '../layout.js';
 import { maskEmail, maskPhone } from '../../lib/sensitive-mask.js';
+import { emailStatusChip } from './email-status.js';
 
 const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
 
@@ -47,7 +48,9 @@ function passwordBadge(status) {
   return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${b.cls}">${b.label}</span>`;
 }
 
-export function adminUsersBody({ registrations = [], canViewSensitive = true } = {}) {
+// accountEmails: { [registration id]: latest approval / set-password email_log row }. Shown
+// only while the password still isn't set — that's when "did they even open it?" matters.
+export function adminUsersBody({ registrations = [], canViewSensitive = true, accountEmails = {} } = {}) {
   const rowsData = registrations.map(r => ({ r, pwStatus: passwordStatus(r), flags: r.bogusFlags || [] }));
 
   const counts = {
@@ -77,7 +80,7 @@ export function adminUsersBody({ registrations = [], canViewSensitive = true } =
   </td>
   <td class="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">${r.phone ? escHtml(canViewSensitive ? r.phone : maskPhone(r.phone)) : '—'}</td>
   <td class="px-4 py-3"><div class="flex gap-1 flex-wrap">${posChips(r.positions)}</div></td>
-  <td class="px-4 py-3"><div class="flex gap-1 flex-wrap items-center">${badge(r.status)}${passwordBadge(pwStatus)}${flaggedBadge}</div></td>
+  <td class="px-4 py-3"><div class="flex gap-1 flex-wrap items-center">${badge(r.status)}${passwordBadge(pwStatus)}${pwStatus && pwStatus !== 'set' ? emailStatusChip(accountEmails[r.id], { prefix: 'Email' }) : ''}${flaggedBadge}</div></td>
   <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(r.created_at)}</td>
   <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${r.approved_at ? fmtDate(r.approved_at) : '—'}</td>
   <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(r.last_login_at)}</td>
