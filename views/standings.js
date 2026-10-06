@@ -80,24 +80,20 @@ function weekHeadline(n, wkGames, before, after) {
   return big ? `${big.name} beats ${big.opp} by ${big.pts - big.oppPts}` : '';
 }
 
-// A 3-team loop where each team won its season series against the next (A>B, B>C, C>A).
+// A 3-team loop where each team leads its season series against the next (A>B, B>C, C>A).
+// Returns the set of pair keys ("idA|idB", sorted) that make up the loop, or null.
 function findTriangle(teams, games) {
   const net = {};
   for (const g of games) {
     const w = winnerOf(g);
-    const k = `${w.id}|${w.oppId}`, rk = `${w.oppId}|${w.id}`;
-    net[k] = (net[k] || 0) + 1; net[rk] = (net[rk] || 0) - 1;
+    net[`${w.id}|${w.oppId}`] = (net[`${w.id}|${w.oppId}`] || 0) + 1;
+    net[`${w.oppId}|${w.id}`] = (net[`${w.oppId}|${w.id}`] || 0) - 1;
   }
   const beat = (a, b) => (net[`${a}|${b}`] || 0) > 0;
+  const key = (a, b) => [a, b].sort().join('|');
   for (const a of teams) for (const b of teams) for (const c of teams) {
     if (a.id === b.id || b.id === c.id || a.id === c.id) continue;
-    if (beat(a.id, b.id) && beat(b.id, c.id) && beat(c.id, a.id)) {
-      const score = (x, y) => {
-        const g = [...games].reverse().find(g => { const w = winnerOf(g); return w.id === x.id && w.oppId === y.id; });
-        return g ? `${winnerOf(g).pts}-${winnerOf(g).oppPts}` : '';
-      };
-      return { a, b, c, ab: score(a, b), bc: score(b, c), ca: score(c, a) };
-    }
+    if (beat(a.id, b.id) && beat(b.id, c.id) && beat(c.id, a.id)) return new Set([key(a.id, b.id), key(b.id, c.id), key(c.id, a.id)]);
   }
   return null;
 }
@@ -220,69 +216,57 @@ function playoffPicture(table, isCurrent) {
 </section>`;
 }
 
-function triangleCard(tri) {
-  if (!tri) return '';
-  const chip = (t, cls) => `<span class="stp-tri__chip ${cls}"><span class="team-dot" style="background:${t.color}"></span><span class="pill-label">${escHtml(t.name)}</span></span>`;
-  return `<div class="stp-tri">
-    <span class="stp-kicker">The triangle</span>
-    <p class="stp-tri__title">Three teams, three different winners.</p>
-    <div class="stp-tri__fig" role="img" aria-label="${escHtml(`${tri.a.name} beat ${tri.b.name} ${tri.ab}, ${tri.b.name} beat ${tri.c.name} ${tri.bc}, ${tri.c.name} beat ${tri.a.name} ${tri.ca}`)}">
-      <svg viewBox="0 0 240 196" width="240" height="196" aria-hidden="true">
-        <defs><marker id="stp-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f59332"/></marker></defs>
-        <g stroke="#f59332" stroke-width="2" fill="none" marker-end="url(#stp-ah)" opacity=".85">
-          <line x1="140" y1="44" x2="190" y2="140"/><line x1="170" y1="168" x2="72" y2="168"/><line x1="48" y1="140" x2="98" y2="44"/>
-        </g>
-        <g font-family="Saira Condensed, sans-serif" font-size="14" font-weight="600" fill="#e7eaf0" text-anchor="middle">
-          <text x="190" y="88">${escHtml(tri.ab)}</text><text x="120" y="188">${escHtml(tri.bc)}</text><text x="50" y="88">${escHtml(tri.ca)}</text>
-        </g>
-      </svg>
-      ${chip(tri.a, 'is-top')}${chip(tri.b, 'is-right')}${chip(tri.c, 'is-left')}
-    </div>
-    <p class="stp-tri__note">Arrows point from winner to loser. Each of the three has beaten one of the others and lost to the other.</p>
-  </div>`;
-}
-
-function headToHead(table, games, colorOf) {
-  if (!games.length) return '';
-  const margins = games.map(g => { const w = winnerOf(g); return w.pts - w.oppPts; });
-  const maxM = Math.max(...margins), minM = Math.min(...margins);
-  const series = {};
-  for (const g of games) {
-    const w = winnerOf(g);
-    const k = [w.id, w.oppId].sort().join('|');
-    (series[k] ||= {})[w.id] = (series[k][w.id] || 0) + 1;
-  }
-  const seriesLine = (aId, aName, bId, bName) => {
-    const s = series[[aId, bId].sort().join('|')] || {};
-    const a = s[aId] || 0, b = s[bId] || 0;
-    if (a === b) return `Series tied ${a}-${b}`;
-    return a > b ? `${aName} lead the series ${a}-${b}` : `${bName} lead the series ${b}-${a}`;
-  };
-  const cards = games.map((g, i) => {
-    const w = winnerOf(g);
-    const m = w.pts - w.oppPts;
-    const note = games.length >= 3 && m === maxM ? 'Biggest margin' : games.length >= 3 && m === minM ? 'Closest game' : '';
-    return `<a href="/games/${encodeURIComponent(g.id)}" class="stp-mu" data-teams="${escHtml(`${w.id} ${w.oppId}`)}" style="--glare:${rgba(colorOf(w.id), 0.16)}">
-      <span class="stp-mu__top"><span class="stp-th">Wk ${g.week} · ${fmtDay(g.date)}</span>${note ? `<span class="stp-mu__note">${note}</span>` : ''}</span>
-      <span class="stp-mu__team is-w"><span class="team-dot" style="background:${colorOf(w.id)}"></span><span>${escHtml(w.name)}</span><b class="font-condensed">${w.pts}</b></span>
-      <span class="stp-mu__team"><span class="team-dot" style="background:${colorOf(w.oppId)}"></span><span>${escHtml(w.opp)}</span><b class="font-condensed">${w.oppPts}</b></span>
-      <span class="stp-mu__foot"><span>${escHtml(seriesLine(w.id, w.name, w.oppId, w.opp))}</span><span class="stp-mu__link">Box score &rarr;</span></span>
-    </a>`;
-  }).join('');
+// Head to head as a rivalry timeline: one row per pairing (in order of first meeting),
+// one column per week. A played game shows the winner's colour and score; a scheduled one
+// says "Next"; the rest of the season is empty dashed slots.
+function headToHead(table, games, sched, totalWeeks, colorOf) {
+  if (table.length < 2 || !games.length) return '';
+  const key = (a, b) => [a, b].sort().join('|');
+  const pairs = [];
+  for (let i = 0; i < table.length; i++) for (let j = i + 1; j < table.length; j++) pairs.push({ a: table[i], b: table[j], k: key(table[i].id, table[j].id) });
+  const first = k => { const g = games.find(g => key(g.team_a_id, g.team_b_id) === k); return g ? games.indexOf(g) : Infinity; };
+  pairs.sort((x, y) => first(x.k) - first(y.k));
   const tri = findTriangle(table, games);
-  const records = Object.fromEntries(table.map(t => [t.id, `${t.wins}-${t.losses}`]));
-  const chips = [`<button type="button" class="stp-chip is-on" data-team="" aria-pressed="true"><span class="pill-label">All</span></button>`]
-    .concat(table.map(t => `<button type="button" class="stp-chip" data-team="${escHtml(t.id)}" data-label="${escHtml(`${t.name} vs the field: ${records[t.id]}`)}" aria-pressed="false"><span class="team-dot" style="background:${t.color}"></span><span class="pill-label">${escHtml(t.name)}</span></button>`)).join('');
-  const defaultLine = 'Every game this season, newest last. Pick a team to see only its games.';
+
+  const rowsHtml = pairs.map(({ a, b, k }) => {
+    const pg = games.filter(g => key(g.team_a_id, g.team_b_id) === k);
+    const wins = { [a.id]: 0, [b.id]: 0 };
+    pg.forEach(g => { wins[winnerOf(g).id]++; });
+    const cells = Array.from({ length: totalWeeks }, (_, n) => {
+      const g = pg.find(x => x.week === n + 1);
+      if (g) {
+        const w = winnerOf(g);
+        return `<a href="/games/${encodeURIComponent(g.id)}" class="stp-tl__cell" style="--glare:${rgba(colorOf(w.id), 0.18)}" title="${escHtml(`${w.name} ${w.pts}-${w.oppPts} ${w.opp}`)}"><span class="team-dot" style="background:${colorOf(w.id)}"></span><span class="font-condensed">${w.pts}-${w.oppPts}</span></a>`;
+      }
+      const s = sched.find(x => x.week === n + 1 && key(x.team_a_id, x.team_b_id) === k);
+      return s ? `<a href="/games/${encodeURIComponent(s.id)}" class="stp-tl__cell is-next">Next</a>` : '<span class="stp-tl__cell is-empty"></span>';
+    }).join('');
+    const aw = wins[a.id], bw = wins[b.id];
+    const lead = aw > bw ? a : bw > aw ? b : null;
+    const series = !pg.length ? '<span class="stp-tl__series is-none">—</span>'
+      : lead ? `<span class="stp-tl__series"><span class="team-dot" style="background:${lead.color}"></span>${escHtml(lead.name)}<b class="font-condensed">${Math.max(aw, bw)}-${Math.min(aw, bw)}</b></span>`
+      : `<span class="stp-tl__series">Tied<b class="font-condensed">${aw}-${bw}</b></span>`;
+    return `<div class="stp-tl__row">
+      <span class="stp-tl__pair"><span class="stp-tl__side"><span class="team-dot" style="background:${a.color}"></span>${escHtml(a.name)}</span><i>vs</i><span class="stp-tl__side"><span class="team-dot" style="background:${b.color}"></span>${escHtml(b.name)}${tri?.has(k) ? '<span class="stp-tl__tri" title="Part of the triangle">▲</span>' : ''}</span></span>
+      ${cells}
+      ${series}
+    </div>`;
+  }).join('');
+
+  const heads = Array.from({ length: totalWeeks }, (_, n) => `<span class="stp-th stp-c">Wk ${n + 1}</span>`).join('');
   return `<section class="stp-h2h" aria-labelledby="stp-h2h-h">
   <div class="section-header"><h2 id="stp-h2h-h">Head to head</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
   <div class="stp-bar">
-    <p class="stp-desc" id="stp-h2h-line" data-default="${escHtml(defaultLine)}">${escHtml(defaultLine)}</p>
-    <div class="stp-chips" role="group" aria-label="Show games for">${chips}</div>
+    <p class="stp-desc">Each cell is a game: the winner's colour and the score.</p>
+    ${tri ? '<span class="stp-tl__key"><span class="stp-tl__tri">▲</span>Part of the triangle: three teams, three different winners</span>' : ''}
   </div>
-  <div class="stp-h2h__body${tri ? ' has-tri' : ''}">
-    ${triangleCard(tri)}
-    <div class="stp-mu-grid">${cards}</div>
+  <div class="stp-tl card">
+    <div class="stp-scroll">
+      <div class="stp-tl__grid" style="--weeks:${totalWeeks}">
+        <div class="stp-tl__row stp-tl__row--head"><span class="stp-th">Matchup</span>${heads}<span class="stp-th stp-tl__series-h">Series</span></div>
+        ${rowsHtml}
+      </div>
+    </div>
   </div>
 </section>`;
 }
@@ -383,18 +367,6 @@ function teamStats(table, teamStatsRows) {
 
 const SCRIPT = `<script>
 (function(){
-  var h2h=document.querySelector('.stp-h2h');
-  if(h2h){
-    var line=document.getElementById('stp-h2h-line');
-    h2h.querySelectorAll('.stp-chip[data-team]').forEach(function(b){
-      b.addEventListener('click',function(){
-        var id=b.getAttribute('data-team');
-        h2h.querySelectorAll('.stp-chip[data-team]').forEach(function(x){var on=x===b;x.classList.toggle('is-on',on);x.setAttribute('aria-pressed',on);});
-        h2h.querySelectorAll('.stp-mu').forEach(function(m){m.classList.toggle('is-faded',!!id&&(' '+m.getAttribute('data-teams')+' ').indexOf(' '+id+' ')<0);});
-        line.textContent=id?b.getAttribute('data-label'):line.getAttribute('data-default');
-      });
-    });
-  }
   var st=document.querySelector('.stp-stats');
   if(st){
     st.querySelectorAll('.stp-chip[data-mode]').forEach(function(b){
@@ -501,6 +473,13 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
   const sched = [...scheduled].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const nextDay = sched[0] ? String(sched[0].date).slice(0, 10) : null;
   const expected = Math.max(played.length + sched.length, rows.length * (rows.length - 1));
+  let schedWeek = week, schedStart = null;
+  for (const g of sched) {
+    const d = String(g.date).slice(0, 10);
+    if (!schedStart || (new Date(d) - new Date(schedStart)) / DAY > 3) { schedWeek++; schedStart = d; }
+    g.week = schedWeek;
+  }
+  const totalWeeks = Math.max(schedWeek, Math.ceil(expected / Math.max(1, Math.floor(rows.length / 2))));
   const next = played.length < expected ? {
     n: week + 1, date: nextDay,
     games: nextDay ? sched.filter(g => String(g.date).slice(0, 10) === nextDay).map(g => ({ id: g.id, a: g.team_a_name, ac: colorOf(g.team_a_id), b: g.team_b_name, bc: colorOf(g.team_b_id) })) : [],
@@ -513,7 +492,7 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
     ${leagueTable(table, season, week, isCurrent, notes)}
     ${playoffPicture(table, isCurrent)}
   </div>` : '<p class="stp-desc">No standings for this season yet.</p>'}
-  ${headToHead(table, played, colorOf)}
+  ${headToHead(table, played, sched, totalWeeks, colorOf)}
   ${roadSoFar(weeks, next, isCurrent)}
   ${teamStats(table, teamStatsRows)}
 </div>
