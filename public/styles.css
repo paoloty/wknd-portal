@@ -7524,7 +7524,11 @@ a.player-link:hover { color: var(--amber); }
   .home-grid { min-height: 0; }
 }
 @media (max-width: 720px) {
-  .hero-carousel { min-height: 0; height: auto; aspect-ratio: 4 / 5; }
+  /* 4:5 via an explicit height (page width minus the 20px gutters, ×1.25): every child
+     of the carousel is absolutely positioned, so a browser without aspect-ratio support
+     (iOS ≤ 14 Safari / in-app browsers) would otherwise collapse it to 0px and the hero
+     would vanish. aspect-ratio stays as the modern path. */
+  .hero-carousel { min-height: 0; height: calc((100vw - 40px) * 1.25); aspect-ratio: 4 / 5; }
   .hero-chips { top: 14px; left: 14px; gap: 5px; }
   .hero-chip { font-size: 10.5px; padding: 5px 8px; }
   .hero-dots { top: 20px; right: 16px; }
