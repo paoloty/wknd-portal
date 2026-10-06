@@ -1,74 +1,135 @@
 import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
 
-// One slim strip of games. Every cell has the same body (two team rows, winner in white);
-// all the context lives in the thin ribbon across its top — season + date for regular
-// games, the playoff/finals state and game number for postseason ones, OT on the right —
-// and the ribbon's colour says how big the game is: grey (regular) → soft amber (next /
-// playoffs) → stronger amber (finals) → solid amber with a trophy (title-clinching game).
+// One slim strip of the latest games, newest first. Regular-season games are compact cells
+// (season + date on top, two team rows, winner in white). A playoff or finals series folds
+// into a single card, placed where its latest game falls: the result up front (who won or
+// leads, by how much) and every game of the series as a chip, oldest to newest, with the
+// score filling the chip. The strip ends with a "See all games" cell.
 //
 // Semifinals are "twice to beat" (see getSeriesRecordForGame's highTeamId) — the higher
 // seed can clinch on a single win, so the record alone can look unfinished when the series
 // is already over; `decided` from the record is what says it's done.
+const TICKER_LIMIT = 30;
+
 const TROPHY = `<svg class="tk-trophy" width="11" height="11" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h8v4a4 4 0 0 1-8 0z"/><path d="M5 4H2.5v1.5A2.5 2.5 0 0 0 5 8M13 4h2.5v1.5A2.5 2.5 0 0 1 13 8M9 10.5V13M6 15.5h6"/></svg>`;
+const ARROW = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`;
 
 const shortDay = (date) => new Date(`${String(date).slice(0, 10)}T00:00:00`)
   .toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+const dot = (name) => `<span class="tk-dot" style="background:${teamColor(name)}"></span>`;
+const isScheduled = (g) => g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score) === 0);
+const otLabel = (g) => { const ot = Number(g.overtime) || 0; return ot === 0 ? '' : ot === 1 ? 'OT' : `${ot}OT`; };
+const seriesKey = (g) => `${g.season}|${g.game_type}|${g.series_id || [g.team_a_id, g.team_b_id].sort().join('_')}`;
 
-// Every cell is the same compact width, so a ribbon has to fit ~20 characters: the stage
-// goes on the left ("S3 FINALS · G2", "S3 PLAYOFFS") and the state on the right, where
-// the team is a coloured dot instead of a name ("●1–0", "●ADVANCES", "TIED 1–1", "OT").
-// → { kind, left, right, dot, trophy } for one game's ribbon.
-function ribbon(g, scheduled) {
-  const s = `S${g.season}`;
-  const ot = Number(g.overtime) || 0;
-  const otLabel = ot === 0 ? '' : ot === 1 ? 'OT' : `${ot}OT`;
-  const rec = g.seriesRecord;
-  const withOt = text => [text, otLabel].filter(Boolean).join(' · ');
+// Regular-season cell. Rows keep the order games were entered in (team A on top) — winner
+// styling follows whichever row actually won, it doesn't reorder them.
+function gameCell(g) {
+  const scheduled = isScheduled(g);
+  const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
+  const row = (name, score, win) => `<span class="tk-row${win ? ' is-win' : ''}">
+      <span class="tk-team">${dot(name)}${escHtml(name)}</span>
+      <b class="tk-score font-condensed">${scheduled ? '–' : score}</b>
+    </span>`;
+  const ot = otLabel(g);
+  const meta = scheduled
+    ? `<span class="tk-meta tk-meta--next"><span>NEXT</span><span>${shortDay(g.date)}</span></span>`
+    : `<span class="tk-meta"><span>S${g.season} · ${shortDay(g.date)}</span><span>${ot ? `FINAL/${ot}` : 'FINAL'}</span></span>`;
+  const tag = scheduled ? 'div' : 'a';
+  const href = scheduled ? '' : ` href="/games/${encodeURIComponent(g.id)}"`;
+  return `<${tag}${href} class="tk-cell">
+    ${meta}
+    ${row(g.team_a_name, sa, !scheduled && sa > sb)}
+    ${row(g.team_b_name, sb, !scheduled && sb > sa)}
+  </${tag}>`;
+}
 
-  if (g.game_type === 'finals' || g.game_type === 'playoff') {
-    const finals = g.game_type === 'finals';
-    const stage = finals ? `${s} FINALS` : `${s} PLAYOFFS`;
-    if (!rec) return { kind: finals ? 'finals' : 'playoff', left: stage, right: scheduled ? 'NEXT' : withOt('FINAL') };
-    const { teamAWins: a, teamBWins: b, decided, winnerName } = rec;
-    const played = a + b;
-    const gameNo = scheduled ? played + 1 : played;
-    const leaderColor = a === b ? null : teamColor(a > b ? g.team_a_name : g.team_b_name);
-    const score = `${Math.max(a, b)}–${Math.min(a, b)}`;
-    if (!scheduled && decided && winnerName) {
-      return finals
-        ? { kind: 'champion', left: `${s} CHAMPIONS`, right: withOt(score), dot: teamColor(winnerName), trophy: true }
-        : { kind: 'playoff', left: stage, right: withOt('ADVANCES'), dot: teamColor(winnerName) };
-    }
-    const left = finals && gameNo ? `${stage} · G${gameNo}` : stage;
-    if (scheduled) return { kind: finals ? 'finals' : 'playoff', left, right: played ? (a === b ? `TIED ${score}` : score) : 'NEXT', dot: leaderColor };
-    return { kind: finals ? 'finals' : 'playoff', left, right: withOt(a === b ? `TIED ${score}` : score), dot: leaderColor };
+// One playoff/finals series. `games` arrive newest first; chips show oldest first.
+function seriesCard(games) {
+  const finals = games[0].game_type === 'finals';
+  const stage = `S${games[0].season} ${finals ? 'FINALS' : 'SEMIS'}`;
+  const chronological = [...games].reverse();
+  // The latest completed game's record covers every game before it, even ones the ticker cut off.
+  const latestDone = games.find(g => !isScheduled(g));
+  const rec = latestDone?.seriesRecord;
+
+  let who = '', status = '', champion = false;
+  if (rec?.decided && rec.winnerName) {
+    const other = rec.winnerName === latestDone.team_a_name ? latestDone.team_b_name : latestDone.team_a_name;
+    const score = `${Math.max(rec.teamAWins, rec.teamBWins)}–${Math.min(rec.teamAWins, rec.teamBWins)}`;
+    champion = finals;
+    who = `${dot(rec.winnerName)}${escHtml(rec.winnerName)}`;
+    status = finals ? `CHAMPIONS · <b>${score}</b>` : `ADVANCES · VS ${escHtml(other)}`;
+  } else if (rec && rec.teamAWins !== rec.teamBWins) {
+    const leader = rec.teamAWins > rec.teamBWins ? latestDone.team_a_name : latestDone.team_b_name;
+    who = `${dot(leader)}${escHtml(leader)}`;
+    status = `LEADS · <b>${Math.max(rec.teamAWins, rec.teamBWins)}–${Math.min(rec.teamAWins, rec.teamBWins)}</b>`;
+  } else {
+    const g = games[0];
+    who = `${dot(g.team_a_name)}${dot(g.team_b_name)}<span class="tk-series__vs">${escHtml(g.team_a_name)} V ${escHtml(g.team_b_name)}</span>`;
+    status = rec ? `TIED · <b>${rec.teamAWins}–${rec.teamBWins}</b>` : 'SERIES STARTS';
   }
-  return { kind: scheduled ? 'next' : 'regular', left: `${s} · ${shortDay(g.date)}`, right: scheduled ? 'NEXT' : (otLabel ? `FINAL/${otLabel}` : 'FINAL') };
+
+  const chips = chronological.map(g => {
+    const r = g.seriesRecord;
+    if (isScheduled(g)) {
+      const no = r ? r.teamAWins + r.teamBWins + 1 : '';
+      return `<div class="tk-chip tk-chip--next">
+      <span class="tk-chip__label"><span>${no ? `G${no}` : 'NEXT'}</span><span>NEXT</span></span>
+      <span class="tk-chip__date font-condensed">${shortDay(g.date)}</span>
+    </div>`;
+    }
+    const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
+    const winner = sa > sb ? g.team_a_name : g.team_b_name;
+    const hi = Math.max(sa, sb), lo = Math.min(sa, sb);
+    const no = r ? r.teamAWins + r.teamBWins : '';
+    const ot = otLabel(g);
+    const label = [no ? `G${no}` : '', ot].filter(Boolean).join(' · ');
+    return `<a class="tk-chip" href="/games/${encodeURIComponent(g.id)}" aria-label="${escHtml(`${label}: ${g.team_a_name} ${sa}, ${g.team_b_name} ${sb}`)}">
+      <span class="tk-chip__label"><span>${label}</span>${dot(winner)}</span>
+      <span class="tk-chip__score font-condensed"><span class="tk-chip__hi">${hi}</span><span class="tk-chip__dash">–</span><span class="tk-chip__lo">${lo}</span></span>
+    </a>`;
+  }).join('\n    ');
+
+  return `<div class="tk-series${champion ? ' tk-series--champion' : ''}">
+    <div class="tk-series__sum">
+      <span class="tk-series__stage">${champion ? TROPHY : ''}${stage}</span>
+      <span class="tk-series__who">${who}</span>
+      <span class="tk-series__status">${status}</span>
+    </div>
+    <div class="tk-series__games">
+    ${chips}
+    </div>
+  </div>`;
 }
 
 export function scoreTicker(games) {
-  const cells = games.map(g => {
-    const scheduled = g.scheduled === 1 || (Number(g.team_a_score) + Number(g.team_b_score) === 0);
-    const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
-    const winA = !scheduled && sa > sb, winB = !scheduled && sb > sa;
-    const r = ribbon(g, scheduled);
-    // Rows keep the order games were entered in (team A on top) — winner styling follows
-    // whichever row actually won, it doesn't reorder them.
-    const row = (name, score, win) => `<span class="tk-row${win ? ' is-win' : ''}">
-      <span class="tk-team"><span class="team-dot" style="background:${teamColor(name)}"></span>${escHtml(name)}</span>
-      <b class="tk-score font-condensed">${scheduled ? '–' : score}</b>
-    </span>`;
-    const tag = scheduled ? 'div' : 'a';
-    const href = scheduled ? '' : ` href="/games/${encodeURIComponent(g.id)}"`;
-    return `<${tag}${href} class="tk-cell tk-cell--${r.kind}">
-    <span class="tk-ribbon" title="${escHtml([r.left, r.right].filter(Boolean).join(' · '))}"><span class="tk-ribbon__left">${r.trophy ? TROPHY : ''}${escHtml(r.left)}</span>${r.right ? `<span class="tk-ribbon__right">${r.dot ? `<span class="tk-dot" style="background:${r.dot}"></span>` : ''}${escHtml(r.right)}</span>` : ''}</span>
-    <span class="tk-body">
-      ${row(g.team_a_name, sa, winA)}
-      ${row(g.team_b_name, sb, winB)}
-    </span>
-  </${tag}>`;
-  });
+  // Group postseason games into their series (placed at the series' newest game), stop
+  // after TICKER_LIMIT games — except that games of a series already on the strip still
+  // join it, so a series is never shown half-cut.
+  const items = [];
+  const seriesByKey = new Map();
+  let count = 0;
+  for (const g of games) {
+    const post = g.game_type === 'playoff' || g.game_type === 'finals';
+    const series = post ? seriesByKey.get(seriesKey(g)) : null;
+    if (series) { series.games.push(g); count++; continue; }
+    if (count >= TICKER_LIMIT) continue;
+    count++;
+    if (post) {
+      const item = { games: [g] };
+      seriesByKey.set(seriesKey(g), item);
+      items.push(item);
+    } else {
+      items.push({ game: g });
+    }
+  }
+
+  const cells = items.map(it => it.game ? gameCell(it.game) : seriesCard(it.games));
+  cells.push(`<a href="/games" class="tk-all">
+    <span class="tk-all__icon">${ARROW}</span>
+    <span>See all games</span>
+  </a>`);
 
   const CHEVRON_L = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
   const CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
