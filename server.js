@@ -1643,7 +1643,7 @@ function regMiniBanner() {
   return `<div class="reg-mini">
   <span class="reg-mini__pill">
     <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-    ${escHtml(pill)}
+    <span class="pill-label">${escHtml(pill)}</span>
   </span>
   <span class="reg-mini__text">${escHtml(message)}</span>
   <a href="/register" class="reg-mini__cta">${escHtml(cta)} <span aria-hidden="true">→</span></a>

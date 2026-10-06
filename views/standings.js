@@ -126,7 +126,7 @@ function findTriangle(teams, games) {
 // ── Sections ──────────────────────────────────────────────────────────────────
 
 function pageHead({ season, seasons, isCurrent, week, played, expected }) {
-  const pills = seasons.map(s => `<a href="/standings${String(s) === String(seasons[0]) ? '' : `?season=${encodeURIComponent(s)}`}" class="stp-pill${String(s) === String(season) ? ' is-on' : ''}"${String(s) === String(season) ? ' aria-current="page"' : ''}>S${escHtml(String(s))}</a>`).join('');
+  const pills = seasons.map(s => `<a href="/standings${String(s) === String(seasons[0]) ? '' : `?season=${encodeURIComponent(s)}`}" class="stp-pill${String(s) === String(season) ? ' is-on' : ''}"${String(s) === String(season) ? ' aria-current="page"' : ''}><span class="pill-label">S${escHtml(String(s))}</span></a>`).join('');
   const pct = expected ? Math.min(100, Math.round(played / expected * 100)) : 0;
   return `<div class="stp-head">
   <div class="stp-head__title">
@@ -156,9 +156,9 @@ function leagueTable(table, season, week, isCurrent, notes) {
   const showLine = table.length >= 4;
   const rowsHtml = table.map((t, i) => {
     const form = [...t.form, ...Array(5 - t.form.length).fill('')].map(r => r
-      ? `<span class="stp-fd stp-fd--${r}">${r}</span>`
+      ? `<span class="stp-fd stp-fd--${r}"><span class="pill-label">${r}</span></span>`
       : '<span class="stp-fd stp-fd--none"></span>').join('');
-    const formInline = t.form.map(r => `<span class="stp-fd stp-fd--${r}">${r}</span>`).join('');
+    const formInline = t.form.map(r => `<span class="stp-fd stp-fd--${r}"><span class="pill-label">${r}</span></span>`).join('');
     const diff = t.diff > 0 ? `+${t.diff}` : String(t.diff);
     const leadGlare = i === 0 ? ` style="--glare:${rgba(t.color, 0.1)}"` : '';
     return `<div class="stp-tr">
@@ -234,7 +234,7 @@ function playoffPicture(table, isCurrent) {
 
 function triangleCard(tri) {
   if (!tri) return '';
-  const chip = (t, cls) => `<span class="stp-tri__chip ${cls}"><span class="team-dot" style="background:${t.color}"></span>${escHtml(t.name)}</span>`;
+  const chip = (t, cls) => `<span class="stp-tri__chip ${cls}"><span class="team-dot" style="background:${t.color}"></span><span class="pill-label">${escHtml(t.name)}</span></span>`;
   return `<div class="stp-tri">
     <span class="stp-kicker">The triangle</span>
     <p class="stp-tri__title">Three teams, three different winners.</p>
@@ -283,8 +283,8 @@ function headToHead(table, games, colorOf) {
   }).join('');
   const tri = findTriangle(table, games);
   const records = Object.fromEntries(table.map(t => [t.id, `${t.wins}-${t.losses}`]));
-  const chips = [`<button type="button" class="stp-chip is-on" data-team="" aria-pressed="true">All</button>`]
-    .concat(table.map(t => `<button type="button" class="stp-chip" data-team="${escHtml(t.id)}" data-label="${escHtml(`${t.name} vs the field: ${records[t.id]}`)}" aria-pressed="false"><span class="team-dot" style="background:${t.color}"></span>${escHtml(t.name)}</button>`)).join('');
+  const chips = [`<button type="button" class="stp-chip is-on" data-team="" aria-pressed="true"><span class="pill-label">All</span></button>`]
+    .concat(table.map(t => `<button type="button" class="stp-chip" data-team="${escHtml(t.id)}" data-label="${escHtml(`${t.name} vs the field: ${records[t.id]}`)}" aria-pressed="false"><span class="team-dot" style="background:${t.color}"></span><span class="pill-label">${escHtml(t.name)}</span></button>`)).join('');
   const defaultLine = 'Every game this season, newest last. Pick a team to see only its games.';
   return `<section class="stp-h2h" aria-labelledby="stp-h2h-h">
   <div class="section-header"><h2 id="stp-h2h-h">Head to head</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
@@ -361,7 +361,7 @@ function teamStats(table, teamStatsRows) {
 
   // Phone: one category at a time as bars, picked from a chip row.
   const barsHtml = `<div class="stp-tsm card">
-    <div class="stp-chips stp-chips--scroll" role="group" aria-label="Stat category">${CATS.map((c, i) => `<button type="button" class="stp-chip${i === 0 ? ' is-on' : ''}" data-cat="${i}" aria-pressed="${i === 0}">${c.k}</button>`).join('')}</div>
+    <div class="stp-chips stp-chips--scroll" role="group" aria-label="Stat category">${CATS.map((c, i) => `<button type="button" class="stp-chip${i === 0 ? ' is-on' : ''}" data-cat="${i}" aria-pressed="${i === 0}"><span class="pill-label">${c.k}</span></button>`).join('')}</div>
     ${CATS.map((c, i) => `<div class="stp-tsm__cat" data-cat="${i}"${i === 0 ? '' : ' hidden'}>
       ${['pg', 'tot'].map(mode => {
         const vals = teams.map(t => ({ t, v: val(c, byId[t.id], mode) })).sort((a, b) => c.low ? a.v - b.v : b.v - a.v);
@@ -384,8 +384,8 @@ function teamStats(table, teamStatsRows) {
   <div class="stp-bar">
     <p class="stp-desc">League best in each column is in amber. For turnovers, fewest is best.</p>
     <div class="stp-chips" role="group" aria-label="Stat mode">
-      <button type="button" class="stp-chip is-on" data-mode="pg" aria-pressed="true">Per game</button>
-      <button type="button" class="stp-chip" data-mode="tot" aria-pressed="false">Totals</button>
+      <button type="button" class="stp-chip is-on" data-mode="pg" aria-pressed="true"><span class="pill-label">Per game</span></button>
+      <button type="button" class="stp-chip" data-mode="tot" aria-pressed="false"><span class="pill-label">Totals</span></button>
     </div>
   </div>
   ${tableHtml}

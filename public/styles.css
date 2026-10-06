@@ -1307,12 +1307,14 @@ a.tk-cell:hover { background: rgba(255,255,255,0.025); }
 a.tk-cell:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 .tk-ribbon {
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  height: 22px; padding: 0 10px;
+  height: 28px; padding: 0 10px;
+  line-height: 1; /* caps-only text: no extra leading, so it sits truly centred */
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
   color: var(--text-muted); background: #0d1119;
   border-bottom: 1px solid var(--border);
 }
-.tk-ribbon__left { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tk-ribbon__left { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tk-ribbon__left .tk-trophy { display: inline-block; vertical-align: -1px; margin-right: 5px; }
 .tk-ribbon__right { flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
 .tk-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.35); }
 .tk-trophy { flex-shrink: 0; }
@@ -1668,11 +1670,13 @@ a.tk-cell:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px;
   color: #22c55e;
   background: rgba(34,197,94,.12);
   border: 1px solid rgba(34,197,94,.3);
-  padding: 2px 9px 2px 7px;
+  padding: 6px 8px;
   border-radius: 99px;
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* letter-spacing adds space after the last letter too; pull it back so the label stays centred */
+.reg-mini__pill .pill-label { margin-right: -.1em; }
 .reg-mini__text {
   font-size: 13px;
   color: var(--text-muted);
@@ -7445,6 +7449,11 @@ a.player-link:hover { color: var(--amber); }
   .hero-cta { font-size: 13px; }
 }
 
+/* Pill / chip labels: put the label in its own span inside a flex pill and the capital
+   letters sit exactly in the middle (the font's ascent is taller than its descent, so a
+   plain line box rides ~1px high). Browsers without text-box keep the old 1px-high look. */
+.pill-label { display: block; text-box: trim-both cap alphabetic; }
+
 /* ── /standings (views/standings.js) ─────────────────────────────────────────
    Race summary → grouped league table + playoff picture → head to head → road so far →
    team stats. Section headers reuse .section-header; everything else is prefixed stp-. */
@@ -7560,7 +7569,7 @@ a.stp-row:hover { background-color: rgba(255,255,255,.02); }
 .stp-tri__fig svg { position: absolute; inset: 0; }
 .stp-tri__chip {
   position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 11px; border-radius: 999px; background: #161b26; border: 1px solid rgba(255,255,255,.1);
+  padding: 8px 11px; border-radius: 999px; background: #161b26; border: 1px solid rgba(255,255,255,.1);
   font-size: 12px; font-weight: 700; line-height: 1; color: var(--text); white-space: nowrap;
 }
 .stp-tri__chip .team-dot { width: 8px; height: 8px; }
