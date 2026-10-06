@@ -871,7 +871,7 @@ function closingCta(msg) {
 // One per block: a kicker ("THE RACE · AFTER WEEK 4"), a generated headline where
 // **name** markers become amber highlights, and a sentence or two. Admins get a
 // regenerate button (and see a placeholder when nothing has been generated yet).
-function summaryPanel(s, block, isAdmin) {
+export function summaryPanel(s, block, isAdmin) {
   if (!s && !isAdmin) return '';
   const headline = s ? escHtml(s.headline).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>') : '';
   const body = s?.body ? escHtml(s.body.replace(/\*\*/g, '')) : '';

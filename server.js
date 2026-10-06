@@ -134,6 +134,7 @@ import {
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
+  setGamePick, getGamePickCounts, getPlayerGamePicks,
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
@@ -8193,26 +8194,353 @@ app.post('/me/photo', jsonLarge, async (req, res) => {
   }
 });
 
+// ── /games: upcoming matchups, POTG marquee, season tiles ─────────────────────
+// Dates are stored either as "YYYY-MM-DD" or the older "M/D/YYYY h:mm AM" — normalise to
+// YYYY-MM-DD before comparing against manilaTodayStr().
+function gameYmd(raw) {
+  const s = String(raw || '');
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  return isNaN(d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDaysYmd(ymd, days) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+const isPlayedGame = g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0;
+const titleCase = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+const shortDay = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+
+// "Upcoming" = still scheduled, dated today or later, within the next 14 days. The date
+// check matters: stale scheduled rows that were never played must not sit in "Up next".
+const UPCOMING_WINDOW_DAYS = 14;
+function getUpcomingGames(games) {
+  const today = manilaTodayStr();
+  const until = addDaysYmd(today, UPCOMING_WINDOW_DAYS);
+  return games
+    .filter(g => (g.status === 'scheduled' || g.scheduled) && !g.under_review)
+    .map(g => ({ g, ymd: gameYmd(g.date) }))
+    .filter(x => x.ymd && x.ymd >= today && x.ymd <= until)
+    .sort((x, y) => x.ymd.localeCompare(y.ymd) || String(x.g.id).localeCompare(String(y.g.id)))
+    .slice(0, 2)
+    .map(x => x.g);
+}
+
+// Per-game team averages over a set of games. Points use every game's final score; the
+// box-score lines (shooting, rebounds...) only the games that actually have player stats —
+// a "stats pending" final can count toward points and wins without dragging the rest to 0.
+function teamAveragesOver(gameList, teamName, statsById, toById) {
+  const t = { gp: 0, pts: 0, box: 0, reb: 0, ast: 0, stl: 0, blk: 0, to: 0, fgm: 0, fga: 0, t3: 0, t3a: 0, ftm: 0, fta: 0 };
+  for (const g of gameList) {
+    const side = g.team_a_name === teamName ? 'a' : g.team_b_name === teamName ? 'b' : null;
+    if (!side) continue;
+    t.gp++;
+    t.pts += Number(g[`team_${side}_score`]) || 0;
+    const rows = (statsById[g.id] || []).filter(s => s.team_id === g[`team_${side}_id`]);
+    if (!rows.length) continue;
+    t.box++;
+    for (const s of rows) {
+      const fgm = (+s.fg2m || 0) + (+s.fg3m || 0) + (+s.fg4m || 0);
+      t.fgm += fgm;
+      t.fga += fgm + (+s.fg2m_miss || 0) + (+s.fg3m_miss || 0) + (+s.fg4m_miss || 0);
+      t.t3 += +s.fg3m || 0; t.t3a += (+s.fg3m || 0) + (+s.fg3m_miss || 0);
+      t.ftm += +s.ftm || 0; t.fta += (+s.ftm || 0) + (+s.ft_miss || 0);
+      t.reb += +s.reb || 0; t.ast += +s.ast || 0; t.stl += +s.stl || 0; t.blk += +s.blk || 0; t.to += +s.turnover || 0;
+    }
+    t.to += Number(toById[g.id]?.[side]) || 0;
+  }
+  const per = (v, n) => (n ? Math.round((v / n) * 10) / 10 : null);
+  const pct = (m, a) => (a ? Math.round((m / a) * 1000) / 10 : null);
+  return {
+    gp: t.gp, box: t.box,
+    pts: per(t.pts, t.gp), fg: pct(t.fgm, t.fga), t3m: per(t.t3, t.box), t3p: pct(t.t3, t.t3a), ft: pct(t.ftm, t.fta),
+    reb: per(t.reb, t.box), ast: per(t.ast, t.box), stl: per(t.stl, t.box), blk: per(t.blk, t.box), to: per(t.to, t.box),
+  };
+}
+
+// [key, label, higherIsBetter, suffix used in the AI facts]
+const MATCHUP_STATS = [
+  ['pts', 'Points', true], ['fg', 'FG%', true, '%'], ['t3m', '3PT made', true], ['t3p', '3PT%', true, '%'], ['ft', 'FT%', true, '%'],
+  ['reb', 'Rebounds', true], ['ast', 'Assists', true], ['stl', 'Steals', true], ['blk', 'Blocks', true], ['to', 'Turnovers', false],
+];
+
+function gameTagLabel(g) {
+  if (g.game_type === 'finals') return 'Finals';
+  if (g.game_type === 'playoff') return 'Playoffs';
+  return '';
+}
+
+// Everything the matchup card needs for one upcoming game. Head-to-head covers every
+// meeting since the league began (all seasons, playoffs included); when the two teams have
+// never met, the comparison falls back to each team's current-season games.
+function buildMatchup(game, ctx) {
+  const A = game.team_a_name, B = game.team_b_name;
+  const pair = g => (g.team_a_name === A && g.team_b_name === B) || (g.team_a_name === B && g.team_b_name === A);
+  const meetings = ctx.played.filter(pair); // newest first
+  const winsOf = name => meetings.filter(g => {
+    const aWin = Number(g.team_a_score) > Number(g.team_b_score);
+    return (aWin ? g.team_a_name : g.team_b_name) === name;
+  }).length;
+  const seasonGames = ctx.played.filter(g => String(g.season) === String(ctx.season));
+  const recordOf = name => {
+    const mine = seasonGames.filter(g => g.team_a_name === name || g.team_b_name === name);
+    const w = mine.filter(g => (g.team_a_name === name) === (Number(g.team_a_score) > Number(g.team_b_score))).length;
+    return { w, l: mine.length - w };
+  };
+
+  const firstMeeting = meetings.length === 0;
+  const basis = firstMeeting ? seasonGames : meetings;
+  for (const g of basis) ctx.loadGame(g.id);
+  const avgA = teamAveragesOver(firstMeeting ? basis.filter(g => g.team_a_name === A || g.team_b_name === A) : basis, A, ctx.statsById, ctx.toById);
+  const avgB = teamAveragesOver(firstMeeting ? basis.filter(g => g.team_a_name === B || g.team_b_name === B) : basis, B, ctx.statsById, ctx.toById);
+  const rows = MATCHUP_STATS
+    .filter(([k]) => avgA[k] != null && avgB[k] != null)
+    .map(([k, label, hi, suffix = '']) => ({ key: k, label, a: avgA[k], b: avgB[k], hi, suffix }));
+
+  // Go-to scorer per team in this matchup: highest points per game over the meetings they
+  // played (at least 2 when there have been 2+ box scores, so one hot night doesn't win it).
+  const scorers = [];
+  if (!firstMeeting) {
+    for (const [name, opp] of [[A, B], [B, A]]) {
+      const per = new Map();
+      for (const g of [...meetings].reverse()) { // oldest first, for the per-game bars
+        const side = g.team_a_name === name ? 'a' : 'b';
+        for (const s of (ctx.statsById[g.id] || []).filter(s => s.team_id === g[`team_${side}_id`])) {
+          const p = per.get(s.player_id) || { id: s.player_id, games: [], pts: 0, reb: 0, ast: 0, fgm: 0, fga: 0 };
+          const fgm = (+s.fg2m || 0) + (+s.fg3m || 0) + (+s.fg4m || 0);
+          p.games.push({ pts: +s.pts || 0, ymd: gameYmd(g.date), tag: gameTagLabel(g) });
+          p.pts += +s.pts || 0; p.reb += +s.reb || 0; p.ast += +s.ast || 0;
+          p.fgm += fgm; p.fga += fgm + (+s.fg2m_miss || 0) + (+s.fg3m_miss || 0) + (+s.fg4m_miss || 0);
+          per.set(s.player_id, p);
+        }
+      }
+      const boxCount = meetings.filter(g => (ctx.statsById[g.id] || []).length).length;
+      const minGames = Math.min(2, boxCount);
+      const best = [...per.values()].filter(p => p.games.length >= minGames)
+        .sort((x, y) => y.pts / y.games.length - x.pts / x.games.length)[0];
+      if (!best) { scorers.push(null); continue; }
+      const player = ctx.playerMap[best.id];
+      const top = best.games.reduce((m, x) => (x.pts > m.pts ? x : m), best.games[0]);
+      const n = best.games.length;
+      scorers.push({
+        id: best.id, name: displayPlayerName(player?.name || ''), number: player?.number ?? '', team: name, opp, hasPhoto: !!player?.picture_url,
+        ppg: Math.round((best.pts / n) * 10) / 10, rpg: Math.round((best.reb / n) * 10) / 10, apg: Math.round((best.ast / n) * 10) / 10,
+        fg: best.fga ? Math.round((best.fgm / best.fga) * 1000) / 10 : null, games: n,
+        series: best.games.map(x => x.pts), best: { pts: top.pts, label: top.tag ? `${top.tag} · ${shortDay(top.ymd)}` : shortDay(top.ymd) },
+      });
+    }
+  }
+
+  const lastMeetings = meetings.slice(0, 3).map(g => {
+    ctx.loadGame(g.id);
+    const stats = ctx.statsById[g.id] || [];
+    const aIsA = g.team_a_name === A;
+    const potgId = stats.length ? (g.manual_potg_player_id || derivePotgPlayerId(g, stats)) : null;
+    const potgStat = potgId ? stats.find(s => s.player_id === potgId) : null;
+    return {
+      id: g.id, ymd: gameYmd(g.date), season: g.season, tag: gameTagLabel(g), hasCover: !!g.has_cover,
+      scoreA: Number(aIsA ? g.team_a_score : g.team_b_score), scoreB: Number(aIsA ? g.team_b_score : g.team_a_score),
+      potg: potgStat ? { name: displayPlayerName(ctx.playerMap[potgId]?.name || ''), pts: +potgStat.pts || 0, reb: +potgStat.reb || 0, ast: +potgStat.ast || 0 } : null,
+    };
+  });
+
+  return {
+    game, ymd: gameYmd(game.date), a: A, b: B, firstMeeting,
+    winsA: winsOf(A), winsB: winsOf(B), meetings: meetings.length,
+    boxMeetings: meetings.filter(g => (ctx.statsById[g.id] || []).length).length,
+    recordA: recordOf(A), recordB: recordOf(B), season: ctx.season,
+    rows, scorers, lastMeetings,
+    slides: meetings.filter(g => g.has_cover).slice(0, 4).map(g => g.id),
+  };
+}
+
+// POTG marquee: the latest Players of the Game, newest first.
+function buildPotgMarquee(played, playerMap, count = 8) {
+  const out = [];
+  for (const g of played) {
+    if (out.length >= count) break;
+    const stats = getGameStats(g.id);
+    if (!stats.length) continue;
+    const pid = g.manual_potg_player_id || derivePotgPlayerId(g, stats);
+    const s = pid && stats.find(x => x.player_id === pid);
+    if (!s) continue;
+    const player = playerMap[pid];
+    const team = s.team_id === g.team_a_id ? g.team_a_name : g.team_b_name;
+    // Points always, then up to two of the bigger other lines.
+    const extras = [['reb', 'REB', 5], ['ast', 'AST', 5], ['stl', 'STL', 3], ['blk', 'BLK', 3]]
+      .map(([k, u, min]) => ({ n: +s[k] || 0, u, score: (+s[k] || 0) / min }))
+      .filter(x => x.score >= 1).sort((x, y) => y.score - x.score).slice(0, 2);
+    const aWin = Number(g.team_a_score) > Number(g.team_b_score);
+    const [w, l, ws, ls] = aWin ? [g.team_a_name, g.team_b_name, g.team_a_score, g.team_b_score] : [g.team_b_name, g.team_a_name, g.team_b_score, g.team_a_score];
+    const tag = gameTagLabel(g);
+    out.push({
+      gameId: g.id, playerId: pid, name: displayPlayerName(player?.name || ''), team, hasPhoto: !!player?.picture_url,
+      meta: `${shortDay(gameYmd(g.date))} · S${g.season}${tag ? ` ${tag}` : ''}`,
+      stats: [{ n: +s.pts || 0, u: 'PTS' }, ...extras.map(x => ({ n: x.n, u: x.u }))],
+      result: `${titleCase(w)} ${ws}–${ls} ${titleCase(l)}`,
+    });
+  }
+  return out;
+}
+
+// Four season tiles: biggest win, closest finish, most team points, best single game.
+function buildSeasonTiles(seasonPlayed, playerMap) {
+  if (!seasonPlayed.length) return [];
+  const margin = g => Math.abs(Number(g.team_a_score) - Number(g.team_b_score));
+  const line = g => {
+    const aWin = Number(g.team_a_score) > Number(g.team_b_score);
+    const [w, l, ws, ls] = aWin ? [g.team_a_name, g.team_b_name, g.team_a_score, g.team_b_score] : [g.team_b_name, g.team_a_name, g.team_b_score, g.team_a_score];
+    return { text: `${titleCase(w)} ${ws}–${ls} ${titleCase(l)} · ${shortDay(gameYmd(g.date))}`, ws, ls };
+  };
+  const biggest = seasonPlayed.reduce((m, g) => (margin(g) > margin(m) ? g : m));
+  const closest = seasonPlayed.reduce((m, g) => (margin(g) < margin(m) ? g : m));
+  const high = seasonPlayed.reduce((m, g) => (Math.max(+g.team_a_score, +g.team_b_score) > Math.max(+m.team_a_score, +m.team_b_score) ? g : m));
+  const highSide = +high.team_a_score >= +high.team_b_score ? 'a' : 'b';
+  let bestGame = null;
+  for (const g of seasonPlayed) {
+    for (const s of getGameStats(g.id)) {
+      if (!bestGame || (+s.pts || 0) > bestGame.pts) bestGame = { pts: +s.pts || 0, playerId: s.player_id, g, team: s.team_id === g.team_a_id ? g.team_a_name : g.team_b_name };
+    }
+  }
+  const c = line(closest);
+  const tiles = [
+    { label: 'Biggest win', value: `+${margin(biggest)}`, sub: line(biggest).text, href: `/games/${encodeURIComponent(biggest.id)}` },
+    { label: 'Closest finish', value: `${c.ws}–${c.ls}`, sub: c.text, href: `/games/${encodeURIComponent(closest.id)}` },
+    { label: 'Most points', value: String(high[`team_${highSide}_score`]), sub: `${titleCase(high[`team_${highSide}_name`])} · ${shortDay(gameYmd(high.date))}`, href: `/games/${encodeURIComponent(high.id)}` },
+  ];
+  if (bestGame && bestGame.pts > 0) {
+    tiles.push({ label: 'Best single game', value: `${bestGame.pts} PTS`, sub: `${displayPlayerName(playerMap[bestGame.playerId]?.name || '')} · ${titleCase(bestGame.team)}, ${shortDay(gameYmd(bestGame.g.date))}`, href: `/players/${encodeURIComponent(bestGame.playerId)}`, accent: true });
+  }
+  return tiles;
+}
+
+// ── Matchup storylines (AI) ───────────────────────────────────────────────────
+// Same pattern as the homepage summaries: facts reduce to a key, the stored story (setting
+// games_matchup_story_<gameId>) only shows while the key still matches, a stale/missing one
+// is written in the background, never awaited by the page. Every number must appear in
+// the facts, banned words are rejected in code, then a temperature-0 fact check.
+const MATCHUP_STORY_VERSION = 1;
+const matchupStoryInFlight = new Set();
+let matchupStoryCooldownUntil = 0;
+const MATCHUP_BANNED = /\b(clash|showdown|impressive|stellar|remarkable|dominant|dominates|showcase|intriguing|intrigues|epic|crowd|fans|spectators)\b/i;
+
+function matchupStoryFacts(m) {
+  const T = titleCase;
+  const meetLines = m.lastMeetings.map(x => {
+    const aWin = x.scoreA > x.scoreB;
+    return `${aWin ? T(m.a) : T(m.b)} ${Math.max(x.scoreA, x.scoreB)}-${Math.min(x.scoreA, x.scoreB)} on ${shortDay(x.ymd)} (Season ${x.season}${x.tag ? ` ${x.tag}` : ''})`;
+  });
+  const statLines = m.rows.map(r => `- ${r.label}: ${T(m.a)} ${r.a.toFixed(1)}${r.suffix}, ${T(m.b)} ${r.b.toFixed(1)}${r.suffix}${r.hi ? "" : " (fewer is better)"}`);
+  const scorerLines = m.scorers.filter(Boolean).map(s => `${s.name} (${T(s.team)}) ${s.ppg.toFixed(1)} points per game against ${T(s.opp)} over ${s.games} games, scoring ${s.series.join(', ')} in those games, oldest first`);
+  const basis = m.firstMeeting
+    ? `The two teams have not met before. Per-game averages below are each team's Season ${m.season} games against anyone.`
+    : `Head to head since Season 3: ${m.meetings} meetings, ${T(m.a)} has won ${m.winsA}, ${T(m.b)} has won ${m.winsB}.\nMost recent meetings, newest first: ${meetLines.join('; ')}.\nPer-game averages in their meetings${m.boxMeetings < m.meetings ? ` (box-score stats exist for ${m.boxMeetings} of the ${m.meetings} meetings; points cover all of them)` : ''}:`;
+  const facts = `Upcoming game: ${T(m.a)} vs ${T(m.b)}, Season ${m.season}.
+Season ${m.season} records so far: ${T(m.a)} ${m.recordA.w}-${m.recordA.l}, ${T(m.b)} ${m.recordB.w}-${m.recordB.l}.
+${basis}
+${statLines.join('\n')}${scorerLines.length ? `\nTop scorers in this matchup: ${scorerLines.join('; ')}.` : ''}`;
+  const key = `v${MATCHUP_STORY_VERSION}|${m.game.id}|${m.recordA.w}-${m.recordA.l}|${m.recordB.w}-${m.recordB.l}|${m.lastMeetings.map(x => `${x.id}:${x.scoreA}-${x.scoreB}`).join(',')}|${m.meetings}`;
+  return { key, facts, section: 'matchup preview' };
+}
+
+async function generateMatchupStory(gameId, f) {
+  const voice = pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
+  let prompt = `You write the storyline for an upcoming game on the WKND Basketball League games page — a recreational league whose players read every word.
+
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+
+FACTS (the only things you may state):
+${f.facts}
+
+Rules:
+- headline: one sentence, at most 110 characters, ending with a period. Wrap the one or two key phrases (a team name or the deciding number) in **double asterisks**. Team names in title case.
+- body: one paragraph of 3-4 sentences, 60-90 words, plain text — no asterisks, markdown or emoji. Explain what has decided this matchup so far and what to watch next time they meet. Don't repeat the headline.
+- Every number must be copied exactly as written in the facts. Never calculate a difference, total, gap or percentage of your own (no "6 more", no "12 combined") — compare with words like "more" or "fewer" instead.
+- A single game's margin is not an "edge" or a "lead" in the series. Per-game averages describe the meetings overall; never attach them to a single game.
+- Don't invent stats, history, injuries, quotes or lineups. Don't predict a winner as certain. Never call anything a record, a first or a best-ever.
+- Write finished copy only: no questions to yourself, no notes or alternatives.
+- Don't mention the crowd, fans or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "showcase", "intriguing", "clash" or "showdown".`;
+  const schema = { type: 'object', properties: { headline: { type: 'string' }, body: { type: 'string' } }, required: ['headline', 'body'] };
+  const factNums = new Set(f.facts.match(/\d+(?:\.\d+)?/g) || []);
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const { data } = await generateJson(prompt, schema, { temperature: Math.min(aiTemperature(), 0.6), maxTokens: 500 });
+    const headline = String(data.headline || '').trim().slice(0, 160);
+    const body = String(data.body || '').replace(/\*\*/g, '').trim().slice(0, 700);
+    if (!headline || !body) continue;
+    const bad = (`${headline} ${body}`.match(/\d+(?:\.\d+)?/g) || []).filter(n => !factNums.has(n));
+    if (bad.length) {
+      console.warn(`Matchup story (${gameId}) attempt ${attempt} used numbers not in the facts: ${bad.join(', ')}`);
+      prompt += `\n\nA previous draft was rejected for using numbers that are not in the facts (${bad.join(', ')}). Only copy numbers from the facts.`;
+      continue;
+    }
+    const banned = `${headline} ${body}`.match(MATCHUP_BANNED);
+    if (banned) {
+      console.warn(`Matchup story (${gameId}) attempt ${attempt} used a banned word: ${banned[0]}`);
+      prompt += `\n\nA previous draft was rejected for using the word "${banned[0]}". Don't use it.`;
+      continue;
+    }
+    const problems = await factCheckHomeSummary(f, headline, body);
+    if (problems.length) {
+      console.warn(`Matchup story (${gameId}) attempt ${attempt} failed the fact check: ${problems.join(' | ')}`);
+      prompt += `\n\nA previous draft was rejected for these errors — avoid them: ${problems.join('; ')}`;
+      continue;
+    }
+    setSetting(`games_matchup_story_${gameId}`, JSON.stringify({ key: f.key, headline, body, at: Date.now() }));
+    return;
+  }
+  throw new Error('No matchup story passed the checks');
+}
+
+function getMatchupStories(matchups) {
+  const out = {};
+  for (const m of matchups) {
+    const f = matchupStoryFacts(m);
+    let stored = null;
+    try { stored = JSON.parse(getSetting(`games_matchup_story_${m.game.id}`, '') || 'null'); } catch {}
+    if (stored && stored.key === f.key) {
+      out[m.game.id] = { headline: stored.headline, body: stored.body };
+    } else if (aiAvailable() && !matchupStoryInFlight.has(m.game.id) && Date.now() >= matchupStoryCooldownUntil) {
+      matchupStoryInFlight.add(m.game.id);
+      generateMatchupStory(m.game.id, f)
+        .catch(err => { console.error(`Matchup story (${m.game.id}) failed:`, err.message); matchupStoryCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS; })
+        .finally(() => matchupStoryInFlight.delete(m.game.id));
+    }
+  }
+  return out;
+}
+
+function buildGamesContext(games, playerMap) {
+  const played = games.filter(isPlayedGame);
+  const statsById = {}, toById = {};
+  return {
+    played, playerMap, season: getPortalCurrentSeason(), statsById, toById,
+    loadGame(id) {
+      if (statsById[id]) return;
+      statsById[id] = getGameStats(id);
+      const full = getGameById(id);
+      toById[id] = { a: full?.team_a_to_team || 0, b: full?.team_b_to_team || 0 };
+    },
+  };
+}
+
 app.get('/games', (req, res) => {
-  const teams = getAllTeams();
   const players = getAllPlayers();
   const games = byDate(getAllGames());
-
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
-  const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
+  const ctx = buildGamesContext(games, playerMap);
+  const currentSeason = ctx.season;
 
-  const completedGames = games.filter(g =>
-    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
-
-  // Trimmed to a teaser now that /highlights is the full browsing destination — the "See
-  // all" link on this widget points there, not back at this page.
-  const highlights = buildHighlights(completedGames, playerMap, teamMap, 4);
+  // Season filter: ?season=3, ?season=all; defaults to the current season.
+  const seasons = [...new Set(ctx.played.map(g => String(g.season)).filter(Boolean))].sort((a, b) => Number(b) - Number(a));
+  const qSeason = String(req.query.season || '');
+  const season = qSeason === 'all' ? 'all' : (seasons.includes(qSeason) ? qSeason : (seasons.includes(String(currentSeason)) ? String(currentSeason) : (seasons[0] || 'all')));
+  const listGames = games.filter(g => (g.status === 'final' || g.status === 'complete') && !g.under_review && (season === 'all' || String(g.season) === season));
 
   const commentsEnabled = getSetting('comments_enabled', '0') === '1';
   let socialByGame = {};
   if (commentsEnabled) {
-    const ids = completedGames.map(g => g.id);
+    const ids = listGames.map(g => g.id);
     const commentCounts = getGameCommentCounts(ids);
     const reactionCounts = getGameReactionCounts(ids);
     const reactedIds = getReactedGameIdsForPlayer(ids, req.session?.playerPlayerId || null);
@@ -8223,11 +8551,66 @@ app.get('/games', (req, res) => {
     }]));
   }
 
+  // Top scorer per listed game, for the card footer.
+  const topScorerByGame = {};
+  for (const g of listGames) {
+    const top = getGameStats(g.id).reduce((m, s) => ((+s.pts || 0) > (m ? +m.pts || 0 : -1) ? s : m), null);
+    if (top) topScorerByGame[g.id] = { name: displayPlayerName(playerMap[top.player_id]?.name || ''), pts: +top.pts || 0 };
+  }
+
+  const upcoming = getUpcomingGames(games);
+  const matchups = upcoming.map(g => buildMatchup(g, ctx));
+  const upcomingIds = upcoming.map(g => g.id);
+  const pickCounts = getGamePickCounts(upcomingIds);
+  const myPicks = getPlayerGamePicks(upcomingIds, req.session?.playerPlayerId || null);
+  const stories = getMatchupStories(matchups);
+
+  const potg = buildPotgMarquee(ctx.played, playerMap, 8);
+  const seasonPlayed = season === 'all' ? ctx.played : ctx.played.filter(g => String(g.season) === season);
+  const tiles = buildSeasonTiles(seasonPlayed, playerMap);
+
+  // The homepage's "The story" summary (Game headlines block) doubles as this page's intro.
+  const summary = getHomeSummaries(homeSummaryContext({
+    season: currentSeason, games, standings: buildHomeStandings(currentSeason, games), boards: [],
+  })).headlines || null;
+
   res.send(renderPage(req, {
     title: 'Games — WKND Basketball League',
     currentPath: req.path,
-    body: gamesPage({ games, highlights, commentsEnabled, socialByGame })
+    body: gamesPage({
+      games: listGames, season, seasons, currentSeason, seasonPlayedCount: seasonPlayed.length,
+      summary, isAdmin: !!req.session?.isAdmin, isPlayer: !!req.session?.playerPlayerId,
+      tiles, potg, matchups, stories, pickCounts, myPicks,
+      commentsEnabled, socialByGame, topScorerByGame,
+    }),
   }));
+});
+
+// "Who wins?" — one pick per logged-in player per game, only while the game is upcoming.
+app.post('/games/:id/pick', express.json(), (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.status(401).json({ error: 'Log in to pick.' });
+  const game = getGameById(req.params.id);
+  if (!game || !getUpcomingGames([game]).length) return res.status(400).json({ error: 'Picks are closed for this game.' });
+  const side = req.body?.side === 'a' || req.body?.side === 'b' ? req.body.side : null;
+  setGamePick(game.id, playerId, side);
+  res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id] });
+});
+
+app.post('/admin/games/matchup-story/regenerate', requireAuth, express.json(), async (req, res) => {
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const games = byDate(getAllGames());
+  const game = getUpcomingGames(games).find(g => g.id === String(req.body?.gameId || ''));
+  if (!game) return res.status(400).json({ error: 'That game is not upcoming.' });
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const m = buildMatchup(game, buildGamesContext(games, playerMap));
+  try {
+    await generateMatchupStory(game.id, matchupStoryFacts(m));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`Matchup story (${game.id}) regenerate failed:`, err.message);
+    res.status(502).json({ error: 'The AI provider failed — try again in a bit.' });
+  }
 });
 
 app.get('/highlights', (req, res) => {

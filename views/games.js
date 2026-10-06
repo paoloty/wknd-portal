@@ -1,7 +1,6 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt } from './utils.js';
-import { scoreTicker } from './ticker.js';
-import { highlightsSidebar } from './home.js';
+import { summaryPanel } from './home.js';
 
 // Comment/react/share for this row — same actions as the game page's tabActionsBar, just
 // reachable from the list. The row itself is a "stretched link" card (see .game-row__link
@@ -128,33 +127,374 @@ export function gameListScript() {
 <\/script>`;
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
-export function gamesPage({ games, highlights = [], commentsEnabled = false, socialByGame = {} }) {
-  const completedGames = games
-    .filter(g => g.status === 'final' || g.status === 'complete')
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const upcomingGames = games
-    .filter(g => g.status === 'scheduled')
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 5);
-  const tickerGames = [...upcomingGames, ...completedGames];
+// ── /games page ───────────────────────────────────────────────────────────────
+const tc = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+const dayLabel = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '');
+const shortDayLabel = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+const initialsOf = name => String(name || '').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+const dot = (name, size = 0) => `<span class="team-dot"${size ? ` style="width:${size}px;height:${size}px;background:${teamColor(name)}"` : ` style="background:${teamColor(name)}"`}></span>`;
+const avatar = (cls, p) => p.hasPhoto
+  ? `<img class="${cls}" src="/api/player/${encodeURIComponent(p.id || p.playerId)}/photo" alt="" loading="lazy">`
+  : `<span class="${cls} gm-avatar--initials">${escHtml(initialsOf(p.name))}</span>`;
+const gameYmdOf = raw => {
+  const s = String(raw || '');
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  return isNaN(d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
-  const cards = completedGames.length
-    ? completedGames.map(g => gameRow(g, {
-        commentsEnabled,
-        social: socialByGame[g.id] || { commentsCount: 0, reactCount: 0, reacted: false },
-      })).join('\n    ')
-    : `<div class="card game-list__empty">No games yet.</div>`;
+// POTG marquee: the list twice in one track so the loop is seamless (the second copy is
+// hidden from screen readers).
+function potgMarquee(items) {
+  if (!items.length) return '';
+  const item = (p, hidden) => `<a href="/games/${encodeURIComponent(p.gameId)}" class="gm-mq__item" style="--team:${teamColor(p.team)}"${hidden ? ' tabindex="-1" aria-hidden="true"' : ''}>
+      ${avatar('gm-mq__img', p)}
+      <span class="gm-mq__who"><span class="gm-mq__meta">${escHtml(p.meta)}</span><span class="gm-mq__name">${escHtml(p.name)}</span></span>
+      <span class="gm-mq__line">
+        <span class="gm-mq__stats">${p.stats.map(s => `<span><b class="font-condensed">${s.n}</b><i>${s.u}</i></span>`).join('')}</span>
+        <span class="gm-mq__result">${dot(p.team, 8)}${escHtml(p.result)}</span>
+      </span>
+    </a>`;
+  return `<section class="gm-mq" aria-label="Recent Players of the Game">
+  <div class="gm-mq__label"><b>POTG</b><span>Players of the game</span></div>
+  <div class="gm-mq__view"><div class="gm-mq__track">
+    ${items.map(p => item(p, false)).join('')}
+    ${items.map(p => item(p, true)).join('')}
+  </div></div>
+</section>`;
+}
 
-  return `<div class="page-content">
-${pageHeader({ title: 'Games', description: 'Every result this season — box scores, recaps, and Player of the Game spotlights.' })}
+// One stat row: the better side's number + bar in amber (lower is better for turnovers).
+function edgeRow(r) {
+  const tie = r.a === r.b;
+  const aGood = !tie && (r.hi ? r.a > r.b : r.a < r.b);
+  const bGood = !tie && !aGood;
+  const max = Math.max(r.a, r.b) || 1;
+  const w = v => `${Math.round((v / max) * 100)}%`;
+  return `<div class="gm-st">
+      <span class="gm-st__v${aGood ? ' is-good' : ''}">${r.a.toFixed(1)}</span>
+      <span class="gm-st__track gm-st__track--a"><span class="gm-st__bar${aGood ? ' is-good' : ''}" style="width:${w(r.a)}"></span></span>
+      <span class="gm-st__lbl">${escHtml(r.label)}</span>
+      <span class="gm-st__track"><span class="gm-st__bar${bGood ? ' is-good' : ''}" style="width:${w(r.b)}"></span></span>
+      <span class="gm-st__v gm-st__v--b${bGood ? ' is-good' : ''}">${r.b.toFixed(1)}</span>
+    </div>`;
+}
 
-<div class="games-layout">
-  <div class="games-main">
-    ${completedGames.length ? `<div class="games-grid">${cards}</div>` : cards}
-  </div>
-  ${highlightsSidebar(highlights, { limit: 4, seeAllLink: true })}
+function scorerCard(p, side) {
+  if (!p) return `<div class="gm-fo__p gm-fo__p--empty${side === 'b' ? ' gm-fo__p--r' : ''}">No box scores yet</div>`;
+  const max = Math.max(...p.series, 1);
+  return `<a href="/players/${encodeURIComponent(p.id)}" class="gm-fo__p${side === 'b' ? ' gm-fo__p--r' : ''}" style="--team:${teamColor(p.team)}">
+      <span class="gm-fo__head">
+        ${avatar('gm-fo__img', p)}
+        <span class="gm-fo__id"><b class="gm-fo__name">${escHtml(p.name)}</b><span class="gm-fo__sub">${dot(p.team, 7)}${escHtml(p.team)}${p.number !== '' && p.number != null ? ` · #${escHtml(String(p.number))}` : ''}</span></span>
+      </span>
+      <span class="gm-fo__big"><b class="font-condensed${p.lead ? ' is-lead' : ''}">${p.ppg.toFixed(1)}</b><span>PPG vs ${escHtml(p.opp)}</span></span>
+      <span class="gm-fo__spark" aria-label="Points in each game against ${escHtml(tc(p.opp))}: ${p.series.join(', ')}">
+        ${p.series.map(v => `<span class="gm-fo__bar" style="height:${Math.max(6, Math.round((v / max) * 100))}%" title="${v} pts"></span>`).join('')}
+      </span>
+      <span class="gm-fo__stats"><span><b class="font-condensed">${p.rpg.toFixed(1)}</b>REB</span><span><b class="font-condensed">${p.apg.toFixed(1)}</b>AST</span>${p.fg != null ? `<span><b class="font-condensed">${p.fg.toFixed(1)}</b>FG%</span>` : ''}</span>
+      <span class="gm-fo__best">Best vs ${escHtml(tc(p.opp))} · <b>${p.best.pts} · ${escHtml(p.best.label)}</b></span>
+    </a>`;
+}
+
+function meetingTile(m, x) {
+  const aWin = x.scoreA > x.scoreB;
+  const potg = x.potg
+    ? `POTG · ${escHtml(x.potg.name)} ${x.potg.pts} pts${x.potg.reb >= 5 ? `, ${x.potg.reb} reb` : x.potg.ast >= 5 ? `, ${x.potg.ast} ast` : ''}`
+    : 'No box score for this game';
+  return `<a href="/games/${encodeURIComponent(x.id)}" class="gm-mt${x.hasCover ? ' has-photo' : ''}" style="--team:${teamColor(aWin ? m.a : m.b)}">
+      ${x.hasCover ? `<img class="gm-mt__img" src="/api/photo/${encodeURIComponent(x.id)}" alt="" loading="lazy">` : ''}
+      <span class="gm-mt__in">
+        <span class="gm-mt__top"><span class="gm-mt__when">${escHtml(shortDayLabel(x.ymd))} · S${escHtml(String(x.season))}</span>${x.tag ? `<span class="gm-mt__tag">${escHtml(x.tag)}</span>` : ''}</span>
+        <span class="gm-mt__sb">
+          <span class="gm-mt__row${aWin ? ' is-win' : ''}">${dot(m.a, 8)}${escHtml(m.a)}<b class="font-condensed">${x.scoreA}</b></span>
+          <span class="gm-mt__row${aWin ? '' : ' is-win'}">${dot(m.b, 8)}${escHtml(m.b)}<b class="font-condensed">${x.scoreB}</b></span>
+        </span>
+        <span class="gm-mt__potg">${potg}</span>
+      </span>
+    </a>`;
+}
+
+const storyHtml = s => escHtml(s).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>');
+
+function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer }) {
+  const g = m.game;
+  const leadA = m.winsA > m.winsB, leadB = m.winsB > m.winsA;
+  const glare = `radial-gradient(65% 130% at 0% 75%, ${teamColor(m.a)}80 0%, transparent 62%), radial-gradient(65% 130% at 100% 75%, ${teamColor(m.b)}80 0%, transparent 62%)`;
+  const slides = m.slides.map((id, i) => `<div class="gm-sl${i === 0 ? ' is-on' : ''}"><img src="/api/photo/${encodeURIComponent(id)}" alt=""${i === 0 ? '' : ' loading="lazy"'}></div>`).join('');
+
+  // Who wins?
+  const total = counts.a + counts.b;
+  const pctA = total ? Math.round((counts.a / total) * 100) : 50;
+  const pick = `<div class="gm-pick" data-game-id="${escHtml(g.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}">
+      <div class="gm-pick__btns"${myPick ? ' hidden' : ''}>
+        <button type="button" class="gm-pick__btn" data-side="a">${dot(m.a)}${escHtml(m.a)}</button>
+        <button type="button" class="gm-pick__btn" data-side="b">${escHtml(m.b)}${dot(m.b)}</button>
+      </div>
+      <div class="gm-pick__result"${myPick ? '' : ' hidden'}>
+        <div class="gm-pick__split">
+          <span class="gm-pick__seg${myPick === 'a' ? ' is-mine' : ''}" data-seg="a" style="width:${pctA}%">${dot(m.a, 8)}${escHtml(m.a)} <b>${pctA}%</b></span>
+          <span class="gm-pick__seg gm-pick__seg--b${myPick === 'b' ? ' is-mine' : ''}" data-seg="b" style="width:${100 - pctA}%"><b>${100 - pctA}%</b> ${escHtml(m.b)}${dot(m.b, 8)}</span>
+        </div>
+        <div class="gm-pick__note"><span>You picked <b data-mine-name>${escHtml(myPick === 'b' ? m.b : m.a)}</b> · we'll show how the picks did after the game</span><button type="button" class="gm-pick__change">Change</button></div>
+      </div>
+    </div>`;
+
+  // Biggest edges first (gap relative to the larger value), the rest behind a toggle.
+  const gap = r => Math.abs(r.a - r.b) / (Math.max(r.a, r.b) || 1);
+  const ranked = [...m.rows].sort((x, y) => gap(y) - gap(x));
+  const edgeIds = new Set(ranked.slice(0, 5).map(r => r.key));
+  const rowsHtml = m.rows.map(r => `<div class="gm-st-wrap${edgeIds.has(r.key) ? '' : ' is-extra'}">${edgeRow(r)}</div>`).join('');
+  const basisNote = m.firstMeeting
+    ? `First meeting · S${escHtml(String(m.season))} per game`
+    : `${m.meetings} meeting${m.meetings === 1 ? '' : 's'}${m.boxMeetings < m.meetings ? ` · ${m.boxMeetings} with box scores` : ''}`;
+
+  const scorers = m.scorers.length === 2 && (m.scorers[0] || m.scorers[1]) ? (() => {
+    const [sa, sb] = m.scorers;
+    if (sa && sb) { sa.lead = sa.ppg > sb.ppg; sb.lead = sb.ppg > sa.ppg; }
+    return `<div class="gm-grp">Go-to scorers · in this matchup</div>
+      <div class="gm-fo">${scorerCard(sa, 'a')}${scorerCard(sb, 'b')}<span class="gm-fo__vs font-condensed" aria-hidden="true">VS</span></div>`;
+  })() : '';
+
+  const meetings = m.lastMeetings.length ? `<div class="gm-grp">${m.lastMeetings.length === 1 ? 'Last meeting' : `Last ${m.lastMeetings.length} meetings`}</div>
+      <div class="gm-mts">${m.lastMeetings.map(x => meetingTile(m, x)).join('')}</div>` : '';
+
+  return `<article class="gm-card" aria-label="${escHtml(tc(m.a))} vs ${escHtml(tc(m.b))}">
+    <div class="gm-hero">
+      <div class="gm-slides" data-slides>${slides}</div>
+      <div class="gm-shade"></div>
+      <div class="gm-glare" style="background:${glare}"></div>
+      <div class="gm-hero__in">
+        <div class="gm-hero__chips"><span class="hero-chip hero-chip--season">Up next</span><span class="hero-chip">${escHtml(dayLabel(m.ymd))}</span></div>
+        <div class="gm-hero__teams">
+          <span class="gm-side"><span class="gm-side__name">${dot(m.a, 11)}<b>${escHtml(m.a)}</b></span><span class="gm-side__rec">S${escHtml(String(m.season))} ${m.recordA.w}–${m.recordA.l}</span></span>
+          <span class="gm-h2h">${m.firstMeeting
+            ? '<span class="gm-h2h__lbl">First meeting</span>'
+            : `<span class="gm-h2h__lbl">Head to head</span><span class="gm-h2h__wins"><b class="font-condensed${leadA ? ' is-lead' : ''}">${m.winsA}</b><span class="font-condensed">–</span><b class="font-condensed${leadB ? ' is-lead' : ''}">${m.winsB}</b></span>`}</span>
+          <span class="gm-side gm-side--b"><span class="gm-side__name"><b>${escHtml(m.b)}</b>${dot(m.b, 11)}</span><span class="gm-side__rec">S${escHtml(String(m.season))} ${m.recordB.w}–${m.recordB.l}</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="gm-body">
+      ${story ? `<div class="gm-story">
+        <p class="gm-story__head">${storyHtml(story.headline)}</p>
+        <p class="gm-story__body">${escHtml(story.body)}</p>
+        ${isAdmin ? `<button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button>` : ''}
+      </div>` : (isAdmin ? `<div class="gm-story gm-story--empty"><span>No storyline yet — it's written in the background, or regenerate it now</span><button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button></div>` : '')}
+      <div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
+      ${pick}
+      <div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Biggest edges · this season' : 'Biggest edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
+      <div class="gm-edges">${rowsHtml}</div>
+      ${m.rows.length > 5 ? `<button type="button" class="gm-more" data-more aria-expanded="false">Show all ${m.rows.length} stats</button>` : ''}
+      ${scorers}
+      ${meetings}
+    </div>
+  </article>`;
+}
+
+// Recap card for the list — the homepage Game headlines card plus a footer (top scorer,
+// comment/react/share). The card is a stretched link so the footer buttons stay real buttons.
+function gameCard(g, { commentsEnabled, social, topScorer }) {
+  const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
+  const aWin = sa > sb;
+  const winner = aWin ? g.team_a_name : g.team_b_name;
+  const recapTitle = boldTitle(g.game_writeup);
+  const margin = Math.abs(sa - sb);
+  const title = recapTitle || `${tc(winner)} beat ${tc(aWin ? g.team_b_name : g.team_a_name)} by ${margin}`;
+  const ymd = gameYmdOf(g.date);
+  const pending = g.status === 'final';
+  const typeTag = g.game_type === 'finals' ? 'Finals' : g.game_type === 'playoff' ? 'Playoffs' : '';
+  const tag = typeTag || (g.overtime ? 'OT' : margin <= 2 ? 'Thriller' : margin >= 20 ? 'Blowout' : '');
+  const side = (name, score, w) => `<span class="gh-score__team${w ? ' is-win' : ''}"><span class="gh-score__name">${dot(name)}${escHtml(name)}</span><b class="gh-score__num font-condensed">${score}</b></span>`;
+  const id = encodeURIComponent(g.id);
+  const actions = `${commentsEnabled ? `<a href="/games/${id}#comments" class="gr-act" aria-label="Comments"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>${social.commentsCount || 0}</span></a>
+      <button type="button" class="gr-act${social.reacted ? ' is-active' : ''}" data-action="react-game" data-game-id="${escHtml(g.id)}" aria-label="React to this game"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg><span>${social.reactCount || 0}</span></button>` : ''}
+      <button type="button" class="gr-act" data-action="share-game" data-url="/games/${id}" aria-label="Share"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></button>`;
+  return `<article class="gh-card gr-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}" data-teams="${escHtml(`${g.team_a_name} ${g.team_b_name}`)}" data-type="${escHtml(g.game_type || 'regular')}">
+    <a href="/games/${id}" class="gr-card__link" aria-label="${escHtml(title.slice(0, 120))}"></a>
+    ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${id}" alt="" loading="lazy">` : ''}
+    <span class="gh-card__top"><span class="gh-card__when"><span class="gh-card__season">S${escHtml(String(g.season))}</span><span class="gh-card__date">${escHtml(dayLabel(ymd))}</span></span>${tag ? `<span class="gr-card__tag">${escHtml(tag)}</span>` : ''}</span>
+    <span class="gh-card__body">
+      <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>
+      <span class="gh-card__title${recapTitle ? '' : ' gr-card__title--quiet'}">${escHtml(title.slice(0, 120))}</span>
+      <span class="gh-card__cta">${pending ? 'Stats pending' : recapTitle ? 'Read recap &rarr;' : 'Box score &rarr;'}</span>
+    </span>
+    <span class="gr-card__foot">
+      <span class="gr-card__top-scorer">${topScorer ? `Top scorer · <b>${escHtml(topScorer.name)} ${topScorer.pts}</b>` : ''}</span>
+      <span class="gr-card__acts">${actions}</span>
+    </span>
+  </article>`;
+}
+
+function gamesPageScript({ isAdmin }) {
+  return `<script>
+(function () {
+  // Matchup photo slideshows: next photo fades in on top while the previous one stays
+  // underneath and keeps drifting, so the banner never dims or jumps.
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('[data-slides]').forEach(function (box, n) {
+    var slides = box.querySelectorAll('.gm-sl');
+    if (slides.length < 2 || reduce) return;
+    var on = 0;
+    setTimeout(function () {
+      setInterval(function () {
+        var prev = on; on = (on + 1) % slides.length;
+        slides.forEach(function (s, i) { s.classList.toggle('is-on', i === on); s.classList.toggle('is-prev', i === prev); });
+      }, 5500);
+    }, n * 1800);
+  });
+
+  // Biggest edges ⇄ all stats
+  document.querySelectorAll('[data-more]').forEach(function (btn) {
+    var label = btn.textContent;
+    btn.addEventListener('click', function () {
+      var edges = btn.previousElementSibling;
+      var open = edges.classList.toggle('is-all');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.textContent = open ? 'Show biggest edges only' : label;
+    });
+  });
+
+  // Who wins?
+  document.querySelectorAll('.gm-pick').forEach(function (box) {
+    var gameId = box.dataset.gameId;
+    var btns = box.querySelector('.gm-pick__btns'), result = box.querySelector('.gm-pick__result');
+    var total = box.closest('.gm-card').querySelector('[data-pick-total]');
+    function render(counts, mine) {
+      var t = counts.a + counts.b, pa = t ? Math.round(counts.a / t * 100) : 50;
+      var a = box.querySelector('[data-seg="a"]'), b = box.querySelector('[data-seg="b"]');
+      a.style.width = pa + '%'; b.style.width = (100 - pa) + '%';
+      a.querySelector('b').textContent = pa + '%'; b.querySelector('b').textContent = (100 - pa) + '%';
+      a.classList.toggle('is-mine', mine === 'a'); b.classList.toggle('is-mine', mine === 'b');
+      box.querySelector('[data-mine-name]').textContent = (mine === 'b' ? b : a).textContent.replace(/[0-9%]/g, '').trim();
+      btns.hidden = !!mine; result.hidden = !mine;
+      total.textContent = t ? t + (t === 1 ? ' pick' : ' picks') : 'Be the first to pick';
+    }
+    function send(side) {
+      if (!box.dataset.player) { window.location.href = '/login?next=' + encodeURIComponent('/games'); return; }
+      fetch('/games/' + encodeURIComponent(gameId) + '/pick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ side: side }) })
+        .then(function (r) { if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent('/games'); return null; } return r.json(); })
+        .then(function (d) { if (d && d.ok) render(d.counts, d.side); else if (d && d.error) alert(d.error); })
+        .catch(function () {});
+    }
+    box.querySelectorAll('.gm-pick__btn').forEach(function (b) { b.addEventListener('click', function () { send(b.dataset.side); }); });
+    box.querySelector('.gm-pick__change').addEventListener('click', function () { send(null); });
+  });
+
+  // Team / type filters on the results grid
+  var grid = document.querySelector('.gr-grid');
+  var state = { team: '', type: '' };
+  function applyFilters() {
+    if (!grid) return;
+    var shown = 0;
+    grid.querySelectorAll('.gr-card').forEach(function (c) {
+      var ok = (!state.team || c.dataset.teams.split(' ').indexOf(state.team) !== -1)
+        && (!state.type || (state.type === 'playoff' ? c.dataset.type !== 'regular' : c.dataset.type === state.type));
+      c.hidden = !ok; if (ok) shown++;
+    });
+    var empty = document.querySelector('.gr-empty');
+    if (empty) empty.hidden = shown !== 0;
+    var count = document.querySelector('[data-games-count]');
+    if (count) count.textContent = shown + (shown === 1 ? ' game' : ' games');
+  }
+  document.querySelectorAll('[data-filter]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = btn.dataset.filter;
+      state[key] = btn.dataset.value;
+      document.querySelectorAll('[data-filter="' + key + '"]').forEach(function (b) { b.classList.toggle('is-on', b === btn); b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+      applyFilters();
+    });
+  });
+
+  // React / share on result cards
+  if (grid) grid.addEventListener('click', function (e) {
+    var reactBtn = e.target.closest('[data-action="react-game"]');
+    if (reactBtn) {
+      reactBtn.disabled = true;
+      fetch('/games/' + encodeURIComponent(reactBtn.dataset.gameId) + '/react', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(function (r) { if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return null; } return r.json(); })
+        .then(function (d) { reactBtn.disabled = false; if (!d || !d.ok) return; reactBtn.classList.toggle('is-active', d.reacted); reactBtn.querySelector('span').textContent = d.count; })
+        .catch(function () { reactBtn.disabled = false; });
+      return;
+    }
+    var shareBtn = e.target.closest('[data-action="share-game"]');
+    if (shareBtn) {
+      var url = window.location.origin + shareBtn.dataset.url;
+      if (navigator.share) { navigator.share({ url: url }).catch(function () {}); return; }
+      navigator.clipboard.writeText(url).then(function () {
+        var orig = shareBtn.innerHTML; shareBtn.textContent = '✓';
+        setTimeout(function () { shareBtn.innerHTML = orig; }, 1500);
+      }).catch(function () {});
+    }
+  });
+${isAdmin ? `
+  // Admin: regenerate the intro summary or a matchup storyline
+  document.querySelectorAll('.hs-summary__regen').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var matchup = btn.dataset.matchup;
+      btn.disabled = true; btn.textContent = 'Writing…';
+      fetch(matchup ? '/admin/games/matchup-story/regenerate' : '/admin/home-summary/regenerate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(matchup ? { gameId: matchup } : { block: btn.dataset.block })
+      })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); }); })
+        .then(function () { location.reload(); })
+        .catch(function (e) { btn.disabled = false; btn.textContent = '↺ Regenerate'; alert(e.message); });
+    });
+  });` : ''}
+})();
+</script>`;
+}
+
+export function gamesPage({
+  games, season, seasons = [], currentSeason, seasonPlayedCount = 0, summary = null, isAdmin = false, isPlayer = false,
+  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {},
+  commentsEnabled = false, socialByGame = {}, topScorerByGame = {},
+}) {
+  const seasonLinks = [...seasons.map(s => ({ v: s, label: `Season ${s}` })), { v: 'all', label: 'All seasons' }]
+    .map(s => `<a href="/games${s.v === String(currentSeason) ? '' : `?season=${s.v}`}" class="gr-seg${s.v === season ? ' is-on' : ''}"${s.v === season ? ' aria-current="page"' : ''}>${escHtml(s.label)}</a>`).join('');
+
+  const tilesHtml = tiles.length ? `<div class="gr-tiles">${tiles.map(t => `<a href="${t.href}" class="gr-tile${t.accent ? ' gr-tile--accent' : ''}">
+      <span class="gr-tile__lbl">${escHtml(t.label)}</span>
+      <b class="gr-tile__val font-condensed">${escHtml(t.value)}</b>
+      <span class="gr-tile__sub">${escHtml(t.sub)}</span>
+    </a>`).join('')}</div>` : '';
+
+  const matchupsHtml = matchups.length ? `<div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
+    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer })).join('')}
+  </div>` : '';
+
+  const teams = ['WHITE', 'BLACK', 'BLUE', 'MAROON'].filter(t => games.some(g => g.team_a_name === t || g.team_b_name === t));
+  const hasPost = games.some(g => g.game_type && g.game_type !== 'regular');
+  const filters = games.length ? `<div class="gr-filters">
+    <div class="gr-chips" role="group" aria-label="Filter by team">
+      <button type="button" class="gr-chip is-on" data-filter="team" data-value="" aria-pressed="true">All teams</button>
+      ${teams.map(t => `<button type="button" class="gr-chip" data-filter="team" data-value="${t}" aria-pressed="false">${dot(t)}${escHtml(tc(t))}</button>`).join('')}
+    </div>
+    ${hasPost ? `<div class="gr-chips" role="group" aria-label="Filter by game type">
+      <button type="button" class="gr-chip is-on" data-filter="type" data-value="" aria-pressed="true">All</button>
+      <button type="button" class="gr-chip" data-filter="type" data-value="regular" aria-pressed="false">Regular</button>
+      <button type="button" class="gr-chip" data-filter="type" data-value="playoff" aria-pressed="false">Playoffs</button>
+    </div>` : ''}
+  </div>` : '';
+
+  const cards = games.map(g => gameCard(g, {
+    commentsEnabled,
+    social: socialByGame[g.id] || { commentsCount: 0, reactCount: 0, reacted: false },
+    topScorer: topScorerByGame[g.id],
+  })).join('\n    ');
+
+  return `<div class="page-content gr-page">
+${pageHeader({ title: 'Games', description: 'Every result — box scores, recaps and Player of the Game spotlights.', actions: seasons.length ? `<nav class="gr-segs" aria-label="Season">${seasonLinks}</nav>` : '' })}
+${summaryPanel(summary, 'headlines', isAdmin)}
+${potgMarquee(potg)}
+${matchupsHtml}
+${tilesHtml}
+<section class="gr-results" aria-labelledby="gr-results-h">
+  <div class="section-header"><h2 id="gr-results-h">${season === 'all' ? 'All results' : `Season ${escHtml(season)} results`} <span class="section-header__sub" data-games-count>${games.length} ${games.length === 1 ? 'game' : 'games'}</span></h2></div>
+  ${filters}
+  ${games.length ? `<div class="gr-grid">${cards}</div><div class="card gr-empty" hidden>No games match these filters.</div>` : `<div class="card gr-empty">No results yet${season !== 'all' ? ` for Season ${escHtml(season)}` : ''}.</div>`}
+</section>
 </div>
-</div>
-${completedGames.length ? gameListScript() : ''}`;
+${gamesPageScript({ isAdmin })}`;
 }
