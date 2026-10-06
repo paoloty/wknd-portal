@@ -690,26 +690,50 @@ const NU_RENDER = {
 };
 
 // ── Standings block (buildHomeStandings in server.js) ─────────────────────────
-// One tile per team in standings order: rank, W-L, last-5 form, point differential and an
-// optional one-line story flag. The headline is server-built HTML (team names escaped there
-// are plain team names from the DB, wrapped in <em> for the amber highlight).
+// One tile per team in standings order, each linking to its team page: rank, W-L, games
+// back, win rate, point differential, last-5 form, an avatar stack of the team's top five
+// (desktop only) and an optional one-line story flag. The tile carries a faint glare in
+// the team's colour — a deliberate exception (Paolo's call) to team colours being for
+// dots/chips only; amber still marks the leader. The headline is server-built HTML (team
+// names escaped there are plain team names from the DB, wrapped in <em> for the amber highlight).
 function standingsSection(standings) {
   if (!standings || !standings.teams.length) return '';
+  const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
   const tiles = standings.teams.map(t => {
+    const color = teamColor(t.name);
     const form = t.form.map(r => `<b class="${r === 'W' ? 'is-w' : 'is-l'}">${r}</b>`).join('');
     const diff = t.diff > 0 ? `+${t.diff}` : t.diff < 0 ? `−${Math.abs(t.diff)}` : '0';
-    return `<div class="st-team">
-      <span class="st-team__rank font-condensed">${t.rank}</span>
-      <span class="st-team__name"><span class="team-dot" style="background:${teamColor(t.name)}"></span>${escHtml(t.name)}</span>
-      <span class="st-team__wl font-condensed">${t.wins}-${t.losses}</span>
-      ${form ? `<span class="st-team__form" aria-label="Last ${t.form.length}: ${t.form.join(' ')}">${form}</span>` : ''}
-      <span class="st-team__diff">Diff <b class="${t.diff > 0 ? 'is-pos' : t.diff < 0 ? 'is-neg' : ''}">${diff}</b></span>
-      ${t.flag ? `<span class="st-team__flag">${escHtml(t.flag)}</span>` : ''}
-    </div>`;
+    const pctLabel = t.pct.toFixed(3).replace(/^0/, '');
+    const more = t.rosterCount - t.roster.length;
+    // Photo over initials, same pattern as the MVP page: the img removes itself on 404.
+    const avatars = t.roster.map(p => `<span class="st-team__av" title="${escHtml(p.name)}"><span class="font-condensed" aria-hidden="true">${escHtml(initials(p.name))}</span><img src="/api/player/${encodeURIComponent(String(p.id))}/photo" alt="" loading="lazy" onerror="this.remove()"></span>`).join('');
+    return `<a href="/teams/${encodeURIComponent(String(t.id))}" class="st-team${t.rank === 1 ? ' is-leader' : ''}" style="--team:${color}">
+      <span class="st-team__top">
+        <span class="st-team__name"><span class="team-dot" style="background:${color}"></span>${escHtml(t.name)}</span>
+        <span class="st-team__rank">${ORD[t.rank - 1] || `#${t.rank}`}</span>
+      </span>
+      <span class="st-team__mid">
+        <span class="st-team__wl font-condensed">${t.wins}-${t.losses}</span>
+        <span class="st-team__gb"><b class="font-condensed">${t.gb > 0 ? t.gb : '—'}</b><span class="st-team__gb-long">Games back</span><span class="st-team__gb-short">GB</span></span>
+      </span>
+      <span class="st-team__rate">
+        <span class="st-team__bar"><span style="width:${Math.round(t.pct * 100)}%"></span></span>
+        <span class="st-team__meta"><span>Win rate ${pctLabel}</span><span>Diff <b class="${t.diff > 0 ? 'is-pos' : t.diff < 0 ? 'is-neg' : ''}">${diff}</b></span></span>
+      </span>
+      ${form ? `<span class="st-team__form" aria-label="Last ${t.form.length}: ${t.form.join(' ')}">${form}<i>last ${t.form.length}</i></span>` : ''}
+      ${t.rosterCount ? `<span class="st-team__roster">
+        <span class="st-team__avs">${avatars}${more > 0 ? `<span class="st-team__av st-team__av--more">+${more}</span>` : ''}</span>
+        <span class="st-team__count">${t.rosterCount} players</span>
+      </span>` : ''}
+      <span class="st-team__foot">
+        <span class="st-team__flag">${t.flag ? escHtml(t.flag) : ''}</span>
+        <span class="st-team__cta">Team page &rarr;</span>
+      </span>
+    </a>`;
   }).join('\n    ');
   return `<section class="home-standings" aria-labelledby="standings-heading">
   <div class="section-header"><h2 id="standings-heading">Season ${escHtml(String(standings.season))} race</h2><a href="/standings" class="section-header__link">Full standings <span>&rarr;</span></a></div>
-  <div class="card st-card">
+  <div class="st-card">
     <p class="st-card__headline">${standings.headline}</p>
     <div class="st-grid" style="--st-teams:${standings.teams.length}">
     ${tiles}

@@ -8733,8 +8733,21 @@ function buildHomeStandings(season, games) {
     (results[g.team_b_id] ||= []).push(sb > sa ? 'W' : 'L');
   }
 
+  // Avatar stack on each tile: the team's top five this season by MVP score (so it doubles
+  // as "who's carrying this team"), topped up in roster order with players who haven't
+  // logged a game yet. Count = everyone currently on the roster.
+  const mvpScoreById = Object.fromEntries(getMvpCandidates(season).filter(s => s.gp >= 1).map(s => [s.id, computeMvpScore(s)]));
+  const rosterByTeam = {};
+  for (const p of getAllPlayers()) if (p.team_id && p.status === 'active') (rosterByTeam[p.team_id] ||= []).push(p);
+  const leader = rows[0];
+
   const teams = rows.map((r, i) => {
     const res = results[r.id] || [];
+    const roster = (rosterByTeam[r.id] || [])
+      .map((p, k) => ({ p, k, score: mvpScoreById[p.id] ?? -1 }))
+      .sort((a, b) => b.score - a.score || a.k - b.k)
+      .map(x => ({ id: x.p.id, name: displayPlayerName(x.p.name) }));
+    const gp = r.wins + r.losses;
     let streak = 0;
     for (let k = res.length - 1; k >= 0 && res[k] === res[res.length - 1]; k--) streak++;
     const streakType = res[res.length - 1] || '';
@@ -8744,8 +8757,11 @@ function buildHomeStandings(season, games) {
     else if (r.wins > r.losses && r.point_diff < 0) flag = 'Winning the close ones';
     else if (streak === 2) flag = streakType === 'W' ? 'Won 2 straight' : 'Lost 2 straight';
     return {
-      rank: i + 1, name: r.name, wins: r.wins, losses: r.losses, diff: r.point_diff,
+      rank: i + 1, id: r.id, name: r.name, wins: r.wins, losses: r.losses, diff: r.point_diff,
       form: res.slice(-5), flag,
+      gb: ((leader.wins - r.wins) + (r.losses - leader.losses)) / 2,
+      pct: gp ? r.wins / gp : 0,
+      roster: roster.slice(0, 5), rosterCount: roster.length,
     };
   });
 
