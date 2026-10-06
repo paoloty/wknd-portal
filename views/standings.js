@@ -55,27 +55,6 @@ function rankAfter(teams, games) {
   return order;
 }
 
-// One-line story per team: long streaks first, then record vs point differential, then a
-// streak that just ended. Same wording as the homepage race tiles where they overlap.
-function teamFlag(results, wins, losses, diff) {
-  const last = results[results.length - 1];
-  let streak = 0;
-  for (let k = results.length - 1; k >= 0 && results[k] === last; k--) streak++;
-  const prevRun = (() => {
-    const before = results.slice(0, results.length - streak);
-    const p = before[before.length - 1];
-    let n = 0;
-    for (let k = before.length - 1; k >= 0 && before[k] === p; k--) n++;
-    return { type: p, n };
-  })();
-  if (streak >= 3) return last === 'W' ? `Won ${streak} straight` : `Lost ${streak} straight`;
-  if (wins < losses && diff > 0) return 'Better than their record';
-  if (wins > losses && diff < 0) return 'Winning the close ones';
-  if (streak === 2) return last === 'W' ? 'Won 2 straight' : 'Lost 2 straight';
-  if (streak === 1 && prevRun.n >= 2) return last === 'W' ? `Snapped a ${prevRun.n}-game skid` : `${prevRun.n}-game win streak ended`;
-  return '';
-}
-
 function weekHeadline(n, wkGames, before, after) {
   if (n === 1) {
     const winners = wkGames.map(g => winnerOf(g).name);
@@ -166,8 +145,7 @@ function leagueTable(table, season, week, isCurrent, notes) {
       <span class="stp-seed font-condensed${i < 2 && showLine ? ' is-top' : ''}">${i + 1}</span>
       <span class="stp-team">
         <span class="stp-team__name"><span class="team-dot" style="background:${t.color}"></span>${escHtml(t.name)}</span>
-        <span class="stp-team__flag">${escHtml(t.flag)}</span>
-        <span class="stp-team__form" aria-hidden="true">${formInline}<span>${escHtml(t.flag)}</span></span>
+        <span class="stp-team__form" aria-hidden="true">${formInline}</span>
       </span>
       <span class="stp-n stp-n--big font-condensed">${t.wins}</span>
       <span class="stp-n stp-n--big stp-n--dim font-condensed">${t.losses}</span>
@@ -214,20 +192,30 @@ function leagueTable(table, season, week, isCurrent, notes) {
 </section>`;
 }
 
+// Twice to beat: the higher seed advances with one win, the lower seed has to win twice;
+// the final is best of 3. Each ring is a win still needed to advance.
+function pips(n, hot) {
+  return `<span class="stp-pips" aria-label="Needs ${n} win${n === 1 ? '' : 's'} to advance">${`<span class="stp-pip${hot ? ' is-hot' : ''}"></span>`.repeat(n)}</span>`;
+}
+
 function playoffPicture(table, isCurrent) {
   if (table.length < 4) return '';
+  const team = (t, n, high) => `<a href="/teams/${encodeURIComponent(t.id)}" class="stp-semi__team${high ? ' is-high' : ''}"><span class="font-condensed stp-semi__seed">${n}</span><span class="team-dot" style="background:${t.color}"></span><span>${escHtml(t.name)}</span><span class="font-condensed stp-semi__rec">${t.wins}-${t.losses}</span>${pips(high ? 1 : 2, high)}</a>`;
   const semi = (label, hi, hiN, lo, loN) => `<div class="stp-semi card">
-    <div class="stp-semi__top"><span class="stp-th">${label}</span><span class="stp-semi__adv">Twice to beat</span></div>
-    <a href="/teams/${encodeURIComponent(hi.id)}" class="stp-semi__team is-high"><span class="font-condensed stp-semi__seed">${hiN}</span><span class="team-dot" style="background:${hi.color}"></span><span>${escHtml(hi.name)}</span><span class="font-condensed stp-semi__rec">${hi.wins}-${hi.losses}</span></a>
-    <a href="/teams/${encodeURIComponent(lo.id)}" class="stp-semi__team"><span class="font-condensed stp-semi__seed">${loN}</span><span class="team-dot" style="background:${lo.color}"></span><span>${escHtml(lo.name)}</span><span class="font-condensed stp-semi__rec">${lo.wins}-${lo.losses}</span></a>
+    <div class="stp-semi__top"><span class="stp-th">${label}</span><span class="stp-th stp-semi__adv">Twice to beat</span></div>
+    ${team(hi, hiN, true)}
+    ${team(lo, loN, false)}
   </div>`;
   return `<section class="stp-playoffs" aria-labelledby="stp-po-h">
   <div class="section-header"><h2 id="stp-po-h">Playoff picture</h2>${isCurrent ? '<a href="/playoffs" class="section-header__link">Bracket <span>&rarr;</span></a>' : ''}</div>
-  <p class="stp-desc">${isCurrent ? 'If the season ended today.' : 'Final regular-season seeding.'}</p>
+  <div class="stp-bar">
+    <p class="stp-desc">${isCurrent ? 'If the season ended today.' : 'Final regular-season seeding.'}</p>
+    <span class="stp-pips-key"><span class="stp-pip is-hot"></span>win to advance</span>
+  </div>
   <div class="stp-playoffs__list">
     ${semi('Semi A', table[0], 1, table[3], 4)}
     ${semi('Semi B', table[1], 2, table[2], 3)}
-    <div class="stp-finals"><span>Finals</span><span>Best of 3</span></div>
+    <div class="stp-finals"><span>Finals</span><span class="stp-finals__fmt">Best of 3</span>${pips(2, false)}</div>
   </div>
 </section>`;
 }
@@ -472,7 +460,6 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
       pfg: gp ? (r.pf / gp).toFixed(1) : '0.0', pag: gp ? (r.pa / gp).toFixed(1) : '0.0',
       diff: Number(r.point_diff) || 0, quo: r.pa > 0 ? r.pf / r.pa : 0,
       form: res.slice(-5), streak: last ? `${last}${streak}` : '',
-      flag: teamFlag(res, r.wins, r.losses, Number(r.point_diff) || 0),
     };
   });
 

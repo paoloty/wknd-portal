@@ -7521,7 +7521,6 @@ a.stp-row:hover { background-color: rgba(255,255,255,.02); }
 .stp-team { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .stp-team__name { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: var(--text); }
 .stp-team__name .team-dot { width: 10px; height: 10px; box-shadow: 0 0 0 2px rgba(255,255,255,.06); }
-.stp-team__flag { padding-left: 20px; font-size: 12px; color: var(--text-muted); }
 .stp-team__form { display: none; }
 .stp-n { text-align: center; font-size: 17px; font-weight: 600; color: var(--text); }
 .stp-n--big { font-size: 20px; font-weight: 700; }
@@ -7547,15 +7546,19 @@ a.stp-row:hover { background-color: rgba(255,255,255,.02); }
 .stp-playoffs__list { display: flex; flex-direction: column; gap: 12px; }
 .stp-semi { overflow: hidden; }
 .stp-semi__top { display: flex; justify-content: space-between; padding: 10px 14px; }
-.stp-semi__adv { font-size: 11px; font-weight: 600; color: var(--amber); }
 .stp-semi__team { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--border); color: #c7d0da; font-weight: 600; text-decoration: none; }
 .stp-semi__team:hover { background: rgba(255,255,255,.02); }
 .stp-semi__team.is-high { color: var(--text); font-weight: 700; }
 .stp-semi__seed { width: 16px; color: var(--text-subtle); }
 .stp-semi__team.is-high .stp-semi__seed { color: var(--amber); }
-.stp-semi__rec { margin-left: auto; font-weight: 500; color: var(--text-muted); }
-.stp-finals { display: flex; justify-content: space-between; align-items: center; padding: 14px; border-radius: var(--radius); border: 1px dashed rgba(255,255,255,.1); font-weight: 600; }
-.stp-finals span + span { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.stp-semi__rec { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.stp-finals { display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: var(--radius); border: 1px dashed rgba(255,255,255,.1); font-weight: 700; }
+.stp-finals__fmt { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+/* Wins-needed rings: amber for the higher seed (one win advances), grey otherwise */
+.stp-pips { display: flex; gap: 5px; margin-left: auto; }
+.stp-pip { width: 10px; height: 10px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--text-subtle); flex: none; }
+.stp-pip.is-hot { border-color: var(--amber); }
+.stp-pips-key { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 /* Head to head */
 .stp-h2h__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
@@ -7674,10 +7677,8 @@ a.stp-row:hover { background-color: rgba(255,255,255,.02); }
   .stp-seed { font-size: 19px; }
   .stp-n--big { font-size: 18px; }
   .stp-n { font-size: 16px; }
-  .stp-team__flag { display: none; }
   .stp-team__form { display: flex; align-items: center; gap: 3px; padding-left: 17px; min-width: 0; }
   .stp-team__form .stp-fd { width: 15px; height: 15px; font-size: 9px; border-radius: 4px; flex: none; }
-  .stp-team__form > span:last-child { margin-left: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .stp-team__name { gap: 8px; }
   .stp-team__name .team-dot { width: 9px; height: 9px; }
   .stp-line { height: 22px; padding: 0 14px; }
@@ -7687,6 +7688,7 @@ a.stp-row:hover { background-color: rgba(255,255,255,.02); }
   .stp-finals { grid-column: 1 / -1; }
   .stp-semi__team { padding: 10px 12px; gap: 7px; font-size: 13px; }
   .stp-semi__rec, .stp-semi__adv { display: none; }
+  .stp-pips { gap: 4px; }
   .stp-semi__top { padding: 10px 12px; }
   .stp-chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -20px; padding: 0 20px 2px; }
   .stp-tri__title { font-size: 15px; }
