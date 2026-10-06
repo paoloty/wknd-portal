@@ -490,7 +490,7 @@ function buildPostOgTags(req, post) {
   const origin = getRequestOrigin(req);
   const url    = `${origin}/posts/${encodeURIComponent(post.slug)}`;
   const desc   = firstParagraph(post.body_html) || 'League news from WKND Basketball League.';
-  const img    = `${origin}/og-image.png`;
+  const img    = `${origin}/og/posts.png?v=${ogDayStamp()}`;
   const publishedIso = post.publish_at ? new Date(post.publish_at).toISOString() : null;
 
   const tags = [
@@ -642,43 +642,217 @@ function buildMvpOgTags(req, candidates, season) {
   return tags.join('\n  ');
 }
 
-function buildDefaultOgSvg() {
+// ── Page share cards (redesign) ───────────────────────────────────────────────
+// One 1200×630 template for every page that has no share image of its own: the WKND
+// wordmark + ball, an amber kicker, the page title and a line of copy on the left, and a
+// small live panel on the right (latest results, the table, top scorers…). Text in Archivo,
+// numbers in Saira Condensed (registered with fontconfig above), same tokens as styles.css.
+const OG_TEAM_COLORS = { WHITE: '#d7dce5', BLACK: '#4a5263', BLUE: '#4a90e2', MAROON: '#b0455a' };
+const ogTeamColor = name => OG_TEAM_COLORS[String(name || '').toUpperCase()] || '#4a5263';
+const OG_TEXT = `'Archivo', ${COVER_SVG_FONT}`;
+const OG_NUM  = `'Saira Condensed', ${COVER_SVG_FONT}`;
+
+function ogWrap(text, maxChars, maxLines) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if ((cur ? cur.length + 1 : 0) + w.length > maxChars && cur) { lines.push(cur); cur = w; } else cur = cur ? `${cur} ${w}` : w;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) { lines.length = maxLines; lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, '') + '…'; }
+  return lines;
+}
+
+// Server-side SVG text can't be measured, so long strings get squeezed to a maximum width
+// (textLength) when a generous per-character estimate says they might not fit. That keeps
+// a long title or player name inside its box whichever font the server ends up using.
+function ogFit(text, size, maxW, perChar = 0.62) {
+  // Narrow glyphs (i, l, punctuation, spaces) count for about half a normal character.
+  const est = [...String(text || '')].reduce((w, ch) => w + (/[ilIjt.,:;'!|\s]/.test(ch) ? 0.5 : 1), 0) * size * perChar;
+  return est > maxW ? ` textLength="${maxW}" lengthAdjust="spacingAndGlyphs"` : '';
+}
+const ogFeatureSize = t => { const n = String(t || '').length; return n <= 8 ? 58 : n <= 11 ? 50 : n <= 14 ? 44 : 38; };
+
+// The site wordmark: heavy slanted WKND + the basketball "full stop" (views/layout.js wkndBall).
+function ogWordmark(x, y, size) {
+  const w = Math.round(size * 3.05);
+  const r = size * 0.27;
+  const bx = x + w + r + size * 0.06, by = y - r - size * 0.02;
+  const k = r / 48;
+  return `<text x="${x}" y="${y}" font-family="${OG_TEXT}" font-size="${size}" font-weight="900" fill="#ffffff" textLength="${w}" lengthAdjust="spacingAndGlyphs" transform="skewX(-10)" transform-origin="${x} ${y}">WKND</text>
+  <g transform="translate(${bx - 50 * k} ${by - 50 * k}) scale(${k})"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></g>`;
+}
+
+function ogPanel(panel) {
+  if (!panel) return '';
+  const X = 676, Y = 132, W = 452, H = 380;
+  const frame = `<rect x="${X}" y="${Y}" width="${W}" height="${H}" rx="22" fill="#10141d" stroke="#ffffff" stroke-opacity="0.07"/>
+  <text x="${X + 30}" y="${Y + 46}" font-family="${OG_TEXT}" font-size="15" font-weight="800" letter-spacing="3" fill="#a3abb9">${escXml(panel.label || '')}</text>`;
+  let body = '';
+  if (panel.type === 'scores') {
+    // Up to two results, each a two-line scoreboard, winner in white.
+    panel.games.slice(0, 2).forEach((g, i) => {
+      const top = Y + 78 + i * 148;
+      body += `<rect x="${X + 22}" y="${top}" width="${W - 44}" height="132" rx="14" fill="#161c29"/>
+  <text x="${X + 44}" y="${top + 30}" font-family="${OG_TEXT}" font-size="13" font-weight="800" letter-spacing="2.5" fill="#8a93a4">${escXml(g.when)}</text>`;
+      [[g.a, g.sa], [g.b, g.sb]].forEach(([name, score], j) => {
+        const win = Number(score) > Number(j === 0 ? g.sb : g.sa);
+        const ly = top + 72 + j * 40;
+        body += `<circle cx="${X + 51}" cy="${ly - 9}" r="7" fill="${ogTeamColor(name)}"/>
+  <text x="${X + 68}" y="${ly}" font-family="${OG_TEXT}" font-size="22" font-weight="800" letter-spacing="1.5" fill="${win ? '#ffffff' : '#8a93a4'}">${escXml(String(name).toUpperCase())}</text>
+  <text x="${X + W - 44}" y="${ly + 4}" font-family="${OG_NUM}" font-size="40" font-weight="900" text-anchor="end" fill="${win ? '#ffffff' : '#8a93a4'}">${escXml(String(score))}</text>`;
+      });
+    });
+  } else if (panel.type === 'table') {
+    // Ranked rows: rank, team dot + name, value on the right (leader's rank in amber).
+    panel.rows.slice(0, 4).forEach((r, i) => {
+      const top = Y + 72 + i * 72;
+      body += `${i ? `<line x1="${X + 30}" y1="${top}" x2="${X + W - 30}" y2="${top}" stroke="#ffffff" stroke-opacity="0.06"/>` : ''}
+  <text x="${X + 34}" y="${top + 46}" font-family="${OG_NUM}" font-size="34" font-weight="900" fill="${i === 0 ? '#f59332' : '#5b6475'}">${i + 1}</text>
+  <circle cx="${X + 82}" cy="${top + 35}" r="7" fill="${ogTeamColor(r.team)}"/>
+  <text x="${X + 100}" y="${top + 43}" font-family="${OG_TEXT}" font-size="${r.small ? 21 : 23}" font-weight="800" letter-spacing="${r.small ? 0 : 1.5}" fill="#ffffff"${ogFit(r.name, r.small ? 21 : 23, 220, 0.64)}>${escXml(r.name)}</text>
+  ${r.sub ? `<text x="${X + 100}" y="${top + 64}" font-family="${OG_TEXT}" font-size="14" font-weight="600" fill="#8a93a4">${escXml(r.sub)}</text>` : ''}
+  <text x="${X + W - 34}" y="${top + 47}" font-family="${OG_NUM}" font-size="36" font-weight="900" text-anchor="end" fill="${i === 0 ? '#f59332' : '#e7eaf0'}">${escXml(r.value)}</text>`;
+    });
+  } else if (panel.type === 'stats') {
+    // Two or three big numbers stacked.
+    panel.items.slice(0, 3).forEach((s, i) => {
+      const top = Y + 82 + i * 96;
+      body += `${i ? `<line x1="${X + 30}" y1="${top - 16}" x2="${X + W - 30}" y2="${top - 16}" stroke="#ffffff" stroke-opacity="0.06"/>` : ''}
+  <text x="${X + 30}" y="${top + 52}" font-family="${OG_NUM}" font-size="64" font-weight="900" fill="${i === 0 ? '#f59332' : '#ffffff'}">${escXml(String(s.value))}</text>
+  <text x="${X + W - 30}" y="${top + 44}" font-family="${OG_TEXT}" font-size="17" font-weight="800" letter-spacing="2.5" text-anchor="end" fill="#a3abb9">${escXml(s.label)}</text>`;
+    });
+  } else if (panel.type === 'feature') {
+    // One big name with a team glare: a champion, the latest Player of the Game…
+    const tc = ogTeamColor(panel.team);
+    body += `<rect x="${X}" y="${Y}" width="${W}" height="${H}" rx="22" fill="url(#ogPanelGlare)"/>
+  <defs><radialGradient id="ogPanelGlare" cx="0%" cy="0%" r="100%"><stop offset="0%" stop-color="${tc}" stop-opacity="0.35"/><stop offset="60%" stop-color="${tc}" stop-opacity="0"/></radialGradient></defs>
+  <text x="${X + 30}" y="${Y + 168}" font-family="${OG_TEXT}" font-size="${ogFeatureSize(panel.title)}" font-weight="900" fill="#ffffff"${ogFit(panel.title, ogFeatureSize(panel.title), W - 60, 0.66)}>${escXml(panel.title)}</text>
+  <circle cx="${X + 40}" cy="${Y + 208}" r="8" fill="${tc}"/>
+  <text x="${X + 58}" y="${Y + 215}" font-family="${OG_TEXT}" font-size="19" font-weight="800" letter-spacing="2.5" fill="#a3abb9">${escXml(panel.sub || '')}</text>
+  ${(panel.stats || []).slice(0, 3).map((s, i) => `<text x="${X + 30 + i * 132}" y="${Y + 318}" font-family="${OG_NUM}" font-size="${String(s.n).length > 3 ? 42 : 54}" font-weight="900" fill="${i === 0 ? '#f59332' : '#ffffff'}"${ogFit(String(s.n), String(s.n).length > 3 ? 42 : 54, 118, 0.5)}>${escXml(String(s.n))}</text>
+  <text x="${X + 30 + i * 132}" y="${Y + 344}" font-family="${OG_TEXT}" font-size="14" font-weight="800" letter-spacing="2.5" fill="#8a93a4">${escXml(s.u)}</text>`).join('\n  ')}`;
+  }
+  return `${frame}\n  ${body}`;
+}
+
+function buildBrandOgSvg({ kicker = '', title = 'WKND', sub = '', panel = null }) {
+  const wide = !panel;
+  const tLen = String(title).length;
+  const tSize = wide ? (tLen <= 10 ? 120 : tLen <= 16 ? 100 : 84) : (tLen <= 8 ? 104 : tLen <= 12 ? 86 : tLen <= 16 ? 70 : 58);
+  const subLines = ogWrap(sub, wide ? 60 : 36, 3);
+  const titleY = 318;
+  // Kicker sits a fixed gap above the title's cap height, whatever size the title is.
+  const kickerY = Math.min(214, titleY - Math.round(tSize * 0.74) - 26);
   return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1200" height="630" fill="#020817"/>
-  <circle cx="960" cy="315" r="310" fill="none" stroke="#0c1525" stroke-width="3"/>
-  <circle cx="960" cy="315" r="230" fill="none" stroke="#0c1525" stroke-width="2"/>
-  <circle cx="960" cy="315" r="145" fill="none" stroke="#121f35" stroke-width="2"/>
-  <path d="M960 5 Q810 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
-  <path d="M960 5 Q1110 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
-  <line x1="650" y1="315" x2="1200" y2="315" stroke="#0c1525" stroke-width="2"/>
-  <rect x="0" y="0" width="1200" height="5" fill="#f59332"/>
-  <text x="80" y="118" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" letter-spacing="6" fill="#f59332">WKND BASKETBALL LEAGUE</text>
-  <text x="72" y="305" font-family="Impact,Arial Black,Arial,sans-serif" font-size="148" font-weight="900" fill="#e2e8f0" letter-spacing="4">WKND</text>
-  <text x="80" y="388" font-family="Impact,Arial Black,Arial,sans-serif" font-size="58" font-weight="900" fill="#1e293b" letter-spacing="10">BASKETBALL</text>
-  <text x="80" y="458" font-family="Arial,Helvetica,sans-serif" font-size="17" fill="#475569" letter-spacing="2">STATS  \xB7  MVP RACE  \xB7  STANDINGS  \xB7  GAME RECAPS</text>
-  <rect x="80" y="548" width="44" height="3" fill="#f59332"/>
-  <text x="80" y="596" font-family="Arial,Helvetica,sans-serif" font-size="12" fill="#2d3d54" letter-spacing="3">WKNDBASKETBALL.COM</text>
+  <defs>
+    <radialGradient id="ogGlare" cx="0%" cy="0%" r="75%"><stop offset="0%" stop-color="#f59332" stop-opacity="0.16"/><stop offset="100%" stop-color="#f59332" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#0a0e16"/>
+  <rect width="1200" height="630" fill="url(#ogGlare)"/>
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="3">
+    <circle cx="${wide ? 1010 : 470}" cy="${wide ? 470 : 640}" r="300"/>
+    <path d="M${wide ? 1010 : 470} ${wide ? 170 : 340}V${wide ? 770 : 940}M${wide ? 710 : 170} ${wide ? 470 : 640}H${wide ? 1310 : 770}"/>
+  </g>
+  ${ogWordmark(72, 104, 46)}
+  <text x="72" y="${kickerY}" font-family="${OG_TEXT}" font-size="17" font-weight="800" letter-spacing="4" fill="#f59332">${escXml(String(kicker).toUpperCase())}</text>
+  <text x="68" y="${titleY}" font-family="${OG_TEXT}" font-size="${tSize}" font-weight="900" letter-spacing="-2" fill="#ffffff"${ogFit(title, tSize, wide ? 1060 : 570, 0.64)}>${escXml(title)}</text>
+  ${subLines.map((l, i) => `<text x="72" y="${titleY + 58 + i * 36}" font-family="${OG_TEXT}" font-size="26" font-weight="400" fill="#b4bbc8">${escXml(l)}</text>`).join('\n  ')}
+  <circle cx="81" cy="563" r="9" fill="#f59332"/>
+  <text x="100" y="570" font-family="${OG_TEXT}" font-size="18" font-weight="700" letter-spacing="2" fill="#8a93a4">WKNDBASKETBALL.COM</text>
+  ${ogPanel(panel)}
 </svg>`;
 }
 
-function buildPapawisOgSvg() {
-  return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1200" height="630" fill="#020817"/>
-  <circle cx="960" cy="315" r="310" fill="none" stroke="#0c1525" stroke-width="3"/>
-  <circle cx="960" cy="315" r="230" fill="none" stroke="#0c1525" stroke-width="2"/>
-  <circle cx="960" cy="315" r="145" fill="none" stroke="#121f35" stroke-width="2"/>
-  <path d="M960 5 Q810 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
-  <path d="M960 5 Q1110 315 960 625" stroke="#0c1525" stroke-width="2" fill="none"/>
-  <line x1="650" y1="315" x2="1200" y2="315" stroke="#0c1525" stroke-width="2"/>
-  <rect x="0" y="0" width="1200" height="5" fill="#f59332"/>
-  <text x="80" y="118" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" letter-spacing="6" fill="#f59332">WKND BASKETBALL LEAGUE</text>
-  <text x="72" y="290" font-family="Impact,Arial Black,Arial,sans-serif" font-size="118" font-weight="900" fill="#e2e8f0" letter-spacing="2">PAPAWIS</text>
-  <text x="80" y="358" font-family="Impact,Arial Black,Arial,sans-serif" font-size="38" font-weight="900" fill="#1e293b" letter-spacing="6">PICKUP GAMES</text>
-  <text x="80" y="420" font-family="Arial,Helvetica,sans-serif" font-size="16" fill="#475569" letter-spacing="1.5">LIMITED SLOTS &#183; FIRST COME, FIRST SERVED</text>
-  <text x="80" y="450" font-family="Arial,Helvetica,sans-serif" font-size="16" fill="#475569" letter-spacing="1.5">WAITLIST AUTO-FILLS WHEN A SPOT OPENS</text>
-  <rect x="80" y="548" width="44" height="3" fill="#f59332"/>
-  <text x="80" y="596" font-family="Arial,Helvetica,sans-serif" font-size="12" fill="#2d3d54" letter-spacing="3">WKNDBASKETBALL.COM/PAPAWIS</text>
-</svg>`;
+// Which share card a page path gets ('/' and anything unlisted get the home card).
+const PAGE_OG_KEYS = {
+  '/games': 'games', '/standings': 'standings', '/playoffs': 'playoffs', '/leaders': 'leaders',
+  '/teams': 'teams', '/players': 'players', '/highlights': 'highlights', '/awards': 'awards',
+  '/posts': 'posts', '/marketplace': 'marketplace', '/register': 'register', '/papawis': 'papawis',
+  '/front-office': 'front-office', '/badges': 'badges',
+};
+const pageOgKey = p => PAGE_OG_KEYS[String(p || '/').replace(/\/+$/, '') || '/'] || 'home';
+// Changes daily, so crawlers that cache images by URL (Facebook, Messenger) re-fetch the
+// live panel at least once a day.
+const ogDayStamp = () => manilaTodayStr().replace(/-/g, '');
+
+// Copy + live panel per page. Panels read straight from the DB, so the card reflects the
+// current season; a failure just drops the panel rather than the whole image.
+function pageOgSpec(key) {
+  const season = getPortalCurrentSeason();
+  const games = byDate(getAllGames());
+  const played = games.filter(isPlayedGame);
+  const S = season ? `Season ${season}` : 'WKND Basketball';
+  const title = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  const standingsRows = () => (buildHomeStandings(season, games)?.teams || []).map(t => ({ team: t.name, name: String(t.name).toUpperCase(), value: `${t.wins}–${t.losses}` }));
+  const latestScores = n => played.slice(0, n).map(g => ({
+    when: `${new Date(`${gameYmd(g.date)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()} · S${g.season}${g.game_type === 'finals' ? ' FINALS' : g.game_type === 'playoff' ? ' PLAYOFFS' : ''}`,
+    a: g.team_a_name, b: g.team_b_name, sa: g.team_a_score, sb: g.team_b_score,
+  }));
+  const leagueStats = () => [
+    { value: getActivePlayerCount(), label: 'PLAYERS' },
+    { value: played.length, label: 'GAMES PLAYED' },
+    { value: new Set(played.flatMap(g => [g.team_a_name, g.team_b_name])).size, label: 'TEAMS' },
+  ];
+  const safe = fn => { try { return fn(); } catch (err) { console.error(`OG panel (${key}) failed:`, err.message); return null; } };
+
+  switch (key) {
+    case 'games': return { kicker: `${S} · Results`, title: 'Games', sub: 'Every result — box scores, recaps and Player of the Game spotlights.', panel: safe(() => { const g = latestScores(2); return g.length ? { type: 'scores', label: 'LATEST RESULTS', games: g } : null; }) };
+    case 'standings': return { kicker: `${S} · The race`, title: 'Standings', sub: 'Records, head to head and the playoff picture.', panel: safe(() => { const rows = standingsRows(); return rows.length ? { type: 'table', label: `${S.toUpperCase()} STANDINGS`, rows } : null; }) };
+    case 'teams': return { kicker: `${S} · Four teams`, title: 'Teams', sub: 'Rosters, averages and every game for White, Black, Blue and Maroon.', panel: safe(() => { const rows = standingsRows(); return rows.length ? { type: 'table', label: `${S.toUpperCase()} RECORDS`, rows } : null; }) };
+    case 'leaders': return { kicker: `${S} · Per game`, title: 'League Leaders', sub: 'The top scorers, rebounders and playmakers this season.', panel: safe(() => {
+      const board = leaderBoards(buildLeaderPlayers(season))[0];
+      return board ? { type: 'table', label: `${String(board.title).toUpperCase()} · ${String(board.label).toUpperCase()}`, rows: board.top.map(p => ({ team: p.team, name: displayPlayerName(p.name), sub: title(p.team), value: p.value, small: true })) } : null;
+    }) };
+    case 'playoffs': return { kicker: 'Win or go home', title: 'Playoffs', sub: 'The bracket, every series and the road to the title.', panel: safe(() => {
+      // Latest decided Finals: the team with 2+ Finals wins in its season.
+      const finals = played.filter(g => g.game_type === 'finals');
+      for (const s of [...new Set(finals.map(g => String(g.season)))].sort((a, b) => Number(b) - Number(a))) {
+        const wins = {};
+        for (const g of finals.filter(g => String(g.season) === s)) { const w = Number(g.team_a_score) > Number(g.team_b_score) ? g.team_a_name : g.team_b_name; wins[w] = (wins[w] || 0) + 1; }
+        const champ = Object.entries(wins).find(([, n]) => n >= 2);
+        if (champ) {
+          // Finals games oldest first, each score from the champion's side.
+          const series = finals.filter(g => String(g.season) === s).reverse();
+          const opp = series[0] ? (series[0].team_a_name === champ[0] ? series[0].team_b_name : series[0].team_a_name) : '';
+          const oppWins = (Object.entries(wins).find(([t]) => t !== champ[0]) || [0, 0])[1];
+          const stats = series.slice(0, 3).map((g, i) => {
+            const mine = g.team_a_name === champ[0] ? +g.team_a_score : +g.team_b_score;
+            const theirs = g.team_a_name === champ[0] ? +g.team_b_score : +g.team_a_score;
+            return { n: `${mine}–${theirs}`, u: `G${i + 1} · ${mine > theirs ? 'W' : 'L'}` };
+          });
+          return { type: 'feature', label: `SEASON ${s} CHAMPION`, title: String(champ[0]).toUpperCase(), team: champ[0], sub: `WON THE FINALS ${champ[1]}–${oppWins}${opp ? ` VS ${String(opp).toUpperCase()}` : ''}`, stats };
+        }
+      }
+      return null;
+    }) };
+    case 'highlights': return { kicker: 'Player of the Game', title: 'Highlights', sub: 'Every Player of the Game spotlight, newest first.', panel: safe(() => {
+      const p = buildPotgMarquee(played, Object.fromEntries(getAllPlayers().map(x => [x.id, x])), 1)[0];
+      return p ? { type: 'feature', label: `LATEST POTG · ${p.meta.toUpperCase()}`, title: p.name, team: p.team, sub: `${String(p.team).toUpperCase()} · ${p.result.toUpperCase()}`, stats: p.stats } : null;
+    }) };
+    case 'players': return { kicker: `${S} · The community`, title: 'Players', sub: 'Profiles, career stats and game logs for everyone in the league.', panel: safe(() => ({ type: 'stats', label: 'THE COMMUNITY', items: leagueStats() })) };
+    case 'awards': return { kicker: 'Season honours', title: 'Awards', sub: 'MVP, Finals MVP, All-WKND teams and every season award.' };
+    case 'posts': return { kicker: 'From the league', title: 'News', sub: 'Previews, recaps and announcements from WKND Basketball.' };
+    case 'marketplace': return { kicker: 'Group buys', title: 'Marketplace', sub: 'Jerseys, gear and group buys for the WKND community.' };
+    case 'register': return { kicker: 'Join the community', title: 'Register', sub: 'Weekend basketball with a league, stats and a community that shows up. Sign up for the next season.' };
+    case 'papawis': return { kicker: 'Pickup games', title: 'Papawis', sub: 'Open runs with limited slots — first come, first served. The waitlist auto-fills when a spot opens.' };
+    case 'front-office': return { kicker: 'Behind the league', title: 'Front Office', sub: 'The people who run WKND Basketball.' };
+    case 'badges': return { kicker: 'Earned on the court', title: 'Badges', sub: 'Every badge a player can unlock, and who has them.' };
+    default: return { kicker: `${S} · Now playing`, title: 'Ball is life.', sub: 'Every weekend. A basketball community — league games, stats, recaps and Papawis pickup runs.', panel: safe(() => ({ type: 'stats', label: 'THE COMMUNITY', items: leagueStats() })) };
+  }
+}
+
+// Rendered cards cached in memory for 10 minutes (the panels change only when results do).
+const _pageOgCache = new Map();
+const PAGE_OG_TTL_MS = 10 * 60 * 1000;
+async function renderPageOgPng(key) {
+  const hit = _pageOgCache.get(key);
+  if (hit && Date.now() - hit.at < PAGE_OG_TTL_MS) return hit.buf;
+  const buf = await sharp(Buffer.from(buildBrandOgSvg(pageOgSpec(key))), { density: 96 })
+    .resize(1200, 630).png({ compressionLevel: 9 }).toBuffer();
+  _pageOgCache.set(key, { buf, at: Date.now() });
+  return buf;
 }
 
 // SVG overlay for the MVP social image. No full-background rect so it renders with
@@ -1732,12 +1906,15 @@ function impersonationBanner(playerName) {
 
 function renderPage(req, opts) {
   const origin = getRequestOrigin(req);
-  const fallbackImg = `${origin}/og-image.png`;
+  // No page-specific image: the page's own redesign share card (see pageOgSpec).
+  const fallbackImg = `${origin}/og/${pageOgKey(req.path)}.png?v=${ogDayStamp()}`;
   const fallbackMeta = [
     `<meta property="og:image" content="${escAttr(fallbackImg)}">`,
+    `<meta property="og:image:secure_url" content="${escAttr(fallbackImg)}">`,
     `<meta property="og:image:type" content="image/png">`,
     `<meta property="og:image:width" content="1200">`,
     `<meta property="og:image:height" content="630">`,
+    `<meta property="og:image:alt" content="${escAttr(opts.title || 'WKND Basketball')}">`,
     `<meta name="twitter:card" content="summary_large_image">`,
     `<meta name="twitter:image" content="${escAttr(fallbackImg)}">`,
   ].join('\n  ');
@@ -4577,29 +4754,31 @@ app.get('/api/cover/:gameId.png', serveCover);
 app.get('/api/cover/:gameId',     serveCover);
 
 // ── Generic + MVP social OG images ───────────────────────────────────────────
-let _ogDefaultPng = null;
+// Kept for old shares and SEO overrides that point here — now the redesigned home card.
 app.get('/og-image.png', async (req, res) => {
   try {
-    if (!_ogDefaultPng) {
-      _ogDefaultPng = await sharp(Buffer.from(buildDefaultOgSvg()), { density: 96 })
-        .resize(1200, 630).png({ compressionLevel: 9 }).toBuffer();
-    }
     res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=604800, immutable');
-    res.end(_ogDefaultPng);
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(await renderPageOgPng('home'));
   } catch (err) { console.error('og-image error:', err); res.status(500).end(); }
 });
 
-let _ogPapawisPng = null;
+// Per-page share cards (see pageOgSpec). ?v= is only a cache-buster for social crawlers.
+app.get('/og/:key.png', async (req, res) => {
+  const key = String(req.params.key || '');
+  if (key !== 'home' && !Object.values(PAGE_OG_KEYS).includes(key)) return res.status(404).end();
+  try {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=600');
+    res.end(await renderPageOgPng(key));
+  } catch (err) { console.error(`og card (${key}) error:`, err); res.status(500).end(); }
+});
+
 app.get('/api/papawis/og-image.png', async (req, res) => {
   try {
-    if (!_ogPapawisPng) {
-      _ogPapawisPng = await sharp(Buffer.from(buildPapawisOgSvg()), { density: 96 })
-        .resize(1200, 630).png({ compressionLevel: 9 }).toBuffer();
-    }
     res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=604800, immutable');
-    res.end(_ogPapawisPng);
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.end(await renderPageOgPng('papawis'));
   } catch (err) { console.error('papawis og-image error:', err); res.status(500).end(); }
 });
 
@@ -12107,7 +12286,7 @@ app.get('/papawis', (req, res) => {
   const origin = getRequestOrigin(req);
   const papawisUrl  = `${origin}/papawis`;
   const papawisDesc = 'Pickup games with limited slots. First come, first served — see the schedule, who\'s in, and join the waitlist.';
-  const papawisImg  = `${origin}/api/papawis/og-image.png`;
+  const papawisImg  = `${origin}/og/papawis.png?v=${ogDayStamp()}`;
   const papawisMetaTags = [
     `<meta name="description" content="${escAttr(papawisDesc)}">`,
     `<link rel="canonical" href="${escAttr(papawisUrl)}">`,
