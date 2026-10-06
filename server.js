@@ -8292,14 +8292,39 @@ app.get('/standings', (req, res) => {
 });
 
 app.get('/playoffs', (req, res) => {
-  const season = getPortalCurrentSeason();
+  const currentSeason = getPortalCurrentSeason();
+  const seasons = [...new Set([currentSeason, ...getLeaderSeasons()].filter(s => s != null).map(String))]
+    .sort((a, b) => Number(b) - Number(a));
+  const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(currentSeason);
+  const isCurrent = season === String(currentSeason);
   const standings = getSeasonStandings(season);
-  const games = getPlayoffGames(season);
   const h2h = buildSeasonH2HMap(standings, season);
+
+  const seasonGames = getAllGames().filter(g => String(g.season) === season && !g.under_review);
+  const nameOf = id => { const p = id ? getPlayerById(id) : null; return p ? displayPlayerName(p.name) : ''; };
+  // Playoff + finals games with their recap headline and player of the game.
+  const games = seasonGames.filter(g => g.game_type === 'playoff' || g.game_type === 'finals').map(g => {
+    const done = (g.status === 'complete' || g.status === 'final') && (Number(g.team_a_score) + Number(g.team_b_score)) > 0;
+    const potgId = done ? (g.manual_potg_player_id || derivePotgPlayerId(g, getGameStats(g.id))) : null;
+    return { ...g, recapTitle: parseWriteup(g.game_writeup || '').title, potgName: nameOf(potgId) };
+  });
+
+  const person = type => {
+    const a = getSeasonAwards(season).find(x => x.award_type === type && x.player_id);
+    const p = a ? getPlayerById(a.player_id) : null;
+    if (!p) return null;
+    const name = displayPlayerName(p.name);
+    return { id: p.id, name, number: p.number ?? '', initials: initials(name) };
+  };
+
+  const regularDone = seasonGames.filter(g => g.game_type === 'regular' && g.status === 'complete').length;
+  const regularLeft = seasonGames.filter(g => g.game_type === 'regular' && (g.status === 'scheduled' || g.scheduled === 1)).length;
+  const regular = { played: regularDone, expected: Math.max(regularDone + regularLeft, standings.length * (standings.length - 1)) };
+
   res.send(renderPage(req, {
-    title: 'Playoffs — WKND Basketball League',
+    title: `${isCurrent ? '' : `Season ${season} `}Playoffs — WKND Basketball League`,
     currentPath: req.path,
-    body: playoffsPage({ standings, games, season, h2h })
+    body: playoffsPage({ standings, games, season, seasons, isCurrent, h2h, awards: { finalsMvp: person('finals_mvp'), mvp: person('mvp') }, regular })
   }));
 });
 
