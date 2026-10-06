@@ -8236,21 +8236,43 @@ app.get('/highlights', (req, res) => {
 });
 
 app.get('/standings', (req, res) => {
-  const teams = getAllTeams();
-  const players = getAllPlayers();
-  const games = byDate(getAllGames());
-  const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
-  const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
-  const completedGames = games.filter(g =>
-    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
-  const highlights = buildHighlights(completedGames, playerMap, teamMap);
-  const season = getPortalCurrentSeason();
-  const teamStats = getTeamSeasonStats(season);
+  const currentSeason = getPortalCurrentSeason();
+  const seasons = [...new Set([currentSeason, ...getLeaderSeasons()].filter(s => s != null).map(String))]
+    .sort((a, b) => Number(b) - Number(a));
+  const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(currentSeason);
+  const isCurrent = season === String(currentSeason);
+
+  // Same order as the /playoffs bracket: wins, two-team ties on head-to-head, then quotient.
+  const standings = getSeasonStandings(season);
+  const seeded = computeSeeds(standings, buildSeasonH2HMap(standings, season));
+  const rows = [...seeded, ...standings.filter(s => !seeded.includes(s))];
+
+  const allGames = getAllGames();
+  const seasonRegular = allGames.filter(g => String(g.season) === season && g.game_type === 'regular' && !g.under_review);
+  const games = seasonRegular.filter(g => g.status === 'complete');
+  const scheduled = seasonRegular.filter(g => g.status === 'scheduled' || g.scheduled === 1);
+
+  // Race summary: the homepage's AI "Season race" summary while it still matches the table
+  // (never generated from here), else the homepage's rule-based headline.
+  let summary = null;
+  const race = buildHomeStandings(season, allGames);
+  if (race) {
+    const week = getSeasonLatestWeek(season)?.week;
+    let stored = null;
+    if (isCurrent) {
+      const f = homeSummaryFacts('standings', homeSummaryContext({ season: currentSeason, games: allGames, standings: race, boards: [] }));
+      try { stored = JSON.parse(getSetting('home_summary_standings', '') || 'null'); } catch {}
+      if (!f || stored?.key !== f.key) stored = null;
+    }
+    summary = stored
+      ? { kicker: stored.kicker, headlineHtml: escHtml(stored.headline).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>'), body: String(stored.body || '').replace(/\*\*/g, '') }
+      : { kicker: isCurrent && week ? `The race · after week ${week}` : `Season ${season} · final standings`, headlineHtml: race.headline, body: '' };
+  }
+
   res.send(renderPage(req, {
-    title: 'Standings — WKND Basketball League',
+    title: `${isCurrent ? '' : `Season ${season} `}Standings — WKND Basketball League`,
     currentPath: req.path,
-    body: standingsPage({ teams, games, highlights, teamStats, season })
+    body: standingsPage({ season, seasons, isCurrent, rows, games, scheduled, teamStats: getTeamSeasonStats(season), summary })
   }));
 });
 
