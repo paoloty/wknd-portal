@@ -7360,11 +7360,12 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
   background: radial-gradient(110% 70% at 0% 0%, color-mix(in srgb, var(--team) 20%, transparent) 0%, transparent 60%);
 }
 .gh-card__top, .gh-card__body { position: relative; z-index: 2; }
-.gh-card__top { display: flex; justify-content: space-between; gap: 8px; padding: 16px 18px 0; }
+.gh-card__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 16px 18px 0; }
 .gh-card__date { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 9px; border-radius: 6px; }
 .gh-card__date { color: var(--text); background: rgba(10,14,22,0.6); }
 /* Headlines reach back past the hero's games, sometimes into last season — the pill says which */
-.gh-card__when { display: flex; gap: 6px; }
+.gh-card__when { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.gh-card__season, .gh-card__date { white-space: nowrap; flex-shrink: 0; }
 .gh-card__season { font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; padding: 5px 8px; border-radius: 6px; color: #0a0e16; background: var(--amber); }
 .gh-card__body { display: flex; flex-direction: column; gap: 9px; padding: 0 18px 18px; }
 /* Scoreboard like the hero's, smaller: team name + dot over a big number, winner in white */
@@ -8143,11 +8144,40 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .gr-card:hover .gh-card__img { transform: scale(1.03); }
 .gr-card__tag { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 9px; border-radius: 6px; color: var(--amber); background: rgba(10,14,22,0.7); }
 .gr-card__title--quiet { color: #b4bbc8; font-weight: 700; }
-.gr-card__tags { display: flex; gap: 6px; }
 .gr-card__tag--upset { color: #0a0e16; background: var(--amber); }
+
+/* Upset pill — every "Upset" tag (results cards, Who called it?, /picks history). A hot
+   red→amber gradient with a bolt and a soft glow, so it stands apart from the plain amber
+   "Called it" / "Up next" chips. Deliberate exception to amber-only, Paolo's call. */
+.gr-card__tag--upset, .pk-upset, .pkp-row__upset {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: #fff; border: none;
+  background: linear-gradient(135deg, #ff3d3d 0%, #ff6a2b 55%, #f59332 100%);
+  box-shadow: 0 0 0 1px rgba(255,90,60,0.45), 0 2px 14px rgba(255,61,61,0.45);
+  text-shadow: 0 1px 2px rgba(120,20,0,0.45);
+}
+.gr-card__tag--upset::before, .pk-upset::before, .pkp-row__upset::before {
+  content: ''; width: 9px; height: 11px; flex-shrink: 0; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 11'%3E%3Cpath d='M5.6 0L0 6.3h3.6L2.8 11 9 4.4H5.3z'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 11'%3E%3Cpath d='M5.6 0L0 6.3h3.6L2.8 11 9 4.4H5.3z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.pkp-row__upset::before { width: 7px; height: 9px; }
+@media (prefers-reduced-motion: no-preference) {
+  .gr-card__tag--upset, .pk-upset { animation: upset-glow 2.4s ease-in-out infinite; }
+}
+@keyframes upset-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,90,60,0.45), 0 2px 10px rgba(255,61,61,0.35); }
+  50%      { box-shadow: 0 0 0 1px rgba(255,90,60,0.6),  0 2px 18px rgba(255,61,61,0.65); }
+}
+
+/* "New" tag on the Picks nav link (desktop bar + phone drawer). */
+.nav-new { display: inline-flex; align-items: center; margin-left: 6px; padding: 2px 6px; border-radius: 5px; font-family: 'Archivo', sans-serif; font-size: 9.5px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.2; color: #0a0e16; background: var(--amber); }
+.hbar .hbar__link .nav-new { margin-left: 0; position: relative; top: -1px; }
 /* Pre-game odds label (lib/picks.js) — quiet when the favourite won, amber on an upset. */
 .gr-card__odds { display: block; margin-top: -2px; font-size: 11.5px; font-weight: 600; color: #a3abb9; text-shadow: 0 1px 6px rgba(0,0,0,0.85); }
-.gr-card__odds.is-upset { color: var(--amber); font-weight: 700; }
+.gr-card__odds.is-upset { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--amber); font-weight: 700; }
+.gr-card__odds .gr-card__tag--upset { padding: 4px 8px; text-shadow: 0 1px 2px rgba(120,20,0,0.45); }
+.gr-card__tag { white-space: nowrap; flex-shrink: 0; }
 .gr-card__foot { position: relative; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--border); background: rgba(10,14,22,0.45); pointer-events: none; }
 .gr-card__top-scorer { min-width: 0; font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gr-card__top-scorer b { color: var(--text); }

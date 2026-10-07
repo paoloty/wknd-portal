@@ -61,7 +61,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     { href: '/games',     label: 'All Games' },
     { href: '/standings', label: 'Standings' },
     { href: '/playoffs',  label: 'Playoffs' },
-  ], ['/games', '/standings', '/playoffs']);
+    ...(features.picks ? [{ href: '/picks', label: 'Who wins? picks' }] : []),
+  ], ['/games', '/standings', '/playoffs', '/picks']);
 
   const statsDropdown = dropdown('Stats', [
     { href: '/teams',   label: 'Teams' },
@@ -159,6 +160,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     games:     mIcon('<rect x="2.5" y="3.5" width="13" height="12" rx="2"/><path d="M2.5 7.5h13M6 2v3M12 2v3"/>'),
     standings: mIcon('<path d="M3 15V9M7 15V4M11 15V7M15 15V11"/>'),
     playoffs:  mIcon('<path d="M2 3.5h4v4h4v4h4M2 14.5h4M10 7.5h4"/>'),
+    picks:     mIcon('<circle cx="9" cy="9" r="6.5"/><path d="M6 9.2l2 2 4-4.4"/>'),
     papawis:   mIcon('<circle cx="9" cy="9" r="6.5"/><path d="M2.5 9h13M9 2.5c2 2 2 11 0 13M9 2.5c-2 2-2 11 0 13"/>'),
   };
   const mLink = (href, label, icon = '') =>
@@ -200,6 +202,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         ${mSection('League', [
           mLink('/', 'Home', mIcons.home),
           mLink('/games', 'Games', mIcons.games),
+          features.picks ? mLink('/picks', 'Picks <span class="nav-new">New</span>', mIcons.picks) : '',
           mLink('/standings', 'Standings', mIcons.standings),
           mLink('/playoffs', 'Playoffs', mIcons.playoffs),
           features.papawis ? mLink('/papawis', 'Papawis', mIcons.papawis) : '',
@@ -277,6 +280,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     { href: '/games',     label: 'All Games', desc: 'Results, schedule and box scores', icon: mIcons.games },
     { href: '/standings', label: 'Standings', desc: 'Season standings and records',     icon: mIcons.standings },
     { href: '/playoffs',  label: 'Playoffs',  desc: 'Bracket and playoff series',       icon: mIcons.playoffs },
+    ...(features.picks ? [{ href: '/picks', label: 'Who wins? picks', desc: 'Pick the winners, climb the Pickmaster race', icon: mIcons.picks }] : []),
   ];
   const statsItems = [
     { href: '/players', label: 'Players',   desc: 'Profiles, season and career numbers', icon: mIcon('<circle cx="9" cy="6" r="3"/><path d="M3 16c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/>') },
@@ -304,6 +308,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     : [
       barLink('/games', 'Games'),
       barLink('/standings', 'Standings'),
+      features.picks ? barLink('/picks', 'Picks <span class="nav-new">New</span>') : '',
       hdr.playoffsStarted ? barLink('/playoffs', 'Playoffs') : '',
       barDropdown('Stats', statsItems),
       barDropdown('Awards', awardsItems),

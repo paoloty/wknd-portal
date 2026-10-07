@@ -461,11 +461,11 @@ function gameCard(g, { commentsEnabled, social, topScorer, odds = null }) {
   return `<article class="gh-card gr-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}" data-teams="${escHtml(`${g.team_a_name} ${g.team_b_name}`)}" data-type="${escHtml(g.game_type || 'regular')}">
     <a href="/games/${id}" class="gr-card__link" aria-label="${escHtml(title.slice(0, 120))}"></a>
     ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${id}" alt="" loading="lazy">` : ''}
-    <span class="gh-card__top"><span class="gh-card__when"><span class="gh-card__season">S${escHtml(String(g.season))}</span><span class="gh-card__date">${escHtml(dayLabel(ymd))}</span></span>${tag || odds?.upset ? `<span class="gr-card__tags">${odds?.upset ? '<span class="gr-card__tag gr-card__tag--upset">Upset</span>' : ''}${tag ? `<span class="gr-card__tag">${escHtml(tag)}</span>` : ''}</span>` : ''}</span>
+    <span class="gh-card__top"><span class="gh-card__when"><span class="gh-card__season">S${escHtml(String(g.season))}</span><span class="gh-card__date">${escHtml(dayLabel(ymd))}</span></span>${tag ? `<span class="gr-card__tag">${escHtml(tag)}</span>` : ''}</span>
     <span class="gh-card__body">
       <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>
       ${odds ? `<span class="gr-card__odds${odds.upset ? ' is-upset' : ''}">${odds.upset
-        ? `${escHtml(tc(winner))} won with ${100 - odds.pct}% odds`
+        ? `<span class="gr-card__tag gr-card__tag--upset">Upset</span><span>${escHtml(tc(winner))} won with ${100 - odds.pct}% odds</span>`
         : `Odds had ${escHtml(tc(winner))} ${odds.pct}%`}</span>` : ''}
       <span class="gh-card__title${recapTitle ? '' : ' gr-card__title--quiet'}">${escHtml(title.slice(0, 120))}</span>
       <span class="gh-card__cta">${pending ? 'Stats pending' : recapTitle ? 'Read recap &rarr;' : 'Box score &rarr;'}</span>

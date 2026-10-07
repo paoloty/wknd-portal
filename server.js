@@ -1613,6 +1613,7 @@ function getFeatureFlags() {
     playerReports: getSetting('player_reports_enabled', '0') === '1',
     marketplace: getSetting('marketplace_enabled', '0') === '1',
     megaMenu: getSetting('mega_menu_enabled', '0') === '1',
+    picks: getSetting('picks_enabled', '1') !== '0',
   };
 }
 
@@ -8962,7 +8963,7 @@ function picksPerson(playerMap, teamNames) {
 }
 
 app.get('/picks', (req, res) => {
-  if (!picksEnabled()) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/games', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' }));
+  if (!picksEnabled()) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/picks', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' }));
   const pctx = buildPicksContext(byDate(getAllGames()));
   const seasons = picksSeasons(pctx);
   const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(getPortalCurrentSeason());
@@ -8993,7 +8994,7 @@ app.get('/picks', (req, res) => {
 
   res.send(renderPage(req, {
     title: `Who wins? picks · Season ${season} — WKND Basketball`,
-    currentPath: '/games',
+    currentPath: '/picks',
     body: picksPage({
       season, seasons, days, pickers, unranked,
       board: sp.board.rows.map(r => ({ ...r, ...person(r.playerId) })),
@@ -9012,7 +9013,7 @@ app.get('/picks', (req, res) => {
 app.get('/picks/players/:id', (req, res) => {
   if (!picksEnabled()) return res.status(404).send('Not found');
   const player = getPlayerById(req.params.id);
-  if (!player) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/games', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Player not found.</p></div>' }));
+  if (!player) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/picks', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Player not found.</p></div>' }));
   const pctx = buildPicksContext(byDate(getAllGames()));
   const seasons = picksSeasons(pctx);
   const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(getPortalCurrentSeason());
@@ -9047,7 +9048,7 @@ app.get('/picks/players/:id', (req, res) => {
   if (req.query.partial === '1') return res.send(picksPlayerSheet(props));
   res.send(renderPage(req, {
     title: `${props.player.name}'s picks · Season ${season} — WKND Basketball`,
-    currentPath: '/games',
+    currentPath: '/picks',
     body: picksPlayerPage(props),
   }));
 });
