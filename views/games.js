@@ -298,7 +298,7 @@ function calledItCard(s, isPlayer) {
       <div class="pk-sb">${row(g.a, g.sa, g.winner === 'a')}${row(g.b, g.sb, g.winner === 'b')}</div>
       ${s.upset ? `<p class="pk-upset-line">${escHtml(tc(winnerName))} won with <b>${g.winner === 'a' ? g.odds.pctA : g.odds.pctB}%</b> odds</p>` : ''}
       <div class="pk-res">
-        <div class="pk-res__row"><span class="pk-res__k">Odds</span><span>${oddsFav ? `<b>${escHtml(tc(oddsFav))} ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%</b>` : 'No odds for this game'}</span>${oddsFav ? verdict(s.oddsCalled) : ''}</div>
+        ${oddsFav ? `<div class="pk-res__row"><span class="pk-res__k">Odds</span><span><b>${escHtml(tc(oddsFav))} ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%</b></span>${verdict(s.oddsCalled)}</div>` : ''}
         <div class="pk-res__row"><span class="pk-res__k">Fans</span><span><b>${s.pctWinner}%</b> picked ${escHtml(tc(winnerName))} · ${s.total} pick${s.total === 1 ? '' : 's'}</span>${s.pctWinner === 50 ? '' : verdict(s.fansCalled)}</div>
         ${isPlayer ? `<div class="pk-res__row"><span class="pk-res__k">You</span><span>${s.myPick ? `You picked <b>${escHtml(tc(s.myPick === 'a' ? g.a : g.b))}</b>` : "You didn't pick"}</span>${s.myPick ? verdict(s.myPick === g.winner) : ''}</div>` : ''}
       </div>
@@ -331,14 +331,14 @@ function pickBoard(picks, isPlayer) {
       <div class="pk-lb">${rows}</div>
       ${mine}
       ${callersLine ? `<p class="pk-board__callers">${callersLine}</p>` : ''}
-      <p class="pk-board__foot">Best pick record at season's end wins the <b>Pickmaster</b> award.</p>
+      <p class="pk-board__foot">Best pick record at season's end wins the <b>Pickmaster</b> award. <a href="/picks" class="pk-board__all">Full race →</a></p>
     </aside>`;
 }
 
 function calledItSection(picks, isPlayer) {
   if (!picks || (!picks.calledIt.length && !picks.board.length && !picks.me)) return '';
   return `<section class="pk-sec" id="called-it" aria-labelledby="pk-h">
-    <div class="section-header"><h2 id="pk-h">Who called it?${picks.lastDay ? ` <span class="section-header__sub">${escHtml(dayLabel(picks.lastDay))}</span>` : ''}</h2></div>
+    <div class="section-header"><h2 id="pk-h">Who called it?${picks.lastDay ? ` <span class="section-header__sub">${escHtml(dayLabel(picks.lastDay))}</span>` : ''}</h2><a href="/picks" class="section-header__link">See all picks →</a></div>
     <div class="pk-grid">
       <div class="pk-cards${picks.calledIt.length === 1 ? ' pk-cards--one' : ''}">${picks.calledIt.length
         ? picks.calledIt.map(s => calledItCard(s, isPlayer)).join('')
@@ -663,3 +663,6 @@ ${tilesHtml}
 </div>
 ${gamesPageScript({ isAdmin })}`;
 }
+
+// Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
+export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel };

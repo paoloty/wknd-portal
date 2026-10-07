@@ -26,6 +26,7 @@ import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
 import { homePage, leaderBoards } from './views/home.js';
 import { gamesPage } from './views/games.js';
+import { picksPage, picksPlayerPage, picksPlayerSheet } from './views/picks.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
@@ -7083,6 +7084,7 @@ app.get('/sitemap.xml', (req, res) => {
   if (flags.mvpRace) urls.push({ loc: '/mvp',    priority: '0.5', changefreq: 'weekly' });
   if (flags.papawis) urls.push({ loc: '/papawis', priority: '0.5', changefreq: 'weekly' });
   if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
+  if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' });
 
   for (const t of getAllTeams())   urls.push({ loc: `/teams/${teamSlug(t)}`,     priority: '0.6', changefreq: 'weekly' });
   for (const p of getAllPlayers()) urls.push({ loc: `/players/${playerSlug(p)}`, priority: '0.5', changefreq: 'weekly' });
@@ -8773,7 +8775,8 @@ function buildPicksContext(games) {
   return {
     all, played,
     byId: Object.fromEntries(all.map(g => [g.id, g])),
-    oddsById: Object.fromEntries(played.map(g => [g.id, computeOdds(g, played)])),
+    // Odds switched off = no odds anywhere, including "upset" (which is judged against them).
+    oddsById: pickOddsEnabled() ? Object.fromEntries(played.map(g => [g.id, computeOdds(g, played)])) : {},
     picks: getAllGamePicks(),
     settings: getAllGamePickSettings(),
   };
@@ -8943,6 +8946,110 @@ app.post('/games/:id/pick', express.json(), (req, res) => {
   const side = req.body?.side === 'a' || req.body?.side === 'b' ? req.body.side : null;
   setGamePick(game.id, playerId, side);
   res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id] });
+});
+
+// ── /picks: full Pickmaster race, game-day history, upsets, per-player pick history ─────
+// Seasons offered = any season with a pick on one of its games, plus the current one.
+function picksSeasons(pctx) {
+  const pickedIds = new Set(pctx.picks.map(p => p.game_id));
+  const seasons = new Set(pctx.all.filter(g => pickedIds.has(g.id)).map(g => g.season));
+  seasons.add(String(getPortalCurrentSeason()));
+  return [...seasons].filter(Boolean).sort((a, b) => Number(b) - Number(a));
+}
+
+function picksPerson(playerMap, teamNames) {
+  return id => ({ id, name: displayPlayerName(playerMap[id]?.name || ''), team: teamNames[playerMap[id]?.team_id] || '' });
+}
+
+app.get('/picks', (req, res) => {
+  if (!picksEnabled()) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/games', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' }));
+  const pctx = buildPicksContext(byDate(getAllGames()));
+  const seasons = picksSeasons(pctx);
+  const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(getPortalCurrentSeason());
+  const sp = seasonPicks(pctx, season);
+  const viewerId = req.session?.playerPlayerId || null;
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const person = picksPerson(playerMap, Object.fromEntries(getAllTeams().map(t => [t.id, t.name])));
+
+  // Newest game day first, both games of a day together.
+  const summaries = [...sp.pickable].reverse().map(g => {
+    const s = calledItSummary(g, getGamePicksWithPlayers(g.id), viewerId);
+    s.calledIt = s.calledIt.map(p => person(p.player_id));
+    return s;
+  });
+  const days = [];
+  for (const s of summaries) {
+    const last = days[days.length - 1];
+    if (last && last.ymd === s.game.ymd) last.games.push(s);
+    else days.push({ ymd: s.game.ymd, games: [s] });
+  }
+
+  const seasonGameIds = new Set(pctx.all.filter(g => g.season === season).map(g => g.id));
+  const pickers = new Set(pctx.picks.filter(p => seasonGameIds.has(p.game_id)).map(p => p.player_id)).size;
+  const unranked = Object.entries(sp.records)
+    .filter(([, r]) => r.picks < sp.board.minPicks)
+    .map(([id, r]) => ({ ...person(id), picks: r.picks, need: sp.board.minPicks - r.picks }))
+    .sort((x, y) => y.picks - x.picks || x.name.localeCompare(y.name));
+
+  res.send(renderPage(req, {
+    title: `Who wins? picks · Season ${season} — WKND Basketball`,
+    currentPath: '/games',
+    body: picksPage({
+      season, seasons, days, pickers, unranked,
+      board: sp.board.rows.map(r => ({ ...r, ...person(r.playerId) })),
+      minPicks: sp.board.minPicks,
+      callers: sp.callers,
+      upsets: summaries.filter(s => s.upset),
+      oddsOn: pickOddsEnabled(),
+      isPlayer: !!viewerId, viewerId,
+    }),
+  }));
+});
+
+// One player's picks for a season. ?partial=1 returns just the sheet (opened in a dialog on
+// /picks); otherwise a full page, so the link works without JS and can be shared. Picks on
+// games not played yet stay private to the player themselves.
+app.get('/picks/players/:id', (req, res) => {
+  if (!picksEnabled()) return res.status(404).send('Not found');
+  const player = getPlayerById(req.params.id);
+  if (!player) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/games', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Player not found.</p></div>' }));
+  const pctx = buildPicksContext(byDate(getAllGames()));
+  const seasons = picksSeasons(pctx);
+  const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(getPortalCurrentSeason());
+  const sp = seasonPicks(pctx, season);
+  const isSelf = req.session?.playerPlayerId === player.id;
+  const settledById = Object.fromEntries(sp.settled.map(g => [g.id, g]));
+
+  const rows = pctx.picks
+    .filter(p => p.player_id === player.id && pctx.byId[p.game_id]?.season === season)
+    .map(p => {
+      const g = pctx.byId[p.game_id];
+      const s = settledById[g.id];
+      if (s) {
+        const pickPct = s.odds ? (p.side === 'a' ? s.odds.pctA : s.odds.pctB) : null;
+        const correct = p.side === s.winner;
+        return { g, side: p.side, state: correct ? 'ok' : 'miss', pickPct, upset: correct && !!s.odds?.fav && s.odds.fav !== s.winner };
+      }
+      if (g.played) return null; // a draft/under-review result — not public yet
+      const o = pickOddsEnabled() && !pctx.settings[g.id]?.hide_odds ? computeOdds(g, pctx.played) : null;
+      return { g, side: isSelf ? p.side : null, state: 'open', pickPct: isSelf && o ? (p.side === 'a' ? o.pctA : o.pctB) : null, upset: false };
+    })
+    .filter(Boolean)
+    .sort((x, y) => y.g.ymd.localeCompare(x.g.ymd) || String(y.g.id).localeCompare(String(x.g.id)));
+
+  const record = sp.records[player.id] || null;
+  const rank = sp.board.rows.find(r => r.playerId === player.id)?.rank || null;
+  const teamNames = Object.fromEntries(getAllTeams().map(t => [t.id, t.name]));
+  const props = {
+    player: { id: player.id, name: displayPlayerName(player.name || ''), team: teamNames[player.team_id] || '', slug: getSlugForEntity('player', player.id) || player.id },
+    season, seasons, record, rank, ranked: sp.board.rows.length, minPicks: sp.board.minPicks, rows, isSelf, oddsOn: pickOddsEnabled(),
+  };
+  if (req.query.partial === '1') return res.send(picksPlayerSheet(props));
+  res.send(renderPage(req, {
+    title: `${props.player.name}'s picks · Season ${season} — WKND Basketball`,
+    currentPath: '/games',
+    body: picksPlayerPage(props),
+  }));
 });
 
 app.post('/admin/games/matchup-story/regenerate', requireAuth, express.json(), async (req, res) => {
@@ -10768,7 +10875,7 @@ app.get('/players/:ref', async (req, res) => {
     const pickSeason = getPortalCurrentSeason();
     const sp = seasonPicks(buildPicksContext(getAllGames()), pickSeason);
     const r = sp.records[resolved.id];
-    if (r) pickRecord = { ...r, season: pickSeason, rank: sp.board.rows.find(x => x.playerId === resolved.id)?.rank || null, ranked: sp.board.rows.length, minPicks: sp.board.minPicks };
+    if (r) pickRecord = { ...r, playerId: resolved.id, season: pickSeason, rank: sp.board.rows.find(x => x.playerId === resolved.id)?.rank || null, ranked: sp.board.rows.length, minPicks: sp.board.minPicks };
   }
 
   res.send(renderPage(req, {

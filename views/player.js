@@ -854,7 +854,10 @@ function pickRecordCard(r, isOwnProfile) {
     <span><b class="font-condensed">${r.upsets}</b>Upsets called</span>
   </div>
   <p class="pk-me__rank">${escHtml(rank)}</p>
-  ${isOwnProfile ? '<a href="/games" class="pk-me__link">Make this week&rsquo;s picks →</a>' : ''}
+  <div class="pk-me__links">
+    <a href="/picks/players/${encodeURIComponent(r.playerId)}?season=${encodeURIComponent(r.season)}" class="pk-me__link">${isOwnProfile ? 'See all your picks' : 'See every pick'} →</a>
+    ${isOwnProfile ? '<a href="/games" class="pk-me__link">Make this week&rsquo;s picks →</a>' : ''}
+  </div>
 </div>`;
 }
 
@@ -1292,7 +1295,7 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransac
       var on = box.checked;
       msg.textContent = 'Saving…';
       fetch('/me/papawis-emails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: on }) })
-        .then(function (r) { if (!r.ok) throw new Error(); msg.textContent = on ? 'You\'ll get Papawis game alerts.' : 'Papawis game alerts turned off.'; })
+        .then(function (r) { if (!r.ok) throw new Error(); msg.textContent = on ? 'You’ll get Papawis game alerts.' : 'Papawis game alerts turned off.'; })
         .catch(function () { box.checked = !on; msg.textContent = 'Couldn\'t save. Try again.'; });
     });
   })();
