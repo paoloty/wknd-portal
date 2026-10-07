@@ -17,6 +17,7 @@ const AWARD_BADGE = {
   four_pm_leader:  { label: '4-PT LEADER',      bg: '#f59332', text: '#10141d' },
   champion:        { label: 'CHAMPION',         bg: '#facc15', text: '#10141d' },
   finals_mvp:      { label: 'FINALS MVP',       bg: '#ef4444', text: '#fff'    },
+  pickmaster:      { label: 'PICKMASTER',       bg: '#f59332', text: '#10141d' },
 };
 
 // Roster/leaderboard groups — each becomes a tab with a compact ranked list. (Season
@@ -26,6 +27,7 @@ const TABS = [
   { key: 'all_wknd_1',   label: 'All-WKND 1st Team',       types: ['all_wknd_1'],   shareKey: 'all_wknd_1'   },
   { key: 'all_wknd_2',   label: 'All-WKND 2nd Team',       types: ['all_wknd_2'],   shareKey: 'all_wknd_2'   },
   { key: 'all_wknd_def', label: 'All-WKND Defensive Team', types: ['all_wknd_def'], shareKey: 'all_wknd_def' },
+  { key: 'fan_awards',   label: 'Fan Awards',              types: ['pickmaster'],   shareKey: null           },
   { key: 'stat_leaders', label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader'], shareKey: 'stat-leaders' },
 ];
 
@@ -49,6 +51,8 @@ function statLine(row, type) {
     : type === 'blocks_leader'   ? [avg(row.blk) && `${avg(row.blk)} BPG`]
     : type === 'three_pm_leader' ? [avg(row.fg3m) && `${avg(row.fg3m)} 3PM`]
     : type === 'four_pm_leader'  ? [avg(row.fg4m) && `${avg(row.fg4m)} 4PM`]
+    // Fan award: the season's best "Who wins?" record, stored on the award row's notes.
+    : type === 'pickmaster'      ? [row.notes || 'Best pick record']
     : [];
   return parts.filter(Boolean).join(' · ');
 }

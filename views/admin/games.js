@@ -591,7 +591,66 @@ function statCorrectionsCard(statCorrections, players) {
 }
 
 // ── Game detail / edit ────────────────────────────────────────────────────────
-export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [] } = {}) {
+// "Who wins?" sidebar card: counts, who picked what (with pick times, so a late switch is
+// visible), and the per-game overrides — close/reopen picks and hide odds.
+function picksPanelCard(game, pp) {
+  if (!pp) return '';
+  const id = encodeURIComponent(game.id);
+  const side = s => (s === 'a' ? game.team_a_name : game.team_b_name);
+  const fmtTime = ms => new Date(ms + 8 * 3600 * 1000).toISOString().replace('T', ' ').slice(5, 16);
+  const groups = ['a', 'b'].map(s => {
+    const list = pp.picks.filter(p => p.side === s);
+    return `<div class="mb-3">
+      <div class="flex items-center gap-2 text-xs font-bold text-slate-200 mb-1"><span class="team-dot" style="background:${teamColor(side(s))}"></span>${escHtml(side(s))} <span class="text-slate-500 font-semibold">${list.length}</span></div>
+      ${list.length ? `<ul class="text-xs text-slate-400 leading-relaxed">${list.map(p => `<li class="flex justify-between gap-2"><span>${escHtml(p.player_name || p.player_id)}</span><span class="text-slate-600 whitespace-nowrap">${fmtTime(p.created_at)}</span></li>`).join('')}</ul>` : '<p class="text-xs text-slate-600">No picks</p>'}
+    </div>`;
+  }).join('');
+  const o = pp.odds;
+  const oddsLine = o
+    ? `${escHtml(game.team_a_name)} ${o.pctA}% · ${o.pctB}% ${escHtml(game.team_b_name)}`
+    : 'No odds yet (a team has no games this season)';
+  const state = pp.upcoming
+    ? (pp.closedNow ? '<span class="text-amber-400">Closed</span>' : '<span class="text-emerald-400">Open</span>')
+    : '<span class="text-slate-500">Game no longer upcoming</span>';
+  return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" id="agm-picks">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500 flex justify-between"><span>Who wins? picks</span><span>${pp.picks.length} total</span></div>
+      <div class="p-4">
+        <div class="text-xs text-slate-400 mb-3">Picks: ${state}${pp.upcoming ? ` · auto-closes ${escHtml(pp.closeTime)} on game day` : ''}${pp.settledAt ? ' · results sent' : ''}</div>
+        ${pp.upcoming ? `<div class="mb-3">
+          <label class="admin-field-label">Pick window</label>
+          <select id="agm-picks-closed" class="admin-input">
+            <option value="auto"${pp.override === 'auto' ? ' selected' : ''}>Automatic (game-day cut-off)</option>
+            <option value="closed"${pp.override === 'closed' ? ' selected' : ''}>Closed now</option>
+            <option value="open"${pp.override === 'open' ? ' selected' : ''}>Keep open (ignore cut-off)</option>
+          </select>
+        </div>` : ''}
+        <div class="mb-3">
+          <div class="admin-field-label">Odds</div>
+          <div class="text-xs text-slate-300 mb-1.5">${oddsLine}</div>
+          ${pp.upcoming ? `<label class="flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" id="agm-picks-hide-odds"${pp.hideOdds ? ' checked' : ''}> Hide odds for this game</label>` : ''}
+        </div>
+        <span class="text-xs block min-h-[14px] mb-2" id="agm-picks-msg"></span>
+        ${groups}
+      </div>
+    </div>
+<script>
+(function(){
+  var msg = document.getElementById('agm-picks-msg');
+  function save(body) {
+    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+    fetch('/admin/games/${id}/picks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { if (!r.ok) throw new Error(); msg.style.color = '#22c55e'; msg.textContent = 'Saved.'; })
+      .catch(function () { msg.style.color = '#f87171'; msg.textContent = 'Error saving.'; });
+  }
+  var sel = document.getElementById('agm-picks-closed');
+  if (sel) sel.addEventListener('change', function () { save({ closed: sel.value }); });
+  var hide = document.getElementById('agm-picks-hide-odds');
+  if (hide) hide.addEventListener('change', function () { save({ hide_odds: hide.checked }); });
+})();
+</script>`;
+}
+
+export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null } = {}) {
   const perOf = (p) => {
     const fgm = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
     const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
@@ -780,6 +839,8 @@ ${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.
         </div>
       </div>
     </div>
+
+    ${picksPanelCard(game, picksPanel)}
 
     ${!isScheduled && !isFinal ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">

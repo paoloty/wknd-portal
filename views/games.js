@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { teamColor, formatDate, boldTitle, excerpt } from './utils.js';
+import { teamColor, formatDate, boldTitle, excerpt, initials } from './utils.js';
 import { summaryPanel } from './home.js';
 
 // Comment/react/share for this row — same actions as the game page's tabActionsBar, just
@@ -217,26 +217,162 @@ function meetingTile(m, x) {
 
 const storyHtml = s => escHtml(s).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>');
 
-function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer }) {
+// ── "Who wins?" odds, results and leaderboard ────────────────────────────────
+// Odds are a thin amber line so they never read as the thick fan-picks bar. Numbers come
+// from lib/picks.js computeOdds — the panel only formats its `steps`.
+const signed = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}`;
+const pctWord = w => (Math.abs(w - 0.5) < 0.005 ? 'half' : `${Math.round(w * 100)}%`);
+
+function howFigured(m, o) {
+  const s = o.steps;
+  const favName = o.fav === 'b' ? m.b : m.a;
+  const favPct = o.fav === 'b' ? o.pctB : o.pctA;
+  const damp = s.weightA === s.weightB
+    ? `Only ${s.gamesA} game${s.gamesA === 1 ? '' : 's'} in, so it counts ${pctWord(s.weightA)}`
+    : `Counted at ${pctWord(s.weightA)} for ${tc(m.a)} (${s.gamesA} games) and ${pctWord(s.weightB)} for ${tc(m.b)} (${s.gamesB})`;
+  const base = s.rA - s.rB;
+  const h2hLead = s.h2hAvg > 0 ? m.a : m.b;
+  return `<details class="gm-how">
+      <summary>How it's figured</summary>
+      <ol class="gm-how__steps">
+        <li><b>Points margin per game, S${escHtml(String(m.season))}</b><span>${dot(m.a, 7)} ${escHtml(tc(m.a))} <em>${signed(s.avgA)}</em> · ${dot(m.b, 7)} ${escHtml(tc(m.b))} <em>${signed(s.avgB)}</em></span></li>
+        <li><b>${escHtml(damp)}</b><span>${escHtml(tc(m.a))} <em>${signed(s.rA)}</em> vs ${escHtml(tc(m.b))} <em>${signed(s.rB)}</em> → ${base === 0 ? 'even' : `${escHtml(tc(base > 0 ? m.a : m.b))} by <em>${Math.abs(base).toFixed(1)}</em>`}. The weight grows as the season goes on.</span></li>
+        <li><b>Head to head nudge</b><span>${s.meetings
+          ? `Last ${s.meetings} meeting${s.meetings === 1 ? '' : 's'}: ${s.h2hAvg === 0 ? 'dead even' : `${escHtml(tc(h2hLead))} <em>+${Math.abs(s.h2hAvg).toFixed(1)}</em> a game`}, counts half → <em>${signed(s.h2hAdj)}</em>`
+          : 'No meetings yet, so no nudge.'}</span></li>
+        <li><b>Projected margin → chance to win</b><span>${o.fav
+          ? `${escHtml(tc(favName))} by <em>${Math.abs(o.margin).toFixed(1)}</em>. A typical game swings about ${s.swing} points either way, so that's <em>${favPct}%</em> to win.`
+          : 'Dead even — a coin flip.'}</span></li>
+      </ol>
+      <p class="gm-how__foot">Recalculated after every final. Just for fun — no betting.</p>
+    </details>`;
+}
+
+function oddsLine(m, o) {
+  const favName = o.fav === 'b' ? m.b : m.a;
+  const proj = o.fav ? `${tc(favName)} by ${Math.max(1, Math.round(Math.abs(o.margin)))}` : 'Toss-up';
+  return `<div class="gm-odds">
+      <div class="gm-odds__top"><span class="gm-odds__kick">Odds</span><span class="gm-odds__proj">· ${escHtml(proj)}</span></div>
+      <div class="gm-odds__row">
+        <span class="gm-odds__side${o.fav === 'a' ? ' is-fav' : ''}">${dot(m.a, 8)}${escHtml(m.a)} <b class="font-condensed">${o.pctA}%</b></span>
+        <span class="gm-odds__bar" aria-hidden="true"><span class="${o.fav === 'a' ? 'is-fav' : ''}" style="width:${o.pctA}%"></span><span class="${o.fav === 'b' ? 'is-fav' : ''}"></span></span>
+        <span class="gm-odds__side gm-odds__side--b${o.fav === 'b' ? ' is-fav' : ''}"><b class="font-condensed">${o.pctB}%</b> ${escHtml(m.b)}${dot(m.b, 8)}</span>
+      </div>
+      ${howFigured(m, o)}
+    </div>`;
+}
+
+const FLAME = `<svg class="pk-flame" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg>`;
+const CHECK = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`;
+const CROSS = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+const verdict = ok => (ok ? `<span class="pk-ok">${CHECK}Called it</span>` : `<span class="pk-miss">${CROSS}Missed</span>`);
+
+// Photo with initials behind it and a team-colour ring. link: false inside rows that are
+// already links themselves (a nested <a> is invalid HTML).
+function pickAvatar(p, size = 30, link = true) {
+  const tag = link ? 'a' : 'span';
+  return `<${tag}${link ? ` href="/players/${encodeURIComponent(p.id)}"` : ''} class="pk-av" style="--team:${teamColor(p.team)};width:${size}px;height:${size}px" title="${escHtml(p.name)}">
+      <span class="pk-av__init">${escHtml(initials(p.name))}</span>
+      <img src="/api/player/${encodeURIComponent(p.id)}/photo" alt="${escHtml(p.name)}" loading="lazy" onerror="this.remove()">
+    </${tag}>`;
+}
+
+function calledItCard(s, isPlayer) {
+  const g = s.game;
+  const winnerName = g.winner === 'a' ? g.a : g.b;
+  const row = (name, score, win) => `<span class="pk-sb__row${win ? ' is-win' : ''}">${dot(name, 8)}${escHtml(name)}<b class="font-condensed">${score}</b></span>`;
+  const oddsFav = g.odds?.fav ? (g.odds.fav === 'a' ? g.a : g.b) : null;
+  const shown = s.calledIt.slice(0, 10);
+  const more = s.calledIt.length - shown.length;
+  return `<article class="pk-card" style="--team:${teamColor(winnerName)}">
+      <div class="pk-card__top">
+        <a href="/games/${encodeURIComponent(g.id)}" class="pk-card__when">${escHtml(shortDayLabel(g.ymd))} · Final</a>
+        ${s.upset ? '<span class="pk-upset">Upset</span>' : ''}
+      </div>
+      <div class="pk-sb">${row(g.a, g.sa, g.winner === 'a')}${row(g.b, g.sb, g.winner === 'b')}</div>
+      ${s.upset ? `<p class="pk-upset-line">${escHtml(tc(winnerName))} won with <b>${g.winner === 'a' ? g.odds.pctA : g.odds.pctB}%</b> odds</p>` : ''}
+      <div class="pk-res">
+        <div class="pk-res__row"><span class="pk-res__k">Odds</span><span>${oddsFav ? `<b>${escHtml(tc(oddsFav))} ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%</b>` : 'No odds for this game'}</span>${oddsFav ? verdict(s.oddsCalled) : ''}</div>
+        <div class="pk-res__row"><span class="pk-res__k">Fans</span><span><b>${s.pctWinner}%</b> picked ${escHtml(tc(winnerName))} · ${s.total} pick${s.total === 1 ? '' : 's'}</span>${s.pctWinner === 50 ? '' : verdict(s.fansCalled)}</div>
+        ${isPlayer ? `<div class="pk-res__row"><span class="pk-res__k">You</span><span>${s.myPick ? `You picked <b>${escHtml(tc(s.myPick === 'a' ? g.a : g.b))}</b>` : "You didn't pick"}</span>${s.myPick ? verdict(s.myPick === g.winner) : ''}</div>` : ''}
+      </div>
+      ${s.calledIt.length ? `<div class="pk-called">
+        <span class="pk-called__lbl">Called it · ${s.calledIt.length}</span>
+        <div class="pk-called__avs">${shown.map(p => pickAvatar(p)).join('')}${more > 0 ? `<span class="pk-av pk-av--more">+${more}</span>` : ''}</div>
+      </div>` : '<div class="pk-called pk-called--none">Nobody called this one</div>'}
+    </article>`;
+}
+
+function pickBoard(picks, isPlayer) {
+  const { board, me, minPicks, callers, season } = picks;
+  const rows = board.length
+    ? board.map(r => `<a href="/players/${encodeURIComponent(r.playerId)}" class="pk-lb__row${r.rank === 1 ? ' is-top' : ''}${me && r.playerId === me.playerId ? ' is-me' : ''}">
+        <span class="pk-lb__rank font-condensed">${r.rank}</span>
+        ${pickAvatar({ id: r.playerId, name: r.name, team: r.team }, 32, false)}
+        <span class="pk-lb__name">${escHtml(r.name)}${r.streak >= 2 ? `<span class="pk-streak">${FLAME}${r.streak}</span>` : ''}</span>
+        <span class="pk-lb__rec"><b class="font-condensed">${r.correct}–${r.picks - r.correct}</b><span>${r.pct}%</span></span>
+      </a>`).join('')
+    : `<p class="pk-lb__empty">Rankings start once players have ${minPicks} picks settled.</p>`;
+  const mine = isPlayer
+    ? (me
+      ? `<div class="pk-lb__me"><span>You</span><b>${me.correct} of ${me.picks}</b>${me.rank ? `<span class="pk-lb__me-rank">#${me.rank}</span>` : `<span class="pk-lb__me-rank">${minPicks - me.picks > 0 ? `${minPicks - me.picks} more to rank` : 'unranked'}</span>`}${me.streak >= 2 ? `<span class="pk-streak">${FLAME}${me.streak}</span>` : ''}</div>`
+      : '<div class="pk-lb__me"><span>You</span><b>No picks settled yet</b></div>')
+    : '<a href="/login?next=%2Fgames" class="pk-lb__me pk-lb__me--login">Log in to pick and get on the board →</a>';
+  const rec = (k, r) => (r.of ? `${k} <b>${r.called} of ${r.of}</b>` : '');
+  const callersLine = [rec('Odds', callers.odds), rec('Fans', callers.fans)].filter(Boolean).join(' · ');
+  return `<aside class="pk-board" aria-labelledby="pk-board-h">
+      <div class="pk-board__head"><h3 id="pk-board-h">Pickmaster race · S${escHtml(String(season))}</h3><span>Min ${minPicks} picks</span></div>
+      <div class="pk-lb">${rows}</div>
+      ${mine}
+      ${callersLine ? `<p class="pk-board__callers">${callersLine}</p>` : ''}
+      <p class="pk-board__foot">Best pick record at season's end wins the <b>Pickmaster</b> award.</p>
+    </aside>`;
+}
+
+function calledItSection(picks, isPlayer) {
+  if (!picks || (!picks.calledIt.length && !picks.board.length && !picks.me)) return '';
+  return `<section class="pk-sec" id="called-it" aria-labelledby="pk-h">
+    <div class="section-header"><h2 id="pk-h">Who called it?${picks.lastDay ? ` <span class="section-header__sub">${escHtml(dayLabel(picks.lastDay))}</span>` : ''}</h2></div>
+    <div class="pk-grid">
+      <div class="pk-cards${picks.calledIt.length === 1 ? ' pk-cards--one' : ''}">${picks.calledIt.length
+        ? picks.calledIt.map(s => calledItCard(s, isPlayer)).join('')
+        : '<div class="card pk-empty">Results show here after the next game day.</div>'}</div>
+      ${pickBoard(picks, isPlayer)}
+    </div>
+  </section>`;
+}
+
+function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = null }) {
   const g = m.game;
   const leadA = m.winsA > m.winsB, leadB = m.winsB > m.winsA;
   const glare = `radial-gradient(65% 130% at 0% 75%, ${teamColor(m.a)}80 0%, transparent 62%), radial-gradient(65% 130% at 100% 75%, ${teamColor(m.b)}80 0%, transparent 62%)`;
   const slides = m.slides.map((id, i) => `<div class="gm-sl${i === 0 ? ' is-on' : ''}"><img src="/api/photo/${encodeURIComponent(id)}" alt=""${i === 0 ? '' : ' loading="lazy"'}></div>`).join('');
 
-  // Who wins?
+  // Who wins? — odds for everyone; the fan split only once you've picked (or picks closed),
+  // so the crowd can't sway a pick. Logged-out visitors get a nudge to log in instead.
   const total = counts.a + counts.b;
   const pctA = total ? Math.round((counts.a / total) * 100) : 50;
-  const pick = `<div class="gm-pick" data-game-id="${escHtml(g.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}">
-      <div class="gm-pick__btns"${myPick ? ' hidden' : ''}>
+  const { closed = false, odds = null } = pickState || {};
+  const showSplit = !!myPick || closed;
+  const fanFav = total && counts.a !== counts.b ? (counts.a > counts.b ? 'a' : 'b') : null;
+  const disagree = showSplit && odds?.fav && fanFav && odds.fav !== fanFav;
+  const pick = `<div class="gm-pick${closed ? ' is-closed' : ''}" data-game-id="${escHtml(g.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}">
+      ${odds ? oddsLine(m, odds) : ''}
+      ${closed ? '' : `<div class="gm-pick__btns"${myPick ? ' hidden' : ''}>
         <button type="button" class="gm-pick__btn" data-side="a">${dot(m.a)}${escHtml(m.a)}</button>
         <button type="button" class="gm-pick__btn" data-side="b">${escHtml(m.b)}${dot(m.b)}</button>
-      </div>
-      <div class="gm-pick__result"${myPick ? '' : ' hidden'}>
+      </div>`}
+      ${!closed && !myPick && !isPlayer ? `<div class="gm-pick__login"><a href="/login?next=%2Fgames">Log in to pick</a>${total ? ` and see how ${total} player${total === 1 ? '' : 's'} picked` : ' and be the first'}</div>` : ''}
+      <div class="gm-pick__result"${showSplit ? '' : ' hidden'}>
+        ${odds ? '<div class="gm-pick__lbl">Fan picks</div>' : ''}
         <div class="gm-pick__split">
           <span class="gm-pick__seg${myPick === 'a' ? ' is-mine' : ''}" data-seg="a" style="width:${pctA}%">${dot(m.a, 8)}${escHtml(m.a)} <b>${pctA}%</b></span>
           <span class="gm-pick__seg gm-pick__seg--b${myPick === 'b' ? ' is-mine' : ''}" data-seg="b" style="width:${100 - pctA}%"><b>${100 - pctA}%</b> ${escHtml(m.b)}${dot(m.b, 8)}</span>
         </div>
-        <div class="gm-pick__note"><span>You picked <b data-mine-name>${escHtml(myPick === 'b' ? m.b : m.a)}</b> · we'll show how the picks did after the game</span><button type="button" class="gm-pick__change">Change</button></div>
+        ${disagree ? `<div class="gm-pick__flag"><b>Fans vs odds</b> · fans lean ${escHtml(tc(fanFav === 'a' ? m.a : m.b))}, the odds like ${escHtml(tc(odds.fav === 'a' ? m.a : m.b))}</div>` : ''}
+        <div class="gm-pick__note">${closed
+          ? `<span>Picks are closed${myPick ? ` · you picked <b>${escHtml(myPick === 'b' ? m.b : m.a)}</b>` : ''} · results after the final</span>`
+          : `<span>You picked <b data-mine-name>${escHtml(myPick === 'b' ? m.b : m.a)}</b> · we'll show who called it after the game</span><button type="button" class="gm-pick__change">Change</button>`}</div>
       </div>
     </div>`;
 
@@ -281,8 +417,8 @@ function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer }) {
         <p class="gm-story__body">${escHtml(story.body)}</p>
         ${isAdmin ? `<button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button>` : ''}
       </div>` : (isAdmin ? `<div class="gm-story gm-story--empty"><span>No storyline yet — it's written in the background, or regenerate it now</span><button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button></div>` : '')}
-      <div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
-      ${pick}
+      ${pickState ? `<div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${closed ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
+      ${pick}` : ''}
       <div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Biggest edges · this season' : 'Biggest edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
       <div class="gm-edges">${rowsHtml}</div>
       ${m.rows.length > 5 ? `<button type="button" class="gm-more" data-more aria-expanded="false">Show all ${m.rows.length} stats</button>` : ''}
@@ -356,7 +492,7 @@ function gamesPageScript({ isAdmin }) {
   });
 
   // Who wins?
-  document.querySelectorAll('.gm-pick').forEach(function (box) {
+  document.querySelectorAll('.gm-pick:not(.is-closed)').forEach(function (box) {
     var gameId = box.dataset.gameId;
     var btns = box.querySelector('.gm-pick__btns'), result = box.querySelector('.gm-pick__result');
     var total = box.closest('.gm-card').querySelector('[data-pick-total]');
@@ -448,7 +584,7 @@ ${isAdmin ? `
 
 export function gamesPage({
   games, season, seasons = [], currentSeason, seasonPlayedCount = 0, summary = null, isAdmin = false, isPlayer = false,
-  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {},
+  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {}, picks = null,
   commentsEnabled = false, socialByGame = {}, topScorerByGame = {},
 }) {
   const seasonLinks = [...seasons.map(s => ({ v: s, label: `Season ${s}` })), { v: 'all', label: 'All seasons' }]
@@ -461,7 +597,7 @@ export function gamesPage({
     </a>`).join('')}</div>` : '';
 
   const matchupsHtml = matchups.length ? `<div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
-    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer })).join('')}
+    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null })).join('')}
   </div>` : '';
 
   const teams = ['WHITE', 'BLACK', 'BLUE', 'MAROON'].filter(t => games.some(g => g.team_a_name === t || g.team_b_name === t));
@@ -489,6 +625,7 @@ ${pageHeader({ title: 'Games', description: 'Every result — box scores, recaps
 ${summaryPanel(summary, 'headlines', isAdmin)}
 ${potgMarquee(potg)}
 ${matchupsHtml}
+${calledItSection(picks, isPlayer)}
 ${tilesHtml}
 <section class="gr-results" aria-labelledby="gr-results-h">
   <div class="section-header"><h2 id="gr-results-h">${season === 'all' ? 'All results' : `Season ${escHtml(season)} results`} <span class="section-header__sub" data-games-count>${games.length} ${games.length === 1 ? 'game' : 'games'}</span></h2></div>

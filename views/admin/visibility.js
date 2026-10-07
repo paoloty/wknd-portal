@@ -15,6 +15,7 @@ const AWARD_SECTIONS = [
   { key: 'award_show_four_pm_leader',  label: '4-Pointers Leader' },
   { key: 'award_show_champion',        label: 'Champion' },
   { key: 'award_show_finals_mvp',      label: 'Finals MVP' },
+  { key: 'award_show_pickmaster',      label: 'Pickmaster (fan award)' },
 ];
 
 function featureRow({ id, label, sub, checked, dataKey, msgId }) {
@@ -54,6 +55,9 @@ export function adminVisibilityBody({
   mvpEnabled = true,
   homeShowRosterMoves = false,
   megaMenuEnabled = false,
+  picksEnabled = true,
+  pickOddsEnabled = true,
+  picksCloseTime = '06:00',
   nextUpCardOptions = [],
   nextUpCards = [],
   sectionSettings = {},
@@ -101,6 +105,24 @@ export function adminVisibilityBody({
         label: 'Comments',
         sub: `Registered players can comment and react on any game page. Admins can delete inline either way.`,
       })}
+      ${featureRow({
+        id: 'vis-picks-enabled', dataKey: 'picks_enabled', checked: picksEnabled, msgId: 'vis-msg-picks_enabled',
+        label: 'Who wins? picks',
+        sub: `Fan picks on the upcoming matchup cards (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/games</code>), the "Who called it?" results, pick records on player profiles, and the after-game notifications. Per-game close/reopen lives on each admin game page.`,
+      })}
+      ${featureRow({
+        id: 'vis-picks-odds-enabled', dataKey: 'picks_odds_enabled', checked: pickOddsEnabled, msgId: 'vis-msg-picks_odds_enabled',
+        label: 'Who wins? odds',
+        sub: `Win chances on the matchup cards, from this season's points margins plus a head-to-head nudge. Hidden until both teams have played this season. Can also be hidden per game.`,
+      })}
+      <tr class="admin-table-row">
+        <td class="admin-td" style="font-weight:600;white-space:nowrap">Picks close at</td>
+        <td class="admin-td" style="color:var(--text-muted)">Game-day cut-off (Manila time). Scheduled games have no tip-off time, so picks lock at this time on the game's date — set it to your first tip-off.</td>
+        <td class="admin-td" style="text-align:right;white-space:nowrap">
+          <input type="time" id="vis-picks-close" value="${escHtml(picksCloseTime)}" class="bg-admin-bg border border-admin-border rounded-md text-xs text-slate-200 px-2 py-1.5">
+          <span id="vis-msg-picks_close_time" class="text-xs block mt-1 min-h-[14px]"></span>
+        </td>
+      </tr>
       ${featureRow({
         id: 'vis-peer-ratings-enabled', dataKey: 'peer_ratings_enabled', checked: peerRatingsEnabled, msgId: 'vis-msg-peer_ratings_enabled',
         label: 'Player Ratings',
@@ -188,6 +210,25 @@ export function adminVisibilityBody({
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
   bindToggle('vis-home-roster-moves', 'home_show_roster_moves', 'vis-msg-home_show_roster_moves');
   bindToggle('vis-mega-menu-enabled', 'mega_menu_enabled', 'vis-msg-mega_menu_enabled');
+  bindToggle('vis-picks-enabled', 'picks_enabled', 'vis-msg-picks_enabled');
+  bindToggle('vis-picks-odds-enabled', 'picks_odds_enabled', 'vis-msg-picks_odds_enabled');
+
+  var closeInput = document.getElementById('vis-picks-close');
+  if (closeInput) closeInput.addEventListener('change', async function() {
+    var msg = document.getElementById('vis-msg-picks_close_time');
+    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+    try {
+      var r = await fetch('/admin/site/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ picks_close_time: this.value })
+      });
+      if (!r.ok) throw new Error();
+      msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
+    } catch(e) {
+      msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+    }
+    setTimeout(function() { msg.textContent = ''; }, 2000);
+  });
 
   document.querySelectorAll('.vis-nextup-select').forEach(function(sel) {
     var prev = sel.value;

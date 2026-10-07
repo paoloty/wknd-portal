@@ -831,7 +831,32 @@ const AWARD_META = {
   four_pm_leader:  { label: '4-Pointers Leader',             icon: '🚀', bg: '#f59332', text: '#10141d' },
   champion:        { label: 'League Champion',                icon: '👑', bg: '#facc15', text: '#10141d' },
   finals_mvp:      { label: 'Finals MVP',                     icon: '🥇', bg: '#ef4444', text: '#fff'    },
+  pickmaster:      { label: 'Pickmaster',                     icon: '🔮', bg: '#f59332', text: '#10141d' },
 };
+
+// "Who wins?" record for the current season (server.js → lib/picks.js). Only rendered once
+// at least one of their picks has been settled.
+function pickRecordCard(r, isOwnProfile) {
+  if (!r) return '';
+  const flame = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg>`;
+  const rank = r.rank
+    ? `#${r.rank} of ${r.ranked} in the Pickmaster race`
+    : `${Math.max(0, r.minPicks - r.picks)} more pick${r.minPicks - r.picks === 1 ? '' : 's'} to get ranked`;
+  return `<div class="card pk-me">
+  <div class="card-label">WHO WINS? · S${escHtml(String(r.season))} PICKS</div>
+  <div class="pk-me__main">
+    <span class="pk-me__rec"><b class="font-condensed">${r.correct}</b><span>of ${r.picks}</span></span>
+    <span class="pk-me__pct font-condensed">${r.pct}%</span>
+  </div>
+  <div class="pk-me__stats">
+    <span><b class="font-condensed">${r.streak >= 2 ? `<i class="pk-me__flame">${flame}</i>` : ''}${r.streak}</b>Streak</span>
+    <span><b class="font-condensed">${r.best}</b>Best run</span>
+    <span><b class="font-condensed">${r.upsets}</b>Upsets called</span>
+  </div>
+  <p class="pk-me__rank">${escHtml(rank)}</p>
+  ${isOwnProfile ? '<a href="/games" class="pk-me__link">Make this week&rsquo;s picks →</a>' : ''}
+</div>`;
+}
 
 function awardsSection(awards) {
   if (!awards?.length) return '';
@@ -1578,7 +1603,7 @@ export function playerPage({
   fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null, papawisEmailsOn = null,
   peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
   viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
-  canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null, badges = null,
+  canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null, badges = null, pickRecord = null,
 }) {
   const potgGameIds = new Set(potgGames.map(g => g.id));
   // fbLinked = true/false when this is the owner's own profile; null = not owner
@@ -1613,6 +1638,7 @@ ${coachNoteHtml}
     ${sidebarHtml}
     ${nextUpHtml}
     ${ratingSnapshotHtml}
+    ${pickRecordCard(pickRecord, isOwnProfile)}
     ${awardsSection(awards)}
     ${potgWriteups(potgGames, player)}
   </div>

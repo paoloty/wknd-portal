@@ -29,6 +29,7 @@ export const AWARD_LABELS = {
   three_pm_leader: '3-Pointers Leader',
   four_pm_leader:  '4-Pointers Leader',
   finals_mvp:      'Finals MVP',
+  pickmaster:      'Pickmaster',
 };
 
 // 'champion' is roster-wide (every player on the winning finals team, not a
@@ -44,6 +45,7 @@ const AWARD_GROUPS = [
   { label: 'All WKND 1st Team',       types: ['all_wknd_1'],   graphicType: 'all_wknd_1',            col: 'pos'   },
   { label: 'All WKND 2nd Team',       types: ['all_wknd_2'],   graphicType: 'all_wknd_2',            col: 'pos'   },
   { label: 'All WKND Defensive Team', types: ['all_wknd_def'], graphicType: 'all_wknd_def',          col: 'pos'   },
+  { label: 'Fan Awards',               types: ['pickmaster'],                                        col: 'award' },
   { label: 'Statistical Leaders',     types: ['scoring_champ', 'assists_leader', 'rebounds_leader', 'steals_leader', 'blocks_leader', 'three_pm_leader', 'four_pm_leader'], graphicType: 'stat-leaders', col: 'award' },
 ];
 
