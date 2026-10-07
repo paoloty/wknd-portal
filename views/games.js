@@ -251,7 +251,13 @@ function howFigured(m, o) {
 function oddsLine(m, o) {
   const favName = o.fav === 'b' ? m.b : m.a;
   const proj = o.fav ? `${tc(favName)} by ${Math.max(1, Math.round(Math.abs(o.margin)))}` : 'Toss-up';
-  return `<div class="gm-odds">
+  // Team glare on both sides, like the matchup banner — the favourite's side glows stronger.
+  // White is the one light team colour, so it gets half strength or it washes out the text.
+  const glow = side => {
+    const base = o.fav === side ? 55 : o.fav ? 28 : 40;
+    return `${Math.round(base * ((side === 'a' ? m.a : m.b) === 'WHITE' ? 0.5 : 1))}%`;
+  };
+  return `<div class="gm-odds" style="--ta:${teamColor(m.a)};--tb:${teamColor(m.b)};--ga:${glow('a')};--gb:${glow('b')}">
       <div class="gm-odds__top"><span class="gm-odds__kick">Odds</span><span class="gm-odds__proj">· ${escHtml(proj)}</span></div>
       <div class="gm-odds__row">
         <span class="gm-odds__side${o.fav === 'a' ? ' is-fav' : ''}">${dot(m.a, 8)}${escHtml(m.a)} <b class="font-condensed">${o.pctA}%</b></span>
@@ -412,25 +418,31 @@ function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = 
       </div>
     </div>
     <div class="gm-body">
-      ${story ? `<div class="gm-story">
+      <!-- Three fixed sections (story / picks / the rest): side by side, the cards share these
+           rows through CSS subgrid, so "Who wins?" and "Biggest edges" line up across both
+           cards whatever the storyline length. Each wrapper always renders, even when empty. -->
+      <div class="gm-sec">${story ? `<div class="gm-story">
         <p class="gm-story__head">${storyHtml(story.headline)}</p>
-        <p class="gm-story__body">${escHtml(story.body)}</p>
+        <p class="gm-story__body" data-clamp>${escHtml(story.body)}</p>
+        <button type="button" class="gm-story__more" data-clamp-btn hidden aria-expanded="false">Read more</button>
         ${isAdmin ? `<button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button>` : ''}
-      </div>` : (isAdmin ? `<div class="gm-story gm-story--empty"><span>No storyline yet — it's written in the background, or regenerate it now</span><button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button></div>` : '')}
-      ${pickState ? `<div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${closed ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
-      ${pick}` : ''}
+      </div>` : (isAdmin ? `<div class="gm-story gm-story--empty"><span>No storyline yet — it's written in the background, or regenerate it now</span><button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button></div>` : '')}</div>
+      <div class="gm-sec">${pickState ? `<div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${closed ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
+      ${pick}` : ''}</div>
+      <div class="gm-sec">
       <div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Biggest edges · this season' : 'Biggest edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
       <div class="gm-edges">${rowsHtml}</div>
       ${m.rows.length > 5 ? `<button type="button" class="gm-more" data-more aria-expanded="false">Show all ${m.rows.length} stats</button>` : ''}
       ${scorers}
       ${meetings}
+      </div>
     </div>
   </article>`;
 }
 
 // Recap card for the list — the homepage Game headlines card plus a footer (top scorer,
 // comment/react/share). The card is a stretched link so the footer buttons stay real buttons.
-function gameCard(g, { commentsEnabled, social, topScorer }) {
+function gameCard(g, { commentsEnabled, social, topScorer, odds = null }) {
   const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
   const aWin = sa > sb;
   const winner = aWin ? g.team_a_name : g.team_b_name;
@@ -449,9 +461,12 @@ function gameCard(g, { commentsEnabled, social, topScorer }) {
   return `<article class="gh-card gr-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}" data-teams="${escHtml(`${g.team_a_name} ${g.team_b_name}`)}" data-type="${escHtml(g.game_type || 'regular')}">
     <a href="/games/${id}" class="gr-card__link" aria-label="${escHtml(title.slice(0, 120))}"></a>
     ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${id}" alt="" loading="lazy">` : ''}
-    <span class="gh-card__top"><span class="gh-card__when"><span class="gh-card__season">S${escHtml(String(g.season))}</span><span class="gh-card__date">${escHtml(dayLabel(ymd))}</span></span>${tag ? `<span class="gr-card__tag">${escHtml(tag)}</span>` : ''}</span>
+    <span class="gh-card__top"><span class="gh-card__when"><span class="gh-card__season">S${escHtml(String(g.season))}</span><span class="gh-card__date">${escHtml(dayLabel(ymd))}</span></span>${tag || odds?.upset ? `<span class="gr-card__tags">${odds?.upset ? '<span class="gr-card__tag gr-card__tag--upset">Upset</span>' : ''}${tag ? `<span class="gr-card__tag">${escHtml(tag)}</span>` : ''}</span>` : ''}</span>
     <span class="gh-card__body">
       <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>
+      ${odds ? `<span class="gr-card__odds${odds.upset ? ' is-upset' : ''}">${odds.upset
+        ? `${escHtml(tc(winner))} won with ${100 - odds.pct}% odds`
+        : `Odds had ${escHtml(tc(winner))} ${odds.pct}%`}</span>` : ''}
       <span class="gh-card__title${recapTitle ? '' : ' gr-card__title--quiet'}">${escHtml(title.slice(0, 120))}</span>
       <span class="gh-card__cta">${pending ? 'Stats pending' : recapTitle ? 'Read recap &rarr;' : 'Box score &rarr;'}</span>
     </span>
@@ -478,6 +493,18 @@ function gamesPageScript({ isAdmin }) {
         slides.forEach(function (s, i) { s.classList.toggle('is-on', i === on); s.classList.toggle('is-prev', i === prev); });
       }, 5500);
     }, n * 1800);
+  });
+
+  // Storylines are capped at 5 lines; "Read more" only shows when one actually overflows.
+  document.querySelectorAll('[data-clamp]').forEach(function (p) {
+    var btn = p.parentNode.querySelector('[data-clamp-btn]');
+    if (!btn || p.scrollHeight <= p.clientHeight + 1) return;
+    btn.hidden = false;
+    btn.addEventListener('click', function () {
+      var open = p.classList.toggle('is-open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.textContent = open ? 'Show less' : 'Read more';
+    });
   });
 
   // Biggest edges ⇄ all stats
@@ -585,7 +612,7 @@ ${isAdmin ? `
 export function gamesPage({
   games, season, seasons = [], currentSeason, seasonPlayedCount = 0, summary = null, isAdmin = false, isPlayer = false,
   tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {}, picks = null,
-  commentsEnabled = false, socialByGame = {}, topScorerByGame = {},
+  commentsEnabled = false, socialByGame = {}, topScorerByGame = {}, oddsByGame = {},
 }) {
   const seasonLinks = [...seasons.map(s => ({ v: s, label: `Season ${s}` })), { v: 'all', label: 'All seasons' }]
     .map(s => `<a href="/games${s.v === String(currentSeason) ? '' : `?season=${s.v}`}" class="gr-seg${s.v === season ? ' is-on' : ''}"${s.v === season ? ' aria-current="page"' : ''}>${escHtml(s.label)}</a>`).join('');
@@ -618,6 +645,7 @@ export function gamesPage({
     commentsEnabled,
     social: socialByGame[g.id] || { commentsCount: 0, reactCount: 0, reacted: false },
     topScorer: topScorerByGame[g.id],
+    odds: oddsByGame[g.id] || null,
   })).join('\n    ');
 
   return `<div class="page-content gr-page">

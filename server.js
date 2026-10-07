@@ -8858,6 +8858,19 @@ app.get('/games', (req, res) => {
     }]));
   }
 
+  // Pre-game odds label (and upset tag) for every listed result — the same lib/picks.js model
+  // as the live cards, computed from games dated before each one, so it also covers games
+  // from before picks existed. None for a season's opening week (no results yet).
+  const oddsByGame = {};
+  if (pickOddsEnabled()) {
+    const playedPick = games.map(g => toPickGame(g, gameYmd)).filter(g => g.played);
+    for (const g of playedPick) {
+      if (!listGames.some(x => x.id === g.id)) continue;
+      const o = computeOdds(g, playedPick);
+      if (o?.fav) oddsByGame[g.id] = { fav: o.fav, pct: o.fav === 'a' ? o.pctA : o.pctB, upset: o.fav !== (g.sa > g.sb ? 'a' : 'b') };
+    }
+  }
+
   // Top scorer per listed game, for the card footer.
   const topScorerByGame = {};
   for (const g of listGames) {
@@ -8914,7 +8927,7 @@ app.get('/games', (req, res) => {
       games: listGames, season, seasons, currentSeason, seasonPlayedCount: seasonPlayed.length,
       summary, isAdmin: !!req.session?.isAdmin, isPlayer: !!req.session?.playerPlayerId,
       tiles, potg, matchups, stories, pickCounts, myPicks, picks,
-      commentsEnabled, socialByGame, topScorerByGame,
+      commentsEnabled, socialByGame, topScorerByGame, oddsByGame,
     }),
   }));
 });
