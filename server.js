@@ -162,6 +162,7 @@ import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './li
 import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
+import { comparisonProblems } from './lib/story-checks.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, callerRecords, calledItSummary } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
@@ -8653,7 +8654,8 @@ function buildSeasonTiles(seasonPlayed, playerMap) {
 // games_matchup_story_<gameId>) only shows while the key still matches, a stale/missing one
 // is written in the background, never awaited by the page. Every number must appear in
 // the facts, banned words are rejected in code, then a temperature-0 fact check.
-const MATCHUP_STORY_VERSION = 1;
+// v2: comparisons are checked in code (lib/story-checks.js) — bumping regenerates every stored story.
+const MATCHUP_STORY_VERSION = 2;
 const matchupStoryInFlight = new Set();
 let matchupStoryCooldownUntil = 0;
 const MATCHUP_BANNED = /\b(clash|showdown|impressive|stellar|remarkable|dominant|dominates|showcase|intriguing|intrigues|epic|crowd|fans|spectators)\b/i;
@@ -8674,7 +8676,12 @@ Season ${m.season} records so far: ${T(m.a)} ${m.recordA.w}-${m.recordA.l}, ${T(
 ${basis}
 ${statLines.join('\n')}${scorerLines.length ? `\nTop scorers in this matchup: ${scorerLines.join('; ')}.` : ''}`;
   const key = `v${MATCHUP_STORY_VERSION}|${m.game.id}|${m.recordA.w}-${m.recordA.l}|${m.recordB.w}-${m.recordB.l}|${m.lastMeetings.map(x => `${x.id}:${x.scoreA}-${x.scoreB}`).join(',')}|${m.meetings}`;
-  return { key, facts, section: 'matchup preview' };
+  return {
+    key, facts, section: 'matchup preview',
+    // For the wrong-way comparison check: team names as the copy writes them, per-game rows.
+    teams: [T(m.a), T(m.b)],
+    rows: m.rows.map(r => ({ label: r.label, a: r.a, b: r.b, hi: !!r.hi })),
+  };
 }
 
 async function generateMatchupStory(gameId, f) {
@@ -8690,6 +8697,7 @@ Rules:
 - headline: one sentence, at most 110 characters, ending with a period. Wrap the one or two key phrases (a team name or the deciding number) in **double asterisks**. Team names in title case.
 - body: one paragraph of 3-4 sentences, 60-90 words, plain text — no asterisks, markdown or emoji. Explain what has decided this matchup so far and what to watch next time they meet. Don't repeat the headline.
 - Every number must be copied exactly as written in the facts. Never calculate a difference, total, gap or percentage of your own (no "6 more", no "12 combined") — compare with words like "more" or "fewer" instead.
+- Before writing "more", "fewer", "higher", "lower", "out-rebounds", "outscores", "edge" or "advantage" about a team, check that team's number in the facts really is the bigger (or smaller) one. For stats marked "fewer is better", the lower number is the advantage.
 - A single game's margin is not an "edge" or a "lead" in the series. Per-game averages describe the meetings overall; never attach them to a single game.
 - Don't invent stats, history, injuries, quotes or lineups. Don't predict a winner as certain. Never call anything a record, a first or a best-ever.
 - Write finished copy only: no questions to yourself, no notes or alternatives.
@@ -8711,6 +8719,12 @@ Rules:
     if (banned) {
       console.warn(`Matchup story (${gameId}) attempt ${attempt} used a banned word: ${banned[0]}`);
       prompt += `\n\nA previous draft was rejected for using the word "${banned[0]}". Don't use it.`;
+      continue;
+    }
+    const wrongWay = comparisonProblems(`${headline.replace(/\*\*/g, '')} ${body}`, f);
+    if (wrongWay.length) {
+      console.warn(`Matchup story (${gameId}) attempt ${attempt} has a comparison the wrong way round: ${wrongWay.join(' | ')}`);
+      prompt += `\n\nA previous draft was rejected because a comparison runs the wrong way: ${wrongWay.join('; ')}. Check which team actually has the bigger number before comparing.`;
       continue;
     }
     const problems = await factCheckHomeSummary(f, headline, body);
