@@ -1,7 +1,7 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt, initials } from './utils.js';
 import { summaryPanel } from './home.js';
-import { pickBox, pickBoxScript } from './pick-box.js';
+import { pickBox, pickBoxScript, previewHref } from './pick-box.js';
 
 // Comment/react/share for this row — same actions as the game page's tabActionsBar, just
 // reachable from the list. The row itself is a "stretched link" card (see .game-row__link
@@ -190,8 +190,8 @@ function scorerCard(p, side) {
         <span class="gm-fo__id"><b class="gm-fo__name">${escHtml(p.name)}</b><span class="gm-fo__sub">${dot(p.team, 7)}${escHtml(p.team)}${p.number !== '' && p.number != null ? ` · #${escHtml(String(p.number))}` : ''}</span></span>
       </span>
       <span class="gm-fo__big"><b class="font-condensed${p.lead ? ' is-lead' : ''}">${p.ppg.toFixed(1)}</b><span>PPG vs ${escHtml(p.opp)}</span></span>
-      <span class="gm-fo__spark" aria-label="Points in each game against ${escHtml(tc(p.opp))}: ${p.series.join(', ')}">
-        ${p.series.map(v => `<span class="gm-fo__bar" style="height:${Math.max(6, Math.round((v / max) * 100))}%" title="${v} pts"></span>`).join('')}
+      <span class="gm-fo__spark" data-bars${p.team === 'BLACK' ? ' style="--bar:#8a94a6"' : ''} aria-label="Points in each game against ${escHtml(tc(p.opp))}: ${p.series.join(', ')}">
+        ${p.series.map((v, i) => `<span class="gm-fo__bar${v === max ? ' is-best' : ''}" data-bar style="--i:${i};height:${Math.max(6, Math.round((v / max) * 100))}%" title="${v} pts"></span>`).join('')}
       </span>
       <span class="gm-fo__stats"><span><b class="font-condensed">${p.rpg.toFixed(1)}</b>REB</span><span><b class="font-condensed">${p.apg.toFixed(1)}</b>AST</span>${p.fg != null ? `<span><b class="font-condensed">${p.fg.toFixed(1)}</b>FG%</span>` : ''}</span>
       <span class="gm-fo__best">Best vs ${escHtml(tc(p.opp))} · <b>${p.best.pts} · ${escHtml(p.best.label)}</b></span>
@@ -214,6 +214,14 @@ function meetingTile(m, x) {
         <span class="gm-mt__potg">${potg}</span>
       </span>
     </a>`;
+}
+
+// /games Up next cards: the storyline's first sentence (or ~150 characters at a word break).
+function storyExcerpt(body) {
+  const text = String(body || '').trim();
+  const first = text.match(/^.+?[.!?](?=\s|$)/)?.[0] || text;
+  if (first.length <= 170) return first.length < text.length && !/[.!?]$/.test(first) ? `${first}…` : first;
+  return `${first.slice(0, 150).replace(/\s+\S*$/, '')}…`;
 }
 
 const storyHtml = s => escHtml(s).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>');
@@ -284,7 +292,8 @@ function pickAvatar(p, size = 30, link = true) {
     </${tag}>`;
 }
 
-function calledItCard(s, isPlayer) {
+// preview: false on the preview page itself (it would link to itself).
+function calledItCard(s, isPlayer, { preview = true } = {}) {
   const g = s.game;
   const winnerName = g.winner === 'a' ? g.a : g.b;
   const row = (name, score, win) => `<span class="pk-sb__row${win ? ' is-win' : ''}">${dot(name, 8)}${escHtml(name)}<b class="font-condensed">${score}</b></span>`;
@@ -300,57 +309,25 @@ function calledItCard(s, isPlayer) {
       ${s.upset ? `<p class="pk-upset-line">${escHtml(tc(winnerName))} won with <b>${g.winner === 'a' ? g.odds.pctA : g.odds.pctB}%</b> odds</p>` : ''}
       <div class="pk-res">
         ${oddsFav ? `<div class="pk-res__row"><span class="pk-res__k">Odds</span><span><b>${escHtml(tc(oddsFav))} ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%</b></span>${verdict(s.oddsCalled)}</div>` : ''}
-        <div class="pk-res__row"><span class="pk-res__k">Fans</span><span><b>${s.pctWinner}%</b> picked ${escHtml(tc(winnerName))} · ${s.total} pick${s.total === 1 ? '' : 's'}</span>${s.pctWinner === 50 ? '' : verdict(s.fansCalled)}</div>
+        <div class="pk-res__row"><span class="pk-res__k">Fans</span>${s.total
+          ? `<span><b>${s.pctWinner}%</b> picked ${escHtml(tc(winnerName))} · ${s.total} pick${s.total === 1 ? '' : 's'}</span>${s.pctWinner === 50 ? '' : verdict(s.fansCalled)}`
+          : '<span>No picks on this game</span>'}</div>
         ${isPlayer ? `<div class="pk-res__row"><span class="pk-res__k">You</span><span>${s.myPick ? `You picked <b>${escHtml(tc(s.myPick === 'a' ? g.a : g.b))}</b>` : "You didn't pick"}</span>${s.myPick ? verdict(s.myPick === g.winner) : ''}</div>` : ''}
       </div>
       ${s.calledIt.length ? `<div class="pk-called">
         <span class="pk-called__lbl">Called it · ${s.calledIt.length}</span>
         <div class="pk-called__avs">${shown.map(p => pickAvatar(p)).join('')}${more > 0 ? `<span class="pk-av pk-av--more">+${more}</span>` : ''}</div>
-      </div>` : '<div class="pk-called pk-called--none">Nobody called this one</div>'}
+      </div>` : `<div class="pk-called pk-called--none">${s.total ? 'Nobody called this one' : 'Nobody picked this game'}</div>`}
+      ${preview ? `<a href="${escHtml(previewHref(g))}" class="pk-card__prev">Pre-game preview →</a>` : ''}
     </article>`;
 }
 
-function pickBoard(picks, isPlayer) {
-  const { board, me, minPicks, callers, season } = picks;
-  const rows = board.length
-    ? board.map(r => `<a href="/players/${encodeURIComponent(r.playerId)}" class="pk-lb__row${r.rank === 1 ? ' is-top' : ''}${me && r.playerId === me.playerId ? ' is-me' : ''}">
-        <span class="pk-lb__rank font-condensed">${r.rank}</span>
-        ${pickAvatar({ id: r.playerId, name: r.name, team: r.team }, 32, false)}
-        <span class="pk-lb__name">${escHtml(r.name)}${r.streak >= 2 ? `<span class="pk-streak">${FLAME}${r.streak}</span>` : ''}</span>
-        <span class="pk-lb__rec"><b class="font-condensed">${r.correct}–${r.picks - r.correct}</b><span>${r.pct}%</span></span>
-      </a>`).join('')
-    : `<p class="pk-lb__empty">Rankings start once players have ${minPicks} picks settled.</p>`;
-  const mine = isPlayer
-    ? (me
-      ? `<div class="pk-lb__me"><span>You</span><b>${me.correct} of ${me.picks}</b>${me.rank ? `<span class="pk-lb__me-rank">#${me.rank}</span>` : `<span class="pk-lb__me-rank">${minPicks - me.picks > 0 ? `${minPicks - me.picks} more to rank` : 'unranked'}</span>`}${me.streak >= 2 ? `<span class="pk-streak">${FLAME}${me.streak}</span>` : ''}</div>`
-      : '<div class="pk-lb__me"><span>You</span><b>No picks settled yet</b></div>')
-    : '<a href="/login?next=%2Fgames" class="pk-lb__me pk-lb__me--login">Log in to pick and get on the board →</a>';
-  const rec = (k, r) => (r.of ? `${k} <b>${r.called} of ${r.of}</b>` : '');
-  const callersLine = [rec('Odds', callers.odds), rec('Fans', callers.fans)].filter(Boolean).join(' · ');
-  return `<aside class="pk-board" aria-labelledby="pk-board-h">
-      <div class="pk-board__head"><h3 id="pk-board-h">Pickmaster race · S${escHtml(String(season))}</h3><span>Min ${minPicks} picks</span></div>
-      <div class="pk-lb">${rows}</div>
-      ${mine}
-      ${callersLine ? `<p class="pk-board__callers">${callersLine}</p>` : ''}
-      <p class="pk-board__foot">Best pick record at season's end wins the <b>Pickmaster</b> award. <a href="/picks" class="pk-board__all">Full race →</a></p>
-    </aside>`;
-}
-
-function calledItSection(picks, isPlayer) {
-  if (!picks || (!picks.calledIt.length && !picks.board.length && !picks.me)) return '';
-  return `<section class="pk-sec" id="called-it" aria-labelledby="pk-h">
-    <div class="section-header"><h2 id="pk-h">Who called it?${picks.lastDay ? ` <span class="section-header__sub">${escHtml(dayLabel(picks.lastDay))}</span>` : ''}</h2><a href="/picks" class="section-header__link">See all picks →</a></div>
-    <div class="pk-grid">
-      <div class="pk-cards${picks.calledIt.length === 1 ? ' pk-cards--one' : ''}">${picks.calledIt.length
-        ? picks.calledIt.map(s => calledItCard(s, isPlayer)).join('')
-        : '<div class="card pk-empty">Results show here after the next game day.</div>'}</div>
-      ${pickBoard(picks, isPlayer)}
-    </div>
-  </section>`;
-}
-
-function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = null, pickers = null }) {
+// variant 'semi' = /games Up next (storyline + pick, links to the full preview);
+// 'full' = /picks/<game>. state: 'open' | 'closed' | 'final' (the archived preview, with the
+// pre-game odds in place of the pick) | 'later' (scheduled, picks not open yet).
+function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPlayer, pickState = null, pickers = null, variant = 'full', state = 'open', href = '', next = '/games', page = false }) {
   const g = m.game;
+  const semi = variant === 'semi';
   const leadA = m.winsA > m.winsB, leadB = m.winsB > m.winsA;
   const glare = `radial-gradient(65% 130% at 0% 75%, ${teamColor(m.a)}80 0%, transparent 62%), radial-gradient(65% 130% at 100% 75%, ${teamColor(m.b)}80 0%, transparent 62%)`;
   const slides = m.slides.map((id, i) => `<div class="gm-sl${i === 0 ? ' is-on' : ''}"><img src="/api/photo/${encodeURIComponent(id)}" alt=""${i === 0 ? '' : ' loading="lazy"'}></div>`).join('');
@@ -359,9 +336,16 @@ function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = 
   // The fan split and faces only show once you've picked (or picks closed).
   const total = counts.a + counts.b;
   const { closed = false, odds = null } = pickState || {};
-  const pick = pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers }, {
-    isPlayer, next: '/games', oddsHtml: odds ? oddsLine(m, odds) : '',
+  const pick = state === 'final' || state === 'later' ? '' : pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers }, {
+    isPlayer, next, oddsHtml: odds ? oddsLine(m, odds) : '',
   });
+  const pickSec = state === 'final'
+    ? (odds ? `<div class="gm-grp">Pre-game odds</div>${oddsLine(m, odds)}` : '')
+    : state === 'later'
+      ? '<div class="gm-grp">Who wins?</div><p class="gm-later">Picks open closer to game day.</p>'
+      : pickState ? `<div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${closed ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
+      ${pick}` : '';
+  const chip = state === 'final' ? 'Pre-game preview' : state === 'later' ? 'Coming up' : 'Up next';
 
   // Biggest edges first (gap relative to the larger value), the rest behind a toggle.
   const gap = r => Math.abs(r.a - r.b) / (Math.max(r.a, r.b) || 1);
@@ -382,13 +366,42 @@ function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = 
   const meetings = m.lastMeetings.length ? `<div class="gm-grp">${m.lastMeetings.length === 1 ? 'Last meeting' : `Last ${m.lastMeetings.length} meetings`}</div>
       <div class="gm-mts">${m.lastMeetings.map(x => meetingTile(m, x)).join('')}</div>` : '';
 
-  return `<article class="gm-card" id="m-${escHtml(g.id)}" aria-label="${escHtml(tc(m.a))} vs ${escHtml(tc(m.b))}">
+  const regen = isAdmin && state !== 'final' && state !== 'later';
+  const storySec = story
+    ? `<div class="gm-story">
+        <p class="gm-story__head">${storyHtml(story.headline)}</p>
+        ${semi
+          ? `<p class="gm-story__body">${escHtml(storyExcerpt(story.body))} <a href="${escHtml(href)}" class="gm-story__link">${state === 'open' ? 'Read more &amp; pick' : 'Read more'} →</a></p>`
+          : `<p class="gm-story__body" data-clamp>${escHtml(story.body)}</p>
+        <button type="button" class="gm-story__more" data-clamp-btn hidden aria-expanded="false">Read more</button>`}
+        ${regen ? `<button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button>` : ''}
+      </div>`
+    : regen ? `<div class="gm-story gm-story--empty"><span>No storyline yet — it's written in the background, or regenerate it now</span><button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button></div>` : '';
+
+  // Semi: the details stay on /picks/<game> — a short teaser of what's there instead.
+  const teaser = [
+    m.firstMeeting ? 'First meeting' : `${m.meetings} meeting${m.meetings === 1 ? '' : 's'}`,
+    `${m.rows.length} stats compared`,
+    m.scorers.some(Boolean) ? 'go-to scorers' : '',
+    m.lastMeetings.length ? `last ${m.lastMeetings.length === 1 ? 'meeting' : `${m.lastMeetings.length} meetings`}` : '',
+  ].filter(Boolean).join(' · ');
+  const detailSec = semi
+    ? `${ranked.length ? `<div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Top edges · this season' : 'Top edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
+      <div class="gm-edges">${ranked.slice(0, 3).map(edgeRow).join('')}</div>` : ''}
+      <a href="${escHtml(href)}" class="gm-full"><span class="gm-full__k">Full matchup preview</span><span class="gm-full__t">${escHtml(teaser)}</span><span class="gm-full__go">${state === 'open' ? 'Preview &amp; pick' : 'Open preview'} →</span></a>`
+    : `<div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Biggest edges · this season' : 'Biggest edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
+      <div class="gm-edges">${rowsHtml}</div>
+      ${m.rows.length > 5 ? `<button type="button" class="gm-more" data-more aria-expanded="false">Show all ${m.rows.length} stats</button>` : ''}
+      ${scorers}
+      ${meetings}`;
+
+  return `<article class="gm-card${page ? ' gm-card--page' : ''}${semi ? ' gm-card--semi' : ''}" id="m-${escHtml(g.id)}" aria-label="${escHtml(tc(m.a))} vs ${escHtml(tc(m.b))}">
     <div class="gm-hero">
       <div class="gm-slides" data-slides>${slides}</div>
       <div class="gm-shade"></div>
       <div class="gm-glare" style="background:${glare}"></div>
       <div class="gm-hero__in">
-        <div class="gm-hero__chips"><span class="hero-chip hero-chip--season">Up next</span><span class="hero-chip">${escHtml(dayLabel(m.ymd))}</span></div>
+        <div class="gm-hero__chips"><span class="hero-chip hero-chip--season">${chip}</span><span class="hero-chip">${escHtml(dayLabel(m.ymd))}</span></div>
         <div class="gm-hero__teams">
           <span class="gm-side"><span class="gm-side__name">${dot(m.a, 11)}<b>${escHtml(m.a)}</b></span><span class="gm-side__rec">S${escHtml(String(m.season))} ${m.recordA.w}–${m.recordA.l}</span></span>
           <span class="gm-h2h">${m.firstMeeting
@@ -402,20 +415,10 @@ function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = 
       <!-- Three fixed sections (story / picks / the rest): side by side, the cards share these
            rows through CSS subgrid, so "Who wins?" and "Biggest edges" line up across both
            cards whatever the storyline length. Each wrapper always renders, even when empty. -->
-      <div class="gm-sec">${story ? `<div class="gm-story">
-        <p class="gm-story__head">${storyHtml(story.headline)}</p>
-        <p class="gm-story__body" data-clamp>${escHtml(story.body)}</p>
-        <button type="button" class="gm-story__more" data-clamp-btn hidden aria-expanded="false">Read more</button>
-        ${isAdmin ? `<button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button>` : ''}
-      </div>` : (isAdmin ? `<div class="gm-story gm-story--empty"><span>No storyline yet — it's written in the background, or regenerate it now</span><button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(g.id)}">↺ Regenerate</button></div>` : '')}</div>
-      <div class="gm-sec">${pickState ? `<div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${closed ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
-      ${pick}` : ''}</div>
+      <div class="gm-sec">${storySec}</div>
+      <div class="gm-sec">${pickSec}</div>
       <div class="gm-sec">
-      <div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Biggest edges · this season' : 'Biggest edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
-      <div class="gm-edges">${rowsHtml}</div>
-      ${m.rows.length > 5 ? `<button type="button" class="gm-more" data-more aria-expanded="false">Show all ${m.rows.length} stats</button>` : ''}
-      ${scorers}
-      ${meetings}
+      ${detailSec}
       </div>
     </div>
   </article>`;
@@ -458,8 +461,47 @@ function gameCard(g, { commentsEnabled, social, topScorer, odds = null }) {
   </article>`;
 }
 
-function gamesPageScript({ isAdmin }) {
+const REGEN_JS = `
+  // Admin: regenerate the intro summary or a matchup storyline
+  document.querySelectorAll('.hs-summary__regen').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var matchup = btn.dataset.matchup;
+      btn.disabled = true; btn.textContent = 'Writing…';
+      fetch(matchup ? '/admin/games/matchup-story/regenerate' : '/admin/home-summary/regenerate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(matchup ? { gameId: matchup } : { block: btn.dataset.block })
+      })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); }); })
+        .then(function () { location.reload(); })
+        .catch(function (e) { btn.disabled = false; btn.textContent = '↺ Regenerate'; alert(e.message); });
+    });
+  });`;
+
+// Bars grow up from the baseline when they scroll into view (homepage face-off, matchup
+// scorers). Armed only from JS, so without it the bars simply show; off for reduced motion.
+// window.__wkndBars.replay(el) re-runs one chart (the homepage tabs call it on switch).
+function barsScript() {
   return `<script>
+(function () {
+  if (window.__wkndBars) return;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function show(el) { requestAnimationFrame(function () { el.classList.add('is-in'); }); }
+  function replay(el) { if (reduce || !el.classList.contains('is-armed')) return; el.classList.remove('is-in'); void el.offsetWidth; show(el); }
+  window.__wkndBars = { replay: replay };
+  if (reduce || !('IntersectionObserver' in window)) return;
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) { show(e.target); io.unobserve(e.target); } });
+  }, { threshold: 0.35 });
+  document.querySelectorAll('[data-bars]').forEach(function (el) { el.classList.add('is-armed'); io.observe(el); });
+})();
+</script>`;
+}
+
+// Matchup card behaviour — slideshow, storyline clamp, stats toggle, admin regenerate.
+// Shared with /picks/<game>.
+function matchupScript({ isAdmin }) {
+  return `${barsScript()}
+<script>
 (function () {
   // Matchup photo slideshows: next photo fades in on top while the previous one stays
   // underneath and keeps drifting, so the banner never dims or jumps.
@@ -498,7 +540,14 @@ function gamesPageScript({ isAdmin }) {
       btn.textContent = open ? 'Show biggest edges only' : label;
     });
   });
+${isAdmin ? REGEN_JS : ''}
+})();
+</script>`;
+}
 
+function gamesPageScript() {
+  return `<script>
+(function () {
   // Team / type filters on the results grid
   var grid = document.querySelector('.gr-grid');
   var state = { team: '', type: '' };
@@ -545,28 +594,13 @@ function gamesPageScript({ isAdmin }) {
       }).catch(function () {});
     }
   });
-${isAdmin ? `
-  // Admin: regenerate the intro summary or a matchup storyline
-  document.querySelectorAll('.hs-summary__regen').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var matchup = btn.dataset.matchup;
-      btn.disabled = true; btn.textContent = 'Writing…';
-      fetch(matchup ? '/admin/games/matchup-story/regenerate' : '/admin/home-summary/regenerate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(matchup ? { gameId: matchup } : { block: btn.dataset.block })
-      })
-        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); }); })
-        .then(function () { location.reload(); })
-        .catch(function (e) { btn.disabled = false; btn.textContent = '↺ Regenerate'; alert(e.message); });
-    });
-  });` : ''}
 })();
 </script>`;
 }
 
 export function gamesPage({
   games, season, seasons = [], currentSeason, seasonPlayedCount = 0, summary = null, isAdmin = false, isPlayer = false,
-  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {}, picks = null,
+  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {}, picks = null, previewHrefs = {},
   commentsEnabled = false, socialByGame = {}, topScorerByGame = {}, oddsByGame = {},
 }) {
   const seasonLinks = [...seasons.map(s => ({ v: s, label: `Season ${s}` })), { v: 'all', label: 'All seasons' }]
@@ -579,7 +613,7 @@ export function gamesPage({
     </a>`).join('')}</div>` : '';
 
   const matchupsHtml = matchups.length ? `<div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
-    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null, pickers: picks?.pickers?.[m.game.id] || null })).join('')}
+    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null, pickers: picks?.pickers?.[m.game.id] || null, variant: 'semi', state: picks?.states?.[m.game.id]?.closed ? 'closed' : 'open', href: previewHrefs[m.game.id] || '/picks' })).join('')}
   </div>` : '';
 
   const teams = ['WHITE', 'BLACK', 'BLUE', 'MAROON'].filter(t => games.some(g => g.team_a_name === t || g.team_b_name === t));
@@ -608,7 +642,6 @@ ${pageHeader({ title: 'Games', description: 'Every result — box scores, recaps
 ${summaryPanel(summary, 'headlines', isAdmin)}
 ${potgMarquee(potg)}
 ${matchupsHtml}
-${calledItSection(picks, isPlayer)}
 ${tilesHtml}
 <section class="gr-results" aria-labelledby="gr-results-h">
   <div class="section-header"><h2 id="gr-results-h">${season === 'all' ? 'All results' : `Season ${escHtml(season)} results`} <span class="section-header__sub" data-games-count>${games.length} ${games.length === 1 ? 'game' : 'games'}</span></h2></div>
@@ -616,9 +649,10 @@ ${tilesHtml}
   ${games.length ? `<div class="gr-grid">${cards}</div><div class="card gr-empty" hidden>No games match these filters.</div>` : `<div class="card gr-empty">No results yet${season !== 'all' ? ` for Season ${escHtml(season)}` : ''}.</div>`}
 </section>
 </div>
-${gamesPageScript({ isAdmin })}
+${gamesPageScript()}
+${matchups.length || isAdmin ? matchupScript({ isAdmin }) : ''}
 ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel };
+export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript };

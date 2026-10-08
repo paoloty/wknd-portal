@@ -1,7 +1,7 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor } from './utils.js';
-import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel } from './games.js';
-import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime } from './pick-box.js';
+import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript } from './games.js';
+import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime, previewHref } from './pick-box.js';
 
 // This week's games, pickable right here (same pick box as /games, the homepage and profile).
 function openPicksSection(open, { isPlayer, closeTime }) {
@@ -84,7 +84,7 @@ function upsetsPanel(upsets, season) {
       ${upsets.map(s => {
         const g = s.game, w = g.winner === 'a' ? g.a : g.b, l = g.winner === 'a' ? g.b : g.a;
         const shown = s.calledIt.slice(0, 3);
-        return `<a href="/games/${encodeURIComponent(g.id)}" class="pkp-up">
+        return `<a href="${escHtml(previewHref(g))}" class="pkp-up">
           <span class="pkp-up__pct font-condensed">${g.winner === 'a' ? g.odds.pctA : g.odds.pctB}%</span>
           <span class="pkp-up__txt"><span><b>${escHtml(tc(w))}</b> beat ${escHtml(tc(l))} ${Math.max(g.sa, g.sb)}–${Math.min(g.sa, g.sb)}</span><i>${escHtml(shortDayLabel(g.ymd))} · ${s.calledIt.length} called it</i></span>
           <span class="pkp-up__avs">${shown.map(p => pickAvatar(p, 26, false)).join('')}</span>
@@ -143,7 +143,7 @@ export function picksPlayerSheet({ player, season, record, rank, ranked, minPick
     const verdict = r.state === 'ok' ? '<span class="pk-ok">Called it</span>' : r.state === 'miss' ? '<span class="pk-miss">Missed</span>' : '<span class="pkp-open">Open</span>';
     const score = r.state === 'open' ? 'vs' : `${g.sa}–${g.sb}`;
     const oddsTxt = oddsOn && r.pickPct != null ? ` · odds gave them ${r.pickPct}%` : '';
-    return `<a href="/games/${encodeURIComponent(g.id)}" class="pkp-row">
+    return `<a href="${escHtml(previewHref(g))}" class="pkp-row">
         <span class="pkp-row__when">${escHtml(shortDayLabel(g.ymd))}</span>
         <span class="pkp-row__mu">
           <b>${dot(g.a, 7)}${escHtml(tc(g.a))} <i>${score}</i> ${escHtml(tc(g.b))}${dot(g.b, 7)}${r.upset ? '<span class="pkp-row__upset">Upset</span>' : ''}</b>
@@ -228,4 +228,40 @@ function picksScript() {
   });
 })();
 </script>`;
+}
+
+// ── /picks/<game> — the full matchup preview; after the final, its archive ──────────────
+// state: 'open' | 'closed' | 'later' | 'final'. The matchup, storyline and odds come from
+// the saved preview (server.js gamePreview), frozen from the moment picks close — so a
+// finished game shows the preview exactly as it read before tip-off, with the result on top.
+export function picksGamePage({ m, story, state, odds = null, pick = null, result = null, recapHref = '', siblings = [], isAdmin = false, isPlayer = false, selfHref = '/picks' }) {
+  const when = dayLabel(m.ymd);
+  const desc = {
+    final: `${when} · Season ${m.season} · Final`,
+    closed: `${when} · Picks closed · results after the final`,
+    later: `${when} · Picks open closer to game day`,
+    open: `${when} · Make your pick before tip-off`,
+  }[state];
+  const card = matchupCard(m, {
+    story, isAdmin, isPlayer, variant: 'full', state, next: selfHref, page: true,
+    counts: pick?.counts, myPick: pick?.myPick, pickers: pick?.pickers || null,
+    pickState: pick ? { closed: pick.closed, odds } : state === 'final' ? { odds } : null,
+  });
+  const also = siblings.length ? `<p class="pkg-also">Also on ${escHtml(shortDayLabel(m.ymd))}: ${siblings.map(x => `<a href="${escHtml(x.href)}">${dot(x.a, 7)}${escHtml(tc(x.a))} vs ${escHtml(tc(x.b))}${dot(x.b, 7)}</a>`).join(' · ')}</p>` : '';
+
+  const resultHtml = state === 'final' ? `<section class="pkg-result" aria-labelledby="pkg-res-h">
+    <div class="section-header"><h2 id="pkg-res-h">Result</h2>${recapHref ? `<a href="${escHtml(recapHref)}" class="section-header__link">Read the recap →</a>` : ''}</div>
+    ${result ? `<div class="pkg-result__card">${calledItCard(result, isPlayer, { preview: false })}</div>` : ''}
+  </section>
+  <div class="section-header pkg-prev-h"><h2>The preview <span class="section-header__sub">as it stood before tip-off</span></h2></div>` : '';
+
+  return `<div class="page-content pkg-page">
+  <p class="pkp-crumb"><a href="/picks">← All picks</a></p>
+  ${pageHeader({ title: `${escHtml(tc(m.a))} vs ${escHtml(tc(m.b))}`, description: escHtml(desc) })}
+  ${also}
+  ${resultHtml}
+  <div class="gm-grid gm-grid--one">${card}</div>
+</div>
+${matchupScript({ isAdmin })}
+${pick ? pickBoxScript() : ''}`;
 }

@@ -2,6 +2,8 @@ import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, boldTitle, playerAvatar, playerLink, stripEmptyParagraphs } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { scoreTicker } from './ticker.js';
+import { openPickCard, pickBoxScript } from './pick-box.js';
+import { calledItCard } from './games.js';
 
 function youtubeEmbedUrl(url) {
   const m = String(url || '').match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
@@ -2002,7 +2004,20 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
   </div>`;
 }
 
-export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false }) {
+// "Who wins?" quick widget for the right column (server.js builds gamePicks): the pick card,
+// the "Who called it?" result, or just the link to the pre-game preview on /picks.
+function gamePicksBlock(gp, isPlayer, next) {
+  if (!gp) return '';
+  if (gp.kind === 'open') {
+    return `<section class="gd-picks" aria-label="Who wins?"><div class="gd-picks__h">Who wins?</div>${openPickCard(gp.o, { isPlayer, next, size: 'sm' })}</section>${pickBoxScript()}`;
+  }
+  if (gp.kind === 'final') {
+    return `<section class="gd-picks" aria-label="Who called it?"><div class="gd-picks__h">Who called it?</div>${calledItCard(gp.s, isPlayer)}</section>`;
+  }
+  return `<a href="${escHtml(gp.href)}" class="gd-picks__link">${gp.state === 'final' ? 'Pre-game preview' : 'Matchup preview'} <span>→</span></a>`;
+}
+
+export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, gamePicks = null, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false }) {
   const colorA = teamColor(game.team_a_name);
   const colorB = teamColor(game.team_b_name);
   const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
@@ -2025,6 +2040,7 @@ export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterSc
   <div class="game-detail-right">
     ${myStat ? shareStatsBanner(game, myStat) : ''}
     ${scoreCard(game, colorA, colorB)}
+    ${gamePicksBlock(gamePicks, !!currentPlayerId, `/games/${encodeURIComponent(game.id)}`)}
     ${potgCard(potgStat, game.potg_writeup)}
     ${topPerformers(stats, potgPlayerId)}
   </div>

@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
+import { gameSlug } from '../lib/slugs.js';
 
 // ── "Who wins?" pick box — one component for every surface that takes a pick ──────────
 // /games matchup cards, the /picks "Open picks" section, the homepage widget and the
@@ -12,6 +13,15 @@ import { teamColor } from './utils.js';
 // pickers is null unless the viewer is a logged-in player who has picked (or picks are
 // closed) — the crowd stays hidden until you commit, so nobody copies a teammate.
 // face = { id, name, ini, color, me }
+
+// The full matchup preview for a game — /picks/<slug>. Takes a pick-shaped game ({ id, a, b })
+// or a games row.
+export function previewHref(g) {
+  return `/picks/${encodeURIComponent(gameSlug({ id: g.id, team_a_name: g.a ?? g.team_a_name, team_b_name: g.b ?? g.team_b_name }))}`;
+}
+
+// Team colour for the odds edge — Black is too dark on the header, so a lighter slate.
+const edgeColor = team => (String(team).toUpperCase() === 'BLACK' ? '#8a94a6' : teamColor(team));
 
 const tcase = s => String(s || '').charAt(0) + String(s || '').slice(1).toLowerCase();
 const dot = (name, size = 9) => `<span class="team-dot" style="background:${teamColor(name)};width:${size}px;height:${size}px"></span>`;
@@ -87,7 +97,9 @@ export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = null 
 
 // A whole open-pick card: team header (records + head to head) around pickBox().
 // size 'lg' = /picks (photo-less glare header); 'sm' = homepage widget / profile tile.
-export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg', label = '' } = {}) {
+// middle: HTML placed between the matchup summary (head + odds) and the pick buttons — the
+// homepage puts the player face-off there, so the actions sit at the bottom.
+export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg', label = '', middle = '', more = true } = {}) {
   const needs = isPlayer && !o.myPick && !o.closed;
   const total = o.counts.a + o.counts.b;
   const white = n => (n === 'WHITE' ? 0.45 : 1);
@@ -96,23 +108,33 @@ export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg'
   const h2h = o.h2h?.meetings
     ? `<span class="pkb-h2h"><span>Head to head</span><b class="font-condensed">${o.h2h.a}–${o.h2h.b}</b></span>`
     : '<span class="pkb-h2h"><span>First meeting</span></span>';
-  const chips = [
+  const compact = !!middle;
+  const odds = compact && o.odds?.fav !== undefined ? o.odds : null;
+  const pct = side => (odds ? ` · <span class="pkb-pct${odds.fav === side ? ' is-fav' : ''}">${side === 'a' ? odds.pctA : odds.pctB}%</span>` : '');
+  const oddsEdge = odds
+    ? `<div class="pkb-edge" role="img" aria-label="Odds: ${escHtml(tcase(o.a))} ${odds.pctA}%, ${escHtml(tcase(o.b))} ${odds.pctB}%"><i class="${odds.fav === 'a' ? 'is-fav' : ''}" style="width:${odds.pctA}%;--c:${edgeColor(o.a)}"></i><i class="${odds.fav === 'b' ? 'is-fav' : ''}" style="--c:${edgeColor(o.b)}"></i></div>`
+    : '';
+  const chips = compact ? '' : [
     label ? `<span class="pkb-chip">${escHtml(label)}</span>` : '',
     o.closed ? '<span class="pkb-chip">Picks closed</span>' : '',
     needs ? '<span class="pkb-chip pkb-chip--need" data-needs-chip>Needs your pick</span>' : '',
   ].join('');
   return `<article class="pkb-card pkb-card--${size}${needs ? ' is-needs' : ''}" aria-label="${escHtml(tcase(o.a))} vs ${escHtml(tcase(o.b))}">
-    <div class="pkb-head" style="background:${glare}">
+    <div class="pkb-head${odds ? ' has-edge' : ''}" style="background:${glare}">
       ${chips ? `<div class="pkb-chips">${chips}</div>` : ''}
       <div class="pkb-teams">
-        <span class="pkb-team"><b>${dot(o.a, size === 'lg' ? 10 : 9)}${escHtml(o.a)}</b><small class="font-condensed">S${escHtml(String(o.season))} ${rec(o.recA)}</small></span>
+        <span class="pkb-team"><b>${dot(o.a, size === 'lg' ? 10 : 9)}${escHtml(o.a)}</b><small class="font-condensed">S${escHtml(String(o.season))} ${rec(o.recA)}${pct('a')}</small></span>
         ${h2h}
-        <span class="pkb-team pkb-team--b"><b>${escHtml(o.b)}${dot(o.b, size === 'lg' ? 10 : 9)}</b><small class="font-condensed">S${escHtml(String(o.season))} ${rec(o.recB)}</small></span>
+        <span class="pkb-team pkb-team--b"><b>${escHtml(o.b)}${dot(o.b, size === 'lg' ? 10 : 9)}</b><small class="font-condensed">${odds ? `<span class="pkb-pct${odds.fav === 'b' ? ' is-fav' : ''}">${odds.pctB}%</span> · ` : ''}S${escHtml(String(o.season))} ${rec(o.recB)}</small></span>
       </div>
+      ${oddsEdge}
     </div>
     <div class="pkb-body">
-      ${pickBox(o, { isPlayer, next })}
-      ${size === 'lg' ? `<div class="pkb-foot"><span data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'No picks yet'}</span><a href="/games#m-${encodeURIComponent(o.id)}">Full matchup preview →</a></div>` : ''}
+      ${middle ? `${middle}
+      ${pickBox(o, { isPlayer, next, oddsHtml: '' })}` : pickBox(o, { isPlayer, next })}
+      ${size === 'lg'
+        ? `<div class="pkb-foot"><span data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'No picks yet'}</span><a href="${escHtml(o.href || previewHref(o))}">Full matchup preview →</a></div>`
+        : more ? `<a href="${escHtml(o.href || previewHref(o))}" class="pkb-more">Full preview →</a>` : ''}
     </div>
   </article>`;
 }

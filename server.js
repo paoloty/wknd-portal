@@ -27,7 +27,7 @@ import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
 import { homePage, leaderBoards } from './views/home.js';
 import { gamesPage } from './views/games.js';
-import { picksPage, picksPlayerPage, picksPlayerSheet } from './views/picks.js';
+import { picksPage, picksPlayerPage, picksPlayerSheet, picksGamePage } from './views/picks.js';
 import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
@@ -140,6 +140,7 @@ import {
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
   setGamePick, getGamePickCounts, getPlayerGamePicks,
   getAllGamePicks, getGamePicksWithPlayers, getAllGamePickSettings, setGamePickClosed, setGamePickHideOdds, claimGamePickSettle,
+  getGamePreview, saveGamePreview, getGamePreviewIds,
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
@@ -1700,7 +1701,7 @@ function buildTopTicker(features) {
       const parts = [];
       open.forEach((g, i) => { if (i) parts.push([' and ', false]); parts.push([`${T(g.team_a_name)} vs ${T(g.team_b_name)}`, true]); });
       parts.push([` · ${dayOf(gameYmd(open[0].date))}, picks close ${fmtCloseTime(picksCloseTime())}`, false]);
-      items.push({ tag: 'Who wins?', accent: true, href: '/picks', parts });
+      items.push({ tag: 'Who wins?', accent: true, href: open.length === 1 ? previewHref(open[0]) : '/picks', parts });
     }
   }
 
@@ -1733,7 +1734,7 @@ function buildTopTicker(features) {
         parts.push([`${called} of ${gp.length}`, true], [` called ${T(win)} over ${T(lose)}`, false]);
         if (g.odds?.fav && g.odds.fav !== g.winner) parts.push([' (upset)', false]);
       });
-      items.push({ tag: 'Called it', accent: true, href: '/games#called-it', parts });
+      items.push({ tag: 'Called it', accent: true, href: '/picks', parts });
     }
     const top = sp.board.rows[0];
     if (top) {
@@ -7188,9 +7189,13 @@ app.get('/sitemap.xml', (req, res) => {
 
   for (const t of getAllTeams())   urls.push({ loc: `/teams/${teamSlug(t)}`,     priority: '0.6', changefreq: 'weekly' });
   for (const p of getAllPlayers()) urls.push({ loc: `/players/${playerSlug(p)}`, priority: '0.5', changefreq: 'weekly' });
+  // Matchup previews: the upcoming games plus every game whose preview has been saved.
+  const previewIds = picksEnabled() ? getGamePreviewIds() : new Set();
+  const upcomingIds = new Set(getUpcomingGames(byDate(getAllGames())).map(g => g.id));
   for (const g of getAllGames()) {
     if (g.under_review) continue;
     urls.push({ loc: `/games/${gameSlug(g)}`, priority: '0.5', changefreq: 'monthly', lastmod: isoDate(Date.parse(g.date)) });
+    if (picksEnabled() && (previewIds.has(g.id) || upcomingIds.has(g.id))) urls.push({ loc: `/picks/${gameSlug(g)}`, priority: '0.4', changefreq: upcomingIds.has(g.id) ? 'daily' : 'monthly' });
   }
   if (flags.posts) {
     for (const post of getPublicPosts()) {
@@ -7250,12 +7255,35 @@ app.get('/games/:ref', (req, res) => {
     mentionablePlayers = getPlayersWithAccounts();
   }
 
+  // "Who wins?" quick widget: the pick card while picks are open/closed, "Who called it?"
+  // after a final that had picks, otherwise just the link to the pre-game preview.
+  let gamePicks = null;
+  if (picksEnabled()) {
+    const sorted = byDate(allGames);
+    const pctx = buildPicksContext(sorted);
+    const state = previewState(game, sorted, pctx);
+    const href = previewHref(game);
+    gamePicks = { kind: 'link', href, state };
+    if (state === 'open' || state === 'closed') {
+      const o = openPicks(sorted, pctx, currentPlayerId).find(x => x.id === game.id);
+      if (o) gamePicks = { kind: 'open', o, href };
+    } else if (state === 'final') {
+      const gp = getGamePicksWithPlayers(game.id);
+      const sg = gp.length && seasonPicks(pctx, pctx.byId[game.id].season).settled.find(g => g.id === game.id);
+      if (sg) {
+        const s = calledItSummary(sg, gp, currentPlayerId);
+        s.calledIt = s.calledIt.map(x => ({ id: x.player_id, name: displayPlayerName(x.player_name || ''), team: x.team_name || '' }));
+        gamePicks = { kind: 'final', s, href };
+      }
+    }
+  }
+
   res.send(renderPage(req, {
     title: `${pageTitle} — WKND Basketball League`,
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
     body: gamePage({
-      game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap,
+      game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap, gamePicks,
       commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
       currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
     })
@@ -8041,10 +8069,9 @@ function picksEmailContext() {
   const open = adminUpNext(games, pctx).filter(u => !u.closed);
   if (!open.length) return null;
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-  const ctx = buildGamesContext(games, playerMap);
   const emailGames = open.map(u => ({
     id: u.id, a: u.a, b: u.b, odds: u.hideOdds ? null : u.odds,
-    story: matchupStoryFacts(buildMatchup(games.find(g => g.id === u.id), ctx)),
+    story: matchupStoryFacts(matchupAsOf(games.find(g => g.id === u.id), games, playerMap)),
   }));
   return {
     pctx, open, emailGames, playerMap, ymd: open[0].ymd,
@@ -8978,7 +9005,7 @@ function buildMatchup(game, ctx) {
         id: best.id, name: displayPlayerName(player?.name || ''), number: player?.number ?? '', team: name, opp, hasPhoto: !!player?.picture_url,
         ppg: Math.round((best.pts / n) * 10) / 10, rpg: Math.round((best.reb / n) * 10) / 10, apg: Math.round((best.ast / n) * 10) / 10,
         fg: best.fga ? Math.round((best.fgm / best.fga) * 1000) / 10 : null, games: n,
-        series: best.games.map(x => x.pts), best: { pts: top.pts, label: top.tag ? `${top.tag} · ${shortDay(top.ymd)}` : shortDay(top.ymd) },
+        series: best.games.map(x => x.pts), dates: best.games.map(x => x.ymd), best: { pts: top.pts, label: top.tag ? `${top.tag} · ${shortDay(top.ymd)}` : shortDay(top.ymd) },
       });
     }
   }
@@ -9156,14 +9183,20 @@ Rules:
   throw new Error('No matchup story passed the checks');
 }
 
+// The stored storyline for a game, only while it still matches these facts.
+function storedMatchupStory(gameId, key) {
+  let s = null;
+  try { s = JSON.parse(getSetting(`games_matchup_story_${gameId}`, '') || 'null'); } catch {}
+  return s && s.key === key ? { headline: s.headline, body: s.body } : null;
+}
+
 function getMatchupStories(matchups) {
   const out = {};
   for (const m of matchups) {
     const f = matchupStoryFacts(m);
-    let stored = null;
-    try { stored = JSON.parse(getSetting(`games_matchup_story_${m.game.id}`, '') || 'null'); } catch {}
-    if (stored && stored.key === f.key) {
-      out[m.game.id] = { headline: stored.headline, body: stored.body };
+    const stored = storedMatchupStory(m.game.id, f.key);
+    if (stored) {
+      out[m.game.id] = stored;
     } else if (aiAvailable() && !matchupStoryInFlight.has(m.game.id) && Date.now() >= matchupStoryCooldownUntil) {
       matchupStoryInFlight.add(m.game.id);
       generateMatchupStory(m.game.id, f)
@@ -9173,6 +9206,66 @@ function getMatchupStories(matchups) {
   }
   return out;
 }
+
+// ── Matchup previews (/picks/<game>), stored in game_previews ─────────────────
+// The matchup as it stood before tip-off: only games dated before this one count, and
+// records are for the game's own season. /games, /picks/<game>, the reminder email and the
+// storyline facts all build it this way, so the story key matches everywhere — and a
+// finished game rebuilds to exactly the numbers it had before it was played.
+function matchupAsOf(game, games, playerMap) {
+  const ymd = gameYmd(game.date);
+  const ctx = buildGamesContext(games.filter(g => g.id !== game.id && gameYmd(g.date) < ymd), playerMap);
+  if (game.season != null && game.season !== '') ctx.season = game.season;
+  return buildMatchup(game, ctx);
+}
+
+// 'open' (picks open), 'closed' (picks closed or game day passed, no result yet), 'final',
+// or 'later' (scheduled past the upcoming window — preview only, no picks yet).
+function previewState(game, games, pctx) {
+  const pg = pctx.byId[game.id] || toPickGame(game, gameYmd);
+  if (pg.played) return 'final';
+  if (getUpcomingGames(games).some(g => g.id === game.id)) return upcomingPickState(game, pctx).closed ? 'closed' : 'open';
+  const ymd = gameYmd(game.date);
+  return ymd && ymd < manilaTodayStr() ? 'closed' : 'later';
+}
+
+// The preview for one game. While picks are open it's rebuilt on every view (and saved when
+// something changed); from close onward the saved copy is frozen and served as is. Odds are
+// stored raw — the odds switch and per-game "hide odds" apply when rendering.
+function gamePreview(game, games, playerMap, pctx) {
+  const ymd = gameYmd(game.date);
+  const state = previewState(game, games, pctx);
+  const stored = getGamePreview(game.id);
+  // An admin re-opening picks (or a postponed game) unfreezes it.
+  if (stored?.frozen && stored.ymd === ymd && stored.matchup && (state === 'final' || state === 'closed')) {
+    return { state, m: { ...stored.matchup, game }, story: stored.story, odds: stored.odds, frozen: true };
+  }
+  const freeze = state === 'final' || state === 'closed';
+  const m = matchupAsOf(game, games, playerMap);
+  // Frozen: the last storyline written for these exact facts (none is written now).
+  // Live: the same background generation /games triggers.
+  const story = freeze ? storedMatchupStory(game.id, matchupStoryFacts(m).key) : (getMatchupStories([m])[game.id] || null);
+  const odds = computeOdds(pctx.byId[game.id] || toPickGame(game, gameYmd), pctx.played);
+  const { game: _game, ...matchup } = m;
+  const changed = !stored || stored.frozen || stored.ymd !== ymd || JSON.stringify([stored.matchup, stored.story, stored.odds]) !== JSON.stringify([matchup, story, odds]);
+  if (freeze || changed) saveGamePreview({ gameId: game.id, ymd, matchup, story, odds, frozen: freeze });
+  return { state, m, story, odds, frozen: freeze };
+}
+
+// Odds as shown: none when the odds switch is off or this game's odds are hidden.
+const shownOdds = (gameId, odds, pctx) => (pickOddsEnabled() && !pctx.settings[gameId]?.hide_odds ? odds : null);
+
+// Slugs are saved the first time a game is opened by id, so a slug nobody has visited yet
+// (sitemap, a pasted link) is matched against the games list.
+function findGameRef(ref) {
+  const r = resolveRef('game', ref, id => getGameById(id), g => gameSlug(g));
+  if (r) return r;
+  const g = getAllGames().find(x => gameSlug(x) === ref);
+  if (!g) return null;
+  saveSlug('game', g.id, ref);
+  return { id: g.id };
+}
+const previewHref = game => `/picks/${encodeURIComponent(gameSlug(game))}`;
 
 function buildGamesContext(games, playerMap) {
   const played = games.filter(isPlayedGame);
@@ -9258,7 +9351,7 @@ function settleGamePicks(gameId) {
         body: ok
           ? `${upset ? 'You called the upset! ' : ''}${season}${r.streak >= 2 ? ` · ${r.streak} in a row` : ''}`
           : `Your ${loser} pick missed. ${season}.`,
-        link: '/games#called-it',
+        link: previewHref(game),
       });
     }
   } catch (err) {
@@ -9302,7 +9395,7 @@ function openPicks(games, pctx, viewerId) {
     const meetings = pctx.played.filter(x => (x.a === pg.a && x.b === pg.b) || (x.a === pg.b && x.b === pg.a));
     const winsOf = t => meetings.filter(x => (x.sa > x.sb ? x.a : x.b) === t).length;
     return {
-      id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season,
+      id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season, href: previewHref(g),
       counts: counts[g.id], myPick, closed, odds,
       pickers: canSeeFaces(viewerId, myPick, closed) ? pickFaces(g.id, viewerId) : null,
       recA: recordOf(pg.a), recB: recordOf(pg.b),
@@ -9324,6 +9417,51 @@ function recentPickResults(pctx, season, viewerId, n = 3) {
       id: g.id, ymd: g.ymd, a: g.a, b: g.b, sa: g.sa, sb: g.sb, side: p.side,
       ok: p.side === g.winner, upset: !!(g.odds?.fav && g.odds.fav !== g.winner),
     }));
+}
+
+// Homepage face-off for one open game: each side's go-to scorer in this matchup (from the
+// same as-of-tip-off matchup the preview uses), or — when the teams haven't met — each
+// team's top scorer this season.
+function homeFaceoff(game, games, playerMap) {
+  const m = matchupAsOf(game, games, playerMap);
+  const scorers = [[m.a, m.b], [m.b, m.a]].map(([team, opp], i) => (m.scorers[i] ? { ...m.scorers[i], basis: 'h2h' } : seasonTopScorer(game, team, opp, games, playerMap)));
+  return { scorers, firstMeeting: m.firstMeeting };
+}
+
+// A team's highest points-per-game player this season, before this game (at least 2 games
+// once there are 2+ box scores, same rule as the matchup's go-to scorer).
+function seasonTopScorer(game, team, opp, games, playerMap) {
+  const ymd = gameYmd(game.date);
+  const list = games
+    .filter(g => isPlayedGame(g) && String(g.season) === String(game.season) && gameYmd(g.date) < ymd && (g.team_a_name === team || g.team_b_name === team))
+    .sort((x, y) => gameYmd(x.date).localeCompare(gameYmd(y.date)));
+  const per = new Map();
+  let boxCount = 0;
+  for (const g of list) {
+    const side = g.team_a_name === team ? 'a' : 'b';
+    const rows = getGameStats(g.id).filter(s => s.team_id === g[`team_${side}_id`]);
+    if (rows.length) boxCount++;
+    for (const s of rows) {
+      const p = per.get(s.player_id) || { id: s.player_id, games: [], pts: 0, reb: 0, ast: 0, fgm: 0, fga: 0 };
+      const fgm = (+s.fg2m || 0) + (+s.fg3m || 0) + (+s.fg4m || 0);
+      p.games.push({ pts: +s.pts || 0, ymd: gameYmd(g.date) });
+      p.pts += +s.pts || 0; p.reb += +s.reb || 0; p.ast += +s.ast || 0;
+      p.fgm += fgm; p.fga += fgm + (+s.fg2m_miss || 0) + (+s.fg3m_miss || 0) + (+s.fg4m_miss || 0);
+      per.set(s.player_id, p);
+    }
+  }
+  const minGames = Math.min(2, boxCount);
+  const best = [...per.values()].filter(p => p.games.length >= minGames).sort((x, y) => y.pts / y.games.length - x.pts / x.games.length)[0];
+  if (!best) return null;
+  const player = playerMap[best.id];
+  const n = best.games.length;
+  const top = best.games.reduce((a, x) => (x.pts > a.pts ? x : a), best.games[0]);
+  return {
+    id: best.id, name: displayPlayerName(player?.name || ''), number: player?.number ?? '', team, opp, hasPhoto: !!player?.picture_url,
+    ppg: Math.round((best.pts / n) * 10) / 10, rpg: Math.round((best.reb / n) * 10) / 10, apg: Math.round((best.ast / n) * 10) / 10,
+    fg: best.fga ? Math.round((best.fgm / best.fga) * 1000) / 10 : null, games: n,
+    series: best.games.map(x => x.pts), dates: best.games.map(x => x.ymd), best: { pts: top.pts, label: shortDay(top.ymd) }, basis: 'season',
+  };
 }
 
 // Homepage "Who wins?" widget (views/picks-widget.js). Game day and the day after show the
@@ -9357,7 +9495,11 @@ function homePicksWidget(games, viewerId) {
   };
   if (lastDay && lastDay >= addDaysYmd(today, -1)) return results();
   const open = openPicks(games, pctx, viewerId);
-  if (open.length) return { ...base, mode: 'open', ymd: open[0].ymd, closeTime: picksCloseTime(), games: open };
+  if (open.length) {
+    const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+    for (const o of open) o.face = homeFaceoff(games.find(g => g.id === o.id), games, playerMap);
+    return { ...base, mode: 'open', ymd: open[0].ymd, closeTime: picksCloseTime(), games: open };
+  }
   if (lastDay && lastDay >= addDaysYmd(today, -6)) return results();
   return null;
 }
@@ -9410,38 +9552,25 @@ app.get('/games', (req, res) => {
   }
 
   const upcoming = getUpcomingGames(games);
-  const matchups = upcoming.map(g => buildMatchup(g, ctx));
+  const matchups = upcoming.map(g => matchupAsOf(g, games, playerMap));
   const upcomingIds = upcoming.map(g => g.id);
   const pickCounts = getGamePickCounts(upcomingIds);
   const myPicks = getPlayerGamePicks(upcomingIds, req.session?.playerPlayerId || null);
   const stories = getMatchupStories(matchups);
 
-  // "Who wins?": odds + closed state for the upcoming cards, then the latest game day that
-  // had picks ("Who called it?") and the season's pick leaderboard.
+  // "Who wins?" on the Up next cards: odds + closed state + faces. The full preview, the
+  // "Who called it?" results and the Pickmaster race live on /picks.
   const viewerId = req.session?.playerPlayerId || null;
   let picks = null;
   if (picksEnabled()) {
     const pctx = buildPicksContext(games);
     const pickStates = Object.fromEntries(upcoming.map(g => [g.id, upcomingPickState(g, pctx)]));
-    const sp = seasonPicks(pctx, currentSeason);
-    const lastDay = sp.pickable.length ? sp.pickable[sp.pickable.length - 1].ymd : null;
-    const calledIt = sp.pickable.filter(g => g.ymd === lastDay).map(g => {
-      const s = calledItSummary(g, getGamePicksWithPlayers(g.id), viewerId);
-      s.calledIt = s.calledIt.map(p => ({ id: p.player_id, name: displayPlayerName(p.player_name || ''), team: p.team_name || '' }));
-      return s;
-    });
-    const teamNames = Object.fromEntries(getAllTeams().map(t => [t.id, t.name]));
-    const person = id => ({ id, name: displayPlayerName(playerMap[id]?.name || ''), team: teamNames[playerMap[id]?.team_id] || '' });
     picks = {
-      states: pickStates, calledIt, lastDay,
+      states: pickStates,
       pickers: Object.fromEntries(upcoming.map(g => [g.id, canSeeFaces(viewerId, myPicks[g.id], pickStates[g.id].closed) ? pickFaces(g.id, viewerId) : null])),
-      board: sp.board.rows.slice(0, 5).map(r => ({ ...r, ...person(r.playerId) })),
-      minPicks: sp.board.minPicks,
-      me: viewerId && sp.records[viewerId] ? { ...sp.records[viewerId], playerId: viewerId, rank: sp.board.rows.find(r => r.playerId === viewerId)?.rank || null } : null,
-      callers: { odds: sp.callers.odds, fans: sp.callers.fans },
-      season: currentSeason,
     };
   }
+  const previewHrefs = Object.fromEntries(upcoming.map(g => [g.id, previewHref(g)]));
 
   const potg = buildPotgMarquee(ctx.played, playerMap, 8);
   const seasonPlayed = season === 'all' ? ctx.played : ctx.played.filter(g => String(g.season) === season);
@@ -9458,7 +9587,7 @@ app.get('/games', (req, res) => {
     body: gamesPage({
       games: listGames, season, seasons, currentSeason, seasonPlayedCount: seasonPlayed.length,
       summary, isAdmin: !!req.session?.isAdmin, isPlayer: !!req.session?.playerPlayerId,
-      tiles, potg, matchups, stories, pickCounts, myPicks, picks,
+      tiles, potg, matchups, stories, pickCounts, myPicks, picks, previewHrefs,
       commentsEnabled, socialByGame, topScorerByGame, oddsByGame,
     }),
   }));
@@ -9584,15 +9713,68 @@ app.get('/picks/players/:id', (req, res) => {
   }));
 });
 
+// ── /picks/<game>: the full matchup preview, and its archive once picks close ─────────
+// Works with picks switched off too (the preview stays, the pick box goes).
+app.get('/picks/:ref', (req, res) => {
+  const notFound = () => res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/picks', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Game not found.</p></div>' }));
+  const resolved = findGameRef(req.params.ref);
+  if (!resolved) return notFound();
+  if (resolved.slug) return res.redirect(302, `/picks/${encodeURIComponent(resolved.slug)}`);
+  const game = getGameById(resolved.id);
+  if (!game || game.under_review || !game.team_a_name || !game.team_b_name) return notFound();
+
+  const games = byDate(getAllGames());
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const pctx = buildPicksContext(games);
+  const p = gamePreview(game, games, playerMap, pctx);
+  const viewerId = req.session?.playerPlayerId || null;
+  const odds = shownOdds(game.id, p.odds, pctx);
+  const selfHref = previewHref(game);
+
+  let pick = null;
+  if (picksEnabled() && (p.state === 'open' || p.state === 'closed')) {
+    const myPick = getPlayerGamePicks([game.id], viewerId)[game.id] || null;
+    const closed = p.state === 'closed';
+    pick = { counts: getGamePickCounts([game.id])[game.id], myPick, closed, pickers: canSeeFaces(viewerId, myPick, closed) ? pickFaces(game.id, viewerId) : null };
+  }
+  let result = null;
+  if (p.state === 'final' && picksEnabled()) {
+    const pg = pctx.byId[game.id];
+    const sg = seasonPicks(pctx, pg.season).settled.find(g => g.id === game.id);
+    if (sg) {
+      result = calledItSummary(sg, getGamePicksWithPlayers(game.id), viewerId);
+      result.calledIt = result.calledIt.map(x => ({ id: x.player_id, name: displayPlayerName(x.player_name || ''), team: x.team_name || '' }));
+    }
+  }
+  const ymd = gameYmd(game.date);
+  const siblings = games
+    .filter(g => g.id !== game.id && !g.under_review && gameYmd(g.date) === ymd && g.team_a_name && g.team_b_name)
+    .map(g => ({ href: previewHref(g), a: g.team_a_name, b: g.team_b_name }));
+
+  const T = titleCase;
+  res.send(renderPage(req, {
+    title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'final' ? 'Pre-game preview' : 'Who wins?'} — WKND Basketball`,
+    currentPath: '/picks',
+    body: picksGamePage({
+      m: p.m, story: p.story, state: p.state, odds, pick, result, siblings, selfHref,
+      recapHref: p.state === 'final' ? `/games/${encodeURIComponent(gameSlug(game))}` : '',
+      isAdmin: !!req.session?.isAdmin, isPlayer: !!viewerId,
+    }),
+  }));
+});
+
 app.post('/admin/games/matchup-story/regenerate', requireAuth, express.json(), async (req, res) => {
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const games = byDate(getAllGames());
   const game = getUpcomingGames(games).find(g => g.id === String(req.body?.gameId || ''));
   if (!game) return res.status(400).json({ error: 'That game is not upcoming.' });
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-  const m = buildMatchup(game, buildGamesContext(games, playerMap));
+  const f = matchupStoryFacts(matchupAsOf(game, games, playerMap));
   try {
-    await generateMatchupStory(game.id, matchupStoryFacts(m));
+    await generateMatchupStory(game.id, f);
+    // Picks already closed: the preview is frozen, so the new storyline goes into it directly.
+    const p = getGamePreview(game.id);
+    if (p?.frozen) saveGamePreview({ gameId: game.id, ymd: p.ymd, matchup: p.matchup, story: storedMatchupStory(game.id, f.key), odds: p.odds, frozen: true });
     res.json({ ok: true });
   } catch (err) {
     console.error(`Matchup story (${game.id}) regenerate failed:`, err.message);
