@@ -8075,7 +8075,7 @@ function picksEmailFor(c, draft, playerId, regId = '') {
   const mine = new Map(c.pctx.picks.filter(p => p.player_id === playerId).map(p => [p.game_id, p.side]));
   const games = c.open.map(u => ({
     id: u.id, a: titleCase(u.a), b: titleCase(u.b), colA: teamColor(u.a), colB: teamColor(u.b),
-    odds: !u.hideOdds && u.odds?.fav ? { name: titleCase(u.odds.fav === 'a' ? u.a : u.b), pct: u.odds.fav === 'a' ? u.odds.pctA : u.odds.pctB } : null,
+    odds: !u.hideOdds && u.odds?.fav ? { fav: u.odds.fav, pctA: u.odds.pctA, pctB: u.odds.pctB } : null,
     myPick: mine.has(u.id) ? titleCase(mine.get(u.id) === 'a' ? u.a : u.b) : null,
   }));
   const { board: { rows, minPicks }, records } = c.sp;
