@@ -27,6 +27,8 @@ import { layout, escHtml } from './views/layout.js';
 import { homePage, leaderBoards } from './views/home.js';
 import { gamesPage } from './views/games.js';
 import { picksPage, picksPlayerPage, picksPlayerSheet } from './views/picks.js';
+import { picksWidget } from './views/picks-widget.js';
+import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
@@ -181,6 +183,7 @@ import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminDashboardBody } from './views/admin/dashboard.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
+import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
@@ -1656,9 +1659,90 @@ function getHeaderInfo(features) {
       };
     }
   }
-  const value = { season, nextPapawis, playoffsStarted: !!(season && isPlayoffStarted(season)), mvpLead };
+  let tickerItems = [];
+  try { tickerItems = buildTopTicker(features); } catch (err) { console.error('[ticker]', err.message); }
+  const value = { season, nextPapawis, playoffsStarted: !!(season && isPlayoffStarted(season)), mvpLead, tickerItems };
   headerInfoCache = { at: now, megaMenu: features.megaMenu, value };
   return value;
+}
+
+// The top strip's rolling ticker (views/layout.js): what's happening around the league, one
+// line at a time. Same for every visitor (it's cached with the rest of the header info), so
+// nothing personal goes in here. Each item: { tag, accent, parts: [[text, bold]], href }.
+// A line only shows while it's fresh — finals for 3 days, pick results for 4.
+function buildTopTicker(features) {
+  const items = [];
+  const today = manilaTodayStr();
+  const T = s => titleCase(String(s || ''));
+  const dayOf = ymd => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  if (features.papawis) {
+    const next = getPapawisGames()
+      .filter(g => g.status !== 'cancelled' && g.status !== 'completed' && String(g.date) >= today)
+      .sort((a, b) => `${a.date}T${a.start_time || '00:00'}`.localeCompare(`${b.date}T${b.start_time || '00:00'}`))[0];
+    if (next) {
+      const when = [dayOf(String(next.date)), next.time_label || formatTimeRange(next.start_time, '')].filter(Boolean).join(' · ');
+      const left = Math.max(0, (Number(next.max_slots) || 0) - getPapawisConfirmedCount(next.id));
+      items.push({ tag: 'Papawis', accent: true, href: '/papawis', parts: [
+        [when, true], [next.location ? ` · ${next.location}` : '', false],
+        [left > 0 ? ` · ${left} slot${left === 1 ? '' : 's'} left` : ' · Full, join the waitlist', false],
+      ] });
+    }
+  }
+
+  const games = byDate(getAllGames());
+  if (features.picks) {
+    const pctx = buildPicksContext(games);
+    const open = getUpcomingGames(games).filter(g => !upcomingPickState(g, pctx).closed);
+    if (open.length) {
+      const parts = [];
+      open.forEach((g, i) => { if (i) parts.push([' and ', false]); parts.push([`${T(g.team_a_name)} vs ${T(g.team_b_name)}`, true]); });
+      parts.push([` · ${dayOf(gameYmd(open[0].date))}, picks close ${fmtCloseTime(picksCloseTime())}`, false]);
+      items.push({ tag: 'Who wins?', accent: true, href: '/picks', parts });
+    }
+  }
+
+  const finals = games.filter(g => !g.scheduled && !g.under_review && (g.status === 'final' || g.status === 'complete') && Number(g.team_a_score) + Number(g.team_b_score) > 0);
+  const lastYmd = finals.map(g => gameYmd(g.date)).filter(Boolean).sort().pop();
+  if (lastYmd && lastYmd >= addDaysYmd(today, -3)) {
+    const parts = [];
+    finals.filter(g => gameYmd(g.date) === lastYmd).forEach((g, i) => {
+      const aWin = Number(g.team_a_score) > Number(g.team_b_score);
+      const [w, l, ws, ls] = aWin ? [g.team_a_name, g.team_b_name, g.team_a_score, g.team_b_score] : [g.team_b_name, g.team_a_name, g.team_b_score, g.team_a_score];
+      if (i) parts.push([' · ', false]);
+      parts.push([`${T(w)} ${ws}–${ls} ${T(l)}`, true]);
+    });
+    parts.push([` · ${dayOf(lastYmd)}`, false]);
+    items.push({ tag: 'Final', accent: false, href: '/games', parts });
+  }
+
+  if (features.picks) {
+    const pctx = buildPicksContext(games);
+    const season = String(getPortalCurrentSeason());
+    const sp = seasonPicks(pctx, season);
+    const lastDay = sp.pickable.length ? sp.pickable[sp.pickable.length - 1].ymd : null;
+    if (lastDay && lastDay >= addDaysYmd(today, -4)) {
+      const parts = [];
+      sp.pickable.filter(g => g.ymd === lastDay).forEach((g, i) => {
+        const gp = pctx.picks.filter(p => p.game_id === g.id);
+        const called = gp.filter(p => p.side === g.winner).length;
+        const win = g.winner === 'a' ? g.a : g.b, lose = g.winner === 'a' ? g.b : g.a;
+        if (i) parts.push([' · ', false]);
+        parts.push([`${called} of ${gp.length}`, true], [` called ${T(win)} over ${T(lose)}`, false]);
+        if (g.odds?.fav && g.odds.fav !== g.winner) parts.push([' (upset)', false]);
+      });
+      items.push({ tag: 'Called it', accent: true, href: '/games#called-it', parts });
+    }
+    const top = sp.board.rows[0];
+    if (top) {
+      const p = getPlayerById(top.playerId);
+      const tied = sp.board.rows.filter(r => r.rank === 1).length;
+      items.push({ tag: 'Pickmaster', accent: true, href: '/picks', parts: [
+        [displayPlayerName(p?.name || ''), true], [tied > 1 ? ` and ${tied - 1} more share the lead at ` : ' leads the race at ', false], [`${top.correct} of ${top.picks}`, true],
+      ] });
+    }
+  }
+  return items;
 }
 
 const BANNER_POOL_REFRESH_MS = 24 * 60 * 60 * 1000; // once a day per pool — a batch, not one call per pageview
@@ -6497,6 +6581,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       picksEnabled: picksEnabled(),
       pickOddsEnabled: pickOddsEnabled(),
       picksCloseTime: picksCloseTime(),
+      homePicksWidgetEnabled: getSetting('home_picks_widget_enabled', '1') !== '0',
       nextUpCardOptions: HOME_NEXTUP_CARDS,
       nextUpCards: [1, 2].map((n, i) => getSetting(`home_nextup_card_${n}`, HOME_NEXTUP_DEFAULTS[i])),
       sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
@@ -6507,7 +6592,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
-    'picks_enabled', 'picks_odds_enabled',
+    'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -7043,7 +7128,8 @@ app.get('/', (req, res) => {
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin })
+    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
+      picksWidgetHtml: picksWidget(homePicksWidget(games, req.session?.playerPlayerId || null)) })
   }));
 });
 
@@ -7778,7 +7864,144 @@ app.post('/admin/games/:id/picks', requireAuth, jsonSmall, (req, res) => {
     setGamePickClosed(game.id, closed === 'auto' ? null : closed === 'closed');
   }
   if (hide_odds !== undefined) setGamePickHideOdds(game.id, !!hide_odds);
+  headerInfoCache.at = 0; // the top-strip ticker's "Who wins?" line follows the pick window
   res.json({ ok: true });
+});
+
+// ── /admin/picks: the whole "Who wins?" picture (views/admin/picks.js) ──────────────────
+// Players who could pick (an account they can log in with) but haven't picked every open
+// game on the next game day. Shared by the page and the reminder.
+function picksMissing(upNext, pctx) {
+  const openIds = upNext.filter(u => !u.closed).map(u => u.id);
+  if (!openIds.length) return null;
+  const accounts = getPlayersWithAccounts();
+  const pickedBy = new Map();
+  for (const p of pctx.picks) if (openIds.includes(p.game_id)) pickedBy.set(p.player_id, (pickedBy.get(p.player_id) || 0) + 1);
+  const list = accounts
+    .filter(p => (pickedBy.get(p.id) || 0) < openIds.length)
+    .map(p => ({ id: p.id, name: displayPlayerName(p.name) }))
+    .sort((x, y) => x.name.localeCompare(y.name));
+  return { list, accounts: accounts.length, games: openIds.length };
+}
+
+function adminUpNext(games, pctx) {
+  return getUpcomingGames(games).map(g => {
+    const pg = pctx.byId[g.id] || toPickGame(g, gameYmd);
+    const setting = pctx.settings[g.id] || {};
+    const teamOf = name => String(name || '').toUpperCase();
+    const picks = getGamePicksWithPlayers(g.id).map(p => ({
+      id: p.player_id, name: displayPlayerName(p.player_name || ''), team: p.team_name || '', side: p.side, at: p.created_at,
+      ownTeamAgainst: !!p.team_name && teamOf(p.team_name) === teamOf(p.side === 'a' ? g.team_b_name : g.team_a_name),
+    })).reverse();
+    return {
+      id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd,
+      closed: upcomingPickState(g, pctx).closed,
+      odds: pickOddsEnabled() ? computeOdds(pg, pctx.played) : null,
+      hideOdds: !!setting.hide_odds,
+      override: setting.closed == null ? 'auto' : (setting.closed ? 'closed' : 'open'),
+      counts: { a: picks.filter(p => p.side === 'a').length, b: picks.filter(p => p.side === 'b').length },
+      picks, closeTime: picksCloseTime(),
+    };
+  });
+}
+
+app.get('/admin/picks', requireAuth, (req, res) => {
+  const games = byDate(getAllGames());
+  const pctx = buildPicksContext(games);
+  const seasons = picksSeasons(pctx);
+  const current = String(getPortalCurrentSeason());
+  const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : current;
+  const isCurrent = season === current;
+  const sp = seasonPicks(pctx, season);
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const teamNames = Object.fromEntries(getAllTeams().map(t => [t.id, t.name]));
+  const person = id => ({ id, name: displayPlayerName(playerMap[id]?.name || ''), team: teamNames[playerMap[id]?.team_id] || '' });
+
+  const upNext = isCurrent ? adminUpNext(games, pctx) : [];
+  const upDay = upNext[0]?.ymd || null;
+  const missing = isCurrent ? picksMissing(upNext, pctx) : null;
+  if (missing && upDay) {
+    const sent = JSON.parse(getSetting(`picks_reminded_${upDay}`, 'null') || 'null');
+    if (sent) { missing.remindedAt = sent.at; missing.remindedCount = sent.count; }
+  }
+
+  const seasonGameIds = new Set(pctx.all.filter(g => g.season === season).map(g => g.id));
+  const seasonPickRows = pctx.picks.filter(p => seasonGameIds.has(p.game_id));
+  const results = [...sp.settled].reverse().map(g => {
+    const gp = getGamePicksWithPlayers(g.id);
+    const s = calledItSummary(g, gp);
+    return {
+      id: g.id, ymd: g.ymd, a: g.a, b: g.b, sa: g.sa, sb: g.sb, winner: g.winner, odds: g.odds,
+      total: s.total, pctWinner: s.pctWinner, fansCalled: s.fansCalled, upset: s.upset,
+      called: gp.filter(p => p.side === g.winner).map(p => person(p.player_id)),
+      missed: gp.filter(p => p.side !== g.winner).map(p => person(p.player_id)),
+      settledAt: pctx.settings[g.id]?.settled_at || null,
+    };
+  });
+
+  const missingIds = new Set((missing?.list || []).map(p => p.id));
+  const byPlayer = new Map();
+  for (const p of seasonPickRows) {
+    const e = byPlayer.get(p.player_id) || { made: 0, last: null };
+    e.made++;
+    if (!e.last || p.created_at > e.last.at) {
+      const g = pctx.byId[p.game_id];
+      e.last = { at: p.created_at, ymd: g?.ymd || '', team: g ? (p.side === 'a' ? g.a : g.b) : '' };
+    }
+    byPlayer.set(p.player_id, e);
+  }
+  const rankOf = new Map(sp.board.rows.map(r => [r.playerId, r.rank]));
+  const pickers = [...byPlayer.entries()].map(([id, e]) => {
+    const r = sp.records[id];
+    return {
+      ...person(id), picks: e.made, settled: r?.picks || 0, correct: r?.correct || 0, pct: r?.pct || 0,
+      streak: r?.streak || 0, upsets: r?.upsets || 0, rank: rankOf.get(id) || null, last: e.last,
+      missingNext: missingIds.has(id),
+    };
+  }).sort((x, y) => (x.rank || 1e9) - (y.rank || 1e9) || y.correct - x.correct || y.picks - x.picks || x.name.localeCompare(y.name));
+
+  const leaderRow = sp.board.rows[0];
+  res.send(renderAdminPage(req, {
+    title: 'Who wins? picks',
+    currentPath: '/admin/picks',
+    body: adminPicksBody({
+      season, seasons, isCurrent, upNext, upDay, missing, results, pickers,
+      minPicks: sp.board.minPicks, oddsOn: pickOddsEnabled(), picksOn: picksEnabled(),
+      msg: req.query.reminded ? `Reminder sent to ${req.query.reminded} player${req.query.reminded === '1' ? '' : 's'}.` : '',
+      kpi: {
+        picks: seasonPickRows.length, pickers: byPlayer.size, accounts: getPlayersWithAccounts().length,
+        callers: sp.callers, oddsOn: pickOddsEnabled(), minPicks: sp.board.minPicks,
+        upsets: results.filter(r => r.odds?.fav && r.odds.fav !== r.winner).length,
+        // Odds are judged on every finished game with odds, picked or not.
+        oddsRecord: { called: results.filter(r => r.odds?.fav && r.odds.fav === r.winner).length, of: results.filter(r => r.odds?.fav).length },
+        leader: leaderRow ? { ...person(leaderRow.playerId), correct: leaderRow.correct, picks: leaderRow.picks } : null,
+      },
+    }),
+  }));
+});
+
+// In-app nudge (bell notification, no email) to everyone who hasn't picked every open game
+// on the next game day. Remembers when it went out so the page can say so.
+app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: false }), (req, res) => {
+  if (!picksEnabled()) return res.redirect('/admin/picks');
+  const games = byDate(getAllGames());
+  const pctx = buildPicksContext(games);
+  const upNext = adminUpNext(games, pctx);
+  const missing = picksMissing(upNext, pctx);
+  if (!missing?.list.length) return res.redirect('/admin/picks');
+  const open = upNext.filter(u => !u.closed);
+  const matchups = open.map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');
+  const dayStr = new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  for (const p of missing.list) {
+    createNotification({
+      playerId: p.id, type: 'pick_reminder',
+      title: `Who wins? ${matchups}`,
+      body: `Make your pick${open.length === 1 ? '' : 's'} before ${fmtCloseTime(picksCloseTime())} on ${dayStr}.`,
+      link: '/picks',
+    });
+  }
+  setSetting(`picks_reminded_${open[0].ymd}`, JSON.stringify({ at: Date.now(), count: missing.list.length }));
+  res.redirect(`/admin/picks?reminded=${missing.list.length}`);
 });
 
 app.delete('/admin/games/:id', requireAuth, (req, res) => {
@@ -8849,6 +9072,97 @@ function settleGamePicks(gameId) {
   }
 }
 
+// Faces for the pick box (views/pick-box.js): who picked which side, the viewer first.
+// Callers only pass these to a logged-in player who has picked the game, or once picks are
+// closed — before that the crowd stays hidden so nobody copies a teammate.
+function pickFaces(gameId, viewerId) {
+  const out = { a: [], b: [] };
+  for (const p of getGamePicksWithPlayers(gameId)) {
+    const name = displayPlayerName(p.player_name || '');
+    out[p.side]?.push({ id: p.player_id, name, ini: initials(name), color: teamColor(p.team_name), me: p.player_id === viewerId });
+  }
+  // Newest picks first after you, so the faces up front change as people pick.
+  for (const s of ['a', 'b']) out[s].reverse().sort((x, y) => Number(y.me) - Number(x.me));
+  return out;
+}
+const canSeeFaces = (viewerId, myPick, closed) => !!viewerId && (!!myPick || !!closed);
+
+// Every upcoming game's pick state for one viewer — the /picks "Open picks" cards, the
+// homepage widget and the profile card all render this through openPickCard().
+function openPicks(games, pctx, viewerId) {
+  const upcoming = getUpcomingGames(games);
+  if (!upcoming.length) return [];
+  const ids = upcoming.map(g => g.id);
+  const counts = getGamePickCounts(ids);
+  const mine = getPlayerGamePicks(ids, viewerId);
+  return upcoming.map(g => {
+    const pg = pctx.byId[g.id] || toPickGame(g, gameYmd);
+    const { closed, odds } = upcomingPickState(g, pctx);
+    const myPick = mine[g.id] || null;
+    const seasonPlayed = pctx.played.filter(x => x.season === pg.season);
+    const recordOf = t => {
+      const list = seasonPlayed.filter(x => x.a === t || x.b === t);
+      const w = list.filter(x => (x.a === t) === (x.sa > x.sb)).length;
+      return { w, l: list.length - w };
+    };
+    const meetings = pctx.played.filter(x => (x.a === pg.a && x.b === pg.b) || (x.a === pg.b && x.b === pg.a));
+    const winsOf = t => meetings.filter(x => (x.sa > x.sb ? x.a : x.b) === t).length;
+    return {
+      id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season,
+      counts: counts[g.id], myPick, closed, odds,
+      pickers: canSeeFaces(viewerId, myPick, closed) ? pickFaces(g.id, viewerId) : null,
+      recA: recordOf(pg.a), recB: recordOf(pg.b),
+      h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
+    };
+  });
+}
+
+// The viewer's last few settled picks, newest first (profile card, homepage widget).
+function recentPickResults(pctx, season, viewerId, n = 3) {
+  if (!viewerId) return [];
+  const settled = new Map(seasonPicks(pctx, season).settled.map(g => [g.id, g]));
+  return pctx.picks
+    .filter(p => p.player_id === viewerId && settled.has(p.game_id))
+    .map(p => ({ p, g: settled.get(p.game_id) }))
+    .sort((x, y) => y.g.ymd.localeCompare(x.g.ymd) || String(y.g.id).localeCompare(String(x.g.id)))
+    .slice(0, n)
+    .map(({ p, g }) => ({
+      id: g.id, ymd: g.ymd, a: g.a, b: g.b, sa: g.sa, sb: g.sb, side: p.side,
+      ok: p.side === g.winner, upset: !!(g.odds?.fav && g.odds.fav !== g.winner),
+    }));
+}
+
+// Homepage "Who wins?" widget (views/picks-widget.js). Game day and the day after show the
+// results ("Who called it?"); otherwise the next game day's picks; nothing when there's
+// neither. Admin switch: Visibility → home_picks_widget_enabled (on by default).
+function homePicksWidget(games, viewerId) {
+  if (!picksEnabled() || getSetting('home_picks_widget_enabled', '1') === '0') return null;
+  const pctx = buildPicksContext(games);
+  const season = String(getPortalCurrentSeason());
+  const sp = seasonPicks(pctx, season);
+  const r = viewerId ? sp.records[viewerId] : null;
+  const base = {
+    isPlayer: !!viewerId, season, minPicks: sp.board.minPicks,
+    me: r ? { ...r, playerId: viewerId, rank: sp.board.rows.find(x => x.playerId === viewerId)?.rank || null } : null,
+    recent: recentPickResults(pctx, season, viewerId, 6),
+  };
+  const today = manilaTodayStr();
+  const lastDay = sp.pickable.length ? sp.pickable[sp.pickable.length - 1].ymd : null;
+  const results = () => {
+    const cards = sp.pickable.filter(g => g.ymd === lastDay).map(g => {
+      const s = calledItSummary(g, getGamePicksWithPlayers(g.id), viewerId);
+      s.calledIt = s.calledIt.map(p => ({ id: p.player_id, name: displayPlayerName(p.player_name || ''), team: p.team_name || '' }));
+      return s;
+    });
+    return { ...base, mode: 'results', ymd: lastDay, cards };
+  };
+  if (lastDay && lastDay >= addDaysYmd(today, -1)) return results();
+  const open = openPicks(games, pctx, viewerId);
+  if (open.length) return { ...base, mode: 'open', ymd: open[0].ymd, closeTime: picksCloseTime(), games: open };
+  if (lastDay && lastDay >= addDaysYmd(today, -6)) return results();
+  return null;
+}
+
 app.get('/games', (req, res) => {
   const players = getAllPlayers();
   const games = byDate(getAllGames());
@@ -8921,6 +9235,7 @@ app.get('/games', (req, res) => {
     const person = id => ({ id, name: displayPlayerName(playerMap[id]?.name || ''), team: teamNames[playerMap[id]?.team_id] || '' });
     picks = {
       states: pickStates, calledIt, lastDay,
+      pickers: Object.fromEntries(upcoming.map(g => [g.id, canSeeFaces(viewerId, myPicks[g.id], pickStates[g.id].closed) ? pickFaces(g.id, viewerId) : null])),
       board: sp.board.rows.slice(0, 5).map(r => ({ ...r, ...person(r.playerId) })),
       minPicks: sp.board.minPicks,
       me: viewerId && sp.records[viewerId] ? { ...sp.records[viewerId], playerId: viewerId, rank: sp.board.rows.find(r => r.playerId === viewerId)?.rank || null } : null,
@@ -8960,7 +9275,7 @@ app.post('/games/:id/pick', express.json(), (req, res) => {
   if (upcomingPickState(game, buildPicksContext([game])).closed) return res.status(400).json({ error: 'Picks are closed for this game.' });
   const side = req.body?.side === 'a' || req.body?.side === 'b' ? req.body.side : null;
   setGamePick(game.id, playerId, side);
-  res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id] });
+  res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id], pickers: side ? pickFaces(game.id, playerId) : null });
 });
 
 // ── /picks: full Pickmaster race, game-day history, upsets, per-player pick history ─────
@@ -9017,6 +9332,9 @@ app.get('/picks', (req, res) => {
       upsets: summaries.filter(s => s.upset),
       oddsOn: pickOddsEnabled(),
       isPlayer: !!viewerId, viewerId,
+      // This week's games sit on top of the current season's page — /picks is where you pick.
+      open: season === String(getPortalCurrentSeason()) ? openPicks(byDate(getAllGames()), pctx, viewerId) : [],
+      closeTime: picksCloseTime(),
     }),
   }));
 });
@@ -10885,12 +11203,26 @@ app.get('/players/:ref', async (req, res) => {
   });
 
   // "Who wins?" record for the current season — only once they've had a pick settled.
+  // On your own profile it also carries this week's open picks and your recent results.
   let pickRecord = null;
   if (picksEnabled()) {
     const pickSeason = getPortalCurrentSeason();
-    const sp = seasonPicks(buildPicksContext(getAllGames()), pickSeason);
+    const pickGames = byDate(getAllGames());
+    const pctx = buildPicksContext(pickGames);
+    const sp = seasonPicks(pctx, pickSeason);
     const r = sp.records[resolved.id];
-    if (r) pickRecord = { ...r, playerId: resolved.id, season: pickSeason, rank: sp.board.rows.find(x => x.playerId === resolved.id)?.rank || null, ranked: sp.board.rows.length, minPicks: sp.board.minPicks };
+    const own = isOwnProfile ? {
+      open: openPicks(pickGames, pctx, resolved.id),
+      recent: recentPickResults(pctx, String(pickSeason), resolved.id, 6),
+      closeTime: picksCloseTime(),
+    } : null;
+    if (r || own?.open.length) {
+      pickRecord = {
+        ...(r || { picks: 0, correct: 0, pct: 0, streak: 0, best: 0, upsets: 0 }), settled: !!r,
+        playerId: resolved.id, season: pickSeason, rank: r ? sp.board.rows.find(x => x.playerId === resolved.id)?.rank || null : null,
+        ranked: sp.board.rows.length, minPicks: sp.board.minPicks, own,
+      };
+    }
   }
 
   res.send(renderPage(req, {

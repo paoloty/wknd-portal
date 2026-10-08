@@ -320,12 +320,31 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   // Log in / Admin / Sign out live in the top strip in both modes; the bar only carries
   // Join (guests) or My Account + bell (players).
   const barAccount = isPlayer ? `${myAccountDropdown}${notificationBell}` : isAdmin ? '' : joinBtn;
+  // Rolling ticker after the season label: one line at a time, rolling up every few seconds
+// (server.js buildTopTicker). Falls back to the plain "Next Papawis run" link when there's
+// nothing else to say. The roll pauses on hover/focus and never moves for reduced motion.
+  const topTicker = h => {
+    const items = h.tickerItems || [];
+    if (!items.length) {
+      return h.nextPapawis ? `<span class="topstrip__sep" aria-hidden="true"></span><a href="/papawis" class="topstrip__link">Next Papawis run: ${escHtml(h.nextPapawis)}</a>` : '';
+    }
+    const line = (it, clone) => `<a href="${escHtml(it.href)}" class="tkr__item"${clone ? ' aria-hidden="true" tabindex="-1"' : ''}>
+        <span class="tkr__tag${it.accent ? '' : ' tkr__tag--plain'}">${escHtml(it.tag)}</span>
+        <span class="tkr__txt">${it.parts.map(([t, b]) => (b ? `<b>${escHtml(t)}</b>` : escHtml(t))).join('')}</span>
+        <span class="tkr__go" aria-hidden="true">→</span>
+      </a>`;
+    return `<span class="topstrip__sep" aria-hidden="true"></span>
+      <div class="tkr" data-tkr aria-label="League updates" role="region">
+        <div class="tkr__roll" data-tkr-roll>${items.map(it => line(it, false)).join('')}${items.length > 1 ? line(items[0], true) : ''}</div>
+      </div>
+      ${items.length > 1 ? `<span class="tkr__pips" aria-hidden="true">${items.map((_, i) => `<i${i ? '' : ' class="is-on"'}></i>`).join('')}</span>` : ''}`;
+  };
   const topStrip = `<div class="topstrip">
     <div class="container">
       <div class="topstrip__inner">
         <div class="topstrip__left">
           ${hdr.season ? `<span class="topstrip__season"><span class="topstrip__dot" aria-hidden="true"></span>Season ${escHtml(String(hdr.season))}</span>` : ''}
-          ${hdr.nextPapawis ? `<span class="topstrip__sep" aria-hidden="true"></span><a href="/papawis" class="topstrip__link">Next Papawis run: ${escHtml(hdr.nextPapawis)}</a>` : ''}
+          ${topTicker(hdr)}
         </div>
         <div class="topstrip__right">
           <a href="https://www.facebook.com/wkndbasketball" class="topstrip__icon" target="_blank" rel="noopener" aria-label="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
@@ -348,6 +367,27 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   // and stay in sync, since resizing across the breakpoint shouldn't leave a stale
   // open/closed state on whichever one becomes visible next.
   const navToggleScript = `<script>
+      (function(){
+        // Top-strip ticker: roll up one line every 4.5s; the cloned first line at the end
+        // lets it loop without a visible jump back.
+        var t = document.querySelector('[data-tkr]');
+        if (!t) return;
+        var roll = t.querySelector('[data-tkr-roll]'), n = roll.children.length - 1;
+        if (n < 1 || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+        var pips = document.querySelectorAll('.tkr__pips i'), i = 0, paused = false;
+        t.addEventListener('mouseenter', function(){ paused = true; });
+        t.addEventListener('mouseleave', function(){ paused = false; });
+        t.addEventListener('focusin', function(){ paused = true; });
+        t.addEventListener('focusout', function(){ paused = false; });
+        setInterval(function(){
+          if (paused || document.hidden) return;
+          i++;
+          roll.style.transition = 'transform .55s cubic-bezier(.65,0,.35,1)';
+          roll.style.transform = 'translateY(' + (-i * 36) + 'px)';
+          pips.forEach(function(p, k){ p.classList.toggle('is-on', k === i % n); });
+          if (i === n) setTimeout(function(){ roll.style.transition = 'none'; roll.style.transform = 'translateY(0)'; i = 0; }, 600);
+        }, 4500);
+      })();
       (function(){
         var nav = document.getElementById('mobile-nav');
         if (!nav) return;

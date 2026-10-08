@@ -1,6 +1,23 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor } from './utils.js';
 import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel } from './games.js';
+import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime } from './pick-box.js';
+
+// This week's games, pickable right here (same pick box as /games, the homepage and profile).
+function openPicksSection(open, { isPlayer, closeTime }) {
+  if (!open.length) return '';
+  const day = open[0].ymd;
+  const allClosed = open.every(o => o.closed);
+  return `<section class="pkp-now" aria-labelledby="pkp-now-h">
+    <div class="pkp-now__head">
+      <h2 id="pkp-now-h">${allClosed ? 'Picks are in' : 'Open picks'} <span>${escHtml(dayLabel(day))} · ${allClosed ? 'results after the final' : `close ${escHtml(fmtCloseTime(closeTime))} on game day`}</span></h2>
+      ${isPlayer ? pickProgress(open, '.pkp-now') : ''}
+    </div>
+    <div class="pkp-now__grid${open.length === 1 ? ' is-one' : ''}">
+      ${open.map((o, i) => openPickCard(o, { isPlayer, next: '/picks', size: 'lg', label: open.length > 1 ? `Game ${i + 1}` : '' })).join('')}
+    </div>
+  </section>`;
+}
 
 // ── /picks — the full "Who wins?" record for a season ─────────────────────────
 // Data comes from server.js (/picks, /picks/players/:id) → lib/picks.js. Class prefix pkp-;
@@ -84,13 +101,14 @@ function gameDays(days, isPlayer) {
     </div>`).join('');
 }
 
-export function picksPage({ season, seasons, days, board, unranked, minPicks, callers, upsets, pickers, oddsOn, isPlayer, viewerId }) {
+export function picksPage({ season, seasons, days, board, unranked, minPicks, callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], closeTime = '06:00' }) {
   return `<div class="page-content pkp-page">
 ${pageHeader({
     title: 'Who wins? picks',
-    description: `Every call, the Pickmaster race${oddsOn ? ', and how the odds are doing' : ''}. <a href="/games" class="pkp-back">Make this week's picks →</a>`,
+    description: open.length ? `Make this week's picks, then follow every call and the Pickmaster race${oddsOn ? ' — and how the odds are doing' : ''}.` : `Every call, the Pickmaster race${oddsOn ? ', and how the odds are doing' : ''}.`,
     actions: seasonTabs(seasons, season, '/picks'),
   })}
+${openPicksSection(open, { isPlayer, closeTime })}
 ${statTiles({ callers, upsets, pickers, ranked: board.length, minPicks, oddsOn })}
 <div class="pkp-tabs" role="tablist" aria-label="Picks sections">
   <button type="button" class="pkp-tab is-on" role="tab" aria-selected="true" data-pkp-tab="race">Pickmaster race</button>
@@ -108,6 +126,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, minPicks, oddsOn }
 </div>
 <dialog class="pkp-dialog" aria-label="Player picks"><div class="pkp-dialog__in" data-pkp-sheet></div></dialog>
 </div>
+${open.length ? pickBoxScript() : ''}
 ${picksScript()}`;
 }
 

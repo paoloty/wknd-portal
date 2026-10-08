@@ -1000,7 +1000,7 @@ function latestPosts(posts) {
 // Page order: hero → registration banner → game headlines → season race → league leaders
 // → posts → coming up → (guests) what you get + closing CTA. Game headlines are the four
 // recaps *before* the hero's four, so the two never show the same games.
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false }) {
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '' }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1026,6 +1026,8 @@ export function homePage({ teams, players, games, highlights = [], mvpRace = nul
 </div>
 
 ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerBig(signupBanner) : ''}
+
+${picksWidgetHtml}
 
 ${headlinesSection(headlineGames, summaries.headlines, isAdmin)}
 

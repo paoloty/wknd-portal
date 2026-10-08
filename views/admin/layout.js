@@ -2,6 +2,7 @@ import { escHtml, wkndBall } from '../layout.js';
 
 const IC = {
   dashboard: `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="8.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="8.5" width="5" height="5" rx="1"/><rect x="8.5" y="8.5" width="5" height="5" rx="1"/></svg>`,
+  picks:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><circle cx="7.5" cy="7.5" r="2.5"/><path d="M7.5 1.5v2M7.5 11.5v2M1.5 7.5h2M11.5 7.5h2"/></svg>`,
   games:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="12" height="10" rx="1.5"/><path d="M5 3V1.5M10 3V1.5"/><path d="M1.5 7h12"/></svg>`,
   players:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="4.5" r="2.5"/><path d="M2 13c0-3.038 2.462-5.5 5.5-5.5S13 9.962 13 13"/></svg>`,
   teams:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1.5L2 4v4.5c0 3 2.5 5.5 5.5 6 3-.5 5.5-3 5.5-6V4L7.5 1.5z"/></svg>`,
@@ -38,6 +39,7 @@ const NAV_GROUPS = [
     label: 'Games & Stats',
     items: [
       { href: '/admin/games',     label: 'Games',     icon: 'games' },
+      { href: '/admin/picks',     label: 'Picks',     icon: 'picks' },
       { href: '/admin/players',   label: 'Players',   icon: 'players' },
       { href: '/admin/teams',     label: 'Teams',     icon: 'teams',     soon: true },
       { href: '/admin/standings', label: 'Standings', icon: 'standings', soon: true },

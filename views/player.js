@@ -4,6 +4,8 @@ import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
 import { BADGE_ICONS } from '../lib/badges.js';
+import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime } from './pick-box.js';
+import { resultChips } from './picks-widget.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -834,32 +836,63 @@ const AWARD_META = {
   pickmaster:      { label: 'Pickmaster',                     icon: '🔮', bg: '#f59332', text: '#10141d' },
 };
 
-// "Who wins?" record for the current season (server.js → lib/picks.js). Only rendered once
-// at least one of their picks has been settled.
+// "Who wins?" card. Everyone sees the settled record for the current season (server.js →
+// lib/picks.js). On your own profile it's also where you pick: this week's open games
+// (same pick box as /picks and the homepage) and your recent results. Pending picks are
+// only ever shown to you.
 function pickRecordCard(r, isOwnProfile) {
   if (!r) return '';
   const flame = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg>`;
   const rank = r.rank
     ? `#${r.rank} of ${r.ranked} in the Pickmaster race`
     : `${Math.max(0, r.minPicks - r.picks)} more pick${r.minPicks - r.picks === 1 ? '' : 's'} to get ranked`;
-  return `<div class="card pk-me">
-  <div class="card-label">WHO WINS? · S${escHtml(String(r.season))} PICKS</div>
-  <div class="pk-me__main">
+  const own = isOwnProfile ? r.own : null;
+  const record = r.settled === false
+    ? `<p class="pk-me__rank">Your first picks settle after the final. Get ${r.minPicks} in to join the Pickmaster race.</p>`
+    : `<div class="pk-me__main">
     <span class="pk-me__rec"><b class="font-condensed">${r.correct}</b><span>of ${r.picks}</span></span>
     <span class="pk-me__pct font-condensed">${r.pct}%</span>
+    ${own?.recent?.length ? resultChips(own.recent) : ''}
   </div>
   <div class="pk-me__stats">
     <span><b class="font-condensed">${r.streak >= 2 ? `<i class="pk-me__flame">${flame}</i>` : ''}${r.streak}</b>Streak</span>
     <span><b class="font-condensed">${r.best}</b>Best run</span>
     <span><b class="font-condensed">${r.upsets}</b>Upsets called</span>
   </div>
-  <p class="pk-me__rank">${escHtml(rank)}</p>
+  <p class="pk-me__rank">${escHtml(rank)}</p>`;
+  const openHtml = own?.open?.length ? `<div class="pk-me__sec">
+    <div class="pk-me__sec-h"><span>${own.open.every(o => o.closed || o.myPick) ? 'Your picks' : 'Pick now'}</span><span>${escHtml(shortDay(own.open[0].ymd))}${own.open.every(o => o.closed) ? ' · closed' : ` · closes ${escHtml(fmtCloseTime(own.closeTime))}`}</span></div>
+    ${pickProgress(own.open, '.pk-me')}
+    <div class="pk-me__open">${own.open.map(o => openPickCard(o, { isPlayer: true, next: '/me', size: 'sm' })).join('')}</div>
+  </div>` : '';
+  const recentHtml = own?.recent?.length ? `<div class="pk-me__sec">
+    <div class="pk-me__sec-h"><span>Recent results</span></div>
+    <div class="pk-me__res">${own.recent.slice(0, 3).map(x => {
+      const picked = x.side === 'a' ? x.a : x.b;
+      const win = x.sa > x.sb;
+      return `<a href="/games/${encodeURIComponent(x.id)}" class="pk-me__res-row">
+        <span class="pk-me__res-d font-condensed">${escHtml(monthDay(x.ymd))}</span>
+        <span class="pk-me__res-t">Picked <b>${escHtml(tcase(picked))}</b> · ${escHtml(tcase(win ? x.a : x.b))} ${Math.max(x.sa, x.sb)}–${Math.min(x.sa, x.sb)} ${escHtml(tcase(win ? x.b : x.a))}${x.ok && x.upset ? ' · <span class="pk-me__upset">upset call</span>' : ''}</span>
+        <span class="pkw-chip ${x.ok ? 'is-ok' : 'is-miss'}" title="${x.ok ? 'Called it' : 'Missed'}">${x.ok ? '✓' : '✕'}</span>
+      </a>`;
+    }).join('')}</div>
+  </div>` : '';
+  return `<div class="card pk-me${own ? ' pk-me--own' : ''}">
+  <div class="card-label">WHO WINS? · S${escHtml(String(r.season))} PICKS</div>
+  ${record}
+  ${openHtml}
+  ${recentHtml}
   <div class="pk-me__links">
-    <a href="/picks/players/${encodeURIComponent(r.playerId)}?season=${encodeURIComponent(r.season)}" class="pk-me__link">${isOwnProfile ? 'See all your picks' : 'See every pick'} →</a>
-    ${isOwnProfile ? '<a href="/games" class="pk-me__link">Make this week&rsquo;s picks →</a>' : ''}
+    ${r.settled === false ? '<a href="/picks" class="pk-me__link">Pickmaster race →</a>' : `<a href="/picks/players/${encodeURIComponent(r.playerId)}?season=${encodeURIComponent(r.season)}" class="pk-me__link">${isOwnProfile ? 'See all your picks' : 'See every pick'} →</a>`}
+    ${isOwnProfile && !own?.open?.length ? '<a href="/picks" class="pk-me__link">Pickmaster race →</a>' : ''}
   </div>
-</div>`;
+</div>
+${own?.open?.length ? pickBoxScript() : ''}`;
 }
+
+const tcase = s => String(s || '').charAt(0) + String(s || '').slice(1).toLowerCase();
+const monthDay = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase() : '');
+const shortDay = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '');
 
 function awardsSection(awards) {
   if (!awards?.length) return '';

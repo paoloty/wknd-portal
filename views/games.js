@@ -1,6 +1,7 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt, initials } from './utils.js';
 import { summaryPanel } from './home.js';
+import { pickBox, pickBoxScript } from './pick-box.js';
 
 // Comment/react/share for this row — same actions as the game page's tabActionsBar, just
 // reachable from the list. The row itself is a "stretched link" card (see .game-row__link
@@ -348,39 +349,19 @@ function calledItSection(picks, isPlayer) {
   </section>`;
 }
 
-function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = null }) {
+function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = null, pickers = null }) {
   const g = m.game;
   const leadA = m.winsA > m.winsB, leadB = m.winsB > m.winsA;
   const glare = `radial-gradient(65% 130% at 0% 75%, ${teamColor(m.a)}80 0%, transparent 62%), radial-gradient(65% 130% at 100% 75%, ${teamColor(m.b)}80 0%, transparent 62%)`;
   const slides = m.slides.map((id, i) => `<div class="gm-sl${i === 0 ? ' is-on' : ''}"><img src="/api/photo/${encodeURIComponent(id)}" alt=""${i === 0 ? '' : ' loading="lazy"'}></div>`).join('');
 
-  // Who wins? — odds for everyone; the fan split only once you've picked (or picks closed),
-  // so the crowd can't sway a pick. Logged-out visitors get a nudge to log in instead.
+  // Who wins? — the shared pick box (views/pick-box.js) with this card's odds panel on top.
+  // The fan split and faces only show once you've picked (or picks closed).
   const total = counts.a + counts.b;
-  const pctA = total ? Math.round((counts.a / total) * 100) : 50;
   const { closed = false, odds = null } = pickState || {};
-  const showSplit = !!myPick || closed;
-  const fanFav = total && counts.a !== counts.b ? (counts.a > counts.b ? 'a' : 'b') : null;
-  const disagree = showSplit && odds?.fav && fanFav && odds.fav !== fanFav;
-  const pick = `<div class="gm-pick${closed ? ' is-closed' : ''}" data-game-id="${escHtml(g.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}">
-      ${odds ? oddsLine(m, odds) : ''}
-      ${closed ? '' : `<div class="gm-pick__btns"${myPick ? ' hidden' : ''}>
-        <button type="button" class="gm-pick__btn" data-side="a">${dot(m.a)}${escHtml(m.a)}</button>
-        <button type="button" class="gm-pick__btn" data-side="b">${escHtml(m.b)}${dot(m.b)}</button>
-      </div>`}
-      ${!closed && !myPick && !isPlayer ? `<div class="gm-pick__login"><a href="/login?next=%2Fgames">Log in to pick</a>${total ? ` and see how ${total} player${total === 1 ? '' : 's'} picked` : ' and be the first'}</div>` : ''}
-      <div class="gm-pick__result"${showSplit ? '' : ' hidden'}>
-        ${odds ? '<div class="gm-pick__lbl">Fan picks</div>' : ''}
-        <div class="gm-pick__split">
-          <span class="gm-pick__seg${myPick === 'a' ? ' is-mine' : ''}" data-seg="a" style="width:${pctA}%">${dot(m.a, 8)}${escHtml(m.a)} <b>${pctA}%</b></span>
-          <span class="gm-pick__seg gm-pick__seg--b${myPick === 'b' ? ' is-mine' : ''}" data-seg="b" style="width:${100 - pctA}%"><b>${100 - pctA}%</b> ${escHtml(m.b)}${dot(m.b, 8)}</span>
-        </div>
-        ${disagree ? `<div class="gm-pick__flag"><b>Fans vs odds</b> · fans lean ${escHtml(tc(fanFav === 'a' ? m.a : m.b))}, the odds like ${escHtml(tc(odds.fav === 'a' ? m.a : m.b))}</div>` : ''}
-        <div class="gm-pick__note">${closed
-          ? `<span>Picks are closed${myPick ? ` · you picked <b>${escHtml(myPick === 'b' ? m.b : m.a)}</b>` : ''} · results after the final</span>`
-          : `<span>You picked <b data-mine-name>${escHtml(myPick === 'b' ? m.b : m.a)}</b> · we'll show who called it after the game</span><button type="button" class="gm-pick__change">Change</button>`}</div>
-      </div>
-    </div>`;
+  const pick = pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers }, {
+    isPlayer, next: '/games', oddsHtml: odds ? oddsLine(m, odds) : '',
+  });
 
   // Biggest edges first (gap relative to the larger value), the rest behind a toggle.
   const gap = r => Math.abs(r.a - r.b) / (Math.max(r.a, r.b) || 1);
@@ -401,7 +382,7 @@ function matchupCard(m, { story, counts, myPick, isAdmin, isPlayer, pickState = 
   const meetings = m.lastMeetings.length ? `<div class="gm-grp">${m.lastMeetings.length === 1 ? 'Last meeting' : `Last ${m.lastMeetings.length} meetings`}</div>
       <div class="gm-mts">${m.lastMeetings.map(x => meetingTile(m, x)).join('')}</div>` : '';
 
-  return `<article class="gm-card" aria-label="${escHtml(tc(m.a))} vs ${escHtml(tc(m.b))}">
+  return `<article class="gm-card" id="m-${escHtml(g.id)}" aria-label="${escHtml(tc(m.a))} vs ${escHtml(tc(m.b))}">
     <div class="gm-hero">
       <div class="gm-slides" data-slides>${slides}</div>
       <div class="gm-shade"></div>
@@ -518,32 +499,6 @@ function gamesPageScript({ isAdmin }) {
     });
   });
 
-  // Who wins?
-  document.querySelectorAll('.gm-pick:not(.is-closed)').forEach(function (box) {
-    var gameId = box.dataset.gameId;
-    var btns = box.querySelector('.gm-pick__btns'), result = box.querySelector('.gm-pick__result');
-    var total = box.closest('.gm-card').querySelector('[data-pick-total]');
-    function render(counts, mine) {
-      var t = counts.a + counts.b, pa = t ? Math.round(counts.a / t * 100) : 50;
-      var a = box.querySelector('[data-seg="a"]'), b = box.querySelector('[data-seg="b"]');
-      a.style.width = pa + '%'; b.style.width = (100 - pa) + '%';
-      a.querySelector('b').textContent = pa + '%'; b.querySelector('b').textContent = (100 - pa) + '%';
-      a.classList.toggle('is-mine', mine === 'a'); b.classList.toggle('is-mine', mine === 'b');
-      box.querySelector('[data-mine-name]').textContent = (mine === 'b' ? b : a).textContent.replace(/[0-9%]/g, '').trim();
-      btns.hidden = !!mine; result.hidden = !mine;
-      total.textContent = t ? t + (t === 1 ? ' pick' : ' picks') : 'Be the first to pick';
-    }
-    function send(side) {
-      if (!box.dataset.player) { window.location.href = '/login?next=' + encodeURIComponent('/games'); return; }
-      fetch('/games/' + encodeURIComponent(gameId) + '/pick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ side: side }) })
-        .then(function (r) { if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent('/games'); return null; } return r.json(); })
-        .then(function (d) { if (d && d.ok) render(d.counts, d.side); else if (d && d.error) alert(d.error); })
-        .catch(function () {});
-    }
-    box.querySelectorAll('.gm-pick__btn').forEach(function (b) { b.addEventListener('click', function () { send(b.dataset.side); }); });
-    box.querySelector('.gm-pick__change').addEventListener('click', function () { send(null); });
-  });
-
   // Team / type filters on the results grid
   var grid = document.querySelector('.gr-grid');
   var state = { team: '', type: '' };
@@ -624,7 +579,7 @@ export function gamesPage({
     </a>`).join('')}</div>` : '';
 
   const matchupsHtml = matchups.length ? `<div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
-    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null })).join('')}
+    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null, pickers: picks?.pickers?.[m.game.id] || null })).join('')}
   </div>` : '';
 
   const teams = ['WHITE', 'BLACK', 'BLUE', 'MAROON'].filter(t => games.some(g => g.team_a_name === t || g.team_b_name === t));
@@ -661,7 +616,8 @@ ${tilesHtml}
   ${games.length ? `<div class="gr-grid">${cards}</div><div class="card gr-empty" hidden>No games match these filters.</div>` : `<div class="card gr-empty">No results yet${season !== 'all' ? ` for Season ${escHtml(season)}` : ''}.</div>`}
 </section>
 </div>
-${gamesPageScript({ isAdmin })}`;
+${gamesPageScript({ isAdmin })}
+${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
