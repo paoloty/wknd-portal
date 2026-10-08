@@ -7069,11 +7069,21 @@ app.get('/', (req, res) => {
 
   const homePosts = getSetting('posts_enabled', '0') === '1' ? getPublicPosts() : [];
 
-  // AI summaries above Game headlines / Season race / League leaders (stale ones refresh
-  // in the background; see getHomeSummaries).
+  // "Who wins?" widget for this viewer, plus logged-out versions of it and of Coming up for
+  // the AI summaries (the same copy is shown to everyone).
+  const viewerId = req.session?.playerPlayerId || null;
+  const picksW = homePicksWidget(games, viewerId);
+  const picksPublic = viewerId ? homePicksWidget(games, null) : picksW;
+  const nextUpPublic = isHomepageLoggedIn
+    ? buildHomeNextUp({ season: getPortalCurrentSeason(), players, games, isLoggedIn: false })
+    : nextUp;
+
+  // AI summaries above Game headlines / Season race / League leaders / Who wins? / Coming up
+  // (stale ones refresh in the background; see getHomeSummaries).
   const summaries = getHomeSummaries(homeSummaryContext({
     season: getPortalCurrentSeason(), games, standings,
     boards: showRosterMoves ? [] : leaderBoards(leaderPlayers),
+    picksW: picksPublic, nextUp: nextUpPublic,
   }));
 
   let awardsGallery = [];
@@ -7130,7 +7140,7 @@ app.get('/', (req, res) => {
     title: 'WKND Basketball League',
     currentPath: req.path,
     body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
-      picksWidgetHtml: picksWidget(homePicksWidget(games, req.session?.playerPlayerId || null)) })
+      picksWidgetHtml: picksWidget(picksW, { summary: summaries.picks || null, isAdmin: !!req.session?.isAdmin }) })
   }));
 });
 
@@ -9323,6 +9333,11 @@ function homePicksWidget(games, viewerId) {
     isPlayer: !!viewerId, season, minPicks: sp.board.minPicks,
     me: r ? { ...r, playerId: viewerId, rank: sp.board.rows.find(x => x.playerId === viewerId)?.rank || null } : null,
     recent: recentPickResults(pctx, season, viewerId, 6),
+    leader: (() => {
+      const top = sp.board.rows[0];
+      if (!top) return null;
+      return { name: displayPlayerName(getPlayerById(top.playerId)?.name || ''), correct: top.correct, picks: top.picks, tied: sp.board.rows.filter(r => r.rank === 1).length };
+    })(),
   };
   const today = manilaTodayStr();
   const lastDay = sp.pickable.length ? sp.pickable[sp.pickable.length - 1].ymd : null;
@@ -10216,18 +10231,106 @@ function buildHomeStandings(season, games) {
 // so a new result makes it disappear rather than show stale claims. A missing/stale one is
 // regenerated in the background — never awaited by the page — at most one call in flight
 // per block, with a cooldown after an AI failure. Admins can force it from the homepage.
-const HOME_SUMMARY_BLOCKS = new Set(['headlines', 'standings', 'leaders']);
+const HOME_SUMMARY_BLOCKS = new Set(['headlines', 'standings', 'leaders', 'picks', 'comingup']);
 const homeSummaryInFlight = new Set();
 let homeSummaryCooldownUntil = 0;
 const HOME_SUMMARY_COOLDOWN_MS = 10 * 60 * 1000;
 // Bump when the prompt changes so every stored summary is rewritten with the new one.
 const HOME_SUMMARY_VERSION = 7;
 
-function homeSummaryContext({ season, games, standings, boards }) {
+// picksW = homePicksWidget(games, null) and nextUp = buildHomeNextUp({ isLoggedIn: false }):
+// both built for a logged-out viewer, since the summary is the same for everyone (so no
+// birthday names, poll questions or anyone's own picks can reach the copy).
+function homeSummaryContext({ season, games, standings, boards, picksW = null, nextUp = null }) {
   const completed = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  return { season, week: season ? (getSeasonLatestWeek(season)?.week ?? null) : null, completed, standings, boards };
+  return { season, week: season ? (getSeasonLatestWeek(season)?.week ?? null) : null, completed, standings, boards, picksW, nextUp };
+}
+
+const summaryDay = ymd => new Date(`${String(ymd).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+// "Who wins?" block facts — the next game day's picks, or the last game day's results.
+function picksSummaryFacts(w) {
+  const title = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  const leaderLine = w.leader
+    ? `Pickmaster race (best pick record, minimum ${w.minPicks} settled picks): ${w.leader.name} leads at ${w.leader.correct} of ${w.leader.picks}${w.leader.tied > 1 ? `, tied with ${w.leader.tied - 1} other${w.leader.tied > 2 ? 's' : ''}` : ''}.`
+    : `Pickmaster race: nobody is ranked yet (players need ${w.minPicks} settled picks).`;
+  if (w.mode === 'open') {
+    const leanOf = g => {
+      const t = g.counts.a + g.counts.b;
+      if (t < 5 || g.counts.a === g.counts.b) return '';
+      return title(g.counts.a > g.counts.b ? g.a : g.b);
+    };
+    const lines = w.games.map(g => {
+      const parts = [`${title(g.a)} (${g.recA.w}-${g.recA.l} this season) vs ${title(g.b)} (${g.recB.w}-${g.recB.l} this season)`];
+      parts.push(g.h2h.meetings ? `all-time head to head ${title(g.a)} ${g.h2h.a}, ${title(g.b)} ${g.h2h.b}` : 'first ever meeting');
+      if (g.odds?.fav) parts.push(`the odds favour ${title(g.odds.fav === 'a' ? g.a : g.b)} at ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%`);
+      const lean = leanOf(g);
+      if (lean) parts.push(`most pickers so far are taking ${lean}`);
+      if (g.closed) parts.push('picks are closed');
+      return `- ${parts.join('; ')}`;
+    });
+    const close = fmtCloseTime(w.closeTime);
+    return {
+      key: `v${HOME_SUMMARY_VERSION}|p|open|${w.ymd}|${w.games.map(g => `${g.id}:${g.odds?.pctA ?? '-'}:${leanOf(g)}:${g.recA.w}-${g.recA.l}:${g.recB.w}-${g.recB.l}:${g.closed ? 1 : 0}`).join(',')}|${w.leader ? `${w.leader.name}:${w.leader.correct}/${w.leader.picks}` : '-'}`,
+      kicker: `Who wins? · ${summaryDay(w.ymd)}`,
+      section: 'Who wins? (fan picks for the next game day)',
+      facts: `"Who wins?" is the league's pick-em: logged-in players pick the winner of each game. Picks close at ${close} on game day, ${summaryDay(w.ymd)}.\nGames:\n${lines.join('\n')}\n${leaderLine}`,
+      focus: 'Preview the picks for this game day: frame each matchup with the odds and the head to head, mention which way pickers lean only where the facts say so, and nudge readers to make their picks before the cut-off. Call the people who pick "pickers", never fans.',
+    };
+  }
+  const lines = w.cards.map(s => {
+    const g = s.game;
+    const win = g.winner === 'a' ? g.a : g.b, lose = g.winner === 'a' ? g.b : g.a;
+    const parts = [`${title(win)} beat ${title(lose)} ${Math.max(g.sa, g.sb)}-${Math.min(g.sa, g.sb)}`];
+    if (g.odds?.fav) parts.push(`the odds had favoured ${title(g.odds.fav === 'a' ? g.a : g.b)} at ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%${s.upset ? ', so this was an upset' : ''}`);
+    parts.push(`${s.calledIt.length} of ${s.total} pickers called it`);
+    return `- ${parts.join('; ')}`;
+  });
+  return {
+    key: `v${HOME_SUMMARY_VERSION}|p|res|${w.ymd}|${w.cards.map(s => `${s.game.id}:${s.game.sa}-${s.game.sb}:${s.total}:${s.calledIt.length}`).join(',')}|${w.leader ? `${w.leader.name}:${w.leader.correct}/${w.leader.picks}` : '-'}`,
+    kicker: `Who called it? · ${summaryDay(w.ymd)}`,
+    section: 'Who called it? (how the fan picks went)',
+    facts: `"Who wins?" is the league's pick-em: logged-in players pick the winner of each game. Results of the picks for ${summaryDay(w.ymd)}:\n${lines.join('\n')}\n${leaderLine}`,
+    focus: 'Sum up how the picks went: which games the pickers called, any upset against the odds, and the Pickmaster race. Call the people who pick "pickers", never fans.',
+  };
+}
+
+// "Coming up" block facts — one line per card actually on the homepage, public details only.
+function comingUpSummaryFacts(nextUp) {
+  if (!nextUp?.cards?.length) return null;
+  const title = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  const lines = [];
+  for (const c of nextUp.cards) {
+    const d = c.data;
+    if (c.kind === 'league') {
+      if (d.mode === 'upcoming') lines.push(`- Next league game day, ${summaryDay(d.date)}: ${d.games.map(g => `${title(g.a)}${g.recA ? ` (${g.recA})` : ''} vs ${title(g.b)}${g.recB ? ` (${g.recB})` : ''}${g.type === 'playoff' ? ' (playoffs)' : ''}`).join('; ')}. Records are this season's.`);
+      else lines.push(`- No league games scheduled yet. Latest results, ${summaryDay(d.date)}: ${d.games.map(g => (g.scoreA > g.scoreB ? `${title(g.a)} beat ${title(g.b)} ${g.scoreA}-${g.scoreB}` : `${title(g.b)} beat ${title(g.a)} ${g.scoreB}-${g.scoreA}`)).join('; ')}.`);
+    } else if (c.kind === 'papawis') {
+      if (d.empty) lines.push('- Papawis (open pickup runs): no run scheduled yet.');
+      else lines.push(`- Next Papawis run (open pickup game, sign up on the site): ${summaryDay(d.date)}${d.time ? `, ${d.time}` : ''}${d.location ? ` at ${d.location}` : ''}. ${d.maxSlots && d.confirmed >= d.maxSlots ? 'Every slot is already taken, but players can join the waitlist right now (the waitlist is already open; the date is when the run itself happens).' : 'Slots are still open, sign-ups are open now.'}${d.hasReferee ? ' There will be a referee.' : ''}`);
+    } else if (c.kind === 'marketplace') {
+      lines.push(`- Marketplace (group buys): ${d.listings.map(l => `"${l.title}"`).join(', ')} open for orders.`);
+    } else if (c.kind === 'birthdays') {
+      lines.push(`- ${d.total === 1 ? 'One player has a birthday' : `${d.total} players have birthdays`} this week (names are only shown to logged-in members).`);
+    } else if (c.kind === 'new_members') {
+      lines.push(`- New members joined the community in the last 30 days.`);
+    } else if (c.kind === 'poll') {
+      lines.push('- A players\x27 poll is open for voting (logged-in members only).');
+    } else if (c.kind === 'video') {
+      lines.push(`- Latest game video is up: ${title(d.a)} ${d.scoreA}-${d.scoreB} ${title(d.b)}, ${summaryDay(d.date)}.`);
+    }
+  }
+  if (!lines.length) return null;
+  const facts = `What's coming up around the WKND community:\n${lines.join('\n')}`;
+  return {
+    key: `v${HOME_SUMMARY_VERSION}|n|${createHash('sha1').update(facts).digest('hex').slice(0, 16)}`,
+    kicker: 'Coming up · This week',
+    section: 'Coming up (what\x27s next around the community)',
+    facts,
+    focus: 'Preview the week ahead: lead with the next league game day or the next Papawis run, whichever comes first, then one more thing worth knowing. Point readers to what they can do (sign up, join the waitlist, vote, shop) — only actions the facts mention. Every date is the day the event itself happens; never attach a date to anything else (like when a waitlist or sign-up opens).',
+  };
 }
 
 function homeSummaryFacts(block, ctx) {
@@ -10288,6 +10391,8 @@ function homeSummaryFacts(block, ctx) {
       focus: 'Pick the one or two most interesting leaderboard stories (e.g. who leads scoring, or a player who shows up in several categories). A player only "leads" a category where they are #1.',
     };
   }
+  if (block === 'picks') return ctx.picksW ? picksSummaryFacts(ctx.picksW) : null;
+  if (block === 'comingup') return comingUpSummaryFacts(ctx.nextUp);
   return null;
 }
 
@@ -10415,6 +10520,8 @@ app.post('/admin/home-summary/regenerate', requireAuth, express.json(), async (r
     season, games,
     standings: buildHomeStandings(season, games),
     boards: showRosterMoves ? [] : leaderBoards(buildLeaderPlayers(season)),
+    picksW: block === 'picks' ? homePicksWidget(byDate(games), null) : null,
+    nextUp: block === 'comingup' ? buildHomeNextUp({ season, players: getAllPlayers(), games, isLoggedIn: false }) : null,
   });
   const f = homeSummaryFacts(block, ctx);
   if (!f) return res.status(400).json({ error: 'Nothing to summarise yet.' });

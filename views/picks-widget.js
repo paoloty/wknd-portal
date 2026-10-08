@@ -1,4 +1,5 @@
 import { escHtml } from './layout.js';
+import { summaryPanel } from './home.js';
 import { calledItCard, FLAME, dayLabel } from './games.js';
 import { openPickCard, pickBoxScript, fmtCloseTime } from './pick-box.js';
 
@@ -46,13 +47,15 @@ function sidePanel(w) {
     </aside>`;
 }
 
-export function picksWidget(w) {
+export function picksWidget(w, { summary = null, isAdmin = false } = {}) {
   if (!w) return '';
+  const panel = summaryPanel(summary, 'picks', isAdmin);
   if (w.mode === 'open') {
     const allClosed = w.games.every(g => g.closed);
     const when = `${escHtml(dayLabel(w.ymd))} · ${allClosed ? 'picks closed' : `picks close ${escHtml(fmtCloseTime(w.closeTime))}`}`;
     return `<section class="home-section pkw" aria-labelledby="pkw-h">
   <div class="section-header"><h2 id="pkw-h">Who wins? <span class="section-header__sub">${when}</span></h2><a href="/picks" class="section-header__link">Pickmaster race →</a></div>
+  ${panel}
   <div class="pkw-grid${w.games.length === 1 ? ' is-one' : ''}">
     ${w.games.map(o => openPickCard(o, { isPlayer: w.isPlayer, next: '/', size: 'sm' })).join('')}
     ${sidePanel(w)}
@@ -62,6 +65,7 @@ ${pickBoxScript()}`;
   }
   return `<section class="home-section pkw" aria-labelledby="pkw-h">
   <div class="section-header"><h2 id="pkw-h">Who called it? <span class="section-header__sub">${escHtml(dayLabel(w.ymd))} · Final</span></h2><a href="/picks" class="section-header__link">All results →</a></div>
+  ${panel}
   <div class="pkw-grid pkw-grid--res${w.cards.length === 1 ? ' is-one' : ''}">
     ${w.cards.map(s => calledItCard(s, w.isPlayer)).join('')}
     ${sidePanel(w)}

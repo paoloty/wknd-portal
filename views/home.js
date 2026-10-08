@@ -965,11 +965,12 @@ function leadersSection(leaderPlayers, rosterMovers, season, summary = null, isA
 </section>` : '';
 }
 
-function nextUpSection(nextUp) {
+function nextUpSection(nextUp, summary = null, isAdmin = false) {
   if (!nextUp || !nextUp.cards.length) return '';
   const cards = nextUp.cards.map(c => NU_RENDER[c.kind] ? NU_RENDER[c.kind](c.data, nextUp) : '').join('\n  ');
   return `<section class="home-section nu-section" aria-labelledby="nu-heading">
   <div class="section-header"><h2 id="nu-heading">Coming up</h2></div>
+  ${summaryPanel(summary, 'comingup', isAdmin)}
   <div class="nu-grid" style="--nu-cards:${nextUp.cards.length}">
   ${cards}
   </div>
@@ -1037,7 +1038,7 @@ ${leadersSection(leaderPlayers, rosterMovers, leaderSeason, summaries.leaders, i
 
 ${latestPosts(posts)}
 
-${nextUpSection(nextUp)}
+${nextUpSection(nextUp, summaries.comingup, isAdmin)}
 
 ${memberPerksSection(memberPerks)}
 
