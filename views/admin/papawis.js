@@ -649,7 +649,9 @@ function broadcastCard(game, broadcast) {
     const reach = preview
       ? `${preview.emailable} regular${preview.emailable === 1 ? '' : 's'} will be emailed`
         + [preview.settle ? `${preview.settle} with an unpaid game` : '', preview.deposit ? `${preview.deposit} needing a deposit` : '',
-           preview.optedOut ? `${preview.optedOut} opted out (bell only)` : '', preview.noEmail ? `${preview.noEmail} with no email (bell only)` : '']
+           preview.optedOut ? `${preview.optedOut} bell only (opted out, spam report or shared email)` : '',
+           preview.noValidEmail ? `${preview.noValidEmail} skipped, no valid email${preview.bounced ? ` (${preview.bounced} bounced)` : ''}` : '',
+           preview.dormant ? `${preview.dormant} skipped, account inactive` : '']
           .filter(Boolean).map(x => ` · ${x}`).join('')
       : '';
     let status, button = '';
@@ -1577,7 +1579,17 @@ ${(() => {
             var unpaid = d.skipped.filter(function(s) { return s.reason === 'unpaid'; }).length;
             var probation = d.skipped.filter(function(s) { return s.reason === 'probation'; }).length;
             var already = d.skipped.filter(function(s) { return s.reason === 'already_listed'; }).length;
+            var noEmail = d.skipped.filter(function(s) { return s.reason === 'no_valid_email' || s.reason === 'bounced'; }).length;
+            var inactive = d.skipped.filter(function(s) { return s.reason === 'inactive'; }).length;
+            var notApproved = d.skipped.filter(function(s) { return s.reason === 'not_approved'; }).length;
+            var linkExpired = d.skipped.filter(function(s) { return s.reason === 'link_expired'; }).length;
+            var dormant = d.skipped.filter(function(s) { return s.reason === 'dormant'; }).length;
             var parts = [];
+            if (linkExpired) parts.push(linkExpired + ' never finished account setup');
+            if (dormant) parts.push(dormant + ' not logged in for 3+ months');
+            if (noEmail) parts.push(noEmail + ' with no valid email');
+            if (inactive) parts.push(inactive + ' inactive');
+            if (notApproved) parts.push(notApproved + ' without an approved account');
             if (already) parts.push(already + ' already listed');
             if (unpaid) parts.push(unpaid + ' with an unpaid balance');
             if (probation) parts.push(probation + ' on probation');

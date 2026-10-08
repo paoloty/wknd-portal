@@ -92,6 +92,8 @@ function missingBar(m) {
     <div class="text-xs text-slate-400 min-w-0">
       <b class="text-slate-200">${m.list.length} of ${m.accounts} players with an account haven't picked ${m.games > 1 ? 'every game' : 'yet'}</b>
       <span class="block mt-1">${shown.map(p => escHtml(p.name)).join(', ')}${m.list.length > shown.length ? ` <span class="text-slate-500">+${m.list.length - shown.length} more</span>` : ''}</span>
+      ${m.noValidEmail ? `<span class="block mt-1 text-slate-500">${m.noValidEmail} skipped, no valid email on their account</span>` : ''}
+      ${m.dormant ? `<span class="block mt-1 text-slate-500">${m.dormant} skipped, account inactive (no login in 3+ months or setup link expired)</span>` : ''}
       ${m.remindedAt ? `<span class="block mt-1 text-amber-400">Reminder sent ${escHtml(when(m.remindedAt))} to ${m.remindedCount} player${m.remindedCount === 1 ? '' : 's'}</span>` : ''}
       ${m.emailed ? `<span class="block mt-1 text-amber-400">Email sent ${escHtml(when(m.emailed.at))} to ${m.emailed.sent} of ${m.emailed.of}${m.emailed.failed ? ` · <b class="text-red-400">${m.emailed.failed} failed</b>` : ''} · ${m.emailed.source === 'ai' ? 'AI copy' : 'template copy'}</span>` : ''}
     </div>
@@ -99,10 +101,10 @@ function missingBar(m) {
       <button type="button" class="admin-btn admin-btn--sm" data-copy-names="${escHtml(m.list.map(p => p.name).join(', '))}">Copy names</button>
       <a href="/admin/picks/email/preview" class="admin-btn admin-btn--sm" title="See the AI-written email, rewrite it, or send yourself a test">Preview email</a>
       <form method="post" action="/admin/picks/remind" class="inline-flex items-center gap-2">
-        <label class="inline-flex items-center gap-1.5 text-xs text-slate-300" title="Players without an email on file or who unsubscribed get the bell only">
+        <label class="inline-flex items-center gap-1.5 text-xs text-slate-300" title="Players who unsubscribed, reported spam or share an inbox get the bell only">
           <input type="checkbox" name="email" value="1"${m.emailable ? ' checked' : ' disabled'}> Also email ${m.emailable} of them
         </label>
-        <button type="submit" class="admin-btn admin-btn--sm admin-btn--success" data-confirm="${escHtml(`Send a reminder to ${m.list.length} player${m.list.length === 1 ? '' : 's'}? Ticked "also email": ${m.emailable} get the email too.${m.remindedAt ? ' You already sent one for this game day.' : ''}`)}">${m.remindedAt ? 'Remind again' : 'Send reminder'}</button>
+        <button type="submit" class="admin-btn admin-btn--sm admin-btn--success"${m.reachable ? '' : ' disabled'} data-confirm="${escHtml(`Send a reminder to ${m.reachable} player${m.reachable === 1 ? '' : 's'}? Ticked "also email": ${m.emailable} get the email too.${m.remindedAt ? ' You already sent one for this game day.' : ''}`)}">${m.remindedAt ? 'Remind again' : 'Send reminder'}</button>
       </form>
     </div>
   </div>`;

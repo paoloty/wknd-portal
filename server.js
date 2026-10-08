@@ -206,6 +206,7 @@ import {
   announcePapawisGame, queuePapawisSlotAlert, runPapawisBroadcasts, papawisBroadcastState, papawisAnnouncementPreview,
   verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
 } from './lib/papawis-broadcast.js';
+import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
@@ -7935,7 +7936,11 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     const sent = JSON.parse(getSetting(`picks_reminded_${upDay}`, 'null') || 'null');
     if (sent) { missing.remindedAt = sent.at; missing.remindedCount = sent.count; }
     // Reminder email: who'd get one, and the last send's tally for this game day.
-    missing.emailable = picksEmailRecipients(missing.list).length;
+    const reach = picksReminderRecipients(missing.list);
+    missing.reachable = reach.recipients.length;
+    missing.emailable = reach.emailable.length;
+    missing.noValidEmail = reach.skipped.noValidEmail;
+    missing.dormant = reach.skipped.dormant + reach.skipped.linkExpired;
     try { missing.emailed = JSON.parse(getSetting(`picks_emailed_${upDay}`, 'null') || 'null'); } catch {}
   }
 
@@ -8010,7 +8015,9 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
   const open = upNext.filter(u => !u.closed);
   const matchups = open.map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');
   const dayStr = new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  for (const p of missing.list) {
+  const reach = picksReminderRecipients(missing.list);
+  if (!reach.recipients.length) return res.redirect('/admin/picks');
+  for (const { player: p } of reach.recipients) {
     createNotification({
       playerId: p.id, type: 'pick_reminder',
       title: `Who wins? ${matchups}`,
@@ -8018,13 +8025,12 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
       link: '/picks',
     });
   }
-  setSetting(`picks_reminded_${open[0].ymd}`, JSON.stringify({ at: Date.now(), count: missing.list.length }));
-  // "Also email them": same players, minus anyone without an approved account email or who
-  // unsubscribed from pick emails (they still got the bell above). Sent in the background —
-  // the page shows the tally from picks_emailed_<day> once it's done.
-  const recipients = req.body?.email === '1' ? picksEmailRecipients(missing.list) : [];
+  setSetting(`picks_reminded_${open[0].ymd}`, JSON.stringify({ at: Date.now(), count: reach.recipients.length }));
+  // "Also email them": the emailable ones (the rest still got the bell above). Sent in the
+  // background — the page shows the tally from picks_emailed_<day> once it's done.
+  const recipients = req.body?.email === '1' ? reach.emailable : [];
   if (recipients.length) setImmediate(() => sendPicksEmails(recipients).catch(e => console.error('[picks email] send failed:', e.message)));
-  res.redirect(`/admin/picks?reminded=${missing.list.length}${recipients.length ? `&emailing=${IS_DEV ? 1 : recipients.length}` : ''}`);
+  res.redirect(`/admin/picks?reminded=${reach.recipients.length}${recipients.length ? `&emailing=${IS_DEV ? 1 : recipients.length}` : ''}`);
 });
 
 // ── "Who wins?" reminder email (copy: lib/picks-email.js, template: lib/mailer.js) ──────
@@ -8088,13 +8094,13 @@ function picksEmailFor(c, draft, playerId, regId = '') {
   });
 }
 
-// Who can get the email out of a list of players: approved account, an email on file, and
-// not unsubscribed from pick emails.
-function picksEmailRecipients(players) {
-  return players.map(p => {
-    const reg = getRegistrationByPlayerId(p.id);
-    return reg && reg.status === 'approved' && String(reg.email || '').trim() && !reg.picks_email_optout ? { playerId: p.id, reg } : null;
-  }).filter(Boolean);
+// Who the reminder reaches out of a list of players: the shared broadcast gates
+// (lib/broadcast-recipients.js — valid email first, active, approved). Everyone in
+// `recipients` gets the bell; `emailable` drops anyone unsubscribed from pick emails, who
+// once marked our email as spam, or whose inbox is already on the list.
+function picksReminderRecipients(players) {
+  const { recipients, skipped } = selectBroadcastRecipients(players.map(p => p.id), { optOutColumn: 'picks_email_optout' });
+  return { recipients, emailable: recipients.filter(r => r.emailable), skipped };
 }
 
 async function sendPicksEmails(recipients) {
@@ -8105,20 +8111,20 @@ async function sendPicksEmails(recipients) {
   // full send would land dozens of copies there — one is enough to see it.
   const list = IS_DEV ? recipients.slice(0, 1) : recipients;
   let sent = 0, failed = 0, first = true;
-  for (const { playerId, reg } of list) {
+  for (const { player, reg, email } of list) {
     // Stay under Resend's rate limit (about 2 requests a second).
     if (!first) await new Promise(r => setTimeout(r, 600));
     first = false;
     const unsub = picksUnsubscribeUrl(reg.id);
     try {
       const ok = await sendMail({
-        to: String(reg.email).trim(), ...picksEmailFor(c, draft, playerId, reg.id), ref: reg.id,
+        to: email, ...picksEmailFor(c, draft, player.id, reg.id), ref: reg.id,
         headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
       });
       if (ok) sent++;
     } catch (e) {
       failed++;
-      console.error(`[picks email] ${reg.email}: ${e.message}`);
+      console.error(`[picks email] ${email}: ${e.message}`);
     }
   }
   setSetting(`picks_emailed_${c.ymd}`, JSON.stringify({ at: Date.now(), sent, failed, of: list.length, source: draft.source }));
@@ -14277,8 +14283,9 @@ app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
 });
 
 // Bulk-adds known regulars (same definition as the Papawis Activity page) who aren't
-// already on the roster, skipping anyone with a real unpaid Papawis debt or on probation —
-// see autofillPapawisRegulars() for why those two need a human decision instead.
+// already on the roster, skipping anyone who isn't an active player (checkActivePlayer) and
+// anyone with a real unpaid Papawis debt or on probation — see autofillPapawisRegulars()
+// for why those two need a human decision instead.
 app.post('/admin/papawis/:id/autofill-regulars', requireAuth, (req, res) => {
   if (!papawisLockCheck(req.params.id, res)) return;
   const result = autofillPapawisRegulars(req.params.id);
