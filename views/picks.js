@@ -14,7 +14,7 @@ function openPicksSection(open, { isPlayer, closeTime }) {
       ${isPlayer ? pickProgress(open, '.pkp-now') : ''}
     </div>
     <div class="pkp-now__grid${open.length === 1 ? ' is-one' : ''}">
-      ${open.map((o, i) => openPickCard(o, { isPlayer, next: '/picks', size: 'lg', label: open.length > 1 ? `Game ${i + 1}` : '' })).join('')}
+      ${open.map(o => openPickCard(o, { isPlayer, next: '/picks', size: 'lg' })).join('')}
     </div>
   </section>`;
 }

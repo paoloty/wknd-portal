@@ -7969,6 +7969,13 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     missing.emailable = reach.emailable.length;
     missing.noValidEmail = reach.skipped.noValidEmail;
     missing.dormant = reach.skipped.dormant + reach.skipped.linkExpired;
+    // Per-player status for the pick-who-to-remind checklist: email, bell only (and why),
+    // or unreachable (failed the broadcast gates).
+    const byId = new Map(reach.recipients.map(r => [r.player.id, r]));
+    missing.people = missing.list.map(p => {
+      const r = byId.get(p.id);
+      return { ...p, reach: !r ? 'skip' : r.emailable ? 'email' : 'bell', note: r?.bellOnly || (r ? '' : 'inactive or no valid email') };
+    });
     try { missing.emailed = JSON.parse(getSetting(`picks_emailed_${upDay}`, 'null') || 'null'); } catch {}
   }
 
@@ -8040,10 +8047,14 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
   const upNext = adminUpNext(games, pctx);
   const missing = picksMissing(upNext, pctx);
   if (!missing?.list.length) return res.redirect('/admin/picks');
+  // The page's checklist posts the chosen players as `ids`; only those get reminded.
+  const chosen = new Set([].concat(req.body?.ids || []).map(String));
+  const targets = missing.list.filter(p => chosen.has(p.id));
+  if (!targets.length) return res.redirect('/admin/picks');
   const open = upNext.filter(u => !u.closed);
   const matchups = open.map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');
   const dayStr = new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const reach = picksReminderRecipients(missing.list);
+  const reach = picksReminderRecipients(targets);
   if (!reach.recipients.length) return res.redirect('/admin/picks');
   for (const { player: p } of reach.recipients) {
     createNotification({
@@ -9360,8 +9371,7 @@ function settleGamePicks(gameId) {
 }
 
 // Faces for the pick box (views/pick-box.js): who picked which side, the viewer first.
-// Callers only pass these to a logged-in player who has picked the game, or once picks are
-// closed — before that the crowd stays hidden so nobody copies a teammate.
+// Callers only pass these to logged-in players (canSeeFaces) — guests never get names or faces.
 function pickFaces(gameId, viewerId) {
   const out = { a: [], b: [] };
   for (const p of getGamePicksWithPlayers(gameId)) {
@@ -9372,7 +9382,9 @@ function pickFaces(gameId, viewerId) {
   for (const s of ['a', 'b']) out[s].reverse().sort((x, y) => Number(y.me) - Number(x.me));
   return out;
 }
-const canSeeFaces = (viewerId, myPick, closed) => !!viewerId && (!!myPick || !!closed);
+// Logged-in players see who picked each side, picked or not (Paolo, 2026-10-08 — the tiles show
+// faces before you pick); guests never get names or faces.
+const canSeeFaces = viewerId => !!viewerId;
 
 // Every upcoming game's pick state for one viewer — the /picks "Open picks" cards, the
 // homepage widget and the profile card all render this through openPickCard().
@@ -9397,7 +9409,7 @@ function openPicks(games, pctx, viewerId) {
     return {
       id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season, href: previewHref(g),
       counts: counts[g.id], myPick, closed, odds,
-      pickers: canSeeFaces(viewerId, myPick, closed) ? pickFaces(g.id, viewerId) : null,
+      pickers: canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null,
       recA: recordOf(pg.a), recB: recordOf(pg.b),
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
     };
@@ -9499,9 +9511,6 @@ function homePicksWidget(games, viewerId) {
     const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
     for (const o of open) {
       o.face = homeFaceoff(games.find(g => g.id === o.id), games, playerMap);
-      // Homepage tiles show who's picked each team even before you pick (Paolo, 2026-10-08) —
-      // logged-in players only; guests never get names or faces.
-      if (viewerId && !o.pickers) o.pickers = pickFaces(o.id, viewerId);
     }
     return { ...base, mode: 'open', ymd: open[0].ymd, closeTime: picksCloseTime(), games: open };
   }
@@ -9572,7 +9581,7 @@ app.get('/games', (req, res) => {
     const pickStates = Object.fromEntries(upcoming.map(g => [g.id, upcomingPickState(g, pctx)]));
     picks = {
       states: pickStates,
-      pickers: Object.fromEntries(upcoming.map(g => [g.id, canSeeFaces(viewerId, myPicks[g.id], pickStates[g.id].closed) ? pickFaces(g.id, viewerId) : null])),
+      pickers: Object.fromEntries(upcoming.map(g => [g.id, canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null])),
     };
   }
   const previewHrefs = Object.fromEntries(upcoming.map(g => [g.id, previewHref(g)]));
@@ -9609,8 +9618,7 @@ app.post('/games/:id/pick', express.json(), (req, res) => {
   if (upcomingPickState(game, buildPicksContext([game])).closed) return res.status(400).json({ error: 'Picks are closed for this game.' });
   const side = req.body?.side === 'a' || req.body?.side === 'b' ? req.body.side : null;
   setGamePick(game.id, playerId, side);
-  // Faces come back after a cancel too: the homepage tiles keep showing them. The full pick
-  // box still only draws them once you've picked (pickBoxScript checks).
+  // Faces come back after a cancel too — the tiles keep showing them.
   res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id], pickers: pickFaces(game.id, playerId) });
 });
 
@@ -9743,7 +9751,7 @@ app.get('/picks/:ref', (req, res) => {
   if (picksEnabled() && (p.state === 'open' || p.state === 'closed')) {
     const myPick = getPlayerGamePicks([game.id], viewerId)[game.id] || null;
     const closed = p.state === 'closed';
-    pick = { counts: getGamePickCounts([game.id])[game.id], myPick, closed, pickers: canSeeFaces(viewerId, myPick, closed) ? pickFaces(game.id, viewerId) : null };
+    pick = { counts: getGamePickCounts([game.id])[game.id], myPick, closed, pickers: canSeeFaces(viewerId) ? pickFaces(game.id, viewerId) : null };
   }
   let result = null;
   if (p.state === 'final' && picksEnabled()) {

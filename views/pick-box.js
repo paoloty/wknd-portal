@@ -3,16 +3,21 @@ import { teamColor } from './utils.js';
 import { gameSlug } from '../lib/slugs.js';
 
 // ── "Who wins?" pick box — one component for every surface that takes a pick ──────────
-// /games matchup cards, the /picks "Open picks" section, the homepage widget and the
-// player's own profile all render pickBox() and share pickBoxScript(), so a pick made
-// anywhere behaves the same: buttons → fan split + the faces of who picked which side.
+// The homepage widget, /games Up next, /picks (Open picks + each game's preview), the game
+// detail page and the player's own profile all render pickBox() and share pickBoxScript(),
+// so a pick made anywhere looks and behaves the same.
 //
-// Data shape (server.js openPickFor()):
+// The pick is two team-coloured tiles that never swap out — the box keeps its exact height
+// before and after you pick. Each tile: team name, the faces of who picked that team, the
+// count. Picked: your tile fills with its colour + ✓, the other dims; tap yours to cancel,
+// the other to switch. Faces are decoration (the tile is the tap target); the full list
+// opens from "Who picked" on the line below.
+//
+// Data shape (server.js openPicks()):
 //   { id, a, b, ymd, counts: {a,b}, myPick: 'a'|'b'|null, closed, odds: {pctA,pctB,fav}|null,
-//     pickers: { a: [face], b: [face] } | null, recA, recB, h2h }
-// pickers is null unless the viewer is a logged-in player who has picked (or picks are
-// closed) — the crowd stays hidden until you commit, so nobody copies a teammate.
-// face = { id, name, ini, color, me }
+//     pickers: { a: [face], b: [face] } | null, recA, recB, h2h, href }
+// pickers: logged-in players only (Paolo, 2026-10-08: they see who picked before picking);
+// guests never get names or faces. face = { id, name, ini, color, me }
 
 // The full matchup preview for a game — /picks/<slug>. Takes a pick-shaped game ({ id, a, b })
 // or a games row.
@@ -20,67 +25,41 @@ export function previewHref(g) {
   return `/picks/${encodeURIComponent(gameSlug({ id: g.id, team_a_name: g.a ?? g.team_a_name, team_b_name: g.b ?? g.team_b_name }))}`;
 }
 
-// Team colour for the odds edge — Black is too dark on the header, so a lighter slate.
+// Team colours on the tiles and the odds edge are Paolo's call (an exception to "team colours
+// = dots/chips only"). Black is too dark on the cards, so it gets a lighter slate.
 const edgeColor = team => (String(team).toUpperCase() === 'BLACK' ? '#8a94a6' : teamColor(team));
 
 const tcase = s => String(s || '').charAt(0) + String(s || '').slice(1).toLowerCase();
 const dot = (name, size = 9) => `<span class="team-dot" style="background:${teamColor(name)};width:${size}px;height:${size}px"></span>`;
-const FACES_SHOWN = 5;
-const NARROW = 34; // % below which a split segment drops the team name
+const TILE_FACES = 3;
+const CHECK_SVG = '<svg class="pkt__check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
 
-function face(p, size = 28) {
+function face(p, size = 22) {
   return `<span class="pk-av${p.me ? ' pk-av--me' : ''}" style="--team:${escHtml(p.color)};width:${size}px;height:${size}px" title="${escHtml(p.me ? 'You' : p.name)}">
       <span class="pk-av__init">${escHtml(p.ini)}</span>
       <img src="/api/player/${encodeURIComponent(p.id)}/photo" alt="" loading="lazy" onerror="this.remove()">
     </span>`;
 }
 
-function facesSide(list, side, teamName) {
-  if (!list.length) return `<span class="pkb-faces__side pkb-faces__side--${side} is-empty">No picks yet</span>`;
-  const shown = list.slice(0, FACES_SHOWN);
-  const more = list.length - shown.length;
-  return `<button type="button" class="pkb-faces__side pkb-faces__side--${side}" data-faces-side="${side}" aria-label="See the ${list.length} player${list.length === 1 ? '' : 's'} who picked ${escHtml(tcase(teamName))}">
-      ${shown.map(p => face(p)).join('')}${more > 0 ? `<span class="pk-av pk-av--more" style="width:28px;height:28px">+${more}</span>` : ''}
-    </button>`;
+// The odds as a thin two-colour edge — each side as wide as its chance, the favourite glowing
+// a little more. Sits on the bottom of a header (pick cards) or a photo banner (/games).
+export function oddsEdge(a, b, odds) {
+  if (!odds) return '';
+  return `<div class="pkb-edge" role="img" aria-label="Odds: ${escHtml(tcase(a))} ${odds.pctA}%, ${escHtml(tcase(b))} ${odds.pctB}%"><i class="${odds.fav === 'a' ? 'is-fav' : ''}" style="width:${odds.pctA}%;--c:${edgeColor(a)}"></i><i class="${odds.fav === 'b' ? 'is-fav' : ''}" style="--c:${edgeColor(b)}"></i></div>`;
 }
 
-function facesRow(o) {
-  if (!o.pickers) return '<div class="pkb-faces" data-faces hidden></div>';
-  return `<div class="pkb-faces" data-faces>${facesSide(o.pickers.a, 'a', o.a)}${facesSide(o.pickers.b, 'b', o.b)}</div>`;
-}
-
-// Compact odds line for surfaces without the /games odds panel.
-export function oddsMini(o) {
-  if (!o.odds?.fav) return o.odds ? '<div class="pkb-odds"><span class="pkb-odds__k">Odds</span><b>Toss-up</b></div>' : '';
-  return `<div class="pkb-odds" aria-label="Odds: ${escHtml(tcase(o.a))} ${o.odds.pctA}%, ${escHtml(tcase(o.b))} ${o.odds.pctB}%">
-      <span class="pkb-odds__k">Odds · ${escHtml(tcase(o.odds.fav === 'a' ? o.a : o.b))} favoured</span>
-      <span class="pkb-odds__row" aria-hidden="true">
-        <b class="${o.odds.fav === 'a' ? 'is-fav' : ''}">${escHtml(tcase(o.a))} ${o.odds.pctA}%</b>
-        <span class="pkb-odds__bar"><i class="${o.odds.fav === 'a' ? 'is-fav' : ''}" style="width:${o.odds.pctA}%"></i><i class="${o.odds.fav === 'b' ? 'is-fav' : ''}"></i></span>
-        <b class="${o.odds.fav === 'b' ? 'is-fav' : ''}">${o.odds.pctB}% ${escHtml(tcase(o.b))}</b>
-      </span>
-    </div>`;
-}
-
-// Homepage cards: two team-coloured tiles that ARE the pick and never swap out — before and
-// after you pick the card keeps its exact height. Each tile: team name, the faces of who
-// picked that team, the count. Picked: your tile fills with its colour + ✓, the other dims;
-// tap yours to cancel, the other to switch. Faces are decoration (the tile is the tap
-// target); the full list opens from "Who picked" on the line below.
-const MINI_FACES = 3;
-const CHECK_SVG = '<svg class="pkt__check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
 function pickTile(o, side, isPlayer) {
   const name = side === 'a' ? o.a : o.b;
   const mine = o.myPick === side;
   const label = o.closed ? `${tcase(name)} · ${o.counts[side]} picked` : !isPlayer ? `Log in to pick ${tcase(name)}` : mine ? `Cancel your ${tcase(name)} pick` : `Pick ${tcase(name)}`;
-  return `<button type="button" class="pkt pkt--${side}${mine ? ' is-mine' : ''}${o.myPick && !mine ? ' is-other' : ''}" style="--c:${edgeColor(name)}"${String(name).toUpperCase() === 'WHITE' ? ' data-light' : ''} data-mini="${side}" data-mini-pick="${side}" aria-pressed="${mine}" aria-label="${escHtml(label)}"${o.closed ? ' disabled' : ''}>
+  return `<button type="button" class="pkt pkt--${side}${mine ? ' is-mine' : ''}${o.myPick && !mine ? ' is-other' : ''}" style="--c:${edgeColor(name)}"${String(name).toUpperCase() === 'WHITE' ? ' data-light' : ''} data-tile="${side}" aria-pressed="${mine}" aria-label="${escHtml(label)}"${o.closed ? ' disabled' : ''}>
       <span class="pkt__name">${CHECK_SVG}${escHtml(name)}</span>
-      <span class="pkt__crowd"><span class="pkt__avs" data-mini-avs>${(o.pickers?.[side] || []).slice(0, MINI_FACES).map(p => face(p, 22)).join('')}</span><b class="pkt__n font-condensed" data-mini-n>${o.counts[side]}</b></span>
+      <span class="pkt__crowd"><span class="pkt__avs" data-tile-avs>${(o.pickers?.[side] || []).slice(0, TILE_FACES).map(p => face(p)).join('')}</span><b class="pkt__n font-condensed" data-tile-n>${o.counts[side]}</b></span>
     </button>`;
 }
 
 // The line under the tiles — what to do next, and the "Who picked" list when there are faces.
-function compactNote(o, isPlayer, next) {
+function pickNote(o, isPlayer, next) {
   const total = o.counts.a + o.counts.b;
   const picked = `${total} picked so far`;
   const text = o.closed
@@ -92,54 +71,32 @@ function compactNote(o, isPlayer, next) {
   return `<div class="pkt-note"><span data-pick-note>${text}</span>${who}</div>`;
 }
 
-function compactPickBox(o, { isPlayer, next }) {
+// "Fans vs odds" — where the pickers lean against the favourite (the /picks/<game> preview).
+function fansVsOdds(o) {
+  const { counts } = o;
+  const fanFav = counts.a !== counts.b ? (counts.a > counts.b ? 'a' : 'b') : null;
+  const on = !!(o.odds?.fav && fanFav && o.odds.fav !== fanFav);
+  return `<div class="pkt-flag" data-pick-flag${on ? '' : ' hidden'}><b>Fans vs odds</b> · <span data-flag-text>${on ? `fans lean ${escHtml(tcase(fanFav === 'a' ? o.a : o.b))}, the odds like ${escHtml(tcase(o.odds.fav === 'a' ? o.a : o.b))}` : ''}</span></div>`;
+}
+
+// The pick itself. oddsHtml: an odds panel above the tiles (the /picks/<game> preview passes
+// its full "How it's figured" panel); flag: show the Fans vs odds line.
+export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = '', flag = false } = {}) {
   const { counts, myPick, closed } = o;
   const names = JSON.stringify({ a: o.a, b: o.b });
-  return `<div class="gm-pick gm-pick--compact${closed ? ' is-closed' : ''}${myPick ? ' has-pick' : ''}" data-compact="1" data-game-id="${escHtml(o.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}" data-next="${escHtml(next)}" data-fav="${o.odds?.fav || ''}" data-names="${escHtml(names)}"${o.pickers ? ` data-pickers="${escHtml(JSON.stringify(o.pickers))}"` : ''}>
+  return `<div class="gm-pick${closed ? ' is-closed' : ''}${myPick ? ' has-pick' : ''}" data-game-id="${escHtml(o.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}" data-next="${escHtml(next)}" data-fav="${o.odds?.fav || ''}" data-names="${escHtml(names)}"${o.pickers ? ` data-pickers="${escHtml(JSON.stringify(o.pickers))}"` : ''}>
+      ${oddsHtml}
       <div class="pkt-row">${pickTile(o, 'a', isPlayer)}${pickTile(o, 'b', isPlayer)}</div>
-      ${compactNote(o, isPlayer, next)}
+      ${flag ? fansVsOdds(o) : ''}
+      ${pickNote(o, isPlayer, next)}
     </div>`;
 }
 
-// The pick itself. opts.oddsHtml replaces the compact odds line (/games passes its own panel).
-export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = null, compact = false } = {}) {
-  if (compact) return compactPickBox(o, { isPlayer, next });
-  const { counts, myPick, closed } = o;
-  const total = counts.a + counts.b;
-  const pctA = total ? Math.round((counts.a / total) * 100) : 50;
-  const showSplit = !!myPick || closed;
-  const fanFav = total && counts.a !== counts.b ? (counts.a > counts.b ? 'a' : 'b') : null;
-  const disagree = showSplit && o.odds?.fav && fanFav && o.odds.fav !== fanFav;
-  const loginHref = `/login?next=${encodeURIComponent(next)}`;
-  const names = JSON.stringify({ a: o.a, b: o.b });
-  return `<div class="gm-pick${closed ? ' is-closed' : ''}" data-game-id="${escHtml(o.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}" data-next="${escHtml(next)}" data-fav="${o.odds?.fav || ''}" data-names="${escHtml(names)}"${o.pickers ? ` data-pickers="${escHtml(JSON.stringify(o.pickers))}"` : ''}>
-      ${oddsHtml ?? oddsMini(o)}
-      ${closed ? '' : `<div class="gm-pick__btns"${myPick ? ' hidden' : ''}>
-        <button type="button" class="gm-pick__btn" data-side="a">${dot(o.a)}${escHtml(o.a)}</button>
-        <button type="button" class="gm-pick__btn" data-side="b">${escHtml(o.b)}${dot(o.b)}</button>
-      </div>`}
-      ${!closed && !myPick && !isPlayer ? `<div class="gm-pick__login"><a href="${escHtml(loginHref)}">Log in to pick</a>${total ? ` and see who picked · ${total} so far` : ' and be the first'}</div>` : ''}
-      ${!closed && !myPick && isPlayer ? `<div class="pkb-hint" data-pick-hint>${total ? `${total} player${total === 1 ? ' has' : 's have'} picked · pick to see who` : 'Nobody has picked yet · be the first'}</div>` : ''}
-      <div class="gm-pick__result"${showSplit ? '' : ' hidden'}>
-        ${o.odds ? `<div class="gm-pick__lbl">Fan picks · <span data-pick-n>${total}</span></div>` : ''}
-        <div class="gm-pick__split">
-          <span class="gm-pick__seg${myPick === 'a' ? ' is-mine' : ''}${pctA < NARROW ? ' is-narrow' : ''}" data-seg="a" style="width:${pctA}%">${dot(o.a, 8)}<span class="gm-pick__nm">${escHtml(o.a)}</span> <b>${pctA}%</b></span>
-          <span class="gm-pick__seg gm-pick__seg--b${myPick === 'b' ? ' is-mine' : ''}${100 - pctA < NARROW ? ' is-narrow' : ''}" data-seg="b" style="width:${100 - pctA}%"><b>${100 - pctA}%</b> <span class="gm-pick__nm">${escHtml(o.b)}</span>${dot(o.b, 8)}</span>
-        </div>
-        ${facesRow(o)}
-        <div class="gm-pick__flag" data-pick-flag${disagree ? '' : ' hidden'}><b>Fans vs odds</b> · <span data-flag-text>${disagree ? `fans lean ${escHtml(tcase(fanFav === 'a' ? o.a : o.b))}, the odds like ${escHtml(tcase(o.odds.fav === 'a' ? o.a : o.b))}` : ''}</span></div>
-        <div class="gm-pick__note">${closed
-          ? `<span>Picks are closed${myPick ? ` · you picked <b>${escHtml(myPick === 'b' ? o.b : o.a)}</b>` : ''} · results after the final</span>`
-          : `<span>You picked <b data-mine-name>${escHtml(myPick === 'b' ? o.b : o.a)}</b> · results after the final</span><button type="button" class="gm-pick__change">Change</button>`}</div>
-      </div>
-    </div>`;
-}
-
-// A whole open-pick card: team header (records + head to head) around pickBox().
-// size 'lg' = /picks (photo-less glare header); 'sm' = homepage widget / profile tile.
-// middle: HTML placed between the matchup summary (head + odds) and the pick buttons — the
-// homepage puts the player face-off there, so the actions sit at the bottom.
-export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg', label = '', middle = '', more = true } = {}) {
+// A whole pick card: team header (records, odds %, head to head, the odds edge) around
+// pickBox(). size 'lg' = /picks Open picks; 'sm' = homepage, game detail, profile.
+// middle: HTML between the header and the tiles — the homepage puts the player face-off
+// there, so the pick sits at the bottom. An unpicked game gets an amber outline (is-needs).
+export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg', middle = '', more = true } = {}) {
   const needs = isPlayer && !o.myPick && !o.closed;
   const total = o.counts.a + o.counts.b;
   const white = n => (n === 'WHITE' ? 0.45 : 1);
@@ -148,33 +105,24 @@ export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg'
   const h2h = o.h2h?.meetings
     ? `<span class="pkb-h2h"><span>Head to head</span><b class="font-condensed">${o.h2h.a}–${o.h2h.b}</b></span>`
     : '<span class="pkb-h2h"><span>First meeting</span></span>';
-  const compact = !!middle;
-  const odds = compact && o.odds?.fav !== undefined ? o.odds : null;
-  const pct = side => (odds ? ` · <span class="pkb-pct${odds.fav === side ? ' is-fav' : ''}">${side === 'a' ? odds.pctA : odds.pctB}%</span>` : '');
-  const oddsEdge = odds
-    ? `<div class="pkb-edge" role="img" aria-label="Odds: ${escHtml(tcase(o.a))} ${odds.pctA}%, ${escHtml(tcase(o.b))} ${odds.pctB}%"><i class="${odds.fav === 'a' ? 'is-fav' : ''}" style="width:${odds.pctA}%;--c:${edgeColor(o.a)}"></i><i class="${odds.fav === 'b' ? 'is-fav' : ''}" style="--c:${edgeColor(o.b)}"></i></div>`
-    : '';
-  const chips = compact ? '' : [
-    label ? `<span class="pkb-chip">${escHtml(label)}</span>` : '',
-    o.closed ? '<span class="pkb-chip">Picks closed</span>' : '',
-    needs ? '<span class="pkb-chip pkb-chip--need" data-needs-chip>Needs your pick</span>' : '',
-  ].join('');
+  const odds = o.odds || null;
+  const pct = side => (odds ? `<span class="pkb-pct${odds.fav === side ? ' is-fav' : ''}">${side === 'a' ? odds.pctA : odds.pctB}%</span>` : '');
+  const href = o.href || previewHref(o);
   return `<article class="pkb-card pkb-card--${size}${needs ? ' is-needs' : ''}" aria-label="${escHtml(tcase(o.a))} vs ${escHtml(tcase(o.b))}">
     <div class="pkb-head${odds ? ' has-edge' : ''}" style="background:${glare}">
-      ${chips ? `<div class="pkb-chips">${chips}</div>` : ''}
       <div class="pkb-teams">
-        <span class="pkb-team"><b>${dot(o.a, size === 'lg' ? 10 : 9)}${escHtml(o.a)}</b><small class="font-condensed">S${escHtml(String(o.season))} ${rec(o.recA)}${pct('a')}</small></span>
+        <span class="pkb-team"><b>${dot(o.a, size === 'lg' ? 10 : 9)}${escHtml(o.a)}</b><small class="font-condensed">S${escHtml(String(o.season))} ${rec(o.recA)}${odds ? ` · ${pct('a')}` : ''}</small></span>
         ${h2h}
-        <span class="pkb-team pkb-team--b"><b>${escHtml(o.b)}${dot(o.b, size === 'lg' ? 10 : 9)}</b><small class="font-condensed">${odds ? `<span class="pkb-pct${odds.fav === 'b' ? ' is-fav' : ''}">${odds.pctB}%</span> · ` : ''}S${escHtml(String(o.season))} ${rec(o.recB)}</small></span>
+        <span class="pkb-team pkb-team--b"><b>${escHtml(o.b)}${dot(o.b, size === 'lg' ? 10 : 9)}</b><small class="font-condensed">${odds ? `${pct('b')} · ` : ''}S${escHtml(String(o.season))} ${rec(o.recB)}</small></span>
       </div>
-      ${oddsEdge}
+      ${oddsEdge(o.a, o.b, odds)}
     </div>
     <div class="pkb-body">
-      ${middle ? `${middle}
-      ${pickBox(o, { isPlayer, next, oddsHtml: '', compact: true })}` : pickBox(o, { isPlayer, next })}
+      ${middle}
+      ${pickBox(o, { isPlayer, next })}
       ${size === 'lg'
-        ? `<div class="pkb-foot"><span data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'No picks yet'}</span><a href="${escHtml(o.href || previewHref(o))}">Full matchup preview →</a></div>`
-        : more ? `<a href="${escHtml(o.href || previewHref(o))}" class="pkb-more">Full preview →</a>` : ''}
+        ? `<div class="pkb-foot"><span data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'No picks yet'}</span><a href="${escHtml(href)}">Full matchup preview →</a></div>`
+        : more ? `<a href="${escHtml(href)}" class="pkb-more">Full preview →</a>` : ''}
     </div>
   </article>`;
 }
@@ -184,12 +132,10 @@ export function pickBoxScript() {
   return `<script>
 (function () {
   if (window.__wkndPickBox) return; window.__wkndPickBox = true;
-  var SHOWN = ${FACES_SHOWN};
   function tc(s) { s = String(s || ''); return s.charAt(0) + s.slice(1).toLowerCase(); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  function faceEl(p, size, link) {
-    var f = el(link ? 'a' : 'span', 'pk-av' + (p.me ? ' pk-av--me' : ''));
-    if (link) f.href = '/players/' + encodeURIComponent(p.id);
+  function faceEl(p, size) {
+    var f = el('span', 'pk-av' + (p.me ? ' pk-av--me' : ''));
     f.style.setProperty('--team', p.color); f.style.width = f.style.height = size + 'px';
     f.title = p.me ? 'You' : p.name;
     f.appendChild(el('span', 'pk-av__init', p.ini));
@@ -218,7 +164,7 @@ export function pickBoxScript() {
       if (!data[s].length) col.appendChild(el('p', 'pkb-dlg__none', 'No picks yet'));
       data[s].forEach(function (p) {
         var row = el('a', 'pkb-dlg__p'); row.href = '/players/' + encodeURIComponent(p.id);
-        row.appendChild(faceEl(p, 30, false));
+        row.appendChild(faceEl(p, 30));
         row.appendChild(el('span', '', p.me ? 'You' : p.name));
         col.appendChild(row);
       });
@@ -227,39 +173,23 @@ export function pickBoxScript() {
     dlg.appendChild(cols);
     dlg.showModal();
   }
-  function renderFaces(box, pickers) {
-    var wrap = box.querySelector('[data-faces]'); if (!wrap) return;
-    wrap.innerHTML = '';
-    if (!pickers) { wrap.hidden = true; box.removeAttribute('data-pickers'); return; }
-    box.dataset.pickers = JSON.stringify(pickers);
-    var names = JSON.parse(box.dataset.names);
-    ['a', 'b'].forEach(function (s) {
-      var list = pickers[s];
-      if (!list.length) { wrap.appendChild(el('span', 'pkb-faces__side pkb-faces__side--' + s + ' is-empty', 'No picks yet')); return; }
-      var b = el('button', 'pkb-faces__side pkb-faces__side--' + s); b.type = 'button'; b.dataset.facesSide = s;
-      b.setAttribute('aria-label', 'See the ' + list.length + ' player' + (list.length === 1 ? '' : 's') + ' who picked ' + tc(names[s]));
-      list.slice(0, SHOWN).forEach(function (p) { b.appendChild(faceEl(p, 28, false)); });
-      if (list.length > SHOWN) { var m = el('span', 'pk-av pk-av--more', '+' + (list.length - SHOWN)); m.style.width = m.style.height = '28px'; b.appendChild(m); }
-      wrap.appendChild(b);
-    });
-    wrap.hidden = false;
-  }
-  // Compact boxes (homepage): the tiles stay; only their state, faces, counts and the note change.
-  function renderMini(box, counts, mine, pickers) {
+  // The tiles stay put; only their state, faces, counts and the lines under them change.
+  function render(box, counts, mine, pickers) {
     var names = JSON.parse(box.dataset.names), player = !!box.dataset.player;
-    if (pickers) box.dataset.pickers = JSON.stringify(pickers);
     var t = counts.a + counts.b;
+    if (pickers) box.dataset.pickers = JSON.stringify(pickers);
     ['a', 'b'].forEach(function (s) {
-      var c = box.querySelector('[data-mini="' + s + '"]'); if (!c) return;
+      var c = box.querySelector('[data-tile="' + s + '"]'); if (!c) return;
       c.classList.toggle('is-mine', mine === s);
       c.classList.toggle('is-other', !!mine && mine !== s);
       c.setAttribute('aria-pressed', mine === s ? 'true' : 'false');
       c.setAttribute('aria-label', (mine === s ? 'Cancel your ' : 'Pick ') + tc(names[s]) + (mine === s ? ' pick' : ''));
-      c.querySelector('[data-mini-n]').textContent = counts[s];
-      var avs = c.querySelector('[data-mini-avs]'); avs.innerHTML = '';
-      (pickers ? pickers[s] : []).slice(0, ${MINI_FACES}).forEach(function (p) { avs.appendChild(faceEl(p, 22, false)); });
+      c.querySelector('[data-tile-n]').textContent = counts[s];
+      var avs = c.querySelector('[data-tile-avs]'); avs.innerHTML = '';
+      (pickers ? pickers[s] : []).slice(0, ${TILE_FACES}).forEach(function (p) { avs.appendChild(faceEl(p, 22)); });
     });
     box.classList.toggle('has-pick', !!mine);
+    box.dataset.mine = mine || '';
     var note = box.querySelector('[data-pick-note]');
     if (note && player) {
       note.innerHTML = '';
@@ -269,41 +199,18 @@ export function pickBoxScript() {
     var who = box.querySelector('.pkt-note__who');
     if (!who && pickers && t && note) { who = el('button', 'pkt-note__who', 'Who picked →'); who.type = 'button'; note.parentNode.appendChild(who); }
     if (who) { who.dataset.facesSide = mine || 'a'; who.hidden = !t; }
-    var card = box.closest('.pkb-card'); if (card && player) card.classList.toggle('is-needs', !mine);
-  }
-  function render(box, counts, mine, pickers) {
-    var names = JSON.parse(box.dataset.names);
-    var t = counts.a + counts.b, pa = t ? Math.round(counts.a / t * 100) : 50;
-    var compact = !!box.dataset.compact;
-    if (compact) renderMini(box, counts, mine, pickers);
-    else {
-    var a = box.querySelector('[data-seg="a"]'), b = box.querySelector('[data-seg="b"]');
-    a.style.width = pa + '%'; b.style.width = (100 - pa) + '%';
-    a.querySelector('b').textContent = pa + '%'; b.querySelector('b').textContent = (100 - pa) + '%';
-    a.classList.toggle('is-mine', mine === 'a'); b.classList.toggle('is-mine', mine === 'b');
-    a.classList.toggle('is-narrow', pa < ${NARROW}); b.classList.toggle('is-narrow', 100 - pa < ${NARROW});
-    }
-    var mn = box.querySelector('[data-mine-name]'); if (mn) mn.textContent = mine === 'b' ? names.b : names.a;
-    var btns = box.querySelector('.gm-pick__btns'); if (btns) btns.hidden = !!mine;
-    var res = box.querySelector('.gm-pick__result'); if (res) res.hidden = !mine;
-    var hint = box.querySelector('[data-pick-hint]');
-    if (hint) { hint.hidden = !!mine; hint.textContent = t ? t + (t === 1 ? ' player has' : ' players have') + ' picked · pick to see who' : 'Nobody has picked yet · be the first'; }
-    var n = box.querySelector('[data-pick-n]'); if (n) n.textContent = t;
     var fav = box.dataset.fav, fanFav = t && counts.a !== counts.b ? (counts.a > counts.b ? 'a' : 'b') : '';
     var flag = box.querySelector('[data-pick-flag]');
     if (flag) {
-      var on = !!(mine && fav && fanFav && fav !== fanFav);
+      var on = !!(fav && fanFav && fav !== fanFav);
       flag.hidden = !on;
       if (on) flag.querySelector('[data-flag-text]').textContent = 'fans lean ' + tc(names[fanFav]) + ', the odds like ' + tc(names[fav]);
     }
-    box.dataset.mine = mine || '';
-    if (!compact) renderFaces(box, mine ? pickers : null);
     var scope = box.closest('.gm-card, .pkb-card');
     if (scope) {
       var total = scope.querySelector('[data-pick-total]');
       if (total) total.textContent = t ? t + (t === 1 ? ' pick' : ' picks') : (scope.classList.contains('gm-card') ? 'Be the first to pick' : 'No picks yet');
-      var chip = scope.querySelector('[data-needs-chip]'); if (chip) chip.hidden = !!mine;
-      if (!compact) scope.classList.toggle('is-needs', !mine && !!chip);
+      if (player && scope.classList.contains('pkb-card')) scope.classList.toggle('is-needs', !mine);
     }
     document.dispatchEvent(new CustomEvent('wknd:pick', { detail: { gameId: box.dataset.gameId, side: mine || null } }));
   }
@@ -328,12 +235,9 @@ export function pickBoxScript() {
     var faces = e.target.closest('[data-faces-side]');
     if (faces) { openList(box, faces.dataset.facesSide); return; }
     if (box.classList.contains('is-closed') || box.classList.contains('is-busy')) return;
-    var btn = e.target.closest('.gm-pick__btn');
-    if (btn) { send(box, btn.dataset.side); return; }
-    if (e.target.closest('.gm-pick__change')) { send(box, null); return; }
-    // Compact row: your side cancels, the other side switches.
-    var mp = e.target.closest('[data-mini-pick]');
-    if (mp) send(box, box.dataset.mine === mp.dataset.miniPick ? null : mp.dataset.miniPick);
+    // Your side cancels, the other side picks / switches.
+    var tile = e.target.closest('[data-tile]');
+    if (tile) send(box, box.dataset.mine === tile.dataset.tile ? null : tile.dataset.tile);
   });
   // "You've picked N of M" counters (/picks, profile).
   document.addEventListener('wknd:pick', function () {

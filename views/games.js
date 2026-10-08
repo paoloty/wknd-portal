@@ -1,7 +1,7 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt, initials } from './utils.js';
 import { summaryPanel } from './home.js';
-import { pickBox, pickBoxScript, previewHref } from './pick-box.js';
+import { pickBox, pickBoxScript, previewHref, oddsEdge } from './pick-box.js';
 
 // Comment/react/share for this row — same actions as the game page's tabActionsBar, just
 // reachable from the list. The row itself is a "stretched link" card (see .game-row__link
@@ -337,7 +337,9 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
   const total = counts.a + counts.b;
   const { closed = false, odds = null } = pickState || {};
   const pick = state === 'final' || state === 'later' ? '' : pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers }, {
-    isPlayer, next, oddsHtml: odds ? oddsLine(m, odds) : '',
+    // The preview keeps the full odds panel + the Fans vs odds line; the /games card shows the
+    // odds as an edge along its photo banner instead.
+    isPlayer, next, oddsHtml: !semi && odds ? oddsLine(m, odds) : '', flag: !semi,
   });
   const pickSec = state === 'final'
     ? (odds ? `<div class="gm-grp">Pre-game odds</div>${oddsLine(m, odds)}` : '')
@@ -345,6 +347,13 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
       ? '<div class="gm-grp">Who wins?</div><p class="gm-later">Picks open closer to game day.</p>'
       : pickState ? `<div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${closed ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
       ${pick}` : '';
+  // /games card: each side's chance next to its record, matching the odds edge on the banner.
+  const showEdge = semi && state !== 'final' && state !== 'later' && !!odds;
+  const heroPct = (side, before = false) => {
+    if (!showEdge) return '';
+    const v = `<span class="pkb-pct${odds.fav === side ? ' is-fav' : ''}">${side === 'a' ? odds.pctA : odds.pctB}%</span>`;
+    return before ? `${v} · ` : ` · ${v}`;
+  };
   const chip = state === 'final' ? 'Pre-game preview' : state === 'later' ? 'Coming up' : 'Up next';
 
   // Biggest edges first (gap relative to the larger value), the rest behind a toggle.
@@ -400,14 +409,15 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
       <div class="gm-slides" data-slides>${slides}</div>
       <div class="gm-shade"></div>
       <div class="gm-glare" style="background:${glare}"></div>
+      ${showEdge ? oddsEdge(m.a, m.b, odds) : ''}
       <div class="gm-hero__in">
         <div class="gm-hero__chips"><span class="hero-chip hero-chip--season">${chip}</span><span class="hero-chip">${escHtml(dayLabel(m.ymd))}</span></div>
         <div class="gm-hero__teams">
-          <span class="gm-side"><span class="gm-side__name">${dot(m.a, 11)}<b>${escHtml(m.a)}</b></span><span class="gm-side__rec">S${escHtml(String(m.season))} ${m.recordA.w}–${m.recordA.l}</span></span>
+          <span class="gm-side"><span class="gm-side__name">${dot(m.a, 11)}<b>${escHtml(m.a)}</b></span><span class="gm-side__rec">S${escHtml(String(m.season))} ${m.recordA.w}–${m.recordA.l}${heroPct('a')}</span></span>
           <span class="gm-h2h">${m.firstMeeting
             ? '<span class="gm-h2h__lbl">First meeting</span>'
             : `<span class="gm-h2h__lbl">Head to head</span><span class="gm-h2h__wins"><b class="font-condensed${leadA ? ' is-lead' : ''}">${m.winsA}</b><span class="font-condensed">–</span><b class="font-condensed${leadB ? ' is-lead' : ''}">${m.winsB}</b></span>`}</span>
-          <span class="gm-side gm-side--b"><span class="gm-side__name"><b>${escHtml(m.b)}</b>${dot(m.b, 11)}</span><span class="gm-side__rec">S${escHtml(String(m.season))} ${m.recordB.w}–${m.recordB.l}</span></span>
+          <span class="gm-side gm-side--b"><span class="gm-side__name"><b>${escHtml(m.b)}</b>${dot(m.b, 11)}</span><span class="gm-side__rec">${heroPct('b', true)}S${escHtml(String(m.season))} ${m.recordB.w}–${m.recordB.l}</span></span>
         </div>
       </div>
     </div>
