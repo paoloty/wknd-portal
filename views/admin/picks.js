@@ -84,14 +84,36 @@ function upNextCard(u) {
   </div>`;
 }
 
+// Who-to-remind checklist: every reachable player starts ticked; untick to leave someone
+// out, or "None" then tick a few to remind just them. Unreachable players are listed but
+// can't be ticked. The boxes belong to the reminder form via form="picks-remind".
+function remindChecklist(people) {
+  const tag = { email: '', bell: '<span class="text-slate-500">bell only</span>', skip: '<span class="text-slate-600">can\'t reach</span>' };
+  return `<details class="mt-2" data-remind-pick>
+      <summary class="cursor-pointer text-amber-400 font-semibold select-none">Choose players · <span data-sel-count></span></summary>
+      <div class="flex gap-3 mt-2 mb-1.5">
+        <button type="button" class="text-amber-400 font-semibold" data-sel="all">All</button>
+        <button type="button" class="text-amber-400 font-semibold" data-sel="none">None</button>
+        <button type="button" class="text-amber-400 font-semibold" data-sel="email">Only emailable</button>
+      </div>
+      <div class="grid gap-x-4 gap-y-1" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
+        ${people.map(p => `<label class="flex items-center gap-1.5 min-w-0${p.reach === 'skip' ? ' opacity-50' : ''}" title="${escHtml(p.note)}">
+          <input type="checkbox" form="picks-remind" name="ids" value="${escHtml(p.id)}" data-reach="${p.reach}"${p.reach === 'skip' ? ' disabled' : ' checked'}>
+          <span class="truncate text-slate-300">${escHtml(p.name)}</span> ${tag[p.reach]}
+        </label>`).join('')}
+      </div>
+    </details>`;
+}
+
 function missingBar(m) {
   if (!m) return '';
   if (!m.list.length) return `<div class="px-4 py-3 border-t border-admin-border text-xs text-emerald-400">Every player with an account has picked. 🎯</div>`;
   const shown = m.list.slice(0, 12);
   return `<div class="px-4 py-3 border-t border-admin-border flex flex-wrap items-center justify-between gap-3">
-    <div class="text-xs text-slate-400 min-w-0">
+    <div class="text-xs text-slate-400 min-w-0 flex-1">
       <b class="text-slate-200">${m.list.length} of ${m.accounts} players with an account haven't picked ${m.games > 1 ? 'every game' : 'yet'}</b>
       <span class="block mt-1">${shown.map(p => escHtml(p.name)).join(', ')}${m.list.length > shown.length ? ` <span class="text-slate-500">+${m.list.length - shown.length} more</span>` : ''}</span>
+      ${remindChecklist(m.people || [])}
       ${m.noValidEmail ? `<span class="block mt-1 text-slate-500">${m.noValidEmail} skipped, no valid email on their account</span>` : ''}
       ${m.dormant ? `<span class="block mt-1 text-slate-500">${m.dormant} skipped, account inactive (no login in 3+ months or setup link expired)</span>` : ''}
       ${m.remindedAt ? `<span class="block mt-1 text-amber-400">Reminder sent ${escHtml(when(m.remindedAt))} to ${m.remindedCount} player${m.remindedCount === 1 ? '' : 's'}</span>` : ''}
@@ -100,11 +122,11 @@ function missingBar(m) {
     <div class="flex flex-wrap items-center gap-2 shrink-0">
       <button type="button" class="admin-btn admin-btn--sm" data-copy-names="${escHtml(m.list.map(p => p.name).join(', '))}">Copy names</button>
       <a href="/admin/picks/email/preview" class="admin-btn admin-btn--sm" title="See the AI-written email, rewrite it, or send yourself a test">Preview email</a>
-      <form method="post" action="/admin/picks/remind" class="inline-flex items-center gap-2">
+      <form method="post" action="/admin/picks/remind" id="picks-remind" class="inline-flex items-center gap-2" data-reminded="${m.remindedAt ? 1 : ''}">
         <label class="inline-flex items-center gap-1.5 text-xs text-slate-300" title="Players who unsubscribed, reported spam or share an inbox get the bell only">
-          <input type="checkbox" name="email" value="1"${m.emailable ? ' checked' : ' disabled'}> Also email ${m.emailable} of them
+          <input type="checkbox" name="email" value="1"${m.emailable ? ' checked' : ' disabled'}> Also email <span data-email-count>${m.emailable}</span> of them
         </label>
-        <button type="submit" class="admin-btn admin-btn--sm admin-btn--success"${m.reachable ? '' : ' disabled'} data-confirm="${escHtml(`Send a reminder to ${m.reachable} player${m.reachable === 1 ? '' : 's'}? Ticked "also email": ${m.emailable} get the email too.${m.remindedAt ? ' You already sent one for this game day.' : ''}`)}">${m.remindedAt ? 'Remind again' : 'Send reminder'}</button>
+        <button type="submit" class="admin-btn admin-btn--sm admin-btn--success"${m.reachable ? '' : ' disabled'} data-remind-submit>${m.remindedAt ? 'Remind again' : 'Send reminder'}</button>
       </form>
     </div>
   </div>`;
@@ -205,6 +227,40 @@ ${pickersTable(pickers, minPicks)}
   document.querySelectorAll('[data-show-more]').forEach(function (b) { b.addEventListener('click', function () { b.previousElementSibling.querySelectorAll('[data-more-row]').forEach(function (r) { r.classList.remove('hidden'); }); b.remove(); }); });
   document.querySelectorAll('[data-copy-names]').forEach(function (b) { b.addEventListener('click', function () { navigator.clipboard.writeText(b.dataset.copyNames).then(function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy names'; }, 1500); }); }); });
   document.querySelectorAll('[data-confirm]').forEach(function (b) { b.addEventListener('click', function (e) { if (!confirm(b.dataset.confirm)) e.preventDefault(); }); });
+  // Reminder checklist: counts, the "also email" label and the confirm follow the ticks.
+  var remind = document.getElementById('picks-remind');
+  if (remind) {
+    var boxes = [].slice.call(document.querySelectorAll('input[name="ids"][form="picks-remind"]:not([disabled])'));
+    var submit = remind.querySelector('[data-remind-submit]');
+    var emailBox = remind.querySelector('input[name="email"]');
+    var tally = function () {
+      var on = boxes.filter(function (b) { return b.checked; });
+      return { n: on.length, e: on.filter(function (b) { return b.dataset.reach === 'email'; }).length };
+    };
+    var sync = function () {
+      var t = tally();
+      var sc = document.querySelector('[data-sel-count]');
+      if (sc) sc.textContent = t.n + ' of ' + boxes.length + ' selected';
+      remind.querySelector('[data-email-count]').textContent = t.e;
+      emailBox.disabled = !t.e;
+      submit.disabled = !t.n;
+    };
+    boxes.forEach(function (b) { b.addEventListener('change', sync); });
+    document.querySelectorAll('[data-sel]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        boxes.forEach(function (b) { b.checked = btn.dataset.sel === 'all' || (btn.dataset.sel === 'email' && b.dataset.reach === 'email'); });
+        sync();
+      });
+    });
+    remind.addEventListener('submit', function (e) {
+      var t = tally();
+      var msg = 'Send a reminder to ' + t.n + ' player' + (t.n === 1 ? '' : 's') + '?' +
+        (emailBox.checked && t.e ? ' ' + t.e + ' get the email too.' : ' Bell only, no email.') +
+        (remind.dataset.reminded ? ' You already sent one for this game day.' : '');
+      if (!confirm(msg)) e.preventDefault();
+    });
+    sync();
+  }
   function toggle(row) {
     var ex = document.querySelector('[data-expanded="' + row.dataset.expand + '"]');
     var open = ex.classList.toggle('hidden') === false;
