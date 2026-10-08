@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-REMOTE_HOST="root@wkndbasketball.com"
+REMOTE_HOST="root@hetzner"
 REMOTE_PATH="/opt/wknd-portal"
 PM2_NAME="wknd-portal"
 
