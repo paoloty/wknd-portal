@@ -62,8 +62,48 @@ export function oddsMini(o) {
     </div>`;
 }
 
+// Homepage cards: two team-coloured tiles that ARE the pick and never swap out — before and
+// after you pick the card keeps its exact height. Each tile: team name, the faces of who
+// picked that team, the count. Picked: your tile fills with its colour + ✓, the other dims;
+// tap yours to cancel, the other to switch. Faces are decoration (the tile is the tap
+// target); the full list opens from "Who picked" on the line below.
+const MINI_FACES = 3;
+const CHECK_SVG = '<svg class="pkt__check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+function pickTile(o, side, isPlayer) {
+  const name = side === 'a' ? o.a : o.b;
+  const mine = o.myPick === side;
+  const label = o.closed ? `${tcase(name)} · ${o.counts[side]} picked` : !isPlayer ? `Log in to pick ${tcase(name)}` : mine ? `Cancel your ${tcase(name)} pick` : `Pick ${tcase(name)}`;
+  return `<button type="button" class="pkt pkt--${side}${mine ? ' is-mine' : ''}${o.myPick && !mine ? ' is-other' : ''}" style="--c:${edgeColor(name)}"${String(name).toUpperCase() === 'WHITE' ? ' data-light' : ''} data-mini="${side}" data-mini-pick="${side}" aria-pressed="${mine}" aria-label="${escHtml(label)}"${o.closed ? ' disabled' : ''}>
+      <span class="pkt__name">${CHECK_SVG}${escHtml(name)}</span>
+      <span class="pkt__crowd"><span class="pkt__avs" data-mini-avs>${(o.pickers?.[side] || []).slice(0, MINI_FACES).map(p => face(p, 22)).join('')}</span><b class="pkt__n font-condensed" data-mini-n>${o.counts[side]}</b></span>
+    </button>`;
+}
+
+// The line under the tiles — what to do next, and the "Who picked" list when there are faces.
+function compactNote(o, isPlayer, next) {
+  const total = o.counts.a + o.counts.b;
+  const picked = `${total} picked so far`;
+  const text = o.closed
+    ? `Picks are closed${o.myPick ? ` · you picked <b>${escHtml(tcase(o.myPick === 'b' ? o.b : o.a))}</b>` : ` · ${picked}`}`
+    : !isPlayer ? `<a href="${escHtml(`/login?next=${encodeURIComponent(next)}`)}">Log in to pick</a> · ${total ? picked : 'be the first'}`
+    : o.myPick ? `You picked <b>${escHtml(tcase(o.myPick === 'b' ? o.b : o.a))}</b> · tap to cancel`
+    : total ? `Tap a team to pick · ${picked}` : 'Tap a team to pick · be the first';
+  const who = o.pickers && total ? `<button type="button" class="pkt-note__who" data-faces-side="${o.myPick || 'a'}">Who picked →</button>` : '';
+  return `<div class="pkt-note"><span data-pick-note>${text}</span>${who}</div>`;
+}
+
+function compactPickBox(o, { isPlayer, next }) {
+  const { counts, myPick, closed } = o;
+  const names = JSON.stringify({ a: o.a, b: o.b });
+  return `<div class="gm-pick gm-pick--compact${closed ? ' is-closed' : ''}${myPick ? ' has-pick' : ''}" data-compact="1" data-game-id="${escHtml(o.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}" data-next="${escHtml(next)}" data-fav="${o.odds?.fav || ''}" data-names="${escHtml(names)}"${o.pickers ? ` data-pickers="${escHtml(JSON.stringify(o.pickers))}"` : ''}>
+      <div class="pkt-row">${pickTile(o, 'a', isPlayer)}${pickTile(o, 'b', isPlayer)}</div>
+      ${compactNote(o, isPlayer, next)}
+    </div>`;
+}
+
 // The pick itself. opts.oddsHtml replaces the compact odds line (/games passes its own panel).
-export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = null } = {}) {
+export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = null, compact = false } = {}) {
+  if (compact) return compactPickBox(o, { isPlayer, next });
   const { counts, myPick, closed } = o;
   const total = counts.a + counts.b;
   const pctA = total ? Math.round((counts.a / total) * 100) : 50;
@@ -131,7 +171,7 @@ export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg'
     </div>
     <div class="pkb-body">
       ${middle ? `${middle}
-      ${pickBox(o, { isPlayer, next, oddsHtml: '' })}` : pickBox(o, { isPlayer, next })}
+      ${pickBox(o, { isPlayer, next, oddsHtml: '', compact: true })}` : pickBox(o, { isPlayer, next })}
       ${size === 'lg'
         ? `<div class="pkb-foot"><span data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'No picks yet'}</span><a href="${escHtml(o.href || previewHref(o))}">Full matchup preview →</a></div>`
         : more ? `<a href="${escHtml(o.href || previewHref(o))}" class="pkb-more">Full preview →</a>` : ''}
@@ -204,17 +244,48 @@ export function pickBoxScript() {
     });
     wrap.hidden = false;
   }
+  // Compact boxes (homepage): the tiles stay; only their state, faces, counts and the note change.
+  function renderMini(box, counts, mine, pickers) {
+    var names = JSON.parse(box.dataset.names), player = !!box.dataset.player;
+    if (pickers) box.dataset.pickers = JSON.stringify(pickers);
+    var t = counts.a + counts.b;
+    ['a', 'b'].forEach(function (s) {
+      var c = box.querySelector('[data-mini="' + s + '"]'); if (!c) return;
+      c.classList.toggle('is-mine', mine === s);
+      c.classList.toggle('is-other', !!mine && mine !== s);
+      c.setAttribute('aria-pressed', mine === s ? 'true' : 'false');
+      c.setAttribute('aria-label', (mine === s ? 'Cancel your ' : 'Pick ') + tc(names[s]) + (mine === s ? ' pick' : ''));
+      c.querySelector('[data-mini-n]').textContent = counts[s];
+      var avs = c.querySelector('[data-mini-avs]'); avs.innerHTML = '';
+      (pickers ? pickers[s] : []).slice(0, ${MINI_FACES}).forEach(function (p) { avs.appendChild(faceEl(p, 22, false)); });
+    });
+    box.classList.toggle('has-pick', !!mine);
+    var note = box.querySelector('[data-pick-note]');
+    if (note && player) {
+      note.innerHTML = '';
+      if (mine) { note.appendChild(document.createTextNode('You picked ')); note.appendChild(el('b', '', tc(names[mine]))); note.appendChild(document.createTextNode(' · tap to cancel')); }
+      else note.textContent = 'Tap a team to pick · ' + (t ? t + ' picked so far' : 'be the first');
+    }
+    var who = box.querySelector('.pkt-note__who');
+    if (!who && pickers && t && note) { who = el('button', 'pkt-note__who', 'Who picked →'); who.type = 'button'; note.parentNode.appendChild(who); }
+    if (who) { who.dataset.facesSide = mine || 'a'; who.hidden = !t; }
+    var card = box.closest('.pkb-card'); if (card && player) card.classList.toggle('is-needs', !mine);
+  }
   function render(box, counts, mine, pickers) {
     var names = JSON.parse(box.dataset.names);
     var t = counts.a + counts.b, pa = t ? Math.round(counts.a / t * 100) : 50;
+    var compact = !!box.dataset.compact;
+    if (compact) renderMini(box, counts, mine, pickers);
+    else {
     var a = box.querySelector('[data-seg="a"]'), b = box.querySelector('[data-seg="b"]');
     a.style.width = pa + '%'; b.style.width = (100 - pa) + '%';
     a.querySelector('b').textContent = pa + '%'; b.querySelector('b').textContent = (100 - pa) + '%';
     a.classList.toggle('is-mine', mine === 'a'); b.classList.toggle('is-mine', mine === 'b');
     a.classList.toggle('is-narrow', pa < ${NARROW}); b.classList.toggle('is-narrow', 100 - pa < ${NARROW});
+    }
     var mn = box.querySelector('[data-mine-name]'); if (mn) mn.textContent = mine === 'b' ? names.b : names.a;
     var btns = box.querySelector('.gm-pick__btns'); if (btns) btns.hidden = !!mine;
-    box.querySelector('.gm-pick__result').hidden = !mine;
+    var res = box.querySelector('.gm-pick__result'); if (res) res.hidden = !mine;
     var hint = box.querySelector('[data-pick-hint]');
     if (hint) { hint.hidden = !!mine; hint.textContent = t ? t + (t === 1 ? ' player has' : ' players have') + ' picked · pick to see who' : 'Nobody has picked yet · be the first'; }
     var n = box.querySelector('[data-pick-n]'); if (n) n.textContent = t;
@@ -226,13 +297,13 @@ export function pickBoxScript() {
       if (on) flag.querySelector('[data-flag-text]').textContent = 'fans lean ' + tc(names[fanFav]) + ', the odds like ' + tc(names[fav]);
     }
     box.dataset.mine = mine || '';
-    renderFaces(box, mine ? pickers : null);
+    if (!compact) renderFaces(box, mine ? pickers : null);
     var scope = box.closest('.gm-card, .pkb-card');
     if (scope) {
       var total = scope.querySelector('[data-pick-total]');
       if (total) total.textContent = t ? t + (t === 1 ? ' pick' : ' picks') : (scope.classList.contains('gm-card') ? 'Be the first to pick' : 'No picks yet');
       var chip = scope.querySelector('[data-needs-chip]'); if (chip) chip.hidden = !!mine;
-      scope.classList.toggle('is-needs', !mine && !!chip);
+      if (!compact) scope.classList.toggle('is-needs', !mine && !!chip);
     }
     document.dispatchEvent(new CustomEvent('wknd:pick', { detail: { gameId: box.dataset.gameId, side: mine || null } }));
   }
@@ -259,7 +330,10 @@ export function pickBoxScript() {
     if (box.classList.contains('is-closed') || box.classList.contains('is-busy')) return;
     var btn = e.target.closest('.gm-pick__btn');
     if (btn) { send(box, btn.dataset.side); return; }
-    if (e.target.closest('.gm-pick__change')) send(box, null);
+    if (e.target.closest('.gm-pick__change')) { send(box, null); return; }
+    // Compact row: your side cancels, the other side switches.
+    var mp = e.target.closest('[data-mini-pick]');
+    if (mp) send(box, box.dataset.mine === mp.dataset.miniPick ? null : mp.dataset.miniPick);
   });
   // "You've picked N of M" counters (/picks, profile).
   document.addEventListener('wknd:pick', function () {

@@ -600,7 +600,7 @@ function gamesPageScript() {
 
 export function gamesPage({
   games, season, seasons = [], currentSeason, seasonPlayedCount = 0, summary = null, isAdmin = false, isPlayer = false,
-  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {}, picks = null, previewHrefs = {},
+  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {}, picks = null, previewHrefs = {}, recapDay = null,
   commentsEnabled = false, socialByGame = {}, topScorerByGame = {}, oddsByGame = {},
 }) {
   const seasonLinks = [...seasons.map(s => ({ v: s, label: `Season ${s}` })), { v: 'all', label: 'All seasons' }]
@@ -612,9 +612,20 @@ export function gamesPage({
       <span class="gr-tile__sub">${escHtml(t.sub)}</span>
     </a>`).join('')}</div>` : '';
 
-  const matchupsHtml = matchups.length ? `<div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
+  // Ordered by time: what's next on top, then the last game day's recap (storyline + POTG),
+  // then the season — each block under its own header so they don't run together.
+  const matchupsHtml = matchups.length ? `<section class="gr-sec" aria-labelledby="gr-next-h">
+  <div class="section-header"><h2 id="gr-next-h">Up next <span class="section-header__sub">${escHtml(dayLabel(matchups[0].ymd))}</span></h2><a href="/picks" class="section-header__link">Picks &amp; race →</a></div>
+  <div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
     ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null, pickers: picks?.pickers?.[m.game.id] || null, variant: 'semi', state: picks?.states?.[m.game.id]?.closed ? 'closed' : 'open', href: previewHrefs[m.game.id] || '/picks' })).join('')}
-  </div>` : '';
+  </div>
+</section>` : '';
+
+  const recapInner = `${summaryPanel(summary, 'headlines', isAdmin)}${potgMarquee(potg)}`;
+  const recapHtml = recapInner.trim() ? `<section class="gr-sec gr-recap" aria-labelledby="gr-recap-h">
+  <div class="section-header"><h2 id="gr-recap-h">Recap${recapDay ? ` <span class="section-header__sub">${escHtml(dayLabel(recapDay))}</span>` : ''}</h2></div>
+  ${recapInner}
+</section>` : '';
 
   const teams = ['WHITE', 'BLACK', 'BLUE', 'MAROON'].filter(t => games.some(g => g.team_a_name === t || g.team_b_name === t));
   const hasPost = games.some(g => g.game_type && g.game_type !== 'regular');
@@ -639,9 +650,8 @@ export function gamesPage({
 
   return `<div class="page-content gr-page">
 ${pageHeader({ title: 'Games', description: 'Every result — box scores, recaps and Player of the Game spotlights.', actions: seasons.length ? `<nav class="gr-segs" aria-label="Season">${seasonLinks}</nav>` : '' })}
-${summaryPanel(summary, 'headlines', isAdmin)}
-${potgMarquee(potg)}
 ${matchupsHtml}
+${recapHtml}
 ${tilesHtml}
 <section class="gr-results" aria-labelledby="gr-results-h">
   <div class="section-header"><h2 id="gr-results-h">${season === 'all' ? 'All results' : `Season ${escHtml(season)} results`} <span class="section-header__sub" data-games-count>${games.length} ${games.length === 1 ? 'game' : 'games'}</span></h2></div>

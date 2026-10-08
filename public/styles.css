@@ -7727,6 +7727,10 @@ a.stp-tl__cell:hover { background-color: rgba(255,255,255,.08); }
 .gr-page { min-width: 0; }
 .gr-page > * { min-width: 0; max-width: 100%; }
 .gr-page > .hs-summary { margin-bottom: 22px; }
+.gr-sec { margin-bottom: 34px; }
+.gr-sec .gm-grid { margin-bottom: 0; }
+.gr-recap .hs-summary { margin-bottom: 16px; }
+.gr-recap .gm-mq { margin-bottom: 0; }
 /* Season switcher in the page header */
 .gr-segs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
 .gr-seg { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
@@ -8258,7 +8262,7 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .pk-av.pk-av--me { box-shadow: 0 0 0 2px var(--pkb-bg, var(--surface)), 0 0 0 3.5px var(--amber) !important; }
 .pk-av--me .pk-av__init { color: var(--amber); }
 
-.pkb-dlg { width: min(560px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 64px)); padding: 0; border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.1); background: var(--surface); color: var(--text); box-shadow: 0 24px 70px rgba(0,0,0,0.55); }
+.pkb-dlg { width: min(560px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 64px)); margin: auto; padding: 0; border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.1); background: var(--surface); color: var(--text); box-shadow: 0 24px 70px rgba(0,0,0,0.55); }
 .pkb-dlg::backdrop { background: rgba(4,6,10,0.7); backdrop-filter: blur(2px); }
 .pkb-dlg__head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 14px; }
 .pkb-dlg__x { width: 36px; height: 36px; border-radius: 10px; font-size: 22px; line-height: 1; color: var(--text-muted); }
@@ -8519,7 +8523,6 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
   .pkf-p__ppg { flex-direction: column; gap: 2px; }
   .pkf-p--b .pkf-p__ppg { flex-direction: column; align-items: flex-end; }
   .pkf-vs { width: 28px; height: 28px; font-size: 12px; }
-  .pkf-duel__row { gap: 6px; }
   .pkf-race__go { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -8539,7 +8542,70 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
   .pkf-p__ppg { grid-area: ppg; flex-direction: column; gap: 2px; }
   .pkf-p--b .pkf-p__ppg { flex-direction: column; align-items: flex-end; }
   .pkf-chart, .pkf-chart--b { grid-area: chart; align-self: center; }
-  /* wider seam so the VS badge sits in the gap and clears the charts at the inner edges */
-  .pkf-duel__row { gap: 22px; }
+  /* same 8px seam as the pick buttons; the charts keep clear of the VS badge on that seam */
+  .pkf-p--a .pkf-chart { margin-right: 12px; }
+  .pkf-p--b .pkf-chart { margin-left: 12px; }
   .pkf-bars .pkf-col:nth-last-of-type(n+5), .pkf-dates small:nth-last-of-type(n+5) { display: none; }
+}
+
+/* Homepage pick tiles (compactPickBox in views/pick-box.js) — two team-coloured tiles that are
+   the pick in every state, so the card never changes height. --c = team colour (Black → slate).
+   Team colours here are Paolo's call, like the scorer bars. */
+.gm-pick--compact { gap: 10px; }
+.pkt-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pkt { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; height: 48px; padding: 0 12px 0 14px; border-radius: 12px; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--c) 38%, transparent);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--c) 24%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 7%, var(--surface-2)) 70%);
+  color: var(--text); cursor: pointer; transition: border-color 0.2s, background 0.25s, box-shadow 0.25s, opacity 0.25s, transform 0.12s; }
+/* the glare: a soft highlight across the top of the tile */
+.pkt::before { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0.09), transparent 55%); pointer-events: none; }
+.pkt--b { flex-direction: row-reverse; padding: 0 14px 0 12px;
+  background: linear-gradient(240deg, color-mix(in srgb, var(--c) 24%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 7%, var(--surface-2)) 70%); }
+.pkt:hover:not(:disabled) { border-color: color-mix(in srgb, var(--c) 75%, transparent); box-shadow: 0 0 18px color-mix(in srgb, var(--c) 22%, transparent); }
+.pkt:active:not(:disabled) { transform: scale(0.98); }
+.pkt:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.pkt:disabled { cursor: default; }
+.pkt__name { position: relative; display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 13.5px; font-weight: 900; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkt--b .pkt__name { flex-direction: row-reverse; }
+.pkt__check { display: none; flex-shrink: 0; }
+.pkt__crowd { position: relative; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pkt--b .pkt__crowd { flex-direction: row-reverse; }
+.pkt__avs { display: flex; }
+.pkt--b .pkt__avs { flex-direction: row-reverse; }
+.pkt__avs .pk-av { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 16%, var(--surface-2)); }
+.pkt__avs .pk-av + .pk-av { margin-left: -7px; }
+.pkt--b .pkt__avs .pk-av + .pk-av { margin-left: 0; margin-right: -7px; }
+.pkt__n { min-width: 14px; font-size: 19px; font-weight: 800; line-height: 1; text-align: center; color: color-mix(in srgb, var(--c) 35%, #fff); }
+
+/* Your pick: full team colour, glow, ✓. The other side steps back. */
+.pkt.is-mine { border-color: color-mix(in srgb, var(--c) 90%, #fff);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--c) 58%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 30%, var(--surface-2)) 80%);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--c) 38%, transparent), inset 0 1px 0 rgba(255,255,255,0.18); }
+.pkt--b.is-mine { background: linear-gradient(240deg, color-mix(in srgb, var(--c) 58%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 30%, var(--surface-2)) 80%); }
+.pkt.is-mine .pkt__check { display: block; }
+.pkt.is-mine .pkt__n { color: #fff; }
+.pkt.is-mine .pkt__avs .pk-av { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 50%, var(--surface-2)); }
+/* White picked is a light tile — dark text keeps it readable */
+.pkt[data-light].is-mine { color: #0a0e16; }
+.pkt[data-light].is-mine .pkt__n { color: #0a0e16; }
+.pkt[data-light].is-mine::before { background: linear-gradient(to bottom, rgba(255,255,255,0.25), transparent 60%); }
+.pkt.is-other { opacity: 0.5; }
+.pkt.is-other:hover { opacity: 0.85; }
+
+.pkt-note { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-height: 16px; font-size: 12px; color: var(--text-muted); }
+.pkt-note > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkt-note b { color: var(--text); }
+.pkt-note a { color: var(--amber); font-weight: 700; }
+.pkt-note a:hover { text-decoration: underline; }
+.pkt-note__who { flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--amber); }
+.pkt-note__who:hover { text-decoration: underline; }
+.pkt-note__who[hidden] { display: none; }
+.pkt-note__who:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 420px) {
+  .pkt { padding: 0 10px; gap: 6px; }
+  .pkt__name { font-size: 12px; }
+  .pkt__avs .pk-av:nth-child(n+3) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pkt { transition: none; }
 }

@@ -9497,7 +9497,12 @@ function homePicksWidget(games, viewerId) {
   const open = openPicks(games, pctx, viewerId);
   if (open.length) {
     const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-    for (const o of open) o.face = homeFaceoff(games.find(g => g.id === o.id), games, playerMap);
+    for (const o of open) {
+      o.face = homeFaceoff(games.find(g => g.id === o.id), games, playerMap);
+      // Homepage tiles show who's picked each team even before you pick (Paolo, 2026-10-08) —
+      // logged-in players only; guests never get names or faces.
+      if (viewerId && !o.pickers) o.pickers = pickFaces(o.id, viewerId);
+    }
     return { ...base, mode: 'open', ymd: open[0].ymd, closeTime: picksCloseTime(), games: open };
   }
   if (lastDay && lastDay >= addDaysYmd(today, -6)) return results();
@@ -9588,6 +9593,7 @@ app.get('/games', (req, res) => {
       games: listGames, season, seasons, currentSeason, seasonPlayedCount: seasonPlayed.length,
       summary, isAdmin: !!req.session?.isAdmin, isPlayer: !!req.session?.playerPlayerId,
       tiles, potg, matchups, stories, pickCounts, myPicks, picks, previewHrefs,
+      recapDay: ctx.played.length ? gameYmd(ctx.played[0].date) : null,
       commentsEnabled, socialByGame, topScorerByGame, oddsByGame,
     }),
   }));
@@ -9603,7 +9609,9 @@ app.post('/games/:id/pick', express.json(), (req, res) => {
   if (upcomingPickState(game, buildPicksContext([game])).closed) return res.status(400).json({ error: 'Picks are closed for this game.' });
   const side = req.body?.side === 'a' || req.body?.side === 'b' ? req.body.side : null;
   setGamePick(game.id, playerId, side);
-  res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id], pickers: side ? pickFaces(game.id, playerId) : null });
+  // Faces come back after a cancel too: the homepage tiles keep showing them. The full pick
+  // box still only draws them once you've picked (pickBoxScript checks).
+  res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id], pickers: pickFaces(game.id, playerId) });
 });
 
 // ── /picks: full Pickmaster race, game-day history, upsets, per-player pick history ─────
