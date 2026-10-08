@@ -13,7 +13,8 @@ import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import CleanCSS from 'clean-css';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
+import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, picksReminderEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
+import { PICKS_PRIZE_LINE, picksUnsubscribeUrl, verifyPicksUnsubscribe, picksEmailFacts, writePicksEmail } from './lib/picks-email.js';
 import {
   birthdaysAround, runBirthdayAutomation, autoSendState, birthdayFacts, defaultBirthdayMessage, writeBirthdayMessage,
   buildBirthdayEmail, sendBirthdayEmail, logBirthdayEventFor,
@@ -155,7 +156,7 @@ import {
   getAllPeerRatings, getPeerRatingSeasons,
   db as portalDb,
   getBirthdayEmail, saveBirthdayDraft, getBirthdayEmailsForYears, getSentBirthdayEmails, getBirthdayLog,
-  papawisProbationHold, getPapawisSlotAlerts, cancelPapawisAnnounce, setPapawisEmailOptout,
+  papawisProbationHold, getPapawisSlotAlerts, cancelPapawisAnnounce, setPapawisEmailOptout, setPicksEmailOptout,
   getEmailsForAddress, getLatestEmailsByRef, getLatestEmailForRef,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
@@ -7923,6 +7924,9 @@ app.get('/admin/picks', requireAuth, (req, res) => {
   if (missing && upDay) {
     const sent = JSON.parse(getSetting(`picks_reminded_${upDay}`, 'null') || 'null');
     if (sent) { missing.remindedAt = sent.at; missing.remindedCount = sent.count; }
+    // Reminder email: who'd get one, and the last send's tally for this game day.
+    missing.emailable = picksEmailRecipients(missing.list).length;
+    try { missing.emailed = JSON.parse(getSetting(`picks_emailed_${upDay}`, 'null') || 'null'); } catch {}
   }
 
   const seasonGameIds = new Set(pctx.all.filter(g => g.season === season).map(g => g.id));
@@ -7967,7 +7971,11 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     body: adminPicksBody({
       season, seasons, isCurrent, upNext, upDay, missing, results, pickers,
       minPicks: sp.board.minPicks, oddsOn: pickOddsEnabled(), picksOn: picksEnabled(),
-      msg: req.query.reminded ? `Reminder sent to ${req.query.reminded} player${req.query.reminded === '1' ? '' : 's'}.` : '',
+      msg: req.query.reminded
+        ? `Reminder sent to ${req.query.reminded} player${req.query.reminded === '1' ? '' : 's'}.${req.query.emailing ? ` Emailing ${req.query.emailing} of them now; refresh in a minute for the tally.` : ''}`
+        : req.query.tested ? `Test email sent to ${ADMIN_TEST_EMAIL}.`
+        : req.query.test_error ? `Test email failed: ${req.query.test_error}`
+        : '',
       kpi: {
         picks: seasonPickRows.length, pickers: byPlayer.size, accounts: getPlayersWithAccounts().length,
         callers: sp.callers, oddsOn: pickOddsEnabled(), minPicks: sp.board.minPicks,
@@ -8001,7 +8009,177 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
     });
   }
   setSetting(`picks_reminded_${open[0].ymd}`, JSON.stringify({ at: Date.now(), count: missing.list.length }));
-  res.redirect(`/admin/picks?reminded=${missing.list.length}`);
+  // "Also email them": same players, minus anyone without an approved account email or who
+  // unsubscribed from pick emails (they still got the bell above). Sent in the background —
+  // the page shows the tally from picks_emailed_<day> once it's done.
+  const recipients = req.body?.email === '1' ? picksEmailRecipients(missing.list) : [];
+  if (recipients.length) setImmediate(() => sendPicksEmails(recipients).catch(e => console.error('[picks email] send failed:', e.message)));
+  res.redirect(`/admin/picks?reminded=${missing.list.length}${recipients.length ? `&emailing=${IS_DEV ? 1 : recipients.length}` : ''}`);
+});
+
+// ── "Who wins?" reminder email (copy: lib/picks-email.js, template: lib/mailer.js) ──────
+// Everything the email needs for the next game day's open games, or null when none are open.
+function picksEmailContext() {
+  const games = byDate(getAllGames());
+  const pctx = buildPicksContext(games);
+  const open = adminUpNext(games, pctx).filter(u => !u.closed);
+  if (!open.length) return null;
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const ctx = buildGamesContext(games, playerMap);
+  const emailGames = open.map(u => ({
+    id: u.id, a: u.a, b: u.b, odds: u.hideOdds ? null : u.odds,
+    story: matchupStoryFacts(buildMatchup(games.find(g => g.id === u.id), ctx)),
+  }));
+  return {
+    pctx, open, emailGames, playerMap, ymd: open[0].ymd,
+    dayLabel: new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+    closeLabel: fmtCloseTime(picksCloseTime()),
+    sp: seasonPicks(pctx, getPortalCurrentSeason()),
+  };
+}
+
+// One AI draft per game day, reused for every recipient (and for the preview, so what the
+// admin reads is what goes out). Rewritten when the facts behind it change, or on request.
+async function ensurePicksDraft(c, { rewrite = false } = {}) {
+  const input = { games: c.emailGames, dayLabel: c.dayLabel, closeLabel: c.closeLabel };
+  const { key } = picksEmailFacts(input);
+  if (!rewrite) {
+    try {
+      const stored = JSON.parse(getSetting(`picks_email_draft_${c.ymd}`, '') || 'null');
+      if (stored && stored.key === key) return stored;
+    } catch {}
+  }
+  const draft = { ...(await writePicksEmail(input, factCheckHomeSummary)), key, at: Date.now() };
+  setSetting(`picks_email_draft_${c.ymd}`, JSON.stringify(draft));
+  return draft;
+}
+
+// The email for one player: their own pick status per game, their record, the race.
+function picksEmailFor(c, draft, playerId, regId = '') {
+  const mine = new Map(c.pctx.picks.filter(p => p.player_id === playerId).map(p => [p.game_id, p.side]));
+  const games = c.open.map(u => ({
+    id: u.id, a: titleCase(u.a), b: titleCase(u.b), colA: teamColor(u.a), colB: teamColor(u.b),
+    odds: !u.hideOdds && u.odds?.fav ? { name: titleCase(u.odds.fav === 'a' ? u.a : u.b), pct: u.odds.fav === 'a' ? u.odds.pctA : u.odds.pctB } : null,
+    myPick: mine.has(u.id) ? titleCase(mine.get(u.id) === 'a' ? u.a : u.b) : null,
+  }));
+  const { board: { rows, minPicks }, records } = c.sp;
+  const r = records[playerId];
+  const rank = rows.find(x => x.playerId === playerId)?.rank;
+  const need = r ? Math.max(0, minPicks - r.picks) : minPicks;
+  const me = !r ? `You haven't had a pick settled yet. ${minPicks} settled picks get you on the board.`
+    : rank ? `You're #${rank} of ${rows.length} at ${r.correct} of ${r.picks}${r.streak >= 2 ? `, ${r.streak} in a row` : ''}.`
+    : `You're ${r.correct} of ${r.picks}. ${need} more settled pick${need === 1 ? '' : 's'} to get ranked.`;
+  return picksReminderEmail({
+    name: c.playerMap[playerId]?.name || '', copy: draft, games, dayLabel: c.dayLabel, closeLabel: c.closeLabel,
+    board: rows.slice(0, 5).map(x => ({ rank: x.rank, name: displayPlayerName(c.playerMap[x.playerId]?.name || ''), record: `${x.correct}–${x.picks - x.correct}` })),
+    me, prizeLine: PICKS_PRIZE_LINE,
+    url: `${(process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '')}/picks`,
+    unsubscribeUrl: regId ? picksUnsubscribeUrl(regId) : '',
+  });
+}
+
+// Who can get the email out of a list of players: approved account, an email on file, and
+// not unsubscribed from pick emails.
+function picksEmailRecipients(players) {
+  return players.map(p => {
+    const reg = getRegistrationByPlayerId(p.id);
+    return reg && reg.status === 'approved' && String(reg.email || '').trim() && !reg.picks_email_optout ? { playerId: p.id, reg } : null;
+  }).filter(Boolean);
+}
+
+async function sendPicksEmails(recipients) {
+  const c = picksEmailContext();
+  if (!c) return;
+  const draft = await ensurePicksDraft(c);
+  // Outside production every email is redirected to the admin inbox (lib/mailer.js), so a
+  // full send would land dozens of copies there — one is enough to see it.
+  const list = IS_DEV ? recipients.slice(0, 1) : recipients;
+  let sent = 0, failed = 0, first = true;
+  for (const { playerId, reg } of list) {
+    // Stay under Resend's rate limit (about 2 requests a second).
+    if (!first) await new Promise(r => setTimeout(r, 600));
+    first = false;
+    const unsub = picksUnsubscribeUrl(reg.id);
+    try {
+      const ok = await sendMail({
+        to: String(reg.email).trim(), ...picksEmailFor(c, draft, playerId, reg.id), ref: reg.id,
+        headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+      });
+      if (ok) sent++;
+    } catch (e) {
+      failed++;
+      console.error(`[picks email] ${reg.email}: ${e.message}`);
+    }
+  }
+  setSetting(`picks_emailed_${c.ymd}`, JSON.stringify({ at: Date.now(), sent, failed, of: list.length, source: draft.source }));
+}
+
+// Preview exactly what a player would get (the first player still missing picks, else any
+// account), with the draft's source on top. Writes the draft on first view.
+app.get('/admin/picks/email/preview', requireAuth, async (req, res) => {
+  const c = picksEmailContext();
+  if (!c) return res.send(renderAdminPage(req, { title: 'Pick email', currentPath: '/admin/picks', body: '<p class="text-sm text-slate-400 p-6">No open games on the next game day, so there\'s no reminder to preview.</p>' }));
+  const draft = await ensurePicksDraft(c);
+  const sample = picksMissing(c.open, c.pctx)?.list[0] || getPlayersWithAccounts()[0];
+  const email = picksEmailFor(c, draft, sample?.id || '', '');
+  res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pick email preview</title></head>
+<body style="margin:0;background:#0b0f17;font-family:Arial,sans-serif">
+  <div style="max-width:520px;margin:0 auto;padding:16px 0 12px;color:#94a3b8;font-size:13px;line-height:1.5">
+    <a href="/admin/picks" style="color:#94a3b8">← Back to picks</a>
+    <div style="margin-top:8px"><b style="color:#e2e8f0">Subject:</b> ${escHtml(email.subject)}</div>
+    <div>Preview for <b style="color:#e2e8f0">${escHtml(displayPlayerName(c.playerMap[sample?.id]?.name || ''))}</b> · copy: <b style="color:${draft.source === 'ai' ? '#22c55e' : '#f59332'}">${draft.source === 'ai' ? 'AI, passed all checks' : 'template (AI not used)'}</b>${draft.note ? ` · ${escHtml(draft.note)}` : ''}</div>
+    <form method="post" action="/admin/picks/email/rewrite" style="display:inline-block;margin-top:8px"><button style="padding:6px 12px;border-radius:6px;border:1px solid #334155;background:#0d1424;color:#e2e8f0;cursor:pointer">↺ Rewrite with AI</button></form>
+    <form method="post" action="/admin/picks/email/test" style="display:inline-block;margin:8px 0 0 6px"><button style="padding:6px 12px;border-radius:6px;border:1px solid #334155;background:#0d1424;color:#e2e8f0;cursor:pointer">Send a test to ${escHtml(ADMIN_TEST_EMAIL)}</button></form>
+  </div>
+  ${email.html}
+  <div style="height:40px"></div>
+</body></html>`);
+});
+
+app.post('/admin/picks/email/rewrite', requireAuth, async (req, res) => {
+  const c = picksEmailContext();
+  if (c) await ensurePicksDraft(c, { rewrite: true });
+  res.redirect('/admin/picks/email/preview');
+});
+
+app.post('/admin/picks/email/test', requireAuth, async (req, res) => {
+  const c = picksEmailContext();
+  if (!c) return res.redirect('/admin/picks');
+  const draft = await ensurePicksDraft(c);
+  const sample = picksMissing(c.open, c.pctx)?.list[0] || getPlayersWithAccounts()[0];
+  try {
+    const email = picksEmailFor(c, draft, sample?.id || '', '');
+    await sendMail({ to: ADMIN_TEST_EMAIL, ...email, subject: `[TEST] ${email.subject}` });
+    res.redirect('/admin/picks?tested=1');
+  } catch (e) {
+    res.redirect(`/admin/picks?test_error=${encodeURIComponent(e.message.slice(0, 120))}`);
+  }
+});
+
+// Unsubscribe from pick reminder emails (bell reminders keep coming). Same flow as Papawis:
+// a signed link, a confirm page, then a POST — so link scanners can't unsubscribe anyone.
+app.get('/picks/emails/unsubscribe', (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyPicksUnsubscribe(regId, token)) {
+    return res.status(400).send(papawisUnsubPage(req, { title: 'Link expired', bodyHtml: '<h1 class="papawis-unsub__title">This unsubscribe link isn\'t valid</h1><p class="papawis-unsub__text">Ask an admin to stop the pick reminder emails for you.</p>' }));
+  }
+  res.send(papawisUnsubPage(req, {
+    title: 'Unsubscribe',
+    bodyHtml: `<h1 class="papawis-unsub__title">Stop pick reminder emails?</h1>
+      <p class="papawis-unsub__text">You won't get "Who wins?" reminder emails. Reminders in the bell on the site still show up.</p>
+      <form method="post" action="/picks/emails/unsubscribe?r=${encodeURIComponent(regId)}&amp;t=${encodeURIComponent(token)}">
+        <button type="submit" class="pw-btn pw-btn--primary">Unsubscribe</button>
+      </form>`,
+  }));
+});
+app.post('/picks/emails/unsubscribe', (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyPicksUnsubscribe(regId, token)) return res.status(400).send('Invalid unsubscribe link.');
+  setPicksEmailOptout(regId, true);
+  res.send(papawisUnsubPage(req, {
+    title: 'Unsubscribed',
+    bodyHtml: '<h1 class="papawis-unsub__title">You\'re unsubscribed</h1><p class="papawis-unsub__text">No more pick reminder emails. You can still pick every week on the Who wins? page.</p>',
+  }));
 });
 
 app.delete('/admin/games/:id', requireAuth, (req, res) => {
