@@ -5698,11 +5698,14 @@ app.get('/admin/birthdays', requireSuperAdmin, (req, res) => {
     const previewHtml = draft ? buildBirthdayEmail(entry, draft).html : null;
     return { entry, draft, previewHtml, manual: birthdayManualAllowed(entry, state) };
   });
+  // The week after that, for information only: nothing is drafted or sent from here yet.
+  // Inactive players are kept in so it's clear who won't get an email.
+  const nextWeek = birthdaysAround(today, { forward: 14 }).filter(e => e.inDays >= 7);
   res.send(renderAdminPage(req, {
     title: 'Birthdays',
     currentPath: '/admin/birthdays',
     body: adminBirthdaysBody({
-      all, rows, drafts, sent: getSentBirthdayEmails(year), year, state, log: getBirthdayLog(100),
+      all, rows, drafts, nextWeek, sent: getSentBirthdayEmails(year), year, state, log: getBirthdayLog(100),
       msg: String(req.query.msg || ''), error: String(req.query.error || ''), testEmail: ADMIN_TEST_EMAIL,
     }),
   }));
@@ -7964,7 +7967,7 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     const sent = JSON.parse(getSetting(`picks_reminded_${upDay}`, 'null') || 'null');
     if (sent) { missing.remindedAt = sent.at; missing.remindedCount = sent.count; }
     // Reminder email: who'd get one, and the last send's tally for this game day.
-    const reach = picksReminderRecipients(missing.list);
+    const reach = picksReminderRecipients(missing.list, upDay);
     missing.reachable = reach.recipients.length;
     missing.emailable = reach.emailable.length;
     missing.noValidEmail = reach.skipped.noValidEmail;
@@ -7972,9 +7975,11 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     // Per-player status for the pick-who-to-remind checklist: email, bell only (and why),
     // or unreachable (failed the broadcast gates).
     const byId = new Map(reach.recipients.map(r => [r.player.id, r]));
+    const emailedIds = picksEmailedIds(upDay);
+    missing.alreadyEmailed = missing.list.filter(p => emailedIds.has(p.id)).length;
     missing.people = missing.list.map(p => {
       const r = byId.get(p.id);
-      return { ...p, reach: !r ? 'skip' : r.emailable ? 'email' : 'bell', note: r?.bellOnly || (r ? '' : 'inactive or no valid email') };
+      return { ...p, reach: !r ? 'skip' : r.emailable ? 'email' : 'bell', emailed: emailedIds.has(p.id), note: r?.bellOnly || (r ? '' : 'inactive or no valid email') };
     });
     try { missing.emailed = JSON.parse(getSetting(`picks_emailed_${upDay}`, 'null') || 'null'); } catch {}
   }
@@ -8054,7 +8059,7 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
   const open = upNext.filter(u => !u.closed);
   const matchups = open.map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');
   const dayStr = new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const reach = picksReminderRecipients(targets);
+  const reach = picksReminderRecipients(targets, open[0].ymd);
   if (!reach.recipients.length) return res.redirect('/admin/picks');
   for (const { player: p } of reach.recipients) {
     createNotification({
@@ -8135,10 +8140,20 @@ function picksEmailFor(c, draft, playerId, regId = '') {
 // Who the reminder reaches out of a list of players: the shared broadcast gates
 // (lib/broadcast-recipients.js — valid email first, active, approved). Everyone in
 // `recipients` gets the bell; `emailable` drops anyone unsubscribed from pick emails, who
-// once marked our email as spam, or whose inbox is already on the list.
-function picksReminderRecipients(players) {
+// once marked our email as spam, or whose inbox is already on the list — and anyone already
+// emailed for this game day (`ymd`), so "Remind again" only emails the new names. The list is
+// keyed by game day, so it starts fresh once the next game day's picks open.
+function picksReminderRecipients(players, ymd) {
   const { recipients, skipped } = selectBroadcastRecipients(players.map(p => p.id), { optOutColumn: 'picks_email_optout' });
+  const already = picksEmailedIds(ymd);
+  for (const r of recipients) {
+    if (r.emailable && already.has(r.player.id)) { r.emailable = false; r.bellOnly = 'already emailed for this game day'; }
+  }
   return { recipients, emailable: recipients.filter(r => r.emailable), skipped };
+}
+
+function picksEmailedIds(ymd) {
+  try { return new Set(ymd ? JSON.parse(getSetting(`picks_emailed_ids_${ymd}`, '[]') || '[]') : []); } catch { return new Set(); }
 }
 
 async function sendPicksEmails(recipients) {
@@ -8147,7 +8162,11 @@ async function sendPicksEmails(recipients) {
   const draft = await ensurePicksDraft(c);
   // Outside production every email is redirected to the admin inbox (lib/mailer.js), so a
   // full send would land dozens of copies there — one is enough to see it.
-  const list = IS_DEV ? recipients.slice(0, 1) : recipients;
+  // Drop anyone emailed since the page was loaded (a double submit, two admins at once).
+  const emailedIds = picksEmailedIds(c.ymd);
+  const fresh = recipients.filter(r => !emailedIds.has(r.player.id));
+  const list = IS_DEV ? fresh.slice(0, 1) : fresh;
+  if (!list.length) return;
   let sent = 0, failed = 0, first = true;
   for (const { player, reg, email } of list) {
     // Stay under Resend's rate limit (about 2 requests a second).
@@ -8159,12 +8178,13 @@ async function sendPicksEmails(recipients) {
         to: email, ...picksEmailFor(c, draft, player.id, reg.id), ref: reg.id,
         headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
       });
-      if (ok) sent++;
+      if (ok) { sent++; emailedIds.add(player.id); }
     } catch (e) {
       failed++;
       console.error(`[picks email] ${email}: ${e.message}`);
     }
   }
+  setSetting(`picks_emailed_ids_${c.ymd}`, JSON.stringify([...emailedIds]));
   setSetting(`picks_emailed_${c.ymd}`, JSON.stringify({ at: Date.now(), sent, failed, of: list.length, source: draft.source }));
 }
 
