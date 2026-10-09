@@ -335,8 +335,8 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
   // Who wins? — the shared pick box (views/pick-box.js) with this card's odds panel on top.
   // The bar shows the fan split; "Who picked" opens from its middle badge.
   const total = counts.a + counts.b;
-  const { closed = false, odds = null } = pickState || {};
-  const pick = state === 'final' || state === 'later' ? '' : pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers }, {
+  const { closed = false, odds = null, ymd = null, closeHm = null } = pickState || {};
+  const pick = state === 'final' || state === 'later' ? '' : pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers, ymd, closeHm }, {
     // The preview keeps the full odds panel + the Fans vs odds line; the /games card shows the
     // odds as an edge along its photo banner instead.
     isPlayer, next, oddsHtml: !semi && odds ? oddsLine(m, odds) : '', flag: !semi,

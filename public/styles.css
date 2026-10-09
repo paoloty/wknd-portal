@@ -8498,17 +8498,17 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
   .pkf-bars .pkf-col:nth-last-of-type(n+5), .pkf-dates small:nth-last-of-type(n+5) { display: none; }
 }
 
-/* The pick bar (pickBox in views/pick-box.js) — one bar, two tap halves that always split
-   50/50 so the badge lines up with the homepage face-off's VS. Behind them the team colours
-   split where the fans do (--split), with a lit break on the seam. --ca/--cb = team colours
-   (Black → slate), --cm = your pick's colour, --ka1/--ka2/--kb1/--kb2 = colour strength by share.
+/* The pick bar (pickBox in views/pick-box.js) — two tap halves that always split 50/50.
+   Behind them the team colours split where the fans do (--split), with a lit break on the
+   seam and the pick-count badge riding it. --ca/--cb = team colours (Black → slate),
+   --cm = your pick's colour, --ka1/--ka2/--kb1/--kb2 = colour strength by share.
+   --safe keeps the break (and the badge on it) clear of each side's name and count.
    Team colours here are Paolo's call, like the scorer bars. */
-.pkt-bar { --safe: 150px; position: relative; display: flex; height: 56px; border-radius: 14px; overflow: hidden; container-type: inline-size;
+.pkt-bar { --safe: 174px; position: relative; display: flex; height: 56px; border-radius: 14px; overflow: hidden; container-type: inline-size;
   border: 1px solid rgba(255,255,255,0.08);
   background: linear-gradient(250deg, color-mix(in srgb, var(--cb) var(--kb1), var(--surface-2)) 0%, color-mix(in srgb, var(--cb) var(--kb2), var(--surface-2)) 100%);
   transition: border-color 0.25s, box-shadow 0.25s; }
 .gm-pick.has-pick .pkt-bar { border-color: color-mix(in srgb, var(--cm) 85%, #fff); box-shadow: 0 0 22px color-mix(in srgb, var(--cm) 32%, transparent); }
-/* The break never comes closer than --safe to either end: that's where the name and count live */
 .pkt-bar__fill { position: absolute; left: 0; top: 0; bottom: 0; width: clamp(var(--safe), var(--split), calc(100% - var(--safe)));
   background: linear-gradient(110deg, color-mix(in srgb, var(--ca) var(--ka1), var(--surface-2)) 0%, color-mix(in srgb, var(--ca) var(--ka2), var(--surface-2)) 100%);
   transition: width 0.45s cubic-bezier(.2,.8,.2,1); }
@@ -8528,18 +8528,16 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .pkt:disabled { cursor: default; }
 .pkt__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pkt--b .pkt__id { align-items: flex-end; }
-.pkt__name { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: 13.5px; font-weight: 900; letter-spacing: 0.06em; }
-.pkt--b .pkt__name { flex-direction: row-reverse; }
+.pkt__name { display: flex; min-width: 0; max-width: 100%; font-size: 13.5px; font-weight: 900; letter-spacing: 0.06em; }
 /* Long names give way last, with an ellipsis */
 .pkt__name > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pkt__check { display: none; flex-shrink: 0; }
 .pkt__sub { max-width: 100%; font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkt__sub:empty { display: none; }
 .pkt__n { flex-shrink: 0; font-size: 22px; font-weight: 800; line-height: 1; }
 .pkt--a .pkt__n { color: color-mix(in srgb, var(--ca) 40%, #fff); }
 .pkt--b .pkt__n { color: color-mix(in srgb, var(--cb) 40%, #fff); }
 
-/* Your pick: brighter fill (via --ka/--kb), ✓, white count. The other side steps back. */
-.pkt.is-mine .pkt__check { display: block; }
+/* Your pick: brighter fill (via --ka/--kb) and border, white count. The other side steps back. */
 .pkt.is-mine .pkt__n { color: #fff; }
 .pkt.is-mine .pkt__sub { color: rgba(255,255,255,0.75); }
 /* White picked is a light fill — dark text keeps it readable */
@@ -8548,40 +8546,76 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .pkt.is-other { opacity: 0.6; }
 .pkt.is-other:hover { opacity: 0.9; }
 
-/* The badge in the middle — same ring as the face-off's VS */
-.pkt-badge { position: absolute; left: 50%; top: 50%; z-index: 2; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border-radius: 50%;
+/* The pick count on the break — same ring as the face-off's VS */
+.pkt-badge { position: absolute; top: 50%; left: clamp(var(--safe), var(--split), calc(100% - var(--safe))); z-index: 2; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border-radius: 50%;
   background: var(--pkb-bg, var(--surface)); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 0 0 4px var(--pkb-bg, var(--surface));
-  line-height: 1; color: var(--text-muted); cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+  line-height: 1; color: var(--text-muted); cursor: pointer; transition: left 0.45s cubic-bezier(.2,.8,.2,1), border-color 0.2s; }
 .pkt-badge b { font-size: 15px; font-weight: 800; color: var(--text); }
 .pkt-badge small { font-size: 7px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-a.pkt-badge small { color: var(--amber); }
 .pkt-badge:hover:not(:disabled) { border-color: rgba(245,147,50,0.6); }
 .pkt-badge:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .pkt-badge:disabled { cursor: default; }
-.pkt-badge.is-me { border-color: var(--amber); box-shadow: 0 0 0 4px var(--pkb-bg, var(--surface)), 0 0 16px rgba(245,147,50,0.35); }
-.pkt-badge .pk-av { box-shadow: none !important; }
 
-/* Narrow bars (profile, game detail, phones): the line under the names drops except on your
-   pick, and the break may come closer in. Sized off the bar itself, not the viewport. */
+/* The pick stamp: your side lights up with "✓ Picked White" for ~2s while the badge steps
+   aside; "Pick removed" washes over the whole bar. Added and removed by pickBoxScript. */
+.pkt-fx { position: absolute; top: 0; bottom: 0; z-index: 3; display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; animation: pkt-stamp 2.2s ease forwards; }
+.pkt-fx--a { left: 0; right: 50%; background: linear-gradient(110deg, color-mix(in srgb, var(--ca) 72%, var(--surface-2)), color-mix(in srgb, var(--ca) 46%, var(--surface-2))); }
+.pkt-fx--b { left: 50%; right: 0; background: linear-gradient(250deg, color-mix(in srgb, var(--cb) 72%, var(--surface-2)), color-mix(in srgb, var(--cb) 46%, var(--surface-2))); }
+.pkt-fx--clear { left: 0; right: 0; background: rgba(16,20,29,0.86); animation-duration: 1.6s; }
+.pkt-fx__stamp { position: relative; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; color: #fff; }
+.pkt-fx[data-light] .pkt-fx__stamp { color: #0a0e16; }
+.pkt-fx--clear .pkt-fx__stamp { font-size: 12.5px; letter-spacing: 0.08em; color: #c7d0da; }
+.pkt-fx__sweep { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.35), transparent); animation: pkt-sweep 0.9s cubic-bezier(.3,.7,.3,1) forwards; }
+.pkt-bar.is-flash .pkt-badge { animation: pkt-badge-away 2.2s ease forwards; }
+@keyframes pkt-stamp { 0% { opacity: 0; } 10% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes pkt-sweep { 0% { transform: translateX(-120%); } 100% { transform: translateX(260%); } }
+@keyframes pkt-badge-away {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  10%, 82% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  92% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .pkt-fx__sweep { display: none; }
+  .pkt-bar__fill, .pkt-bar__seam, .pkt-badge { transition: none; }
+  .pkt-bar.is-flash .pkt-badge { animation: none; opacity: 0; }
+}
+
+/* The footer line: what you picked / what to do next, and the actions */
+.pkt-foot { container-type: inline-size; }
+.pkt-foot__in { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-height: 16px; padding: 0 2px; font-size: 12px; color: var(--text-muted); }
+.pkt-foot__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkt-foot__text b { font-weight: 800; color: var(--text); }
+.pkt-foot.is-error .pkt-foot__text { color: #f4a3a3; }
+.pkt-foot__acts { display: flex; align-items: baseline; gap: 14px; flex-shrink: 0; }
+.pkt-foot__acts button { font-size: 12px; font-weight: 700; color: var(--amber); }
+.pkt-foot__acts button:hover { text-decoration: underline; }
+.pkt-foot__acts button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 4px; }
+.pkt-foot__acts [hidden] { display: none; }
+/* On narrow boxes the badge is the way into "Who picked" */
+@container (max-width: 420px) { .pkt-foot__who { display: none; } }
+
+/* Narrow bars (profile, game detail, phones): tighter padding, "% fans", and the break may
+   come closer in. Sized off the bar itself, not the viewport. */
 @container (max-width: 420px) {
-  .pkt-bar__fill, .pkt-bar__seam { --safe: 128px; }
+  .pkt-bar__fill, .pkt-bar__seam, .pkt-badge { --safe: 152px; }
   .pkt { gap: 10px; padding: 0 26px 0 12px; }
   .pkt--b { padding: 0 12px 0 26px; }
-  .pkt:not(.is-mine) .pkt__sub { display: none; }
+  .pkt__of { display: none; }
 }
-/* Smallest phones: a smaller badge and tighter type so team names stay whole; your pick
-   still reads from its fill, border and "Your pick" without the ✓. */
+/* Smallest phones: a smaller badge and tighter type so team names stay whole; the stamp
+   keeps just "Picked" / "Switched". */
 @container (max-width: 300px) {
-  .pkt-bar__fill, .pkt-bar__seam { --safe: 112px; }
+  .pkt-bar__fill, .pkt-bar__seam, .pkt-badge { --safe: 124px; }
   .pkt { gap: 6px; padding: 0 21px 0 10px; }
   .pkt--b { padding: 0 10px 0 21px; }
   .pkt__name { font-size: 12.5px; letter-spacing: 0.03em; }
-  .pkt.is-mine .pkt__check { display: none; }
   .pkt__n { font-size: 20px; }
   .pkt-badge { width: 34px; height: 34px; }
   .pkt-badge b { font-size: 13px; }
   .pkt-badge small { font-size: 6px; }
-  .pkt-badge .pk-av { width: 26px !important; height: 26px !important; }
+  .pkt-fx__team { display: none; }
+  .pkt-fx__stamp { font-size: 12px; }
 }
 
 /* Fans vs odds (the /picks/<game> preview) */

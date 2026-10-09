@@ -9408,7 +9408,7 @@ function openPicks(games, pctx, viewerId) {
     const winsOf = t => meetings.filter(x => (x.sa > x.sb ? x.a : x.b) === t).length;
     return {
       id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season, href: previewHref(g),
-      counts: counts[g.id], myPick, closed, odds,
+      counts: counts[g.id], myPick, closed, odds, closeHm: picksCloseTime(),
       pickers: canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null,
       recA: recordOf(pg.a), recB: recordOf(pg.b),
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
@@ -9578,7 +9578,9 @@ app.get('/games', (req, res) => {
   let picks = null;
   if (picksEnabled()) {
     const pctx = buildPicksContext(games);
-    const pickStates = Object.fromEntries(upcoming.map(g => [g.id, upcomingPickState(g, pctx)]));
+    // ymd + closeHm: the pick box footer's "closes Sun 6:00 AM"
+    const closeHm = picksCloseTime();
+    const pickStates = Object.fromEntries(upcoming.map(g => [g.id, { ...upcomingPickState(g, pctx), ymd: gameYmd(g.date), closeHm }]));
     picks = {
       states: pickStates,
       pickers: Object.fromEntries(upcoming.map(g => [g.id, canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null])),

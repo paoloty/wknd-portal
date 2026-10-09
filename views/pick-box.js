@@ -7,18 +7,20 @@ import { gameSlug } from '../lib/slugs.js';
 // detail page and the player's own profile all render pickBox() and share pickBoxScript(),
 // so a pick made anywhere looks and behaves the same.
 //
-// The pick is one bar (Paolo, 2026-10-09: the "seam badge" mockup). Two tap halves, always
-// 50/50, so the badge between them lines up with the homepage face-off's VS. Behind them the
-// team colours split where the fans do, with a lit break on the seam; the break is clamped
-// in from each end (--safe in CSS) so it never runs under a team's name or count. Picked:
-// your side fills brighter + ✓, the other dims; tap yours to cancel, the other to switch.
-// The badge in the middle is the action: pick total → "Who picked" list, your face once
-// you've picked, a lock once closed, "Log in" for guests. The box keeps its exact height
-// in every state.
+// The pick is one bar plus a footer line (Paolo, 2026-10-09: "seam badge", then "F+A").
+// Bar: two tap halves (always 50/50). Behind them the team colours split where the fans do,
+// with a lit break on the seam; the break is clamped in from each end (--safe in CSS) so it
+// never runs under a team's name or count. The pick-count badge rides the break and opens
+// "Who picked". Your side fills brighter; the bar itself carries no "Your pick" text.
+// Footer: what you picked / what to do next / when picks close, plus "Remove pick" and
+// "Who picked →". Picking plays a short stamp across your side (the badge steps aside for
+// it). Tapping your own side again just replays the stamp — removing is the footer's job.
+// Guests: any tap goes to log in, and the tapped side comes back with them (?pick=a:<id>).
+// The box keeps its exact height in every state.
 //
 // Data shape (server.js openPicks()):
 //   { id, a, b, ymd, counts: {a,b}, myPick: 'a'|'b'|null, closed, odds: {pctA,pctB,fav}|null,
-//     pickers: { a: [face], b: [face] } | null, recA, recB, h2h, href }
+//     pickers: { a: [face], b: [face] } | null, recA, recB, h2h, href, closeHm }
 // pickers: logged-in players only (Paolo, 2026-10-08: they see who picked before picking);
 // guests never get names or faces. face = { id, name, ini, color, me }
 
@@ -49,23 +51,36 @@ function pickBarState(counts, mine, closed) {
     return {
       k1: me ? 60 : other ? Math.round(8 + 18 * sh) : Math.round(10 + 30 * sh),
       k2: me ? 30 : Math.round(3 + 9 * sh),
-      sub: me ? 'Your pick' : !t ? 'No picks yet' : early ? 'Early picks' : Math.round(sh * 100) + '% of fans',
+      // Each side's share of fans; none until the split shows (the footer says why)
+      pct: !t || early ? null : Math.round(sh * 100),
     };
   }
   return {
-    total: t, split: Math.round(share * 1000) / 10,
+    total: t, early: early, split: Math.round(share * 1000) / 10,
     lead: !t || early || share === 0.5 ? '' : share > 0.5 ? 'a' : 'b',
     a: side('a', share), b: side('b', 1 - share), closed: !!closed,
   };
 }
-const barVars = st => `--split:${st.split}%;--ka1:${st.a.k1}%;--ka2:${st.a.k2}%;--kb1:${st.b.k1}%;--kb2:${st.b.k2}%`;
 
-function face(p, size = 22) {
-  return `<span class="pk-av${p.me ? ' pk-av--me' : ''}" style="--team:${escHtml(p.color)};width:${size}px;height:${size}px" title="${escHtml(p.me ? 'You' : p.name)}">
-      <span class="pk-av__init">${escHtml(p.ini)}</span>
-      <img src="/api/player/${encodeURIComponent(p.id)}/photo" alt="" loading="lazy" onerror="this.remove()">
-    </span>`;
+// The footer line: { lead, pick, tail } (pick is the bold team name) and whether
+// "Remove pick" shows. Shared with the browser like pickBarState.
+function pickFootState(st, mine, names, closeLabel, isPlayer) {
+  function tcap(s) { s = String(s || ''); return s.charAt(0) + s.slice(1).toLowerCase(); }
+  var t = st.total, picks = t + (t === 1 ? ' pick' : ' picks');
+  if (st.closed) return mine ? { lead: 'Picks closed · you picked ', pick: tcap(names[mine]), tail: '' } : { lead: 'Picks closed · ' + picks, pick: '', tail: '' };
+  if (mine && isPlayer) return { lead: 'You picked ', pick: tcap(names[mine]), tail: '', remove: true };
+  if (!t) return { lead: 'Be the first to pick', pick: '', tail: closeLabel ? ' · ' + closeLabel : '' };
+  if (st.early) return { lead: 'Tap a team to pick', pick: '', tail: ' · the fan split shows after 5 picks' };
+  return { lead: 'Tap a team to pick', pick: '', tail: closeLabel ? ' · ' + closeLabel : ' · ' + t + ' picked so far' };
 }
+
+// "closes Sun 6:00 AM" — game day (Manila calendar date) + the picks_close_time setting
+function closeLabelFor(ymd, hm) {
+  if (!ymd || !hm) return '';
+  const day = new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+  return `closes ${day} ${fmtCloseTime(hm)}`;
+}
+const barVars = st => `--split:${st.split}%;--ka1:${st.a.k1}%;--ka2:${st.a.k2}%;--kb1:${st.b.k1}%;--kb2:${st.b.k2}%`;
 
 // The odds as a thin two-colour edge — each side as wide as its chance, the favourite glowing
 // a little more. Sits on the bottom of a header (pick cards) or a photo banner (/games).
@@ -75,32 +90,38 @@ export function oddsEdge(a, b, odds) {
 }
 
 function tileLabel(name, mine, closed, isPlayer, n) {
-  return closed ? `${tcase(name)} · ${n} picked` : !isPlayer ? `Log in to pick ${tcase(name)}` : mine ? `Cancel your ${tcase(name)} pick` : `Pick ${tcase(name)}`;
+  return closed ? `${tcase(name)} · ${n} picked` : !isPlayer ? `Log in to pick ${tcase(name)}` : mine ? `${tcase(name)} · your pick` : `Pick ${tcase(name)}`;
 }
+
+// "69% of fans" — "of" drops on narrow bars (CSS)
+const subHtml = pct => (pct == null ? '' : `${pct}%<span class="pkt__of"> of</span> fans`);
 
 function pickTile(o, side, isPlayer, st) {
   const name = side === 'a' ? o.a : o.b;
   const mine = o.myPick === side;
-  return `<button type="button" class="pkt pkt--${side}${mine ? ' is-mine' : ''}${o.myPick && !mine ? ' is-other' : ''}"${String(name).toUpperCase() === 'WHITE' ? ' data-light' : ''} data-tile="${side}" aria-pressed="${mine}" aria-label="${escHtml(tileLabel(name, mine, o.closed, isPlayer, o.counts[side]))}"${mine && !o.closed ? ' title="Tap to cancel your pick"' : ''}${o.closed ? ' disabled' : ''}>
-      <span class="pkt__id"><span class="pkt__name">${CHECK_SVG}<span>${escHtml(name)}</span></span><span class="pkt__sub" data-tile-sub>${escHtml(st[side].sub)}</span></span>
+  return `<button type="button" class="pkt pkt--${side}${mine ? ' is-mine' : ''}${o.myPick && !mine ? ' is-other' : ''}"${String(name).toUpperCase() === 'WHITE' ? ' data-light' : ''} data-tile="${side}" aria-pressed="${mine}" aria-label="${escHtml(tileLabel(name, mine, o.closed, isPlayer, o.counts[side]))}"${o.closed ? ' disabled' : ''}>
+      <span class="pkt__id"><span class="pkt__name"><span>${escHtml(name)}</span></span><span class="pkt__sub" data-tile-sub>${subHtml(st[side].pct)}</span></span>
       <b class="pkt__n font-condensed" data-tile-n>${o.counts[side]}</b>
     </button>`;
 }
 
-// The middle of the bar. Guests: a link to log in. Players: opens "Who picked" (the faces
-// list); shows your face once you've picked. Closed: a lock (the list still opens).
-function badgeInner(st, mineFace) {
-  if (st.closed) return LOCK_SVG;
-  if (mineFace) return face(mineFace, 30);
-  return `<b class="font-condensed">${st.total}</b><small>${st.total ? 'picks' : 'vs'}</small>`;
-}
-function pickBadge(o, isPlayer, next, st) {
-  if (!isPlayer && !o.closed) {
-    return `<a class="pkt-badge" href="${escHtml(`/login?next=${encodeURIComponent(next)}`)}" aria-label="Log in to pick"><b class="font-condensed">${st.total}</b><small>log in</small></a>`;
-  }
-  const mineFace = o.myPick ? (o.pickers?.[o.myPick] || []).find(p => p.me) : null;
+// The pick count, riding the break. Players: opens "Who picked". Guests: goes to log in
+// (the script handles both). Closed: a lock (the list still opens).
+function pickBadge(o, isPlayer, st) {
   const canList = !!(o.pickers && st.total);
-  return `<button type="button" class="pkt-badge${mineFace && !o.closed ? ' is-me' : ''}" data-badge data-faces-side="${o.myPick || 'a'}" aria-label="${canList ? `Who picked · ${st.total} pick${st.total === 1 ? '' : 's'}` : o.closed ? 'Picks closed' : 'No picks yet'}"${canList ? '' : ' disabled'}>${badgeInner(st, mineFace)}</button>`;
+  const label = !isPlayer && !o.closed ? `${st.total} pick${st.total === 1 ? '' : 's'} · log in to pick` : canList ? `Who picked · ${st.total} pick${st.total === 1 ? '' : 's'}` : o.closed ? 'Picks closed' : 'No picks yet';
+  const off = isPlayer && !canList;
+  return `<button type="button" class="pkt-badge" data-badge${isPlayer ? ` data-faces-side="${o.myPick || 'a'}"` : ''} aria-label="${escHtml(label)}"${off ? ' disabled' : ''}>${o.closed ? LOCK_SVG : `<b class="font-condensed" data-badge-n>${st.total}</b><small data-badge-w>${st.total ? 'picks' : 'vs'}</small>`}</button>`;
+}
+
+// The footer line under the bar
+function pickFoot(o, isPlayer, st, closeLabel) {
+  const f = pickFootState(st, o.myPick, { a: o.a, b: o.b }, closeLabel, isPlayer);
+  const who = !!(o.pickers && st.total);
+  return `<div class="pkt-foot" data-pick-foot><div class="pkt-foot__in">
+      <span class="pkt-foot__text" data-foot-text aria-live="polite">${escHtml(f.lead)}${f.pick ? `<b>${escHtml(f.pick)}</b>` : ''}${escHtml(f.tail)}</span>
+      <span class="pkt-foot__acts">${isPlayer && !o.closed ? `<button type="button" data-remove${f.remove ? '' : ' hidden'}>Remove pick</button>` : ''}${o.pickers ? `<button type="button" class="pkt-foot__who" data-faces-side="${o.myPick || 'a'}"${who ? '' : ' hidden'}>Who picked →</button>` : ''}</span>
+    </div></div>`;
 }
 
 // "Fans vs odds" — where the pickers lean against the favourite (the /picks/<game> preview).
@@ -118,13 +139,15 @@ export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = '', f
   const names = JSON.stringify({ a: o.a, b: o.b });
   const st = pickBarState(counts, myPick, closed);
   const mineColor = myPick ? `var(--c${myPick})` : '';
-  return `<div class="gm-pick${closed ? ' is-closed' : ''}${myPick ? ' has-pick' : ''}" data-game-id="${escHtml(o.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}" data-next="${escHtml(next)}" data-fav="${o.odds?.fav || ''}" data-names="${escHtml(names)}"${o.pickers ? ` data-pickers="${escHtml(JSON.stringify(o.pickers))}"` : ''}>
+  const closeLabel = closeLabelFor(o.ymd, o.closeHm);
+  return `<div class="gm-pick${closed ? ' is-closed' : ''}${myPick ? ' has-pick' : ''}" data-game-id="${escHtml(o.id)}" data-a="${counts.a}" data-b="${counts.b}" data-mine="${myPick || ''}" data-player="${isPlayer ? '1' : ''}" data-next="${escHtml(next)}" data-fav="${o.odds?.fav || ''}" data-names="${escHtml(names)}" data-close="${escHtml(closeLabel)}"${o.pickers ? ` data-pickers="${escHtml(JSON.stringify(o.pickers))}"` : ''}>
       ${oddsHtml}
       <div class="pkt-bar" data-pick-bar data-lead="${st.lead}" style="--ca:${edgeColor(o.a)};--cb:${edgeColor(o.b)};--cm:${mineColor || 'transparent'};${barVars(st)}">
         <span class="pkt-bar__fill" aria-hidden="true"></span><span class="pkt-bar__seam" aria-hidden="true"></span>
         ${pickTile(o, 'a', isPlayer, st)}${pickTile(o, 'b', isPlayer, st)}
-        ${pickBadge(o, isPlayer, next, st)}
+        ${pickBadge(o, isPlayer, st)}
       </div>
+      ${pickFoot(o, isPlayer, st, closeLabel)}
       ${flag ? fansVsOdds(o) : ''}
     </div>`;
 }
@@ -211,11 +234,43 @@ export function pickBoxScript() {
     dlg.showModal();
   }
   ${pickBarState.toString()}
-  // The halves stay put; the colour split, counts, lines under the names and the badge change.
+  ${pickFootState.toString()}
+  var CHECK = ${JSON.stringify(CHECK_SVG)};
+  function subFill(node, pct) {
+    node.textContent = '';
+    if (pct == null) return;
+    node.appendChild(document.createTextNode(pct + '%'));
+    node.appendChild(el('span', 'pkt__of', ' of'));
+    node.appendChild(document.createTextNode(' fans'));
+  }
+  function footFill(box, st, mine) {
+    var foot = box.querySelector('[data-pick-foot]'); if (!foot || foot.classList.contains('is-error')) return;
+    var f = pickFootState(st, mine, JSON.parse(box.dataset.names), box.dataset.close || '', !!box.dataset.player);
+    var text = foot.querySelector('[data-foot-text]');
+    text.textContent = f.lead;
+    if (f.pick) text.appendChild(el('b', '', f.pick));
+    if (f.tail) text.appendChild(document.createTextNode(f.tail));
+    var rm = foot.querySelector('[data-remove]'); if (rm) rm.hidden = !f.remove;
+    var who = foot.querySelector('.pkt-foot__who'); if (who) { who.hidden = !(box.dataset.pickers && st.total); who.dataset.facesSide = mine || 'a'; }
+  }
+  // A problem saving shows in the footer for a few seconds instead of a pop-up.
+  function footError(box, msg) {
+    var foot = box.querySelector('[data-pick-foot]'); if (!foot) return;
+    clearTimeout(foot._errT);
+    foot.classList.add('is-error');
+    foot.querySelector('[data-foot-text]').textContent = msg;
+    foot._errT = setTimeout(function () {
+      foot.classList.remove('is-error');
+      var c = { a: +box.dataset.a, b: +box.dataset.b }, m = box.dataset.mine || null;
+      footFill(box, pickBarState(c, m, box.classList.contains('is-closed')), m);
+    }, 5000);
+  }
+  // The halves stay put; the colour split, counts, share lines, badge and footer change.
   function render(box, counts, mine, pickers) {
-    var names = JSON.parse(box.dataset.names);
+    var names = JSON.parse(box.dataset.names), player = !!box.dataset.player;
     var t = counts.a + counts.b;
     if (pickers) box.dataset.pickers = JSON.stringify(pickers);
+    box.dataset.a = counts.a; box.dataset.b = counts.b;
     var st = pickBarState(counts, mine, box.classList.contains('is-closed'));
     var bar = box.querySelector('[data-pick-bar]');
     if (bar) {
@@ -230,22 +285,22 @@ export function pickBoxScript() {
       c.classList.toggle('is-mine', mine === s);
       c.classList.toggle('is-other', !!mine && mine !== s);
       c.setAttribute('aria-pressed', mine === s ? 'true' : 'false');
-      c.setAttribute('aria-label', (mine === s ? 'Cancel your ' : 'Pick ') + tc(names[s]) + (mine === s ? ' pick' : ''));
-      if (mine === s) c.title = 'Tap to cancel your pick'; else c.removeAttribute('title');
+      c.setAttribute('aria-label', mine === s ? tc(names[s]) + ' · your pick' : 'Pick ' + tc(names[s]));
       c.querySelector('[data-tile-n]').textContent = counts[s];
-      c.querySelector('[data-tile-sub]').textContent = st[s].sub;
+      subFill(c.querySelector('[data-tile-sub]'), st[s].pct);
     });
     var badge = box.querySelector('[data-badge]');
     if (badge) {
-      var me = mine && pickers ? (pickers[mine] || []).filter(function (p) { return p.me; })[0] : null;
-      badge.innerHTML = '';
-      if (me) badge.appendChild(faceEl(me, 30));
-      else { badge.appendChild(el('b', 'font-condensed', String(t))); badge.appendChild(el('small', '', t ? 'picks' : 'vs')); }
-      badge.classList.toggle('is-me', !!me);
-      badge.dataset.facesSide = mine || 'a';
-      badge.disabled = !(pickers && t);
-      badge.setAttribute('aria-label', t ? 'Who picked · ' + t + (t === 1 ? ' pick' : ' picks') : 'No picks yet');
+      var n = badge.querySelector('[data-badge-n]'), w = badge.querySelector('[data-badge-w]');
+      if (n) n.textContent = t;
+      if (w) w.textContent = t ? 'picks' : 'vs';
+      if (player) {
+        badge.dataset.facesSide = mine || 'a';
+        badge.disabled = !(box.dataset.pickers && t);
+        badge.setAttribute('aria-label', t ? 'Who picked · ' + t + (t === 1 ? ' pick' : ' picks') : 'No picks yet');
+      }
     }
+    footFill(box, st, mine);
     box.classList.toggle('has-pick', !!mine);
     box.dataset.mine = mine || '';
     var fav = box.dataset.fav, fanFav = t && counts.a !== counts.b ? (counts.a > counts.b ? 'a' : 'b') : '';
@@ -263,31 +318,99 @@ export function pickBoxScript() {
     }
     document.dispatchEvent(new CustomEvent('wknd:pick', { detail: { gameId: box.dataset.gameId, side: mine || null } }));
   }
-  function send(box, side) {
+  // The stamp across your side ("Picked White" / "Switched to Maroon"), or "Pick removed"
+  // across the bar. The badge steps aside while a stamp plays (.is-flash).
+  function fx(box, side, kind) {
+    var bar = box.querySelector('[data-pick-bar]'); if (!bar) return;
+    var old = bar.querySelector('.pkt-fx'); if (old) old.remove();
+    clearTimeout(bar._fxT); bar.classList.remove('is-flash');
+    var names = JSON.parse(box.dataset.names);
+    var f = el('span', 'pkt-fx ' + (kind === 'clear' ? 'pkt-fx--clear' : 'pkt-fx--' + side));
+    f.setAttribute('aria-hidden', 'true');
+    var stamp = el('span', 'pkt-fx__stamp');
+    if (kind === 'clear') stamp.textContent = 'Pick removed';
+    else {
+      if (String(names[side]).toUpperCase() === 'WHITE') f.setAttribute('data-light', '');
+      f.appendChild(el('i', 'pkt-fx__sweep'));
+      stamp.innerHTML = CHECK;
+      stamp.appendChild(el('span', '', kind === 'switch' ? 'Switched' : 'Picked'));
+      stamp.appendChild(el('span', 'pkt-fx__team', (kind === 'switch' ? ' to ' : ' ') + names[side]));
+      void bar.offsetWidth; bar.classList.add('is-flash');
+    }
+    f.appendChild(stamp); bar.appendChild(f);
+    bar._fxT = setTimeout(function () { f.remove(); bar.classList.remove('is-flash'); }, kind === 'clear' ? 1600 : 2300);
+  }
+  // Guests: off to log in, carrying the side they tapped (?pick=a:<game id>) so it's
+  // picked for them when they land back here.
+  function toLogin(box, side) {
     var next = box.dataset.next || '/picks';
-    if (!box.dataset.player) { window.location.href = '/login?next=' + encodeURIComponent(next); return; }
-    box.classList.add('is-busy');
+    if (side) next += (next.indexOf('?') < 0 ? '?' : '&') + 'pick=' + side + ':' + encodeURIComponent(box.dataset.gameId);
+    window.location.href = '/login?next=' + encodeURIComponent(next);
+  }
+  // The bar changes the moment you tap; if saving fails it goes back and the footer says so.
+  function send(box, side) {
+    if (box.dataset.busy) return;
+    box.dataset.busy = '1';
+    var prev = { a: +box.dataset.a, b: +box.dataset.b }, prevMine = box.dataset.mine || null;
+    var prevPickers = box.dataset.pickers ? JSON.parse(box.dataset.pickers) : null;
+    var c = { a: prev.a, b: prev.b };
+    if (prevMine) c[prevMine] = Math.max(0, c[prevMine] - 1);
+    if (side) c[side]++;
+    render(box, c, side, null);
+    fx(box, side, side ? (prevMine ? 'switch' : 'pick') : 'clear');
+    if (side && navigator.vibrate) { try { navigator.vibrate(12); } catch (err) {} }
+    function undo(msg) {
+      render(box, prev, prevMine, prevPickers);
+      var bar = box.querySelector('[data-pick-bar]');
+      if (bar) { var o = bar.querySelector('.pkt-fx'); if (o) o.remove(); bar.classList.remove('is-flash'); }
+      footError(box, msg);
+    }
     fetch('/games/' + encodeURIComponent(box.dataset.gameId) + '/pick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ side: side }) })
-      .then(function (r) { if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(next); return null; } return r.json(); })
+      .then(function (r) {
+        if (r.status === 401) { toLogin(box, side); return null; }
+        return r.json().catch(function () { return {}; });
+      })
       .then(function (d) {
-        box.classList.remove('is-busy');
-        if (d && d.ok) {
+        delete box.dataset.busy;
+        if (!d) return;
+        if (d.ok) {
           render(box, d.counts, d.side, d.pickers);
           // Same game shown twice on a page (e.g. profile + another widget): keep them in step.
           document.querySelectorAll('.gm-pick[data-game-id="' + CSS.escape(box.dataset.gameId) + '"]').forEach(function (o) { if (o !== box && !o.classList.contains('is-closed')) render(o, d.counts, d.side, d.pickers); });
-        } else if (d && d.error) alert(d.error);
+        } else undo(d.error || "Couldn't save your pick. Try again.");
       })
-      .catch(function () { box.classList.remove('is-busy'); });
+      .catch(function () { delete box.dataset.busy; undo("Couldn't save your pick. Check your connection and try again."); });
   }
   document.addEventListener('click', function (e) {
     var box = e.target.closest('.gm-pick'); if (!box) return;
+    var player = !!box.dataset.player, closed = box.classList.contains('is-closed');
+    if (!player && !closed && e.target.closest('[data-badge]')) { toLogin(box, null); return; }
     var faces = e.target.closest('[data-faces-side]');
     if (faces) { openList(box, faces.dataset.facesSide); return; }
-    if (box.classList.contains('is-closed') || box.classList.contains('is-busy')) return;
-    // Your side cancels, the other side picks / switches.
-    var tile = e.target.closest('[data-tile]');
-    if (tile) send(box, box.dataset.mine === tile.dataset.tile ? null : tile.dataset.tile);
+    if (closed) return;
+    if (e.target.closest('[data-remove]')) { if (box.dataset.mine) send(box, null); return; }
+    var tile = e.target.closest('[data-tile]'); if (!tile) return;
+    var s = tile.dataset.tile;
+    if (!player) { toLogin(box, s); return; }
+    // Your own side again: nothing to change, just show it's yours. Removing lives in the footer.
+    if (box.dataset.mine === s) { fx(box, s, 'pick'); return; }
+    send(box, s);
   });
+  // Back from logging in with ?pick=a:<id>: make that pick, then tidy the address bar.
+  function pickFromLogin() {
+    var q = new URLSearchParams(location.search), v = q.get('pick');
+    if (!v) return;
+    q.delete('pick');
+    history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+    var side = v.charAt(0), id = v.slice(2);
+    if ((side !== 'a' && side !== 'b') || !id) return;
+    var box = document.querySelector('.gm-pick[data-game-id="' + CSS.escape(id) + '"]');
+    if (!box || !box.dataset.player || box.classList.contains('is-closed')) return;
+    if (box.dataset.mine === side) { fx(box, side, 'pick'); return; }
+    box.scrollIntoView({ block: 'center' });
+    send(box, side);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pickFromLogin); else pickFromLogin();
   // "You've picked N of M" counters (/picks, profile).
   document.addEventListener('wknd:pick', function () {
     document.querySelectorAll('[data-pick-progress]').forEach(function (p) {
