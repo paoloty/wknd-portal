@@ -113,6 +113,38 @@ function summaryTable(all, drafts, state) {
 </div>`;
 }
 
+// Birthdays 7–13 days out, for information only. Their drafts start once they're inside
+// the week-ahead window, so there's no status beyond whether they'll qualify.
+function nextWeekTable(list) {
+  const th = 'px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap';
+  const rows = list.map(e => {
+    const note = !e.activity?.active ? pill('Skipped', '#64748b') + ' <span class="text-xs text-slate-500 ml-1">Inactive for 3+ months</span>'
+      : !e.email ? pill('No email', '#f87171') + ' <span class="text-xs text-slate-500 ml-1">No approved email on file</span>'
+      : `<span class="text-xs text-slate-500">Draft starts ${escHtml(fmtMonthDay(new Date(Date.parse(e.date + 'T00:00:00Z') - 6 * 86400000).toISOString().slice(0, 10)))}</span>`;
+    return `<tr class="border-b border-admin-border/40 last:border-0">
+      <td class="px-4 py-2.5 text-sm whitespace-nowrap text-slate-300">${escHtml(fmtBirthdayWhen(e.inDays, e.date))}</td>
+      <td class="px-4 py-2.5 text-sm whitespace-nowrap text-slate-200">${escHtml(e.fullName)}</td>
+      <td class="px-4 py-2.5 text-sm text-slate-400 whitespace-nowrap">${escHtml(e.teamName || '—')}</td>
+      <td class="px-4 py-2.5 text-sm text-slate-300 whitespace-nowrap tabular-nums">${e.age ? `Turns ${e.age}` : '—'}</td>
+      <td class="px-4 py-2.5 text-sm whitespace-nowrap text-slate-400">${escHtml(lastActiveText(e.activity))}</td>
+      <td class="px-4 py-2.5 whitespace-nowrap">${note}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="mt-8">
+  <h3 class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Next week${list.length ? ` (${list.length})` : ''}</h3>
+  ${list.length
+    ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
+    <table class="w-full border-collapse">
+      <thead><tr class="border-b border-admin-border">
+        <th class="${th}">Birthday</th><th class="${th}">Player</th><th class="${th}">Team</th><th class="${th}">Age</th><th class="${th}">Last active</th><th class="${th}">Email</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`
+    : `<div class="bg-admin-surface border border-admin-border rounded-lg p-6 text-center text-sm text-slate-500">No birthdays next week.</div>`}
+</div>`;
+}
+
 const LOG_EVENTS = {
   drafted:     { label: 'Drafted',     color: '#94a3b8' },
   redrafted:   { label: 'Rewritten',   color: '#94a3b8' },
@@ -249,7 +281,7 @@ function birthdayCard({ entry, draft, previewHtml, manual }, testEmail, state) {
 // all: every qualifying birthday from 7 days back to 7 days ahead (summary table).
 // rows: the cards (today, upcoming, and belated ones not yet sent). drafts: Map of
 // `${playerId}:${year}` → row. state: autoSendState(). log: birthday_email_log rows.
-export function adminBirthdaysBody({ all = [], rows, drafts = new Map(), sent = [], year, state = {}, log = [], msg = '', error = '', testEmail }) {
+export function adminBirthdaysBody({ all = [], rows, drafts = new Map(), nextWeek = [], sent = [], year, state = {}, log = [], msg = '', error = '', testEmail }) {
   const needsYou = rows.filter(r => r.manual && r.draft?.status !== 'sent' && r.entry.inDays <= 0).length;
   return `
 <div class="mb-4">
@@ -264,6 +296,7 @@ ${needsYou ? `<h3 class="text-[10px] font-bold uppercase tracking-widest text-br
 ${rows.length
   ? `<div class="space-y-4">${rows.map(r => birthdayCard(r, testEmail, state)).join('')}</div>`
   : `<div class="bg-admin-surface border border-admin-border rounded-lg p-12 text-center text-sm text-slate-500">No birthdays within a week of today.</div>`}
+${nextWeekTable(nextWeek)}
 ${activityLog(log)}
 ${sentHistory(sent, year)}
 <script>
