@@ -8498,68 +8498,90 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
   .pkf-bars .pkf-col:nth-last-of-type(n+5), .pkf-dates small:nth-last-of-type(n+5) { display: none; }
 }
 
-/* Homepage pick tiles (compactPickBox in views/pick-box.js) — two team-coloured tiles that are
-   the pick in every state, so the card never changes height. --c = team colour (Black → slate).
+/* The pick bar (pickBox in views/pick-box.js) — one bar, two tap halves that always split
+   50/50 so the badge lines up with the homepage face-off's VS. Behind them the team colours
+   split where the fans do (--split), with a lit break on the seam. --ca/--cb = team colours
+   (Black → slate), --cm = your pick's colour, --ka1/--ka2/--kb1/--kb2 = colour strength by share.
    Team colours here are Paolo's call, like the scorer bars. */
-.pkt-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.pkt { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; height: 48px; padding: 0 12px 0 14px; border-radius: 12px; overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--c) 38%, transparent);
-  background: linear-gradient(120deg, color-mix(in srgb, var(--c) 24%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 7%, var(--surface-2)) 70%);
-  color: var(--text); cursor: pointer; transition: border-color 0.2s, background 0.25s, box-shadow 0.25s, opacity 0.25s, transform 0.12s; }
-/* the glare: a soft highlight across the top of the tile */
-.pkt::before { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0.09), transparent 55%); pointer-events: none; }
-.pkt--b { flex-direction: row-reverse; padding: 0 14px 0 12px;
-  background: linear-gradient(240deg, color-mix(in srgb, var(--c) 24%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 7%, var(--surface-2)) 70%); }
-.pkt:hover:not(:disabled) { border-color: color-mix(in srgb, var(--c) 75%, transparent); box-shadow: 0 0 18px color-mix(in srgb, var(--c) 22%, transparent); }
-.pkt:active:not(:disabled) { transform: scale(0.98); }
-.pkt:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.pkt:disabled { cursor: default; }
-.pkt__name { position: relative; display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 13.5px; font-weight: 900; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pkt--b .pkt__name { flex-direction: row-reverse; }
-.pkt__check { display: none; flex-shrink: 0; }
-.pkt__crowd { position: relative; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.pkt--b .pkt__crowd { flex-direction: row-reverse; }
-.pkt__avs { display: flex; }
-.pkt--b .pkt__avs { flex-direction: row-reverse; }
-.pkt__avs .pk-av { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 16%, var(--surface-2)); }
-.pkt__avs .pk-av + .pk-av { margin-left: -7px; }
-.pkt--b .pkt__avs .pk-av + .pk-av { margin-left: 0; margin-right: -7px; }
-.pkt__n { min-width: 14px; font-size: 19px; font-weight: 800; line-height: 1; text-align: center; color: color-mix(in srgb, var(--c) 35%, #fff); }
+.pkt-bar { --safe: 150px; position: relative; display: flex; height: 56px; border-radius: 14px; overflow: hidden; container-type: inline-size;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(250deg, color-mix(in srgb, var(--cb) var(--kb1), var(--surface-2)) 0%, color-mix(in srgb, var(--cb) var(--kb2), var(--surface-2)) 100%);
+  transition: border-color 0.25s, box-shadow 0.25s; }
+.gm-pick.has-pick .pkt-bar { border-color: color-mix(in srgb, var(--cm) 85%, #fff); box-shadow: 0 0 22px color-mix(in srgb, var(--cm) 32%, transparent); }
+/* The break never comes closer than --safe to either end: that's where the name and count live */
+.pkt-bar__fill { position: absolute; left: 0; top: 0; bottom: 0; width: clamp(var(--safe), var(--split), calc(100% - var(--safe)));
+  background: linear-gradient(110deg, color-mix(in srgb, var(--ca) var(--ka1), var(--surface-2)) 0%, color-mix(in srgb, var(--ca) var(--ka2), var(--surface-2)) 100%);
+  transition: width 0.45s cubic-bezier(.2,.8,.2,1); }
+.pkt-bar__seam { position: absolute; top: -4px; bottom: -4px; left: calc(clamp(var(--safe), var(--split), calc(100% - var(--safe))) - 1px); width: 2px; pointer-events: none;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.8) 50%, rgba(255,255,255,0));
+  box-shadow: 0 0 10px rgba(255,255,255,0.35); transition: left 0.45s cubic-bezier(.2,.8,.2,1), box-shadow 0.3s; }
+.pkt-bar[data-lead="a"] .pkt-bar__seam { box-shadow: 0 0 10px rgba(255,255,255,0.35), 0 0 18px color-mix(in srgb, var(--ca) 55%, transparent); }
+.pkt-bar[data-lead="b"] .pkt-bar__seam { box-shadow: 0 0 10px rgba(255,255,255,0.35), 0 0 18px color-mix(in srgb, var(--cb) 55%, transparent); }
+/* the glare: a soft highlight across the top of the bar */
+.pkt-bar::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0.1), transparent 55%); pointer-events: none; }
 
-/* Your pick: full team colour, glow, ✓. The other side steps back. */
-.pkt.is-mine { border-color: color-mix(in srgb, var(--c) 90%, #fff);
-  background: linear-gradient(120deg, color-mix(in srgb, var(--c) 58%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 30%, var(--surface-2)) 80%);
-  box-shadow: 0 0 22px color-mix(in srgb, var(--c) 38%, transparent), inset 0 1px 0 rgba(255,255,255,0.18); }
-.pkt--b.is-mine { background: linear-gradient(240deg, color-mix(in srgb, var(--c) 58%, var(--surface-2)) 0%, color-mix(in srgb, var(--c) 30%, var(--surface-2)) 80%); }
+.pkt { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 0 26px 0 16px; text-align: left; color: var(--text); cursor: pointer; transition: opacity 0.25s, background 0.2s; }
+.pkt--b { flex-direction: row-reverse; padding: 0 16px 0 26px; text-align: right; }
+.pkt:hover:not(:disabled) { background: rgba(255,255,255,0.04); }
+.pkt:active:not(:disabled) { background: rgba(255,255,255,0.07); }
+.pkt:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.pkt:disabled { cursor: default; }
+.pkt__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pkt--b .pkt__id { align-items: flex-end; }
+.pkt__name { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: 13.5px; font-weight: 900; letter-spacing: 0.06em; }
+.pkt--b .pkt__name { flex-direction: row-reverse; }
+/* Long names give way last, with an ellipsis */
+.pkt__name > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkt__check { display: none; flex-shrink: 0; }
+.pkt__sub { max-width: 100%; font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkt__n { flex-shrink: 0; font-size: 22px; font-weight: 800; line-height: 1; }
+.pkt--a .pkt__n { color: color-mix(in srgb, var(--ca) 40%, #fff); }
+.pkt--b .pkt__n { color: color-mix(in srgb, var(--cb) 40%, #fff); }
+
+/* Your pick: brighter fill (via --ka/--kb), ✓, white count. The other side steps back. */
 .pkt.is-mine .pkt__check { display: block; }
 .pkt.is-mine .pkt__n { color: #fff; }
-.pkt.is-mine .pkt__avs .pk-av { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 50%, var(--surface-2)); }
-/* White picked is a light tile — dark text keeps it readable */
-.pkt[data-light].is-mine { color: #0a0e16; }
-.pkt[data-light].is-mine .pkt__n { color: #0a0e16; }
-.pkt[data-light].is-mine::before { background: linear-gradient(to bottom, rgba(255,255,255,0.25), transparent 60%); }
-.pkt.is-other { opacity: 0.5; }
-.pkt.is-other:hover { opacity: 0.85; }
+.pkt.is-mine .pkt__sub { color: rgba(255,255,255,0.75); }
+/* White picked is a light fill — dark text keeps it readable */
+.pkt[data-light].is-mine, .pkt[data-light].is-mine .pkt__n { color: #0a0e16; }
+.pkt[data-light].is-mine .pkt__sub { color: rgba(10,14,22,0.7); }
+.pkt.is-other { opacity: 0.6; }
+.pkt.is-other:hover { opacity: 0.9; }
 
-.pkt-note { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-height: 16px; font-size: 12px; color: var(--text-muted); }
-.pkt-note > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pkt-note b { color: var(--text); }
-.pkt-note a { color: var(--amber); font-weight: 700; }
-.pkt-note a:hover { text-decoration: underline; }
-.pkt-note__who { flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--amber); }
-.pkt-note__who:hover { text-decoration: underline; }
-.pkt-note__who[hidden] { display: none; }
-.pkt-note__who:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 4px; }
-/* Faces give way to the team name as the tiles narrow (profile, game detail, phones) —
-   "Who picked" still lists everyone. Sized off the tile row itself, not the viewport. */
-.pkt-row { container-type: inline-size; }
-@container (max-width: 400px) {
-  .pkt { padding: 0 10px; gap: 6px; }
-  .pkt__name { font-size: 12.5px; }
-  .pkt__avs .pk-av:nth-child(n+2) { display: none; }
+/* The badge in the middle — same ring as the face-off's VS */
+.pkt-badge { position: absolute; left: 50%; top: 50%; z-index: 2; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border-radius: 50%;
+  background: var(--pkb-bg, var(--surface)); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 0 0 4px var(--pkb-bg, var(--surface));
+  line-height: 1; color: var(--text-muted); cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+.pkt-badge b { font-size: 15px; font-weight: 800; color: var(--text); }
+.pkt-badge small { font-size: 7px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+a.pkt-badge small { color: var(--amber); }
+.pkt-badge:hover:not(:disabled) { border-color: rgba(245,147,50,0.6); }
+.pkt-badge:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.pkt-badge:disabled { cursor: default; }
+.pkt-badge.is-me { border-color: var(--amber); box-shadow: 0 0 0 4px var(--pkb-bg, var(--surface)), 0 0 16px rgba(245,147,50,0.35); }
+.pkt-badge .pk-av { box-shadow: none !important; }
+
+/* Narrow bars (profile, game detail, phones): the line under the names drops except on your
+   pick, and the break may come closer in. Sized off the bar itself, not the viewport. */
+@container (max-width: 420px) {
+  .pkt-bar__fill, .pkt-bar__seam { --safe: 128px; }
+  .pkt { gap: 10px; padding: 0 26px 0 12px; }
+  .pkt--b { padding: 0 12px 0 26px; }
+  .pkt:not(.is-mine) .pkt__sub { display: none; }
 }
+/* Smallest phones: a smaller badge and tighter type so team names stay whole; your pick
+   still reads from its fill, border and "Your pick" without the ✓. */
 @container (max-width: 300px) {
-  .pkt__avs { display: none; }
+  .pkt-bar__fill, .pkt-bar__seam { --safe: 112px; }
+  .pkt { gap: 6px; padding: 0 21px 0 10px; }
+  .pkt--b { padding: 0 10px 0 21px; }
+  .pkt__name { font-size: 12.5px; letter-spacing: 0.03em; }
+  .pkt.is-mine .pkt__check { display: none; }
+  .pkt__n { font-size: 20px; }
+  .pkt-badge { width: 34px; height: 34px; }
+  .pkt-badge b { font-size: 13px; }
+  .pkt-badge small { font-size: 6px; }
+  .pkt-badge .pk-av { width: 26px !important; height: 26px !important; }
 }
 
 /* Fans vs odds (the /picks/<game> preview) */

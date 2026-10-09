@@ -333,7 +333,7 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
   const slides = m.slides.map((id, i) => `<div class="gm-sl${i === 0 ? ' is-on' : ''}"><img src="/api/photo/${encodeURIComponent(id)}" alt=""${i === 0 ? '' : ' loading="lazy"'}></div>`).join('');
 
   // Who wins? — the shared pick box (views/pick-box.js) with this card's odds panel on top.
-  // The fan split and faces only show once you've picked (or picks closed).
+  // The bar shows the fan split; "Who picked" opens from its middle badge.
   const total = counts.a + counts.b;
   const { closed = false, odds = null } = pickState || {};
   const pick = state === 'final' || state === 'later' ? '' : pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers }, {
