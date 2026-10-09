@@ -7966,8 +7966,13 @@ app.get('/admin/picks', requireAuth, (req, res) => {
   if (missing && upDay) {
     const sent = JSON.parse(getSetting(`picks_reminded_${upDay}`, 'null') || 'null');
     if (sent) { missing.remindedAt = sent.at; missing.remindedCount = sent.count; }
+    // Already emailed for this game day: left off the checklist and the counts entirely (no
+    // repeat bell either).
+    const emailedIds = picksEmailedIds(upDay);
+    const remindable = missing.list.filter(p => !emailedIds.has(p.id));
+    missing.alreadyEmailed = missing.list.length - remindable.length;
     // Reminder email: who'd get one, and the last send's tally for this game day.
-    const reach = picksReminderRecipients(missing.list, upDay);
+    const reach = picksReminderRecipients(remindable, upDay);
     missing.reachable = reach.recipients.length;
     missing.emailable = reach.emailable.length;
     missing.noValidEmail = reach.skipped.noValidEmail;
@@ -7975,11 +7980,9 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     // Per-player status for the pick-who-to-remind checklist: email, bell only (and why),
     // or unreachable (failed the broadcast gates).
     const byId = new Map(reach.recipients.map(r => [r.player.id, r]));
-    const emailedIds = picksEmailedIds(upDay);
-    missing.alreadyEmailed = missing.list.filter(p => emailedIds.has(p.id)).length;
-    missing.people = missing.list.map(p => {
+    missing.people = remindable.map(p => {
       const r = byId.get(p.id);
-      return { ...p, reach: !r ? 'skip' : r.emailable ? 'email' : 'bell', emailed: emailedIds.has(p.id), note: r?.bellOnly || (r ? '' : 'inactive or no valid email') };
+      return { ...p, reach: !r ? 'skip' : r.emailable ? 'email' : 'bell', note: r?.bellOnly || (r ? '' : 'inactive or no valid email') };
     });
     try { missing.emailed = JSON.parse(getSetting(`picks_emailed_${upDay}`, 'null') || 'null'); } catch {}
   }
@@ -8054,7 +8057,8 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
   if (!missing?.list.length) return res.redirect('/admin/picks');
   // The page's checklist posts the chosen players as `ids`; only those get reminded.
   const chosen = new Set([].concat(req.body?.ids || []).map(String));
-  const targets = missing.list.filter(p => chosen.has(p.id));
+  const emailedIds = picksEmailedIds(upNext.find(u => !u.closed)?.ymd);
+  const targets = missing.list.filter(p => chosen.has(p.id) && !emailedIds.has(p.id));
   if (!targets.length) return res.redirect('/admin/picks');
   const open = upNext.filter(u => !u.closed);
   const matchups = open.map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');

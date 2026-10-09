@@ -99,7 +99,7 @@ function remindChecklist(people) {
       <div class="grid gap-x-4 gap-y-1" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
         ${people.map(p => `<label class="flex items-center gap-1.5 min-w-0${p.reach === 'skip' ? ' opacity-50' : ''}" title="${escHtml(p.note)}">
           <input type="checkbox" form="picks-remind" name="ids" value="${escHtml(p.id)}" data-reach="${p.reach}"${p.reach === 'skip' ? ' disabled' : ' checked'}>
-          <span class="truncate text-slate-300">${escHtml(p.name)}</span> ${p.emailed && p.reach === 'bell' ? '<span class="text-slate-500">emailed ✓</span>' : tag[p.reach]}
+          <span class="truncate text-slate-300">${escHtml(p.name)}</span> ${tag[p.reach]}
         </label>`).join('')}
       </div>
     </details>`;
@@ -116,7 +116,7 @@ function missingBar(m) {
       ${remindChecklist(m.people || [])}
       ${m.noValidEmail ? `<span class="block mt-1 text-slate-500">${m.noValidEmail} skipped, no valid email on their account</span>` : ''}
       ${m.dormant ? `<span class="block mt-1 text-slate-500">${m.dormant} skipped, account inactive (no login in 3+ months or setup link expired)</span>` : ''}
-      ${m.alreadyEmailed ? `<span class="block mt-1 text-slate-500">${m.alreadyEmailed} already emailed for this game day, they'll get the bell only</span>` : ''}
+      ${m.alreadyEmailed ? `<span class="block mt-1 text-slate-500">${m.alreadyEmailed} already emailed for this game day, left off the list</span>` : ''}
       ${m.remindedAt ? `<span class="block mt-1 text-amber-400">Reminder sent ${escHtml(when(m.remindedAt))} to ${m.remindedCount} player${m.remindedCount === 1 ? '' : 's'}</span>` : ''}
       ${m.emailed ? `<span class="block mt-1 text-amber-400">Email sent ${escHtml(when(m.emailed.at))} to ${m.emailed.sent} of ${m.emailed.of}${m.emailed.failed ? ` · <b class="text-red-400">${m.emailed.failed} failed</b>` : ''} · ${m.emailed.source === 'ai' ? 'AI copy' : 'template copy'}</span>` : ''}
     </div>
