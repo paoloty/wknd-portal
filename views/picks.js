@@ -264,7 +264,7 @@ export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine =
         <li><strong>More correct picks.</strong> 10–4 beats 7–1, even though both are +6.</li>
         <li><strong>Longest streak</strong> of correct picks in the season. A wrong pick breaks a streak; a game you skip doesn't.</li>
         <li><strong>Beat the Odds points</strong> (below).</li>
-        <li><strong>Finals margin guess.</strong> When you pick Finals Game 1, you'll also be able to guess the winning margin (it opens before the playoffs). Closest guess wins.</li>
+        <li><strong>Finals margin guess.</strong> Closest guess wins (see below).</li>
         <li>Still level: <strong>co-Pickmasters</strong>.</li>
       </ol>
       <p>With three or more tied, anyone a step separates is placed, and whoever is still level starts again at head-to-head.</p>`)}
@@ -276,8 +276,15 @@ export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine =
         <li>The odds used are the ones shown when picks closed. A game with no odds (early in the season, or odds hidden for that game) counts +1 or −1.</li>
       </ul>
       ${oddsOn ? '' : '<p>Odds are switched off on the site right now, but the odds stored for each game still count here.</p>'}`)}
+      ${section('Finals margin guess', `<p>On <strong>Finals Game 1</strong> only, once you've picked a side, the pick box asks by how many points your side wins. It's optional, and you can change it until picks close.</p>
+      <ul>
+        <li>It's measured from your pick. Say you guessed <strong>Blue by 7</strong>: if Blue wins by 4, you're 3 off; if Blue loses by 5, you're 12 off.</li>
+        <li>Closest guess wins this tiebreaker. No guess counts as furthest off.</li>
+        <li>Removing your pick removes your guess. Switching sides keeps the number.</li>
+        <li>Guesses stay private, and only matter if there's a tie for Pickmaster after the first four tiebreakers.</li>
+      </ul>`)}
       ${section('Special cases', `<ul>
-        <li><strong>Cancelled games</strong>, or games without a final result, score nothing for anyone.</li>
+        <li><strong>Cancelled games</strong>, or games without a final result, score nothing for anyone. If Finals Game 1 is cancelled, the margin guesses on it don't count.</li>
         <li><strong>Score corrections:</strong> if a final score is corrected, every pick on that game is rescored. Beat the Odds points stay based on the odds shown at close.</li>
         <li>Rules are set before the season's picks are scored. Any change only applies to games after it's announced.</li>
       </ul>`)}

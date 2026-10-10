@@ -138,7 +138,7 @@ import {
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
-  setGamePick, getGamePickCounts, getPlayerGamePicks,
+  setGamePick, setGamePickMargin, getGamePickCounts, getPlayerGamePicks,
   getAllGamePicks, getGamePicksWithPlayers, getAllGamePickSettings, setGamePickClosed, setGamePickHideOdds, claimGamePickSettle,
   getGamePreview, saveGamePreview, getGamePreviewIds,
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
@@ -167,7 +167,7 @@ import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceCo
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { comparisonProblems } from './lib/story-checks.js';
-import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, callerRecords, calledItSummary } from './lib/picks.js';
+import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
@@ -7890,6 +7890,10 @@ app.get('/admin/games/:id', requireAuth, (req, res) => {
     settledAt: pickSetting.settled_at || null,
     odds: pg ? (pg.played ? pctx.oddsById[game.id] : computeOdds(pg, pctx.played)) : null,
     closeTime: picksCloseTime(),
+    // The margin-guess tiebreaker hangs off the type: a Finals game left as 'playoff' gets none.
+    finalsNote: game.game_type === 'finals'
+      ? (finalsGame1Id(pctx.all, String(game.season)) === game.id ? 'Finals Game 1: players can add a winning-margin guess here (Pickmaster tiebreaker 5).' : '')
+      : game.game_type === 'playoff' ? 'If this is a Finals game, set its type to Finals so Game 1 gets the margin-guess tiebreaker.' : '',
   };
   res.send(renderAdminPage(req, {
     title: `${game.team_a_name} vs ${game.team_b_name}`,
@@ -8019,6 +8023,7 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     return {
       ...person(id), picks: e.made, settled: r?.picks || 0, correct: r?.correct || 0, net: r?.net || 0, oddsPts: r?.oddsPts || 0,
       streak: r?.streak || 0, upsets: r?.upsets || 0, rank: rankOf.get(id) || null, last: e.last,
+      marginGuess: sp.finalsG1 ? (pctx.picks.find(p => p.game_id === sp.finalsG1 && p.player_id === id)?.margin_guess ?? null) : undefined,
       missingNext: missingIds.has(id),
     };
   }).sort((x, y) => (x.rank || 1e9) - (y.rank || 1e9) || y.correct - x.correct || y.picks - x.picks || x.name.localeCompare(y.name));
@@ -8028,7 +8033,7 @@ app.get('/admin/picks', requireAuth, (req, res) => {
     title: 'Who wins? picks',
     currentPath: '/admin/picks',
     body: adminPicksBody({
-      season, seasons, isCurrent, upNext, upDay, missing, results, pickers,
+      season, seasons, isCurrent, upNext, upDay, missing, results, pickers, hasFinalsG1: !!sp.finalsG1,
       minPicks: sp.board.minPicks, oddsOn: pickOddsEnabled(), picksOn: picksEnabled(),
       msg: req.query.reminded
         ? `Reminder sent to ${req.query.reminded} player${req.query.reminded === '1' ? '' : 's'}.${req.query.emailing ? ` Emailing ${req.query.emailing} of them now; refresh in a minute for the tally.` : ''}`
@@ -9357,7 +9362,10 @@ function seasonPicks(pctx, season) {
   const pickedIds = new Set(pctx.picks.map(p => p.game_id));
   const pickable = settled.filter(g => pickedIds.has(g.id));
   const records = buildPickRecords(pctx.picks, pickable, scoringOdds(pickable, pctx));
-  return { settled, pickable, records, board: pickLeaderboard(records), callers: callerRecords(settled, pctx.picks) };
+  // Tiebreak step 5 only counts once Finals Game 1 has a final.
+  const finalsG1 = finalsGame1Id(pctx.all, season);
+  const guesses = marginGuessDiffs(pctx.picks, settled.find(g => g.id === finalsG1));
+  return { settled, pickable, records, finalsG1, board: pickLeaderboard(records, guesses), callers: callerRecords(settled, pctx.picks) };
 }
 
 // Closed/odds state for one upcoming game.
@@ -9432,6 +9440,7 @@ function openPicks(games, pctx, viewerId) {
     const pg = pctx.byId[g.id] || toPickGame(g, gameYmd);
     const { closed, odds } = upcomingPickState(g, pctx);
     const myPick = mine[g.id] || null;
+    const isFinalsG1 = pg.type === 'finals' && finalsGame1Id(pctx.all, pg.season) === g.id;
     const seasonPlayed = pctx.played.filter(x => x.season === pg.season);
     const recordOf = t => {
       const list = seasonPlayed.filter(x => x.a === t || x.b === t);
@@ -9443,6 +9452,8 @@ function openPicks(games, pctx, viewerId) {
     return {
       id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season, href: previewHref(g),
       counts: counts[g.id], myPick, closed, odds, closeHm: picksCloseTime(),
+      // Finals Game 1 carries the margin-guess tiebreaker; the guess is only ever sent to its owner.
+      marginGuess: isFinalsG1 ? { mine: myPick ? (pctx.picks.find(p => p.game_id === g.id && p.player_id === viewerId)?.margin_guess ?? null) : null } : null,
       pickers: canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null,
       recA: recordOf(pg.a), recB: recordOf(pg.b),
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
@@ -9645,6 +9656,26 @@ app.get('/games', (req, res) => {
 });
 
 // "Who wins?" — one pick per logged-in player per game, only while the game is upcoming.
+// The Finals Game 1 tiebreaker guess: "my side wins by N" (1–MARGIN_MAX), or null to clear.
+// Needs an existing pick on that game, and picks still open.
+app.post('/games/:id/pick/margin', express.json(), (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.status(401).json({ error: 'Log in to pick.' });
+  const game = getGameById(req.params.id);
+  if (!picksEnabled()) return res.status(404).json({ error: 'Picks are off right now.' });
+  if (!game || !getUpcomingGames([game]).length) return res.status(400).json({ error: 'Picks are closed for this game.' });
+  const pctx = buildPicksContext(getAllGames());
+  if (upcomingPickState(game, pctx).closed) return res.status(400).json({ error: 'Picks are closed for this game.' });
+  if (finalsGame1Id(pctx.all, String(game.season)) !== game.id) return res.status(400).json({ error: 'The margin guess is only on Finals Game 1.' });
+  const raw = req.body?.margin;
+  const margin = raw === null || raw === '' ? null : Number(raw);
+  if (margin !== null && !(Number.isInteger(margin) && margin >= 1 && margin <= MARGIN_MAX)) {
+    return res.status(400).json({ error: `Enter a whole number from 1 to ${MARGIN_MAX}.` });
+  }
+  if (!setGamePickMargin(game.id, playerId, margin)) return res.status(400).json({ error: 'Pick a side first.' });
+  res.json({ ok: true, margin });
+});
+
 app.post('/games/:id/pick', express.json(), (req, res) => {
   const playerId = req.session?.playerPlayerId;
   if (!playerId) return res.status(401).json({ error: 'Log in to pick.' });

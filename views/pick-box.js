@@ -1,6 +1,7 @@
 import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
 import { gameSlug } from '../lib/slugs.js';
+import { MARGIN_MAX } from '../lib/picks.js';
 
 // ── "Who wins?" pick box — one component for every surface that takes a pick ──────────
 // The homepage widget, /games Up next, /picks (Open picks + each game's preview), the game
@@ -124,6 +125,25 @@ function pickFoot(o, isPlayer, st, closeLabel) {
     </div></div>`;
 }
 
+// Finals Game 1 only: the margin-guess tiebreaker under the footer. Always drawn on that game
+// (disabled until you pick) so the box doesn't jump when you do. o.marginGuess = { mine }.
+function marginRow(o, isPlayer) {
+  if (!o.marginGuess) return '';
+  if (!isPlayer) return `<div class="pkt-margin is-guest"><span class="pkt-margin__k">Tiebreaker</span><span class="pkt-margin__msg">Pick a side, then guess the winning margin. It's the last Pickmaster tiebreaker. <a href="/picks/rules">Rules</a></span></div>`;
+  const mine = o.myPick, saved = o.marginGuess.mine;
+  const team = mine ? tcase(mine === 'a' ? o.a : o.b) : 'Your side';
+  if (o.closed) {
+    return `<div class="pkt-margin is-closed"><span class="pkt-margin__k">Tiebreaker</span><span class="pkt-margin__msg">${mine && saved != null ? `Your guess: <b>${escHtml(team)} by ${saved}</b>` : 'No margin guess'}</span></div>`;
+  }
+  return `<div class="pkt-margin" data-margin data-saved="${saved ?? ''}">
+      <span class="pkt-margin__k">Tiebreaker</span>
+      <label class="pkt-margin__q"><span data-margin-team>${escHtml(team)}</span> wins by
+        <input type="number" inputmode="numeric" min="1" max="${MARGIN_MAX}" step="1" value="${saved ?? ''}" placeholder="–" data-margin-in aria-label="Winning margin guess"${mine ? '' : ' disabled'}> pts</label>
+      <button type="button" class="pkt-margin__save" data-margin-save hidden>Save</button>
+      <span class="pkt-margin__msg" data-margin-msg aria-live="polite">${mine ? (saved == null ? 'Optional' : '') : 'Pick a side first'}</span>
+    </div>`;
+}
+
 // "Fans vs odds" — where the pickers lean against the favourite (the /picks/<game> preview).
 function fansVsOdds(o) {
   const { counts } = o;
@@ -148,6 +168,7 @@ export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = '', f
         ${pickBadge(o, isPlayer, st)}
       </div>
       ${pickFoot(o, isPlayer, st, closeLabel)}
+      ${marginRow(o, isPlayer)}
       ${flag ? fansVsOdds(o) : ''}
     </div>`;
 }
@@ -253,6 +274,38 @@ export function pickBoxScript() {
     var rm = foot.querySelector('[data-remove]'); if (rm) rm.hidden = !f.remove;
     var who = foot.querySelector('.pkt-foot__who'); if (who) { who.hidden = !(box.dataset.pickers && st.total); who.dataset.facesSide = mine || 'a'; }
   }
+  // Finals Game 1 guess row: follows the pick (team name, enabled); removing the pick clears it.
+  function marginFill(box, mine) {
+    var row = box.querySelector('[data-margin]'); if (!row) return;
+    var names = JSON.parse(box.dataset.names), inp = row.querySelector('[data-margin-in]'), msg = row.querySelector('[data-margin-msg]');
+    row.querySelector('[data-margin-team]').textContent = mine ? tc(names[mine]) : 'Your side';
+    inp.disabled = !mine;
+    if (!mine) { inp.value = ''; row.dataset.saved = ''; row.querySelector('[data-margin-save]').hidden = true; msg.textContent = 'Pick a side first'; }
+    else if (msg.textContent === 'Pick a side first') msg.textContent = row.dataset.saved ? '' : 'Optional';
+  }
+  function marginDirty(row) {
+    row.querySelector('[data-margin-save]').hidden = row.querySelector('[data-margin-in]').value.trim() === (row.dataset.saved || '');
+  }
+  function saveMargin(box) {
+    var row = box.querySelector('[data-margin]'); if (!row || row.dataset.busy) return;
+    var inp = row.querySelector('[data-margin-in]'), msg = row.querySelector('[data-margin-msg]'), btn = row.querySelector('[data-margin-save]');
+    var v = inp.value.trim(), n = v === '' ? null : Number(v);
+    if (n !== null && !(n % 1 === 0 && n >= 1 && n <= +inp.max)) { msg.textContent = 'Whole number, 1 to ' + inp.max; return; }
+    row.dataset.busy = '1'; msg.textContent = 'Saving…';
+    fetch('/games/' + encodeURIComponent(box.dataset.gameId) + '/pick/margin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ margin: n }) })
+      .then(function (r) { if (r.status === 401) { toLogin(box, null); return null; } return r.json().catch(function () { return {}; }); })
+      .then(function (d) {
+        delete row.dataset.busy; if (!d) return;
+        if (d.ok) { row.dataset.saved = d.margin == null ? '' : String(d.margin); inp.value = row.dataset.saved; btn.hidden = true; msg.textContent = d.margin == null ? 'Guess cleared' : 'Saved'; }
+        else msg.textContent = d.error || "Couldn't save your guess.";
+      })
+      .catch(function () { delete row.dataset.busy; msg.textContent = "Couldn't save. Check your connection."; });
+  }
+  document.addEventListener('input', function (e) { var row = e.target.closest('[data-margin]'); if (row) marginDirty(row); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' || !e.target.matches('[data-margin-in]')) return;
+    e.preventDefault(); saveMargin(e.target.closest('.gm-pick'));
+  });
   // A problem saving shows in the footer for a few seconds instead of a pop-up.
   function footError(box, msg) {
     var foot = box.querySelector('[data-pick-foot]'); if (!foot) return;
@@ -301,6 +354,7 @@ export function pickBoxScript() {
       }
     }
     footFill(box, st, mine);
+    marginFill(box, mine);
     box.classList.toggle('has-pick', !!mine);
     box.dataset.mine = mine || '';
     var fav = box.dataset.fav, fanFav = t && counts.a !== counts.b ? (counts.a > counts.b ? 'a' : 'b') : '';
@@ -388,6 +442,8 @@ export function pickBoxScript() {
     var faces = e.target.closest('[data-faces-side]');
     if (faces) { openList(box, faces.dataset.facesSide); return; }
     if (closed) return;
+    if (e.target.closest('[data-margin-save]')) { saveMargin(box); return; }
+    if (e.target.closest('[data-margin]')) return;
     if (e.target.closest('[data-remove]')) { if (box.dataset.mine) send(box, null); return; }
     var tile = e.target.closest('[data-tile]'); if (!tile) return;
     var s = tile.dataset.tile;

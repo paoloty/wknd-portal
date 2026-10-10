@@ -616,6 +616,7 @@ function picksPanelCard(game, pp) {
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500 flex justify-between"><span>Who wins? picks</span><span>${pp.picks.length} total</span></div>
       <div class="p-4">
         <div class="text-xs text-slate-400 mb-3">Picks: ${state}${pp.upcoming ? ` · auto-closes ${escHtml(pp.closeTime)} on game day` : ''}${pp.settledAt ? ' · results sent' : ''}</div>
+        ${pp.finalsNote ? `<div class="text-xs text-amber-400 mb-3">${escHtml(pp.finalsNote)}</div>` : ''}
         ${pp.upcoming ? `<div class="mb-3">
           <label class="admin-field-label">Pick window</label>
           <select id="agm-picks-closed" class="admin-input">

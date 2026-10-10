@@ -168,7 +168,7 @@ function resultsTable(rows, oddsOn) {
   </div>`;
 }
 
-function pickersTable(rows, minPicks) {
+function pickersTable(rows, minPicks, hasFinalsG1 = false) {
   if (!rows.length) return `<div class="${panel} p-8 text-center text-sm text-slate-500">Nobody has picked this season yet.</div>`;
   const body = rows.map(r => `<tr class="admin-table-row">
       <td class="admin-td font-bold ${r.rank === 1 ? 'text-amber-400' : 'text-slate-400'}">${r.rank || '<span class="text-slate-600">—</span>'}</td>
@@ -178,19 +178,20 @@ function pickersTable(rows, minPicks) {
       <td class="admin-td font-semibold">${r.settled ? fmtPts(r.net) : '<span class="text-slate-600">—</span>'}</td>
       <td class="admin-td">${r.settled ? r.oddsPts.toFixed(2) : '<span class="text-slate-600">—</span>'}</td>
       <td class="admin-td">${r.streak >= 2 ? `<span class="text-amber-400 font-semibold">${r.streak} in a row</span>` : '<span class="text-slate-600">—</span>'}</td>
-      <td class="admin-td">${r.upsets || '<span class="text-slate-600">0</span>'}</td>
+      <td class="admin-td">${r.upsets || '<span class="text-slate-600">0</span>'}</td>${hasFinalsG1 ? `
+      <td class="admin-td">${r.marginGuess != null ? `by ${r.marginGuess}` : '<span class="text-slate-600">—</span>'}</td>` : ''}
       <td class="admin-td whitespace-nowrap">${r.last ? `${escHtml(shortDay(r.last.ymd))} · ${escHtml(tc(r.last.team))}` : ''}${r.missingNext ? ' <span class="text-amber-400">· no pick yet this week</span>' : ''}</td>
       <td class="admin-td text-xs ${r.rank ? 'text-slate-400' : 'text-slate-500'}">${r.rank ? 'On the board' : 'Waiting on a final'}</td>
     </tr>`).join('');
   return `<div class="${panel} overflow-auto">
     <table class="admin-table">
-      <thead><tr><th class="admin-th">#</th><th class="admin-th">Player</th><th class="admin-th">Picks</th><th class="admin-th">Called</th><th class="admin-th">Pts</th><th class="admin-th">Odds pts</th><th class="admin-th">Streak</th><th class="admin-th">Upsets</th><th class="admin-th">Last pick</th><th class="admin-th">Status</th></tr></thead>
+      <thead><tr><th class="admin-th">#</th><th class="admin-th">Player</th><th class="admin-th">Picks</th><th class="admin-th">Called</th><th class="admin-th">Pts</th><th class="admin-th">Odds pts</th><th class="admin-th">Streak</th><th class="admin-th">Upsets</th>${hasFinalsG1 ? '<th class="admin-th" title="Finals Game 1 margin guess (tiebreaker 5)">Finals guess</th>' : ''}<th class="admin-th">Last pick</th><th class="admin-th">Status</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   </div>`;
 }
 
-export function adminPicksBody({ season, seasons, isCurrent, kpi, upNext, upDay, missing, results, pickers, minPicks, oddsOn, picksOn, msg = '' }) {
+export function adminPicksBody({ season, seasons, isCurrent, kpi, upNext, upDay, missing, results, pickers, hasFinalsG1 = false, minPicks, oddsOn, picksOn, msg = '' }) {
   const seasonSel = seasons.length > 1 ? `<select class="admin-input" style="height:34px;width:auto" aria-label="Season" onchange="location.href='/admin/picks?season='+encodeURIComponent(this.value)">${seasons.map(s => `<option value="${escHtml(s)}"${s === season ? ' selected' : ''}>Season ${escHtml(s)}</option>`).join('')}</select>` : '';
   return `
 <div class="mb-5 flex flex-wrap items-end justify-between gap-4">
@@ -215,7 +216,7 @@ ${upNext.length ? `<div class="${panel} mb-6">
 <h3 class="${kicker} mb-2">Season ${escHtml(season)} results <span class="normal-case tracking-normal font-normal text-slate-600">· click a row for who called it and who missed</span></h3>
 ${resultsTable(results, oddsOn)}
 <h3 class="${kicker} mb-2">Pickers · Season ${escHtml(season)}</h3>
-${pickersTable(pickers, minPicks)}
+${pickersTable(pickers, minPicks, hasFinalsG1)}
 <script>
 (function () {
   function save(id, body) {
