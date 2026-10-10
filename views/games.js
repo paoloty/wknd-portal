@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet } from './utils.js';
+import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl } from './utils.js';
 import { summaryPanel } from './home.js';
 import { pickBox, pickBoxScript, previewHref, oddsEdge, talkLink } from './pick-box.js';
 
@@ -42,7 +42,7 @@ export function gameRow(game, { commentsEnabled = false, social = { commentsCoun
 
   const flareOpacity = game.has_cover ? '55' : 'bb';
   const thumb = `${game.has_cover
-    ? `<img src="/api/photo/${encodeURIComponent(game.id)}" alt="" class="game-row__thumb-img">`
+    ? `<img src="/api/photo/${encodeURIComponent(game.id)}?w=640" alt="" class="game-row__thumb-img" loading="lazy">`
     : `<div class="game-row__thumb-placeholder"><span class="game-row__thumb-vs">VS</span></div>`}
   <div class="game-row__thumb-flare" style="background:linear-gradient(135deg,${colorA}${flareOpacity} 0%,transparent 55%,${colorB}${flareOpacity} 100%)"></div>`;
 
@@ -135,7 +135,7 @@ const shortDayLabel = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateStri
 const initialsOf = name => String(name || '').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const dot = (name, size = 0) => `<span class="team-dot"${size ? ` style="width:${size}px;height:${size}px;background:${teamColor(name)}"` : ` style="background:${teamColor(name)}"`}></span>`;
 const avatar = (cls, p) => p.hasPhoto
-  ? `<img class="${cls}" src="/api/player/${encodeURIComponent(p.id || p.playerId)}/photo" alt="" loading="lazy">`
+  ? `<img class="${cls}" src="${playerPhotoUrl(p.id || p.playerId, 96)}" alt="" loading="lazy">`
   : `<span class="${cls} gm-avatar--initials">${escHtml(initialsOf(p.name))}</span>`;
 const gameYmdOf = raw => {
   const s = String(raw || '');
@@ -204,7 +204,7 @@ function meetingTile(m, x) {
     ? `POTG · ${escHtml(x.potg.name)} ${x.potg.pts} pts${x.potg.reb >= 5 ? `, ${x.potg.reb} reb` : x.potg.ast >= 5 ? `, ${x.potg.ast} ast` : ''}`
     : 'No box score for this game';
   return `<a href="/games/${encodeURIComponent(x.id)}" class="gm-mt${x.hasCover ? ' has-photo' : ''}" style="--team:${teamColor(aWin ? m.a : m.b)}">
-      ${x.hasCover ? `<img class="gm-mt__img" src="/api/photo/${encodeURIComponent(x.id)}" alt="" loading="lazy">` : ''}
+      ${x.hasCover ? `<img class="gm-mt__img" src="/api/photo/${encodeURIComponent(x.id)}?w=640" alt="" loading="lazy">` : ''}
       <span class="gm-mt__in">
         <span class="gm-mt__top"><span class="gm-mt__when">${escHtml(shortDayLabel(x.ymd))} · S${escHtml(String(x.season))}</span>${x.tag ? `<span class="gm-mt__tag">${escHtml(x.tag)}</span>` : ''}</span>
         <span class="gm-mt__sb">
@@ -288,7 +288,7 @@ function pickAvatar(p, size = 30, link = true) {
   const tag = link ? 'a' : 'span';
   return `<${tag}${link ? ` href="/players/${encodeURIComponent(p.id)}"` : ''} class="pk-av" style="--team:${teamColor(p.team)};width:${size}px;height:${size}px" title="${escHtml(p.name)}">
       <span class="pk-av__init">${escHtml(initials(p.name))}</span>
-      <img src="/api/player/${encodeURIComponent(p.id)}/photo" alt="${escHtml(p.name)}" loading="lazy" onerror="this.remove()">
+      <img src="${playerPhotoUrl(p.id, size > 48 ? 192 : 96)}" alt="${escHtml(p.name)}" loading="lazy" onerror="this.remove()">
     </${tag}>`;
 }
 
@@ -330,7 +330,7 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
   const semi = variant === 'semi';
   const leadA = m.winsA > m.winsB, leadB = m.winsB > m.winsA;
   const glare = `radial-gradient(65% 130% at 0% 75%, ${teamColor(m.a)}80 0%, transparent 62%), radial-gradient(65% 130% at 100% 75%, ${teamColor(m.b)}80 0%, transparent 62%)`;
-  const slides = m.slides.map((id, i) => `<div class="gm-sl${i === 0 ? ' is-on' : ''}"><img src="/api/photo/${encodeURIComponent(id)}" alt=""${i === 0 ? '' : ' loading="lazy"'}></div>`).join('');
+  const slides = m.slides.map((id, i) => `<div class="gm-sl${i === 0 ? ' is-on' : ''}"><img src="/api/photo/${encodeURIComponent(id)}?w=960" alt=""${i === 0 ? '' : ' loading="lazy"'}></div>`).join('');
 
   // Who wins? — the shared pick box (views/pick-box.js) with this card's odds panel on top.
   // The bar shows the fan split; "Who picked" opens from its middle badge.
@@ -455,7 +455,7 @@ function gameCard(g, { commentsEnabled, social, topScorer, odds = null }) {
       <button type="button" class="gr-act" data-action="share-game" data-url="/games/${id}" aria-label="Share"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></button>`;
   return `<article class="gh-card gr-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}" data-teams="${escHtml(`${g.team_a_name} ${g.team_b_name}`)}" data-type="${escHtml(g.game_type || 'regular')}">
     <a href="/games/${id}" class="gr-card__link" aria-label="${escHtml(title.slice(0, 120))}"></a>
-    ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${id}" alt="" loading="lazy">` : ''}
+    ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${id}?w=640" alt="" loading="lazy">` : ''}
     <span class="gh-card__top"><span class="gh-card__when"><span class="gh-card__season">S${escHtml(String(g.season))}</span><span class="gh-card__date">${escHtml(dayLabel(ymd))}</span></span>${tag ? `<span class="gr-card__tag">${escHtml(tag)}</span>` : ''}</span>
     <span class="gh-card__body">
       <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>

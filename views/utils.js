@@ -142,12 +142,27 @@ export function initials(name) {
   return parts.map(p => p[0] || '').join('').slice(0, 2).toUpperCase();
 }
 
+// Player photo URL, sized (w = 96 | 192, or 0 for the stored original) and versioned with
+// the photo's hash so it can be cached for a year. server.js registers the hash lookup at
+// startup (setPhotoVersionResolver); without one, or for an unknown player, the URL is
+// simply unversioned and short-cached.
+let photoVersionOf = () => '';
+export function setPhotoVersionResolver(fn) { photoVersionOf = fn; }
+export function playerPhotoUrl(id, w = 0) {
+  const v = photoVersionOf(id);
+  const q = [w ? `w=${w}` : '', v ? `v=${v}` : ''].filter(Boolean).join('&');
+  return `/api/player/${encodeURIComponent(String(id || ''))}/photo${q ? `?${q}` : ''}`;
+}
+
 // Renders a player avatar circle (initials behind, photo on top).
 // Pass link: true to wrap in an <a> pointing to /players/:id.
+// Leader/mover/MVP avatars render up to 96px, so they get the 192px photo; the rest are ≤48px.
+const LARGE_AVATAR_CLASSES = new Set(['leader-avatar', 'mover-avatar', 'hmvp-avatar']);
 export function playerAvatar(id, name, color, { className = 'player-avatar', link = false } = {}) {
   const init  = initials(name);
+  const w     = LARGE_AVATAR_CLASSES.has(className) ? 192 : 96;
   const inner = `<span class="font-condensed">${escHtml(init)}</span>
-    <img src="/api/player/${encodeURIComponent(String(id || ''))}/photo" alt="" loading="lazy" onerror="this.style.display='none'">`;
+    <img src="${playerPhotoUrl(id, w)}" alt="" loading="lazy" onerror="this.style.display='none'">`;
   const style = `border-color:${escHtml(color)}`;
   if (link) {
     const href = `/players/${encodeURIComponent(String(id || ''))}`;

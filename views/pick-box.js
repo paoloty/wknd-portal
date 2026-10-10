@@ -231,7 +231,7 @@ export function pickBoxScript() {
     f.style.setProperty('--team', p.color); f.style.width = f.style.height = size + 'px';
     f.title = p.me ? 'You' : p.name;
     f.appendChild(el('span', 'pk-av__init', p.ini));
-    var img = document.createElement('img'); img.src = '/api/player/' + encodeURIComponent(p.id) + '/photo'; img.alt = ''; img.loading = 'lazy';
+    var img = document.createElement('img'); img.src = '/api/player/' + encodeURIComponent(p.id) + '/photo?w=96'; img.alt = ''; img.loading = 'lazy';
     img.onerror = function () { img.remove(); }; f.appendChild(img);
     return f;
   }

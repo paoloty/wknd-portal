@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, playerAvatar, playerLink, stripEmptyParagraphs } from './utils.js';
+import { teamColor, displayPlayerName, initials, playerAvatar, playerLink, stripEmptyParagraphs, playerPhotoUrl } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
@@ -52,7 +52,7 @@ function shareStatsModal(game, stat) {
   const day = new Date(`${String(game.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const bgs = [
     game.has_cover ? { key: 'game', label: 'Game photo', css: `background-image:url('/api/photo/${encodeURIComponent(game.id)}')` } : null,
-    { key: 'me', label: 'Your photo', css: `background-image:url('/api/player/${encodeURIComponent(stat.player_id)}/photo');background-position:center 20%` },
+    { key: 'me', label: 'Your photo', css: `background-image:url('${playerPhotoUrl(stat.player_id)}');background-position:center 20%` },
     { key: 'team', label: 'Team glow', css: `background:radial-gradient(90% 70% at 50% 85%, ${team}88 0%, transparent 70%), linear-gradient(160deg, #1b2232, #0a0e16)`, solid: true },
   ].filter(Boolean);
   const bgBtn = b => `<button type="button" class="ssc2-bg" data-bg="${b.key}" data-css="${escHtml(b.css)}"${b.solid ? ' data-solid="1"' : ''}><span class="ssc2-bg__im"><i style="${escHtml(b.css)}"></i></span>${escHtml(b.label)}</button>`;
@@ -1445,11 +1445,11 @@ function yourGameStrip(game, mg) {
   // team-colour glow.
   const team = teamColor(s.team_name);
   const bgCover = game.has_cover ? ` style="background-image:url('/api/photo/${encodeURIComponent(game.id)}')"` : ` style="background:radial-gradient(80% 60% at 50% 30%, ${team}55, #10141d)"`;
-  const bgPlayer = ` style="background-image:url('/api/player/${encodeURIComponent(s.player_id)}/photo');background-position:center 20%"`;
+  const bgPlayer = ` style="background-image:url('${playerPhotoUrl(s.player_id)}');background-position:center 20%"`;
   const bgTeam = ` style="background:radial-gradient(90% 70% at 50% 85%, ${team}66 0%, transparent 70%), linear-gradient(160deg, #1b2232, #0a0e16)"`;
   return `<section class="gd-yg" aria-label="Your game" style="--team:${teamColor(s.team_name)}">
     <div class="gd-yg__l">
-      <span class="gd-yg__av" aria-hidden="true"><span class="font-condensed">${escHtml(initials(displayPlayerName(s.name)))}</span><img src="/api/player/${encodeURIComponent(s.player_id)}/photo" alt="" onerror="this.remove()"></span>
+      <span class="gd-yg__av" aria-hidden="true"><span class="font-condensed">${escHtml(initials(displayPlayerName(s.name)))}</span><img src="${playerPhotoUrl(s.player_id, 192)}" alt="" onerror="this.remove()"></span>
       <div class="gd-yg__i">
         <span class="gd-kick gd-kick--amber">Your game <i>· ${won ? 'W' : 'L'} vs ${escHtml(tc(opp))}</i></span>
         <span class="gd-yg__line">${nums.map(x => `<span><b class="font-condensed">${x.v}</b><i>${x.l}</i></span>`).join('')}</span>
@@ -1477,7 +1477,7 @@ function shareDock(mg) {
   const best = [['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK']]
     .map(([k, l]) => ({ v: Number(s[k]) || 0, l })).filter(x => x.v > 0).sort((a, b) => b.v - a.v)[0];
   return `<div class="gd-dock" data-gd-dock hidden>
-    <span class="gd-dock__av"><img src="/api/player/${encodeURIComponent(s.player_id)}/photo" alt="" onerror="this.remove()"></span>
+    <span class="gd-dock__av"><img src="${playerPhotoUrl(s.player_id, 96)}" alt="" onerror="this.remove()"></span>
     <span class="gd-dock__t"><b class="font-condensed">${Number(s.pts) || 0} PTS${best ? ` · ${best.v} ${best.l}` : ''}</b>Your line</span>
     <button type="button" class="gd-dock__b" data-ssc-open>Share</button>
   </div>`;
@@ -1514,7 +1514,7 @@ function finalHero(d) {
     s.n <= 1 ? 'First meeting' : s.a === s.b ? `All-time series tied ${s.a}–${s.b}` : `${tc(s.a > s.b ? game.team_a_name : game.team_b_name)} lead the all-time series ${Math.max(s.a, s.b)}–${Math.min(s.a, s.b)}`,
   ].filter(Boolean);
   return `<section class="gd-hero" aria-label="Final score">
-    ${game.has_cover ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(game.id)}" alt="">` : ''}
+    ${game.has_cover ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(game.id)}" alt="" fetchpriority="high">` : ''}
     <div class="gd-hero__shade"></div>
     <div class="gd-hero__glare" style="background:${heroGlare(game, winner)}"></div>
     ${oddsEdge(game.team_a_name, game.team_b_name, heroOdds)}
@@ -1545,7 +1545,7 @@ function upcomingHero(d) {
   const chip = state === 'open' ? 'Picks open' : state === 'closed' ? 'Picks closed' : 'Coming up';
   const closeAt = state === 'open' && picks.o?.closeHm && ymd ? `${ymd}T${picks.o.closeHm}:00+08:00` : '';
   return `<section class="gd-hero gd-hero--up" aria-label="Upcoming game">
-    ${slide ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(slide)}" alt="">` : ''}
+    ${slide ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(slide)}" alt="" fetchpriority="high">` : ''}
     <div class="gd-hero__shade"></div>
     <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>
     ${oddsEdge(game.team_a_name, game.team_b_name, heroOdds)}
@@ -1728,7 +1728,7 @@ function duelSide(s, side, potgId, say) {
   return `<div class="gd-dl__p${side === 'b' ? ' gd-dl__p--r' : ''}">
       <a href="/players/${encodeURIComponent(s.player_id)}" class="gd-dl__ph" style="--team:${color}" tabindex="-1" aria-hidden="true">
         <span class="font-condensed">${escHtml(initials(displayPlayerName(s.name)))}</span>
-        <img src="/api/player/${encodeURIComponent(s.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()">
+        <img src="${playerPhotoUrl(s.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()">
       </a>
       <div class="gd-dl__i">
         ${tag}
@@ -1789,8 +1789,8 @@ function performersSection(game, dc, verdict, potgId, say = () => '') {
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>', sub: 'The best player on each side, head to head. Then the rest of each team’s standouts, ranked by game score.' })}
     <article class="card gd-dl" aria-label="The duel">
       <div class="gd-dl__top">
-        <div class="gd-dl__bg gd-dl__bg--l" aria-hidden="true" style="--team:${teamColor(dc.a.team_name)}"><img src="/api/player/${encodeURIComponent(dc.a.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()"></div>
-        <div class="gd-dl__bg gd-dl__bg--r" aria-hidden="true" style="--team:${teamColor(dc.b.team_name)}"><img src="/api/player/${encodeURIComponent(dc.b.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()"></div>
+        <div class="gd-dl__bg gd-dl__bg--l" aria-hidden="true" style="--team:${teamColor(dc.a.team_name)}"><img src="${playerPhotoUrl(dc.a.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></div>
+        <div class="gd-dl__bg gd-dl__bg--r" aria-hidden="true" style="--team:${teamColor(dc.b.team_name)}"><img src="${playerPhotoUrl(dc.b.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></div>
         ${duelSide(dc.a, 'a', potgId, say)}
         <div class="gd-dl__rows"><span class="gd-kick">Head to head</span>${duelRows(dc.a, dc.b)}</div>
         ${duelSide(dc.b, 'b', potgId, say)}
@@ -2062,7 +2062,7 @@ export function gamePage(d) {
   const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
   const mentionable = (d.mentionablePlayers || []).map(p => {
     const name = displayPlayerName(p.name);
-    return { id: p.id, name, initials: initials(name), photoUrl: `/api/player/${encodeURIComponent(p.id)}/photo` };
+    return { id: p.id, name, initials: initials(name), photoUrl: `${playerPhotoUrl(p.id, 96)}` };
   });
   const v = { ...d, mentionable };
   const floater = d.commentsEnabled ? gameSocialFloater({ commentsEnabled: true, gameReaction: d.gameReaction, commentsCount: d.comments.length }) : '';

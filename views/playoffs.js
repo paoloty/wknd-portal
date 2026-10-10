@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor } from './utils.js';
+import { teamColor, playerPhotoUrl } from './utils.js';
 
 // ── /playoffs ─────────────────────────────────────────────────────────────────
 // Champion hero (once there is one) → bracket (semis → finals → champion, with win rings)
@@ -112,7 +112,7 @@ function semiCard(label, high, hs, low, ls, games, projected) {
 }
 
 function heroSection(h) {
-  const avatar = p => `<span class="po-av"><span class="font-condensed" aria-hidden="true">${escHtml(p.initials)}</span><img src="/api/player/${encodeURIComponent(p.id)}/photo" alt="" loading="lazy" onerror="this.remove()"></span>`;
+  const avatar = p => `<span class="po-av"><span class="font-condensed" aria-hidden="true">${escHtml(p.initials)}</span><img src="${playerPhotoUrl(p.id, 96)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
   const person = (label, p, hot) => p ? `<a href="/players/${encodeURIComponent(p.id)}" class="po-hero__person">${avatar(p)}<span><span class="stp-th${hot ? ' is-hot' : ''}">${label}</span><span class="po-hero__pname">${escHtml(p.name)}${p.number !== '' && p.number != null ? ` <span class="font-condensed">#${escHtml(String(p.number))}</span>` : ''}</span></span></a>` : '';
   return `<section class="po-hero" aria-label="Champion" style="--glare:${rgba(teamColor(h.team.name), 0.13)}">
   <div class="po-hero__main">

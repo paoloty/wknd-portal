@@ -336,15 +336,25 @@ function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}
 </div>`;
 }
 
-// Builds the "All Time" + per-season grids for a Per Game/Totals-style tab, sharing one
-// pattern with Records: every scope is pre-rendered and toggled client-side (no reload), so
-// share/download buttons keep working per panel regardless of which scope is showing.
-function buildScopedGrids(cats, defaultFmt, mode, allTimePlayers, leaderSeasons, playersBySeason) {
+// One grid's panels, by key: 'pg:alltime' | 'pg:s3' | 'tot:…' | 'po:pg' | 'po:tot' |
+// 'rec:alltime' | 'rec:s3'. The page renders only its default grid; every other tab/scope
+// is fetched from /leaders/grid?k=<key> the first time it's shown (the page used to ship
+// all ~200 panels — 656 KB of HTML — to show ~16). `players` is that scope's leader rows
+// (pg/tot/po), `gameRecords` the record rows (rec).
+export const LEADERS_GRID_KEY = /^(?:(?:pg|tot|rec):(?:alltime|s\d+)|po:(?:pg|tot))$/;
+export function leadersGridHtml(key, { players = [], gameRecords = [], currentSeason = 3, isLoggedIn = false } = {}) {
+  _showDownload = isLoggedIn;
+  const [tab, scope] = key.split(':');
   // season value baked into each panel's share button must match what /api/leaders/share expects
-  const panelsForScope = (players, seasonVal) => cats.map(cat => leaderPanel(cat, players, defaultFmt, { mode, season: seasonVal })).filter(Boolean).join('\n');
-  const allTimeHtml = panelsForScope(allTimePlayers, 'alltime');
-  const seasonHtml  = Object.fromEntries(leaderSeasons.map(s => [s, panelsForScope(playersBySeason[s] || [], String(s))]));
-  return { allTimeHtml, seasonHtml };
+  const season = scope === 'alltime' ? 'alltime' : scope.slice(1);
+  const panels = (cats, fmt, mode, seasonVal) => cats.map(cat => leaderPanel(cat, players, fmt, { mode, season: seasonVal })).filter(Boolean).join('\n');
+  if (tab === 'pg')  return panels(PER_GAME, fmtPerGame, 'pg', season);
+  if (tab === 'tot') return panels(TOTALS, fmtTotals, 'tot', season);
+  if (tab === 'po')  return scope === 'pg'
+    ? panels(PER_GAME, fmtPerGame, 'po-pg', String(currentSeason))
+    : panels(TOTALS, fmtTotals, 'po-tot', String(currentSeason));
+  if (tab === 'rec') return buildRecordsGrid(scope === 'alltime' ? gameRecords : gameRecords.filter(r => String(r.season) === season), season);
+  return '';
 }
 
 function scopedPillsHtml(prefix, leaderSeasons, defaultScopeId, hidden) {
@@ -357,35 +367,33 @@ function scopedPillsHtml(prefix, leaderSeasons, defaultScopeId, hidden) {
       </div>`;
 }
 
-function scopedGridsBlock(prefix, allTimeHtml, seasonHtml, leaderSeasons, defaultScopeId) {
-  const seasonGridsHtml = leaderSeasons.map(s =>
-    `<div class="leaders-page-grid" id="${prefix}-grid-s${s}" style="${defaultScopeId === 's' + s ? '' : 'display:none'}">${seasonHtml[s]}</div>`
-  ).join('\n');
-  return `<div class="leaders-page-grid" id="${prefix}-grid-alltime" style="${defaultScopeId === 'alltime' ? '' : 'display:none'}">${allTimeHtml}</div>
+// The default Per Game scope gets its panels inline; every other grid is an empty shell
+// with data-lazy=<key>, filled by the page script the first time it's shown.
+function lazyGrid(id, key, html, hidden) {
+  const style = hidden ? ' style="display:none"' : '';
+  return html != null
+    ? `<div class="leaders-page-grid" id="${id}"${style}>${html}</div>`
+    : `<div class="leaders-page-grid" id="${id}"${style} data-lazy="${escHtml(key)}"></div>`;
+}
+
+function scopedGridsBlock(prefix, leaderSeasons, defaultScopeId, defaultHtml) {
+  const html = scope => (prefix === 'pg' && scope === defaultScopeId ? defaultHtml : null);
+  const seasonGridsHtml = leaderSeasons.map(s => lazyGrid(`${prefix}-grid-s${s}`, `${prefix}:s${s}`, html('s' + s), defaultScopeId !== 's' + s)).join('\n');
+  return `${lazyGrid(`${prefix}-grid-alltime`, `${prefix}:alltime`, html('alltime'), defaultScopeId !== 'alltime')}
     ${seasonGridsHtml}`;
 }
 
+// The scope Per Game opens on: the current season's if it has leaders yet, otherwise All Time.
+export function leadersDefaultScope(leaderSeasons, currentSeason) {
+  return leaderSeasons.map(String).includes(String(currentSeason)) ? 's' + currentSeason : 'alltime';
+}
+
+// defaultGridHtml: leadersGridHtml(`pg:${leadersDefaultScope(…)}`, …), rendered by the route.
 export function leadersPage({
-  playoffPlayers = [], gameRecords = [], currentSeason = 3, asOfLabel = '', isLoggedIn = false,
-  leaderSeasons = [], leadersBySeason = {}, leadersAllTime = [],
+  hasPlayoffs = false, recordSeasons = [], currentSeason = 3, asOfLabel = '',
+  leaderSeasons = [], defaultGridHtml = '',
 }) {
-  _showDownload = isLoggedIn;
-  // Default to the current season's tab if it has leaders yet, otherwise fall back to All Time.
-  const defaultScopeId = leaderSeasons.map(String).includes(String(currentSeason)) ? 's' + currentSeason : 'alltime';
-
-  const pgGrids  = buildScopedGrids(PER_GAME, fmtPerGame, 'pg', leadersAllTime, leaderSeasons, leadersBySeason);
-  const totGrids = buildScopedGrids(TOTALS, fmtTotals, 'tot', leadersAllTime, leaderSeasons, leadersBySeason);
-
-  const opts = s => ({ mode: s, season: String(currentSeason) });
-  const poPgPanels  = PER_GAME.map(cat => leaderPanel(cat, playoffPlayers, fmtPerGame, opts('po-pg'))).filter(Boolean).join('\n');
-  const poTotPanels = TOTALS.map(cat => leaderPanel(cat, playoffPlayers, fmtTotals, opts('po-tot'))).filter(Boolean).join('\n');
-  const hasPlayoffs = playoffPlayers.length > 0;
-
-  const recordSeasons = [...new Set(gameRecords.map(r => r.season).filter(Boolean))].sort((a, b) => b - a);
-  const allTimeGrid   = buildRecordsGrid(gameRecords, 'alltime');
-  const seasonGridsHtml = recordSeasons.map(s =>
-    `<div class="leaders-page-grid" id="rec-grid-s${s}" style="display:none">${buildRecordsGrid(gameRecords.filter(r => r.season === s), String(s))}</div>`
-  ).join('\n');
+  const defaultScopeId = leadersDefaultScope(leaderSeasons, currentSeason);
   const seasonPillsHtml = recordSeasons.map(s =>
     `<button class="season-pill" id="rec-btn-s${s}" onclick="recordsSwitch('s${s}')">S${escHtml(String(s))}</button>`
   ).join('');
@@ -410,18 +418,18 @@ export function leadersPage({
       ${scopedPillsHtml('tot', leaderSeasons, defaultScopeId, true)}
     </div>
     <div id="leaders-grid-pg">
-      ${scopedGridsBlock('pg', pgGrids.allTimeHtml, pgGrids.seasonHtml, leaderSeasons, defaultScopeId)}
+      ${scopedGridsBlock('pg', leaderSeasons, defaultScopeId, defaultGridHtml)}
     </div>
     <div id="leaders-grid-tot" style="display:none">
-      ${scopedGridsBlock('tot', totGrids.allTimeHtml, totGrids.seasonHtml, leaderSeasons, defaultScopeId)}
+      ${scopedGridsBlock('tot', leaderSeasons, defaultScopeId, null)}
     </div>
     ${hasPlayoffs ? `<div id="leaders-grid-po" style="display:none">
-      <div class="leaders-page-grid" id="leaders-grid-po-pg">${poPgPanels}</div>
-      <div class="leaders-page-grid" id="leaders-grid-po-tot" style="display:none">${poTotPanels}</div>
+      ${lazyGrid('leaders-grid-po-pg', 'po:pg', null, false)}
+      ${lazyGrid('leaders-grid-po-tot', 'po:tot', null, true)}
     </div>` : ''}
     <div id="leaders-grid-rec" style="display:none">
-      <div class="leaders-page-grid" id="rec-grid-alltime">${allTimeGrid}</div>
-      ${seasonGridsHtml}
+      ${lazyGrid('rec-grid-alltime', 'rec:alltime', null, false)}
+      ${recordSeasons.map(s => lazyGrid(`rec-grid-s${s}`, `rec:s${s}`, null, true)).join('\n')}
     </div>
     <script>
     var _recSeasons = ${JSON.stringify(recordSeasons)};
@@ -430,6 +438,44 @@ export function leadersPage({
     var _allLeaderScopes = ['alltime'].concat(_leaderSeasons.map(function(s){ return 's'+s; }));
     var _asOfLabel = '${escHtml(asOfLabel)}';
     var _hasPlayoffs = ${hasPlayoffs};
+    // Lazy grids (data-lazy="<key>"): fetched from /leaders/grid the first time they're
+    // shown. Each tab's opening grid is warmed in the background once the page has loaded,
+    // so the usual first tap fills instantly instead of waiting on the network.
+    var _gridReqs = {};
+    function gridHtml(key) {
+      if (!_gridReqs[key]) {
+        _gridReqs[key] = fetch('/leaders/grid?k=' + encodeURIComponent(key), { credentials: 'same-origin' })
+          .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+          .catch(function(e) { delete _gridReqs[key]; throw e; });
+      }
+      return _gridReqs[key];
+    }
+    function lazyFill(el) {
+      var key = el.getAttribute('data-lazy');
+      if (!key || el.getAttribute('data-loading')) return;
+      el.setAttribute('data-loading', '1');
+      el.innerHTML = '<p class="leaders-lazy-msg">Loading…</p>';
+      gridHtml(key).then(function(html) {
+        el.innerHTML = html;
+        el.removeAttribute('data-lazy');
+        el.removeAttribute('data-loading');
+      }).catch(function() {
+        el.removeAttribute('data-loading');
+        el.innerHTML = '<p class="leaders-lazy-msg">Could not load. <button type="button" class="leaders-lazy-retry">Try again</button></p>';
+        el.querySelector('button').onclick = function() { lazyFill(el); };
+      });
+    }
+    function fillVisible() {
+      document.querySelectorAll('[data-lazy]').forEach(function(el) { if (el.offsetParent !== null) lazyFill(el); });
+    }
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        ['#leaders-grid-tot', '#leaders-grid-rec', '#leaders-grid-po'].forEach(function(sel) {
+          var first = document.querySelector(sel + ' > [data-lazy]:not([style*="none"])');
+          if (first) gridHtml(first.getAttribute('data-lazy')).catch(function() {});
+        });
+      }, 1500);
+    });
     function leadersSwitch(mode) {
       var modes = ['pg','tot','rec'].concat(_hasPlayoffs ? ['po'] : []);
       modes.forEach(function(m) {
@@ -443,6 +489,7 @@ export function leadersPage({
       if (poPills) poPills.style.display = mode === 'po' ? '' : 'none';
       document.getElementById('pg-season-pills').style.display = mode === 'pg' ? '' : 'none';
       document.getElementById('tot-season-pills').style.display = mode === 'tot' ? '' : 'none';
+      fillVisible();
     }
     function poSwitch(sub) {
       ['pg','tot'].forEach(function(s) {
@@ -451,6 +498,7 @@ export function leadersPage({
         if (grid) grid.style.display = s === sub ? '' : 'none';
         if (btn)  btn.classList.toggle('season-pill--active', s === sub);
       });
+      fillVisible();
     }
     function recordsSwitch(scope) {
       _allRecScopes.forEach(function(s) {
@@ -459,6 +507,7 @@ export function leadersPage({
         if (grid) grid.style.display = s === scope ? '' : 'none';
         if (btn)  btn.classList.toggle('season-pill--active', s === scope);
       });
+      fillVisible();
     }
     function pgSeasonSwitch(scope) {
       _allLeaderScopes.forEach(function(s) {
@@ -467,6 +516,7 @@ export function leadersPage({
         if (grid) grid.style.display = s === scope ? '' : 'none';
         if (btn)  btn.classList.toggle('season-pill--active', s === scope);
       });
+      fillVisible();
     }
     function totSeasonSwitch(scope) {
       _allLeaderScopes.forEach(function(s) {
@@ -475,6 +525,7 @@ export function leadersPage({
         if (grid) grid.style.display = s === scope ? '' : 'none';
         if (btn)  btn.classList.toggle('season-pill--active', s === scope);
       });
+      fillVisible();
     }
     async function downloadLeader(btn) {
       if (btn._busy) return;

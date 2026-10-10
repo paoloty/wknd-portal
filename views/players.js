@@ -1,5 +1,5 @@
 ﻿import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials } from './utils.js';
+import { teamColor, displayPlayerName, initials, playerPhotoUrl } from './utils.js';
 
 const POS_ORDER = ['PG', 'SG', 'SF', 'PF', 'C'];
 
@@ -56,7 +56,7 @@ function playerRow(p, isAdmin = false) {
     <a href="/players/${encodeURIComponent(p.id)}" class="pt-player-link">
       <div class="pt-avatar" style="border-color:${color}">
         <span>${escHtml(initials(p.name))}</span>
-        <img src="/api/player/${encodeURIComponent(p.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+        <img src="${playerPhotoUrl(p.id, 96)}" alt="" loading="lazy" onerror="this.style.display='none'">
       </div>
       <div class="pt-player-info">
         <span class="pt-first">${firstName}</span>
@@ -462,7 +462,7 @@ ${isAdmin ? `<div id="pt-edit-modal" style="display:none;position:fixed;inset:0;
       var right = align === 'right';
       return '<div style="display:flex;justify-content:' + (right ? 'flex-end' : 'flex-start') + '">'
         + '<div class="pt-avatar" style="border-color:' + color + '">'
-        + '<img src="/api/player/' + encodeURIComponent(id) + '/photo" alt="" onerror="this.style.display=\\'none\\'">'
+        + '<img src="/api/player/' + encodeURIComponent(id) + '/photo?w=96" alt="" onerror="this.style.display=\\'none\\'">'
         + '</div>'
         + '</div>';
     };

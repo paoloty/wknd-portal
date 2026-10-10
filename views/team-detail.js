@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, formatDate } from './utils.js';
+import { teamColor, displayPlayerName, initials, formatDate, playerPhotoUrl } from './utils.js';
 import { gameRow, gameListScript } from './games.js';
 import { leagueLeaders } from './home.js';
 
@@ -59,7 +59,7 @@ function rosterRow(p, v, avgs) {
     <a href="/players/${encodeURIComponent(p.id)}" class="pt-player-link">
       <div class="pt-avatar" style="border-color:${teamColor(p.team_name)}">
         <span>${escHtml(initials(p.name))}</span>
-        <img src="/api/player/${encodeURIComponent(p.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+        <img src="${playerPhotoUrl(p.id, 96)}" alt="" loading="lazy" onerror="this.style.display='none'">
       </div>
       <div class="pt-player-info">
         <span class="pt-first">${firstName}</span>

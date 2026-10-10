@@ -33,7 +33,7 @@ import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
-import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
+import { leadersPage, leadersGridHtml, leadersDefaultScope, LEADERS_GRID_KEY, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
 import { playoffsPage, computeSeeds, pairKey } from './views/playoffs.js';
@@ -48,7 +48,7 @@ import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamDetailPage } from './views/team-detail.js';
-import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -79,7 +79,7 @@ import {
   getTeamGamesCount,
   getPlayerStatsByType,
   upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
-  getPlayerPhoto, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame,
+  getPlayerPhoto, getAllPlayerPhotoUrls, getPlayerPhotoWrites, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, markGameFinal, setGameOvertime, createGame,
@@ -240,7 +240,7 @@ const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__di
 // to serving the original file as-is instead of a broken empty response.
 const MINIFIED_CSS = (() => {
   const cache = {};
-  for (const file of ['styles.css', 'admin.css']) {
+  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css']) {
     try {
       const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
       const out = new CleanCSS({}).minify(raw);
@@ -537,7 +537,7 @@ function buildPlayerOgTags(req, player, totals) {
   // Version hash: short fingerprint of the stored photo so the og:image URL
   // changes whenever the photo is replaced, bypassing social-crawler caches.
   const photoVer = hasPhoto
-    ? createHash('sha1').update(player.picture_url.slice(0, 256)).digest('hex').slice(0, 8)
+    ? photoVersion(player.picture_url).slice(0, 8)
     : '0';
   const img = `${origin}/og/player/${encodeURIComponent(player.id)}.png?v=${ogDayStamp()}${photoVer}`;
 
@@ -1573,7 +1573,16 @@ function buildSeasonH2HMap(standings, season) {
   return map;
 }
 
+// The ticker is the same for every visitor and sits on every page, so the rendered HTML is
+// kept for 60 seconds instead of re-querying ~36 games (plus playoff seeds) per request.
+let _tickerCache = { at: 0, html: '' };
 function buildTicker() {
+  if (Date.now() - _tickerCache.at < 60_000) return _tickerCache.html;
+  _tickerCache = { at: Date.now(), html: buildTickerUncached() };
+  return _tickerCache.html;
+}
+
+function buildTickerUncached() {
   const games = getTickerGames();
   if (!games.length) return '';
 
@@ -2124,7 +2133,7 @@ function renderPage(req, opts) {
     if (p) {
       const name = displayPlayerName(p.name);
       const photoUrl = p.picture_url
-        ? `/api/player/${encodeURIComponent(p.id)}/photo?v=${createHash('sha1').update(p.picture_url.slice(0, 256)).digest('hex').slice(0, 8)}`
+        ? `/api/player/${encodeURIComponent(p.id)}/photo?w=96&v=${photoVersion(p.picture_url)}`
         : null;
       navPlayer = { name, initials: initials(name), photoUrl };
     }
@@ -2725,7 +2734,7 @@ app.use(express.urlencoded({ extended: false }));
 // express.static unchanged. Safe to cache for a full year: the URL is always requested
 // with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
 // invalidating this one.
-app.get(['/styles.css', '/admin.css'], (req, res) => {
+app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css'], (req, res) => {
   const file = req.path.slice(1);
   const minified = MINIFIED_CSS[file];
   if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
@@ -2733,7 +2742,14 @@ app.get(['/styles.css', '/admin.css'], (req, res) => {
   res.type('text/css').send(minified);
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Everything else in public/: a week in the browser cache. Font files never change under
+// the same name (they're Google's content-hashed filenames), so those get a year.
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '7d',
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.woff2')) res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+}));
 
 // Bounces a logged-out visitor to /login with a next= pointing back at whatever page
 // they actually asked for, so signing in lands them where they meant to go.
@@ -5069,16 +5085,13 @@ app.get('/og-mvp.png', async (req, res) => {
   } catch (err) { console.error('og-mvp error:', err); res.status(500).end(); }
 });
 
-app.get('/api/photo/:gameId', (req, res) => {
-  const row    = getGameCover(req.params.gameId);
-  const dataUrl = row?.social_cover_data_url;
-  if (!dataUrl) return res.status(404).end();
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) return res.status(404).end();
-  const buf = Buffer.from(match[2], 'base64');
-  res.set('Content-Type', match[1]);
-  res.set('Cache-Control', 'public, max-age=86400');
-  res.end(buf);
+// Game covers are stored 1200×900 (~270 KB); cards and list thumbnails ask for ?w=640,
+// the matchup slideshows ?w=960, heroes take the original.
+const COVER_WIDTHS = new Set([640, 960]);
+app.get('/api/photo/:gameId', async (req, res) => {
+  const dataUrl = getGameCover(req.params.gameId)?.social_cover_data_url;
+  if (!dataUrl?.startsWith('data:')) return res.status(404).end();
+  await sendPlayerPhoto(req, res, dataUrl, { widths: COVER_WIDTHS, maxAge: 86400 });
 });
 
 // SEO override cover images are stored as base64 data: URIs (see compressSeoImage),
@@ -5096,33 +5109,113 @@ app.get('/api/seo-cover', (req, res) => {
   res.end(buf);
 });
 
-async function sendPlayerPhotoUrl(res, url) {
-  if (!url) return res.status(404).end();
+// ── Sized player photos ──────────────────────────────────────────────────────
+// /api/player/:id/photo?w=96|192 serves a downscaled WebP (2–5 KB vs the stored
+// 400px JPEG at ~32 KB). Variants are rendered once and kept in memory, keyed by a
+// hash of the stored photo, so a replaced photo is picked up on its next request.
+// Remote sources (admin-app paths, Facebook CDN links) are fetched once per photo
+// instead of on every request; a failed fetch is remembered for 10 minutes so an
+// expired link doesn't stall every page that shows it.
+const PHOTO_WIDTHS = new Set([96, 192]);
+const PHOTO_CACHE_MAX = 600;
+const PHOTO_FAIL_TTL = 10 * 60 * 1000;
+const photoCache = new Map(); // key → { buf, type } | { failedAt }
+
+function photoVersion(url) {
+  return createHash('sha1').update(String(url || '')).digest('hex').slice(0, 10);
+}
+
+function photoCacheGet(key) {
+  const hit = photoCache.get(key);
+  if (!hit) return null;
+  if (hit.failedAt && Date.now() - hit.failedAt > PHOTO_FAIL_TTL) { photoCache.delete(key); return null; }
+  photoCache.delete(key); photoCache.set(key, hit); // LRU bump
+  return hit;
+}
+
+function photoCacheSet(key, val) {
+  photoCache.set(key, val);
+  while (photoCache.size > PHOTO_CACHE_MAX) photoCache.delete(photoCache.keys().next().value);
+}
+
+async function loadPhotoVariant(url, w) {
+  const ver = photoVersion(url);
+  const key = `${ver}:${w || 0}`;
+  const hit = photoCacheGet(key);
+  if (hit) return { ...hit, ver };
+  let src = null, type = 'image/jpeg';
   if (url.startsWith('data:')) {
     const comma = url.indexOf(',');
-    const mime  = (url.slice(0, comma).match(/^data:([^;]+)/) || [])[1] || 'image/jpeg';
-    const buf   = Buffer.from(url.slice(comma + 1), 'base64');
-    res.set('Content-Type', mime);
-    res.set('Cache-Control', 'no-cache');
-    return res.end(buf);
+    type = (url.slice(0, comma).match(/^data:([^;]+)/) || [])[1] || type;
+    src  = Buffer.from(url.slice(comma + 1), 'base64');
+  } else {
+    // Relative paths are served by the admin server, not the portal
+    const fetchUrl = url.startsWith('/') ? `${ADMIN_URL}${url}` : url;
+    try {
+      const upstream = await fetch(fetchUrl, { signal: AbortSignal.timeout(8000) });
+      if (upstream.ok) {
+        src  = Buffer.from(await upstream.arrayBuffer());
+        type = upstream.headers.get('content-type') || type;
+      }
+    } catch {}
   }
-  // Relative paths are served by the admin server, not the portal
-  const fetchUrl = url.startsWith('/') ? `${ADMIN_URL}${url}` : url;
-  try {
-    const upstream = await fetch(fetchUrl, { signal: AbortSignal.timeout(8000) });
-    if (!upstream.ok) return res.status(upstream.status).end();
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    res.set('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.end(buf);
-  } catch {
-    res.status(502).end();
+  if (!src) { photoCacheSet(key, { failedAt: Date.now() }); return { failedAt: Date.now(), ver }; }
+  let out = { buf: src, type };
+  if (w) {
+    try {
+      const buf = await sharp(src).rotate().resize(w, w, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 80 }).toBuffer();
+      out = { buf, type: 'image/webp' };
+    } catch {} // undecodable source: fall back to the original bytes
   }
+  // Data URLs are already in the DB, so only cache the full-size copy for remote sources.
+  if (w || !url.startsWith('data:')) photoCacheSet(key, out);
+  return { ...out, ver };
 }
+
+// widths: the ?w= values this route accepts (anything else gets the original).
+// maxAge: browser cache seconds for un-versioned URLs before revalidating via ETag.
+async function sendPlayerPhoto(req, res, url, { widths = PHOTO_WIDTHS, maxAge = 300 } = {}) {
+  if (!url) return res.status(404).end();
+  const w = widths.has(Number(req.query.w)) ? Number(req.query.w) : 0;
+  const photo = await loadPhotoVariant(url, w);
+  if (photo.failedAt) return res.status(502).end();
+  const etag = `"${photo.ver}-${w}"`;
+  res.set('ETag', etag);
+  // ?v= is the photo's own hash (photoVersion), so that URL can never go stale. Bare
+  // URLs: serve from browser cache briefly, then revalidate (a 304 costs no image bytes).
+  res.set('Cache-Control', req.query.v
+    ? 'public, max-age=31536000, immutable'
+    : `public, max-age=${maxAge}, stale-while-revalidate=86400`);
+  if (req.headers['if-none-match'] === etag) return res.status(304).end();
+  res.set('Content-Type', photo.type);
+  res.end(photo.buf);
+}
+
+// Older call sites (crop source, Papawis court/map images, marketplace photos) — same
+// cached, ETag'd path as player photos.
+function sendPlayerPhotoUrl(res, url) {
+  return sendPlayerPhoto(res.req, res, url);
+}
+
+// Player photo URL with its version hash baked in, so browsers (and Cloudflare) can keep
+// it for a year — a replaced photo gets a new hash, so a new URL. Hashes come from a
+// 60-second in-memory snapshot of players.picture_url (rebuilt at once after a photo
+// upload); a player missing from it falls back to the bare, short-cached URL.
+let _photoVers = { at: 0, writes: -1, map: new Map() };
+function playerPhotoVersion(id) {
+  const writes = getPlayerPhotoWrites();
+  if (Date.now() - _photoVers.at > 60_000 || writes !== _photoVers.writes) {
+    const map = new Map();
+    for (const r of getAllPlayerPhotoUrls()) if (r.picture_url) map.set(String(r.id), photoVersion(r.picture_url));
+    _photoVers = { at: Date.now(), writes, map };
+  }
+  return _photoVers.map.get(String(id)) || '';
+}
+setPhotoVersionResolver(playerPhotoVersion);
 
 app.get('/api/player/:id/photo', async (req, res) => {
   const row = getPlayerPhoto(req.params.id);
-  await sendPlayerPhotoUrl(res, row?.picture_url);
+  await sendPlayerPhoto(req, res, row?.picture_url);
 });
 
 // Best available source to re-crop from: the retained pre-crop original if we have
@@ -6473,7 +6566,7 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
         slot,
         teamColor: row.team_color || '#4a5263',
         shadeCss: columnCount > 1 ? stripShadeGradient(row.team_color) : heroShadeGradient(row.team_color),
-        photoUrl: (override && override.photo_url) || `/api/player/${encodeURIComponent(row.player_id)}/photo`,
+        photoUrl: (override && override.photo_url) || playerPhotoUrl(row.player_id),
         offsetX: override ? override.offset_x : 50,
         offsetY: override ? override.offset_y : 50,
         zoom: override ? override.zoom : 1,
@@ -6527,7 +6620,7 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
       statUnit: statSplit ? statSplit.unit : '',
       teamColor: row.team_color || '#4a5263',
       shadeCss: stripShadeGradient(row.team_color),
-      photoUrl: (override && override.photo_url) || `/api/player/${encodeURIComponent(row.player_id)}/photo`,
+      photoUrl: (override && override.photo_url) || playerPhotoUrl(row.player_id),
       offsetX: override ? override.offset_x : 50,
       offsetY: override ? override.offset_y : 50,
       zoom: override ? override.zoom : 1,
@@ -7728,7 +7821,7 @@ app.post('/games/:id/comments', express.json(), (req, res) => {
       created_at: saved.created_at,
       displayName: displayPlayerName(saved.player_name),
       initials: initials(saved.player_name),
-      photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo`,
+      photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo?w=96`,
       color: teamColor(saved.team_name || ''),
     },
   });
@@ -11396,7 +11489,7 @@ app.get('/api/mvp/:season/:playerId/photo', (req, res) => {
 function mvpPhoto(season, playerId, meta = {}) {
   const enc = encodeURIComponent(String(playerId));
   const d = meta[0], m = meta[1];
-  const profileUrl = `/api/player/${enc}/photo`;
+  const profileUrl = playerPhotoUrl(playerId);
   const url = d?.has_photo ? `/api/mvp/${season}/${enc}/photo?v=${d.updated_at}` : profileUrl;
   const x = d ? d.offset_x : 50, y = d ? d.offset_y : 50, zoom = d ? d.zoom : 1;
   return {
@@ -11430,7 +11523,7 @@ app.get('/admin/mvp/photo-options', requireAuth, (req, res) => {
   const pid = String(req.query.player_id || '');
   if (!season || !pid) return res.status(400).json({ error: 'Missing season or player' });
   const enc = encodeURIComponent(pid);
-  const options = [{ key: 'profile', label: 'Profile photo', url: `/api/player/${enc}/photo` }];
+  const options = [{ key: 'profile', label: 'Profile photo', url: playerPhotoUrl(pid) }];
   if (getPlayerPhotoOriginal(pid)) options.push({ key: 'original', label: 'Profile photo (uncropped)', url: `/admin/player-photo-original/${enc}` });
   for (const r of getPlayerAwardPhotoKeys(pid)) {
     if (r.award_type === 'mvp_race') continue;
@@ -11690,26 +11783,42 @@ FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` 
   }));
 });
 
+// Only the opening grid (Per Game, current season or All Time) is rendered here; the
+// other tabs/scopes come from /leaders/grid below when first shown (views/leaders.js).
 app.get('/leaders', (req, res) => {
   const season         = getPortalCurrentSeason();
-  const playoffPlayers = getPlayoffLeaders(season);
-  const gameRecords    = getGameRecords();
+  const currentSeason  = season || 3;
   const weekNum        = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
   const asOfLabel      = weekNum ? `S${season} · WK ${weekNum}` : '';
-
-  const leaderSeasons   = getLeaderSeasons();
-  const leadersBySeason = Object.fromEntries(leaderSeasons.map(s => [s, buildLeaderPlayers(s)]));
-  const leadersAllTime  = buildLeaderPlayersAllTime();
+  const leaderSeasons  = getLeaderSeasons();
+  const recordSeasons  = [...new Set(getGameRecords().map(r => r.season).filter(Boolean))].sort((a, b) => b - a);
+  const defaultKey     = `pg:${leadersDefaultScope(leaderSeasons, currentSeason)}`;
 
   res.send(renderPage(req, {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
     body: leadersPage({
-      playoffPlayers, gameRecords, currentSeason: season || 3, asOfLabel,
-      leaderSeasons, leadersBySeason, leadersAllTime,
-      isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId),
+      hasPlayoffs: getPlayoffLeaders(season).length > 0, recordSeasons, currentSeason, asOfLabel, leaderSeasons,
+      defaultGridHtml: leadersGrid(req, defaultKey, season),
     })
   }));
+});
+
+function leadersGrid(req, key, season) {
+  const [tab, scope] = key.split(':');
+  const data = { currentSeason: season || 3, isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) };
+  if (tab === 'po')       data.players = getPlayoffLeaders(season);
+  else if (tab === 'rec') data.gameRecords = getGameRecords();
+  else                    data.players = scope === 'alltime' ? buildLeaderPlayersAllTime() : buildLeaderPlayers(Number(scope.slice(1)));
+  return leadersGridHtml(key, data);
+}
+
+app.get('/leaders/grid', (req, res) => {
+  const key = String(req.query.k || '');
+  if (!LEADERS_GRID_KEY.test(key)) return res.status(400).end();
+  // private: the panels carry a download button only for logged-in viewers.
+  res.set('Cache-Control', 'private, max-age=60');
+  res.type('html').send(leadersGrid(req, key, getPortalCurrentSeason()));
 });
 
 app.get('/roast', (req, res) => {
@@ -15925,7 +16034,7 @@ app.post('/marketplace/:id/comments', express.json(), (req, res) => {
       created_at: saved.created_at,
       displayName: displayPlayerName(saved.player_name),
       initials: initials(saved.player_name),
-      photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo`,
+      photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo?w=96`,
       color: teamColor(saved.team_name || ''),
     },
   });

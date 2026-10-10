@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { displayPlayerName, teamColor, initials } from './utils.js';
+import { displayPlayerName, teamColor, initials, playerPhotoUrl } from './utils.js';
 
 // ── Award badge config ────────────────────────────────────────────────────────
 const AWARD_BADGE = {
@@ -74,7 +74,7 @@ function heroRow(row, type, article, season) {
   <a href="${href}" class="awd-hero-row">
     <div class="awd-hero-row__thumb">
       <div class="awd-hero-row__thumb-placeholder"><span class="font-condensed">${escHtml(init)}</span></div>
-      <img class="awd-hero-row__thumb-img" src="/api/player/${encodeURIComponent(row.player_id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+      <img class="awd-hero-row__thumb-img" src="${playerPhotoUrl(row.player_id, 192)}" alt="" loading="lazy" onerror="this.style.display='none'">
       <div class="awd-hero-row__thumb-flare" style="background:linear-gradient(135deg,${color}44 0%,transparent 55%)"></div>
     </div>
     <div class="awd-hero-row__body" style="background:linear-gradient(135deg,${color}12 0%,transparent 50%)">
@@ -119,7 +119,7 @@ function rankRow(row, type, article) {
   <a href="${href}" class="awd-rank-row__link" aria-label="${escHtml(name)}"></a>
   <span class="awd-rank-row__avatar" style="border-color:${color}">
     <span class="font-condensed">${escHtml(initials(row.player_name || ''))}</span>
-    <img class="awd-rank-row__avatar-img" src="/api/player/${encodeURIComponent(row.player_id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+    <img class="awd-rank-row__avatar-img" src="${playerPhotoUrl(row.player_id, 96)}" alt="" loading="lazy" onerror="this.style.display='none'">
   </span>
   <span class="awd-rank-row__name"><span class="team-dot" style="background:${color}"></span>${escHtml(name)}</span>
   <span class="awd-rank-row__chip" style="background:${badge.bg};color:${badge.text}">${escHtml(chip)}</span>

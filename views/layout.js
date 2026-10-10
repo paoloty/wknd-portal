@@ -593,9 +593,12 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     name: 'WKND Basketball League',
     url: origin,
   })}</script>` : ''}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;1,900&family=Saira+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Self-hosted fonts (public/fonts/): same origin, so no extra DNS/TLS round trips to
+       Google. Preload the two faces nearly every page paints — Archivo body text and the
+       Saira Condensed 800 numerals — so they download alongside the CSS, not after it. -->
+  <link rel="preload" href="/fonts/archivo-k3kPo8UDI-1M0wlSV9XAw6lQkqWY8Q82sLydOxI.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/sairacondensed-EJRLQgErUN8XuHNEtX81i9TmEkrnBc1Q962f.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css${cssVer ? `?v=${cssVer}` : ''}">
   <link rel="stylesheet" href="/styles.css${cssVer ? `?v=${cssVer}` : ''}">
   ${gaSnippet}
 </head>

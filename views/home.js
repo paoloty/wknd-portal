@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink, manilaTodayStr, commentSnippet } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink, manilaTodayStr, commentSnippet, playerPhotoUrl } from './utils.js';
 import { moveBadge } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
@@ -29,7 +29,7 @@ function heroCarousel(games, awardItems = []) {
     const body = excerpt(game.game_writeup);
     const day = new Date(`${String(game.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
-    const bg = `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt=""></div>`
+    const bg = `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt="" fetchpriority="${i === 0 ? 'high' : 'low'}"></div>`
     // Without a cover photo the winner's glare carries the slide, so it's stronger.
     const flareOpacity = game.has_cover ? '2e' : '66';
     const team = (name, score, win) => `<div class="hero-score__team${win ? ' is-win' : ''}">
@@ -68,7 +68,7 @@ function heroCarousel(games, awardItems = []) {
 
     if (it.kind === 'team') {
       return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
-  <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt=""></div>
+  <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt="" fetchpriority="${isActive ? 'high' : 'low'}"></div>
   <div class="hero-overlay"></div>
   <div class="hero-chips"><span class="hero-chip hero-chip--season">${escHtml(it.label)}</span></div>
   <div class="hero-content">
@@ -82,7 +82,7 @@ function heroCarousel(games, awardItems = []) {
     const writeup = String(it.writeup || '').replace(/\*\*/g, '').trim();
 
     return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
-  <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt=""></div>
+  <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt="" fetchpriority="${isActive ? 'high' : 'low'}"></div>
   <div class="hero-overlay"></div>
   <div class="hero-chips"><span class="hero-chip hero-chip--season">${escHtml(it.label)}</span></div>
   <div class="hero-content">
@@ -757,7 +757,7 @@ function standingsSection(standings, summary = null, isAdmin = false) {
     const pctLabel = t.pct.toFixed(3).replace(/^0/, '');
     const more = t.rosterCount - t.roster.length;
     // Photo over initials, same pattern as the MVP page: the img removes itself on 404.
-    const avatars = t.roster.map(p => `<span class="st-team__av" title="${escHtml(p.name)}"><span class="font-condensed" aria-hidden="true">${escHtml(initials(p.name))}</span><img src="/api/player/${encodeURIComponent(String(p.id))}/photo" alt="" loading="lazy" onerror="this.remove()"></span>`).join('');
+    const avatars = t.roster.map(p => `<span class="st-team__av" title="${escHtml(p.name)}"><span class="font-condensed" aria-hidden="true">${escHtml(initials(p.name))}</span><img src="${playerPhotoUrl(String(p.id), 96)}" alt="" loading="lazy" onerror="this.remove()"></span>`).join('');
     return `<a href="/teams/${encodeURIComponent(String(t.id))}" class="st-team${t.rank === 1 ? ' is-leader' : ''}" style="--team:${color}">
       <span class="st-team__top">
         <span class="st-team__name"><span class="team-dot" style="background:${color}"></span>${escHtml(t.name)}</span>
@@ -904,7 +904,7 @@ function headlinesSection(games, summary, isAdmin, latestComments = {}) {
     // winner in white.
     const side = (name, score, w) => `<span class="gh-score__team${win(w)}"><span class="gh-score__name">${dot(name)}${escHtml(name)}</span><b class="gh-score__num font-condensed">${score}</b></span>`;
     return `<a href="/games/${encodeURIComponent(g.id)}" class="gh-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}">
-      ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${encodeURIComponent(g.id)}" alt="" loading="lazy">` : ''}
+      ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${encodeURIComponent(g.id)}?w=640" alt="" loading="lazy">` : ''}
       <span class="gh-card__top"><span class="gh-card__when">${g.season ? `<span class="gh-card__season">S${escHtml(String(g.season))}</span>` : ''}<span class="gh-card__date">${escHtml(day)}</span></span></span>
       <span class="gh-card__body">
         <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>

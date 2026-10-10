@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { displayPlayerName, teamColor, initials } from './utils.js';
+import { displayPlayerName, teamColor, initials, playerPhotoUrl } from './utils.js';
 
 const RANK_LABELS = ['', 'FRONTRUNNER', 'CLOSE SECOND', 'IN THE MIX'];
 
@@ -41,7 +41,7 @@ function moveText(rank, prevRank, short = false) {
 // Initials sit underneath; the photo covers them once it loads and removes itself if it
 // 404s. Crop comes from the admin's MVP photo override (object-position + scale).
 function photo(c) {
-  const p = c.photo || { url: `/api/player/${encodeURIComponent(String(c.player.id))}/photo`, x: 50, y: 50, zoom: 1 };
+  const p = c.photo || { url: `${playerPhotoUrl(String(c.player.id))}`, x: 50, y: 50, zoom: 1 };
   const m = p.phone || p;
   // Desktop crop in --x/--y/--z, phone crop in --mx/--my/--mz (the stylesheet swaps them
   // at the phone breakpoint); a different phone photo comes in through <picture>.

@@ -9183,3 +9183,7 @@ html.ssc2-lock { overflow: hidden; }
   .ssc2__acts { grid-template-columns: 52px 52px 1fr; gap: 8px; padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
   .ssc2-act span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
+
+/* /leaders lazy grids — placeholder while a tab's panels load (views/leaders.js) */
+.leaders-lazy-msg { grid-column: 1 / -1; padding: 40px 0; text-align: center; color: var(--text-muted); font-size: 14px; }
+.leaders-lazy-retry { margin-left: 6px; background: none; border: 0; padding: 0; color: var(--amber); font: inherit; font-weight: 700; cursor: pointer; }

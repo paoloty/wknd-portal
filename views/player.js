@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, truncate, initials, playerAvatar } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, truncate, initials, playerAvatar, playerPhotoUrl } from './utils.js';
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
@@ -1598,7 +1598,7 @@ function prfHero(o) {
   <div class="player-hero__avatar-wrap prf-hero__avatar-wrap">
     <div class="player-hero__avatar prf-hero__avatar" style="border-color:${color}">
       <span>${escHtml(initials(player.name))}</span>
-      <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+      <img id="player-avatar-img" src="${playerPhotoUrl(player.id)}" alt="" loading="lazy" onerror="this.style.display='none'">
     </div>
     ${canEditPhoto ? photoUploadOverlay() : photoLightbox()}
   </div>
