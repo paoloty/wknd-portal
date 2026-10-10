@@ -12,617 +12,226 @@ function youtubeEmbedUrl(url) {
   return m ? `https://www.youtube.com/embed/${m[1]}` : null;
 }
 
-// ── "Share My Stats" editor (modal) ──────────────────────────────────────────
-// Only rendered when the viewer's own player_id has a stat row in this game
-// (server.js passes myGame) — the PNG endpoint re-checks the session server-side
-// too, so this is a UI gate, not the real one. Any [data-ssc-open] button opens it.
+// ── "Share My Stats" editor ──────────────────────────────────────────────────
+// Only rendered when the viewer's own player_id has a stat row in this game (server.js passes
+// myGame) — the PNG endpoint re-checks the session server-side too, so this is a UI gate, not
+// the real one. Any [data-ssc-open] button opens it; data-template / data-bg open it on that
+// template and preview backdrop (the fan cards on the "Your game" strip do).
+//
+// The card is a transparent overlay and always saves that way (Paolo, 2026-10-10). The
+// "Preview on" backdrops — game photo, your photo, team glow, your own upload — are drawn
+// faintly over the transparency checkerboard so it's clear they're only a preview. An
+// uploaded photo never leaves the device (object URL). Badge toggle hidden for now.
+const SSC_TEMPLATES = [
+  { key: 'left', label: 'Marquee L' },
+  { key: 'center', label: 'Marquee' },
+  { key: 'right', label: 'Marquee R' },
+  { key: 'bottom', label: 'Lower third' },
+  { key: 'stacked', label: 'Box score' },
+  { key: 'premium', label: 'Premium' },
+  { key: 'hero', label: 'Hero' },
+  { key: 'card', label: 'Card' },
+  { key: 'scoreboard', label: 'Scoreboard' },
+];
+const SSC_ACCENTS = [
+  ['amber', '#f59332'], ['red', '#ef4444'], ['blue', '#3b82f6'], ['green', '#22c55e'],
+  ['purple', '#a78bfa'], ['pink', '#f472b6'], ['cyan', '#22d3ee'],
+];
+
 function shareStatsModal(game, stat) {
-  const ast   = Number(stat.ast) || 0;
-  const stl   = Number(stat.stl) || 0;
-  const blk   = Number(stat.blk) || 0;
-  const fg3m  = Number(stat.fg3m) || 0;
-  const gameId = escHtml(game.id);
+  const ast = Number(stat.ast) || 0, stl = Number(stat.stl) || 0, blk = Number(stat.blk) || 0, fg3m = Number(stat.fg3m) || 0;
+  // Opening "Focus" follows this player's own box score — a rough offense-vs-defense signal
+  // (ast+3PM vs stl+blk), so a defensive night doesn't open on a PTS/REB/AST row.
+  const offense = ast + fg3m, defense = stl + blk;
+  const focus = defense >= 4 && defense > offense ? 'defense' : offense >= 6 ? 'offense' : 'all';
+  const team = teamColor(stat.team_name);
+  const opp = String(stat.team_name || '').toUpperCase() === String(game.team_a_name).toUpperCase() ? game.team_b_name : game.team_a_name;
+  const best = [['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK']]
+    .map(([k, l]) => ({ v: Number(stat[k]) || 0, l })).filter(x => x.v > 0).sort((a, b) => b.v - a.v)[0];
+  const line = `${Number(stat.pts) || 0} PTS${best ? ` · ${best.v} ${best.l}` : ''}`;
+  const day = new Date(`${String(game.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const bgs = [
+    game.has_cover ? { key: 'game', label: 'Game photo', css: `background-image:url('/api/photo/${encodeURIComponent(game.id)}')` } : null,
+    { key: 'me', label: 'Your photo', css: `background-image:url('/api/player/${encodeURIComponent(stat.player_id)}/photo');background-position:center 20%` },
+    { key: 'team', label: 'Team glow', css: `background:radial-gradient(90% 70% at 50% 85%, ${team}88 0%, transparent 70%), linear-gradient(160deg, #1b2232, #0a0e16)`, solid: true },
+  ].filter(Boolean);
+  const bgBtn = b => `<button type="button" class="ssc2-bg" data-bg="${b.key}" data-css="${escHtml(b.css)}"${b.solid ? ' data-solid="1"' : ''}><span class="ssc2-bg__im"><i style="${escHtml(b.css)}"></i></span>${escHtml(b.label)}</button>`;
+  const icon = d => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 
-  // Personalizes the default "Focus" pick to this player's own box score
-  // instead of always opening on All-Around — a rough offense-vs-defense
-  // signal (ast+3PM vs stl+blk), not a precise ranking, just enough that a
-  // defensive night doesn't default to a PTS/REB/AST row nobody asked for.
-  const offenseScore = ast + fg3m;
-  const defenseScore = stl + blk;
-  let defaultFocus = 'all';
-  if (defenseScore >= 4 && defenseScore > offenseScore) defaultFocus = 'defense';
-  else if (offenseScore >= 6) defaultFocus = 'offense';
-
-  // All six are public now — no per-template release gating (there used to
-  // be a template_<key>_public site_settings flag per template, toggled on
-  // /admin/visibility, with an admin-only bypass; removed in favor of
-  // shipping everything live). Keys ('left'/'bottom'/etc.) are unchanged —
-  // only the labels shown here are new — since they're load-bearing:
-  // server.js's route dispatch, the PNG cache key, and stat-card-action
-  // logging all match on the key, not the label.
-  //
-  // Premium respects Hide Zeros just like Lower Third/Box Score, but ignores
-  // Focus (it ranks all 6 count stats by value instead of picking 3 by
-  // category), the Gauges toggle, and alignment — same "controls stay
-  // visible but some have nothing to affect" pattern as Box Score already
-  // ignoring alignment. See generateGameStatPremiumPng's own comment for why
-  // it's a different visual language entirely from the other templates.
-  //
-  // Hero/Card/Scoreboard each ignore Focus/Gauges/Hide Zeros the same way
-  // Premium does (see generateGameStatPremiumPng's own comment) — each picks
-  // its own fixed stat set (Hero: single highest count stat; Card/Scoreboard:
-  // top 4/3 by value) rather than anything Focus-driven.
-  const TEMPLATE_OPTIONS = [
-    { key: 'left',       label: 'Marquee Left' },
-    { key: 'center',     label: 'Marquee Center' },
-    { key: 'right',      label: 'Marquee Right' },
-    { key: 'bottom',     label: 'Lower Third' },
-    { key: 'stacked',    label: 'Box Score' },
-    { key: 'premium',    label: 'Premium' },
-    { key: 'hero',       label: 'Hero' },
-    { key: 'card',       label: 'Card' },
-    { key: 'scoreboard', label: 'Scoreboard' },
-  ];
-  const FOCUS_OPTIONS = [
-    { key: 'all',     label: 'All-Around' },
-    { key: 'offense', label: 'Offense' },
-    { key: 'defense', label: 'Defense' },
-  ];
-  // Chip list shared by the Template and Focus sheet panels — a flat row of
-  // pill buttons instead of a dropdown menu, since these now live inside an
-  // already-open sheet rather than needing their own floating popover.
-  function chipList(options, activeKey) {
-    const active = options.find(o => o.key === activeKey) || options[0];
-    return options.map(o => `<button type="button" class="ssc-chip${o.key === active.key ? ' is-active' : ''}" data-value="${o.key}">${escHtml(o.label)}</button>`).join('\n');
-  }
-
-  const iconTemplate = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>`;
-  const iconFocus    = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>`;
-  // Mirrors iconSave's shape (below) but flipped — an up-arrow into a top bar
-  // instead of a down-arrow into a bottom one — so the two read as visual
-  // opposites (send out vs. bring in) despite living in different panels now.
-  const iconPublish  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9"/><path d="M7 14l5-5 5 5"/><path d="M5 3h14"/></svg>`;
-
-  const iconSave  =`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
-  const iconCopy  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
-  const iconShare = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`;
-
-  return `<div class="pcp-backdrop ssc-backdrop" id="ssc-backdrop" hidden>
-  <div class="pcp-modal ssc-modal">
-    <div class="pcp-modal__header ssc-header">
-      <span class="pcp-modal__title">Share My Stats</span>
-      <button class="pcp-modal__close" id="ssc-close">&#x2715;</button>
-    </div>
-    <div class="ssc-preview">
-      <div class="ssc-spinner" id="ssc-spinner"></div>
-      <img id="ssc-img" alt="Your stat card" hidden>
-    </div>
-    <div class="ssc-controls">
-      <!-- Compact, CapCut/Instagram-style toolbar: icon buttons instead of
-           always-visible dropdowns/swatches/action row, so the preview above
-           gets most of the modal's height by default. Tapping one slides the
-           matching panel up from directly below the toolbar (see .ssc-sheet's
-           grid-rows transition in the <style> below); tapping it again,
-           picking a Template/Focus chip, or tapping the preview all collapse
-           it back down — see the script for exactly which of those
-           auto-close. Save/Copy/Share live in Publish's panel rather than
-           floating over the art — that used to still sit on top of Bottom's
-           and Premium's own bottom-anchored content no matter which edge it
-           floated against; a sheet panel like every other tool doesn't have
-           that problem, since it only ever covers the (otherwise empty)
-           controls area, never the art itself. -->
-      <div class="ssc-toolbar">
-        <button type="button" class="ssc-tool-btn" id="ssc-tool-template" data-target="template">
-          ${iconTemplate}<span>Template</span>
-        </button>
-        <button type="button" class="ssc-tool-btn" id="ssc-tool-focus" data-target="focus">
-          ${iconFocus}<span>Focus</span>
-        </button>
-        <button type="button" class="ssc-tool-btn" id="ssc-tool-accent" data-target="accent">
-          <span class="ssc-tool-btn__dot" id="ssc-tool-accent-dot" style="--swatch:#f59332"></span><span>Style</span>
-        </button>
-        <button type="button" class="ssc-tool-btn" id="ssc-tool-publish" data-target="publish">
-          ${iconPublish}<span>Publish</span>
-        </button>
+  return `<div class="ssc2" id="ssc2" hidden role="dialog" aria-modal="true" aria-labelledby="ssc2-title"
+    data-game="${escHtml(game.id)}" data-focus="${focus}" data-default-bg="${game.has_cover ? 'game' : 'team'}">
+  <div class="ssc2__back" data-ssc2-close></div>
+  <div class="ssc2__box">
+    <div class="ssc2__pv">
+      <div class="ssc2__stage">
+        <div class="ssc2__bgl" id="ssc2-bgl"></div>
+        <img class="ssc2__card" id="ssc2-img" alt="Your stat card" hidden>
+        <span class="ssc2__spin" id="ssc2-spin" aria-hidden="true"></span>
       </div>
-      <div class="ssc-sheet" id="ssc-sheet">
-        <div class="ssc-sheet__inner">
-          <!-- max-height + overflow-y:auto on each panel (not just this one) is
-               deliberate headroom for Template/Focus growing past what fits in
-               one unscrolled chip row — the sheet's own height still animates
-               smoothly via .ssc-sheet's grid-rows transition either way, since
-               that trick only cares about the panel's natural (possibly now
-               scrollable) content height, not each individual chip. -->
-          <div class="ssc-sheet__panel" id="ssc-panel-template">
-            <div class="ssc-chip-row">${chipList(TEMPLATE_OPTIONS, 'center')}</div>
-          </div>
-          <div class="ssc-sheet__panel" id="ssc-panel-focus" hidden>
-            <div class="ssc-chip-row">${chipList(FOCUS_OPTIONS, defaultFocus)}</div>
-          </div>
-          <div class="ssc-sheet__panel" id="ssc-panel-accent" hidden>
-            <!-- Toggles ride along with the swatches (not their own panel) — same
-                 "Style" grouping as before, just inside a sheet now instead of its
-                 own always-visible row. -->
-            <div class="ssc-accent-row">
-              <div class="ssc-swatches" role="tablist" aria-label="Accent color">
-                <button type="button" class="ssc-swatch-btn is-active" data-accent="amber" title="Amber" style="--swatch:#f59332"></button>
-                <button type="button" class="ssc-swatch-btn" data-accent="red" title="Red" style="--swatch:#ef4444"></button>
-                <button type="button" class="ssc-swatch-btn" data-accent="blue" title="Blue" style="--swatch:#3b82f6"></button>
-                <button type="button" class="ssc-swatch-btn" data-accent="green" title="Green" style="--swatch:#22c55e"></button>
-                <button type="button" class="ssc-swatch-btn" data-accent="purple" title="Purple" style="--swatch:#a78bfa"></button>
-                <button type="button" class="ssc-swatch-btn" data-accent="pink" title="Pink" style="--swatch:#f472b6"></button>
-                <button type="button" class="ssc-swatch-btn" data-accent="cyan" title="Cyan" style="--swatch:#22d3ee"></button>
-              </div>
-              <div class="ssc-toggle-group">
-                <button type="button" class="ssc-toggle" id="ssc-gauges-toggle" aria-pressed="true" title="Show shooting gauges">
-                  <span class="ssc-toggle__switch"></span>
-                  Gauges
-                </button>
-                <button type="button" class="ssc-toggle" id="ssc-hidezeros-toggle" aria-pressed="false" title="Hide stats with no attempts or a zero value">
-                  <span class="ssc-toggle__switch"></span>
-                  Hide Zeros
-                </button>
-                <!-- Add-on overlay, not a template of its own — composited onto
-                     whichever Template is picked (see composeStravagantBadgeOverlay
-                     in server.js). Off by default: it renders nothing at all for a
-                     game with no double-double/triple-double/career-high, so an
-                     "on" state that visibly does nothing most games would be a
-                     confusing default. -->
-                <!-- Hidden for now (Paolo, 2026-10-10: doesn't like the badge yet). The button stays
-                     in the markup so the script still binds; it's off by default, so cards
-                     render without it. Remove the style to bring it back. -->
-                <button type="button" class="ssc-toggle" id="ssc-badge-toggle" aria-pressed="false" style="display:none" title="Add an achievement badge (double-double, triple-double, or career high) when this game earned one">
-                  <span class="ssc-toggle__switch"></span>
-                  Badge
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="ssc-sheet__panel" id="ssc-panel-publish" hidden>
-            <div class="ssc-actions">
-              <button type="button" class="ssc-action-btn" id="ssc-save">${iconSave}<span>Save</span></button>
-              <button type="button" class="ssc-action-btn" id="ssc-copy">${iconCopy}<span>Copy</span></button>
-              <button type="button" class="ssc-action-btn ssc-action-btn--primary" id="ssc-share">${iconShare}<span>Share</span></button>
-            </div>
-          </div>
-        </div>
+      <span class="ssc2__tag" id="ssc2-tag"></span>
+    </div>
+    <div class="ssc2__side">
+      <div class="ssc2__head">
+        <div><b id="ssc2-title">Share my stats</b><small>vs ${escHtml(tc(opp))} · ${escHtml(day)} · ${escHtml(line)}</small></div>
+        <button type="button" class="ssc2__x" data-ssc2-close aria-label="Close">${icon('<path d="M18 6L6 18M6 6l12 12"/>')}</button>
       </div>
-      <div id="ssc-msg" class="ssc-msg" hidden></div>
+      <div class="ssc2__tabs" role="tablist" aria-label="Editor controls">
+        <button type="button" role="tab" class="is-on" data-ssc2-tab="tpl" aria-selected="true">Template</button>
+        <button type="button" role="tab" data-ssc2-tab="bg" aria-selected="false">Preview on</button>
+        <button type="button" role="tab" data-ssc2-tab="style" aria-selected="false">Style</button>
+      </div>
+      <div class="ssc2__body">
+        <section class="ssc2__grp" data-ssc2-panel="bg">
+          <div class="ssc2__gh"><span class="gd-kick">Preview on</span><span>Just to preview · your card always saves transparent</span></div>
+          <div class="ssc2__bgs">
+            ${bgs.map(bgBtn).join('')}
+            <label class="ssc2-bg" data-bg="upload"><span class="ssc2-bg__im ssc2-bg__up"><i id="ssc2-up-thumb"></i>${icon('<path d="M12 5v14M5 12h14"/>')}</span>Upload<input type="file" accept="image/*" id="ssc2-file" hidden></label>
+            <button type="button" class="ssc2-bg" data-bg="none"><span class="ssc2-bg__im"><i></i></span>None</button>
+          </div>
+        </section>
+        <section class="ssc2__grp is-on" data-ssc2-panel="tpl">
+          <div class="ssc2__gh"><span class="gd-kick">Template</span><span>${SSC_TEMPLATES.length} styles</span></div>
+          <div class="ssc2__tpls">${SSC_TEMPLATES.map(t => `<button type="button" class="ssc2-tp" data-tpl="${t.key}" data-label="${escHtml(t.label)}"><span class="ssc2-tp__im"><img alt="" data-thumb="${t.key}"></span>${escHtml(t.label)}</button>`).join('')}</div>
+        </section>
+        <section class="ssc2__grp" data-ssc2-panel="style">
+          <div class="ssc2__gh"><span class="gd-kick">Style</span><span></span></div>
+          <div class="ssc2__row">${[['all', 'All-around'], ['offense', 'Offense'], ['defense', 'Defense']].map(([k, l]) => `<button type="button" class="ssc2-chip" data-focus="${k}">${l}</button>`).join('')}</div>
+          <div class="ssc2__row">${SSC_ACCENTS.map(([k, c]) => `<button type="button" class="ssc2-sw" data-accent="${k}" style="--sw:${c}" aria-label="${k} accent"></button>`).join('')}</div>
+          <div class="ssc2__row">
+            <button type="button" class="ssc2-tg" data-toggle="gauges" aria-pressed="true"><i></i>Gauges</button>
+            <button type="button" class="ssc2-tg" data-toggle="hidezeros" aria-pressed="false"><i></i>Hide zeros</button>
+          </div>
+        </section>
+      </div>
+      <div class="ssc2__msg" id="ssc2-msg" hidden></div>
+      <div class="ssc2__acts">
+        <button type="button" class="ssc2-act" id="ssc2-save" aria-label="Save">${icon('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')}<span>Save</span></button>
+        <button type="button" class="ssc2-act" id="ssc2-copy" aria-label="Copy">${icon('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>')}<span>Copy</span></button>
+        <button type="button" class="ssc2-act ssc2-act--p" id="ssc2-share">${icon('<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/>')}Share to story</button>
+      </div>
     </div>
   </div>
 </div>
-
-<style>
-
-/* overflow-y: auto (not the shared .pcp-modal's overflow: hidden) is a safety net for
-   short viewports — the height-driven sizing below should make the whole modal fit
-   without scrolling on virtually any phone, but a tall system font size or unusual
-   browser chrome shouldn't be able to strand the action row off-screen. */
-.ssc-modal { max-width: 360px; overflow-y: auto; }
-.ssc-preview {
-  position: relative; aspect-ratio: 1080 / 1920; display: flex; align-items: center; justify-content: center;
-  /* Sized from height, not width: 100% — a 9:16 box that always fills the modal's width
-     runs 600px+ tall on a narrow phone, which used to push the Save/Copy/Share row past
-     the modal's max-height and get clipped. Driving size from height (capped to a share
-     of the viewport) and letting width follow the aspect ratio keeps the whole modal,
-     buttons included, on-screen. align-self: center overrides the modal's own
-     align-items: stretch (its default, from the shared .pcp-modal class) — without it
-     this box silently stretches to the modal's full width instead of the narrow,
-     aspect-ratio-driven shape these values are trying to produce. */
-  height: min(46dvh, 400px); max-width: 100%; width: auto; margin: 0 auto; align-self: center;
-  /* Transparency checkerboard — the gauges card (like the other templates) is
-     a transparent overlay meant to sit over a photo/video the player picks
-     themselves, so this honestly represents what's see-through vs. drawn. */
-  background-color: #1a1a1a;
-  background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
-  background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0;
-}
-.ssc-preview img { width: 100%; height: 100%; object-fit: contain; }
-/* Desktop/tablet gets a bigger ceiling than the mobile-safe defaults above — a
-   phone viewport's dvh is scarce and shared with browser chrome, but a desktop
-   window has plenty of both width and height to spare, so the fixed 400px cap
-   above (sized for the tightest phones) left it looking tiny. Gated on width,
-   not just height, so a short phone in landscape doesn't get the bigger cap. */
-@media (min-width: 640px) {
-  .ssc-modal { max-width: 460px; }
-  .ssc-preview { height: min(70dvh, 760px); }
-}
-/* Below 640px, the modal takes over the whole screen instead of floating as a
-   small card. Previously the preview filled the entire viewport with the
-   header/controls floating on top of it (gradient-backed, story-editor style)
-   — but this preview is just a checkerboard, not a real photo, so a taller
-   controls panel (more rows added since) just ate into that overlap with no
-   way for the art to know its available space had shrunk, leaving the art
-   sitting too close to the controls or too far from them depending on how
-   much content the controls row happened to have. A real stacked flex column
-   — header, then art, then controls, each getting genuine layout space —
-   keeps the art centered in whatever room is actually left over, and (via
-   overflow:hidden on the modal) means the sheet never scrolls either. */
-@media (max-width: 639px) {
-  .ssc-backdrop { padding: 0; }
-  /* max-height: none overrides the shared .pcp-modal class's own max-height:
-     90dvh (public/styles.css) — every OTHER modal on the site wants that cap
-     (so it never touches the screen edges), but this one is deliberately going
-     full-screen, and that inherited 90dvh cap was exactly the bug: it left a
-     10%-of-screen gap at the bottom with the page peeking through beneath the
-     action row. inset: 0 alone (no explicit width/height) is also the more
-     robust way to size a fixed full-screen element than 100vw/100dvh, which can
-     lose to inset by a hair depending on how a given browser resolves dvh. */
-  /* overflow: hidden overrides this file's own base .ssc-modal rule above
-     (overflow-y: auto) — flex-direction/display themselves already come from
-     the shared .pcp-modal class (public/styles.css), no need to restate them. */
-  .ssc-modal { position: fixed; inset: 0; max-width: none; max-height: none; border-radius: 0; overflow: hidden; }
-  /* flex: 1 + min-height: 0 — takes exactly whatever room is left after the
-     header and controls claim their own (content-driven) heights, instead of
-     assuming a fixed viewport share. min-height: 0 is the part that's easy to
-     forget: without it a flex child won't shrink below its content size, and
-     an aspect-ratio'd/large image would blow the column out and force a
-     scrollbar right back in. */
-  .ssc-preview { position: relative; flex: 1; min-height: 0; height: auto; max-width: none; width: 100%; margin: 0; overflow: hidden; }
-  /* object-fit: cover (not contain) here — these templates aren't full-bleed,
-     their content sits in one portion of the 1080x1920 canvas with
-     transparent space above/below by design (an overlay sticker, not a
-     poster), so "contain" just letterboxes the preview with empty margins on
-     whichever side the box's aspect ratio doesn't match. "cover" scales up
-     until the box is completely filled and crops the excess (equally off top
-     +bottom or left+right, centered) — this is a display-only crop, the
-     underlying image is untouched, so Save/Copy/Share still send the full,
-     uncropped PNG. */
-  .ssc-preview img { object-fit: cover; }
-  /* Safe-area padding so the edge-to-edge header/controls don't sit under a
-     notch/Dynamic Island or the home-indicator gesture bar on iPhones — a no-op
-     (env() resolves to 0) on devices without either. */
-  .ssc-header { flex-shrink: 0; padding-top: env(safe-area-inset-top); }
-  .ssc-controls { flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-}
-/* Absolutely positioned against .ssc-preview (position: relative/absolute in every
-   mode) rather than relying on the preview's flex centering — keeps it dead-center
-   regardless of how that box ends up sized/stretched. */
-.ssc-spinner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--amber); animation: ssc-spin .8s linear infinite; }
-@keyframes ssc-spin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
-/* Compact icon-row + slide-up sheet, replacing the old always-visible
-   dropdowns/swatches row — CapCut/Instagram-editor style, so the preview
-   above keeps most of the modal's height until a control is actually opened.
-   .ssc-sheet's grid-template-rows 0fr→1fr transition is what gives the "slide
-   up" feel without any JS height math: a 0fr row genuinely takes no space
-   (unlike max-height:0, it doesn't need a guessed cap), and animating to 1fr
-   lets it grow to its content's natural height. .ssc-sheet__inner's
-   overflow:hidden is required for that trick — a grid row can't clip its own
-   overflow during the transition otherwise. */
-.ssc-toolbar { display: flex; gap: 4px; padding: 10px 16px 0; }
-.ssc-tool-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: var(--radius-sm); background: none; border: 1px solid transparent; color: var(--text-muted); font-size: 11px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
-.ssc-tool-btn:hover { color: var(--text); }
-.ssc-tool-btn.is-active { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.16); color: var(--text); }
-.ssc-tool-btn__dot { width: 18px; height: 18px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.3); }
-.ssc-sheet { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease; }
-.ssc-sheet.is-open { grid-template-rows: 1fr; }
-.ssc-sheet__inner { overflow: hidden; min-height: 0; }
-/* max-height + overflow-y:auto is headroom for Template/Focus growing past
-   what fits in one unscrolled chip row — the panel's own scrollbar handles
-   the overflow instead of the whole modal growing (and, on desktop, instead
-   of .ssc-modal's own overflow-y:auto scrolling the toolbar/preview out of
-   view along with it). The grid-rows trick above still works the same either
-   way: it just animates to this capped height rather than an ever-growing
-   one once a panel has more content than fits. */
-.ssc-sheet__panel { padding: 12px 16px 2px; max-height: 200px; overflow-y: auto; }
-.ssc-sheet__panel[hidden] { display: none; }
-.ssc-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.ssc-chip { padding: 8px 14px; border-radius: 999px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text-muted); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.ssc-chip:hover { color: var(--text); }
-.ssc-chip.is-active { background: var(--amber); border-color: transparent; color: #0a0e16; }
-/* Single row, deliberately — swatches and toggles used to wrap onto their own
-   line on narrower phones once both were at full size. flex-wrap: nowrap
-   forces one line always; overflow-x: auto is the safety valve for whatever
-   width that still doesn't fit on (a scrollable row still reads as "one
-   line" — it just isn't all in view at once — whereas wrapping visibly
-   becomes two). Tightened swatch/toggle sizing (below) means that scroll
-   only actually kicks in on the narrowest phones; most widths show the whole
-   row without any cropping or scrolling at all. */
-.ssc-accent-row { display: flex; align-items: center; gap: 14px; flex-wrap: nowrap; overflow-x: auto; }
-.ssc-swatches { display: flex; gap: 7px; flex-shrink: 0; }
-.ssc-toggle-group { display: flex; gap: 10px; flex-shrink: 0; }
-.ssc-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 4px 0; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
-.ssc-toggle:hover { color: var(--text); }
-.ssc-toggle__switch { position: relative; width: 30px; height: 18px; border-radius: 999px; background: rgba(255,255,255,0.16); transition: background .12s; flex-shrink: 0; }
-.ssc-toggle__switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .12s; }
-.ssc-toggle[aria-pressed="true"] .ssc-toggle__switch { background: var(--amber); }
-.ssc-toggle[aria-pressed="true"] .ssc-toggle__switch::after { transform: translateX(12px); }
-.ssc-toggle[aria-pressed="true"] { color: var(--text); }
-.ssc-swatch-btn { width: 22px; height: 22px; border-radius: 50%; background: var(--swatch); border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); transition: transform .12s, border-color .12s; flex-shrink: 0; }
-.ssc-swatch-btn:hover { transform: scale(1.1); }
-.ssc-swatch-btn.is-active { border-color: #fff; }
-.ssc-msg { padding: 8px 16px 0; font-size: 12px; color: var(--text-muted); text-align: center; }
-.ssc-msg--retry { color: var(--amber); font-weight: 700; text-decoration: underline; cursor: pointer; }
-.ssc-actions { display: flex; gap: 8px; }
-.ssc-action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: var(--radius-sm); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s; }
-.ssc-action-btn:hover { background: rgba(255,255,255,0.18); }
-.ssc-action-btn--primary { background: var(--amber); border-color: transparent; color: #0a0e16; }
-.ssc-action-btn--primary:hover { opacity: .88; background: var(--amber); }
-</style>
-
 <script>
-(function() {
-  var GAME_ID  = '${gameId}';
-  var openBtns = Array.prototype.slice.call(document.querySelectorAll('[data-ssc-open]'));
-  var backdrop = document.getElementById('ssc-backdrop');
-  var closeBtn = document.getElementById('ssc-close');
-  var img      = document.getElementById('ssc-img');
-  var spinner  = document.getElementById('ssc-spinner');
-  var msg      = document.getElementById('ssc-msg');
-  var saveBtn  = document.getElementById('ssc-save');
-  var copyBtn  = document.getElementById('ssc-copy');
-  var shareBtn = document.getElementById('ssc-share');
-  var swatchBtns   = Array.prototype.slice.call(document.querySelectorAll('.ssc-swatch-btn'));
-  var gaugesToggle = document.getElementById('ssc-gauges-toggle');
-  var hideZerosToggle = document.getElementById('ssc-hidezeros-toggle');
-  var badgeToggle = document.getElementById('ssc-badge-toggle');
-  var accentDot    = document.getElementById('ssc-tool-accent-dot');
-  var cache = {};
-  var pending = {};
-  var align = 'center';
-  var accent = 'amber';
-  var gaugesOn = true;
-  var hideZerosOn = false;
-  var badgeOn = false;
-  // The server already picked and marked the best opening Focus chip
-  // (personalized to this player's own box score — see shareStatsModal in
-  // game.js) — read whichever chip it marked active instead of recomputing.
-  function activeChipValue(panelId) {
-    var chip = document.querySelector('#' + panelId + ' .ssc-chip.is-active') || document.querySelector('#' + panelId + ' .ssc-chip');
-    return chip.getAttribute('data-value');
-  }
-  var focus = activeChipValue('ssc-panel-focus');
+(function () {
+  var root = document.getElementById('ssc2');
+  if (!root) return;
+  var GAME = root.dataset.game;
+  var img = document.getElementById('ssc2-img'), spin = document.getElementById('ssc2-spin');
+  var bgl = document.getElementById('ssc2-bgl'), tag = document.getElementById('ssc2-tag'), msg = document.getElementById('ssc2-msg');
+  var st = { tpl: 'center', bg: root.dataset.defaultBg, focus: root.dataset.focus, accent: 'amber', gauges: true, hidezeros: false };
+  var cache = {}, pending = {}, uploadUrl = null, lastFocus = null;
 
-  // Compact icon toolbar + slide-up sheet (CapCut/Instagram-editor style,
-  // replacing the old always-visible dropdowns/swatches) — only one panel
-  // shown at a time, sheet fully collapsed when nothing's open so the
-  // preview above keeps as much of the modal's height as possible.
-  var toolBtns = Array.prototype.slice.call(document.querySelectorAll('.ssc-tool-btn'));
-  var sheet    = document.getElementById('ssc-sheet');
-  var panels   = {
-    template: document.getElementById('ssc-panel-template'),
-    focus:    document.getElementById('ssc-panel-focus'),
-    accent:   document.getElementById('ssc-panel-accent'),
-    publish:  document.getElementById('ssc-panel-publish'),
-  };
-  var openTarget = null;
-  function closeSheet() {
-    sheet.classList.remove('is-open');
-    toolBtns.forEach(function(b) { b.classList.remove('is-active'); });
-    openTarget = null;
+  function url(tpl, thumb) {
+    return '/api/games/' + encodeURIComponent(GAME) + '/my-stat-card.png?layout=gauges&align=' + tpl +
+      '&focus=' + st.focus + '&accent=' + st.accent + '&gauges=' + (st.gauges ? 1 : 0) + '&hidezeros=' + (st.hidezeros ? 1 : 0) + '&badge=0' + (thumb ? '&thumb=1' : '');
   }
-  function openSheet(target) {
-    Object.keys(panels).forEach(function(k) { panels[k].hidden = k !== target; });
-    sheet.classList.add('is-open');
-    toolBtns.forEach(function(b) { b.classList.toggle('is-active', b.getAttribute('data-target') === target); });
-    openTarget = target;
-  }
-  toolBtns.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var target = btn.getAttribute('data-target');
-      if (openTarget === target) closeSheet(); else openSheet(target);
-    });
-  });
-  // Tapping the preview itself (not just the toolbar) is the other way to
-  // dismiss an open panel — the same "tap outside to close" instinct the old
-  // dropdown's document-click listener gave, scoped to the one place in this
-  // modal that isn't already an interactive control.
-  document.querySelector('.ssc-preview').addEventListener('click', function() {
-    if (openTarget) closeSheet();
-  });
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && openTarget) closeSheet();
-  });
+  function key() { return url(st.tpl, false); }
+  function say(text, retry) { msg.textContent = text; msg.hidden = !text; msg.classList.toggle('is-retry', !!retry); }
+  msg.addEventListener('click', function () { if (msg.classList.contains('is-retry')) { say(''); render(); } });
 
-  // Chip controller shared by the Template and Focus panels — Template/Focus
-  // auto-close the sheet on pick (single choice, quick in-and-out), but
-  // Accent's swatches/toggles don't (see their own listeners below) since
-  // trying a few colors in a row is the whole point of that panel.
-  function setupChips(panelId, onChange) {
-    var panel = panels[panelId];
-    var chips = Array.prototype.slice.call(panel.querySelectorAll('.ssc-chip'));
-    chips.forEach(function(chip) {
-      chip.addEventListener('click', function() {
-        chips.forEach(function(c) { c.classList.toggle('is-active', c === chip); });
-        clearMsg();
-        onChange(chip.getAttribute('data-value'));
-        closeSheet();
-      });
-    });
+  function load(k) {
+    if (cache[k] || pending[k]) return;
+    pending[k] = true;
+    var ctl = new AbortController(), late = false;
+    var t = setTimeout(function () { late = true; ctl.abort(); }, 20000);
+    fetch(k, { signal: ctl.signal })
+      .then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(function (b) { cache[k] = { blob: b, url: URL.createObjectURL(b) }; if (k === key()) render(); })
+      .catch(function () { if (k === key()) { spin.hidden = true; say(late ? 'Taking too long. Tap to retry.' : 'Could not load your card. Tap to retry.', true); } })
+      .then(function () { clearTimeout(t); pending[k] = false; });
   }
-  // The mobile full-screen preview crops to fill (object-fit: cover, set in
-  // this file's <style>) since these cards aren't full-bleed — their content
-  // sits in one region of the 1080x1920 canvas, not spread edge-to-edge. A
-  // symmetric center-crop is correct for every vertically-centered template,
-  // but Bottom's and Premium's content both hug the bottom edge (see
-  // generateGameStatPremiumPng's own comments), so centering the crop there
-  // would risk shaving into it from below while leaving untouched transparent
-  // space at the top. Anchoring the crop to the bottom for those two
-  // templates guarantees only the (empty) top gets cropped instead.
-  var BOTTOM_ANCHORED_TEMPLATES = ['bottom', 'premium', 'hero', 'scoreboard'];
-  function applyPreviewCropAnchor() {
-    img.style.objectPosition = BOTTOM_ANCHORED_TEMPLATES.indexOf(align) !== -1 ? 'center bottom' : 'center center';
-  }
-  applyPreviewCropAnchor();
-
-  setupChips('template', function(v) { align = v; applyPreviewCropAnchor(); render(); });
-  setupChips('focus', function(v) { focus = v; render(); });
-
-  function cacheKey(a, f, c, g, hz, b) { return [a, f, c, g, hz, b].join('|'); }
-  function buildUrl(a, f, c, g, hz, b) {
-    var params = ['layout=gauges', 'align=' + encodeURIComponent(a), 'focus=' + encodeURIComponent(f), 'accent=' + encodeURIComponent(c), 'gauges=' + (g ? '1' : '0'), 'hidezeros=' + (hz ? '1' : '0'), 'badge=' + (b ? '1' : '0')];
-    return '/api/games/' + GAME_ID + '/my-stat-card.png?' + params.join('&');
-  }
-  function currentKey() { return cacheKey(align, focus, accent, gaugesOn, hideZerosOn, badgeOn); }
-
-  // retry: true marks this message as tappable-to-retry (load failures only —
-  // "Copied to clipboard" etc. shouldn't be clickable). Re-clicking an
-  // already-active control is the "obvious" retry, but a control that's
-  // already selected doesn't look clickable to re-try — making the error
-  // message itself the retry action means there's always a guaranteed,
-  // discoverable way to re-fire the request for whatever's currently picked.
-  function showMsg(text, retry) {
-    msg.textContent = text;
-    msg.hidden = false;
-    msg.classList.toggle('ssc-msg--retry', !!retry);
-  }
-  function clearMsg() { msg.hidden = true; msg.textContent = ''; msg.classList.remove('ssc-msg--retry'); }
-  msg.addEventListener('click', function() {
-    if (!msg.classList.contains('ssc-msg--retry')) return;
-    clearMsg();
-    render();
-  });
-
-  // Tracks in-flight requests per combo (not one shared flag) so switching
-  // controls while a fetch is still pending doesn't strand the newly-picked
-  // combo waiting on a "loading" flag that belongs to another one.
-  function ensureLoaded(a, f, c, g, hz, b) {
-    var key = cacheKey(a, f, c, g, hz, b);
-    if (cache[key] || pending[key]) return;
-    pending[key] = true;
-    // A request that just hangs (flaky mobile network, a stalled response)
-    // used to leave pending[key] stuck true forever with nothing to catch
-    // or reject it — the spinner never cleared, and closing/reopening the
-    // modal or re-picking the same control silently no-op'd instead of
-    // retrying, since both checks above still saw pending===true. Aborting
-    // after 20s (generous headroom over the ~200-250ms this normally takes)
-    // forces the promise chain to settle either way, so pending[key] always
-    // gets reset and a retry can actually go out.
-    var timedOut = false;
-    var controller = new AbortController();
-    var timer = setTimeout(function() { timedOut = true; controller.abort(); }, 20000);
-    fetch(buildUrl(a, f, c, g, hz, b), { signal: controller.signal })
-      .then(function(r) { if (!r.ok) throw new Error('failed'); return r.blob(); })
-      .then(function(res) {
-        cache[key] = { blob: res, url: URL.createObjectURL(res) };
-        if (key === currentKey()) render();
-      })
-      .catch(function() {
-        if (key === currentKey()) {
-          spinner.hidden = true;
-          showMsg(timedOut ? 'Taking too long to load. Tap to retry.' : 'Could not load your stat card. Tap to retry.', true);
-        }
-      })
-      .then(function() { clearTimeout(timer); pending[key] = false; }, function() { clearTimeout(timer); pending[key] = false; });
-  }
-
-  // Each render is only ~200-250ms server-side, but every swatch click still
-  // paid a full fetch since nothing was pre-warmed — quietly loads the other
-  // accent colors for the combo just shown, in the background, so a follow-up
-  // color click resolves from cache instead of waiting on the network again.
-  var ACCENT_KEYS = ['amber', 'red', 'blue', 'green', 'purple', 'pink', 'cyan'];
-  function prefetchOtherAccents(a, f, current, g, hz, b) {
-    ACCENT_KEYS.forEach(function(c) {
-      if (c !== current) ensureLoaded(a, f, c, g, hz, b);
-    });
-  }
-
   function render() {
-    var entry = cache[currentKey()];
-    if (!entry) { spinner.hidden = false; img.hidden = true; ensureLoaded(align, focus, accent, gaugesOn, hideZerosOn, badgeOn); return; }
-    img.src = entry.url;
-    img.hidden = false;
-    spinner.hidden = true;
-    prefetchOtherAccents(align, focus, accent, gaugesOn, hideZerosOn, badgeOn);
+    var e = cache[key()];
+    if (!e) { spin.hidden = false; img.hidden = true; load(key()); return; }
+    img.src = e.url; img.hidden = false; spin.hidden = true;
+  }
+  function thumbs() {
+    root.querySelectorAll('[data-thumb]').forEach(function (i) { i.src = url(i.dataset.thumb, true); });
+  }
+  function labelOf(sel, attr) { var el = root.querySelector(sel); return el ? el.dataset[attr] || el.textContent.trim() : ''; }
+  function paint() {
+    root.querySelectorAll('[data-tpl]').forEach(function (b) { b.classList.toggle('is-on', b.dataset.tpl === st.tpl); });
+    root.querySelectorAll('.ssc2-bg').forEach(function (b) { b.classList.toggle('is-on', b.dataset.bg === st.bg); });
+    root.querySelectorAll('[data-focus]').forEach(function (b) { if (b.classList.contains('ssc2-chip')) b.classList.toggle('is-on', b.dataset.focus === st.focus); });
+    root.querySelectorAll('[data-accent]').forEach(function (b) { b.classList.toggle('is-on', b.dataset.accent === st.accent); });
+    root.querySelectorAll('[data-toggle]').forEach(function (b) { b.setAttribute('aria-pressed', st[b.dataset.toggle] ? 'true' : 'false'); });
+    var bgBtn = root.querySelector('.ssc2-bg[data-bg="' + st.bg + '"]');
+    bgl.setAttribute('style', st.bg === 'upload' && uploadUrl ? "background-image:url('" + uploadUrl + "')" : (bgBtn && bgBtn.dataset.css) || '');
+    bgl.classList.toggle('is-solid', !!(bgBtn && bgBtn.dataset.solid));
+    var tl = labelOf('[data-tpl="' + st.tpl + '"]', 'label');
+    var bl = bgBtn ? bgBtn.textContent.trim() : '';
+    tag.textContent = st.bg === 'none' ? tl + ' · transparent' : tl + ' · preview on ' + bl.toLowerCase();
   }
 
-  function open() {
-    backdrop.hidden = false;
-    closeSheet();
-    clearMsg();
-    render();
+  function open(opts) {
+    if (opts.template) st.tpl = opts.template;
+    if (opts.bg && root.querySelector('.ssc2-bg[data-bg="' + opts.bg + '"]')) st.bg = opts.bg;
+    lastFocus = document.activeElement;
+    root.hidden = false;
+    document.documentElement.classList.add('ssc2-lock');
+    say(''); paint(); thumbs(); render();
+    var x = root.querySelector('.ssc2__x'); if (x) x.focus();
   }
-  function close() { backdrop.hidden = true; }
-
-  openBtns.forEach(function(b) { b.addEventListener('click', open); });
-  closeBtn.addEventListener('click', close);
-  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
-
-  swatchBtns.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      accent = btn.getAttribute('data-accent');
-      swatchBtns.forEach(function(b) { b.classList.toggle('is-active', b === btn); });
-      accentDot.style.setProperty('--swatch', btn.style.getPropertyValue('--swatch'));
-      clearMsg();
-      render();
-    });
-  });
-
-  gaugesToggle.addEventListener('click', function() {
-    gaugesOn = !gaugesOn;
-    gaugesToggle.setAttribute('aria-pressed', gaugesOn ? 'true' : 'false');
-    clearMsg();
-    render();
-  });
-
-  hideZerosToggle.addEventListener('click', function() {
-    hideZerosOn = !hideZerosOn;
-    hideZerosToggle.setAttribute('aria-pressed', hideZerosOn ? 'true' : 'false');
-    clearMsg();
-    render();
-  });
-
-  badgeToggle.addEventListener('click', function() {
-    badgeOn = !badgeOn;
-    badgeToggle.setAttribute('aria-pressed', badgeOn ? 'true' : 'false');
-    clearMsg();
-    render();
-  });
-
-  // Save/Copy/Share all happen entirely client-side against an
-  // already-fetched blob — without this ping, the server (and admin) would
-  // never know a player did anything past opening the editor. Fire-and-forget
-  // on purpose: a logging failure shouldn't surface an error for an action
-  // the player already completed successfully.
-  function logCardAction(action) {
-    fetch('/api/games/' + GAME_ID + '/stat-card-action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: action, template: align, focus: focus, accent: accent }),
-    }).catch(function() {});
+  function close() {
+    root.hidden = true;
+    document.documentElement.classList.remove('ssc2-lock');
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
-
-  saveBtn.addEventListener('click', function() {
-    var entry = cache[currentKey()];
-    if (!entry) return;
-    var a = document.createElement('a');
-    a.href = entry.url;
-    a.download = 'wknd-game-' + GAME_ID + '-stats.png';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    logCardAction('save');
+  document.querySelectorAll('[data-ssc-open]').forEach(function (b) {
+    b.addEventListener('click', function () { open({ template: b.dataset.template, bg: b.dataset.bg }); });
   });
+  root.querySelectorAll('[data-ssc2-close]').forEach(function (b) { b.addEventListener('click', close); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !root.hidden) close(); });
 
-  copyBtn.addEventListener('click', function() {
-    var entry = cache[currentKey()];
-    if (!entry) return;
-    clearMsg();
-    if (!navigator.clipboard || !window.ClipboardItem) {
-      showMsg('Copy is not supported in this browser. Use Save instead.');
-      return;
+  root.addEventListener('click', function (e) {
+    var t = e.target.closest('button');
+    if (!t || !root.contains(t)) return;
+    if (t.dataset.tpl) { st.tpl = t.dataset.tpl; say(''); paint(); render(); return; }
+    if (t.classList.contains('ssc2-bg')) { st.bg = t.dataset.bg; paint(); return; }
+    if (t.classList.contains('ssc2-chip')) { st.focus = t.dataset.focus; say(''); paint(); thumbs(); render(); return; }
+    if (t.dataset.accent) { st.accent = t.dataset.accent; say(''); paint(); thumbs(); render(); return; }
+    if (t.dataset.toggle) { st[t.dataset.toggle] = !st[t.dataset.toggle]; say(''); paint(); thumbs(); render(); return; }
+    if (t.dataset.ssc2Tab) {
+      root.querySelectorAll('[data-ssc2-tab]').forEach(function (x) { var on = x === t; x.classList.toggle('is-on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+      root.querySelectorAll('[data-ssc2-panel]').forEach(function (p) { p.classList.toggle('is-on', p.dataset.ssc2Panel === t.dataset.ssc2Tab); });
     }
-    navigator.clipboard.write([new ClipboardItem({ 'image/png': entry.blob })])
-      .then(function() { showMsg('Copied to clipboard.'); logCardAction('copy'); })
-      .catch(function() { showMsg('Could not copy. Try Save instead.'); });
+  });
+  // Upload: preview only — the photo stays on this device.
+  var file = document.getElementById('ssc2-file');
+  file.addEventListener('change', function () {
+    var f = file.files && file.files[0];
+    if (!f) return;
+    if (uploadUrl) URL.revokeObjectURL(uploadUrl);
+    uploadUrl = URL.createObjectURL(f);
+    document.getElementById('ssc2-up-thumb').style.backgroundImage = "url('" + uploadUrl + "')";
+    root.querySelector('.ssc2-bg[data-bg="upload"]').classList.add('has-photo');
+    st.bg = 'upload'; paint();
   });
 
-  shareBtn.addEventListener('click', function() {
-    var entry = cache[currentKey()];
-    if (!entry) return;
-    clearMsg();
-    var file = new File([entry.blob], 'wknd-game-stats.png', { type: 'image/png' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      // Resolves on a completed share, but also on some browsers when the
-      // user just dismisses the share sheet — a false positive here is a
-      // much smaller problem than never counting a real share, so this
-      // isn't worth trying to distinguish.
-      navigator.share({ files: [file], title: 'My Stats — WKND Basketball' })
-        .then(function() { logCardAction('share'); })
-        .catch(function() {});
-    } else {
-      showMsg('Sharing is not supported in this browser. Use Save instead.');
-    }
+  // Save / Copy / Share use the already-loaded transparent PNG; each is logged (fire-and-forget).
+  function log(action) {
+    fetch('/api/games/' + encodeURIComponent(GAME) + '/stat-card-action', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, template: st.tpl, focus: st.focus, accent: st.accent }) }).catch(function () {});
+  }
+  function current() { return cache[key()]; }
+  document.getElementById('ssc2-save').addEventListener('click', function () {
+    var e = current(); if (!e) return;
+    var a = document.createElement('a'); a.href = e.url; a.download = 'wknd-' + GAME + '-' + st.tpl + '.png';
+    document.body.appendChild(a); a.click(); a.remove(); log('save'); say('Saved.');
+  });
+  document.getElementById('ssc2-copy').addEventListener('click', function () {
+    var e = current(); if (!e) return;
+    if (!navigator.clipboard || !window.ClipboardItem) { say('Copy isn’t supported in this browser. Use Save instead.'); return; }
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': e.blob })])
+      .then(function () { say('Copied.'); log('copy'); }).catch(function () { say('Could not copy. Try Save instead.'); });
+  });
+  document.getElementById('ssc2-share').addEventListener('click', function () {
+    var e = current(); if (!e) return;
+    var f = new File([e.blob], 'wknd-my-stats.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) {
+      navigator.share({ files: [f], title: 'My stats — WKND Basketball' }).then(function () { log('share'); }).catch(function () {});
+    } else { say('Sharing isn’t supported in this browser. Use Save, then post it.'); }
   });
 })();
 </script>`;
@@ -1830,7 +1439,7 @@ function yourGameStrip(game, mg) {
   const opp = String(s.team_name || '').toUpperCase() === String(game.team_a_name).toUpperCase() ? game.team_b_name : game.team_a_name;
   const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
   const won = String(s.team_name || '').toUpperCase() === String(fa > fb ? game.team_a_name : game.team_b_name).toUpperCase();
-  const card = q => `/api/games/${encodeURIComponent(game.id)}/my-stat-card.png?layout=gauges&${q}&accent=amber`;
+  const card = q => `/api/games/${encodeURIComponent(game.id)}/my-stat-card.png?layout=gauges&${q}&accent=amber&thumb=1`;
   // Three different templates on three different backdrops, the way they end up posted:
   // Marquee over the game photo, Card (a frame) over the player's own photo, Box Score over a
   // team-colour glow.
@@ -1848,11 +1457,11 @@ function yourGameStrip(game, mg) {
       </div>
     </div>
     <div class="gd-yg__r">
-      <button type="button" class="gd-yg__fan" data-ssc-open aria-label="Open your stat cards">
-        <span${bgCover}><img src="${card('align=center&focus=all&gauges=1')}" alt="" loading="lazy"></span>
-        <span${bgPlayer}><img src="${card('align=card')}" alt="" loading="lazy"></span>
-        <span${bgTeam}><img src="${card('align=stacked')}" alt="" loading="lazy"></span>
-      </button>
+      <div class="gd-yg__fan">
+        <button type="button"${bgCover} data-ssc-open data-template="center" data-bg="${game.has_cover ? 'game' : 'team'}" aria-label="Open the Marquee card"><img src="${card('align=center&focus=all&gauges=1')}" alt="" loading="lazy"></button>
+        <button type="button"${bgPlayer} data-ssc-open data-template="card" data-bg="me" aria-label="Open the Card template on your photo"><img src="${card('align=card')}" alt="" loading="lazy"></button>
+        <button type="button"${bgTeam} data-ssc-open data-template="stacked" data-bg="team" aria-label="Open the Box score card"><img src="${card('align=stacked')}" alt="" loading="lazy"></button>
+      </div>
       <div class="gd-yg__cta">
         <button type="button" class="gd-yg__btn" data-ssc-open>${ICON_SHARE}Share my stats</button>
         <span>9 story-sized templates to post over your own photo · Save, Copy or Share</span>

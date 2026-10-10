@@ -7626,8 +7626,12 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
     if (badge && layout !== 'default' && layout !== 'comparison') {
       png = await composeStravagantBadgeOverlay(png, stat, resolveAccent(accent));
     }
+    // ?thumb=1: a small copy for the editor's template picker (9 of these per open), so it
+    // doesn't pull nine full 1080×1920 PNGs.
+    const thumb = req.query.thumb === '1';
+    if (thumb) png = await sharp(png).resize(216).png({ compressionLevel: 9 }).toBuffer();
     res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'private, max-age=60');
+    res.set('Cache-Control', `private, max-age=${thumb ? 600 : 60}`);
     res.end(png);
   } catch (err) {
     console.error('my-stat-card.png error', err);
