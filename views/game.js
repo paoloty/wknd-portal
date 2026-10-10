@@ -1560,7 +1560,7 @@ function upcomingHero(d) {
         <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${oddsPct(heroOdds, 'b')}${recLine(ctx.recB)}</span></div>
       </div>
       <div class="gd-hero__bot">
-        ${closeAt ? `<div class="gd-cd" data-close="${escHtml(closeAt)}"><span class="gd-cd__k">Picks close in</span><span class="gd-cd__n"><span><b data-cd="d">–</b><i>DAYS</i></span><span><b data-cd="h">–</b><i>HRS</i></span><span><b data-cd="m">–</b><i>MIN</i></span></span></div>` : '<span></span>'}
+        ${closeAt ? `<div class="gd-cd" data-close="${escHtml(closeAt)}"><span class="gd-cd__k">Picks close in</span><span class="gd-cd__n"><span><b data-cd="d">–</b><i>DAYS</i></span><span><b data-cd="h">–</b><i>HRS</i></span><span><b data-cd="m">–</b><i>MIN</i></span><span><b data-cd="s">–</b><i>SEC</i></span></span></div>`: '<span></span>'}
         ${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: false })}
       </div>
     </div>
@@ -2016,11 +2016,12 @@ function pageScript() {
     var tick = function () {
       var ms = end - Date.now();
       if (ms <= 0) { cd.querySelector('.gd-cd__k').textContent = 'Picks closed'; cd.querySelector('.gd-cd__n').hidden = true; return; }
-      var m = Math.floor(ms / 60000);
-      cd.querySelector('[data-cd="d"]').textContent = Math.floor(m / 1440);
-      cd.querySelector('[data-cd="h"]').textContent = Math.floor(m / 60) % 24;
-      cd.querySelector('[data-cd="m"]').textContent = m % 60;
-      setTimeout(tick, 30000);
+      var s = Math.floor(ms / 1000);
+      cd.querySelector('[data-cd="d"]').textContent = Math.floor(s / 86400);
+      cd.querySelector('[data-cd="h"]').textContent = Math.floor(s / 3600) % 24;
+      cd.querySelector('[data-cd="m"]').textContent = Math.floor(s / 60) % 60;
+      cd.querySelector('[data-cd="s"]').textContent = s % 60;
+      setTimeout(tick, (ms % 1000) || 1000);
     };
     tick();
   }

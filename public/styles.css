@@ -8750,7 +8750,7 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-cd__k { font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #c7d0da; }
 .gd-cd__n { display: flex; gap: 8px; }
 .gd-cd__n > span { display: flex; flex-direction: column; align-items: center; min-width: 54px; padding: 7px 0; border-radius: 10px; background: rgba(10,14,22,.65); border: 1px solid rgba(255,255,255,.1); }
-.gd-cd__n b { font-family: 'Saira Condensed', sans-serif; font-size: 24px; line-height: 1; color: #fff; }
+.gd-cd__n b { font-family: 'Saira Condensed', sans-serif; font-size: 24px; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
 .gd-cd__n i { font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: .12em; color: var(--text-muted); }
 
 /* Sticky section nav (replaces the tabs) */
