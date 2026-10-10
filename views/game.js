@@ -168,7 +168,10 @@ function shareStatsModal(game, stat) {
                      game with no double-double/triple-double/career-high, so an
                      "on" state that visibly does nothing most games would be a
                      confusing default. -->
-                <button type="button" class="ssc-toggle" id="ssc-badge-toggle" aria-pressed="false" title="Add an achievement badge (double-double, triple-double, or career high) when this game earned one">
+                <!-- Hidden for now (Paolo, 2026-10-10: doesn't like the badge yet). The button stays
+                     in the markup so the script still binds; it's off by default, so cards
+                     render without it. Remove the style to bring it back. -->
+                <button type="button" class="ssc-toggle" id="ssc-badge-toggle" aria-pressed="false" style="display:none" title="Add an achievement badge (double-double, triple-double, or career high) when this game earned one">
                   <span class="ssc-toggle__switch"></span>
                   Badge
                 </button>
