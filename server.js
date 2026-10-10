@@ -39,7 +39,7 @@ import { standingsPage } from './views/standings.js';
 import { playoffsPage, computeSeeds, pairKey } from './views/playoffs.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
-import { playerPage, playerPageV2 } from './views/player.js';
+import { playerPage } from './views/player.js';
 import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage, rulesPage } from './views/legal.js';
@@ -172,7 +172,7 @@ import { comparisonProblems } from './lib/story-checks.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
-import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
+import { adminLedgerBody, adminLedgerPlayerBody } from './views/admin/ledger.js';
 import { adminAwardsBody } from './views/admin/awards.js';
 import { adminVisibilityBody } from './views/admin/visibility.js';
 import { adminAiWritingBody } from './views/admin/ai-writing.js';
@@ -231,7 +231,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 const CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/styles.css')).mtimeMs); } catch { return Date.now(); } })();
-// The new player profile's own stylesheet (profile_v2_enabled), versioned the same way.
+// The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 
 // Minified once at process start (same lifecycle as CSS_VER — both only change on a
@@ -526,9 +526,9 @@ function buildPostOgTags(req, post) {
   return tags.join('\n  ');
 }
 
-// card: the new profile share image (/og/player/:id.png, behind profile_v2_enabled) instead
-// of the bare photo. Versioned by day + photo so crawlers re-fetch when stats or the photo change.
-function buildPlayerOgTags(req, player, totals, { card = false } = {}) {
+// og:image is the profile share card (/og/player/:id.png), versioned by day + photo so
+// crawlers re-fetch when stats or the photo change.
+function buildPlayerOgTags(req, player, totals) {
   const origin  = getRequestOrigin(req);
   const name    = displayPlayerName(player.name);
   const team    = String(player.team_name || '').toUpperCase();
@@ -539,9 +539,7 @@ function buildPlayerOgTags(req, player, totals, { card = false } = {}) {
   const photoVer = hasPhoto
     ? createHash('sha1').update(player.picture_url.slice(0, 256)).digest('hex').slice(0, 8)
     : '0';
-  const img = card
-    ? `${origin}/og/player/${encodeURIComponent(player.id)}.png?v=${ogDayStamp()}${photoVer}`
-    : hasPhoto ? `${origin}/api/player/${encodeURIComponent(player.id)}/photo?v=${photoVer}` : null;
+  const img = `${origin}/og/player/${encodeURIComponent(player.id)}.png?v=${ogDayStamp()}${photoVer}`;
 
   let positions = [];
   try { positions = JSON.parse(player.positions || '[]'); } catch {}
@@ -576,17 +574,16 @@ function buildPlayerOgTags(req, player, totals, { card = false } = {}) {
     `<meta property="profile:last_name" content="${escAttr(lastName)}">`,
   ];
 
-  if (img) {
-    tags.push(
-      `<meta property="og:image" content="${escAttr(img)}">`,
-      `<meta property="og:image:secure_url" content="${escAttr(img)}">`,
-      `<meta property="og:image:alt" content="${escAttr(name)}">`,
-      ...(card ? ['<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">'] : []),
-    );
-  }
+  tags.push(
+    `<meta property="og:image" content="${escAttr(img)}">`,
+    `<meta property="og:image:secure_url" content="${escAttr(img)}">`,
+    `<meta property="og:image:alt" content="${escAttr(name)}">`,
+    '<meta property="og:image:width" content="1200">',
+    '<meta property="og:image:height" content="630">',
+  );
 
   tags.push(
-    `<meta name="twitter:card" content="${card ? 'summary_large_image' : 'summary'}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
     `<meta name="twitter:title" content="${escAttr(name + ' — WKND Basketball')}">`,
     `<meta name="twitter:description" content="${escAttr(desc)}">`,
   );
@@ -1630,7 +1627,6 @@ function getFeatureFlags() {
     marketplace: getSetting('marketplace_enabled', '0') === '1',
     megaMenu: getSetting('mega_menu_enabled', '0') === '1',
     picks: getSetting('picks_enabled', '1') !== '0',
-    profileV2: getSetting('profile_v2_enabled', '0') === '1',
   };
 }
 
@@ -4896,7 +4892,7 @@ function playerChampionSeasons(playerId, gameLogs) {
   return [...out].sort((a, b) => b - a);
 }
 
-// ── Player profile share card (profile_v2_enabled) ────────────────────────────────
+// ── Player profile share card ───────────────────────────────────────────────────────
 // "Card C": italic all-caps name, team/number/position/champion chips and a four-stat
 // career strip over the brand background. With a profile photo, the photo sits faded and
 // mostly grey on the right (Paolo, 2026-10-10: "make it subtle"); without one, the jersey
@@ -6736,7 +6732,6 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
       megaMenuEnabled: getSetting('mega_menu_enabled', '0') === '1',
-      profileV2Enabled: getSetting('profile_v2_enabled', '0') === '1',
       picksEnabled: picksEnabled(),
       pickOddsEnabled: pickOddsEnabled(),
       picksCloseTime: picksCloseTime(),
@@ -6750,7 +6745,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves', 'profile_v2_enabled',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
     'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
@@ -11894,17 +11889,6 @@ app.get('/players/:ref', async (req, res) => {
     pending: badgesAllSeasons.find(s => String(s.season) === String(badgeCurrentSeason))?.pending || [],
   };
 
-  let financialSection = '';
-  if (isAdminWithSection(req, 'finance')) {
-    const fin = getPlayerFinancials(resolved.id);
-    const txs = getPlayerTransactions(resolved.id);
-    const allPlayers = getAllPlayers();
-    const allPlayerOptions = allPlayers.map(p =>
-      `<option value="${p.id}"${p.id === resolved.id ? ' selected' : ''}>${displayPlayerName(p.name)} — ${p.team_name || ''}</option>`
-    ).join('');
-    financialSection = playerFinancialSection(fin, txs, displayName, resolved.id, allPlayerOptions);
-  }
-
   const isOwnProfile = !!req.session?.playerPlayerId && resolved.id === req.session.playerPlayerId;
   let balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [];
   let coachNote = null;
@@ -11990,46 +11974,28 @@ app.get('/players/:ref', async (req, res) => {
     }
   }
 
-  if (getFeatureFlags().profileV2) {
-    const papawisEmailsOn = isOwnProfile && req.session?.playerRegId ? !getRegistration(req.session.playerRegId)?.papawis_email_optout : null;
-    const minDeposit = isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null;
-    return res.send(renderPage(req, {
-      title: `${displayName} — WKND Basketball`,
-      currentPath: '/players',
-      isOwnProfile,
-      metaTags: `${buildPlayerOgTags(req, player, totals, { card: true })}\n  <link rel="stylesheet" href="/profile.css?v=${PROFILE_CSS_VER}">`,
-      body: playerPageV2({
-        player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord,
-        isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
-        champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
-        balanceAmount, balanceTransactions: isOwnProfile && balanceAmount > 0 ? balanceTransactions : [], papawisGames, coachNote, latestPoll, papawisEmailsOn,
-        // Same "already covered by credit" rule as the old profile's probation card.
-        papawisProbation: isOwnProfile && !!player.papawis_probation && !(minDeposit != null && papawisBalance <= -minDeposit),
-        peerRatingsEnabled: getFeatureFlags().peerRatings,
-        peerRatingSummary, peerRatingsFeed, canRate,
-        viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
-        canReport, reportCategories: canReport ? getReportableFineCategories() : [],
-        reportOtherCategoryId: canReport ? (getOtherFineCategory()?.id || '') : '',
-      }),
-    }));
-  }
-
+  const papawisEmailsOn = isOwnProfile && req.session?.playerRegId ? !getRegistration(req.session.playerRegId)?.papawis_email_optout : null;
+  // Suppress the probation tile once they already have enough credit on file to cover the
+  // floor — same hasCoveringCredit check the join route uses to skip the hold itself.
+  // Scoped to the Papawis-only balance, so an unrelated season fee doesn't keep it showing.
+  const minDeposit = isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null;
   res.send(renderPage(req, {
     title: `${displayName} — WKND Basketball`,
     currentPath: '/players',
     isOwnProfile,
-    metaTags: buildPlayerOgTags(req, player, totals),
+    metaTags: `${buildPlayerOgTags(req, player, totals)}\n  <link rel="stylesheet" href="/profile.css?v=${PROFILE_CSS_VER}">`,
     body: playerPage({
-      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection, badges, pickRecord,
-      isAdmin: !!req.session?.isAdmin, isOwnProfile, balanceAmount, papawisBalance, balanceTransactions, papawisGames, coachNote, latestPoll,
-      papawisEmailsOn: isOwnProfile && req.session?.playerRegId ? !getRegistration(req.session.playerRegId)?.papawis_email_optout : null,
-      minDeposit: isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null,
+      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord,
+      isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
+      champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
+      balanceAmount, balanceTransactions: isOwnProfile && balanceAmount > 0 ? balanceTransactions : [], papawisGames, coachNote, latestPoll, papawisEmailsOn,
+      papawisProbation: isOwnProfile && !!player.papawis_probation && !(minDeposit != null && papawisBalance <= -minDeposit),
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
       viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
       canReport, reportCategories: canReport ? getReportableFineCategories() : [],
       reportOtherCategoryId: canReport ? (getOtherFineCategory()?.id || '') : '',
-    })
+    }),
   }));
 });
 

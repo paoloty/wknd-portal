@@ -39,13 +39,13 @@ Public-facing MPA (multi-page app) for the WKND Basketball League. Node.js + Exp
 - **Accent color**: `#f59332` (amber) — the ONLY UI accent. Never use team colors for UI elements.
 - **Team colors** (Blue/Maroon/White/Black): used exclusively for small indicator dots, chips, avatar rings.
 - **Fonts**: Archivo (body text) + Saira Condensed (numerals/scores) — loaded from Google Fonts
-- **Cards**: 14–16px border-radius, `1px solid var(--border)` border
-- **Background**: `#020817` (near-black navy)
-- **Surface**: `#0d1424`
-- **Border**: `#1e293b`
-- **Text primary**: `#e2e8f0`
-- **Text muted**: `#64748b`
-- All tokens live in `public/styles.css` as CSS custom properties
+- **Cards**: `var(--radius)` (14px) border-radius, `1px solid var(--border)` border
+- **Background** (`--bg`): `#0a0e16` (near-black navy)
+- **Surface** (`--surface`): `#10141d`; raised/inset fills (`--surface-2`): `#161c29`
+- **Border** (`--border`): `rgba(255,255,255,0.06)`
+- **Text primary** (`--text`): `#e7eaf0`
+- **Text muted** (`--text-muted`): `#8a93a4`; faintest (`--text-subtle`): `#5b6475`
+- All tokens live in `public/styles.css` `:root` as CSS custom properties — that file is the source of truth if these ever drift
 
 ## Database schema (read-only, key tables)
 - `teams` — id (TEXT), name, color, sort_order

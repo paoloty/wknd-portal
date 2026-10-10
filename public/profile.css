@@ -1,5 +1,5 @@
-/* ── Player profile v2 (profile_v2_enabled) — views/player.js playerPageV2 ─────────────
-   Loaded only on /players/:id while the flag is on. Everything is prefixed prf-; the
+/* ── Player profile — views/player.js playerPage() ─────────────────────────────────────
+   Loaded only on /players/:id. Everything is prefixed prf-; the
    section and card headers reuse the site's .section-header / .card-label as-is, and the
    embedded pieces (pick cards, badges, ratings, wallet…) keep their own styles.css rules. */
 
@@ -36,7 +36,7 @@
 
 .prf-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s, border-color .15s; }
 .prf-btn:hover { border-color: rgba(255,255,255,0.14); }
-.prf-btn--amber { background: var(--amber); border-color: var(--amber); color: #1a0f02; }
+.prf-btn--amber { background: var(--amber); border-color: var(--amber); color: #0a0e16; }
 .prf-btn--amber:hover { background: #fbb36b; border-color: #fbb36b; }
 .prf-btn:focus-visible, .prf-share-btn:focus-visible, .prf-nav a:focus-visible, .prf-kpi__cta:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
@@ -61,7 +61,7 @@
 .prf-kpi__cta--quiet { color: var(--text-muted); }
 .prf-stat { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; white-space: nowrap; }
 .prf-stat--due { background: rgba(245,147,50,0.15); color: var(--amber); }
-.prf-stat--ok { background: rgba(74,222,128,0.12); color: #86efac; }
+.prf-stat--ok { background: rgba(74,222,128,0.12); color: #4ade80; }
 .prf-stat--plain { letter-spacing: 0; text-transform: none; font-size: 11px; }
 .prf-segs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; margin-top: 4px; }
 .prf-segs i { height: 6px; border-radius: 99px; background: var(--surface-2); }
@@ -97,7 +97,7 @@
 .prf-line small { font-size: 12.5px; color: var(--text-muted); }
 a.prf-line:hover b { color: var(--amber); }
 .prf-line--off { color: var(--text-subtle); }
-.prf-line > .prf-line__ico { flex-direction: row; align-items: center; gap: 10px; }
+.prf-line > span.prf-line__ico { flex-direction: row; align-items: center; gap: 10px; }
 
 /* Tables */
 .prf-table-wrap { overflow-x: auto; }
@@ -124,7 +124,7 @@ a.prf-line:hover b { color: var(--amber); }
 .prf-coach__video { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; color: var(--text); }
 .prf-coach__video:hover { border-color: rgba(245,147,50,0.35); }
 .prf-coach__video > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.prf-coach__play { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--amber); color: #1a0f02; display: flex; align-items: center; justify-content: center; }
+.prf-coach__play { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--amber); color: #0a0e16; display: flex; align-items: center; justify-content: center; }
 .prf-coach__title { font-size: 14px; font-weight: 600; }
 
 /* Full game log, collapsed */
@@ -159,3 +159,16 @@ a.prf-line:hover b { color: var(--amber); }
   .prf-nav { gap: 18px; }
 }
 .prf-grid2--after { margin-top: 16px; }
+
+/* Folded lower sections (own profile, phones only). The toggle sits at the end of the header. */
+.prf-fold { display: none; }
+@media (max-width: 640px) {
+  .prf-sec--fold .section-header { align-items: center; }
+  .prf-fold { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; margin: -10px -10px -10px 0; border-radius: 10px; color: var(--text-muted); font-size: 22px; line-height: 1; }
+  .prf-fold::before { content: '+'; }
+  .prf-fold:focus-visible { outline: 2px solid var(--amber); outline-offset: -4px; }
+  .prf-sec--fold.is-open .prf-fold::before { content: '\2013'; }
+  .prf-sec--fold:not(.is-open) .prf-sec__body { display: none; }
+  .prf-sec--fold:not(.is-open) .section-header { margin-bottom: 0; }
+  .prf-sec--fold .section-header__link { margin-left: auto; }
+}

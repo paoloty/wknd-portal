@@ -55,7 +55,6 @@ export function adminVisibilityBody({
   mvpEnabled = true,
   homeShowRosterMoves = false,
   megaMenuEnabled = false,
-  profileV2Enabled = false,
   picksEnabled = true,
   pickOddsEnabled = true,
   homePicksWidgetEnabled = true,
@@ -165,11 +164,6 @@ export function adminVisibilityBody({
         sub: `Desktop header: Stats and Awards open as full-width panels with descriptions and the MVP frontrunner, instead of small dropdowns. Phones always use the side drawer.`,
       })}
       ${featureRow({
-        id: 'vis-profile-v2-enabled', dataKey: 'profile_v2_enabled', checked: profileV2Enabled, msgId: 'vis-msg-profile_v2_enabled',
-        label: 'New player profile',
-        sub: `The redesigned <code class="text-[11px] bg-admin-border/50 px-1 rounded">/players/:id</code>: a "My Profile" dashboard for the player themself (Today tiles, This week, My season, Badges, Community, Career, Account) and a cleaner public view for everyone else, plus the new profile share image. Off = the old profile.`,
-      })}
-      ${featureRow({
         id: 'vis-home-roster-moves', dataKey: 'home_show_roster_moves', checked: homeShowRosterMoves, msgId: 'vis-msg-home_show_roster_moves',
         label: 'Homepage: New/Traded',
         sub: `Swaps the homepage's League Leaders carousel for a New/Traded Players one — for early in a season, before there's enough game data for real leaders. Off shows League Leaders as usual (empty if the current season has no games yet).`,
@@ -221,9 +215,7 @@ export function adminVisibilityBody({
   bindToggle('vis-awards-enabled',  'awards_enabled',    'vis-msg-awards_enabled');
   bindToggle('vis-mvp-enabled',     'mvp_race_enabled',  'vis-msg-mvp_race_enabled');
   bindToggle('vis-home-roster-moves', 'home_show_roster_moves', 'vis-msg-home_show_roster_moves');
-  bindToggle('vis-mega-menu-enabled', 'mega_menu_enabled', 'vis-msg-mega_menu_enabled');
-  bindToggle('vis-profile-v2-enabled', 'profile_v2_enabled', 'vis-msg-profile_v2_enabled');
-  bindToggle('vis-picks-enabled', 'picks_enabled', 'vis-msg-picks_enabled');
+  bindToggle('vis-mega-menu-enabled', 'mega_menu_enabled', 'vis-msg-mega_menu_enabled');  bindToggle('vis-picks-enabled', 'picks_enabled', 'vis-msg-picks_enabled');
   bindToggle('vis-picks-odds-enabled', 'picks_odds_enabled', 'vis-msg-picks_odds_enabled');
   bindToggle('vis-home-picks-widget', 'home_picks_widget_enabled', 'vis-msg-home_picks_widget_enabled');
 

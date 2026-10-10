@@ -312,103 +312,6 @@ function bioEditorScript() {
 <\/script>`;
 }
 
-// ── Hero ──────────────────────────────────────────────────────────────────────
-function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canReport = false, reportCategories = [], reportOtherCategoryId = '') {
-  const teamName  = String(player.team_name || '').toUpperCase();
-  const color     = teamColor(teamName);
-  const isLight   = teamName === 'WHITE';
-  const positions = parsePositions(player.positions);
-  const bio       = String(player.writeup || '').trim();
-
-  // ── Left column: identity ──────────────────────────────────────────────────
-  const metaParts = [
-    player.number ? `<span class="player-hero__number">#${escHtml(String(player.number))}</span>` : '',
-    positions.length ? `<span class="player-hero__pos">${escHtml(positions.join(' · '))}</span>` : '',
-    `<span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>`,
-  ].filter(Boolean).join('');
-
-  const avatarInits = initials(player.name);
-  // Own-profile players get the same replace-photo affordance admins already had — the
-  // only thing that changes below is which endpoint the crop/save script posts to
-  // (see canEditPhoto/uploadScript).
-  const canEditPhoto = isAdmin || isOwnProfile;
-  const uploadOverlay = canEditPhoto ? photoUploadOverlay() : '';
-
-  // Everyone else (including logged-out visitors) just gets a click-to-enlarge lightbox —
-  // same avatar image, same "has a photo → pointer cursor" affordance as the edit path, but
-  // no crop tool, no file input, nothing that implies they can change it.
-  const viewLightbox = canEditPhoto ? '' : photoLightbox();
-
-  const leftCol = `<div class="player-hero__left">
-    <div class="player-hero__avatar-wrap">
-      <div class="player-hero__avatar" style="border-color:${color}">
-        <span>${escHtml(avatarInits)}</span>
-        <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
-      </div>
-      ${uploadOverlay}
-      ${viewLightbox}
-    </div>
-    <div class="player-hero__info">
-      <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
-      <div class="player-hero__meta">${metaParts}</div>
-      ${isOwnProfile ? `
-      <div class="player-hero__bio-label">Intro</div>
-      <div class="player-hero__bio-block" id="bio-block">
-        <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you.">${escHtml(bio)}</textarea>
-        <button type="button" class="player-hero__bio-edit-btn" id="bio-edit-btn" aria-label="Edit intro" title="Edit intro">✎</button>
-        <div class="player-hero__bio-actions" id="bio-actions" hidden>
-          <button type="button" class="player-hero__bio-icon-btn" id="bio-cancel" aria-label="Cancel" title="Cancel">✕</button>
-          <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
-        </div>
-      </div>` : (bio ? `<div class="player-hero__bio-label">Intro</div><p class="player-hero__bio">${escHtml(bio)}</p>` : '')}
-      ${canReport ? reportPlayerSection(player, reportCategories, reportOtherCategoryId) : ''}
-    </div>
-  </div>`;
-
-  // ── Right column: career averages ──────────────────────────────────────────
-  const gp = totals?.games_played || 0;
-  const fga  = (totals?.fg2m || 0) + (totals?.fg3m || 0) + (totals?.fg4m || 0) + (totals?.fg2m_miss || 0) + (totals?.fg3m_miss || 0) + (totals?.fg4m_miss || 0);
-  const tpa  = (totals?.fg3m || 0) + (totals?.fg3m_miss || 0);
-  const qpa  = (totals?.fg4m || 0) + (totals?.fg4m_miss || 0);
-  const fta  = (totals?.ftm || 0) + (totals?.ft_miss || 0);
-  const caStats = gp ? [
-    { lbl: 'PPG', val: avg(totals.pts, gp) },
-    { lbl: 'RPG', val: avg(totals.reb, gp) },
-    { lbl: 'APG', val: avg(totals.ast, gp) },
-    { lbl: 'SPG', val: avg(totals.stl, gp) },
-    { lbl: 'BPG', val: avg(totals.blk, gp) },
-    ...(fga  >= 10 ? [{ lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0) + (totals.fg4m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0) + (totals.fg4m_miss || 0)) }] : []),
-    ...(tpa  >= 5  ? [{ lbl: '3P%', val: pct(totals.fg3m, totals.fg3m_miss) }] : []),
-    ...(qpa  >= 1  ? [{ lbl: '4P%', val: pct(totals.fg4m || 0, totals.fg4m_miss || 0) }] : []),
-    ...(fta  >= 5  ? [{ lbl: 'FT%', val: pct(totals.ftm, totals.ft_miss) }] : []),
-  ].filter(s => s.val !== '0.0' && s.val !== '0%' && s.val !== '—').slice(0, 8) : [];
-
-  const rightCol = `<div class="player-hero__right">
-    ${player.number ? `<span class="player-hero__num-bg" aria-hidden="true">${escHtml(String(player.number))}</span>` : ''}
-    <div class="ca-label">CAREER AVERAGES</div>
-    ${caStats.length
-      ? `<div class="ca-grid" style="--ca-count:${caStats.length}">
-          ${caStats.map(s => `<div class="ca-item">
-            <span class="ca-item__val">${escHtml(String(s.val))}</span>
-            <span class="ca-item__lbl">${s.lbl}</span>
-          </div>`).join('')}
-        </div>`
-      : `<p class="player-hero__no-stats">No games recorded yet.</p>`}
-  </div>`;
-
-  const uploadScript = canEditPhoto ? photoUploadScript(player, isAdmin) : '';
-
-  const bioEditScript = isOwnProfile ? bioEditorScript() : '';
-
-  return `<div class="card player-hero" style="--ph-color:${color}">
-  <div class="player-hero__grid">
-    ${leftCol}
-    ${rightCol}
-  </div>
-  ${bioEditScript}
-</div>${uploadScript}`;
-}
-
 // ── Report player ───────────────────────────────────────────────────────────────
 // Deliberately understated compared to "Rate This Player" (a full card) — a conduct
 // report is a serious, reputation-affecting accusation, not something that should read as
@@ -1014,83 +917,11 @@ function statsTable(statsByType) {
 </div>`;
 }
 
-// ── Facebook connect card ─────────────────────────────────────────────────────
-function fbConnectCard(fbLinked) {
-  const btnHtml = fbLinked
-    ? `<button class="fb-disconnect-btn" onclick="fbDisconnect()">Disconnect Facebook</button>`
-    : `<a href="/auth/facebook" class="fb-connect-btn">Connect with Facebook</a>`;
-  const statusHtml = fbLinked
-    ? `<span class="fb-status fb-status--on">Connected</span>`
-    : `<span class="fb-status fb-status--off">Not connected</span>`;
-  const desc = fbLinked
-    ? `Your account is linked to Facebook. You can sign in with Facebook and your profile photo syncs automatically.`
-    : `Link your Facebook account to sign in faster and sync your profile photo.`;
-  return `<div class="card" style="padding:18px 20px">
-  <div class="card-label" style="margin-bottom:12px">FACEBOOK</div>
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#1877F2" style="flex-shrink:0">
-      <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.022 1.792-4.692 4.533-4.692 1.313 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.93-1.956 1.886v2.256h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
-    </svg>
-    <div style="flex:1;min-width:0">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-weight:600;font-size:14px;color:var(--text)">Facebook</span>
-        ${statusHtml}
-      </div>
-      <p style="font-size:13px;color:var(--text-muted);margin:0">${escHtml(desc)}</p>
-    </div>
-    ${btnHtml}
-  </div>
-  ${fbLinked ? `<script>
-function fbDisconnect() {
-  if (!confirm("Disconnect your Facebook account?")) return;
-  fetch("/auth/facebook/disconnect", { method: "POST", headers: { "Content-Type": "application/json" } })
-    .then(r => r.json())
-    .then(d => { if (d.ok) location.reload(); })
-    .catch(() => alert("Something went wrong."));
-}
-<\/script>` : ''}
-</div>`;
-}
-
 // "2026-08-02" -> "Sun, Aug 2"
 function fmtShortDate(d) {
   return d
     ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
     : '—';
-}
-
-// Owner-only — full-width, sits between the hero and the two-column layout below.
-// Fixed until the player's career averages actually change (see getOrGenerateCoachNote
-// in server.js), so the footer date is important context, not decoration.
-function coachNoteCard(coachNote) {
-  if (!coachNote?.analysis) return '';
-  const label = FOCUS_LABELS[coachNote.focus_tag] || coachNote.focus_tag;
-  const video = FOCUS_VIDEOS[coachNote.focus_tag];
-  const dateStr = coachNote.generated_at
-    ? new Date(coachNote.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : '';
-
-  return `<div class="card coach-card">
-    <div class="section-header"><h2>Coach's Note</h2></div>
-    <span class="coach-card__tag">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-      Focus: ${escHtml(label)}
-    </span>
-    <p class="coach-card__body">${escHtml(coachNote.analysis)}</p>
-    ${video ? `<a class="coach-card__video" href="${escHtml(video.url)}" target="_blank" rel="noopener">
-      <span class="coach-card__play">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-      </span>
-      <span class="coach-card__video-meta">
-        <span class="coach-card__video-eyebrow">Watch &middot; ${escHtml(label)}</span>
-        <span class="coach-card__video-title">${escHtml(video.title)}</span>
-      </span>
-    </a>` : ''}
-    ${dateStr ? `<div class="coach-card__foot">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-      Based on stats through ${escHtml(dateStr)} &middot; updates the next time your season averages change
-    </div>` : ''}
-  </div>`;
 }
 
 // Owner-only — top of the right sidebar on your own profile. Balance notice is
@@ -1659,65 +1490,15 @@ function nextUpWidget(pending) {
 </div>`;
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
-export function playerPage({
-  player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, financialSection = '', isAdmin = false,
-  fbLinked = null, isOwnProfile = false, balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [], coachNote = null, latestPoll = null, papawisEmailsOn = null,
-  peerRatingsEnabled = false, peerRatingSummary = null, peerRatingsFeed = [], canRate = false,
-  viewerExistingRating = null, viewerCooldownActive = false, viewerCooldownUntil = 0,
-  canReport = false, reportCategories = [], reportOtherCategoryId = '', minDeposit = null, badges = null, pickRecord = null,
-}) {
-  const potgGameIds = new Set(potgGames.map(g => g.id));
-  // fbLinked = true/false when this is the owner's own profile; null = not owner
-  const fbCard = fbLinked !== null ? fbConnectCard(fbLinked) : '';
-  // Suppress the probation notice once they already have enough credit on file to cover the
-  // floor — same hasCoveringCredit check the join route uses (server.js) to skip the hold
-  // itself, so the card can't tell them to deposit when they've already effectively done so.
-  // Scoped to the Papawis-only balance, not the whole-account one — an unrelated season fee
-  // balance shouldn't keep the probation notice showing.
-  const probationCovered = minDeposit != null && papawisBalance <= -minDeposit;
-  const sidebarHtml = isOwnProfile ? myProfileSidebar({ balanceAmount, papawisGames, balanceTransactions, latestPoll, papawisProbation: !!player.papawis_probation && !probationCovered, papawisEmailsOn }) : '';
-  const coachNoteHtml = isOwnProfile ? coachNoteCard(coachNote) : '';
-  const nextUpHtml = isOwnProfile ? nextUpWidget(badges?.pending) : '';
-
-  const peerRatingsHtml = peerRatingsEnabled ? `
-    ${canRate ? rateThisPlayerCard(player.id, viewerExistingRating, viewerCooldownActive, viewerCooldownUntil) : ''}
-    ${ratingFeedCard(peerRatingsFeed)}
-  ` : '';
-  const ratingSnapshotHtml = peerRatingsEnabled ? communityRatingsCard(peerRatingSummary, isOwnProfile) : '';
-
-  return `${heroSection(player, totals, isAdmin, isOwnProfile, canReport, reportCategories, reportOtherCategoryId)}
-${badgeShowcase(badges)}
-${coachNoteHtml}
-<div class="game-detail-layout">
-  <div class="game-detail-left">
-    ${statsTable(statsByType)}
-    ${gameLog(gameLogs, player, potgGameIds)}
-    ${peerRatingsHtml}
-    ${fbCard}
-  </div>
-  <div class="game-detail-right">
-    ${sidebarHtml}
-    ${nextUpHtml}
-    ${ratingSnapshotHtml}
-    ${pickRecordCard(pickRecord, isOwnProfile)}
-    ${awardsSection(awards)}
-    ${potgWriteups(potgGames, player)}
-  </div>
-</div>`;
-}
-
-// ══ Player profile v2 (profile_v2_enabled) ═══════════════════════════════════════
+// ══ Player profile ════════════════════════════════════════════════════════════════
 // One page, two audiences (mockup: claude.ai/artifact/Uyy7ZMQyfrfpGxQVMZkgLT):
 //   own     — "My Profile": sections ordered by what a player logs in to do. Today (stat
 //             tiles for anything needing action) → This week (pick cards + Papawis) → My
-//             season → Badges → Community → Career → Account & settings.
+//             season → Badges → Community → Career → Account & settings. On phones the
+//             last four start folded (profile.css + the nav script below).
 //   public  — what everyone else sees: hero, this season's averages vs career, recent games,
 //             badges, community, career. Also what the owner sees with ?view=public.
-// Built from the same pieces as the old profile (photo crop, intro editor, report flow,
-// rating card, badges, stats table, game log, wallet, poll, pick cards), so their behaviour
-// is unchanged. Styles: public/profile.css (prf- prefix). Delete playerPage() and its
-// v1-only helpers once the flag is retired.
+// Styles: public/profile.css (prf- prefix).
 
 const PRF_ICON = {
   share: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
@@ -1763,11 +1544,15 @@ function prfGame(g) {
   return { opp: String((isA ? g.team_b_name : g.team_a_name) || '').toUpperCase(), won: my > op, my, op, fg: prfFg(g) };
 }
 
-function prfSection(id, title, { sub = '', link = '', body = '' } = {}) {
+// fold: on phones the section starts folded behind a +/– toggle in its header (own profile,
+// lower sections only). The toggle is hidden on wider screens, where it's always open.
+function prfSection(id, title, { sub = '', link = '', body = '', fold = false } = {}) {
   if (!body) return '';
-  return `<section class="prf-sec" id="${id}" aria-labelledby="${id}-h">
-  <div class="section-header"><h2 id="${id}-h">${title}${sub ? ` <span class="section-header__sub">${sub}</span>` : ''}</h2>${link}</div>
-  ${body}
+  const toggle = fold
+    ? `<button type="button" class="prf-fold" aria-expanded="false" aria-controls="${id}-body" aria-label="Show ${title.replace(/&amp;/g, '&')}"></button>` : '';
+  return `<section class="prf-sec${fold ? ' prf-sec--fold' : ''}" id="${id}" aria-labelledby="${id}-h">
+  <div class="section-header"><h2 id="${id}-h">${title}${sub ? ` <span class="section-header__sub">${sub}</span>` : ''}</h2>${link}${toggle}</div>
+  <div class="prf-sec__body" id="${id}-body">${body}</div>
 </section>`;
 }
 const prfLink = (href, text) => `<a href="${escHtml(href)}" class="section-header__link">${text} <span>&rarr;</span></a>`;
@@ -2008,6 +1793,7 @@ function prfBadges(o, own) {
   const next = own ? nextUpWidget(o.badges?.pending) : '';
   if (!show && !next) return '';
   return prfSection('badges', 'Badges', {
+    fold: own,
     link: prfLink('/badges', 'All badges'),
     body: show && next ? `<div class="prf-grid-badges">${show}${next}</div>` : (show || next),
   });
@@ -2024,7 +1810,7 @@ function prfCommunity(o, own, pollInToday) {
   if (o.pickRecord?.settled) cards.push(pickRecordCard({ ...o.pickRecord, own: null }, own));
   const body = cards.filter(Boolean).join('');
   if (!body) return '';
-  return prfSection('community', own ? 'Community' : 'What players say', { body: `<div class="prf-grid2">${body}</div>` });
+  return prfSection('community', own ? 'Community' : 'What players say', { fold: own, body: `<div class="prf-grid2">${body}</div>` });
 }
 
 function prfHighlights(o) {
@@ -2053,6 +1839,7 @@ function prfCareer(o) {
   if (!table && !cards.length && !rows) return '';
   const total = o.statsByType?.career?.games_played || 0;
   return prfSection('career', 'Career', {
+    fold: !!o.foldLower,
     sub: total ? `${total} game${total === 1 ? '' : 's'}` : '',
     body: `${table}${cards.length ? `<div class="prf-grid2 prf-grid2--after">${cards.join('')}</div>` : ''}
     ${rows ? `<details class="prf-log"><summary>Full game log <span>${played} game${played === 1 ? '' : 's'}${dnp ? ` · ${dnp} DNP` : ''}</span></summary>${gameLog(o.gameLogs, o.player, o.potgGameIds)}</details>` : ''}`,
@@ -2069,17 +1856,18 @@ function prfAccount(o) {
       <a class="prf-line" href="/forgot-password"><span><b>Change password</b><small>We email you a link to set a new one</small></span><span aria-hidden="true">&rarr;</span></a>
       <div class="prf-line prf-line--off" aria-disabled="true"><span class="prf-line__ico">${PRF_ICON.google}<b>Sign in with Google</b></span><span class="prf-chip">Coming soon</span></div>
     </div></div>`;
-  return prfSection('account', 'Account &amp; settings', { body: `<div class="prf-grid3">${wallet}${emails}${signIn}</div>` });
+  return prfSection('account', 'Account &amp; settings', { fold: true, body:`<div class="prf-grid3">${wallet}${emails}${signIn}</div>` });
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function playerPageV2(o) {
+export function playerPage(o) {
   const own = !!o.isOwnProfile && !o.viewPublic;
   const d = {
     ...o,
     potgGameIds: new Set((o.potgGames || []).map(g => g.id)),
     papawisGames: o.papawisGames || [], balanceTransactions: o.balanceTransactions || [],
     champSeasons: o.champSeasons || [],
+    foldLower: own,
   };
   const latestGame = d.gameLogs.find(g => g.status === 'played') || null;
   const hero = prfHero({
@@ -2114,8 +1902,22 @@ export function playerPageV2(o) {
   var header = document.querySelector('.site-header:not(.site-header--minimal)');
   function place() { nav.style.setProperty('--prf-nav-top', (header && getComputedStyle(header).position === 'sticky' ? header.offsetHeight : 0) + 'px'); }
   place(); window.addEventListener('resize', place);
+  // Folded sections (phones): the +/– toggle, and a nav tap or #hash opens its section.
+  function setOpen(sec, open) {
+    var btn = sec && sec.querySelector('.prf-fold');
+    if (!btn) return;
+    sec.classList.toggle('is-open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  document.querySelectorAll('.prf-sec--fold').forEach(function (sec) {
+    sec.querySelector('.prf-fold').addEventListener('click', function () { setOpen(sec, !sec.classList.contains('is-open')); });
+  });
+  function openHash(hash) { if (hash && hash.length > 1) setOpen(document.getElementById(hash.slice(1)), true); }
+  openHash(location.hash);
+  window.addEventListener('hashchange', function () { openHash(location.hash); });
   // Underline the section in view.
   var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
+  links.forEach(function (a) { a.addEventListener('click', function () { openHash(a.getAttribute('href')); }); });
   if (!('IntersectionObserver' in window)) return;
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (e) {
