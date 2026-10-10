@@ -9029,3 +9029,59 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gr-talk span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gr-talk-link { position: relative; z-index: 4; display: block; }
 .gr-talk-link:hover .gr-talk { border-color: rgba(245,147,50,.5); }
+
+/* ── Share My Stats, front and centre (game page): "Your game" strip under the hero, the
+   hero's main button, the phone dock. Only for a logged-in player in the game. ── */
+.gd-acts { flex-wrap: nowrap; }
+.gd-btn--me { box-shadow: 0 0 0 3px rgba(245,147,50,.22); }
+.gd-yg { position: relative; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 28px; align-items: center; margin-top: 16px; padding: 24px 28px; border-radius: var(--radius-lg); border: 1px solid rgba(245,147,50,.35); background: radial-gradient(60% 140% at 0% 50%, color-mix(in srgb, var(--team) 14%, transparent), transparent 60%), linear-gradient(100deg, #141a26 0%, var(--surface) 55%, #1a1510 100%); }
+.gd-yg__l { display: flex; align-items: center; gap: 22px; min-width: 0; }
+.gd-yg__av { position: relative; display: grid; place-items: center; flex-shrink: 0; width: 96px; height: 96px; border-radius: 50%; overflow: hidden; background: var(--surface-2); color: var(--text-muted); font-size: 24px; box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--team), 0 0 30px 6px color-mix(in srgb, var(--team) 45%, transparent); }
+.gd-yg__av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gd-yg__i { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gd-yg__i .gd-kick i { font-style: normal; color: var(--text-subtle); }
+.gd-yg__line { display: flex; gap: 22px; }
+.gd-yg__line > span { display: flex; flex-direction: column; }
+.gd-yg__line b { font-size: 44px; line-height: .9; color: #fff; }
+.gd-yg__line > span:first-child b { color: var(--amber); }
+.gd-yg__line i { font-style: normal; font-size: 10.5px; font-weight: 800; letter-spacing: .12em; color: var(--text-subtle); }
+.gd-yg__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 12.5px; color: var(--text-muted); }
+.gd-yg__meta b { color: var(--amber); }
+.gd-yg__r { display: flex; align-items: center; gap: 24px; }
+.gd-yg__fan { position: relative; width: 232px; height: 186px; padding: 0; border: 0; background: none; cursor: pointer; }
+.gd-yg__fan > span { position: absolute; top: 0; width: 104px; height: 185px; border-radius: 10px; overflow: hidden; background: #141a26 center / cover no-repeat; box-shadow: 0 14px 30px rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.12); transition: transform .2s ease; }
+.gd-yg__fan > span::before { content: ''; position: absolute; inset: 0; background: rgba(10,14,22,.45); }
+.gd-yg__fan img { position: relative; display: block; width: 100%; height: 100%; object-fit: cover; }
+.gd-yg__fan > span:nth-child(1) { left: 0; transform: rotate(-8deg) translateY(8px); }
+.gd-yg__fan > span:nth-child(2) { left: 64px; z-index: 2; }
+.gd-yg__fan > span:nth-child(3) { left: 128px; transform: rotate(8deg) translateY(8px); }
+.gd-yg__fan:hover > span:nth-child(1) { transform: rotate(-12deg) translate(-6px, 6px); }
+.gd-yg__fan:hover > span:nth-child(3) { transform: rotate(12deg) translate(6px, 6px); }
+.gd-yg__cta { display: flex; flex-direction: column; gap: 10px; width: 220px; }
+.gd-yg__cta > span { font-size: 12px; line-height: 1.45; color: var(--text-muted); text-align: center; }
+.gd-yg__btn { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 54px; border: 0; border-radius: 12px; background: var(--amber); color: #0a0e16; font: 900 16px 'Archivo', sans-serif; cursor: pointer; box-shadow: 0 10px 30px rgba(245,147,50,.3); }
+.gd-yg__btn:hover { opacity: .92; }
+.gd-dock { display: none; }
+@media (max-width: 860px) {
+  .gd-acts { display: flex; flex-wrap: nowrap; }
+  .gd-acts--me .gd-btn { flex: 0 0 auto; padding: 0 12px; }
+  .gd-acts--me .gd-btn--me { flex: 1 1 auto; }
+  .gd-acts--me .gd-btn__l { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .gd-yg { grid-template-columns: 1fr; gap: 18px; padding: 18px; }
+  .gd-yg__l { gap: 14px; }
+  .gd-yg__av { width: 64px; height: 64px; font-size: 18px; }
+  .gd-yg__line { gap: 16px; }
+  .gd-yg__line b { font-size: 34px; }
+  .gd-yg__r { flex-direction: column; align-items: stretch; gap: 14px; }
+  .gd-yg__fan { align-self: center; }
+  .gd-yg__cta { width: auto; }
+  .gd-dock { position: fixed; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 90; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 16px; background: rgba(22,28,41,.97); border: 1px solid rgba(245,147,50,.4); box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .gd-dock[hidden] { display: none; }
+  .gd-dock__av { position: relative; width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%; overflow: hidden; background: var(--surface-2); box-shadow: 0 0 0 2px var(--amber); }
+  .gd-dock__av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .gd-dock__t { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.3; color: var(--text-muted); }
+  .gd-dock__t b { display: block; font-size: 15px; color: #fff; letter-spacing: .02em; }
+  .gd-dock__b { min-height: 42px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--amber); color: #0a0e16; font: 900 13px 'Archivo', sans-serif; cursor: pointer; }
+  /* The comments bubble sits above the dock while it shows. */
+  body:has(.gd-dock:not([hidden])) .game-floater { bottom: 90px; }
+}

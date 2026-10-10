@@ -32,7 +32,7 @@ import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
-import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext } from './lib/game-detail.js';
+import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor } from './lib/game-detail.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
@@ -7442,7 +7442,14 @@ app.get('/games/:ref', (req, res) => {
   const flow = gameFlow(game);
   const plays = keyPlays(flow, game, quarterScores);
   const won = stats.length ? howItWasWon(game, teamTotals(stats, game.team_a_name, game.team_a_to_team), teamTotals(stats, game.team_b_name, game.team_b_to_team)) : [];
-  const dc = stats.length ? duelAndCast(stats, game, playerHistory(stats.map(s => s.player_id), game)) : null;
+  const history = stats.length ? playerHistory(stats.map(s => s.player_id), game) : {};
+  const dc = stats.length ? duelAndCast(stats, game, history) : null;
+  // The viewer's own line, for the "Your game" strip + Share My Stats buttons.
+  const mine = currentPlayerId ? stats.find(s => s.player_id === currentPlayerId) : null;
+  const myGame = mine ? {
+    stat: mine, badge: badgeFor(mine, history[mine.player_id]),
+    vsAvg: history[mine.player_id]?.sGp ? Math.round((Number(mine.pts) - history[mine.player_id].sAvg) * 10) / 10 : null,
+  } : null;
   const verdict = dc ? duelVerdict(dc.a, dc.b, game) : '';
 
   // "Who called it?": the pre-game odds plus pickers and your own pick. The preview shown
@@ -7472,7 +7479,7 @@ app.get('/games/:ref', (req, res) => {
     metaTags: buildGameOgTags(req, game),
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
-      flow, plays, won, dc, verdict, called, preview, upNext, upNextLabel,
+      flow, plays, won, dc, verdict, called, preview, upNext, upNextLabel, myGame,
     }),
   }));
 });
@@ -9578,7 +9585,36 @@ function upcomingPickState(game, pctx) {
 
 // After-game "you called it" notifications — once per game (claimGamePickSettle), only once
 // the result is public. Called from every route that can make a result final or public.
+// "Your stat card is ready" — once per game, to every player in the box score with a login,
+// as soon as a final has its stats and is public. Recent games only, so re-saving an old
+// game doesn't ping anyone. The link opens the Share My Stats editor (?share=1).
+function notifyStatCards(gameId) {
+  try {
+    const game = getGameById(gameId);
+    if (!game || game.under_review || !(game.status === 'final' || game.status === 'complete')) return;
+    const ymd = gameYmd(game.date);
+    if (!ymd || ymd < addDaysYmd(manilaTodayStr(), -7)) return;
+    const stats = getGameDetailStats(gameId);
+    if (!stats.length || getSetting(`stat_cards_notified_${gameId}`, '')) return;
+    setSetting(`stat_cards_notified_${gameId}`, String(Date.now()));
+    const accounts = new Set(getPlayersWithAccounts().map(p => p.id));
+    const link = `/games/${encodeURIComponent(gameSlug(game))}?share=1`;
+    for (const s of stats) {
+      if (!accounts.has(s.player_id)) continue;
+      const opp = String(s.team_name || '').toUpperCase() === String(game.team_a_name).toUpperCase() ? game.team_b_name : game.team_a_name;
+      const best = [['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK']]
+        .map(([k, l]) => ({ v: Number(s[k]) || 0, l })).filter(x => x.v > 0).sort((a, b) => b.v - a.v)[0];
+      const line = `${Number(s.pts) || 0} PTS${best ? ` · ${best.v} ${best.l}` : ''}`;
+      createNotification({ playerId: s.player_id, type: 'stat_card', title: 'Your stat card is ready', body: `${line} vs ${titleCase(opp)}. Share it to your story →`, link });
+    }
+  } catch (err) {
+    console.error(`[stat cards] notify ${gameId} failed:`, err.message);
+  }
+}
+
 function settleGamePicks(gameId) {
+  // Same moments a result becomes final/public — also when players' stat cards are ready.
+  notifyStatCards(gameId);
   try {
     const game = getGameById(gameId);
     if (!game) return;

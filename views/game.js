@@ -12,18 +12,15 @@ function youtubeEmbedUrl(url) {
   return m ? `https://www.youtube.com/embed/${m[1]}` : null;
 }
 
-// ── "Share My Stats" banner + modal ──────────────────────────────────────────
+// ── "Share My Stats" editor (modal) ──────────────────────────────────────────
 // Only rendered when the viewer's own player_id has a stat row in this game
-// (gamePage computes myStat from currentPlayerId) — the PNG endpoint re-checks
-// the session server-side too, so this is a UI gate, not the real one.
-function shareStatsBanner(game, stat) {
-  const pts   = Number(stat.pts) || 0;
-  const reb   = Number(stat.reb) || 0;
+// (server.js passes myGame) — the PNG endpoint re-checks the session server-side
+// too, so this is a UI gate, not the real one. Any [data-ssc-open] button opens it.
+function shareStatsModal(game, stat) {
   const ast   = Number(stat.ast) || 0;
   const stl   = Number(stat.stl) || 0;
   const blk   = Number(stat.blk) || 0;
   const fg3m  = Number(stat.fg3m) || 0;
-  const color = escHtml(stat.team_color || '#f59332');
   const gameId = escHtml(game.id);
 
   // Personalizes the default "Focus" pick to this player's own box score
@@ -90,15 +87,7 @@ function shareStatsBanner(game, stat) {
   const iconCopy  = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
   const iconShare = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`;
 
-  return `<div class="share-stats-banner card" style="--ssb-color:${color}">
-  <div class="share-stats-banner__info">
-    <span class="share-stats-banner__eyebrow">YOUR LINE</span>
-    <span class="share-stats-banner__stats">${pts} PTS · ${reb} REB · ${ast} AST</span>
-  </div>
-  <button type="button" class="share-stats-banner__btn" id="ssc-open-btn">Share My Stats</button>
-</div>
-
-<div class="pcp-backdrop ssc-backdrop" id="ssc-backdrop" hidden>
+  return `<div class="pcp-backdrop ssc-backdrop" id="ssc-backdrop" hidden>
   <div class="pcp-modal ssc-modal">
     <div class="pcp-modal__header ssc-header">
       <span class="pcp-modal__title">Share My Stats</span>
@@ -201,12 +190,6 @@ function shareStatsBanner(game, stat) {
 </div>
 
 <style>
-.share-stats-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-top: 3px solid var(--ssb-color); }
-.share-stats-banner__info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.share-stats-banner__eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--text-muted); }
-.share-stats-banner__stats { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; }
-.share-stats-banner__btn { flex-shrink: 0; padding: 10px 18px; border-radius: var(--radius-sm); background: var(--amber); border: none; color: #0a0e16; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity .12s; }
-.share-stats-banner__btn:hover { opacity: .88; }
 
 /* overflow-y: auto (not the shared .pcp-modal's overflow: hidden) is a safety net for
    short viewports — the height-driven sizing below should make the whole modal fit
@@ -357,7 +340,7 @@ function shareStatsBanner(game, stat) {
 <script>
 (function() {
   var GAME_ID  = '${gameId}';
-  var openBtn  = document.getElementById('ssc-open-btn');
+  var openBtns = Array.prototype.slice.call(document.querySelectorAll('[data-ssc-open]'));
   var backdrop = document.getElementById('ssc-backdrop');
   var closeBtn = document.getElementById('ssc-close');
   var img      = document.getElementById('ssc-img');
@@ -379,7 +362,7 @@ function shareStatsBanner(game, stat) {
   var hideZerosOn = false;
   var badgeOn = false;
   // The server already picked and marked the best opening Focus chip
-  // (personalized to this player's own box score — see shareStatsBanner in
+  // (personalized to this player's own box score — see shareStatsModal in
   // game.js) — read whichever chip it marked active instead of recomputing.
   function activeChipValue(panelId) {
     var chip = document.querySelector('#' + panelId + ' .ssc-chip.is-active') || document.querySelector('#' + panelId + ' .ssc-chip');
@@ -548,7 +531,7 @@ function shareStatsBanner(game, stat) {
   }
   function close() { backdrop.hidden = true; }
 
-  openBtn.addEventListener('click', open);
+  openBtns.forEach(function(b) { b.addEventListener('click', open); });
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
 
@@ -1266,7 +1249,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
   // ?share=1 (from the profile's "Share my stats" buttons) opens the stat-card editor
   // straight away — only when this viewer has a line in the game (the button exists).
   if (/[?&]share=1(&|$)/.test(window.location.search)) {
-    var sscBtn = document.getElementById('ssc-open-btn');
+    var sscBtn = document.querySelector('[data-ssc-open]');
     if (sscBtn) setTimeout(function(){ sscBtn.click(); }, 0);
   }
 
@@ -1819,12 +1802,67 @@ function miniLineScore(game, quarterScores) {
     </table>`;
 }
 
-function heroActions({ game, commentsEnabled, gameReaction, watch }) {
-  return `<span class="gd-acts">
-      ${watch ? `<a class="gd-btn gd-btn--amber" href="#watch">${ICON_PLAY}Watch the game</a>` : ''}
-      ${commentsEnabled ? `<button type="button" id="game-react-btn" class="gd-btn${gameReaction.reacted ? ' is-active' : ''}" title="React to this game">${ICON_FLAME}<span>React</span><b id="game-react-count">${gameReaction.count || 0}</b></button>` : ''}
-      <button type="button" id="game-share-btn" class="gd-btn" title="Share">${ICON_SHARE}<span>Share</span></button>
+// One row of buttons, always (Paolo). A player who played gets "Share my stats" as the amber
+// main action; the rest stay secondary and drop to icons on phones (.gd-acts--me).
+function heroActions({ game, commentsEnabled, gameReaction, watch, me = false }) {
+  return `<span class="gd-acts${me ? ' gd-acts--me' : ''}">
+      ${me ? `<button type="button" class="gd-btn gd-btn--amber gd-btn--me" data-ssc-open>${ICON_SHARE}<span>Share my stats</span></button>` : ''}
+      ${watch ? `<a class="gd-btn${me ? '' : ' gd-btn--amber'}" href="#watch" title="Watch the game">${ICON_PLAY}<span class="gd-btn__l">Watch${me ? '' : ' the game'}</span></a>` : ''}
+      ${commentsEnabled ? `<button type="button" id="game-react-btn" class="gd-btn${gameReaction.reacted ? ' is-active' : ''}" title="React to this game">${ICON_FLAME}<span class="gd-btn__l">React</span><b id="game-react-count">${gameReaction.count || 0}</b></button>` : ''}
+      <button type="button" id="game-share-btn" class="gd-btn" title="Share this game">${ICON_SHARE}<span class="gd-btn__l">Share</span></button>
     </span>`;
+}
+
+// "Your game": the viewer's own line, badge and stat cards, with the big Share my stats button.
+// Only for a logged-in player in this game (myGame from server.js). The card previews are the
+// real PNGs (session-gated, lazy) over the game's cover, the way they look once posted.
+function yourGameStrip(game, mg) {
+  if (!mg) return '';
+  const s = mg.stat;
+  const n = k => Number(s[k]) || 0;
+  const nums = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK']]
+    .map(([k, l]) => ({ v: n(k), l, k })).filter((x, i) => i === 0 || x.v > 0)
+    .sort((a, b) => (a.k === 'pts' ? -1 : b.k === 'pts' ? 1 : b.v - a.v)).slice(0, 4);
+  const fgm = n('fg2m') + n('fg3m') + n('fg4m'), fga = fgm + n('fg2m_miss') + n('fg3m_miss') + n('fg4m_miss');
+  const opp = String(s.team_name || '').toUpperCase() === String(game.team_a_name).toUpperCase() ? game.team_b_name : game.team_a_name;
+  const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
+  const won = String(s.team_name || '').toUpperCase() === String(fa > fb ? game.team_a_name : game.team_b_name).toUpperCase();
+  const card = q => `/api/games/${encodeURIComponent(game.id)}/my-stat-card.png?layout=gauges&${q}&accent=amber`;
+  const bg = game.has_cover ? ` style="background-image:url('/api/photo/${encodeURIComponent(game.id)}')"` : '';
+  return `<section class="gd-yg" aria-label="Your game" style="--team:${teamColor(s.team_name)}">
+    <div class="gd-yg__l">
+      <span class="gd-yg__av" aria-hidden="true"><span class="font-condensed">${escHtml(initials(displayPlayerName(s.name)))}</span><img src="/api/player/${encodeURIComponent(s.player_id)}/photo" alt="" onerror="this.remove()"></span>
+      <div class="gd-yg__i">
+        <span class="gd-kick gd-kick--amber">Your game <i>· ${won ? 'W' : 'L'} vs ${escHtml(tc(opp))}</i></span>
+        <span class="gd-yg__line">${nums.map(x => `<span><b class="font-condensed">${x.v}</b><i>${x.l}</i></span>`).join('')}</span>
+        <span class="gd-yg__meta">${mg.badge ? `<span class="gd-hook">${escHtml(mg.badge)}</span>` : ''}${mg.vsAvg != null && mg.vsAvg !== 0 ? `<span><b>${mg.vsAvg > 0 ? '+' : '−'}${Math.abs(mg.vsAvg)}</b> pts ${mg.vsAvg > 0 ? 'over' : 'under'} your season average</span>` : ''}${fga ? `<span>FG ${fgm}/${fga}</span>` : ''}</span>
+      </div>
+    </div>
+    <div class="gd-yg__r">
+      <button type="button" class="gd-yg__fan" data-ssc-open aria-label="Open your stat cards">
+        <span${bg}><img src="${card('align=center&focus=all&gauges=1')}" alt="" loading="lazy"></span>
+        <span${bg}><img src="${card('align=premium')}" alt="" loading="lazy"></span>
+        <span${bg}><img src="${card('align=hero')}" alt="" loading="lazy"></span>
+      </button>
+      <div class="gd-yg__cta">
+        <button type="button" class="gd-yg__btn" data-ssc-open>${ICON_SHARE}Share my stats</button>
+        <span>9 story-sized templates to post over your own photo · Save, Copy or Share</span>
+      </div>
+    </div>
+  </section>`;
+}
+
+// Phones: a small dock with your line and Share, shown once the strip has scrolled away.
+function shareDock(mg) {
+  if (!mg) return '';
+  const s = mg.stat;
+  const best = [['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK']]
+    .map(([k, l]) => ({ v: Number(s[k]) || 0, l })).filter(x => x.v > 0).sort((a, b) => b.v - a.v)[0];
+  return `<div class="gd-dock" data-gd-dock hidden>
+    <span class="gd-dock__av"><img src="/api/player/${encodeURIComponent(s.player_id)}/photo" alt="" onerror="this.remove()"></span>
+    <span class="gd-dock__t"><b class="font-condensed">${Number(s.pts) || 0} PTS${best ? ` · ${best.v} ${best.l}` : ''}</b>Your line</span>
+    <button type="button" class="gd-dock__b" data-ssc-open>Share</button>
+  </div>`;
 }
 
 function finalHero(d) {
@@ -1863,7 +1901,7 @@ function finalHero(d) {
         </div>
         <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${recLine(ctx.recB)}</span></div>
       </div>
-      <div class="gd-hero__bot"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url) })}</div>
+      <div class="gd-hero__bot"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div>
     </div>
   </section>`;
 }
@@ -2357,6 +2395,14 @@ function pageScript() {
     tick();
   }
 
+  // Phones: the Share dock shows once the "Your game" strip has scrolled up out of view.
+  var dock = document.querySelector('[data-gd-dock]'), strip = document.querySelector('.gd-yg');
+  if (dock && strip && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      es.forEach(function (e) { dock.hidden = e.isIntersecting || e.boundingClientRect.top > 0; });
+    }).observe(strip);
+  }
+
   // "Say something" on a performer: to the comments with "@Name " typed in. Guests log in first.
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-say]');
@@ -2427,7 +2473,7 @@ ${scripts}`;
   // Final.
   const A = teamTotals(d.stats, game.team_a_name, game.team_a_to_team);
   const B = teamTotals(d.stats, game.team_b_name, game.team_b_to_team);
-  const myStat = d.currentPlayerId ? d.stats.find(s => s.player_id === d.currentPlayerId) : null;
+  const myStat = d.myGame?.stat || null;
   const recap = recapCard(game);
   const hasBox = d.stats.length > 0;
   const items = [
@@ -2441,12 +2487,13 @@ ${scripts}`;
     d.preview ? { id: 'preview', label: 'Pre-game preview' } : null,
   ].filter(Boolean);
   const mini = `${escHtml(String(game.team_a_name).slice(0, 3))} ${fa} <i>–</i> ${fb} ${escHtml(String(game.team_b_name).slice(0, 3))}`;
-  const rail = [calledCard(game, d.called, d.isPlayer), myStat ? shareStatsBanner(game, myStat) : '', upNextCard(d.upNext, d.upNextLabel)].filter(Boolean).join('');
+  const rail = [calledCard(game, d.called, d.isPlayer), upNextCard(d.upNext, d.upNextLabel)].filter(Boolean).join('');
   const talk = talkSection(v, 'Comments');
   const plays = playsBlock(game, d.plays);
   return `<div class="page-content gd-page">
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${finalHero(v)}
+  ${yourGameStrip(game, d.myGame)}
   ${sectionNav(items, mini)}
   <div class="gd-cols">
     <div class="gd-cols__main">
@@ -2466,6 +2513,7 @@ ${scripts}`;
   ${previewArchive(v)}
 </div>
 ${floater}
+${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat)}` : ''}
 ${d.preview ? matchupScript({ isAdmin: false }) : ''}
 ${scripts}`;
 }
