@@ -1,59 +1,15 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, boldTitle, playerAvatar, playerLink, stripEmptyParagraphs } from './utils.js';
+import { teamColor, displayPlayerName, initials, playerAvatar, playerLink, stripEmptyParagraphs } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
-import { scoreTicker } from './ticker.js';
-import { openPickCard, pickBoxScript } from './pick-box.js';
-import { calledItCard } from './games.js';
+import { gameSlug } from '../lib/slugs.js';
+import { pickBox, pickBoxScript } from './pick-box.js';
+import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, meetingTile, storyHtml } from './games.js';
+import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
+
 
 function youtubeEmbedUrl(url) {
   const m = String(url || '').match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
   return m ? `https://www.youtube.com/embed/${m[1]}` : null;
-}
-
-// ── Left-column media (YouTube → cover fallback → nothing) ───────────────────
-function leftMedia(game, colorA, colorB) {
-  const embedUrl = youtubeEmbedUrl(game.youtube_url);
-  if (embedUrl) {
-    return `<div class="sidebar-hero sidebar-hero--video">
-  <iframe src="${embedUrl}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="sidebar-hero__iframe"></iframe>
-</div>`;
-  }
-  if (game.has_cover) {
-    return `<div class="sidebar-hero">
-  <div class="sidebar-hero__bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt=""></div>
-  <div class="sidebar-hero__flare" style="background:linear-gradient(135deg,${colorA}44 0%,transparent 50%,${colorB}44 100%)"></div>
-</div>`;
-  }
-  return '';
-}
-
-// ── Score card ────────────────────────────────────────────────────────────────
-function scoreCard(game, colorA, colorB) {
-  const scoreA = Number(game.team_a_score);
-  const scoreB = Number(game.team_b_score);
-  const winA = scoreA > scoreB;
-  const winB = scoreB > scoreA;
-
-  const ot = Number(game.overtime) || 0;
-  const finalLabel = ot === 0 ? 'FINAL' : ot === 1 ? 'FINAL/OT' : `FINAL/OT${ot}`;
-
-  return `<div class="game-score-card" id="potg-anchor" style="background:linear-gradient(135deg,${colorA}55 0%,var(--surface) 50%,${colorB}55 100%)">
-  <div class="game-score-card__board">
-    <div class="game-score-card__team">
-      <div class="game-score-card__team-name${winA ? ' game-score-card__team-name--winner' : ''}">${escHtml(game.team_a_name)}</div>
-      <div class="font-condensed game-score-card__pts${winA ? ' game-score-card__pts--winner' : ''}">${scoreA}</div>
-    </div>
-    <div class="game-score-card__divider">
-      <div class="game-score-card__divider-line"></div>
-      <span class="game-score-card__divider-label">${finalLabel}</span>
-      <div class="game-score-card__divider-line"></div>
-    </div>
-    <div class="game-score-card__team">
-      <div class="game-score-card__team-name${winB ? ' game-score-card__team-name--winner' : ''}">${escHtml(game.team_b_name)}</div>
-      <div class="font-condensed game-score-card__pts${winB ? ' game-score-card__pts--winner' : ''}">${scoreB}</div>
-    </div>
-  </div>
-</div>`;
 }
 
 // ── "Share My Stats" banner + modal ──────────────────────────────────────────
@@ -726,22 +682,6 @@ function renderWriteup(writeup) {
   ].filter(Boolean).join('\n');
 }
 
-function writeupToEditorHtml(writeup) {
-  if (!writeup) return '';
-  if (/<[a-z][\s\S]*>/i.test(writeup)) return writeup;
-  // Convert legacy ** to <b>
-  return escHtml(writeup).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-}
-
-function recapTab(game) {
-  const rendered = renderWriteup(game.game_writeup);
-  const statsPending = game.status === 'final'
-    ? `<p class="tabs-empty" style="margin-top:${rendered ? '16px' : '0'};border-top:${rendered ? '1px solid var(--border)' : 'none'};padding-top:${rendered ? '16px' : '0'}">Full box scores will be available once stats are imported.</p>`
-    : '';
-  if (!rendered) return `<p class="tabs-empty">No recap available yet.</p>${statsPending}`;
-  return `<div class="recap-tab">${rendered}</div>${statsPending}`;
-}
-
 // ── Box Score tab ─────────────────────────────────────────────────────────────
 function minToSecs(m) {
   const p = String(m || '0:00').split(':');
@@ -1194,21 +1134,6 @@ export function playByPlayTab(game) {
   return `<div class="pbp-tab">${html}</div>`;
 }
 
-// ── Tabs ──────────────────────────────────────────────────────────────────────
-// React (page-level "liked the game") + Share, pinned to the right end of the tab nav —
-// separate from the tab-switching buttons since they're actions, not views to switch to.
-function tabActionsBar({ commentsEnabled, gameReaction }) {
-  const reactBtn = commentsEnabled
-    ? `<button type="button" id="game-react-btn" class="game-tabs__icon-btn${gameReaction.reacted ? ' is-active' : ''}" title="React to this game">
-        🔥 <span id="game-react-count">${gameReaction.count || 0}</span>
-      </button>`
-    : '';
-  return `<div class="game-tabs__actions">
-    ${reactBtn}
-    <button type="button" id="game-share-btn" class="game-tabs__icon-btn" title="Share">↗</button>
-  </div>`;
-}
-
 function gameTabsStyles() {
   return `<style>
     .game-tabs__actions { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 8px; flex-shrink: 0; }
@@ -1300,10 +1225,6 @@ function gameTabsStyles() {
   </style>`;
 }
 
-function commentsTabButton(comments, isActive) {
-  return `<button class="game-tabs__tab${isActive ? ' game-tabs__tab--active' : ''}" data-tab="comments">💬<span class="game-tabs__tab-label"> Comments</span><span id="comments-count">${comments.length ? ` · ${comments.length}` : ''}</span></button>`;
-}
-
 // Mobile-only floating menu — mirrors comment/react/share off the (cramped, horizontally
 // scrolling) tab row into a fixed bottom-right bubble that expands on tap. Desktop is
 // untouched; see the ≤900px rules in gameTabsStyles() for the actual swap.
@@ -1329,33 +1250,24 @@ function gameSocialFloater({ commentsEnabled, gameReaction, commentsCount }) {
   </div>`;
 }
 
-function commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive }) {
-  return `<div id="tab-comments" class="game-tabs__body${isActive ? '' : ' game-tabs__body--hidden'}">${commentsTabBody({ gameId: game.id, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers })}</div>`;
-}
-
 // One shared script for tab switching + comments (post/react/delete) + page-level react/share
 // — all game-tabs concerns live in this one block regardless of which branch built the markup.
 function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
   return `<script>
 (function(){
-  var nav = document.querySelector('.game-tabs__nav');
-  nav.addEventListener('click', function(e){
-    var btn = e.target.closest('[data-tab]');
-    if (!btn) return;
-    document.querySelectorAll('.game-tabs__tab').forEach(function(b){ b.classList.remove('game-tabs__tab--active'); });
-    document.querySelectorAll('.game-tabs__body').forEach(function(b){ b.classList.add('game-tabs__body--hidden'); });
-    btn.classList.add('game-tabs__tab--active');
-    document.getElementById('tab-' + btn.dataset.tab).classList.remove('game-tabs__body--hidden');
-  });
+  // Deep link from elsewhere (e.g. the comment icon on /games, notifications) straight to the
+  // comments section — the old #comments tab anchor still works.
+  function goToTalk(smooth) {
+    var talk = document.getElementById('talk');
+    if (talk) talk.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+  }
+  if (window.location.hash === '#comments') goToTalk(false);
 
-  // Deep link from elsewhere (e.g. the comment icon on /games) straight into the
-  // comments tab, rather than landing on Recap and making the visitor find it themselves.
-  if (window.location.hash === '#comments') {
-    var commentsTabBtn = document.querySelector('.game-tabs__tab[data-tab="comments"]');
-    if (commentsTabBtn) {
-      commentsTabBtn.click();
-      document.querySelector('.game-tabs').scrollIntoView({ block: 'start' });
-    }
+  // ?share=1 (from the profile's "Share my stats" buttons) opens the stat-card editor
+  // straight away — only when this viewer has a line in the game (the button exists).
+  if (/[?&]share=1(&|$)/.test(window.location.search)) {
+    var sscBtn = document.getElementById('ssc-open-btn');
+    if (sscBtn) setTimeout(function(){ sscBtn.click(); }, 0);
   }
 
   var gameId = ${JSON.stringify(gameId)};
@@ -1583,7 +1495,8 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
     if (!el) return;
     var current = parseInt((el.textContent || '').replace(/[^0-9]/g, ''), 10) || 0;
     var next = Math.max(0, current + delta);
-    el.textContent = next ? ' · ' + next : '';
+    el.textContent = next || '';
+    el.hidden = !next;
     updateFloaterState();
   }
   // Mirrors linkifyMentions() server-side (views/game.js) — kept in sync manually since
@@ -1623,8 +1536,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
     return li;
   }
 
-  var tabComments = document.getElementById('tab-comments');
-  if (tabComments) {
+  if (document.getElementById('game-talk')) {
     connectCommentsSocket();
   }
   function connectCommentsSocket() {
@@ -1756,11 +1668,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
     var floaterCommentBtn = document.getElementById('floater-comment-btn');
     if (floaterCommentBtn) {
       floaterCommentBtn.addEventListener('click', function() {
-        var tabBtn = document.querySelector('.game-tabs__tab[data-tab="comments"]');
-        if (tabBtn) {
-          tabBtn.click();
-          document.querySelector('.game-tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        goToTalk(true);
         setFloaterOpen(false);
       });
     }
@@ -1781,145 +1689,6 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
 </script>`;
 }
 
-function gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers: rawMentionablePlayers = [], isPlayer = false, isAdmin = false }) {
-  const actions = tabActionsBar({ commentsEnabled, gameReaction });
-  const floater = gameSocialFloater({ commentsEnabled, gameReaction, commentsCount: comments.length });
-  // getPlayersWithAccounts() (server.js) returns names in raw "LASTNAME, Firstname"
-  // storage form — format for display/matching the same way comment authorship already is.
-  // initials/photoUrl are precomputed here so the dropdown can show a real avatar without
-  // duplicating name-initial logic client-side.
-  const mentionablePlayers = rawMentionablePlayers.map(p => {
-    const name = displayPlayerName(p.name);
-    return { id: p.id, name, initials: initials(name), photoUrl: `/api/player/${encodeURIComponent(p.id)}/photo` };
-  });
-  // Comments leads the tab bar, but only actually opens by default once there's a
-  // conversation already happening there — an empty comments tab isn't a useful landing
-  // page, so a game with no comments yet still lands on Recap like before.
-  const commentsIsDefault = commentsEnabled && comments.length > 0;
-
-  if (game.status === 'final') {
-    return `<div class="card game-tabs">
-  <div class="game-tabs__nav">
-    ${commentsEnabled ? commentsTabButton(comments, commentsIsDefault) : ''}
-    <button class="game-tabs__tab${commentsIsDefault ? '' : ' game-tabs__tab--active'}" data-tab="recap">Recap</button>
-    ${actions}
-  </div>
-  <div id="tab-recap" class="game-tabs__body${commentsIsDefault ? ' game-tabs__body--hidden' : ''}">${recapTab(game)}</div>
-  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive: commentsIsDefault }) : ''}
-</div>
-${floater}
-${gameTabsStyles()}
-${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
-  }
-
-  const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
-  const nameA = game.team_a_name.toUpperCase();
-  const nameB = game.team_b_name.toUpperCase();
-  const tabIdA = 'bs-' + nameA.replace(/\s+/g, '-');
-  const tabIdB = 'bs-' + nameB.replace(/\s+/g, '-');
-
-  let log = [];
-  try { log = JSON.parse(game.game_log_json || '[]'); } catch {}
-  const hasLog = log.length > 0;
-
-  return `<div class="card game-tabs">
-  <div class="game-tabs__nav">
-    ${commentsEnabled ? commentsTabButton(comments, commentsIsDefault) : ''}
-    <button class="game-tabs__tab${commentsIsDefault ? '' : ' game-tabs__tab--active'}" data-tab="recap">Recap</button>
-    <button class="game-tabs__tab" data-tab="${tabIdA}">${escHtml(nameA)}${nameA === winner ? ' <span class="tab-win-dot"></span>' : ''}</button>
-    <button class="game-tabs__tab" data-tab="${tabIdB}">${escHtml(nameB)}${nameB === winner ? ' <span class="tab-win-dot"></span>' : ''}</button>
-    <button class="game-tabs__tab" data-tab="leaders">Leaders</button>
-    <button class="game-tabs__tab" data-tab="comparison">Team Comparison</button>
-    <button class="game-tabs__tab" data-tab="linescore">Line Score</button>
-    ${hasLog ? `<button class="game-tabs__tab" data-tab="pbp">Play by Play</button>` : ''}
-    ${actions}
-  </div>
-  <div id="tab-recap" class="game-tabs__body${commentsIsDefault ? ' game-tabs__body--hidden' : ''}">${recapTab(game)}</div>
-  <div id="tab-${tabIdA}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameA, byTeam, dnpByTeam, winner, teamTurnovers)}</div>
-  <div id="tab-${tabIdB}" class="game-tabs__body game-tabs__body--hidden">${teamBoxScoreTab(nameB, byTeam, dnpByTeam, winner, teamTurnovers)}</div>
-  <div id="tab-leaders" class="game-tabs__body game-tabs__body--hidden">${gameLeadersTab(game, stats)}</div>
-  <div id="tab-comparison" class="game-tabs__body game-tabs__body--hidden">${teamComparisonTab(game, stats)}</div>
-  <div id="tab-linescore" class="game-tabs__body game-tabs__body--hidden">${lineScoreTab(game, quarterScores)}</div>
-  ${hasLog ? `<div id="tab-pbp" class="game-tabs__body game-tabs__body--hidden">${playByPlayTab(game)}</div>` : ''}
-  ${commentsEnabled ? commentsTabPanel({ game, comments, reactedIds, isPlayer, isAdmin, mentionablePlayers, isActive: commentsIsDefault }) : ''}
-</div>
-${floater}
-${gameTabsStyles()}
-${gameTabsScript({ gameId: game.id, isAdmin, mentionablePlayers })}`;
-}
-
-// ── POTG card ─────────────────────────────────────────────────────────────────
-function potgCard(stat, writeup) {
-  if (!stat) return '';
-  const teamName = String(stat.team_name || '').toUpperCase();
-  const color = teamColor(teamName);
-  const isLight = teamName === 'WHITE';
-  const displayName = displayPlayerName(stat.name || '').toUpperCase();
-  const cleanWriteup = String(writeup || '').replace(/\*\*/g, '').trim();
-
-  const statDefs = [
-    { val: Number(stat.pts), lbl: 'PTS' },
-    { val: Number(stat.reb), lbl: 'REB' },
-    { val: Number(stat.ast), lbl: 'AST' },
-    { val: Number(stat.stl), lbl: 'STL' },
-    { val: Number(stat.blk), lbl: 'BLK' },
-  ].filter(s => s.val > 0);
-
-  const statCells = statDefs.map(s => `<div class="potg-card__stat">
-      <span class="font-condensed potg-card__stat-val">${s.val}</span>
-      <span class="potg-card__stat-lbl">${s.lbl}</span>
-    </div>`).join('');
-
-  return `<div class="card potg-card">
-  <div class="card-label card-label--accent">PLAYER OF THE GAME</div>
-  <div class="potg-card__player">
-    ${playerAvatar(stat.player_id, stat.name, color, { className: 'potg-card__avatar', link: true })}
-    <div class="potg-card__info">
-      <div class="potg-card__name">${playerLink(stat.player_id, stat.name, { upper: true })}</div>
-      <span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
-    </div>
-  </div>
-  <div class="potg-card__statline">${statCells}</div>
-  ${cleanWriteup ? `<p class="potg-card__writeup">${escHtml(cleanWriteup)}</p>` : ''}
-</div>`;
-}
-
-// ── Top performers ────────────────────────────────────────────────────────────
-function topPerformers(stats, potgPlayerId) {
-  const others = stats.filter(s => s.player_id !== potgPlayerId && Number(calcPer(s)) >= 10);
-  if (!others.length) return '';
-
-  const rows = others.map(s => {
-    const teamName = String(s.team_name || '').toUpperCase();
-    const color = teamColor(teamName);
-
-    const extras = [
-      { val: Number(s.reb), lbl: 'REB' },
-      { val: Number(s.ast), lbl: 'AST' },
-      { val: Number(s.stl), lbl: 'STL' },
-      { val: Number(s.blk), lbl: 'BLK' },
-    ].filter(x => x.val > 0).slice(0, 2);
-    const statLine = [{ val: Number(s.pts), lbl: 'PTS' }, ...extras]
-      .map(x => `${x.val} ${x.lbl}`).join(' · ');
-
-    return `<div class="performer-row">
-  <div class="performer-row__left">
-    <span class="team-dot" style="background:${color}"></span>
-    <span class="performer-row__name">${playerLink(s.player_id, s.name || '', { upper: true })}</span>
-  </div>
-  <span class="performer-row__line">${escHtml(statLine)}</span>
-</div>`;
-  });
-
-  return `<div class="card top-performers">
-  <div class="card-label">TOP PERFORMERS</div>
-  <div class="top-performers__list">
-    ${rows.join('\n    ')}
-  </div>
-</div>`;
-}
-
-// ── Main export ───────────────────────────────────────────────────────────────
 function fmtCommentTime(ms) {
   return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
@@ -2004,45 +1773,670 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
   </div>`;
 }
 
-// "Who wins?" quick widget for the right column (server.js builds gamePicks): the pick card,
-// the "Who called it?" result, or just the link to the pre-game preview on /picks.
-function gamePicksBlock(gp, isPlayer, next) {
-  if (!gp) return '';
-  if (gp.kind === 'open') {
-    return `<section class="gd-picks" aria-label="Who wins?"><div class="gd-picks__h">Who wins?</div>${openPickCard(gp.o, { isPlayer, next, size: 'sm' })}</section>${pickBoxScript()}`;
-  }
-  if (gp.kind === 'final') {
-    return `<section class="gd-picks" aria-label="Who called it?"><div class="gd-picks__h">Who called it?</div>${calledItCard(gp.s, isPlayer)}</section>`;
-  }
-  return `<a href="${escHtml(gp.href)}" class="gd-picks__link">${gp.state === 'final' ? 'Pre-game preview' : 'Matchup preview'} <span>→</span></a>`;
+// ══ Game detail page ═══════════════════════════════════════════════════════════════════
+// One scrolling page with a sticky section nav (no tabs). Two states share the URL:
+//   'upcoming' — the matchup preview: pick box with odds, storyline, head to head, go-to
+//                scorers, last meetings, pre-game chatter (this used to be /picks/<game>).
+//   'final'    — recap, game flow, top performers (duel + supporting cast), box score, key
+//                plays, comments, "Who called it?" and the pre-game preview as it stood.
+// Data comes from server.js (GET /games/:ref) and lib/game-detail.js.
+
+const ICON_PLAY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const ICON_FLAME = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-9z"/></svg>';
+const ICON_SHARE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>';
+const ICON_CAL = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const ICON_CHAT = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+
+const n0 = v => Number(v) || 0;
+const typeLabel = g => ({ playoff: 'Playoffs', finals: 'Finals' }[g.game_type] || 'Regular season');
+const longDay = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '');
+const recLine = r => `${r.w}–${r.l}${r.streak ? ` · ${r.streak}` : ''}`;
+const sh = (id, title, { link = '', sub = '' } = {}) => `<div class="section-header gd-sh"><h2${id ? ` id="${id}-h"` : ''}>${title}</h2>${link}</div>${sub ? `<p class="gd-sd">${sub}</p>` : ''}`;
+
+// ── Hero ─────────────────────────────────────────────────────────────────────────────────
+function heroGlare(game, winner) {
+  const a = teamColor(game.team_a_name), b = teamColor(game.team_b_name);
+  const k = side => {
+    const base = winner === side ? 0x70 : winner ? 0x38 : 0x55;
+    const name = side === 'a' ? game.team_a_name : game.team_b_name;
+    return Math.round(base * (String(name).toUpperCase() === 'WHITE' ? 0.8 : 1)).toString(16).padStart(2, '0');
+  };
+  return `radial-gradient(55% 120% at 0% 70%, ${a}${k('a')} 0%, transparent 60%), radial-gradient(55% 120% at 100% 70%, ${b}${k('b')} 0%, transparent 60%)`;
 }
 
-export function gamePage({ game, stats, dnpPlayers = [], potgPlayerId, quarterScores = [], allGames = [], playerMap = {}, teamMap = {}, gamePicks = null, commentsEnabled = false, comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [], currentPlayerId = null, isPlayer = false, isAdmin = false }) {
-  const colorA = teamColor(game.team_a_name);
-  const colorB = teamColor(game.team_b_name);
-  const potgStat = potgPlayerId ? stats.find(s => s.player_id === potgPlayerId) : null;
-  const myStat = currentPlayerId ? stats.find(s => s.player_id === currentPlayerId) : null;
+function miniLineScore(game, quarterScores) {
+  const qs = quarterScores.filter(s => s.a != null && s.b != null);
+  if (!qs.length) return '';
+  const lbl = q => (q <= 4 ? `Q${q}` : `OT${q - 4}`);
+  const cell = (v, other) => `<td${v > other ? ' class="is-w"' : ''}>${v}</td>`;
+  const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
+  return `<table class="gd-ls" aria-label="Score by quarter">
+      <thead><tr><th></th>${qs.map(s => `<th>${lbl(s.quarter)}</th>`).join('')}<th>T</th></tr></thead>
+      <tbody>
+        <tr><td class="gd-ls__n">${escHtml(String(game.team_a_name).slice(0, 3))}</td>${qs.map(s => cell(s.a, s.b)).join('')}<td class="gd-ls__t${fa > fb ? ' is-win' : ''}">${fa}</td></tr>
+        <tr><td class="gd-ls__n">${escHtml(String(game.team_b_name).slice(0, 3))}</td>${qs.map(s => cell(s.b, s.a)).join('')}<td class="gd-ls__t${fb > fa ? ' is-win' : ''}">${fb}</td></tr>
+      </tbody>
+    </table>`;
+}
 
-  const completedGames = allGames
-    .filter(g => g.status === 'final' || g.status === 'complete')
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const upcomingGames = allGames
-    .filter(g => g.status === 'scheduled')
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 5);
-  const tickerGames = [...upcomingGames, ...completedGames];
+function heroActions({ game, commentsEnabled, gameReaction, watch }) {
+  return `<span class="gd-acts">
+      ${watch ? `<a class="gd-btn gd-btn--amber" href="#watch">${ICON_PLAY}Watch the game</a>` : ''}
+      ${commentsEnabled ? `<button type="button" id="game-react-btn" class="gd-btn${gameReaction.reacted ? ' is-active' : ''}" title="React to this game">${ICON_FLAME}<span>React</span><b id="game-react-count">${gameReaction.count || 0}</b></button>` : ''}
+      <button type="button" id="game-share-btn" class="gd-btn" title="Share">${ICON_SHARE}<span>Share</span></button>
+    </span>`;
+}
 
-  return `<div class="game-detail-layout">
-  <div class="game-detail-left">
-    ${leftMedia(game, colorA, colorB)}
-    ${gameTabs({ game, stats, dnpPlayers, quarterScores, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers, isPlayer, isAdmin })}
+function finalHero(d) {
+  const { game, ctx, flow, called } = d;
+  const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
+  const winner = fa > fb ? 'a' : fb > fa ? 'b' : null;
+  const ot = n0(game.overtime);
+  const finalLabel = ot === 0 ? 'FINAL' : ot === 1 ? 'FINAL/OT' : `FINAL/OT${ot}`;
+  const odds = called?.odds;
+  let oddsChip = '';
+  if (odds?.fav && winner) {
+    const favName = odds.fav === 'a' ? game.team_a_name : game.team_b_name;
+    const winPct = winner === 'a' ? odds.pctA : odds.pctB;
+    oddsChip = odds.fav === winner
+      ? `<a href="#picks" class="gd-chip gd-chip--amber">Odds called it · ${escHtml(tc(favName))} ${winPct}%</a>`
+      : `<a href="#picks" class="gd-chip gd-chip--amber">Upset · ${escHtml(tc(winner === 'a' ? game.team_a_name : game.team_b_name))} won with ${winPct}%</a>`;
+  }
+  const s = ctx.series;
+  const meta = [
+    longDay(d.ymd),
+    flow && winner && flow.trailedBy >= 8 ? `Came back from ${flow.trailedBy} down` : flow && winner && !flow.forGood && flow.trailedBy === 0 ? 'Led wire to wire' : '',
+    s.n <= 1 ? 'First meeting' : s.a === s.b ? `All-time series tied ${s.a}–${s.b}` : `${tc(s.a > s.b ? game.team_a_name : game.team_b_name)} lead the all-time series ${Math.max(s.a, s.b)}–${Math.min(s.a, s.b)}`,
+  ].filter(Boolean);
+  return `<section class="gd-hero" aria-label="Final score">
+    ${game.has_cover ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(game.id)}" alt="">` : ''}
+    <div class="gd-hero__shade"></div>
+    <div class="gd-hero__glare" style="background:${heroGlare(game, winner)}"></div>
+    <div class="gd-hero__in">
+      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}</span>${oddsChip}</div>
+      <div class="gd-board">
+        <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}</span></div>
+        <div class="gd-score">
+          <span class="gd-score__n${winner === 'a' ? ' is-win' : ''}">${fa}</span>
+          <span class="gd-score__mid"><span class="gd-final">${finalLabel}</span>${miniLineScore(game, d.quarterScores)}</span>
+          <span class="gd-score__n${winner === 'b' ? ' is-win' : ''}">${fb}</span>
+        </div>
+        <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${recLine(ctx.recB)}</span></div>
+      </div>
+      <div class="gd-hero__bot"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url) })}</div>
+    </div>
+  </section>`;
+}
+
+function upcomingHero(d) {
+  const { game, ctx, picks } = d;
+  const ymd = d.ymd;
+  const dt = ymd ? new Date(`${ymd}T00:00:00`) : null;
+  const slide = picks?.m?.slides?.[0];
+  const s = ctx.series;
+  const state = picks?.state;
+  const chip = state === 'open' ? 'Picks open' : state === 'closed' ? 'Picks closed' : 'Coming up';
+  const closeAt = state === 'open' && picks.o?.closeHm && ymd ? `${ymd}T${picks.o.closeHm}:00+08:00` : '';
+  return `<section class="gd-hero gd-hero--up" aria-label="Upcoming game">
+    ${slide ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(slide)}" alt="">` : ''}
+    <div class="gd-hero__shade"></div>
+    <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>
+    <div class="gd-hero__in">
+      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}</span><a href="#picks" class="gd-chip${state === 'open' ? ' gd-chip--live' : ''}">${chip}</a></div>
+      <div class="gd-board">
+        <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}</span></div>
+        <div class="gd-when">
+          ${dt ? `<span class="gd-when__k">${dt.toLocaleDateString('en-US', { weekday: 'long' })}</span><span class="gd-when__d">${dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}</span>` : '<span class="gd-when__d">TBD</span>'}
+          ${s.n ? `<span class="gd-h2h"><span>All-time</span><b class="${s.a >= s.b ? 'is-lead' : ''}">${s.a}</b><i>–</i><b class="${s.b >= s.a ? 'is-lead' : ''}">${s.b}</b></span>` : '<span class="gd-h2h"><span>First meeting</span></span>'}
+        </div>
+        <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${recLine(ctx.recB)}</span></div>
+      </div>
+      <div class="gd-hero__bot">
+        ${closeAt ? `<div class="gd-cd" data-close="${escHtml(closeAt)}"><span class="gd-cd__k">Picks close in</span><span class="gd-cd__n"><span><b data-cd="d">–</b><i>DAYS</i></span><span><b data-cd="h">–</b><i>HRS</i></span><span><b data-cd="m">–</b><i>MIN</i></span></span></div>` : '<span></span>'}
+        ${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: false })}
+      </div>
+    </div>
+  </section>`;
+}
+
+// ── Sticky section nav (replaces the tab bar) ────────────────────────────────────────────
+function sectionNav(items, mini) {
+  return `<nav class="gd-snav" aria-label="On this page" data-gd-snav>
+    ${mini ? `<span class="gd-snav__mini">${mini}</span>` : ''}
+    ${items.map((it, i) => `<a href="#${it.id}" class="${i === 0 ? 'is-on' : ''}" data-spy="${it.id}">${escHtml(it.label)}${it.badge != null ? `<em${it.badgeId ? ` id="${it.badgeId}"` : ''}${it.badge ? '' : ' hidden'}>${it.badge}</em>` : ''}</a>`).join('')}
+  </nav>`;
+}
+
+// ── Final: recap, video, how it was won, game flow ───────────────────────────────────────
+function recapCard(game) {
+  const html = renderWriteup(game.game_writeup);
+  if (!html) return '';
+  return `<article id="recap" class="card gd-recap">
+    <span class="gd-kick">Recap</span>
+    <div class="gd-recap__body" data-gd-clamp>${html}</div>
+    <button type="button" class="gd-more" data-gd-clamp-btn hidden aria-expanded="false">Read the full recap →</button>
+  </article>`;
+}
+
+function videoCard(game) {
+  const url = youtubeEmbedUrl(game.youtube_url);
+  if (!url) return '';
+  return `<section id="watch" class="gd-video card" aria-label="Game video">
+    <iframe src="${escHtml(url)}" title="${escHtml(`${tc(game.team_a_name)} vs ${tc(game.team_b_name)} — full game`)}" loading="lazy" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+  </section>`;
+}
+
+function wonBlock(won) {
+  if (!won.length) return '';
+  return `<section aria-labelledby="won-h">
+    ${sh('won', 'How it was won', { sub: 'The biggest gaps in the box score.' })}
+    <div class="gd-won">${won.map(w => `<div class="gd-won__t">
+      <span class="gd-kick">${escHtml(w.label)}</span>
+      <div class="gd-won__v"><b class="font-condensed">+${w.n}</b><span>${dot(w.team, 9)}${escHtml(w.team.toUpperCase())}</span></div>
+      <div class="gd-won__d">${escHtml(w.detail)}</div>
+    </div>`).join('')}</div>
+  </section>`;
+}
+
+function flowCard(game, flow) {
+  if (!flow) return '';
+  const c = flowChart(flow);
+  const A = String(game.team_a_name).slice(0, 3).toUpperCase(), B = String(game.team_b_name).slice(0, 3).toUpperCase();
+  const ca = teamColor(game.team_a_name), cb = teamColor(game.team_b_name);
+  const best = [flow.bestA, flow.bestB].filter(Boolean).sort((x, y) => y.n - x.n)[0];
+  const lead = side => flow.maxLead[side] ? `${flow.maxLead[side].n} <small>${side === 'a' ? A : B}</small>` : '';
+  const pct = v => `${Math.min(96, Math.max(0, v / c.w * 100)).toFixed(1)}%`;
+  // Annotations: the loser's biggest lead, the best run (shaded) and the go-ahead basket.
+  const notes = [];
+  const loser = flow.winner === 'a' ? 'b' : flow.winner === 'b' ? 'a' : null;
+  const ml = loser && flow.maxLead[loser];
+  if (ml && ml.n >= 6) {
+    const yy = c.y(ml.p.a - ml.p.b);
+    notes.push(`<circle cx="${c.x(ml.p.t)}" cy="${yy}" r="4" fill="${loser === 'a' ? ca : cb}" stroke="#0a0e16" stroke-width="2"/>`);
+    notes.push({ html: `${escHtml(tc(loser === 'a' ? game.team_a_name : game.team_b_name))} up ${ml.n} · ${ml.p.a}–${ml.p.b}`, left: pct(c.x(ml.p.t) - 60), top: yy > c.mid ? 'calc(100% - 26px)' : '0' });
+  }
+  if (best && best.n >= 8) {
+    notes.push({ html: `${best.n}–0 ${escHtml(tc(best.side === 'a' ? game.team_a_name : game.team_b_name))} run`, left: pct(c.x(best.end.t) - 90), top: best.side === 'a' ? '58%' : '28%', amber: true });
+  }
+  if (flow.forGood) {
+    const gx = c.x(flow.forGood.t), gy = c.y(flow.forGood.a - flow.forGood.b);
+    notes.push(`<line x1="${gx}" y1="${c.mid}" x2="${gx}" y2="12" stroke="#f59332" stroke-width="1.5" stroke-dasharray="2 3"/><circle cx="${gx}" cy="${gy}" r="4" fill="#f59332"/>`);
+    notes.push({ html: `${escHtml(shortName(flow.forGood.who))} · ${flow.forGood.a}–${flow.forGood.b} · ahead for good`, left: pct(gx - 40), top: '0', amber: true, right: gx > c.w * 0.6 });
+  }
+  // Shade the best run between its first and last basket.
+  let band = '';
+  if (best && best.n >= 8) {
+    const i = flow.points.indexOf(best.end);
+    let j = i; while (j > 0) { const p = flow.points[j - 1]; const prev = flow.points[j - 2] || { a: 0, b: 0 }; const side = p.a > prev.a ? 'a' : 'b'; if (side !== best.side) break; j--; }
+    const x1 = c.x(flow.points[Math.max(0, j - 1)].t), x2 = c.x(best.end.t);
+    band = `<rect x="${x1}" y="0" width="${Math.max(2, x2 - x1).toFixed(1)}" height="${c.h}" fill="rgba(245,147,50,.08)"/>`;
+  }
+  const svgNotes = notes.filter(n => typeof n === 'string').join('');
+  const labels = notes.filter(n => typeof n !== 'string')
+    .map(n => `<span class="gd-ann${n.amber ? ' gd-ann--a' : ''}" style="${n.right ? `right:0;` : `left:${n.left};`}top:${n.top}">${n.html}</span>`).join('');
+  return `<section id="flow" class="card gd-flow" aria-labelledby="flow-h">
+    <div class="gd-flow__h"><h2 id="flow-h">Game flow</h2><span class="gd-legend"><span>${dot(game.team_a_name, 9)}${escHtml(tc(game.team_a_name))} ahead</span><span>${dot(game.team_b_name, 9)}${escHtml(tc(game.team_b_name))} ahead</span></span></div>
+    <div class="gd-flow__stats">
+      <div><span class="gd-kick">Lead changes</span><b class="font-condensed">${flow.leadChanges}</b></div>
+      <div><span class="gd-kick">Ties</span><b class="font-condensed">${flow.ties}</b></div>
+      <div><span class="gd-kick">Biggest lead</span><b class="font-condensed">${[lead('a'), lead('b')].filter(Boolean).join(' · ') || '–'}</b></div>
+      ${best ? `<div><span class="gd-kick">Best run</span><b class="font-condensed">${best.n}–0 <small>${best.side === 'a' ? A : B}</small></b></div>` : ''}
+    </div>
+    <div class="gd-chart">
+      <svg viewBox="0 0 ${c.w} ${c.h}" role="img" aria-label="Score margin through the game: ${escHtml(tc(game.team_a_name))} above the line, ${escHtml(tc(game.team_b_name))} below. ${flow.leadChanges} lead changes.">
+        <defs><clipPath id="gdTop"><rect x="0" y="0" width="${c.w}" height="${c.mid}"/></clipPath><clipPath id="gdBot"><rect x="0" y="${c.mid}" width="${c.w}" height="${c.mid}"/></clipPath></defs>
+        ${c.qLines.map(l => `<line x1="${l.x}" y1="0" x2="${l.x}" y2="${c.h}" stroke="rgba(255,255,255,${l.half ? '.12' : '.07'})"${l.half ? ' stroke-dasharray="3 4"' : ''}/>`).join('')}
+        ${band}
+        <path clip-path="url(#gdTop)" fill="${ca}" fill-opacity="${String(game.team_a_name).toUpperCase() === 'WHITE' ? '.3' : '.4'}" d="${c.area}"/>
+        <path clip-path="url(#gdBot)" fill="${cb}" fill-opacity="${String(game.team_b_name).toUpperCase() === 'WHITE' ? '.3' : '.4'}" d="${c.area}"/>
+        <path fill="none" stroke="#e7eaf0" stroke-width="1.4" stroke-linejoin="round" d="${c.line}"/>
+        <line x1="0" y1="${c.mid}" x2="${c.w}" y2="${c.mid}" stroke="rgba(255,255,255,.25)"/>
+        ${svgNotes}
+        <text x="4" y="${c.tickY + 4}" class="gd-chart__tick">${A} +${c.tick}</text>
+        <text x="4" y="${c.h - c.tickY + 4}" class="gd-chart__tick">${B} +${c.tick}</text>
+      </svg>
+      ${labels}
+    </div>
+    <div class="gd-qx">${c.qs.map(q => `<span style="width:${q.w}%">${q.label}</span>`).join('')}</div>
+  </section>`;
+}
+
+// ── Rail: Who called it?, Up next ────────────────────────────────────────────────────────
+function calledCard(game, called, isPlayer) {
+  if (!called) return '';
+  const { odds, result } = called;
+  const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
+  const winner = fa > fb ? 'a' : 'b';
+  const T = side => tc(side === 'a' ? game.team_a_name : game.team_b_name);
+  const ok = v => (v ? '<span class="pk-ok">✓ Called it</span>' : '<span class="pk-miss">✕ Missed</span>');
+  const rows = [];
+  if (odds?.fav) {
+    const proj = Math.max(1, Math.round(Math.abs(odds.margin)));
+    rows.push(`<div class="gd-vr"><span class="gd-kick">Odds</span><span>${escHtml(T(odds.fav))} by <b>${proj}</b> · ${escHtml(T(winner))} won by <b>${Math.abs(fa - fb)}</b></span>${ok(odds.fav === winner)}</div>`);
+  }
+  if (result) {
+    rows.push(result.total
+      ? `<div class="gd-vr"><span class="gd-kick">Pickers</span><span><b>${result.pctWinner}%</b> picked ${escHtml(T(winner))} · ${result.total} pick${result.total === 1 ? '' : 's'}</span>${result.pctWinner === 50 ? '' : ok(result.fansCalled)}</div>`
+      : '<div class="gd-vr"><span class="gd-kick">Pickers</span><span>Nobody picked this game</span><span></span></div>');
+    if (isPlayer) rows.push(`<div class="gd-vr"><span class="gd-kick">You</span><span>${result.myPick ? `You picked <b>${escHtml(T(result.myPick))}</b>` : "You didn't pick"}</span>${result.myPick ? ok(result.myPick === winner) : '<span></span>'}</div>`);
+  }
+  const faces = result?.calledIt?.length ? `<div class="gd-faces">${result.calledIt.slice(0, 6).map(p => pickAvatar(p, 28)).join('')}<span><b>${result.calledIt.length}</b> called it</span></div>` : '';
+  return `<section id="picks" class="card gd-called" aria-labelledby="picks-h">
+    <div class="gd-card__h"><h2 id="picks-h">Who called it?</h2>${result?.upset ? '<span class="pk-upset">Upset</span>' : ''}</div>
+    ${odds ? `<span class="gd-kick">Odds before tip-off</span>
+    <div class="gd-oline">
+      <span class="gd-oline__s${odds.fav === 'a' ? ' is-fav' : ''}">${dot(game.team_a_name, 8)}${escHtml(String(game.team_a_name).slice(0, 3))} <b class="font-condensed">${odds.pctA}%</b></span>
+      <span class="gd-obar"><span style="width:${odds.pctA}%"></span></span>
+      <span class="gd-oline__s${odds.fav === 'b' ? ' is-fav' : ''}"><b class="font-condensed">${odds.pctB}%</b> ${escHtml(String(game.team_b_name).slice(0, 3))}${dot(game.team_b_name, 8)}</span>
+    </div>` : ''}
+    ${rows.length ? `<div class="gd-vrd">${rows.join('')}</div>` : ''}
+    ${faces}
+    ${called.hasPreview ? '<a class="gd-lnk" href="#preview" data-gd-open-preview>Pre-game preview<small>Odds, storyline and matchup stats as they stood at tip-off</small><span>↓</span></a>' : ''}
+  </section>`;
+}
+
+function upNextCard(list, ymdLabel) {
+  if (!list.length) return '';
+  return `<section class="card gd-next" aria-label="Up next">
+    <div class="gd-card__h"><h2>Up next${ymdLabel ? ` · ${escHtml(ymdLabel)}` : ''}</h2><a href="/picks">All picks</a></div>
+    ${list.map(o => {
+      const fav = o.odds?.fav;
+      const pct = fav ? (fav === 'a' ? o.odds.pctA : o.odds.pctB) : null;
+      return `<div class="gd-nx">
+        <div>
+          <span class="gd-nx__t">${dot(o.a, 8)}${escHtml(o.a)} <i>vs</i> ${escHtml(o.b)}${dot(o.b, 8)}</span>
+          ${o.odds ? `<span class="gd-nx__o"><span class="gd-obar"><span style="width:${o.odds.pctA}%"></span></span>${fav ? `${escHtml(tc(fav === 'a' ? o.a : o.b))} ${pct}%${Math.abs(o.odds.pctA - 50) <= 5 ? ' · a coin flip' : ''}` : 'Even'}</span>` : ''}
+        </div>
+        <a class="gd-pk" href="${escHtml(o.href)}#picks">${o.myPick ? 'Picked' : o.closed ? 'View' : 'Pick'}</a>
+      </div>`;
+    }).join('')}
+  </section>`;
+}
+
+// ── Final: top performers (duel + supporting cast) ───────────────────────────────────────
+function duelSide(s, side, potgId) {
+  const color = teamColor(s.team_name);
+  const tag = s.player_id === potgId ? '<span class="gd-dl__tag">PLAYER OF THE GAME</span>' : s.badge ? `<span class="gd-dl__tag gd-dl__tag--ghost">${escHtml(s.badge)}</span>` : '';
+  return `<div class="gd-dl__p${side === 'b' ? ' gd-dl__p--r' : ''}">
+      <a href="/players/${encodeURIComponent(s.player_id)}" class="gd-dl__ph" style="--team:${color}" tabindex="-1" aria-hidden="true">
+        <span class="font-condensed">${escHtml(initials(displayPlayerName(s.name)))}</span>
+        <img src="/api/player/${encodeURIComponent(s.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()">
+      </a>
+      <div class="gd-dl__i">
+        ${tag}
+        <span class="gd-dl__nm">${playerLink(s.player_id, s.name || '', { upper: true })}<small>${dot(s.team_name, 8)}${escHtml(s.team_name)}${s.number !== '' && s.number != null ? ` · #${escHtml(String(s.number))}` : ''}</small></span>
+        <span class="gd-dl__gs">Game score <b class="font-condensed">${s.gs.toFixed(1)}</b></span>
+      </div>
+    </div>`;
+}
+
+function duelRows(a, b) {
+  const fg = s => { const m = n0(s.fg2m) + n0(s.fg3m) + n0(s.fg4m); const at = m + n0(s.fg2m_miss) + n0(s.fg3m_miss) + n0(s.fg4m_miss); return at ? Math.round(m / at * 100) : null; };
+  const defs = [
+    ['PTS', n0(a.pts), n0(b.pts)], ['REB', n0(a.reb), n0(b.reb)], ['AST', n0(a.ast), n0(b.ast)],
+    ['STL', n0(a.stl), n0(b.stl)], ['BLK', n0(a.blk), n0(b.blk)],
+    ...(fg(a) != null && fg(b) != null ? [['FG%', fg(a), fg(b), '%']] : []),
+    ['TO', n0(a.turnover), n0(b.turnover), '', true],
+  ].filter(([k, x, y]) => k !== 'BLK' || x + y > 0);
+  return defs.map(([k, x, y, suf = '', low = false]) => {
+    const max = Math.max(x, y) || 1;
+    const aw = x !== y && (low ? x < y : x > y), bw = x !== y && !aw;
+    const w = v => (low ? (Math.min(x, y) === v ? 100 : Math.round(Math.min(x, y) / max * 100) || 8) : Math.round(v / max * 100));
+    const wa = low ? (aw ? 100 : Math.max(8, Math.round(y / Math.max(x, 1) * 100))) : w(x);
+    const wb = low ? (bw ? 100 : Math.max(8, Math.round(x / Math.max(y, 1) * 100))) : w(y);
+    const tie = x === y;
+    return `<div class="gd-dlr"><span class="gd-dlr__v${aw || tie ? ' is-w' : ''}">${x}${suf}</span><span class="gd-dlr__l"><i class="${aw || tie ? 'is-w' : ''}" style="width:${wa}%"></i></span><span class="gd-dlr__k">${k}</span><span class="gd-dlr__r"><i class="${bw || tie ? 'is-w' : ''}" style="width:${wb}%"></i></span><span class="gd-dlr__v${bw || tie ? ' is-w' : ''}">${y}${suf}</span></div>`;
+  }).join('');
+}
+
+function castCol(game, side, list) {
+  const name = side === 'a' ? game.team_a_name : game.team_b_name;
+  if (!list.length) return `<div class="card gd-cast__col"><div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div><p class="gd-cast__none">Nobody else reached a game score of 10.</p></div>`;
+  return `<div class="card gd-cast__col">
+    <div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div>
+    ${list.map(s => `<div class="gd-cr">
+      ${playerAvatar(s.player_id, s.name, teamColor(s.team_name), { className: 'gd-cr__av', link: true })}
+      <div><span class="gd-cr__nm">${playerLink(s.player_id, s.name || '')}</span><span class="gd-cr__ln">${s.badge ? `<span class="gd-hook">${escHtml(s.badge)}</span>` : ''}${escHtml(castLine(s))}</span></div>
+      <span class="gd-cr__p"><b class="font-condensed">${n0(s.pts)}</b><span>PTS</span></span>
+    </div>`).join('')}
+  </div>`;
+}
+
+function performersSection(game, dc, verdict, potgId) {
+  if (!dc) return '';
+  return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
+    ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>', sub: 'The best player on each side, head to head. Then the rest of each team’s standouts, ranked by game score.' })}
+    <article class="card gd-dl" aria-label="The duel">
+      <div class="gd-dl__top">
+        <div class="gd-dl__bg gd-dl__bg--l" aria-hidden="true" style="--team:${teamColor(dc.a.team_name)}"><img src="/api/player/${encodeURIComponent(dc.a.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()"></div>
+        <div class="gd-dl__bg gd-dl__bg--r" aria-hidden="true" style="--team:${teamColor(dc.b.team_name)}"><img src="/api/player/${encodeURIComponent(dc.b.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()"></div>
+        ${duelSide(dc.a, 'a', potgId)}
+        <div class="gd-dl__rows"><span class="gd-kick">Head to head</span>${duelRows(dc.a, dc.b)}</div>
+        ${duelSide(dc.b, 'b', potgId)}
+      </div>
+      <div class="gd-dl__v">${verdict}</div>
+    </article>
+    <div class="gd-cast">${castCol(game, 'a', dc.castA)}${castCol(game, 'b', dc.castB)}</div>
+    <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
+  </section>`;
+}
+
+// ── Final: box score + team stats ────────────────────────────────────────────────────────
+function teamStatsCard(game, A, B) {
+  const pc = (m, a) => (a ? +(m / a * 100).toFixed(1) : null);
+  const rows = [
+    ['FG%', pc(A.fgm, A.fga), pc(B.fgm, B.fga)],
+    ['3PT MADE', A.fg3m, B.fg3m], ['3PT%', pc(A.fg3m, A.fg3a), pc(B.fg3m, B.fg3a)],
+    ...(A.fg4a + B.fg4a ? [['4PT MADE', A.fg4m, B.fg4m]] : []),
+    ['FT%', pc(A.ftm, A.fta), pc(B.ftm, B.fta)],
+    ['REBOUNDS', A.reb, B.reb], ['ASSISTS', A.ast, B.ast], ['STEALS', A.stl, B.stl], ['BLOCKS', A.blk, B.blk],
+    ['TURNOVERS', A.to, B.to, true],
+  ].filter(r => r[1] != null && r[2] != null);
+  const fmt = (v, k) => (k.includes('%') ? v.toFixed(1) : v);
+  return `<div class="card gd-cmp">
+    <div class="gd-cmp__h"><span>${dot(game.team_a_name, 8)}${escHtml(String(game.team_a_name).slice(0, 3))}</span><span>${escHtml(String(game.team_b_name).slice(0, 3))}${dot(game.team_b_name, 8)}</span></div>
+    ${rows.map(([k, a, b, low]) => {
+      const max = Math.max(a, b) || 1;
+      const aw = a !== b && (low ? a < b : a > b), bw = a !== b && !aw;
+      return `<div class="gd-cr2"><span class="gd-cr2__v${aw ? ' is-w' : ''}">${fmt(a, k)}</span><span class="gd-cr2__m"><span>${k}</span><span class="gd-cr2__bars"><span class="gd-cr2__l"><i class="${aw ? 'is-w' : ''}" style="width:${Math.round(a / max * 100)}%"></i></span><span class="gd-cr2__r"><i class="${bw ? 'is-w' : ''}" style="width:${Math.round(b / max * 100)}%"></i></span></span></span><span class="gd-cr2__v${bw ? ' is-w' : ''}">${fmt(b, k)}</span></div>`;
+    }).join('')}
+  </div>`;
+}
+
+function boxSection(game, stats, dnpPlayers, A, B) {
+  if (!stats.length) return '';
+  const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
+  const na = String(game.team_a_name).toUpperCase(), nb = String(game.team_b_name).toUpperCase();
+  const first = winner === nb ? 'b' : 'a';
+  const panel = (side, name) => `<div class="gd-box__panel" data-gd-box="${side}"${side === first ? '' : ' hidden'}>${teamBoxScoreTab(name, byTeam, dnpByTeam, winner, teamTurnovers)}</div>`;
+  return `<div class="gd-cols gd-sec">
+    <section id="box" class="gd-cols__main" aria-labelledby="box-h">
+      <div class="section-header gd-sh gd-sh--row"><h2 id="box-h">Box score</h2>
+        <span class="gd-seg" role="group" aria-label="Team">
+          <button type="button" class="${first === 'a' ? 'is-on' : ''}" aria-pressed="${first === 'a'}" data-gd-box-btn="a">${dot(na, 8)}${escHtml(na)} · ${n0(game.team_a_score)}</button>
+          <button type="button" class="${first === 'b' ? 'is-on' : ''}" aria-pressed="${first === 'b'}" data-gd-box-btn="b">${dot(nb, 8)}${escHtml(nb)} · ${n0(game.team_b_score)}</button>
+        </span>
+      </div>
+      <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
+    </section>
+    <aside class="gd-cols__rail" aria-labelledby="ts-h">
+      <div class="section-header gd-sh"><h2 id="ts-h">Team stats</h2></div>
+      ${teamStatsCard(game, A, B)}
+    </aside>
+  </div>`;
+}
+
+// ── Final: key plays ──────────────────────────────────────────────────────────────────────
+function playsBlock(game, plays) {
+  let hasLog = false;
+  try { hasLog = JSON.parse(game.game_log_json || '[]').length > 0; } catch {}
+  if (!plays.length && !hasLog) return '';
+  const color = side => (side ? teamColor(side === 'a' ? game.team_a_name : game.team_b_name) : '#5b6475');
+  return `<section id="plays" class="gd-plays-sec" aria-labelledby="plays-h">
+    ${sh('plays', 'Key plays', { sub: plays.length ? 'Picked from the scoring log: runs, the biggest leads and the go-ahead basket.' : '' })}
+    ${plays.length ? `<div class="card gd-plays">${plays.map(p => `<div class="gd-pl${p.big ? ' gd-pl--big' : ''}">
+      <span class="gd-pl__t">${escHtml(p.qLabel)}${p.qLabel !== 'HALF' && p.qLabel !== 'FINAL' && p.clock ? `<b class="font-condensed">${escHtml(p.clock)}</b>` : ''}</span>
+      <span class="gd-pl__dot" style="background:${p.big ? '#f59332' : color(p.side)}"></span>
+      <span class="gd-pl__x"><b>${escHtml(p.strong)}</b>${p.rest ? ` ${escHtml(p.rest)}` : ''}</span>
+      <span class="gd-pl__s font-condensed">${p.score.a}<i>–</i>${p.score.b}</span>
+    </div>`).join('')}</div>` : ''}
+    ${hasLog ? `<details class="gd-pbp"><summary>Full play-by-play</summary>${playByPlayTab(game)}</details>` : ''}
+  </section>`;
+}
+
+// ── Comments ──────────────────────────────────────────────────────────────────────────────
+function talkSection(d, title) {
+  if (!d.commentsEnabled) return '';
+  return `<section id="talk" class="gd-talk" aria-labelledby="talk-h">
+    <div class="section-header gd-sh gd-sh--row"><h2 id="talk-h">${title}</h2><span class="gd-live">LIVE</span></div>
+    <div class="card gd-talk__card" id="game-talk">${commentsTabBody({ gameId: d.game.id, comments: d.comments, reactedIds: d.reactedIds, isPlayer: d.isPlayer, isAdmin: d.isAdmin, mentionablePlayers: d.mentionable })}</div>
+  </section>`;
+}
+
+// ── The matchup preview (upcoming page body, and the archived copy after the final) ─────────
+function storyBlock(game, story, { isAdmin, regen }) {
+  if (!story && !regen) return '';
+  return `<article class="card gd-story" id="story">
+    <span class="gd-kick gd-kick--amber">The storyline</span>
+    ${story ? `<h3 class="gd-story__head">${storyHtml(story.headline)}</h3>
+    <p class="gd-story__body">${escHtml(story.body)}</p>` : '<p class="gd-story__body">No storyline yet — it’s written in the background, or regenerate it now.</p>'}
+    ${regen && isAdmin ? `<button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(game.id)}">↺ Regenerate</button>` : ''}
+  </article>`;
+}
+
+function edgesBlock(m) {
+  if (!m.rows?.length) return '';
+  const gap = r => Math.abs(r.a - r.b) / (Math.max(r.a, r.b) || 1);
+  const ranked = [...m.rows].sort((x, y) => gap(y) - gap(x));
+  const top = new Set(ranked.slice(0, 5).map(r => r.key));
+  const basis = m.firstMeeting ? `First meeting · Season ${escHtml(String(m.season))} per game` : `Per game in their ${m.meetings} meeting${m.meetings === 1 ? '' : 's'}${m.boxMeetings < m.meetings ? ` (${m.boxMeetings} with box scores)` : ''}, all seasons. Biggest edges first.`;
+  return `<section id="h2h" aria-labelledby="h2h-h">
+    ${sh('h2h', 'Head to head', { sub: basis })}
+    <div class="card gd-edges-card">
+      <div class="gm-edges">${ranked.map(r => `<div class="gm-st-wrap${top.has(r.key) ? '' : ' is-extra'}">${edgeRow(r)}</div>`).join('')}</div>
+      ${m.rows.length > 5 ? `<button type="button" class="gm-more" data-more aria-expanded="false">Show all ${m.rows.length} stats</button>` : ''}
+    </div>
+  </section>`;
+}
+
+function scorersBlock(m) {
+  if (m.scorers?.length !== 2 || !(m.scorers[0] || m.scorers[1])) return '';
+  const [sa, sb] = m.scorers;
+  if (sa && sb) { sa.lead = sa.ppg > sb.ppg; sb.lead = sb.ppg > sa.ppg; }
+  return `<section id="watchlist" aria-labelledby="watchlist-h">
+    ${sh('watchlist', 'Players to watch', { sub: 'Each side’s top scorer against this opponent.' })}
+    <div class="gm-fo gd-fo">${scorerCard(sa, 'a')}${scorerCard(sb, 'b')}<span class="gm-fo__vs font-condensed" aria-hidden="true">VS</span></div>
+  </section>`;
+}
+
+function meetingsBlock(m) {
+  if (!m.lastMeetings?.length) return '';
+  return `<section id="meetings" aria-labelledby="meetings-h">
+    ${sh('meetings', m.lastMeetings.length === 1 ? 'Last meeting' : 'Last meetings', { sub: 'Tap one for its box score.' })}
+    <div class="gm-mts gd-mts">${m.lastMeetings.map(x => meetingTile(m, x)).join('')}</div>
+  </section>`;
+}
+
+function pickRail(d) {
+  const { picks, game } = d;
+  if (!picks?.pickable) return '';
+  const { state, o, m } = picks;
+  let body;
+  if ((state === 'open' || state === 'closed') && o) {
+    const total = n0(o.counts?.a) + n0(o.counts?.b);
+    body = `<div class="gd-card__h"><h2 id="picks-h">Who wins?</h2><span class="gd-card__note" data-pick-total>${state === 'closed' ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'} so far` : 'Be the first to pick'}</span></div>
+      ${pickBox(o, { isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}#picks`, oddsHtml: o.odds ? oddsLine(m, o.odds) : '', flag: true })}`;
+  } else {
+    body = `<div class="gd-card__h"><h2 id="picks-h">Who wins?</h2></div>
+      ${picks.odds ? oddsLine(m, picks.odds) : ''}
+      <p class="gd-later">${state === 'later' ? 'Picks open closer to game day.' : 'Picks are closed for this one.'}</p>`;
+  }
+  const also = picks.siblings?.length ? `<section class="card gd-next" aria-label="Same day">
+      <div class="gd-card__h"><h2>Also on ${escHtml(shortDayLabel(m.ymd))}</h2></div>
+      ${picks.siblings.map(x => `<div class="gd-nx"><div><span class="gd-nx__t">${dot(x.a, 8)}${escHtml(x.a)} <i>vs</i> ${escHtml(x.b)}${dot(x.b, 8)}</span>${x.odds ? `<span class="gd-nx__o"><span class="gd-obar"><span style="width:${x.odds.pctA}%"></span></span>${x.odds.fav ? `${escHtml(tc(x.odds.fav === 'a' ? x.a : x.b))} ${x.odds.fav === 'a' ? x.odds.pctA : x.odds.pctB}%` : 'Even'}</span>` : ''}</div><a class="gd-pk" href="${escHtml(x.href)}#picks">${state === 'open' ? 'Pick' : 'View'}</a></div>`).join('')}
+    </section>` : '';
+  return `<section id="picks" class="card gd-pick" aria-labelledby="picks-h">${body}</section>${also}`;
+}
+
+function previewArchive(d) {
+  const p = d.preview;
+  if (!p) return '';
+  const { m, story, odds } = p;
+  return `<details id="preview" class="gd-sec gd-prev">
+    <summary><span class="gd-prev__t">Pre-game preview</span><span class="gd-prev__s">As it stood at tip-off: odds, storyline and matchup stats</span></summary>
+    <div class="gd-prev__in">
+      ${odds ? `<div class="card gd-prev__odds">${oddsLine(m, odds)}</div>` : ''}
+      ${storyBlock(d.game, story, { isAdmin: false, regen: false })}
+      ${edgesBlock(m)}
+      ${scorersBlock(m)}
+      ${meetingsBlock(m)}
+    </div>
+  </details>`;
+}
+
+// ── Page scripts: scroll-spy nav, recap clamp, box toggle, countdown, preview opener ──────
+function pageScript() {
+  return `<script>
+(function () {
+  var header = document.querySelector('.site-header');
+  var nav = document.querySelector('[data-gd-snav]');
+  function setTop() { if (header && nav) document.documentElement.style.setProperty('--gd-top', header.getBoundingClientRect().height + 'px'); }
+  setTop(); window.addEventListener('resize', setTop);
+
+  // Scroll-spy: the section nearest the top (under the sticky nav) lights its link.
+  if (nav) {
+    var links = [].slice.call(nav.querySelectorAll('[data-spy]'));
+    var secs = links.map(function (a) { return document.getElementById(a.dataset.spy); });
+    var ticking = false;
+    function spy() {
+      ticking = false;
+      var line = (header ? header.getBoundingClientRect().height : 0) + nav.offsetHeight + 24;
+      var on = 0;
+      secs.forEach(function (s, i) { if (s && s.getBoundingClientRect().top - line <= 0) on = i; });
+      links.forEach(function (a, i) { a.classList.toggle('is-on', i === on); });
+      nav.classList.toggle('is-stuck', nav.getBoundingClientRect().top <= (header ? header.getBoundingClientRect().height : 0) + 1);
+    }
+    window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(spy); } }, { passive: true });
+    spy();
+    nav.addEventListener('click', function (e) {
+      var a = e.target.closest('[data-spy]');
+      if (!a) return;
+      var target = document.getElementById(a.dataset.spy);
+      if (target && target.tagName === 'DETAILS') target.open = true;
+    });
+  }
+
+  // Recap: clamp long recaps, "Read the full recap" only when it actually overflows.
+  document.querySelectorAll('[data-gd-clamp]').forEach(function (el) {
+    var btn = el.parentNode.querySelector('[data-gd-clamp-btn]');
+    if (!btn || el.scrollHeight <= el.clientHeight + 2) { el.classList.add('is-open'); return; }
+    btn.hidden = false;
+    btn.addEventListener('click', function () {
+      var open = el.classList.toggle('is-open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.textContent = open ? 'Show less' : 'Read the full recap →';
+    });
+  });
+
+  // Box score team switch.
+  document.querySelectorAll('[data-gd-box-btn]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var side = b.dataset.gdBoxBtn;
+      document.querySelectorAll('[data-gd-box-btn]').forEach(function (x) { var on = x === b; x.classList.toggle('is-on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+      document.querySelectorAll('[data-gd-box]').forEach(function (p) { p.hidden = p.dataset.gdBox !== side; });
+    });
+  });
+
+  // Picks-close countdown.
+  var cd = document.querySelector('[data-close]');
+  if (cd) {
+    var end = new Date(cd.dataset.close).getTime();
+    var tick = function () {
+      var ms = end - Date.now();
+      if (ms <= 0) { cd.querySelector('.gd-cd__k').textContent = 'Picks closed'; cd.querySelector('.gd-cd__n').hidden = true; return; }
+      var m = Math.floor(ms / 60000);
+      cd.querySelector('[data-cd="d"]').textContent = Math.floor(m / 1440);
+      cd.querySelector('[data-cd="h"]').textContent = Math.floor(m / 60) % 24;
+      cd.querySelector('[data-cd="m"]').textContent = m % 60;
+      setTimeout(tick, 30000);
+    };
+    tick();
+  }
+
+  // Links into the archived preview open it first; so does arriving with #preview.
+  function openPrev() { var p = document.getElementById('preview'); if (p) p.open = true; }
+  document.querySelectorAll('[data-gd-open-preview]').forEach(function (a) { a.addEventListener('click', openPrev); });
+  if (location.hash === '#preview') { openPrev(); var p = document.getElementById('preview'); if (p) p.scrollIntoView(); }
+})();
+</script>`;
+}
+
+export function gamePage(d) {
+  const { game, state } = d;
+  const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
+  const mentionable = (d.mentionablePlayers || []).map(p => {
+    const name = displayPlayerName(p.name);
+    return { id: p.id, name, initials: initials(name), photoUrl: `/api/player/${encodeURIComponent(p.id)}/photo` };
+  });
+  const v = { ...d, mentionable };
+  const floater = d.commentsEnabled ? gameSocialFloater({ commentsEnabled: true, gameReaction: d.gameReaction, commentsCount: d.comments.length }) : '';
+  const comments = d.commentsEnabled ? { label: 'Comments', id: 'talk', badge: d.comments.length, badgeId: 'comments-count' } : null;
+  const scripts = `${gameTabsStyles()}${gameTabsScript({ gameId: game.id, isAdmin: d.isAdmin, mentionablePlayers: mentionable })}${pageScript()}`;
+
+  if (state === 'upcoming') {
+    const p = d.picks;
+    const m = p?.m;
+    const items = [
+      p?.pickable ? { id: 'picks', label: 'Who wins?' } : null,
+      m && (p.story || d.isAdmin) ? { id: 'story', label: 'Storyline' } : null,
+      m?.rows?.length ? { id: 'h2h', label: 'Head to head' } : null,
+      m?.scorers?.some(Boolean) ? { id: 'watchlist', label: 'Players to watch' } : null,
+      m?.lastMeetings?.length ? { id: 'meetings', label: 'Last meetings' } : null,
+      comments ? { ...comments, label: 'Pre-game chatter' } : null,
+    ].filter(Boolean);
+    return `<div class="container"><div class="page-content gd-page">
+  <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
+  ${upcomingHero(v)}
+  ${sectionNav(items)}
+  <div class="gd-cols">
+    <div class="gd-cols__main">
+      ${m ? storyBlock(game, p.story, { isAdmin: d.isAdmin, regen: p.state === 'open' || p.state === 'closed' }) : ''}
+      ${m ? edgesBlock(m) : ''}
+      ${m ? scorersBlock(m) : ''}
+      ${m ? meetingsBlock(m) : ''}
+      ${talkSection(v, 'Pre-game chatter')}
+    </div>
+    <aside class="gd-cols__rail gd-rail--sticky">${pickRail(v)}</aside>
   </div>
-  <div class="game-detail-right">
-    ${myStat ? shareStatsBanner(game, myStat) : ''}
-    ${scoreCard(game, colorA, colorB)}
-    ${gamePicksBlock(gamePicks, !!currentPlayerId, `/games/${encodeURIComponent(game.id)}`)}
-    ${potgCard(potgStat, game.potg_writeup)}
-    ${topPerformers(stats, potgPlayerId)}
+</div></div>
+${floater}
+${m ? matchupScript({ isAdmin: d.isAdmin }) : ''}
+${p?.o ? pickBoxScript() : ''}
+${scripts}`;
+  }
+
+  // Final.
+  const A = teamTotals(d.stats, game.team_a_name, game.team_a_to_team);
+  const B = teamTotals(d.stats, game.team_b_name, game.team_b_to_team);
+  const myStat = d.currentPlayerId ? d.stats.find(s => s.player_id === d.currentPlayerId) : null;
+  const recap = recapCard(game);
+  const hasBox = d.stats.length > 0;
+  const items = [
+    recap ? { id: 'recap', label: 'Recap' } : null,
+    d.called ? { id: 'picks', label: 'Who called it' } : null,
+    d.flow ? { id: 'flow', label: 'Game flow' } : null,
+    d.dc ? { id: 'perf', label: 'Top performers' } : null,
+    hasBox ? { id: 'box', label: 'Box score' } : null,
+    d.plays.length ? { id: 'plays', label: 'Key plays' } : null,
+    comments,
+    d.preview ? { id: 'preview', label: 'Pre-game preview' } : null,
+  ].filter(Boolean);
+  const mini = `${escHtml(String(game.team_a_name).slice(0, 3))} ${fa} <i>–</i> ${fb} ${escHtml(String(game.team_b_name).slice(0, 3))}`;
+  const rail = [calledCard(game, d.called, d.isPlayer), myStat ? shareStatsBanner(game, myStat) : '', upNextCard(d.upNext, d.upNextLabel)].filter(Boolean).join('');
+  const talk = talkSection(v, 'Comments');
+  const plays = playsBlock(game, d.plays);
+  return `<div class="container"><div class="page-content gd-page">
+  <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
+  ${finalHero(v)}
+  ${sectionNav(items, mini)}
+  <div class="gd-cols">
+    <div class="gd-cols__main">
+      ${recap}
+      ${videoCard(game)}
+      ${hasBox ? wonBlock(d.won) : '<p class="gd-empty card">Full box scores will be available once stats are imported.</p>'}
+      ${flowCard(game, d.flow)}
+    </div>
+    ${rail ? `<aside class="gd-cols__rail">${rail}</aside>` : ''}
   </div>
-</div>`;
+  ${performersSection(game, d.dc, d.verdict, d.potgPlayerId)}
+  ${boxSection(game, d.stats, d.dnpPlayers, A, B)}
+  ${plays || talk ? `<div class="gd-cols gd-sec">
+    ${plays ? `<div class="gd-cols__main">${plays}</div>` : ''}
+    ${talk ? `<div class="${plays ? 'gd-cols__rail' : 'gd-cols__main'}">${talk}</div>` : ''}
+  </div>` : ''}
+  ${previewArchive(v)}
+</div></div>
+${floater}
+${d.preview ? matchupScript({ isAdmin: false }) : ''}
+${scripts}`;
 }

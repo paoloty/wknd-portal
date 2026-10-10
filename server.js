@@ -27,11 +27,12 @@ import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
 import { homePage, leaderBoards } from './views/home.js';
 import { gamesPage } from './views/games.js';
-import { picksPage, picksPlayerPage, picksPlayerSheet, picksGamePage, picksRulesPage } from './views/picks.js';
+import { picksPage, picksPlayerPage, picksPlayerSheet, picksRulesPage } from './views/picks.js';
 import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
+import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext } from './lib/game-detail.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
@@ -7343,13 +7344,12 @@ app.get('/sitemap.xml', (req, res) => {
 
   for (const t of getAllTeams())   urls.push({ loc: `/teams/${teamSlug(t)}`,     priority: '0.6', changefreq: 'weekly' });
   for (const p of getAllPlayers()) urls.push({ loc: `/players/${playerSlug(p)}`, priority: '0.5', changefreq: 'weekly' });
-  // Matchup previews: the upcoming games plus every game whose preview has been saved.
-  const previewIds = picksEnabled() ? getGamePreviewIds() : new Set();
+  // Each game's page is also its matchup preview (the old /picks/<game> pages redirect there),
+  // so upcoming games change daily.
   const upcomingIds = new Set(getUpcomingGames(byDate(getAllGames())).map(g => g.id));
   for (const g of getAllGames()) {
     if (g.under_review) continue;
-    urls.push({ loc: `/games/${gameSlug(g)}`, priority: '0.5', changefreq: 'monthly', lastmod: isoDate(Date.parse(g.date)) });
-    if (picksEnabled() && (previewIds.has(g.id) || upcomingIds.has(g.id))) urls.push({ loc: `/picks/${gameSlug(g)}`, priority: '0.4', changefreq: upcomingIds.has(g.id) ? 'daily' : 'monthly' });
+    urls.push({ loc: `/games/${gameSlug(g)}`, priority: '0.5', changefreq: upcomingIds.has(g.id) ? 'daily' : 'monthly', lastmod: isoDate(Date.parse(g.date)) });
   }
   if (flags.posts) {
     for (const post of getPublicPosts()) {
@@ -7370,35 +7370,30 @@ ${u.lastmod ? `    <lastmod>${u.lastmod}</lastmod>\n` : ''}    <changefreq>${u.c
 });
 
 app.get('/games/:ref', (req, res) => {
-  const resolved = resolveRef('game', req.params.ref,
-    ref => getGameById(ref),
-    g   => gameSlug(g)
-  );
-  if (!resolved) return res.status(404).send(
+  const notFound = () => res.status(404).send(
     layout({ title: 'Not Found', currentPath: req.path, body: '<p style="padding:40px;color:var(--text-muted)">Game not found.</p>' })
   );
-  if (resolved.slug) return res.redirect(302, `/games/${resolved.slug}`);
+  // findGameRef also matches slugs nobody has visited yet (sitemap, pasted /picks links).
+  const resolved = findGameRef(req.params.ref);
+  if (!resolved) return notFound();
+  const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  if (resolved.slug) return res.redirect(302, `/games/${resolved.slug}${qs}`);
 
   const game = getGameById(resolved.id);
-  if (!game || game.under_review) return res.status(404).send(
-    layout({ title: 'Not Found', currentPath: req.path, body: '<p style="padding:40px;color:var(--text-muted)">Game not found.</p>' })
-  );
+  if (!game || game.under_review) return notFound();
 
-  const stats = getGameDetailStats(game.id);
-  const dnpPlayers = getGameDnpPlayers(game.id);
-  const potgPlayerId = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
-  const quarterScores = extractQuarterScores(game);
-
-  const teams = getAllTeams();
-  const players = getAllPlayers();
   const allGames = getAllGames();
+  const sorted = byDate(allGames);
+  const players = getAllPlayers();
   const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
-  const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
-
-  const pageTitle = gamePageTitle(game);
+  const currentPlayerId = req.session?.playerPlayerId || null;
+  const isFinal = (game.status === 'final' || game.status === 'complete') && Number(game.team_a_score) + Number(game.team_b_score) > 0;
+  const ymd = gameYmd(game.date);
+  const ctx = seasonContext([...sorted].reverse(), game);
+  const pctx = buildPicksContext(sorted);
+  const T = titleCase;
 
   const commentsEnabled = getSetting('comments_enabled', '0') === '1';
-  const currentPlayerId = req.session?.playerPlayerId || null;
   let comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [];
   if (commentsEnabled) {
     comments = getGameComments(game.id);
@@ -7409,38 +7404,74 @@ app.get('/games/:ref', (req, res) => {
     mentionablePlayers = getPlayersWithAccounts();
   }
 
-  // "Who wins?" quick widget: the pick card while picks are open/closed, "Who called it?"
-  // after a final that had picks, otherwise just the link to the pre-game preview.
-  let gamePicks = null;
-  if (picksEnabled()) {
-    const sorted = byDate(allGames);
-    const pctx = buildPicksContext(sorted);
-    const state = previewState(game, sorted, pctx);
-    const href = previewHref(game);
-    gamePicks = { kind: 'link', href, state };
-    if (state === 'open' || state === 'closed') {
-      const o = openPicks(sorted, pctx, currentPlayerId).find(x => x.id === game.id);
-      if (o) gamePicks = { kind: 'open', o, href };
-    } else if (state === 'final') {
-      const gp = getGamePicksWithPlayers(game.id);
-      const sg = gp.length && seasonPicks(pctx, pctx.byId[game.id].season).settled.find(g => g.id === game.id);
-      if (sg) {
-        const s = calledItSummary(sg, gp, currentPlayerId);
-        s.calledIt = s.calledIt.map(x => ({ id: x.player_id, name: displayPlayerName(x.player_name || ''), team: x.team_name || '' }));
-        gamePicks = { kind: 'final', s, href };
-      }
-    }
+  const common = {
+    game, ymd, ctx, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
+    currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
+  };
+  const opens = picksEnabled() ? openPicks(sorted, pctx, currentPlayerId) : [];
+
+  // ── Before the final: this page is the matchup preview (formerly /picks/<game>). ──
+  if (!isFinal) {
+    const p = gamePreview(game, sorted, playerMap, pctx);
+    const o = opens.find(x => x.id === game.id) || null;
+    const siblings = sorted
+      .filter(g => g.id !== game.id && !g.under_review && gameYmd(g.date) === ymd && g.team_a_name && g.team_b_name)
+      .map(g => {
+        const x = opens.find(y => y.id === g.id);
+        return { a: g.team_a_name, b: g.team_b_name, href: previewHref(g), odds: x?.odds || null };
+      });
+    const picks = {
+      state: p.state, m: p.m, story: p.story, odds: shownOdds(game.id, p.odds, pctx), o, siblings,
+      pickable: picksEnabled() && p.state !== 'final',
+    };
+    return res.send(renderPage(req, {
+      title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} — WKND Basketball League`,
+      currentPath: req.path,
+      metaTags: buildGameOgTags(req, game),
+      body: gamePage({ ...common, state: 'upcoming', picks }),
+    }));
   }
 
+  // ── After the final: recap, flow, performers, box score, picks verdict, the frozen preview. ──
+  const stats = getGameDetailStats(game.id);
+  const dnpPlayers = getGameDnpPlayers(game.id);
+  const potgPlayerId = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
+  const quarterScores = extractQuarterScores(game);
+  const flow = gameFlow(game);
+  const plays = keyPlays(flow, game, quarterScores);
+  const won = stats.length ? howItWasWon(game, teamTotals(stats, game.team_a_name, game.team_a_to_team), teamTotals(stats, game.team_b_name, game.team_b_to_team)) : [];
+  const dc = stats.length ? duelAndCast(stats, game, playerHistory(stats.map(s => s.player_id), game)) : null;
+  const verdict = dc ? duelVerdict(dc.a, dc.b, game) : '';
+
+  // "Who called it?": the pre-game odds plus pickers and your own pick. The preview shown
+  // underneath is only the stored snapshot — finals without one get no preview section.
+  let called = null, preview = null;
+  if (picksEnabled()) {
+    const odds = shownOdds(game.id, pctx.oddsById[game.id] || null, pctx);
+    let result = null;
+    const gp = getGamePicksWithPlayers(game.id);
+    const pg = pctx.byId[game.id];
+    const sg = gp.length && pg && seasonPicks(pctx, pg.season).settled.find(g => g.id === game.id);
+    if (sg) {
+      result = calledItSummary(sg, gp, currentPlayerId);
+      result.calledIt = result.calledIt.map(x => ({ id: x.player_id, name: displayPlayerName(x.player_name || ''), team: x.team_name || '' }));
+    }
+    const stored = getGamePreview(game.id);
+    if (stored?.matchup) preview = { m: { ...stored.matchup, game }, story: stored.story, odds: shownOdds(game.id, stored.odds, pctx) };
+    if (odds || result) called = { odds, result, hasPreview: !!preview };
+  }
+  const upNext = opens.filter(x => x.id !== game.id);
+  const upNextLabel = upNext.length && upNext.every(x => x.ymd === upNext[0].ymd)
+    ? new Date(`${upNext[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+
   res.send(renderPage(req, {
-    title: `${pageTitle} — WKND Basketball League`,
+    title: `${gamePageTitle(game)} — WKND Basketball League`,
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
     body: gamePage({
-      game, stats, dnpPlayers, potgPlayerId, quarterScores, allGames, playerMap, teamMap, gamePicks,
-      commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
-      currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
-    })
+      ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
+      flow, plays, won, dc, verdict, called, preview, upNext, upNextLabel,
+    }),
   }));
 });
 
@@ -9454,7 +9485,8 @@ function findGameRef(ref) {
   saveSlug('game', g.id, ref);
   return { id: g.id };
 }
-const previewHref = game => `/picks/${encodeURIComponent(gameSlug(game))}`;
+// A game's page is its matchup preview before tip-off (formerly /picks/<game>, which now redirects).
+const previewHref = game => `/games/${encodeURIComponent(gameSlug(game))}`;
 
 function buildGamesContext(games, playerMap) {
   const played = games.filter(isPlayedGame);
@@ -9954,52 +9986,15 @@ app.get('/picks/rules', (req, res) => {
   }));
 });
 
+// The full matchup preview moved onto the game page itself (one URL per game, preview before
+// tip-off and recap after). Old links — pick reminder emails, notifications, shares — land
+// there: the pick box before the final, the archived preview after it.
 app.get('/picks/:ref', (req, res) => {
-  const notFound = () => res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/picks', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Game not found.</p></div>' }));
   const resolved = findGameRef(req.params.ref);
-  if (!resolved) return notFound();
-  if (resolved.slug) return res.redirect(302, `/picks/${encodeURIComponent(resolved.slug)}`);
-  const game = getGameById(resolved.id);
-  if (!game || game.under_review || !game.team_a_name || !game.team_b_name) return notFound();
-
-  const games = byDate(getAllGames());
-  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-  const pctx = buildPicksContext(games);
-  const p = gamePreview(game, games, playerMap, pctx);
-  const viewerId = req.session?.playerPlayerId || null;
-  const odds = shownOdds(game.id, p.odds, pctx);
-  const selfHref = previewHref(game);
-
-  let pick = null;
-  if (picksEnabled() && (p.state === 'open' || p.state === 'closed')) {
-    const myPick = getPlayerGamePicks([game.id], viewerId)[game.id] || null;
-    const closed = p.state === 'closed';
-    pick = { counts: getGamePickCounts([game.id])[game.id], myPick, closed, pickers: canSeeFaces(viewerId) ? pickFaces(game.id, viewerId) : null };
-  }
-  let result = null;
-  if (p.state === 'final' && picksEnabled()) {
-    const pg = pctx.byId[game.id];
-    const sg = seasonPicks(pctx, pg.season).settled.find(g => g.id === game.id);
-    if (sg) {
-      result = calledItSummary(sg, getGamePicksWithPlayers(game.id), viewerId);
-      result.calledIt = result.calledIt.map(x => ({ id: x.player_id, name: displayPlayerName(x.player_name || ''), team: x.team_name || '' }));
-    }
-  }
-  const ymd = gameYmd(game.date);
-  const siblings = games
-    .filter(g => g.id !== game.id && !g.under_review && gameYmd(g.date) === ymd && g.team_a_name && g.team_b_name)
-    .map(g => ({ href: previewHref(g), a: g.team_a_name, b: g.team_b_name }));
-
-  const T = titleCase;
-  res.send(renderPage(req, {
-    title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'final' ? 'Pre-game preview' : 'Who wins?'} — WKND Basketball`,
-    currentPath: '/picks',
-    body: picksGamePage({
-      m: p.m, story: p.story, state: p.state, odds, pick, result, siblings, selfHref,
-      recapHref: p.state === 'final' ? `/games/${encodeURIComponent(gameSlug(game))}` : '',
-      isAdmin: !!req.session?.isAdmin, isPlayer: !!viewerId,
-    }),
-  }));
+  const game = resolved && getGameById(resolved.id);
+  if (!game || game.under_review) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/picks', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Game not found.</p></div>' }));
+  const played = toPickGame(game, gameYmd).played;
+  res.redirect(301, `${previewHref(game)}${played ? '#preview' : '#picks'}`);
 });
 
 app.post('/admin/games/matchup-story/regenerate', requireAuth, express.json(), async (req, res) => {

@@ -318,7 +318,7 @@ function calledItCard(s, isPlayer, { preview = true } = {}) {
         <span class="pk-called__lbl">Called it · ${s.calledIt.length}</span>
         <div class="pk-called__avs">${shown.map(p => pickAvatar(p)).join('')}${more > 0 ? `<span class="pk-av pk-av--more">+${more}</span>` : ''}</div>
       </div>` : `<div class="pk-called pk-called--none">${s.total ? 'Nobody called this one' : 'Nobody picked this game'}</div>`}
-      ${preview ? `<a href="${escHtml(previewHref(g))}" class="pk-card__prev">Pre-game preview →</a>` : ''}
+      ${preview ? `<a href="${escHtml(previewHref(g))}#preview" class="pk-card__prev">Pre-game preview →</a>` : ''}
     </article>`;
 }
 
@@ -675,4 +675,4 @@ ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript };
+export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml };

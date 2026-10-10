@@ -25,10 +25,10 @@ import { MARGIN_MAX } from '../lib/picks.js';
 // pickers: logged-in players only (Paolo, 2026-10-08: they see who picked before picking);
 // guests never get names or faces. face = { id, name, ini, color, me }
 
-// The full matchup preview for a game — /picks/<slug>. Takes a pick-shaped game ({ id, a, b })
-// or a games row.
+// The full matchup preview for a game — its own page, /games/<slug> (the old /picks/<slug>
+// redirects there). Takes a pick-shaped game ({ id, a, b }) or a games row.
 export function previewHref(g) {
-  return `/picks/${encodeURIComponent(gameSlug({ id: g.id, team_a_name: g.a ?? g.team_a_name, team_b_name: g.b ?? g.team_b_name }))}`;
+  return `/games/${encodeURIComponent(gameSlug({ id: g.id, team_a_name: g.a ?? g.team_a_name, team_b_name: g.b ?? g.team_b_name }))}`;
 }
 
 // Team colours on the tiles and the odds edge are Paolo's call (an exception to "team colours
