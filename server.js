@@ -38,7 +38,7 @@ import { standingsPage } from './views/standings.js';
 import { playoffsPage, computeSeeds, pairKey } from './views/playoffs.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
-import { playerPage } from './views/player.js';
+import { playerPage, playerPageV2 } from './views/player.js';
 import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage, rulesPage } from './views/legal.js';
@@ -229,6 +229,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 const CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/styles.css')).mtimeMs); } catch { return Date.now(); } })();
+// The new player profile's own stylesheet (profile_v2_enabled), versioned the same way.
+const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 
 // Minified once at process start (same lifecycle as CSS_VER — both only change on a
 // restart, which is also the only time the underlying file can change anyway) rather than
@@ -522,7 +524,9 @@ function buildPostOgTags(req, post) {
   return tags.join('\n  ');
 }
 
-function buildPlayerOgTags(req, player, totals) {
+// card: the new profile share image (/og/player/:id.png, behind profile_v2_enabled) instead
+// of the bare photo. Versioned by day + photo so crawlers re-fetch when stats or the photo change.
+function buildPlayerOgTags(req, player, totals, { card = false } = {}) {
   const origin  = getRequestOrigin(req);
   const name    = displayPlayerName(player.name);
   const team    = String(player.team_name || '').toUpperCase();
@@ -533,7 +537,9 @@ function buildPlayerOgTags(req, player, totals) {
   const photoVer = hasPhoto
     ? createHash('sha1').update(player.picture_url.slice(0, 256)).digest('hex').slice(0, 8)
     : '0';
-  const img = hasPhoto ? `${origin}/api/player/${encodeURIComponent(player.id)}/photo?v=${photoVer}` : null;
+  const img = card
+    ? `${origin}/og/player/${encodeURIComponent(player.id)}.png?v=${ogDayStamp()}${photoVer}`
+    : hasPhoto ? `${origin}/api/player/${encodeURIComponent(player.id)}/photo?v=${photoVer}` : null;
 
   let positions = [];
   try { positions = JSON.parse(player.positions || '[]'); } catch {}
@@ -573,11 +579,12 @@ function buildPlayerOgTags(req, player, totals) {
       `<meta property="og:image" content="${escAttr(img)}">`,
       `<meta property="og:image:secure_url" content="${escAttr(img)}">`,
       `<meta property="og:image:alt" content="${escAttr(name)}">`,
+      ...(card ? ['<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">'] : []),
     );
   }
 
   tags.push(
-    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:card" content="${card ? 'summary_large_image' : 'summary'}">`,
     `<meta name="twitter:title" content="${escAttr(name + ' — WKND Basketball')}">`,
     `<meta name="twitter:description" content="${escAttr(desc)}">`,
   );
@@ -1621,6 +1628,7 @@ function getFeatureFlags() {
     marketplace: getSetting('marketplace_enabled', '0') === '1',
     megaMenu: getSetting('mega_menu_enabled', '0') === '1',
     picks: getSetting('picks_enabled', '1') !== '0',
+    profileV2: getSetting('profile_v2_enabled', '0') === '1',
   };
 }
 
@@ -4866,6 +4874,147 @@ app.get('/og/:key.png', async (req, res) => {
   } catch (err) { console.error(`og card (${key}) error:`, err); res.status(500).end(); }
 });
 
+// Seasons a player won the title: the team that won 2+ Finals games that season (the same
+// rule as the /playoffs share card) and the player played a Finals game for that team.
+function playerChampionSeasons(playerId, gameLogs) {
+  const wins = {}, champ = {};
+  for (const g of getAllGames()) {
+    if (g.game_type !== 'finals' || !isPlayedGame(g)) continue;
+    const w = String(Number(g.team_a_score) > Number(g.team_b_score) ? g.team_a_name : g.team_b_name).toUpperCase();
+    const k = `${g.season}|${w}`;
+    wins[k] = (wins[k] || 0) + 1;
+    if (wins[k] >= 2) champ[String(g.season)] = w;
+  }
+  const out = new Set();
+  for (const g of gameLogs || []) {
+    if (g.game_type !== 'finals' || g.status !== 'played') continue;
+    const mine = String(g.player_team_id === g.team_a_id ? g.team_a_name : g.team_b_name).toUpperCase();
+    if (champ[String(g.season)] === mine) out.add(Number(g.season));
+  }
+  return [...out].sort((a, b) => b - a);
+}
+
+// ── Player profile share card (profile_v2_enabled) ────────────────────────────────
+// "Card C": italic all-caps name, team/number/position/champion chips and a four-stat
+// career strip over the brand background. With a profile photo, the photo sits faded and
+// mostly grey on the right (Paolo, 2026-10-10: "make it subtle"); without one, the jersey
+// number is a huge faint watermark there instead. Photos are small squares (~400px), so the
+// photo stays a 640px panel on the right — never full-bleed, where it would turn soft.
+function playerOgSpec(player) {
+  const statsByType = getPlayerStatsByType(player.id);
+  const seasons = statsByType?.seasons || [];
+  const regular = seasons.filter(r => r.game_type === 'regular');
+  const sum = k => regular.reduce((t, r) => t + Number(r[k] || 0), 0);
+  const regGp = sum('games_played');
+  const latest = [...regular].sort((a, b) => Number(b.season) - Number(a.season))[0];
+  const highs = getPlayerCareerHighs(player.id) || {};
+  const champs = playerChampionSeasons(player.id, getPlayerGameLog(player.id));
+  let positions = [];
+  try { positions = JSON.parse(player.positions || '[]'); } catch {}
+  return {
+    name: displayPlayerName(player.name),
+    team: String(player.team_name || '').toUpperCase(),
+    number: player.number != null && player.number !== '' ? String(player.number) : '',
+    positions,
+    champ: champs.length ? (champs.length > 1 ? `${champs.length}× CHAMPION` : `S${champs[0]} CHAMPION`) : '',
+    stats: [
+      { v: String(statsByType?.career?.games_played || 0), l: 'GAMES PLAYED' },
+      { v: regGp ? (sum('pts') / regGp).toFixed(1) : '—', l: 'REG. SEASON PPG' },
+      { v: highs.pts != null ? String(highs.pts) : '—', l: 'CAREER HIGH' },
+      { v: latest?.games_played ? (latest.pts / latest.games_played).toFixed(1) : '—', l: latest ? `S${latest.season} PPG` : 'THIS SEASON' },
+    ],
+  };
+}
+
+function buildPlayerOgSvg(spec, hasPhoto) {
+  const tc = ogTeamColor(spec.team);
+  const name = spec.name.toUpperCase();
+  const chips = [
+    spec.team ? { text: spec.team, dot: tc, fill: 'rgba(215,220,229,0.12)', color: '#e7eaf0' } : null,
+    spec.number ? { text: `#${spec.number}`, fill: '#161c29', color: '#b4bbc8' } : null,
+    spec.positions.length ? { text: spec.positions.join(' · '), fill: '#161c29', color: '#b4bbc8' } : null,
+    spec.champ ? { text: spec.champ, trophy: true, fill: 'rgba(245,147,50,0.16)', color: '#f59332' } : null,
+  ].filter(Boolean);
+  let cx = 72;
+  const chipSvg = chips.map(c => {
+    const textW = Math.round([...c.text].reduce((w, ch) => w + (/[ilI1.,·\s]/.test(ch) ? 0.45 : 1), 0) * 20 * 0.68 + c.text.length * 2);
+    const lead = c.dot || c.trophy ? 26 : 0;
+    const w = 36 + lead + textW;
+    const x = cx; cx += w + 12;
+    const icon = c.dot
+      ? `<circle cx="${x + 26}" cy="345" r="7" fill="${c.dot}"/>`
+      : c.trophy ? `<g transform="translate(${x + 16} 335) scale(0.85)" fill="none" stroke="${c.color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></g>` : '';
+    return `<rect x="${x}" y="326" width="${w}" height="38" rx="19" fill="${c.fill}"/>${icon}
+  <text x="${x + 18 + lead}" y="352" font-family="${OG_TEXT}" font-size="20" font-weight="800" letter-spacing="2" fill="${c.color}">${escXml(c.text)}</text>`;
+  }).join('\n  ');
+  const stats = spec.stats.map((s, i) => {
+    const x = 72 + i * 264;
+    return `<text x="${x}" y="496" font-family="${OG_NUM}" font-size="52" font-weight="700" fill="#ffffff">${escXml(s.v)}</text>
+  <text x="${x}" y="522" font-family="${OG_TEXT}" font-size="13" font-weight="800" letter-spacing="3" fill="#8a93a4">${escXml(s.l)}</text>`;
+  }).join('\n  ');
+  return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="pgGlare" cx="0%" cy="0%" r="75%"><stop offset="0%" stop-color="#f59332" stop-opacity="0.16"/><stop offset="100%" stop-color="#f59332" stop-opacity="0"/></radialGradient>
+    <radialGradient id="pgTeam" cx="100%" cy="100%" r="70%"><stop offset="0%" stop-color="${tc}" stop-opacity="0.14"/><stop offset="100%" stop-color="${tc}" stop-opacity="0"/></radialGradient>
+    <linearGradient id="pgFloor" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" stop-color="#0a0e16" stop-opacity="1"/><stop offset="26%" stop-color="#0a0e16" stop-opacity="0.75"/><stop offset="55%" stop-color="#0a0e16" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#pgTeam)"/>
+  <rect width="1200" height="630" fill="url(#pgFloor)"/>
+  <rect width="1200" height="630" fill="url(#pgGlare)"/>
+  ${!hasPhoto && spec.number ? `<text x="1150" y="580" text-anchor="end" font-family="${OG_NUM}" font-size="700" font-weight="800" fill="#ffffff" fill-opacity="0.05">${escXml(spec.number)}</text>` : ''}
+  ${ogWordmark(72, 104, 46)}
+  <text x="72" y="196" font-family="${OG_TEXT}" font-size="17" font-weight="800" letter-spacing="4" fill="#f59332">${escXml(`PLAYER PROFILE${spec.team ? ` · ${spec.team}` : ''}`)}</text>
+  <text x="70" y="290" font-family="${OG_TEXT}" font-size="88" font-weight="900" font-style="italic" letter-spacing="-3" fill="#ffffff"${ogFit(name, 88, 1056, 0.7)}>${escXml(name)}</text>
+  ${chipSvg}
+  <rect x="72" y="430" width="1056" height="1" fill="#ffffff" fill-opacity="0.1"/>
+  ${stats}
+  <circle cx="81" cy="573" r="9" fill="#f59332"/>
+  <text x="100" y="580" font-family="${OG_TEXT}" font-size="18" font-weight="700" letter-spacing="2" fill="#8a93a4">WKNDBASKETBALL.COM</text>
+</svg>`;
+}
+
+const _playerOgCache = new Map();
+async function renderPlayerOgPng(player) {
+  const key = `${player.id}:${ogDayStamp()}:${String(player.picture_url || '').length}`;
+  const hit = _playerOgCache.get(key);
+  if (hit && Date.now() - hit.at < PAGE_OG_TTL_MS) return hit.buf;
+  const W = 1200, H = 630, PW = 640;
+  let photo = null;
+  if (player.picture_url) {
+    try {
+      const src = await fetchCoverImageBuffer(player.picture_url);
+      if (src) {
+        // Fade-in mask: transparent on the left, up to 28% opacity on the right.
+        const mask = Buffer.from(`<svg width="${PW}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="m" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#fff" stop-opacity="0"/><stop offset="30%" stop-color="#fff" stop-opacity="0.17"/><stop offset="60%" stop-color="#fff" stop-opacity="0.28"/></linearGradient></defs><rect width="${PW}" height="${H}" fill="url(#m)"/></svg>`);
+        photo = await sharp(src).rotate()
+          .resize(PW, H, { fit: 'cover', position: 'attention' })
+          .modulate({ brightness: 0.8, saturation: 0.15 })
+          .ensureAlpha()
+          .composite([{ input: mask, blend: 'dest-in' }])
+          .png().toBuffer();
+      }
+    } catch (err) { console.error('player og photo failed:', err.message); }
+  }
+  const overlay = await sharp(Buffer.from(buildPlayerOgSvg(playerOgSpec(player), !!photo)), { density: 96 }).resize(W, H).png().toBuffer();
+  const layers = [...(photo ? [{ input: photo, top: 0, left: W - PW }] : []), { input: overlay, top: 0, left: 0 }];
+  const buf = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 10, g: 14, b: 22 } } })
+    .composite(layers).png({ compressionLevel: 9 }).toBuffer();
+  if (_playerOgCache.size > 300) _playerOgCache.clear();
+  _playerOgCache.set(key, { buf, at: Date.now() });
+  return buf;
+}
+
+app.get('/og/player/:id.png', async (req, res) => {
+  const player = getPlayerWithTeam(String(req.params.id || ''));
+  if (!player) return res.status(404).end();
+  try {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=600');
+    res.end(await renderPlayerOgPng(player));
+  } catch (err) { console.error(`player og card (${player.id}) error:`, err); res.status(500).end(); }
+});
+
+
 app.get('/api/papawis/og-image.png', async (req, res) => {
   try {
     res.set('Content-Type', 'image/png');
@@ -6585,6 +6734,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
       megaMenuEnabled: getSetting('mega_menu_enabled', '0') === '1',
+      profileV2Enabled: getSetting('profile_v2_enabled', '0') === '1',
       picksEnabled: picksEnabled(),
       pickOddsEnabled: pickOddsEnabled(),
       picksCloseTime: picksCloseTime(),
@@ -6598,7 +6748,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
-    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
+    'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves', 'profile_v2_enabled',
     'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
@@ -11642,7 +11792,8 @@ app.get('/players/:ref', async (req, res) => {
     title: 'Not Found', currentPath: '/players',
     body: comingSoonPage({ label: 'Player Not Found', description: 'This player could not be found.' })
   }));
-  if (resolved.slug) return res.redirect(302, `/players/${resolved.slug}`);
+  // Keep the query string (e.g. ?view=public) across the id → slug redirect.
+  if (resolved.slug) return res.redirect(302, `/players/${resolved.slug}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
 
   const player      = getPlayerWithTeam(resolved.id);
   if (!player) return res.status(404).send(renderPage(req, {
@@ -11785,6 +11936,30 @@ app.get('/players/:ref', async (req, res) => {
         ranked: sp.board.rows.length, minPicks: sp.board.minPicks, own,
       };
     }
+  }
+
+  if (getFeatureFlags().profileV2) {
+    const papawisEmailsOn = isOwnProfile && req.session?.playerRegId ? !getRegistration(req.session.playerRegId)?.papawis_email_optout : null;
+    const minDeposit = isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null;
+    return res.send(renderPage(req, {
+      title: `${displayName} — WKND Basketball`,
+      currentPath: '/players',
+      isOwnProfile,
+      metaTags: `${buildPlayerOgTags(req, player, totals, { card: true })}\n  <link rel="stylesheet" href="/profile.css?v=${PROFILE_CSS_VER}">`,
+      body: playerPageV2({
+        player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord,
+        isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
+        champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
+        balanceAmount, balanceTransactions: isOwnProfile && balanceAmount > 0 ? balanceTransactions : [], papawisGames, coachNote, latestPoll, papawisEmailsOn,
+        // Same "already covered by credit" rule as the old profile's probation card.
+        papawisProbation: isOwnProfile && !!player.papawis_probation && !(minDeposit != null && papawisBalance <= -minDeposit),
+        peerRatingsEnabled: getFeatureFlags().peerRatings,
+        peerRatingSummary, peerRatingsFeed, canRate,
+        viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
+        canReport, reportCategories: canReport ? getReportableFineCategories() : [],
+        reportOtherCategoryId: canReport ? (getOtherFineCategory()?.id || '') : '',
+      }),
+    }));
   }
 
   res.send(renderPage(req, {

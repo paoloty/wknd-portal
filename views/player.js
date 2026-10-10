@@ -7,6 +7,7 @@ import { BADGE_ICONS } from '../lib/badges.js';
 import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime } from './pick-box.js';
 import { resultChips } from './picks-widget.js';
 import { fmtPts } from '../lib/picks.js';
+import { gameSlug } from '../lib/slugs.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -23,39 +24,24 @@ function parsePositions(raw) {
   try { return JSON.parse(raw || '[]'); } catch { return []; }
 }
 
-// ── Hero ──────────────────────────────────────────────────────────────────────
-function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canReport = false, reportCategories = [], reportOtherCategoryId = '') {
-  const teamName  = String(player.team_name || '').toUpperCase();
-  const color     = teamColor(teamName);
-  const isLight   = teamName === 'WHITE';
-  const positions = parsePositions(player.positions);
-  const bio       = String(player.writeup || '').trim();
-
-  // ── Left column: identity ──────────────────────────────────────────────────
-  const metaParts = [
-    player.number ? `<span class="player-hero__number">#${escHtml(String(player.number))}</span>` : '',
-    positions.length ? `<span class="player-hero__pos">${escHtml(positions.join(' · '))}</span>` : '',
-    `<span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>`,
-  ].filter(Boolean).join('');
-
-  const avatarInits = initials(player.name);
-  // Own-profile players get the same replace-photo affordance admins already had — the
-  // only thing that changes below is which endpoint the crop/save script posts to
-  // (see canEditPhoto/uploadScript).
-  const canEditPhoto = isAdmin || isOwnProfile;
-  const uploadOverlay = canEditPhoto ? `
+// ── Hero building blocks (shared by the old and new profile) ────────────────────
+// Camera button over the avatar — own profile or admin. Pairs with photoUploadScript.
+function photoUploadOverlay() {
+  return `
     <label class="player-avatar-replace" id="pcp-label" title="Replace photo">
       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
         <circle cx="12" cy="13" r="4"/>
       </svg>
       <input type="file" id="pcp-file" accept="image/*" style="display:none">
-    </label>` : '';
+    </label>`;
+}
 
-  // Everyone else (including logged-out visitors) just gets a click-to-enlarge lightbox —
-  // same avatar image, same "has a photo → pointer cursor" affordance as the edit path, but
-  // no crop tool, no file input, nothing that implies they can change it.
-  const viewLightbox = canEditPhoto ? '' : `
+// Everyone else (including logged-out visitors) just gets a click-to-enlarge lightbox —
+// same avatar image, same "has a photo → pointer cursor" affordance as the edit path, but
+// no crop tool, no file input, nothing that implies they can change it.
+function photoLightbox() {
+  return `
 <div class="pcp-backdrop" id="pv-backdrop" hidden>
   <div class="pcp-modal" style="max-width:420px">
     <div class="pcp-modal__header">
@@ -97,65 +83,12 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
 })();
 </script>`;
+}
 
-  const leftCol = `<div class="player-hero__left">
-    <div class="player-hero__avatar-wrap">
-      <div class="player-hero__avatar" style="border-color:${color}">
-        <span>${escHtml(avatarInits)}</span>
-        <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
-      </div>
-      ${uploadOverlay}
-      ${viewLightbox}
-    </div>
-    <div class="player-hero__info">
-      <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
-      <div class="player-hero__meta">${metaParts}</div>
-      ${isOwnProfile ? `
-      <div class="player-hero__bio-label">Intro</div>
-      <div class="player-hero__bio-block" id="bio-block">
-        <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you.">${escHtml(bio)}</textarea>
-        <button type="button" class="player-hero__bio-edit-btn" id="bio-edit-btn" aria-label="Edit intro" title="Edit intro">✎</button>
-        <div class="player-hero__bio-actions" id="bio-actions" hidden>
-          <button type="button" class="player-hero__bio-icon-btn" id="bio-cancel" aria-label="Cancel" title="Cancel">✕</button>
-          <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
-        </div>
-      </div>` : (bio ? `<div class="player-hero__bio-label">Intro</div><p class="player-hero__bio">${escHtml(bio)}</p>` : '')}
-      ${canReport ? reportPlayerSection(player, reportCategories, reportOtherCategoryId) : ''}
-    </div>
-  </div>`;
-
-  // ── Right column: career averages ──────────────────────────────────────────
-  const gp = totals?.games_played || 0;
-  const fga  = (totals?.fg2m || 0) + (totals?.fg3m || 0) + (totals?.fg4m || 0) + (totals?.fg2m_miss || 0) + (totals?.fg3m_miss || 0) + (totals?.fg4m_miss || 0);
-  const tpa  = (totals?.fg3m || 0) + (totals?.fg3m_miss || 0);
-  const qpa  = (totals?.fg4m || 0) + (totals?.fg4m_miss || 0);
-  const fta  = (totals?.ftm || 0) + (totals?.ft_miss || 0);
-  const caStats = gp ? [
-    { lbl: 'PPG', val: avg(totals.pts, gp) },
-    { lbl: 'RPG', val: avg(totals.reb, gp) },
-    { lbl: 'APG', val: avg(totals.ast, gp) },
-    { lbl: 'SPG', val: avg(totals.stl, gp) },
-    { lbl: 'BPG', val: avg(totals.blk, gp) },
-    ...(fga  >= 10 ? [{ lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0) + (totals.fg4m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0) + (totals.fg4m_miss || 0)) }] : []),
-    ...(tpa  >= 5  ? [{ lbl: '3P%', val: pct(totals.fg3m, totals.fg3m_miss) }] : []),
-    ...(qpa  >= 1  ? [{ lbl: '4P%', val: pct(totals.fg4m || 0, totals.fg4m_miss || 0) }] : []),
-    ...(fta  >= 5  ? [{ lbl: 'FT%', val: pct(totals.ftm, totals.ft_miss) }] : []),
-  ].filter(s => s.val !== '0.0' && s.val !== '0%' && s.val !== '—').slice(0, 8) : [];
-
-  const rightCol = `<div class="player-hero__right">
-    ${player.number ? `<span class="player-hero__num-bg" aria-hidden="true">${escHtml(String(player.number))}</span>` : ''}
-    <div class="ca-label">CAREER AVERAGES</div>
-    ${caStats.length
-      ? `<div class="ca-grid" style="--ca-count:${caStats.length}">
-          ${caStats.map(s => `<div class="ca-item">
-            <span class="ca-item__val">${escHtml(String(s.val))}</span>
-            <span class="ca-item__lbl">${s.lbl}</span>
-          </div>`).join('')}
-        </div>`
-      : `<p class="player-hero__no-stats">No games recorded yet.</p>`}
-  </div>`;
-
-  const uploadScript = canEditPhoto ? `
+// Crop-and-save flow behind the camera button. Admins post to the admin endpoint, a player
+// on their own profile to /me/photo.
+function photoUploadScript(player, isAdmin) {
+  return `
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
 
 <div class="pcp-backdrop" id="pcp-backdrop" hidden>
@@ -304,9 +237,12 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
     });
   });
 })();
-<\/script>` : '';
+<\/script>`;
+}
 
-  const bioEditScript = isOwnProfile ? `
+// Inline intro editor (#bio-input / #bio-edit-btn / #bio-actions) → POST /me/writeup.
+function bioEditorScript() {
+  return `
 <script>
 (function() {
   var input     = document.getElementById('bio-input');
@@ -373,7 +309,96 @@ function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canR
 
   autoGrow();
 })();
-<\/script>` : '';
+<\/script>`;
+}
+
+// ── Hero ──────────────────────────────────────────────────────────────────────
+function heroSection(player, totals, isAdmin = false, isOwnProfile = false, canReport = false, reportCategories = [], reportOtherCategoryId = '') {
+  const teamName  = String(player.team_name || '').toUpperCase();
+  const color     = teamColor(teamName);
+  const isLight   = teamName === 'WHITE';
+  const positions = parsePositions(player.positions);
+  const bio       = String(player.writeup || '').trim();
+
+  // ── Left column: identity ──────────────────────────────────────────────────
+  const metaParts = [
+    player.number ? `<span class="player-hero__number">#${escHtml(String(player.number))}</span>` : '',
+    positions.length ? `<span class="player-hero__pos">${escHtml(positions.join(' · '))}</span>` : '',
+    `<span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>`,
+  ].filter(Boolean).join('');
+
+  const avatarInits = initials(player.name);
+  // Own-profile players get the same replace-photo affordance admins already had — the
+  // only thing that changes below is which endpoint the crop/save script posts to
+  // (see canEditPhoto/uploadScript).
+  const canEditPhoto = isAdmin || isOwnProfile;
+  const uploadOverlay = canEditPhoto ? photoUploadOverlay() : '';
+
+  // Everyone else (including logged-out visitors) just gets a click-to-enlarge lightbox —
+  // same avatar image, same "has a photo → pointer cursor" affordance as the edit path, but
+  // no crop tool, no file input, nothing that implies they can change it.
+  const viewLightbox = canEditPhoto ? '' : photoLightbox();
+
+  const leftCol = `<div class="player-hero__left">
+    <div class="player-hero__avatar-wrap">
+      <div class="player-hero__avatar" style="border-color:${color}">
+        <span>${escHtml(avatarInits)}</span>
+        <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+      </div>
+      ${uploadOverlay}
+      ${viewLightbox}
+    </div>
+    <div class="player-hero__info">
+      <h1 class="player-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
+      <div class="player-hero__meta">${metaParts}</div>
+      ${isOwnProfile ? `
+      <div class="player-hero__bio-label">Intro</div>
+      <div class="player-hero__bio-block" id="bio-block">
+        <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you.">${escHtml(bio)}</textarea>
+        <button type="button" class="player-hero__bio-edit-btn" id="bio-edit-btn" aria-label="Edit intro" title="Edit intro">✎</button>
+        <div class="player-hero__bio-actions" id="bio-actions" hidden>
+          <button type="button" class="player-hero__bio-icon-btn" id="bio-cancel" aria-label="Cancel" title="Cancel">✕</button>
+          <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
+        </div>
+      </div>` : (bio ? `<div class="player-hero__bio-label">Intro</div><p class="player-hero__bio">${escHtml(bio)}</p>` : '')}
+      ${canReport ? reportPlayerSection(player, reportCategories, reportOtherCategoryId) : ''}
+    </div>
+  </div>`;
+
+  // ── Right column: career averages ──────────────────────────────────────────
+  const gp = totals?.games_played || 0;
+  const fga  = (totals?.fg2m || 0) + (totals?.fg3m || 0) + (totals?.fg4m || 0) + (totals?.fg2m_miss || 0) + (totals?.fg3m_miss || 0) + (totals?.fg4m_miss || 0);
+  const tpa  = (totals?.fg3m || 0) + (totals?.fg3m_miss || 0);
+  const qpa  = (totals?.fg4m || 0) + (totals?.fg4m_miss || 0);
+  const fta  = (totals?.ftm || 0) + (totals?.ft_miss || 0);
+  const caStats = gp ? [
+    { lbl: 'PPG', val: avg(totals.pts, gp) },
+    { lbl: 'RPG', val: avg(totals.reb, gp) },
+    { lbl: 'APG', val: avg(totals.ast, gp) },
+    { lbl: 'SPG', val: avg(totals.stl, gp) },
+    { lbl: 'BPG', val: avg(totals.blk, gp) },
+    ...(fga  >= 10 ? [{ lbl: 'FG%', val: pct((totals.fg2m || 0) + (totals.fg3m || 0) + (totals.fg4m || 0), (totals.fg2m_miss || 0) + (totals.fg3m_miss || 0) + (totals.fg4m_miss || 0)) }] : []),
+    ...(tpa  >= 5  ? [{ lbl: '3P%', val: pct(totals.fg3m, totals.fg3m_miss) }] : []),
+    ...(qpa  >= 1  ? [{ lbl: '4P%', val: pct(totals.fg4m || 0, totals.fg4m_miss || 0) }] : []),
+    ...(fta  >= 5  ? [{ lbl: 'FT%', val: pct(totals.ftm, totals.ft_miss) }] : []),
+  ].filter(s => s.val !== '0.0' && s.val !== '0%' && s.val !== '—').slice(0, 8) : [];
+
+  const rightCol = `<div class="player-hero__right">
+    ${player.number ? `<span class="player-hero__num-bg" aria-hidden="true">${escHtml(String(player.number))}</span>` : ''}
+    <div class="ca-label">CAREER AVERAGES</div>
+    ${caStats.length
+      ? `<div class="ca-grid" style="--ca-count:${caStats.length}">
+          ${caStats.map(s => `<div class="ca-item">
+            <span class="ca-item__val">${escHtml(String(s.val))}</span>
+            <span class="ca-item__lbl">${s.lbl}</span>
+          </div>`).join('')}
+        </div>`
+      : `<p class="player-hero__no-stats">No games recorded yet.</p>`}
+  </div>`;
+
+  const uploadScript = canEditPhoto ? photoUploadScript(player, isAdmin) : '';
+
+  const bioEditScript = isOwnProfile ? bioEditorScript() : '';
 
   return `<div class="card player-hero" style="--ph-color:${color}">
   <div class="player-hero__grid">
@@ -1679,5 +1704,433 @@ ${coachNoteHtml}
     ${awardsSection(awards)}
     ${potgWriteups(potgGames, player)}
   </div>
+</div>`;
+}
+
+// ══ Player profile v2 (profile_v2_enabled) ═══════════════════════════════════════
+// One page, two audiences (mockup: claude.ai/artifact/Uyy7ZMQyfrfpGxQVMZkgLT):
+//   own     — "My Profile": sections ordered by what a player logs in to do. Today (stat
+//             tiles for anything needing action) → This week (pick cards + Papawis) → My
+//             season → Badges → Community → Career → Account & settings.
+//   public  — what everyone else sees: hero, this season's averages vs career, recent games,
+//             badges, community, career. Also what the owner sees with ?view=public.
+// Built from the same pieces as the old profile (photo crop, intro editor, report flow,
+// rating card, badges, stats table, game log, wallet, poll, pick cards), so their behaviour
+// is unchanged. Styles: public/profile.css (prf- prefix). Delete playerPage() and its
+// v1-only helpers once the flag is retired.
+
+const PRF_ICON = {
+  share: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
+  eye: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  star: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.3 12 2"/></svg>',
+  trophy: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>',
+  due: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v6"/><path d="M12 17h.01"/></svg>',
+  ok: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+  play: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+  google: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.2c0-.7-.1-1.3-.2-1.9H12v3.6h5a4.3 4.3 0 0 1-1.9 2.8v2.3h3A9 9 0 0 0 21 12.2z"/><path d="M12 21a8.9 8.9 0 0 0 6.1-2.3l-3-2.3a5.6 5.6 0 0 1-8.3-2.9H3.7v2.4A9 9 0 0 0 12 21z"/><path d="M6.8 13.5a5.4 5.4 0 0 1 0-3.4V7.7H3.7a9 9 0 0 0 0 8.2z"/><path d="M12 6.6c1.4 0 2.6.5 3.6 1.4l2.7-2.7A9 9 0 0 0 3.7 7.7l3.1 2.4A5.4 5.4 0 0 1 12 6.6z"/></svg>',
+};
+
+const prfPeso = n => `₱${Number(n).toLocaleString()}`;
+const prfFg = r => {
+  const m = (r.fg2m || 0) + (r.fg3m || 0) + (r.fg4m || 0);
+  return { m, a: m + (r.fg2m_miss || 0) + (r.fg3m_miss || 0) + (r.fg4m_miss || 0) };
+};
+const prfDay = ymd => (ymd ? new Date(`${String(ymd).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+const prfWeekday = ymd => (ymd ? new Date(`${String(ymd).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' }) : '');
+
+// Regular-season rows only, newest first — "this season" and the career comparison are
+// both regular season, so a Finals run doesn't inflate (or sink) the headline numbers.
+function prfRegular(statsByType) {
+  return (statsByType?.seasons || []).filter(r => r.game_type === 'regular')
+    .sort((a, b) => Number(b.season) - Number(a.season));
+}
+function prfLine(rows) {
+  const sum = k => rows.reduce((t, r) => t + Number(r[k] || 0), 0);
+  const gp = sum('games_played');
+  if (!gp) return null;
+  const fg = rows.reduce((t, r) => { const x = prfFg(r); return { m: t.m + x.m, a: t.a + x.a }; }, { m: 0, a: 0 });
+  return {
+    gp, ppg: (sum('pts') / gp).toFixed(1), rpg: (sum('reb') / gp).toFixed(1), apg: (sum('ast') / gp).toFixed(1),
+    fgm: fg.m, fga: fg.a, fgPct: fg.a ? ((fg.m / fg.a) * 100).toFixed(1) : null,
+  };
+}
+
+// One game-log row, from this player's side.
+function prfGame(g) {
+  const isA = g.player_team_id === g.team_a_id;
+  const my = Number(isA ? g.team_a_score : g.team_b_score);
+  const op = Number(isA ? g.team_b_score : g.team_a_score);
+  return { opp: String((isA ? g.team_b_name : g.team_a_name) || '').toUpperCase(), won: my > op, my, op, fg: prfFg(g) };
+}
+
+function prfSection(id, title, { sub = '', link = '', body = '' } = {}) {
+  if (!body) return '';
+  return `<section class="prf-sec" id="${id}" aria-labelledby="${id}-h">
+  <div class="section-header"><h2 id="${id}-h">${title}${sub ? ` <span class="section-header__sub">${sub}</span>` : ''}</h2>${link}</div>
+  ${body}
+</section>`;
+}
+const prfLink = (href, text) => `<a href="${escHtml(href)}" class="section-header__link">${text} <span>&rarr;</span></a>`;
+
+function prfTile({ label, chip = null, value, small = '', segs = null, sub = '', cta = null }) {
+  const due = chip?.kind === 'due';
+  return `<div class="card prf-kpi${due ? ' prf-kpi--due' : ''}">
+    <div class="card-label"><span>${escHtml(label)}</span>${chip ? `<span class="prf-stat prf-stat--${chip.kind}">${PRF_ICON[chip.kind]}${escHtml(chip.text)}</span>` : ''}</div>
+    <div class="prf-kpi__body">
+      <div class="prf-kpi__val font-condensed">${escHtml(value)}${small ? `<small>${escHtml(small)}</small>` : ''}</div>
+      ${segs ? `<div class="prf-segs" aria-label="${segs.done} of ${segs.total} picked">${Array.from({ length: segs.total }, (_, i) => `<i${i < segs.done ? ' class="on"' : ''}></i>`).join('')}</div>` : ''}
+      ${sub ? `<div class="prf-kpi__sub">${escHtml(sub)}</div>` : ''}
+    </div>
+    ${cta ? `<a href="${escHtml(cta.href)}" class="prf-kpi__cta${cta.quiet ? ' prf-kpi__cta--quiet' : ''}">${escHtml(cta.text)} <span>&rarr;</span></a>` : ''}
+  </div>`;
+}
+
+// ── Hero ──────────────────────────────────────────────────────────────────────
+function prfHero(o) {
+  const { player, editing, canEditPhoto, isAdmin, champSeasons, latestGame, canRate, peerRatingsEnabled, canReport } = o;
+  const teamName = String(player.team_name || '').toUpperCase();
+  const color = teamColor(teamName);
+  const positions = parsePositions(player.positions);
+  const bio = String(player.writeup || '').trim();
+  const champ = champSeasons.length
+    ? `<span class="prf-chip prf-chip--amber">${PRF_ICON.trophy}${champSeasons.length > 1 ? `${champSeasons.length}× champion` : `Season ${champSeasons[0]} champion`}</span>` : '';
+  const intro = editing ? `
+      <div class="player-hero__bio-block prf-hero__bio" id="bio-block">
+        <textarea class="player-hero__bio-input" id="bio-input" maxlength="500" rows="1" readonly placeholder="Add a short intro so people know a bit about you." aria-label="Your intro">${escHtml(bio)}</textarea>
+        <button type="button" class="player-hero__bio-edit-btn" id="bio-edit-btn" aria-label="Edit intro" title="Edit intro">✎</button>
+        <div class="player-hero__bio-actions" id="bio-actions" hidden>
+          <button type="button" class="player-hero__bio-icon-btn" id="bio-cancel" aria-label="Cancel" title="Cancel">✕</button>
+          <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
+        </div>
+      </div>` : (bio ? `<p class="prf-hero__quote">“${escHtml(bio)}”</p>` : '');
+  const shareHref = latestGame ? `/games/${encodeURIComponent(gameSlug(latestGame))}?share=1` : '';
+  const actions = editing
+    ? `${shareHref ? `<a class="prf-btn prf-btn--amber" href="${shareHref}">${PRF_ICON.share}Share my stats</a>` : ''}
+       <a class="prf-btn" href="?view=public">${PRF_ICON.eye}See public profile</a>`
+    : `${canRate && peerRatingsEnabled ? `<a class="prf-btn prf-btn--amber" href="#pr-rate-card">${PRF_ICON.star}Rate player</a>` : ''}
+       <button type="button" class="prf-btn" data-prf-share>${PRF_ICON.share}<span>Share</span></button>`;
+  return `<section class="prf-hero" aria-label="Player">
+  <div class="player-hero__avatar-wrap prf-hero__avatar-wrap">
+    <div class="player-hero__avatar prf-hero__avatar" style="border-color:${color}">
+      <span>${escHtml(initials(player.name))}</span>
+      <img id="player-avatar-img" src="/api/player/${encodeURIComponent(player.id)}/photo" alt="" loading="lazy" onerror="this.style.display='none'">
+    </div>
+    ${canEditPhoto ? photoUploadOverlay() : photoLightbox()}
+  </div>
+  <div class="prf-hero__info">
+    <h1 class="prf-hero__name">${escHtml(displayPlayerName(player.name))}</h1>
+    <div class="prf-hero__meta">
+      ${player.number ? `<span class="prf-hero__num font-condensed">#${escHtml(String(player.number))}</span>` : ''}
+      ${positions.length ? `<span>${escHtml(positions.join(' · '))}</span>` : ''}
+      ${teamName ? `<span class="prf-chip"><span class="team-dot" style="background:${color}"></span>${escHtml(teamName)}</span>` : ''}
+      ${champ}
+    </div>
+    ${intro}
+  </div>
+  <div class="prf-hero__actions">
+    ${actions}
+    ${canReport ? reportPlayerSection(player, o.reportCategories, o.reportOtherCategoryId) : ''}
+  </div>
+</section>
+${canEditPhoto ? photoUploadScript(player, isAdmin) : ''}
+${editing ? bioEditorScript() : ''}
+${editing ? '' : `<script>
+(function () {
+  document.querySelectorAll('[data-prf-share]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var url = location.origin + location.pathname, label = b.querySelector('span');
+      if (navigator.share) { navigator.share({ title: document.title, url: url }).catch(function () {}); return; }
+      if (navigator.clipboard) navigator.clipboard.writeText(url).then(function () {
+        label.textContent = 'Link copied'; setTimeout(function () { label.textContent = 'Share'; }, 1800);
+      });
+    });
+  });
+})();
+</script>`}`;
+}
+
+// ── Own: Today tiles ────────────────────────────────────────────────────────────
+function prfToday(o) {
+  const tiles = [];
+  let due = 0;
+  if (o.balanceAmount > 0) {
+    due++;
+    const last = o.balanceTransactions.find(t => t.type === 'charge' && t.status !== 'voided');
+    tiles.push(prfTile({ label: 'BALANCE DUE', chip: { kind: 'due', text: 'DUE' }, value: prfPeso(o.balanceAmount), sub: last?.notes ? `Latest: ${last.notes}` : 'Outstanding charges', cta: { href: '/settle-balance', text: 'Settle balance' } }));
+  }
+  if (o.papawisProbation) {
+    due++;
+    tiles.push(prfTile({ label: 'PAPAWIS DEPOSIT', chip: { kind: 'due', text: 'NEEDED' }, value: 'Hold', sub: 'You join Papawis games on the waitlist until a deposit is confirmed.', cta: { href: `/settle-balance?category=${encodeURIComponent('Papawis Deposit')}`, text: 'Submit a deposit' } }));
+  }
+  const live = (o.pickRecord?.own?.open || []).filter(g => !g.closed);
+  if (live.length) {
+    const done = live.filter(g => g.myPick).length;
+    const all = done === live.length;
+    if (!all) due++;
+    tiles.push(prfTile({ label: `${prfWeekday(live[0].ymd).toUpperCase()} PICKS`, chip: all ? { kind: 'ok', text: 'ALL IN' } : { kind: 'due', text: 'OPEN' }, value: String(done), small: `/${live.length}`, segs: { done, total: live.length }, sub: `Closes ${prfWeekday(live[0].ymd)} ${fmtCloseTime(o.pickRecord.own.closeTime)}`, cta: { href: '#this-week', text: all ? 'Change picks' : 'Pick now', quiet: all } }));
+  }
+  const poll = o.latestPoll;
+  if (poll && poll.status === 'open' && poll.canVote && !poll.myVote) {
+    due++;
+    tiles.push(prfTile({ label: 'POLLS', chip: { kind: 'due', text: 'NEW' }, value: '1', sub: truncate(String(poll.question || ''), 70), cta: { href: `/polls#poll-${poll.id}`, text: 'Vote' } }));
+  }
+  const next = o.papawisGames
+    .filter(g => g.status !== 'completed' && g.status !== 'cancelled' && String(g.date || '') >= o.todayYmd)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
+  if (next) {
+    tiles.push(prfTile({ label: 'NEXT PAPAWIS', chip: next.any_confirmed ? { kind: 'ok', text: 'IN' } : { kind: 'due', text: 'WAITLIST' }, value: prfDay(next.date), sub: [prfWeekday(next.date), next.any_confirmed ? 'Confirmed' : 'Waitlist', next.title].filter(Boolean).join(' · '), cta: { href: '/papawis', text: 'View', quiet: true } }));
+  }
+  const body = tiles.length
+    ? `<div class="prf-kpis">${tiles.join('')}</div>`
+    : `<p class="prf-note">You're all caught up — nothing needs you right now.</p>`;
+  return prfSection('today', 'Today', { sub: due ? `${due} need${due === 1 ? 's' : ''} action` : '', body });
+}
+
+// ── Own: This week (pick cards + Papawis) ──────────────────────────────────────
+function prfThisWeek(o) {
+  const own = o.pickRecord?.own;
+  const open = own?.open || [];
+  const papawis = o.papawisGames.slice(0, 4);
+  if (!open.length && !papawis.length) return '';
+  const note = open.length && o.pickRecord && !o.pickRecord.settled
+    ? '<p class="prf-note">Your first picks settle after the final. Every settled pick counts toward the Pickmaster race.</p>' : '';
+  const sub = open.length
+    ? `${escHtml(prfWeekday(open[0].ymd))}, ${escHtml(prfDay(open[0].ymd))} game day${open.every(g => g.closed) ? ' · picks closed' : ` · picks close ${escHtml(fmtCloseTime(own.closeTime))}`}` : '';
+  const body = `${note}<div class="prf-week">
+    ${open.map(g => `<div class="prf-week__pick">${openPickCard(g, { isPlayer: true, next: '/me', size: 'sm' })}</div>`).join('')}
+    ${papawis.length ? myProfileSidebar({ papawisGames: papawis }) : ''}
+  </div>${open.length ? pickBoxScript() : ''}`;
+  return prfSection('this-week', 'This week', { sub, link: o.picksOn ? prfLink('/picks', 'Pickmaster race') : '', body });
+}
+
+// ── Season averages / last games ────────────────────────────────────────────────
+function prfSeasonCard(o, season, line, games) {
+  const rows = games.map(g => {
+    const x = prfGame(g);
+    const share = `/games/${encodeURIComponent(gameSlug(g))}?share=1`;
+    return `<tr>
+      <td><a href="/games/${encodeURIComponent(gameSlug(g))}" class="prf-table__game">${escHtml(prfDay(g.date))} · <span class="team-dot" style="background:${teamColor(x.opp)}"></span>${escHtml(tcase(x.opp))}</a></td>
+      <td class="prf-table__res">${x.won ? 'W' : 'L'} ${x.my}–${x.op}</td>
+      <td class="font-condensed">${g.pts ?? 0}</td><td class="font-condensed">${g.reb ?? 0}</td><td class="font-condensed">${g.ast ?? 0}</td>
+      <td class="prf-table__act"><a class="prf-share-btn" href="${share}" aria-label="Share my ${escHtml(prfDay(g.date))} stats vs ${escHtml(tcase(x.opp))}" title="Share my stats">${PRF_ICON.share}</a></td>
+    </tr>`;
+  }).join('');
+  const stat = (v, l) => `<div><div class="prf-big font-condensed">${escHtml(v)}</div><div class="prf-k">${l}</div></div>`;
+  return `<div class="card">
+    <div class="card-label"><span>SEASON ${escHtml(String(season))} AVERAGES</span><span class="card-label__count">${line.gp} GP</span></div>
+    <div class="prf-body">
+      <div class="prf-avgs">${stat(line.ppg, 'PPG')}${stat(line.rpg, 'RPG')}${stat(line.apg, 'APG')}${stat(line.fgPct != null ? `${Math.round(line.fgPct)}%` : '—', 'FG')}</div>
+      ${rows ? `<div class="prf-table-wrap"><table class="prf-table">
+        <thead><tr><th>Last ${games.length} games</th><th>Result</th><th>PTS</th><th>REB</th><th>AST</th><th><span class="sr-only">Share</span></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>` : ''}
+    </div>
+  </div>`;
+}
+
+function prfCoachCard(coachNote) {
+  if (!coachNote?.analysis) return '';
+  const label = FOCUS_LABELS[coachNote.focus_tag] || coachNote.focus_tag;
+  const video = FOCUS_VIDEOS[coachNote.focus_tag];
+  const dateStr = coachNote.generated_at ? new Date(coachNote.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  return `<div class="card">
+    <div class="card-label"><span>COACH'S NOTE</span><span class="prf-stat prf-stat--due prf-stat--plain">Focus: ${escHtml(label)}</span></div>
+    <div class="prf-body">
+      <p class="prf-coach__text">${escHtml(coachNote.analysis)}</p>
+      ${video ? `<a class="prf-coach__video" href="${escHtml(video.url)}" target="_blank" rel="noopener">
+        <span class="prf-coach__play">${PRF_ICON.play}</span>
+        <span><span class="prf-k">WATCH · ${escHtml(label.toUpperCase())}</span><span class="prf-coach__title">${escHtml(video.title)}</span></span>
+      </a>` : ''}
+      ${dateStr ? `<span class="prf-small">Based on stats through ${escHtml(dateStr)} · updates the next time your averages change. Only you see this.</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function prfMySeason(o) {
+  const reg = prfRegular(o.statsByType);
+  const cur = reg[0];
+  const line = cur ? prfLine([cur]) : null;
+  const played = o.gameLogs.filter(g => g.status === 'played');
+  const last3 = cur ? played.filter(g => String(g.season) === String(cur.season)).slice(0, 3) : [];
+  const cards = [line ? prfSeasonCard(o, cur.season, line, last3.length ? last3 : played.slice(0, 3)) : '', prfCoachCard(o.coachNote)].filter(Boolean);
+  if (!cards.length) return '';
+  return prfSection('my-season', 'My season', {
+    sub: line ? `Season ${escHtml(String(cur.season))} · ${line.gp} game${line.gp === 1 ? '' : 's'}` : '',
+    link: played.length ? prfLink('#career', 'Full game log') : '',
+    body: `<div class="prf-grid2">${cards.join('')}</div>`,
+  });
+}
+
+// ── Public: this season vs career + recent games ───────────────────────────────
+function prfPublicSeason(o) {
+  const reg = prfRegular(o.statsByType);
+  const cur = reg[0];
+  const line = cur ? prfLine([cur]) : null;
+  const career = prfLine(reg);
+  if (!line) return '';
+  const vs = (v) => (reg.length > 1 && career ? `Career ${v}` : '');
+  const tiles = [
+    prfTile({ label: 'POINTS', value: line.ppg, sub: vs(career.ppg) }),
+    prfTile({ label: 'REBOUNDS', value: line.rpg, sub: vs(career.rpg) }),
+    prfTile({ label: 'ASSISTS', value: line.apg, sub: vs(career.apg) }),
+    prfTile({ label: 'FIELD GOALS', value: line.fgPct != null ? line.fgPct : '—', small: line.fgPct != null ? '%' : '', sub: [`${line.fgm} / ${line.fga}`, reg.length > 1 && career?.fgPct != null ? `career ${career.fgPct}%` : ''].filter(Boolean).join(' · ') }),
+  ];
+  return prfSection('season', `Season ${escHtml(String(cur.season))}`, {
+    sub: `${line.gp} game${line.gp === 1 ? '' : 's'} · regular season · per game`,
+    body: `<div class="prf-kpis">${tiles.join('')}</div>`,
+  });
+}
+
+function prfRecentGames(o) {
+  const played = o.gameLogs.filter(g => g.status === 'played').slice(0, 5);
+  if (!played.length) return '';
+  const TYPE = { playoff: 'PLAYOFFS', finals: 'FINALS' };
+  const rows = played.map(g => {
+    const x = prfGame(g);
+    return `<tr>
+      <td>${escHtml(prfDay(g.date))}${TYPE[g.game_type] ? ` <span class="prf-tag">${TYPE[g.game_type]}</span>` : ''}${o.potgGameIds.has(g.id) ? ' <span class="prf-tag" title="Player of the Game">POTG</span>' : ''}</td>
+      <td><a href="/games/${encodeURIComponent(gameSlug(g))}" class="prf-table__game"><span class="team-dot" style="background:${teamColor(x.opp)}"></span>${escHtml(tcase(x.opp))}</a></td>
+      <td class="prf-table__res">${x.won ? 'W' : 'L'} ${x.my}–${x.op}</td>
+      <td class="font-condensed">${g.pts ?? 0}</td><td class="font-condensed">${g.reb ?? 0}</td><td class="font-condensed">${g.ast ?? 0}</td>
+      <td class="font-condensed">${g.stl ?? 0}</td><td class="font-condensed">${g.turnover ?? 0}</td><td class="font-condensed">${x.fg.m}–${x.fg.a}</td>
+    </tr>`;
+  }).join('');
+  return prfSection('recent', 'Recent games', {
+    link: prfLink('#career', 'Full game log'),
+    body: `<div class="card"><div class="prf-table-wrap"><table class="prf-table prf-table--wide">
+      <thead><tr><th>Date</th><th>Opponent</th><th>Result</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>TOV</th><th>FG</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`,
+  });
+}
+
+// ── Shared lower sections ───────────────────────────────────────────────────────
+function prfBadges(o, own) {
+  const show = badgeShowcase(o.badges);
+  const next = own ? nextUpWidget(o.badges?.pending) : '';
+  if (!show && !next) return '';
+  return prfSection('badges', 'Badges', {
+    link: prfLink('/badges', 'All badges'),
+    body: show && next ? `<div class="prf-grid-badges">${show}${next}</div>` : (show || next),
+  });
+}
+
+function prfCommunity(o, own, pollInToday) {
+  const cards = [];
+  if (o.peerRatingsEnabled) {
+    cards.push(communityRatingsCard(o.peerRatingSummary, own));
+    if (!own && o.canRate) cards.push(rateThisPlayerCard(o.player.id, o.viewerExistingRating, o.viewerCooldownActive, o.viewerCooldownUntil));
+    cards.push(ratingFeedCard(o.peerRatingsFeed));
+  }
+  if (own && o.latestPoll && !pollInToday) cards.push(myProfileSidebar({ latestPoll: o.latestPoll }));
+  if (o.pickRecord?.settled) cards.push(pickRecordCard({ ...o.pickRecord, own: null }, own));
+  const body = cards.filter(Boolean).join('');
+  if (!body) return '';
+  return prfSection('community', own ? 'Community' : 'What players say', { body: `<div class="prf-grid2">${body}</div>` });
+}
+
+function prfHighlights(o) {
+  const played = o.gameLogs.filter(g => g.status === 'played');
+  const best = k => played.reduce((b, g) => (Number(g[k] || 0) > Number(b?.[k] || 0) ? g : b), null);
+  const rows = [];
+  for (const s of o.champSeasons) rows.push(`<div class="prf-line"><span><b>Season ${escHtml(String(s))} champion</b><small>Won the Finals</small></span><span class="prf-chip prf-chip--amber">${PRF_ICON.trophy}S${escHtml(String(s))}</span></div>`);
+  if (o.potgGames.length) rows.push(`<div class="prf-line"><span><b>Player of the Game</b><small>${o.potgGames.length === 1 ? 'Once' : `${o.potgGames.length} times`}</small></span><span class="prf-big prf-big--sm font-condensed">${o.potgGames.length}</span></div>`);
+  for (const [k, label] of [['pts', 'points'], ['reb', 'rebounds'], ['ast', 'assists']]) {
+    const g = best(k);
+    if (!g || !Number(g[k])) continue;
+    const x = prfGame(g);
+    rows.push(`<a class="prf-line" href="/games/${encodeURIComponent(gameSlug(g))}"><span><b>Career high: ${g[k]} ${label}</b><small>${escHtml(prfDay(g.date))} vs ${escHtml(tcase(x.opp))}</small></span><span class="prf-big prf-big--sm font-condensed">${g[k]}</span></a>`);
+  }
+  if (!rows.length) return '';
+  return `<div class="card"><div class="card-label"><span>HIGHLIGHTS</span></div><div class="prf-body prf-body--list">${rows.join('')}</div></div>`;
+}
+
+function prfCareer(o) {
+  const rows = o.gameLogs.length;
+  const played = o.gameLogs.filter(g => g.status === 'played').length;
+  const dnp = rows - played;
+  // The season-by-season table gets its own full-width row (11 columns); the rest share a grid.
+  const table = statsTable(o.statsByType);
+  const cards = [prfHighlights(o), awardsSection(o.awards), potgWriteups(o.potgGames, o.player)].filter(Boolean);
+  if (!table && !cards.length && !rows) return '';
+  const total = o.statsByType?.career?.games_played || 0;
+  return prfSection('career', 'Career', {
+    sub: total ? `${total} game${total === 1 ? '' : 's'}` : '',
+    body: `${table}${cards.length ? `<div class="prf-grid2 prf-grid2--after">${cards.join('')}</div>` : ''}
+    ${rows ? `<details class="prf-log"><summary>Full game log <span>${played} game${played === 1 ? '' : 's'}${dnp ? ` · ${dnp} DNP` : ''}</span></summary>${gameLog(o.gameLogs, o.player, o.potgGameIds)}</details>` : ''}`,
+  });
+}
+
+function prfAccount(o) {
+  const wallet = o.balanceAmount !== 0
+    ? myProfileSidebar({ balanceAmount: o.balanceAmount, balanceTransactions: o.balanceTransactions })
+    : `<div class="card"><div class="card-label"><span>WALLET</span></div><div class="prf-body"><p class="prf-small" style="margin:0">No balance due.</p><a href="/settle-balance" class="prf-small-link">Make a payment &rarr;</a></div></div>`;
+  const emails = myProfileSidebar({ papawisEmailsOn: o.papawisEmailsOn });
+  const signIn = `<div class="card"><div class="card-label"><span>SIGN-IN</span></div>
+    <div class="prf-body prf-body--list">
+      <a class="prf-line" href="/forgot-password"><span><b>Change password</b><small>We email you a link to set a new one</small></span><span aria-hidden="true">&rarr;</span></a>
+      <div class="prf-line prf-line--off" aria-disabled="true"><span class="prf-line__ico">${PRF_ICON.google}<b>Sign in with Google</b></span><span class="prf-chip">Coming soon</span></div>
+    </div></div>`;
+  return prfSection('account', 'Account &amp; settings', { body: `<div class="prf-grid3">${wallet}${emails}${signIn}</div>` });
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
+export function playerPageV2(o) {
+  const own = !!o.isOwnProfile && !o.viewPublic;
+  const d = {
+    ...o,
+    potgGameIds: new Set((o.potgGames || []).map(g => g.id)),
+    papawisGames: o.papawisGames || [], balanceTransactions: o.balanceTransactions || [],
+    champSeasons: o.champSeasons || [],
+  };
+  const latestGame = d.gameLogs.find(g => g.status === 'played') || null;
+  const hero = prfHero({
+    player: d.player, editing: own, canEditPhoto: own || (!!d.isAdmin && !o.viewPublic), isAdmin: !!d.isAdmin,
+    champSeasons: d.champSeasons, latestGame, canRate: d.canRate, peerRatingsEnabled: d.peerRatingsEnabled,
+    canReport: !own && d.canReport, reportCategories: d.reportCategories, reportOtherCategoryId: d.reportOtherCategoryId,
+  });
+  const banner = o.isOwnProfile && o.viewPublic
+    ? `<div class="prf-banner">${PRF_ICON.eye}<span>This is how other players see your profile.</span><a href="?">Back to My Profile &rarr;</a></div>` : '';
+
+  let sections;
+  if (own) {
+    const poll = d.latestPoll;
+    const pollInToday = !!(poll && poll.status === 'open' && poll.canVote && !poll.myVote);
+    sections = [
+      prfToday(d), prfThisWeek(d), prfMySeason(d), prfBadges(d, true),
+      prfCommunity(d, true, pollInToday), prfCareer(d), prfAccount(d),
+    ];
+  } else {
+    sections = [prfPublicSeason(d), prfRecentGames(d), prfBadges(d, false), prfCommunity(d, false, false), prfCareer(d)];
+  }
+  const NAV = { today: 'Today', 'this-week': 'This week', 'my-season': 'My season', badges: 'Badges', community: 'Community', career: 'Career', account: 'Account' };
+  const nav = own ? `<nav class="prf-nav" aria-label="Profile sections">${sections.filter(Boolean).map(s => {
+    const id = s.match(/id="([^"]+)"/)[1];
+    return NAV[id] ? `<a href="#${id}">${NAV[id]}</a>` : '';
+  }).join('')}</nav>
+<script>
+(function () {
+  var nav = document.querySelector('.prf-nav');
+  if (!nav) return;
+  // Sit just under the sticky site header, whatever height it is on this screen.
+  var header = document.querySelector('.site-header:not(.site-header--minimal)');
+  function place() { nav.style.setProperty('--prf-nav-top', (header && getComputedStyle(header).position === 'sticky' ? header.offsetHeight : 0) + 'px'); }
+  place(); window.addEventListener('resize', place);
+  // Underline the section in view.
+  var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
+  if (!('IntersectionObserver' in window)) return;
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      links.forEach(function (a) { a.classList.toggle('is-on', a.getAttribute('href') === '#' + e.target.id); });
+    });
+  }, { rootMargin: '-35% 0px -60% 0px' });
+  links.forEach(function (a) { var s = document.getElementById(a.getAttribute('href').slice(1)); if (s) io.observe(s); });
+})();
+</script>` : '';
+
+  return `<div class="prf${own ? ' prf--own' : ''}">
+${banner}
+${hero}
+${nav}
+${sections.filter(Boolean).join('\n')}
 </div>`;
 }
