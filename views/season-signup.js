@@ -841,6 +841,9 @@ ${stylesBlock}
   // to land — same shared infra as the mobile page at views/liveness-mobile.js. Required —
   // Continue is gated on liveness_captured (see validateStep) via either path.
   (function () {
+    // The ask shown on this page — sent with the QR and save requests so the phone page and
+    // the stored photo use this exact one, even if another tab re-rolled the session's ask.
+    var LV_PROMPT    = ${JSON.stringify(livenessPrompt).replace(/</g, '\\u003c')};
     var consent      = document.getElementById('lv-consent');
     var startBtn     = document.getElementById('lv-start-btn');
     var qrBtn        = document.getElementById('lv-qr-btn');
@@ -971,7 +974,7 @@ ${stylesBlock}
       setError('');
       fetch('/season-signup/liveness-capture', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: dataUrl }),
+        body: JSON.stringify({ dataUrl: dataUrl, prompt: LV_PROMPT }),
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
@@ -988,7 +991,7 @@ ${stylesBlock}
     qrBtn.addEventListener('click', function () {
       setError('');
       qrBtn.disabled = true;
-      fetch('/season-signup/liveness-token', { method: 'POST' })
+      fetch('/season-signup/liveness-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: LV_PROMPT }) })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
           qrBtn.disabled = false;

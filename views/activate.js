@@ -70,6 +70,9 @@ export function activatePage({ prompt = '', card = {} } = {}) {
   var video = $('gf-video'), preview = $('gf-preview'), canvas = $('gf-canvas'), idle = $('gf-idle'), guide = $('gf-guide');
   var qr = $('gf-qr'), qrImg = $('gf-qr-img'), errEl = $('gf-error');
   var stream = null, dataUrl = null, ws = null;
+  // The ask shown above the camera — sent with the QR and save requests so the phone page and
+  // the stored photo use this exact one (see shownPrompt in server.js).
+  var PROMPT = ${JSON.stringify(prompt).replace(/</g, '\\u003c')};
 
   function show(el, on) { el.classList.toggle('hidden', !on); }
   function setError(msg) { errEl.textContent = msg || ''; show(errEl, !!msg); }
@@ -147,7 +150,7 @@ export function activatePage({ prompt = '', card = {} } = {}) {
   useBtn.addEventListener('click', function () {
     if (!dataUrl) return;
     useBtn.disabled = retakeBtn.disabled = true; setError('');
-    fetch('/activate/liveness-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataUrl: dataUrl }) })
+    fetch('/activate/liveness-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataUrl: dataUrl, prompt: PROMPT }) })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         useBtn.disabled = retakeBtn.disabled = false;
@@ -159,7 +162,7 @@ export function activatePage({ prompt = '', card = {} } = {}) {
 
   phoneBtn.addEventListener('click', function () {
     setError(''); phoneBtn.disabled = true;
-    fetch('/activate/liveness-token', { method: 'POST' })
+    fetch('/activate/liveness-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: PROMPT }) })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         phoneBtn.disabled = false;

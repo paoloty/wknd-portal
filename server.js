@@ -12602,6 +12602,20 @@ const LIVENESS_PROMPTS = [
   'Hold up a random receipt from your wallet or pocket',
   'Grab any rubber band, hair tie, or twistie within reach',
   "Hold up whatever's currently in your pocket — no peeking beforehand",
+  // Basketball poses — no item needed at all, so always doable (added 2026-10-10)
+  'Strike your free-throw pose — elbow in, eyes on the rim',
+  "Point at the camera like you're calling for the ball — you're wide open",
+  "Give us your best 'and-one!' face",
+  "Both hands up like you're contesting the last shot",
+  "Do the 'too small' celebration — you know the one",
+  "Give us your 'ref, that was clean!' face",
+  // Around the house, take two — still nothing to buy, borrow or cook (added 2026-10-10)
+  "Hug a pillow like you're protecting the ball from a steal",
+  'Hold up a pair of socks — your lucky pair, obviously',
+  "Hold up any pen or pencil like it's the last one at the draft board",
+  "Grab your pamaypay or anything you fan yourself with — it's hot, we know",
+  "Hold up your tumbler or mug like you just won Finals MVP",
+  'Grab the nearest umbrella — tag-ulan essentials',
 ];
 function randomLivenessPrompt() {
   return LIVENESS_PROMPTS[Math.floor(Math.random() * LIVENESS_PROMPTS.length)];
@@ -12611,6 +12625,17 @@ function randomLivenessPrompt() {
 const ACTIVATION_PROMPTS = LIVENESS_PROMPTS.filter(p => !/barya|gcash|money|balance|pamasahe|receipt|wallet/i.test(p));
 function randomActivationPrompt() {
   return ACTIVATION_PROMPTS[Math.floor(Math.random() * ACTIVATION_PROMPTS.length)];
+}
+// The ask the desktop page actually showed. Its script sends it back with the QR-token and
+// capture requests, so the phone page and the stored photo always carry the same ask the
+// person read on screen, even if another tab has since re-rolled the session's prompt (Season
+// Signup rolls a new one on every load). Only accepted if it's a real ask from this flow's
+// list; otherwise falls back to the session's, then to a fresh one.
+function shownPrompt(req, pool) {
+  const sent = String(req.body?.prompt || '');
+  if (pool.includes(sent)) return sent;
+  if (pool.includes(req.session?.livenessPrompt)) return req.session.livenessPrompt;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function resolveSeasonSignupContext(req) {
@@ -12629,7 +12654,7 @@ app.post('/season-signup/liveness-capture', express.json({ limit: '8mb' }), (req
   if (!ctx) return res.status(401).json({ error: 'Not eligible to sign up right now.' });
   const dataUrl = String(req.body?.dataUrl || '');
   if (!/^data:image\/(jpeg|jpg|png);base64,/.test(dataUrl)) return res.status(400).json({ error: 'Invalid image.' });
-  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, photoData: dataUrl, via: 'inline', prompt: req.session.livenessPrompt || '' });
+  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, photoData: dataUrl, via: 'inline', prompt: shownPrompt(req, LIVENESS_PROMPTS) });
   res.json({ ok: true });
 });
 
@@ -12644,7 +12669,7 @@ function pruneLivenessTokens() {
   for (const [token, info] of livenessTokens) if (info.expiresAt < now) livenessTokens.delete(token);
 }
 
-app.post('/season-signup/liveness-token', async (req, res) => {
+app.post('/season-signup/liveness-token', express.json(), async (req, res) => {
   const ctx = resolveSeasonSignupContext(req);
   if (!ctx) return res.status(401).json({ error: 'Not eligible to sign up right now.' });
   pruneLivenessTokens();
@@ -12655,7 +12680,7 @@ app.post('/season-signup/liveness-token', async (req, res) => {
   // different from what the user just read on the desktop screen. Stored on the token
   // (not re-read from session on GET) so a slow-connection reload of the mobile page still
   // shows the same prompt instead of re-rolling mid-attempt.
-  const prompt = req.session.livenessPrompt || randomLivenessPrompt();
+  const prompt = shownPrompt(req, LIVENESS_PROMPTS);
   livenessTokens.set(token, { regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, expiresAt: Date.now() + LIVENESS_TOKEN_TTL_MS, consumed: false, prompt });
   const url = `${getRequestOrigin(req)}/season-signup/liveness/${token}`;
   const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 240 });
@@ -12714,18 +12739,18 @@ app.post('/activate/liveness-capture', express.json({ limit: '8mb' }), (req, res
   if (!ctx) return res.status(401).json({ error: 'Sign in again to finish activating.' });
   const dataUrl = String(req.body?.dataUrl || '');
   if (!/^data:image\/(jpeg|jpg|png);base64,/.test(dataUrl)) return res.status(400).json({ error: 'Invalid image.' });
-  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.season, photoData: dataUrl, via: 'activation', prompt: req.session.livenessPrompt || '' });
+  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.season, photoData: dataUrl, via: 'activation', prompt: shownPrompt(req, ACTIVATION_PROMPTS) });
   res.json({ ok: true });
 });
 
 // The phone handoff reuses Season Signup's token store, phone page and capture route
 // (/season-signup/liveness/:token…) — the token carries everything that route needs.
-app.post('/activate/liveness-token', async (req, res) => {
+app.post('/activate/liveness-token', express.json(), async (req, res) => {
   const ctx = resolveActivationContext(req);
   if (!ctx) return res.status(401).json({ error: 'Sign in again to finish activating.' });
   pruneLivenessTokens();
   const token = randomBytes(16).toString('hex');
-  const prompt = ACTIVATION_PROMPTS.includes(req.session.livenessPrompt) ? req.session.livenessPrompt : randomActivationPrompt();
+  const prompt = shownPrompt(req, ACTIVATION_PROMPTS);
   livenessTokens.set(token, { regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.season, expiresAt: Date.now() + LIVENESS_TOKEN_TTL_MS, consumed: false, prompt });
   const url = `${getRequestOrigin(req)}/season-signup/liveness/${token}`;
   const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 240 });
