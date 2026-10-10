@@ -2403,7 +2403,7 @@ export function gamePage(d) {
       m?.lastMeetings?.length ? { id: 'meetings', label: 'Last meetings' } : null,
       comments ? { ...comments, label: 'Pre-game chatter' } : null,
     ].filter(Boolean);
-    return `<div class="container"><div class="page-content gd-page">
+    return `<div class="page-content gd-page">
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${upcomingHero(v)}
   ${sectionNav(items)}
@@ -2417,7 +2417,7 @@ export function gamePage(d) {
     </div>
     <aside class="gd-cols__rail gd-rail--sticky">${pickRail(v)}</aside>
   </div>
-</div></div>
+</div>
 ${floater}
 ${m ? matchupScript({ isAdmin: d.isAdmin }) : ''}
 ${p?.o ? pickBoxScript() : ''}
@@ -2444,7 +2444,7 @@ ${scripts}`;
   const rail = [calledCard(game, d.called, d.isPlayer), myStat ? shareStatsBanner(game, myStat) : '', upNextCard(d.upNext, d.upNextLabel)].filter(Boolean).join('');
   const talk = talkSection(v, 'Comments');
   const plays = playsBlock(game, d.plays);
-  return `<div class="container"><div class="page-content gd-page">
+  return `<div class="page-content gd-page">
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${finalHero(v)}
   ${sectionNav(items, mini)}
@@ -2464,7 +2464,7 @@ ${scripts}`;
     ${talk ? `<div class="${plays ? 'gd-cols__rail' : 'gd-cols__main'}">${talk}</div>` : ''}
   </div>` : ''}
   ${previewArchive(v)}
-</div></div>
+</div>
 ${floater}
 ${d.preview ? matchupScript({ isAdmin: false }) : ''}
 ${scripts}`;

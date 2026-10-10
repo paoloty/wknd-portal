@@ -9005,6 +9005,8 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
   .gd-ann { display: none; }
   .gd-pl { grid-template-columns: 50px 12px 1fr auto; gap: 10px; }
   .gd-recap .recap-tab__title { font-size: 21px; }
+  /* Before tip-off the pick is the point: on phones the pick rail comes first, not last. */
+  .gd-cols > .gd-rail--sticky { order: -1; }
 }
 
 /* ── Comment nudges: "Say something" on performers, "Talk trash" after a pick, and the latest
