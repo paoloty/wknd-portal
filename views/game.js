@@ -2,7 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, playerLink, stripEmptyParagraphs } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
-import { pickBox, pickBoxScript, talkLink } from './pick-box.js';
+import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
 import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, meetingTile, storyHtml } from './games.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 
@@ -1828,7 +1828,13 @@ function yourGameStrip(game, mg) {
   const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
   const won = String(s.team_name || '').toUpperCase() === String(fa > fb ? game.team_a_name : game.team_b_name).toUpperCase();
   const card = q => `/api/games/${encodeURIComponent(game.id)}/my-stat-card.png?layout=gauges&${q}&accent=amber`;
-  const bg = game.has_cover ? ` style="background-image:url('/api/photo/${encodeURIComponent(game.id)}')"` : '';
+  // Three different templates on three different backdrops, the way they end up posted:
+  // Marquee over the game photo, Card (a frame) over the player's own photo, Box Score over a
+  // team-colour glow.
+  const team = teamColor(s.team_name);
+  const bgCover = game.has_cover ? ` style="background-image:url('/api/photo/${encodeURIComponent(game.id)}')"` : ` style="background:radial-gradient(80% 60% at 50% 30%, ${team}55, #10141d)"`;
+  const bgPlayer = ` style="background-image:url('/api/player/${encodeURIComponent(s.player_id)}/photo');background-position:center 20%"`;
+  const bgTeam = ` style="background:radial-gradient(90% 70% at 50% 85%, ${team}66 0%, transparent 70%), linear-gradient(160deg, #1b2232, #0a0e16)"`;
   return `<section class="gd-yg" aria-label="Your game" style="--team:${teamColor(s.team_name)}">
     <div class="gd-yg__l">
       <span class="gd-yg__av" aria-hidden="true"><span class="font-condensed">${escHtml(initials(displayPlayerName(s.name)))}</span><img src="/api/player/${encodeURIComponent(s.player_id)}/photo" alt="" onerror="this.remove()"></span>
@@ -1840,9 +1846,9 @@ function yourGameStrip(game, mg) {
     </div>
     <div class="gd-yg__r">
       <button type="button" class="gd-yg__fan" data-ssc-open aria-label="Open your stat cards">
-        <span${bg}><img src="${card('align=center&focus=all&gauges=1')}" alt="" loading="lazy"></span>
-        <span${bg}><img src="${card('align=premium')}" alt="" loading="lazy"></span>
-        <span${bg}><img src="${card('align=hero')}" alt="" loading="lazy"></span>
+        <span${bgCover}><img src="${card('align=center&focus=all&gauges=1')}" alt="" loading="lazy"></span>
+        <span${bgPlayer}><img src="${card('align=card')}" alt="" loading="lazy"></span>
+        <span${bgTeam}><img src="${card('align=stacked')}" alt="" loading="lazy"></span>
       </button>
       <div class="gd-yg__cta">
         <button type="button" class="gd-yg__btn" data-ssc-open>${ICON_SHARE}Share my stats</button>
@@ -1865,8 +1871,17 @@ function shareDock(mg) {
   </div>`;
 }
 
+// Each side's chance next to its record, matching the odds edge along the bottom of the hero
+// (same look as the /games matchup cards). The favourite's number is amber.
+function oddsPct(odds, side) {
+  if (!odds) return '';
+  const v = `<span class="gd-pct${odds.fav === side ? ' is-fav' : ''}">${side === 'a' ? odds.pctA : odds.pctB}%</span>`;
+  return side === 'a' ? ` · ${v}` : `${v} · `;
+}
+
 function finalHero(d) {
   const { game, ctx, flow, called } = d;
+  const heroOdds = called?.odds || null; // the pre-game odds
   const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
   const winner = fa > fb ? 'a' : fb > fa ? 'b' : null;
   const ot = n0(game.overtime);
@@ -1890,16 +1905,17 @@ function finalHero(d) {
     ${game.has_cover ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(game.id)}" alt="">` : ''}
     <div class="gd-hero__shade"></div>
     <div class="gd-hero__glare" style="background:${heroGlare(game, winner)}"></div>
+    ${oddsEdge(game.team_a_name, game.team_b_name, heroOdds)}
     <div class="gd-hero__in">
       <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}</span>${oddsChip}</div>
       <div class="gd-board">
-        <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}</span></div>
+        <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}${oddsPct(heroOdds, 'a')}</span></div>
         <div class="gd-score">
           <span class="gd-score__n${winner === 'a' ? ' is-win' : ''}">${fa}</span>
           <span class="gd-score__mid"><span class="gd-final">${finalLabel}</span>${miniLineScore(game, d.quarterScores)}</span>
           <span class="gd-score__n${winner === 'b' ? ' is-win' : ''}">${fb}</span>
         </div>
-        <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${recLine(ctx.recB)}</span></div>
+        <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${oddsPct(heroOdds, 'b')}${recLine(ctx.recB)}</span></div>
       </div>
       <div class="gd-hero__bot"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div>
     </div>
@@ -1908,6 +1924,7 @@ function finalHero(d) {
 
 function upcomingHero(d) {
   const { game, ctx, picks } = d;
+  const heroOdds = picks?.odds || picks?.o?.odds || null;
   const ymd = d.ymd;
   const dt = ymd ? new Date(`${ymd}T00:00:00`) : null;
   const slide = picks?.m?.slides?.[0];
@@ -1919,15 +1936,16 @@ function upcomingHero(d) {
     ${slide ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(slide)}" alt="">` : ''}
     <div class="gd-hero__shade"></div>
     <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>
+    ${oddsEdge(game.team_a_name, game.team_b_name, heroOdds)}
     <div class="gd-hero__in">
       <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}</span><a href="#picks" class="gd-chip${state === 'open' ? ' gd-chip--live' : ''}">${chip}</a></div>
       <div class="gd-board">
-        <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}</span></div>
+        <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}${oddsPct(heroOdds, 'a')}</span></div>
         <div class="gd-when">
           ${dt ? `<span class="gd-when__k">${dt.toLocaleDateString('en-US', { weekday: 'long' })}</span><span class="gd-when__d">${dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}</span>` : '<span class="gd-when__d">TBD</span>'}
           ${s.n ? `<span class="gd-h2h"><span>All-time</span><b class="${s.a >= s.b ? 'is-lead' : ''}">${s.a}</b><i>–</i><b class="${s.b >= s.a ? 'is-lead' : ''}">${s.b}</b></span>` : '<span class="gd-h2h"><span>First meeting</span></span>'}
         </div>
-        <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${recLine(ctx.recB)}</span></div>
+        <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${oddsPct(heroOdds, 'b')}${recLine(ctx.recB)}</span></div>
       </div>
       <div class="gd-hero__bot">
         ${closeAt ? `<div class="gd-cd" data-close="${escHtml(closeAt)}"><span class="gd-cd__k">Picks close in</span><span class="gd-cd__n"><span><b data-cd="d">–</b><i>DAYS</i></span><span><b data-cd="h">–</b><i>HRS</i></span><span><b data-cd="m">–</b><i>MIN</i></span></span></div>` : '<span></span>'}

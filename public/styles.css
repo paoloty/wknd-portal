@@ -9085,3 +9085,7 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
   /* The comments bubble sits above the dock while it shows. */
   body:has(.gd-dock:not([hidden])) .game-floater { bottom: 90px; }
 }
+/* Odds in the game hero: the two-colour edge along the bottom + each side's % by its record. */
+.gd-hero .pkb-edge { z-index: 3; height: 5px; }
+.gd-pct { font-family: 'Saira Condensed', sans-serif; font-size: 15px; font-weight: 800; color: #c7d0da; }
+.gd-pct.is-fav { color: var(--amber); }
