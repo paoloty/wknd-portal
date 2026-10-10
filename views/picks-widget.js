@@ -3,6 +3,7 @@ import { summaryPanel } from './home.js';
 import { calledItCard, FLAME, dayLabel, shortDayLabel, pickAvatar, barsScript } from './games.js';
 import { teamColor } from './utils.js';
 import { openPickCard, pickBoxScript, fmtCloseTime } from './pick-box.js';
+import { fmtPts } from '../lib/picks.js';
 
 // ── Homepage "Who wins?" widget (placement A: under the registration banner) ────────────
 // Two modes, picked in server.js (homePicksWidget):
@@ -26,19 +27,19 @@ export function resultChips(recent) {
 // anyone is ranked it's fixed copy rather than a leaderboard with nobody on it.
 function raceCallout(w) {
   const lead = w.leader
-    ? `<b>${escHtml(w.leader.name)}</b> leads at ${w.leader.correct} of ${w.leader.picks}${w.leader.tied > 1 ? `, tied with ${w.leader.tied - 1} other${w.leader.tied > 2 ? 's' : ''}` : ''}.`
-    : `Nobody's ranked yet. Get ${w.minPicks} picks settled to join the race.`;
+    ? `<b>${escHtml(w.leader.name)}</b> leads on ${fmtPts(w.leader.net)} (${w.leader.correct}–${w.leader.wrong})${w.leader.tied > 1 ? `, tied with ${w.leader.tied - 1} other${w.leader.tied > 2 ? 's' : ''}` : ''}.`
+    : 'Nobody on the board yet. Your first final puts you in the race.';
   const me = w.me;
   const mine = !w.isPlayer
     ? `<span class="pkw-side__p">Log in on any game to make your pick.</span>`
     : me
-      ? `<div class="pkw-rec"><b class="font-condensed">${me.correct}</b><span>of ${me.picks} called</span></div>
+      ? `<div class="pkw-rec"><b class="font-condensed">${fmtPts(me.net)}</b><span>pts · ${me.correct}–${me.wrong}</span></div>
       ${resultChips(w.recent)}
-      <span class="pkw-side__p">${me.rank ? `You're <b>#${me.rank}</b> in the race` : `${Math.max(0, w.minPicks - me.picks)} more to get ranked`}${me.streak >= 2 ? ` · <span class="pkw-streak">${FLAME}${me.streak} in a row</span>` : ''}</span>`
+      <span class="pkw-side__p">${me.rank ? `You're <b>#${me.rank}</b> in the race` : 'On the board after your next final'}${me.streak >= 2 ? ` · <span class="pkw-streak">${FLAME}${me.streak} in a row</span>` : ''}</span>`
       : `<span class="pkw-side__p">No picks settled yet. Yours show up here.</span>`;
   return `<a href="/picks" class="pkw-side pkw-call">
       <span class="pkw-side__k">Pickmaster race · S${escHtml(String(w.season))}</span>
-      <p class="pkw-side__p">${lead} Best record at season's end wins the <b>Pickmaster</b> award.</p>
+      <p class="pkw-side__p">${lead} Most points at season's end wins the <b>Pickmaster</b> award.</p>
       ${mine}
       <span class="pkw-side__link">Picks, race &amp; results →</span>
     </a>`;
@@ -107,11 +108,11 @@ function faceoff(o, w) {
 // Race strip under the face-off: the leader, your own line, a link to /picks.
 function raceStrip(w) {
   const lead = w.leader
-    ? `<b>${escHtml(w.leader.name)}</b> leads at ${w.leader.correct} of ${w.leader.picks}${w.leader.tied > 1 ? ' (tied)' : ''}`
-    : `Nobody's ranked yet · ${w.minPicks} settled picks to join`;
+    ? `<b>${escHtml(w.leader.name)}</b> leads on ${fmtPts(w.leader.net)}${w.leader.tied > 1 ? ' (tied)' : ''}`
+    : 'Nobody on the board yet · first finals put you in';
   const me = w.me;
   const mine = !w.isPlayer ? 'Log in on any game to pick'
-    : me ? `You: <b>${me.correct} of ${me.picks}</b>${me.rank ? ` · #${me.rank}` : ` · ${Math.max(0, w.minPicks - me.picks)} more to rank`}${me.streak >= 2 ? ` · <span class="pkw-streak">${FLAME}${me.streak}</span>` : ''}`
+    : me ? `You: <b>${fmtPts(me.net)}</b> (${me.correct}–${me.wrong})${me.rank ? ` · #${me.rank}` : ''}${me.streak >= 2 ? ` · <span class="pkw-streak">${FLAME}${me.streak}</span>` : ''}`
     : 'Your picks show here once games settle';
   return `<a href="/picks" class="pkf-race">
       <span class="pkf-race__k">Pickmaster race · S${escHtml(String(w.season))}</span>

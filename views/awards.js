@@ -52,7 +52,7 @@ function statLine(row, type) {
     : type === 'three_pm_leader' ? [avg(row.fg3m) && `${avg(row.fg3m)} 3PM`]
     : type === 'four_pm_leader'  ? [avg(row.fg4m) && `${avg(row.fg4m)} 4PM`]
     // Fan award: the season's best "Who wins?" record, stored on the award row's notes.
-    : type === 'pickmaster'      ? [row.notes || 'Best pick record']
+    : type === 'pickmaster'      ? [row.notes || 'Most pick points']
     : [];
   return parts.filter(Boolean).join(' · ');
 }

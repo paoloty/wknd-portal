@@ -1,4 +1,5 @@
 import { escHtml } from '../layout.js';
+import { fmtPts } from '../../lib/picks.js';
 import { teamColor } from '../utils.js';
 
 // ── /admin/picks — every "Who wins?" pick in one place ────────────────────────────────
@@ -36,7 +37,7 @@ function kpis(k) {
     ${tile('Reach', k.accounts ? `${Math.round((k.pickers / k.accounts) * 100)}%` : '—', `of ${k.accounts} players with an account`)}
     ${tile('Fans called', rec(k.callers.fans), 'games with picks · majority won')}
     ${k.oddsOn ? tile('Odds called', rec(k.oddsRecord), `every finished game · ${k.upsets} upset${k.upsets === 1 ? '' : 's'}`) : ''}
-    ${tile('Pickmaster leader', k.leader ? escHtml(k.leader.name) : '—', k.leader ? `${k.leader.correct} of ${k.leader.picks} · min ${k.minPicks} picks` : `Ranks start at ${k.minPicks} settled picks`)}
+    ${tile('Pickmaster leader', k.leader ? escHtml(k.leader.name) : '—', k.leader ? `${fmtPts(k.leader.net)} pts (${k.leader.correct}–${k.leader.wrong})${k.leader.decidedBy === 'shared' ? ` · level with ${k.leader.level - 1} on every tiebreak` : k.leader.decidedBy ? ` · ahead on ${k.leader.decidedBy.toLowerCase()}` : ''}` : 'Board fills after the first settled picks')}
   </div>`;
 }
 
@@ -174,15 +175,16 @@ function pickersTable(rows, minPicks) {
       <td class="admin-td"><a href="/admin/players/${encodeURIComponent(r.id)}" class="inline-flex items-center gap-2 text-slate-100 hover:text-amber-400">${dot(r.team)}${escHtml(r.name)}</a></td>
       <td class="admin-td">${r.picks}</td>
       <td class="admin-td">${r.correct}</td>
-      <td class="admin-td">${r.settled ? `${r.pct}%` : '<span class="text-slate-600">—</span>'}</td>
+      <td class="admin-td font-semibold">${r.settled ? fmtPts(r.net) : '<span class="text-slate-600">—</span>'}</td>
+      <td class="admin-td">${r.settled ? r.oddsPts.toFixed(2) : '<span class="text-slate-600">—</span>'}</td>
       <td class="admin-td">${r.streak >= 2 ? `<span class="text-amber-400 font-semibold">${r.streak} in a row</span>` : '<span class="text-slate-600">—</span>'}</td>
       <td class="admin-td">${r.upsets || '<span class="text-slate-600">0</span>'}</td>
       <td class="admin-td whitespace-nowrap">${r.last ? `${escHtml(shortDay(r.last.ymd))} · ${escHtml(tc(r.last.team))}` : ''}${r.missingNext ? ' <span class="text-amber-400">· no pick yet this week</span>' : ''}</td>
-      <td class="admin-td text-xs ${r.rank ? 'text-slate-400' : 'text-slate-500'}">${r.rank ? 'Ranked' : `${Math.max(0, minPicks - r.settled)} more to rank`}</td>
+      <td class="admin-td text-xs ${r.rank ? 'text-slate-400' : 'text-slate-500'}">${r.rank ? 'On the board' : 'Waiting on a final'}</td>
     </tr>`).join('');
   return `<div class="${panel} overflow-auto">
     <table class="admin-table">
-      <thead><tr><th class="admin-th">#</th><th class="admin-th">Player</th><th class="admin-th">Picks</th><th class="admin-th">Called</th><th class="admin-th">%</th><th class="admin-th">Streak</th><th class="admin-th">Upsets</th><th class="admin-th">Last pick</th><th class="admin-th">Status</th></tr></thead>
+      <thead><tr><th class="admin-th">#</th><th class="admin-th">Player</th><th class="admin-th">Picks</th><th class="admin-th">Called</th><th class="admin-th">Pts</th><th class="admin-th">Odds pts</th><th class="admin-th">Streak</th><th class="admin-th">Upsets</th><th class="admin-th">Last pick</th><th class="admin-th">Status</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   </div>`;

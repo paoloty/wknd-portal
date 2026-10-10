@@ -2,6 +2,7 @@ import { escHtml, pageHeader } from './layout.js';
 import { teamColor } from './utils.js';
 import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript } from './games.js';
 import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime, previewHref } from './pick-box.js';
+import { fmtPts } from '../lib/picks.js';
 
 // This week's games, pickable right here (same pick box as /games, the homepage and profile).
 function openPicksSection(open, { isPlayer, closeTime }) {
@@ -30,7 +31,7 @@ function seasonTabs(seasons, season, base) {
   return `<nav class="gr-segs" aria-label="Season">${seasons.map(s => `<a href="${base}?season=${encodeURIComponent(s)}" class="gr-seg${s === season ? ' is-on' : ''}"${s === season ? ' aria-current="page"' : ''}>Season ${escHtml(s)}</a>`).join('')}</nav>`;
 }
 
-function statTiles({ callers, upsets, pickers, ranked, minPicks, oddsOn }) {
+function statTiles({ callers, upsets, pickers, ranked, oddsOn }) {
   const rec = r => (r.of ? `${r.called} of ${r.of}` : '—');
   const tile = (label, value, sub, accent = false) => `<div class="gr-tile${accent ? ' gr-tile--accent' : ''}">
       <span class="gr-tile__lbl">${label}</span>
@@ -42,38 +43,80 @@ function statTiles({ callers, upsets, pickers, ranked, minPicks, oddsOn }) {
     ${oddsOn ? tile('Odds record', rec(callers.odds), callers.odds.of ? (oddsMisses && oddsMisses === upsets.length ? `${oddsMisses === 1 ? 'The miss was an upset' : 'Every miss was an upset'}` : 'Favourite won') : 'After the first game day', true) : ''}
     ${tile('Fans record', rec(callers.fans), callers.fans.of ? `Majority pick won ${Math.round((callers.fans.called / callers.fans.of) * 100)}% of the time` : 'After the first game day', !oddsOn)}
     ${oddsOn ? tile('Upsets', String(upsets.length), upsets.length ? upsets.slice(0, 2).map(u => `${escHtml(tc(u.game.winner === 'a' ? u.game.a : u.game.b))} over ${escHtml(tc(u.game.winner === 'a' ? u.game.b : u.game.a))}`).join(' · ') : 'Underdog wins show here') : ''}
-    ${tile('Pickers', String(pickers), `${ranked} ranked · min ${minPicks} picks`)}
+    ${tile('Pickers', String(pickers), ranked ? `${ranked} on the board` : 'On the board after their first final')}
   </div>`;
 }
 
+const fmtOdds = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}`;
+
+// Movement since the game day before: ▲2 / ▼1 (nothing for no change or a first game day).
+const trendHtml = t => (t > 0 ? `<i class="pkp-lb__tr is-up">▲${t}</i>` : t < 0 ? `<i class="pkp-lb__tr is-down">▼${-t}</i>` : '');
+
 function raceRow(r, season, viewerId) {
+  const sub = [
+    r.team ? `${dot(r.team, 6)}${escHtml(tc(r.team))}` : '',
+    r.weekPicks ? `${fmtPts(r.week)} this week` : '',
+  ].filter(Boolean).join(' · ');
   return `<a href="${playerHref(r.playerId, season)}" class="pkp-lb${r.rank === 1 ? ' is-top' : ''}${r.playerId === viewerId ? ' is-me' : ''}" data-picks-player>
       <span class="pkp-lb__rank font-condensed">${r.rank}</span>
       ${pickAvatar({ id: r.playerId, name: r.name, team: r.team }, 32, false)}
-      <span class="pkp-lb__nm"><b>${escHtml(r.name)}${r.playerId === viewerId ? ' · You' : ''}</b><span>${r.team ? `${dot(r.team, 6)}${escHtml(tc(r.team))}` : ''}${r.upsets ? ` · ${r.upsets} upset${r.upsets === 1 ? '' : 's'}` : ''}</span></span>
-      <span class="pkp-lb__wl font-condensed">${r.correct}–${r.picks - r.correct}</span>
-      <span class="pkp-lb__pct">${r.pct}%</span>
+      <span class="pkp-lb__nm"><b>${escHtml(r.name)}${r.playerId === viewerId ? ' · You' : ''}</b><span>${sub}${trendHtml(r.trend)}</span></span>
+      <span class="pkp-lb__rec">${r.correct}–${r.wrong}</span>
+      <span class="pkp-lb__pts font-condensed">${fmtPts(r.net)}</span>
       <span class="pkp-lb__run${r.streak >= 2 ? '' : ' is-zero'}">${FLAME}${r.streak}</span>
     </a>`;
 }
 
-function racePanel({ board, unranked, minPicks, season, viewerId }) {
+function oddsRow(r, season, viewerId) {
+  return `<a href="${playerHref(r.playerId, season)}" class="pkp-lb${r.oddsRank === 1 ? ' is-top' : ''}${r.playerId === viewerId ? ' is-me' : ''}" data-picks-player>
+      <span class="pkp-lb__rank font-condensed">${r.oddsRank}</span>
+      ${pickAvatar({ id: r.playerId, name: r.name, team: r.team }, 32, false)}
+      <span class="pkp-lb__nm"><b>${escHtml(r.name)}${r.playerId === viewerId ? ' · You' : ''}</b><span>${r.team ? `${dot(r.team, 6)}${escHtml(tc(r.team))}` : ''}${r.upsets ? ` · ${r.upsets} upset${r.upsets === 1 ? '' : 's'}` : ''}</span></span>
+      <span class="pkp-lb__rec">${r.correct}–${r.wrong}</span>
+      <span class="pkp-lb__pts font-condensed">${fmtOdds(r.oddsPts)}</span>
+      <span class="pkp-lb__run is-zero"></span>
+    </a>`;
+}
+
+function boardList(rows, rowFn, { name, season, viewerId, hidden = false }) {
   const SHOW = 10;
-  const rows = board.length
-    ? `<div class="pkp-lb__head" aria-hidden="true"><span>#</span><span></span><span>Player</span><span>W–L</span><span>Pct</span><span>Run</span></div>
-      <div class="pkp-lb__list${board.length > SHOW ? ' is-capped' : ''}" data-race>${board.map((r, i) => (i === SHOW ? '<div class="pkp-lb__rest">' : '') + raceRow(r, season, viewerId)).join('')}${board.length > SHOW ? '</div>' : ''}</div>
-      ${board.length > SHOW ? `<button type="button" class="gm-more pkp-lb__all" data-race-all aria-expanded="false">Show all ${board.length}</button>` : ''}`
-    : `<p class="pk-lb__empty">Rankings start once players have ${minPicks} picks settled.</p>`;
-  const waiting = unranked.length ? `<div class="pkp-sub">
-      <div class="pkp-sub__lbl">Not ranked yet · need ${minPicks} picks</div>
-      ${unranked.slice(0, 8).map(u => `<a href="${playerHref(u.id, season)}" class="pkp-sub__row" data-picks-player><span>${dot(u.team, 6)}${escHtml(u.name)}${u.id === viewerId ? ' · You' : ''}</span><i>${u.picks} pick${u.picks === 1 ? '' : 's'} · ${u.need} more to rank</i></a>`).join('')}
-      ${unranked.length > 8 ? `<p class="pkp-sub__more">+${unranked.length - 8} more</p>` : ''}
-    </div>` : '';
+  return `<div data-race-board="${name}"${hidden ? ' hidden' : ''}>
+      <div class="pkp-lb__head" aria-hidden="true"><span>#</span><span></span><span>Player</span><span>W–L</span><span>Pts</span><span>${name === 'pts' ? 'Run' : ''}</span></div>
+      <div class="pkp-lb__list${rows.length > SHOW ? ' is-capped' : ''}">${rows.map((r, i) => (i === SHOW ? '<div class="pkp-lb__rest">' : '') + rowFn(r, season, viewerId)).join('')}${rows.length > SHOW ? '</div>' : ''}</div>
+      ${rows.length > SHOW ? `<button type="button" class="gm-more pkp-lb__all" data-race-all aria-expanded="false">Show all ${rows.length}</button>` : ''}
+    </div>`;
+}
+
+function racePanel({ board, oddsBoard, season, viewerId }) {
+  const body = board.length
+    ? `<div class="pkp-boards" role="group" aria-label="Leaderboard">
+        <button type="button" class="pkp-boards__b is-on" data-race-show="pts" aria-pressed="true">Pickmaster</button>
+        <button type="button" class="pkp-boards__b" data-race-show="odds" aria-pressed="false">Beat the Odds</button>
+      </div>
+      ${boardList(board, raceRow, { name: 'pts', season, viewerId })}
+      ${boardList(oddsBoard, oddsRow, { name: 'odds', season, viewerId, hidden: true })}`
+    : '<p class="pk-lb__empty">The board fills after the first game day\'s finals. Every settled pick counts.</p>';
   return `<section class="pk-board pkp-race" aria-labelledby="pkp-race-h">
-      <div class="pk-board__head"><h2 id="pkp-race-h">Pickmaster race · S${escHtml(season)}</h2><span>${board.length} ranked</span></div>
-      ${rows}
-      ${waiting}
-      <p class="pk-board__foot">Best pick record at season's end wins the <b>Pickmaster</b> award. Ties break on most correct, then upsets called.</p>
+      <div class="pk-board__head"><h2 id="pkp-race-h">Pickmaster race · S${escHtml(season)}</h2><span>${board.length} on the board</span></div>
+      ${body}
+      <div class="pk-board__foot">
+        <p data-race-foot="pts">Most points at season's end wins the <b>Pickmaster</b> award: <b>+1</b> for a correct pick, <b>−1</b> for a miss, <b>0</b> for a game you sit out.</p>
+        <p data-race-foot="odds" hidden>Bragging rights, no prize. A correct pick on the side the odds doubted earns more (up to +1.30); a miss on the side they backed costs more. Games without odds count ±1.</p>
+        <details class="pkp-ties">
+          <summary>How ties are broken</summary>
+          <p>Players level on points share a rank during the season. For the award, a tie at the end goes down this list until it's settled:</p>
+          <ol>
+            <li><b>Head-to-head</b>: on games where the tied players picked opposite sides, who was right more often</li>
+            <li><b>More correct picks</b>: 10–4 beats 7–1</li>
+            <li><b>Longest streak</b> of correct picks (a skipped game doesn't break it)</li>
+            <li><b>Beat the Odds</b> points</li>
+            <li><b>Finals margin guess</b>: closest guess of Finals Game 1's winning margin</li>
+            <li>Still level: <b>co-Pickmasters</b></li>
+          </ol>
+          <p>When three or more are tied, anyone a step separates is placed, and whoever is still level starts again at head-to-head.</p>
+        </details>
+        <a class="pkp-rules-link" href="/picks/rules">Full Pickmaster rules →</a>
+      </div>
     </section>`;
 }
 
@@ -101,15 +144,15 @@ function gameDays(days, isPlayer) {
     </div>`).join('');
 }
 
-export function picksPage({ season, seasons, days, board, unranked, minPicks, callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], closeTime = '06:00' }) {
+export function picksPage({ season, seasons, days, board, oddsBoard = [], callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], closeTime = '06:00' }) {
   return `<div class="page-content pkp-page">
 ${pageHeader({
     title: 'Who wins? picks',
-    description: open.length ? `Make this week's picks, then follow every call and the Pickmaster race${oddsOn ? ' — and how the odds are doing' : ''}.` : `Every call, the Pickmaster race${oddsOn ? ', and how the odds are doing' : ''}.`,
+    description: `${open.length ? `Make this week's picks, then follow every call and the Pickmaster race${oddsOn ? ' — and how the odds are doing' : ''}.` : `Every call, the Pickmaster race${oddsOn ? ', and how the odds are doing' : ''}.`} <a href="/picks/rules" class="pkp-rules-link">How scoring works →</a>`,
     actions: seasonTabs(seasons, season, '/picks'),
   })}
 ${openPicksSection(open, { isPlayer, closeTime })}
-${statTiles({ callers, upsets, pickers, ranked: board.length, minPicks, oddsOn })}
+${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
 <div class="pkp-tabs" role="tablist" aria-label="Picks sections">
   <button type="button" class="pkp-tab is-on" role="tab" aria-selected="true" data-pkp-tab="race">Pickmaster race</button>
   <button type="button" class="pkp-tab" role="tab" aria-selected="false" data-pkp-tab="days">Game days</button>
@@ -120,7 +163,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, minPicks, oddsOn }
     ${gameDays(days, isPlayer)}
   </section>
   <aside class="pkp-side" data-pkp-panel="race">
-    ${racePanel({ board, unranked, minPicks, season, viewerId })}
+    ${racePanel({ board, oddsBoard, season, viewerId })}
     ${upsetsPanel(upsets, season)}
   </aside>
 </div>
@@ -131,12 +174,12 @@ ${picksScript()}`;
 }
 
 // ── One player's picks ───────────────────────────────────────────────────────
-export function picksPlayerSheet({ player, season, record, rank, ranked, minPicks, rows, isSelf, oddsOn }) {
+export function picksPlayerSheet({ player, season, record, rank, ranked, rows, isSelf, oddsOn }) {
   const col = teamColor(player.team);
   const strip = record ? record.results.map(r => `<span class="${r.correct ? 'is-hit' : ''}" title="${r.correct ? 'Called it' : 'Missed'}"></span>`).join('') : '';
   const rankLine = rank
     ? `#${rank} of ${ranked} · Pickmaster race · S${escHtml(season)}`
-    : record ? `${Math.max(0, minPicks - record.picks)} more pick${minPicks - record.picks === 1 ? '' : 's'} to get ranked` : `No settled picks in Season ${escHtml(season)}`;
+    : `No settled picks in Season ${escHtml(season)}`;
   const rowHtml = rows.length ? rows.map(r => {
     const g = r.g;
     const picked = r.side ? tc(r.side === 'a' ? g.a : g.b) : null;
@@ -165,8 +208,8 @@ export function picksPlayerSheet({ player, season, record, rank, ranked, minPick
       </div>
     </div>
     ${record ? `<div class="pkp-sheet__stats">
-      <div><b class="font-condensed is-amber">${record.correct}–${record.picks - record.correct}</b><span>Record</span></div>
-      <div><b class="font-condensed">${record.pct}%</b><span>Pct</span></div>
+      <div><b class="font-condensed is-amber">${fmtPts(record.net)}</b><span>Points</span></div>
+      <div><b class="font-condensed">${record.correct}–${record.wrong}</b><span>Record</span></div>
       <div><b class="font-condensed">${record.streak}</b><span>Streak</span></div>
       <div><b class="font-condensed">${record.upsets}</b><span>Upsets</span></div>
     </div>
@@ -177,6 +220,69 @@ export function picksPlayerSheet({ player, season, record, rank, ranked, minPick
     <div class="pkp-sheet__list-lbl">Picks · newest first</div>
     ${rowHtml}
     <p class="pkp-sheet__note">${isSelf ? 'Your open picks are only visible to you until the final.' : 'Picks on games not played yet stay private until the final.'}</p>
+  </div>
+</div>`;
+}
+
+// ── /picks/rules — the Pickmaster rules in plain language ───────────────────────────────
+// Same card + section styling as /rules (legal-*). The numbers here must match lib/picks.js:
+// net scoring, the tiebreak order (TIEBREAK_STEPS) and the 35–65% odds clamp.
+export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine = '' }) {
+  const section = (heading, content) => `<div class="legal-section">
+    <h2 class="legal-section__heading">${escHtml(heading)}</h2>
+    <div class="legal-section__body">${content}</div>
+  </div>`;
+  return `<div class="page-content">
+  <div class="legal-page pkr-page">
+    <p class="pkp-crumb"><a href="/picks">← Who wins? picks</a></p>
+    <div class="legal-header">
+      <h1 class="legal-title">Pickmaster rules</h1>
+      <p class="legal-updated">Season 4 · in effect from the October 11, 2026 games</p>
+    </div>
+    <div class="card legal-card">
+      ${section('The short version', `<p>Pick who wins each game. A correct pick is <strong>+1</strong>, a wrong one is <strong>−1</strong>, and a game you don't pick is <strong>0</strong>. Most points when the season ends is the <strong>Pickmaster</strong>.</p>
+      ${prizeLine ? `<p>${escHtml(prizeLine)}</p>` : ''}`)}
+      ${section('Making a pick', `<ul>
+        <li>Log in with your player account, then tap a team on any open game: on the homepage, <a href="/picks">/picks</a>, a game page or your profile.</li>
+        <li>You can change or remove your pick until picks close at <strong>${escHtml(fmtCloseTime(closeTime))} (Manila time) on game day</strong>. Your last pick is the one that counts.</li>
+        <li>You can pick any game, including your own team's, and either side of it.</li>
+        <li>Logged-in players can see who picked each side. Everyone sees the results after the final.</li>
+      </ul>`)}
+      ${section('Scoring', `<table class="pkr-table">
+        <thead><tr><th>Your pick</th><th>Points</th></tr></thead>
+        <tbody>
+          <tr><td>Correct</td><td class="font-condensed">+1</td></tr>
+          <tr><td>Wrong</td><td class="font-condensed">−1</td></tr>
+          <tr><td>Didn't pick</td><td class="font-condensed">0</td></tr>
+        </tbody>
+      </table>
+      <p>The leaderboard shows your points next to your record, so <strong>7–1</strong> is <strong>+6</strong>. Every game counts the same, regular season and playoffs alike.</p>
+      <p>There's no minimum number of picks. Sitting out a game costs nothing, and guessing every game doesn't help either: a coin-flip picker ends up near 0. Joining late is fine. Someone who starts in week 8 and goes 6–0 is level with someone who went 9–3 all season.</p>`)}
+      ${section('If players are tied', `<p>During the season, players on the same points share a rank. When the season ends, a tie for Pickmaster goes down this list until it's settled:</p>
+      <ol class="pkr-steps">
+        <li><strong>Head-to-head.</strong> Only the games where the tied players picked opposite sides count. Whoever was right more often wins.</li>
+        <li><strong>More correct picks.</strong> 10–4 beats 7–1, even though both are +6.</li>
+        <li><strong>Longest streak</strong> of correct picks in the season. A wrong pick breaks a streak; a game you skip doesn't.</li>
+        <li><strong>Beat the Odds points</strong> (below).</li>
+        <li><strong>Finals margin guess.</strong> When you pick Finals Game 1, you'll also be able to guess the winning margin (it opens before the playoffs). Closest guess wins.</li>
+        <li>Still level: <strong>co-Pickmasters</strong>.</li>
+      </ol>
+      <p>With three or more tied, anyone a step separates is placed, and whoever is still level starts again at head-to-head.</p>`)}
+      ${section('Beat the Odds', `<p>A second leaderboard for calling upsets. Bragging rights only; it doesn't decide the prize except as tiebreaker 4.</p>
+      <ul>
+        <li>A correct pick earns <strong>2 × (100% − the odds on your side)</strong>. A wrong pick costs <strong>2 × the odds on your side</strong>.</li>
+        <li>Odds count between 35% and 65%. A team given 84% counts as 65%, and one given 16% counts as 35%.</li>
+        <li>So a correct pick on a 35% underdog earns <strong>+1.30</strong>, and a miss on a 65% favourite costs <strong>−1.30</strong>. A 50/50 game is +1 or −1.</li>
+        <li>The odds used are the ones shown when picks closed. A game with no odds (early in the season, or odds hidden for that game) counts +1 or −1.</li>
+      </ul>
+      ${oddsOn ? '' : '<p>Odds are switched off on the site right now, but the odds stored for each game still count here.</p>'}`)}
+      ${section('Special cases', `<ul>
+        <li><strong>Cancelled games</strong>, or games without a final result, score nothing for anyone.</li>
+        <li><strong>Score corrections:</strong> if a final score is corrected, every pick on that game is rescored. Beat the Odds points stay based on the odds shown at close.</li>
+        <li>Rules are set before the season's picks are scored. Any change only applies to games after it's announced.</li>
+      </ul>`)}
+      ${section('Questions', '<p>Ask an admin, or message the league page. <a href="/picks">See the race →</a></p>')}
+    </div>
   </div>
 </div>`;
 }
@@ -201,15 +307,23 @@ function picksScript() {
   tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.pkpTab); }); });
   show('race');
 
-  // Race: first 10, then "Show all".
-  var all = document.querySelector('[data-race-all]');
-  if (all) all.addEventListener('click', function () {
-    var list = document.querySelector('[data-race]');
-    var open = list.classList.toggle('is-open');
-    all.setAttribute('aria-expanded', open ? 'true' : 'false');
-    all.textContent = open ? 'Show top 10' : all.dataset.label || all.textContent;
+  // Race: Pickmaster / Beat the Odds boards, each showing 10 then "Show all".
+  document.querySelectorAll('[data-race-show]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var name = b.dataset.raceShow;
+      document.querySelectorAll('[data-race-show]').forEach(function (x) { var on = x === b; x.classList.toggle('is-on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+      document.querySelectorAll('[data-race-board]').forEach(function (p) { p.hidden = p.dataset.raceBoard !== name; });
+      document.querySelectorAll('[data-race-foot]').forEach(function (p) { p.hidden = p.dataset.raceFoot !== name; });
+    });
   });
-  if (all) all.dataset.label = all.textContent;
+  document.querySelectorAll('[data-race-all]').forEach(function (all) {
+    all.dataset.label = all.textContent;
+    all.addEventListener('click', function () {
+      var open = all.previousElementSibling.classList.toggle('is-open');
+      all.setAttribute('aria-expanded', open ? 'true' : 'false');
+      all.textContent = open ? 'Show top 10' : all.dataset.label;
+    });
+  });
 
   // A player's picks open in a sheet; the link still works as a normal page without JS.
   var dlg = document.querySelector('.pkp-dialog'), sheet = document.querySelector('[data-pkp-sheet]');

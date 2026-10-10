@@ -27,7 +27,7 @@ import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
 import { homePage, leaderBoards } from './views/home.js';
 import { gamesPage } from './views/games.js';
-import { picksPage, picksPlayerPage, picksPlayerSheet, picksGamePage } from './views/picks.js';
+import { picksPage, picksPlayerPage, picksPlayerSheet, picksGamePage, picksRulesPage } from './views/picks.js';
 import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
@@ -167,7 +167,7 @@ import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceCo
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { comparisonProblems } from './lib/story-checks.js';
-import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, callerRecords, calledItSummary } from './lib/picks.js';
+import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, callerRecords, calledItSummary } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody, playerFinancialSection } from './views/admin/ledger.js';
@@ -6061,15 +6061,16 @@ function getFinalsSuggestionContext(season) {
   };
 }
 
-// Pickmaster (fan award): the season's top "Who wins?" pick record, from the same ranking
+// Pickmaster (fan award): the season's top "Who wins?" points total, from the same ranking
 // /games shows. notes carries the record ("14 of 18 picks") onto the awards page.
 function pickmasterSuggestion(season, seasonStats = []) {
-  const top = seasonPicks(buildPicksContext(getAllGames()), season).board.rows[0];
+  const top = pickmasterLeader(seasonPicks(buildPicksContext(getAllGames()), season).board);
   if (!top) return null;
   const row = seasonStats.find(p => p.id === top.playerId);
   const p = row || getPlayerById(top.playerId);
   if (!p) return null;
-  return { player: row || { id: p.id, name: p.name, team_name: '' }, notes: `${top.correct} of ${top.picks} picks`, statLine: '' };
+  const how = top.decidedBy === 'shared' ? ` · level with ${top.level - 1} other${top.level > 2 ? 's' : ''} on every tiebreak` : top.decidedBy ? ` · won on ${top.decidedBy.toLowerCase()}` : '';
+  return { player: row || { id: p.id, name: p.name, team_name: '' }, notes: `${fmtPts(top.net)} pts (${top.correct}–${top.wrong})${how}`, statLine: '' };
 }
 
 app.get('/admin/awards', requireAuth, (req, res) => {
@@ -7188,7 +7189,7 @@ app.get('/sitemap.xml', (req, res) => {
   if (flags.mvpRace) urls.push({ loc: '/mvp',    priority: '0.5', changefreq: 'weekly' });
   if (flags.papawis) urls.push({ loc: '/papawis', priority: '0.5', changefreq: 'weekly' });
   if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
-  if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' });
+  if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' }, { loc: '/picks/rules', priority: '0.3', changefreq: 'monthly' });
 
   for (const t of getAllTeams())   urls.push({ loc: `/teams/${teamSlug(t)}`,     priority: '0.6', changefreq: 'weekly' });
   for (const p of getAllPlayers()) urls.push({ loc: `/players/${playerSlug(p)}`, priority: '0.5', changefreq: 'weekly' });
@@ -8016,13 +8017,13 @@ app.get('/admin/picks', requireAuth, (req, res) => {
   const pickers = [...byPlayer.entries()].map(([id, e]) => {
     const r = sp.records[id];
     return {
-      ...person(id), picks: e.made, settled: r?.picks || 0, correct: r?.correct || 0, pct: r?.pct || 0,
+      ...person(id), picks: e.made, settled: r?.picks || 0, correct: r?.correct || 0, net: r?.net || 0, oddsPts: r?.oddsPts || 0,
       streak: r?.streak || 0, upsets: r?.upsets || 0, rank: rankOf.get(id) || null, last: e.last,
       missingNext: missingIds.has(id),
     };
   }).sort((x, y) => (x.rank || 1e9) - (y.rank || 1e9) || y.correct - x.correct || y.picks - x.picks || x.name.localeCompare(y.name));
 
-  const leaderRow = sp.board.rows[0];
+  const leaderRow = pickmasterLeader(sp.board);
   res.send(renderAdminPage(req, {
     title: 'Who wins? picks',
     currentPath: '/admin/picks',
@@ -8040,7 +8041,7 @@ app.get('/admin/picks', requireAuth, (req, res) => {
         upsets: results.filter(r => r.odds?.fav && r.odds.fav !== r.winner).length,
         // Odds are judged on every finished game with odds, picked or not.
         oddsRecord: { called: results.filter(r => r.odds?.fav && r.odds.fav === r.winner).length, of: results.filter(r => r.odds?.fav).length },
-        leader: leaderRow ? { ...person(leaderRow.playerId), correct: leaderRow.correct, picks: leaderRow.picks } : null,
+        leader: leaderRow ? { ...person(leaderRow.playerId), net: leaderRow.net, correct: leaderRow.correct, wrong: leaderRow.wrong, level: leaderRow.level, decidedBy: leaderRow.decidedBy } : null,
       },
     }),
   }));
@@ -8125,16 +8126,14 @@ function picksEmailFor(c, draft, playerId, regId = '') {
     odds: !u.hideOdds && u.odds?.fav ? { fav: u.odds.fav, pctA: u.odds.pctA, pctB: u.odds.pctB } : null,
     myPick: mine.has(u.id) ? titleCase(mine.get(u.id) === 'a' ? u.a : u.b) : null,
   }));
-  const { board: { rows, minPicks }, records } = c.sp;
+  const { board: { rows }, records } = c.sp;
   const r = records[playerId];
   const rank = rows.find(x => x.playerId === playerId)?.rank;
-  const need = r ? Math.max(0, minPicks - r.picks) : minPicks;
-  const me = !r ? `You haven't had a pick settled yet. ${minPicks} settled picks get you on the board.`
-    : rank ? `You're #${rank} of ${rows.length} at ${r.correct} of ${r.picks}${r.streak >= 2 ? `, ${r.streak} in a row` : ''}.`
-    : `You're ${r.correct} of ${r.picks}. ${need} more settled pick${need === 1 ? '' : 's'} to get ranked.`;
+  const me = !r ? "You haven't had a pick settled yet. Your first final puts you on the board."
+    : `You're #${rank} of ${rows.length} on ${fmtPts(r.net)} (${r.correct}–${r.wrong})${r.streak >= 2 ? `, ${r.streak} in a row` : ''}.`;
   return picksReminderEmail({
     name: c.playerMap[playerId]?.name || '', copy: draft, games, dayLabel: c.dayLabel, closeLabel: c.closeLabel,
-    board: rows.slice(0, 5).map(x => ({ rank: x.rank, name: displayPlayerName(c.playerMap[x.playerId]?.name || ''), record: `${x.correct}–${x.picks - x.correct}` })),
+    board: rows.slice(0, 5).map(x => ({ rank: x.rank, name: displayPlayerName(c.playerMap[x.playerId]?.name || ''), record: `${fmtPts(x.net)} (${x.correct}–${x.wrong})` })),
     me, prizeLine: PICKS_PRIZE_LINE,
     url: `${(process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '')}/picks`,
     unsubscribeUrl: regId ? picksUnsubscribeUrl(regId) : '',
@@ -9342,12 +9341,23 @@ function buildPicksContext(games) {
   };
 }
 
+// Odds that score "Beat the Odds" points: the preview frozen at pick close when there is one
+// (so a later box-score fix can't move anyone's points), else the pre-game odds. Scored even
+// with the global odds switch off; a game with its odds hidden scores ±1 like a toss-up.
+function scoringOdds(settled, pctx) {
+  return Object.fromEntries(settled.map(g => {
+    if (pctx.settings[g.id]?.hide_odds) return [g.id, null];
+    const stored = getGamePreview(g.id);
+    return [g.id, (stored?.frozen && stored.odds) || computeOdds(g, pctx.played)];
+  }));
+}
+
 function seasonPicks(pctx, season) {
   const settled = settleGames(pctx.played.filter(g => g.season === String(season)), pctx.oddsById);
   const pickedIds = new Set(pctx.picks.map(p => p.game_id));
   const pickable = settled.filter(g => pickedIds.has(g.id));
-  const records = buildPickRecords(pctx.picks, settled);
-  return { settled, pickable, records, board: pickLeaderboard(records, pickable.length), callers: callerRecords(settled, pctx.picks) };
+  const records = buildPickRecords(pctx.picks, pickable, scoringOdds(pickable, pctx));
+  return { settled, pickable, records, board: pickLeaderboard(records), callers: callerRecords(settled, pctx.picks) };
 }
 
 // Closed/odds state for one upcoming game.
@@ -9516,7 +9526,7 @@ function homePicksWidget(games, viewerId) {
     leader: (() => {
       const top = sp.board.rows[0];
       if (!top) return null;
-      return { name: displayPlayerName(getPlayerById(top.playerId)?.name || ''), correct: top.correct, picks: top.picks, tied: sp.board.rows.filter(r => r.rank === 1).length };
+      return { name: displayPlayerName(getPlayerById(top.playerId)?.name || ''), net: top.net, correct: top.correct, wrong: top.wrong, picks: top.picks, tied: sp.board.rows.filter(r => r.rank === 1).length };
     })(),
   };
   const today = manilaTodayStr();
@@ -9686,18 +9696,14 @@ app.get('/picks', (req, res) => {
 
   const seasonGameIds = new Set(pctx.all.filter(g => g.season === season).map(g => g.id));
   const pickers = new Set(pctx.picks.filter(p => seasonGameIds.has(p.game_id)).map(p => p.player_id)).size;
-  const unranked = Object.entries(sp.records)
-    .filter(([, r]) => r.picks < sp.board.minPicks)
-    .map(([id, r]) => ({ ...person(id), picks: r.picks, need: sp.board.minPicks - r.picks }))
-    .sort((x, y) => y.picks - x.picks || x.name.localeCompare(y.name));
 
   res.send(renderPage(req, {
     title: `Who wins? picks · Season ${season} — WKND Basketball`,
     currentPath: '/picks',
     body: picksPage({
-      season, seasons, days, pickers, unranked,
+      season, seasons, days, pickers,
       board: sp.board.rows.map(r => ({ ...r, ...person(r.playerId) })),
-      minPicks: sp.board.minPicks,
+      oddsBoard: sp.board.oddsRows.map(r => ({ ...r, ...person(r.playerId) })),
       callers: sp.callers,
       upsets: summaries.filter(s => s.upset),
       oddsOn: pickOddsEnabled(),
@@ -9757,6 +9763,16 @@ app.get('/picks/players/:id', (req, res) => {
 
 // ── /picks/<game>: the full matchup preview, and its archive once picks close ─────────
 // Works with picks switched off too (the preview stays, the pick box goes).
+// The Pickmaster rules. Registered before /picks/:ref so "rules" isn't looked up as a game.
+app.get('/picks/rules', (req, res) => {
+  if (!picksEnabled()) return res.status(404).send('Not found');
+  res.send(renderPage(req, {
+    title: 'Pickmaster rules — WKND Basketball',
+    currentPath: '/picks',
+    body: picksRulesPage({ closeTime: picksCloseTime(), oddsOn: pickOddsEnabled(), prizeLine: PICKS_PRIZE_LINE }),
+  }));
+});
+
 app.get('/picks/:ref', (req, res) => {
   const notFound = () => res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/picks', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Game not found.</p></div>' }));
   const resolved = findGameRef(req.params.ref);
@@ -10484,8 +10500,8 @@ const summaryDay = ymd => new Date(`${String(ymd).slice(0, 10)}T00:00:00`).toLoc
 function picksSummaryFacts(w) {
   const title = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   const leaderLine = w.leader
-    ? `Pickmaster race (best pick record, minimum ${w.minPicks} settled picks): ${w.leader.name} leads at ${w.leader.correct} of ${w.leader.picks}${w.leader.tied > 1 ? `, tied with ${w.leader.tied - 1} other${w.leader.tied > 2 ? 's' : ''}` : ''}.`
-    : `Pickmaster race: nobody is ranked yet (players need ${w.minPicks} settled picks).`;
+    ? `Pickmaster race (net points: +1 per correct pick, −1 per miss): ${w.leader.name} leads on ${fmtPts(w.leader.net)} (${w.leader.correct}–${w.leader.wrong})${w.leader.tied > 1 ? `, tied with ${w.leader.tied - 1} other${w.leader.tied > 2 ? 's' : ''}` : ''}.`
+    : 'Pickmaster race: nobody is on the board yet (no picks have settled).';
   if (w.mode === 'open') {
     const leanOf = g => {
       const t = g.counts.a + g.counts.b;
@@ -11733,7 +11749,7 @@ app.get('/players/:ref', async (req, res) => {
     } : null;
     if (r || own?.open.length) {
       pickRecord = {
-        ...(r || { picks: 0, correct: 0, pct: 0, streak: 0, best: 0, upsets: 0 }), settled: !!r,
+        ...(r || { picks: 0, correct: 0, wrong: 0, net: 0, pct: 0, streak: 0, best: 0, upsets: 0 }), settled: !!r,
         playerId: resolved.id, season: pickSeason, rank: r ? sp.board.rows.find(x => x.playerId === resolved.id)?.rank || null : null,
         ranked: sp.board.rows.length, minPicks: sp.board.minPicks, own,
       };

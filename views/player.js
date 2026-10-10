@@ -6,6 +6,7 @@ import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
 import { BADGE_ICONS } from '../lib/badges.js';
 import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime } from './pick-box.js';
 import { resultChips } from './picks-widget.js';
+import { fmtPts } from '../lib/picks.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -845,13 +846,13 @@ function pickRecordCard(r, isOwnProfile) {
   const flame = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg>`;
   const rank = r.rank
     ? `#${r.rank} of ${r.ranked} in the Pickmaster race`
-    : `${Math.max(0, r.minPicks - r.picks)} more pick${r.minPicks - r.picks === 1 ? '' : 's'} to get ranked`;
+    : 'On the board after your next final';
   const own = isOwnProfile ? r.own : null;
   const record = r.settled === false
-    ? `<p class="pk-me__rank">Your first picks settle after the final. Get ${r.minPicks} in to join the Pickmaster race.</p>`
+    ? `<p class="pk-me__rank">Your first picks settle after the final. Every settled pick counts toward the Pickmaster race.</p>`
     : `<div class="pk-me__main">
-    <span class="pk-me__rec"><b class="font-condensed">${r.correct}</b><span>of ${r.picks}</span></span>
-    <span class="pk-me__pct font-condensed">${r.pct}%</span>
+    <span class="pk-me__rec"><b class="font-condensed">${fmtPts(r.net)}</b><span>pts</span></span>
+    <span class="pk-me__pct font-condensed">${r.correct}–${r.wrong}</span>
     ${own?.recent?.length ? resultChips(own.recent) : ''}
   </div>
   <div class="pk-me__stats">
