@@ -360,6 +360,91 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     </div>
   </div>`;
 
+  // Global footer — "mirror the header": wordmark + social tiles, five link groups that
+  // follow the mega-menu groups (plus League), and a bottom strip styled like .topstrip.
+  // Each group is a <details> so phones get an accordion; desktop forces them open.
+  // Links keep the same feature gating as the header; empty groups drop out.
+  const isGuest = !isPlayer && !isAdmin;
+  const footerGroups = [
+    ['Games', [
+      ['/games', 'All games'], ['/standings', 'Standings'], ['/playoffs', 'Playoffs'],
+      features.picks ? ['/picks', 'Who wins? picks'] : null,
+      ['/highlights', 'Highlights'],
+    ]],
+    ['Stats', [['/leaders', 'Leaders'], ['/players', 'Players'], ['/teams', 'Teams'], ['/roast', 'The Roast']]],
+    ['Awards', [
+      features.mvpRace !== false ? ['/mvp', 'MVP Race'] : null,
+      features.awards  !== false ? ['/awards', 'Season awards'] : null,
+      ['/badges', 'Badges'],
+    ]],
+    ['Community', [
+      features.papawis ? ['/papawis', 'Papawis'] : null,
+      features.posts ? ['/posts', 'Posts'] : null,
+      isPlayer ? ['/polls', 'Polls'] : null,
+      features.marketplace ? ['/marketplace', 'Marketplace'] : null,
+    ]],
+    ['League', [
+      ['/rules', 'League rules'], ['/rules/fines', 'League fines'],
+      features.picks ? ['/picks/rules', 'Pickmaster rules'] : null,
+      isGuest ? ['/register', 'Join the community', 'site-footer__join-link'] : null,
+    ]],
+  ].map(([t, links]) => [t, links.filter(Boolean)]).filter(([, links]) => links.length);
+  const footerChevron = `<svg class="site-footer__chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
+  const footerTile = (href, label, svg) =>
+    `<a href="${href}" class="site-footer__tile" target="_blank" rel="noopener" aria-label="${label}">${svg}</a>`;
+  const siteFooter = `<footer class="site-footer">
+    <div class="container">
+      <div class="site-footer__inner">
+        <div class="site-footer__brand">
+          ${wkndLogo('site-footer__logo')}
+          <p class="site-footer__tagline">Ball is life. Every weekend.</p>
+          <div class="site-footer__social">
+            ${footerTile('https://www.facebook.com/wkndbasketball', 'Facebook', '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>')}
+            ${footerTile('https://www.instagram.com/wknd.basketball', 'Instagram', '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/></svg>')}
+            ${footerTile('https://www.youtube.com/@wkndbasketball', 'YouTube', '<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#10141d"/></svg>')}
+          </div>
+          ${isGuest ? `<a href="/register" class="site-footer__join">Join the community</a>` : ''}
+        </div>
+        <nav class="site-footer__groups" aria-label="Footer">
+          ${footerGroups.map(([t, links]) => `<details class="site-footer__group" open>
+            <summary class="site-footer__group-title">${t}${footerChevron}</summary>
+            <div class="site-footer__links">${links.map(([href, lbl, cls]) =>
+              `<a href="${href}"${cls ? ` class="${cls}"` : ''}>${lbl}</a>`).join('')}</div>
+          </details>`).join('')}
+        </nav>
+      </div>
+    </div>
+    <div class="site-footer__bottom">
+      <div class="container">
+        <div class="site-footer__bottom-inner">
+          <div class="site-footer__bottom-left">
+            ${hdr.season ? `<span class="topstrip__season"><span class="topstrip__dot" aria-hidden="true"></span>Season ${escHtml(String(hdr.season))}</span><span class="topstrip__sep" aria-hidden="true"></span>` : ''}
+            <nav class="site-footer__legal" aria-label="Legal">
+              <a href="/privacy">Privacy Policy</a>
+              <a href="/terms">Terms of Service</a>
+              <a href="#" data-cookie-settings hidden>Cookie Settings</a>
+            </nav>
+          </div>
+          <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function(){
+        // Phones: accordion with only the first group open. Wider: every group open, and
+        // the summaries don't toggle.
+        var mq = window.matchMedia('(max-width: 640px)');
+        var groups = document.querySelectorAll('.site-footer__group');
+        function sync(){ groups.forEach(function(d, i){ d.open = mq.matches ? i === 0 : true; }); }
+        groups.forEach(function(d){
+          d.querySelector('summary').addEventListener('click', function(e){ if (!mq.matches) e.preventDefault(); });
+        });
+        sync();
+        (mq.addEventListener ? mq.addEventListener('change', sync) : mq.addListener(sync));
+      })();
+    </script>
+  </footer>`;
+
   // Shared by both header variants (full and minimal) — only one ever renders, and
   // both render mobileNav (#mobile-nav) right before this script, so one script covers
   // either. Two hamburger buttons can exist for minimalHeader pages — one in the header
@@ -559,63 +644,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       ${body}
     </div>
   </div>
-  <footer class="site-footer">
-    <div class="container">
-      <div class="site-footer__inner">
-        <div class="site-footer__brand">
-          ${wkndLogo('site-footer__logo')}
-          <span class="site-footer__tagline">Ball is life. Every weekend.</span>
-          <div class="site-footer__social">
-            <a href="https://www.facebook.com/wkndbasketball" class="site-footer__social-link" target="_blank" rel="noopener" aria-label="Facebook">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-            </a>
-            <a href="https://www.instagram.com/wknd.basketball" class="site-footer__social-link" target="_blank" rel="noopener" aria-label="Instagram">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>
-            </a>
-            <a href="https://www.youtube.com/@wkndbasketball" class="site-footer__social-link" target="_blank" rel="noopener" aria-label="YouTube">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#020817"/></svg>
-            </a>
-          </div>
-        </div>
-        <div class="site-footer__groups">
-          <div class="site-footer__group">
-            <span class="site-footer__group-title">Games</span>
-            <a href="/games">All Games</a>
-            <a href="/standings">Standings</a>
-            <a href="/playoffs">Playoffs</a>
-            ${features.papawis ? '<a href="/papawis">Papawis</a>' : ''}
-            ${features.marketplace ? '<a href="/marketplace">Marketplace</a>' : ''}
-            ${features.posts ? '<a href="/posts">Posts</a>' : ''}
-          </div>
-          <div class="site-footer__group">
-            <span class="site-footer__group-title">Stats</span>
-            <a href="/teams">Teams</a>
-            <a href="/players">Players</a>
-            <a href="/leaders">Leaders</a>
-            <a href="/roast">The Roast</a>
-          </div>
-          ${features.awards !== false || features.mvpRace !== false ? `<div class="site-footer__group">
-            <span class="site-footer__group-title">Awards</span>
-            ${features.awards  !== false ? `<a href="/awards">Season Awards</a>` : ''}
-            ${features.mvpRace !== false ? `<a href="/mvp">MVP Race</a>`         : ''}
-          </div>` : ''}
-          <div class="site-footer__group">
-            <span class="site-footer__group-title">League</span>
-            <a href="/rules">League Rules</a>
-            <a href="/rules/fines">League Fines</a>
-          </div>
-        </div>
-      </div>
-      <div class="site-footer__bottom">
-        <nav class="site-footer__legal">
-          <a href="/privacy">Privacy Policy</a>
-          <a href="/terms">Terms of Service</a>
-          <a href="#" data-cookie-settings hidden>Cookie Settings</a>
-        </nav>
-        <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
-      </div>
-    </div>
-  </footer>`}
+  ${siteFooter}`}
 </body>
 </html>`;
 }
