@@ -139,6 +139,7 @@ import {
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
+  getLatestCommentsForGames, getGameCommenterIds, getTeamPlayerIdsWithAccounts, findUnreadNotification, refreshNotification,
   setGamePick, setGamePickMargin, getGamePickCounts, getPlayerGamePicks,
   getAllGamePicks, getGamePicksWithPlayers, getAllGamePickSettings, setGamePickClosed, setGamePickHideOdds, claimGamePickSettle,
   getGamePreview, saveGamePreview, getGamePreviewIds,
@@ -7297,6 +7298,7 @@ app.get('/', (req, res) => {
     title: 'WKND Basketball League',
     currentPath: req.path,
     body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
+      latestComments: getSetting('comments_enabled', '0') === '1' ? getLatestCommentsForGames(games.filter(g => g.status === 'final' || g.status === 'complete').map(g => g.id)) : {},
       picksWidgetHtml: picksWidget(picksW, { summary: summaries.picks || null, isAdmin: !!req.session?.isAdmin }) })
   }));
 });
@@ -7649,10 +7651,12 @@ app.post('/games/:id/comments', express.json(), (req, res) => {
     },
   });
 
-  // Notifications: an @mentioned player gets a specific callout; everyone else who
-  // actually played in this game gets a general "new comment" one. Never both for the
-  // same person, and never for the commenter's own comment.
-  const gameLink = `/games/${gameSlug(game)}`;
+  // Notifications: an @mentioned player gets a specific callout; everyone else involved gets
+  // a general "new comment" one — players in the box score after the final, both teams'
+  // players and everyone who picked the game before it, plus anyone already in the thread.
+  // Never both for the same person, never for the commenter's own comment, and a thread you
+  // haven't read yet updates one "N new comments" notification instead of stacking more.
+  const gameLink = `/games/${gameSlug(game)}#talk`;
   const commenterName = displayPlayerName(saved.player_name);
   const accountedPlayers = getPlayersWithAccounts().map(p => ({ id: p.id, name: displayPlayerName(p.name) }));
   const mentionedIds = new Set(extractMentionedPlayerIds(body, accountedPlayers));
@@ -7668,15 +7672,28 @@ app.post('/games/:id/comments', express.json(), (req, res) => {
     });
   });
 
-  const gameStats = getGameDetailStats(game.id);
-  const participantIds = new Set(gameStats.map(s => s.player_id));
-  participantIds.forEach(pid => {
+  const isFinal = (game.status === 'final' || game.status === 'complete') && Number(game.team_a_score) + Number(game.team_b_score) > 0;
+  const involved = new Set([
+    ...(isFinal
+      ? getGameDetailStats(game.id).map(s => s.player_id)
+      : [...getTeamPlayerIdsWithAccounts(game.team_a_id, game.team_b_id), ...getGamePicksWithPlayers(game.id).map(p => p.player_id)]),
+    ...getGameCommenterIds(game.id),
+  ]);
+  const matchup = `${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`;
+  const preview = `${commenterName}: ${body.length > 100 ? body.slice(0, 100) + '…' : body}`;
+  involved.forEach(pid => {
     if (pid === playerId || mentionedIds.has(pid)) return;
+    const unread = findUnreadNotification(pid, 'comment_new', gameLink);
+    if (unread) {
+      const n = (Number(String(unread.title).match(/^(\d+) new comments/)?.[1]) || 1) + 1;
+      refreshNotification(unread.id, { title: `${n} new comments on ${matchup}`, body: preview });
+      return;
+    }
     createNotification({
       playerId: pid,
       type: 'comment_new',
-      title: `New comment on ${game.team_a_name} vs ${game.team_b_name}`,
-      body: `${commenterName}: ${body.length > 100 ? body.slice(0, 100) + '…' : body}`,
+      title: `${isFinal ? 'New comment' : 'Pre-game chatter'} on ${matchup}`,
+      body: preview,
       link: gameLink,
     });
   });
@@ -9637,6 +9654,8 @@ function openPicks(games, pctx, viewerId) {
       // Finals Game 1 carries the margin-guess tiebreaker; the guess is only ever sent to its owner.
       marginGuess: isFinalsG1 ? { mine: myPick ? (pctx.picks.find(p => p.game_id === g.id && p.player_id === viewerId)?.margin_guess ?? null) : null } : null,
       pickers: canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null,
+      // After picking, a "Talk trash" link to the game's pre-game chatter (comments on).
+      talk: getSetting('comments_enabled', '0') === '1',
       recA: recordOf(pg.a), recB: recordOf(pg.b),
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
     };
@@ -9765,10 +9784,12 @@ app.get('/games', (req, res) => {
     const commentCounts = getGameCommentCounts(ids);
     const reactionCounts = getGameReactionCounts(ids);
     const reactedIds = getReactedGameIdsForPlayer(ids, req.session?.playerPlayerId || null);
+    const latest = getLatestCommentsForGames(ids);
     socialByGame = Object.fromEntries(ids.map(id => [id, {
       commentsCount: commentCounts[id] || 0,
       reactCount: reactionCounts[id] || 0,
       reacted: reactedIds.has(id),
+      latest: latest[id] || null,
     }]));
   }
 

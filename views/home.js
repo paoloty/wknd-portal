@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink, manilaTodayStr } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink, manilaTodayStr, commentSnippet } from './utils.js';
 import { moveBadge } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
@@ -890,7 +890,7 @@ export function summaryPanel(s, block, isAdmin) {
 // ── Game headlines (the 4 games before the hero's, recap headline over the cover photo) ──
 // Cards without a cover photo fall back to the same team-colour glare as the standings
 // tiles. The glare/tint is the winning team's colour.
-function headlinesSection(games, summary, isAdmin) {
+function headlinesSection(games, summary, isAdmin, latestComments = {}) {
   if (!games.length) return '';
   const cards = games.map(g => {
     const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
@@ -909,6 +909,7 @@ function headlinesSection(games, summary, isAdmin) {
       <span class="gh-card__body">
         <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>
         <span class="gh-card__title">${escHtml(title)}</span>
+        ${commentSnippet(latestComments[g.id])}
         <span class="gh-card__cta">Read recap &rarr;</span>
       </span>
     </a>`;
@@ -1001,7 +1002,7 @@ function latestPosts(posts) {
 // Page order: hero → registration banner → game headlines → season race → league leaders
 // → posts → coming up → (guests) what you get + closing CTA. Game headlines are the four
 // recaps *before* the hero's four, so the two never show the same games.
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '' }) {
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', latestComments = {} }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1030,7 +1031,7 @@ ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerB
 
 ${picksWidgetHtml}
 
-${headlinesSection(headlineGames, summaries.headlines, isAdmin)}
+${headlinesSection(headlineGames, summaries.headlines, isAdmin, latestComments)}
 
 ${standingsSection(standings, summaries.standings, isAdmin)}
 

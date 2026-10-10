@@ -178,3 +178,13 @@ export function truncate(str, max = 90) {
 export function excerpt(writeup) {
   return parseWriteup(writeup).body;
 }
+
+// The newest comment on a game as a one-line teaser on list cards (/games, homepage
+// headlines), so people can see there's a conversation. c = getLatestCommentsForGames() row.
+export function commentSnippet(c) {
+  if (!c) return '';
+  const name = displayPlayerName(c.player_name || '');
+  const first = name.split(' ')[0] || name;
+  const body = String(c.body || '').replace(/\s+/g, ' ').trim();
+  return `<span class="gr-talk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><b>${escHtml(first)}</b><span>${escHtml(body.length > 80 ? `${body.slice(0, 78)}…` : body)}</span></span>`;
+}

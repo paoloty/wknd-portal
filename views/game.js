@@ -2,7 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, playerLink, stripEmptyParagraphs } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
-import { pickBox, pickBoxScript } from './pick-box.js';
+import { pickBox, pickBoxScript, talkLink } from './pick-box.js';
 import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, meetingTile, storyHtml } from './games.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 
@@ -2054,7 +2054,7 @@ function upNextCard(list, ymdLabel) {
 }
 
 // ── Final: top performers (duel + supporting cast) ───────────────────────────────────────
-function duelSide(s, side, potgId) {
+function duelSide(s, side, potgId, say) {
   const color = teamColor(s.team_name);
   const tag = s.player_id === potgId ? '<span class="gd-dl__tag">PLAYER OF THE GAME</span>' : s.badge ? `<span class="gd-dl__tag gd-dl__tag--ghost">${escHtml(s.badge)}</span>` : '';
   return `<div class="gd-dl__p${side === 'b' ? ' gd-dl__p--r' : ''}">
@@ -2066,6 +2066,7 @@ function duelSide(s, side, potgId) {
         ${tag}
         <span class="gd-dl__nm">${playerLink(s.player_id, s.name || '', { upper: true })}<small>${dot(s.team_name, 8)}${escHtml(s.team_name)}${s.number !== '' && s.number != null ? ` · #${escHtml(String(s.number))}` : ''}</small></span>
         <span class="gd-dl__gs">Game score <b class="font-condensed">${s.gs.toFixed(1)}</b></span>
+        ${say(s)}
       </div>
     </div>`;
 }
@@ -2089,20 +2090,32 @@ function duelRows(a, b) {
   }).join('');
 }
 
-function castCol(game, side, list) {
+function castCol(game, side, list, say) {
   const name = side === 'a' ? game.team_a_name : game.team_b_name;
   if (!list.length) return `<div class="card gd-cast__col"><div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div><p class="gd-cast__none">Nobody else reached a game score of 10.</p></div>`;
   return `<div class="card gd-cast__col">
     <div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div>
     ${list.map(s => `<div class="gd-cr">
       ${playerAvatar(s.player_id, s.name, teamColor(s.team_name), { className: 'gd-cr__av', link: true })}
-      <div><span class="gd-cr__nm">${playerLink(s.player_id, s.name || '')}</span><span class="gd-cr__ln">${s.badge ? `<span class="gd-hook">${escHtml(s.badge)}</span>` : ''}${escHtml(castLine(s))}</span></div>
+      <div><span class="gd-cr__nm">${playerLink(s.player_id, s.name || '')}</span><span class="gd-cr__ln">${s.badge ? `<span class="gd-hook">${escHtml(s.badge)}</span>` : ''}${escHtml(castLine(s))}</span>${say(s, true)}</div>
       <span class="gd-cr__p"><b class="font-condensed">${n0(s.pts)}</b><span>PTS</span></span>
     </div>`).join('')}
   </div>`;
 }
 
-function performersSection(game, dc, verdict, potgId) {
+// "Say something" for a performer: jumps to the comments with "@Name " already typed (plain
+// "Name " when they have no login to be mentioned). Guests are sent to log in first.
+function sayButton(mentionable) {
+  const names = new Set(mentionable.map(p => p.name));
+  return (s, small = false) => {
+    const name = displayPlayerName(s.name || '');
+    const text = names.has(name) ? `@${name} ` : `${name} `;
+    return `<button type="button" class="gd-say${small ? ' gd-say--sm' : ''}" data-say="${escHtml(text)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Say something<span class="sr-only"> to ${escHtml(name)}</span></button>`;
+  };
+}
+
+// say(s, small): the "Say something" button for a player (empty when comments are off).
+function performersSection(game, dc, verdict, potgId, say = () => '') {
   if (!dc) return '';
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>', sub: 'The best player on each side, head to head. Then the rest of each team’s standouts, ranked by game score.' })}
@@ -2110,13 +2123,13 @@ function performersSection(game, dc, verdict, potgId) {
       <div class="gd-dl__top">
         <div class="gd-dl__bg gd-dl__bg--l" aria-hidden="true" style="--team:${teamColor(dc.a.team_name)}"><img src="/api/player/${encodeURIComponent(dc.a.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()"></div>
         <div class="gd-dl__bg gd-dl__bg--r" aria-hidden="true" style="--team:${teamColor(dc.b.team_name)}"><img src="/api/player/${encodeURIComponent(dc.b.player_id)}/photo" alt="" loading="lazy" onerror="this.remove()"></div>
-        ${duelSide(dc.a, 'a', potgId)}
+        ${duelSide(dc.a, 'a', potgId, say)}
         <div class="gd-dl__rows"><span class="gd-kick">Head to head</span>${duelRows(dc.a, dc.b)}</div>
-        ${duelSide(dc.b, 'b', potgId)}
+        ${duelSide(dc.b, 'b', potgId, say)}
       </div>
       <div class="gd-dl__v">${verdict}</div>
     </article>
-    <div class="gd-cast">${castCol(game, 'a', dc.castA)}${castCol(game, 'b', dc.castB)}</div>
+    <div class="gd-cast">${castCol(game, 'a', dc.castA, say)}${castCol(game, 'b', dc.castB, say)}</div>
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
   </section>`;
 }
@@ -2245,7 +2258,8 @@ function pickRail(d) {
   if ((state === 'open' || state === 'closed') && o) {
     const total = n0(o.counts?.a) + n0(o.counts?.b);
     body = `<div class="gd-card__h"><h2 id="picks-h">Who wins?</h2><span class="gd-card__note" data-pick-total>${state === 'closed' ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'} so far` : 'Be the first to pick'}</span></div>
-      ${pickBox(o, { isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}#picks`, oddsHtml: o.odds ? oddsLine(m, o.odds) : '', flag: true })}`;
+      ${pickBox(o, { isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}#picks`, oddsHtml: o.odds ? oddsLine(m, o.odds) : '', flag: true })}
+      ${d.commentsEnabled && d.isPlayer && state === 'open' ? talkLink(o.id, '#talk', !!o.myPick) : ''}`;
   } else {
     body = `<div class="gd-card__h"><h2 id="picks-h">Who wins?</h2></div>
       ${picks.odds ? oddsLine(m, picks.odds) : ''}
@@ -2343,6 +2357,21 @@ function pageScript() {
     tick();
   }
 
+  // "Say something" on a performer: to the comments with "@Name " typed in. Guests log in first.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-say]');
+    if (!b) return;
+    var input = document.getElementById('gc-input');
+    if (!input) { location.href = '/login?next=' + encodeURIComponent(location.pathname + '#talk'); return; }
+    var talk = document.getElementById('talk');
+    if (talk) talk.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var v = input.value.replace(/\\s+$/, '');
+    input.value = (v ? v + ' ' : '') + b.dataset.say;
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
   // Links into the archived preview open it first; so does arriving with #preview.
   function openPrev() { var p = document.getElementById('preview'); if (p) p.open = true; }
   document.querySelectorAll('[data-gd-open-preview]').forEach(function (a) { a.addEventListener('click', openPrev); });
@@ -2428,7 +2457,7 @@ ${scripts}`;
     </div>
     ${rail ? `<aside class="gd-cols__rail">${rail}</aside>` : ''}
   </div>
-  ${performersSection(game, d.dc, d.verdict, d.potgPlayerId)}
+  ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined)}
   ${boxSection(game, d.stats, d.dnpPlayers, A, B)}
   ${plays || talk ? `<div class="gd-cols gd-sec">
     ${plays ? `<div class="gd-cols__main">${plays}</div>` : ''}

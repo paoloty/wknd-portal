@@ -9006,3 +9006,24 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
   .gd-pl { grid-template-columns: 50px 12px 1fr auto; gap: 10px; }
   .gd-recap .recap-tab__title { font-size: 21px; }
 }
+
+/* ── Comment nudges: "Say something" on performers, "Talk trash" after a pick, and the latest
+   comment on game cards (/games, homepage headlines). ── */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.gd-say { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(10,14,22,.55); color: var(--text); font: 700 12px 'Archivo', sans-serif; cursor: pointer; }
+.gd-say:hover { border-color: var(--amber); color: var(--amber); }
+.gd-dl__p--r .gd-say { align-self: flex-end; }
+.gd-say--sm { min-height: 0; margin-top: 6px; padding: 3px 0; border: 0; background: none; color: var(--text-muted); font-size: 11.5px; }
+.gd-say--sm:hover { color: var(--amber); }
+.pk-talk { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px dashed rgba(245,147,50,.45); font-size: 12.5px; font-weight: 700; color: var(--text); }
+.pk-talk svg { flex-shrink: 0; color: var(--amber); }
+.pk-talk span { flex: 1; }
+.pk-talk b { color: var(--amber); }
+.pk-talk:hover { border-style: solid; border-color: var(--amber); }
+.pk-talk[hidden] { display: none; }
+.gr-talk { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: rgba(10,14,22,.6); border: 1px solid rgba(255,255,255,.08); font-size: 12px; color: #c7d0da; }
+.gr-talk svg { flex-shrink: 0; color: var(--amber); }
+.gr-talk b { flex-shrink: 0; color: #fff; }
+.gr-talk span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr-talk-link { position: relative; z-index: 4; display: block; }
+.gr-talk-link:hover .gr-talk { border-color: rgba(245,147,50,.5); }

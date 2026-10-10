@@ -31,6 +31,12 @@ export function previewHref(g) {
   return `/games/${encodeURIComponent(gameSlug({ id: g.id, team_a_name: g.a ?? g.team_a_name, team_b_name: g.b ?? g.team_b_name }))}`;
 }
 
+// "Talk trash →" under a pick: shown once you've picked (pickBoxScript reveals it the moment
+// you do), leading to that game's pre-game chatter. Only where comments are on.
+export function talkLink(gameId, href, shown) {
+  return `<a href="${escHtml(href)}" class="pk-talk" data-talk="${escHtml(gameId)}"${shown ? '' : ' hidden'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Picked. Now talk trash in the pre-game chatter</span><b aria-hidden="true">→</b></a>`;
+}
+
 // Team colours on the tiles and the odds edge are Paolo's call (an exception to "team colours
 // = dots/chips only"). Black is too dark on the cards, so it gets a lighter slate.
 const edgeColor = team => (String(team).toUpperCase() === 'BLACK' ? '#8a94a6' : teamColor(team));
@@ -201,6 +207,7 @@ export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg'
     <div class="pkb-body">
       ${middle}
       ${pickBox(o, { isPlayer, next })}
+      ${o.talk && isPlayer && !o.closed ? talkLink(o.id, `${href}#talk`, !!o.myPick) : ''}
       ${size === 'lg'
         ? `<div class="pkb-foot"><span data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'No picks yet'}</span><a href="${escHtml(href)}">Full matchup preview →</a></div>`
         : more ? `<a href="${escHtml(href)}" class="pkb-more">Full preview →</a>` : ''}
@@ -213,6 +220,10 @@ export function pickBoxScript() {
   return `<script>
 (function () {
   if (window.__wkndPickBox) return; window.__wkndPickBox = true;
+  // Picked → the "Talk trash" link for that game shows up; removed → it hides again.
+  document.addEventListener('wknd:pick', function (e) {
+    document.querySelectorAll('[data-talk]').forEach(function (a) { if (a.dataset.talk === e.detail.gameId) a.hidden = !e.detail.side; });
+  });
   function tc(s) { s = String(s || ''); return s.charAt(0) + s.slice(1).toLowerCase(); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function faceEl(p, size) {
