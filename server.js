@@ -2068,7 +2068,9 @@ function renderPage(req, opts) {
   // Focused auth-style pages (register, login, season-signup, set-password) skip
   // every site-wide banner/ticker/balance-reminder — none of it is relevant on the
   // page that IS the CTA those banners would otherwise point at.
-  const bannerHtml = opts.minimalHeader ? '' : (showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showJerseyRequestBanner ? jerseyRequestBanner() : (showMini ? regMiniBanner() : '')));
+  // bare = the sign-in family (login, register, activate, forgot/reset) — same treatment.
+  const focused = opts.minimalHeader || opts.bare;
+  const bannerHtml = focused ? '' : (showSignupBanner ? memberSignupBanner(signupBannerSeason) : (showJerseyRequestBanner ? jerseyRequestBanner() : (showMini ? regMiniBanner() : '')));
 
   // Balance reminder — shown site-wide to a player with an outstanding balance, on top of
   // whatever other banner is already showing. Dismissal is per-amount and lives in the
@@ -2078,7 +2080,7 @@ function renderPage(req, opts) {
   // itself (redundant — you're already there doing exactly what the strip asks).
   const onOwnBalanceSurface = opts.currentPath === '/settle-balance' || (opts.currentPath === '/players' && opts.isOwnProfile);
   let balanceBarHtml = '';
-  if (!opts.minimalHeader && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface) {
+  if (!focused && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface) {
     const fin = getPlayerFinancials(req.session.playerPlayerId);
     const balance = fin?.current_balance ?? 0;
     if (balance > 0 && req.session.balanceBarDismissedAmount !== balance) {
@@ -2093,7 +2095,7 @@ function renderPage(req, opts) {
   // uses to skip the hold itself (server.js /papawis/:id/join), so the bar can't nag them to
   // deposit when they've already effectively done so.
   let probationBarHtml = '';
-  if (!opts.minimalHeader && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface && !req.session.probationBarDismissed) {
+  if (!focused && isPlayer && req.session?.playerPlayerId && !onOwnBalanceSurface && !req.session.probationBarDismissed) {
     if (getPlayerById(req.session.playerPlayerId)?.papawis_probation) {
       const minDep = getMaxPapawisPrice();
       const covered = minDep != null && getPlayerPapawisBalance(req.session.playerPlayerId) <= -minDep;
@@ -2129,9 +2131,9 @@ function renderPage(req, opts) {
   }
 
   const features = getFeatureFlags();
-  const headerInfo = opts.minimalHeader ? null : getHeaderInfo(features);
+  const headerInfo = focused ? null : getHeaderInfo(features);
 
-  return layout({ ticker: opts.minimalHeader ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features, headerInfo, origin, notifications, unreadNotificationCount, navPlayer, ...opts, title, body, metaTags });
+  return layout({ ticker: focused ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features, headerInfo, origin, notifications, unreadNotificationCount, navPlayer, ...opts, title, body, metaTags });
 }
 
 // Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
@@ -5215,11 +5217,49 @@ function safeNextPath(next) {
   return next;
 }
 
+// ── Sign-in family: login, register, activate, forgot/reset ───────────────────────
+// All rendered bare (no site header/footer — each page draws its own slim top bar) with
+// public/auth.css. Mockups: claude.ai/artifact/Tg9DRY8WKmEwXsdmNFV1he.
+const AUTH_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/auth.css')).mtimeMs); } catch { return Date.now(); } })();
+function renderAuth(req, { title, body, currentPath = '' }) {
+  return renderPage(req, { title, currentPath, ticker: '', bare: true, body, metaTags: `<link rel="stylesheet" href="/auth.css?v=${AUTH_CSS_VER}">` });
+}
+// "TY, Jose Paolo" → first name, display name and initials, plus positions/intro, for the
+// player card on activation and the register "sent" screen.
+function authCardFromReg(reg) {
+  const player = reg?.player_id ? getPlayerById(reg.player_id) : null;
+  const [last = '', first = ''] = String(reg?.full_name || '').split(',').map(s => s.trim());
+  let positions = [];
+  try { positions = JSON.parse(reg?.positions || player?.positions || '[]'); } catch {}
+  return {
+    first,
+    name: displayPlayerName(reg?.full_name || '') || reg?.email || '',
+    initials: `${first.charAt(0)}${last.charAt(0)}`.toUpperCase(),
+    positions: positions.join(' · '),
+    intro: String(reg?.motto || player?.writeup || '').trim(),
+  };
+}
+// Same session a successful POST /login sets up — used to sign people straight in after
+// they activate or reset (only for approved accounts, as /login itself requires).
+function signInRegistration(req, reg) {
+  setRegistrationLastLogin(reg.id);
+  req.session.playerRegId    = reg.id;
+  req.session.playerPlayerId = reg.player_id;
+  if (reg.is_admin) {
+    req.session.isAdmin          = true;
+    req.session.isElevatedPlayer = true;
+    req.session.playerName       = (reg.full_name || '').split(',').reverse().map(s => s.trim()).join(' ');
+  }
+}
+// A password reset signs out every other session on that account (the stored sessions are
+// JSON in the same database — better-sqlite3-session-store's `sessions` table).
+const stmtDeleteOtherSessions = portalDb.prepare("DELETE FROM sessions WHERE json_extract(sess, '$.playerRegId') = ? AND sid != ?");
+
 app.get('/login', (req, res) => {
   const next = req.query.next;
   if (req.session?.isAdmin && !req.session?.isElevatedPlayer) return res.redirect('/admin');
   if (req.session?.playerRegId) return res.redirect(safeNextPath(next) || '/me');
-  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ ref: req.query.ref, next }) }));
+  res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ ref: req.query.ref, next }) }));
 });
 
 app.post('/login', (req, res) => {
@@ -5238,10 +5278,10 @@ app.post('/login', (req, res) => {
   const reg = getRegistrationByEmail(username.trim());
   if (reg) {
     if (reg.status !== 'approved') {
-      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Your registration is not yet approved.', ref, next }) }));
+      return res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ error: 'Your registration is not yet approved.', ref, next, email: username }) }));
     }
     if (!reg.password_hash) {
-      return res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'No password set yet — check your email for the setup link.', ref, next }) }));
+      return res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ error: 'No password set yet — check your email for the setup link.', ref, next, email: username }) }));
     }
     if (checkPlayerPassword(password, reg.password_hash)) {
       setRegistrationLastLogin(reg.id);
@@ -5264,7 +5304,7 @@ app.post('/login', (req, res) => {
     }
   }
 
-  res.send(renderPage(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', ticker: '', body: adminLoginBody({ error: 'Invalid email or password.', ref, next }) }));
+  res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ error: 'Invalid email or password.', ref, next, email: username }) }));
 });
 
 app.get('/logout', (req, res) => {
@@ -5317,27 +5357,40 @@ app.get('/set-password', (req, res) => {
   const { token = '' } = req.query;
   const reg = token ? getRegByPasswordToken(token) : null;
   if (!reg) {
-    return res.status(400).send(renderPage(req, {
-      title: 'Invalid Link — WKND Basketball', currentPath: '', ticker: '',
-      body: setPasswordPage({ error: 'This link is invalid or has expired. Contact your league admin.' }),
+    return res.status(400).send(renderAuth(req, {
+      title: 'Invalid Link — WKND Basketball',
+      body: setPasswordPage({ error: 'This link is invalid or has expired.' }),
     }));
   }
-  const name = (reg.full_name || '').split(',')[1]?.trim() || reg.full_name || '';
+  const card = authCardFromReg(reg);
   insertAdminLog({
     actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
     method: 'GET', path: '/set-password', details: { event: 'email_opened', email: reg.email },
   });
-  res.send(renderPage(req, { title: 'Set Your Password — WKND Basketball', currentPath: '', ticker: '', body: setPasswordPage({ token, name }) }));
+  // An account that already has a password is here from a forgot-password email (a reset);
+  // one without is activating for the first time (password, then the game face).
+  const isReset = !!reg.password_hash;
+  res.send(renderAuth(req, {
+    title: isReset ? 'Reset Your Password — WKND Basketball' : 'Welcome to WKND Basketball',
+    body: setPasswordPage({ token, name: card.first, isReset, card }),
+  }));
 });
 
 app.post('/set-password', express.urlencoded({ extended: false }), async (req, res) => {
   const { token = '', password = '', confirm = '' } = req.body;
-  const renderErr = (error) => res.status(400).send(renderPage(req, {
-    title: 'Set Your Password — WKND Basketball', currentPath: '', ticker: '',
-    body: setPasswordPage({ token, error }),
-  }));
   const reg = token ? getRegByPasswordToken(token) : null;
-  if (!reg) return renderErr('This link is invalid or has expired.');
+  if (!reg) {
+    return res.status(400).send(renderAuth(req, {
+      title: 'Invalid Link — WKND Basketball',
+      body: setPasswordPage({ error: 'This link is invalid or has expired.' }),
+    }));
+  }
+  const isReset = !!reg.password_hash;
+  const card = authCardFromReg(reg);
+  const renderErr = (error) => res.status(400).send(renderAuth(req, {
+    title: isReset ? 'Reset Your Password — WKND Basketball' : 'Welcome to WKND Basketball',
+    body: setPasswordPage({ token, error, name: card.first, isReset, card }),
+  }));
   if (password.length < 8) return renderErr('Password must be at least 8 characters.');
   if (password !== confirm) return renderErr('Passwords do not match.');
 
@@ -5348,13 +5401,25 @@ app.post('/set-password', express.urlencoded({ extended: false }), async (req, r
   setRegistrationPassword(reg.id, hash);
   insertAdminLog({
     actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
-    method: 'POST', path: '/set-password', details: { event: 'password_set', email: reg.email },
+    method: 'POST', path: '/set-password', details: { event: isReset ? 'password_reset' : 'password_set', email: reg.email },
   });
-  res.send(renderPage(req, { title: 'Password Set — WKND Basketball', currentPath: '', ticker: '', body: setPasswordDonePage() }));
+
+  // Signed straight in — but only approved accounts, the same rule POST /login applies.
+  const canSignIn = reg.status === 'approved';
+  if (isReset) {
+    // Whoever else was signed in to this account (the reason for many resets) is signed out.
+    stmtDeleteOtherSessions.run(reg.id, req.sessionID || '');
+    if (canSignIn) signInRegistration(req, reg);
+    return res.send(renderAuth(req, { title: 'Password Saved — WKND Basketball', body: setPasswordDonePage({ signedIn: canSignIn }) }));
+  }
+  if (!canSignIn) return res.send(renderAuth(req, { title: 'Password Set — WKND Basketball', body: setPasswordDonePage() }));
+  signInRegistration(req, reg);
+  req.session.livenessPrompt = randomActivationPrompt();
+  req.session.save(() => res.redirect('/activate'));
 });
 
 app.get('/forgot-password', (req, res) => {
-  res.send(renderPage(req, { title: 'Forgot Password — WKND Basketball', currentPath: '', ticker: '', body: forgotPasswordPage() }));
+  res.send(renderAuth(req, { title: 'Forgot Password — WKND Basketball', body: forgotPasswordPage() }));
 });
 
 // Simple in-memory per-email cooldown (not IP-based — a real attacker rotates IPs trivially,
@@ -5382,12 +5447,13 @@ function canSelfServiceResetPassword(reg) {
 
 app.post('/forgot-password', express.urlencoded({ extended: false }), async (req, res) => {
   const email = String(req.body?.email || '').trim();
-  const renderSent = () => res.send(renderPage(req, {
-    title: 'Check Your Email — WKND Basketball', currentPath: '', ticker: '', body: forgotPasswordSentPage(),
+  // Echoes back only what they typed — the page reads the same whether or not it matched.
+  const renderSent = () => res.send(renderAuth(req, {
+    title: 'Check Your Email — WKND Basketball', body: forgotPasswordSentPage({ email }),
   }));
   if (!email) {
-    return res.status(400).send(renderPage(req, {
-      title: 'Forgot Password — WKND Basketball', currentPath: '', ticker: '',
+    return res.status(400).send(renderAuth(req, {
+      title: 'Forgot Password — WKND Basketball',
       body: forgotPasswordPage({ error: 'Enter your email address.' }),
     }));
   }
@@ -12159,11 +12225,10 @@ app.get('/register', (req, res) => {
   const hypeAvatars = getAllPlayers()
     .filter(p => p.status !== 'inactive' && p.picture_url)
     .map(p => ({ id: p.id, name: p.name, color: teamColor(p.team_name) }));
-  res.send(renderPage(req, {
+  res.send(renderAuth(req, {
     title: 'Join WKND Basketball',
     currentPath: '/register',
-    minimalHeader: true,
-    body: registerPage({ hypeAvatars, ref: req.query.ref }),
+    body: registerPage({ hypeAvatars, ref: req.query.ref, playerCount: getActivePlayerCount() }),
   }));
 });
 
@@ -12173,7 +12238,7 @@ app.post('/register', (req, res) => {
           emergency_name, emergency_phone, motto, gender, social_handle, agree,
           waiver_agree, waiver_signature, ref } = req.body;
 
-  const prefill = { first_name, last_name, email, phone, birthday, height, weight,
+  const prefill = { first_name, last_name, email, phone, birthday, height, weight, positions,
                     jersey_pref, dominant_hand, experience, referred_by,
                     emergency_name, emergency_phone, motto, gender, social_handle,
                     waiver_signature, ref };
@@ -12183,65 +12248,66 @@ app.post('/register', (req, res) => {
   const hypeAvatars = getAllPlayers()
     .filter(p => p.status !== 'inactive' && p.picture_url)
     .map(p => ({ id: p.id, name: p.name, color: teamColor(p.team_name) }));
+  const playerCount = getActivePlayerCount();
 
   // Validate required fields
   if (!first_name?.trim() || !last_name?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'We need your name, bestie. Both of them.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'We need your name, bestie. Both of them.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!email?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'That email is giving nothing. Drop a real one.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'That email is giving nothing. Drop a real one.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!phone?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'No digits, no ball. Drop your phone number.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'No digits, no ball. Drop your phone number.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!birthday?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'We need your birthday. The real one, not your alter ego\'s.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'We need your birthday. The real one, not your alter ego\'s.', prefill, hypeAvatars, playerCount }) }));
   }
   const _dob   = new Date(birthday);
   const _age18 = new Date(_dob.getFullYear() + 18, _dob.getMonth(), _dob.getDate());
   if (new Date() < _age18) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'Bestie, you\'re not 18 yet. The league will still be here when you\'re legal.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Bestie, you\'re not 18 yet. The league will still be here when you\'re legal.', prefill, hypeAvatars, playerCount }) }));
   }
   const posArr = Array.isArray(positions) ? positions : (positions ? [positions] : []);
   if (posArr.length === 0) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'Pick a position, sis. You can\'t just vibe on the sideline.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Pick a position, sis. You can\'t just vibe on the sideline.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!height?.toString().trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'Height? Be honest. The court doesn\'t care about your feelings.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Height? Be honest. The court doesn\'t care about your feelings.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!weight?.toString().trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'We need your weight. This is a safe space, babe.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'We need your weight. This is a safe space, babe.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!dominant_hand?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'Which hand runs the show? We need to know.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Which hand runs the show? We need to know.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!agree) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'You gotta swear on your crossover first, babe.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'You gotta swear on your crossover first, babe.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!waiver_agree) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'Read the fine print and check the waiver box, bestie — non-negotiable.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Read the fine print and check the waiver box, bestie — non-negotiable.', prefill, hypeAvatars, playerCount }) }));
   }
   if (!waiver_signature?.trim()) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'Type your full legal name as your signature on the waiver.', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'Type your full legal name as your signature on the waiver.', prefill, hypeAvatars, playerCount }) }));
   }
 
   // Check for duplicate email
   const existing = getRegistrationByEmail(email.trim().toLowerCase());
   if (existing) {
-    return res.send(layout({ title: 'Join WKND Basketball', currentPath: '/register', minimalHeader: true,
-      body: registerPage({ error: 'That email\'s already in the chat. Are you trying to have two accounts, sis?', prefill, hypeAvatars }) }));
+    return res.send(renderAuth(req, { title: 'Join WKND Basketball', currentPath: '/register',
+      body: registerPage({ error: 'That email\'s already in the chat. Are you trying to have two accounts, sis?', prefill, hypeAvatars, playerCount }) }));
   }
 
   const full_name = `${last_name.trim().toUpperCase()}, ${first_name.trim()}`;
@@ -12274,8 +12340,9 @@ app.post('/register', (req, res) => {
     logPapawisActivity({ gameId: '', eventType: 'registered', playerId: regId, playerName: full_name, notes: 'via papawis link' });
   }
 
-  res.send(layout({ title: 'Registration Received', currentPath: '/register', minimalHeader: true,
-    body: registerPage({ success: true, hypeAvatars }) }));
+  const sentCard = authCardFromReg({ full_name, positions: JSON.stringify(posArr), motto: (motto || '').trim() });
+  res.send(renderAuth(req, { title: 'Application Sent — WKND Basketball', currentPath: '/register',
+    body: registerPage({ success: true, card: { ...sentCard, email: email.trim().toLowerCase() } }) }));
 });
 
 // ── Season Signup (member-facing) ─────────────────────────────────────────────
@@ -12522,6 +12589,12 @@ const LIVENESS_PROMPTS = [
 function randomLivenessPrompt() {
   return LIVENESS_PROMPTS[Math.floor(Math.random() * LIVENESS_PROMPTS.length)];
 }
+// Activation (the sign-in family) keeps money talk out entirely, so it skips the barya,
+// GCash and receipt/wallet prompts. Season Signup still draws from the full list.
+const ACTIVATION_PROMPTS = LIVENESS_PROMPTS.filter(p => !/barya|gcash|money|balance|pamasahe|receipt|wallet/i.test(p));
+function randomActivationPrompt() {
+  return ACTIVATION_PROMPTS[Math.floor(Math.random() * ACTIVATION_PROMPTS.length)];
+}
 
 function resolveSeasonSignupContext(req) {
   const regId = req.session?.playerRegId;
@@ -12590,6 +12663,56 @@ app.post('/season-signup/liveness/:token/capture', express.json({ limit: '8mb' }
   upsertLivenessCapture({ regId: info.regId, playerId: info.playerId, season: info.season, photoData: dataUrl, via: 'qr', prompt: info.prompt || '' });
   broadcastLivenessCaptured(token);
   res.json({ ok: true });
+});
+
+// ── Activation step 2: "Snap your game face" ──────────────────────────────────────
+// Right after a first-time password set (POST /set-password signs them in and redirects
+// here; resets never do). Same private liveness_captures row as Season Signup — a photo
+// taken here also satisfies Season Signup's "liveness photo before continuing" check, since
+// that looks up by reg id. Skippable: Season Signup will still ask if they skip.
+import { activatePage } from './views/activate.js';
+function resolveActivationContext(req) {
+  const regId = req.session?.playerRegId;
+  if (!regId) return null;
+  const reg = getRegistration(regId);
+  if (!reg || reg.status !== 'approved') return null;
+  const season = getSetting('signup_target_season', '') || String(getPortalCurrentSeason() || '');
+  return { regId, reg, season };
+}
+
+app.get('/activate', (req, res) => {
+  const ctx = resolveActivationContext(req);
+  if (!ctx) return res.redirect(loginUrl(req));
+  if (getLivenessCaptureByRegId(ctx.regId)) return res.redirect('/me');
+  // Re-roll if the session still holds a Season Signup prompt this page doesn't use.
+  if (!ACTIVATION_PROMPTS.includes(req.session.livenessPrompt)) req.session.livenessPrompt = randomActivationPrompt();
+  res.send(renderAuth(req, {
+    title: 'Snap Your Game Face — WKND Basketball',
+    body: activatePage({ prompt: req.session.livenessPrompt, card: authCardFromReg(ctx.reg) }),
+  }));
+});
+
+app.post('/activate/liveness-capture', express.json({ limit: '8mb' }), (req, res) => {
+  const ctx = resolveActivationContext(req);
+  if (!ctx) return res.status(401).json({ error: 'Sign in again to finish activating.' });
+  const dataUrl = String(req.body?.dataUrl || '');
+  if (!/^data:image\/(jpeg|jpg|png);base64,/.test(dataUrl)) return res.status(400).json({ error: 'Invalid image.' });
+  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.season, photoData: dataUrl, via: 'activation', prompt: req.session.livenessPrompt || '' });
+  res.json({ ok: true });
+});
+
+// The phone handoff reuses Season Signup's token store, phone page and capture route
+// (/season-signup/liveness/:token…) — the token carries everything that route needs.
+app.post('/activate/liveness-token', async (req, res) => {
+  const ctx = resolveActivationContext(req);
+  if (!ctx) return res.status(401).json({ error: 'Sign in again to finish activating.' });
+  pruneLivenessTokens();
+  const token = randomBytes(16).toString('hex');
+  const prompt = ACTIVATION_PROMPTS.includes(req.session.livenessPrompt) ? req.session.livenessPrompt : randomActivationPrompt();
+  livenessTokens.set(token, { regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.season, expiresAt: Date.now() + LIVENESS_TOKEN_TTL_MS, consumed: false, prompt });
+  const url = `${getRequestOrigin(req)}/season-signup/liveness/${token}`;
+  const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 240 });
+  res.json({ ok: true, token, url, qrDataUrl });
 });
 
 // ── Settle Balance (member-facing) ─────────────────────────────────────────────

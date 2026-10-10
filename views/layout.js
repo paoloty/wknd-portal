@@ -15,7 +15,7 @@ export function wkndLogo(className = 'site-header__logo', href = '/') {
   return `<a href="${href}" class="wknd-logo ${className}" aria-label="WKND Basketball home">WKND${wkndBall()}</a>`;
 }
 
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null, headerInfo = null }) {
+export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, bare = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null, headerInfo = null }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -600,7 +600,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   ${gaSnippet}
 </head>
 <body>
-  ${minimalHeader ? `<div class="minimal-page">
+  ${bare ? body : minimalHeader ? `<div class="minimal-page">
     <header class="site-header site-header--minimal">
       <nav class="site-nav site-header--minimal__nav">
         ${nav}
