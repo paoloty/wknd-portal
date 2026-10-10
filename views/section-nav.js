@@ -37,11 +37,14 @@ export function sectionNavScript() {
     var atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
     // Pick by position, not link order: on phones the game page's side rail ("Who called
     // it") drops below the main column, so sections aren't in the same order as the links.
+    // On desktop that rail sits beside the main column, so two sections can share a top —
+    // a tie keeps the link that's already lit (i.e. the one just clicked).
     var on = null, best = -Infinity, limit = atEnd ? window.innerHeight : line;
     links.forEach(function (a) {
       var s = document.getElementById(a.dataset.spy); if (!s) return;
       var top = s.getBoundingClientRect().top;
-      if (top <= limit && top > best) { best = top; on = a; }
+      if (top > limit) return;
+      if (top > best + 1 || (Math.abs(top - best) <= 1 && a === last)) { best = Math.max(best, top); on = a; }
     });
     setOn(on || links[0]);
   }
