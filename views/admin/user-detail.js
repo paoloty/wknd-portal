@@ -94,7 +94,7 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, is
     <div id="match-chips" class="flex flex-col gap-1.5 mb-3"></div>
     <div style="position:relative">
       <input id="player-search" type="text" placeholder="Search all players…" autocomplete="off"
-        class="w-full bg-admin-border/50 border border-admin-border rounded-md px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand">
+        class="admin-input">
       <div id="player-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:220px;overflow-y:auto"></div>
     </div>
     <div id="selected-player-label" class="text-[11px] text-slate-500 mt-2">No player selected — will approve without linking.</div>
@@ -133,7 +133,7 @@ export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, is
     <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Relink to a different player</div>
     <div style="position:relative">
       <input id="relink-search" type="text" placeholder="Search all players…" autocomplete="off"
-        class="w-full bg-admin-border/50 border border-admin-border rounded-md px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand">
+        class="admin-input">
       <div id="relink-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:220px;overflow-y:auto"></div>
     </div>
     <div id="relink-selected-label" class="text-[11px] text-slate-500 mt-2">Won't send an email — just repoints the link.</div>
@@ -201,7 +201,7 @@ ${bogusFlags.length ? `
             <dt class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">Birthday</dt>
             <dd class="flex items-center gap-2">
               <input id="birthday-input" type="date" value="${escHtml(reg.birthday || '')}"
-                class="bg-admin-bg border border-admin-border rounded-md px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-brand">
+                class="admin-input" style="width:auto">
               <button onclick="saveBirthday()" class="text-[11px] font-semibold text-brand hover:opacity-80 transition-opacity">Save</button>
               <span id="birthday-msg" class="text-[11px] text-slate-500"></span>
             </dd>
@@ -287,7 +287,7 @@ ${bogusFlags.length ? `
   <div class="bg-admin-surface border border-admin-border rounded-xl p-6" style="width:100%;max-width:420px">
     <div class="text-sm font-bold text-slate-200 mb-3">Reject Registration</div>
     <textarea id="reject-notes" rows="3" placeholder="Reason (optional)…"
-      class="w-full bg-admin-border/50 border border-admin-border rounded-md px-3 py-2 text-sm text-slate-300 resize-none focus:outline-none focus:border-brand mb-3"></textarea>
+      class="admin-input mb-3"></textarea>
     <div class="flex justify-end gap-2">
       <button onclick="document.getElementById('reject-backdrop').style.display='none'" class="admin-btn">${ICON_X} Cancel</button>
       <button id="reject-confirm" class="admin-btn admin-btn--danger">${ICON_X} Confirm Reject</button>

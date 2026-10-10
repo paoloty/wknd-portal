@@ -31,7 +31,7 @@ function ratingRow(r) {
 export function adminRatingsBody({ season, seasons = [], ratings = [] } = {}) {
   const seasonTabs = seasons.length > 1
     ? `<div class="flex gap-2 mb-5 flex-wrap">${seasons.map(s =>
-        `<a href="/admin/ratings?season=${escHtml(String(s))}" class="agm-pill${String(s) === String(season) ? ' is-active' : ''}">Season ${escHtml(String(s))}</a>`
+        `<a href="/admin/ratings?season=${escHtml(String(s))}" class="agm-pill${String(s) === String(season) ? ' is-active' : ''}"><span class="pill-label">Season ${escHtml(String(s))}</span></a>`
       ).join('')}</div>`
     : '';
 

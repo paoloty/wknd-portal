@@ -142,7 +142,7 @@ export function awardsPage({ awards = [], season, availableSeasons = [], visible
 
   const seasonSelector = availableSeasons.length > 1
     ? `<div class="awd-season-tabs">${availableSeasons.map(s =>
-        `<a href="/awards?season=${encodeURIComponent(s)}" class="awd-season-tab${s === season ? ' is-active' : ''}">Season ${escHtml(String(s))}</a>`
+        `<a href="/awards?season=${encodeURIComponent(s)}" class="awd-season-tab${s === season ? ' is-active' : ''}"><span class="pill-label">Season ${escHtml(String(s))}</span></a>`
       ).join('')}</div>`
     : '';
 

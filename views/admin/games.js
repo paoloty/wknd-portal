@@ -53,7 +53,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
       : `<span class="agm-score">${scoreA} – ${scoreB}${otLbl ? `<span style="font-size:10px;font-weight:700;color:var(--amber);margin-left:4px">${otLbl}</span>` : ''}</span>`;
 
     const otEdit = !isUpcom
-      ? `<select class="agm-ot-sel ml-2 text-[11px] bg-admin-bg border border-admin-border text-slate-500 rounded px-1 py-0.5" data-gid="${escHtml(g.id)}" title="Overtime periods">
+      ? `<select class="agm-ot-sel admin-input ml-2" style="width:auto;display:inline-block" data-gid="${escHtml(g.id)}" title="Overtime periods">
           <option value="0"${ot===0?' selected':''}>REG</option>
           <option value="1"${ot===1?' selected':''}>OT</option>
           <option value="2"${ot===2?' selected':''}>OT2</option>
@@ -92,7 +92,7 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
   }).join('');
 
   const seasonPills = seasons.map(s =>
-    `<button class="agm-pill" data-fs="${escHtml(s)}">${escHtml(s)}</button>`
+    `<button class="agm-pill" data-fs="${escHtml(s)}"><span class="pill-label">${escHtml(s)}</span></button>`
   ).join('');
 
   const teamOpts = teams.map(t =>
@@ -212,16 +212,16 @@ export function adminGamesListBody({ games = [], seasons = [], teams = [], curre
 
 <div class="mb-4 flex flex-wrap gap-3">
   <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-ft="">All</button>
-    <button class="agm-pill" data-ft="regular">Regular</button>
-    <button class="agm-pill" data-ft="playoff">Playoff</button>
+    <button class="agm-pill is-active" data-ft=""><span class="pill-label">All</span></button>
+    <button class="agm-pill" data-ft="regular"><span class="pill-label">Regular</span></button>
+    <button class="agm-pill" data-ft="playoff"><span class="pill-label">Playoff</span></button>
   </div>
   <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fst="">All Status</button>
-    <button class="agm-pill" data-fst="live">Live</button>
-    <button class="agm-pill" data-fst="draft">Draft</button>
-    <button class="agm-pill" data-fst="final">Final</button>
-    <button class="agm-pill" data-fst="upcoming">Upcoming</button>
+    <button class="agm-pill is-active" data-fst=""><span class="pill-label">All Status</span></button>
+    <button class="agm-pill" data-fst="live"><span class="pill-label">Live</span></button>
+    <button class="agm-pill" data-fst="draft"><span class="pill-label">Draft</span></button>
+    <button class="agm-pill" data-fst="final"><span class="pill-label">Final</span></button>
+    <button class="agm-pill" data-fst="upcoming"><span class="pill-label">Upcoming</span></button>
   </div>
   ${seasons.length > 1 ? `<div class="flex flex-wrap items-center gap-1.5">${seasonPills}</div>` : ''}
 </div>

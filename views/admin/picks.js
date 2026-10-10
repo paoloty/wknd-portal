@@ -72,7 +72,7 @@ function upNextCard(u) {
         ${disagree ? `<div class="text-amber-400 pt-1">Fans vs odds: fans lean ${escHtml(tc(fanFav === 'a' ? u.a : u.b))}, the odds like ${escHtml(tc(o.fav === 'a' ? u.a : u.b))}</div>` : ''}
       </div>
       <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-        <select class="admin-input" style="height:32px;width:auto" data-pick-closed="${id}" aria-label="Pick window">
+        <select class="admin-input" style="width:auto" data-pick-closed="${id}" aria-label="Pick window">
           <option value="auto"${u.override === 'auto' ? ' selected' : ''}>Automatic (cut-off ${escHtml(u.closeTime)})</option>
           <option value="closed"${u.override === 'closed' ? ' selected' : ''}>Closed now</option>
           <option value="open"${u.override === 'open' ? ' selected' : ''}>Keep open (ignore cut-off)</option>
@@ -192,7 +192,7 @@ function pickersTable(rows, minPicks, hasFinalsG1 = false) {
 }
 
 export function adminPicksBody({ season, seasons, isCurrent, kpi, upNext, upDay, missing, results, pickers, hasFinalsG1 = false, minPicks, oddsOn, picksOn, msg = '' }) {
-  const seasonSel = seasons.length > 1 ? `<select class="admin-input" style="height:34px;width:auto" aria-label="Season" onchange="location.href='/admin/picks?season='+encodeURIComponent(this.value)">${seasons.map(s => `<option value="${escHtml(s)}"${s === season ? ' selected' : ''}>Season ${escHtml(s)}</option>`).join('')}</select>` : '';
+  const seasonSel = seasons.length > 1 ? `<select class="admin-input" style="width:auto" aria-label="Season" onchange="location.href='/admin/picks?season='+encodeURIComponent(this.value)">${seasons.map(s => `<option value="${escHtml(s)}"${s === season ? ' selected' : ''}>Season ${escHtml(s)}</option>`).join('')}</select>` : '';
   return `
 <div class="mb-5 flex flex-wrap items-end justify-between gap-4">
   <div>

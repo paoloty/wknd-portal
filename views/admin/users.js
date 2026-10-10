@@ -100,13 +100,13 @@ export function adminUsersBody({ registrations = [], canViewSensitive = true, ac
 </div>
 
 <div class="flex items-center gap-1.5 mb-4 flex-wrap">
-  <button onclick="filterUsers('all')"      id="f-all"      class="agm-pill is-active">All (${counts.all})</button>
-  <button onclick="filterUsers('pending')"  id="f-pending"  class="agm-pill">Pending (${counts.pending})</button>
-  <button onclick="filterUsers('approved')" id="f-approved" class="agm-pill">Approved (${counts.approved})</button>
-  <button onclick="filterUsers('rejected')" id="f-rejected" class="agm-pill">Rejected (${counts.rejected})</button>
-  <button onclick="filterUsers('awaiting_password')" id="f-awaiting_password" class="agm-pill">Awaiting Password (${counts.awaiting_password})</button>
-  <button onclick="filterUsers('link_expired')" id="f-link_expired" class="agm-pill">Link Expired (${counts.link_expired})</button>
-  <button onclick="filterUsers('flagged')" id="f-flagged" class="agm-pill">Flagged (${counts.flagged})</button>
+  <button onclick="filterUsers('all')"      id="f-all"      class="agm-pill is-active"><span class="pill-label">All (${counts.all})</span></button>
+  <button onclick="filterUsers('pending')"  id="f-pending"  class="agm-pill"><span class="pill-label">Pending (${counts.pending})</span></button>
+  <button onclick="filterUsers('approved')" id="f-approved" class="agm-pill"><span class="pill-label">Approved (${counts.approved})</span></button>
+  <button onclick="filterUsers('rejected')" id="f-rejected" class="agm-pill"><span class="pill-label">Rejected (${counts.rejected})</span></button>
+  <button onclick="filterUsers('awaiting_password')" id="f-awaiting_password" class="agm-pill"><span class="pill-label">Awaiting Password (${counts.awaiting_password})</span></button>
+  <button onclick="filterUsers('link_expired')" id="f-link_expired" class="agm-pill"><span class="pill-label">Link Expired (${counts.link_expired})</span></button>
+  <button onclick="filterUsers('flagged')" id="f-flagged" class="agm-pill"><span class="pill-label">Flagged (${counts.flagged})</span></button>
 </div>
 
 ${registrations.length === 0

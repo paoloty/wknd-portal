@@ -32,11 +32,11 @@ function posChips(positions) {
 
 export function adminPlayersBody({ players = [], seasons = [], season = '', teams = [] } = {}) {
   const seasonPills = seasons.map(s =>
-    `<button class="agm-pill${String(s) === String(season) ? ' is-active' : ''}" data-season="${escHtml(String(s))}">${escHtml('Season ' + s)}</button>`
+    `<button class="agm-pill${String(s) === String(season) ? ' is-active' : ''}" data-season="${escHtml(String(s))}"><span class="pill-label">${escHtml('Season ' + s)}</span></button>`
   ).join('');
 
   const teamPills = teams.map(t =>
-    `<button class="agm-pill" data-fteam="${escHtml(t.name.toLowerCase())}">${escHtml(t.name)}</button>`
+    `<button class="agm-pill" data-fteam="${escHtml(t.name.toLowerCase())}"><span class="pill-label">${escHtml(t.name)}</span></button>`
   ).join('');
 
   const rows = players.map(p => {
@@ -85,17 +85,17 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
 
 <div class="mb-4 flex flex-wrap gap-3">
   ${seasons.length ? `<div class="flex flex-wrap items-center gap-1.5" id="plr-season-pills">
-    <button class="agm-pill${!season ? ' is-active' : ''}" data-season="">All Time</button>
+    <button class="agm-pill${!season ? ' is-active' : ''}" data-season=""><span class="pill-label">All Time</span></button>
     ${seasonPills}
   </div>` : ''}
   <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fteam="">All Teams</button>
+    <button class="agm-pill is-active" data-fteam=""><span class="pill-label">All Teams</span></button>
     ${teamPills}
   </div>
   <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" id="plr-show-active">Active</button>
-    <button class="agm-pill" id="plr-show-inactive">Inactive</button>
-    <button class="agm-pill" id="plr-show-all">All</button>
+    <button class="agm-pill is-active" id="plr-show-active"><span class="pill-label">Active</span></button>
+    <button class="agm-pill" id="plr-show-inactive"><span class="pill-label">Inactive</span></button>
+    <button class="agm-pill" id="plr-show-all"><span class="pill-label">All</span></button>
   </div>
 </div>
 

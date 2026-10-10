@@ -85,7 +85,7 @@ export function adminRegistrationsBody({ registrations = [], players = [] } = {}
     <div class="flex flex-wrap items-end gap-3">
       <div class="flex-1 min-w-[200px]">
         <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Link to existing player</label>
-        <select id="sel-${escHtml(r.id)}" class="w-full bg-admin-border/50 border border-admin-border rounded-md px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand">
+        <select id="sel-${escHtml(r.id)}" class="admin-input">
           <option value="">— No match / select player —</option>
           ${playerOpts}
         </select>
@@ -138,7 +138,7 @@ ${resolved.map(regCard).join('')}` : ''}
   <div class="bg-admin-surface border border-admin-border rounded-xl p-6" style="width:100%;max-width:420px">
     <div class="text-sm font-bold text-slate-200 mb-3">Reject Registration</div>
     <textarea id="reject-notes" rows="3" placeholder="Reason (optional)..."
-      class="w-full bg-admin-border/50 border border-admin-border rounded-md px-3 py-2 text-sm text-slate-300 resize-none focus:outline-none focus:border-brand mb-3"></textarea>
+      class="admin-input mb-3"></textarea>
     <div class="flex justify-end gap-2">
       <button onclick="document.getElementById('reject-backdrop').style.display='none'"
         class="px-4 py-2 text-xs font-bold text-slate-400 bg-admin-border/30 rounded-md hover:bg-admin-border/60">Cancel</button>

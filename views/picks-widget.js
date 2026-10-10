@@ -91,6 +91,12 @@ function facePlayer(p, side, max, lead) {
 }
 
 function faceoff(o, w) {
+  return faceoffCard(o, { isPlayer: w.isPlayer, next: '/' });
+}
+
+// The homepage's pick card with the scorer face-off in the middle — also the team page's
+// "Up next" (views/team-detail.js). o.face comes from server.js homeFaceoff().
+export function faceoffCard(o, { isPlayer = false, next = '/' } = {}) {
   const [pa, pb] = o.face?.scorers || [null, null];
   const max = Math.max(1, ...[pa, pb].filter(Boolean).flatMap(p => p.series.slice(-BARS_SHOWN)));
   const basis = (pa || pb)?.basis === 'season' ? 'Top scorers · this season' : 'Go-to scorers · in this matchup';
@@ -102,7 +108,7 @@ function faceoff(o, w) {
           <span class="pkf-vs font-condensed" aria-hidden="true">VS</span>
         </div>
       </div>`;
-  return openPickCard(o, { isPlayer: w.isPlayer, next: '/', size: 'sm', middle, more: false });
+  return openPickCard(o, { isPlayer, next, size: 'sm', middle, more: false });
 }
 
 // Race strip under the face-off: the leader, your own line, a link to /picks.

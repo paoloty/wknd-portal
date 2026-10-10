@@ -107,8 +107,8 @@ export function adminReturningBody({ prevSeason = '', sigSeason = '', players = 
   </div>
 
   <div class="flex items-center gap-3 mb-4">
-    <input id="returning-search" type="text" placeholder="Search player…" class="admin-input text-xs" style="max-width:220px">
-    <select id="returning-filter" class="admin-input text-xs" style="font-size:11px;padding:3px 8px">
+    <input id="returning-search" type="text" placeholder="Search player…" class="admin-input" style="max-width:220px">
+    <select id="returning-filter" class="admin-input">
       <option value="">All</option>
       <option value="0">Not signed up</option>
       <option value="1">Signed up</option>

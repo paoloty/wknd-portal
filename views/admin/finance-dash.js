@@ -31,7 +31,7 @@ function progressBar(value, max) {
 
 export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, quota = 0, quotaPlayerCount = 0, quotaPaid = 0, balMap = {}, players = [], pending = [], categoryTotals = [], teamTotals = [], recentTx = [] } = {}) {
   const seasonPills = seasons.map(s =>
-    `<a href="/admin/finance?season=${encodeURIComponent(s)}" class="agm-pill${s === season ? ' is-active' : ''}">${escHtml(s)}</a>`
+    `<a href="/admin/finance?season=${encodeURIComponent(s)}" class="agm-pill${s === season ? ' is-active' : ''}"><span class="pill-label">${escHtml(s)}</span></a>`
   ).join('');
 
   const totalOutstanding = Number(summary.total_outstanding ?? 0);
@@ -149,11 +149,11 @@ ${quota ? `
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Finance Overview</h2>
-  <a href="/admin/ledger${season ? '?season='+encodeURIComponent(season) : ''}" class="agm-pill">Open Ledger →</a>
+  <a href="/admin/ledger${season ? '?season='+encodeURIComponent(season) : ''}" class="agm-pill"><span class="pill-label">Open Ledger →</span></a>
 </div>
 
 ${seasons.length ? `<div class="mb-5 flex flex-wrap items-center gap-1.5">
-  <a href="/admin/finance" class="agm-pill${!season ? ' is-active' : ''}">All Time</a>
+  <a href="/admin/finance" class="agm-pill${!season ? ' is-active' : ''}"><span class="pill-label">All Time</span></a>
   ${seasonPills}
 </div>` : ''}
 

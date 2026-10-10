@@ -65,7 +65,7 @@ export function adminVisibilityBody({
 } = {}) {
   // Two dropdowns for the homepage "Coming up" section's admin-picked cards (League and
   // Papawis are always first). Saved through the same /admin/site/settings endpoint.
-  const nextUpSelect = (n) => `<select id="vis-nextup-${n}" data-key="home_nextup_card_${n}" class="vis-nextup-select bg-admin-bg border border-admin-border rounded-md text-xs text-slate-200 px-2 py-1.5">
+  const nextUpSelect = (n) => `<select id="vis-nextup-${n}" data-key="home_nextup_card_${n}" class="vis-nextup-select admin-input" style="width:auto">
       ${nextUpCardOptions.map(o => `<option value="${escHtml(o.key)}"${nextUpCards[n - 1] === o.key ? ' selected' : ''}>${escHtml(o.label)}</option>`).join('')}
     </select>`;
   const sectionRows = AWARD_SECTIONS.map(({ key, label }) => sectionRow({ key, label, on: sectionSettings[key] !== '0' })).join('');
@@ -125,7 +125,7 @@ export function adminVisibilityBody({
         <td class="admin-td" style="font-weight:600;white-space:nowrap">Picks close at</td>
         <td class="admin-td" style="color:var(--text-muted)">Game-day cut-off (Manila time). Scheduled games have no tip-off time, so picks lock at this time on the game's date — set it to your first tip-off.</td>
         <td class="admin-td" style="text-align:right;white-space:nowrap">
-          <input type="time" id="vis-picks-close" value="${escHtml(picksCloseTime)}" class="bg-admin-bg border border-admin-border rounded-md text-xs text-slate-200 px-2 py-1.5">
+          <input type="time" id="vis-picks-close" value="${escHtml(picksCloseTime)}" class="admin-input" style="width:auto">
           <span id="vis-msg-picks_close_time" class="text-xs block mt-1 min-h-[14px]"></span>
         </td>
       </tr>

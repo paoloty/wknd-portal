@@ -28,7 +28,7 @@ const playerHref = (id, season) => `/picks/players/${encodeURIComponent(id)}?sea
 
 function seasonTabs(seasons, season, base) {
   if (seasons.length < 2) return '';
-  return `<nav class="gr-segs" aria-label="Season">${seasons.map(s => `<a href="${base}?season=${encodeURIComponent(s)}" class="gr-seg${s === season ? ' is-on' : ''}"${s === season ? ' aria-current="page"' : ''}>Season ${escHtml(s)}</a>`).join('')}</nav>`;
+  return `<nav class="gr-segs" aria-label="Season">${seasons.map(s => `<a href="${base}?season=${encodeURIComponent(s)}" class="gr-seg${s === season ? ' is-on' : ''}"${s === season ? ' aria-current="page"' : ''}><span class="pill-label">Season ${escHtml(s)}</span></a>`).join('')}</nav>`;
 }
 
 function statTiles({ callers, upsets, pickers, ranked, oddsOn }) {
@@ -154,8 +154,8 @@ ${pageHeader({
 ${openPicksSection(open, { isPlayer, closeTime })}
 ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
 <div class="pkp-tabs" role="tablist" aria-label="Picks sections">
-  <button type="button" class="pkp-tab is-on" role="tab" aria-selected="true" data-pkp-tab="race">Pickmaster race</button>
-  <button type="button" class="pkp-tab" role="tab" aria-selected="false" data-pkp-tab="days">Game days</button>
+  <button type="button" class="pkp-tab is-on" role="tab" aria-selected="true" data-pkp-tab="race"><span class="pill-label">Pickmaster race</span></button>
+  <button type="button" class="pkp-tab" role="tab" aria-selected="false" data-pkp-tab="days"><span class="pill-label">Game days</span></button>
 </div>
 <div class="pkp-grid">
   <section class="pkp-days" data-pkp-panel="days" aria-labelledby="pkp-days-h">

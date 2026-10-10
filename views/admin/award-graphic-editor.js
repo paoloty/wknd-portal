@@ -65,7 +65,7 @@ export function awardGraphicEditorBody(params) {
 
     headerControlsHtml = `<label class="agr-grid-toggle">
         Images
-        <select id="agr-col-count" class="admin-input" style="height:26px;padding:0 8px;font-size:12px;width:56px">
+        <select id="agr-col-count" class="admin-input" style="width:56px">
           ${Array.from({ length: maxColumns }, (_, i) => i + 1).map(n =>
             `<option value="${n}"${n === columnCount ? ' selected' : ''}>${n}</option>`).join('')}
         </select>

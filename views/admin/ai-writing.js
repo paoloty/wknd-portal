@@ -16,7 +16,7 @@ const voiceOptions = (voices, selected, firstLabel) =>
 function voiceCard(v) {
   return `<div class="aiw-voice" data-id="${escHtml(v.id)}" style="border:1px solid var(--admin-border,#1e293b);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
   <div style="display:flex;align-items:center;gap:10px">
-    <input type="text" class="admin-input aiw-name" value="${escHtml(v.name)}" placeholder="Voice name" maxlength="40" style="flex:1;font-weight:600">
+    <input type="text" class="admin-input aiw-name" value="${escHtml(v.name)}" placeholder="Voice name" maxlength="40" style="flex:1">
     <label class="site-toggle" title="Include in weekly rotation">
       <input type="checkbox" class="aiw-enabled" ${v.enabled !== false ? 'checked' : ''}>
       <span class="site-toggle__track"></span>

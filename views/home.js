@@ -341,17 +341,16 @@ export function leaderBoards(players) {
     const top = pool.filter(p => cat.sort(p) > 0)
       .sort((a, b) => cat.sort(b) - cat.sort(a) || b.games_played - a.games_played)
       .slice(0, 3)
-      .map(p => ({ id: p.id, name: p.name, team: String(p.team_name || '').toUpperCase(), value: cat.fn(p) }));
+      .map(p => ({ id: p.id, name: p.name, team: String(p.team_name || '').toUpperCase(), value: cat.fn(p), gp: p.games_played }));
     if (!top.length) return null;
-    // "+1.7 ahead of #2" under the leader's number — from the displayed values, so the
-    // gap always matches what's on the card. Percent stats read in points.
-    let leadNote = '';
-    if (top[1]) {
-      const pct = top[0].value.endsWith('%');
-      const gap = parseFloat(top[0].value) - parseFloat(top[1].value);
-      leadNote = gap > 0.001 ? `+${pct ? Math.round(gap) + ' pts' : gap.toFixed(1)} ahead of #2` : 'Tied for #1';
+    // Gap to #1 on each chasing row ("−1.5", "TIE") — from the displayed values, so it
+    // always matches what's on the card (same layout as the /leaders boards).
+    const decimals = (top[0].value.split('.')[1] || '').replace('%', '').length;
+    for (const p of top.slice(1)) {
+      const gap = parseFloat(top[0].value) - parseFloat(p.value);
+      p.delta = gap > 0.001 ? `−${gap.toFixed(decimals)}` : 'TIE';
     }
-    return { label, title, top, leadNote };
+    return { label, title, top };
   }).filter(Boolean);
 }
 
@@ -839,8 +838,16 @@ function memberPerksSection(perks) {
     },
   ].filter(Boolean);
 
+  // Fixed copy in the same panel as the AI blocks (no Regenerate: nothing here changes week to week).
+  const writeup = {
+    kicker: 'Membership · Register once',
+    headline: perks.papawis ? 'One account for **Papawis** runs, season signups and your own profile' : 'One account for season signups and your own profile',
+    body: `Register and an admin approves you. From then on you can ${[perks.papawis && 'grab pickup slots', 'sign up the moment a new league season opens', perks.comments ? 'join the talk around every game' : 'vote in polls'].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' and $1')}.`,
+  };
+
   return `<section class="home-section home-perks" aria-labelledby="perks-heading">
   <div class="section-header"><h2 id="perks-heading">What you get when you join</h2></div>
+  ${summaryPanel(writeup, 'perks', false)}
   <div class="mp-grid" style="--mp-cards:${cards.length}">
     ${cards.map(c => `<a href="/register" class="card mp-card">
       <div class="mp-card__preview">${c.preview}<span class="mp-card__lock">${LOCK_ICON}</span></div>
@@ -923,26 +930,39 @@ function headlinesSection(games, summary, isAdmin, latestComments = {}) {
 </section>`;
 }
 
+// "LASTNAME, Firstname" → { first: 'Firstname', last: 'LASTNAME' } — split on the comma,
+// never on case (some last names are stored mixed-case).
+function lbNameParts(raw) {
+  const str = String(raw || '').trim();
+  const comma = str.indexOf(',');
+  if (comma === -1) return { first: '', last: str.toUpperCase() };
+  return { first: str.slice(comma + 1).trim(), last: str.slice(0, comma).trim().toUpperCase() };
+}
+
 // ── League leaders: top 3 in 8 categories, leader large with the team-colour glare ──
 function leaderBoardsSection(boards, summary, season, isAdmin) {
   const cards = boards.map(c => {
     const lead = c.top[0];
     const color = teamColor(lead.team);
-    const rest = c.top.slice(1).map((p, k) => `<a href="/players/${encodeURIComponent(String(p.id))}" class="lb-card__alt">
+    const rest = c.top.slice(1).map((p, k) => {
+      const n = lbNameParts(p.name);
+      return `<a href="/players/${encodeURIComponent(String(p.id))}" class="lb-card__alt">
         <span class="lb-card__rank font-condensed">${k + 2}</span>
         <span class="team-dot" style="background:${teamColor(p.team)}"></span>
-        <span class="lb-card__alt-name">${escHtml(displayPlayerName(p.name))}</span>
+        <span class="lb-card__alt-name">${n.first ? `<span class="lb-card__alt-first">${escHtml(n.first)}</span>` : ''}<span class="lb-card__alt-last">${escHtml(n.last)}</span></span>
+        <span class="lb-card__delta font-condensed">${escHtml(p.delta)}</span>
         <b class="lb-card__alt-val font-condensed">${escHtml(p.value)}</b>
-      </a>`).join('');
+      </a>`;
+    }).join('');
+    const n = lbNameParts(lead.name);
     return `<div class="lb-card" style="--team:${color}">
       <a href="/players/${encodeURIComponent(String(lead.id))}" class="lb-card__lead">
         <span class="lb-card__head"><span class="lb-card__title">${escHtml(c.title)}</span><span class="lb-card__key">${escHtml(c.label)}</span></span>
         <span class="lb-card__row">
           ${playerAvatar(lead.id, lead.name, color, { className: 'lb-card__av' })}
-          <span class="lb-card__who"><span class="lb-card__name${displayPlayerName(lead.name).length > 15 ? ' is-long' : ''}">${escHtml(displayPlayerName(lead.name))}</span><span class="lb-card__team"><span class="team-dot" style="background:${color}"></span>${escHtml(lead.team)}</span></span>
+          <span class="lb-card__who">${n.first ? `<span class="lb-card__first">${escHtml(n.first)}</span>` : ''}<span class="lb-card__last">${escHtml(n.last)}</span><span class="lb-card__team"><span class="team-dot" style="background:${color}"></span>${escHtml(lead.team)}${lead.gp ? ` · ${lead.gp} GP` : ''}</span></span>
           <b class="lb-card__val font-condensed">${escHtml(lead.value)}</b>
         </span>
-        ${c.leadNote ? `<span class="lb-card__gap">${escHtml(c.leadNote)}</span>` : ''}
       </a>
       ${rest ? `<div class="lb-card__rest">${rest}</div>` : ''}
     </div>`;

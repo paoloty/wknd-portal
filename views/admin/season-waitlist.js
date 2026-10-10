@@ -171,7 +171,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], count = 0, con
   </label>
   <div class="ml-auto flex gap-3 items-center">
     <span class="text-[10px] text-slate-600 uppercase tracking-wider">Filter:</span>
-    <select id="status-filter" class="admin-input text-xs" style="font-size:11px;padding:3px 8px">
+    <select id="status-filter" class="admin-input">
       <option value="">All</option>
       <option value="waitlisted">Waitlisted</option>
       <option value="confirmed">Confirmed</option>

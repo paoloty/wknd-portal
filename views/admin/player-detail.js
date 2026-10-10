@@ -38,7 +38,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
   const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   const seasonPills = seasons.map(s =>
-    `<a href="/admin/players/${escHtml(player.id)}?season=${encodeURIComponent(s)}" class="agm-pill${String(s) === String(season) ? ' is-active' : ''}" style="font-size:11px">S${escHtml(String(s))}</a>`
+    `<a href="/admin/players/${escHtml(player.id)}?season=${encodeURIComponent(s)}" class="agm-pill${String(s) === String(season) ? ' is-active' : ''}" style="font-size:11px"><span class="pill-label">S${escHtml(String(s))}</span></a>`
   ).join('');
 
   // ── OVR ──────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       <div class="flex items-center gap-1.5">
         <span class="text-xs text-slate-500 min-w-[20px] text-right">${computed ?? '—'}</span>
         <input type="number" name="${key}_ovr" min="1" max="99" placeholder="—" value="${override ?? ''}"
-          class="admin-input" style="width:44px;padding:3px 5px;font-size:12px;text-align:center"
+          class="admin-input" style="width:44px;text-align:center"
           title="Override">
       </div>
     </div>`;
@@ -138,7 +138,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
           <div>
             <label class="admin-field-label">Jersey Number</label>
             <input type="text" id="val-number" class="admin-input mt-1.5" value="${escHtml(player.number || '')}"
-              placeholder="e.g. 23" style="width:80px;text-align:center;font-size:20px;font-weight:700">
+              placeholder="e.g. 23" style="width:80px;text-align:center">
           </div>
           <div id="photo-msg" class="text-xs text-slate-500"></div>
         </div>
@@ -237,7 +237,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
       <div class="p-4">
 
         ${seasons.length ? `<div class="flex flex-wrap gap-1 mb-3">
-          <a href="/admin/players/${escHtml(player.id)}" class="agm-pill${!season ? ' is-active' : ''}" style="font-size:11px">All</a>
+          <a href="/admin/players/${escHtml(player.id)}" class="agm-pill${!season ? ' is-active' : ''}" style="font-size:11px"><span class="pill-label">All</span></a>
           ${seasonPills}
         </div>` : ''}
 
@@ -256,7 +256,7 @@ export function adminPlayerDetailBody({ player, rating = null, stats = null, sea
             <div class="flex-1 text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Overall Override</div>
             <input type="number" name="overall_ovr" min="1" max="99" placeholder="—"
               value="${rating?.overall_ovr ?? ''}"
-              class="admin-input" style="width:44px;padding:3px 5px;font-size:12px;text-align:center">
+              class="admin-input" style="width:44px;text-align:center">
           </div>
           <span id="ratings-msg" class="text-xs block mb-2"></span>
           <button type="submit" class="agm-new-btn admin-btn--block">${ICON_CHECK} Save Ratings</button>

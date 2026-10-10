@@ -2,6 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, playerLink, stripEmptyParagraphs, playerPhotoUrl } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
+import { sectionNavScript } from './section-nav.js';
 import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
 import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, meetingTile, storyHtml } from './games.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
@@ -76,9 +77,9 @@ function shareStatsModal(game, stat) {
         <button type="button" class="ssc2__x" data-ssc2-close aria-label="Close">${icon('<path d="M18 6L6 18M6 6l12 12"/>')}</button>
       </div>
       <div class="ssc2__tabs" role="tablist" aria-label="Editor controls">
-        <button type="button" role="tab" class="is-on" data-ssc2-tab="tpl" aria-selected="true">Template</button>
-        <button type="button" role="tab" data-ssc2-tab="bg" aria-selected="false">Preview on</button>
-        <button type="button" role="tab" data-ssc2-tab="style" aria-selected="false">Style</button>
+        <button type="button" role="tab" class="is-on" data-ssc2-tab="tpl" aria-selected="true"><span class="pill-label">Template</span></button>
+        <button type="button" role="tab" data-ssc2-tab="bg" aria-selected="false"><span class="pill-label">Preview on</span></button>
+        <button type="button" role="tab" data-ssc2-tab="style" aria-selected="false"><span class="pill-label">Style</span></button>
       </div>
       <div class="ssc2__body">
         <section class="ssc2__grp" data-ssc2-panel="bg">
@@ -95,7 +96,7 @@ function shareStatsModal(game, stat) {
         </section>
         <section class="ssc2__grp" data-ssc2-panel="style">
           <div class="ssc2__gh"><span class="gd-kick">Style</span><span></span></div>
-          <div class="ssc2__row">${[['all', 'All-around'], ['offense', 'Offense'], ['defense', 'Defense']].map(([k, l]) => `<button type="button" class="ssc2-chip" data-focus="${k}">${l}</button>`).join('')}</div>
+          <div class="ssc2__row">${[['all', 'All-around'], ['offense', 'Offense'], ['defense', 'Defense']].map(([k, l]) => `<button type="button" class="ssc2-chip" data-focus="${k}"><span class="pill-label">${l}</span></button>`).join('')}</div>
           <div class="ssc2__row">${SSC_ACCENTS.map(([k, c]) => `<button type="button" class="ssc2-sw" data-accent="${k}" style="--sw:${c}" aria-label="${k} accent"></button>`).join('')}</div>
           <div class="ssc2__row">
             <button type="button" class="ssc2-tg" data-toggle="gauges" aria-pressed="true"><i></i>Gauges</button>
@@ -1834,8 +1835,8 @@ function boxSection(game, stats, dnpPlayers, A, B) {
     <section id="box" class="gd-cols__main" aria-labelledby="box-h">
       <div class="section-header gd-sh gd-sh--row"><h2 id="box-h">Box score</h2>
         <span class="gd-seg" role="group" aria-label="Team">
-          <button type="button" class="${first === 'a' ? 'is-on' : ''}" aria-pressed="${first === 'a'}" data-gd-box-btn="a">${dot(na, 8)}${escHtml(na)} · ${n0(game.team_a_score)}</button>
-          <button type="button" class="${first === 'b' ? 'is-on' : ''}" aria-pressed="${first === 'b'}" data-gd-box-btn="b">${dot(nb, 8)}${escHtml(nb)} · ${n0(game.team_b_score)}</button>
+          <button type="button" class="${first === 'a' ? 'is-on' : ''}" aria-pressed="${first === 'a'}" data-gd-box-btn="a">${dot(na, 8)}<span class="pill-label">${escHtml(na)} · ${n0(game.team_a_score)}</span></button>
+          <button type="button" class="${first === 'b' ? 'is-on' : ''}" aria-pressed="${first === 'b'}" data-gd-box-btn="b">${dot(nb, 8)}<span class="pill-label">${escHtml(nb)} · ${n0(game.team_b_score)}</span></button>
         </span>
       </div>
       <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
@@ -1956,37 +1957,11 @@ function previewArchive(d) {
   </details>`;
 }
 
-// ── Page scripts: scroll-spy nav, recap clamp, box toggle, countdown, preview opener ──────
+// ── Page scripts: recap clamp, box toggle, countdown, preview opener ──────
 function pageScript() {
   return `<script>
 (function () {
-  var header = document.querySelector('.site-header');
-  var nav = document.querySelector('[data-gd-snav]');
-  function setTop() { if (header && nav) document.documentElement.style.setProperty('--gd-top', header.getBoundingClientRect().height + 'px'); }
-  setTop(); window.addEventListener('resize', setTop);
-
-  // Scroll-spy: the section nearest the top (under the sticky nav) lights its link.
-  if (nav) {
-    var links = [].slice.call(nav.querySelectorAll('[data-spy]'));
-    var secs = links.map(function (a) { return document.getElementById(a.dataset.spy); });
-    var ticking = false;
-    function spy() {
-      ticking = false;
-      var line = (header ? header.getBoundingClientRect().height : 0) + nav.offsetHeight + 24;
-      var on = 0;
-      secs.forEach(function (s, i) { if (s && s.getBoundingClientRect().top - line <= 0) on = i; });
-      links.forEach(function (a, i) { a.classList.toggle('is-on', i === on); });
-      nav.classList.toggle('is-stuck', nav.getBoundingClientRect().top <= (header ? header.getBoundingClientRect().height : 0) + 1);
-    }
-    window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(spy); } }, { passive: true });
-    spy();
-    nav.addEventListener('click', function (e) {
-      var a = e.target.closest('[data-spy]');
-      if (!a) return;
-      var target = document.getElementById(a.dataset.spy);
-      if (target && target.tagName === 'DETAILS') target.open = true;
-    });
-  }
+  // Sticky section nav: views/section-nav.js (sectionNavScript, added alongside this script).
 
   // Recap: clamp long recaps, "Read the full recap" only when it actually overflows.
   document.querySelectorAll('[data-gd-clamp]').forEach(function (el) {
@@ -2067,7 +2042,7 @@ export function gamePage(d) {
   const v = { ...d, mentionable };
   const floater = d.commentsEnabled ? gameSocialFloater({ commentsEnabled: true, gameReaction: d.gameReaction, commentsCount: d.comments.length }) : '';
   const comments = d.commentsEnabled ? { label: 'Comments', id: 'talk', badge: d.comments.length, badgeId: 'comments-count' } : null;
-  const scripts = `${gameTabsStyles()}${gameTabsScript({ gameId: game.id, isAdmin: d.isAdmin, mentionablePlayers: mentionable })}${pageScript()}`;
+  const scripts = `${gameTabsStyles()}${gameTabsScript({ gameId: game.id, isAdmin: d.isAdmin, mentionablePlayers: mentionable })}${pageScript()}${sectionNavScript()}`;
 
   if (state === 'upcoming') {
     const p = d.picks;

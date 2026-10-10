@@ -44,7 +44,7 @@ export function adminCommentsBody({ sigSeason = '', signups = [] } = {}) {
       <h1 class="text-xl font-bold text-slate-100">Signup Comments</h1>
       <p class="text-xs text-slate-500 mt-0.5">${signups.length} comment${signups.length === 1 ? '' : 's'} &middot; Season ${escHtml(String(sigSeason))}</p>
     </div>
-    <input id="comments-search" type="text" placeholder="Search name or text…" class="admin-input text-xs" style="max-width:240px">
+    <input id="comments-search" type="text" placeholder="Search name or text…" class="admin-input" style="max-width:240px">
   </div>
 
   ${body}

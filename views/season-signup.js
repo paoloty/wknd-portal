@@ -174,14 +174,7 @@ const stylesBlock = `<style>
 .field { margin-bottom: 0; }
 .field label { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px; }
 .req { color: var(--amber); font-style: normal; }
-.field__input {
-  display: block; width: 100%; background: var(--bg); border: 1px solid var(--border-solid); border-radius: 8px;
-  padding: 11px 13px; font-size: 14px; color: var(--text); font-family: inherit; outline: none;
-  transition: border-color .15s; box-sizing: border-box; resize: vertical;
-}
-.field__input:focus { border-color: var(--amber); }
-.field__input::placeholder { color: var(--text-muted); opacity: .5; }
-.field__input.reg-invalid { border-color: #f87171; }
+.field__input { width: 100%; } /* look: "Form controls" in styles.css */
 .reg-field-error { font-size: 11px; color: #f87171; margin-top: 5px; }
 
 /* ── size picker ──────────────────────────────────────────────────────── */

@@ -46,17 +46,11 @@
 .au-lbl { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
 .au-lbl small { font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-subtle); }
 .au-lbl__end { margin-left: auto; font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none; }
-.au-input { display: block; width: 100%; box-sizing: border-box; min-height: 48px; padding: 0 14px; border-radius: 8px; background: var(--bg); border: 1px solid #1e2530; color: var(--text); font: inherit; font-size: 15px; outline: none; transition: border-color .15s, box-shadow .15s; }
-textarea.au-input { min-height: 84px; padding: 12px 14px; resize: vertical; line-height: 1.5; }
-select.au-input { appearance: none; -webkit-appearance: none; padding-right: 36px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a93a4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; }
-select.au-input option { background: var(--surface); }
-.au-input::placeholder { color: var(--text-subtle); }
-.au-input:focus { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,147,50,0.18); }
+.au-input { width: 100%; } /* look: "Form controls" at the end of styles.css (same box as every other field) */
 .au-input.is-invalid { border-color: #f87171; }
 .au-field__err { margin-top: 6px; font-size: 12px; color: #f87171; }
 .au-pw { position: relative; }
-.au-pw .au-input { padding-right: 52px; }
-.au-pw__eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); border-radius: 8px; }
+.au-pw__eye { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 36px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); border-radius: 8px; }
 .au-pw__eye:hover { color: var(--text); }
 .au-pw__eye:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 .au-g2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -114,9 +108,9 @@ select.au-input option { background: var(--surface); }
 .au-pos__opt:has(input:checked) { border-color: var(--amber); background: rgba(245,147,50,0.1); }
 .au-pos__opt:has(input:checked) span { color: #f5b37a; }
 .au-pos__opt:has(input:focus-visible) { outline: 2px solid var(--amber); outline-offset: 2px; }
-.au-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid #1e2530; border-radius: 8px; overflow: hidden; }
-.au-seg label { position: relative; display: flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 6px; background: var(--bg); color: var(--text-muted); font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
-.au-seg label + label { border-left: 1px solid #1e2530; }
+.au-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--field-border); border-radius: 8px; overflow: hidden; }
+.au-seg label { position: relative; display: flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 6px; background: var(--bg); color: var(--text-muted); font-size: 13.5px; font-weight: 700; cursor: pointer; text-align: center; }
+.au-seg label + label { border-left: 1px solid var(--field-border); }
 .au-seg input { position: absolute; opacity: 0; pointer-events: none; }
 .au-seg label:has(input:checked) { background: var(--amber); color: #0a0e16; }
 .au-seg label:has(input:focus-visible) { outline: 2px solid var(--amber); outline-offset: -3px; }
@@ -230,5 +224,4 @@ select.au-input option { background: var(--surface); }
   .au-card { padding: 20px; border-radius: var(--radius); }
   .au-g2, .au-g3 { grid-template-columns: minmax(0, 1fr); }
   .au-pos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .au-input { font-size: 16px; }
 }

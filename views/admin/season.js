@@ -43,7 +43,7 @@ export function adminSeasonBody({
       <div class="text-xs text-slate-400">Season shown to visitors on the public site</div>
     </div>
     <div class="flex items-center gap-2">
-      <select id="portal-season-select" class="admin-input text-sm font-semibold" style="min-width:180px">
+      <select id="portal-season-select" class="admin-input" style="min-width:180px">
         ${portalOpts}
       </select>
       <button id="portal-season-save" class="agm-new-btn shrink-0">${IC_CHECK} Apply</button>
@@ -113,7 +113,7 @@ export function adminSeasonBody({
       <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Season Setup</span>
       ${signupStatusBadge}
     </div>
-    <select id="setup-season-select" class="admin-input text-sm font-semibold" style="width:auto">
+    <select id="setup-season-select" class="admin-input" style="width:auto">
       ${setupSeasonOpts}
     </select>
   </div>
@@ -123,7 +123,7 @@ export function adminSeasonBody({
     <div class="flex flex-col gap-4">
       <div>
         <label class="block text-[12px] font-semibold text-slate-300 mb-1.5">Season Format <span class="text-slate-500 font-normal">(shown to members on signup &mdash; separate points with &middot; for a bulleted list)</span></label>
-        <textarea id="season-format-input" rows="2" class="admin-input w-full resize-none" style="font-size:12px" placeholder="e.g. Double Round Robin · Top 4 Twice-to-Beat (1 vs 4, 2 vs 3) · Finals Best of 3">${escHtml(seasonFormat)}</textarea>
+        <textarea id="season-format-input" rows="2" class="admin-input w-full resize-none" placeholder="e.g. Double Round Robin · Top 4 Twice-to-Beat (1 vs 4, 2 vs 3) · Finals Best of 3">${escHtml(seasonFormat)}</textarea>
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>

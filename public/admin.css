@@ -377,21 +377,8 @@ a.agm-new-btn, a.agm-new-btn:link, a.agm-new-btn:visited { color: #020817 !impor
 .agm-import-btn:hover { background: rgba(245,147,50,.14); border-color: rgba(245,147,50,.5); }
 
 /* ── Search ─────────────────────────────────────────────────── */
-.agm-search {
-  height: 34px;
-  padding: 0 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  min-width: 180px;
-  transition: border-color .15s;
-}
-.agm-search::placeholder { color: var(--text-muted); }
-.agm-search:focus { border-color: var(--amber); }
+/* Look from "Form controls" in styles.css */
+.agm-search { min-width: 180px; }
 
 /* ── Filter bar + pills ─────────────────────────────────────── */
 .agm-filters {
@@ -561,33 +548,9 @@ a.agm-new-btn, a.agm-new-btn:link, a.agm-new-btn:visited { color: #020817 !impor
 .agm-edit-link:hover { border-color: var(--text-2); color: var(--text); }
 
 /* ── Form elements ──────────────────────────────────────────── */
-.admin-input {
-  display: block;
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color .15s, box-shadow .15s;
-  box-sizing: border-box;
-}
-input.admin-input, select.admin-input { height: 34px; padding: 0 12px; }
-textarea.admin-input { padding: 10px 12px; resize: vertical; min-height: 80px; line-height: 1.55; }
-.admin-input::placeholder { color: var(--text-muted); }
-.admin-input:focus { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,147,50,.08); }
-.admin-input:disabled { opacity: .5; cursor: not-allowed; }
-
-select.admin-input {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 28px;
-}
+/* .admin-input look (height, padding, border, focus, select chevron) lives in the
+   "Form controls" block at the end of styles.css — only width here. */
+.admin-input { width: 100%; }
 
 .admin-field-label {
   display: block;
@@ -601,33 +564,8 @@ select.admin-input {
 }
 .admin-field-label:first-child { margin-top: 0; }
 
-/* ── Modal variants (agm-modal-input / agm-modal-select) ─────── */
-.agm-modal-input,
-.agm-modal-select {
-  display: block;
-  width: 100%;
-  height: 34px;
-  padding: 0 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color .15s, box-shadow .15s;
-  box-sizing: border-box;
-}
-.agm-modal-input:focus,
-.agm-modal-select:focus { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,147,50,.08); }
-.agm-modal-select {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 28px;
-}
+/* agm-modal-input / agm-modal-select: look comes from "Form controls" in styles.css */
+.agm-modal-input, .agm-modal-select { width: 100%; }
 .agm-modal-label {
   font-size: 10.5px;
   font-weight: 700;

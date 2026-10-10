@@ -149,7 +149,7 @@ function playerRow({ rowId, pid, pname, tname, type, awdId, isConf, stats, col, 
 </tr>
 ${withArticle ? `<tr id="awd-article-${escHtml(aKey)}" style="display:none">
   <td colspan="8" class="awd-td-sub">
-    <textarea id="article-ta-${escHtml(aKey)}" class="admin-input w-full" rows="3" style="font-size:12px;line-height:1.6;resize:vertical" placeholder="Generated article…">${escHtml(article || '')}</textarea>
+    <textarea id="article-ta-${escHtml(aKey)}" class="admin-input w-full" rows="3" style="resize:vertical" placeholder="Generated article…">${escHtml(article || '')}</textarea>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="admin-btn admin-btn--sm" data-save-article="${escHtml(aKey)}">${ICON_CHECK} Save</button>
       <button class="admin-btn admin-btn--sm" data-gen-article="${escHtml(aKey)}" data-award-type="${escHtml(type)}" data-player-id="${escHtml(aPid)}">${ICON_RETRY} Generate</button>
@@ -288,7 +288,7 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
 
   const seasonTabs = seasons.length > 1
     ? `<div class="flex gap-2 mb-5 flex-wrap">${seasons.map(s =>
-        `<a href="/admin/awards?season=${s}" class="agm-pill${s === season ? ' is-active' : ''}">Season ${escHtml(String(s))}</a>`
+        `<a href="/admin/awards?season=${s}" class="agm-pill${s === season ? ' is-active' : ''}"><span class="pill-label">Season ${escHtml(String(s))}</span></a>`
       ).join('')}</div>`
     : '';
 

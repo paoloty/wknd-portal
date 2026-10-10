@@ -166,7 +166,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   const mLink = (href, label, icon = '') =>
     `<a href="${href}" class="mnav__link"${isActive(href) ? ' aria-current="page"' : ''}>${icon}${label}</a>`;
   const mChip = (href, label, active) =>
-    `<a href="${href}" class="mnav__chip"${active ? ' aria-current="page"' : ''}>${label}</a>`;
+    `<a href="${href}" class="mnav__chip"${active ? ' aria-current="page"' : ''}><span class="pill-label">${label}</span></a>`;
   const mSection = (label, links, grid = false) => {
     const html = links.filter(Boolean).join('');
     return html ? `<div class="mnav__section"><span class="mnav__label">${label}</span>${grid ? `<div class="mnav__grid">${html}</div>` : html}</div>` : '';

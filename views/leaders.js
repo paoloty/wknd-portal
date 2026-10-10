@@ -1,7 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, playerAvatar, playerLink } from './utils.js';
-
-let _showDownload = false;
+import { teamColor, displayPlayerName, playerAvatar } from './utils.js';
 
 // ── Shared PER formula — matches box score (game.js calcPer) ─────────────────
 // pts + 0.4×FGM - 0.7×FGA - 0.4×missedFT + 0.7×REB + STL + 0.7×AST + 0.7×BLK - TO
@@ -109,50 +107,6 @@ function buildRecordTop5(rows, cat) {
     .slice(0, 5);
 }
 
-function recordPanel(cat, top5, scope = 'alltime') {
-  if (!top5.length) return '';
-  const first   = top5[0];
-  const fmt     = cat.fmt || (v => String(Math.round(v)));
-  const color   = teamColor(String(first.r.team_name || '').toUpperCase());
-  const isLight = String(first.r.team_name || '').toUpperCase() === 'WHITE';
-  const ctx     = recordContext(first.r);
-
-  const rows = top5.slice(1).map((x, i) => {
-    const tc   = teamColor(String(x.r.team_name || '').toUpperCase());
-    const xctx = recordContext(x.r);
-    return `<div class="record-panel__row">
-      <span class="leader-panel__rank">${i + 2}</span>
-      <span class="team-dot" style="background:${tc}"></span>
-      <span class="record-panel__row-name">
-        ${playerLink(x.r.player_id, x.r.name, { upper: true })} <a href="/games/${encodeURIComponent(x.r.game_id)}" class="record-panel__row-game">${escHtml(fmtRecordDate(x.r.date))} · vs ${escHtml(xctx.opp)}</a>
-      </span>
-      <span class="record-panel__row-val font-condensed">${escHtml(fmt(x.v))}</span>
-    </div>`;
-  }).join('');
-
-  return `<div class="card leader-panel record-panel" style="--lp-color:${color}">
-  <div class="leader-panel__head">
-    <span class="leader-panel__cat">${escHtml(cat.label)}</span>
-    <span class="leader-panel__title">${escHtml(cat.title)}</span>
-    ${cat.min ? `<span class="leader-panel__min">${escHtml(cat.min)}</span>` : ''}
-    <div class="leader-panel__actions">${recShareBtn(cat, scope, first, color, fmt)}${recDownloadBtn(cat)}</div>
-  </div>
-  <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
-    ${playerAvatar(first.r.player_id, first.r.name, color, { className: 'leader-avatar', link: true })}
-    <div class="leader-panel__info">
-      <div class="leader-panel__name">${playerLink(first.r.player_id, first.r.name, { upper: true })}</div>
-      <span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(String(first.r.team_name || '').toUpperCase())}</span>
-      <a href="/games/${encodeURIComponent(first.r.game_id)}" class="record-panel__ctx">${escHtml(fmtRecordDate(first.r.date))} · vs ${escHtml(ctx.opp)} · <span class="${ctx.won ? 'record-ctx--w' : 'record-ctx--l'}">${escHtml(ctx.result)}</span>${ctx.isPO ? ' <span class="gl-badge gl-badge--po">PO</span>' : ''}${ctx.isFinals ? ' <span class="gl-badge gl-badge--finals">F</span>' : ''}</a>
-    </div>
-    <div class="leader-panel__stat font-condensed">${escHtml(fmt(first.v))}</div>
-  </div>
-  ${rows ? `<div class="leader-panel__list">${rows}</div>` : ''}
-</div>`;
-}
-
-function buildRecordsGrid(rows, scope = 'alltime') {
-  return RECORD_CATS.map(cat => recordPanel(cat, buildRecordTop5(rows, cat), scope)).filter(Boolean).join('\n');
-}
 
 export const PER_GAME = [
   { id: 'pts',      label: 'PPG', title: 'Scoring',        fn: p => p.pts      / p.games_played },
@@ -233,8 +187,20 @@ export const TOTALS = [
 export function fmtPerGame(v) { return v.toFixed(1); }
 export function fmtTotals(v)  { return String(Math.round(v)); }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Leaders v2 (ld- prefix; mockup: claude.ai/artifact/SzJV3LrfyKT6aVukN3wp2G).
+// One model drives the page, the AI section writeups' facts and their fallbacks, so
+// what's on screen and what the writer is told can't drift apart. /roast reuses every
+// piece below (views/roast.js).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SHARE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>`;
+const DL_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+
+// Share/download buttons keep the data-* contract /api/leaders/share reads.
 function shareBtn(cat, mode, season, best, color, fmt) {
-  return `<button class="leader-panel__share" onclick="shareLeader(this)" title="Share"
+  return `<button type="button" class="ld-act" onclick="shareLeader(this)" aria-label="Share this board" title="Share"
     data-season="${escHtml(String(season))}"
     data-cat-id="${escHtml(cat.id)}"
     data-mode="${escHtml(mode)}"
@@ -246,25 +212,16 @@ function shareBtn(cat, mode, season, best, color, fmt) {
     data-stat-label="${escHtml(cat.label)}"
     data-stat-title="${escHtml(cat.title)}"
     data-stat-value="${best.v}"
-    data-stat-fmt="${escHtml(fmt(best.v))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>`;
+    data-stat-fmt="${escHtml(fmt(best.v))}">${SHARE_ICON}</button>`;
 }
 
-const DL_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-
-function downloadBtn(cat, mode) {
-  if (!_showDownload) return '';
-  return `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
-    data-label="${escHtml(cat.label)}"
-    data-mode="${escHtml(mode)}">${DL_ICON}</button>`;
-}
-
-function recShareBtn(cat, scope, first, color, fmt) {
+function recShareBtn(cat, scope, first, color, fmt, mode = 'rec') {
   const ctx    = recordContext(first.r);
   const teamId = first.r.player_team_id || first.r.team_id || '';
-  return `<button class="leader-panel__share" onclick="shareLeader(this)" title="Share"
+  return `<button type="button" class="ld-act" onclick="shareLeader(this)" aria-label="Share this record" title="Share"
     data-season="${escHtml(String(scope))}"
     data-cat-id="${escHtml(cat.id)}"
-    data-mode="rec"
+    data-mode="${escHtml(mode)}"
     data-player-id="${escHtml(String(first.r.player_id || ''))}"
     data-player-name="${escHtml(String(first.r.name || ''))}"
     data-team-id="${escHtml(String(teamId))}"
@@ -278,359 +235,533 @@ function recShareBtn(cat, scope, first, color, fmt) {
     data-game-date="${escHtml(String(first.r.date || ''))}"
     data-game-opp="${escHtml(ctx.opp)}"
     data-game-result="${escHtml(ctx.result)}"
-    data-is-playoff="${ctx.isPO ? '1' : '0'}"
-  ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>`;
+    data-is-playoff="${ctx.isPO ? '1' : '0'}">${SHARE_ICON}</button>`;
 }
 
-function recDownloadBtn(cat) {
-  if (!_showDownload) return '';
-  return `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
-    data-label="${escHtml(cat.label)}"
-    data-mode="rec">${DL_ICON}</button>`;
+function downloadBtn(cat, mode, showDownload) {
+  if (!showDownload) return '';
+  return `<button type="button" class="ld-act" onclick="downloadLeader(this)" aria-label="Download image" title="Download image"
+    data-label="${escHtml(cat.label)}" data-mode="${escHtml(mode)}">${DL_ICON}</button>`;
 }
 
-function leaderPanel(cat, players, defaultFmt, { mode = 'pg', season = '' } = {}) {
-  const scored = players
+// ── Names: "LAST, First" → two lines (first name truncates, last name never does) ──
+export function nameParts(raw) {
+  const s = String(raw || '').trim();
+  const i = s.indexOf(',');
+  if (i < 0) return { first: '', last: s.toUpperCase() };
+  return { first: s.slice(i + 1).trim(), last: s.slice(0, i).trim().toUpperCase() };
+}
+// "Vin Salenga" — how the AI writer is told to write names (normal case, not shouty).
+export function plainName(raw) {
+  const { first, last } = nameParts(raw);
+  const cap = w => w.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+  return [first, cap(last)].filter(Boolean).join(' ');
+}
+const profileUrl = id => `/players/${encodeURIComponent(String(id || ''))}`;
+const teamOf = x => String(x || '').toUpperCase();
+const titleTeam = t => teamOf(t).charAt(0) + teamOf(t).slice(1).toLowerCase();
+
+function nameHtml(raw) {
+  const n = nameParts(raw);
+  return `<span class="ld-name">${n.first ? `<span class="ld-name__first">${escHtml(n.first)}</span>` : ''}<span class="ld-name__last">${escHtml(n.last)}</span></span>`;
+}
+
+// Gap to #1, worked out from the DISPLAYED values so it always matches what's on screen.
+// Higher-is-better boards read "−1.5"; lowest-is-worst roast boards read "+0.3".
+const shownNum = s => parseFloat(String(s).replace('−', '-'));
+const decimals = s => ((String(s).match(/\.(\d+)/) || [])[1] || '').length;
+function deltaLabel(leadStr, str) {
+  const a = shownNum(leadStr), b = shownNum(str);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return '';
+  const r = Math.abs(b - a).toFixed(Math.max(decimals(leadStr), decimals(str)));
+  if (Number(r) === 0) return 'TIE';
+  return (b < a ? '−' : '+') + r;
+}
+
+// ── Board model (top N of one category) ──────────────────────────────────────
+// valid: which values count (default: positive). asc: lowest first (roast boards).
+export function boardModel(cat, players, { mode, season, fmt, asc = false, valid, take = 5, size = 'sm', title } = {}) {
+  const ok = valid || (v => v > 0);
+  const ranked = players
     .map(p => ({ p, v: cat.fn(p) }))
-    .filter(x => x.v > 0)
-    .sort((a, b) => b.v - a.v || b.p.games_played - a.p.games_played || (b.p.team_wins || 0) - (a.p.team_wins || 0));
+    .filter(x => x.v !== null && x.v !== undefined && Number.isFinite(x.v) && ok(x.v))
+    .sort((a, b) => (asc ? a.v - b.v : b.v - a.v) || b.p.games_played - a.p.games_played || (b.p.team_wins || 0) - (a.p.team_wins || 0));
+  if (!ranked.length) return null;
+  const f = cat.fmt || fmt;
+  const top = ranked.slice(0, take).map(x => ({ ...x, s: f(x.v) }));
+  top.slice(1).forEach(x => { x.delta = deltaLabel(top[0].s, x.s); });
+  return { kind: 'board', cat, mode, season, fmt: f, asc, size, title: title || cat.title, sub: cat.sub || '', lead: top[0], rest: top.slice(1) };
+}
 
-  if (!scored.length) return '';
+// ── Record model (single-game bests; also the roast's disasters) ─────────────
+const seasonTag = r => {
+  const ctx = recordContext(r);
+  return `S${r.season}${ctx.isFinals ? ' Finals' : ctx.isPO ? ' Playoffs' : ''}`;
+};
+export function recordModel(cat, rows, { scope, currentSeason, mode = 'rec' } = {}) {
+  const top = buildRecordTop5(rows, cat);
+  if (!top.length) return null;
+  const f = cat.fmt || (v => String(Math.round(v)));
+  top.forEach(x => { x.s = cat.show ? cat.show(x.r) : f(x.v); x.ctx = recordContext(x.r); });
+  const [a, b] = top;
+  const tied = !!b && b.v === a.v;
+  let badge = '', badgeOn = false;
+  if (String(a.r.season) === String(currentSeason)) { badge = tied ? 'Tied this season' : 'This season'; badgeOn = true; }
+  else if (a.ctx.isFinals) badge = 'Finals';
+  else if (a.ctx.isPO) badge = 'Playoffs';
+  const foot = !b ? '' : tied
+    ? `Also ${b.s}: ${displayPlayerName(b.r.name)} (${seasonTag(b.r)})`
+    : `Next ${cat.worst ? 'worst' : 'best'}: ${b.s} — ${displayPlayerName(b.r.name)} (${seasonTag(b.r)})`;
+  return { kind: 'record', cat, mode, scope, fmt: f, top, badge, badgeOn, foot, unit: cat.unit ? cat.unit(a.r) : '' };
+}
 
-  const top10 = scored.slice(0, 10);
-  const best = top10[0];
-  const fmt = cat.fmt || defaultFmt;
-  const maxV = best.v;
+// ── Rendering ────────────────────────────────────────────────────────────────
+function avatarHtml(id, raw, color) {
+  return playerAvatar(id, displayPlayerName(raw), color, { className: 'ld-av' });
+}
 
-  const teamName = String(best.p.team_name || '').toUpperCase();
-  const color = teamColor(teamName);
-  const isLight = teamName === 'WHITE';
+function rowHtml(x, rank) {
+  const n = nameParts(x.p.name);
+  return `<a class="ld-row" href="${profileUrl(x.p.id)}">
+        <span class="ld-row__rank font-condensed">${rank}</span>
+        <span class="team-dot" style="background:${teamColor(teamOf(x.p.team_name))}"></span>
+        <span class="ld-row__name">${n.first ? `<span class="ld-row__first">${escHtml(n.first)}</span>` : ''}<span class="ld-row__last">${escHtml(n.last)}</span></span>
+        <span class="ld-row__delta font-condensed">${escHtml(x.delta || '')}</span>
+        <b class="ld-row__val font-condensed">${escHtml(x.s)}</b>
+      </a>`;
+}
 
-  return `<div class="card leader-panel" style="--lp-color:${color}">
-  <div class="leader-panel__head">
-    <span class="leader-panel__cat">${escHtml(cat.label)}</span>
-    <span class="leader-panel__title">${escHtml(cat.title)}</span>
-    ${cat.min ? `<span class="leader-panel__min">${escHtml(cat.min)}</span>` : ''}
-    <div class="leader-panel__actions">${shareBtn(cat, mode, season, best, color, fmt)}${downloadBtn(cat, mode)}</div>
-  </div>
-  <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
-    ${playerAvatar(best.p.id, best.p.name, color, { className: 'leader-avatar', link: true })}
-    <div class="leader-panel__info">
-      <div class="leader-panel__name">${playerLink(best.p.id, best.p.name, { upper: true })}</div>
-      <span class="team-chip" style="background:${color};color:${isLight?'#10141d':'#fff'}">${escHtml(teamName)}</span>
+function boardCard(b, showDownload) {
+  const { cat, lead } = b;
+  const team = teamOf(lead.p.team_name);
+  const color = teamColor(team);
+  const meta = [team, lead.p.games_played ? `${lead.p.games_played} GP` : ''].filter(Boolean).join(' · ');
+  return `<article class="ld-card${b.size === 'lg' ? ' ld-card--lg' : ''}" style="--team:${color}">
+    <div class="ld-card__top">
+      <div class="ld-card__head">
+        <span class="ld-card__title">${escHtml(b.title)}${b.sub ? `<small>${escHtml(b.sub)}</small>` : ''}</span>
+        <span class="ld-card__side">
+          <span class="ld-card__key">${escHtml(cat.min || cat.label)}</span>
+          <span class="ld-card__acts">${shareBtn(cat, b.mode, b.season, lead, color, b.fmt)}${downloadBtn(cat, b.mode, showDownload)}</span>
+        </span>
+      </div>
+      <div class="ld-card__lead">
+        ${avatarHtml(lead.p.id, lead.p.name, color)}
+        <a class="ld-card__who" href="${profileUrl(lead.p.id)}">${nameHtml(lead.p.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}"></span>${escHtml(meta)}</span></a>
+        <b class="ld-card__val font-condensed">${escHtml(lead.s)}</b>
+      </div>
     </div>
-    <div class="leader-panel__stat font-condensed">${escHtml(fmt(best.v))}</div>
+    ${b.rest.length ? `<div class="ld-card__rest">${b.rest.map((x, i) => rowHtml(x, i + 2)).join('')}</div>` : ''}
+  </article>`;
+}
+
+function fmtDay(d) {
+  if (!d) return '';
+  return new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function recordTile(t) {
+  const first = t.top[0];
+  const team = teamOf(first.r.team_name);
+  const color = teamColor(team);
+  const ctx = first.ctx;
+  const when = [fmtDay(first.r.date), `Season ${first.r.season}`, ctx.isFinals ? 'Finals' : ctx.isPO ? 'Playoffs' : ''].filter(Boolean).join(' · ');
+  return `<article class="ld-tile" style="--team:${color}">
+    <div class="ld-card__head">
+      <span class="ld-card__title">${escHtml(t.cat.tileTitle || t.cat.title)}</span>
+      <span class="ld-card__side">
+        ${t.badge ? `<span class="ld-badge${t.badgeOn ? ' is-on' : ''}">${escHtml(t.badge)}</span>` : ''}
+        <span class="ld-card__acts">${recShareBtn(t.cat, t.scope, first, color, t.fmt, t.mode)}</span>
+      </span>
+    </div>
+    <div class="ld-tile__val font-condensed">${escHtml(first.s)}${t.unit ? `<small>${escHtml(t.unit)}</small>` : ''}</div>
+    <div class="ld-card__lead">
+      ${avatarHtml(first.r.player_id, first.r.name, color)}
+      <a class="ld-card__who" href="${profileUrl(first.r.player_id)}">${nameHtml(first.r.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}"></span>${escHtml(team)}</span></a>
+    </div>
+    <a class="ld-tile__game" href="/games/${encodeURIComponent(String(first.r.game_id || ''))}"><b>vs ${escHtml(teamOf(ctx.opp))} · ${escHtml(ctx.result)}</b><span>${escHtml(when)}</span></a>
+    ${t.foot ? `<p class="ld-tile__foot">${escHtml(t.foot)}</p>` : ''}
+  </article>`;
+}
+
+// section: { id, nav, title, sub, link?, writeup, items: [board|record models], cols }
+function sectionHtml(sec, showDownload) {
+  const items = sec.items.filter(Boolean);
+  if (!items.length) return '';
+  return `<section class="ld-sec" id="ld-${escHtml(sec.id)}" data-ld-sec>
+  <div class="section-header"><h2>${escHtml(sec.title)}${sec.sub ? ` <span class="section-header__sub">${escHtml(sec.sub)}</span>` : ''}</h2>${sec.link ? `<a href="${escHtml(sec.link.href)}" class="section-header__link">${escHtml(sec.link.label)} <span>&rarr;</span></a>` : ''}</div>
+  ${sec.writeup ? `<p class="ld-desc">${escHtml(sec.writeup)}</p>` : ''}
+  <div class="ld-grid ld-grid--${sec.cols || 4}">
+    ${items.map(m => m.kind === 'record' ? recordTile(m) : boardCard(m, showDownload)).join('\n    ')}
   </div>
-  <div class="leader-panel__list">
-    ${top10.slice(1).map((x, i) => {
-      const tc = teamColor(String(x.p.team_name || '').toUpperCase());
-      const barW = maxV > 0 ? Math.round(x.v / maxV * 100) : 0;
-      return `<div class="leader-panel__row" style="--bar-w:${barW}%;--bar-color:${tc}">
-      <span class="leader-panel__rank">${i + 2}</span>
-      <span class="team-dot" style="background:${tc}"></span>
-      <span class="leader-panel__row-name">${playerLink(x.p.id, x.p.name, { upper: true })}</span>
-      <span class="leader-panel__row-stat font-condensed">${escHtml(fmt(x.v))}</span>
-    </div>`;
-    }).join('')}
+</section>`;
+}
+
+// ── Facts for the AI writer (built from the same models the page renders) ────
+function boardFacts(b, scopeLabel) {
+  const all = [b.lead, ...b.rest];
+  const lines = all.map((x, i) => {
+    const tie = i > 0 && x.delta === 'TIE' ? ' (tied with #1)' : '';
+    return `${i + 1}. ${plainName(x.p.name)} (${titleTeam(x.p.team_name)}, ${x.p.games_played} games) ${x.s}${tie}`;
+  }).join('; ');
+  const gap = b.rest[0] && b.rest[0].delta && b.rest[0].delta !== 'TIE'
+    ? ` Gap from #1 to #2: ${b.rest[0].delta.replace(/^[−+]/, '')}.` : '';
+  const dir = b.asc ? 'lowest is "worst", ranked first' : 'highest first';
+  return `- ${b.title} (${b.cat.label}${b.cat.min ? `, minimum ${b.cat.min}` : ''}, ${scopeLabel}, ${dir}): ${lines}.${gap}`;
+}
+function recordFacts(t, currentSeason) {
+  const line = x => {
+    const c = x.ctx;
+    const stage = c.isFinals ? 'Finals' : c.isPO ? 'playoffs' : 'regular season';
+    return `${x.s} — ${plainName(x.r.name)} (${titleTeam(x.r.team_name)}) vs ${titleTeam(c.opp)}, ${fmtDay(x.r.date)}, Season ${x.r.season} ${stage}, ${c.won ? 'won' : 'lost'} ${c.myScore}–${c.opScore}`;
+  };
+  const [a, ...others] = t.top;
+  const scope = t.scope === 'alltime' ? 'across all seasons' : `in Season ${t.scope}`;
+  const label = t.cat.worst ? `Worst single game ${scope}` : `Single-game record ${scope}`;
+  const thisSeason = String(a.r.season) === String(currentSeason)
+    ? ' (set this season)'
+    : ` (set in Season ${a.r.season}, an earlier season; the current season is Season ${currentSeason})`;
+  return `- ${label}, ${t.cat.tileTitle || t.cat.title}${t.unit ? ` (${t.unit})` : ''}: ${line(a)}${thisSeason}. Next: ${others.slice(0, 2).map(line).join('; ') || 'none'}.`;
+}
+export function sectionFacts(sec, { scopeLabel, currentSeason }) {
+  const items = sec.items.filter(Boolean);
+  if (!items.length) return '';
+  return `${sec.title}:\n${items.map(m => m.kind === 'record' ? recordFacts(m, currentSeason) : boardFacts(m, scopeLabel)).join('\n')}`;
+}
+
+// ── Leaders page model ───────────────────────────────────────────────────────
+const cat = (list, id) => list.find(c => c.id === id);
+const NOUN = { pts: 'scoring', reb: 'rebounding', ast: 'assists', per: 'efficiency', stl: 'steals', blk: 'blocks', fg3m: 'threes', ftm: 'free throws made' };
+function leadersLine(items) {
+  const parts = items.filter(Boolean).map(b => `${plainName(b.lead.p.name)} in ${NOUN[b.cat.id] || b.cat.title.toLowerCase()} (${b.lead.s})`);
+  return parts.length ? `Leaders: ${parts.join(', ')}.` : '';
+}
+
+// Record tiles chosen for the per-game view (the full 16 live under Stats → Records).
+const RECORD_TILE_IDS = ['pts', 'reb', 'ast', 'stl', 'blk', 'fg3m'];
+const RECORD_TITLES = { pts: 'Points', per: 'PER', reb: 'Rebounds', ast: 'Assists', stl: 'Steals', blk: 'Blocks', fg3m: '3-pointers', fg4m: '4-pointers', ftm: 'Free throws made', fgp: 'FG %', tsp: 'True shooting', fg3p: '3PT %', fg4p: '4PT %', ftp: 'FT %' };
+const recCat = id => { const c = cat(RECORD_CATS, id); return c && { ...c, tileTitle: RECORD_TITLES[id] || c.title }; };
+
+// stats: 'pg' | 'tot' | 'rec' | 'po'; season: number | 'alltime'
+export function buildLeadersModel({ stats, season, currentSeason, players = [], careerPlayers = [], gameRecords = [], seasons = [] }) {
+  const isAll = season === 'alltime';
+  const shareSeason = isAll ? 'alltime' : String(season);
+  const sections = [];
+
+  if (stats === 'rec') {
+    const rows = isAll ? gameRecords : gameRecords.filter(r => String(r.season) === String(season));
+    const tiles = ids => ids.map(id => recordModel(recCat(id), rows, { scope: shareSeason, currentSeason }));
+    const where = isAll ? 'across all seasons' : `in Season ${season}`;
+    sections.push({ id: 'big-nights', nav: 'Big nights', title: 'Big nights', sub: isAll ? 'all seasons' : `Season ${season}`, cols: 3,
+      items: tiles(['pts', 'per', 'reb', 'ast', 'stl', 'blk']), fallback: `The best single-game lines ${where}, regular season and playoffs.` });
+    sections.push({ id: 'shooting-nights', nav: 'Shooting', title: 'Shooting nights', sub: 'minimum attempts noted', cols: 3,
+      items: tiles(['fg3m', 'fg4m', 'ftm', 'fgp', 'tsp', 'fg3p', 'fg4p', 'ftp']), fallback: `The best shooting games ${where}. Percentages need a minimum number of attempts in that game.` });
+    return { stats, season, sections, also: [] };
+  }
+
+  const isTot = stats === 'tot';
+  const list = isTot ? TOTALS : PER_GAME;
+  const fmt = isTot ? fmtTotals : fmtPerGame;
+  const mode = stats === 'po' ? 'po-pg' : stats;
+  const board = (id, size, title) => boardModel(cat(list, id), players, { mode, season: shareSeason, fmt, size, title });
+  const unit = isTot ? 'season totals' : stats === 'po' ? 'playoffs · per game' : 'per game';
+
+  const races = ['pts', 'reb', 'ast', 'per'].map(id => board(id, 'lg', { pts: 'Scoring', reb: 'Rebounds', ast: 'Assists', per: 'Efficiency' }[id]));
+  sections.push({ id: 'races', nav: 'Races', title: 'Headline races', sub: `${unit} · gap to #1`, items: races, fallback: leadersLine(races) });
+
+  if (stats === 'pg') {
+    sections.push({ id: 'shooting', nav: 'Shooting', title: 'Shooting', sub: 'qualified shooters only',
+      items: [board('fgp', 'sm', 'FG %'), board('tsp', 'sm', 'True shooting'), board('fg3p', 'sm', '3PT %'), board('ftp', 'sm', 'Free throws')],
+      fallback: 'Qualified shooters only: 10+ field-goal attempts for FG% and true shooting, 5+ attempts for 3PT% and free throws.' });
+  }
+  const spec = [board('stl', 'sm', 'Steals'), board('blk', 'sm', 'Blocks'), board('fg3m', 'sm', '3-pointers'), board('ftm', 'sm', 'Free throws made')];
+  sections.push({ id: 'specialists', nav: 'Defense', title: 'Defense & specialists', sub: unit, items: spec, fallback: leadersLine(spec) });
+
+  if (stats === 'pg') {
+    sections.push({ id: 'records', nav: 'Records', title: 'Single-game records', sub: 'all seasons', cols: 3,
+      link: { href: `/leaders?stats=rec&season=alltime`, label: 'All records' },
+      items: RECORD_TILE_IDS.map(id => recordModel(recCat(id), gameRecords, { scope: 'alltime', currentSeason })),
+      fallback: 'The best single-game marks across all seasons, regular season and playoffs.' });
+    if (!isAll && careerPlayers.length) {
+      const span = seasons.length > 1 ? `Seasons ${Math.min(...seasons)}–${Math.max(...seasons)}` : 'all seasons';
+      const career = ['pts', 'per', 'reb', 'ast'].map(id => boardModel(cat(PER_GAME, id), careerPlayers,
+        { mode: 'pg', season: 'alltime', fmt: fmtPerGame, take: 3, title: { pts: 'Scoring', per: 'Efficiency', reb: 'Rebounds', ast: 'Assists' }[id] }));
+      sections.push({ id: 'career', nav: 'Career', title: 'Career leaders', sub: `per game, ${span}`,
+        link: { href: `/leaders?stats=pg&season=alltime`, label: 'All-time boards' },
+        items: career, fallback: `Per-game averages across every season played, ${span}.` });
+    }
+  }
+
+  // Thin categories: one line each instead of a card.
+  const also = [];
+  if (stats !== 'tot') {
+    for (const id of ['fg4m', 'fg4p']) {
+      const b = boardModel(cat(PER_GAME, id), players, { mode, season: shareSeason, fmt: fmtPerGame, take: 1 });
+      if (b) also.push({ label: id === 'fg4m' ? '4-pointers' : '4PT %', name: displayPlayerName(b.lead.p.name), value: b.lead.s, id: b.lead.p.id });
+    }
+  } else {
+    const b = boardModel(cat(TOTALS, 'fg4m'), players, { mode, season: shareSeason, fmt: fmtTotals, take: 1 });
+    if (b) also.push({ label: '4-pointers', name: displayPlayerName(b.lead.p.name), value: b.lead.s, id: b.lead.p.id });
+  }
+  return { stats, season, sections, also };
+}
+
+// ── Page chrome shared with /roast ───────────────────────────────────────────
+// Sticky controls: real GET form (works without JS); the page script swaps the content
+// in place on change. fields: [{ name, label, value, options: [{ value, label }] }]
+export function controlsBar({ action, title, fields, sections }) {
+  const field = f => `<label class="ld-field">
+      <span class="ld-field__k">${escHtml(f.label)}</span>
+      <select name="${escHtml(f.name)}" class="ld-field__select">
+        ${f.options.map(o => `<option value="${escHtml(String(o.value))}"${String(o.value) === String(f.value) ? ' selected' : ''}>${escHtml(o.label)}</option>`).join('')}
+      </select>
+    </label>`;
+  const nav = sections.filter(s => s.items.some(Boolean));
+  return `<form class="ld-bar" action="${escHtml(action)}" method="get" data-ld-bar>
+    <span class="ld-bar__mini">${escHtml(title)}</span>
+    <div class="ld-bar__fields">${fields.map(field).join('')}</div>
+    <noscript><button type="submit" class="ld-bar__go">Go</button></noscript>
+    ${nav.length > 1 ? `<nav class="ld-bar__nav" aria-label="Sections">${nav.map(s => `<a href="#ld-${escHtml(s.id)}" data-spy="ld-${escHtml(s.id)}">${escHtml(s.nav)}</a>`).join('')}</nav>` : ''}
+  </form>`;
+}
+
+export function pageHead({ kicker, title, meta }) {
+  return `<div class="ld-head">
+    <span class="ld-kicker">${escHtml(kicker)}</span>
+    <h1>${escHtml(title)}</h1>
+    ${meta ? `<p class="ld-head__meta">${meta}</p>` : ''}
+  </div>`;
+}
+
+export function sectionsHtml(sections, writeups, showDownload) {
+  return sections.map(s => sectionHtml({ ...s, writeup: (writeups && writeups[s.id]) || s.fallback }, showDownload)).join('\n');
+}
+
+const STATS_OPTIONS = [
+  { value: 'pg', label: 'Per game' }, { value: 'tot', label: 'Totals' },
+  { value: 'rec', label: 'Single-game records' }, { value: 'po', label: 'Playoffs' },
+];
+
+// v: { model, seasons, currentSeason, kicker, meta, summaryHtml, writeups, showDownload, emptyMsg }
+export function leadersPage(v) {
+  const { model } = v;
+  const seasonOpts = [...v.seasons.map(s => ({ value: s, label: `Season ${s}` })), { value: 'alltime', label: 'All-time' }];
+  const bar = controlsBar({
+    action: '/leaders', title: 'Leaders', sections: model.sections,
+    fields: [
+      { name: 'stats', label: 'Stats', value: model.stats, options: STATS_OPTIONS },
+      { name: 'season', label: 'Season', value: model.season, options: seasonOpts },
+    ],
+  });
+  const body = model.sections.some(s => s.items.some(Boolean))
+    ? sectionsHtml(model.sections, v.writeups, v.showDownload)
+    : `<div class="ld-empty">${escHtml(v.emptyMsg || 'Nothing to show for this selection yet.')}</div>`;
+  const also = model.also.length ? `<div class="ld-also">
+    <span class="ld-also__k">Also tracked</span>
+    ${model.also.map(a => `<span>${escHtml(a.label)} <a href="${profileUrl(a.id)}">${escHtml(a.name)}</a> <b class="font-condensed">${escHtml(a.value)}</b></span>`).join('')}
+    <a href="/roast" class="ld-also__roast">Most turnovers &amp; fouls live on The Roast <span>&rarr;</span></a>
+  </div>` : '';
+  return `<div class="ld-page" data-ld-page data-as-of="${escHtml(v.asOfLabel || '')}">
+  ${pageHead({ kicker: v.kicker, title: 'League leaders', meta: v.meta })}
+  ${v.summaryHtml || ''}
+  ${bar}
+  <div class="ld-body">
+    ${body}
+    ${also}
   </div>
 </div>`;
 }
 
-// One grid's panels, by key: 'pg:alltime' | 'pg:s3' | 'tot:…' | 'po:pg' | 'po:tot' |
-// 'rec:alltime' | 'rec:s3'. The page renders only its default grid; every other tab/scope
-// is fetched from /leaders/grid?k=<key> the first time it's shown (the page used to ship
-// all ~200 panels — 656 KB of HTML — to show ~16). `players` is that scope's leader rows
-// (pg/tot/po), `gameRecords` the record rows (rec).
-export const LEADERS_GRID_KEY = /^(?:(?:pg|tot|rec):(?:alltime|s\d+)|po:(?:pg|tot))$/;
-export function leadersGridHtml(key, { players = [], gameRecords = [], currentSeason = 3, isLoggedIn = false } = {}) {
-  _showDownload = isLoggedIn;
-  const [tab, scope] = key.split(':');
-  // season value baked into each panel's share button must match what /api/leaders/share expects
-  const season = scope === 'alltime' ? 'alltime' : scope.slice(1);
-  const panels = (cats, fmt, mode, seasonVal) => cats.map(cat => leaderPanel(cat, players, fmt, { mode, season: seasonVal })).filter(Boolean).join('\n');
-  if (tab === 'pg')  return panels(PER_GAME, fmtPerGame, 'pg', season);
-  if (tab === 'tot') return panels(TOTALS, fmtTotals, 'tot', season);
-  if (tab === 'po')  return scope === 'pg'
-    ? panels(PER_GAME, fmtPerGame, 'po-pg', String(currentSeason))
-    : panels(TOTALS, fmtTotals, 'po-tot', String(currentSeason));
-  if (tab === 'rec') return buildRecordsGrid(scope === 'alltime' ? gameRecords : gameRecords.filter(r => String(r.season) === season), season);
-  return '';
-}
+// ── Page script (once per full page load; survives in-place content swaps) ───
+export function leadersScript({ isAdmin = false, regen = null } = {}) {
+  return `<script>
+(function () {
+  var root = document.documentElement;
+  function setTop() {
+    var h = document.querySelector('.site-header');
+    root.style.setProperty('--ld-top', (h ? h.getBoundingClientRect().height : 0) + 'px');
+  }
+  setTop(); window.addEventListener('resize', setTop);
 
-function scopedPillsHtml(prefix, leaderSeasons, defaultScopeId, hidden) {
-  const pillsHtml = leaderSeasons.map(s =>
-    `<button class="season-pill${defaultScopeId === 's' + s ? ' season-pill--active' : ''}" id="${prefix}-btn-s${s}" onclick="${prefix}SeasonSwitch('s${s}')">S${escHtml(String(s))}</button>`
-  ).join('');
-  return `<div class="leaders-season-pills" id="${prefix}-season-pills"${hidden ? ' style="display:none"' : ''}>
-        <button class="season-pill${defaultScopeId === 'alltime' ? ' season-pill--active' : ''}" id="${prefix}-btn-alltime" onclick="${prefix}SeasonSwitch('alltime')">All Time</button>
-        ${pillsHtml}
-      </div>`;
-}
+  // Sticky bar: .is-stuck once it pins (shows the mini title, adds the backdrop).
+  var observer = null;
+  function watchBar() {
+    var bar = document.querySelector('[data-ld-bar]');
+    if (!bar || !('IntersectionObserver' in window)) return;
+    if (observer) observer.disconnect();
+    var top = parseFloat(getComputedStyle(bar).top) || 0;
+    observer = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { bar.classList.toggle('is-stuck', e.intersectionRatio < 1 && e.boundingClientRect.top <= top + 1); });
+    }, { rootMargin: '-' + (top + 1) + 'px 0px 0px 0px', threshold: [1] });
+    observer.observe(bar);
+  }
 
-// The default Per Game scope gets its panels inline; every other grid is an empty shell
-// with data-lazy=<key>, filled by the page script the first time it's shown.
-function lazyGrid(id, key, html, hidden) {
-  const style = hidden ? ' style="display:none"' : '';
-  return html != null
-    ? `<div class="leaders-page-grid" id="${id}"${style}>${html}</div>`
-    : `<div class="leaders-page-grid" id="${id}"${style} data-lazy="${escHtml(key)}"></div>`;
-}
+  // Where the bar's bottom edge sits once pinned: its sticky top (header + gap) plus its height.
+  function stuckBottom() {
+    var bar = document.querySelector('[data-ld-bar]');
+    return bar ? (parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight : 0;
+  }
+  function setOn(on) {
+    document.querySelectorAll('.ld-bar__nav [data-spy]').forEach(function (a) { a.classList.toggle('is-on', a === on); });
+  }
 
-function scopedGridsBlock(prefix, leaderSeasons, defaultScopeId, defaultHtml) {
-  const html = scope => (prefix === 'pg' && scope === defaultScopeId ? defaultHtml : null);
-  const seasonGridsHtml = leaderSeasons.map(s => lazyGrid(`${prefix}-grid-s${s}`, `${prefix}:s${s}`, html('s' + s), defaultScopeId !== 's' + s)).join('\n');
-  return `${lazyGrid(`${prefix}-grid-alltime`, `${prefix}:alltime`, html('alltime'), defaultScopeId !== 'alltime')}
-    ${seasonGridsHtml}`;
-}
-
-// The scope Per Game opens on: the current season's if it has leaders yet, otherwise All Time.
-export function leadersDefaultScope(leaderSeasons, currentSeason) {
-  return leaderSeasons.map(String).includes(String(currentSeason)) ? 's' + currentSeason : 'alltime';
-}
-
-// defaultGridHtml: leadersGridHtml(`pg:${leadersDefaultScope(…)}`, …), rendered by the route.
-export function leadersPage({
-  hasPlayoffs = false, recordSeasons = [], currentSeason = 3, asOfLabel = '',
-  leaderSeasons = [], defaultGridHtml = '',
-}) {
-  const defaultScopeId = leadersDefaultScope(leaderSeasons, currentSeason);
-  const seasonPillsHtml = recordSeasons.map(s =>
-    `<button class="season-pill" id="rec-btn-s${s}" onclick="recordsSwitch('s${s}')">S${escHtml(String(s))}</button>`
-  ).join('');
-
-  return `<div class="page-content">
-    <div class="leaders-header">
-      <div class="leaders-toggle">
-        <button class="leaders-toggle__btn leaders-toggle__btn--active" id="leaders-btn-pg" onclick="leadersSwitch('pg')">Per Game<span class="leaders-toggle__desc">Season averages</span></button>
-        <button class="leaders-toggle__btn" id="leaders-btn-tot" onclick="leadersSwitch('tot')">Totals<span class="leaders-toggle__desc">Season totals</span></button>
-        ${hasPlayoffs ? `<button class="leaders-toggle__btn" id="leaders-btn-po" onclick="leadersSwitch('po')">Playoffs<span class="leaders-toggle__desc">Per game</span></button>` : ''}
-        <button class="leaders-toggle__btn" id="leaders-btn-rec" onclick="leadersSwitch('rec')">Records<span class="leaders-toggle__desc">Single-game bests</span></button>
-      </div>
-      <div class="leaders-season-pills" id="leaders-season-pills" style="display:none">
-        <button class="season-pill season-pill--active" id="rec-btn-alltime" onclick="recordsSwitch('alltime')">All Time</button>
-        ${seasonPillsHtml}
-      </div>
-      ${hasPlayoffs ? `<div class="leaders-season-pills" id="leaders-po-pills" style="display:none">
-        <button class="season-pill season-pill--active" id="po-btn-pg" onclick="poSwitch('pg')">Per Game</button>
-        <button class="season-pill" id="po-btn-tot" onclick="poSwitch('tot')">Totals</button>
-      </div>` : ''}
-      ${scopedPillsHtml('pg', leaderSeasons, defaultScopeId, false)}
-      ${scopedPillsHtml('tot', leaderSeasons, defaultScopeId, true)}
-    </div>
-    <div id="leaders-grid-pg">
-      ${scopedGridsBlock('pg', leaderSeasons, defaultScopeId, defaultGridHtml)}
-    </div>
-    <div id="leaders-grid-tot" style="display:none">
-      ${scopedGridsBlock('tot', leaderSeasons, defaultScopeId, null)}
-    </div>
-    ${hasPlayoffs ? `<div id="leaders-grid-po" style="display:none">
-      ${lazyGrid('leaders-grid-po-pg', 'po:pg', null, false)}
-      ${lazyGrid('leaders-grid-po-tot', 'po:tot', null, true)}
-    </div>` : ''}
-    <div id="leaders-grid-rec" style="display:none">
-      ${lazyGrid('rec-grid-alltime', 'rec:alltime', null, false)}
-      ${recordSeasons.map(s => lazyGrid(`rec-grid-s${s}`, `rec:s${s}`, null, true)).join('\n')}
-    </div>
-    <script>
-    var _recSeasons = ${JSON.stringify(recordSeasons)};
-    var _allRecScopes = ['alltime'].concat(_recSeasons.map(function(s){ return 's'+s; }));
-    var _leaderSeasons = ${JSON.stringify(leaderSeasons)};
-    var _allLeaderScopes = ['alltime'].concat(_leaderSeasons.map(function(s){ return 's'+s; }));
-    var _asOfLabel = '${escHtml(asOfLabel)}';
-    var _hasPlayoffs = ${hasPlayoffs};
-    // Lazy grids (data-lazy="<key>"): fetched from /leaders/grid the first time they're
-    // shown. Each tab's opening grid is warmed in the background once the page has loaded,
-    // so the usual first tap fills instantly instead of waiting on the network.
-    var _gridReqs = {};
-    function gridHtml(key) {
-      if (!_gridReqs[key]) {
-        _gridReqs[key] = fetch('/leaders/grid?k=' + encodeURIComponent(key), { credentials: 'same-origin' })
-          .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-          .catch(function(e) { delete _gridReqs[key]; throw e; });
-      }
-      return _gridReqs[key];
-    }
-    function lazyFill(el) {
-      var key = el.getAttribute('data-lazy');
-      if (!key || el.getAttribute('data-loading')) return;
-      el.setAttribute('data-loading', '1');
-      el.innerHTML = '<p class="leaders-lazy-msg">Loading…</p>';
-      gridHtml(key).then(function(html) {
-        el.innerHTML = html;
-        el.removeAttribute('data-lazy');
-        el.removeAttribute('data-loading');
-      }).catch(function() {
-        el.removeAttribute('data-loading');
-        el.innerHTML = '<p class="leaders-lazy-msg">Could not load. <button type="button" class="leaders-lazy-retry">Try again</button></p>';
-        el.querySelector('button').onclick = function() { lazyFill(el); };
-      });
-    }
-    function fillVisible() {
-      document.querySelectorAll('[data-lazy]').forEach(function(el) { if (el.offsetParent !== null) lazyFill(el); });
-    }
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        ['#leaders-grid-tot', '#leaders-grid-rec', '#leaders-grid-po'].forEach(function(sel) {
-          var first = document.querySelector(sel + ' > [data-lazy]:not([style*="none"])');
-          if (first) gridHtml(first.getAttribute('data-lazy')).catch(function() {});
-        });
-      }, 1500);
+  // Scroll-spy: the last section whose top has passed just under the pinned bar lights its
+  // link. At the very bottom of the page the last section can't scroll up that far, so it
+  // wins as soon as its top is on screen. Paused while a nav click is animating.
+  var ticking = false, lock = null;
+  function spy() {
+    ticking = false;
+    if (lock) return;
+    var links = [].slice.call(document.querySelectorAll('.ld-bar__nav [data-spy]'));
+    if (!links.length) return;
+    var line = stuckBottom() + 40;
+    var atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+    var on = links[0];
+    links.forEach(function (a) {
+      var s = document.getElementById(a.dataset.spy); if (!s) return;
+      var top = s.getBoundingClientRect().top;
+      if (top <= line || (atEnd && top < window.innerHeight)) on = a;
     });
-    function leadersSwitch(mode) {
-      var modes = ['pg','tot','rec'].concat(_hasPlayoffs ? ['po'] : []);
-      modes.forEach(function(m) {
-        var grid = document.getElementById('leaders-grid-' + m);
-        var btn  = document.getElementById('leaders-btn-' + m);
-        if (grid) grid.style.display = mode === m ? '' : 'none';
-        if (btn)  btn.classList.toggle('leaders-toggle__btn--active', mode === m);
+    setOn(on);
+  }
+  window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(spy); } }, { passive: true });
+
+  // Nav click: light the clicked link right away and glide the section up to just under the
+  // pinned bar. Done in JS because the site-wide html scroll-padding-top would otherwise
+  // stack on top of the bar's offset and park the section ~100px too low.
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('.ld-bar__nav [data-spy]');
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    var sec = document.getElementById(a.dataset.spy);
+    if (!sec) return;
+    e.preventDefault();
+    setOn(a);
+    a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    var y = Math.max(0, window.scrollY + sec.getBoundingClientRect().top - stuckBottom());
+    var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    clearTimeout(lock);
+    // Hold the spy until the glide settles (scrollend where supported, a timer as backstop).
+    lock = setTimeout(function () { lock = null; }, 1200);
+    window.addEventListener('scrollend', function () { clearTimeout(lock); lock = null; }, { once: true });
+    window.scrollTo({ top: y, behavior: reduce ? 'auto' : 'smooth' });
+    history.replaceState(null, '', '#' + sec.id);
+  });
+
+  // Dropdown change: fetch the same URL with partial=1 and swap the page content in place.
+  document.addEventListener('change', function (e) {
+    var form = e.target.closest && e.target.closest('[data-ld-bar]');
+    if (!form) return;
+    var params = new URLSearchParams(new FormData(form));
+    var url = form.getAttribute('action') + '?' + params.toString();
+    var page = document.querySelector('[data-ld-page]');
+    page.classList.add('is-loading');
+    params.set('partial', '1');
+    fetch(form.getAttribute('action') + '?' + params.toString(), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (html) {
+        var keepY = window.scrollY, barTop = form.getBoundingClientRect().top;
+        page.outerHTML = html;
+        history.replaceState(null, '', url);
+        var bar = document.querySelector('[data-ld-bar]');
+        // Keep the bar where it was on screen so the change doesn't jump the page.
+        if (bar) window.scrollTo(0, Math.max(0, keepY + bar.getBoundingClientRect().top - barTop));
+        watchBar(); spy();
+      })
+      .catch(function () { location.href = url; });
+  });
+
+  watchBar(); spy();
+${isAdmin && regen ? `
+  // Admin: the summary's Regenerate rewrites the page summary and the section writeups.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('.ld-page .hs-summary__regen');
+    if (!btn) return;
+    btn.disabled = true; btn.textContent = 'Writing…';
+    var post = function (url, body) {
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); }); });
+    };
+    Promise.all(${JSON.stringify(regen)}.map(function (x) { return post(x.url, x.body); }))
+      .then(function () { location.reload(); })
+      .catch(function (err) { btn.disabled = false; btn.textContent = '↺ Regenerate'; alert(err.message); });
+  });` : ''}
+})();
+
+async function downloadLeader(btn) {
+  if (btn._busy) return;
+  btn._busy = true;
+  var icon = btn.innerHTML;
+  btn.innerHTML = '&hellip;';
+  var panel = btn.closest('.ld-card, .ld-tile');
+  var asOf = (document.querySelector('[data-ld-page]') || {}).dataset ? document.querySelector('[data-ld-page]').dataset.asOf : '';
+  try {
+    if (!window._h2cPro) {
+      await new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas-pro/dist/html2canvas-pro.min.js';
+        s.onload = function () { window._h2cPro = window.html2canvasPro || window.html2canvas; resolve(); };
+        s.onerror = reject;
+        document.head.appendChild(s);
       });
-      document.getElementById('leaders-season-pills').style.display = mode === 'rec' ? '' : 'none';
-      var poPills = document.getElementById('leaders-po-pills');
-      if (poPills) poPills.style.display = mode === 'po' ? '' : 'none';
-      document.getElementById('pg-season-pills').style.display = mode === 'pg' ? '' : 'none';
-      document.getElementById('tot-season-pills').style.display = mode === 'tot' ? '' : 'none';
-      fillVisible();
     }
-    function poSwitch(sub) {
-      ['pg','tot'].forEach(function(s) {
-        var grid = document.getElementById('leaders-grid-po-' + s);
-        var btn  = document.getElementById('po-btn-' + s);
-        if (grid) grid.style.display = s === sub ? '' : 'none';
-        if (btn)  btn.classList.toggle('season-pill--active', s === sub);
-      });
-      fillVisible();
-    }
-    function recordsSwitch(scope) {
-      _allRecScopes.forEach(function(s) {
-        var grid = document.getElementById('rec-grid-' + s);
-        var btn  = document.getElementById('rec-btn-' + s);
-        if (grid) grid.style.display = s === scope ? '' : 'none';
-        if (btn)  btn.classList.toggle('season-pill--active', s === scope);
-      });
-      fillVisible();
-    }
-    function pgSeasonSwitch(scope) {
-      _allLeaderScopes.forEach(function(s) {
-        var grid = document.getElementById('pg-grid-' + s);
-        var btn  = document.getElementById('pg-btn-' + s);
-        if (grid) grid.style.display = s === scope ? '' : 'none';
-        if (btn)  btn.classList.toggle('season-pill--active', s === scope);
-      });
-      fillVisible();
-    }
-    function totSeasonSwitch(scope) {
-      _allLeaderScopes.forEach(function(s) {
-        var grid = document.getElementById('tot-grid-' + s);
-        var btn  = document.getElementById('tot-btn-' + s);
-        if (grid) grid.style.display = s === scope ? '' : 'none';
-        if (btn)  btn.classList.toggle('season-pill--active', s === scope);
-      });
-      fillVisible();
-    }
-    async function downloadLeader(btn) {
-      if (btn._busy) return;
-      btn._busy = true;
-      var icon = btn.innerHTML;
-      btn.innerHTML = '&hellip;';
-      var panel = btn.closest('.card.leader-panel');
-      try {
-        if (!window._h2cPro) {
-          await new Promise(function(resolve, reject) {
-            var s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/html2canvas-pro/dist/html2canvas-pro.min.js';
-            s.onload = function() { window._h2cPro = window.html2canvasPro || window.html2canvas; resolve(); };
-            s.onerror = reject;
-            document.head.appendChild(s);
-          });
-        }
-        var captured = await window._h2cPro(panel, {
-          backgroundColor: null,
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          scrollX: -window.scrollX,
-          scrollY: -window.scrollY,
-          onclone: function(clonedDoc, clonedEl) {
-            var acts = clonedEl.querySelector('.leader-panel__actions');
-            if (acts) acts.style.display = 'none';
-          },
-        });
-        var PAD = 32;
-        var FOOTER_H = 56;
-        var W = captured.width + PAD * 2;
-        var H = captured.height + PAD * 2 + FOOTER_H;
-        var out = document.createElement('canvas');
-        out.width = W; out.height = H;
-        var ctx = out.getContext('2d');
-        ctx.fillStyle = '#0a0e16';
-        ctx.fillRect(0, 0, W, H);
-        ctx.drawImage(captured, PAD, PAD);
-        ctx.fillStyle = '#475569';
-        ctx.font = '600 20px Arial,sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('WKNDBASKETBALL.COM' + (_asOfLabel ? '   \xB7   ' + _asOfLabel : ''),
-          W / 2, captured.height + PAD + Math.round((PAD + FOOTER_H) / 2));
-        out.toBlob(function(blob) {
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url;
-          a.download = 'wknd-' + (btn.dataset.label || 'stat').toLowerCase() + '-' + btn.dataset.mode + '.png';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 'image/png');
-        btn.innerHTML = '&#10003;';
-        setTimeout(function() { btn.innerHTML = icon; btn._busy = false; }, 1500);
-      } catch(e) {
-        btn.innerHTML = icon;
-        btn._busy = false;
-      }
-    }
-    async function shareLeader(btn) {
-      if (btn._busy) return;
-      btn._busy = true;
-      const icon = btn.innerHTML;
-      btn.innerHTML = '&hellip;';
-      try {
-        const r = await fetch('/api/leaders/share', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            season:      btn.dataset.season,
-            category_id: btn.dataset.catId,
-            mode:        btn.dataset.mode,
-            player_id:   btn.dataset.playerId,
-            player_name: btn.dataset.playerName,
-            team_id:     btn.dataset.teamId,
-            team_name:   btn.dataset.teamName,
-            team_color:  btn.dataset.teamColor,
-            stat_label:  btn.dataset.statLabel,
-            stat_title:  btn.dataset.statTitle,
-            stat_value:  parseFloat(btn.dataset.statValue),
-            stat_fmt:    btn.dataset.statFmt,
-            game_id:     btn.dataset.gameId,
-            game_date:   btn.dataset.gameDate,
-            game_opp:    btn.dataset.gameOpp,
-            game_result: btn.dataset.gameResult,
-            is_playoff:  btn.dataset.isPlayoff,
-          })
-        });
-        const { url } = await r.json();
-        await navigator.clipboard.writeText(url);
-        btn.innerHTML = '&#10003; Copied';
-        btn.classList.add('leader-panel__share--copied');
-        setTimeout(() => {
-          btn.innerHTML = icon;
-          btn.classList.remove('leader-panel__share--copied');
-          btn._busy = false;
-        }, 2000);
-      } catch {
-        btn.innerHTML = icon;
-        btn._busy = false;
-      }
-    }
-    </script>
-  </div>`;
+    var captured = await window._h2cPro(panel, {
+      backgroundColor: null, scale: 2, useCORS: true, logging: false,
+      scrollX: -window.scrollX, scrollY: -window.scrollY,
+      onclone: function (clonedDoc, clonedEl) {
+        var acts = clonedEl.querySelector('.ld-card__acts');
+        if (acts) acts.style.display = 'none';
+      },
+    });
+    var PAD = 32, FOOTER_H = 56;
+    var W = captured.width + PAD * 2, H = captured.height + PAD * 2 + FOOTER_H;
+    var out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    var ctx = out.getContext('2d');
+    ctx.fillStyle = '#0a0e16'; ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(captured, PAD, PAD);
+    ctx.fillStyle = '#475569'; ctx.font = '600 20px Arial,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('WKNDBASKETBALL.COM' + (asOf ? '   \\xB7   ' + asOf : ''), W / 2, captured.height + PAD + Math.round((PAD + FOOTER_H) / 2));
+    out.toBlob(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'wknd-' + (btn.dataset.label || 'stat').toLowerCase() + '-' + btn.dataset.mode + '.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+    btn.innerHTML = '&#10003;';
+    setTimeout(function () { btn.innerHTML = icon; btn._busy = false; }, 1500);
+  } catch (e) {
+    btn.innerHTML = icon; btn._busy = false;
+  }
+}
+
+async function shareLeader(btn) {
+  if (btn._busy) return;
+  btn._busy = true;
+  var icon = btn.innerHTML;
+  btn.innerHTML = '&hellip;';
+  try {
+    var d = btn.dataset;
+    var r = await fetch('/api/leaders/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        season: d.season, category_id: d.catId, mode: d.mode,
+        player_id: d.playerId, player_name: d.playerName, team_id: d.teamId, team_name: d.teamName, team_color: d.teamColor,
+        stat_label: d.statLabel, stat_title: d.statTitle, stat_value: parseFloat(d.statValue), stat_fmt: d.statFmt,
+        game_id: d.gameId, game_date: d.gameDate, game_opp: d.gameOpp, game_result: d.gameResult, is_playoff: d.isPlayoff,
+      })
+    });
+    var url = (await r.json()).url;
+    await navigator.clipboard.writeText(url);
+    btn.innerHTML = '&#10003;';
+    btn.classList.add('is-copied');
+    btn.setAttribute('aria-label', 'Link copied');
+    setTimeout(function () { btn.innerHTML = icon; btn.classList.remove('is-copied'); btn.setAttribute('aria-label', 'Share this board'); btn._busy = false; }, 2000);
+  } catch (e) {
+    btn.innerHTML = icon; btn._busy = false;
+  }
+}
+</script>`;
 }

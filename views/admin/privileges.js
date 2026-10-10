@@ -63,7 +63,7 @@ export function adminPrivilegesBody({ admins = [], candidates = [], sections = [
     <div class="px-5 py-4">
       <div style="position:relative">
         <input id="candidate-search" type="text" placeholder="Search approved users…" autocomplete="off"
-          class="w-full bg-admin-border/50 border border-admin-border rounded-md px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand">
+          class="admin-input">
         <div id="candidate-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:260px;overflow-y:auto"></div>
       </div>
       <p class="text-[11px] text-slate-600 mt-3">Only approved users can be granted admin access. Search by name or email.</p>

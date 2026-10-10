@@ -50,7 +50,7 @@ export function adminSignupDetailBody({ signup, isSuperAdmin = false, seasonEmai
     <div>
       <dt class="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Team Preference</dt>
       <dd class="flex items-center gap-2 flex-wrap">
-        <select id="team-pref-select" class="bg-admin-bg border border-admin-border rounded-md px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-brand">
+        <select id="team-pref-select" class="admin-input" style="width:auto">
           <option value="" ${!s.team_pref ? 'selected' : ''}>—</option>
           <option value="stick" ${s.team_pref === 'stick' ? 'selected' : ''}>Stick${s.prev_team_name ? ` (${escHtml(s.prev_team_name)})` : ''}</option>
           <option value="reshuffle" ${s.team_pref === 'reshuffle' ? 'selected' : ''}>Shuffle</option>

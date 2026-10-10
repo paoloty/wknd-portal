@@ -188,8 +188,8 @@ function photoDialog(season) {
       <button type="submit" value="cancel" class="mvpx-dlg__x" aria-label="Close">&times;</button>
     </div>
     <div class="mvpx-dlg__tabs" role="tablist" aria-label="Which screen">
-      <button type="button" role="tab" class="mvpx-dlg__tab" data-dlg-tab="desktop" aria-selected="true">Desktop</button>
-      <button type="button" role="tab" class="mvpx-dlg__tab" data-dlg-tab="phone" aria-selected="false">Phone</button>
+      <button type="button" role="tab" class="mvpx-dlg__tab" data-dlg-tab="desktop" aria-selected="true"><span class="pill-label">Desktop</span></button>
+      <button type="button" role="tab" class="mvpx-dlg__tab" data-dlg-tab="phone" aria-selected="false"><span class="pill-label">Phone</span></button>
       <span class="mvpx-dlg__tab-note" data-dlg-note></span>
     </div>
     <div class="mvpx-dlg__body">

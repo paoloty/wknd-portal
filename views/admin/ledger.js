@@ -184,11 +184,11 @@ export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], s
   });
 
   const seasonPills = seasons.map(s =>
-    `<button class="agm-pill${s === season ? ' is-active' : ''}" data-season="${escHtml(s)}">${escHtml(s)}</button>`
+    `<button class="agm-pill${s === season ? ' is-active' : ''}" data-season="${escHtml(s)}"><span class="pill-label">${escHtml(s)}</span></button>`
   ).join('');
 
   const teamPills = teams.map(t =>
-    `<button class="agm-pill" data-fteam="${escHtml(t.toLowerCase())}">${escHtml(t)}</button>`
+    `<button class="agm-pill" data-fteam="${escHtml(t.toLowerCase())}"><span class="pill-label">${escHtml(t)}</span></button>`
   ).join('');
 
   const rows = sorted.map(p => {
@@ -280,20 +280,20 @@ ${season ? `
 
 <div class="mb-4 flex flex-wrap gap-3">
   ${seasons.length ? `<div class="flex flex-wrap items-center gap-1.5" id="lgr-season-pills">
-    <button class="agm-pill${!season ? ' is-active' : ''}" data-season="">All Time</button>
+    <button class="agm-pill${!season ? ' is-active' : ''}" data-season=""><span class="pill-label">All Time</span></button>
     ${seasonPills}
   </div>` : ''}
   <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fteam="">All Teams</button>
+    <button class="agm-pill is-active" data-fteam=""><span class="pill-label">All Teams</span></button>
     ${teamPills}
   </div>
   <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fbal="">All</button>
-    <button class="agm-pill" data-fbal="owed">Owed</button>
-    <button class="agm-pill" data-fbal="settled">Settled</button>
+    <button class="agm-pill is-active" data-fbal=""><span class="pill-label">All</span></button>
+    <button class="agm-pill" data-fbal="owed"><span class="pill-label">Owed</span></button>
+    <button class="agm-pill" data-fbal="settled"><span class="pill-label">Settled</span></button>
   </div>
   <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill" id="lgr-pending-toggle">⏳ Pending only</button>
+    <button class="agm-pill" id="lgr-pending-toggle"><span class="pill-label">⏳ Pending only</span></button>
   </div>
 </div>
 
@@ -544,7 +544,7 @@ export function adminLedgerPlayerBody({ player, fin = {}, transactions = [], sea
   const seasonPaid = transactions.filter(t => t.status === 'confirmed' && t.type === 'payment').reduce((s, t) => s + t.amount, 0);
 
   const seasonPills = seasons.map(s =>
-    `<a href="/admin/ledger/${escHtml(player.id)}?season=${encodeURIComponent(s)}" class="agm-pill${s === season ? ' is-active' : ''}">${escHtml(s)}</a>`
+    `<a href="/admin/ledger/${escHtml(player.id)}?season=${encodeURIComponent(s)}" class="agm-pill${s === season ? ' is-active' : ''}"><span class="pill-label">${escHtml(s)}</span></a>`
   ).join('');
 
   const txRows = transactions.length
@@ -557,7 +557,7 @@ export function adminLedgerPlayerBody({ player, fin = {}, transactions = [], sea
         const notesCell = canConfirm
           ? `${escHtml(tx.notes || '—')}${refLine}
              ${tx.screenshot_url ? `<a href="${tx.screenshot_url}" target="_blank" class="ml-1.5 text-[10px] text-brand hover:underline">📷 screenshot</a>` : ''}
-             <input type="text" id="cat-${escHtml(tx.id)}" class="admin-input mt-1.5" style="max-width:180px;height:26px;font-size:11px" placeholder="Category — e.g. papawis" value="${escHtml(tx.category || '')}">`
+             <input type="text" id="cat-${escHtml(tx.id)}" class="admin-input mt-1.5" style="max-width:180px" placeholder="Category — e.g. papawis" value="${escHtml(tx.category || '')}">`
           : `${escHtml(tx.notes || '—')}${refLine}
              ${tx.screenshot_url ? `<a href="${tx.screenshot_url}" target="_blank" class="ml-1.5 text-[10px] text-brand hover:underline">📷 screenshot</a>` : ''}
              ${tx.category ? `<span class="ml-1.5 text-[10px] text-slate-500 bg-admin-border/50 px-1.5 py-0.5 rounded-full">${escHtml(tx.category)}</span>` : ''}`;
@@ -595,7 +595,7 @@ export function adminLedgerPlayerBody({ player, fin = {}, transactions = [], sea
 </div>
 
 ${seasons.length ? `<div class="mb-4 flex flex-wrap items-center gap-1.5">
-  <a href="/admin/ledger/${escHtml(player.id)}?season=" class="agm-pill${!season ? ' is-active' : ''}">All Time</a>
+  <a href="/admin/ledger/${escHtml(player.id)}?season=" class="agm-pill${!season ? ' is-active' : ''}"><span class="pill-label">All Time</span></a>
   ${seasonPills}
 </div>` : ''}
 

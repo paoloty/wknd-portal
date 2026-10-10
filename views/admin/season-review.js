@@ -27,8 +27,8 @@ function rosterRow(r) {
     <td class="px-4 py-3">${jerseyToggleCell('shorts-toggle', r.jerseyShorts, r.shortsAmount, r.shortsExcluded, shortsExtra)}</td>
     <td class="px-4 py-3">
       <div class="flex items-center gap-1.5">
-        <input type="text" class="extra-label admin-input text-[11px] w-24" placeholder="Label" value="${escHtml(r.extraLabel || '')}">
-        <input type="number" class="extra-amount admin-input text-[11px] w-20" placeholder="0" value="${r.extraAmount ? r.extraAmount : ''}">
+        <input type="text" class="extra-label admin-input w-24" placeholder="Label" value="${escHtml(r.extraLabel || '')}">
+        <input type="number" class="extra-amount admin-input w-20" placeholder="0" value="${r.extraAmount ? r.extraAmount : ''}">
       </div>
     </td>
     <td class="px-4 py-3 text-right font-bold text-slate-100 total-cell whitespace-nowrap" data-total="${r.total}">${money(r.total)}</td>

@@ -90,7 +90,7 @@ function teamColumn(team, players) {
     <!-- Team name + controls -->
     <div class="flex items-center gap-1.5 mb-1.5">
       <span class="team-dot w-2 h-2 rounded-full shrink-0" style="background:${escHtml(team.color)}"></span>
-      <input class="team-name-input admin-input flex-1 text-[13px] font-bold min-w-0 px-2 py-1" data-team-id="${escHtml(team.id)}" value="${escHtml(team.name)}">
+      <input class="team-name-input admin-input flex-1 min-w-0" data-team-id="${escHtml(team.id)}" value="${escHtml(team.name)}">
       <input type="color" class="team-color-input" data-team-id="${escHtml(team.id)}" value="${escHtml(team.color)}"
         style="width:24px;height:24px;border:1px solid #1e293b;border-radius:4px;background:none;cursor:pointer;padding:1px;flex-shrink:0">
       <button class="team-delete-btn text-slate-700 hover:text-error text-lg leading-none p-0 bg-transparent border-0 cursor-pointer shrink-0" data-team-id="${escHtml(team.id)}" title="Remove team">×</button>
@@ -182,7 +182,7 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
         return hasOptions ? `
           <div class="flex items-center gap-2 mt-1.5">
             <span class="text-[10px] text-slate-600 uppercase tracking-widest font-bold">Source:</span>
-            <select id="sandbox-source-select" class="admin-input text-[11px] py-1 px-2 h-7">
+            <select id="sandbox-source-select" class="admin-input" style="width:auto">
               ${playerOpts}
               ${waitlistOpts}
             </select>
@@ -210,7 +210,7 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
   ${!isStarted ? `
   <!-- Add team toolbar -->
   <div class="flex items-center gap-2 flex-wrap mb-4 px-3.5 py-2.5 bg-admin-surface border border-admin-border rounded-lg">
-    <input id="new-team-name" class="admin-input text-[12px] w-40" placeholder="Team name">
+    <input id="new-team-name" class="admin-input" style="width:10rem" placeholder="Team name">
     <div class="flex gap-1 items-center" id="color-swatches">${colorPickers}</div>
     <button id="add-team-btn" class="agm-new-btn">+ Add Team</button>
   </div>` : ''}
@@ -237,7 +237,7 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <input id="pool-search" type="text" placeholder="Search…"
-          class="h-7 px-2.5 text-[12px] bg-admin-surface border border-admin-border rounded text-slate-200 w-36 outline-none font-sans">
+          class="admin-input" style="width:9rem">
         <div class="flex gap-1">${posFilterBtns}</div>
         <span id="filter-status" class="text-[10px] text-slate-600 min-w-[50px]"></span>
       </div>

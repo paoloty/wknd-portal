@@ -25,7 +25,7 @@ import { forgotPasswordPage, forgotPasswordSentPage } from './views/forgot-passw
 import sharp from 'sharp';
 import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
-import { homePage, leaderBoards } from './views/home.js';
+import { homePage, leaderBoards, summaryPanel } from './views/home.js';
 import { gamesPage } from './views/games.js';
 import { picksPage, picksPlayerPage, picksPlayerSheet, picksRulesPage } from './views/picks.js';
 import { picksWidget } from './views/picks-widget.js';
@@ -33,8 +33,8 @@ import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
-import { leadersPage, leadersGridHtml, leadersDefaultScope, LEADERS_GRID_KEY, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
-import { roastPage, ROAST_CATS } from './views/roast.js';
+import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
+import { roastPage, buildRoastModel, ROAST_CATS, DISASTER_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
 import { playoffsPage, computeSeeds, pairKey } from './views/playoffs.js';
 import { comingSoonPage } from './views/coming-soon.js';
@@ -70,6 +70,7 @@ import {
   getSeasonQuota, setSeasonQuota, getSeasonFeePaid, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover, getCommunityStats, getRecentlyApprovedMembers,
+  getPlayerSeasonLines, getSeasonPointsByGame, getPlayerSeasonTotalsLite, getPapawisPlayedCounts,
   getTeamSeasonStats, getTeamPointsForAgainst, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
   getLeadersAllTime, getLeaderSeasons,
   getGameById, getGameDetailStats, getGameStats,
@@ -233,6 +234,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/styles.css')).mtimeMs); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
+// /teams and /teams/:slug (public/teams.css), versioned the same way.
+const TEAMS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/teams.css')).mtimeMs); } catch { return Date.now(); } })();
+// /players directory (public/players.css), versioned the same way.
+const PLAYERS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/players.css')).mtimeMs); } catch { return Date.now(); } })();
 
 // Minified once at process start (same lifecycle as CSS_VER — both only change on a
 // restart, which is also the only time the underlying file can change anyway) rather than
@@ -240,7 +245,7 @@ const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__di
 // to serving the original file as-is instead of a broken empty response.
 const MINIFIED_CSS = (() => {
   const cache = {};
-  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css']) {
+  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css']) {
     try {
       const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
       const out = new CleanCSS({}).minify(raw);
@@ -2250,9 +2255,11 @@ async function generateLeaderSvg(share) {
   const teamName    = String(share.team_name || '').toUpperCase();
   const color       = share.team_color || '#f59332';
   const statStr     = String(share.stat_fmt);
-  const isRec       = share.mode === 'rec';
-  const modeLabel   = share.mode === 'pg' ? 'PER GAME' : isRec ? 'SINGLE GAME' : 'TOTALS';
-  const scopeLabel  = (isRec && share.season === 'alltime') ? 'ALL TIME' : `SEASON ${share.season}`;
+  const isRec       = share.mode === 'rec' || share.mode === 'disaster';
+  const modeLabel   = isRec ? 'SINGLE GAME'
+    : share.mode === 'po-pg' ? 'PLAYOFFS · PER GAME' : share.mode === 'po-tot' ? 'PLAYOFF TOTALS'
+    : (share.mode === 'pg' || share.mode === 'roast') ? 'PER GAME' : 'TOTALS';
+  const scopeLabel  = share.season === 'alltime' ? 'ALL TIME' : `SEASON ${share.season}`;
   const chipTextColor = teamName === 'WHITE' ? '#10141d' : '#fff';
 
   const { asOfLabel } = buildShareAsOfLabel(share);
@@ -2734,7 +2741,7 @@ app.use(express.urlencoded({ extended: false }));
 // express.static unchanged. Safe to cache for a full year: the URL is always requested
 // with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
 // invalidating this one.
-app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css'], (req, res) => {
+app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css'], (req, res) => {
   const file = req.path.slice(1);
   const minified = MINIFIED_CSS[file];
   if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
@@ -5228,13 +5235,24 @@ app.get('/api/player/:id/photo-source', async (req, res) => {
   await sendPlayerPhotoUrl(res, row?.picture_url);
 });
 
+// Head-to-head write-up for the /players compare sheet (and the admin compare page's
+// regenerate), in the conyo voice from /admin/ai-writing. ?season=N | career; default is the
+// latest completed regular season. Numbers are guarded against the facts like the homepage
+// summaries: up to 3 drafts, then 503.
+const COMPARE_VOICE_VERSION = 'conyo1';
 app.get('/api/compare', async (req, res) => {
   const { a, b, force } = req.query;
   if (!a || !b) return res.status(400).json({ error: 'Missing player IDs' });
   try {
     const pA = getPlayerWithTeam(a), pB = getPlayerWithTeam(b);
     if (!pA || !pB) return res.status(404).json({ error: 'Player not found' });
-    const tA = getPlayerTotals(a), tB = getPlayerTotals(b);
+    const seasons = getLeaderSeasons().map(Number).filter(Boolean).sort((x, y) => y - x);
+    const qs = String(req.query.season || '');
+    const season = qs === 'career' ? null : (seasons.includes(Number(qs)) ? Number(qs) : (seasons[0] ?? null));
+    const label = season == null ? 'Career' : `Season ${season}`;
+    const lines = getPlayerSeasonLines(season);
+    const tA = lines.find(r => r.id === a) || null, tB = lines.find(r => r.id === b) || null;
+    const variant = `${COMPARE_VOICE_VERSION}|${season == null ? 'career' : `s${season}`}`;
 
     const playerData = (p, t) => ({
       name: displayPlayerName(p.name),
@@ -5247,52 +5265,72 @@ app.get('/api/compare', async (req, res) => {
       },
     });
 
-    const cached = force !== '1' && getCompareCache(a, b, tA, tB);
+    const firstName = p => String(p.first_name || displayPlayerName(p.name)).trim().split(/\s+/)[0];
+    const missing = [[pA, tA], [pB, tB]].filter(([, t]) => !t?.games_played).map(([p]) => firstName(p));
+    if (missing.length) {
+      return res.json({ writeup: `${missing.join(' and ')} ${missing.length > 1 ? "don't" : "doesn't"} have ${label} games yet, so there's nothing to compare.`, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
+    }
+
+    const cached = force !== '1' && getCompareCache(a, b, tA, tB, variant);
     if (cached) {
       incrementCompareViews(a, b);
       return res.json({ writeup: cached, cached: true, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
     }
 
-    const pg = (t, field) => {
-      const gp = t?.games_played || 0;
-      return gp > 0 ? ((t?.[field] || 0) / gp).toFixed(1) : '0.0';
-    };
-    const fgPct = (t) => {
-      if (!t) return null;
-      const made = (t.fg2m || 0) + (t.fg3m || 0) + (t.fg4m || 0);
-      const att  = made + (t.fg2m_miss || 0) + (t.fg3m_miss || 0) + (t.fg4m_miss || 0);
-      return att > 0 ? Math.round(made / att * 100) + '%' : null;
-    };
+    const pg = (t, field) => (t[field] / t.games_played).toFixed(1);
+    const pctOf = (made, miss) => (made + miss) > 0 ? `${Math.round(made / (made + miss) * 100)}%` : null;
     const line = (p, t) => {
-      const name = displayPlayerName(p.name);
-      const team = p.team_name || p.team_id || '';
-      const gp   = t?.games_played || 0;
-      const fg   = fgPct(t);
-      return `${name} (${team}): ${pg(t,'pts')} PPG, ${pg(t,'reb')} RPG, ${pg(t,'ast')} APG, ${pg(t,'stl')} SPG, ${pg(t,'blk')} BPG${fg ? ', ' + fg + ' FG%' : ''}, ${gp} GP`;
+      const fg = pctOf(t.fg2m + t.fg3m + t.fg4m, t.fg2m_miss + t.fg3m_miss + t.fg4m_miss);
+      const tp = pctOf(t.fg3m, t.fg3m_miss), ft = pctOf(t.ftm, t.ft_miss);
+      return `${firstName(p)} (${displayPlayerName(p.name)}, ${t.team_name || p.team_name || 'no team'}): ${t.games_played} GP, ${pg(t, 'pts')} PPG, ${pg(t, 'reb')} RPG, ${pg(t, 'ast')} APG, ${pg(t, 'stl')} SPG, ${pg(t, 'blk')} BPG, ${pg(t, 'turnover')} turnovers per game${fg ? `, ${fg} FG` : ''}${tp ? `, ${tp} from three` : ''}${ft ? `, ${ft} FT` : ''}`;
+    };
+    const facts = `${line(pA, tA)}\n${line(pB, tB)}`;
+
+    // The conyo voice as configured at /admin/ai-writing (falls back if an admin removed it).
+    const voice = getVoiceConfig().voices.find(v => v.id === 'conyo') || {
+      name: 'Conyo hoops writer',
+      guide: 'Write as a conyo rich kid from a Makati/BGC private school who loves this league: mostly English with Tagalog dropped in the conyo way ("make + verb", "naman", "kasi", "talaga", "diba", "grabe", "super", "literally").',
     };
 
-    // Gather recent roast openers to keep intros unique across comparisons
+    // Recent openers, so takes don't all start the same way.
     const currentPair = [a, b].sort().join('|');
     const recentOpeners = getCompareAnalytics()
       .filter(r => r.writeup && r.pair_key !== currentPair)
       .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
-      .slice(0, 10)
+      .slice(0, 8)
       .map(r => r.writeup.split(/(?<=[.!?])\s/)[0])
       .filter(Boolean);
 
-    const prompt = `You are a ruthless roast comic doing a comedy roast of two players in the WKND Basketball League, a recreational league. Write 2-3 sentences roasting both players by comparing their stats. The roast is the main event — dig into weaknesses, bad shooting splits, low numbers, whatever the stats hand you, and make it sting a little. You can land a backhanded compliment if it sets up a better joke, but do not go soft or turn it into a celebration. Be specific with the numbers. Use first names only. No emojis. Start the roast immediately — no preamble, no "Alright" or "Let's" opener, no labels or headers. Output only the paragraph.
+    let prompt = `You write "the conyo take" on a head-to-head comparison of two players in the WKND Basketball League, a recreational league whose players read every word.
 
-Vary your opening line every time — do not fall back on the same sentence structure or stock setup across different roasts.${recentOpeners.length ? `
+VOICE — ${voice.name}: ${voice.guide}${voice.sample ? `\nExample line in this voice: "${voice.sample}"` : ''}
 
-OPENING LINES ALREADY USED IN RECENT ROASTS (do NOT reuse these words, structures, or patterns for your opening line):
-${recentOpeners.map(o => `- "${o}"`).join('\n')}` : ''}
+FACTS (${label}, regular season — the only stats you may use):
+${facts}
 
-${line(pA, tA)}
-${line(pB, tB)}`;
+Rules:
+- 2-3 sentences, at most 70 words, one paragraph. Say who is better at what, head to head, with light teasing about the stats — never mean, never about anything except basketball.
+- Use first names only (the name before the brackets).
+- Every number must be copied exactly as it appears in the facts. Never calculate new numbers: no differences, sums, ratios or rounding.
+- Don't invent games, plays, history, rankings or records beyond the facts.
+- No emojis, hashtags, headings or labels. Output only the paragraph.${recentOpeners.length ? `\n- Open differently from these recent takes:\n${recentOpeners.map(o => `  - "${o}"`).join('\n')}` : ''}`;
 
-    const { text, model } = await generateText(prompt, { maxTokens: 280, temperature: 0.92 });
-    if (text && text.length >= 40) setCompareCache(a, b, tA, tB, text, model);
-    res.json({ writeup: text, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
+    const factNums = new Set(facts.match(/\d+(?:\.\d+)?/g) || []);
+    const invented = t => (t.match(/\d+(?:\.\d+)?/g) || []).filter(n => !factNums.has(n));
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { text, model } = await generateText(prompt, { maxTokens: 320, temperature: attempt === 1 ? 0.9 : 0.75 });
+      const take = String(text || '').replace(/\s+/g, ' ').trim();
+      if (take.length < 40) continue;
+      const bad = invented(take);
+      if (bad.length) {
+        console.warn(`compare take attempt ${attempt} used numbers not in the facts: ${bad.join(', ')}`);
+        prompt += `\n\nA previous draft used numbers that aren't in the facts (${bad.join(', ')}). Only copy numbers from the facts.`;
+        continue;
+      }
+      setCompareCache(a, b, tA, tB, take, model, variant);
+      return res.json({ writeup: take, playerA: playerData(pA, tA), playerB: playerData(pB, tB) });
+    }
+    res.status(503).json({ error: 'No take passed the number check' });
   } catch (err) {
     console.error('compare writeup error:', err.message);
     res.status(503).json({ error: 'AI unavailable' });
@@ -10404,8 +10442,9 @@ app.post('/api/leaders/share', (req, res) => {
   let top10 = [];
   let leaderPlayer = null;
 
-  if (mode === 'rec') {
-    const recCat       = RECORD_CATS.find(c => c.id === category_id);
+  // 'disaster' = the roast's single-game disasters: same shape as records, own categories.
+  if (mode === 'rec' || mode === 'disaster') {
+    const recCat       = (mode === 'rec' ? RECORD_CATS : DISASTER_CATS).find(c => c.id === category_id);
     const recFmt       = recCat?.fmt || (v => String(Math.round(v)));
     const allRecs      = getGameRecords();
     const filteredRecs = season === 'alltime' ? allRecs : allRecs.filter(r => String(r.season) === String(season));
@@ -10423,7 +10462,7 @@ app.post('/api/leaders/share', (req, res) => {
             team_name:   String(x.r.team_name || '').toUpperCase(),
             team_color:  teamColor(String(x.r.team_name || '').toUpperCase()),
             stat_value:  x.v,
-            stat_fmt:    recFmt(x.v),
+            stat_fmt:    recCat.show ? recCat.show(x.r) : recFmt(x.v),
             game_id:     String(x.r.game_id || ''),
             game_date:   String(x.r.date || ''),
             game_opp:    ctx.opp,
@@ -10455,11 +10494,14 @@ app.post('/api/leaders/share', (req, res) => {
           }))
       : [];
   } else {
-    const allCats    = mode === 'pg' ? PER_GAME : TOTALS;
+    // po-pg / po-tot are playoff boards: rank playoff stats, not the regular season's.
+    const isPo       = String(mode).startsWith('po-');
+    const perGame    = mode === 'pg' || mode === 'po-pg';
+    const allCats    = perGame ? PER_GAME : TOTALS;
     const cat        = allCats.find(c => c.id === category_id);
-    const defaultFmt = mode === 'pg' ? fmtPerGame : fmtTotals;
+    const defaultFmt = perGame ? fmtPerGame : fmtTotals;
     const fmt        = cat?.fmt || defaultFmt;
-    const allPlayers = buildLeaderPlayers(season);
+    const allPlayers = isPo ? getPlayoffLeaders(season) : buildLeaderPlayers(season);
     leaderPlayer     = allPlayers.find(p => p.id === player_id);
     top10 = cat
       ? allPlayers
@@ -10509,16 +10551,21 @@ app.get('/leaders/share/:id', (req, res) => {
     ? (isAlltime ? ` Updated through Season ${asOfSeason}, Week ${asOfWeek}.` : ` Updated through Week ${asOfWeek}.`)
     : '';
   const isRoastShare = share.mode === 'roast';
-  const title       = isRecShare
+  const isDisaster   = share.mode === 'disaster';
+  const title       = isDisaster
+    ? `${displayName} · ${share.stat_title} — The Roast · WKND Basketball`
+    : isRecShare
     ? `${displayName} · ${share.stat_label} ${scopeText} Record — WKND Basketball`
     : isRoastShare
       ? `${displayName} · ${share.stat_title} — The Roast · WKND Basketball`
       : `${displayName} · ${share.stat_label} Leader (${scopeText}) — WKND Basketball`;
-  const desc        = isRecShare
+  const desc        = isDisaster
+    ? `${displayName}'s ${share.stat_fmt} is The Roast's "${share.stat_title}" — all in good fun.${asOfDesc}`
+    : isRecShare
     ? `${displayName} holds the ${isAlltime ? 'all-time' : `Season ${share.season}`} ${share.stat_title} record with ${share.stat_fmt}.${asOfDesc}`
     : isRoastShare
       ? `${displayName} earned the "${share.stat_title}" award — ${share.stat_fmt} ${share.stat_label}.${asOfDesc}`
-      : `${displayName} leads the WKND League in ${share.stat_title} with ${share.stat_fmt}${share.mode === 'pg' ? ' per game' : ' total'}.${asOfDesc}`;
+      : `${displayName} leads the WKND League in ${share.stat_title} with ${share.stat_fmt}${share.mode === 'pg' || share.mode === 'po-pg' ? ' per game' : ' total'}${String(share.mode).startsWith('po-') ? ' in the playoffs' : ''}.${asOfDesc}`;
   const imageUrl    = `${origin}/api/leaders/share/${share.id}/image.png`;
   const pageUrl     = `${origin}/leaders/share/${share.id}`;
   const metaTags = [
@@ -11046,9 +11093,12 @@ function homeSummaryFacts(block, ctx) {
   return null;
 }
 
-async function generateHomeSummary(block, f) {
+// opts (the /teams summaries): where = the page named in the prompt, settingKey = where it's
+// stored, strict = the extra code-side checks below (2 sentences max, spelled-out numbers,
+// no cause-and-effect claims) — the homepage blocks run without them, unchanged.
+async function generateHomeSummary(block, f, opts = {}) {
   const voice = pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
-  let prompt = `You write the short headline and summary that sits above the "${f.section}" section on the WKND Basketball League homepage — a recreational league whose players read every word.
+  let prompt = `You write the short headline and summary that sits above the "${f.section}" section on the WKND Basketball League ${opts.where || 'homepage'} — a recreational league whose players read every word.
 
 THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
 
@@ -11065,7 +11115,9 @@ Rules:
 - Never call anything a record, a first, a best-ever or a career high — the facts only cover this season's standings and leaderboards.
 - Season totals (record, point differential, per-game averages) describe the whole season; never attach them to a single game.
 - Write finished copy only: no questions to yourself, no corrections, no notes or alternatives.
-- Don't mention the crowd, fans or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "dominates", "intrigues" or "showcase".`;
+- Don't mention the crowd, fans or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "dominates", "intrigues" or "showcase".${opts.strict ? `
+- Never claim one stat causes or explains another (no "because", "explains", "drives", "thanks to", "fuels"). State the numbers side by side and let the reader connect them.
+- Write every number as digits, never as a word.` : ''}`;
   // Season race also gets one short note per team card (f.notesFor = the team names).
   if (f.notesFor) {
     prompt += `\n- notes: exactly one note per team (${f.notesFor.join(', ')}), each one sentence of at most 12 words, plain text, about that team only — the most telling fact about its season so far. Don't start with the team's name.`;
@@ -11103,6 +11155,10 @@ Rules:
     const noteText = Object.entries(notes).map(([t, n]) => `${t}: ${n}`).join('\n');
     const bad = invented(`${headline} ${body} ${noteText}`);
     if (bad.length) { console.warn(`Home summary (${block}) attempt ${attempt} used numbers not in the facts: ${bad.join(', ')}`); continue; }
+    if (opts.strict) {
+      const issue = strictSummaryIssue(headline, body, f.facts);
+      if (issue) { console.warn(`Summary (${block}) attempt ${attempt}: ${issue}`); prompt += `\n\nA previous draft was rejected: ${issue}. Avoid that.`; continue; }
+    }
     // Second opinion at temperature 0: every claim checked against the same facts.
     const problems = await factCheckHomeSummary(f, headline, body, noteText);
     if (problems.length) {
@@ -11110,10 +11166,28 @@ Rules:
       prompt += `\n\nA previous draft was rejected for these errors — avoid them: ${problems.join('; ')}`;
       continue;
     }
-    setSetting(`home_summary_${block}`, JSON.stringify({ key: f.key, kicker: f.kicker, headline, body, notes, at: Date.now() }));
+    setSetting(opts.settingKey || `home_summary_${block}`, JSON.stringify({ key: f.key, kicker: f.kicker, headline, body, notes, at: Date.now() }));
     return;
   }
   throw new Error('No summary passed the fact check');
+}
+
+// The teams summaries' extra checks — each one a slip the fact check let through when the
+// mockup copy was generated (2026-10-11): a 3-sentence body, "Nine players…" dodging the
+// digits-only number guard, and "That gap explains why…". Returns a reason, or ''.
+const SPELLED_NUMBERS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+function strictSummaryIssue(headline, body, facts) {
+  const sentences = String(body).replace(/\*\*/g, '').split(/(?<=[.!?])\s+(?=[A-Z0-9])/).filter(x => x.trim());
+  if (sentences.length > 2) return `the body has ${sentences.length} sentences (at most 2)`;
+  const text = `${headline} ${body}`.replace(/\*\*/g, '');
+  const factNums = new Set(String(facts).match(/\d+(?:\.\d+)?/g) || []);
+  // "zero"/"one" are skipped: "one of", "one game" read as words, not stats.
+  for (const w of text.toLowerCase().match(/[a-z]+/g) || []) {
+    const n = SPELLED_NUMBERS.indexOf(w);
+    if (n > 1 && !factNums.has(String(n))) return `it spells out a number ("${w}") that isn't in the facts`;
+  }
+  if (/\b(explains?|because|thanks to|drives?|driven by|fuels?|fueled by|powered by|leads? to)\b/i.test(text)) return 'it claims one stat causes or explains another';
+  return '';
 }
 
 // Returns the problems found ([] = every claim is supported by the facts).
@@ -11783,53 +11857,270 @@ FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` 
   }));
 });
 
-// Only the opening grid (Per Game, current season or All Time) is rendered here; the
-// other tabs/scopes come from /leaders/grid below when first shown (views/leaders.js).
-app.get('/leaders', (req, res) => {
-  const season         = getPortalCurrentSeason();
-  const currentSeason  = season || 3;
-  const weekNum        = season ? (getSeasonLatestWeek(season)?.week ?? null) : null;
-  const asOfLabel      = weekNum ? `S${season} · WK ${weekNum}` : '';
-  const leaderSeasons  = getLeaderSeasons();
-  const recordSeasons  = [...new Set(getGameRecords().map(r => r.season).filter(Boolean))].sort((a, b) => b - a);
-  const defaultKey     = `pg:${leadersDefaultScope(leaderSeasons, currentSeason)}`;
+// ── /leaders and /roast (views/leaders.js, views/roast.js) ───────────────────
+// One view per URL: ?stats=pg|tot|rec|po & ?season=N|alltime. The page's dropdowns fetch
+// the same URL with ?partial=1 and swap the content in place (no full reload).
+function leaderSeasonsDesc() {
+  return [...new Set(getLeaderSeasons().map(Number))].filter(Boolean).sort((a, b) => b - a);
+}
+function pickLeadersSeason(q, seasons, current) {
+  if (q === 'alltime') return 'alltime';
+  if (seasons.includes(Number(q))) return Number(q);
+  if (seasons.includes(Number(current))) return Number(current);
+  return seasons[0] ?? 'alltime';
+}
+function leadersKicker(season, current) {
+  if (season === 'alltime') return 'All-time';
+  const week = getSeasonLatestWeek(season)?.week ?? null;
+  return `Season ${season}${week && String(season) === String(current) ? ` · After week ${week}` : ''}`;
+}
 
+// ── Section writeups (one short paragraph under each section header) ─────────
+// Only the default view of each page (current season, per game) gets AI copy; every other
+// view, and any section the writer gets wrong, shows the model's code-built fallback.
+// Same lifecycle as the homepage summaries: the stored copy is keyed by a hash of its
+// facts, a stale key renders fallbacks and writes fresh copy in the background.
+const PAGE_WRITEUPS_VERSION = 2;
+// Own list (MATCHUP_BANNED misses "dominated"): checked in code, not left to the prompt.
+const WRITEUP_BANNED = /\b(clash\w*|showdown|impressive|stellar|remarkable|dominat\w*|showcase\w*|intrigu\w*|epic|crowd|fans|spectators)\b/i;
+const WRITEUP_MAX_WORDS = 45;
+const pageWriteupsInFlight = new Set();
+let pageWriteupsCooldownUntil = 0;
+
+function pageWriteupFacts(model, { season, currentSeason }) {
+  const scopeLabel = season === 'alltime' ? 'all seasons' : `Season ${season}`;
+  const out = {};
+  for (const sec of model.sections) {
+    const f = sectionFacts(sec, { scopeLabel, currentSeason });
+    if (f) out[sec.id] = f;
+  }
+  return out;
+}
+
+// The Roast ribs players, so it keeps one gentle voice unless an admin overrides it at
+// /admin/ai-writing ("The Roast writeups").
+function roastVoice() {
+  const cfg = getVoiceConfig();
+  if (cfg.overrides.roast) return pickVoice('roast');
+  return cfg.voices.find(v => v.id === 'barbershop' && v.enabled) || pickVoice('roast');
+}
+
+async function factCheckPageWriteups(facts, texts) {
+  const ids = Object.keys(texts);
+  const prompt = `Check these short section writeups for a basketball league stats page against each section's facts.
+
+${ids.map(id => `SECTION ${id}\nFacts:\n${facts[id]}\nCopy: ${texts[id]}`).join('\n\n')}
+
+For each section, list every statement in its copy that its facts do not directly support: wrong numbers, wrong rankings, a player "leading" something they are not #1 in, a tie described as a lead, numbers that were calculated rather than taken from the facts, a team or player mixed up, the wrong season (an earlier season's record called "this season's"), history or streaks the facts don't state, or something called a record that the facts don't call a record. Opinions, jokes and tone are fine. Return an empty list for a section with no problems.`;
+  const schema = {
+    type: 'object',
+    properties: Object.fromEntries(ids.map(id => [id, { type: 'array', items: { type: 'string' } }])),
+    required: ids,
+  };
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500 });
+  return Object.fromEntries(ids.map(id => [id, (Array.isArray(data?.[id]) ? data[id] : ['no verdict']).map(p => String(p).slice(0, 200)).filter(Boolean)]));
+}
+
+async function generatePageWriteups(page, facts, key) {
+  const isRoast = page === 'roast';
+  const voice = isRoast ? roastVoice() : pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
+  const ids = Object.keys(facts);
+  const base = `You write the short paragraph that sits under each section heading on the WKND Basketball League ${isRoast ? '"The Roast" page — the playful flip side of the league leaders board' : 'League Leaders page'}. It's a recreational league whose players read every word.
+
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+
+Write one paragraph per section. Each: 1–2 sentences, at most 40 words, plain text (no markdown, asterisks or emoji). Tell ONE story from that section's facts — a close race, a tie, a big gap, a player on several boards. Mention at most two or three players; never walk through every board.${isRoast ? ' Make it funny: a wry line or light joke in the voice, not a dry recap of the numbers.' : ''}
+
+SECTIONS
+${ids.map(id => `[${id}]\n${facts[id]}`).join('\n\n')}
+
+Rules:
+- Every number must be copied from that section's facts. Never calculate new numbers (differences, sums, percentages) — if a gap matters, use the gap the facts give.
+- A player only "leads" a board where they are #1. A tie is a tie, not a lead.
+- Write player names in normal case exactly as the facts spell them (e.g. Vin Salenga); team names in title case.
+- Only call something a record if the facts call it one. Records list the season they were set in; only say "this season" for one the facts mark "set this season". The facts list today's top marks, not what they replaced, so never say a mark broke, beat or surpassed anyone's earlier best. Don't invent history, streaks or comparisons.
+- Don't mention fans, the crowd or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "showcase", "clash" or "epic".${isRoast ? `
+- This is friendly ribbing about the numbers only — never about looks, background, effort, character or anyone's life off the court. Nothing mean; it should be something the player laughs at too.` : ''}
+- Write finished copy only: no notes, alternatives or questions.
+
+FINAL REMINDER — one story per section, at most 40 words, in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`;
+
+  const accepted = {};
+  let notes = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const todo = ids.filter(id => !accepted[id]);
+    if (!todo.length) break;
+    const schema = { type: 'object', properties: Object.fromEntries(todo.map(id => [id, { type: 'string' }])), required: todo };
+    const prompt = base + (todo.length < ids.length ? `\n\nOnly write these sections this time: ${todo.join(', ')}.` : '') + notes;
+    const { data } = await generateJson(prompt, schema, { temperature: Math.min(aiTemperature(), 0.7), maxTokens: 900 });
+    const drafts = {};
+    for (const id of todo) {
+      const text = String(data?.[id] || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim().slice(0, 400);
+      if (!text) continue;
+      // Code-side guards first: every number must appear in this section's facts, no banned words.
+      const factNums = new Set(facts[id].match(/\d+(?:\.\d+)?/g) || []);
+      const invented = (text.match(/\d+(?:\.\d+)?/g) || []).filter(n => !factNums.has(n));
+      const banned = text.match(WRITEUP_BANNED);
+      const words = text.split(/\s+/).length;
+      const sentences = (text.match(/[.!?](\s|$)/g) || []).length;
+      const why = invented.length ? `using numbers not in its facts (${invented.join(', ')})`
+        : banned ? `using the word "${banned[0]}"`
+        : words > WRITEUP_MAX_WORDS || sentences > 2 ? `being too long (${words} words, ${sentences} sentences; the limit is 2 sentences and 40 words, so tell ONE story)` : '';
+      if (why) {
+        console.warn(`${page} writeup [${id}] attempt ${attempt} rejected for ${why}`);
+        notes += `\n\nA previous [${id}] draft was rejected for ${why}.`;
+        continue;
+      }
+      drafts[id] = text;
+    }
+    if (!Object.keys(drafts).length) continue;
+    const problems = await factCheckPageWriteups(facts, drafts);
+    for (const [id, text] of Object.entries(drafts)) {
+      if (problems[id].length) {
+        console.warn(`${page} writeup [${id}] attempt ${attempt} failed the fact check: ${problems[id].join(' | ')}`);
+        notes += `\n\nA previous [${id}] draft was rejected for these errors — avoid them: ${problems[id].join('; ')}`;
+      } else accepted[id] = text;
+    }
+  }
+  if (!Object.keys(accepted).length) throw new Error('No writeup passed the checks');
+  setSetting(`${page}_writeups`, JSON.stringify({ key, texts: accepted, voice: voice.id, at: Date.now() }));
+  return accepted;
+}
+
+function pageWriteupsKey(page, season, facts) {
+  return `v${PAGE_WRITEUPS_VERSION}|${page}|${season}|${createHash('sha1').update(JSON.stringify(facts)).digest('hex').slice(0, 12)}`;
+}
+
+// Stored AI copy when it matches today's facts; otherwise {} (fallbacks) + background refresh.
+function getPageWriteups(page, facts, season) {
+  if (!Object.keys(facts).length) return {};
+  const key = pageWriteupsKey(page, season, facts);
+  let stored = null;
+  try { stored = JSON.parse(getSetting(`${page}_writeups`, '') || 'null'); } catch {}
+  if (stored && stored.key === key) return stored.texts || {};
+  if (aiAvailable() && !pageWriteupsInFlight.has(page) && Date.now() >= pageWriteupsCooldownUntil) {
+    pageWriteupsInFlight.add(page);
+    generatePageWriteups(page, facts, key)
+      .catch(err => { console.error(`${page} writeups failed:`, err.message); pageWriteupsCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS; })
+      .finally(() => pageWriteupsInFlight.delete(page));
+  }
+  return {};
+}
+
+function leadersDefaultModel(current) {
+  const seasons = leaderSeasonsDesc();
+  const season = pickLeadersSeason('', seasons, current);
+  if (season === 'alltime') return null;
+  const model = buildLeadersModel({
+    stats: 'pg', season, currentSeason: current, seasons,
+    players: buildLeaderPlayers(season), careerPlayers: buildLeaderPlayersAllTime(), gameRecords: getGameRecords(),
+  });
+  return { model, season };
+}
+function roastDefaultModel(current) {
+  const seasons = leaderSeasonsDesc();
+  const season = pickLeadersSeason('', seasons, current);
+  if (season === 'alltime') return null;
+  return { model: buildRoastModel({ season, players: buildLeaderPlayers(season), gameRecords: getGameRecords(), currentSeason: current }), season };
+}
+
+app.post('/admin/leaders/writeups/regenerate', requireAuth, express.json(), async (req, res) => {
+  const page = req.body?.page === 'roast' ? 'roast' : 'leaders';
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const current = getPortalCurrentSeason();
+  const d = page === 'roast' ? roastDefaultModel(current) : leadersDefaultModel(current);
+  if (!d) return res.status(400).json({ error: 'Nothing to write about yet.' });
+  const facts = pageWriteupFacts(d.model, { season: d.season, currentSeason: current });
+  try {
+    await generatePageWriteups(page, facts, pageWriteupsKey(page, d.season, facts));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`${page} writeups regenerate failed:`, err.message);
+    res.status(502).json({ error: 'The AI couldn’t write copy that passed the fact check — try again in a bit.' });
+  }
+});
+
+app.get('/leaders', (req, res) => {
+  const current  = getPortalCurrentSeason();
+  const seasons  = leaderSeasonsDesc();
+  const stats    = ['pg', 'tot', 'rec', 'po'].includes(req.query.stats) ? req.query.stats : 'pg';
+  const season   = pickLeadersSeason(String(req.query.season || ''), seasons, current);
+  const isAll    = season === 'alltime';
+  const isAdmin  = !!req.session?.isAdmin;
+
+  let players = [];
+  if (stats === 'po') players = isAll ? [] : getPlayoffLeaders(season);
+  else if (stats !== 'rec') players = isAll ? buildLeaderPlayersAllTime() : buildLeaderPlayers(season);
+  const model = buildLeadersModel({
+    stats, season, currentSeason: current, seasons, players,
+    careerPlayers: stats === 'pg' && !isAll ? buildLeaderPlayersAllTime() : [],
+    gameRecords: stats === 'pg' || stats === 'rec' ? getGameRecords() : [],
+  });
+
+  const isDefault = stats === 'pg' && !isAll && String(season) === String(current);
+  const writeups = isDefault ? getPageWriteups('leaders', pageWriteupFacts(model, { season, currentSeason: current }), season) : {};
+  // Page summary = the homepage's stored "leaders" summary, while it's for this season.
+  let summary = null;
+  if (isDefault) {
+    try {
+      const s = JSON.parse(getSetting('home_summary_leaders', '') || 'null');
+      if (s && String(s.key || '').split('|')[2] === String(season)) summary = s;
+    } catch {}
+  }
+  const n = players.length;
+  const maxGp = players.reduce((m, p) => Math.max(m, p.games_played || 0), 0);
+  const meta = stats === 'rec'
+    ? 'The best single-game lines, regular season and playoffs.'
+    : n ? `${n} players${!isAll && maxGp ? ` · up to ${maxGp} game${maxGp === 1 ? '' : 's'} each` : ''} · shooting boards need minimum attempts` : '';
+  const html = leadersPage({
+    model, seasons, currentSeason: current,
+    kicker: stats === 'rec' ? `Single-game records · ${isAll ? 'All seasons' : `Season ${season}`}` : stats === 'po' ? `Playoffs · ${isAll ? 'All-time' : `Season ${season}`}` : leadersKicker(season, current),
+    meta,
+    summaryHtml: isDefault && (summary || isAdmin) ? summaryPanel(summary, 'leaders', isAdmin) : '',
+    writeups,
+    showDownload: !!(req.session?.isAdmin || req.session?.playerRegId),
+    asOfLabel: isAll ? 'ALL TIME' : leadersKicker(season, current).toUpperCase(),
+    emptyMsg: stats === 'po'
+      ? (isAll ? 'Playoff leaders are kept per season — pick a season.' : `No playoff games in Season ${season} yet.`)
+      : 'No games played yet for this selection.',
+  });
+  if (req.query.partial === '1') return res.type('html').send(html);
   res.send(renderPage(req, {
     title: 'League Leaders — WKND Basketball League',
     currentPath: req.path,
-    body: leadersPage({
-      hasPlayoffs: getPlayoffLeaders(season).length > 0, recordSeasons, currentSeason, asOfLabel, leaderSeasons,
-      defaultGridHtml: leadersGrid(req, defaultKey, season),
-    })
+    body: `<div class="page-content">${html}</div>${leadersScript({
+      isAdmin,
+      regen: [{ url: '/admin/home-summary/regenerate', body: { block: 'leaders' } }, { url: '/admin/leaders/writeups/regenerate', body: { page: 'leaders' } }],
+    })}`,
   }));
 });
 
-function leadersGrid(req, key, season) {
-  const [tab, scope] = key.split(':');
-  const data = { currentSeason: season || 3, isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId) };
-  if (tab === 'po')       data.players = getPlayoffLeaders(season);
-  else if (tab === 'rec') data.gameRecords = getGameRecords();
-  else                    data.players = scope === 'alltime' ? buildLeaderPlayersAllTime() : buildLeaderPlayers(Number(scope.slice(1)));
-  return leadersGridHtml(key, data);
-}
-
-app.get('/leaders/grid', (req, res) => {
-  const key = String(req.query.k || '');
-  if (!LEADERS_GRID_KEY.test(key)) return res.status(400).end();
-  // private: the panels carry a download button only for logged-in viewers.
-  res.set('Cache-Control', 'private, max-age=60');
-  res.type('html').send(leadersGrid(req, key, getPortalCurrentSeason()));
-});
-
 app.get('/roast', (req, res) => {
-  const season          = getPortalCurrentSeason();
-  const leaderSeasons   = getLeaderSeasons();
-  const roastBySeason   = Object.fromEntries(leaderSeasons.map(s => [s, buildLeaderPlayers(s)]));
-  const roastAllTime    = buildLeaderPlayersAllTime();
-  const origin           = getRequestOrigin(req);
-  const roastUrl         = `${origin}/roast`;
-  const roastDesc        = `The flip side of the leaders board. Season ${season || ''} worst performers, funniest stat disasters, and dubious awards — only on WKND Basketball.`;
-  const roastMetaTags    = [
+  const current = getPortalCurrentSeason();
+  const seasons = leaderSeasonsDesc();
+  const season  = pickLeadersSeason(String(req.query.season || ''), seasons, current);
+  const isAll   = season === 'alltime';
+  const isAdmin = !!req.session?.isAdmin;
+  const players = isAll ? buildLeaderPlayersAllTime() : buildLeaderPlayers(season);
+  const model   = buildRoastModel({ season, players, gameRecords: getGameRecords(), currentSeason: current });
+  const isDefault = !isAll && String(season) === String(current);
+  const writeups = isDefault ? getPageWriteups('roast', pageWriteupFacts(model, { season, currentSeason: current }), season) : {};
+  const html = roastPage({
+    model, seasons,
+    kicker: leadersKicker(season, current),
+    meta: 'The flip side of the <a href="/leaders">leaders board</a> · all in good fun · 3+ games to qualify',
+    // Admins get a Regenerate for the section writeups (the roast has no page summary).
+    summaryHtml: isDefault && isAdmin ? `<div class="ld-admin"><button type="button" class="hs-summary__regen">↺ Regenerate writeups</button></div>` : '',
+    writeups,
+    showDownload: !!(req.session?.isAdmin || req.session?.playerRegId),
+    asOfLabel: isAll ? 'ALL TIME' : leadersKicker(season, current).toUpperCase(),
+  });
+  if (req.query.partial === '1') return res.type('html').send(html);
+
+  const origin    = getRequestOrigin(req);
+  const roastUrl  = `${origin}/roast`;
+  const roastDesc = `The flip side of the leaders board. Season ${current || ''} worst performers, funniest stat disasters, and dubious awards — only on WKND Basketball.`;
+  const roastMetaTags = [
     `<meta name="description" content="${escAttr(roastDesc)}">`,
     `<link rel="canonical" href="${escAttr(roastUrl)}">`,
     `<meta property="og:type" content="website">`,
@@ -11846,79 +12137,543 @@ app.get('/roast', (req, res) => {
     title: 'The Roast — WKND Basketball League',
     currentPath: req.path,
     metaTags: roastMetaTags,
-    body: roastPage({
-      currentSeason: season || 3, leaderSeasons, roastBySeason, roastAllTime,
-      isLoggedIn: !!(req.session?.isAdmin || req.session?.playerRegId),
-    }),
+    body: `<div class="page-content">${html}</div>${leadersScript({
+      isAdmin, regen: [{ url: '/admin/leaders/writeups/regenerate', body: { page: 'roast' } }],
+    })}`,
   }));
 });
 
-app.get('/teams', (req, res) => {
-  const teams   = getAllTeams();
-  const season  = getPortalCurrentSeason();
-  const records = getTeamRecords(season);
-  const players = getPlayersWithRatings('');
-  const allGames = byDate(getAllGames());
+// ── /teams + /teams/:slug (rebuilt 2026-10-11 from the "WKND Teams Redesign" canvas) ──────
+// views/teams.js (index) and views/team-detail.js (team page), styles in public/teams.css.
+// Both pages carry AI summaries written by generateHomeSummary with { strict: true } — the
+// same prompt, number guard and fact check as the homepage blocks, plus the stricter
+// code-side checks. Stored in settings (teams_summary_*), shown only while their key still
+// matches the facts, regenerated in the background (never awaited) or by an admin.
+const TEAMS_SUMMARY_VERSION = 1;
+const teamsSummaryInFlight = new Set();
+const TEAM_AWARD_LABELS = {
+  mvp: 'MVP', finals_mvp: 'Finals MVP', dpoy: 'Defensive POY', scoring_champ: 'Scoring champ',
+  assists_leader: 'Assists leader', rebounds_leader: 'Rebounds leader', steals_leader: 'Steals leader',
+  blocks_leader: 'Blocks leader', three_pm_leader: '3PM leader', four_pm_leader: '4PM leader',
+  all_wknd_1: 'All-WKND 1st team', all_wknd_2: 'All-WKND 2nd team', all_wknd_def: 'All-WKND Defense',
+};
+const ordinalOf = n => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+const fmt1 = n => (Number.isFinite(n) ? n.toFixed(1) : '—');
+const signed1 = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}`;
+const teamSide = (g, teamId) => (g.team_a_id === teamId ? 'a' : g.team_b_id === teamId ? 'b' : null);
+function teamResult(g, teamId) {
+  const side = teamSide(g, teamId);
+  const my = Number(side === 'a' ? g.team_a_score : g.team_b_score);
+  const opp = Number(side === 'a' ? g.team_b_score : g.team_a_score);
+  return { won: my > opp, my, opp, oppName: side === 'a' ? g.team_b_name : g.team_a_name, oppId: side === 'a' ? g.team_b_id : g.team_a_id };
+}
+const resultTitle = (g, teamId) => { const r = teamResult(g, teamId); return `${r.won ? 'W' : 'L'} ${r.my}–${r.opp} ${r.oppName}`; };
+const gameTypeLabel = g => (g.game_type === 'finals' ? 'Finals' : g.game_type === 'playoff' ? 'Playoffs' : '');
 
-  const recordMap    = Object.fromEntries(records.map(r => [r.team_id, r]));
-  const teamIdByName = Object.fromEntries(teams.map(t => [t.name.toUpperCase(), t.id]));
+// Consecutive results from the newest game back (games newest first).
+function streakOf(games, teamId) {
+  if (!games.length) return null;
+  const won = teamResult(games[0], teamId).won;
+  let count = 0;
+  for (const g of games) { if (teamResult(g, teamId).won === won) count++; else break; }
+  return { won, count };
+}
 
-  const playersByTeam = {};
-  for (const p of players) {
-    if (!p.team_name || p.status !== 'active') continue;
-    const tid = teamIdByName[String(p.team_name).toUpperCase()];
-    if (!tid) continue;
-    if (!playersByTeam[tid]) playersByTeam[tid] = [];
-    playersByTeam[tid].push(p);
-  }
-
-  const avgOf = (arr, fn) => arr.length ? Math.round(arr.reduce((s, p) => s + fn(p), 0) / arr.length) : null;
-
-  // Streak reads off the same last-5 games already fetched for the form pills — counts
-  // consecutive same-result games from the most recent one, so it caps at 5 even if the
-  // real streak runs longer (acceptable: this is a quick-glance card stat, not the
-  // standings page's authoritative number).
-  const computeStreak = (games, teamId) => {
-    if (!games.length) return null;
-    const results = games.map(g => {
-      const isA = g.team_a_id === teamId;
-      const my  = Number(isA ? g.team_a_score : g.team_b_score);
-      const opp = Number(isA ? g.team_b_score : g.team_a_score);
-      return my > opp;
+// The champion of each finished season (awards: 'champion' rows carry the team), newest first,
+// with the Finals series line and the MVPs for the Past champions rows / history.
+function teamsChampions(teams) {
+  const out = [];
+  const teamById = Object.fromEntries(teams.map(t => [t.id, t]));
+  for (const season of getGameSeasons()) {
+    const awards = getSeasonAwards(season);
+    const champ = awards.find(a => a.award_type === 'champion' && a.team_id && teamById[a.team_id]);
+    if (!champ) continue;
+    const team = teamById[champ.team_id];
+    const finals = getPlayoffGames(season).filter(g => g.game_type === 'finals' && (Number(g.team_a_score) + Number(g.team_b_score)) > 0);
+    let line = '', dateLabel = '', oppName = '', series = '';
+    if (finals.length) {
+      const wins = finals.filter(g => teamResult(g, team.id).won).length;
+      const last = finals[finals.length - 1];
+      const r = teamResult(last, team.id);
+      oppName = r.oppName;
+      series = `${wins}–${finals.length - wins}`;
+      line = `Beat ${oppName} ${series} in the Finals${finals.length > 1 ? ` · ${r.my}–${r.opp} in Game ${finals.length}` : ` · ${r.my}–${r.opp}`}`;
+      dateLabel = new Date(`${gameYmd(last.date)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    const person = type => { const a = awards.find(x => x.award_type === type && x.player_id); const p = a ? getPlayerById(a.player_id) : null; return p ? displayPlayerName(p.name) : ''; };
+    out.push({
+      season: String(season), teamId: team.id, team: team.name, line, dateLabel, oppName, series, finals,
+      mvp: person('mvp'), finalsMvp: person('finals_mvp'), scoringChamp: person('scoring_champ'),
+      championIds: awards.filter(a => a.award_type === 'champion' && a.team_id === team.id).map(a => a.player_id),
     });
-    const won = results[0];
-    let count = 0;
-    for (const r of results) { if (r === won) count++; else break; }
-    return { won, count };
-  };
+  }
+  return out;
+}
 
-  const teamData = teams.map(t => {
-    const plrs  = playersByTeam[t.id] || [];
-    const rated = plrs.filter(p => p.eff_overall != null);
-    const avgOvr = avgOf(rated, p => p.eff_overall);
-    const avgOff = avgOf(rated, p => Math.round(((p.eff_scoring ?? 0) + (p.eff_shooting ?? 0)) / 2));
-    const avgDef = avgOf(rated, p => p.eff_defense);
-    const rec    = recordMap[t.id] ?? null;
-    const recentGames = allGames
-      .filter(g => !g.scheduled && (Number(g.team_a_score) + Number(g.team_b_score)) > 0 && (g.team_a_id === t.id || g.team_b_id === t.id))
-      .slice(0, 5);
-    const wins   = rec?.wins ?? 0;
-    const losses = rec?.losses ?? 0;
+// Stored summary while its key matches; otherwise kick off a background rewrite.
+function teamsSummary(settingKey, block, f) {
+  if (!f) return null;
+  let stored = null;
+  try { stored = JSON.parse(getSetting(settingKey, '') || 'null'); } catch {}
+  if (stored && stored.key === f.key) {
+    // The writer sometimes drops the **name** markers; then the team names get the amber
+    // highlight anyway, so every panel reads the same.
+    let headline = String(stored.headline || '');
+    if (!headline.includes('**')) {
+      const names = getAllTeams().map(t => t.name).sort((a, b) => b.length - a.length);
+      headline = headline.replace(new RegExp(`\\b(${names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi'), '**$1**');
+    }
+    return { kicker: stored.kicker, headline, body: stored.body };
+  }
+  if (aiAvailable() && !teamsSummaryInFlight.has(settingKey) && Date.now() >= homeSummaryCooldownUntil) {
+    teamsSummaryInFlight.add(settingKey);
+    generateHomeSummary(block, f, { where: f.where, settingKey, strict: true })
+      .catch(err => { console.error(`Teams summary (${settingKey}) failed:`, err.message); homeSummaryCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS; })
+      .finally(() => teamsSummaryInFlight.delete(settingKey));
+  }
+  return null;
+}
+const factsKey = (tag, facts) => `v${TEAMS_SUMMARY_VERSION}|${tag}|${createHash('sha1').update(facts).digest('hex').slice(0, 16)}`;
+
+// Seasons with at least one played game, newest first; the current season leads when it has one.
+function teamsSeasonList() {
+  const played = new Set(getAllGames().filter(isPlayedGame).map(g => String(g.season)));
+  return getGameSeasons().map(String).filter(s => played.has(s));
+}
+
+// ── /teams data ──────────────────────────────────────────────────────────────
+// Stack-up categories, best first. "Allowed" and "Turnovers" rank low-to-high.
+const STACKUP_CATS = [
+  { id: 'pts', title: 'Points', note: 'PPG', fact: 'Points scored', v: t => t.ppg },
+  { id: 'opp', title: 'Allowed', note: 'fewer is better', fact: 'Points allowed (fewer is better)', low: true, v: t => t.opp },
+  { id: 'reb', title: 'Rebounds', note: 'RPG', fact: 'Rebounds', v: t => t.box?.gp ? t.box.reb / t.box.gp : null },
+  { id: 'ast', title: 'Assists', note: 'APG', fact: 'Assists', v: t => t.box?.gp ? t.box.ast / t.box.gp : null },
+  { id: 'stl', title: 'Steals', note: 'SPG', fact: 'Steals', v: t => t.box?.gp ? t.box.stl / t.box.gp : null },
+  { id: 'to', title: 'Turnovers', note: 'fewer is better', fact: 'Turnovers (fewer is better)', low: true, v: t => t.box?.gp ? t.box.turnover / t.box.gp : null },
+  { id: 'fg', title: 'Field goal %', note: 'FG%', fact: 'Field goal percentage', pct: true, v: t => t.box?.fga ? t.box.fgm / t.box.fga * 100 : null },
+  { id: 'tp', title: 'Three-point %', note: '3P%', fact: 'Three-point percentage', pct: true, v: t => t.box?.fg3a ? t.box.fg3m / t.box.fg3a * 100 : null },
+];
+// "Known for": the categories a team ranks 1st in (else 2nd), in this order.
+const KNOWN_FOR = [['pts', 'scoring'], ['opp', 'defense'], ['reb', 'rebounding'], ['ast', 'assists'], ['stl', 'steals'], ['to', 'ball security'], ['fg', 'FG%'], ['tp', '3P%']];
+
+function buildTeamsIndex(season) {
+  const currentSeason = String(getPortalCurrentSeason());
+  const isCurrent = String(season) === currentSeason;
+  const teams = getAllTeams();
+  const allGames = byDate(getAllGames());
+  const standings = getSeasonStandings(season);
+  const seeded = computeSeeds(standings, buildSeasonH2HMap(standings, season));
+  const order = [...seeded, ...standings.filter(s => !seeded.includes(s))];
+  const boxById = Object.fromEntries(getTeamSeasonStats(season).map(s => [s.team_id, s]));
+  const seasonPlayers = getSeasonPlayerStats(season);
+  const heads = getAllTeamHeads();
+  const champions = teamsChampions(teams);
+  const reigning = champions.find(c => Number(c.season) <= Number(season)) || null;
+  const upcoming = isCurrent ? getUpcomingGames(allGames) : [];
+  const active = getPlayersWithRatings('').filter(p => p.status === 'active');
+  const dayLabel = ymd => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  const rows = order.map((row, i) => {
+    const t = teams.find(x => x.id === row.id) || row;
+    const gp = (row.wins || 0) + (row.losses || 0);
+    const games = allGames.filter(g => String(g.season) === String(season) && g.game_type === 'regular' && isPlayedGame(g) && teamSide(g, t.id));
+    const next = upcoming.find(g => teamSide(g, t.id));
+    const stars = seasonPlayers.filter(p => p.team_id === t.id && p.games_played > 0)
+      .map(p => ({ p, ppg: (p.pts || 0) / p.games_played }))
+      .sort((a, b) => b.ppg - a.ppg).slice(0, 3)
+      .map(({ p, ppg }) => ({ id: p.id, name: displayPlayerName(p.name), short: String(p.name).split(',')[0].trim().toUpperCase(), team: t.name, ppg: fmt1(ppg) }));
     return {
-      ...t, wins, losses, avgOvr, avgOff, avgDef, rosterCount: plrs.length, recentGames,
-      streak: computeStreak(recentGames, t.id),
+      id: t.id, slug: teamSlug(t), name: t.name, place: gp ? ordinalOf(i + 1) : '', rank: i + 1, gp,
+      wins: row.wins || 0, losses: row.losses || 0, record: `${row.wins || 0}–${row.losses || 0}`,
+      ppg: gp ? fmt1(row.pf / gp) : null, opp: gp ? fmt1(row.pa / gp) : null,
+      ppgNum: gp ? row.pf / gp : null, oppNum: gp ? row.pa / gp : null, diff: gp ? row.point_diff / gp : null, diffTotal: row.point_diff || 0,
+      streak: streakOf(games, t.id),
+      form: games.slice(0, 5).reverse().map(g => ({ r: teamResult(g, t.id).won ? 'W' : 'L', title: resultTitle(g, t.id) })),
+      chip: reigning && reigning.teamId === t.id ? `S${reigning.season} champions` : '',
+      box: boxById[t.id] || null, stars,
+      next: next ? `vs ${teamResult(next, t.id).oppName} · ${dayLabel(gameYmd(next.date))}` : '',
+      head: heads.filter(h => h.team_id === t.id).map(h => displayPlayerName(h.player_name)).join(', '),
+      rosterCount: isCurrent
+        ? active.filter(p => String(p.team_name || '').toUpperCase() === String(t.name).toUpperCase()).length
+        : seasonPlayers.filter(p => p.team_id === t.id).length,
     };
   });
 
-  const rankById = rankTeamsByRecord(teams, recordMap);
-  for (const t of teamData) t.rank = rankById[t.id];
+  // Category rankings (teams that have played only), shared by the cards' "known for" line.
+  const played = rows.filter(t => t.gp > 0);
+  const cats = STACKUP_CATS.map(c => {
+    const list = played.map(t => ({ t, num: c.v({ ...t, ppg: t.ppgNum, opp: t.oppNum }) })).filter(x => x.num != null);
+    list.sort((a, b) => (c.low ? a.num - b.num : b.num - a.num));
+    const rankOf = {};
+    list.forEach((x, i) => { rankOf[x.t.id] = i > 0 && x.num.toFixed(1) === list[i - 1].num.toFixed(1) ? rankOf[list[i - 1].t.id] : i + 1; });
+    return { ...c, rankOf, rows: list.map(x => ({ team: x.t.name, num: x.num, value: `${fmt1(x.num)}${c.pct ? '%' : ''}` })), lowBetter: !!c.low };
+  }).filter(c => c.rows.length >= 2);
+  for (const t of rows) {
+    const at = rank => KNOWN_FOR.filter(([id]) => cats.find(c => c.id === id)?.rankOf[t.id] === rank).map(([, label]) => label);
+    const first = at(1), second = at(2);
+    t.knownFor = first.length ? `1st in ${first.slice(0, 2).join(' and ')}` : second.length ? `2nd in ${second.slice(0, 2).join(' and ')}` : '';
+    t.ranks = Object.fromEntries(cats.map(c => [c.id, c.rankOf[t.id]]));
+  }
 
+  const nextDay = upcoming[0] ? `next games ${dayLabel(gameYmd(upcoming[0].date))}` : '';
+  const week = isCurrent ? getSeasonLatestWeek(season)?.week ?? null : null;
+  return {
+    season: String(season), isCurrent, week, teams: rows, cats, champions,
+    playerCount: rows.reduce((n, t) => n + t.rosterCount, 0), nextLabel: nextDay,
+  };
+}
+
+function teamsIndexSummaryFacts(d) {
+  const title = s => titleCase(s);
+  const played = d.teams.filter(t => t.gp > 0);
+  if (!played.length) return null;
+  const after = d.week ? `AFTER WEEK ${d.week}` : `SEASON ${d.season}`;
+  const catLabel = { pts: 'scoring', opp: 'points allowed (fewest)', reb: 'rebounding', ast: 'assists', stl: 'steals', to: 'turnovers (fewest)', fg: 'field goal percentage', tp: 'three-point percentage' };
+  const lines = played.map(t => {
+    const best = d.cats.filter(c => c.rankOf[t.id] === 1).map(c => `${catLabel[c.id]} (${c.rows[0].value})`);
+    const worst = d.cats.filter(c => c.rankOf[t.id] === c.rows.length).map(c => `${catLabel[c.id]} (${c.rows[c.rows.length - 1].value})`);
+    const parts = [`${t.rank}. ${title(t.name)} ${t.wins}-${t.losses}`, `scores ${t.ppg} and allows ${t.opp} per game`, `point differential ${t.diffTotal > 0 ? '+' : ''}${t.diffTotal} for the season`];
+    if (t.streak) parts.push(`${t.streak.won ? 'won' : 'lost'} its last ${t.streak.count === 1 ? 'game' : `${t.streak.count} games`}`);
+    if (best.length) parts.push(`1st in the league in ${best.join(', ')}`);
+    if (worst.length) parts.push(`last in ${worst.join(', ')}`);
+    if (t.stars[0]) parts.push(`top scorer ${t.stars[0].name} ${t.stars[0].ppg}`);
+    if (t.chip) parts.push(`reigning ${t.chip.replace(/^S(\d+) /, 'Season $1 ')}`);
+    return `- ${parts.join(', ')}`;
+  });
+  const facts = `Season ${d.season} teams, per game averages, standings order:\n${lines.join('\n')}`;
+  return {
+    key: factsKey('index', facts), kicker: `The teams · ${after}`, section: 'Teams (one card per team)', where: 'Teams page', facts,
+    focus: 'This sits on the Teams page, not the standings: tell what makes one or two teams stand out — what each is best or worst at — rather than recapping the standings order.',
+  };
+}
+
+function teamsStackupSummaryFacts(d) {
+  if (d.cats.length < 3) return null;
+  const after = d.week ? `AFTER WEEK ${d.week}` : `SEASON ${d.season}`;
+  const facts = `Season ${d.season} team rankings, per game, best first:\n${d.cats.map(c => `- ${c.fact}: ${c.rows.map(r => `${titleCase(r.team)} ${r.value}`).join(', ')}`).join('\n')}`;
+  return {
+    key: factsKey('stackup', facts), kicker: `How they stack up · ${after}`, section: 'How they stack up (team stat rankings)', where: 'Teams page', facts,
+    focus: 'Pick the one or two most telling stat stories across these rankings — the biggest gap at the top or bottom of a category, or a team that ranks first in some categories and last in others. Don\'t list every category.',
+  };
+}
+
+function teamsChampionsSummaryFacts(champions) {
+  const c = champions[0];
+  if (!c) return null;
+  const title = s => titleCase(s);
+  const standings = getSeasonStandings(c.season);
+  const playoffs = getPlayoffGames(c.season).filter(g => g.game_type === 'playoff' && (Number(g.team_a_score) + Number(g.team_b_score)) > 0);
+  const day = g => new Date(`${gameYmd(g.date)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const beat = g => { const aw = Number(g.team_a_score) > Number(g.team_b_score); return `${title(aw ? g.team_a_name : g.team_b_name)} beat ${title(aw ? g.team_b_name : g.team_a_name)} ${Math.max(g.team_a_score, g.team_b_score)}-${Math.min(g.team_a_score, g.team_b_score)} (${day(g)})`; };
+  const active = getPlayersWithRatings('').filter(p => p.status === 'active' && String(p.team_name || '').toUpperCase() === String(c.team).toUpperCase());
+  const back = active.filter(p => c.championIds.includes(p.id)).length;
+  const lines = [
+    `Season ${c.season} regular season records: ${standings.map(s => `${title(s.name)} ${s.wins}-${s.losses}`).join(', ')}.`,
+    playoffs.length ? `Playoff games: ${playoffs.map(beat).join('; ')}.` : '',
+    c.finals.length ? `Finals, ${title(c.team)} vs ${title(c.oppName)}: ${c.finals.map((g, i) => `Game ${i + 1}: ${beat(g)}`).join('; ')}. ${title(c.team)} won the Finals ${c.series.replace('–', '-')} and the Season ${c.season} championship.` : `${title(c.team)} won the Season ${c.season} championship.`,
+    [c.mvp && `Season ${c.season} MVP: ${c.mvp}`, c.finalsMvp && `Finals MVP: ${c.finalsMvp}`, c.scoringChamp && `Scoring champion: ${c.scoringChamp}`].filter(Boolean).join('. ') + '.',
+    back ? `${back} players from ${title(c.team)}'s Season ${c.season} championship team are on ${title(c.team)}'s roster this season.` : '',
+  ].filter(x => x && x !== '.');
+  const facts = `${champions.length === 1 ? `Season ${c.season} (the only completed season on record)` : `Season ${c.season} (the most recent completed season)`}:\n${lines.map(l => `- ${l}`).join('\n')}`;
+  return {
+    key: factsKey('champions', facts), kicker: `Champions · Season ${c.season}`, section: 'Past champions', where: 'Teams page', facts,
+    focus: 'Sum up the last champion: how they won it, the deciding game, and who carried them. One closing beat may connect to this season only through the roster fact given.',
+  };
+}
+
+app.get('/teams', (req, res) => {
+  const seasons = teamsSeasonList();
+  const currentSeason = String(getPortalCurrentSeason());
+  const fallback = seasons.includes(currentSeason) ? currentSeason : (seasons[0] || currentSeason);
+  const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : fallback;
+  const d = buildTeamsIndex(season);
+  const isAdmin = !!req.session?.isAdmin;
+  const summaries = {
+    index: d.isCurrent ? teamsSummary('teams_summary_index', 'teams', teamsIndexSummaryFacts(d)) : null,
+    stackup: d.isCurrent ? teamsSummary('teams_summary_stackup', 'teams_stackup', teamsStackupSummaryFacts(d)) : null,
+    champions: teamsSummary('teams_summary_champions', 'teams_champions', teamsChampionsSummaryFacts(d.champions)),
+  };
   res.send(renderPage(req, {
-    title: 'Teams — WKND Basketball League',
+    title: `${d.isCurrent ? '' : `Season ${season} `}Teams — WKND Basketball League`,
     currentPath: req.path,
-    body: teamsBody({ teams: teamData }),
+    metaTags: `<link rel="stylesheet" href="/teams.css?v=${TEAMS_CSS_VER}">`,
+    body: teamsBody({ ...d, seasons, summaries, isAdmin }),
   }));
 });
+
+// ── /teams/:slug data ────────────────────────────────────────────────────────
+function buildTeamPage(team, viewerId) {
+  const currentSeason = String(getPortalCurrentSeason());
+  const seasons = teamsSeasonList();
+  // Numbers come from whichever season actually has games — the current one, or the latest
+  // played season in the gap before a new season's first game.
+  const statsSeason = seasons.includes(currentSeason) ? currentSeason : (seasons[0] || currentSeason);
+  const isCurrent = statsSeason === currentSeason;
+  const teams = getAllTeams();
+  const allGames = byDate(getAllGames());
+  const played = allGames.filter(g => isPlayedGame(g) && teamSide(g, team.id));
+  const dayLabel = ymd => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const shortDayOf = g => new Date(`${gameYmd(g.date)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  // Standings place + record (regular season), every team's index row for the ranks.
+  const index = buildTeamsIndex(statsSeason);
+  const me = index.teams.find(t => t.id === team.id) || { gp: 0, wins: 0, losses: 0, record: '0–0', rank: null };
+  const champions = index.champions;
+  const titles = champions.filter(c => c.teamId === team.id);
+
+  // Streak across every game (all seasons, playoffs too) — the facts name its span.
+  const streak = streakOf(played, team.id);
+  const streakSeasonSplit = streak ? played.slice(0, streak.count).reduce((m, g) => { m[g.season] = (m[g.season] || 0) + 1; return m; }, {}) : {};
+  const chips = [];
+  if (titles.length) chips.push({ kind: 'title', label: titles.length === 1 ? `Season ${titles[0].season} champions` : `${titles.length}× champions` });
+  if (streak && streak.count >= 3) chips.push({ kind: streak.won ? 'streak' : 'slump', label: `${streak.won ? 'Won' : 'Lost'} ${streak.count} straight` });
+  const form = played.slice(0, 5).reverse().map(g => ({
+    r: teamResult(g, team.id).won ? 'W' : 'L',
+    title: `${String(g.season) !== statsSeason ? `S${g.season} ${gameTypeLabel(g) || 'regular season'} · ` : gameTypeLabel(g) ? `${gameTypeLabel(g)} · ` : ''}${resultTitle(g, team.id)}`,
+  }));
+  const allTimeW = played.filter(g => teamResult(g, team.id).won).length;
+  const allTime = `${allTimeW}–${played.length - allTimeW}`;
+
+  // Where they rank — the same 6 cards as before (lib/team-ranks.js), now with a meter.
+  const pfPaByTeam = Object.fromEntries(getTeamPointsForAgainst(statsSeason).map(r => [r.team_id, r]));
+  const allTeamsStats = getTeamSeasonStats(statsSeason).map(s => ({ ...s, ...(pfPaByTeam[s.team_id] || { points_for: 0, points_against: 0 }) }));
+  const ranks = computeTeamRankCards(team.id, allTeamsStats).map(c => ({ ...c, place: ordinalOf(c.rank) }));
+  const rankOf = id => ranks.find(c => c.id === id)?.rank;
+
+  const kpis = me.gp ? [
+    { value: me.ppg, label: `PPG${rankOf('scoring') ? ` · ${ordinalOf(rankOf('scoring'))}` : ''}` },
+    { value: me.opp, label: `Allowed${rankOf('defense') ? ` · ${ordinalOf(rankOf('defense'))}` : ''}` },
+    { value: signed1(me.diff), label: 'Diff / game', tone: me.diff > 0 ? 'pos' : me.diff < 0 ? 'neg' : '' },
+    { value: allTime, label: 'All-time' },
+    ...(titles.length ? [{ value: String(titles.length), label: titles.length === 1 ? 'Title' : 'Titles', tone: 'amber' }] : []),
+  ] : [{ value: allTime, label: 'All-time' }, ...(titles.length ? [{ value: String(titles.length), label: titles.length === 1 ? 'Title' : 'Titles', tone: 'amber' }] : [])];
+
+  // Up next: the shared Who wins? card while picks are on, else a plain matchup card.
+  let openPick = null, nextGame = null;
+  const upcomingGame = getUpcomingGames(allGames).find(g => teamSide(g, team.id));
+  if (upcomingGame && picksEnabled()) {
+    openPick = openPicks(allGames, buildPicksContext(allGames), viewerId).find(o => o.id === upcomingGame.id) || null;
+    // Same card as the homepage widget: the scorer face-off sits above the pick.
+    if (openPick) openPick.face = homeFaceoff(upcomingGame, allGames, Object.fromEntries(getAllPlayers().map(p => [p.id, p])));
+  }
+  const h2hMeetings = oppId => played.filter(g => teamResult(g, team.id).oppId === oppId).slice().reverse(); // oldest first
+  if (upcomingGame && !openPick) {
+    const r = teamResult(upcomingGame, team.id);
+    const ms = h2hMeetings(r.oppId);
+    const w = ms.filter(g => teamResult(g, team.id).won).length;
+    const last = ms[ms.length - 1];
+    const oppRow = index.teams.find(t => t.id === r.oppId);
+    nextGame = {
+      opp: r.oppName, oppRecord: oppRow?.gp ? oppRow.record : '', dateLabel: dayLabel(gameYmd(upcomingGame.date)), href: previewHref(upcomingGame),
+      series: ms.length ? `${team.name} ${w}–${ms.length - w}` : 'First meeting',
+      last: last ? `${teamResult(last, team.id).won ? 'W' : 'L'} ${teamResult(last, team.id).my}–${teamResult(last, team.id).opp} · ${shortDayOf(last)}` : '',
+    };
+  }
+
+  // Team leaders: PPG, RPG, APG, 3PM — top 3 inside the team; the leader's league rank.
+  const seasonPlayers = getSeasonPlayerStats(statsSeason).filter(p => p.games_played > 0);
+  const per = (p, k) => (p[k] || 0) / p.games_played;
+  const leagueRank = (k, value) => {
+    const vals = seasonPlayers.map(p => +per(p, k).toFixed(1));
+    const better = vals.filter(v => v > +value.toFixed(1)).length;
+    const tied = vals.filter(v => v === +value.toFixed(1)).length;
+    return `${tied > 1 ? 'tied ' : ''}${ordinalOf(better + 1)} in league`;
+  };
+  const splitName = raw => { const s = String(raw || ''); const i = s.indexOf(','); return i === -1 ? { first: '', last: s.toUpperCase() } : { first: s.slice(i + 1).trim(), last: s.slice(0, i).trim().toUpperCase() }; };
+  const mine = seasonPlayers.filter(p => p.team_id === team.id);
+  const leaders = [
+    { k: 'pts', title: 'Scoring', key: 'PPG' }, { k: 'reb', title: 'Rebounds', key: 'RPG' },
+    { k: 'ast', title: 'Assists', key: 'APG' }, { k: 'fg3m', title: '3-pointers', key: '3PM' },
+  ].map(c => {
+    const top = [...mine].sort((a, b) => per(b, c.k) - per(a, c.k) || b.games_played - a.games_played).slice(0, 3);
+    if (!top.length || !(per(top[0], c.k) > 0)) return null;
+    const p = top[0], v = per(p, c.k);
+    const note = c.k === 'fg3m'
+      ? `${p.fg3m} of ${(p.fg3m || 0) + (p.fg3m_miss || 0)} · ${leagueRank(c.k, v)}`
+      : `${p.games_played} GP · ${leagueRank(c.k, v)}`;
+    return { ...c, id: p.id, name: displayPlayerName(p.name), ...splitName(p.name), value: fmt1(v), note,
+      rest: top.slice(1).filter(x => per(x, c.k) > 0).map(x => ({ id: x.id, name: displayPlayerName(x.name), value: fmt1(per(x, c.k)) })) };
+  }).filter(Boolean);
+
+  // Roster: active players on the team, this season's line, highs from the box scores.
+  const seasonTeamGames = played.filter(g => String(g.season) === statsSeason);
+  const statsByGame = Object.fromEntries(seasonTeamGames.map(g => [g.id, getGameStats(g.id)]));
+  const highs = {};
+  for (const rows of Object.values(statsByGame)) for (const s of rows) if (s.team_id === team.id) highs[s.player_id] = Math.max(highs[s.player_id] ?? 0, +s.pts || 0);
+  const seasonById = Object.fromEntries(mine.map(p => [p.id, p]));
+  const prevSeason = seasons.find(s => Number(s) < Number(statsSeason)) || null;
+  const prevTeamOf = prevSeason ? Object.fromEntries(getSeasonPlayerStats(prevSeason).map(p => [p.id, p.team_name])) : {};
+  const prevAwards = prevSeason ? getSeasonAwards(prevSeason) : [];
+  const lastChamp = champions.find(c => Number(c.season) < Number(statsSeason) || (!isCurrent && c.season === statsSeason)) || null;
+  const ringSeasons = {};
+  for (const c of champions) for (const pid of c.championIds) (ringSeasons[pid] ||= []).push(c.season);
+  const headIds = new Set(getAllTeamHeads().filter(h => h.team_id === team.id).map(h => h.player_id));
+  const awardTag = pid => {
+    const a = prevAwards.find(x => x.player_id === pid && ['mvp', 'finals_mvp', 'scoring_champ'].includes(x.award_type));
+    return a ? `S${prevSeason} ${TEAM_AWARD_LABELS[a.award_type] === 'Scoring champ' ? 'scoring champ' : TEAM_AWARD_LABELS[a.award_type]}` : '';
+  };
+  const parsePos = raw => { try { return JSON.parse(raw || '[]'); } catch { return []; } };
+  const pct = (m, x) => { const att = (m || 0) + (x || 0); return att > 0 ? (m / att) * 100 : null; };
+  const teamUpper = String(team.name).toUpperCase();
+  const roster = getPlayersWithRatings('')
+    .filter(p => p.status === 'active' && String(p.team_name || '').toUpperCase() === teamUpper)
+    .map(p => {
+      const s = seasonById[p.id];
+      const gp = s?.games_played || 0;
+      const v = gp ? {
+        pts: s.pts / gp, reb: s.reb / gp, ast: s.ast / gp, stl: s.stl / gp, blk: s.blk / gp, to: s.turnover / gp, high: highs[p.id] ?? null,
+        fgp: pct((s.fg2m || 0) + (s.fg3m || 0) + (s.fg4m || 0), (s.fg2m_miss || 0) + (s.fg3m_miss || 0) + (s.fg4m_miss || 0)),
+        tpp: pct(s.fg3m, s.fg3m_miss), ftp: pct(s.ftm, s.ft_miss),
+      } : null;
+      const prevTeam = prevTeamOf[p.id];
+      const isNew = prevSeason && prevTeam && String(prevTeam).toUpperCase() !== teamUpper;
+      const tag = headIds.has(p.id) ? 'Team head' : isNew ? `New · from ${prevTeam}` : awardTag(p.id);
+      const rings = ringSeasons[p.id] || [];
+      return {
+        id: p.id, name: displayPlayerName(p.name), num: p.number != null && p.number !== '' ? String(p.number) : '',
+        pos: parsePos(p.positions).slice(0, 3).join(' · '), gp, v, tag, isNew: !!isNew,
+        ring: rings.length ? `Season ${rings.join(', ')} champion` : '',
+      };
+    })
+    .sort((a, b) => (b.v?.pts ?? -1) - (a.v?.pts ?? -1) || a.name.localeCompare(b.name));
+  const back = lastChamp && lastChamp.teamId === team.id ? roster.filter(p => lastChamp.championIds.includes(p.id)).length : 0;
+  const newCount = roster.filter(p => p.isNew).length;
+  const rosterSub = [`${roster.length} player${roster.length === 1 ? '' : 's'}`, back ? `${back} back from the title team` : '', newCount ? `${newCount} new` : ''].filter(Boolean).join(' · ');
+
+  // Schedule & results: the /games result cards for this season's games.
+  const games = seasonTeamGames.filter(g => g.status === 'final' || g.status === 'complete');
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const topScorerByGame = {};
+  for (const g of games) {
+    const top = (statsByGame[g.id] || []).reduce((m, s) => ((+s.pts || 0) > (m ? +m.pts || 0 : -1) ? s : m), null);
+    if (top) topScorerByGame[g.id] = { name: displayPlayerName(playerMap[top.player_id]?.name || ''), pts: +top.pts || 0 };
+  }
+  const commentsEnabled = getSetting('comments_enabled', '0') === '1';
+  let socialByGame = {};
+  if (commentsEnabled && games.length) {
+    const ids = games.map(g => g.id);
+    const commentCounts = getGameCommentCounts(ids), reactionCounts = getGameReactionCounts(ids);
+    const reactedIds = getReactedGameIdsForPlayer(ids, viewerId);
+    const latest = getLatestCommentsForGames(ids);
+    socialByGame = Object.fromEntries(ids.map(id => [id, { commentsCount: commentCounts[id] || 0, reactCount: reactionCounts[id] || 0, reacted: reactedIds.has(id), latest: latest[id] || null }]));
+  }
+  const oddsByGame = {};
+  if (pickOddsEnabled() && games.length) {
+    const playedPick = allGames.map(g => toPickGame(g, gameYmd)).filter(g => g.played);
+    for (const g of playedPick) {
+      if (!games.some(x => x.id === g.id)) continue;
+      const o = computeOdds(g, playedPick);
+      if (o?.fav) oddsByGame[g.id] = { fav: o.fav, pct: o.fav === 'a' ? o.pctA : o.pctB, upset: o.fav !== (g.sa > g.sb ? 'a' : 'b') };
+    }
+  }
+
+  // Head to head, every opponent, all seasons with playoffs.
+  const nextOppId = upcomingGame ? teamResult(upcomingGame, team.id).oppId : null;
+  const lastFinals = champions.find(c => c.finals.length && (c.teamId === team.id || c.finals.some(g => teamSide(g, team.id))));
+  const h2h = teams.filter(t => t.id !== team.id).map(t => {
+    const ms = h2hMeetings(t.id);
+    if (!ms.length) return null;
+    const w = ms.filter(g => teamResult(g, team.id).won).length;
+    const thisSeason = ms.filter(g => String(g.season) === statsSeason);
+    const sw = thisSeason.filter(g => teamResult(g, team.id).won).length;
+    const margin = ms.reduce((n, g) => { const r = teamResult(g, team.id); return n + (r.my - r.opp); }, 0) / ms.length;
+    const last = ms[ms.length - 1], lr = teamResult(last, team.id);
+    let tag = '';
+    if (t.id === nextOppId) tag = 'Up next';
+    else if (lastFinals && lastFinals.finals.some(g => teamResult(g, team.id).oppId === t.id)) tag = lastFinals.teamId === team.id ? `Beat them in the S${lastFinals.season} Finals` : `Lost the S${lastFinals.season} Finals`;
+    return {
+      opp: t.name, n: ms.length, series: `${w}–${ms.length - w}`, season: `${sw}–${thisSeason.length - sw}`,
+      marginNum: margin, margin: signed1(margin), tag,
+      games: ms.map(g => ({ r: teamResult(g, team.id).won ? 'W' : 'L', title: `S${g.season}${gameTypeLabel(g) ? ` ${gameTypeLabel(g)}` : ''} · ${shortDayOf(g)} · ${resultTitle(g, team.id)}` })),
+      last: `${lr.won ? 'W' : 'L'} ${lr.my}–${lr.opp} · ${shortDayOf(last)}`,
+    };
+  }).filter(Boolean).sort((a, b) => b.n - a.n);
+
+  // Season by season.
+  const history = seasons.filter(s => played.some(g => String(g.season) === s)).map(s => {
+    const st = getSeasonStandings(s);
+    const sd = computeSeeds(st, buildSeasonH2HMap(st, s));
+    const ord = [...sd, ...st.filter(x => !sd.includes(x))];
+    const i = ord.findIndex(x => x.id === team.id);
+    const row = ord[i] || { wins: 0, losses: 0 };
+    const champ = champions.find(c => c.season === s);
+    const won = champ?.teamId === team.id;
+    const post = played.filter(g => String(g.season) === s && g.game_type !== 'regular');
+    const inFinals = post.some(g => g.game_type === 'finals');
+    const result = won ? 'Champions'
+      : inFinals ? 'Lost in the Finals'
+      : post.length ? 'Playoffs'
+      : s === currentSeason && !champ ? `${ordinalOf(i + 1)} · in progress` : `${ordinalOf(i + 1)} in the standings`;
+    let line = '';
+    if (post.length) {
+      const semis = post.filter(g => g.game_type === 'playoff');
+      const parts = [];
+      if (semis.length) {
+        const sw = semis.filter(g => teamResult(g, team.id).won).length;
+        const opp = teamResult(semis[0], team.id).oppName;
+        parts.push(semis.length === 1 ? `${sw ? 'Beat' : 'Lost to'} ${opp} ${teamResult(semis[0], team.id).my}–${teamResult(semis[0], team.id).opp} in the semis` : `${sw > semis.length - sw ? 'Beat' : 'Lost to'} ${opp} ${sw}–${semis.length - sw} in the semis`);
+      }
+      if (champ && champ.finals.some(g => teamSide(g, team.id))) {
+        const fw = champ.finals.filter(g => teamResult(g, team.id).won).length;
+        parts.push(`${won ? 'beat' : 'lost to'} ${teamResult(champ.finals[0], team.id).oppName} ${fw}–${champ.finals.length - fw} in the Finals`);
+      }
+      line = parts.join(', then ');
+      line = line.charAt(0).toUpperCase() + line.slice(1);
+    }
+    const awards = getSeasonAwards(s).filter(a => a.team_id === team.id && TEAM_AWARD_LABELS[a.award_type] && a.player_id);
+    const nameOfId = id => { const p = playerMap[id]; return p ? displayPlayerName(p.name) : ''; };
+    const chipsOut = [];
+    for (const type of Object.keys(TEAM_AWARD_LABELS)) {
+      const ofType = awards.filter(a => a.award_type === type);
+      if (!ofType.length) continue;
+      const names = [...new Set(ofType.map(a => nameOfId(a.player_id)).filter(Boolean))];
+      if (names.length) chipsOut.push(`${TEAM_AWARD_LABELS[type]} · ${names.join(', ')}`);
+    }
+    return { season: s, record: `${row.wins || 0}–${row.losses || 0}`, result, champion: won, line, awards: chipsOut };
+  });
+
+  const coverGame = played.find(g => g.has_cover);
+  return {
+    team, slug: teamSlug(team), season: statsSeason, isCurrent, index, me, titles, streak, streakSeasonSplit,
+    kicker: me.gp ? `Season ${statsSeason} · ${ordinalOf(me.rank)} in the standings` : `Season ${statsSeason}`,
+    record: me.record, chips, form, kpis, coverId: coverGame?.id || null, openPick, nextGame, upcomingGame,
+    ranks, leaders, roster, rosterSub, back, newCount, lastChamp,
+    ringLabel: Object.keys(ringSeasons).some(id => roster.some(p => p.id === id)) ? 'Won a title' : '',
+    games, topScorerByGame, socialByGame, oddsByGame, commentsEnabled, h2h, history, allTime,
+  };
+}
+
+function teamPageSummaryFacts(d) {
+  const T = titleCase(d.team.name);
+  if (!d.me.gp) return null;
+  const week = d.isCurrent ? getSeasonLatestWeek(d.season)?.week : null;
+  const results = d.games.slice().reverse().map(g => { const r = teamResult(g, d.team.id); return `${r.won ? 'beat' : 'lost to'} ${titleCase(r.oppName)} ${r.my}-${r.opp}${g.overtime ? ' in overtime' : ''} (${new Date(`${gameYmd(g.date)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`; });
+  const lines = [
+    `Record ${d.me.wins}-${d.me.losses}, ${ordinalOf(d.me.rank)} in the standings. Results in order: ${results.join(', ')}.`,
+  ];
+  if (d.streak && d.streak.count >= 2) {
+    const split = Object.entries(d.streakSeasonSplit);
+    const span = split.length > 1
+      ? ` (${split.map(([s, n]) => `${n} in Season ${s}${String(s) !== d.season ? ', counting playoff and Finals games' : ''}`).join(' and ')})`
+      : String(split[0]?.[0]) === d.season ? ', all this season' : '';
+    lines.push(`${T} has ${d.streak.won ? 'won' : 'lost'} ${d.streak.count} straight games${span}.`);
+  }
+  if (d.ranks.length) lines.push(`Per game, among ${d.ranks[0].totalTeams} teams: ${d.ranks.map(c => `${c.label.toLowerCase()} ${c.valueDisplay}${c.unit ? ` ${c.unit}` : ''} (${ordinalOf(c.rank)})`).join(', ')}.`);
+  if (d.leaders.length) lines.push(`Team leaders per game: ${d.leaders.map(c => `${c.name} ${c.value} ${c.key}`).join(', ')}.`);
+  lines.push(`Roster: ${d.roster.length} players${d.back ? `, ${d.back} of them from the Season ${d.lastChamp.season} championship team` : ''}${d.newCount ? `, ${d.newCount} new this season` : ''}.`);
+  if (d.titles.length) lines.push(`${T} won the championship in Season ${d.titles.map(t => t.season).join(' and Season ')}.`);
+  if (d.upcomingGame) {
+    const r = teamResult(d.upcomingGame, d.team.id);
+    const h = d.h2h.find(x => x.opp === r.oppName);
+    const oppRow = d.index.teams.find(t => t.id === r.oppId);
+    lines.push(`Next game: ${titleCase(r.oppName)}${oppRow?.gp ? ` (${oppRow.wins}-${oppRow.losses})` : ''} on ${new Date(`${gameYmd(d.upcomingGame.date)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}.${h ? ` All-time ${T} is ${h.series.replace('–', '-')} against ${titleCase(r.oppName)}; this season ${h.season.replace('–', '-')}.` : ' First ever meeting.'}`);
+  }
+  const facts = `${T}, Season ${d.season}:\n${lines.map(l => `- ${l}`).join('\n')}`;
+  return {
+    key: factsKey(`team:${d.team.id}`, facts), kicker: `${T} · ${week ? `AFTER WEEK ${week}` : `SEASON ${d.season}`}`, section: `${T} (team page)`, where: 'team page', facts,
+    focus: 'Sum up this team\'s season so far for its own page: where it stands, what it does best, who carries it, and what is next. Lead with the most telling fact.',
+  };
+}
 
 app.get('/teams/:ref', (req, res) => {
   const resolved = resolveRef('team', req.params.ref,
@@ -11932,74 +12687,41 @@ app.get('/teams/:ref', (req, res) => {
   if (resolved.slug) return res.redirect(302, `/teams/${resolved.slug}`);
 
   const team = getTeamById(resolved.id);
-  const color = teamColor(team.name);
-  const currentSeason = getPortalCurrentSeason();
-  const record = getTeamRecords(currentSeason).find(r => r.team_id === team.id) || null;
-
-  // Numbers reflect whichever season actually has games recorded — falls back off the live
-  // "current" season during the gap between a new season's roster being drafted and its
-  // first game being played (same gap buildRosterMovers/leadersPage's own defaultScopeId
-  // already handle), rather than showing an all-zero page.
-  const gameSeasons  = getGameSeasons();
-  const statsSeason  = gameSeasons.includes(String(currentSeason)) ? String(currentSeason) : (gameSeasons[0] || String(currentSeason));
-
-  // Roster + career ratings — same source /teams' index cards use, so the OVR shown here
-  // matches the team card's avgOvr composition. Grouped by team NAME (not team_id, which
-  // this query doesn't expose) same as the /teams index route does.
-  const teamNameUpper = String(team.name).toUpperCase();
-  const roster = getPlayersWithRatings('')
-    .filter(p => p.status === 'active' && String(p.team_name || '').toUpperCase() === teamNameUpper)
-    .sort((a, b) => (b.eff_overall ?? -1) - (a.eff_overall ?? -1));
-
-  const seasonStatsMap = Object.fromEntries(
-    getSeasonPlayerStats(statsSeason).filter(p => p.team_id === team.id).map(p => [p.id, p])
-  );
-  const rosterWithStats = roster.map(p => ({ ...p, seasonStats: seasonStatsMap[p.id] || null }));
-
-  const avgOf = (arr, fn) => arr.length ? Math.round(arr.reduce((s, p) => s + fn(p), 0) / arr.length) : null;
-  const ratedRoster = roster.filter(p => p.eff_overall != null);
-  const avgOvr = avgOf(ratedRoster, p => p.eff_overall);
-  const avgOff = avgOf(ratedRoster, p => Math.round(((p.eff_scoring ?? 0) + (p.eff_shooting ?? 0)) / 2));
-  const avgDef = avgOf(ratedRoster, p => p.eff_defense);
-
-  // Team leaders — same pool shape the homepage's League Leaders widget takes, just
-  // pre-filtered to this team. getLeaders() resolves each player to the team they actually
-  // played for that season (withSeasonTeam), so this stays correct even when live team_id
-  // has since drifted from a season's roster (see the /teams grouping caveat).
-  const leaders = getLeaders(statsSeason).filter(p => p.team_id === team.id);
-
-  // Category rank cards — how this team stacks up leaguewide, statsSeason (not currentSeason)
-  // so it's consistent with the roster/leaders numbers above rather than a fallback season
-  // mismatch. Needs every team's totals, not just this one, to actually rank against.
-  const pfPaByTeam = Object.fromEntries(getTeamPointsForAgainst(statsSeason).map(r => [r.team_id, r]));
-  const allTeamsStats = getTeamSeasonStats(statsSeason).map(s => ({ ...s, ...(pfPaByTeam[s.team_id] || { points_for: 0, points_against: 0 }) }));
-  const rankCards = computeTeamRankCards(team.id, allTeamsStats);
-
-  const teamGames = byDate(getAllGames()).filter(g => g.team_a_id === team.id || g.team_b_id === team.id);
-
-  // Points for/against — scoped to the live current season (same games the record above
-  // comes from), not statsSeason's fallback, so everything in the hero row stays about the
-  // same season rather than mixing a live 0-0 record with a fallback season's scoring.
-  let pointsFor = 0, pointsAgainst = 0;
-  for (const g of teamGames) {
-    if (g.scheduled || String(g.season) !== String(currentSeason)) continue;
-    const scoreSum = Number(g.team_a_score) + Number(g.team_b_score);
-    if (!(scoreSum > 0)) continue;
-    const isA = g.team_a_id === team.id;
-    pointsFor     += Number(isA ? g.team_a_score : g.team_b_score);
-    pointsAgainst += Number(isA ? g.team_b_score : g.team_a_score);
-  }
-
+  const d = buildTeamPage(team, req.session?.playerPlayerId || null);
+  const summary = d.isCurrent ? teamsSummary(`teams_summary_team_${team.id}`, `team:${team.id}`, teamPageSummaryFacts(d)) : null;
   res.send(renderPage(req, {
-    title: `${teamNameUpper} — WKND Basketball`,
+    title: `${String(team.name).toUpperCase()} — WKND Basketball`,
     currentPath: '/teams',
-    metaTags: buildTeamOgTags(req, team),
-    body: teamDetailPage({
-      team, color, record, currentSeason, statsSeason,
-      avgOvr, avgOff, avgDef, pointsFor, pointsAgainst, rankCards,
-      roster: rosterWithStats, leaders, games: teamGames,
-    }),
+    metaTags: `${buildTeamOgTags(req, team)}\n  <link rel="stylesheet" href="/teams.css?v=${TEAMS_CSS_VER}">`,
+    body: teamDetailPage({ ...d, summary, isAdmin: !!req.session?.isAdmin, isPlayer: !!req.session?.playerPlayerId }),
   }));
+});
+
+// Admin: rewrite one teams-page summary now. block: teams | teams_stackup | teams_champions | team:<id>
+app.post('/admin/teams-summary/regenerate', requireAuth, express.json(), async (req, res) => {
+  const block = String(req.body?.block || '');
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  let f = null, settingKey = '';
+  if (block === 'teams' || block === 'teams_stackup' || block === 'teams_champions') {
+    const seasons = teamsSeasonList();
+    const cur = String(getPortalCurrentSeason());
+    const d = buildTeamsIndex(seasons.includes(cur) ? cur : (seasons[0] || cur));
+    if (block === 'teams') { f = teamsIndexSummaryFacts(d); settingKey = 'teams_summary_index'; }
+    else if (block === 'teams_stackup') { f = teamsStackupSummaryFacts(d); settingKey = 'teams_summary_stackup'; }
+    else { f = teamsChampionsSummaryFacts(d.champions); settingKey = 'teams_summary_champions'; }
+  } else if (block.startsWith('team:')) {
+    const team = getTeamById(block.slice(5));
+    if (!team) return res.status(404).json({ error: 'Unknown team' });
+    f = teamPageSummaryFacts(buildTeamPage(team, null));
+    settingKey = `teams_summary_team_${team.id}`;
+  } else return res.status(400).json({ error: 'Unknown block' });
+  if (!f) return res.status(400).json({ error: 'Nothing to summarise yet.' });
+  try {
+    await generateHomeSummary(block, f, { where: f.where, settingKey, strict: true });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed' });
+  }
 });
 
 app.get('/players', (req, res) => {
@@ -12007,11 +12729,56 @@ app.get('/players', (req, res) => {
   // Public directory only — an inactive (archived) player shouldn't appear here, matching
   // every other roster view (/teams, team-head roster, awards picker, etc). Admins still
   // see everyone, since they're the ones who'd need to find and reactivate one.
-  const players = getAllPlayers().filter(p => isAdmin || p.status !== 'inactive');
+  const visible = p => isAdmin || p.status !== 'inactive';
+  const all = getAllPlayers();
+  const byId = new Map(all.map(p => [p.id, p]));
+  const teamIds = new Set(getAllTeams().map(t => t.id));
+  const seasons = getLeaderSeasons().map(Number).filter(Boolean).sort((a, b) => b - a);
+  const season = seasons[0] || null;
+  const linesOf = {};
+  for (const r of getPlayerSeasonTotalsLite()) (linesOf[r.player_id] ||= []).push(r);
+  // Rookie = no regular-season games before the current season.
+  const isRookie = id => !!season && !(linesOf[id] || []).some(r => Number(r.season) < season);
+  const positionsOf = p => { try { return JSON.parse(p.positions || '[]'); } catch { return []; } };
+  const names = p => ({ first: String(p.first_name || '').trim(), last: String(p.last_name || '').trim().toUpperCase(), firstName: p.first_name, lastName: p.last_name });
+  const fullName = p => { const n = names(p); return `${n.first} ${n.last}`.trim(); };
+
+  // getAllPlayers' totals are the latest completed regular season — the same `season`.
+  const spark = season ? getSeasonPointsByGame(season) : {};
+  const roster = all.filter(p => visible(p) && teamIds.has(p.team_id)).map(p => ({
+    id: p.id, ...names(p), team: String(p.team_name || '').toUpperCase(), number: p.number, positions: positionsOf(p),
+    status: p.status, photo: !!p.picture_url, gp: p.games_played || 0, pts: p.pts, reb: p.reb, ast: p.ast,
+    spark: spark[p.id] || [], rookie: isRookie(p.id),
+  }));
+  const unrostered = all.filter(p => visible(p) && !teamIds.has(p.team_id));
+  const alumni = unrostered.filter(p => linesOf[p.id]?.length).map(p => {
+    const last = [...linesOf[p.id]].sort((a, b) => Number(b.season) - Number(a.season))[0];
+    return { id: p.id, name: fullName(p), season: Number(last.season), gp: last.games_played, pts: last.pts };
+  }).sort((a, b) => b.season - a.season || b.gp - a.gp || a.name.localeCompare(b.name));
+  const papawis = getPapawisPlayedCounts();
+  const community = unrostered.filter(p => !linesOf[p.id]?.length).map(p => ({ id: p.id, name: fullName(p), papawis: papawis[p.id] || 0 }))
+    .sort((a, b) => b.papawis - a.papawis || a.name.localeCompare(b.name));
+
+  const view = req.query.view === 'stats' ? 'stats' : 'rosters';
+  let stats = null;
+  if (view === 'stats') {
+    const qs = String(req.query.season || '');
+    const statSeason = qs === 'career' ? 'career' : (seasons.includes(Number(qs)) ? Number(qs) : season);
+    const rows = getPlayerSeasonLines(statSeason === 'career' ? null : statSeason)
+      .filter(r => byId.has(r.id) && visible(byId.get(r.id)))
+      .map(r => {
+        const p = byId.get(r.id);
+        return { ...r, ...names(p), gp: r.games_played, team: String(r.team_name || p.team_name || '').toUpperCase(), number: p.number,
+          positions: positionsOf(p), status: p.status, photo: !!p.picture_url, rookie: statSeason === season && isRookie(p.id) };
+      });
+    stats = { rows, season: statSeason ?? 'career', seasons, mode: req.query.mode === 'totals' ? 'totals' : 'pg' };
+  }
+
   res.send(renderPage(req, {
     title: 'Players — WKND Basketball League',
     currentPath: req.path,
-    body: playersPage({ players, isAdmin })
+    metaTags: `<link rel="stylesheet" href="/players.css?v=${PLAYERS_CSS_VER}">`,
+    body: playersPage({ view, season, week: season ? (getSeasonLatestWeek(season)?.week ?? null) : null, roster, alumni, community, stats, isAdmin }),
   }));
 });
 

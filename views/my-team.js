@@ -107,8 +107,7 @@ export function myTeamPage({ notPublished = false, notAssigned = false, team = n
 .mt-chip--num { font-family: 'Saira Condensed', sans-serif; font-weight: 700; }
 .mt-chip--muted { color: var(--text-muted); font-weight: 500; }
 .mt-num-form { display: flex; align-items: center; gap: 6px; position: relative; }
-.mt-num-input { width: 44px; height: 26px; text-align: center; font-size: 12px; font-weight: 700; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); outline: none; }
-.mt-num-input:focus { border-color: var(--amber); }
+.mt-num-input { width: 44px; } /* look: "Form controls" in styles.css */
 .mt-num-save { height: 26px; padding: 0 10px; font-size: 11px; font-weight: 700; background: var(--amber); color: #1a1206; border: none; border-radius: 6px; cursor: pointer; }
 .mt-num-save:disabled { opacity: .5; cursor: default; }
 .mt-num-error { font-size: 10.5px; color: #f87171; position: absolute; top: 28px; left: 0; white-space: nowrap; }

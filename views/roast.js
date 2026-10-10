@@ -1,10 +1,7 @@
 import { escHtml } from './layout.js';
-import { teamColor, playerAvatar, playerLink } from './utils.js';
+import { boardModel, recordModel, controlsBar, pageHead, sectionsHtml, plainName } from './leaders.js';
 
-let _showDownload = false;
 
-const SHARE_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
-const DL_ICON   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
 
 // ── Roast categories — mirror of leaders page, worst performers ───────────────
 export const ROAST_CATS = [
@@ -100,201 +97,75 @@ export const ROAST_CATS = [
   },
 ];
 
-function roastPanel(cat, players, season) {
-  const scored = players
-    .map(p => ({ p, v: cat.fn(p) }))
-    .filter(x => x.v !== null && x.v !== undefined && !isNaN(x.v))
-    .sort((a, b) => cat.asc ? a.v - b.v : b.v - a.v);
+// ── Single-game disasters (all seasons) ──────────────────────────────────────
+// Same record machinery as /leaders (higher fn = worse). `show` is the tile's big value,
+// `unit` the line under it; ties sort by the record helper's usual order.
+const fga = r => (r.fg2m || 0) + (r.fg3m || 0) + (r.fg4m || 0) + (r.fg2m_miss || 0) + (r.fg3m_miss || 0) + (r.fg4m_miss || 0);
+const fgm = r => (r.fg2m || 0) + (r.fg3m || 0) + (r.fg4m || 0);
+const fta = r => (r.ftm || 0) + (r.ft_miss || 0);
+const misses = r => fga(r) - fgm(r) + (r.ft_miss || 0);
+export const DISASTER_CATS = [
+  { id: 'd_to',    label: 'TO',   title: 'Most turnovers in a game', tileTitle: 'Turnovers', worst: true,
+    fn: r => r.turnover || 0, unit: () => 'in one game' },
+  { id: 'd_miss',  label: 'MISS', title: 'Most missed shots in a game', tileTitle: 'Missed shots', worst: true,
+    fn: r => misses(r), unit: r => `incl. ${r.ft_miss || 0} free throws · ${fgm(r)} of ${fga(r)} FG` },
+  { id: 'd_cold',  label: 'FG',   title: 'Coldest shooting night', tileTitle: 'Coldest night', worst: true,
+    fn: r => fga(r) >= 10 ? (1 - fgm(r) / fga(r)) + fga(r) / 1000 : -1, show: r => `${fgm(r)}/${fga(r)}`, unit: () => 'from the field · 10+ attempts' },
+  { id: 'd_ft',    label: 'FT',   title: 'Worst free-throw night', tileTitle: 'Free-throw nightmare', worst: true,
+    fn: r => fta(r) >= 5 ? (1 - (r.ftm || 0) / fta(r)) + fta(r) / 1000 : -1, show: r => `${r.ftm || 0}/${fta(r)}`, unit: () => 'at the line · 5+ attempts' },
+];
 
-  if (!scored.length) return '';
+const DUBIOUS = ['ghost', 'passenger', 'generous', 'bricks'];
+const MORE = ['icecold', 'ftphobia', 'lane', 'foul'];
+const fmt1 = v => v.toFixed(1);
 
-  const top10    = scored.slice(0, 10);
-  const best     = top10[0];
-  const fmt      = cat.fmt || (v => v.toFixed(1));
-  const refV     = best.v;
-  const teamName = String(best.p.team_name || '').toUpperCase();
-  const color    = teamColor(teamName);
-  const isLight  = teamName === 'WHITE';
-  const fmtVal   = fmt(best.v);
-
-  const shareBtn = `<button class="leader-panel__share" onclick="shareLeader(this)" title="Share"
-    data-season="${escHtml(String(season || ''))}"
-    data-cat-id="${escHtml(cat.id)}"
-    data-mode="roast"
-    data-player-id="${escHtml(String(best.p.id || ''))}"
-    data-player-name="${escHtml(String(best.p.name || ''))}"
-    data-team-id="${escHtml(String(best.p.team_id || ''))}"
-    data-team-name="${escHtml(teamName)}"
-    data-team-color="${escHtml(color)}"
-    data-stat-label="${escHtml(cat.label)}"
-    data-stat-title="${escHtml(cat.title)}"
-    data-stat-value="${best.v}"
-    data-stat-fmt="${escHtml(fmtVal)}">${SHARE_ICON}</button>`;
-
-  const dlBtn = _showDownload ? `<button class="leader-panel__share" onclick="downloadLeader(this)" title="Download image"
-    data-label="${escHtml(cat.label)}"
-    data-mode="roast">${DL_ICON}</button>` : '';
-
-  const rows = top10.slice(1).map((x, i) => {
-    const tc   = teamColor(String(x.p.team_name || '').toUpperCase());
-    const barW = refV !== 0 ? Math.round((cat.asc ? refV / x.v : x.v / refV) * 100) : 0;
-    return `<div class="leader-panel__row" style="--bar-w:${barW}%;--bar-color:${tc}">
-      <span class="leader-panel__rank">${i + 2}</span>
-      <span class="team-dot" style="background:${tc}"></span>
-      <span class="leader-panel__row-name">${playerLink(x.p.id, x.p.name, { upper: true })}</span>
-      <span class="leader-panel__row-stat font-condensed">${escHtml(fmt(x.v))}</span>
-    </div>`;
-  }).join('');
-
-  return `<div class="card leader-panel leader-panel--roast" style="--lp-color:${color}">
-  <div class="leader-panel__head">
-    <span class="leader-panel__cat">${escHtml(cat.label)}</span>
-    <span class="leader-panel__title">${escHtml(cat.title)}</span>
-    ${cat.min ? `<span class="leader-panel__min">${escHtml(cat.min)}</span>` : ''}
-    <div class="leader-panel__actions">${shareBtn}${dlBtn}</div>
-  </div>
-  <div class="leader-panel__top" style="background:linear-gradient(135deg,${color}1a 0%,transparent 65%)">
-    ${playerAvatar(best.p.id, best.p.name, color, { className: 'leader-avatar', link: true })}
-    <div class="leader-panel__info">
-      <div class="leader-panel__name">${playerLink(best.p.id, best.p.name, { upper: true })}</div>
-      <span class="team-chip" style="background:${color};color:${isLight ? '#10141d' : '#fff'}">${escHtml(teamName)}</span>
-      <span class="roast-sub">${escHtml(cat.sub)}</span>
-    </div>
-    <div class="leader-panel__stat font-condensed roast-stat">${escHtml(fmtVal)}</div>
-  </div>
-  ${rows ? `<div class="leader-panel__list">${rows}</div>` : ''}
-</div>`;
+// season: number | 'alltime'. players = that scope's per-player season rows (3+ GP rule is
+// inside each category's fn); gameRecords = every game line, for the disasters.
+export function buildRoastModel({ season, players = [], gameRecords = [], currentSeason }) {
+  const shareSeason = season === 'alltime' ? 'alltime' : String(season);
+  const board = id => {
+    const c = ROAST_CATS.find(x => x.id === id);
+    return boardModel({ ...c, min: c.min || '' }, players, { mode: 'roast', season: shareSeason, fmt: c.fmt || fmt1, asc: !!c.asc, valid: () => true, size: 'lg' });
+  };
+  const dubious = DUBIOUS.map(board);
+  const more = MORE.map(board).map(b => b && { ...b, size: 'sm' });
+  const name = b => b ? plainName(b.lead.p.name) : '';
+  return {
+    season,
+    sections: [
+      { id: 'dubious', nav: 'Dubious', title: 'Dubious awards', sub: 'per game · gap to the “winner”', items: dubious,
+        fallback: dubious.filter(Boolean).length ? `This season’s least flattering per-game marks, minimum 3 games. ${name(dubious[0]) ? `${name(dubious[0])} is The Ghost.` : ''}`.trim() : '' },
+      { id: 'more', nav: 'More', title: 'More awards', sub: 'per game', items: more,
+        fallback: 'Shooting boards need 3+ games plus 10+ field-goal or 5+ free-throw attempts.' },
+      { id: 'disasters', nav: 'Disasters', title: 'Single-game disasters', sub: 'all seasons', cols: 4,
+        items: DISASTER_CATS.map(c => recordModel(c, gameRecords, { scope: 'alltime', currentSeason, mode: 'disaster' })),
+        fallback: 'The roughest single-game lines across all seasons.' },
+    ],
+    also: [],
+  };
 }
 
-export function roastPage({ currentSeason = 3, leaderSeasons = [], roastBySeason = {}, roastAllTime = [], isLoggedIn = false }) {
-  _showDownload = isLoggedIn;
-
-  const panelsFor = (players, seasonVal) => ROAST_CATS.map(cat => roastPanel(cat, players, seasonVal)).filter(Boolean).join('\n');
-  const allTimePanels = panelsFor(roastAllTime, 'alltime');
-  const seasonPanels  = Object.fromEntries(leaderSeasons.map(s => [s, panelsFor(roastBySeason[s] || [], String(s))]));
-
-  if (!allTimePanels && !Object.values(seasonPanels).some(Boolean)) {
-    return `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">Not enough data yet. Check back after a few games.</div>`;
-  }
-
-  const defaultScopeId = leaderSeasons.map(String).includes(String(currentSeason)) ? 's' + currentSeason : 'alltime';
-
-  const pillsHtml = leaderSeasons.map(s =>
-    `<button class="season-pill${defaultScopeId === 's' + s ? ' season-pill--active' : ''}" id="roast-btn-s${s}" onclick="roastSeasonSwitch('s${s}')">S${escHtml(String(s))}</button>`
-  ).join('');
-  // Every category needs a handful of games (3+ GP) before a single one qualifies, so a
-  // season with games logged but too few played so far renders zero panels — without this,
-  // that tab would just be a blank grid with no explanation.
-  const seasonGridsHtml = leaderSeasons.map(s =>
-    `<div class="leaders-page-grid" id="roast-grid-s${s}" style="${defaultScopeId === 's' + s ? '' : 'display:none'}">${seasonPanels[s] || `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted)">Not enough games played yet this season. Check back after a few more.</div>`}</div>`
-  ).join('\n');
-
-  return `<div class="page-content">
-  <div class="roast-header">
-    <p class="roast-intro">The flip side of glory. Same stats, opposite podium.</p>
-    <div class="leaders-season-pills" id="roast-season-pills">
-      <button class="season-pill${defaultScopeId === 'alltime' ? ' season-pill--active' : ''}" id="roast-btn-alltime" onclick="roastSeasonSwitch('alltime')">All Time</button>
-      ${pillsHtml}
+// v: { model, seasons, kicker, meta, summaryHtml, writeups, showDownload }
+export function roastPage(v) {
+  const { model } = v;
+  const seasonOpts = [...v.seasons.map(s => ({ value: s, label: `Season ${s}` })), { value: 'alltime', label: 'All-time' }];
+  const bar = controlsBar({
+    action: '/roast', title: 'The Roast', sections: model.sections,
+    fields: [{ name: 'season', label: 'Season', value: model.season, options: seasonOpts }],
+  });
+  const body = model.sections.some(s => s.items.some(Boolean))
+    ? sectionsHtml(model.sections, v.writeups, v.showDownload)
+    : '<div class="ld-empty">Nobody has played 3 games yet — the roast needs a bigger sample.</div>';
+  return `<div class="ld-page" data-ld-page data-as-of="${escHtml(v.asOfLabel || '')}">
+  ${pageHead({ kicker: v.kicker, title: 'The Roast', meta: v.meta })}
+  ${v.summaryHtml || ''}
+  ${bar}
+  <div class="ld-body">
+    ${body}
+    <div class="ld-also">
+      <span>Boards need 3+ games; shooting boards also need 10+ field-goal or 5+ free-throw attempts. All in good fun.</span>
+      <a href="/leaders" class="ld-also__roast">Back to the leaders <span>&rarr;</span></a>
     </div>
   </div>
-  <div class="leaders-page-grid" id="roast-grid-alltime" style="${defaultScopeId === 'alltime' ? '' : 'display:none'}">${allTimePanels}</div>
-  ${seasonGridsHtml}
-  <script>
-  var _asOfLabel = '';
-  var _leaderSeasons = ${JSON.stringify(leaderSeasons)};
-  var _allLeaderScopes = ['alltime'].concat(_leaderSeasons.map(function(s){ return 's'+s; }));
-  function roastSeasonSwitch(scope) {
-    _allLeaderScopes.forEach(function(s) {
-      var grid = document.getElementById('roast-grid-' + s);
-      var btn  = document.getElementById('roast-btn-' + s);
-      if (grid) grid.style.display = s === scope ? '' : 'none';
-      if (btn)  btn.classList.toggle('season-pill--active', s === scope);
-    });
-  }
-  async function downloadLeader(btn) {
-    if (btn._busy) return;
-    btn._busy = true;
-    var icon = btn.innerHTML;
-    btn.innerHTML = '&hellip;';
-    var panel = btn.closest('.card.leader-panel');
-    try {
-      if (!window._h2cPro) {
-        await new Promise(function(resolve, reject) {
-          var s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/html2canvas-pro/dist/html2canvas-pro.min.js';
-          s.onload = function() { window._h2cPro = window.html2canvasPro || window.html2canvas; resolve(); };
-          s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
-      var captured = await window._h2cPro(panel, {
-        backgroundColor: null, scale: 2, useCORS: true, logging: false,
-        scrollX: -window.scrollX, scrollY: -window.scrollY,
-        onclone: function(clonedDoc, clonedEl) {
-          var acts = clonedEl.querySelector('.leader-panel__actions');
-          if (acts) acts.style.display = 'none';
-        },
-      });
-      var PAD = 32, FOOTER_H = 56;
-      var W = captured.width + PAD * 2, H = captured.height + PAD * 2 + FOOTER_H;
-      var out = document.createElement('canvas');
-      out.width = W; out.height = H;
-      var ctx = out.getContext('2d');
-      ctx.fillStyle = '#0a0e16';
-      ctx.fillRect(0, 0, W, H);
-      ctx.drawImage(captured, PAD, PAD);
-      ctx.fillStyle = '#475569';
-      ctx.font = '600 20px Arial,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('WKNDBASKETBALL.COM · THE ROAST', W / 2, captured.height + PAD + Math.round((PAD + FOOTER_H) / 2));
-      out.toBlob(function(blob) {
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'wknd-roast-' + (btn.dataset.label || 'stat').toLowerCase() + '.png';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 'image/png');
-      btn.innerHTML = '&#10003;';
-      setTimeout(function() { btn.innerHTML = icon; btn._busy = false; }, 1500);
-    } catch(e) { btn.innerHTML = icon; btn._busy = false; }
-  }
-  async function shareLeader(btn) {
-    if (btn._busy) return;
-    btn._busy = true;
-    const icon = btn.innerHTML;
-    btn.innerHTML = '&hellip;';
-    try {
-      const r = await fetch('/api/leaders/share', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          season:      btn.dataset.season,
-          category_id: btn.dataset.catId,
-          mode:        btn.dataset.mode,
-          player_id:   btn.dataset.playerId,
-          player_name: btn.dataset.playerName,
-          team_id:     btn.dataset.teamId,
-          team_name:   btn.dataset.teamName,
-          team_color:  btn.dataset.teamColor,
-          stat_label:  btn.dataset.statLabel,
-          stat_title:  btn.dataset.statTitle,
-          stat_value:  parseFloat(btn.dataset.statValue),
-          stat_fmt:    btn.dataset.statFmt,
-        })
-      });
-      const { url } = await r.json();
-      await navigator.clipboard.writeText(url);
-      btn.innerHTML = '&#10003; Copied';
-      btn.classList.add('leader-panel__share--copied');
-      setTimeout(() => {
-        btn.innerHTML = icon;
-        btn.classList.remove('leader-panel__share--copied');
-        btn._busy = false;
-      }, 2000);
-    } catch { btn.innerHTML = icon; btn._busy = false; }
-  }
-  </script>
 </div>`;
 }

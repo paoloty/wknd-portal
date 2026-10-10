@@ -129,8 +129,7 @@ ${reportModal(players, categories)}
 .fn-pill--fined { background: rgba(96,165,250,.12); color: #60a5fa; }
 .fn-pill--rejected { background: rgba(255,255,255,.06); color: var(--text-muted); }
 
-.fn-input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; font-size: 13.5px; color: var(--text); font-family: inherit; }
-.fn-input:focus { outline: none; border-color: var(--amber); }
+.fn-input { width: 100%; } /* look: "Form controls" in styles.css */
 .fn-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-subtle); margin: 12px 0 6px; }
 .fn-label:first-child { margin-top: 0; }
 .fn-error { font-size: 12px; color: #f87171; }

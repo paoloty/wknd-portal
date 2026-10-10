@@ -616,7 +616,7 @@ export function gamesPage({
   commentsEnabled = false, socialByGame = {}, topScorerByGame = {}, oddsByGame = {},
 }) {
   const seasonLinks = [...seasons.map(s => ({ v: s, label: `Season ${s}` })), { v: 'all', label: 'All seasons' }]
-    .map(s => `<a href="/games${s.v === String(currentSeason) ? '' : `?season=${s.v}`}" class="gr-seg${s.v === season ? ' is-on' : ''}"${s.v === season ? ' aria-current="page"' : ''}>${escHtml(s.label)}</a>`).join('');
+    .map(s => `<a href="/games${s.v === String(currentSeason) ? '' : `?season=${s.v}`}" class="gr-seg${s.v === season ? ' is-on' : ''}"${s.v === season ? ' aria-current="page"' : ''}><span class="pill-label">${escHtml(s.label)}</span></a>`).join('');
 
   const tilesHtml = tiles.length ? `<div class="gr-tiles">${tiles.map(t => `<a href="${t.href}" class="gr-tile${t.accent ? ' gr-tile--accent' : ''}">
       <span class="gr-tile__lbl">${escHtml(t.label)}</span>
@@ -677,4 +677,4 @@ ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml };
+export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gamesPageScript };
