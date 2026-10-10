@@ -32,7 +32,7 @@ import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
-import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor } from './lib/game-detail.js';
+import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
 import { leadersPage, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, ROAST_CATS } from './views/roast.js';
 import { standingsPage } from './views/standings.js';
@@ -168,7 +168,7 @@ import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './li
 import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
-import { comparisonProblems } from './lib/story-checks.js';
+import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
@@ -2529,9 +2529,19 @@ function derivePotgPlayerId(game, gameStats) {
 }
 
 function extractQuarterScores(game) {
-  // Source 1: derive per-quarter pts from consecutive periodCheckpoint cumulative totals
   let log;
   try { log = JSON.parse(game.game_log_json || '[]'); } catch { log = []; }
+  // Source 0: the scorer's "End Qn [WHI 36 - BLU 46]" markers — the score at the moment the
+  // quarter was closed. A checkpoint can disagree (Oct 4 White–Blue Q2 checkpoint said 33–44;
+  // the marker and the admin snapshot both say 36–46), so markers win where they exist.
+  const ends = quarterMarkers(log);
+  const fromMarkers = {};
+  for (let q = 1, pa = 0, pb = 0; ends[q]; q++) {
+    fromMarkers[q] = { a: ends[q].a - pa, b: ends[q].b - pb };
+    pa = ends[q].a; pb = ends[q].b;
+  }
+
+  // Source 1: derive per-quarter pts from consecutive periodCheckpoint cumulative totals
   const checkpoints = log
     .filter(e => e.metaType === 'periodCheckpoint' && e.checkpointSnapshot)
     .sort((a, b) => Number(a.quarter) - Number(b.quarter));
@@ -2560,12 +2570,12 @@ function extractQuarterScores(game) {
     };
   }
 
-  const allQs = new Set([...Object.keys(fromLog), ...Object.keys(fromSnaps)].map(Number));
+  const allQs = new Set([...Object.keys(fromMarkers), ...Object.keys(fromLog), ...Object.keys(fromSnaps)].map(Number));
   const maxQ = Math.max(4, ...allQs, 0);
 
   const scores = [];
   for (let q = 1; q <= maxQ; q++) {
-    const src = fromLog[q] ?? fromSnaps[q] ?? null;
+    const src = fromMarkers[q] ?? fromLog[q] ?? fromSnaps[q] ?? null;
     scores.push({ quarter: q, a: src?.a ?? null, b: src?.b ?? null });
   }
   return scores;
@@ -8640,54 +8650,40 @@ function scoringTimeline(game) {
   return events;
 }
 
+// CAREER HIGH / TIED CAREER HIGH / SEASON HIGH / DOUBLE-DOUBLE lines for the AI writers, from
+// the same history and rules as the game page's badges. "Tied" is spelled out so a writer
+// never turns a matched best into a "new career high".
+function milestoneHooks(game, players) {
+  const history = playerHistory(players.map(p => p.player_id), game);
+  const words = { pts: 'points', reb: 'rebounds', ast: 'assists', stl: 'steals', blk: 'blocks', fg3m: 'threes' };
+  const mins = { pts: 10, reb: 8, ast: 5, stl: 4, blk: 3, fg3m: 3 };
+  const out = [];
+  for (const p of players) {
+    const h = history[p.player_id];
+    const name = displayPlayerName(p.name);
+    const badge = badgeFor(p, h);
+    if (badge && !/^\d+ & \d+$/.test(badge)) out.push(`MILESTONE: ${name} — ${badge}.`);
+    if (h && h.gp >= 3) {
+      for (const k of Object.keys(words)) {
+        const v = Number(p[k]) || 0;
+        if (v >= mins[k] && v === h.max[k]) out.push(`TIED CAREER HIGH (not a new one): ${name} matched a previous best of ${v} ${words[k]}.`);
+      }
+    }
+  }
+  return out;
+}
+
 function recapStoryHooks(game, stats) {
   const hooks = [];
-  const A = game.team_a_name, B = game.team_b_name;
   const scoreA = Number(game.team_a_score), scoreB = Number(game.team_b_score);
-  const winnerIsA = scoreA > scoreB;
-  const qLabel = q => (q > 4 ? `OT${q - 4}` : `Q${q}`);
 
-  const tl = scoringTimeline(game);
-  if (tl && tl.length) {
-    // Largest lead for each side, lead changes, ties.
-    let maxA = 0, maxAAt = null, maxB = 0, maxBAt = null, leadChanges = 0, ties = 0, lastLeader = 0;
-    for (const ev of tl) {
-      const diff = ev.a - ev.b;
-      if (diff > maxA) { maxA = diff; maxAAt = ev; }
-      if (-diff > maxB) { maxB = -diff; maxBAt = ev; }
-      const leader = Math.sign(diff);
-      if (leader === 0 && lastLeader !== 0) ties++;
-      if (leader !== 0 && lastLeader !== 0 && leader !== lastLeader) leadChanges++;
-      if (leader !== 0) lastLeader = leader;
-    }
-    // Biggest unanswered run.
-    let best = null, cur = null;
-    for (const ev of tl) {
-      if (cur && cur.teamA === ev.teamA) { cur.pts += ev.pts; cur.end = ev; }
-      else { cur = { teamA: ev.teamA, pts: ev.pts, start: ev, end: ev }; }
-      if (!best || cur.pts > best.pts) best = { ...cur };
-    }
-    const winnerMaxDeficit = winnerIsA ? maxB : maxA;
-    if (winnerMaxDeficit >= 8) hooks.push(`COMEBACK: ${winnerIsA ? A : B} trailed by as many as ${winnerMaxDeficit} and still won.`);
-    const loserMaxLead = winnerIsA ? maxB : maxA;
-    const loserAt = winnerIsA ? maxBAt : maxAAt;
-    if (loserMaxLead >= 6 && winnerMaxDeficit < 8) hooks.push(`BLOWN LEAD: ${winnerIsA ? B : A} led by ${loserMaxLead} (${qLabel(loserAt.quarter)}) and lost.`);
-    if (best && best.pts >= 8) hooks.push(`BIGGEST RUN: ${best.teamA ? A : B} scored ${best.pts} unanswered points (${qLabel(best.start.quarter)} ${best.start.clock}${best.end.quarter !== best.start.quarter || best.end.clock !== best.start.clock ? ` to ${qLabel(best.end.quarter)} ${best.end.clock}` : ''}).`);
-    if (leadChanges >= 5) hooks.push(`SEESAW: ${leadChanges} lead changes and ${ties} ties.`);
-    const winnerMaxLead = winnerIsA ? maxA : maxB;
-    if (winnerMaxLead >= 20) hooks.push(`WIRE-TO-WIRE CONTROL: ${winnerIsA ? A : B} led by as many as ${winnerMaxLead}.`);
-  }
+  // Runs, leads, comeback, the go-ahead basket, halftime — from the same game flow the game
+  // page draws (lib/game-detail.js), so the recap and the page can't disagree.
+  hooks.push(...flowHooks(gameFlow(game), game));
 
-  // Career / season-best individual nights (as of this game's date).
-  for (const p of [...stats].sort((x, y) => y.pts - x.pts).slice(0, 8)) {
-    const prior = getPlayerCareerHighsBefore(p.player_id, game.date);
-    if (!prior || prior.gp < 3) continue;
-    const name = displayPlayerName(p.name);
-    if (p.pts > (prior.pts ?? 0) && p.pts >= 12) hooks.push(`CAREER HIGH: ${name} scored ${p.pts}, topping a previous best of ${prior.pts}.`);
-    else if (p.reb > (prior.reb ?? 0) && p.reb >= 10) hooks.push(`CAREER HIGH: ${name} grabbed ${p.reb} rebounds (previous best ${prior.reb}).`);
-    else if (p.ast > (prior.ast ?? 0) && p.ast >= 7) hooks.push(`CAREER HIGH: ${name} dished ${p.ast} assists (previous best ${prior.ast}).`);
-    if (p.pts >= 10 && p.reb >= 10 && p.ast >= 10) hooks.push(`TRIPLE-DOUBLE: ${name} — ${p.pts}/${p.reb}/${p.ast}.`);
-  }
+  // Individual milestones — the same rules as the page's badges (badgeFor), as of this
+  // game's date. Only these may be called career or season highs.
+  hooks.push(...milestoneHooks(game, [...stats].sort((x, y) => y.pts - x.pts).slice(0, 8)));
 
   const margin = Math.abs(scoreA - scoreB);
   if (margin <= 3) hooks.push(`NAIL-BITER: decided by ${margin}.`);
@@ -8700,14 +8696,17 @@ function potgStoryHooks(game, stats, p) {
   const hooks = [];
   const qLabel = q => (q > 4 ? `OT${q - 4}` : `Q${q}`);
 
+  // Career highs (new or only tied), double-doubles, season highs — same rules as the game
+  // page's badges (milestoneHooks → badgeFor), so the spotlight can't overclaim.
   const prior = getPlayerCareerHighsBefore(p.player_id, game.date);
   if (prior && prior.gp >= 3) {
+    // Every new career high, not just the headline one the badge picks.
     if (p.pts > (prior.pts ?? 0) && p.pts >= 10) hooks.push(`CAREER HIGH: ${p.pts} points (previous best ${prior.pts}).`);
     if (p.reb > (prior.reb ?? 0) && p.reb >= 8)  hooks.push(`CAREER HIGH: ${p.reb} rebounds (previous best ${prior.reb}).`);
     if (p.ast > (prior.ast ?? 0) && p.ast >= 5)  hooks.push(`CAREER HIGH: ${p.ast} assists (previous best ${prior.ast}).`);
+    if (p.stl > (prior.stl ?? 0) && p.stl >= 4)  hooks.push(`CAREER HIGH: ${p.stl} steals (previous best ${prior.stl}).`);
   }
-  if (p.pts >= 10 && p.reb >= 10 && p.ast >= 10) hooks.push(`TRIPLE-DOUBLE: ${p.pts}/${p.reb}/${p.ast}.`);
-  else if ([p.pts, p.reb, p.ast].filter(v => v >= 10).length >= 2) hooks.push(`DOUBLE-DOUBLE.`);
+  hooks.push(...milestoneHooks(game, [p]).filter(h => !/^MILESTONE: .* — Career-high/.test(h)));
 
   // Season average comparison, from this season's games before this one.
   const prev = getPlayerGameLog(p.player_id).filter(g => g.status === 'played' && String(g.season) === String(game.season) && g.date < game.date);
@@ -8847,6 +8846,9 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     `STORY HOOKS (computed from the play-by-play and stats — all verified):`,
     storyHooks.length ? storyHooks.map(h => `- ${h}`).join('\n') : '- (no standout hooks — find the angle in the top performers or the standings)',
     `Pick the single most compelling hook and OPEN the recap with it. Weave in one or two others if they fit. Do not list them.`,
+    `- Runs and leads: only cite a run, lead or comeback that is in the hooks, with the exact numbers and quarter given there. Never describe a run as bigger, or in a different quarter, than the hook says.`,
+    `- Highs: only call something a career high, season high, record or a "first" if a CAREER HIGH or MILESTONE hook says so. A "TIED CAREER HIGH" is a matched best — never write that it was a new one.`,
+    `- Late game: only mention a specific late basket (a "final-minute three", a "go-ahead shot") if it appears in the play-by-play or the AHEAD FOR GOOD hook, with the same player.`,
     `- History: you may mention the earlier meeting from the PREVIOUS MATCHUP data below, in your own words. Do not claim anything else about past seasons or playoffs.`,
     `- Never copy the labeled data lines below (e.g. "PREVIOUS MATCHUP:", "TEAM RECORDS") into the recap — write everything as prose.`,
     ``,
@@ -8979,6 +8981,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     `STORY HOOKS (verified):`,
     storyHooks.length ? storyHooks.map(h => `- ${h}`).join('\n') : '- (none — find the angle in the box score and the result)',
     `Open with the most compelling hook. Do not open with the player's name, and do not open with a stat-line formula like "A 22-point, 9-rebound..." — vary the first sentence.`,
+    `Only call something a career high or season high if a CAREER HIGH or MILESTONE hook says so. A "TIED CAREER HIGH" matched a previous best — never write that it was a new one.`,
     recentOpenings.length ? `OPENING SENTENCES FROM RECENT SPOTLIGHTS (yours must not resemble these):\n${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '',
     ``,
     `Do NOT mention PER, advanced metrics, or formula names.`,
@@ -9408,7 +9411,8 @@ function buildSeasonTiles(seasonPlayed, playerMap) {
 // is written in the background, never awaited by the page. Every number must appear in
 // the facts, banned words are rejected in code, then a temperature-0 fact check.
 // v2: comparisons are checked in code (lib/story-checks.js) — bumping regenerates every stored story.
-const MATCHUP_STORY_VERSION = 2;
+// v3 (2026-10-10): player-number check — rewrites the stored storylines once.
+const MATCHUP_STORY_VERSION = 3;
 const matchupStoryInFlight = new Set();
 let matchupStoryCooldownUntil = 0;
 const MATCHUP_BANNED = /\b(clash|showdown|impressive|stellar|remarkable|dominant|dominates|showcase|intriguing|intrigues|epic|crowd|fans|spectators)\b/i;
@@ -9434,6 +9438,8 @@ ${statLines.join('\n')}${scorerLines.length ? `\nTop scorers in this matchup: ${
     // For the wrong-way comparison check: team names as the copy writes them, per-game rows.
     teams: [T(m.a), T(m.b)],
     rows: m.rows.map(r => ({ label: r.label, a: r.a, b: r.b, hi: !!r.hi })),
+    // For the "player's number passed off as a team edge" check.
+    scorers: m.scorers.filter(Boolean).map(s => ({ name: s.name, ppg: s.ppg })),
   };
 }
 
@@ -9452,6 +9458,7 @@ Rules:
 - Every number must be copied exactly as written in the facts. Never calculate a difference, total, gap or percentage of your own (no "6 more", no "12 combined") — compare with words like "more" or "fewer" instead.
 - Before writing "more", "fewer", "higher", "lower", "out-rebounds", "outscores", "edge" or "advantage" about a team, check that team's number in the facts really is the bigger (or smaller) one. For stats marked "fewer is better", the lower number is the advantage.
 - A single game's margin is not an "edge" or a "lead" in the series. Per-game averages describe the meetings overall; never attach them to a single game.
+- A player's points per game belongs to that player. Never present it as a team's edge, lead or margin, and name the player whenever you use it.
 - Don't invent stats, history, injuries, quotes or lineups. Don't predict a winner as certain. Never call anything a record, a first or a best-ever.
 - Write finished copy only: no questions to yourself, no notes or alternatives.
 - Don't mention the crowd, fans or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "showcase", "intriguing", "clash" or "showdown".`;
@@ -9472,6 +9479,12 @@ Rules:
     if (banned) {
       console.warn(`Matchup story (${gameId}) attempt ${attempt} used a banned word: ${banned[0]}`);
       prompt += `\n\nA previous draft was rejected for using the word "${banned[0]}". Don't use it.`;
+      continue;
+    }
+    const misattributed = playerNumberProblems(`${headline.replace(/\*\*/g, '')}. ${body}`, f.scorers);
+    if (misattributed.length) {
+      console.warn(`Matchup story (${gameId}) attempt ${attempt} passed a player's number off as a team stat: ${misattributed.join(' | ')}`);
+      prompt += `\n\nA previous draft was rejected: ${misattributed.join('; ')}. A player's points per game belongs to that player — name the player when you use it.`;
       continue;
     }
     const wrongWay = comparisonProblems(`${headline.replace(/\*\*/g, '')} ${body}`, f);
