@@ -1506,7 +1506,7 @@ function finalHero(d) {
     const winPct = winner === 'a' ? odds.pctA : odds.pctB;
     oddsChip = odds.fav === winner
       ? `<a href="#picks" class="gd-chip gd-chip--amber">Odds called it · ${escHtml(tc(favName))} ${winPct}%</a>`
-      : `<a href="#picks" class="gd-chip gd-chip--amber">Upset · ${escHtml(tc(winner === 'a' ? game.team_a_name : game.team_b_name))} won with ${winPct}%</a>`;
+      : `<a href="#picks" class="gd-upset"><span class="pk-upset">Upset</span><span class="gd-chip">${escHtml(tc(winner === 'a' ? game.team_a_name : game.team_b_name))} won with ${winPct}%</span></a>`;
   }
   const s = ctx.series;
   const meta = [
@@ -1691,7 +1691,7 @@ function calledCard(game, called, isPlayer) {
   }
   const faces = result?.calledIt?.length ? `<div class="gd-faces">${result.calledIt.slice(0, 6).map(p => pickAvatar(p, 28)).join('')}<span><b>${result.calledIt.length}</b> called it</span></div>` : '';
   return `<section id="picks" class="card gd-called" aria-labelledby="picks-h">
-    <div class="gd-card__h"><h2 id="picks-h">Who called it?</h2>${result?.upset ? '<span class="pk-upset">Upset</span>' : ''}</div>
+    <div class="gd-card__h"><h2 id="picks-h">Who called it?</h2>${(odds?.fav && odds.fav !== winner) || result?.upset ? '<span class="pk-upset">Upset</span>' : ''}</div>
     ${odds ? `<span class="gd-kick">Odds before tip-off</span>
     <div class="gd-oline">
       <span class="gd-oline__s${odds.fav === 'a' ? ' is-fav' : ''}">${dot(game.team_a_name, 8)}${escHtml(String(game.team_a_name).slice(0, 3))} <b class="font-condensed">${odds.pctA}%</b></span>

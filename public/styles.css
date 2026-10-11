@@ -8658,6 +8658,9 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 a.gd-chip:hover { color: #fff; }
 .gd-chip--amber { color: #0a0e16; background: var(--amber); border-color: var(--amber); }
 a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
+/* Hero upset: the shared Upset pill (.pk-upset) beside a plain chip with the odds. */
+.gd-upset { display: inline-flex; align-items: center; gap: 8px; }
+.gd-upset:hover .gd-chip { border-color: rgba(255,255,255,.25); }
 .gd-chip--live { color: var(--amber); border-color: rgba(245,147,50,.5); }
 .gd-board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; }
 .gd-tm { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
