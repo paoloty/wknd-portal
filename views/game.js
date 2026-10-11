@@ -1168,12 +1168,14 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
         }
         list.appendChild(buildCommentLi(msg.comment));
         bumpCommentsCount(1);
+        document.dispatchEvent(new CustomEvent('gd:comment', { detail: msg.comment }));
         return;
       }
       if (msg.type === 'comment:delete') {
         var row = document.querySelector('.game-comment[data-id="' + msg.id + '"]');
         if (row) row.remove();
         bumpCommentsCount(-1);
+        document.dispatchEvent(new CustomEvent('gd:uncomment', { detail: msg.id }));
         return;
       }
       if (msg.type === 'comment:react') {
@@ -1501,13 +1503,16 @@ function finalHero(d) {
   const ot = n0(game.overtime);
   const finalLabel = ot === 0 ? 'FINAL' : ot === 1 ? 'FINAL/OT' : `FINAL/OT${ot}`;
   const odds = called?.odds;
+  // The chip jumps to "Who called it?" only when that card is on the page (see gamePage).
+  const chipTag = d.showCalled ? 'a href="#picks"' : 'span';
+  const chipEnd = d.showCalled ? 'a' : 'span';
   let oddsChip = '';
   if (odds?.fav && winner) {
     const favName = odds.fav === 'a' ? game.team_a_name : game.team_b_name;
     const winPct = winner === 'a' ? odds.pctA : odds.pctB;
     oddsChip = odds.fav === winner
-      ? `<a href="#picks" class="gd-chip gd-chip--amber">Odds called it · ${escHtml(tc(favName))} ${winPct}%</a>`
-      : `<a href="#picks" class="gd-upset"><span class="pk-upset">Upset</span><span class="gd-chip">${escHtml(tc(winner === 'a' ? game.team_a_name : game.team_b_name))} won with ${winPct}%</span></a>`;
+      ? `<${chipTag} class="gd-chip gd-chip--amber">Odds called it · ${escHtml(tc(favName))} ${winPct}%</${chipEnd}>`
+      : `<${chipTag} class="gd-upset"><span class="pk-upset">Upset</span><span class="gd-chip">${escHtml(tc(winner === 'a' ? game.team_a_name : game.team_b_name))} won with ${winPct}%</span></${chipEnd}>`;
   }
   const s = ctx.series;
   const meta = [
@@ -1644,8 +1649,9 @@ function flowCard(game, flow) {
   const svgNotes = notes.filter(n => typeof n === 'string').join('');
   const labels = notes.filter(n => typeof n !== 'string')
     .map(n => `<span class="gd-ann${n.amber ? ' gd-ann--a' : ''}" style="${n.right ? `right:0;` : `left:${n.left};`}top:${n.top}">${n.html}</span>`).join('');
-  return `<section id="flow" class="card gd-flow" aria-labelledby="flow-h">
-    <div class="gd-flow__h"><h2 id="flow-h">Game flow</h2><span class="gd-legend"><span>${dot(game.team_a_name, 9)}${escHtml(tc(game.team_a_name))} ahead</span><span>${dot(game.team_b_name, 9)}${escHtml(tc(game.team_b_name))} ahead</span></span></div>
+  return `<section id="flow" aria-labelledby="flow-h">
+    <div class="section-header gd-sh gd-sh--row"><h2 id="flow-h">Game flow</h2><span class="gd-legend"><span>${dot(game.team_a_name, 9)}${escHtml(tc(game.team_a_name))} ahead</span><span>${dot(game.team_b_name, 9)}${escHtml(tc(game.team_b_name))} ahead</span></span></div>
+    <div class="card gd-flow">
     <div class="gd-flow__stats">
       <div><span class="gd-kick">Lead changes</span><b class="font-condensed">${flow.leadChanges}</b></div>
       <div><span class="gd-kick">Ties</span><b class="font-condensed">${flow.ties}</b></div>
@@ -1668,6 +1674,7 @@ function flowCard(game, flow) {
       ${labels}
     </div>
     <div class="gd-qx">${c.qs.map(q => `<span style="width:${q.w}%">${q.label}</span>`).join('')}</div>
+    </div>
   </section>`;
 }
 
@@ -1829,14 +1836,14 @@ function teamStatsCard(game, A, B) {
   </div>`;
 }
 
+// Box score, then team stats under it: both in the main column, the rail stays one stack.
 function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '') {
   if (!stats.length) return '';
   const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
   const na = String(game.team_a_name).toUpperCase(), nb = String(game.team_b_name).toUpperCase();
   const first = winner === nb ? 'b' : 'a';
   const panel = (side, name) => `<div class="gd-box__panel" data-gd-box="${side}"${side === first ? '' : ' hidden'}>${teamBoxScoreTab(name, byTeam, dnpByTeam, winner, teamTurnovers)}</div>`;
-  return `<div class="gd-cols gd-sec">
-    <section id="box" class="gd-cols__main" aria-labelledby="box-h">
+  return `<section id="box" aria-labelledby="box-h">
       <div class="section-header gd-sh gd-sh--row"><h2 id="box-h">Box score</h2>
         <span class="gd-seg" role="group" aria-label="Team">
           <button type="button" class="${first === 'a' ? 'is-on' : ''}" aria-pressed="${first === 'a'}" data-gd-box-btn="a">${dot(na, 8)}<span class="pill-label">${escHtml(na)} · ${n0(game.team_a_score)}</span></button>
@@ -1845,12 +1852,11 @@ function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '') {
       </div>
       <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
     </section>
-    <aside class="gd-cols__rail" aria-labelledby="ts-h">
+    <section id="team-stats" aria-labelledby="ts-h">
       <div class="section-header gd-sh"><h2 id="ts-h">Team stats</h2></div>
       ${statsPanel}
       ${teamStatsCard(game, A, B)}
-    </aside>
-  </div>`;
+    </section>`;
 }
 
 // ── Final: key plays ──────────────────────────────────────────────────────────────────────
@@ -1880,11 +1886,32 @@ function talkSection(d, title) {
   </section>`;
 }
 
+// Rail teaser for the comments: count + the latest two, live. It fades out once the real
+// comments section scrolls into view (pageScript), and is desktop-only (phones have the floater).
+const RAIL_TALK_SHOWN = 2;
+function railTalkRow(c) {
+  return `<li class="gd-rtalk__c" data-id="${escHtml(c.id)}">
+    ${playerAvatar(c.player_id, c.player_name, teamColor(c.team_name || ''), { className: 'game-comment__avatar' })}
+    <div><b>${escHtml(displayPlayerName(c.player_name || ''))}</b><p>${escHtml(c.body)}</p></div>
+  </li>`;
+}
+function railTalkCard(d, title) {
+  if (!d.commentsEnabled) return '';
+  const n = d.comments.length;
+  const latest = d.comments.slice(-RAIL_TALK_SHOWN).reverse();
+  return `<section class="card gd-rtalk" aria-label="${escHtml(title)}" data-gd-rtalk>
+    <div class="gd-card__h"><h2>${escHtml(title)}<em data-gd-rtalk-n${n ? '' : ' hidden'}>${n}</em></h2><span class="gd-live">LIVE</span></div>
+    <ul class="gd-rtalk__list" data-gd-rtalk-list>${latest.map(railTalkRow).join('')}</ul>
+    <p class="gd-rtalk__empty" data-gd-rtalk-empty${n ? ' hidden' : ''}>No comments yet. Be the first.</p>
+    <a href="#talk" class="gd-rtalk__go" data-gd-rtalk-go>${d.isPlayer ? 'Add a comment' : 'Join the conversation'} <span>↓</span></a>
+  </section>`;
+}
+
 // ── The matchup preview (upcoming page body, and the archived copy after the final) ─────────
 function storyBlock(game, story, { isAdmin, regen }) {
   if (!story && !regen) return '';
   return `<article class="card gd-story" id="story">
-    <span class="gd-kick gd-kick--amber">The storyline</span>
+    <span class="gd-kick">Storyline</span>
     ${story ? `<h3 class="gd-story__head">${storyHtml(story.headline)}</h3>
     <p class="gd-story__body">${escHtml(story.body)}</p>` : '<p class="gd-story__body">No storyline yet — it’s written in the background, or regenerate it now.</p>'}
     ${regen && isAdmin ? `<button type="button" class="hs-summary__regen gm-story__regen" data-matchup="${escHtml(game.id)}">↺ Regenerate</button>` : ''}
@@ -1943,17 +1970,18 @@ function pickRail(d) {
       <div class="gd-card__h"><h2>Also on ${escHtml(shortDayLabel(m.ymd))}</h2></div>
       ${picks.siblings.map(x => `<div class="gd-nx"><div><span class="gd-nx__t">${dot(x.a, 8)}${escHtml(x.a)} <i>vs</i> ${escHtml(x.b)}${dot(x.b, 8)}</span>${x.odds ? `<span class="gd-nx__o"><span class="gd-obar"><span style="width:${x.odds.pctA}%"></span></span>${x.odds.fav ? `${escHtml(tc(x.odds.fav === 'a' ? x.a : x.b))} ${x.odds.fav === 'a' ? x.odds.pctA : x.odds.pctB}%` : 'Even'}</span>` : ''}</div><a class="gd-pk" href="${escHtml(x.href)}#picks">${state === 'open' ? 'Pick' : 'View'}</a></div>`).join('')}
     </section>` : '';
-  return `<section id="picks" class="card gd-pick" aria-labelledby="picks-h">${body}</section>${also}`;
+  // The amber glow is the call to action: only while picks are open.
+  return `<section id="picks" class="card gd-pick${state === 'open' ? ' gd-pick--open' : ''}" aria-labelledby="picks-h">${body}</section>${also}`;
 }
 
 function previewArchive(d) {
   const p = d.preview;
   if (!p) return '';
-  const { m, story, odds } = p;
-  return `<details id="preview" class="gd-sec gd-prev">
-    <summary><div class="section-header gd-sh gd-sh--row"><h2>Pre-game preview</h2><span class="gd-prev__tog" aria-hidden="true"></span></div><p class="gd-sd">As it stood at tip-off: odds, storyline and matchup stats</p></summary>
+  // The pre-game odds already sit in "Who called it?" in the rail, so they're not repeated here.
+  const { m, story } = p;
+  return `<details id="preview" class="gd-prev">
+    <summary><div class="section-header gd-sh gd-sh--row"><h2>Pre-game preview</h2><span class="gd-prev__tog" aria-hidden="true"></span></div><p class="gd-sd">As it stood at tip-off: storyline and matchup stats</p></summary>
     <div class="gd-prev__in">
-      ${odds ? oddsLine(m, odds) : ''}
       ${storyBlock(d.game, story, { isAdmin: false, regen: false })}
       ${edgesBlock(m)}
       ${scorersBlock(m)}
@@ -2029,6 +2057,44 @@ function pageScript() {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
+  // Rail comments teaser: gone once the real comments section reaches the screen (and back
+  // when you scroll up past it); new/deleted comments mirror in live (gd:comment events).
+  var rt = document.querySelector('[data-gd-rtalk]'), talkSec = document.getElementById('talk');
+  if (rt && talkSec) {
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (es) {
+        es.forEach(function (e) { rt.classList.toggle('is-gone', e.isIntersecting || e.boundingClientRect.top < 0); });
+      }).observe(talkSec);
+    }
+    // Rebuilt from the real thread each time, so a delete pulls the previous comment back in.
+    var rl = rt.querySelector('[data-gd-rtalk-list]'), rn = rt.querySelector('[data-gd-rtalk-n]'), re = rt.querySelector('[data-gd-rtalk-empty]');
+    var sync = function () {
+      var all = document.querySelectorAll('#game-comments-list > .game-comment');
+      rl.textContent = '';
+      for (var i = all.length - 1; i >= 0 && rl.children.length < ${RAIL_TALK_SHOWN}; i--) {
+        var src = all[i], av = src.querySelector('.game-comment__avatar'), li = document.createElement('li');
+        var b = document.createElement('b'), p = document.createElement('p'), box = document.createElement('div');
+        li.className = 'gd-rtalk__c';
+        b.textContent = (src.querySelector('.game-comment__name') || {}).textContent || '';
+        p.textContent = (src.querySelector('.game-comment__text') || {}).textContent || '';
+        box.appendChild(b); box.appendChild(p);
+        if (av) li.appendChild(av.cloneNode(true));
+        li.appendChild(box);
+        rl.appendChild(li);
+      }
+      rn.textContent = all.length; rn.hidden = !all.length; re.hidden = !!all.length;
+    };
+    document.addEventListener('gd:comment', sync);
+    document.addEventListener('gd:uncomment', sync);
+    rt.querySelector('[data-gd-rtalk-go]').addEventListener('click', function (e) {
+      var input = document.getElementById('gc-input');
+      if (!input) return; // guests: the plain #talk jump shows the login prompt
+      e.preventDefault();
+      talkSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      input.focus({ preventScroll: true });
+    });
+  }
+
   // Links into the archived preview open it first; so does arriving with #preview.
   function openPrev() { var p = document.getElementById('preview'); if (p) p.open = true; }
   document.querySelectorAll('[data-gd-open-preview]').forEach(function (a) { a.addEventListener('click', openPrev); });
@@ -2072,7 +2138,7 @@ export function gamePage(d) {
       ${m ? meetingsBlock(m) : ''}
       ${talkSection(v, 'Pre-game chatter')}
     </div>
-    <aside class="gd-cols__rail gd-rail--sticky">${pickRail(v)}</aside>
+    <aside class="gd-cols__rail gd-rail--sticky">${pickRail(v)}${railTalkCard(v, 'Pre-game chatter')}</aside>
   </div>
 </div>
 ${floater}
@@ -2081,7 +2147,9 @@ ${p?.o ? pickBoxScript() : ''}
 ${scripts}`;
   }
 
-  // Final.
+  // Final. "Who called it?" only when people actually picked: older games (before picks)
+  // still get computed odds, but no card, no nav link and a plain hero chip.
+  v.showCalled = !!d.called?.result?.total;
   const A = teamTotals(d.stats, game.team_a_name, game.team_a_to_team);
   const B = teamTotals(d.stats, game.team_b_name, game.team_b_to_team);
   const myStat = d.myGame?.stat || null;
@@ -2089,7 +2157,7 @@ ${scripts}`;
   const hasBox = d.stats.length > 0;
   const items = [
     recap ? { id: 'recap', label: 'Recap' } : null,
-    d.called ? { id: 'picks', label: 'Who called it' } : null,
+    v.showCalled ? { id: 'picks', label: 'Who called it' } : null,
     d.flow ? { id: 'flow', label: 'Game flow' } : null,
     d.dc ? { id: 'perf', label: 'Top performers' } : null,
     hasBox ? { id: 'box', label: 'Box score' } : null,
@@ -2098,7 +2166,7 @@ ${scripts}`;
     d.preview ? { id: 'preview', label: 'Pre-game preview' } : null,
   ].filter(Boolean);
   const mini = `${escHtml(String(game.team_a_name).slice(0, 3))} ${fa} <i>–</i> ${fb} ${escHtml(String(game.team_b_name).slice(0, 3))}`;
-  const rail = [calledCard(game, d.called, d.isPlayer), upNextCard(d.upNext, d.upNextLabel)].filter(Boolean).join('');
+  const rail = [v.showCalled ? calledCard(game, d.called, d.isPlayer) : '', upNextCard(d.upNext, d.upNextLabel), railTalkCard(v, 'Comments')].filter(Boolean).join('');
   const talk = talkSection(v, 'Comments');
   const plays = playsBlock(game, d.plays);
   // Section writeups (server.js gameSectionFacts): d.sections = { perf, stats }.
@@ -2108,22 +2176,20 @@ ${scripts}`;
   ${finalHero(v)}
   ${yourGameStrip(game, d.myGame)}
   ${sectionNav(items, mini)}
-  <div class="gd-cols">
+  <div class="gd-cols gd-cols--final">
     <div class="gd-cols__main">
       ${recap}
       ${videoCard(game)}
       ${hasBox ? wonBlock(d.won) : '<p class="gd-empty card">Full box scores will be available once stats are imported.</p>'}
       ${flowCard(game, d.flow)}
+      ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'))}
+      ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'))}
+      ${plays}
+      ${talk}
+      ${previewArchive(v)}
     </div>
-    ${rail ? `<aside class="gd-cols__rail">${rail}</aside>` : ''}
+    ${rail ? `<aside class="gd-cols__rail gd-rail--sticky">${rail}</aside>` : ''}
   </div>
-  ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'))}
-  ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'))}
-  ${plays || talk ? `<div class="gd-cols gd-sec">
-    ${plays ? `<div class="gd-cols__main">${plays}</div>` : ''}
-    ${talk ? `<div class="${plays ? 'gd-cols__rail' : 'gd-cols__main'}">${talk}</div>` : ''}
-  </div>` : ''}
-  ${previewArchive(v)}
 </div>
 ${floater}
 ${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat)}` : ''}
