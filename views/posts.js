@@ -17,7 +17,7 @@ function postRow(post) {
 export function postsListPage({ posts = [] } = {}) {
   const rows = posts.length
     ? posts.map(postRow).join('\n    ')
-    : `<div class="card post-list__empty">No posts yet.</div>`;
+    : `<div class="post-list__empty">No posts yet.</div>`;
 
   return `<style>
   .post-list__empty { padding: 32px; text-align: center; color: var(--text-muted); }

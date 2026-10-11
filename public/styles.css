@@ -8301,8 +8301,8 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 
 /* Matchup previews — semi card on /games, full page on /picks/<game> (pkg-), game detail widget (gd-picks) */
 .gm-later { margin: 0; padding: 4px 0 6px; font-size: 13px; color: var(--text-muted); }
-.gm-full { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: rgba(255,255,255,0.02); transition: border-color 0.15s, background 0.15s; }
-.gm-full:hover { border-color: rgba(245,147,50,0.45); background: rgba(245,147,50,0.04); }
+/* A divider row inside the card, not a box of its own (no nested cards). */
+.gm-full { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .gm-full:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .gm-full__k { font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
 .gm-full__t { font-size: 13px; color: #b4bbc8; }
@@ -8395,15 +8395,15 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .pkf-k { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 6px; }
 .pkf-k a { letter-spacing: 0; text-transform: none; font-size: 12px; color: var(--amber); white-space: nowrap; }
 .pkf-k a:hover { text-decoration: underline; }
-.pkf-duel__row { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pkf-duel__row { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 44px; }
 /* VS sits on the seam between the two player boxes */
 .pkf-vs { position: absolute; left: 50%; top: 50%; z-index: 2; transform: translate(-50%, -50%); display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 0 0 4px var(--surface); font-size: 13px; font-weight: 800; color: var(--text-muted); pointer-events: none; }
 
-.pkf-p { display: flex; flex-direction: column; gap: 7px; min-width: 0; height: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); color: inherit;
-  background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--team) 16%, transparent) 0%, transparent 60%), var(--surface-2); transition: border-color 0.15s; }
-.pkf-p--b { align-items: flex-end; text-align: right; background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--team) 16%, transparent) 0%, transparent 60%), var(--surface-2); }
-.pkf-p:hover { border-color: color-mix(in srgb, var(--team) 55%, var(--border)); }
-.pkf-p--empty { justify-content: center; align-items: center; min-height: 140px; font-size: 12.5px; color: var(--text-muted); background: var(--surface-2); }
+/* The two players sit flat in the card (no boxes inside a card); the VS badge marks the seam. */
+.pkf-p { display: flex; flex-direction: column; gap: 7px; min-width: 0; height: 100%; box-sizing: border-box; padding: 4px 0; color: inherit; }
+.pkf-p--b { align-items: flex-end; text-align: right; }
+.pkf-p:hover .pkf-p__id b { text-decoration: underline; }
+.pkf-p--empty { justify-content: center; align-items: center; min-height: 140px; font-size: 12.5px; color: var(--text-muted); }
 .pkf-p__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pkf-p--b .pkf-p__head { flex-direction: row-reverse; }
 .pkf-p__head .pk-av { flex-shrink: 0; }
@@ -8461,7 +8461,6 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
   .pkf-games { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
-  .pkf-p { padding: 9px 10px; }
   .pkf-p__ppg { flex-direction: column; gap: 2px; }
   .pkf-p--b .pkf-p__ppg { flex-direction: column; align-items: flex-end; }
   .pkf-vs { width: 28px; height: 28px; font-size: 12px; }
@@ -8622,7 +8621,7 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 }
 
 /* Fans vs odds (the /picks/<game> preview) */
-.pkt-flag { padding: 8px 12px; border-radius: 10px; border: 1px dashed rgba(245,147,50,0.45); font-size: 12px; color: #c7d0da; }
+.pkt-flag { font-size: 12px; color: #c7d0da; }
 .pkt-flag b { color: var(--amber); }
 .pkt-flag[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -8777,9 +8776,8 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-obar { position: relative; display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #2a3242; }
 .gd-obar > span { display: block; height: 100%; background: var(--amber); }
 .gd-obar::after { content: ''; position: absolute; left: 50%; top: -1px; bottom: -1px; width: 2px; background: var(--surface); }
-.gd-vrd { display: flex; flex-direction: column; margin-top: 14px; border-radius: 12px; background: var(--surface-2); overflow: hidden; }
-.gd-vr { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 10px; padding: 10px 13px; border-top: 1px solid rgba(255,255,255,.05); font-size: 12.5px; color: #c7d0da; }
-.gd-vr:first-child { border-top: 0; }
+.gd-vrd { display: flex; flex-direction: column; margin-top: 14px; }
+.gd-vr { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); font-size: 12.5px; color: #c7d0da; }
 .gd-vr b { color: #fff; }
 .gd-vr .gd-kick { color: var(--text-muted); }
 .gd-faces { display: flex; align-items: center; margin-top: 14px; }
@@ -8918,17 +8916,17 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-edges-card .gm-more { margin: 4px 0 10px; }
 .gd-fo { margin: 0; }
 .gd-mts { margin: 0; }
-.gd-pick .gm-odds { margin-bottom: 12px; }
-.gd-prev { border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
-.gd-prev > summary { display: flex; flex-direction: column; gap: 3px; padding: 18px 22px; cursor: pointer; list-style: none; }
+/* Inside the pick card the odds sit flat — the glow panel is for when it stands alone. */
+.gd-pick .gm-odds { margin-bottom: 12px; padding: 0 0 12px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; }
+/* Archived pre-game preview: a plain section (header is the toggle), cards sit on the page
+   like every other section — no wrapping card. */
+.gd-prev > summary { cursor: pointer; list-style: none; }
 .gd-prev > summary::-webkit-details-marker { display: none; }
-.gd-prev__t { font-size: 19px; font-weight: 800; color: #fff; }
-.gd-prev__t::after { content: ' ↓'; color: var(--amber); }
-.gd-prev[open] .gd-prev__t::after { content: ' ↑'; }
-.gd-prev__s { font-size: 13px; color: var(--text-muted); }
-.gd-prev__in { display: flex; flex-direction: column; gap: 28px; padding: 4px 22px 24px; }
-.gd-prev__in .card { background: var(--bg); }
-.gd-prev__odds { padding: 16px; }
+.gd-prev__tog { font-size: 13px; font-weight: 800; color: var(--amber); white-space: nowrap; }
+.gd-prev__tog::after { content: 'Show ↓'; }
+.gd-prev[open] .gd-prev__tog::after { content: 'Hide ↑'; }
+.gd-prev > summary:hover .gd-prev__tog { text-decoration: underline; }
+.gd-prev__in { display: flex; flex-direction: column; gap: 28px; }
 
 @media (max-width: 860px) {
   .gd-hero, .gd-hero__in { min-height: 0; }

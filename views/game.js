@@ -1946,9 +1946,9 @@ function previewArchive(d) {
   if (!p) return '';
   const { m, story, odds } = p;
   return `<details id="preview" class="gd-sec gd-prev">
-    <summary><span class="gd-prev__t">Pre-game preview</span><span class="gd-prev__s">As it stood at tip-off: odds, storyline and matchup stats</span></summary>
+    <summary><div class="section-header gd-sh gd-sh--row"><h2>Pre-game preview</h2><span class="gd-prev__tog" aria-hidden="true"></span></div><p class="gd-sd">As it stood at tip-off: odds, storyline and matchup stats</p></summary>
     <div class="gd-prev__in">
-      ${odds ? `<div class="card gd-prev__odds">${oddsLine(m, odds)}</div>` : ''}
+      ${odds ? oddsLine(m, odds) : ''}
       ${storyBlock(d.game, story, { isAdmin: false, regen: false })}
       ${edgesBlock(m)}
       ${scorersBlock(m)}
