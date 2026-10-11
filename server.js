@@ -7682,9 +7682,10 @@ app.get('/games/:ref', (req, res) => {
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
       flow, plays, won, dc, verdict, called, preview, upNext, upNextLabel, myGame,
-      // Only this season's finals are written on a page view (crawlers walk every old game);
-      // admins write the rest from the page.
-      sections: sectionSummaries(gameSectionFacts(game, { stats, dc, won }), { autoWrite: String(game.season) === String(getPortalCurrentSeason()) }),
+      // A finished game is an archive: a missing writeup is written on the first page view
+      // (any season — at most 2 in flight, so a crawler only queues them), then kept as written
+      // (keep). Admin Regenerate is the only rewrite.
+      sections: sectionSummaries(gameSectionFacts(game, { stats, dc, won }), { keep: true }),
     }),
   }));
 });
@@ -10172,7 +10173,7 @@ app.get('/picks', (req, res) => {
       closeTime: picksCloseTime(),
       isAdmin: !!req.session?.isAdmin,
       // The facts never use the viewer's own pick, so the copy is the same for everyone.
-      sections: sectionSummaries(picksSectionFacts(pd)),
+      sections: sectionSummaries(picksSectionFacts(pd), { keep: season !== String(getPortalCurrentSeason()) }),
     }),
   }));
 });
@@ -10348,7 +10349,7 @@ app.get('/standings', (req, res) => {
     currentPath: req.path,
     body: standingsPage({
       season, seasons, isCurrent, rows, games, scheduled, teamStats: sd.teamStats, summary, isAdmin,
-      sections: sectionSummaries(standingsSectionFacts(sd)),
+      sections: sectionSummaries(standingsSectionFacts(sd), { keep: !sd.isCurrent }),
     })
   }));
 });
@@ -10367,7 +10368,7 @@ app.get('/playoffs', (req, res) => {
     currentPath: req.path,
     body: playoffsPage({
       standings: pd.standings, games: pd.games, season, seasons, isCurrent, h2h: pd.h2h, awards: pd.awards, regular: pd.regular,
-      isAdmin, sections: sectionSummaries(playoffsSectionFacts(pd)),
+      isAdmin, sections: sectionSummaries(playoffsSectionFacts(pd), { keep: !pd.isCurrent }),
     })
   }));
 });
@@ -12776,7 +12777,9 @@ app.post('/admin/teams-summary/regenerate', requireAuth, express.json(), async (
 // setting per section (section_summary_<block>), shown only while its facts key still
 // matches; otherwise it's rewritten in the background, never awaited by the page.
 // block = "<page>_<section>:<season or game id>", e.g. standings_h2h:4, game_perf:<id>.
-// A past season's or game's facts don't change, so each of those is written once.
+// Finished games and past seasons are archives (keep): written on the first view when
+// missing, then kept as written even if their facts change; an admin Regenerate is the only
+// way to replace one.
 const SECTION_SUMMARY_VERSION = 1;
 // At most this many writes at once across every section — a page with four sections
 // shouldn't fire four AI calls in parallel; the rest are picked up on a later view.
@@ -12791,15 +12794,18 @@ let sectionSummaryCooldownUntil = 0;
 const sectionFactsKey = (block, facts) => `s${SECTION_SUMMARY_VERSION}|${block}|${createHash('sha1').update(facts).digest('hex').slice(0, 16)}`;
 
 // factsMap: { [section]: facts with .block } → { [section]: { kicker, headline, body } } for
-// the ones whose stored copy is current. autoWrite=false only reads (old game pages).
-function sectionSummaries(factsMap, { autoWrite = true } = {}) {
+// the ones whose stored copy is current; a missing or stale one is written in the background.
+// keep=true is for archives (finished games, past seasons): once written, the stored copy —
+// kicker, headline and body — stays as it was even if the facts later change (a stat
+// correction, a newer career high). Only an admin Regenerate replaces it.
+function sectionSummaries(factsMap, { keep = false } = {}) {
   const out = {};
   for (const [name, f] of Object.entries(factsMap || {})) {
     if (!f) continue;
     const settingKey = `section_summary_${f.block}`;
     let stored = null;
     try { stored = JSON.parse(getSetting(settingKey, '') || 'null'); } catch {}
-    if (stored && stored.key === f.key) {
+    if (stored && (keep || stored.key === f.key)) {
       // The writer sometimes drops the **name** markers; then team names get the amber
       // highlight anyway, like the teams panels.
       let headline = String(stored.headline || '');
@@ -12807,10 +12813,12 @@ function sectionSummaries(factsMap, { autoWrite = true } = {}) {
         const names = getAllTeams().map(t => t.name).sort((a, b) => b.length - a.length);
         if (names.length) headline = headline.replace(new RegExp(`\\b(${names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi'), '**$1**');
       }
-      out[name] = { kicker: stored.kicker, headline, body: stored.body };
+      // Live pages take the live kicker (it's only the "as of" label, so a wording change shows
+      // without rewriting every summary); archives keep the one saved with the writeup.
+      out[name] = { kicker: keep ? (stored.kicker || f.kicker) : (f.kicker || stored.kicker), headline, body: stored.body };
       continue;
     }
-    if (!autoWrite || !aiAvailable() || sectionSummaryInFlight.has(settingKey)) continue;
+    if (!aiAvailable() || sectionSummaryInFlight.has(settingKey)) continue;
     if (sectionSummaryInFlight.size >= SECTION_SUMMARY_MAX_IN_FLIGHT || Date.now() < sectionSummaryCooldownUntil) continue;
     if (Date.now() - (sectionSummaryFailedAt.get(settingKey) || 0) < SECTION_SUMMARY_RETRY_MS) continue;
     sectionSummaryInFlight.add(settingKey);
@@ -13003,7 +13011,8 @@ function picksSectionFacts(pd) {
     const top = pd.board.slice(0, 5).map(r => `- ${r.rank}. ${r.name}${r.team ? ` (${T(r.team)})` : ''}: ${fmtPts(r.net)} points, ${r.correct}-${r.wrong}${r.streak >= 2 ? `, ${r.streak} correct in a row` : ''}${r.weekPicks ? `, ${fmtPts(r.week)} on the latest game day` : ''}`);
     const odds = pd.oddsOn ? pd.oddsBoard.slice(0, 3).map(r => `- ${r.oddsRank}. ${r.name}: ${r.oddsPts > 0 ? '+' : ''}${r.oddsPts.toFixed(2)}${r.upsets ? `, ${plural(r.upsets, 'upset')} called` : ''}`) : [];
     out.race = {
-      kicker: `Pickmaster race · S${pd.season}`, section: 'Pickmaster race (the pick-em leaderboard)', where,
+      // The race card's own header already says "Pickmaster race · S4"; the panel shows the as-of.
+      kicker: `Pickmaster race · ${pd.days.length ? `After ${summaryDay(pd.days[0].ymd)}` : `Season ${pd.season}`}`, section: 'Pickmaster race (the pick-em leaderboard)', where,
       facts: `Pickmaster race, Season ${pd.season}: +1 point for a correct pick, -1 for a miss; most points at season's end wins the Pickmaster award. Players level on points share a rank. ${plural(pd.board.length, 'picker')} on the board. Top of the board:\n${top.join('\n')}${odds.length ? `\nBeat the Odds board (bragging rights only: a correct pick against the odds earns more):\n${odds.join('\n')}` : ''}`,
       focus: 'Describe the Pickmaster race: who leads, by how much, and who is closest behind. Mention the Beat the Odds board only if its leader is different. Call the people who pick "pickers", never fans.',
     };

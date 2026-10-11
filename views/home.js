@@ -897,7 +897,10 @@ export function summaryPanel(s, block, isAdmin, attr = 'block') {
 }
 
 // A section writeup under a section header (/standings, /playoffs, /picks, game pages).
-export const sectionPanel = (s, block, isAdmin) => summaryPanel(s, block, isAdmin, 'section-block');
+// Kickers read "<Section name> · <as of>"; the header right above already names the section,
+// so only the "as of" part shows here.
+export const sectionPanel = (s, block, isAdmin) => summaryPanel(
+  s && { ...s, kicker: String(s.kicker || '').split(' · ').slice(1).join(' · ') }, block, isAdmin, 'section-block');
 
 // Admin "Regenerate" for every sectionPanel on the page.
 export function sectionRegenScript() {

@@ -7289,6 +7289,7 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
 .st-card .hs-summary { margin: 0; }
 .hs-summary__copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 920px; }
 .hs-summary__kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+.hs-summary__kicker:empty { display: none; }
 .hs-summary__headline { margin: 0; font-size: 24px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; color: var(--text); text-wrap: balance; }
 .hs-summary__headline em { font-style: normal; color: var(--amber); }
 .hs-summary__body { margin: 0; max-width: 72ch; font-size: 15px; line-height: 1.6; color: #b4bbc8; }
