@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
+import { sectionPanel, sectionRegenScript } from './home.js';
 
 // ── /standings ────────────────────────────────────────────────────────────────
 // Race summary → league table (grouped columns) + playoff picture → head to head
@@ -17,7 +18,7 @@ function rgba(hex, a) {
   return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})`;
 }
 
-const winnerOf = g => Number(g.team_a_score) > Number(g.team_b_score)
+export const winnerOf = g => Number(g.team_a_score) > Number(g.team_b_score)
   ? { id: g.team_a_id, name: g.team_a_name, pts: Number(g.team_a_score), oppId: g.team_b_id, opp: g.team_b_name, oppPts: Number(g.team_b_score) }
   : { id: g.team_b_id, name: g.team_b_name, pts: Number(g.team_b_score), oppId: g.team_a_id, opp: g.team_a_name, oppPts: Number(g.team_a_score) };
 
@@ -82,7 +83,7 @@ function weekHeadline(n, wkGames, before, after) {
 
 // A 3-team loop where each team leads its season series against the next (A>B, B>C, C>A).
 // Returns the set of pair keys ("idA|idB", sorted) that make up the loop, or null.
-function findTriangle(teams, games) {
+export function findTriangle(teams, games) {
   const net = {};
   for (const g of games) {
     const w = winnerOf(g);
@@ -194,7 +195,7 @@ function pips(n, hot) {
   return `<span class="stp-pips" aria-label="Needs ${n} win${n === 1 ? '' : 's'} to advance">${`<span class="stp-pip${hot ? ' is-hot' : ''}"></span>`.repeat(n)}</span>`;
 }
 
-function playoffPicture(table, isCurrent) {
+function playoffPicture(table, isCurrent, panel = '') {
   if (table.length < 4) return '';
   const team = (t, n, high) => `<a href="/teams/${encodeURIComponent(t.id)}" class="stp-semi__team${high ? ' is-high' : ''}"><span class="font-condensed stp-semi__seed">${n}</span><span class="team-dot" style="background:${t.color}"></span><span>${escHtml(t.name)}</span><span class="font-condensed stp-semi__rec">${t.wins}-${t.losses}</span>${pips(high ? 1 : 2, high)}</a>`;
   const semi = (label, hi, hiN, lo, loN) => `<div class="stp-semi card">
@@ -204,6 +205,7 @@ function playoffPicture(table, isCurrent) {
   </div>`;
   return `<section class="stp-playoffs" aria-labelledby="stp-po-h">
   <div class="section-header"><h2 id="stp-po-h">Playoff picture</h2>${isCurrent ? '<a href="/playoffs" class="section-header__link">Bracket <span>&rarr;</span></a>' : ''}</div>
+  ${panel}
   <div class="stp-bar">
     <p class="stp-desc">${isCurrent ? 'If the season ended today.' : 'Final regular-season seeding.'}</p>
     <span class="stp-pips-key"><span class="stp-pip is-hot"></span>win to advance</span>
@@ -219,7 +221,7 @@ function playoffPicture(table, isCurrent) {
 // Head to head as a rivalry timeline: one row per pairing (in order of first meeting),
 // one column per week. A played game shows the winner's colour and score; a scheduled one
 // says "Next"; the rest of the season is empty dashed slots.
-function headToHead(table, games, sched, totalWeeks, colorOf) {
+function headToHead(table, games, sched, totalWeeks, colorOf, panel = '') {
   if (table.length < 2 || !games.length) return '';
   const key = (a, b) => [a, b].sort().join('|');
   const pairs = [];
@@ -256,6 +258,7 @@ function headToHead(table, games, sched, totalWeeks, colorOf) {
   const heads = Array.from({ length: totalWeeks }, (_, n) => `<span class="stp-th stp-c">Wk ${n + 1}</span>`).join('');
   return `<section class="stp-h2h" aria-labelledby="stp-h2h-h">
   <div class="section-header"><h2 id="stp-h2h-h">Head to head</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
+  ${panel}
   <div class="stp-bar">
     <p class="stp-desc">Each cell is a game: the winner's colour and the score.</p>
     ${tri ? '<span class="stp-tl__key"><span class="stp-tl__tri">▲</span>Part of the triangle: three teams, three different winners</span>' : ''}
@@ -272,7 +275,7 @@ function headToHead(table, games, sched, totalWeeks, colorOf) {
 }
 
 // One card per week, newest first, in a single horizontally scrolling row.
-function roadSoFar(weeks) {
+function roadSoFar(weeks, panel = '') {
   if (!weeks.length) return '';
   const cards = [...weeks].reverse().map((w, i) => `<div class="stp-wk${i === 0 ? ' is-latest' : ''}">
     <div class="stp-wk__top"><span class="stp-kicker">Week ${w.n}</span><span class="stp-th">${w.dates.length > 1 ? `${fmtDay(w.dates[0])} – ${fmtDay(w.dates[w.dates.length - 1])}` : fmtDay(w.dates[0])}</span></div>
@@ -292,30 +295,34 @@ function roadSoFar(weeks) {
   </div>`).join('');
   return `<section class="stp-road" aria-labelledby="stp-road-h">
   <div class="section-header"><h2 id="stp-road-h">The road so far</h2></div>
+  ${panel}
   <p class="stp-desc">What each week did to the table, newest first.</p>
   <div class="stp-road__grid">${cards}</div>
 </section>`;
 }
 
-function teamStats(table, teamStatsRows) {
+// Team stats columns (also the facts for the section's AI writeup, server.js).
+export const TEAM_STAT_CATS = [
+  { k: 'PTS', title: 'Points', fn: s => s.pts },
+  { k: 'REB', title: 'Rebounds', fn: s => s.reb },
+  { k: 'AST', title: 'Assists', fn: s => s.ast },
+  { k: 'STL', title: 'Steals', fn: s => s.stl },
+  { k: 'BLK', title: 'Blocks', fn: s => s.blk },
+  { k: '3PM', title: '3-pointers made', fn: s => s.fg3m },
+  { k: 'FG%', title: 'Field goal %', fn: s => s.fga > 0 ? s.fgm / s.fga : 0, pct: true },
+  { k: '3P%', title: '3-point %', fn: s => s.fg3a > 0 ? s.fg3m / s.fg3a : 0, pct: true },
+  { k: 'FT%', title: 'Free throw %', fn: s => (s.ftm + s.ft_miss) > 0 ? s.ftm / (s.ftm + s.ft_miss) : 0, pct: true },
+  { k: 'TO', title: 'Turnovers', fn: s => s.turnover, low: true },
+];
+export const teamStatVal = (c, s, mode) => { const v = Number(c.fn(s)) || 0; return c.pct || mode === 'tot' ? v : (s.gp > 0 ? v / s.gp : 0); };
+export const teamStatFmt = (c, v, mode) => c.pct ? `${(v * 100).toFixed(1)}%` : mode === 'tot' ? String(Math.round(v)) : v.toFixed(1);
+
+function teamStats(table, teamStatsRows, panel = '') {
   if (!teamStatsRows.length) return '';
   const byId = Object.fromEntries(teamStatsRows.map(t => [t.team_id, t]));
   const teams = table.filter(t => byId[t.id]);
   if (!teams.length) return '';
-  const CATS = [
-    { k: 'PTS', title: 'Points', fn: s => s.pts },
-    { k: 'REB', title: 'Rebounds', fn: s => s.reb },
-    { k: 'AST', title: 'Assists', fn: s => s.ast },
-    { k: 'STL', title: 'Steals', fn: s => s.stl },
-    { k: 'BLK', title: 'Blocks', fn: s => s.blk },
-    { k: '3PM', title: '3-pointers made', fn: s => s.fg3m },
-    { k: 'FG%', title: 'Field goal %', fn: s => s.fga > 0 ? s.fgm / s.fga : 0, pct: true },
-    { k: '3P%', title: '3-point %', fn: s => s.fg3a > 0 ? s.fg3m / s.fg3a : 0, pct: true },
-    { k: 'FT%', title: 'Free throw %', fn: s => (s.ftm + s.ft_miss) > 0 ? s.ftm / (s.ftm + s.ft_miss) : 0, pct: true },
-    { k: 'TO', title: 'Turnovers', fn: s => s.turnover, low: true },
-  ];
-  const val = (c, s, mode) => { const v = Number(c.fn(s)) || 0; return c.pct || mode === 'tot' ? v : (s.gp > 0 ? v / s.gp : 0); };
-  const fmt = (c, v, mode) => c.pct ? `${(v * 100).toFixed(1)}%` : mode === 'tot' ? String(Math.round(v)) : v.toFixed(1);
+  const CATS = TEAM_STAT_CATS, val = teamStatVal, fmt = teamStatFmt;
   const best = (c, mode) => { const vs = teams.map(t => val(c, byId[t.id], mode)); return c.low ? Math.min(...vs) : Math.max(...vs); };
   const cell = (c, t, mode) => { const v = val(c, byId[t.id], mode); return `<span class="stp-ts__v stp-ts__v--${mode}${v === best(c, mode) ? ' is-best' : ''}">${fmt(c, v, mode)}</span>`; };
 
@@ -346,6 +353,7 @@ function teamStats(table, teamStatsRows) {
 
   return `<section class="stp-stats" data-mode="pg" aria-labelledby="stp-ts-h">
   <div class="section-header"><h2 id="stp-ts-h">Team stats</h2><a href="/leaders" class="section-header__link">League leaders <span>&rarr;</span></a></div>
+  ${panel}
   <div class="stp-bar">
     <p class="stp-desc">League best in each column is in amber. For turnovers, fewest is best.</p>
     <div class="stp-chips" role="group" aria-label="Stat mode">
@@ -384,7 +392,29 @@ const SCRIPT = `<script>
 // games:      the season's completed regular-season games, not under review
 // scheduled:  the season's scheduled (unplayed) regular-season games
 // summary:    { kicker, headlineHtml, body } or null
-export function standingsPage({ season, seasons = [], isCurrent = true, rows = [], games = [], scheduled = [], teamStats: teamStatsRows = [], summary = null }) {
+// sections:   the section writeups { playoffs, h2h, road, stats } (server.js standingsSectionFacts)
+export function standingsPage({ season, seasons = [], isCurrent = true, rows = [], games = [], scheduled = [], teamStats: teamStatsRows = [], summary = null, sections = {}, isAdmin = false }) {
+  const { played, colorOf, week, table, notes, weeks, sched, expected, totalWeeks } = standingsModel({ rows, games, scheduled });
+  const panel = key => sectionPanel(sections[key] || null, `standings_${key}:${season}`, isAdmin);
+
+  return `<div class="page-content stp">
+  ${pageHead({ season, seasons, isCurrent, week, played: played.length, expected })}
+  ${raceSummary(summary)}
+  ${table.length ? `<div class="stp-top">
+    ${leagueTable(table, season, week, isCurrent, notes)}
+    ${playoffPicture(table, isCurrent, panel('playoffs'))}
+  </div>` : '<p class="stp-desc">No standings for this season yet.</p>'}
+  ${headToHead(table, played, sched, totalWeeks, colorOf, panel('h2h'))}
+  ${roadSoFar(weeks, panel('road'))}
+  ${teamStats(table, teamStatsRows, panel('stats'))}
+</div>
+${SCRIPT}
+${isAdmin ? sectionRegenScript() : ''}`;
+}
+
+// Everything the page derives from the season's games — also used by server.js for the
+// section writeups' facts, so the copy and the page always describe the same numbers.
+export function standingsModel({ rows = [], games = [], scheduled = [] }) {
   const played = [...games].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
   const colorOf = id => teamColor(rows.find(r => r.id === id)?.name);
 
@@ -470,16 +500,5 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
   }
   const totalWeeks = Math.max(schedWeek, Math.ceil(expected / Math.max(1, Math.floor(rows.length / 2))));
 
-  return `<div class="page-content stp">
-  ${pageHead({ season, seasons, isCurrent, week, played: played.length, expected })}
-  ${raceSummary(summary)}
-  ${table.length ? `<div class="stp-top">
-    ${leagueTable(table, season, week, isCurrent, notes)}
-    ${playoffPicture(table, isCurrent)}
-  </div>` : '<p class="stp-desc">No standings for this season yet.</p>'}
-  ${headToHead(table, played, sched, totalWeeks, colorOf)}
-  ${roadSoFar(weeks)}
-  ${teamStats(table, teamStatsRows)}
-</div>
-${SCRIPT}`;
+  return { played, colorOf, week, table, notes, weeks, sched, expected, totalWeeks };
 }

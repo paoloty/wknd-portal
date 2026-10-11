@@ -6,6 +6,7 @@ import { sectionNavScript } from './section-nav.js';
 import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
 import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, meetingTile, storyHtml } from './games.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
+import { sectionPanel, sectionRegenScript } from './home.js';
 
 
 function youtubeEmbedUrl(url) {
@@ -1784,10 +1785,13 @@ function sayButton(mentionable) {
 }
 
 // say(s, small): the "Say something" button for a player (empty when comments are off).
-function performersSection(game, dc, verdict, potgId, say = () => '') {
+// panel: the section's AI writeup (sectionPanel), between the header and its description.
+function performersSection(game, dc, verdict, potgId, say = () => '', panel = '') {
   if (!dc) return '';
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
-    ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>', sub: 'The best player on each side, head to head. Then the rest of each team’s standouts, ranked by game score.' })}
+    ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>' })}
+    ${panel}
+    <p class="gd-sd">The best player on each side, head to head. Then the rest of each team’s standouts, ranked by game score.</p>
     <article class="card gd-dl" aria-label="The duel">
       <div class="gd-dl__top">
         <div class="gd-dl__bg gd-dl__bg--l" aria-hidden="true" style="--team:${teamColor(dc.a.team_name)}"><img src="${playerPhotoUrl(dc.a.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></div>
@@ -1825,7 +1829,7 @@ function teamStatsCard(game, A, B) {
   </div>`;
 }
 
-function boxSection(game, stats, dnpPlayers, A, B) {
+function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '') {
   if (!stats.length) return '';
   const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
   const na = String(game.team_a_name).toUpperCase(), nb = String(game.team_b_name).toUpperCase();
@@ -1843,6 +1847,7 @@ function boxSection(game, stats, dnpPlayers, A, B) {
     </section>
     <aside class="gd-cols__rail" aria-labelledby="ts-h">
       <div class="section-header gd-sh"><h2 id="ts-h">Team stats</h2></div>
+      ${statsPanel}
       ${teamStatsCard(game, A, B)}
     </aside>
   </div>`;
@@ -2096,6 +2101,8 @@ ${scripts}`;
   const rail = [calledCard(game, d.called, d.isPlayer), upNextCard(d.upNext, d.upNextLabel)].filter(Boolean).join('');
   const talk = talkSection(v, 'Comments');
   const plays = playsBlock(game, d.plays);
+  // Section writeups (server.js gameSectionFacts): d.sections = { perf, stats }.
+  const secPanel = key => sectionPanel(d.sections?.[key] || null, `game_${key}:${game.id}`, d.isAdmin);
   return `<div class="page-content gd-page">
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${finalHero(v)}
@@ -2110,8 +2117,8 @@ ${scripts}`;
     </div>
     ${rail ? `<aside class="gd-cols__rail">${rail}</aside>` : ''}
   </div>
-  ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined)}
-  ${boxSection(game, d.stats, d.dnpPlayers, A, B)}
+  ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'))}
+  ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'))}
   ${plays || talk ? `<div class="gd-cols gd-sec">
     ${plays ? `<div class="gd-cols__main">${plays}</div>` : ''}
     ${talk ? `<div class="${plays ? 'gd-cols__rail' : 'gd-cols__main'}">${talk}</div>` : ''}
@@ -2121,5 +2128,6 @@ ${scripts}`;
 ${floater}
 ${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat)}` : ''}
 ${d.preview ? matchupScript({ isAdmin: false }) : ''}
+${d.isAdmin ? sectionRegenScript() : ''}
 ${scripts}`;
 }

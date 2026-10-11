@@ -878,7 +878,9 @@ function closingCta(msg) {
 // One per block: a kicker ("THE RACE · AFTER WEEK 4"), a generated headline where
 // **name** markers become amber highlights, and a sentence or two. Admins get a
 // regenerate button (and see a placeholder when nothing has been generated yet).
-export function summaryPanel(s, block, isAdmin) {
+// attr: the button's data attribute — 'section-block' for the section writeups
+// (server.js SECTION_SUMMARIES), which sectionRegenScript() picks up.
+export function summaryPanel(s, block, isAdmin, attr = 'block') {
   if (!s && !isAdmin) return '';
   const headline = s ? escHtml(s.headline).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>') : '';
   const body = s?.body ? escHtml(s.body.replace(/\*\*/g, '')) : '';
@@ -890,8 +892,28 @@ export function summaryPanel(s, block, isAdmin) {
       ${body ? `<p class="hs-summary__body">${body}</p>` : ''}`
         : `<span class="hs-summary__kicker">No summary yet — it's written after the next result, or regenerate it now</span>`}
     </div>
-    ${isAdmin ? `<button type="button" class="hs-summary__regen" data-block="${escHtml(block)}">↺ Regenerate</button>` : ''}
+    ${isAdmin ? `<button type="button" class="hs-summary__regen" data-${attr}="${escHtml(block)}">↺ Regenerate</button>` : ''}
   </div>`;
+}
+
+// A section writeup under a section header (/standings, /playoffs, /picks, game pages).
+export const sectionPanel = (s, block, isAdmin) => summaryPanel(s, block, isAdmin, 'section-block');
+
+// Admin "Regenerate" for every sectionPanel on the page.
+export function sectionRegenScript() {
+  return `<script>
+(function () {
+  document.querySelectorAll('.hs-summary__regen[data-section-block]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = 'Writing…';
+      fetch('/admin/section-summary/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block: btn.dataset.sectionBlock }) })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); }); })
+        .then(function () { location.reload(); })
+        .catch(function (e) { btn.disabled = false; btn.textContent = '↺ Regenerate'; alert(e.message); });
+    });
+  });
+})();
+</script>`;
 }
 
 // ── Game headlines (the 4 games before the hero's, recap headline over the cover photo) ──

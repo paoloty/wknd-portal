@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor, playerPhotoUrl } from './utils.js';
+import { sectionPanel, sectionRegenScript } from './home.js';
 
 // ── /playoffs ─────────────────────────────────────────────────────────────────
 // Champion hero (once there is one) → bracket (semis → finals → champion, with win rings)
@@ -132,10 +133,11 @@ function heroSection(h) {
 </section>`;
 }
 
-function gamesTable(rows) {
+function gamesTable(rows, panel = '') {
   if (!rows.length) return '';
   return `<section class="po-games" aria-labelledby="po-games-h">
   <div class="section-header"><h2 id="po-games-h">Every playoff game</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
+  ${panel}
   <div class="po-gl card">
     <div class="po-gl__row is-head"><span class="stp-th">Round</span><span class="stp-th">Date</span><span class="stp-th">Result</span><span class="stp-th">Recap</span><span class="stp-th">Player of the game</span></div>
     ${rows.map(r => `<a href="/games/${encodeURIComponent(r.id)}" class="po-gl__row">
@@ -152,32 +154,10 @@ function gamesTable(rows) {
 // season, seasons, isCurrent; standings (getSeasonStandings rows); h2h map; games: the
 // season's playoff + finals games (not under review), each with recapTitle and potgName;
 // awards: { finalsMvp, mvp } as { id, name, number, initials } or null; regular: { played, expected }.
-export function playoffsPage({ standings = [], games = [], season, seasons = [], isCurrent = true, h2h = {}, awards = {}, regular = { played: 0, expected: 0 } }) {
-  const seeds = computeSeeds(standings, h2h);
-  const seedOf = t => t ? seeds.findIndex(s => s.id === t.id) + 1 : null;
-  const sorted = [...games].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
-  const semiGames = sorted.filter(g => g.game_type === 'playoff');
-  const finalsGames = sorted.filter(g => g.game_type === 'finals');
-  const started = sorted.some(isPlayed);
-  const projected = !started && seeds.length === 4;
-
-  const pairGames = (a, b) => a && b ? semiGames.filter(g => pairKey(g.team_a_id, g.team_b_id) === pairKey(a.id, b.id)) : [];
-  const [s1, s2, s3, s4] = seeds;
-  const semi1 = pairGames(s1, s4), semi2 = pairGames(s2, s3);
-  const w1 = seriesState(semi1, s1, s4, { high: 1, low: 2 }).winner;
-  const w2 = seriesState(semi2, s2, s3, { high: 1, low: 2 }).winner;
-
-  // Finalists: the semi winners, else whoever is in the finals games.
-  let f = [w1, w2];
-  if (finalsGames.length && (!f[0] || !f[1])) {
-    const ids = new Set(finalsGames.flatMap(g => [g.team_a_id, g.team_b_id]));
-    const inFinals = seeds.filter(s => ids.has(s.id));
-    f = [f[0] || inFinals.find(t => t !== f[1]) || null, f[1] || inFinals.find(t => t !== f[0]) || null];
-  }
-  if (f[0] && f[1] && seedOf(f[1]) < seedOf(f[0])) f = [f[1], f[0]];
-  const [fHigh, fLow] = f;
-  const fin = seriesState(finalsGames, fHigh, fLow, { high: 2, low: 2 });
-  const champ = fin.winner;
+// sections: the section writeups { bracket, games } (server.js playoffsSectionFacts).
+export function playoffsPage({ standings = [], games = [], season, seasons = [], isCurrent = true, h2h = {}, awards = {}, regular = { played: 0, expected: 0 }, sections = {}, isAdmin = false }) {
+  const { seeds, seedOf, finalsGames, projected, s1, s2, s3, s4, semi1, semi2, w1, w2, fHigh, fLow, fin, champ, tableRows } = playoffsModel({ standings, games, h2h });
+  const panel = key => sectionPanel(sections[key] || null, `playoffs_${key}:${season}`, isAdmin);
 
   // Hero line: final result, then how the champion's semi went.
   let hero = '';
@@ -194,7 +174,8 @@ export function playoffsPage({ standings = [], games = [], season, seasons = [],
 
   // Before the playoffs: who would have twice to beat today.
   const pct = regular.expected ? Math.min(100, Math.round(regular.played / regular.expected * 100)) : 0;
-  const preSummary = projected ? `<div class="stp-summary">
+  // Rule-based line, only while the AI bracket writeup (which says the same) isn't there.
+  const preSummary = projected && !sections.bracket ? `<div class="stp-summary">
     <span class="stp-kicker">The playoff race${isCurrent ? '' : ' · final seeding'}</span>
     <p class="stp-summary__headline">${isCurrent ? 'If the season ended today, ' : ''}<em>${escHtml(s1.name)}</em> and <em>${escHtml(s2.name)}</em> ${isCurrent ? 'would have' : 'have'} twice to beat.</p>
     <p class="stp-summary__body">${escHtml(s3.name)} and ${escHtml(s4.name)} would have to win twice to reach the final.</p>
@@ -215,6 +196,7 @@ export function playoffsPage({ standings = [], games = [], season, seasons = [],
 
   const bracket = seeds.length < 4 ? '<p class="stp-desc">Not enough teams for a bracket yet.</p>' : `<section class="po-bracket" aria-labelledby="po-br-h">
   <div class="section-header"><h2 id="po-br-h">${projected ? 'Projected bracket' : 'Bracket'}</h2><span class="po-legend"><span><span class="po-pip is-won"></span>win</span><span><span class="po-pip"></span>win needed</span></span></div>
+  ${panel('bracket')}
   <p class="stp-desc">${projected ? 'Seeds as they stand today. Semis: the higher seed is twice to beat. Finals: best of 3.' : 'Semis: the higher seed is twice to beat. Finals: best of 3.'}</p>
   <div class="po-bracket__grid${projected ? ' is-projected' : ''}">
     <div class="po-bracket__semis">
@@ -227,23 +209,6 @@ export function playoffsPage({ standings = [], games = [], season, seasons = [],
     ${champCard}
   </div>
 </section>`;
-
-  // Every playoff game, in order, with its round label.
-  const rows = [];
-  const label = (list, name) => list.filter(isPlayed).forEach((g, i) => rows.push({ g, round: `${name} · G${i + 1}` }));
-  label(semi1, 'Semi 1'); label(semi2, 'Semi 2'); label(finalsGames, 'Finals');
-  const extra = semiGames.filter(g => isPlayed(g) && !semi1.includes(g) && !semi2.includes(g));
-  extra.forEach(g => rows.push({ g, round: 'Semis' }));
-  rows.sort((a, b) => String(a.g.date).localeCompare(String(b.g.date)) || (a.round > b.round ? 1 : -1));
-  const tableRows = rows.map(({ g, round }) => {
-    const aw = Number(g.team_a_score) > Number(g.team_b_score);
-    return {
-      id: g.id, round, date: g.date, finals: g.game_type === 'finals',
-      w: aw ? g.team_a_name : g.team_b_name, l: aw ? g.team_b_name : g.team_a_name,
-      ws: Math.max(g.team_a_score, g.team_b_score), ls: Math.min(g.team_a_score, g.team_b_score),
-      ot: !!Number(g.overtime), recap: g.recapTitle, potg: g.potgName,
-    };
-  });
 
   const pills = seasons.length > 1 ? `<nav class="stp-pills" aria-label="Season">${seasons.map(s => `<a href="/playoffs${String(s) === String(seasons[0]) ? '' : `?season=${encodeURIComponent(s)}`}" class="stp-pill${String(s) === String(season) ? ' is-on' : ''}"${String(s) === String(season) ? ' aria-current="page"' : ''}><span class="pill-label">S${escHtml(String(s))}</span></a>`).join('')}</nav>` : '';
 
@@ -264,6 +229,57 @@ export function playoffsPage({ standings = [], games = [], season, seasons = [],
   ${hero}
   ${preSummary}
   ${bracket}
-  ${gamesTable(tableRows)}
-</div>`;
+  ${gamesTable(tableRows, panel('games'))}
+</div>
+${isAdmin ? sectionRegenScript() : ''}`;
+}
+
+// Seeds, series and every played playoff game — also used by server.js for the section
+// writeups' facts, so the copy and the bracket always agree.
+export function playoffsModel({ standings = [], games = [], h2h = {} }) {
+  const seeds = computeSeeds(standings, h2h);
+  const seedOf = t => t ? seeds.findIndex(s => s.id === t.id) + 1 : null;
+  const sorted = [...games].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
+  const semiGames = sorted.filter(g => g.game_type === 'playoff');
+  const finalsGames = sorted.filter(g => g.game_type === 'finals');
+  const started = sorted.some(isPlayed);
+  const projected = !started && seeds.length === 4;
+
+  const pairGames = (a, b) => a && b ? semiGames.filter(g => pairKey(g.team_a_id, g.team_b_id) === pairKey(a.id, b.id)) : [];
+  const [s1, s2, s3, s4] = seeds;
+  const semi1 = pairGames(s1, s4), semi2 = pairGames(s2, s3);
+  const st1 = seriesState(semi1, s1, s4, { high: 1, low: 2 });
+  const st2 = seriesState(semi2, s2, s3, { high: 1, low: 2 });
+  const w1 = st1.winner, w2 = st2.winner;
+
+  // Finalists: the semi winners, else whoever is in the finals games.
+  let f = [w1, w2];
+  if (finalsGames.length && (!f[0] || !f[1])) {
+    const ids = new Set(finalsGames.flatMap(g => [g.team_a_id, g.team_b_id]));
+    const inFinals = seeds.filter(s => ids.has(s.id));
+    f = [f[0] || inFinals.find(t => t !== f[1]) || null, f[1] || inFinals.find(t => t !== f[0]) || null];
+  }
+  if (f[0] && f[1] && seedOf(f[1]) < seedOf(f[0])) f = [f[1], f[0]];
+  const [fHigh, fLow] = f;
+  const fin = seriesState(finalsGames, fHigh, fLow, { high: 2, low: 2 });
+  const champ = fin.winner;
+
+  // Every playoff game, in order, with its round label.
+  const rows = [];
+  const label = (list, name) => list.filter(isPlayed).forEach((g, i) => rows.push({ g, round: `${name} · G${i + 1}` }));
+  label(semi1, 'Semi 1'); label(semi2, 'Semi 2'); label(finalsGames, 'Finals');
+  const extra = semiGames.filter(g => isPlayed(g) && !semi1.includes(g) && !semi2.includes(g));
+  extra.forEach(g => rows.push({ g, round: 'Semis' }));
+  rows.sort((a, b) => String(a.g.date).localeCompare(String(b.g.date)) || (a.round > b.round ? 1 : -1));
+  const tableRows = rows.map(({ g, round }) => {
+    const aw = Number(g.team_a_score) > Number(g.team_b_score);
+    return {
+      id: g.id, round, date: g.date, finals: g.game_type === 'finals',
+      w: aw ? g.team_a_name : g.team_b_name, l: aw ? g.team_b_name : g.team_a_name,
+      ws: Math.max(g.team_a_score, g.team_b_score), ls: Math.min(g.team_a_score, g.team_b_score),
+      ot: !!Number(g.overtime), recap: g.recapTitle, potg: g.potgName, potgLine: g.potgLine || '',
+    };
+  });
+
+  return { seeds, seedOf, finalsGames, projected, s1, s2, s3, s4, semi1, semi2, st1, st2, w1, w2, fHigh, fLow, fin, champ, tableRows };
 }

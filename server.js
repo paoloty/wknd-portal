@@ -35,8 +35,8 @@ import { gamePage } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
 import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
 import { roastPage, buildRoastModel, ROAST_CATS, DISASTER_CATS } from './views/roast.js';
-import { standingsPage } from './views/standings.js';
-import { playoffsPage, computeSeeds, pairKey } from './views/playoffs.js';
+import { standingsPage, standingsModel, TEAM_STAT_CATS, teamStatVal, teamStatFmt, findTriangle, winnerOf } from './views/standings.js';
+import { playoffsPage, playoffsModel, computeSeeds, pairKey } from './views/playoffs.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
@@ -7682,6 +7682,9 @@ app.get('/games/:ref', (req, res) => {
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
       flow, plays, won, dc, verdict, called, preview, upNext, upNextLabel, myGame,
+      // Only this season's finals are written on a page view (crawlers walk every old game);
+      // admins write the rest from the page.
+      sections: sectionSummaries(gameSectionFacts(game, { stats, dc, won }), { autoWrite: String(game.season) === String(getPortalCurrentSeason()) }),
     }),
   }));
 });
@@ -10155,12 +10158,32 @@ app.get('/picks', (req, res) => {
   const pctx = buildPicksContext(byDate(getAllGames()));
   const seasons = picksSeasons(pctx);
   const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(getPortalCurrentSeason());
-  const sp = seasonPicks(pctx, season);
   const viewerId = req.session?.playerPlayerId || null;
+  const pd = buildPicksPageData(season, viewerId, pctx);
+
+  res.send(renderPage(req, {
+    title: `Who wins? picks · Season ${season} — WKND Basketball`,
+    currentPath: '/picks',
+    body: picksPage({
+      ...pd, seasons,
+      isPlayer: !!viewerId, viewerId,
+      // This week's games sit on top of the current season's page — /picks is where you pick.
+      open: season === String(getPortalCurrentSeason()) ? openPicks(byDate(getAllGames()), pctx, viewerId) : [],
+      closeTime: picksCloseTime(),
+      isAdmin: !!req.session?.isAdmin,
+      // The facts never use the viewer's own pick, so the copy is the same for everyone.
+      sections: sectionSummaries(picksSectionFacts(pd)),
+    }),
+  }));
+});
+
+// /picks for one season: game days (newest first, both games of a day together), both
+// boards, caller records, upsets, picker count. viewerId only marks the viewer's own pick.
+function buildPicksPageData(season, viewerId = null, pctx = buildPicksContext(byDate(getAllGames()))) {
+  season = String(season);
+  const sp = seasonPicks(pctx, season);
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const person = picksPerson(playerMap, Object.fromEntries(getAllTeams().map(t => [t.id, t.name])));
-
-  // Newest game day first, both games of a day together.
   const summaries = [...sp.pickable].reverse().map(g => {
     const s = calledItSummary(g, getGamePicksWithPlayers(g.id), viewerId);
     s.calledIt = s.calledIt.map(p => person(p.player_id));
@@ -10172,27 +10195,17 @@ app.get('/picks', (req, res) => {
     if (last && last.ymd === s.game.ymd) last.games.push(s);
     else days.push({ ymd: s.game.ymd, games: [s] });
   }
-
   const seasonGameIds = new Set(pctx.all.filter(g => g.season === season).map(g => g.id));
-  const pickers = new Set(pctx.picks.filter(p => seasonGameIds.has(p.game_id)).map(p => p.player_id)).size;
-
-  res.send(renderPage(req, {
-    title: `Who wins? picks · Season ${season} — WKND Basketball`,
-    currentPath: '/picks',
-    body: picksPage({
-      season, seasons, days, pickers,
-      board: sp.board.rows.map(r => ({ ...r, ...person(r.playerId) })),
-      oddsBoard: sp.board.oddsRows.map(r => ({ ...r, ...person(r.playerId) })),
-      callers: sp.callers,
-      upsets: summaries.filter(s => s.upset),
-      oddsOn: pickOddsEnabled(),
-      isPlayer: !!viewerId, viewerId,
-      // This week's games sit on top of the current season's page — /picks is where you pick.
-      open: season === String(getPortalCurrentSeason()) ? openPicks(byDate(getAllGames()), pctx, viewerId) : [],
-      closeTime: picksCloseTime(),
-    }),
-  }));
-});
+  return {
+    season, days,
+    pickers: new Set(pctx.picks.filter(p => seasonGameIds.has(p.game_id)).map(p => p.player_id)).size,
+    board: sp.board.rows.map(r => ({ ...r, ...person(r.playerId) })),
+    oddsBoard: sp.board.oddsRows.map(r => ({ ...r, ...person(r.playerId) })),
+    callers: sp.callers,
+    upsets: summaries.filter(s => s.upset),
+    oddsOn: pickOddsEnabled(),
+  };
+}
 
 // One player's picks for a season. ?partial=1 returns just the sheet (opened in a dialog on
 // /picks); otherwise a full page, so the link works without JS and can be shared. Picks on
@@ -10308,16 +10321,10 @@ app.get('/standings', (req, res) => {
     .sort((a, b) => Number(b) - Number(a));
   const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(currentSeason);
   const isCurrent = season === String(currentSeason);
-
-  // Same order as the /playoffs bracket: wins, two-team ties on head-to-head, then quotient.
-  const standings = getSeasonStandings(season);
-  const seeded = computeSeeds(standings, buildSeasonH2HMap(standings, season));
-  const rows = [...seeded, ...standings.filter(s => !seeded.includes(s))];
-
   const allGames = getAllGames();
-  const seasonRegular = allGames.filter(g => String(g.season) === season && g.game_type === 'regular' && !g.under_review);
-  const games = seasonRegular.filter(g => g.status === 'complete');
-  const scheduled = seasonRegular.filter(g => g.status === 'scheduled' || g.scheduled === 1);
+  const sd = standingsSectionData(season, allGames);
+  const { rows, games, scheduled } = sd;
+  const isAdmin = !!req.session?.isAdmin;
 
   // Race summary: the homepage's AI "Season race" summary while it still matches the table
   // (never generated from here), else the homepage's rule-based headline.
@@ -10339,7 +10346,10 @@ app.get('/standings', (req, res) => {
   res.send(renderPage(req, {
     title: `${isCurrent ? '' : `Season ${season} `}Standings — WKND Basketball League`,
     currentPath: req.path,
-    body: standingsPage({ season, seasons, isCurrent, rows, games, scheduled, teamStats: getTeamSeasonStats(season), summary })
+    body: standingsPage({
+      season, seasons, isCurrent, rows, games, scheduled, teamStats: sd.teamStats, summary, isAdmin,
+      sections: sectionSummaries(standingsSectionFacts(sd)),
+    })
   }));
 });
 
@@ -10349,18 +10359,53 @@ app.get('/playoffs', (req, res) => {
     .sort((a, b) => Number(b) - Number(a));
   const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(currentSeason);
   const isCurrent = season === String(currentSeason);
+  const pd = playoffsSectionData(season);
+  const isAdmin = !!req.session?.isAdmin;
+
+  res.send(renderPage(req, {
+    title: `${isCurrent ? '' : `Season ${season} `}Playoffs — WKND Basketball League`,
+    currentPath: req.path,
+    body: playoffsPage({
+      standings: pd.standings, games: pd.games, season, seasons, isCurrent, h2h: pd.h2h, awards: pd.awards, regular: pd.regular,
+      isAdmin, sections: sectionSummaries(playoffsSectionFacts(pd)),
+    })
+  }));
+});
+
+// What /standings shows for a season (rows in seeding order: wins, two-team ties on
+// head-to-head, then quotient — the same order as the /playoffs bracket).
+function standingsSectionData(season, allGames = getAllGames()) {
+  season = String(season);
+  const standings = getSeasonStandings(season);
+  const seeded = computeSeeds(standings, buildSeasonH2HMap(standings, season));
+  const rows = [...seeded, ...standings.filter(s => !seeded.includes(s))];
+  const seasonRegular = allGames.filter(g => String(g.season) === season && g.game_type === 'regular' && !g.under_review);
+  return {
+    season, isCurrent: season === String(getPortalCurrentSeason()), rows,
+    games: seasonRegular.filter(g => g.status === 'complete'),
+    scheduled: seasonRegular.filter(g => g.status === 'scheduled' || g.scheduled === 1),
+    teamStats: getTeamSeasonStats(season),
+  };
+}
+
+// What /playoffs shows for a season: playoff + finals games with their recap headline and
+// player of the game (name + stat line), the season awards, regular-season progress.
+function playoffsSectionData(season) {
+  season = String(season);
   const standings = getSeasonStandings(season);
   const h2h = buildSeasonH2HMap(standings, season);
-
   const seasonGames = getAllGames().filter(g => String(g.season) === season && !g.under_review);
-  const nameOf = id => { const p = id ? getPlayerById(id) : null; return p ? displayPlayerName(p.name) : ''; };
-  // Playoff + finals games with their recap headline and player of the game.
   const games = seasonGames.filter(g => g.game_type === 'playoff' || g.game_type === 'finals').map(g => {
     const done = (g.status === 'complete' || g.status === 'final') && (Number(g.team_a_score) + Number(g.team_b_score)) > 0;
-    const potgId = done ? (g.manual_potg_player_id || derivePotgPlayerId(g, getGameStats(g.id))) : null;
-    return { ...g, recapTitle: parseWriteup(g.game_writeup || '').title, potgName: nameOf(potgId) };
+    const stats = done ? getGameStats(g.id) : [];
+    const potgId = done ? (g.manual_potg_player_id || derivePotgPlayerId(g, stats)) : null;
+    const p = potgId ? getPlayerById(potgId) : null;
+    const s = stats.find(x => x.player_id === potgId);
+    return {
+      ...g, recapTitle: parseWriteup(g.game_writeup || '').title, potgName: p ? displayPlayerName(p.name) : '',
+      potgLine: s ? `${Number(s.pts) || 0} points, ${Number(s.reb) || 0} rebounds, ${Number(s.ast) || 0} assists` : '',
+    };
   });
-
   const person = type => {
     const a = getSeasonAwards(season).find(x => x.award_type === type && x.player_id);
     const p = a ? getPlayerById(a.player_id) : null;
@@ -10368,17 +10413,14 @@ app.get('/playoffs', (req, res) => {
     const name = displayPlayerName(p.name);
     return { id: p.id, name, number: p.number ?? '', initials: initials(name) };
   };
-
   const regularDone = seasonGames.filter(g => g.game_type === 'regular' && g.status === 'complete').length;
   const regularLeft = seasonGames.filter(g => g.game_type === 'regular' && (g.status === 'scheduled' || g.scheduled === 1)).length;
-  const regular = { played: regularDone, expected: Math.max(regularDone + regularLeft, standings.length * (standings.length - 1)) };
-
-  res.send(renderPage(req, {
-    title: `${isCurrent ? '' : `Season ${season} `}Playoffs — WKND Basketball League`,
-    currentPath: req.path,
-    body: playoffsPage({ standings, games, season, seasons, isCurrent, h2h, awards: { finalsMvp: person('finals_mvp'), mvp: person('mvp') }, regular })
-  }));
-});
+  return {
+    season, isCurrent: season === String(getPortalCurrentSeason()), standings, h2h, games,
+    awards: { finalsMvp: person('finals_mvp'), mvp: person('mvp') },
+    regular: { played: regularDone, expected: Math.max(regularDone + regularLeft, standings.length * (standings.length - 1)) },
+  };
+}
 
 // Applies to every request from here on, ahead of any route's own express.json() — a
 // route-level limit override (e.g. /settle-balance's 20mb) never actually took effect
@@ -11096,6 +11138,7 @@ function homeSummaryFacts(block, ctx) {
 // opts (the /teams summaries): where = the page named in the prompt, settingKey = where it's
 // stored, strict = the extra code-side checks below (2 sentences max, spelled-out numbers,
 // no cause-and-effect claims) — the homepage blocks run without them, unchanged.
+// highsOk (game page sections): career/season highs may be named where the facts give them.
 async function generateHomeSummary(block, f, opts = {}) {
   const voice = pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
   let prompt = `You write the short headline and summary that sits above the "${f.section}" section on the WKND Basketball League ${opts.where || 'homepage'} — a recreational league whose players read every word.
@@ -11112,7 +11155,9 @@ Rules:
 - body: 1-2 sentences, at most 45 words, plain text — no asterisks, markdown or emoji.
 - Every number, record, ranking or streak must come straight from the facts. Don't invent stats, comparisons or history. Only mention a streak if the facts state it, and say whose streak it is exactly as the facts do.
 - If two facts seem to disagree, leave that detail out rather than guess.
-- Never call anything a record, a first, a best-ever or a career high — the facts only cover this season's standings and leaderboards.
+${opts.highsOk
+    ? '- Only call something a career high, a season high, a double-double or a triple-double where the facts say so, exactly as they say it. Never call anything a record, a first or a best-ever.'
+    : "- Never call anything a record, a first, a best-ever or a career high — the facts only cover this season's standings and leaderboards."}
 - Season totals (record, point differential, per-game averages) describe the whole season; never attach them to a single game.
 - Write finished copy only: no questions to yourself, no corrections, no notes or alternatives.
 - Don't mention the crowd, fans or spectators. No filler like "impressive", "stellar", "remarkable", "dominant", "dominates", "intrigues" or "showcase".${opts.strict ? `
@@ -12721,6 +12766,322 @@ app.post('/admin/teams-summary/regenerate', requireAuth, express.json(), async (
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed' });
+  }
+});
+
+// ── Section writeups ──────────────────────────────────────────────────────────
+// The same summary panel as the homepage and /teams, under the section headers of
+// /standings, /playoffs, /picks and every final's game page. Same writer, number guard,
+// strict checks and fact check as the teams summaries (generateHomeSummary). One site
+// setting per section (section_summary_<block>), shown only while its facts key still
+// matches; otherwise it's rewritten in the background, never awaited by the page.
+// block = "<page>_<section>:<season or game id>", e.g. standings_h2h:4, game_perf:<id>.
+// A past season's or game's facts don't change, so each of those is written once.
+const SECTION_SUMMARY_VERSION = 1;
+// At most this many writes at once across every section — a page with four sections
+// shouldn't fire four AI calls in parallel; the rest are picked up on a later view.
+const SECTION_SUMMARY_MAX_IN_FLIGHT = 2;
+const sectionSummaryInFlight = new Set();
+// Own cooldowns, so a section never pauses the homepage summaries: a section whose drafts
+// all fail the checks waits 6 hours before its next try (others carry on); any other error
+// (the AI provider) pauses every section for 10 minutes.
+const SECTION_SUMMARY_RETRY_MS = 6 * 60 * 60 * 1000;
+const sectionSummaryFailedAt = new Map();
+let sectionSummaryCooldownUntil = 0;
+const sectionFactsKey = (block, facts) => `s${SECTION_SUMMARY_VERSION}|${block}|${createHash('sha1').update(facts).digest('hex').slice(0, 16)}`;
+
+// factsMap: { [section]: facts with .block } → { [section]: { kicker, headline, body } } for
+// the ones whose stored copy is current. autoWrite=false only reads (old game pages).
+function sectionSummaries(factsMap, { autoWrite = true } = {}) {
+  const out = {};
+  for (const [name, f] of Object.entries(factsMap || {})) {
+    if (!f) continue;
+    const settingKey = `section_summary_${f.block}`;
+    let stored = null;
+    try { stored = JSON.parse(getSetting(settingKey, '') || 'null'); } catch {}
+    if (stored && stored.key === f.key) {
+      // The writer sometimes drops the **name** markers; then team names get the amber
+      // highlight anyway, like the teams panels.
+      let headline = String(stored.headline || '');
+      if (!headline.includes('**')) {
+        const names = getAllTeams().map(t => t.name).sort((a, b) => b.length - a.length);
+        if (names.length) headline = headline.replace(new RegExp(`\\b(${names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi'), '**$1**');
+      }
+      out[name] = { kicker: stored.kicker, headline, body: stored.body };
+      continue;
+    }
+    if (!autoWrite || !aiAvailable() || sectionSummaryInFlight.has(settingKey)) continue;
+    if (sectionSummaryInFlight.size >= SECTION_SUMMARY_MAX_IN_FLIGHT || Date.now() < sectionSummaryCooldownUntil) continue;
+    if (Date.now() - (sectionSummaryFailedAt.get(settingKey) || 0) < SECTION_SUMMARY_RETRY_MS) continue;
+    sectionSummaryInFlight.add(settingKey);
+    generateHomeSummary(f.block, f, { where: f.where, settingKey, strict: true, highsOk: !!f.highsOk })
+      .catch(err => {
+        console.error(`Section summary (${f.block}) failed:`, err.message);
+        if (/fact check/.test(err.message)) sectionSummaryFailedAt.set(settingKey, Date.now());
+        else sectionSummaryCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS;
+      })
+      .finally(() => sectionSummaryInFlight.delete(settingKey));
+  }
+  return out;
+}
+
+// Stamps block + key onto each section's facts.
+function sectionFactsMap(page, param, sections) {
+  const out = {};
+  for (const [name, f] of Object.entries(sections)) {
+    if (!f) continue;
+    const block = `${page}_${name}:${param}`;
+    // The number guard rejects any figure not in the facts, and drafts kept failing on sums
+    // and margins they worked out themselves — the facts give margins where they matter.
+    const focus = `${f.focus} Use every number exactly as the facts give it: never add, subtract or average numbers yourself.`;
+    out[name] = { ...f, focus, block, key: sectionFactsKey(block, f.facts) };
+  }
+  return out;
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// /standings: playoff picture, head to head, the road so far, team stats.
+function standingsSectionFacts(sd) {
+  const m = standingsModel(sd);
+  if (!m.table.length || !m.played.length) return {};
+  const T = titleCase;
+  // Title-cases just the team names inside a sentence the view built (tiebreak notes, week headlines).
+  const teamsTc = s => m.table.reduce((x, t) => x.split(t.name).join(T(t.name)), String(s));
+  const rec = t => `${t.wins}-${t.losses}`;
+  const asOf = sd.isCurrent ? `After week ${m.week}` : `Season ${sd.season} · final`;
+  const where = 'Standings page';
+  const out = {};
+
+  if (m.table.length >= 4) {
+    const [s1, s2, s3, s4] = m.table;
+    const gap = ((s2.wins - s3.wins) + (s3.losses - s2.losses)) / 2;
+    const lines = [
+      'Format: the top 4 teams make the semifinals, 1st vs 4th and 2nd vs 3rd. The higher seed in each semifinal is "twice to beat": it advances with 1 win, while the lower seed has to win 2 games. The Finals are best of 3.',
+      sd.isCurrent ? `Seeding if the regular season ended today (after week ${m.week}):` : `Final regular-season seeding, Season ${sd.season}:`,
+      `- Semifinal A: 1st ${T(s1.name)} (${rec(s1)}) vs 4th ${T(s4.name)} (${rec(s4)})`,
+      `- Semifinal B: 2nd ${T(s2.name)} (${rec(s2)}) vs 3rd ${T(s3.name)} (${rec(s3)})`,
+      ...m.table.slice(4).map((t, i) => `- ${i + 5}th ${T(t.name)} (${rec(t)}) is outside the top 4`),
+      gap > 0 ? `${T(s2.name)} (2nd) is ${gap} game${gap === 1 ? '' : 's'} ahead of ${T(s3.name)} (3rd) for the last twice-to-beat spot.` : `${T(s2.name)} and ${T(s3.name)} have the same record; the tiebreak gives ${T(s2.name)} the last twice-to-beat spot.`,
+      ...m.notes.map(n => `Tiebreak: ${teamsTc(n)}.`),
+      sd.isCurrent ? (m.sched.length ? `${plural(m.sched.length, 'regular-season game')} left on the schedule.` : 'No regular-season games left on the schedule.') : '',
+    ].filter(Boolean);
+    out.playoffs = {
+      kicker: `Playoff picture · ${asOf}`, section: 'Playoff picture (the semifinal matchups if the season ended now)', where,
+      facts: lines.join('\n'),
+      focus: sd.isCurrent
+        ? 'Describe the playoff picture: who holds the twice-to-beat spots, how tight the race for them is, and the semifinal matchups as they stand. Don\'t recap the whole table.'
+        : 'Describe how the regular season set up the playoffs: who earned twice to beat and the semifinal matchups it produced.',
+    };
+  }
+
+  // Head to head: one line per pairing, in order of first meeting.
+  const key = (a, b) => [a, b].sort().join('|');
+  const pairs = [];
+  for (let i = 0; i < m.table.length; i++) for (let j = i + 1; j < m.table.length; j++) pairs.push([m.table[i], m.table[j]]);
+  const h2hLines = pairs.map(([a, b]) => {
+    const k = key(a.id, b.id);
+    const pg = m.played.filter(g => key(g.team_a_id, g.team_b_id) === k);
+    const next = m.sched.find(g => key(g.team_a_id, g.team_b_id) === k);
+    if (!pg.length) return `- ${T(a.name)} vs ${T(b.name)}: haven't played yet${next ? `; first meeting is in week ${next.week}` : ''}`;
+    const wins = { [a.id]: 0, [b.id]: 0 };
+    const games = pg.map(g => { const w = winnerOf(g); wins[w.id]++; return `week ${g.week}: ${T(w.name)} won ${w.pts}-${w.oppPts}, by ${plural(w.pts - w.oppPts, 'point')}`; });
+    const aw = wins[a.id], bw = wins[b.id];
+    const series = aw === bw ? `season series tied ${aw}-${bw}` : `${T(aw > bw ? a.name : b.name)} leads the season series ${Math.max(aw, bw)}-${Math.min(aw, bw)}`;
+    return `- ${T(a.name)} vs ${T(b.name)}: ${games.join('; ')}. ${series}${next ? `; next meeting in week ${next.week}` : ''}`;
+  });
+  const tri = findTriangle(m.table, m.played);
+  if (tri) {
+    const ids = [...new Set([...tri].flatMap(k => k.split('|')))];
+    h2hLines.push(`Loop: ${ids.map(id => T(m.table.find(t => t.id === id)?.name || '')).join(', ')} each lead one of their series against each other and trail another, so no one of the three has the edge over both others.`);
+  }
+  out.h2h = {
+    kicker: `Head to head · ${asOf}`, section: 'Head to head (every pairing\'s season series)', where,
+    facts: `Season ${sd.season} regular-season meetings, by pairing:\n${h2hLines.join('\n')}`,
+    focus: 'Pick the one or two most interesting rivalries: a one-sided series, a split one, the loop if there is one, or a meeting still to come. Don\'t go through every pairing.',
+  };
+
+  // The road so far: each week's results and the table after it.
+  const roadLines = m.weeks.map(w => `- Week ${w.n} (${w.dates.map(d => summaryDay(d)).join(' and ')}): ${w.games.map(g => `${T(g.w)} beat ${T(g.l)} ${g.ws}-${g.ls}`).join('; ')}. Table after: ${w.table.map((t, k) => `${k + 1}. ${T(t.name)} ${t.rec}`).join(', ')}.${w.n > 1 && w.headline ? ` Biggest change: ${teamsTc(w.headline)}.` : ''}`);
+  out.road = {
+    kicker: `The road so far · ${asOf}`, section: 'The road so far (what each week did to the table)', where,
+    facts: `Season ${sd.season}, week by week:\n${roadLines.join('\n')}`,
+    focus: 'Tell the arc of the season in one or two beats: how the top of the table took shape and the biggest swing along the way. Don\'t walk through every week.',
+  };
+
+  // Team stats: per game (percentages as they are), best first.
+  const byId = Object.fromEntries((sd.teamStats || []).map(t => [t.team_id, t]));
+  const teams = m.table.filter(t => byId[t.id]);
+  if (teams.length >= 2) {
+    const statLines = TEAM_STAT_CATS.map(c => {
+      const vals = teams.map(t => ({ t, v: teamStatVal(c, byId[t.id], 'pg') })).sort((x, y) => (c.low ? x.v - y.v : y.v - x.v));
+      return `- ${c.title}${c.pct ? '' : ' per game'}${c.low ? ' (fewest is best)' : ''}: ${vals.map(x => `${T(x.t.name)} ${teamStatFmt(c, x.v, 'pg')}`).join(', ')}`;
+    });
+    out.stats = {
+      kicker: `Team stats · ${asOf}`, section: 'Team stats (every team\'s per-game numbers)', where,
+      facts: `Season ${sd.season} team stats, best first in each category:\n${statLines.join('\n')}`,
+      focus: 'Pick the one or two most telling stat stories: the biggest gap at the top or bottom of a category, or a team that ranks first in one category and last in another. Don\'t list every category.',
+    };
+  }
+  return sectionFactsMap('standings', sd.season, out);
+}
+
+// /playoffs: the bracket and every playoff game.
+function playoffsSectionFacts(pd) {
+  const m = playoffsModel(pd);
+  if (m.seeds.length < 4) return {};
+  const T = titleCase;
+  const rec = t => `${t.wins}-${t.losses}`;
+  const where = 'Playoffs page';
+  const out = {};
+  const format = 'Format: semifinals 1st vs 4th and 2nd vs 3rd; the higher seed is "twice to beat" (advances with 1 win, the lower seed needs 2). The Finals are best of 3.';
+  const beat = g => {
+    const aw = Number(g.team_a_score) > Number(g.team_b_score);
+    const hi = Math.max(g.team_a_score, g.team_b_score), lo = Math.min(g.team_a_score, g.team_b_score);
+    return `${T(aw ? g.team_a_name : g.team_b_name)} beat ${T(aw ? g.team_b_name : g.team_a_name)} ${hi}-${lo}, by ${plural(hi - lo, 'point')}${Number(g.overtime) ? ', in overtime' : ''} (${summaryDay(g.date)})`;
+  };
+  const series = (label, hi, hiN, lo, loN, st, need) => {
+    const head = `${label}: ${hiN ? `${hiN}. ` : ''}${T(hi?.name || 'TBD')} vs ${loN ? `${loN}. ` : ''}${T(lo?.name || 'TBD')}`;
+    if (!st.played.length) return `- ${head}: not played yet.`;
+    const result = st.winner ? `${T(st.winner.name)} won the series ${Math.max(st.hw, st.lw)}-${Math.min(st.hw, st.lw)}` : `in progress, ${T(hi.name)} ${st.hw}, ${T(lo.name)} ${st.lw} (${need})`;
+    return `- ${head}: ${st.played.map((g, i) => `Game ${i + 1}: ${beat(g)}`).join('; ')}. ${result}.`;
+  };
+  let facts;
+  if (m.projected) {
+    facts = `${format}\n${pd.isCurrent ? `Projected bracket if the regular season ended today (${pd.regular.played} of ${pd.regular.expected} regular-season games played)` : `Season ${pd.season} final seeding`}:\n- Semifinal 1: 1st ${T(m.s1.name)} (${rec(m.s1)}) vs 4th ${T(m.s4.name)} (${rec(m.s4)})\n- Semifinal 2: 2nd ${T(m.s2.name)} (${rec(m.s2)}) vs 3rd ${T(m.s3.name)} (${rec(m.s3)})`;
+  } else {
+    const fin = m.fHigh && m.fLow ? series('Finals', m.fHigh, m.seedOf(m.fHigh), m.fLow, m.seedOf(m.fLow), m.fin, 'first to 2 wins') : '- Finals: waiting on the semifinals.';
+    facts = `${format}\nSeason ${pd.season} playoffs:\n${series('Semifinal 1', m.s1, 1, m.s4, 4, m.st1, 'the 4th seed needs 2 wins')}\n${series('Semifinal 2', m.s2, 2, m.s3, 3, m.st2, 'the 3rd seed needs 2 wins')}\n${fin}${m.champ ? `\n${T(m.champ.name)} are the Season ${pd.season} champions.` : ''}${pd.awards.finalsMvp ? `\nFinals MVP: ${pd.awards.finalsMvp.name}.` : ''}${pd.awards.mvp ? `\nSeason MVP: ${pd.awards.mvp.name}.` : ''}`;
+  }
+  out.bracket = {
+    kicker: `${m.projected ? 'Projected bracket' : 'The bracket'} · Season ${pd.season}`, section: m.projected ? 'Projected bracket' : 'Bracket', where, facts,
+    focus: m.projected
+      ? 'Preview the bracket as it stands: who has twice to beat and the matchups it sets up. Don\'t predict winners.'
+      : m.champ
+        ? 'Tell how the bracket played out: the path each finalist took and how the Finals were decided.'
+        : 'Say where the bracket stands: who has advanced, what is still to be decided, and what each side needs.',
+  };
+
+  if (m.tableRows.length) {
+    const lines = m.tableRows.map(r => `- ${r.round.replace(/ · G(\d)/, ', Game $1')}, ${summaryDay(r.date)}: ${T(r.w)} beat ${T(r.l)} ${r.ws}-${r.ls}, by ${plural(r.ws - r.ls, 'point')}${r.ot ? ', in overtime' : ''}${r.potg ? `. Player of the game: ${r.potg}${r.potgLine ? ` (${r.potgLine})` : ''}` : ''}${r.recap ? `. Recap headline: "${r.recap}"` : ''}`);
+    out.games = {
+      kicker: `Every playoff game · Season ${pd.season}`, section: 'Every playoff game (results and players of the game)', where,
+      facts: `Season ${pd.season} playoff games, in order:\n${lines.join('\n')}`,
+      focus: 'Pick the standout game or performance of these playoffs: the closest game, the biggest margin, or the best player-of-the-game line. Don\'t recap every game.',
+    };
+  }
+  return sectionFactsMap('playoffs', pd.season, out);
+}
+
+// /picks: game days and the Pickmaster race.
+function picksSectionFacts(pd) {
+  const T = titleCase;
+  const where = 'Who wins? picks page';
+  const out = {};
+  const pct = (g, side) => (side === 'a' ? g.odds.pctA : g.odds.pctB);
+  if (pd.days.length) {
+    const dayLines = pd.days.slice(0, 3).map(d => `${summaryDay(d.ymd)}:\n${d.games.map(s => {
+      const g = s.game;
+      const win = g.winner === 'a' ? g.a : g.b, lose = g.winner === 'a' ? g.b : g.a;
+      const parts = [`${T(win)} beat ${T(lose)} ${Math.max(g.sa, g.sb)}-${Math.min(g.sa, g.sb)}`];
+      if (pd.oddsOn && g.odds?.fav) parts.push(`the odds had favoured ${T(g.odds.fav === 'a' ? g.a : g.b)} at ${pct(g, g.odds.fav)}%${s.upset ? ', so this was an upset' : ''}`);
+      parts.push(`${s.calledIt.length} of ${s.total} pickers called it`);
+      return `- ${parts.join('; ')}`;
+    }).join('\n')}`);
+    const season = [
+      pd.oddsOn && pd.callers.odds.of ? `The odds' favourite has won ${pd.callers.odds.called} of ${pd.callers.odds.of} games this season.` : '',
+      pd.callers.fans.of ? `The side most pickers took has won ${pd.callers.fans.called} of ${pd.callers.fans.of} games this season.` : '',
+      pd.oddsOn ? `${plural(pd.upsets.length, 'upset')} this season.` : '',
+    ].filter(Boolean).join(' ');
+    out.days = {
+      kicker: `Game days · Latest ${summaryDay(pd.days[0].ymd)}`, section: 'Game days (how each game day\'s picks went)', where,
+      facts: `"Who wins?" is the league's pick-em: logged-in players pick the winner of each game. Season ${pd.season} game days, newest first:\n${dayLines.join('\n')}${season ? `\n${season}` : ''}`,
+      focus: 'Sum up how the picks went, leading with the newest game day: which games the pickers called and any upset. Then at most one season-long note about the odds or the majority pick. Call the people who pick "pickers", never fans.',
+    };
+  }
+  if (pd.board.length) {
+    const top = pd.board.slice(0, 5).map(r => `- ${r.rank}. ${r.name}${r.team ? ` (${T(r.team)})` : ''}: ${fmtPts(r.net)} points, ${r.correct}-${r.wrong}${r.streak >= 2 ? `, ${r.streak} correct in a row` : ''}${r.weekPicks ? `, ${fmtPts(r.week)} on the latest game day` : ''}`);
+    const odds = pd.oddsOn ? pd.oddsBoard.slice(0, 3).map(r => `- ${r.oddsRank}. ${r.name}: ${r.oddsPts > 0 ? '+' : ''}${r.oddsPts.toFixed(2)}${r.upsets ? `, ${plural(r.upsets, 'upset')} called` : ''}`) : [];
+    out.race = {
+      kicker: `Pickmaster race · S${pd.season}`, section: 'Pickmaster race (the pick-em leaderboard)', where,
+      facts: `Pickmaster race, Season ${pd.season}: +1 point for a correct pick, -1 for a miss; most points at season's end wins the Pickmaster award. Players level on points share a rank. ${plural(pd.board.length, 'picker')} on the board. Top of the board:\n${top.join('\n')}${odds.length ? `\nBeat the Odds board (bragging rights only: a correct pick against the odds earns more):\n${odds.join('\n')}` : ''}`,
+      focus: 'Describe the Pickmaster race: who leads, by how much, and who is closest behind. Mention the Beat the Odds board only if its leader is different. Call the people who pick "pickers", never fans.',
+    };
+  }
+  return sectionFactsMap('picks', pd.season, out);
+}
+
+// A final's game page: top performers and team stats. data: { stats, dc, won } as the route
+// builds them (gameSectionData rebuilds them for the admin regenerate).
+function gameSectionData(game) {
+  const stats = getGameDetailStats(game.id);
+  if (!stats.length) return { stats, dc: null, won: [] };
+  const history = playerHistory(stats.map(s => s.player_id), game);
+  const A = teamTotals(stats, game.team_a_name, game.team_a_to_team), B = teamTotals(stats, game.team_b_name, game.team_b_to_team);
+  return { stats, dc: duelAndCast(stats, game, history), won: howItWasWon(game, A, B) };
+}
+
+function gameSectionFacts(game, { stats, dc, won }) {
+  if (!stats?.length) return {};
+  const T = titleCase;
+  const n = v => Number(v) || 0;
+  const sa = n(game.team_a_score), sb = n(game.team_b_score);
+  const aWin = sa > sb;
+  const result = `Final: ${T(aWin ? game.team_a_name : game.team_b_name)} beat ${T(aWin ? game.team_b_name : game.team_a_name)} ${Math.max(sa, sb)}-${Math.min(sa, sb)} (${summaryDay(game.date)}, Season ${game.season}${game.game_type === 'regular' ? '' : `, ${game.game_type === 'finals' ? 'Finals' : 'playoffs'}`}).`;
+  const where = 'game page';
+  const kick = label => `${label} · ${T(game.team_a_name)} ${sa}–${sb} ${T(game.team_b_name)}`;
+  const out = {};
+  if (dc) {
+    const line = s => {
+      const fgm = n(s.fg2m) + n(s.fg3m) + n(s.fg4m), fga = fgm + n(s.fg2m_miss) + n(s.fg3m_miss) + n(s.fg4m_miss);
+      const parts = [`${n(s.pts)} points`, `${n(s.reb)} rebounds`, `${n(s.ast)} assists`, `${n(s.stl)} steals`, `${n(s.blk)} blocks`, `${n(s.turnover)} turnovers`, `${fgm} of ${fga} from the field`];
+      if (n(s.fg3m) + n(s.fg3m_miss)) parts.push(`${n(s.fg3m)} of ${n(s.fg3m) + n(s.fg3m_miss)} from three`);
+      if (n(s.ftm) + n(s.ft_miss)) parts.push(`${n(s.ftm)} of ${n(s.ftm) + n(s.ft_miss)} free throws`);
+      return `${displayPlayerName(s.name || '')} (${T(s.team_name)}): ${parts.join(', ')}${s.badge ? `. Note: ${s.badge.replace(/^(\d+) & (\d+)$/, '$1 points and $2 rebounds')}` : ''}`;
+    };
+    const cast = [...dc.castA, ...dc.castB];
+    out.perf = {
+      kicker: kick('Top performers'), section: 'Top performers (the best player on each side, head to head, then other standouts)', where, highsOk: true,
+      facts: `${result}\nThe best player on each team (by game score):\n- ${line(dc.a)}\n- ${line(dc.b)}${cast.length ? `\nOther standouts:\n${cast.map(s => `- ${line(s)}`).join('\n')}` : ''}\nCareer and season highs count league games only. A note like "Career-high 25" means 25 points is the most that player has scored in a league game.`,
+      focus: 'Tell the duel between the two best players and how it lined up with the result, then at most one other standout. Pick the telling numbers; don\'t list every stat.',
+    };
+  }
+  const A = teamTotals(stats, game.team_a_name, game.team_a_to_team), B = teamTotals(stats, game.team_b_name, game.team_b_to_team);
+  const pc = (m, a) => (a ? `${(m / a * 100).toFixed(1)}%` : '—');
+  const team = (name, x) => `- ${T(name)}: ${x.fgm} of ${x.fga} from the field (${pc(x.fgm, x.fga)}), ${x.fg3m} of ${x.fg3a} from three (${pc(x.fg3m, x.fg3a)})${x.fg4a ? `, ${x.fg4m} of ${x.fg4a} four-pointers` : ''}, ${x.ftm} of ${x.fta} free throws (${pc(x.ftm, x.fta)}), ${x.reb} rebounds, ${x.ast} assists, ${x.stl} steals, ${x.blk} blocks, ${x.to} turnovers`;
+  const edges = (won || []).map(w => `- ${w.label}: ${w.team} by ${w.n}${['3pt', 'ft', '2pt', '4pt'].includes(w.key) ? ' points' : ''} (${w.detail})`);
+  out.stats = {
+    kicker: kick('Team stats'), section: 'Team stats (the two teams side by side)', where,
+    facts: `${result}\nTeam totals:\n${team(game.team_a_name, A)}\n${team(game.team_b_name, B)}${edges.length ? `\nWhere the teams differed most:\n${edges.join('\n')}` : ''}`,
+    focus: 'Name the one or two team stats that separated the two sides, with the numbers side by side. One short sentence of body is enough; this sits in a narrow column.',
+  };
+  return sectionFactsMap('game', game.id, out);
+}
+
+// Admin: rewrite one section writeup now. block as above.
+app.post('/admin/section-summary/regenerate', requireAuth, express.json(), async (req, res) => {
+  const block = String(req.body?.block || '');
+  const m = block.match(/^(standings|playoffs|picks|game)_([a-z0-9]+):(.+)$/);
+  if (!m) return res.status(400).json({ error: 'Unknown block' });
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const [, page, section, param] = m;
+  let facts = {};
+  if (page === 'standings') facts = standingsSectionFacts(standingsSectionData(param));
+  else if (page === 'playoffs') facts = playoffsSectionFacts(playoffsSectionData(param));
+  else if (page === 'picks') facts = picksSectionFacts(buildPicksPageData(param));
+  else {
+    const game = getGameById(param);
+    if (!game || game.under_review) return res.status(404).json({ error: 'Unknown game' });
+    facts = gameSectionFacts(game, gameSectionData(game));
+  }
+  const f = facts[section];
+  if (!f) return res.status(400).json({ error: 'Nothing to summarise yet.' });
+  try {
+    await generateHomeSummary(f.block, f, { where: f.where, settingKey: `section_summary_${f.block}`, strict: true, highsOk: !!f.highsOk });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`Section summary (${f.block}) regenerate failed:`, err.message);
+    res.status(502).json({ error: err.message || 'The AI provider failed — try again in a bit.' });
   }
 });
 

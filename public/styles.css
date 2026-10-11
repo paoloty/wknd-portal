@@ -7300,6 +7300,16 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
 }
 .hs-summary__regen:hover { color: var(--text); border-color: rgba(245,147,50,0.6); }
 
+/* Section writeups (sectionPanel): under section headers on /standings, /playoffs, /picks and
+   game pages — a step smaller than the homepage blocks, and smaller again in narrow columns
+   (playoff picture, Pickmaster race card, game Team stats rail), where Regenerate wraps below. */
+.stp .hs-summary__headline, .pkp-page .hs-summary__headline, .gd-page .hs-summary__headline { font-size: 20px; }
+.stp-playoffs .hs-summary, .pkp-race .hs-summary, .gd-cols__rail .hs-summary { flex-direction: column; gap: 10px; }
+.stp-playoffs .hs-summary__headline, .pkp-race .hs-summary__headline, .gd-cols__rail .hs-summary__headline { font-size: 17px; }
+.stp-playoffs .hs-summary__body, .pkp-race .hs-summary__body, .gd-cols__rail .hs-summary__body { font-size: 13.5px; line-height: 1.55; }
+.pkp-race .hs-summary { margin: 0; }
+.gd-page .hs-summary + .gd-sd { margin-top: 0; }
+
 /* Game headlines: recap headline over the game's cover photo */
 .gh-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .gh-card {
@@ -7896,7 +7906,10 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 /* ── /picks page (views/picks.js, prefix pkp-) ─────────────────────────────── */
 .pkp-back { color: var(--amber); font-weight: 700; white-space: nowrap; }
 .pkp-back:hover { text-decoration: underline; }
-.pkp-tiles { margin-bottom: 28px; }
+/* .gr-tiles (later in the file) sets an 8px bottom margin; double class so this one wins. */
+.gr-tiles.pkp-tiles { margin-bottom: 28px; }
+/* Both grid columns start on the same line: no sitewide top margin on "Game days". */
+.pkp-days > .section-header { margin-top: 0; }
 .pkp-tabs { display: none; }
 .pkp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 28px; align-items: start; margin-bottom: 40px; }
 .pkp-side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 90px; }
