@@ -6960,6 +6960,8 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
 .papawis-unsub__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--text); text-wrap: balance; }
 .papawis-unsub__text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-muted); }
 .papawis-unsub form { margin: 8px 0 0; }
+.papawis-unsub .pw-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 16px; border: 0; border-radius: 9px; font: 700 13.5px/1 'Archivo', sans-serif; cursor: pointer; }
+.papawis-unsub .pw-btn--primary { background: var(--amber); color: #020817; }
 
 /* ── Cookie consent banner (built by the GA snippet in server.js, prod only) ── */
 .cookie-consent {

@@ -238,6 +238,8 @@ const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__di
 const TEAMS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/teams.css')).mtimeMs); } catch { return Date.now(); } })();
 // /players directory (public/players.css), versioned the same way.
 const PLAYERS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/players.css')).mtimeMs); } catch { return Date.now(); } })();
+// /papawis (public/papawis.css), versioned the same way.
+const PAPAWIS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/papawis.css')).mtimeMs); } catch { return Date.now(); } })();
 
 // Minified once at process start (same lifecycle as CSS_VER — both only change on a
 // restart, which is also the only time the underlying file can change anyway) rather than
@@ -245,7 +247,7 @@ const PLAYERS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__di
 // to serving the original file as-is instead of a broken empty response.
 const MINIFIED_CSS = (() => {
   const cache = {};
-  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css']) {
+  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css']) {
     try {
       const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
       const out = new CleanCSS({}).minify(raw);
@@ -2741,7 +2743,7 @@ app.use(express.urlencoded({ extended: false }));
 // express.static unchanged. Safe to cache for a full year: the URL is always requested
 // with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
 // invalidating this one.
-app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css'], (req, res) => {
+app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css'], (req, res) => {
   const file = req.path.slice(1);
   const minified = MINIFIED_CSS[file];
   if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
@@ -15049,6 +15051,55 @@ async function geocodePapawisLocation(text) {
 }
 
 // ── Papawis (pickup games) ─────────────────────────────────────────────────────
+// "Papawis this week" write-up in the next run's banner — same writer, number guard,
+// strict checks and fact check as the teams summaries (teamsSummary → generateHomeSummary),
+// stored as setting papawis_summary. Facts deliberately leave out live slot counts and who
+// has signed up, so the copy doesn't go stale (or get rewritten) on every join.
+function papawisSummaryFacts(games) {
+  const today = manilaTodayStr();
+  const at = g => `${g.date}T${g.start_time || '00:00'}`;
+  const upcoming = games.filter(g => g.status === 'open' && g.date >= today).sort((a, b) => (at(a) < at(b) ? -1 : 1));
+  const completed = games.filter(g => g.status === 'completed').sort((a, b) => (at(a) < at(b) ? 1 : -1));
+  const cancelled = games.filter(g => g.status === 'cancelled').length;
+  const next = upcoming[0];
+  if (!next && !completed.length) return null;
+  const day = d => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const lines = [];
+  if (next) {
+    const t = formatTimeRange(next.start_time, next.end_time) || next.time_label || '';
+    lines.push(`Next run: ${day(next.date)}${t ? `, ${t}` : ''}, at ${next.location || 'a court still to be announced'}.`);
+    if (next.location) {
+      let same = 0;
+      for (const g of completed) { if (g.location === next.location) same++; else break; }
+      if (same) lines.push(`The last ${same} completed run${same === 1 ? ' was' : 's were'} also at ${next.location}, so this makes ${same + 1} runs in a row there.`);
+      lines.push(`${next.location} has hosted ${completed.filter(g => g.location === next.location).length} of the ${completed.length} completed runs.`);
+    }
+  } else {
+    lines.push(`No run is posted yet. The most recent completed run was ${day(completed[0].date)} at ${completed[0].location}.`);
+  }
+  let streak = 0;
+  for (const g of completed) { if (g.max_slots && g.confirmed_count >= g.max_slots) streak++; else break; }
+  if (streak >= 2) lines.push(`The last ${streak} completed runs each filled every slot (the streak started ${day(completed[streak - 1].date)}).`);
+  lines.push(`Runs completed so far: ${completed.length}. Runs cancelled: ${cancelled}.`);
+  const facts = lines.map(l => `- ${l}`).join('\n');
+  return {
+    key: factsKey('papawis', facts), kicker: 'Papawis this week', section: 'Next run', where: 'Papawis (pickup games) page', facts,
+    focus: "Write about the next pickup run: where and when, and the streak or court history that makes it notable. Never mention how many slots are left or who has signed up. It's an open pickup run, not a game between league teams.",
+  };
+}
+
+app.post('/admin/papawis-summary/regenerate', requireAuth, express.json(), async (req, res) => {
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
+  const f = papawisSummaryFacts(getPapawisGames());
+  if (!f) return res.status(400).json({ error: 'Nothing to write about yet.' });
+  try {
+    await generateHomeSummary('papawis', f, { where: f.where, settingKey: 'papawis_summary', strict: true });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed' });
+  }
+});
+
 app.get('/papawis', (req, res) => {
   if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
@@ -15066,7 +15117,10 @@ app.get('/papawis', (req, res) => {
     // the join button itself so a not-yet-logged-in visitor sees the likely per-head cost
     // before being asked to log in at all.
     const courtRateFallback = g.court_rate_per_hour ? null : (court?.price_per_hour || null);
-    g.price_per_head = estimatedPapawisPrice(g, getPapawisConfirmedCount(g.id), courtRateFallback);
+    // Estimated as if every slot is taken — dividing by whoever has joined so far showed a
+    // scary ₱1,410 a head on a run with 5 people in, days before it fills up. The page says
+    // "Estimate with N players"; the real price is still set when an admin closes it out.
+    g.price_per_head = estimatedPapawisPrice(g, Math.max(getPapawisConfirmedCount(g.id), g.max_slots || 0), courtRateFallback);
     if (!g.court_image_id && g.location) {
       const cached = getPapawisLocationGeocode(g.map_query);
       if (cached?.map_image) { g.has_map = true; }
@@ -15106,11 +15160,19 @@ app.get('/papawis', (req, res) => {
     `<meta name="twitter:image" content="${escAttr(papawisImg)}">`,
   ].join('\n  ');
 
+  const isAdmin = !!req.session?.isAdmin;
+  const summary = teamsSummary('papawis_summary', 'papawis', papawisSummaryFacts(games));
+  // null = logged out (no alerts button); otherwise the registrant's opt-out flipped.
+  const alertsOn = req.session?.playerRegId ? !getRegistration(req.session.playerRegId)?.papawis_email_optout : null;
+  // Name + team colour for the claim animation (your face pops into the next open slot).
+  const vp = viewerPlayerId ? getPlayerById(viewerPlayerId) : null;
+  const viewer = vp ? { id: vp.id, name: vp.name, teamName: vp.team_id ? (getTeamById(vp.team_id)?.name || '') : '' } : null;
+
   res.send(renderPage(req, {
     title: 'Papawis — WKND Basketball',
     currentPath: '/papawis',
-    metaTags: papawisMetaTags,
-    body: papawisPage({ games, signupsByGame, viewerPlayerId, isLoggedIn, hasBalance }),
+    metaTags: `${papawisMetaTags}\n  <link rel="stylesheet" href="/papawis.css?v=${PAPAWIS_CSS_VER}">`,
+    body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, summary, isAdmin, alertsOn }),
   }));
 });
 
