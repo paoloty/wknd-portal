@@ -172,12 +172,13 @@ function edgeRow(r) {
   const bGood = !tie && !aGood;
   const max = Math.max(r.a, r.b) || 1;
   const w = v => `${Math.round((v / max) * 100)}%`;
+  const f = v => (r.int ? String(v) : v.toFixed(1)); // int: counts (the game page's team stats)
   return `<div class="gm-st">
-      <span class="gm-st__v${aGood ? ' is-good' : ''}">${r.a.toFixed(1)}</span>
+      <span class="gm-st__v${aGood ? ' is-good' : ''}">${f(r.a)}</span>
       <span class="gm-st__track gm-st__track--a"><span class="gm-st__bar${aGood ? ' is-good' : ''}" style="width:${w(r.a)}"></span></span>
       <span class="gm-st__lbl">${escHtml(r.label)}</span>
       <span class="gm-st__track"><span class="gm-st__bar${bGood ? ' is-good' : ''}" style="width:${w(r.b)}"></span></span>
-      <span class="gm-st__v gm-st__v--b${bGood ? ' is-good' : ''}">${r.b.toFixed(1)}</span>
+      <span class="gm-st__v gm-st__v--b${bGood ? ' is-good' : ''}">${f(r.b)}</span>
     </div>`;
 }
 

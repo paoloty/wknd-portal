@@ -1825,14 +1825,10 @@ function teamStatsCard(game, A, B) {
     ['REBOUNDS', A.reb, B.reb], ['ASSISTS', A.ast, B.ast], ['STEALS', A.stl, B.stl], ['BLOCKS', A.blk, B.blk],
     ['TURNOVERS', A.to, B.to, true],
   ].filter(r => r[1] != null && r[2] != null);
-  const fmt = (v, k) => (k.includes('%') ? v.toFixed(1) : v);
-  return `<div class="card gd-cmp">
+  // Same rows as the matchup preview's Head to head (edgeRow): better side in amber.
+  return `<div class="card gd-edges-card gd-cmp">
     <div class="gd-cmp__h"><span>${dot(game.team_a_name, 8)}${escHtml(String(game.team_a_name).slice(0, 3))}</span><span>${escHtml(String(game.team_b_name).slice(0, 3))}${dot(game.team_b_name, 8)}</span></div>
-    ${rows.map(([k, a, b, low]) => {
-      const max = Math.max(a, b) || 1;
-      const aw = a !== b && (low ? a < b : a > b), bw = a !== b && !aw;
-      return `<div class="gd-cr2"><span class="gd-cr2__v${aw ? ' is-w' : ''}">${fmt(a, k)}</span><span class="gd-cr2__m"><span>${k}</span><span class="gd-cr2__bars"><span class="gd-cr2__l"><i class="${aw ? 'is-w' : ''}" style="width:${Math.round(a / max * 100)}%"></i></span><span class="gd-cr2__r"><i class="${bw ? 'is-w' : ''}" style="width:${Math.round(b / max * 100)}%"></i></span></span></span><span class="gd-cr2__v${bw ? ' is-w' : ''}">${fmt(b, k)}</span></div>`;
-    }).join('')}
+    <div class="gm-edges">${rows.map(([k, a, b, low]) => edgeRow({ label: k, a, b, hi: !low, int: !k.includes('%') })).join('')}</div>
   </div>`;
 }
 
