@@ -8892,8 +8892,9 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-more__h { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
 .gd-more__row { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 0; margin: -2px 0; }
 .gd-more__row::-webkit-scrollbar { display: none; }
-.gd-more__row > * { flex: 0 0 calc((100% - 24px) / 3); scroll-snap-align: start; }
-/* Three a view: tighter cards so the duel stays the bigger thing */
+/* Three and a half a view: the half card says the row scrolls. Tighter cards so the duel
+   stays the bigger thing. */
+.gd-more__row > * { flex: 0 0 calc((100% - 36px) / 3.5); scroll-snap-align: start; }
 .gd-more .gd-pc--sm { padding: 12px; gap: 8px; }
 .gd-more .pl-av--md { width: 34px; height: 34px; font-size: 12px; }
 .gd-more .gd-pc--sm .pl-card__top { gap: 8px; }

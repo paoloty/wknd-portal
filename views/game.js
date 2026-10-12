@@ -1922,7 +1922,7 @@ function watchCard(w) {
 }
 
 // Supporting cast (both teams, highest game score first) then the watch-list players not shown above:
-// one row of small player cards, three at a time with arrows on desktop, a swipe row on phones.
+// one row of small player cards, three and a half a view with arrows on desktop, a swipe row on phones.
 function castRow(cast, watch, say, watchOf) {
   // Both teams together, best game score first.
   const sorted = [...cast].sort((x, y) => (y.gs || 0) - (x.gs || 0));
