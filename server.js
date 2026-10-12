@@ -2279,7 +2279,7 @@ function extractQuarterScores(game) {
   // Source 0: the scorer's "End Qn [WHI 36 - BLU 46]" markers — the score at the moment the
   // quarter was closed. A checkpoint can disagree (Oct 4 White–Blue Q2 checkpoint said 33–44;
   // the marker and the admin snapshot both say 36–46), so markers win where they exist.
-  const ends = quarterMarkers(log);
+  const ends = quarterMarkers(log, game);
   const fromMarkers = {};
   for (let q = 1, pa = 0, pb = 0; ends[q]; q++) {
     fromMarkers[q] = { a: ends[q].a - pa, b: ends[q].b - pb };
@@ -8971,7 +8971,8 @@ app.delete('/admin/games/:id/cover', requireAuth, (req, res) => {
 // Mirrors a wknd-stats export's Team A/B sides: teamA*/teamB* keys trade places at every depth
 // (scores, team turnovers, quarterStats, period + checkpoint snapshots) and each play's isTeamA
 // flips. Player stats are keyed by player id, so they need nothing. Play text like
-// "[WHI 99 - BLU 90]" is left as recorded.
+// "[WHI 99 - BLU 90]" is left as recorded; lib/game-detail.js reads those scores by team tag,
+// not position, so a reversed file's text still lands on the right side.
 function swapExportSides(v) {
   if (Array.isArray(v)) return v.map(swapExportSides);
   if (!v || typeof v !== 'object') return v;
