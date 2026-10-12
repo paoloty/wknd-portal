@@ -77,9 +77,10 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     const items = [
       showAwards ? { href: '/awards', label: 'Season Awards' } : null,
       showMvp    ? { href: '/mvp',    label: 'MVP Race' }      : null,
+      showMvp    ? { href: '/dpoy',   label: 'Best Defender Race' } : null,
       { href: '/highlights', label: 'Highlights' },
     ].filter(Boolean);
-    return dropdown('Awards', items, ['/awards', '/mvp', '/highlights']);
+    return dropdown('Awards', items, ['/awards', '/mvp', '/dpoy', '/highlights']);
   })();
 
   const nav = [
@@ -215,6 +216,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         ], true)}
         ${mSection('Awards &amp; more', [
           features.mvpRace !== false ? mLink('/mvp', 'MVP Race') : '',
+          features.mvpRace !== false ? mLink('/dpoy', 'Best Defender Race') : '',
           features.awards  !== false ? mLink('/awards', 'Season Awards') : '',
           mLink('/highlights', 'Highlights'),
           features.posts ? mLink('/posts', 'Posts') : '',
@@ -324,6 +326,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   ];
   const awardsItems = [
     features.mvpRace !== false ? { href: '/mvp',    label: 'MVP Race',      desc: 'Who leads the season MVP ladder, week by week', icon: mIcon('<path d="M5 2.5h8v4a4 4 0 0 1-8 0z"/><path d="M5 4H2.5v1.5A2.5 2.5 0 0 0 5 8M13 4h2.5v1.5A2.5 2.5 0 0 1 13 8M9 10.5V13M6 15.5h6"/>') } : null,
+    // Best Defender Race (/dpoy) shares the MVP Race switch.
+    features.mvpRace !== false ? { href: '/dpoy',   label: 'Best Defender Race', desc: 'Steals, blocks and boards: the season’s top defenders', icon: mIcon('<path d="M9 2l6 2.5v4c0 3.5-2.6 6-6 7.5-3.4-1.5-6-4-6-7.5v-4z"/><path d="M6.5 9l1.8 1.8L11.8 7"/>') } : null,
     features.awards  !== false ? { href: '/awards', label: 'Season Awards', desc: 'All-WKND teams, champions and season honours', icon: mIcon('<circle cx="9" cy="7" r="4.5"/><path d="M6.5 10.8L5.5 16 9 14l3.5 2-1-5.2"/>') } : null,
     { href: '/highlights', label: 'Highlights', desc: 'Every Player of the Game spotlight', icon: mIcon('<path d="M9 2l2.1 4.3 4.7.7-3.4 3.3.8 4.7L9 12.8 4.8 15l.8-4.7L2.2 7l4.7-.7z"/>') },
   ].filter(Boolean);
@@ -408,6 +412,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     ['Stats', [['/leaders', 'Leaders'], ['/players', 'Players'], ['/teams', 'Teams'], ['/roast', 'The Roast']]],
     ['Awards', [
       features.mvpRace !== false ? ['/mvp', 'MVP Race'] : null,
+      features.mvpRace !== false ? ['/dpoy', 'Best Defender Race'] : null,
       features.awards  !== false ? ['/awards', 'Season awards'] : null,
       ['/highlights', 'Highlights'],
       ['/badges', 'Badges'],

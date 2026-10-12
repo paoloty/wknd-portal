@@ -1708,14 +1708,18 @@ function getHeaderInfo(features) {
       nextPapawis = [day, next.time_label || formatTimeRange(next.start_time, ''), next.location].filter(Boolean).join(' · ');
     }
   }
-  let mvpLead = null, mvpTop = null;
+  let mvpLead = null, mvpTop = null, dpoyTop = null;
   const week = season ? getSeasonLatestWeek(season)?.week ?? null : null;
   // No frontrunner card or slide while the MVP reveal lock is on (lib/mvp-lock.js).
   if (features.megaMenu && features.mvpRace && season && !isMvpLocked(season)) {
-    const lead = getMvpCandidates(season)
-      .filter(s => s.gp >= 1)
+    const pool = getMvpCandidates(season).filter(s => s.gp >= 1);
+    const lead = pool
       .map(s => ({ s, score: computeMvpScore(s) }))
       .sort((a, b) => b.score - a.score)[0];
+    // The Best Defender Race (/dpoy) leader gets a slide of its own, same switch and lock.
+    dpoyTop = pool
+      .map(s => ({ s, score: computeDpoyScore(s) }))
+      .sort((a, b) => b.score - a.score)[0] || null;
     if (lead) {
       const gp = lead.s.gp;
       mvpTop = lead;
@@ -1759,6 +1763,10 @@ function getHeaderInfo(features) {
       if (mvpTop) {
         const s = mvpTop.s;
         awardSlides.push(slide({ ...s, team: s.team_name }, { chip: 'MVP race', value: mvpTop.score.toFixed(1), valueKey: 'MVP SCORE', caption: `S${season} frontrunner`, meta: `${(s.pts / s.gp).toFixed(1)} PPG`, href: '/mvp' }));
+      }
+      if (dpoyTop) {
+        const s = dpoyTop.s;
+        awardSlides.push(slide({ ...s, team: s.team_name }, { chip: 'DPOY race', value: dpoyTop.score.toFixed(1), valueKey: 'DEF SCORE', caption: `S${season} top defender`, meta: `${(s.stl / s.gp).toFixed(1)} SPG · ${(s.blk / s.gp).toFixed(1)} BPG`, href: '/dpoy' }));
       }
       const players = getAllPlayers(), teams = getAllTeams();
       const done = byDate(getAllGames()).filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0);
@@ -7404,6 +7412,7 @@ app.get('/sitemap.xml', (req, res) => {
   ];
   if (flags.awards)  urls.push({ loc: '/awards', priority: '0.5', changefreq: 'monthly' });
   if (flags.mvpRace) urls.push({ loc: '/mvp',    priority: '0.5', changefreq: 'weekly' });
+  if (flags.mvpRace) urls.push({ loc: '/dpoy',   priority: '0.5', changefreq: 'weekly' });
   if (flags.papawis) urls.push({ loc: '/papawis', priority: '0.5', changefreq: 'weekly' });
   if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
   if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' }, { loc: '/picks/rules', priority: '0.3', changefreq: 'monthly' });
