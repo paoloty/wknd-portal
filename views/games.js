@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl } from './utils.js';
+import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl, avatarStack } from './utils.js';
 import { summaryPanel } from './home.js';
 import { pickBox, pickBoxScript, previewHref, oddsEdge, talkLink } from './pick-box.js';
 
@@ -380,8 +380,6 @@ function calledItCard(s, isPlayer, { preview = true, maxFaces = 10 } = {}) {
   const row = (name, score, win) => `<span class="pk-sb__row${win ? ' is-win' : ''}">${dot(name, 8)}${escHtml(name)}<b class="font-condensed">${score}</b></span>`;
   const oddsFav = g.odds?.fav ? (g.odds.fav === 'a' ? g.a : g.b) : null;
   const winPct = g.odds?.fav ? (g.winner === 'a' ? g.odds.pctA : g.odds.pctB) : null;
-  const shown = s.calledIt.slice(0, maxFaces);
-  const more = s.calledIt.length - shown.length;
   const pill = s.upset ? '<span class="pk-upset">Upset</span>' : oddsFav ? '<span class="pk-fav">Favourite won</span>' : '';
   const line = s.upset ? `${escHtml(tc(winnerName))} won with <b>${winPct}%</b> odds`
     : oddsFav ? `${escHtml(tc(winnerName))} won as the <b>${winPct}%</b> favourite`
@@ -402,7 +400,7 @@ function calledItCard(s, isPlayer, { preview = true, maxFaces = 10 } = {}) {
       </div>
       ${s.calledIt.length ? `<div class="pk-called">
         <span class="pk-called__lbl">Called it · ${s.calledIt.length}</span>
-        <div class="pk-called__avs">${shown.map(p => pickAvatar(p)).join('')}${more > 0 ? `<span class="pk-av pk-av--more">+${more}</span>` : ''}</div>
+        ${avatarStack(s.calledIt, { size: 30, max: maxFaces, link: true, className: 'pk-called__avs' })}
       </div>` : `<div class="pk-called pk-called--none">${s.total ? 'Nobody called this one' : 'Nobody picked this game'}</div>`}
       ${preview ? `<a href="${escHtml(previewHref(g))}#preview" class="pk-card__prev">Pre-game preview →</a>` : ''}
     </article>`;

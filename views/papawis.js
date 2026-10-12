@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerLink, playerAvatar, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials } from './utils.js';
+import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials } from './utils.js';
 
 // /papawis — rebuilt 2026-10-11 from the "WKND Marketplace + Papawis Redesign" canvas (variant J).
 // Every UPCOMING run gets the full block (countdown bar, photo banner, who's in, details +
@@ -164,14 +164,13 @@ function faceGrid(confirmed, maxSlots, { isLoggedIn, viewerPlayerId, kind }) {
 }
 // Phone: one overlapping row — 7 faces, "+N", then up to 3 open circles.
 function faceStack(confirmed, maxSlots, { kind }) {
-  const shown = confirmed.slice(0, 7);
-  const more = confirmed.length - shown.length;
-  const open = Math.max(0, maxSlots - confirmed.length);
-  return `<div class="pwx-stack" aria-label="${confirmed.length} of ${maxSlots} slots taken">
-    ${shown.map(s => faceAvatar(s, { link: false, cls: 'pwx-sav' })).join('')}
-    ${more > 0 ? `<span class="pwx-sav pwx-sav--more">+${more}</span>` : ''}
-    ${`<span class="pwx-sav pwx-sav--open${kind === 'wait' ? ' is-wait' : ''}" data-open-slot aria-hidden="true">+</span>`.repeat(Math.min(3, open))}
-  </div>`;
+  const faces = confirmed.map(s => s.guest_name
+    ? { guest: true, name: s.guest_name }
+    : { id: s.player_id, name: s.player_name, team: s.team_name });
+  return avatarStack(faces, {
+    size: 38, max: 7, open: Math.min(3, Math.max(0, maxSlots - confirmed.length)),
+    className: `pwx-stack${kind === 'wait' ? ' is-wait' : ''}`, label: `${confirmed.length} of ${maxSlots} slots taken`,
+  });
 }
 
 // ── one upcoming run (the full block) ───────────────────────────────────────
@@ -524,7 +523,7 @@ function papawisScript(viewer) {
       cell.innerHTML = '<div class="pwx-av pwx-pop-in" style="border-color:' + ME.color + '"><span class="font-condensed">' + ME.ini + '</span><img src="/api/player/' + encodeURIComponent(ME.id) + '/photo?w=96" alt="" onerror="this.style.display=\\'none\\'"></div><span class="pwx-face__name pwx-pop-in">You</span>';
     }
     var s = run.querySelector('.pwx-stack [data-open-slot]');
-    if (s) { s.className = 'pwx-sav pwx-pop-in is-me'; s.textContent = ME.ini; s.removeAttribute('data-open-slot'); }
+    if (s) { s.className = 'av-stack__av av-stack__av--me pwx-pop-in'; s.textContent = ME.ini; s.removeAttribute('data-open-slot'); }
   }
   function popOut(gid) {
     var run = document.getElementById('pw-game-' + gid);

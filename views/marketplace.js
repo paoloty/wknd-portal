@@ -1,6 +1,6 @@
 import { escHtml, pageHeader } from './layout.js';
 import { SIZE_CHART, sizeSurcharge } from '../lib/season-pricing.js';
-import { playerAvatar, playerLink, teamColor } from './utils.js';
+import { playerAvatar, avatarStack, playerLink, teamColor } from './utils.js';
 
 const ICON_CHEVRON_L = `<svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
 const ICON_CHEVRON_R = `<svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2.5l4 4.5-4 4.5"/></svg>`;
@@ -33,20 +33,11 @@ function statusBadge(listing, committed) {
 // mirrors Papawis's pw-meter-row/pw-meter (views/papawis.js), but keeps this threshold
 // coloring on the fill itself — min_buyers is a "will this actually happen" signal, unlike
 // Papawis's flat slot-fill meter.
-// Overlapping avatar stack — mirrors Papawis's pw-avatar-stack (views/papawis.js's
-// rosterSummary), minus the empty-slot padding (that's specifically about making a thin
-// roster card not look dead against a fixed max_slots; a group buy has no such visual
-// "this many spots" metaphor to fill). Capped with a "+N" overflow bubble past MAX_AVATARS.
+// Who's committed, as the site-wide overlapping avatar stack (avatarStack in views/utils.js),
+// capped with a "+N" overflow bubble past MAX_AVATARS.
 const MAX_AVATARS = 6;
-function avatarStack(rows) {
-  if (!rows.length) return '';
-  const shown = rows.slice(0, MAX_AVATARS);
-  const overflow = rows.length - shown.length;
-  const avatars = shown.map(r =>
-    playerAvatar(r.player_id, r.player_name, teamColor(r.team_name), { className: 'mkt-avatar' })
-  ).join('');
-  const moreBubble = overflow > 0 ? `<span class="mkt-avatar mkt-avatar--more">+${overflow}</span>` : '';
-  return `<div class="mkt-avatar-stack">${avatars}${moreBubble}</div>`;
+function committedStack(rows) {
+  return avatarStack(rows.map(r => ({ id: r.player_id, name: r.player_name, team: r.team_name })), { size: 26, max: MAX_AVATARS });
 }
 
 function meterBlock(count, min) {
@@ -181,7 +172,7 @@ function listingCard(listing, { committedCount = 0, committed = false, commentCo
     ? `/marketplace/${escHtml(listing.id)}?g=${encodeURIComponent(variant.group)}&o=${encodeURIComponent(variant.opt)}`
     : `/marketplace/${escHtml(listing.id)}`;
 
-  const avatars = avatarStack(committedPlayers);
+  const avatars = committedStack(committedPlayers);
   const photoBanner = `<div class="mkt-photo">
         ${hasCover
           ? `<img src="/api/marketplace/${escHtml(listing.id)}/photo/${coverIndex}" alt="" loading="lazy">`
@@ -501,7 +492,7 @@ export function marketplaceListingPage({
         <div class="mkt-card-price" id="mkt-price-display"><span id="mkt-price-amount">${fmtPeso(displayPrice)}</span> <span class="mkt-price-compare" id="mkt-price-compare">${!commitments.length ? comparePriceHtml(listing, { size: 'detail' }) : ''}</span></div>
         ${meterBlock(committedCount, listing.min_buyers)}
         <div class="mkt-social-row">
-          ${avatarStack(committedPlayers)}
+          ${committedStack(committedPlayers)}
           <button type="button" id="mkt-listing-react-btn" class="mkt-like-btn${listingReaction.reacted ? ' is-active' : ''}" title="Like this listing">
             🔥 <span id="mkt-listing-react-count">${listingReaction.count || 0}</span>
           </button>
@@ -1185,11 +1176,6 @@ const STYLE = `<style>
 /* Overlapping avatar stack — mirrors Papawis's pw-avatar-stack/pw-avatar (views/papawis.js).
    Not a link (unlike the comments-section avatar) since the whole card is already one big
    overlay link to the listing; nesting another interactive element here would just fight it. */
-.mkt-avatar-stack { display: flex; flex-shrink: 0; }
-.mkt-avatar { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface); flex-shrink: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: rgba(255,255,255,.7); background: var(--bg); margin-left: -9px; }
-.mkt-avatar:first-child { margin-left: 0; }
-.mkt-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-.mkt-avatar--more { background: var(--border); color: var(--text-muted); font-size: 9px; }
 
 /* ── Detail page — mirrors .game-detail-layout ───────────────────────────── */
 .mkt-detail-layout { display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; margin-bottom: 40px; }
@@ -1395,7 +1381,7 @@ const STYLE = `<style>
 
 /* Avatars left, like button right — same left/right split as the grid card's overlaid
    avatar-stack/like-count pair, just laid out in the sidebar's plain flow here instead of
-   over a photo. Empty on both sides collapses cleanly since avatarStack returns ''. */
+   over a photo. Empty on both sides collapses cleanly since committedStack returns ''. */
 .mkt-social-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
 /* ── Like button — inline on desktop, mirrors games' tabActionsBar react button; hidden at

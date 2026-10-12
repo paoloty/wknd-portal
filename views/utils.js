@@ -190,6 +190,30 @@ export function playerAvatar(id, name, color, { className = 'player-avatar', lin
   return `<div class="${escHtml(className)}" style="${style}">${inner}</div>`;
 }
 
+// The one overlapping avatar stack for the whole site (.av-stack in styles.css): each face is
+// photo → team ring → cutout, so neighbours separate cleanly. players: [{ id, name, team }]
+// (or color in place of team; guest: true for a dashed initials circle with no photo). max caps
+// the faces and adds a "+N" bubble; pass total when players is only a sample of a bigger count.
+// moreBubble: false drops the bubble when the count is shown elsewhere. open: dashed "+" slots
+// after the faces (Papawis). link: false inside rows that are links themselves (nested <a>).
+// The cutout matches var(--surface); set --av-cut on className when the stack sits on another fill.
+export function avatarStack(players, { size = 28, max = 6, total, link = false, moreBubble = true, open = 0, className = '', label = '' } = {}) {
+  if (!players?.length && !open) return '';
+  const shown = (players || []).slice(0, max);
+  const more = (total ?? (players || []).length) - shown.length;
+  const faces = shown.map(p => {
+    const ini = `<span aria-hidden="true">${escHtml(initials(p.name))}</span>`;
+    if (p.guest) return `<span class="av-stack__av av-stack__av--guest" title="${escHtml(p.name || '')} (guest)">${ini}</span>`;
+    const tag = link && p.id ? 'a' : 'span';
+    const href = tag === 'a' ? ` href="/players/${encodeURIComponent(String(p.id))}"` : '';
+    return `<${tag}${href} class="av-stack__av" style="--team:${escHtml(p.color || teamColor(p.team))}" title="${escHtml(displayPlayerName(p.name || ''))}">${ini}<img src="${playerPhotoUrl(p.id, size > 48 ? 192 : 96)}" alt="" loading="lazy" onerror="this.remove()"></${tag}>`;
+  }).join('');
+  const bubble = moreBubble && more > 0 ? `<span class="av-stack__av av-stack__av--more">+${more}</span>` : '';
+  const slots = '<span class="av-stack__av av-stack__av--open" data-open-slot aria-hidden="true">+</span>'.repeat(Math.max(0, open));
+  const aria = label ? ` aria-label="${escHtml(label)}"` : '';
+  return `<span class="av-stack${className ? ` ${escHtml(className)}` : ''}" style="--av:${size}px"${aria}>${faces}${bubble}${slots}</span>`;
+}
+
 // Renders a player name as a link to /players/:id.
 // Applies displayPlayerName() formatting; pass upper: true for ALL-CAPS output.
 export function playerLink(id, rawName, { className = 'player-link', upper = false } = {}) {

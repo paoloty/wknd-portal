@@ -1979,19 +1979,6 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
 .st-team__form .is-l { background: #1c2230; color: var(--text-muted); }
 .st-team__form i { margin-left: 6px; font-style: normal; font-size: 11px; font-weight: 600; color: var(--text-subtle); }
 .st-team__roster { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.st-team__avs { display: flex; align-items: center; }
-.st-team__av {
-  position: relative; width: 32px; height: 32px; flex-shrink: 0;
-  border-radius: 50%; overflow: hidden;
-  border: 2px solid var(--surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--team) 50%, transparent);
-  background: #1f2633;
-  display: grid; place-items: center;
-  font-size: 12px; font-weight: 800; color: #c3c9d4;
-}
-.st-team__av + .st-team__av { margin-left: -9px; }
-.st-team__av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.st-team__av--more { background: #2a303c; box-shadow: none; font-family: 'Archivo', system-ui, sans-serif; font-size: 11px; color: var(--text); }
 .st-team__count { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
 .st-team__foot {
   margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border);
@@ -2082,17 +2069,6 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
 .nu-slots__row b { color: var(--text); }
 .nu-slots__wait { color: var(--amber); font-weight: 700; }
 /* overlapping "who's in" avatars under the slots bar */
-.nu-faces { display: flex; align-items: center; padding-left: 8px; }
-.nu-face {
-  width: 32px; height: 32px; flex-shrink: 0; margin-left: -8px;
-  border-radius: 50%; border: 2px solid; background: #181d28;
-  box-shadow: 0 0 0 2px var(--surface);
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-}
-.nu-face .font-condensed { font-size: 11px; color: #cdd3de; }
-.nu-face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.nu-face--more { border-color: var(--border); font-size: 11px; font-weight: 800; color: var(--text-muted); }
 
 /* marketplace */
 .nu-item { display: flex; gap: 10px; align-items: center; min-width: 0; padding: 4px; margin: -4px; border-radius: var(--radius-sm); transition: background 0.15s; }
@@ -3205,11 +3181,10 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
 .lsp-avatar .font-condensed { font-size: 34px; font-weight: 800; line-height: 1; }
 /* Shared: photo overlays initials in all avatar types */
 .leader-avatar img,
-.ldr-avatar img,
 .potg-card__avatar img,
 .lsp-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 /* When an avatar is rendered as <a>, suppress anchor defaults */
-a.leader-avatar, a.ldr-avatar, a.potg-card__avatar, a.lsp-avatar { text-decoration: none; }
+a.leader-avatar, a.potg-card__avatar, a.lsp-avatar { text-decoration: none; }
 /* Player name links — inherit container color, amber on hover */
 a.player-link { color: inherit; text-decoration: none; transition: color 0.15s; }
 a.player-link:hover { color: var(--amber); }
@@ -3488,12 +3463,6 @@ a.player-link:hover { color: var(--amber); }
 .mp-poll-check-pop { display: inline-flex; animation: mp-poll-check-in .28s cubic-bezier(.34,1.56,.64,1); }
 @keyframes mp-poll-check-in { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .mp-poll-vote-msg { font-size: 11px; color: var(--text-muted); min-height: 13px; }
-/* Overlapping avatar stack of who's voted — mirrors .mkt-avatar-stack/.mkt-avatar (views/marketplace.js). */
-.mp-poll-avatar-stack { display: flex; }
-.mp-poll-avatar { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--surface); flex-shrink: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: rgba(255,255,255,.7); background: var(--bg); margin-left: -8px; }
-.mp-poll-avatar:first-child { margin-left: 0; }
-.mp-poll-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-.mp-poll-avatar--more { background: var(--border); color: var(--text-muted); font-size: 9px; }
 .mp-poll__meta { font-size: 11px; color: var(--text-muted); }
 .mp-poll__viewall { align-self: flex-start; font-size: 12.5px; font-weight: 700; color: var(--amber); text-decoration: none; }
 .mp-poll__viewall:hover { text-decoration: underline; }
@@ -3738,18 +3707,9 @@ a.player-link:hover { color: var(--amber); }
 .ldr-col--a { align-items: flex-end; }
 .ldr-col--b { align-items: flex-start; }
 .ldr-player { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 180px; }
-.ldr-avatars { display: flex; flex-shrink: 0; }
-.ldr-avatars .ldr-avatar + .ldr-avatar { margin-left: -10px; }
 .ldr-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ldr-col--a .ldr-names { align-items: flex-end; }
 .ldr-center { display: flex; align-items: center; gap: 10px; padding: 0 14px; flex-shrink: 0; }
-.ldr-avatar {
-  width: 32px; height: 32px; border-radius: 50%;
-  background: var(--bg); border: 2px solid;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; position: relative; overflow: hidden;
-}
-.ldr-avatar span { font-size: 10px; font-weight: 700; color: var(--text-muted); }
 .ldr-val { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1; min-width: 28px; text-align: center; }
 .ldr-val--empty { color: var(--text-subtle); }
 .ldr-cat { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-subtle); text-align: center; padding-top: 4px; white-space: nowrap; }
@@ -4283,6 +4243,27 @@ a.player-link:hover { color: var(--amber); }
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; color: #000;
 }
+/* The one overlapping avatar stack — avatarStack() in views/utils.js. Each face: photo →
+   2px team ring → 2px cutout (--av-cut, the fill behind the stack), so neighbours separate
+   cleanly. Size comes from --av; the overlap scales with it. Context classes only add layout
+   (wrap, margins, --av-cut), never their own rings. */
+.av-stack { display: inline-flex; align-items: center; flex-shrink: 0; padding: 4px; margin: -4px; }
+.av-stack__av {
+  --ring: var(--team, #3a4354);
+  position: relative; flex-shrink: 0; width: var(--av, 28px); height: var(--av, 28px);
+  display: grid; place-items: center; border-radius: 50%; overflow: hidden;
+  background: #1f2633; text-decoration: none;
+  box-shadow: 0 0 0 2px var(--ring), 0 0 0 4px var(--av-cut, var(--surface));
+  font-family: 'Saira Condensed', sans-serif; font-size: calc(var(--av, 28px) * 0.36); font-weight: 800; color: #c7d0da;
+}
+.av-stack__av + .av-stack__av { margin-left: calc(var(--av, 28px) * -0.22); }
+.av-stack__av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
+a.av-stack__av:hover, .av-stack__av--me { --ring: var(--amber); }
+.av-stack__av--me { z-index: 1; color: var(--amber); }
+.av-stack__av--more { --ring: rgba(255,255,255,0.1); background: #2a303c; font-family: 'Archivo', system-ui, sans-serif; font-size: calc(var(--av, 28px) * 0.34); color: var(--text-muted); }
+/* Guests and open slots: no photo, a dashed outline in place of the team ring. */
+.av-stack__av--guest, .av-stack__av--open { --ring: transparent; background: var(--av-cut, var(--surface)); border: 1.5px dashed rgba(255,255,255,0.3); color: var(--text-muted); }
+.av-stack__av--open { border-color: rgba(245,147,50,0.6); color: var(--amber); font-family: 'Archivo', system-ui, sans-serif; font-size: calc(var(--av, 28px) * 0.42); font-weight: 500; }
 .player-avatar-replace--loading { opacity: 0.6; pointer-events: none; }
 .player-avatar-replace--loading svg { opacity: 0.4; }
 .player-hero__info { flex: 1; min-width: 0; }
@@ -7857,7 +7838,6 @@ a.stp-tl__cell:hover { background-color: rgba(255,255,255,.08); }
 .pk-upset-line { margin: -4px 0 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .pk-sb__row { white-space: nowrap; }
 .pk-res__row > span:nth-child(2) { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pkw-res .pk-called__avs { flex-wrap: nowrap; overflow: hidden; padding: 4px; margin: -4px; }
 .pk-upset-line b { color: var(--amber); }
 .pk-sb { display: flex; flex-direction: column; gap: 3px; }
 .pk-sb__row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; color: var(--text-muted); }
@@ -7874,15 +7854,13 @@ a.stp-tl__cell:hover { background-color: rgba(255,255,255,.08); }
 .pk-ok svg, .pk-miss svg { display: block; }
 .pk-called { display: flex; flex-direction: column; gap: 8px; }
 .pk-called__lbl { font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
-.pk-called__avs { display: flex; flex-wrap: wrap; row-gap: 6px; }
-/* Same overlapping stack, team rings kept, as .pkp-up__avs on /picks. */
-.pk-called__avs .pk-av + .pk-av { margin-left: -6px; }
+.pk-called__avs { flex-wrap: wrap; row-gap: 6px; }
+.pkw-res .pk-called__avs { flex-wrap: nowrap; overflow: hidden; }
 .pk-called--none { font-size: 12px; color: var(--text-subtle); }
 .pk-av { position: relative; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; overflow: hidden; background: #232a38; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--team, #3a4354); }
 .pk-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
 .pk-av__init { font-family: 'Saira Condensed', sans-serif; font-size: 11px; font-weight: 800; color: #c7d0da; }
 a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); }
-.pk-av--more { width: 30px; height: 30px; font-size: 10.5px; font-weight: 800; color: var(--text-muted); --team: #232a38; }
 
 .pk-board { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
 .pk-board__head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
@@ -7999,8 +7977,6 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .pkp-up__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12.5px; color: #c7d0da; }
 .pkp-up__txt b { color: #fff; }
 .pkp-up__txt i { font-style: normal; font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-subtle); }
-.pkp-up__avs { display: flex; }
-.pkp-up__avs .pk-av + .pk-av { margin-left: -6px; }
 
 /* Player sheet — a <dialog> on /picks, or its own page at /picks/players/:id */
 .pkp-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); margin: auto; padding: 0; border: none; border-radius: 16px; background: transparent; color: var(--text); overflow: visible; }
@@ -8846,8 +8822,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-vr b { color: #fff; }
 .gd-vr .gd-kick { color: var(--text-muted); }
 .gd-faces { display: flex; align-items: center; margin-top: 14px; }
-.gd-faces .pk-av { margin-left: -6px; box-shadow: 0 0 0 2px var(--surface); }
-.gd-faces .pk-av:first-child { margin-left: 0; }
 .gd-faces > span { margin-left: 10px; font-size: 12px; color: var(--text-muted); }
 .gd-faces > span b { color: var(--text); }
 .gd-nx { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border); }

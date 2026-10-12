@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, truncate, initials, playerAvatar, playerPhotoUrl } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, truncate, initials, avatarStack, playerPhotoUrl } from './utils.js';
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
@@ -946,13 +946,7 @@ const TX_STATUS_LABEL = { pending: 'Pending', voided: 'Voided' };
 const POLL_MAX_AVATARS = 8;
 function pollVoterAvatars(voterPlayers) {
   if (!voterPlayers.length) return '';
-  const shown = voterPlayers.slice(0, POLL_MAX_AVATARS);
-  const overflow = voterPlayers.length - shown.length;
-  const avatars = shown.map(p =>
-    playerAvatar(p.id, p.name, teamColor(p.team_name), { className: 'mp-poll-avatar', link: true })
-  ).join('');
-  const moreBubble = overflow > 0 ? `<span class="mp-poll-avatar mp-poll-avatar--more">+${overflow}</span>` : '';
-  return `<div class="mp-poll-avatar-stack">${avatars}${moreBubble}</div>`;
+  return avatarStack(voterPlayers.map(p => ({ id: p.id, name: p.name, team: p.team_name })), { size: 24, max: POLL_MAX_AVATARS, link: true });
 }
 
 function pollSidebarCard(poll) {

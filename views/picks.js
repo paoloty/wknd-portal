@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { teamColor } from './utils.js';
+import { teamColor, avatarStack } from './utils.js';
 import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel } from './games.js';
 import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime, previewHref } from './pick-box.js';
 import { fmtPts } from '../lib/picks.js';
@@ -128,11 +128,10 @@ function upsetsPanel(upsets, season) {
       <div class="pk-board__head"><h2 id="pkp-up-h">Upsets · S${escHtml(season)}</h2><span>Underdog won</span></div>
       ${upsets.map(s => {
         const g = s.game, w = g.winner === 'a' ? g.a : g.b, l = g.winner === 'a' ? g.b : g.a;
-        const shown = s.calledIt.slice(0, 3);
         return `<a href="${escHtml(previewHref(g))}" class="pkp-up">
           <span class="pkp-up__pct font-condensed">${g.winner === 'a' ? g.odds.pctA : g.odds.pctB}%</span>
           <span class="pkp-up__txt"><span><b>${escHtml(tc(w))}</b> beat ${escHtml(tc(l))} ${Math.max(g.sa, g.sb)}–${Math.min(g.sa, g.sb)}</span><i>${escHtml(shortDayLabel(g.ymd))} · ${s.calledIt.length} called it</i></span>
-          <span class="pkp-up__avs">${shown.map(p => pickAvatar(p, 26, false)).join('')}</span>
+          ${avatarStack(s.calledIt, { size: 26, max: 3, moreBubble: false })}
         </a>`;
       }).join('')}
     </section>`;

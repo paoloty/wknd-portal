@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt, truncate, playerAvatar, playerLink, manilaTodayStr, commentSnippet, playerPhotoUrl } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, boldTitle, excerpt, truncate, playerAvatar, avatarStack, playerLink, manilaTodayStr, commentSnippet, playerPhotoUrl } from './utils.js';
 import { moveBadge } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
@@ -710,7 +710,7 @@ const NU_RENDER = {
     const body = `${d.location ? `<p class="nu-card__text nu-card__text--loc">${escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}</p>` : ''}
       ${d.maxSlots ? `<div class="nu-slots"><div class="nu-slots__bar"><i style="width:${pct}%"></i></div>
       <div class="nu-slots__row"><span><b>${d.confirmed}/${d.maxSlots}</b> ${full ? 'full' : 'slots filled'}</span>${d.waitlist ? `<span class="nu-slots__wait">+${d.waitlist} waitlist</span>` : ''}</div></div>` : ''}
-      ${d.faces && d.faces.length ? `<div class="nu-faces" aria-label="${d.confirmed} players confirmed">${d.faces.map(f => playerAvatar(f.id, f.name, teamColor(f.team), { className: 'nu-face' })).join('')}${d.confirmed > d.faces.length ? `<span class="nu-face nu-face--more">+${d.confirmed - d.faces.length}</span>` : ''}</div>` : ''}
+      ${avatarStack(d.faces, { size: 32, max: 7, total: d.confirmed, className: 'nu-faces', label: `${d.confirmed} players confirmed` })}
       ${d.price != null ? `<p class="nu-card__price"><b>${nuPeso(d.price)}</b> per player</p>` : ''}`;
     const foot = isLoggedIn
       ? `<a href="/papawis" class="nu-card__link">${full ? 'Join the waitlist' : 'Grab a slot'} <span>&rarr;</span></a>`
@@ -785,9 +785,6 @@ function standingsSection(standings, summary = null, isAdmin = false) {
     const form = t.form.map(r => `<b class="${r === 'W' ? 'is-w' : 'is-l'}">${r}</b>`).join('');
     const diff = t.diff > 0 ? `+${t.diff}` : t.diff < 0 ? `−${Math.abs(t.diff)}` : '0';
     const pctLabel = t.pct.toFixed(3).replace(/^0/, '');
-    const more = t.rosterCount - t.roster.length;
-    // Photo over initials, same pattern as the MVP page: the img removes itself on 404.
-    const avatars = t.roster.map(p => `<span class="st-team__av" title="${escHtml(p.name)}"><span class="font-condensed" aria-hidden="true">${escHtml(initials(p.name))}</span><img src="${playerPhotoUrl(String(p.id), 96)}" alt="" loading="lazy" onerror="this.remove()"></span>`).join('');
     return `<a href="/teams/${encodeURIComponent(String(t.id))}" class="st-team${t.rank === 1 ? ' is-leader' : ''}" style="--team:${color}">
       <span class="st-team__top">
         <span class="st-team__name"><span class="team-dot" style="background:${color}"></span>${escHtml(t.name)}</span>
@@ -803,7 +800,7 @@ function standingsSection(standings, summary = null, isAdmin = false) {
       </span>
       ${form ? `<span class="st-team__form" aria-label="Last ${t.form.length}: ${t.form.join(' ')}">${form}<i>last ${t.form.length}</i></span>` : ''}
       ${t.rosterCount ? `<span class="st-team__roster">
-        <span class="st-team__avs">${avatars}${more > 0 ? `<span class="st-team__av st-team__av--more">+${more}</span>` : ''}</span>
+        ${avatarStack(t.roster.map(p => ({ id: p.id, name: p.name, color })), { size: 32, max: t.roster.length, total: t.rosterCount })}
         <span class="st-team__count">${t.rosterCount} players</span>
       </span>` : ''}
       ${(() => {

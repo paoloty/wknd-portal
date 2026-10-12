@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, playerAvatar, playerLink, stripEmptyParagraphs, playerPhotoUrl } from './utils.js';
+import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
@@ -523,11 +523,9 @@ export function gameLeadersTab(game, stats) {
     return { value: maxVal, players: tied };
   };
 
-  const avatar = (p, color) => playerAvatar(p.player_id, p.name, color, { className: 'ldr-avatar', link: true });
-
   const playerGroup = (leader, color, isA) => {
     if (!leader.players.length) return '';
-    const avGroup = `<div class="ldr-avatars">${leader.players.map(p => avatar(p, color)).join('')}</div>`;
+    const avGroup = avatarStack(leader.players.map(p => ({ id: p.player_id, name: p.name, color })), { size: 32, link: true });
     const nameEl = `<span class="ldr-name">${leader.players.map(p => playerLink(p.player_id, p.name || '', { upper: true })).join(', ')}</span>`;
     return `<div class="ldr-player">${isA ? nameEl + avGroup : avGroup + nameEl}</div>`;
   };
@@ -1707,7 +1705,7 @@ function calledCard(game, called, isPlayer) {
       : '<div class="gd-vr"><span class="gd-kick">Pickers</span><span>Nobody picked this game</span><span></span></div>');
     if (isPlayer) rows.push(`<div class="gd-vr"><span class="gd-kick">You</span><span>${result.myPick ? `You picked <b>${escHtml(T(result.myPick))}</b>` : "You didn't pick"}</span>${result.myPick ? ok(result.myPick === winner) : '<span></span>'}</div>`);
   }
-  const faces = result?.calledIt?.length ? `<div class="gd-faces">${result.calledIt.slice(0, 6).map(p => pickAvatar(p, 28)).join('')}<span><b>${result.calledIt.length}</b> called it</span></div>` : '';
+  const faces = result?.calledIt?.length ? `<div class="gd-faces">${avatarStack(result.calledIt, { size: 28, link: true, moreBubble: false })}<span><b>${result.calledIt.length}</b> called it</span></div>` : '';
   return `<section id="picks" class="card gd-called" aria-labelledby="picks-h">
     <div class="gd-card__h"><h2 id="picks-h">Who called it?</h2>${(odds?.fav && odds.fav !== winner) || result?.upset ? '<span class="pk-upset">Upset</span>' : ''}</div>
     ${odds ? `<span class="gd-kick">Odds before tip-off</span>

@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerAvatar } from './utils.js';
+import { avatarStack } from './utils.js';
 import { authShell, playerCard } from './auth-shell.js';
 
 // /register — "Join the community". Three steps on one page (Who are you → Your game →
@@ -33,9 +33,8 @@ const initialsOf = (first, last) => `${String(first || '').trim().charAt(0)}${St
 
 function crowd(hypeAvatars, playerCount) {
   if (!playerCount) return '';
-  const faces = [...hypeAvatars].sort(() => Math.random() - 0.5).slice(0, 4)
-    .map(p => playerAvatar(p.id, p.name, p.color, { className: 'au-face' })).join('');
-  return `<div class="au-crowd">${faces ? `<span class="au-crowd__faces" aria-hidden="true">${faces}</span>` : ''}<span><b>${playerCount}</b> players already in</span></div>`;
+  const faces = avatarStack([...hypeAvatars].sort(() => Math.random() - 0.5), { size: 30, max: 4, moreBubble: false, className: 'au-crowd__faces' });
+  return `<div class="au-crowd">${faces}<span><b>${playerCount}</b> players already in</span></div>`;
 }
 
 // success: the "application sent" screen. card: what they entered, for the card on it.
