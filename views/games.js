@@ -458,6 +458,18 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
 // The standard finished-game card: /games, team pages, homepage headlines and game pages all
 // use it (extras from server.js gameCardExtras; actions from gameCardScript). The card is a
 // stretched link so the footer buttons stay real buttons.
+// Stand-in banner for a game with no cover photo: the two team colours split on a diagonal,
+// centre-court lines, both team names large and faint (the winner's brighter). Black is too
+// dark to read on the card, so it gets the same lighter slate as the scorer bars.
+const artColor = team => (String(team).toUpperCase() === 'BLACK' ? '#8a94a6' : teamColor(team));
+function matchupArt(a, b, aWin) {
+  return `<span class="gh-art" aria-hidden="true" style="--ta:${artColor(a)};--tb:${artColor(b)};--sa:${aWin ? 42 : 20}%;--sb:${aWin ? 20 : 42}%">
+      <svg class="gh-art__court" width="260" height="260" viewBox="0 0 260 260" fill="none" stroke="currentColor" stroke-width="2"><circle cx="130" cy="130" r="60"/><circle cx="130" cy="130" r="20"/><line x1="-200" y1="130" x2="460" y2="130"/></svg>
+      <span class="gh-art__nm gh-art__nm--a${aWin ? ' is-win' : ''}">${escHtml(a)}</span>
+      <span class="gh-art__nm gh-art__nm--b${aWin ? '' : ' is-win'}">${escHtml(b)}</span>
+    </span>`;
+}
+
 function gameCard(g, { commentsEnabled, social = { commentsCount: 0, reactCount: 0, reacted: false }, topScorer, odds = null }) {
   const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
   const aWin = sa > sb;
@@ -474,9 +486,14 @@ function gameCard(g, { commentsEnabled, social = { commentsCount: 0, reactCount:
   const actions = `${commentsEnabled ? `<a href="/games/${id}#comments" class="gr-act" aria-label="Comments"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>${social.commentsCount || 0}</span></a>
       <button type="button" class="gr-act${social.reacted ? ' is-active' : ''}" data-action="react-game" data-game-id="${escHtml(g.id)}" aria-label="React to this game"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg><span>${social.reactCount || 0}</span></button>` : ''}
       <button type="button" class="gr-act" data-action="share-game" data-url="/games/${id}" aria-label="Share"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></button>`;
-  return `<article class="gh-card gr-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}" data-teams="${escHtml(`${g.team_a_name} ${g.team_b_name}`)}" data-type="${escHtml(g.game_type || 'regular')}">
+  // No cover yet: matchup art underneath, the winning team's top scorer's photo on top when
+  // there is one (it removes itself if it fails, leaving the art). See gameCardExtras.
+  const standIn = !g.has_cover && topScorer?.standIn;
+  const bg = g.has_cover ? `<img class="gh-card__img" src="/api/photo/${id}?w=640" alt="" loading="lazy">`
+    : `${matchupArt(g.team_a_name, g.team_b_name, aWin)}${standIn ? `<img class="gh-card__img gh-card__img--standin" src="${playerPhotoUrl(standIn)}" alt="" loading="lazy" onerror="this.closest('.gh-card').classList.replace('has-photo','has-art');this.remove()">` : ''}`;
+  return `<article class="gh-card gr-card${g.has_cover || standIn ? ' has-photo' : ' has-art'}" style="--team:${teamColor(winner)}" data-teams="${escHtml(`${g.team_a_name} ${g.team_b_name}`)}" data-type="${escHtml(g.game_type || 'regular')}">
     <a href="/games/${id}" class="gr-card__link" aria-label="${escHtml(title.slice(0, 120))}"></a>
-    ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${id}?w=640" alt="" loading="lazy">` : ''}
+    ${bg}
     <span class="gh-card__top"><span class="gh-card__when"><span class="gh-card__season">S${escHtml(String(g.season))}</span><span class="gh-card__date">${escHtml(dayLabel(ymd))}</span></span>${tag ? `<span class="gr-card__tag">${escHtml(tag)}</span>` : ''}</span>
     <span class="gh-card__body">
       <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>

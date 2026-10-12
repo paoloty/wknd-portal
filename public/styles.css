@@ -7336,6 +7336,27 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
   content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background: radial-gradient(110% 70% at 0% 0%, color-mix(in srgb, var(--team) 20%, transparent) 0%, transparent 60%);
 }
+/* No cover photo yet (views/games.js matchupArt): team colours split on a diagonal + faint
+   names; the top scorer's portrait (.gh-card__img--standin) covers it when there is one. */
+.gh-art {
+  position: absolute; inset: 0; overflow: hidden; color: rgba(255,255,255,0.07);
+  background:
+    linear-gradient(118deg,
+      color-mix(in srgb, var(--ta) var(--sa), transparent) 0%, color-mix(in srgb, var(--ta) 5%, transparent) 49.7%,
+      rgba(255,255,255,0.1) 49.8%, rgba(255,255,255,0.1) 50.2%,
+      color-mix(in srgb, var(--tb) 5%, transparent) 50.3%, color-mix(in srgb, var(--tb) var(--sb), transparent) 100%),
+    var(--surface);
+}
+.gh-art__court { position: absolute; left: 50%; top: -70px; transform: translateX(-50%); }
+.gh-art__nm { position: absolute; font-family: 'Saira Condensed', sans-serif; font-size: 96px; font-weight: 900; line-height: 0.8; text-transform: uppercase; white-space: nowrap; }
+.gh-art__nm--a { left: -6px; top: 34px; color: color-mix(in srgb, var(--ta) 12%, transparent); }
+.gh-art__nm--b { right: -8px; top: 118px; color: color-mix(in srgb, var(--tb) 12%, transparent); }
+.gh-art__nm.is-win { color: rgba(255,255,255,0.18); }
+.gh-card.has-art::before {
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(to top, rgba(10,14,22,0.97) 0%, rgba(10,14,22,0.88) 40%, rgba(10,14,22,0.2) 70%, rgba(10,14,22,0) 100%);
+}
+.gh-card__img--standin { object-position: center 15%; }
 .gh-card__top, .gh-card__body { position: relative; z-index: 2; }
 .gh-card__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 16px 18px 0; }
 .gh-card__date { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 9px; border-radius: 6px; }

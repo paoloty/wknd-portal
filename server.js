@@ -10074,9 +10074,20 @@ function gameCardExtras(cardGames, allGames, { viewerId = null, playerMap = null
     }
   }
   const pm = playerMap || Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const topOf = rows => rows.reduce((m, s) => ((+s.pts || 0) > (m ? +m.pts || 0 : -1) ? s : m), null);
   for (const g of cardGames) {
-    const top = (statsByGame?.[g.id] || getGameStats(g.id)).reduce((m, s) => ((+s.pts || 0) > (m ? +m.pts || 0 : -1) ? s : m), null);
-    if (top) topScorerByGame[g.id] = { name: displayPlayerName(pm[top.player_id]?.name || ''), pts: +top.pts || 0 };
+    const stats = statsByGame?.[g.id] || getGameStats(g.id);
+    const top = topOf(stats);
+    if (!top) continue;
+    // No cover photo yet: the winning team's top scorer's profile photo stands in on the card
+    // (the card falls back to its matchup art when there's no photo). Replaced by the cover
+    // as soon as one is uploaded; nothing is stored.
+    const winTeamId = Number(g.team_a_score) > Number(g.team_b_score) ? g.team_a_id : g.team_b_id;
+    const winTop = g.has_cover ? null : topOf(stats.filter(s => s.team_id === winTeamId));
+    topScorerByGame[g.id] = {
+      name: displayPlayerName(pm[top.player_id]?.name || ''), pts: +top.pts || 0,
+      standIn: winTop && pm[winTop.player_id]?.picture_url ? winTop.player_id : null,
+    };
   }
   return { commentsEnabled, socialByGame, oddsByGame, topScorerByGame };
 }
