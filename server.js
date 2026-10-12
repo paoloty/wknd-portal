@@ -7498,6 +7498,7 @@ app.get('/games/:ref', (req, res) => {
       });
     const picks = {
       state: p.state, m: p.m, story: p.story, odds: shownOdds(game.id, p.odds, pctx), o, siblings,
+      duel: p.m ? duelScorers(game, p.m, sorted, playerMap) : null,
       pickable: picksEnabled() && p.state !== 'final',
     };
     // Last meetings as the standard game cards (views/games.js gameCard).
@@ -7577,6 +7578,7 @@ app.get('/games/:ref', (req, res) => {
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
       flow, plays, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
+      duelHist: dc ? Object.fromEntries([dc.a, dc.b].map(s => [s.player_id, meetingPoints(game, sorted, s.player_id)])) : {},
       // A finished game is an archive: a missing writeup is written on the first page view
       // (any season — at most 2 in flight, so a crawler only queues them), then kept as written
       // (keep). Admin Regenerate is the only rewrite.
@@ -9869,8 +9871,30 @@ function recentPickResults(pctx, season, viewerId, n = 3) {
 // team's top scorer this season.
 function homeFaceoff(game, games, playerMap) {
   const m = matchupAsOf(game, games, playerMap);
-  const scorers = [[m.a, m.b], [m.b, m.a]].map(([team, opp], i) => (m.scorers[i] ? { ...m.scorers[i], basis: 'h2h' } : seasonTopScorer(game, team, opp, games, playerMap)));
-  return { scorers, firstMeeting: m.firstMeeting };
+  return { scorers: duelScorers(game, m, games, playerMap), firstMeeting: m.firstMeeting };
+}
+
+// The two players in the pre-game duel (views/duel.js), for the pick card's face-off and the
+// game page's Players to watch: each side's go-to scorer in this matchup, or — no meetings
+// with box scores yet — the team's top scorer this season. m: matchupAsOf (or a frozen copy).
+function duelScorers(game, m, games, playerMap) {
+  return [[m.a, m.b], [m.b, m.a]].map(([team, opp], i) => (m.scorers?.[i] ? { ...m.scorers[i], basis: 'h2h' } : seasonTopScorer(game, team, opp, games, playerMap)));
+}
+
+// A player's points in each earlier meeting of these two teams, all seasons, oldest first —
+// the recap duel's bars, with tonight added as the last one (views/game.js duelPerformer).
+function meetingPoints(game, games, playerId) {
+  const ymd = gameYmd(game.date);
+  const pair = [game.team_a_name, game.team_b_name].sort().join('|');
+  const earlier = games
+    .filter(g => g.id !== game.id && isPlayedGame(g) && !g.under_review && gameYmd(g.date) < ymd && [g.team_a_name, g.team_b_name].sort().join('|') === pair)
+    .sort((x, y) => gameYmd(x.date).localeCompare(gameYmd(y.date)));
+  const series = [], dates = [];
+  for (const g of earlier) {
+    const s = getGameStats(g.id).find(x => x.player_id === playerId);
+    if (s) { series.push(+s.pts || 0); dates.push(gameYmd(g.date)); }
+  }
+  return { series, dates };
 }
 
 // A team's highest points-per-game player this season, before this game (at least 2 games

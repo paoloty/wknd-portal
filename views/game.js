@@ -4,7 +4,8 @@ import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
 import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
-import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, gameCard, gameCardScript, storyHtml, scorerName } from './games.js';
+import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, gameCard, gameCardScript, storyHtml, scorerName, barsScript } from './games.js';
+import { duelCard, duelScale, previewDuelCards } from './duel.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
 
@@ -1847,20 +1848,33 @@ function perfHead(s, avCls = '', tail = '') {
 }
 const perfBg = s => `<img class="pl-card__bg" src="${playerPhotoUrl(s.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()">`;
 
-// One side of the duel: tag (Player of the Game, or its code-picked hook), the player, game
-// score, their line, the watch-list result and "Say something". POTG gets the amber glow.
-function duelCard(s, potgId, say, watchOf = () => null, stats = []) {
-  const isPotg = s.player_id === potgId;
-  const tag = isPotg ? '<span class="gd-dl__tag">PLAYER OF THE GAME</span>' : s.badge ? `<span class="gd-dl__tag gd-dl__tag--ghost">${escHtml(s.badge)}</span>` : '';
-  const line = stats.map(x => `<span class="pl-stat${x.win ? ' is-win' : x.tie ? ' is-tie' : ''}"${x.win ? ' title="Won this one"' : ''}><b class="font-condensed">${x.v}</b><small>${x.k}</small></span>`).join('');
-  return `<article class="pl-card pl-card--photo gd-pc${isPotg ? ' is-potg' : ''}" style="--team:${teamColor(s.team_name)}">
-    ${perfBg(s)}
-    ${tag ? `<span class="gd-pc__tags">${tag}</span>` : ''}
-    ${perfHead(s)}
-    <span class="gd-pc__gs"><b class="font-condensed">${s.gs.toFixed(1)}</b><small>Game score</small></span>
-    <span class="pl-card__foot gd-pc__line"><span class="pl-card__stats">${line}</span></span>
-    <span class="gd-pc__end">${watchLine(watchOf(s.player_id))}${say(s)}</span>
-  </article>`;
+// One side of the duel as the shared duel card (views/duel.js): tag (Player of the Game, or its
+// code-picked hook), game score, the head-to-head line, then their points in every earlier
+// meeting with tonight as the last bar — against their average there and their best.
+// hist: { series, dates } from server.js meetingPoints. POTG gets the amber glow.
+function duelPerformer(s, opp, potgId, say, stats, hist) {
+  const n = perfName(s.name);
+  const past = hist?.series || [];
+  const tonight = n0(s.pts);
+  const avg = past.length ? Math.round(past.reduce((t, v) => t + v, 0) / past.length * 10) / 10 : null;
+  const best = past.length ? Math.max(...past) : null;
+  const vs = escHtml(tc(opp));
+  let foot = '';
+  if (avg != null) {
+    const x = Math.round((tonight - avg) * 10) / 10;
+    const chip = `<span class="gm-st__chip${x > 0 ? ' is-up' : ''}">${x > 0 ? '+' : x < 0 ? '−' : '±'}${Math.abs(x).toFixed(1)}</span>`;
+    const vsBest = tonight > best ? `<b class="is-amber">New best vs ${vs}</b>` : tonight === best ? `<b class="is-amber">Ties best vs ${vs}</b>` : `best <b>${best}</b>`;
+    foot = `${avg.toFixed(1)} a game vs ${vs} ${chip} · ${vsBest}`;
+  }
+  return {
+    id: s.player_id, first: n.first, last: n.last, team: s.team_name, number: s.number,
+    tag: s.player_id === potgId ? 'PLAYER OF THE GAME' : s.badge || '', potg: s.player_id === potgId,
+    big: s.gs.toFixed(1), bigKey: 'GAME SCORE', lead: s.player_id === potgId,
+    line: stats, series: past, dates: hist?.dates || [], avg, tonight,
+    barsKey: `Points vs ${tc(opp)} · tonight last`,
+    noBars: past.length ? `${past.length} earlier meeting${past.length === 1 ? '' : 's'}: ${past.join(', ')} · ${tonight} tonight` : `First meeting with ${tc(opp)} · ${tonight} tonight`,
+    foot, end: say(s),
+  };
 }
 
 // Supporting cast player: the card with their points, code-picked badge and line.
@@ -1955,8 +1969,10 @@ function castRow(cast, watch, say, watchOf) {
 // say(s, small): the "Say something" button for a player (empty when comments are off).
 // panel: the section's AI writeup (sectionPanel), between the header and its description.
 // watch: the pre-game watch list (server.js), one entry per side or null.
-function performersSection(game, dc, verdict, potgId, say = () => '', panel = '', watch = []) {
+// hist: the duel players' points in earlier meetings, by player id (server.js meetingPoints).
+function performersSection(game, dc, verdict, potgId, say = () => '', panel = '', watch = [], hist = {}) {
   if (!dc) return '';
+  const oppOf = s => (String(s.team_name).toUpperCase() === String(game.team_a_name).toUpperCase() ? game.team_b_name : game.team_a_name);
   const watched = (watch || []).filter(Boolean);
   const watchOf = id => watched.find(w => w.id === id) || null;
   const shown = new Set([dc.a, dc.b, ...dc.castA, ...dc.castB].map(s => s.player_id));
@@ -1965,12 +1981,15 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
   // the end of the row.
   const elsewhere = watched.filter(w => !shown.has(w.id));
   const lines = duelLines(dc.a, dc.b);
+  const pa = duelPerformer(dc.a, oppOf(dc.a), potgId, say, lines[0], hist[dc.a.player_id]);
+  const pb = duelPerformer(dc.b, oppOf(dc.b), potgId, say, lines[1], hist[dc.b.player_id]);
+  const max = duelScale(pa, pb);
   const bothInDuel = watched.length === 2 && watched.every(w => w.id === dc.a.player_id || w.id === dc.b.player_id);
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>' })}
     ${panel}
     <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}; amber marks who won each stat. Then the rest of each team’s standouts, ranked by game score.</p>
-    <div class="gd-duel">${duelCard(dc.a, potgId, say, watchOf, lines[0])}${duelCard(dc.b, potgId, say, watchOf, lines[1])}</div>
+    <div class="gd-duel">${duelCard(pa, max)}${duelCard(pb, max)}</div>${barsScript()}
     <p class="gd-verdict">${verdict}</p>
     ${castRow([...dc.castA, ...dc.castB], elsewhere, say, watchOf)}
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
@@ -2154,13 +2173,15 @@ function edgesBlock(m) {
   </section>`;
 }
 
-function scorersBlock(m) {
-  if (m.scorers?.length !== 2 || !(m.scorers[0] || m.scorers[1])) return '';
-  const [sa, sb] = m.scorers;
-  if (sa && sb) { sa.lead = sa.ppg > sb.ppg; sb.lead = sb.ppg > sa.ppg; }
+// Players to watch: the shared duel cards (views/duel.js). duel = server.js duelScorers — the
+// go-to scorer in this matchup, or the season's top scorer for a side with no meetings yet.
+function scorersBlock(m, duel) {
+  const [sa, sb] = duel || m.scorers || [];
+  if (!sa && !sb) return '';
+  const season = [sa, sb].some(s => s?.basis === 'season');
   return `<section id="watchlist" aria-labelledby="watchlist-h">
-    ${sh('watchlist', 'Players to watch', { sub: 'Each side’s top scorer against this opponent.' })}
-    <div class="gm-fo gd-fo">${scorerCard(sa)}${scorerCard(sb)}</div>
+    ${sh('watchlist', 'Players to watch', { sub: season ? 'Each side’s top scorer this season.' : 'Each side’s top scorer against this opponent.' })}
+    <div class="gd-duel">${previewDuelCards(sa, sb)}</div>
   </section>`;
 }
 
@@ -2348,7 +2369,7 @@ export function gamePage(d) {
     <div class="gd-cols__main">
       ${m ? storyBlock(game, p.story, { isAdmin: d.isAdmin, regen: p.state === 'open' || p.state === 'closed' }) : ''}
       ${m ? edgesBlock(m) : ''}
-      ${m ? scorersBlock(m) : ''}
+      ${m ? scorersBlock(m, p.duel) : ''}
       ${m ? meetingsBlock(m, p.meetingCards) : ''}
       ${talkSection(v, 'Pre-game chatter')}
     </div>
@@ -2397,7 +2418,7 @@ ${scripts}`;
       ${videoCard(game)}
       ${hasBox ? wonBlock(d.won) : '<p class="gd-empty card">Full box scores will be available once stats are imported.</p>'}
       ${flowCard(game, d.flow)}
-      ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'), d.watch)}
+      ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'), d.watch, d.duelHist)}
       ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'), d.usual)}
       ${plays}
       ${series}

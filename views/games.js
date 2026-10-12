@@ -2,6 +2,7 @@ import { escHtml, pageHeader } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl, avatarStack } from './utils.js';
 import { summaryPanel } from './home.js';
 import { pickBox, pickBoxScript, previewHref, oddsEdge, talkLink } from './pick-box.js';
+import { scorerName, previewDuelCards } from './duel.js';
 
 // Comment/react/share for this row — same actions as the game page's tabActionsBar, just
 // reachable from the list. The row itself is a "stretched link" card (see .game-row__link
@@ -234,50 +235,6 @@ function edgeRow(r) {
     </div>`;
 }
 
-// First / LASTNAME from the raw "LASTNAME, Firstname". Previews frozen when picks closed only
-// carry the display name ("Firstname LASTNAME"): its trailing all-caps words are the last name.
-function scorerName(p) {
-  const raw = String(p.rawName || '');
-  const comma = raw.indexOf(',');
-  if (comma !== -1) return { first: raw.slice(comma + 1).trim(), last: raw.slice(0, comma).trim().toUpperCase() };
-  const words = String(p.name || '').trim().split(/\s+/);
-  let i = words.length;
-  while (i > 1 && /\p{Lu}/u.test(words[i - 1]) && words[i - 1] === words[i - 1].toUpperCase()) i--;
-  if (i === words.length) i--; // no all-caps word: the last word
-  return { first: words.slice(0, i).join(' '), last: words.slice(i).join(' ') };
-}
-
-// Players to watch: the player-card lead (photo backdrop, avatar ring, first over LASTNAME)
-// with PPG against this opponent on the right; per-meeting bars, line and best game below.
-function scorerCard(p) {
-  if (!p) return `<div class="gm-fo__p gm-fo__p--empty">No box scores yet</div>`;
-  const max = Math.max(...p.series, 1);
-  const { first, last } = scorerName(p);
-  const num = p.number !== '' && p.number != null ? ` · #${escHtml(String(p.number))}` : '';
-  const photo = playerPhotoUrl(p.id, 192);
-  return `<a href="/players/${encodeURIComponent(p.id)}" class="gm-fo__p" style="--team:${teamColor(p.team)}">
-      <span class="gm-fo__top">
-        <img class="gm-fo__bg" src="${photo}" alt="" loading="lazy" onerror="this.remove()">
-        <span class="gm-fo__lead">
-          <span class="pl-av"><span>${escHtml(initialsOf(`${first} ${last}`))}</span><img src="${photo}" alt="" loading="lazy" onerror="this.remove()"></span>
-          <span class="pl-card__who">
-            ${first ? `<span class="pl-card__first">${escHtml(first)}</span>` : ''}
-            <span class="pl-card__last">${escHtml(last)}</span>
-            <span class="pl-card__meta"><span class="pl-team"><i style="background:${teamColor(p.team)}"></i>${escHtml(p.team)}${num} · ${p.games} ${p.games === 1 ? 'GAME' : 'GAMES'}</span></span>
-          </span>
-          <span class="gm-fo__big"><b class="font-condensed${p.lead ? ' is-lead' : ''}">${p.ppg.toFixed(1)}</b><small>PPG VS ${escHtml(p.opp)}</small></span>
-        </span>
-      </span>
-      <span class="gm-fo__foot">
-        <span class="gm-fo__spark" data-bars${p.team === 'BLACK' ? ' style="--bar:#8a94a6"' : ''} aria-label="Points in each game against ${escHtml(tc(p.opp))}: ${p.series.join(', ')}">
-          ${p.series.map((v, i) => `<span class="gm-fo__bar${v === max ? ' is-best' : ''}" data-bar style="--i:${i};height:${Math.max(6, Math.round((v / max) * 100))}%" title="${v} pts"></span>`).join('')}
-        </span>
-        <span class="gm-fo__stats"><span><b class="font-condensed">${p.rpg.toFixed(1)}</b>REB</span><span><b class="font-condensed">${p.apg.toFixed(1)}</b>AST</span>${p.fg != null ? `<span><b class="font-condensed">${p.fg.toFixed(1)}</b>FG%</span>` : ''}</span>
-        <span class="gm-fo__best">Best vs ${escHtml(tc(p.opp))} · <b>${p.best.pts} · ${escHtml(p.best.label)}</b></span>
-      </span>
-    </a>`;
-}
-
 function meetingTile(m, x) {
   const aWin = x.scoreA > x.scoreB;
   const potg = x.potg
@@ -452,12 +409,10 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
     ? `First meeting · S${escHtml(String(m.season))} per game`
     : `${m.meetings} meeting${m.meetings === 1 ? '' : 's'}${m.boxMeetings < m.meetings ? ` · ${m.boxMeetings} with box scores` : ''}`;
 
-  const scorers = m.scorers.length === 2 && (m.scorers[0] || m.scorers[1]) ? (() => {
-    const [sa, sb] = m.scorers;
-    if (sa && sb) { sa.lead = sa.ppg > sb.ppg; sb.lead = sb.ppg > sa.ppg; }
-    return `<div class="gm-grp">Go-to scorers · in this matchup</div>
-      <div class="gm-fo">${scorerCard(sa)}${scorerCard(sb)}</div>`;
-  })() : '';
+  const scorers = m.scorers.length === 2 && (m.scorers[0] || m.scorers[1])
+    ? `<div class="gm-grp">Go-to scorers · in this matchup</div>
+      <div class="dl-pair">${previewDuelCards(m.scorers[0], m.scorers[1])}</div>`
+    : '';
 
   const meetings = m.lastMeetings.length ? `<div class="gm-grp">${m.lastMeetings.length === 1 ? 'Last meeting' : `Last ${m.lastMeetings.length} meetings`}</div>
       <div class="gm-mts">${m.lastMeetings.map(x => meetingTile(m, x)).join('')}</div>` : '';
@@ -832,4 +787,4 @@ ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { scorerName, potgCard, calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
+export { scorerName, potgCard, calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };

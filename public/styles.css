@@ -8071,40 +8071,6 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .gm-st__lbl { text-align: center; font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
 .gm-more { align-self: center; margin-top: 6px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.1); color: #a3abb9; font-size: 12px; font-weight: 700; }
 .gm-more:hover { color: #fff; border-color: rgba(255,255,255,0.25); }
-/* Players to watch: the player-card lead (photo backdrop, avatar ring, name block — the shared
-   .pl-av / .pl-card__* pieces) with PPG on the right, as on the /leaders cards. The photo stops
-   at the divider; per-meeting bars, line and best game sit below it. */
-.gm-fo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-top: 4px; }
-.gm-fo__p { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--border); color: inherit; text-decoration: none;
-  background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--team) 18%, transparent) 0%, color-mix(in srgb, var(--team) 6%, transparent) 40%, transparent 72%), var(--surface);
-  transition: border-color .15s; }
-.gm-fo__p--empty { justify-content: center; align-items: center; min-height: 120px; font-size: 12.5px; color: var(--text-muted); }
-.gm-fo__p:hover { border-color: rgba(255,255,255,0.14); }
-.gm-fo__p:hover .pl-card__last { color: #fff; }
-.gm-fo__p:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.gm-fo__top { position: relative; overflow: hidden; padding: 18px 20px; }
-.gm-fo__bg, .gm-fo__top::after {
-  position: absolute; top: 0; right: 0; width: 62%; height: 100%; pointer-events: none;
-  -webkit-mask-image: linear-gradient(to left, #000 35%, transparent 100%); mask-image: linear-gradient(to left, #000 35%, transparent 100%);
-}
-.gm-fo__bg { object-fit: cover; object-position: center 25%; filter: grayscale(1) blur(1.5px) contrast(1.1); opacity: .16; }
-.gm-fo__top::after { content: ''; background: var(--team); mix-blend-mode: color; opacity: .28; }
-.gm-fo__lead { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
-.gm-fo__lead .pl-card__who { flex: 1; }
-.gm-fo__big { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.gm-fo__big b { font-size: 44px; font-weight: 800; line-height: 0.9; color: var(--text); }
-.gm-fo__big b.is-lead { color: var(--amber); }
-.gm-fo__big small { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: var(--text-muted); white-space: nowrap; }
-.gm-fo__foot { display: flex; flex-direction: column; gap: 12px; padding: 14px 20px 16px; border-top: 1px solid var(--border); }
-.gm-fo__spark { display: flex; align-items: flex-end; gap: 5px; height: 46px; }
-/* Team-coloured (Paolo's call, 2026-10-08 — an exception to team colours = dots/chips only).
-   Black is too dark on the card, so its bars use a lighter slate (--bar). Best game in amber. */
-.gm-fo__bar { display: block; flex: 1; max-width: 48px; border-radius: 3px 3px 1px 1px; background: var(--bar, var(--team, #3a4354)); opacity: 0.6; }
-.gm-fo__bar.is-best { background: var(--amber); opacity: 1; }
-.gm-fo__stats { display: flex; gap: 18px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-muted); }
-.gm-fo__stats b { margin-right: 4px; font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: 0; }
-.gm-fo__best { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gm-fo__best b { font-weight: 700; color: var(--text); }
 /* Last meetings */
 .gm-mts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 4px; }
 .gm-mt { position: relative; overflow: hidden; display: block; min-height: 150px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: inherit; }
@@ -8214,9 +8180,6 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
   .gm-st { grid-template-columns: 40px minmax(0, 1fr) 84px minmax(0, 1fr) 40px; gap: 6px; }
   .gm-st__v { font-size: 17px; }
   .gm-st__lbl { font-size: 9.5px; letter-spacing: 0.06em; }
-  .gm-fo { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .gm-fo__top { padding: 16px; }
-  .gm-fo__foot { padding: 12px 16px 14px; }
   .gm-mts { display: flex; overflow-x: auto; margin: 0 -16px; padding: 4px 16px; scroll-snap-type: x mandatory; scrollbar-width: none; }
   .gm-mts::-webkit-scrollbar { display: none; }
   .gm-mt { flex: 0 0 72%; scroll-snap-align: start; }
@@ -8433,46 +8396,14 @@ a.pkw-lb--note { color: var(--amber); }
 /* VS sits on the seam between the two player boxes */
 .pkf-vs { position: absolute; left: 50%; top: 50%; z-index: 2; transform: translate(-50%, -50%); display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 0 0 4px var(--surface); font-size: 13px; font-weight: 800; color: var(--text-muted); pointer-events: none; }
 
-/* The two players sit flat in the card (no boxes inside a card); the VS badge marks the seam. */
-.pkf-p { display: flex; flex-direction: column; gap: 7px; min-width: 0; height: 100%; box-sizing: border-box; padding: 4px 0; color: inherit; }
-.pkf-p--b { align-items: flex-end; text-align: right; }
-.pkf-p:hover .pkf-p__id b { text-decoration: underline; }
-.pkf-p--empty { justify-content: center; align-items: center; min-height: 140px; font-size: 12.5px; color: var(--text-muted); }
-.pkf-p__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pkf-p--b .pkf-p__head { flex-direction: row-reverse; }
-.pkf-p__head .pk-av { flex-shrink: 0; }
-.pkf-p__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.pkf-p__id b { font-size: 14px; font-weight: 800; line-height: 1.15; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pkf-p__id > span { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: var(--text-muted); }
-.pkf-p--b .pkf-p__id > span { justify-content: flex-end; }
-.pkf-p__ppg { display: flex; align-items: baseline; gap: 6px; }
-.pkf-p--b .pkf-p__ppg { flex-direction: row-reverse; }
-.pkf-p__ppg b { font-size: 28px; font-weight: 800; line-height: 0.9; color: var(--text); }
-.pkf-p__ppg b.is-lead { color: var(--amber); }
-.pkf-p__ppg span { font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
-
-/* Points chart: one scale shared by both players; the dashed line is the player's average */
-.pkf-chart { display: flex; flex-direction: column; gap: 5px; align-self: flex-start; }
-.pkf-chart--b { align-self: flex-end; }
-.pkf-bars { position: relative; display: flex; align-items: flex-end; gap: 5px; height: 62px; }
-.pkf-chart--b .pkf-bars, .pkf-chart--b .pkf-dates { justify-content: flex-end; }
-.pkf-col { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 28px; }
-.pkf-col em { font-style: normal; font-family: 'Saira Condensed', sans-serif; font-size: 11.5px; font-weight: 800; line-height: 1; color: var(--text-muted); }
-.pkf-bar { display: block; width: 20px; border-radius: 4px 4px 1px 1px; background: var(--bar, var(--team)); opacity: 0.6; }
-.pkf-bar.is-best { opacity: 1; box-shadow: 0 0 14px color-mix(in srgb, var(--bar, var(--team)) 45%, transparent); }
-.pkf-col:has(.is-best) em { color: var(--text); }
-.pkf-avg { position: absolute; left: -4px; right: -4px; z-index: 1; border-top: 1px dashed rgba(255,255,255,0.3); pointer-events: none; }
-.pkf-dates { display: flex; gap: 5px; }
-.pkf-dates small { width: 28px; text-align: center; font-size: 9.5px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
-.pkf-d-short { display: none; }
 
 /* Bar grow animation — barsScript (views/games.js) arms it from JS only */
 [data-bars].is-armed [data-bar] { transform: scaleY(0); transform-origin: bottom; }
-[data-bars].is-armed [data-bar-lbl], [data-bars].is-armed .pkf-avg { opacity: 0; }
+[data-bars].is-armed [data-bar-lbl], [data-bars].is-armed .dl-avg { opacity: 0; }
 [data-bars].is-armed [data-bar-lbl] { transform: translateY(4px); }
 [data-bars].is-armed.is-in [data-bar] { transform: scaleY(1); transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--i, 0) * 90ms + 60ms); }
 [data-bars].is-armed.is-in [data-bar-lbl] { opacity: 1; transform: none; transition: opacity 0.35s ease calc(var(--i, 0) * 90ms + 520ms), transform 0.35s ease calc(var(--i, 0) * 90ms + 520ms); }
-[data-bars].is-armed.is-in .pkf-avg { opacity: 1; transition: opacity 0.5s ease 0.9s; }
+[data-bars].is-armed.is-in .dl-avg { opacity: 1; transition: opacity 0.5s ease 0.9s; }
 
 .pkf-race { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; padding: 12px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); font-size: 13px; color: var(--text-muted); transition: border-color 0.15s; }
 .pkf-race:hover { border-color: rgba(245,147,50,0.45); }
@@ -8482,46 +8413,17 @@ a.pkw-lb--note { color: var(--amber); }
 .pkf-race__go { margin-left: auto; font-weight: 800; color: var(--amber); }
 .pkf-race:hover .pkf-race__go { text-decoration: underline; }
 
-/* Narrower columns: compact players — stacked head, last 4 bars, short dates */
-@media (max-width: 1240px) {
-  .pkf-bars, .pkf-dates { gap: 4px; }
-  .pkf-col, .pkf-dates small { width: 24px; }
-  .pkf-bar { width: 17px; }
-  .pkf-bars .pkf-col:nth-last-of-type(n+5), .pkf-dates small:nth-last-of-type(n+5) { display: none; }
-  .pkf-d-long { display: none; }
-  .pkf-d-short { display: inline; }
-}
 @media (max-width: 860px) {
   .pkf-games { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
-  .pkf-p__ppg { flex-direction: column; gap: 2px; }
-  .pkf-p--b .pkf-p__ppg { flex-direction: column; align-items: flex-end; }
   .pkf-vs { width: 28px; height: 28px; font-size: 12px; }
   .pkf-race__go { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-bars].is-armed [data-bar], [data-bars].is-armed [data-bar-lbl], [data-bars].is-armed .pkf-avg { transform: none; opacity: 1; transition: none; }
+  [data-bars].is-armed [data-bar], [data-bars].is-armed [data-bar-lbl], [data-bars].is-armed .dl-avg { transform: none; opacity: 1; transition: none; }
 }
 
-/* Wide screens: bars beside the player — avatar | name, PPG, stats | chart (mirrored on the
-   right-hand player), the avatar sized to the row's height. The head wrapper dissolves so
-   its avatar and name become grid cells. Last 4 games here so the row fits. */
-@media (min-width: 1560px) {
-  .pkf-p { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "av id chart" "av ppg chart"; column-gap: 10px; row-gap: 6px; align-items: center; }
-  .pkf-p--b { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "chart id av" "chart ppg av"; }
-  .pkf-p__head { display: contents; }
-  .pkf-p__head .pk-av { grid-area: av; width: 64px !important; height: 64px !important; }
-  .pkf-p__head .pk-av .pk-av__init { font-size: 20px; }
-  .pkf-p__id { grid-area: id; }
-  .pkf-p__ppg { grid-area: ppg; flex-direction: column; gap: 2px; }
-  .pkf-p--b .pkf-p__ppg { flex-direction: column; align-items: flex-end; }
-  .pkf-chart, .pkf-chart--b { grid-area: chart; align-self: center; }
-  /* same 8px seam as the pick buttons; the charts keep clear of the VS badge on that seam */
-  .pkf-p--a .pkf-chart { margin-right: 12px; }
-  .pkf-p--b .pkf-chart { margin-left: 12px; }
-  .pkf-bars .pkf-col:nth-last-of-type(n+5), .pkf-dates small:nth-last-of-type(n+5) { display: none; }
-}
 
 /* The pick bar (pickBox in views/pick-box.js) — two tap halves that always split 50/50.
    Behind them the team colours split where the fans do (--split), with a lit break on the
@@ -8845,38 +8747,18 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-later { margin: 10px 0 0; font-size: 13px; color: var(--text-muted); }
 .gd-cols__rail .share-stats-banner { margin: 0; }
 
-/* Top performers: the duel */
-/* Desktop: each player's photo fills their side as a faint black-and-white backdrop with a
-   soft team-colour glare; the real avatar sits on top in a glowing ring. */
-.gd-dl__tag { align-self: flex-start; font-size: 10px; font-weight: 900; letter-spacing: .14em; color: #0a0e16; background: var(--amber); padding: 4px 8px; border-radius: 6px; }
-.gd-dl__tag--ghost { color: var(--amber); background: none; border: 1px solid rgba(245,147,50,.45); text-transform: uppercase; }
-/* Top performers: the duel as two player cards (the shared .pl-card), the head to head as its
-   own strip underneath, the supporting cast as small player cards under a team label. On a
-   narrow column / phones the duel and each team's cast become swipe rows. */
+/* Players to watch + Top performers: the duel as two duel cards (.dl-card, see "Duel" above),
+   the supporting cast as small player cards. On a narrow column / phones the duel and the cast
+   become swipe rows. */
 .gd-duel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .gd-pc { gap: 12px; }
 .gd-pc:hover { transform: none; }
-.gd-pc.is-potg { border-color: rgba(245,147,50,.55); box-shadow: 0 0 0 1px rgba(245,147,50,.22), 0 0 22px -4px rgba(245,147,50,.35); }
 .gd-pc > :not(.pl-card__bg) { position: relative; z-index: 1; }
-.gd-pc__tags { display: flex; }
 .gd-pc a.pl-av { color: inherit; }
 .gd-pc a.pl-card__who { flex: 1; color: inherit; }
 .gd-pc a.pl-card__who:hover .pl-card__last { color: var(--amber); }
-.gd-pc__gs { display: flex; align-items: baseline; gap: 10px; }
-.gd-pc__gs b { font-size: 44px; font-weight: 800; line-height: .85; color: var(--text); }
-.gd-pc.is-potg .gd-pc__gs b { color: var(--amber); }
-.gd-pc__gs small { font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
-.gd-pc .gd-pc__line { margin-top: 0; }
-/* The head to head lives in the two lines: the stat each player won is amber, the other grey,
-   a tie white on both. */
-.gd-pc__line .pl-card__stats { flex: 1; justify-content: space-between; gap: 10px; }
-.gd-pc__line .pl-stat b { color: var(--text-muted); }
-.gd-pc__line .pl-stat.is-tie b { color: var(--text); }
-.gd-pc__line .pl-stat.is-win b { color: var(--amber); }
 .gd-verdict { margin: 12px 2px 0; font-size: 13.5px; line-height: 1.5; color: #c7d0da; }
 .gd-verdict b { color: var(--amber); }
-.gd-pc__end { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: auto; }
-.gd-pc__end .gd-say { align-self: center; }
 /* Supporting cast */
 /* Supporting cast (both teams, best game score first) + watch-list players not shown above:
    one scrolling row, two cards a view with header arrows; 82% swipe cards on a narrow column. */
@@ -8983,7 +8865,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-story .gm-story__regen { margin-top: 12px; }
 .gd-edges-card { padding: 8px 18px 4px; }
 .gd-edges-card .gm-more { margin: 4px 0 10px; }
-.gd-fo { margin: 0; }
 /* Game cards inside the game page (Last meetings): a row of gameCards; swipe row when the
    column is narrow, like the homepage headlines on phones. */
 .gd-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
@@ -9586,6 +9467,83 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pl-spark { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .pl-spark polyline { fill: none; stroke: #8a93a4; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
 .pl-spark circle { fill: var(--amber); }
+
+/* ── Duel (views/duel.js) ─────────────────────────────────────────────────────
+   Two players head to head, one look everywhere: .dl-card is the shared .pl-card (game page
+   Players to watch + Top performers), .dl-side the same pieces flat inside another card (the
+   "Who wins?" face-off). Both players' bars share one scale; the dashed line is the average.
+   Before the game the best game is amber, in the recap tonight's (the last bar). */
+.dl-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-top: 4px; }
+.dl-card { gap: 12px; }
+.dl-card:hover { transform: none; }
+.dl-card > :not(.pl-card__bg) { position: relative; z-index: 1; }
+.dl-card.is-potg { border-color: rgba(245,147,50,.55); box-shadow: 0 0 0 1px rgba(245,147,50,.22), 0 0 22px -4px rgba(245,147,50,.35); }
+.dl-card--empty { justify-content: center; align-items: center; min-height: 160px; font-size: 12.5px; color: var(--text-muted); }
+.dl-card a.pl-av { color: inherit; }
+.dl-card a.pl-card__who { flex: 1; color: inherit; }
+.dl-card a.pl-card__who:hover .pl-card__last { color: var(--amber); }
+.dl-tag { align-self: flex-start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: #0a0e16; background: var(--amber); padding: 4px 8px; border-radius: 6px; }
+.dl-tag--ghost { color: var(--amber); background: none; border: 1px solid rgba(245,147,50,.45); }
+.dl-big { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.dl-big b { font-size: 44px; font-weight: 800; line-height: .9; color: var(--text); }
+.dl-big b.is-lead { color: var(--amber); }
+.dl-big small { font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+/* The stat line: the stat each player won is amber, the other grey, a tie white on both */
+.dl-line { margin-top: 0; }
+.dl-line .pl-card__stats { flex: 1; justify-content: space-between; gap: 10px; }
+.dl-line .pl-stat b { color: var(--text-muted); }
+.dl-line .pl-stat.is-tie b { color: var(--text); }
+.dl-line .pl-stat.is-win b { color: var(--amber); }
+.dl-hist { display: flex; flex-direction: column; gap: 8px; }
+.dl-k { font-size: 9.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--text-subtle); }
+.dl-end { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.dl-foot { min-width: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-muted); }
+.dl-foot b { font-weight: 700; color: var(--text); }
+.dl-foot b.is-amber { color: var(--amber); }
+.dl-end .gd-say { align-self: center; }
+/* No chart (under 3 games): the same height as one, so the two sides still line up */
+.dl-none { box-sizing: border-box; display: flex; align-items: center; justify-content: center; min-height: 80px; margin: 0; padding: 12px; border-radius: 8px; border: 1px dashed rgba(255,255,255,.1); font-size: 12px; text-align: center; color: var(--text-muted); }
+/* Bars. Team-coloured (Paolo's call, 2026-10-08 — an exception to team colours = dots/chips
+   only); --bar is a lighter slate for Black. The earlier best keeps a white cap in the recap. */
+.dl-chart { display: flex; flex-direction: column; gap: 5px; }
+.dl-bars { position: relative; display: flex; align-items: flex-end; gap: 5px; height: 62px; }
+.dl-col { flex: 1; max-width: 44px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.dl-col em { font-style: normal; font-family: 'Saira Condensed', sans-serif; font-size: 11.5px; font-weight: 800; line-height: 1; color: var(--text-muted); }
+.dl-col:has(.is-best) em, .dl-col:has(.is-tonight) em { color: var(--amber); }
+.dl-bar { display: block; width: 100%; max-width: 24px; border-radius: 4px 4px 1px 1px; background: var(--bar, var(--team)); opacity: .6; }
+.dl-bar.is-best, .dl-bar.is-tonight { background: var(--amber); opacity: 1; }
+.dl-bar.is-top { opacity: .85; box-shadow: inset 0 2px 0 rgba(255,255,255,.75); }
+.dl-avg { position: absolute; left: -4px; right: -4px; z-index: 1; border-top: 1px dashed rgba(255,255,255,.3); pointer-events: none; }
+.dl-dates { display: flex; gap: 5px; }
+.dl-dates small { flex: 1; max-width: 44px; text-align: center; font-size: 9.5px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
+.dl-dates small:last-child:not(:empty) { color: var(--text-muted); }
+.dl-d-short { display: none; }
+/* Flat sides (inside the pick card): the right-hand player mirrors to face the left across the VS */
+.dl-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 4px 0; color: inherit; }
+.dl-side--b { align-items: flex-end; text-align: right; }
+.dl-side--empty { justify-content: center; align-items: center; min-height: 140px; font-size: 12.5px; color: var(--text-muted); }
+.dl-side:hover .pl-card__last { color: var(--amber); }
+.dl-side__head { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
+.dl-side--b .dl-side__head { flex-direction: row-reverse; }
+.dl-side--b .pl-card__meta { justify-content: flex-end; }
+.dl-side .pl-card__last { font-size: 15px; }
+.dl-side .dl-big { flex-direction: row; align-items: baseline; gap: 6px; }
+.dl-side--b .dl-big { flex-direction: row-reverse; }
+.dl-side .dl-big b { font-size: 28px; }
+.dl-side .dl-big small { font-size: 9.5px; }
+.dl-side .dl-chart, .dl-side .dl-none { align-self: stretch; }
+.dl-side--b .dl-bars, .dl-side--b .dl-dates { justify-content: flex-end; }
+/* Narrower columns: the flat sides keep the last 4 games, short dates */
+@media (max-width: 1240px) {
+  .dl-side .dl-col:nth-last-of-type(n+5), .dl-side .dl-dates small:nth-last-of-type(n+5) { display: none; }
+  .dl-side .dl-d-long { display: none; }
+  .dl-side .dl-d-short { display: inline; }
+}
+@media (max-width: 720px) {
+  .dl-pair { grid-template-columns: minmax(0, 1fr); }
+  .dl-side .dl-big { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .dl-side--b .dl-big { flex-direction: column; align-items: flex-end; }
+}
 
 /* ── /games Players of the game: .pl-card row (views/games.js potgCards) ──
    Desktop: 4 across (2 on tablets), scrolled by the header arrows. Phones: the shared
