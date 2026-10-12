@@ -12475,9 +12475,9 @@ function buildTeamPage(team, viewerId) {
     if (!top.length || !(per(top[0], c.k) > 0)) return null;
     const p = top[0], v = per(p, c.k);
     const note = c.k === 'fg3m'
-      ? `${p.fg3m} of ${(p.fg3m || 0) + (p.fg3m_miss || 0)} · ${leagueRank(c.k, v)}`
-      : `${p.games_played} GP · ${leagueRank(c.k, v)}`;
-    return { ...c, id: p.id, name: displayPlayerName(p.name), ...splitName(p.name), value: fmt1(v), note,
+      ? `${p.fg3m} of ${(p.fg3m || 0) + (p.fg3m_miss || 0)}`
+      : `${p.games_played} GP`;
+    return { ...c, id: p.id, number: p.number ?? '', rank: leagueRank(c.k, v), name: displayPlayerName(p.name), ...splitName(p.name), value: fmt1(v), note,
       rest: top.slice(1).filter(x => per(x, c.k) > 0).map(x => ({ id: x.id, name: displayPlayerName(x.name), value: fmt1(per(x, c.k)) })) };
   }).filter(Boolean);
 

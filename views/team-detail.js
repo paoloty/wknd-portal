@@ -77,16 +77,20 @@ function rankTile(c) {
     </div>`;
 }
 
+// The /leaders card lead: faded team-tinted photo behind the leader (styles.css .ld-card__bg
+// treatment), avatar ring, first over LASTNAME, "#num · GP" under it; league rank in the header.
 function leaderCard(c, team) {
+  const num = c.number !== '' && c.number != null ? `#${c.number} · ` : '';
   return `<div class="tdp-lb" style="--team:${teamColor(team)}">
       <div class="tdp-lb__top">
-        <div class="tdp-lb__head"><span class="tdp-lb__title">${escHtml(c.title)}</span><span class="tdp-lb__key">${escHtml(c.key)}</span></div>
+        <img class="tdp-lb__bg" src="${playerPhotoUrl(c.id, 192)}" alt="" loading="lazy" onerror="this.remove()">
+        <div class="tdp-lb__head"><span class="tdp-lb__title">${escHtml(c.title)}</span><span class="tdp-lb__key">${c.rank ? `<b>${escHtml(c.rank)}</b> · ` : ''}${escHtml(c.key)}</span></div>
         <a href="/players/${encodeURIComponent(c.id)}" class="tdp-lb__lead">
           ${avatar(c, 'tdp-av tdp-av--lg', team)}
           <span class="tdp-lb__who">
             <span class="tdp-lb__first">${escHtml(c.first)}</span>
             <span class="tdp-lb__last">${escHtml(c.last)}</span>
-            <span class="tdp-lb__note">${escHtml(c.note)}</span>
+            <span class="tdp-lb__note"><i style="background:${teamColor(team)}"></i>${escHtml(num + c.note)}</span>
           </span>
           <b class="tdp-lb__val font-condensed">${escHtml(c.value)}</b>
         </a>
