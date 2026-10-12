@@ -9507,15 +9507,15 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
    only); --bar is a lighter slate for Black. The earlier best keeps a white cap in the recap. */
 .dl-chart { display: flex; flex-direction: column; gap: 5px; }
 .dl-bars { position: relative; display: flex; align-items: flex-end; gap: 5px; height: 62px; }
-.dl-col { flex: 1; max-width: 44px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.dl-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .dl-col em { font-style: normal; font-family: 'Saira Condensed', sans-serif; font-size: 11.5px; font-weight: 800; line-height: 1; color: var(--text-muted); }
 .dl-col:has(.is-best) em, .dl-col:has(.is-tonight) em { color: var(--amber); }
-.dl-bar { display: block; width: 100%; max-width: 24px; border-radius: 4px 4px 1px 1px; background: var(--bar, var(--team)); opacity: .6; }
+.dl-bar { display: block; width: 100%; border-radius: 4px 4px 1px 1px; background: var(--bar, var(--team)); opacity: .6; }
 .dl-bar.is-best, .dl-bar.is-tonight { background: var(--amber); opacity: 1; }
 .dl-bar.is-top { opacity: .85; box-shadow: inset 0 2px 0 rgba(255,255,255,.75); }
 .dl-avg { position: absolute; left: -4px; right: -4px; z-index: 1; border-top: 1px dashed rgba(255,255,255,.3); pointer-events: none; }
 .dl-dates { display: flex; gap: 5px; }
-.dl-dates small { flex: 1; max-width: 44px; text-align: center; font-size: 9.5px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
+.dl-dates small { flex: 1; min-width: 0; text-align: center; font-size: 9.5px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
 .dl-dates small:last-child:not(:empty) { color: var(--text-muted); }
 .dl-d-short { display: none; }
 /* Flat sides (inside the pick card): the right-hand player mirrors to face the left across the VS */
