@@ -96,9 +96,11 @@ function faceoff(o, w) {
   return faceoffCard(o, { isPlayer: w.isPlayer, next: '/' });
 }
 
-// The homepage's pick card with the scorer face-off in the middle — also the team page's
-// "Up next" (views/team-detail.js). o.face comes from server.js homeFaceoff().
+// The homepage's pick card — also the team page's "Up next" (views/team-detail.js). With a
+// Form check (o.formCheck) it's the plain pick card, chart under the pick; the scorer
+// face-off (o.face, server.js homeFaceoff) only fills in when there's no chart to show.
 export function faceoffCard(o, { isPlayer = false, next = '/' } = {}) {
+  if (o.formCheck) return openPickCard(o, { isPlayer, next, size: 'sm', more: true });
   const [pa, pb] = o.face?.scorers || [null, null];
   const basis = (pa || pb)?.basis === 'season' ? 'Top scorers · this season' : 'Go-to scorers · in this matchup';
   const middle = `<div class="pkf-duel">

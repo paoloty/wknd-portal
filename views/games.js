@@ -3,6 +3,7 @@ import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, pl
 import { summaryPanel } from './home.js';
 import { pickBox, pickBoxScript, previewHref, oddsEdge, talkLink } from './pick-box.js';
 import { scorerName, previewDuelCards } from './duel.js';
+import { formCheck, formCheckOf } from './form-check.js';
 
 // Comment/react/share for this row — same actions as the game page's tabActionsBar, just
 // reachable from the list. The row itself is a "stretched link" card (see .game-row__link
@@ -436,8 +437,11 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
     m.scorers.some(Boolean) ? 'go-to scorers' : '',
     m.lastMeetings.length ? `last ${m.lastMeetings.length === 1 ? 'meeting' : `${m.lastMeetings.length} meetings`}` : '',
   ].filter(Boolean).join(' · ');
+  // Semi (/games Up next): the shared Form check chart (views/form-check.js), same as every
+  // pick card; the 3 top-edge rows only when there's no chart (too few recent box scores).
+  const fc = semi ? formCheckOf(m) : null;
   const detailSec = semi
-    ? `${ranked.length ? `<div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Top edges · this season' : 'Top edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
+    ? `${fc ? `<div class="gm-fck">${formCheck(fc)}</div>` : ranked.length ? `<div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Top edges · this season' : 'Top edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>
       <div class="gm-edges">${ranked.slice(0, 3).map(edgeRow).join('')}</div>` : ''}
       <a href="${escHtml(href)}" class="gm-full"><span class="gm-full__k">Full matchup preview</span><span class="gm-full__t">${escHtml(teaser)}</span><span class="gm-full__go">${state === 'open' ? 'Preview &amp; pick' : 'Open preview'} →</span></a>`
     : `<div class="gm-grp gm-grp--row"><span>${m.firstMeeting ? 'Biggest edges · this season' : 'Biggest edges · head to head'}</span><span class="gm-grp__note">${basisNote}</span></div>

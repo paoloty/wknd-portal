@@ -2,6 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
 import { gameSlug } from '../lib/slugs.js';
 import { MARGIN_MAX } from '../lib/picks.js';
+import { formCheck } from './form-check.js';
 
 // ── "Who wins?" pick box — one component for every surface that takes a pick ──────────
 // The homepage widget, /games Up next, /picks (Open picks + each game's preview), the game
@@ -180,7 +181,8 @@ export function pickBox(o, { isPlayer = false, next = '/picks', oddsHtml = '', f
 }
 
 // A whole pick card: team header (records, odds %, head to head, the odds edge) around
-// pickBox(). size 'lg' = /picks Open picks; 'sm' = homepage, game detail, profile.
+// pickBox(), then the Form check chart (views/form-check.js) when o.formCheck has one.
+// size 'lg' = /picks Open picks; 'sm' = homepage, game detail, profile.
 // middle: HTML between the header and the tiles — the homepage puts the player face-off
 // there, so the pick sits at the bottom. An unpicked game gets an amber outline (is-needs).
 export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg', middle = '', more = true } = {}) {
@@ -208,6 +210,7 @@ export function openPickCard(o, { isPlayer = false, next = '/picks', size = 'lg'
       ${middle}
       ${pickBox(o, { isPlayer, next })}
       ${o.talk && isPlayer && !o.closed ? talkLink(o.id, `${href}#talk`, !!o.myPick) : ''}
+      ${formCheck(o.formCheck)}
       ${size === 'lg'
         ? `<div class="pkb-foot"><span data-pick-total>${total ? `${total} pick${total === 1 ? '' : 's'}` : 'No picks yet'}</span><a href="${escHtml(href)}">Full matchup preview →</a></div>`
         : more ? `<a href="${escHtml(href)}" class="pkb-more">Full preview →</a>` : ''}

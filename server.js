@@ -27,6 +27,7 @@ import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
 import { homePage, leaderBoards, summaryPanel, headlineGamesOf } from './views/home.js';
 import { gamesPage } from './views/games.js';
+import { formCheckOf } from './views/form-check.js';
 import { picksPage, picksPlayerPage, picksPlayerSheet, picksRulesPage } from './views/picks.js';
 import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
@@ -9347,6 +9348,27 @@ function buildMatchup(game, ctx) {
     .filter(([k]) => avgA[k] != null && avgB[k] != null)
     .map(([k, label, hi, suffix = '']) => ({ key: k, label, a: avgA[k], b: avgB[k], hi, suffix }));
 
+  // Form check (views/form-check.js): each team's last 5 games with box scores, any opponent,
+  // any season. ctx.played only holds games before this one (matchupAsOf), so a frozen preview
+  // keeps the form it had at tip-off.
+  const byDateDesc = [...ctx.played].sort((x, y) => gameYmd(y.date).localeCompare(gameYmd(x.date)));
+  const lastFive = name => {
+    const out = [];
+    for (const g of byDateDesc) {
+      if (out.length === 5) break;
+      if (g.team_a_name !== name && g.team_b_name !== name) continue;
+      ctx.loadGame(g.id);
+      const side = g.team_a_name === name ? 'a' : 'b';
+      if ((ctx.statsById[g.id] || []).some(s => s.team_id === g[`team_${side}_id`])) out.push(g);
+    }
+    return out;
+  };
+  const fiveA = lastFive(A), fiveB = lastFive(B);
+  const form = {
+    a: teamAveragesOver(fiveA, A, ctx.statsById, ctx.toById), b: teamAveragesOver(fiveB, B, ctx.statsById, ctx.toById),
+    nA: fiveA.length, nB: fiveB.length,
+  };
+
   // Go-to scorer per team in this matchup: highest points per game over the meetings they
   // played (at least 2 when there have been 2+ box scores, so one hot night doesn't win it).
   const scorers = [];
@@ -9399,7 +9421,7 @@ function buildMatchup(game, ctx) {
     winsA: winsOf(A), winsB: winsOf(B), meetings: meetings.length,
     boxMeetings: meetings.filter(g => (ctx.statsById[g.id] || []).length).length,
     recordA: recordOf(A), recordB: recordOf(B), season: ctx.season,
-    rows, scorers, lastMeetings,
+    rows, form, scorers, lastMeetings,
     slides: meetings.filter(g => g.has_cover).slice(0, 4).map(g => g.id),
   };
 }
@@ -9824,6 +9846,7 @@ function openPicks(games, pctx, viewerId) {
   const ids = upcoming.map(g => g.id);
   const counts = getGamePickCounts(ids);
   const mine = getPlayerGamePicks(ids, viewerId);
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   return upcoming.map(g => {
     const pg = pctx.byId[g.id] || toPickGame(g, gameYmd);
     const { closed, odds } = upcomingPickState(g, pctx);
@@ -9847,6 +9870,8 @@ function openPicks(games, pctx, viewerId) {
       talk: getSetting('comments_enabled', '0') === '1',
       recA: recordOf(pg.a), recB: recordOf(pg.b),
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
+      // The card's Form check chart (views/form-check.js), from the same as-of-tip-off matchup.
+      formCheck: formCheckOf(matchupAsOf(g, games, playerMap)),
     };
   });
 }
