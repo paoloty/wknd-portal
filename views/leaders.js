@@ -344,11 +344,14 @@ function boardCard(b, showDownload) {
     <div class="ld-card__top">
       <img class="ld-card__bg" src="${playerPhotoUrl(lead.p.id, 192)}" alt="" loading="lazy" onerror="this.remove()">
       <div class="ld-card__head">
-        <span class="ld-card__title">${escHtml(b.title)}${b.sub ? `<small>${escHtml(b.sub)}</small>` : ''}</span>
+        <span class="ld-card__title" title="${escHtml(b.title)}">${escHtml(b.title)}</span>
         <span class="ld-card__side">
-          <span class="ld-card__key">${escHtml(cat.min || cat.label)}</span>
           <span class="ld-card__acts">${shareBtn(cat, b.mode, b.season, lead, color, b.fmt)}${downloadBtn(cat, b.mode, showDownload)}</span>
         </span>
+      </div>
+      <div class="ld-card__subline">
+        <span class="ld-card__sub"${b.sub ? ` title="${escHtml(b.sub)}"` : ''}>${escHtml(b.sub)}</span>
+        <span class="ld-card__key">${escHtml(cat.min || cat.label)}</span>
       </div>
       <div class="ld-card__lead">
         ${avatarHtml(lead.p.id, lead.p.name, color)}
@@ -371,18 +374,25 @@ function recordTile(t) {
   const color = teamColor(team);
   const ctx = first.ctx;
   const when = [fmtDay(first.r.date), `Season ${first.r.season}`, ctx.isFinals ? 'Finals' : ctx.isPO ? 'Playoffs' : ''].filter(Boolean).join(' · ');
+  const num = first.r.number !== '' && first.r.number != null ? `#${first.r.number}` : '';
+  // Same layout as the board cards: player left, record right, the faded photo (or their
+  // jersey) behind that block only — it stops at the game line's divider.
   return `<article class="ld-tile" style="--team:${color}">
-    <div class="ld-card__head">
-      <span class="ld-card__title">${escHtml(t.cat.tileTitle || t.cat.title)}</span>
-      <span class="ld-card__side">
-        ${t.badge ? `<span class="ld-badge${t.badgeOn ? ' is-on' : ''}">${escHtml(t.badge)}</span>` : ''}
-        <span class="ld-card__acts">${recShareBtn(t.cat, t.scope, first, color, t.fmt, t.mode)}</span>
-      </span>
-    </div>
-    <div class="ld-tile__val font-condensed">${escHtml(first.s)}${t.unit ? `<small>${escHtml(t.unit)}</small>` : ''}</div>
-    <div class="ld-card__lead">
-      ${avatarHtml(first.r.player_id, first.r.name, color)}
-      <a class="ld-card__who" href="${profileUrl(first.r.player_id)}">${nameHtml(first.r.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}"></span>${escHtml(team)}</span></a>
+    <div class="ld-tile__top">
+      <img class="ld-card__bg" src="${playerPhotoUrl(first.r.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()">
+      <div class="ld-card__head">
+        <span class="ld-card__title" title="${escHtml(t.cat.tileTitle || t.cat.title)}">${escHtml(t.cat.tileTitle || t.cat.title)}</span>
+        <span class="ld-card__side">
+          ${t.badge ? `<span class="ld-badge${t.badgeOn ? ' is-on' : ''}">${escHtml(t.badge)}</span>` : ''}
+          <span class="ld-card__acts">${recShareBtn(t.cat, t.scope, first, color, t.fmt, t.mode)}</span>
+        </span>
+      </div>
+      ${t.unit ? `<div class="ld-card__subline"><span class="ld-card__sub" title="${escHtml(t.unit)}">${escHtml(t.unit)}</span></div>` : ''}
+      <div class="ld-card__lead">
+        ${avatarHtml(first.r.player_id, first.r.name, color)}
+        <a class="ld-card__who" href="${profileUrl(first.r.player_id)}">${nameHtml(first.r.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}"></span>${escHtml([team, num].filter(Boolean).join(' · '))}</span></a>
+        <b class="ld-tile__val font-condensed">${escHtml(first.s)}</b>
+      </div>
     </div>
     <a class="ld-tile__game" href="/games/${encodeURIComponent(String(first.r.game_id || ''))}"><b>vs ${escHtml(teamOf(ctx.opp))} · ${escHtml(ctx.result)}</b><span>${escHtml(when)}</span></a>
     ${t.foot ? `<p class="ld-tile__foot">${escHtml(t.foot)}</p>` : ''}

@@ -5183,11 +5183,11 @@ async function loadPhotoVariant(url, w) {
 
 // widths: the ?w= values this route accepts (anything else gets the original).
 // maxAge: browser cache seconds for un-versioned URLs before revalidating via ETag.
-async function sendPlayerPhoto(req, res, url, { widths = PHOTO_WIDTHS, maxAge = 300 } = {}) {
+async function sendPlayerPhoto(req, res, url, { widths = PHOTO_WIDTHS, maxAge = 300, onFail = null } = {}) {
   if (!url) return res.status(404).end();
   const w = widths.has(Number(req.query.w)) ? Number(req.query.w) : 0;
   const photo = await loadPhotoVariant(url, w);
-  if (photo.failedAt) return res.status(502).end();
+  if (photo.failedAt) return onFail ? onFail() : res.status(502).end();
   const etag = `"${photo.ver}-${w}"`;
   res.set('ETag', etag);
   // ?v= is the photo's own hash (photoVersion), so that URL can never go stale. Bare
@@ -5222,19 +5222,30 @@ function playerPhotoVersion(id) {
 }
 setPhotoVersionResolver(playerPhotoVersion);
 
-app.get('/api/player/:id/photo', async (req, res) => {
-  const row = getPlayerPhoto(req.params.id);
-  if (row?.picture_url) return sendPlayerPhoto(req, res, row.picture_url);
-  // No photo yet: their team's jersey with their number (views/utils.js playerJerseySvg).
-  const player = row && getPlayerById(req.params.id);
+// No photo yet: their team's jersey with their number (views/utils.js playerJerseySvg).
+// Also stands in, briefly cached, when a stored photo can't be loaded (e.g. the admin app
+// that hosts /data/player-images is down), so the real photo comes back once it's up.
+function sendPlayerJersey(req, res, { failed = false } = {}) {
+  const player = getPlayerById(req.params.id);
   if (!player) return res.status(404).end();
   const team = player.team_id ? getTeamById(player.team_id) : null;
   const svg = playerJerseySvg({ color: team ? teamColor(team.name) : '#4a5263', number: player.number });
-  const etag = `"jersey-${createHash('sha1').update(svg).digest('hex').slice(0, 12)}"`;
-  res.set('ETag', etag);
-  res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
-  if (req.headers['if-none-match'] === etag) return res.status(304).end();
+  if (failed) {
+    res.set('Cache-Control', 'no-store');
+  } else {
+    const etag = `"jersey-${createHash('sha1').update(svg).digest('hex').slice(0, 12)}"`;
+    res.set('ETag', etag);
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+  }
   res.type('image/svg+xml').send(svg);
+}
+
+app.get('/api/player/:id/photo', async (req, res) => {
+  const row = getPlayerPhoto(req.params.id);
+  if (!row) return res.status(404).end();
+  if (row.picture_url) return sendPlayerPhoto(req, res, row.picture_url, { onFail: () => sendPlayerJersey(req, res, { failed: true }) });
+  sendPlayerJersey(req, res);
 });
 
 // Best available source to re-crop from: the retained pre-crop original if we have
