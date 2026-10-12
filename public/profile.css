@@ -38,14 +38,10 @@
 .prf-btn:hover { border-color: rgba(255,255,255,0.14); }
 .prf-btn--amber { background: var(--amber); border-color: var(--amber); color: #0a0e16; }
 .prf-btn--amber:hover { background: #fbb36b; border-color: #fbb36b; }
-.prf-btn:focus-visible, .prf-share-btn:focus-visible, .prf-nav a:focus-visible, .prf-kpi__cta:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.prf-btn:focus-visible, .prf-share-btn:focus-visible, .prf-kpi__cta:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
-/* Section nav (own profile) */
-.prf-nav { position: sticky; top: var(--prf-nav-top, 70px); z-index: 20; display: flex; gap: 24px; overflow-x: auto; scrollbar-width: none; margin-top: 18px; padding: 0 2px; background: var(--bg); border-bottom: 1px solid var(--border); }
-.prf-nav::-webkit-scrollbar { display: none; }
-.prf-nav a { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; font-weight: 700; color: var(--text-muted); border-bottom: 2px solid transparent; white-space: nowrap; }
-.prf-nav a:hover { color: var(--text); }
-.prf-nav a.is-on { color: var(--text); border-bottom-color: var(--amber); }
+/* Section nav: shared .gd-snav (styles.css + views/section-nav.js), same as the game/team pages */
+.prf-snav a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* Stat tiles (Today + public season) */
 .prf-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
@@ -156,7 +152,6 @@ a.prf-line:hover b { color: var(--amber); }
   .prf-grid2, .prf-grid3, .prf-week { grid-template-columns: minmax(0, 1fr); }
   .prf-body { padding: 14px; }
   .prf-big { font-size: 30px; }
-  .prf-nav { gap: 18px; }
 }
 .prf-grid2--after { margin-top: 16px; }
 

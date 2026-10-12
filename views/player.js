@@ -8,6 +8,7 @@ import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime } from './pick-
 import { resultChips } from './picks-widget.js';
 import { fmtPts } from '../lib/picks.js';
 import { gameSlug } from '../lib/slugs.js';
+import { sectionNavScript } from './section-nav.js';
 
 function avg(val, gp) {
   if (!gp || val == null) return '—';
@@ -1894,20 +1895,18 @@ export function playerPage(o) {
   const NAV = own
     ? { today: 'Today', 'this-week': 'This week', 'my-season': 'My season', badges: 'Badges', community: 'Community', career: 'Career', account: 'Account' }
     : { season: 'Season', recent: 'Recent games', badges: 'Badges', community: 'What players say', career: 'Career' };
-  const navCount = sections.filter(s => s && NAV[s.match(/id="([^"]+)"/)[1]]).length;
-  const nav = navCount >= 2 ? `<nav class="prf-nav" aria-label="Profile sections">${sections.filter(Boolean).map(s => {
-    const id = s.match(/id="([^"]+)"/)[1];
-    return NAV[id] ? `<a href="#${id}">${NAV[id]}</a>` : '';
-  }).join('')}</nav>
-<script>
+  // Same sticky section nav as /games/:slug and /teams/:slug (views/section-nav.js):
+  // scroll-spy, glide on click, mini title once it pins.
+  const navItems = sections.filter(Boolean).map(s => s.match(/id="([^"]+)"/)[1]).filter(id => NAV[id]);
+  const nav = navItems.length >= 2 ? `<nav class="gd-snav prf-snav" data-gd-snav aria-label="Profile sections">
+    <span class="gd-snav__mini">${escHtml(displayPlayerName(d.player.name))}</span>
+    ${navItems.map((id, i) => `<a href="#${id}" data-spy="${id}"${i === 0 ? ' class="is-on"' : ''}>${NAV[id]}</a>`).join('')}
+  </nav>` : '';
+  // Folded sections (own profile, phones): the +/– toggle, and a nav tap or #hash opens its
+  // section. Runs before sectionNavScript (and in the capture phase on the nav) so the section
+  // is open before the shared script measures where to scroll.
+  const foldScript = own ? `<script>
 (function () {
-  var nav = document.querySelector('.prf-nav');
-  if (!nav) return;
-  // Sit just under the sticky site header, whatever height it is on this screen.
-  var header = document.querySelector('.site-header:not(.site-header--minimal)');
-  function place() { nav.style.setProperty('--prf-nav-top', (header && getComputedStyle(header).position === 'sticky' ? header.offsetHeight : 0) + 'px'); }
-  place(); window.addEventListener('resize', place);
-  // Folded sections (phones): the +/– toggle, and a nav tap or #hash opens its section.
   function setOpen(sec, open) {
     var btn = sec && sec.querySelector('.prf-fold');
     if (!btn) return;
@@ -1920,17 +1919,11 @@ export function playerPage(o) {
   function openHash(hash) { if (hash && hash.length > 1) setOpen(document.getElementById(hash.slice(1)), true); }
   openHash(location.hash);
   window.addEventListener('hashchange', function () { openHash(location.hash); });
-  // Underline the section in view.
-  var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
-  links.forEach(function (a) { a.addEventListener('click', function () { openHash(a.getAttribute('href')); }); });
-  if (!('IntersectionObserver' in window)) return;
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (e) {
-      if (!e.isIntersecting) return;
-      links.forEach(function (a) { a.classList.toggle('is-on', a.getAttribute('href') === '#' + e.target.id); });
-    });
-  }, { rootMargin: '-35% 0px -60% 0px' });
-  links.forEach(function (a) { var s = document.getElementById(a.getAttribute('href').slice(1)); if (s) io.observe(s); });
+  var nav = document.querySelector('[data-gd-snav]');
+  if (nav) nav.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-spy]');
+    if (a) openHash('#' + a.dataset.spy);
+  }, true);
 })();
 </script>` : '';
 
@@ -1939,5 +1932,7 @@ ${banner}
 ${hero}
 ${nav}
 ${sections.filter(Boolean).join('\n')}
-</div>`;
+</div>
+${foldScript}
+${nav ? sectionNavScript() : ''}`;
 }
