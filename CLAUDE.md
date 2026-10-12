@@ -38,6 +38,7 @@ Public-facing MPA (multi-page app) for the WKND Basketball League. Node.js + Exp
 ## Design System (strict rules)
 - **Accent color**: `#f59332` (amber) — the ONLY UI accent. Never use team colors for UI elements.
 - **Team colors** (Blue/Maroon/White/Black): used exclusively for small indicator dots, chips, avatar rings.
+- **Medal colors** (`--gold`, `--silver`, `--bronze`): the one other accent, only for 1st/2nd/3rd places (e.g. the /mvp podium cards' border glow and rank badge). Never for general UI.
 - **Fonts**: Archivo (body text) + Saira Condensed (numerals/scores) — loaded from Google Fonts
 - **Cards**: `var(--radius)` (14px) border-radius, `1px solid var(--border)` border
 - **Background** (`--bg`): `#0a0e16` (near-black navy)

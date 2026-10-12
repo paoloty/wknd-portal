@@ -107,7 +107,7 @@ function leadCard(c, second, ctx) {
   ];
   const clear = second ? Math.max(0, c.mvpScore - second.mvpScore).toFixed(1) : '';
   const rec = (c.stats.wins || c.stats.losses) ? ` · TEAM ${c.stats.wins}–${c.stats.losses}` : '';
-  return `<article class="mv-card mv-card--lead" style="--team:${teamColor(String(c.stats.team_name || ''))}">
+  return `<article class="mv-card mv-card--lead mv-card--r1" style="--team:${teamColor(String(c.stats.team_name || ''))}">
     ${backdrop(c)}
     <span class="mv-card__ghost font-condensed" aria-hidden="true">1</span>
     <span class="mv-card__tags"><span class="mvpx-badge mvpx-badge--solid">${RANK_LABELS[1]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
@@ -126,7 +126,7 @@ function leadCard(c, second, ctx) {
 function chaserCard(c, rank, lead, ctx) {
   const move = moveText(rank, c.prevRank);
   const gap  = Math.max(0, lead.mvpScore - c.mvpScore).toFixed(1);
-  return `<article class="mv-card mv-card--chaser" style="--team:${teamColor(String(c.stats.team_name || ''))}">
+  return `<article class="mv-card mv-card--chaser mv-card--r${rank}" style="--team:${teamColor(String(c.stats.team_name || ''))}">
     ${backdrop(c)}
     <span class="mv-card__ghost font-condensed" aria-hidden="true">${rank}</span>
     <span class="mv-card__tags"><span class="mvpx-badge">${RANK_LABELS[rank]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
