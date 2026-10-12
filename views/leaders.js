@@ -336,7 +336,8 @@ function boardCard(b, showDownload) {
   const team = teamOf(lead.p.team_name);
   const color = teamColor(team);
   const num = lead.p.number !== '' && lead.p.number != null ? `#${lead.p.number}` : '';
-  const meta = [team, num, lead.p.games_played ? `${lead.p.games_played} GP` : ''].filter(Boolean).join(' · ');
+  // Team shows as the dot only (named for screen readers / on hover); the line is # · GP.
+  const meta = [num, lead.p.games_played ? `${lead.p.games_played} GP` : ''].filter(Boolean).join(' · ');
   // Leader block = the /players card: faded team-tinted photo behind (a player with no
   // photo gets their jersey from the same URL). The jersey number sits in the team line,
   // since the share/download buttons hold the corner where /players puts it.
@@ -355,7 +356,7 @@ function boardCard(b, showDownload) {
       </div>
       <div class="ld-card__lead">
         ${avatarHtml(lead.p.id, lead.p.name, color)}
-        <a class="ld-card__who" href="${profileUrl(lead.p.id)}">${nameHtml(lead.p.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}"></span>${escHtml(meta)}</span></a>
+        <a class="ld-card__who" href="${profileUrl(lead.p.id)}">${nameHtml(lead.p.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}" role="img" aria-label="${escHtml(team)}" title="${escHtml(team)}"></span>${escHtml(meta)}</span></a>
         <b class="ld-card__val font-condensed">${escHtml(lead.s)}</b>
       </div>
     </div>
@@ -390,7 +391,7 @@ function recordTile(t) {
       ${t.unit ? `<div class="ld-card__subline"><span class="ld-card__sub" title="${escHtml(t.unit)}">${escHtml(t.unit)}</span></div>` : ''}
       <div class="ld-card__lead">
         ${avatarHtml(first.r.player_id, first.r.name, color)}
-        <a class="ld-card__who" href="${profileUrl(first.r.player_id)}">${nameHtml(first.r.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}"></span>${escHtml([team, num].filter(Boolean).join(' · '))}</span></a>
+        <a class="ld-card__who" href="${profileUrl(first.r.player_id)}">${nameHtml(first.r.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}" role="img" aria-label="${escHtml(team)}" title="${escHtml(team)}"></span>${escHtml(num)}</span></a>
         <b class="ld-tile__val font-condensed">${escHtml(first.s)}</b>
       </div>
     </div>
