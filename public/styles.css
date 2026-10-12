@@ -7927,6 +7927,10 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .pkp-tabs { display: none; }
 .pkp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 28px; align-items: start; margin-bottom: 40px; }
 .pkp-side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 90px; }
+/* Main column: open picks above the game days, beside the race sidebar. The two pick cards
+   sit side by side only when the column is wide enough for them. */
+.pkp-main { min-width: 0; }
+@media (max-width: 1240px) { .pkp-main .pkp-now__grid { grid-template-columns: minmax(0, 1fr); } }
 .pkp-day { margin-bottom: 26px; }
 .pkp-day__h { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: #c7d0da; }
 .pkp-day__h span { font-size: 10px; padding: 3px 7px; border-radius: 5px; color: var(--amber); background: var(--amber-dim); letter-spacing: 0.12em; }
@@ -9628,12 +9632,17 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .fcx__how i, .fcx__key i { display: inline-block; vertical-align: middle; }
 .fcx__plot { min-width: 0; }
 .fcx__canvas { position: relative; }
-.fcx__svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* Stretches in width only: HTML axis + an SVG whose x positions are percentages (see chartSvg). */
+.fcx__chart { display: grid; grid-template-columns: 46px minmax(0, 1fr); column-gap: 10px; }
+.fcx__axis { position: relative; }
+.fcx__axis span { position: absolute; right: 0; transform: translateY(-50%); font-size: 11px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
+.fcx__axis span.is-mid { color: var(--text-muted); }
+.fcx__svg { display: block; width: 100%; overflow: visible; }
+.fcx__lines { overflow: visible; }
+.fcx__lines path { vector-effect: non-scaling-stroke; }
 .fcx__swipe { display: none; margin: 0; font-size: 11.5px; color: var(--text-subtle); }
 .fcx__grid { stroke: rgba(255,255,255,.06); }
 .fcx__grid.is-mid { stroke: var(--text-subtle); stroke-dasharray: 4 4; }
-.fcx__tick { font-family: 'Archivo', sans-serif; font-size: 11px; font-weight: 700; fill: var(--text-subtle); }
-.fcx__tick.is-mid { fill: var(--text-muted); }
 .fcx__zone { font-family: 'Archivo', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; fill: var(--text-subtle); }
 .fcx__x { font-family: 'Archivo', sans-serif; font-size: 11.5px; font-weight: 800; letter-spacing: .06em; fill: var(--text-muted); }
 .fcx__x.is-flip { fill: var(--amber); }
@@ -9659,7 +9668,7 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 @media (max-width: 640px) {
   /* Phones: the chart keeps a readable size and scrolls sideways inside the card. */
   .fcx__plot { overflow-x: auto; overscroll-behavior-x: contain; margin: 0 -16px; padding: 0 16px; scrollbar-width: thin; }
-  .fcx__canvas { width: 680px; }
+  .fcx__canvas { width: 640px; }
   .fcx__swipe { display: block; }
   .fcx__head { font-size: 15.5px; }
   .fcx__how > span:last-child { flex-basis: 100%; }

@@ -151,29 +151,36 @@ function chartState(fc, mode) {
   return { M, pts, moves, ha: pts.filter(p => better(p, 'a')).length, hb: pts.filter(p => better(p, 'b')).length };
 }
 
-// The chart SVG. One drawing at every width: on phones it keeps its full size and the plot
-// scrolls sideways (.fcx__plot) instead of squeezing the stats together.
+// The chart. It stretches in width only, so text, dots and lines keep the same pixel size on
+// every screen: the axis labels are HTML; in the SVG, x positions are percentages of the plot
+// width and y positions are pixels (fixed height); the lines sit in a nested SVG stretched to
+// the plot (preserveAspectRatio none) with non-scaling strokes. On phones the plot keeps a
+// minimum width and scrolls sideways (.fcx__plot) instead of squeezing the stats together.
+const CH = 330, CT = 16, CB = 34, PATH_W = 1000;
+const ASSUMED_PLOT_PX = 640; // for label collisions only; wider screens just get more room
+
 function chartSvg(fc, st) {
   const { pts, moves } = st;
-  const W = 760, H = 330, L = 58, R = 10, T = 16, B = 34;
-  const n = pts.length, colW = (W - L - R) / n;
-  const x = i => r1(L + (i + 0.5) * colW);
-  const y = v => r1(T + (1 - (Math.max(Y_MIN, Math.min(Y_MAX, lg(v))) - Y_MIN) / (Y_MAX - Y_MIN)) * (H - T - B));
-  const path = k => pts.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p[k])}`).join('');
+  const n = pts.length;
+  const pct = i => r1(((i + 0.5) / n) * 1000) / 10; // column centre, % of the plot width
+  const y = v => r1(CT + (1 - (Math.max(Y_MIN, Math.min(Y_MAX, lg(v))) - Y_MIN) / (Y_MAX - Y_MIN)) * (CH - CT - CB));
+  const path = k => pts.map((p, i) => `${i ? 'L' : 'M'}${r1((pct(i) / 100) * PATH_W)},${y(p[k])}`).join('');
   const col = side => teamColor(side === 'a' ? fc.a : fc.b);
+  const colPct = 100 / n;
   const pt = (i, v, side, now) => (now
-    ? `<circle class="fcx__pt" cx="${x(i)}" cy="${y(v)}" r="5" fill="${col(side)}"/>`
-    : `<circle class="fcx__upt fcx__upt--${side}" cx="${x(i)}" cy="${y(v)}" r="3"/>`);
+    ? `<circle class="fcx__pt" cx="${pct(i)}%" cy="${y(v)}" r="5" fill="${col(side)}"/>`
+    : `<circle class="fcx__upt fcx__upt--${side}" cx="${pct(i)}%" cy="${y(v)}" r="3"/>`);
   // Move labels: above a rise, below a drop. Each label's box (rough text width) is checked
   // against the ones already placed and the two zone captions; on a clash it steps further
   // from its point, or flips to the other side, so labels never overlap.
+  const PW = ASSUMED_PLOT_PX;
   const placed = [
-    { x0: L, x1: L + 160, y0: T, y1: T + 14 }, // ▲ Better than usual
-    { x0: L, x1: L + 160, y0: H - B - 20, y1: H - B - 4 }, // ▼ Worse than usual
+    { x0: 0, x1: 170, y0: CT, y1: CT + 14 }, // ▲ Better than usual
+    { x0: 0, x1: 170, y0: CH - CB - 20, y1: CH - CB - 4 }, // ▼ Worse than usual
   ];
   const callout = mv => {
     const text = `${fmtV(mv.v)} (usual ${mv.u.toFixed(1)})`;
-    const w = text.length * 6.6, cx = x(mv.i), cy = y(mv.p['r' + mv.side]);
+    const w = text.length * 6.6, cx = (pct(mv.i) / 100) * PW, cy = y(mv.p['r' + mv.side]);
     const anchor = mv.i === 0 ? 'start' : mv.i === n - 1 ? 'end' : 'middle';
     const x0 = anchor === 'start' ? cx - 6 : anchor === 'end' ? cx - w + 6 : cx - w / 2;
     const clash = ty => placed.some(b => x0 < b.x1 && x0 + w > b.x0 && ty - 11 < b.y1 && ty + 3 > b.y0);
@@ -181,26 +188,30 @@ function chartSvg(fc, st) {
     for (const dir of mv.lift > 0 ? [-1, 1] : [1, -1]) {
       for (let k = 0; k < 4; k++) tries.push(dir < 0 ? cy - 12 - k * 15 : cy + 21 + k * 15);
     }
-    const ty = tries.find(t => t - 11 >= T && t + 3 <= H - B && !clash(t));
+    const ty = tries.find(t => t - 11 >= CT && t + 3 <= CH - CB && !clash(t));
     if (ty == null) return '';
     placed.push({ x0, x1: x0 + w, y0: ty - 11, y1: ty + 3 });
-    return `<text class="fcx__call" x="${cx}" y="${r1(ty)}" text-anchor="${anchor}">${text}</text>`;
+    return `<text class="fcx__call" x="${pct(mv.i)}%" y="${r1(ty)}" text-anchor="${anchor}"${anchor === 'start' ? ' dx="-6"' : anchor === 'end' ? ' dx="6"' : ''}>${text}</text>`;
   };
-  return `<svg class="fcx__svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escHtml(tcase(fc.a))} and ${escHtml(tcase(fc.b))}: ${st.M.now} against their usual, ${n} stats">
-      ${pts.map((p, i) => (p.flip ? `<rect class="fcx__flipcol" x="${r1(x(i) - colW / 2 + 2)}" y="${T}" width="${r1(colW - 4)}" height="${H - T - B}" rx="6"/>` : '')).join('')}
-      ${[0.5, 1, 2, 4].map(t => `<line class="fcx__grid${t === 1 ? ' is-mid' : ''}" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/>
-        <text class="fcx__tick${t === 1 ? ' is-mid' : ''}" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${TICK[t]}</text>`).join('')}
-      ${pts.slice(1).map((_, i) => `<line class="fck__div" x1="${r1(L + (i + 1) * colW)}" x2="${r1(L + (i + 1) * colW)}" y1="${T}" y2="${H - B + 6}"/>`).join('')}
-      <text class="fcx__zone" x="${L + 6}" y="${T + 10}">▲ Better than usual</text><text class="fcx__zone" x="${L + 6}" y="${H - B - 8}">▼ Worse than usual</text>
-      <path class="fck__line fck__line--a fck__line--usual" d="${path('rua')}"/>
-      <path class="fck__line fck__line--b fck__line--usual" d="${path('rub')}"/>
-      <path class="fck__line fck__line--a fcx__now" d="${path('ra')}"/>
-      <path class="fck__line fck__line--b fcx__now" d="${path('rb')}"/>
+  return `<div class="fcx__chart">
+      <div class="fcx__axis" aria-hidden="true">${[4, 2, 1, 0.5].map(t => `<span class="${t === 1 ? 'is-mid' : ''}" style="top:${y(t)}px">${TICK[t]}</span>`).join('')}</div>
+      <svg class="fcx__svg" height="${CH}" role="img" aria-label="${escHtml(tcase(fc.a))} and ${escHtml(tcase(fc.b))}: ${st.M.now} against their usual, ${n} stats">
+      ${pts.map((p, i) => (p.flip ? `<rect class="fcx__flipcol" x="${r1(i * colPct + 0.4)}%" y="${CT}" width="${r1(colPct - 0.8)}%" height="${CH - CT - CB}" rx="6"/>` : '')).join('')}
+      ${[0.5, 1, 2, 4].map(t => `<line class="fcx__grid${t === 1 ? ' is-mid' : ''}" x1="0" x2="100%" y1="${y(t)}" y2="${y(t)}"/>`).join('')}
+      ${pts.slice(1).map((_, i) => `<line class="fck__div" x1="${r1((i + 1) * colPct)}%" x2="${r1((i + 1) * colPct)}%" y1="${CT}" y2="${CH - CB + 6}"/>`).join('')}
+      <text class="fcx__zone" x="6" y="${CT + 10}">▲ Better than usual</text><text class="fcx__zone" x="6" y="${CH - CB - 8}">▼ Worse than usual</text>
+      <svg class="fcx__lines" x="0" y="0" width="100%" height="${CH}" viewBox="0 0 ${PATH_W} ${CH}" preserveAspectRatio="none" aria-hidden="true">
+        <path class="fck__line fck__line--a fck__line--usual" d="${path('rua')}"/>
+        <path class="fck__line fck__line--b fck__line--usual" d="${path('rub')}"/>
+        <path class="fck__line fck__line--a fcx__now" d="${path('ra')}"/>
+        <path class="fck__line fck__line--b fcx__now" d="${path('rb')}"/>
+      </svg>
       ${pts.map((p, i) => `${pt(i, p.rua, 'a')}${pt(i, p.rub, 'b')}${pt(i, p.ra, 'a', true)}${pt(i, p.rb, 'b', true)}
-        <text class="fcx__x${p.flip ? ' is-flip' : ''}" x="${x(i)}" y="${H - 10}" text-anchor="middle">${p.short}</text>`).join('')}
+        <text class="fcx__x${p.flip ? ' is-flip' : ''}" x="${pct(i)}%" y="${CH - 10}" text-anchor="middle">${p.short}</text>`).join('')}
       ${moves.map(callout).join('')}
-      ${pts.map((p, i) => `<rect class="fcx__hit" data-fcx-col="${i}" data-x="${(x(i) / W).toFixed(3)}" x="${r1(x(i) - colW / 2)}" y="0" width="${r1(colW)}" height="${H}" tabindex="0" role="button" aria-label="${escHtml(p.word)}: the real numbers"/>`).join('')}
-    </svg>`;
+      ${pts.map((p, i) => `<rect class="fcx__hit" data-fcx-col="${i}" data-x="${(pct(i) / 100).toFixed(3)}" x="${r1(i * colPct)}%" y="0" width="${r1(colPct)}%" height="${CH}" tabindex="0" role="button" aria-label="${escHtml(p.word)}: the real numbers"/>`).join('')}
+    </svg>
+    </div>`;
 }
 
 function chartPanel(fc, mode, hidden) {
@@ -265,8 +276,10 @@ function formChartScript() {
     hideTips(panel);
     panel.querySelectorAll('[data-fcx-col="' + hit.dataset.fcxCol + '"]').forEach(function (r) { r.classList.add('is-on'); });
     tip.hidden = false;
-    var w = canvas.clientWidth, half = tip.offsetWidth / 2;
-    tip.style.left = Math.max(half, Math.min(w - half, Number(hit.dataset.x) * w)) + 'px';
+    // data-x is the column centre as a share of the plot SVG, which sits right of the axis.
+    var c = canvas.getBoundingClientRect(), s = hit.ownerSVGElement.getBoundingClientRect();
+    var w = c.width, half = tip.offsetWidth / 2, at = s.left - c.left + Number(hit.dataset.x) * s.width;
+    tip.style.left = Math.max(half, Math.min(w - half, at)) + 'px';
   }
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-fcx-btn]');
