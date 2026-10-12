@@ -8965,21 +8965,45 @@ app.delete('/admin/games/:id/cover', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Mirrors a wknd-stats export's Team A/B sides: teamA*/teamB* keys trade places at every depth
+// (scores, team turnovers, quarterStats, period + checkpoint snapshots) and each play's isTeamA
+// flips. Player stats are keyed by player id, so they need nothing. Play text like
+// "[WHI 99 - BLU 90]" is left as recorded.
+function swapExportSides(v) {
+  if (Array.isArray(v)) return v.map(swapExportSides);
+  if (!v || typeof v !== 'object') return v;
+  const out = {};
+  for (const [k, val] of Object.entries(v)) {
+    const key = k.startsWith('teamA') ? 'teamB' + k.slice(5) : k.startsWith('teamB') ? 'teamA' + k.slice(5) : k;
+    out[key] = k === 'isTeamA' && typeof val === 'boolean' ? !val : swapExportSides(val);
+  }
+  return out;
+}
+
 app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
 
-  const payload = req.body;
+  let payload = req.body;
   if (payload?.type !== 'wknd-game-log') {
     return res.status(400).json({ error: 'Invalid file. Export the game from the wknd-stats admin app.' });
   }
 
-  const g = payload.game;
-  if (!g) return res.status(400).json({ error: 'Missing game data in export file.' });
+  if (!payload.game) return res.status(400).json({ error: 'Missing game data in export file.' });
 
-  const nameA = String(g.teamAName || '').trim().toUpperCase();
-  const nameB = String(g.teamBName || '').trim().toUpperCase();
-  if (nameA !== game.team_a_name.trim().toUpperCase() || nameB !== game.team_b_name.trim().toUpperCase()) {
+  const upper = s => String(s || '').trim().toUpperCase();
+  const gameA = upper(game.team_a_name), gameB = upper(game.team_b_name);
+  // A file exported with the teams the other way round is flipped to match this game.
+  const swapped = upper(payload.game.teamAName) === gameB && upper(payload.game.teamBName) === gameA && gameA !== gameB;
+  if (swapped) {
+    payload = swapExportSides(payload);
+    console.log(`[import] game=${game.id} export had teams reversed, swapped sides`);
+  }
+  const g = payload.game;
+
+  const nameA = upper(g.teamAName);
+  const nameB = upper(g.teamBName);
+  if (nameA !== gameA || nameB !== gameB) {
     return res.status(400).json({
       error: `Team mismatch: export is ${g.teamAName} vs ${g.teamBName}, this game is ${game.team_a_name} vs ${game.team_b_name}.`
     });
@@ -9005,7 +9029,7 @@ app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
       teamBTeamTurnovers: Number(g.teamBTeamTurnovers || 0),
     });
     console.log(`[import] done in ${Date.now() - t0}ms`);
-    res.json({ ok: true, teamAScore: Number(g.teamAScore), teamBScore: Number(g.teamBScore) });
+    res.json({ ok: true, swapped, teamAScore: Number(g.teamAScore), teamBScore: Number(g.teamBScore) });
     setImmediate(() => settleGamePicks(game.id));
 
     // Auto-recompute ratings for all players in this game (non-blocking, after response)
@@ -9224,7 +9248,7 @@ function buildMatchup(game, ctx) {
       const top = best.games.reduce((m, x) => (x.pts > m.pts ? x : m), best.games[0]);
       const n = best.games.length;
       scorers.push({
-        id: best.id, name: displayPlayerName(player?.name || ''), number: player?.number ?? '', team: name, opp, hasPhoto: !!player?.picture_url,
+        id: best.id, name: displayPlayerName(player?.name || ''), rawName: player?.name || '', number: player?.number ?? '', team: name, opp, hasPhoto: !!player?.picture_url,
         ppg: Math.round((best.pts / n) * 10) / 10, rpg: Math.round((best.reb / n) * 10) / 10, apg: Math.round((best.ast / n) * 10) / 10,
         fg: best.fga ? Math.round((best.fgm / best.fga) * 1000) / 10 : null, games: n,
         series: best.games.map(x => x.pts), dates: best.games.map(x => x.ymd), best: { pts: top.pts, label: top.tag ? `${top.tag} · ${shortDay(top.ymd)}` : shortDay(top.ymd) },

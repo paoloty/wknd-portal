@@ -1187,7 +1187,7 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
         var text = await file.text();
         var payload = JSON.parse(text);
         var body = JSON.stringify(payload);
-        await new Promise(function(resolve, reject) {
+        var result = await new Promise(function(resolve, reject) {
           var xhr = new XMLHttpRequest();
           xhr.open('POST', '/admin/games/${id}/import');
           xhr.setRequestHeader('Content-Type', 'application/json');
@@ -1219,8 +1219,13 @@ ${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.
           xhr.onerror = function() { clearInterval(ticker); reject(new Error('Network error')); };
           xhr.send(body);
         });
-        progressLabel.textContent = 'Done! Reloading…';
-        location.reload();
+        if (result && result.swapped) {
+          progressLabel.textContent = 'Done — file had the teams reversed, so they were swapped to match. Reloading…';
+          setTimeout(function() { location.reload(); }, 2500);
+        } else {
+          progressLabel.textContent = 'Done! Reloading…';
+          location.reload();
+        }
       } catch (e) {
         progressWrap.classList.remove('agm-progress-wrap--visible');
         filePlaceholder.textContent = 'Error: ' + e.message;
