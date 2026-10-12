@@ -808,12 +808,14 @@ function pickRecordCard(r, isOwnProfile) {
   </div>` : '';
   return `<div class="card pk-me${own ? ' pk-me--own' : ''}">
   <div class="card-label">WHO WINS? · S${escHtml(String(r.season))} PICKS</div>
+  <div class="pk-me__body">
   ${record}
   ${openHtml}
   ${recentHtml}
   <div class="pk-me__links">
     ${r.settled === false ? '<a href="/picks" class="pk-me__link">Pickmaster race →</a>' : `<a href="/picks/players/${encodeURIComponent(r.playerId)}?season=${encodeURIComponent(r.season)}" class="pk-me__link">${isOwnProfile ? 'See all your picks' : 'See every pick'} →</a>`}
     ${isOwnProfile && !own?.open?.length ? '<a href="/picks" class="pk-me__link">Pickmaster race →</a>' : ''}
+  </div>
   </div>
 </div>
 ${own?.open?.length ? pickBoxScript() : ''}`;
@@ -1889,8 +1891,11 @@ export function playerPage(o) {
   } else {
     sections = [prfPublicSeason(d), prfRecentGames(d), prfBadges(d, false), prfCommunity(d, false, false), prfCareer(d)];
   }
-  const NAV = { today: 'Today', 'this-week': 'This week', 'my-season': 'My season', badges: 'Badges', community: 'Community', career: 'Career', account: 'Account' };
-  const nav = own ? `<nav class="prf-nav" aria-label="Profile sections">${sections.filter(Boolean).map(s => {
+  const NAV = own
+    ? { today: 'Today', 'this-week': 'This week', 'my-season': 'My season', badges: 'Badges', community: 'Community', career: 'Career', account: 'Account' }
+    : { season: 'Season', recent: 'Recent games', badges: 'Badges', community: 'What players say', career: 'Career' };
+  const navCount = sections.filter(s => s && NAV[s.match(/id="([^"]+)"/)[1]]).length;
+  const nav = navCount >= 2 ? `<nav class="prf-nav" aria-label="Profile sections">${sections.filter(Boolean).map(s => {
     const id = s.match(/id="([^"]+)"/)[1];
     return NAV[id] ? `<a href="#${id}">${NAV[id]}</a>` : '';
   }).join('')}</nav>

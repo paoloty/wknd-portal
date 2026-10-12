@@ -7910,6 +7910,8 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .pk-board__foot b { color: var(--amber); }
 
 /* Profile card (views/player.js) */
+.pk-me__body { padding: 14px 18px 16px; }
+@media (max-width: 640px) { .pk-me__body { padding: 12px 14px 14px; } }
 .pk-me__main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 4px; }
 .pk-me__rec { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--text-muted); }
 .pk-me__rec b { font-size: 40px; line-height: 1; color: var(--text); }
