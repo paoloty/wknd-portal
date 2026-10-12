@@ -8886,11 +8886,16 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-hth__v { margin: 10px -18px 0; padding: 12px 18px; background: var(--surface-2); border-top: 1px solid var(--border); font-size: 13.5px; color: #c7d0da; }
 .gd-hth__v b { color: var(--amber); }
 /* Supporting cast */
-.gd-cast { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 16px; }
-.gd-cast__col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.gd-cast__h { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 800; letter-spacing: .14em; color: var(--text-muted); }
-.gd-cast__none { margin: 0; font-size: 13px; color: var(--text-subtle); }
-.gd-cast__row { display: flex; flex-direction: column; gap: 10px; }
+/* Supporting cast (both teams, best game score first) + watch-list players not shown above:
+   one scrolling row, two cards a view with header arrows; 82% swipe cards on a narrow column. */
+.gd-more { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.gd-more__h { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
+.gd-more__row { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 0; margin: -2px 0; }
+.gd-more__row::-webkit-scrollbar { display: none; }
+.gd-more__row > * { flex: 0 0 calc((100% - 12px) / 2); scroll-snap-align: start; }
+.gd-cast__none { margin: 16px 0 0; font-size: 13px; color: var(--text-subtle); }
+.gd-hook--ghost { color: var(--text-muted); border-color: rgba(255,255,255,.16); }
+.gd-pc__pts--dnp b { font-size: 18px; letter-spacing: .08em; color: var(--text-muted); }
 .gd-pc--sm { padding: 14px; gap: 10px; }
 .pl-av--md { width: 40px; height: 40px; font-size: 13px; }
 .gd-pc--sm .pl-card__last { font-size: 15px; }
@@ -8901,10 +8906,10 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-pc__ln { font-size: 12px; color: #a3abb9; }
 .gd-pc--sm .gd-say--sm { margin-top: -4px; align-self: flex-start; }
 @container gdm (max-width: 760px) {
-  .gd-cast { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .gd-duel, .gd-cast__row { display: flex; flex-direction: row; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px 4px; scroll-padding: 0 16px; scrollbar-width: none; }
-  .gd-duel::-webkit-scrollbar, .gd-cast__row::-webkit-scrollbar { display: none; }
-  .gd-duel > *, .gd-cast__row > * { flex: 0 0 82%; scroll-snap-align: start; }
+  .gd-duel, .gd-more__row { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px 4px; scroll-padding: 0 16px; scrollbar-width: none; }
+  .gd-duel::-webkit-scrollbar { display: none; }
+  .gd-duel > *, .gd-more__row > * { flex: 0 0 82%; scroll-snap-align: start; }
+  .gd-more .gm-potg-head__nav { display: none; }
 }
 
 /* Supporting cast */
@@ -9062,7 +9067,7 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 
 /* Narrow main column (desktop ~1100px and below) or phone: the duel and grids stack. */
 @container gdm (max-width: 760px) {
-  .gd-won, .gd-cast { grid-template-columns: 1fr; }
+  .gd-won { grid-template-columns: 1fr; }
   .gd-ann { display: none; }
   .gd-pl { grid-template-columns: 50px 12px 1fr auto; gap: 10px; }
 }

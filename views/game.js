@@ -4,7 +4,7 @@ import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
 import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
-import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, gameCard, gameCardScript, storyHtml } from './games.js';
+import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, gameCard, gameCardScript, storyHtml, scorerName } from './games.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
 
@@ -1908,12 +1908,51 @@ function sayButton(mentionable) {
 }
 
 // One team's supporting cast: a label, then its player cards (a swipe row on phones).
-function castGroup(game, side, list, say, watchOf) {
-  const name = side === 'a' ? game.team_a_name : game.team_b_name;
-  return `<div class="gd-cast__col">
-    <div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div>
-    ${list.length ? `<div class="gd-cast__row">${list.map(c => castCard(c, say, watchOf)).join('')}</div>` : `<p class="gd-cast__none">Nobody else reached a game score of 10.</p>`}
-  </div>`;
+// A watch-list player who didn't make the duel or the cast: what they scored tonight
+// against their usual against this opponent (or that they sat out).
+function watchCard(w) {
+  const n = scorerName(w);
+  const s = { player_id: w.id, name: `${n.last}, ${n.first}`, team_name: w.team, number: '' };
+  return `<article class="pl-card pl-card--photo gd-pc gd-pc--sm" style="--team:${teamColor(w.team)}">
+    ${perfBg(s)}
+    ${perfHead(s, ' pl-av--md', w.pts == null ? '<span class="gd-pc__pts gd-pc__pts--dnp"><b>DNP</b></span>' : `<span class="gd-pc__pts"><b class="font-condensed">${w.pts}</b><small>PTS</small></span>`)}
+    <span class="gd-hook gd-pc__hook gd-hook--ghost">Watch list</span>
+    ${watchLine(w)}
+  </article>`;
+}
+
+// Supporting cast (both teams, highest game score first) then the watch-list players not shown above:
+// one row of small player cards, two at a time with arrows on desktop, a swipe row on phones.
+function castRow(cast, watch, say, watchOf) {
+  // Both teams together, best game score first.
+  const sorted = [...cast].sort((x, y) => (y.gs || 0) - (x.gs || 0));
+  const cards = [...sorted.map(c => castCard(c, say, watchOf)), ...watch.map(watchCard)];
+  if (!cards.length) return '<p class="gd-cast__none">Nobody else reached a game score of 10.</p>';
+  const arrow = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+  return `<div class="gd-more">
+    <div class="gd-more__h">
+      <span class="gd-kick">Supporting cast${watch.length ? ' · Watch list' : ''}</span>
+      ${cards.length > 2 ? `<span class="gm-potg-head__nav"><button type="button" class="gm-potg-head__btn" data-gd-more="-1" aria-label="Previous players">${arrow('M15 18l-6-6 6-6')}</button><button type="button" class="gm-potg-head__btn" data-gd-more="1" aria-label="More players">${arrow('M9 18l6-6-6-6')}</button></span>` : ''}
+    </div>
+    <div class="gd-more__row" data-gd-more-row>${cards.join('')}</div>
+  </div>
+  <script>
+  (function () {
+    var row = document.querySelector('[data-gd-more-row]');
+    var btns = document.querySelectorAll('[data-gd-more]');
+    if (!row || !btns.length) return;
+    function sync() {
+      btns[0].disabled = row.scrollLeft <= 2;
+      btns[1].disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 2;
+    }
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () { row.scrollBy({ left: Number(b.dataset.gdMore) * (row.clientWidth + 12), behavior: 'smooth' }); });
+    });
+    row.addEventListener('scroll', sync, { passive: true });
+    window.addEventListener('resize', sync);
+    sync();
+  })();
+  </script>`;
 }
 
 // say(s, small): the "Say something" button for a player (empty when comments are off).
@@ -1925,7 +1964,9 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
   const watchOf = id => watched.find(w => w.id === id) || null;
   const shown = new Set([dc.a, dc.b, ...dc.castA, ...dc.castB].map(s => s.player_id));
   // Watched but not in the duel or the cast (a quiet night, or sat out): a line under the cast.
-  const elsewhere = watched.filter(w => !shown.has(w.id)).map(w => `<p class="gd-watch gd-watch--row">${dot(w.team, 8)}${playerLink(w.id, w.name)}${w.pts == null ? '' : ` · ${w.pts} pts`}${watchLine(w)}</p>`).join('');
+  // Watched but not in the duel or the cast (a quiet night, or sat out): their own cards at
+  // the end of the row.
+  const elsewhere = watched.filter(w => !shown.has(w.id));
   const bothInDuel = watched.length === 2 && watched.every(w => w.id === dc.a.player_id || w.id === dc.b.player_id);
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>' })}
@@ -1937,8 +1978,7 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
       ${duelRows(dc.a, dc.b)}
       <div class="gd-hth__v">${verdict}</div>
     </div>
-    <div class="gd-cast">${castGroup(game, 'a', dc.castA, say, watchOf)}${castGroup(game, 'b', dc.castB, say, watchOf)}</div>
-    ${elsewhere}
+    ${castRow([...dc.castA, ...dc.castB], elsewhere, say, watchOf)}
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
   </section>`;
 }

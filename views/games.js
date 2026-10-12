@@ -832,4 +832,4 @@ ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { potgCard, calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
+export { scorerName, potgCard, calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
