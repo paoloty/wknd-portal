@@ -1849,12 +1849,10 @@ const perfBg = s => `<img class="pl-card__bg" src="${playerPhotoUrl(s.player_id,
 
 // One side of the duel: tag (Player of the Game, or its code-picked hook), the player, game
 // score, their line, the watch-list result and "Say something". POTG gets the amber glow.
-function duelCard(s, potgId, say, watchOf = () => null) {
+function duelCard(s, potgId, say, watchOf = () => null, stats = []) {
   const isPotg = s.player_id === potgId;
   const tag = isPotg ? '<span class="gd-dl__tag">PLAYER OF THE GAME</span>' : s.badge ? `<span class="gd-dl__tag gd-dl__tag--ghost">${escHtml(s.badge)}</span>` : '';
-  const extra = n0(s.blk) > n0(s.stl) ? ['BLK', n0(s.blk)] : ['STL', n0(s.stl)];
-  const line = [['PTS', n0(s.pts)], ['REB', n0(s.reb)], ['AST', n0(s.ast)], extra]
-    .map(([k, v]) => `<span class="pl-stat"><b class="font-condensed">${v}</b><small>${k}</small></span>`).join('');
+  const line = stats.map(x => `<span class="pl-stat${x.win ? ' is-win' : x.tie ? ' is-tie' : ''}"${x.win ? ' title="Won this one"' : ''}><b class="font-condensed">${x.v}</b><small>${x.k}</small></span>`).join('');
   return `<article class="pl-card pl-card--photo gd-pc${isPotg ? ' is-potg' : ''}" style="--team:${teamColor(s.team_name)}">
     ${perfBg(s)}
     ${tag ? `<span class="gd-pc__tags">${tag}</span>` : ''}
@@ -1877,23 +1875,22 @@ function castCard(s, say, watchOf = () => null) {
   </article>`;
 }
 
-function duelRows(a, b) {
+// The duel's head to head, as each card's line: PTS, REB, AST, steals or blocks (whichever the
+// two had more of), FG% (when both shot) and turnovers — and who won each (fewer turnovers
+// wins). The winner's number is amber on their card; a tie is white on both.
+function duelLines(a, b) {
   const fg = s => { const m = n0(s.fg2m) + n0(s.fg3m) + n0(s.fg4m); const at = m + n0(s.fg2m_miss) + n0(s.fg3m_miss) + n0(s.fg4m_miss); return at ? Math.round(m / at * 100) : null; };
+  const defense = n0(a.blk) + n0(b.blk) > n0(a.stl) + n0(b.stl) ? ['BLK', n0(a.blk), n0(b.blk)] : ['STL', n0(a.stl), n0(b.stl)];
   const defs = [
-    ['PTS', n0(a.pts), n0(b.pts)], ['REB', n0(a.reb), n0(b.reb)], ['AST', n0(a.ast), n0(b.ast)],
-    ['STL', n0(a.stl), n0(b.stl)], ['BLK', n0(a.blk), n0(b.blk)],
-    ...(fg(a) != null && fg(b) != null ? [['FG%', fg(a), fg(b), '%']] : []),
-    ['TO', n0(a.turnover), n0(b.turnover), '', true],
-  ].filter(([k, x, y]) => k !== 'BLK' || x + y > 0);
-  return defs.map(([k, x, y, suf = '', low = false]) => {
-    const max = Math.max(x, y) || 1;
-    const aw = x !== y && (low ? x < y : x > y), bw = x !== y && !aw;
-    const w = v => (low ? (Math.min(x, y) === v ? 100 : Math.round(Math.min(x, y) / max * 100) || 8) : Math.round(v / max * 100));
-    const wa = low ? (aw ? 100 : Math.max(8, Math.round(y / Math.max(x, 1) * 100))) : w(x);
-    const wb = low ? (bw ? 100 : Math.max(8, Math.round(x / Math.max(y, 1) * 100))) : w(y);
-    const tie = x === y;
-    return `<div class="gd-dlr"><span class="gd-dlr__v${aw || tie ? ' is-w' : ''}">${x}${suf}</span><span class="gd-dlr__l"><i class="${aw || tie ? 'is-w' : ''}" style="width:${wa}%"></i></span><span class="gd-dlr__k">${k}</span><span class="gd-dlr__r"><i class="${bw || tie ? 'is-w' : ''}" style="width:${wb}%"></i></span><span class="gd-dlr__v${bw || tie ? ' is-w' : ''}">${y}${suf}</span></div>`;
-  }).join('');
+    ['PTS', n0(a.pts), n0(b.pts)], ['REB', n0(a.reb), n0(b.reb)], ['AST', n0(a.ast), n0(b.ast)], defense,
+    ...(fg(a) != null && fg(b) != null ? [['FG%', fg(a), fg(b)]] : []),
+    ['TO', n0(a.turnover), n0(b.turnover), true],
+  ];
+  const side = i => defs.map(([k, x, y, low]) => {
+    const [mine, theirs] = i ? [y, x] : [x, y];
+    return { k, v: mine, tie: x === y, win: x !== y && (low ? mine < theirs : mine > theirs) };
+  });
+  return [side(0), side(1)];
 }
 
 // "Say something" for a performer: jumps to the comments with "@Name " already typed (plain
@@ -1967,17 +1964,14 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
   // Watched but not in the duel or the cast (a quiet night, or sat out): their own cards at
   // the end of the row.
   const elsewhere = watched.filter(w => !shown.has(w.id));
+  const lines = duelLines(dc.a, dc.b);
   const bothInDuel = watched.length === 2 && watched.every(w => w.id === dc.a.player_id || w.id === dc.b.player_id);
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>' })}
     ${panel}
-    <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}. Then the rest of each team’s standouts, ranked by game score.</p>
-    <div class="gd-duel">${duelCard(dc.a, potgId, say, watchOf)}${duelCard(dc.b, potgId, say, watchOf)}</div>
-    <div class="card gd-hth" aria-label="Head to head">
-      <div class="gd-hth__h"><span>${dot(dc.a.team_name, 7)}${escHtml(perfName(dc.a.name).last)}</span><span class="gd-kick">Head to head</span><span>${escHtml(perfName(dc.b.name).last)}${dot(dc.b.team_name, 7)}</span></div>
-      ${duelRows(dc.a, dc.b)}
-      <div class="gd-hth__v">${verdict}</div>
-    </div>
+    <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}; amber marks who won each stat. Then the rest of each team’s standouts, ranked by game score.</p>
+    <div class="gd-duel">${duelCard(dc.a, potgId, say, watchOf, lines[0])}${duelCard(dc.b, potgId, say, watchOf, lines[1])}</div>
+    <p class="gd-verdict">${verdict}</p>
     ${castRow([...dc.castA, ...dc.castB], elsewhere, say, watchOf)}
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
   </section>`;

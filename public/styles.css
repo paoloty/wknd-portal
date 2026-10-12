@@ -8850,15 +8850,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
    soft team-colour glare; the real avatar sits on top in a glowing ring. */
 .gd-dl__tag { align-self: flex-start; font-size: 10px; font-weight: 900; letter-spacing: .14em; color: #0a0e16; background: var(--amber); padding: 4px 8px; border-radius: 6px; }
 .gd-dl__tag--ghost { color: var(--amber); background: none; border: 1px solid rgba(245,147,50,.45); text-transform: uppercase; }
-.gd-dlr { display: grid; grid-template-columns: 44px 1fr 40px 1fr 44px; align-items: center; gap: 8px; padding: 5px 0; }
-.gd-dlr__v { font-family: 'Saira Condensed', sans-serif; font-size: 19px; font-weight: 700; color: #7d8696; }
-.gd-dlr__v.is-w { color: #fff; }
-.gd-dlr__v:last-child { text-align: right; }
-.gd-dlr__k { font-size: 10px; font-weight: 800; letter-spacing: .12em; color: var(--text-subtle); text-align: center; }
-.gd-dlr__l, .gd-dlr__r { height: 6px; border-radius: 3px; background: #1b2130; display: flex; }
-.gd-dlr__l { justify-content: flex-end; }
-.gd-dlr__l i, .gd-dlr__r i { display: block; height: 100%; border-radius: 3px; background: #5b6475; }
-.gd-dlr__l i.is-w, .gd-dlr__r i.is-w { background: var(--amber); }
 /* Top performers: the duel as two player cards (the shared .pl-card), the head to head as its
    own strip underneath, the supporting cast as small player cards under a team label. On a
    narrow column / phones the duel and each team's cast become swipe rows. */
@@ -8876,15 +8867,16 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-pc.is-potg .gd-pc__gs b { color: var(--amber); }
 .gd-pc__gs small { font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
 .gd-pc .gd-pc__line { margin-top: 0; }
+/* The head to head lives in the two lines: the stat each player won is amber, the other grey,
+   a tie white on both. */
+.gd-pc__line .pl-card__stats { flex: 1; justify-content: space-between; gap: 10px; }
+.gd-pc__line .pl-stat b { color: var(--text-muted); }
+.gd-pc__line .pl-stat.is-tie b { color: var(--text); }
+.gd-pc__line .pl-stat.is-win b { color: var(--amber); }
+.gd-verdict { margin: 12px 2px 0; font-size: 13.5px; line-height: 1.5; color: #c7d0da; }
+.gd-verdict b { color: var(--amber); }
 .gd-pc__end { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: auto; }
 .gd-pc__end .gd-say { align-self: center; }
-/* Head to head strip */
-.gd-hth { margin-top: 12px; padding: 14px 18px 0; overflow: hidden; }
-.gd-hth__h { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 4px; font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--text-muted); }
-.gd-hth__h > span { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
-.gd-hth__h > span:last-child { justify-content: flex-end; }
-.gd-hth__v { margin: 10px -18px 0; padding: 12px 18px; background: var(--surface-2); border-top: 1px solid var(--border); font-size: 13.5px; color: #c7d0da; }
-.gd-hth__v b { color: var(--amber); }
 /* Supporting cast */
 /* Supporting cast (both teams, best game score first) + watch-list players not shown above:
    one scrolling row, two cards a view with header arrows; 82% swipe cards on a narrow column. */
