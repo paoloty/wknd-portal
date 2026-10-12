@@ -7603,7 +7603,8 @@ a.stp-tl__cell:hover { background-color: rgba(255,255,255,.08); }
 
 /* The road so far */
 /* One row, newest week first; four cards fit across on desktop, the rest scroll */
-.stp-road__grid { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; }
+.stp-road__grid { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-bottom: 6px; }
+.stp-road__grid::-webkit-scrollbar { display: none; }
 .stp-road__grid > .stp-wk { flex: 0 0 calc((100% - 42px) / 4); min-width: 260px; scroll-snap-align: start; }
 .stp-wk { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--radius); border: 1px solid rgba(255,255,255,.07); background: #0d1119; }
 .stp-wk.is-latest { border-color: rgba(245,147,50,.28); background: radial-gradient(300px 160px at 100% 0%, rgba(245,147,50,.09), transparent 70%), #0d1119; }
