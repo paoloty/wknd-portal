@@ -521,7 +521,7 @@ export function adminMarketplaceEditBody({ listing, jerseySizes = [], groups = [
 ${marketplaceListingForm({ mode: 'edit', listing, jerseySizes, groups })}`;
 }
 
-export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigger = false, variantGroups = [], thresholdCommittedCount = null } = {}) {
+export function adminMarketplaceDetailBody({ listing, commitments = [], fulfilled = [], canTrigger = false, variantGroups = [], thresholdCommittedCount = null } = {}) {
   // A grouped listing's threshold is pooled across every listing sharing its goal — passed
   // in as thresholdCommittedCount when set, since commitments.length here is deliberately
   // scoped to just this listing (it's what actually gets charged if triggered, not the
@@ -548,7 +548,12 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
     return values.map(v => photoGroup.optionPhotos?.[v]).filter(idx => Number.isInteger(idx));
   }
 
-  const rows = commitments.map(c => {
+  // Fulfil/Remove only make sense while orders are still open — a charged listing's rows
+  // are settled history.
+  const canManage = isOpen && commitments.length > 0;
+  const colCount = 2 + (photoGroup ? 1 : 0) + (hasJersey ? 1 : 0) + (showAmount ? 1 : 0) + 1;
+
+  const orderRow = (c, actionsHtml, dateMs) => {
     const photoIdxs = commitmentPhotoIndexes(c);
     const qty = Number(c.quantity) || 1;
     return `<tr class="border-b border-admin-border/50 last:border-b-0">
@@ -557,9 +562,38 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
     <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.variantLabel || '—')}${qty > 1 ? ` <span class="text-slate-400 font-semibold">×${qty}</span>` : ''}</td>
     ${hasJersey ? `<td class="px-4 py-2.5 text-xs text-slate-300"${c.notes ? ` title="${escHtml(c.notes)}"` : ''}>${c.custom_name ? `${escHtml(c.custom_name)} #${escHtml(c.custom_number)}` : '—'}${c.notes ? ' <span class="text-slate-500">📝</span>' : ''}</td>` : ''}
     ${showAmount ? `<td class="px-4 py-2.5 text-xs text-slate-300 font-semibold">${fmtPeso(c.amount)}${c.surcharge ? `<span class="text-slate-500 font-normal"> (+${fmtPeso(c.surcharge)} ea.)</span>` : ''}</td>` : ''}
-    <td class="px-4 py-2.5 text-xs text-slate-500">${new Date(c.committed_at).toLocaleDateString()}</td>
+    <td class="px-4 py-2.5 text-xs text-slate-500">${new Date(dateMs).toLocaleDateString()}</td>
+    ${actionsHtml != null ? `<td class="px-4 py-2.5 text-right whitespace-nowrap">${actionsHtml}</td>` : ''}
   </tr>`;
-  }).join('');
+  };
+  const rows = commitments.map(c => orderRow(c, canManage
+    ? `<button type="button" class="admin-btn admin-btn--sm" data-mkt-fulfill="${escHtml(c.id)}">Fulfilled</button>
+       <button type="button" class="admin-btn admin-btn--sm admin-btn--danger" data-mkt-remove="${escHtml(c.id)}">Remove</button>`
+    : null, c.committed_at)).join('');
+  const fulfilledRows = fulfilled.map(c => orderRow(c, null, c.fulfilled_at || c.committed_at)).join('');
+  const headCell = label => `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">${label}</th>`;
+  const tableHead = dateLabel => `<thead>
+      <tr>
+        ${headCell('Player')}
+        ${photoGroup ? headCell('Photo') : ''}
+        ${headCell('Variant')}
+        ${hasJersey ? headCell('Name / Number') : ''}
+        ${showAmount ? headCell('Amount') : ''}
+        ${headCell(dateLabel)}
+        ${dateLabel === 'Committed' && canManage ? headCell('') : ''}
+      </tr>
+    </thead>`;
+
+  const fulfilledSection = fulfilled.length ? `
+<div class="flex items-center justify-between mt-6 mb-2">
+  <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Fulfilled orders (${fulfilled.length})</div>
+</div>
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
+  <table class="w-full border-collapse">
+    ${tableHead('Fulfilled')}
+    <tbody>${fulfilledRows}</tbody>
+  </table>
+</div>` : '';
 
   const triggerSection = isOpen ? `
 <div class="bg-admin-surface border border-admin-border rounded-lg p-5 mt-5">
@@ -591,25 +625,54 @@ export function adminMarketplaceDetailBody({ listing, commitments = [], canTrigg
 
 ${photoManager(listing.id, parseJsonArray(listing.photos))}
 
+<div class="flex items-center justify-between mb-2">
+  <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${isCharged ? 'Charged orders' : 'Active orders'} (${commitments.length})</div>
+  ${canManage ? `<button type="button" id="mkt-fulfill-all-btn" class="admin-btn admin-btn--sm">Mark all ${commitments.length} fulfilled</button>` : ''}
+</div>
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
   <table class="w-full border-collapse">
-    <thead>
-      <tr>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player</th>
-        ${photoGroup ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Photo</th>` : ''}
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Variant</th>
-        ${hasJersey ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Name / Number</th>` : ''}
-        ${showAmount ? `<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Amount</th>` : ''}
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Committed</th>
-      </tr>
-    </thead>
+    ${tableHead('Committed')}
     <tbody>
-      ${rows || `<tr><td colspan="${2 + (photoGroup ? 1 : 0) + (hasJersey ? 1 : 0) + (showAmount ? 1 : 0) + 1}" class="px-4 py-8 text-center text-sm text-slate-500">No commitments yet.</td></tr>`}
+      ${rows || `<tr><td colspan="${colCount}" class="px-4 py-8 text-center text-sm text-slate-500">${fulfilled.length ? 'No active orders — the counter is back at 0.' : 'No commitments yet.'}</td></tr>`}
     </tbody>
   </table>
 </div>
+<p class="agm-modal-err" id="mkt-orders-err" style="margin-top:8px" hidden></p>
+
+${fulfilledSection}
 
 ${triggerSection}
+<script>
+(function() {
+  var base = ${JSON.stringify('/admin/marketplace/' + listing.id + '/orders')};
+  var err = document.getElementById('mkt-orders-err');
+  async function post(url, body, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      var r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Failed.');
+      window.location.reload();
+    } catch (ex) {
+      err.textContent = ex.message; err.hidden = false; if (btn) btn.disabled = false;
+    }
+  }
+  document.addEventListener('click', function(e) {
+    var f = e.target.closest('[data-mkt-fulfill]');
+    if (f) return post(base + '/fulfill', { ids: [f.dataset.mktFulfill] }, f);
+    var rm = e.target.closest('[data-mkt-remove]');
+    if (rm) {
+      if (!confirm('Remove this order? The player will no longer see it in their orders.')) return;
+      return post(base + '/' + encodeURIComponent(rm.dataset.mktRemove) + '/remove', {}, rm);
+    }
+  });
+  var all = document.getElementById('mkt-fulfill-all-btn');
+  if (all) all.addEventListener('click', function() {
+    if (!confirm('Mark all ${commitments.length} active order(s) fulfilled? The order counter resets to 0 and the listing stays open for the next batch. Nobody is charged.')) return;
+    post(base + '/fulfill', {}, all);
+  });
+})();
+</script>
 <script>
 (function() {
   var relaunchBtn = document.getElementById('mkt-relaunch-btn');

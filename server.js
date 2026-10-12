@@ -59,7 +59,7 @@ import {
   incrementMarketplaceListingViews,
   createMarketplaceListingGroup, getMarketplaceListingGroups, getMarketplaceListingGroupById, getGroupCommittedPlayers,
   commitToMarketplaceListing, getActiveMarketplaceCommitment, getActiveMarketplaceCommitmentsForPlayer, getMarketplaceCommitmentById, cancelMarketplaceCommitment,
-  getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged,
+  getMarketplaceCommitments, countActiveMarketplaceCommitments, markMarketplaceCommitmentCharged, markMarketplaceCommitmentsFulfilled,
   setRegistrationMarketplaceChargeAccess,
   getMarketplaceListingComments, getMarketplaceCommentById, getMarketplaceCommentWithMeta,
   addMarketplaceComment, deleteMarketplaceComment, toggleMarketplaceCommentReaction,
@@ -16870,14 +16870,17 @@ app.get('/admin/marketplace/:id', requireAuth, (req, res) => {
   // instead of 'committed' so admin can still see who was actually charged, not an empty list.
   const variantGroups = normalizeVariantGroups(JSON.parse(listing.variant_options || '[]'), JSON.parse(listing.photos || '[]').length);
   const basePrice = Number(listing.price) || 0;
-  const commitments = getMarketplaceCommitments(listing.id, listing.status === 'charged' ? 'charged' : 'committed')
-    .map(c => {
-      let selections = {};
-      try { selections = JSON.parse(c.variant || '{}'); } catch { selections = {}; }
-      const surcharge = computeVariantSurcharge(variantGroups, selections);
-      const quantity = computeVariantQuantity(variantGroups, selections);
-      return { ...c, variantLabel: formatVariantSelections(c.variant), amount: (basePrice + surcharge) * quantity, surcharge, quantity };
-    });
+  const withPricing = c => {
+    let selections = {};
+    try { selections = JSON.parse(c.variant || '{}'); } catch { selections = {}; }
+    const surcharge = computeVariantSurcharge(variantGroups, selections);
+    const quantity = computeVariantQuantity(variantGroups, selections);
+    return { ...c, variantLabel: formatVariantSelections(c.variant), amount: (basePrice + surcharge) * quantity, surcharge, quantity };
+  };
+  const commitments = getMarketplaceCommitments(listing.id, listing.status === 'charged' ? 'charged' : 'committed').map(withPricing);
+  // Orders admin already marked fulfilled — no longer counted, but kept visible as history.
+  const fulfilled = getMarketplaceCommitments(listing.id, 'fulfilled').map(withPricing)
+    .sort((a, b) => (b.fulfilled_at || 0) - (a.fulfilled_at || 0));
   const canTrigger = !req.session?.isElevatedPlayer || !!getRegistration(req.session.playerRegId)?.can_charge_marketplace;
   const group = listing.goal_group_id ? getMarketplaceListingGroupById(listing.goal_group_id) : null;
   const effectiveListing = group ? { ...listing, min_buyers: group.min_buyers } : listing;
@@ -16885,7 +16888,7 @@ app.get('/admin/marketplace/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: listing.title,
     currentPath: '/admin/marketplace',
-    body: adminMarketplaceDetailBody({ listing: effectiveListing, commitments, canTrigger, variantGroups, thresholdCommittedCount, jerseySizes: JERSEY_SIZES }),
+    body: adminMarketplaceDetailBody({ listing: effectiveListing, commitments, fulfilled, canTrigger, variantGroups, thresholdCommittedCount, jerseySizes: JERSEY_SIZES }),
   }));
 });
 
@@ -17048,6 +17051,32 @@ app.post('/admin/marketplace/:id/trigger-charge', requireAuth, express.json(), (
   }
   markMarketplaceListingCharged(listing.id, actorName);
   res.json({ ok: true, charged: rows.length });
+});
+
+// Admin order management on an open listing. Remove = cancel one order (same soft-delete the
+// player's own Remove uses, so history survives). Fulfil = one order, or every committed
+// order when no ids are sent — that's the "reset the counter" path for the next batch.
+app.post('/admin/marketplace/:id/orders/:commitmentId/remove', requireAuth, (req, res) => {
+  if (!isAdminWithSection(req, 'marketplace')) return res.status(403).json({ error: 'Not authorized.' });
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  if (listing.status === 'charged') return res.status(400).json({ error: 'This listing has already been charged.' });
+  const c = getMarketplaceCommitmentById(req.params.commitmentId);
+  if (!c || c.listing_id !== listing.id || c.status !== 'committed') return res.status(400).json({ error: 'That order is no longer active.' });
+  cancelMarketplaceCommitment(c.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/marketplace/:id/orders/fulfill', requireAuth, express.json(), (req, res) => {
+  if (!isAdminWithSection(req, 'marketplace')) return res.status(403).json({ error: 'Not authorized.' });
+  const listing = getMarketplaceListingById(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Not found.' });
+  if (listing.status === 'charged') return res.status(400).json({ error: 'This listing has already been charged.' });
+  const active = getMarketplaceCommitments(listing.id, 'committed');
+  const wanted = Array.isArray(req.body?.ids) ? new Set(req.body.ids.map(String)) : null;
+  const ids = active.filter(c => !wanted || wanted.has(c.id)).map(c => c.id);
+  if (!ids.length) return res.status(400).json({ error: 'No active orders to mark fulfilled.' });
+  res.json({ ok: true, fulfilled: markMarketplaceCommitmentsFulfilled(ids) });
 });
 
 app.post('/admin/marketplace/:id/cancel', requireAuth, (req, res) => {
