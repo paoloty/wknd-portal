@@ -12,8 +12,8 @@ import { gameCard, gameCardScript, swipeScript } from './games.js';
 // the image itself, so no title/excerpt overlay is added; a top eyebrow link is
 // the only HTML text, kept clear of the baked-in bottom text).
 // The next Papawis run leads the carousel while one is posted: court photo (or its map),
-// date/status chips, a slots + per-head "scoreboard", the /papawis AI headline and a CTA.
-// Slot counts stay hidden until sign-ups open, same as the /papawis page.
+// date/status chips, the /papawis AI headline and a CTA. Roster and price stay on
+// /papawis itself.
 function papawisHeroSlide(p) {
   const utcDay = (ms, opts) => new Date(ms).toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' });
   const dateMs = Date.parse(`${p.date}T00:00:00Z`);
@@ -26,22 +26,13 @@ function papawisHeroSlide(p) {
   const title = String(p.headline || '').replace(/\*\*/g, '').trim()
     || `${utcDay(dateMs, { weekday: 'long' })} run${p.location ? ` at ${p.location}` : ''}`;
   const body = String(p.body || '').replace(/\*\*/g, '').trim() || p.location;
-  const stat = (label, num) => `<div class="hero-score__team is-win">
-      <span class="hero-score__name">${label}</span>
-      <span class="hero-score__num font-condensed">${num}</span>
-    </div>`;
-  const board = [
-    p.signupsOpen && p.maxSlots ? stat('IN', `${p.confirmed}<small class="hero-score__of">/${p.maxSlots}</small>`) : '',
-    p.price != null ? stat('PER HEAD', `₱${Number(p.price).toLocaleString('en-US')}`) : '',
-  ].filter(Boolean);
 
   return `<div class="hero-slide hero-slide--active">
   ${p.imgUrl ? `<div class="hero-bg${p.isMap ? ' hero-bg--map' : ''}"><img src="${escHtml(p.imgUrl)}" alt="" fetchpriority="high"></div>` : '<div class="hero-bg"></div>'}
   <div class="hero-flare" style="background:radial-gradient(90% 70% at 0% 0%,#f593322e 0%,transparent 60%)"></div>
   <div class="hero-overlay"></div>
-  <div class="hero-chips"><span class="hero-chip hero-chip--season">Papawis</span><span class="hero-chip">${escHtml(day)}${p.time ? ` · ${escHtml(p.time)}` : ''}</span><span class="hero-chip hero-chip--final">${escHtml(status)}</span></div>
+  <div class="hero-chips"><span class="hero-chip hero-chip--season"><span class="pill-label">Papawis</span></span><span class="hero-chip"><span class="pill-label">${escHtml(day)}${p.time ? ` · ${escHtml(p.time)}` : ''}</span></span><span class="hero-chip"><span class="pill-label">${escHtml(status)}</span></span></div>
   <div class="hero-content">
-    ${board.length ? `<div class="hero-score">${board.join('<span class="hero-score__dash font-condensed">·</span>')}</div>` : ''}
     <h2 class="hero-title">${escHtml(title.slice(0, 120))}</h2>
     ${body ? `<p class="hero-excerpt">${escHtml(body.slice(0, 280))}</p>` : ''}
     <a href="/papawis#pw-game-${encodeURIComponent(p.id)}" class="hero-cta">${cta} <span>&rarr;</span></a>
@@ -83,7 +74,7 @@ function heroCarousel(games, awardItems = [], papawis = null) {
   ${bg}
   <div class="hero-flare" style="background:radial-gradient(90% 70% at 0% 0%,${winColor}${flareOpacity} 0%,transparent 60%)"></div>
   <div class="hero-overlay"></div>
-  <div class="hero-chips">${game.season ? `<span class="hero-chip hero-chip--season">S${escHtml(String(game.season))}</span>` : ''}<span class="hero-chip">${escHtml(day)}</span><span class="hero-chip hero-chip--final">Final</span></div>
+  <div class="hero-chips">${game.season ? `<span class="hero-chip hero-chip--season"><span class="pill-label">S${escHtml(String(game.season))}</span></span>` : ''}<span class="hero-chip"><span class="pill-label">${escHtml(day)}</span></span><span class="hero-chip hero-chip--final"><span class="pill-label">Final</span></span></div>
   <div class="hero-content">
     <div class="hero-score">
       ${team(game.team_a_name, scoreA, winA)}
@@ -110,7 +101,7 @@ function heroCarousel(games, awardItems = [], papawis = null) {
       return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
   <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt="" fetchpriority="${isActive ? 'high' : 'low'}"></div>
   <div class="hero-overlay"></div>
-  <div class="hero-chips"><span class="hero-chip hero-chip--season">${escHtml(it.label)}</span></div>
+  <div class="hero-chips"><span class="hero-chip hero-chip--season"><span class="pill-label">${escHtml(it.label)}</span></span></div>
   <div class="hero-content">
     <h2 class="hero-title">${escHtml(it.title.toUpperCase())}</h2>
     <a href="/awards" class="hero-cta">View season awards <span>&rarr;</span></a>
@@ -124,7 +115,7 @@ function heroCarousel(games, awardItems = [], papawis = null) {
     return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
   <div class="hero-bg"><img src="${escHtml(it.imgUrl)}" alt="" fetchpriority="${isActive ? 'high' : 'low'}"></div>
   <div class="hero-overlay"></div>
-  <div class="hero-chips"><span class="hero-chip hero-chip--season">${escHtml(it.label)}</span></div>
+  <div class="hero-chips"><span class="hero-chip hero-chip--season"><span class="pill-label">${escHtml(it.label)}</span></span></div>
   <div class="hero-content">
     <h2 class="hero-title">${escHtml(name)}</h2>
     ${writeup ? `<p class="hero-excerpt">${escHtml(writeup.slice(0, 280))}</p>` : ''}
@@ -381,7 +372,7 @@ export function leaderBoards(players) {
     const top = pool.filter(p => cat.sort(p) > 0)
       .sort((a, b) => cat.sort(b) - cat.sort(a) || b.games_played - a.games_played)
       .slice(0, 3)
-      .map(p => ({ id: p.id, name: p.name, team: String(p.team_name || '').toUpperCase(), value: cat.fn(p), gp: p.games_played }));
+      .map(p => ({ id: p.id, name: p.name, team: String(p.team_name || '').toUpperCase(), value: cat.fn(p), gp: p.games_played, photo: !!p.picture_url, number: p.number }));
     if (!top.length) return null;
     // Gap to #1 on each chasing row ("−1.5", "TIE") — from the displayed values, so it
     // always matches what's on the card (same layout as the /leaders boards).
@@ -1008,8 +999,12 @@ function leaderBoardsSection(boards, summary, season, isAdmin) {
       </a>`;
     }).join('');
     const n = lbNameParts(lead.name);
+    const num = lead.number !== '' && lead.number != null ? `#${escHtml(String(lead.number))}` : '';
+    // Leader block = the /players card: faded team-tinted photo behind, ghost jersey number
     return `<div class="lb-card" style="--team:${color}">
-      <a href="/players/${encodeURIComponent(String(lead.id))}" class="lb-card__lead">
+      <a href="/players/${encodeURIComponent(String(lead.id))}" class="lb-card__lead${lead.photo ? ' lb-card__lead--photo' : ''}">
+        ${lead.photo ? `<img class="lb-card__bg" src="${playerPhotoUrl(lead.id, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+        ${num ? `<span class="lb-card__num font-condensed" aria-hidden="true">${num}</span>` : ''}
         <span class="lb-card__head"><span class="lb-card__title">${escHtml(c.title)}</span><span class="lb-card__key">${escHtml(c.label)}</span></span>
         <span class="lb-card__row">
           ${playerAvatar(lead.id, lead.name, color, { className: 'lb-card__av' })}
@@ -1023,10 +1018,11 @@ function leaderBoardsSection(boards, summary, season, isAdmin) {
   return `<section class="home-section home-leaders" aria-labelledby="leaders-heading">
   <div class="section-header"><h2 id="leaders-heading">League leaders${season ? ` <span class="section-header__sub">Season ${escHtml(String(season))}<span class="lb-sub-extra"> · per game</span></span>` : ''}</h2><a href="/leaders" class="section-header__link">All leaders <span>&rarr;</span></a></div>
   ${summaryPanel(summary, 'leaders', isAdmin)}
-  <div class="lb-grid">
+  <div class="lb-grid swipe-row" data-swipe>
     ${cards}
   </div>
-</section>`;
+</section>
+${swipeScript()}`;
 }
 
 function leadersSection(leaderPlayers, rosterMovers, season, summary = null, isAdmin = false) {

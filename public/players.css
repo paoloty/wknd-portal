@@ -40,50 +40,7 @@
 
 /* ── Player cards ── */
 .pl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
-.pl-card {
-  position: relative; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; overflow: hidden;
-  border-radius: var(--radius); border: 1px solid var(--border); color: inherit; text-decoration: none;
-  background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--team) 18%, transparent) 0%, color-mix(in srgb, var(--team) 6%, transparent) 40%, transparent 72%), var(--surface);
-  transition: border-color .15s, transform .15s;
-}
-.pl-card:hover { border-color: rgba(255,255,255,.16); transform: translateY(-1px); }
-.pl-card:hover .pl-card__last { color: #fff; }
-/* Photo backdrop: B&W, faint, blurred, right side only, fading left, with a team-colour tint */
-.pl-card__bg, .pl-card--photo::after {
-  position: absolute; top: 0; right: 0; width: 62%; height: 100%; pointer-events: none;
-  -webkit-mask-image: linear-gradient(to left, #000 35%, transparent 100%); mask-image: linear-gradient(to left, #000 35%, transparent 100%);
-}
-.pl-card__bg { object-fit: cover; object-position: center 25%; filter: grayscale(1) blur(1.5px) contrast(1.1); opacity: .16; }
-.pl-card--photo::after { content: ''; background: var(--team); mix-blend-mode: color; opacity: .28; }
-.pl-card__num { position: absolute; top: 10px; right: 14px; z-index: 1; font-size: 40px; font-weight: 800; line-height: 1; color: rgba(255,255,255,.08); }
-.pl-card__top, .pl-card__foot { position: relative; z-index: 1; }
-.pl-card__top { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.pl-av {
-  position: relative; width: 52px; height: 52px; flex-shrink: 0; display: grid; place-items: center; overflow: hidden;
-  border-radius: 50%; border: 2px solid var(--team); background: #1f2633; color: var(--text-muted); font: 700 15px/1 'Archivo', sans-serif;
-}
-.pl-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.pl-av--sm { width: 30px; height: 30px; font-size: 11px; }
-.pl-av--lg { width: 64px; height: 64px; font-size: 18px; }
-.pl-card__who { min-width: 0; display: flex; flex-direction: column; }
-/* Name, team label: same as the leader cards (.lb-card__first/__last/__team) */
-.pl-card__first { font-size: 13px; font-weight: 600; line-height: 1.25; color: #b4bbc8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pl-card__last { font-size: 17px; font-weight: 800; line-height: 1.15; letter-spacing: .01em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s; }
-.pl-card__meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; }
-.pl-card__num-sm, .pl-card__sub { display: none; }
-.pl-team { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--text-muted); }
-.pl-team i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.pl-rookie { padding: 2px 5px; border-radius: 4px; background: var(--amber-dim); color: var(--amber); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
-.pl-rookie--off { background: rgba(255,255,255,.06); color: var(--text-muted); }
-.pl-card__foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
-.pl-card__stats { display: flex; gap: 16px; }
-.pl-stat { display: flex; flex-direction: column; gap: 3px; }
-.pl-stat b { font-size: 22px; font-weight: 700; line-height: 1; color: var(--text); }
-.pl-stat.is-lead b { color: var(--amber); }
-.pl-stat small, .pl-spark small { font-size: 9.5px; font-weight: 800; letter-spacing: .14em; color: var(--text-subtle); }
-.pl-spark { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.pl-spark polyline { fill: none; stroke: #8a93a4; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
-.pl-spark circle { fill: var(--amber); }
+/* .pl-card itself lives in styles.css ("Player card") — shared with /games and others. */
 
 /* ── Alumni + Community ── */
 .pl-more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; margin-top: 16px; }
@@ -209,23 +166,23 @@ body.pl-noscroll { overflow: hidden; }
   .pl-head .stp-pills > * { flex: 1; }
   /* Compact horizontal cards: photo, name, team · # · pos, RPG/APG line, big PPG */
   .pl-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .pl-card { flex-direction: row; align-items: center; gap: 12px; min-height: 76px; padding: 12px 14px; }
-  .pl-card:hover { transform: none; }
-  .pl-card__bg, .pl-card--photo::after { width: 55%; }
-  .pl-card__num, .pl-spark { display: none; }
-  .pl-card__top { flex: 1; }
-  .pl-av { width: 46px; height: 46px; font-size: 13px; }
-  .pl-card__who { flex-direction: row; flex-wrap: wrap; column-gap: 4px; row-gap: 3px; }
-  .pl-card__first { font-size: 14px; font-weight: 600; color: var(--text); }
-  .pl-card__last { font-size: 14px; }
-  .pl-card__meta { flex-basis: 100%; margin-top: 0; font-size: 11px; }
+  .pl .pl-card { flex-direction: row; align-items: center; gap: 12px; min-height: 76px; padding: 12px 14px; }
+  .pl .pl-card:hover { transform: none; }
+  .pl .pl-card__bg, .pl .pl-card--photo::after { width: 55%; }
+  .pl .pl-card__num, .pl .pl-spark { display: none; }
+  .pl .pl-card__top { flex: 1; }
+  .pl .pl-av { width: 46px; height: 46px; font-size: 13px; }
+  .pl .pl-card__who { flex-direction: row; flex-wrap: wrap; column-gap: 4px; row-gap: 3px; }
+  .pl .pl-card__first { font-size: 14px; font-weight: 600; color: var(--text); }
+  .pl .pl-card__last { font-size: 14px; }
+  .pl .pl-card__meta { flex-basis: 100%; margin-top: 0; font-size: 11px; }
   .pl .stp-desc { font-size: 14px; }
-  .pl-card__num-sm { display: inline; }
-  .pl-card__sub { display: block; flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
-  .pl-card__foot { margin: 0; padding: 0; border: 0; }
-  .pl-stat { align-items: flex-end; }
-  .pl-stat:not(:first-child) { display: none; }
-  .pl-stat b { font-size: 24px; }
+  .pl .pl-card__num-sm { display: inline; }
+  .pl .pl-card__sub { display: block; flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
+  .pl .pl-card__foot { margin: 0; padding: 0; border: 0; }
+  .pl .pl-stat { align-items: flex-end; }
+  .pl .pl-stat:not(:first-child) { display: none; }
+  .pl .pl-stat b { font-size: 24px; }
   .pl-alumni { grid-template-columns: minmax(0, 1fr); }
   .pl-tray { flex-wrap: wrap; bottom: 10px; }
   .pl-tray__label { display: none; }

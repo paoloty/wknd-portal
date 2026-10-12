@@ -144,25 +144,67 @@ const gameYmdOf = raw => {
   return isNaN(d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-// POTG marquee: the list twice in one track so the loop is seamless (the second copy is
-// hidden from screen readers).
-function potgMarquee(items) {
-  if (!items.length) return '';
-  const item = (p, hidden) => `<a href="/games/${encodeURIComponent(p.gameId)}" class="gm-mq__item" style="--team:${teamColor(p.team)}"${hidden ? ' tabindex="-1" aria-hidden="true"' : ''}>
-      ${avatar('gm-mq__img', p)}
-      <span class="gm-mq__who"><span class="gm-mq__meta">${escHtml(p.meta)}</span><span class="gm-mq__name">${escHtml(p.name)}</span></span>
-      <span class="gm-mq__line">
-        <span class="gm-mq__stats">${p.stats.map(s => `<span><b class="font-condensed">${s.n}</b><i>${s.u}</i></span>`).join('')}</span>
-        <span class="gm-mq__result">${dot(p.team, 8)}${escHtml(p.result)}</span>
+// Players of the game: the /players card (.pl-card, styles.css) with this game's line in
+// the footer and the final score where /players has its sparkline. One scrolling row:
+// 4 across on desktop with arrows, a swipe row with dots on phones.
+const ordinal = n => `${n}${(n % 100 >= 11 && n % 100 <= 13) ? 'TH' : (['TH', 'ST', 'ND', 'RD'][n % 10] || 'TH')}`;
+function potgCard(p) {
+  const raw = String(p.rawName || '');
+  const comma = raw.indexOf(',');
+  const first = comma === -1 ? '' : raw.slice(comma + 1).trim();
+  const last = (comma === -1 ? raw : raw.slice(0, comma)).trim().toUpperCase();
+  const num = p.number !== '' && p.number != null ? `#${escHtml(String(p.number))}` : '';
+  const won = p.team === p.winner;
+  const [mine, theirs, opp] = won ? [p.ws, p.ls, p.loser] : [p.ls, p.ws, p.winner];
+  const stat = (v, k, lead) => `<span class="pl-stat${lead ? ' is-lead' : ''}"><b class="font-condensed">${v}</b><small>${k}</small></span>`;
+  return `<a href="/games/${encodeURIComponent(p.gameId)}" class="pl-card${p.hasPhoto ? ' pl-card--photo' : ''}" style="--team:${teamColor(p.team)}">
+      ${p.hasPhoto ? `<img class="pl-card__bg" src="${playerPhotoUrl(p.playerId, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      ${num ? `<span class="pl-card__num font-condensed" aria-hidden="true">${num}</span>` : ''}
+      <span class="pl-card__top">
+        <span class="pl-av" style="--team:${teamColor(p.team)}"><span>${escHtml(initialsOf(`${first} ${last}`))}</span>${p.hasPhoto ? `<img src="${playerPhotoUrl(p.playerId, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>
+        <span class="pl-card__who">
+          ${first ? `<span class="pl-card__first">${escHtml(first)}</span>` : ''}
+          <span class="pl-card__last">${escHtml(last)}</span>
+          <span class="pl-card__meta"><span class="pl-team"><i style="background:${teamColor(p.team)}"></i>${escHtml(p.team)}</span><span>${escHtml(p.day)}${p.tag ? ` · ${escHtml(p.tag)}` : ''}</span>${p.tally ? `<span class="pl-rookie" title="Player of the Game number ${p.tally} this season">${ordinal(p.tally)} POTG</span>` : ''}</span>
+        </span>
+      </span>
+      <span class="pl-card__foot">
+        <span class="pl-card__stats">${stat(p.line.pts, 'PTS', true)}${stat(p.line.reb, 'REB')}${stat(p.line.ast, 'AST')}</span>
+        <span class="gm-pc__score"><b class="font-condensed">${mine}–${theirs}</b><small>${won ? 'WIN' : 'LOSS'} VS ${dot(opp, 6)}${escHtml(opp)}</small></span>
       </span>
     </a>`;
-  return `<section class="gm-mq" aria-label="Recent Players of the Game">
-  <div class="gm-mq__label"><b>POTG</b><span>Players of the game</span></div>
-  <div class="gm-mq__view"><div class="gm-mq__track">
-    ${items.map(p => item(p, false)).join('')}
-    ${items.map(p => item(p, true)).join('')}
-  </div></div>
-</section>`;
+}
+
+function potgCards(items) {
+  if (!items.length) return '';
+  return `<div class="gm-potg-head">
+    <h3 class="gm-potg-head__title">Players of the game</h3>
+    <span class="gm-potg-head__nav">
+      <button type="button" class="gm-potg-head__btn" data-potg-nav="-1" aria-label="Previous players of the game"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <button type="button" class="gm-potg-head__btn" data-potg-nav="1" aria-label="More players of the game"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
+    </span>
+  </div>
+  <div class="gm-potg swipe-row" data-swipe data-potg-row>
+    ${items.map(potgCard).join('\n    ')}
+  </div>
+  <script>
+  (function () {
+    var row = document.querySelector('[data-potg-row]');
+    var btns = document.querySelectorAll('[data-potg-nav]');
+    if (!row || !btns.length) return;
+    function sync() {
+      btns[0].disabled = row.scrollLeft <= 2;
+      btns[1].disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 2;
+    }
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () { row.scrollBy({ left: Number(b.dataset.potgNav) * (row.clientWidth + 16), behavior: 'smooth' }); });
+    });
+    row.addEventListener('scroll', sync, { passive: true });
+    window.addEventListener('resize', sync);
+    sync();
+  })();
+  </script>
+  ${swipeScript()}`;
 }
 
 // One stat row: the better side's number + bar in amber (lower is better for turnovers).
@@ -722,7 +764,7 @@ export function gamesPage({
   </div>
 </section>` : '';
 
-  const recapInner = `${summaryPanel(summary, 'headlines', isAdmin)}${potgMarquee(potg)}`;
+  const recapInner = `${summaryPanel(summary, 'headlines', isAdmin)}${potgCards(potg)}`;
   const recapHtml = recapInner.trim() ? `<section class="gr-sec gr-recap" aria-labelledby="gr-recap-h">
   <div class="section-header"><h2 id="gr-recap-h">Recap${recapDay ? ` <span class="section-header__sub">${escHtml(dayLabel(recapDay))}</span>` : ''}</h2></div>
   ${recapInner}

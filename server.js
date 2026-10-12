@@ -9506,9 +9506,19 @@ function buildMatchup(game, ctx) {
 }
 
 // POTG marquee: the latest Players of the Game, newest first.
+// Each item also carries its season count ("2nd POTG this season"), counted over the
+// season's games up to and including that one (played is newest first).
 function buildPotgMarquee(played, playerMap, count = 8) {
   const out = [];
-  for (const g of played) {
+  const potgByGame = new Map();
+  const potgOf = g => {
+    if (!potgByGame.has(g.id)) {
+      const st = getGameStats(g.id);
+      potgByGame.set(g.id, st.length ? (g.manual_potg_player_id || derivePotgPlayerId(g, st)) : null);
+    }
+    return potgByGame.get(g.id);
+  };
+  for (const [i, g] of played.entries()) {
     if (out.length >= count) break;
     const stats = getGameStats(g.id);
     if (!stats.length) continue;
@@ -9524,10 +9534,15 @@ function buildPotgMarquee(played, playerMap, count = 8) {
     const aWin = Number(g.team_a_score) > Number(g.team_b_score);
     const [w, l, ws, ls] = aWin ? [g.team_a_name, g.team_b_name, g.team_a_score, g.team_b_score] : [g.team_b_name, g.team_a_name, g.team_b_score, g.team_a_score];
     const tag = gameTagLabel(g);
+    let tally = 0;
+    for (const og of played.slice(i)) if (String(og.season) === String(g.season) && potgOf(og) === pid) tally++;
     out.push({
-      gameId: g.id, playerId: pid, name: displayPlayerName(player?.name || ''), team, hasPhoto: !!player?.picture_url,
+      gameId: g.id, playerId: pid, name: displayPlayerName(player?.name || ''), rawName: player?.name || '', number: player?.number, team, hasPhoto: !!player?.picture_url,
       meta: `${shortDay(gameYmd(g.date))} · S${g.season}${tag ? ` ${tag}` : ''}`,
+      day: shortDay(gameYmd(g.date)), season: g.season, tag,
       stats: [{ n: +s.pts || 0, u: 'PTS' }, ...extras.map(x => ({ n: x.n, u: x.u }))],
+      line: { pts: +s.pts || 0, reb: +s.reb || 0, ast: +s.ast || 0 },
+      ws, ls, winner: w, loser: l, tally,
       result: `${titleCase(w)} ${ws}–${ls} ${titleCase(l)}`,
     });
   }

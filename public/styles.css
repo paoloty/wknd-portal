@@ -1449,10 +1449,11 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
   transition: width 0.2s, background 0.2s;
 }
 /* Chips (season / date / final) — same look as the Game headlines cards */
-.hero-chips { position: absolute; top: 20px; left: 24px; z-index: 4; display: flex; gap: 6px; }
+.hero-chips { position: absolute; top: 20px; left: 24px; z-index: 4; display: flex; align-items: center; gap: 6px; }
 .hero-chip {
+  display: inline-flex; align-items: center; height: 26px; line-height: 1; white-space: nowrap;
   font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
-  padding: 6px 10px; border-radius: 6px;
+  padding: 0 10px; border-radius: 6px;
   color: var(--text); background: rgba(10,14,22,0.6);
 }
 .hero-chip--season { letter-spacing: 0.08em; color: #0a0e16; background: var(--amber); }
@@ -1463,7 +1464,6 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
 .hero-score__team.is-win { color: #fff; }
 .hero-score__name { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; letter-spacing: 0.12em; }
 .hero-score__num { font-size: 96px; font-weight: 800; line-height: 0.82; font-variant-numeric: tabular-nums; text-shadow: 0 2px 20px rgba(0,0,0,0.6); }
-.hero-score__of { font-size: 0.45em; color: var(--text-muted); }
 .hero-bg--map img { filter: saturate(.8); }
 .hero-score__dash { font-size: 40px; font-weight: 800; line-height: 1; color: var(--text-subtle); padding-bottom: 14px; }
 .hero-content {
@@ -7390,9 +7390,18 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
   transition: border-color 0.15s;
 }
 .lb-card:hover { border-color: rgba(255,255,255,0.14); }
-.lb-card__lead { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 18px; color: inherit; }
+.lb-card__lead { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 18px; color: inherit; }
 .lb-card__lead:focus-visible, .lb-card__alt:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; border-radius: var(--radius); }
-.lb-card__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+/* Same photo backdrop + ghost number as the /players card (.pl-card__bg / __num in players.css) */
+.lb-card__bg, .lb-card__lead--photo::after {
+  position: absolute; top: 0; right: 0; width: 62%; height: 100%; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to left, #000 35%, transparent 100%); mask-image: linear-gradient(to left, #000 35%, transparent 100%);
+}
+.lb-card__bg { object-fit: cover; object-position: center 25%; filter: grayscale(1) blur(1.5px) contrast(1.1); opacity: .16; }
+.lb-card__lead--photo::after { content: ''; background: var(--team); mix-blend-mode: color; opacity: .28; }
+.lb-card__num { position: absolute; top: 10px; right: 14px; font-size: 40px; font-weight: 800; line-height: 1; color: rgba(255,255,255,.08); }
+.lb-card__head, .lb-card__row { position: relative; z-index: 1; }
+.lb-card__head { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .lb-card__title { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #a3abb9; }
 .lb-card__key { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-subtle); }
 .lb-card__row { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -7453,8 +7462,6 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
   .swipe-dots { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
   .swipe-dots button { width: 6px; height: 6px; padding: 0; border: 0; border-radius: 3px; background: #2a3140; cursor: pointer; transition: width 0.2s, background 0.2s; }
   .swipe-dots button.is-on { width: 18px; background: var(--amber); }
-  /* Leader boards stack full width on phones (same as the /leaders mobile layout) */
-  .lb-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .gh-card { min-height: 300px; }
   .gh-score__num { font-size: 38px; }
   .lb-card__val { font-size: 40px; }
@@ -7476,7 +7483,7 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
      would vanish. aspect-ratio stays as the modern path. */
   .hero-carousel { min-height: 0; height: calc((100vw - 40px) * 1.25); aspect-ratio: 4 / 5; }
   .hero-chips { top: 14px; left: 14px; gap: 5px; }
-  .hero-chip { font-size: 10.5px; padding: 5px 8px; }
+  .hero-chip { height: 24px; font-size: 10.5px; padding: 0 8px; }
   .hero-dots { top: 20px; right: 16px; }
   .hero-score, .hero-excerpt, .hero-arrow { display: none; }
   .hero-content { padding: 18px; }
@@ -7738,35 +7745,14 @@ a.stp-tl__cell:hover { background-color: rgba(255,255,255,.08); }
 .gr-sec { margin-bottom: 34px; }
 .gr-sec .gm-grid { margin-bottom: 0; }
 .gr-recap .hs-summary { margin-bottom: 16px; }
-.gr-recap .gm-mq { margin-bottom: 0; }
 /* Season switcher in the page header */
 .gr-segs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
 .gr-seg { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
 .gr-seg:hover { color: var(--text); }
 .gr-seg.is-on { color: #0a0e16; background: var(--amber); }
 
-/* POTG marquee */
-.gm-mq { position: relative; display: flex; align-items: stretch; margin-bottom: 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); overflow: hidden; }
-.gm-mq__label { flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 20px; background: var(--amber); color: #0a0e16; z-index: 2; }
-.gm-mq__label b { font-size: 22px; font-weight: 900; letter-spacing: 0.02em; line-height: 1; }
-.gm-mq__label span { font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
-.gm-mq__view { flex: 1; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%); }
-.gm-mq__track { display: flex; width: max-content; animation: gm-mq 60s linear infinite; }
-.gm-mq:hover .gm-mq__track, .gm-mq:focus-within .gm-mq__track { animation-play-state: paused; }
-@keyframes gm-mq { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-.gm-mq__item { display: flex; align-items: center; gap: 14px; padding: 14px 26px 14px 22px; border-right: 1px solid var(--border); color: inherit; }
-.gm-mq__item:hover { background: var(--surface-2); }
-.gm-mq__item:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
-.gm-mq__img { width: 52px; height: 52px; flex-shrink: 0; border-radius: 50%; object-fit: cover; object-position: center 20%; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--team); }
+/* Avatar initials fallback (games.js avatar()) */
 .gm-avatar--initials { display: grid; place-items: center; font-size: 15px; font-weight: 800; color: var(--text); background: var(--surface-2); }
-.gm-mq__who { display: flex; flex-direction: column; gap: 3px; }
-.gm-mq__meta { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
-.gm-mq__name { font-size: 16px; font-weight: 800; color: #fff; white-space: nowrap; }
-.gm-mq__line { display: flex; flex-direction: column; gap: 5px; padding-left: 6px; }
-.gm-mq__stats { display: flex; gap: 10px; align-items: baseline; white-space: nowrap; }
-.gm-mq__stats b { font-size: 22px; font-weight: 800; line-height: 1; color: var(--amber); }
-.gm-mq__stats i { font-style: normal; font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; color: var(--text-muted); margin-left: 2px; }
-.gm-mq__result { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 
 /* Upcoming matchup cards */
 .gm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 26px; align-items: start; }
@@ -8217,8 +8203,6 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 .gr-empty { padding: 40px; text-align: center; color: var(--text-muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  .gm-mq__track { animation: none; }
-  .gm-mq__view { overflow-x: auto; }
   .gm-sl, .gm-sl img { transition: none !important; transform: none !important; }
 }
 @media (max-width: 1100px) {
@@ -8227,10 +8211,6 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 }
 @media (max-width: 720px) {
   .gr-segs { width: 100%; overflow-x: auto; }
-  .gm-mq__label { padding: 0 12px; }
-  .gm-mq__label span { display: none; }
-  .gm-mq__item { padding: 12px 18px 12px 14px; gap: 10px; }
-  .gm-mq__img { width: 44px; height: 44px; }
   .gm-hero { height: 210px; }
   .gm-hero__in { padding: 14px 16px; }
   .gm-side__name b { font-size: 20px; }
@@ -9487,4 +9467,78 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 /* Phones: 16px text so iOS Safari doesn't zoom the page on focus. */
 @media (max-width: 640px) {
   :root { --field-font-size: 16px; }
+}
+
+/* ── Player card (shared) ─────────────────────────────────────────────────────
+   The /players card (views/players.js playerCard), also used for /games Players of the game.
+   /players compacts it to rows on phones (public/players.css, scoped to .pl). */
+.pl-card {
+  position: relative; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; overflow: hidden;
+  border-radius: var(--radius); border: 1px solid var(--border); color: inherit; text-decoration: none;
+  background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--team) 18%, transparent) 0%, color-mix(in srgb, var(--team) 6%, transparent) 40%, transparent 72%), var(--surface);
+  transition: border-color .15s, transform .15s;
+}
+.pl-card:hover { border-color: rgba(255,255,255,.16); transform: translateY(-1px); }
+.pl-card:hover .pl-card__last { color: #fff; }
+/* Photo backdrop: B&W, faint, blurred, right side only, fading left, with a team-colour tint */
+.pl-card__bg, .pl-card--photo::after {
+  position: absolute; top: 0; right: 0; width: 62%; height: 100%; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to left, #000 35%, transparent 100%); mask-image: linear-gradient(to left, #000 35%, transparent 100%);
+}
+.pl-card__bg { object-fit: cover; object-position: center 25%; filter: grayscale(1) blur(1.5px) contrast(1.1); opacity: .16; }
+.pl-card--photo::after { content: ''; background: var(--team); mix-blend-mode: color; opacity: .28; }
+.pl-card__num { position: absolute; top: 10px; right: 14px; z-index: 1; font-size: 40px; font-weight: 800; line-height: 1; color: rgba(255,255,255,.08); }
+.pl-card__top, .pl-card__foot { position: relative; z-index: 1; }
+.pl-card__top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pl-av {
+  position: relative; width: 52px; height: 52px; flex-shrink: 0; display: grid; place-items: center; overflow: hidden;
+  border-radius: 50%; border: 2px solid var(--team); background: #1f2633; color: var(--text-muted); font: 700 15px/1 'Archivo', sans-serif;
+}
+.pl-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pl-av--sm { width: 30px; height: 30px; font-size: 11px; }
+.pl-av--lg { width: 64px; height: 64px; font-size: 18px; }
+.pl-card__who { min-width: 0; display: flex; flex-direction: column; }
+/* Name, team label: same as the leader cards (.lb-card__first/__last/__team) */
+.pl-card__first { font-size: 13px; font-weight: 600; line-height: 1.25; color: #b4bbc8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-card__last { font-size: 17px; font-weight: 800; line-height: 1.15; letter-spacing: .01em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s; }
+.pl-card__meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; }
+.pl-card__num-sm, .pl-card__sub { display: none; }
+.pl-team { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--text-muted); }
+.pl-team i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.pl-rookie { padding: 2px 5px; border-radius: 4px; background: var(--amber-dim); color: var(--amber); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+.pl-rookie--off { background: rgba(255,255,255,.06); color: var(--text-muted); }
+.pl-card__foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+.pl-card__stats { display: flex; gap: 16px; }
+.pl-stat { display: flex; flex-direction: column; gap: 3px; }
+.pl-stat b { font-size: 22px; font-weight: 700; line-height: 1; color: var(--text); }
+.pl-stat.is-lead b { color: var(--amber); }
+.pl-stat small, .pl-spark small { font-size: 9.5px; font-weight: 800; letter-spacing: .14em; color: var(--text-subtle); }
+.pl-spark { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.pl-spark polyline { fill: none; stroke: #8a93a4; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.pl-spark circle { fill: var(--amber); }
+
+/* ── /games Players of the game: .pl-card row (views/games.js potgCards) ──
+   Desktop: 4 across (2 on tablets), scrolled by the header arrows. Phones: the shared
+   .swipe-row (82% cards + dots). */
+.gm-potg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 12px; }
+.gm-potg-head__title { margin: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+.gm-potg-head__nav { display: flex; gap: 8px; }
+.gm-potg-head__btn { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(255,255,255,0.14); background: var(--surface-2); color: var(--text); }
+.gm-potg-head__btn:hover:not(:disabled) { border-color: rgba(255,255,255,0.28); }
+.gm-potg-head__btn:disabled { background: var(--surface); border-color: var(--border); color: var(--text-subtle); cursor: default; }
+.gm-potg-head__btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.gm-pc__score { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 0; }
+.gm-pc__score b { font-size: 22px; font-weight: 700; line-height: 1; color: var(--text); white-space: nowrap; }
+.gm-pc__score small { display: flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 800; letter-spacing: .14em; color: var(--text-subtle); white-space: nowrap; }
+@media (min-width: 721px) {
+  /* the padding gives the card's 1px hover lift room inside the scroll box */
+  .gm-potg { display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 0; margin: -2px 0; }
+  .gm-potg::-webkit-scrollbar { display: none; }
+  .gm-potg > * { flex: 0 0 calc((100% - 48px) / 4); scroll-snap-align: start; }
+}
+@media (min-width: 721px) and (max-width: 1100px) {
+  .gm-potg > * { flex-basis: calc((100% - 16px) / 2); }
+}
+@media (max-width: 720px) {
+  .gm-potg-head__nav { display: none; }
 }
