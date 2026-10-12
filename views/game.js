@@ -1872,7 +1872,7 @@ function duelPerformer(s, opp, potgId, say, stats, hist) {
     big: s.gs.toFixed(1), bigKey: 'GAME SCORE', lead: s.player_id === potgId,
     line: stats, series: past, dates: hist?.dates || [], avg, tonight,
     barsKey: `Points vs ${tc(opp)} · tonight last`,
-    noBars: past.length ? `${past.length} earlier meeting${past.length === 1 ? '' : 's'}: ${past.join(', ')} · ${tonight} tonight` : `First meeting with ${tc(opp)} · ${tonight} tonight`,
+    noBars: past.length ? `Only ${past.length} earlier meeting${past.length === 1 ? '' : 's'} with ${tc(opp)}` : `First meeting with ${tc(opp)}`,
     foot, end: say(s),
   };
 }

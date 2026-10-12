@@ -8380,13 +8380,13 @@ a.pkw-lb--note { color: var(--amber); }
 .gm-story__link { font-weight: 700; color: var(--amber); white-space: nowrap; }
 .gm-story__link:hover { text-decoration: underline; }
 
-/* Homepage "Who wins?" — both games side by side, pkf- (views/picks-widget.js). Each game
-   is an sm pick card: matchup summary on top, scorers face-off (VS) in the middle, pick
-   buttons at the bottom (openPickCard's middle slot). */
-.pkf { display: flex; flex-direction: column; gap: 12px; }
-.pkf-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
-.pkf-games.is-one { grid-template-columns: minmax(0, 720px); }
-.pkf-games .pkb-card { height: 100%; }
+/* Homepage "Who wins?" — pkf- (views/picks-widget.js): the game day's pick cards plus the
+   Pickmaster race card as the last column (3 across for two games, 2 for one). Each game is
+   an sm pick card: matchup summary on top, pick buttons, then the Form check chart (or the
+   scorers face-off when there's no chart). */
+.pkf-games { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.pkf-games.is-one { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pkf-games .pkb-card, .pkf-games .pkw-race { height: 100%; }
 .pkf-games .pkb-body { gap: 10px; }
 .pkf-games .pkb-body > .gm-pick { margin-top: auto; }  /* actions line up at the bottom of both cards */
 .pkf-k { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 6px; }
@@ -8413,8 +8413,13 @@ a.pkw-lb--note { color: var(--amber); }
 .pkf-race__go { margin-left: auto; font-weight: 800; color: var(--amber); }
 .pkf-race:hover .pkf-race__go { text-decoration: underline; }
 
+@media (max-width: 1100px) {
+  /* Games two across, the race card takes its own full row under them. */
+  .pkf-games { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pkf-games:not(.is-one) > .pkw-race { grid-column: 1 / -1; }
+}
 @media (max-width: 860px) {
-  .pkf-games { grid-template-columns: minmax(0, 1fr); }
+  .pkf-games, .pkf-games.is-one { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
   .pkf-vs { width: 28px; height: 28px; font-size: 12px; }
@@ -9501,8 +9506,6 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .dl-foot b { font-weight: 700; color: var(--text); }
 .dl-foot b.is-amber { color: var(--amber); }
 .dl-end .gd-say { align-self: center; }
-/* No chart (under 3 games): the same height as one, so the two sides still line up */
-.dl-none { box-sizing: border-box; display: flex; align-items: center; justify-content: center; min-height: 80px; margin: 0; padding: 12px; border-radius: 8px; border: 1px dashed rgba(255,255,255,.1); font-size: 12px; text-align: center; color: var(--text-muted); }
 /* Bars. Team-coloured (Paolo's call, 2026-10-08 — an exception to team colours = dots/chips
    only); --bar is a lighter slate for Black. The earlier best keeps a white cap in the recap. */
 .dl-chart { display: flex; flex-direction: column; gap: 5px; }
@@ -9518,6 +9521,11 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .dl-dates small { flex: 1; min-width: 0; text-align: center; font-size: 9.5px; font-weight: 700; color: var(--text-subtle); white-space: nowrap; }
 .dl-dates small:last-child:not(:empty) { color: var(--text-muted); }
 .dl-d-short { display: none; }
+/* Empty slots (fewer than 6 games): faint dashed placeholder bars, so every bar keeps its width */
+.dl-bar--ghost { background: rgba(255,255,255,.03); border: 1px dashed rgba(255,255,255,.12); border-bottom: 0; box-sizing: border-box; opacity: 1; }
+/* Under 3 games: a short note in the date row's place, the same height as it */
+.dl-note { min-height: 12px; font-size: 11px; font-weight: 600; line-height: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-side--b .dl-note { text-align: right; }
 /* Flat sides (inside the pick card): the right-hand player mirrors to face the left across the VS */
 .dl-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 4px 0; color: inherit; }
 .dl-side--b { align-items: flex-end; text-align: right; }
@@ -9531,8 +9539,7 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .dl-side--b .dl-big { flex-direction: row-reverse; }
 .dl-side .dl-big b { font-size: 28px; }
 .dl-side .dl-big small { font-size: 9.5px; }
-.dl-side .dl-chart, .dl-side .dl-none { align-self: stretch; }
-.dl-side--b .dl-bars, .dl-side--b .dl-dates { justify-content: flex-end; }
+.dl-side .dl-chart { align-self: stretch; }
 /* Narrower columns: the flat sides keep the last 4 games, short dates */
 @media (max-width: 1240px) {
   .dl-side .dl-col:nth-last-of-type(n+5), .dl-side .dl-dates small:nth-last-of-type(n+5) { display: none; }

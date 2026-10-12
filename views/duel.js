@@ -17,11 +17,11 @@ import { teamColor, initials, playerPhotoUrl } from './utils.js';
 //   tag, potg                               the tag above the player; potg = amber badge + glow
 //   line: [{ k, v, win, tie }]              the stat line, the winner of each in amber
 //   series, dates, avg, tonight             the bars (oldest first), the dashed line, tonight's points
-//   barsKey, noBars                         the label over the bars; the line shown instead of < 3 bars
+//   barsKey, noBars                         the label over the bars; the note under them when < 3 games
 //   foot, end                               footer html: text on the left, a button on the right
 
 export const DUEL_BARS = 6;     // the last N games
-const MIN_BARS = 3;             // fewer than this says little: a line instead
+const MIN_BARS = 3;             // fewer than this: a note under the chart instead of dates
 const BAR_PX = 44;
 
 const tc = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
@@ -54,23 +54,36 @@ export function duelScale(...ps) {
   return Math.max(1, ...ps.filter(Boolean).flatMap(p => shownBars(p).map(b => b.v)), ...ps.filter(Boolean).map(p => p.avg || 0));
 }
 
-// The bars. Before the game every bar carries its points and date; in the recap only tonight
-// does (hover shows the rest), and the earlier best keeps a thin white cap to measure against.
+// Empty slots: faint dashed placeholder bars at these heights (px), oldest side first.
+const GHOST_PX = [16, 24, 19, 28, 21, 25];
+
+// The bars. Always DUEL_BARS slots, so a bar is the same width however many games there are:
+// the games fill the right-hand slots (newest last), placeholder bars the rest. Before the game
+// every bar carries its points and date; in the recap only tonight does (hover shows the rest),
+// and the earlier best keeps a thin white cap to measure against. Under MIN_BARS games, a short
+// note (p.noBars) takes the date row's place.
 function bars(p, max) {
   const list = shownBars(p);
-  if (list.length < MIN_BARS) return p.noBars ? `<p class="dl-none">${escHtml(p.noBars)}</p>` : '';
+  if (!list.length && !p.noBars) return '';
   const recap = p.tonight != null;
   const past = list.filter(b => !b.tonight).map(b => b.v);
   const best = past.length ? Math.max(...past) : 0;
+  const ghosts = DUEL_BARS - list.length;
+  const few = list.length < MIN_BARS;
   const px = v => Math.max(4, Math.round((v / max) * BAR_PX));
   const cls = b => (b.tonight ? ' is-tonight' : !recap && b.v === best ? ' is-best' : recap && b.v === best ? ' is-top' : '');
-  const aria = `Points in each game: ${past.join(', ')}${recap ? `, and ${p.tonight} tonight` : ''}`;
+  const aria = list.length ? `Points in each game: ${past.join(', ')}${recap ? `${past.length ? ', and ' : ''}${p.tonight} tonight` : ''}` : p.noBars;
+  const ghostCols = GHOST_PX.slice(0, ghosts).map(h => `<span class="dl-col dl-col--ghost"><span class="dl-bar dl-bar--ghost" style="height:${h}px"></span></span>`).join('');
+  const cols = list.map((b, i) => `<span class="dl-col" style="--i:${i}" title="${b.tonight ? `${b.v} pts tonight` : `${b.v} pts${b.ymd ? ` · ${escHtml(shortDay(b.ymd))}` : ''}`}">${!recap || b.tonight ? `<em data-bar-lbl>${b.v}</em>` : ''}<span class="dl-bar${cls(b)}" data-bar style="height:${px(b.v)}px"></span></span>`).join('');
+  const dates = few
+    ? `<span class="dl-note">${escHtml(p.noBars || '')}</span>`
+    : `<span class="dl-dates" aria-hidden="true">${'<small></small>'.repeat(ghosts)}${list.map(b => `<small>${b.tonight ? 'Tonight' : recap ? '' : `<span class="dl-d-long">${escHtml(shortDay(b.ymd))}</span><span class="dl-d-short">${escHtml(numDay(b.ymd))}</span>`}</small>`).join('')}</span>`;
   return `<span class="dl-chart" data-bars role="img" aria-label="${escHtml(aria)}">
       <span class="dl-bars">
-        ${p.avg != null ? `<i class="dl-avg" style="bottom:${px(p.avg)}px" aria-hidden="true"></i>` : ''}
-        ${list.map((b, i) => `<span class="dl-col" style="--i:${i}" title="${b.tonight ? `${b.v} pts tonight` : `${b.v} pts${b.ymd ? ` · ${escHtml(shortDay(b.ymd))}` : ''}`}">${!recap || b.tonight ? `<em data-bar-lbl>${b.v}</em>` : ''}<span class="dl-bar${cls(b)}" data-bar style="height:${px(b.v)}px"></span></span>`).join('')}
+        ${p.avg != null && past.length >= 2 ? `<i class="dl-avg" style="bottom:${px(p.avg)}px" aria-hidden="true"></i>` : ''}
+        ${ghostCols}${cols}
       </span>
-      <span class="dl-dates" aria-hidden="true">${list.map(b => `<small>${b.tonight ? 'Tonight' : recap ? '' : `<span class="dl-d-long">${escHtml(shortDay(b.ymd))}</span><span class="dl-d-short">${escHtml(numDay(b.ymd))}</span>`}</small>`).join('')}</span>
+      ${dates}
     </span>`;
 }
 
@@ -144,7 +157,7 @@ function previewDuel(p, o, { card = true } = {}) {
     line: card ? previewLine(p, o) : [],
     series: p.series || [], dates: p.dates || [], avg: p.ppg,
     barsKey: season ? 'Points each game · this season' : `Points vs ${opp} · each meeting`,
-    noBars: n ? `${season ? `${n} game${n === 1 ? '' : 's'} this season` : `${n} meeting${n === 1 ? '' : 's'} so far`}: ${p.series.join(', ')}` : '',
+    noBars: season ? `Only ${n} game${n === 1 ? '' : 's'} this season so far` : `Only ${n} meeting${n === 1 ? '' : 's'} so far`,
     foot: p.best ? `Best ${season ? 'this season' : `vs ${escHtml(opp)}`} · <b>${p.best.pts} · ${escHtml(p.best.label)}</b>` : '',
   };
 }
