@@ -8846,37 +8846,10 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-cols__rail .share-stats-banner { margin: 0; }
 
 /* Top performers: the duel */
-.gd-dl { overflow: hidden; padding: 0; }
-.gd-dl__top { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; align-items: center; padding: 22px; min-height: 300px; background: radial-gradient(50% 140% at 0% 50%, rgba(215,220,229,.1), transparent 60%), radial-gradient(50% 140% at 100% 50%, rgba(74,144,226,.12), transparent 60%); }
 /* Desktop: each player's photo fills their side as a faint black-and-white backdrop with a
    soft team-colour glare; the real avatar sits on top in a glowing ring. */
-.gd-dl__bg { position: absolute; top: 0; bottom: 0; width: 38%; overflow: hidden; pointer-events: none; }
-.gd-dl__bg img { width: 100%; height: 100%; object-fit: cover; object-position: center 15%; opacity: .16; filter: grayscale(1) contrast(1.15) brightness(1.5) blur(1px); }
-.gd-dl__bg--l { left: 0; -webkit-mask-image: linear-gradient(to right, #000 10%, transparent 92%); mask-image: linear-gradient(to right, #000 10%, transparent 92%); }
-.gd-dl__bg--r { right: 0; -webkit-mask-image: linear-gradient(to left, #000 10%, transparent 92%); mask-image: linear-gradient(to left, #000 10%, transparent 92%); }
-.gd-dl__bg::before { content: ''; position: absolute; inset: 0; z-index: 2; mix-blend-mode: color; opacity: .45; }
-.gd-dl__bg--l::before { background: radial-gradient(80% 100% at 15% 60%, var(--team), transparent 72%); }
-.gd-dl__bg--r::before { background: radial-gradient(80% 100% at 85% 60%, var(--team), transparent 72%); }
-.gd-dl__bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(10,14,22,.5) 0%, rgba(10,14,22,0) 40%); }
-.gd-dl__p, .gd-dl__rows { position: relative; z-index: 1; }
-.gd-dl__p { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
-.gd-dl__p--r { align-items: flex-end; text-align: right; }
-.gd-dl__ph { position: relative; display: grid; place-items: center; width: 108px; height: 108px; flex-shrink: 0; border-radius: 50%; overflow: hidden; background: var(--surface-2); color: var(--text-muted); font-size: 26px; box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--team), 0 0 30px 6px color-mix(in srgb, var(--team) 50%, transparent); }
-.gd-dl__ph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.gd-dl__i { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.gd-dl__p--r .gd-dl__i { align-items: flex-end; }
 .gd-dl__tag { align-self: flex-start; font-size: 10px; font-weight: 900; letter-spacing: .14em; color: #0a0e16; background: var(--amber); padding: 4px 8px; border-radius: 6px; }
-.gd-dl__p--r .gd-dl__tag { align-self: flex-end; }
 .gd-dl__tag--ghost { color: var(--amber); background: none; border: 1px solid rgba(245,147,50,.45); text-transform: uppercase; }
-.gd-dl__nm { font-size: 20px; font-weight: 900; line-height: 1.1; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.6); }
-.gd-dl__nm a { color: inherit; }
-.gd-dl__nm a:hover { color: var(--amber); }
-.gd-dl__nm small { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 12px; font-weight: 700; color: var(--text-muted); text-shadow: none; }
-.gd-dl__p--r .gd-dl__nm small { justify-content: flex-end; }
-.gd-dl__gs { font-size: 12px; color: var(--text-muted); }
-.gd-dl__gs b { font-size: 18px; color: var(--text); }
-.gd-dl__rows { display: flex; flex-direction: column; padding: 14px 18px 12px; border-radius: 14px; background: rgba(10,14,22,.6); border: 1px solid var(--border); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.gd-dl__rows > .gd-kick { text-align: center; margin-bottom: 6px; }
 .gd-dlr { display: grid; grid-template-columns: 44px 1fr 40px 1fr 44px; align-items: center; gap: 8px; padding: 5px 0; }
 .gd-dlr__v { font-family: 'Saira Condensed', sans-serif; font-size: 19px; font-weight: 700; color: #7d8696; }
 .gd-dlr__v.is-w { color: #fff; }
@@ -8886,25 +8859,56 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-dlr__l { justify-content: flex-end; }
 .gd-dlr__l i, .gd-dlr__r i { display: block; height: 100%; border-radius: 3px; background: #5b6475; }
 .gd-dlr__l i.is-w, .gd-dlr__r i.is-w { background: var(--amber); }
-.gd-dl__v { padding: 13px 22px; background: var(--surface-2); font-size: 13.5px; color: #c7d0da; border-top: 1px solid var(--border); }
-.gd-dl__v b { color: var(--amber); }
+/* Top performers: the duel as two player cards (the shared .pl-card), the head to head as its
+   own strip underneath, the supporting cast as small player cards under a team label. On a
+   narrow column / phones the duel and each team's cast become swipe rows. */
+.gd-duel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.gd-pc { gap: 12px; }
+.gd-pc:hover { transform: none; }
+.gd-pc.is-potg { border-color: rgba(245,147,50,.55); box-shadow: 0 0 0 1px rgba(245,147,50,.22), 0 0 22px -4px rgba(245,147,50,.35); }
+.gd-pc > :not(.pl-card__bg) { position: relative; z-index: 1; }
+.gd-pc__tags { display: flex; }
+.gd-pc a.pl-av { color: inherit; }
+.gd-pc a.pl-card__who { flex: 1; color: inherit; }
+.gd-pc a.pl-card__who:hover .pl-card__last { color: var(--amber); }
+.gd-pc__gs { display: flex; align-items: baseline; gap: 10px; }
+.gd-pc__gs b { font-size: 44px; font-weight: 800; line-height: .85; color: var(--text); }
+.gd-pc.is-potg .gd-pc__gs b { color: var(--amber); }
+.gd-pc__gs small { font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
+.gd-pc .gd-pc__line { margin-top: 0; }
+.gd-pc__end { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.gd-pc__end .gd-say { align-self: center; }
+/* Head to head strip */
+.gd-hth { margin-top: 12px; padding: 14px 18px 0; overflow: hidden; }
+.gd-hth__h { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 4px; font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--text-muted); }
+.gd-hth__h > span { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.gd-hth__h > span:last-child { justify-content: flex-end; }
+.gd-hth__v { margin: 10px -18px 0; padding: 12px 18px; background: var(--surface-2); border-top: 1px solid var(--border); font-size: 13.5px; color: #c7d0da; }
+.gd-hth__v b { color: var(--amber); }
+/* Supporting cast */
+.gd-cast { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 16px; }
+.gd-cast__col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gd-cast__h { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 800; letter-spacing: .14em; color: var(--text-muted); }
+.gd-cast__none { margin: 0; font-size: 13px; color: var(--text-subtle); }
+.gd-cast__row { display: flex; flex-direction: column; gap: 10px; }
+.gd-pc--sm { padding: 14px; gap: 10px; }
+.pl-av--md { width: 40px; height: 40px; font-size: 13px; }
+.gd-pc--sm .pl-card__last { font-size: 15px; }
+.gd-pc__pts { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; }
+.gd-pc__pts b { font-size: 30px; font-weight: 800; line-height: .9; color: var(--text); }
+.gd-pc__pts small { font-size: 9px; font-weight: 800; letter-spacing: .14em; color: var(--text-subtle); }
+.gd-pc__hook { align-self: flex-start; }
+.gd-pc__ln { font-size: 12px; color: #a3abb9; }
+.gd-pc--sm .gd-say--sm { margin-top: -4px; align-self: flex-start; }
+@container gdm (max-width: 760px) {
+  .gd-cast { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .gd-duel, .gd-cast__row { display: flex; flex-direction: row; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px 4px; scroll-padding: 0 16px; scrollbar-width: none; }
+  .gd-duel::-webkit-scrollbar, .gd-cast__row::-webkit-scrollbar { display: none; }
+  .gd-duel > *, .gd-cast__row > * { flex: 0 0 82%; scroll-snap-align: start; }
+}
 
 /* Supporting cast */
-.gd-cast { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
-.gd-cast__col { padding: 4px 18px 6px; }
-.gd-cast__h { display: flex; align-items: center; gap: 8px; padding: 12px 0 6px; font-size: 10.5px; font-weight: 800; letter-spacing: .14em; color: var(--text-muted); }
-.gd-cast__none { margin: 6px 0 12px; font-size: 13px; color: var(--text-subtle); }
-.gd-cr { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); }
-.gd-cr__av { position: relative; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; border: 2px solid; overflow: hidden; background: var(--surface-2); font-size: 13px; color: var(--text-muted); }
-.gd-cr__av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.gd-cr__nm { display: block; font-size: 14px; font-weight: 800; color: #fff; }
-.gd-cr__nm a { color: inherit; }
-.gd-cr__nm a:hover { color: var(--amber); }
-.gd-cr__ln { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; font-size: 12px; color: var(--text-muted); }
 .gd-hook { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); border: 1px solid rgba(245,147,50,.45); padding: 3px 8px; border-radius: 999px; }
-.gd-cr__p { display: flex; flex-direction: column; align-items: flex-end; }
-.gd-cr__p b { font-size: 30px; line-height: .9; color: #fff; }
-.gd-cr__p span { font-size: 10px; font-weight: 800; letter-spacing: .12em; color: var(--text-subtle); }
 
 /* Box score + team stats */
 .gd-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
@@ -9010,9 +9014,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 /* Top performers: the watch-list line (duel, cast row, or a row of its own under the cast). */
 .gd-watch { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 12px; color: var(--text-muted); }
 .gd-watch .gd-kick { margin-right: 4px; }
-.gd-dl__i .gd-watch { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border); }
-.gd-dl__p--r .gd-watch { justify-content: flex-end; }
-.gd-cr .gd-watch { margin-top: 5px; }
 .gd-watch--row { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .gd-watch--row > a { font-weight: 800; color: var(--text); }
 .gd-watch--row > .gd-watch { display: contents; }
@@ -9062,14 +9063,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 /* Narrow main column (desktop ~1100px and below) or phone: the duel and grids stack. */
 @container gdm (max-width: 760px) {
   .gd-won, .gd-cast { grid-template-columns: 1fr; }
-  .gd-dl__top { grid-template-columns: 1fr; min-height: 0; padding: 18px; gap: 16px; }
-  .gd-dl__bg { display: none; }
-  .gd-dl__p, .gd-dl__p--r { flex-direction: row; align-items: center; text-align: left; }
-  .gd-dl__p--r .gd-dl__i { align-items: flex-start; }
-  .gd-dl__p--r .gd-dl__tag { align-self: flex-start; }
-  .gd-dl__p--r .gd-dl__nm small { justify-content: flex-start; }
-  .gd-dl__ph { width: 72px; height: 72px; font-size: 18px; }
-  .gd-dl__rows { order: 3; }
   .gd-ann { display: none; }
   .gd-pl { grid-template-columns: 50px 12px 1fr auto; gap: 10px; }
 }
@@ -9079,7 +9072,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .gd-say { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(10,14,22,.55); color: var(--text); font: 700 12px 'Archivo', sans-serif; cursor: pointer; }
 .gd-say:hover { border-color: var(--amber); color: var(--amber); }
-.gd-dl__p--r .gd-say { align-self: flex-end; }
 .gd-say--sm { min-height: 0; margin-top: 6px; padding: 3px 0; border: 0; background: none; color: var(--text-muted); font-size: 11.5px; }
 .gd-say--sm:hover { color: var(--amber); }
 .pk-talk { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px dashed rgba(245,147,50,.45); font-size: 12.5px; font-weight: 700; color: var(--text); }

@@ -1824,22 +1824,57 @@ function watchLine(w) {
   return `<span class="gd-watch"><span><span class="gd-kick">Watch list</span> ${w.ppg.toFixed(1)} a game vs ${opp}</span><span class="gm-st__chip${x > 0 ? ' is-up' : ''}" title="${w.pts} this game">${x > 0 ? '+' : x < 0 ? '−' : '±'}${Math.abs(x).toFixed(1)}</span></span>`;
 }
 
-function duelSide(s, side, potgId, say, watchOf = () => null) {
+// A performer as the shared player card (.pl-card: team glare, faded photo, avatar ring,
+// first over LASTNAME). Not a link itself: it holds links (name, avatar) and the "Say
+// something" button.
+function perfName(raw) {
+  const s = String(raw || ''), i = s.indexOf(',');
+  return i === -1 ? { first: '', last: s.toUpperCase() } : { first: s.slice(i + 1).trim(), last: s.slice(0, i).trim().toUpperCase() };
+}
+function perfHead(s, avCls = '', tail = '') {
+  const n = perfName(s.name);
   const color = teamColor(s.team_name);
-  const tag = s.player_id === potgId ? '<span class="gd-dl__tag">PLAYER OF THE GAME</span>' : s.badge ? `<span class="gd-dl__tag gd-dl__tag--ghost">${escHtml(s.badge)}</span>` : '';
-  return `<div class="gd-dl__p${side === 'b' ? ' gd-dl__p--r' : ''}">
-      <a href="/players/${encodeURIComponent(s.player_id)}" class="gd-dl__ph" style="--team:${color}" tabindex="-1" aria-hidden="true">
-        <span class="font-condensed">${escHtml(initials(displayPlayerName(s.name)))}</span>
-        <img src="${playerPhotoUrl(s.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()">
-      </a>
-      <div class="gd-dl__i">
-        ${tag}
-        <span class="gd-dl__nm">${playerLink(s.player_id, s.name || '', { upper: true })}<small>${dot(s.team_name, 8)}${escHtml(s.team_name)}${s.number !== '' && s.number != null ? ` · #${escHtml(String(s.number))}` : ''}</small></span>
-        <span class="gd-dl__gs">Game score <b class="font-condensed">${s.gs.toFixed(1)}</b></span>
-        ${watchLine(watchOf(s.player_id))}
-        ${say(s)}
-      </div>
-    </div>`;
+  const href = `/players/${encodeURIComponent(s.player_id)}`;
+  const num = s.number !== '' && s.number != null ? ` · #${escHtml(String(s.number))}` : '';
+  return `<span class="pl-card__top">
+      <a href="${href}" class="pl-av${avCls}" style="--team:${color}" tabindex="-1" aria-hidden="true"><span>${escHtml(initials(`${n.first} ${n.last}`))}</span><img src="${playerPhotoUrl(s.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></a>
+      <a href="${href}" class="pl-card__who">
+        ${n.first ? `<span class="pl-card__first">${escHtml(n.first)}</span>` : ''}
+        <span class="pl-card__last">${escHtml(n.last)}</span>
+        <span class="pl-card__meta"><span class="pl-team"><i style="background:${color}"></i>${escHtml(String(s.team_name || '').toUpperCase())}${num}</span></span>
+      </a>${tail}
+    </span>`;
+}
+const perfBg = s => `<img class="pl-card__bg" src="${playerPhotoUrl(s.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()">`;
+
+// One side of the duel: tag (Player of the Game, or its code-picked hook), the player, game
+// score, their line, the watch-list result and "Say something". POTG gets the amber glow.
+function duelCard(s, potgId, say, watchOf = () => null) {
+  const isPotg = s.player_id === potgId;
+  const tag = isPotg ? '<span class="gd-dl__tag">PLAYER OF THE GAME</span>' : s.badge ? `<span class="gd-dl__tag gd-dl__tag--ghost">${escHtml(s.badge)}</span>` : '';
+  const extra = n0(s.blk) > n0(s.stl) ? ['BLK', n0(s.blk)] : ['STL', n0(s.stl)];
+  const line = [['PTS', n0(s.pts)], ['REB', n0(s.reb)], ['AST', n0(s.ast)], extra]
+    .map(([k, v]) => `<span class="pl-stat"><b class="font-condensed">${v}</b><small>${k}</small></span>`).join('');
+  return `<article class="pl-card pl-card--photo gd-pc${isPotg ? ' is-potg' : ''}" style="--team:${teamColor(s.team_name)}">
+    ${perfBg(s)}
+    ${tag ? `<span class="gd-pc__tags">${tag}</span>` : ''}
+    ${perfHead(s)}
+    <span class="gd-pc__gs"><b class="font-condensed">${s.gs.toFixed(1)}</b><small>Game score</small></span>
+    <span class="pl-card__foot gd-pc__line"><span class="pl-card__stats">${line}</span></span>
+    <span class="gd-pc__end">${watchLine(watchOf(s.player_id))}${say(s)}</span>
+  </article>`;
+}
+
+// Supporting cast player: the card with their points, code-picked badge and line.
+function castCard(s, say, watchOf = () => null) {
+  return `<article class="pl-card pl-card--photo gd-pc gd-pc--sm" style="--team:${teamColor(s.team_name)}">
+    ${perfBg(s)}
+    ${perfHead(s, ' pl-av--md', `<span class="gd-pc__pts"><b class="font-condensed">${n0(s.pts)}</b><small>PTS</small></span>`)}
+    ${s.badge ? `<span class="gd-hook gd-pc__hook">${escHtml(s.badge)}</span>` : ''}
+    <span class="gd-pc__ln">${escHtml(castLine(s))}</span>
+    ${watchLine(watchOf(s.player_id))}
+    ${say(s, true)}
+  </article>`;
 }
 
 function duelRows(a, b) {
@@ -1861,19 +1896,6 @@ function duelRows(a, b) {
   }).join('');
 }
 
-function castCol(game, side, list, say, watchOf = () => null) {
-  const name = side === 'a' ? game.team_a_name : game.team_b_name;
-  if (!list.length) return `<div class="card gd-cast__col"><div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div><p class="gd-cast__none">Nobody else reached a game score of 10.</p></div>`;
-  return `<div class="card gd-cast__col">
-    <div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div>
-    ${list.map(s => `<div class="gd-cr">
-      ${playerAvatar(s.player_id, s.name, teamColor(s.team_name), { className: 'gd-cr__av', link: true })}
-      <div><span class="gd-cr__nm">${playerLink(s.player_id, s.name || '')}</span><span class="gd-cr__ln">${s.badge ? `<span class="gd-hook">${escHtml(s.badge)}</span>` : ''}${escHtml(castLine(s))}</span>${watchLine(watchOf(s.player_id))}${say(s, true)}</div>
-      <span class="gd-cr__p"><b class="font-condensed">${n0(s.pts)}</b><span>PTS</span></span>
-    </div>`).join('')}
-  </div>`;
-}
-
 // "Say something" for a performer: jumps to the comments with "@Name " already typed (plain
 // "Name " when they have no login to be mentioned). Guests are sent to log in first.
 function sayButton(mentionable) {
@@ -1883,6 +1905,15 @@ function sayButton(mentionable) {
     const text = names.has(name) ? `@${name} ` : `${name} `;
     return `<button type="button" class="gd-say${small ? ' gd-say--sm' : ''}" data-say="${escHtml(text)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Say something<span class="sr-only"> to ${escHtml(name)}</span></button>`;
   };
+}
+
+// One team's supporting cast: a label, then its player cards (a swipe row on phones).
+function castGroup(game, side, list, say, watchOf) {
+  const name = side === 'a' ? game.team_a_name : game.team_b_name;
+  return `<div class="gd-cast__col">
+    <div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div>
+    ${list.length ? `<div class="gd-cast__row">${list.map(c => castCard(c, say, watchOf)).join('')}</div>` : `<p class="gd-cast__none">Nobody else reached a game score of 10.</p>`}
+  </div>`;
 }
 
 // say(s, small): the "Say something" button for a player (empty when comments are off).
@@ -1900,17 +1931,13 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>' })}
     ${panel}
     <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}. Then the rest of each team’s standouts, ranked by game score.</p>
-    <article class="card gd-dl" aria-label="The duel">
-      <div class="gd-dl__top">
-        <div class="gd-dl__bg gd-dl__bg--l" aria-hidden="true" style="--team:${teamColor(dc.a.team_name)}"><img src="${playerPhotoUrl(dc.a.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></div>
-        <div class="gd-dl__bg gd-dl__bg--r" aria-hidden="true" style="--team:${teamColor(dc.b.team_name)}"><img src="${playerPhotoUrl(dc.b.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></div>
-        ${duelSide(dc.a, 'a', potgId, say, watchOf)}
-        <div class="gd-dl__rows"><span class="gd-kick">Head to head</span>${duelRows(dc.a, dc.b)}</div>
-        ${duelSide(dc.b, 'b', potgId, say, watchOf)}
-      </div>
-      <div class="gd-dl__v">${verdict}</div>
-    </article>
-    <div class="gd-cast">${castCol(game, 'a', dc.castA, say, watchOf)}${castCol(game, 'b', dc.castB, say, watchOf)}</div>
+    <div class="gd-duel">${duelCard(dc.a, potgId, say, watchOf)}${duelCard(dc.b, potgId, say, watchOf)}</div>
+    <div class="card gd-hth" aria-label="Head to head">
+      <div class="gd-hth__h"><span>${dot(dc.a.team_name, 7)}${escHtml(perfName(dc.a.name).last)}</span><span class="gd-kick">Head to head</span><span>${escHtml(perfName(dc.b.name).last)}${dot(dc.b.team_name, 7)}</span></div>
+      ${duelRows(dc.a, dc.b)}
+      <div class="gd-hth__v">${verdict}</div>
+    </div>
+    <div class="gd-cast">${castGroup(game, 'a', dc.castA, say, watchOf)}${castGroup(game, 'b', dc.castB, say, watchOf)}</div>
     ${elsewhere}
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
   </section>`;
