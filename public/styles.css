@@ -8818,9 +8818,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-faces .pk-av:first-child { margin-left: 0; }
 .gd-faces > span { margin-left: 10px; font-size: 12px; color: var(--text-muted); }
 .gd-faces > span b { color: var(--text); }
-.gd-lnk { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(245,147,50,.35); font-size: 13px; font-weight: 800; color: var(--amber); }
-.gd-lnk small { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-muted); margin-top: 2px; }
-.gd-lnk:hover { border-color: var(--amber); }
 .gd-nx { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border); }
 .gd-nx__t { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 800; color: #fff; }
 .gd-nx__t i { font-style: normal; font-size: 11px; color: var(--text-subtle); font-weight: 700; }
@@ -8956,21 +8953,74 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-edges-card { padding: 8px 18px 4px; }
 .gd-edges-card .gm-more { margin: 4px 0 10px; }
 .gd-fo { margin: 0; }
-.gd-mts { margin: 0; }
+/* Game cards inside the game page (Last meetings): a row of gameCards; swipe row when the
+   column is narrow, like the homepage headlines on phones. */
+.gd-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@container gdm (max-width: 760px) {
+  .gd-cards { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px 4px; scroll-padding: 0 16px; scrollbar-width: none; }
+  .gd-cards::-webkit-scrollbar { display: none; }
+  .gd-cards > .gh-card { flex: 0 0 82%; scroll-snap-align: start; min-height: 300px; }
+}
 /* Inside the pick card the odds sit flat — the glow panel is for when it stands alone. */
 .gd-pick .gm-odds { margin-bottom: 12px; padding: 0 0 12px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; }
-/* Archived pre-game preview: a plain section (header is the toggle), cards sit on the page
-   like every other section — no wrapping card. */
-.gd-prev > summary { cursor: pointer; list-style: none; }
-.gd-prev > summary::-webkit-details-marker { display: none; }
-.gd-prev__tog { font-size: 13px; font-weight: 800; color: var(--amber); white-space: nowrap; }
-.gd-prev__tog::after { content: 'Show ↓'; }
-.gd-prev[open] .gd-prev__tog::after { content: 'Hide ↑'; }
-.gd-prev > summary:hover .gd-prev__tog { text-decoration: underline; }
-.gd-prev__in { display: flex; flex-direction: column; gap: 28px; }
-/* Its sections sit one level under the "Pre-game preview" header. */
-.gd-prev__in .section-header { padding-bottom: 8px; }
-.gd-prev__in .section-header h2 { font-size: 15px; }
+/* ── After the final, the pre-game preview lives inside the page (no section of its own) ── */
+/* Team stats vs their usual: edgeRow's +/− chips, and the form-check tiles (How it was won tiles). */
+.gm-st--chips { grid-template-columns: 104px minmax(0, 1fr) 128px minmax(0, 1fr) 104px; }
+.gm-st__vc { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gm-st__vc--b { flex-direction: row-reverse; }
+.gm-st__chip { display: inline-flex; align-items: center; min-height: 20px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; background: var(--surface-2); color: var(--text-muted); }
+.gm-st__chip.is-up { background: rgba(231,234,240,.1); color: var(--text); }
+.gd-sh__note { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.gd-form { margin-bottom: 12px; }
+.gd-won__v b small { font-size: 20px; color: var(--text-muted); }
+.gd-won__v b.is-down { color: #c7d0da; }
+@container gdm (max-width: 560px) {
+  .gd-sh__note { display: none; }
+  .gm-st--chips { grid-template-columns: 50px minmax(0, 1fr) 76px minmax(0, 1fr) 50px; gap: 6px; }
+  .gm-st__vc { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .gm-st__vc--b { align-items: flex-end; }
+  .gm-st__chip { min-height: 18px; padding: 0 6px; font-size: 10.5px; }
+}
+@container gdm (max-width: 760px) {
+  /* Phones: the form check keeps two tiles side by side (form + biggest swing). */
+  .gd-won.gd-form { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .gd-form > .gd-won__t:nth-child(3) { display: none; }
+  .gd-form .gd-won__t { padding: 10px 12px; }
+  .gd-form .gd-won__v b { font-size: 24px; }
+  .gd-form .gd-won__v span { font-size: 10.5px; }
+  .gd-form .gd-won__d { display: none; }
+}
+
+/* Top performers: the watch-list line (duel, cast row, or a row of its own under the cast). */
+.gd-watch { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 12px; color: var(--text-muted); }
+.gd-watch .gd-kick { margin-right: 4px; }
+.gd-dl__i .gd-watch { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border); }
+.gd-dl__p--r .gd-watch { justify-content: flex-end; }
+.gd-cr .gd-watch { margin-top: 5px; }
+.gd-watch--row { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
+.gd-watch--row > a { font-weight: 800; color: var(--text); }
+.gd-watch--row > .gd-watch { display: contents; }
+
+/* Recap: "Before tip-off", the pre-game storyline under what happened. */
+.gd-before { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.gd-before--solo { margin-top: 0; padding-top: 0; border-top: 0; }
+.gd-before__k { display: flex; align-items: center; gap: 8px; }
+.gd-before__h { margin: 0; font-size: 17px; font-weight: 800; line-height: 1.3; color: var(--text); }
+.gd-before__h em { font-style: normal; color: inherit; }
+.gd-before__b { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text-muted); }
+.gd-before .gd-more { margin-top: 0; align-self: flex-start; }
+
+/* The series: result dots (oldest first, this game ringed) and the all-time lead. */
+.gd-ser { display: inline-flex; align-items: center; gap: 12px; }
+.gd-ser__dots { display: inline-flex; align-items: center; gap: 4px; }
+.gd-ser__dot { width: 8px; height: 8px; border-radius: 50%; }
+.gd-ser__dot.is-now { width: 10px; height: 10px; box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--amber); }
+.gd-ser__lead { font-size: 13px; font-weight: 800; color: var(--text); white-space: nowrap; }
+.gd-ser__lead b { font-size: 17px; color: var(--amber); }
+.gd-cards--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container gdm (max-width: 560px) {
+  .gd-ser__dots { display: none; }
+}
 
 @media (max-width: 860px) {
   .gd-hero, .gd-hero__in { min-height: 0; }

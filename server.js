@@ -25,7 +25,7 @@ import { forgotPasswordPage, forgotPasswordSentPage } from './views/forgot-passw
 import sharp from 'sharp';
 import QRCode from 'qrcode';
 import { layout, escHtml } from './views/layout.js';
-import { homePage, leaderBoards, summaryPanel } from './views/home.js';
+import { homePage, leaderBoards, summaryPanel, headlineGamesOf } from './views/home.js';
 import { gamesPage } from './views/games.js';
 import { picksPage, picksPlayerPage, picksPlayerSheet, picksRulesPage } from './views/picks.js';
 import { picksWidget } from './views/picks-widget.js';
@@ -7502,7 +7502,7 @@ app.get('/', (req, res) => {
     title: 'WKND Basketball League',
     currentPath: req.path,
     body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
-      latestComments: getSetting('comments_enabled', '0') === '1' ? getLatestCommentsForGames(games.filter(g => g.status === 'final' || g.status === 'complete').map(g => g.id)) : {},
+      headlineCards: gameCardExtras(headlineGamesOf(games), games, { viewerId: req.session?.playerPlayerId || null, playerMap }),
       picksWidgetHtml: picksWidget(picksW, { summary: summaries.picks || null, isAdmin: !!req.session?.isAdmin }) })
   }));
 });
@@ -7630,6 +7630,9 @@ app.get('/games/:ref', (req, res) => {
       state: p.state, m: p.m, story: p.story, odds: shownOdds(game.id, p.odds, pctx), o, siblings,
       pickable: picksEnabled() && p.state !== 'final',
     };
+    // Last meetings as the standard game cards (views/games.js gameCard).
+    const meetingGames = (p.m?.lastMeetings || []).map(x => sorted.find(g => g.id === x.id)).filter(Boolean);
+    picks.meetingCards = { games: meetingGames, ...gameCardExtras(meetingGames, sorted, { viewerId: currentPlayerId, playerMap }) };
     return res.send(renderPage(req, {
       title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} — WKND Basketball League`,
       currentPath: req.path,
@@ -7656,9 +7659,8 @@ app.get('/games/:ref', (req, res) => {
   } : null;
   const verdict = dc ? duelVerdict(dc.a, dc.b, game) : '';
 
-  // "Who called it?": the pre-game odds plus pickers and your own pick. The preview shown
-  // underneath is only the stored snapshot — finals without one get no preview section.
-  let called = null, preview = null;
+  // "Who called it?": the pre-game odds plus pickers and your own pick.
+  let called = null;
   if (picksEnabled()) {
     const odds = shownOdds(game.id, pctx.oddsById[game.id] || null, pctx);
     let result = null;
@@ -7669,10 +7671,31 @@ app.get('/games/:ref', (req, res) => {
       result = calledItSummary(sg, gp, currentPlayerId);
       result.calledIt = result.calledIt.map(x => ({ id: x.player_id, name: displayPlayerName(x.player_name || ''), team: x.team_name || '' }));
     }
-    const stored = getGamePreview(game.id);
-    if (stored?.matchup) preview = { m: { ...stored.matchup, game }, story: stored.story, odds: shownOdds(game.id, stored.odds, pctx) };
-    if (odds || result) called = { odds, result, hasPreview: !!preview };
+    if (odds || result) called = { odds, result };
   }
+
+  // The pre-game preview, merged into the page rather than kept as its own section. Built fresh
+  // from games on earlier days (matchupAsOf), so older games without a stored preview get it too:
+  //   usual  — each team's per-game averages in their earlier meetings with box scores (Team stats)
+  //   watch  — each side's go-to scorer in those meetings, and what they did tonight (Top performers)
+  //   series — the last three meetings as game cards, plus every result incl. this one (The series)
+  //   story  — the storyline, only where one was stored when picks closed (the recap's footer)
+  const asOf = matchupAsOf(game, sorted, playerMap);
+  const usual = !asOf.firstMeeting && asOf.boxMeetings ? { rows: asOf.rows, n: asOf.boxMeetings } : null;
+  const watch = (asOf.scorers || []).map(w => {
+    if (!w) return null;
+    const line = stats.find(x => x.player_id === w.id);
+    return { id: w.id, name: w.name, team: w.team, opp: w.opp, ppg: w.ppg, games: w.games, pts: line ? +line.pts || 0 : null };
+  });
+  const ymdThis = gameYmd(game.date);
+  const pairOf = g => [g.team_a_name, g.team_b_name].sort().join('|') === [game.team_a_name, game.team_b_name].sort().join('|');
+  const results = sorted
+    .filter(g => pairOf(g) && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0 && gameYmd(g.date) <= ymdThis)
+    .sort((x, y) => String(x.date).localeCompare(String(y.date)))
+    .map(g => ({ id: g.id, winner: Number(g.team_a_score) > Number(g.team_b_score) ? g.team_a_name : g.team_b_name }));
+  const seriesGames = (asOf.lastMeetings || []).map(x => sorted.find(g => g.id === x.id)).filter(Boolean);
+  const series = seriesGames.length ? { results, games: seriesGames, ...gameCardExtras(seriesGames, sorted, { viewerId: currentPlayerId, playerMap }) } : null;
+  const storyline = getGamePreview(game.id)?.story || null;
   const upNext = opens.filter(x => x.id !== game.id);
   const upNextLabel = upNext.length && upNext.every(x => x.ymd === upNext[0].ymd)
     ? new Date(`${upNext[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
@@ -7683,7 +7706,7 @@ app.get('/games/:ref', (req, res) => {
     metaTags: buildGameOgTags(req, game),
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
-      flow, plays, won, dc, verdict, called, preview, upNext, upNextLabel, myGame,
+      flow, plays, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
       // A finished game is an archive: a missing writeup is written on the first page view
       // (any season — at most 2 in flight, so a crawler only queues them), then kept as written
       // (keep). Admin Regenerate is the only rewrite.
@@ -10015,6 +10038,40 @@ function homePicksWidget(games, viewerId) {
   return null;
 }
 
+// Everything the /games result card (views/games.js gameCard) shows beyond the game row:
+// comment/reaction counts, the pre-game odds label and the top scorer. Shared so every place
+// that shows game cards — /games, team pages, homepage headlines, game pages — shows the same
+// card. Odds come from the lib/picks.js model over games dated before each one, so they also
+// cover games from before picks existed (none for a season's opening week).
+// statsByGame: optional { id: stats } already loaded by the caller.
+function gameCardExtras(cardGames, allGames, { viewerId = null, playerMap = null, statsByGame = null } = {}) {
+  const ids = cardGames.map(g => g.id);
+  const commentsEnabled = getSetting('comments_enabled', '0') === '1';
+  const socialByGame = {}, oddsByGame = {}, topScorerByGame = {};
+  if (!ids.length) return { commentsEnabled, socialByGame, oddsByGame, topScorerByGame };
+  if (commentsEnabled) {
+    const commentCounts = getGameCommentCounts(ids), reactionCounts = getGameReactionCounts(ids);
+    const reactedIds = getReactedGameIdsForPlayer(ids, viewerId);
+    const latest = getLatestCommentsForGames(ids);
+    for (const id of ids) socialByGame[id] = { commentsCount: commentCounts[id] || 0, reactCount: reactionCounts[id] || 0, reacted: reactedIds.has(id), latest: latest[id] || null };
+  }
+  if (pickOddsEnabled()) {
+    const want = new Set(ids);
+    const playedPick = allGames.map(g => toPickGame(g, gameYmd)).filter(g => g.played);
+    for (const g of playedPick) {
+      if (!want.has(g.id)) continue;
+      const o = computeOdds(g, playedPick);
+      if (o?.fav) oddsByGame[g.id] = { fav: o.fav, pct: o.fav === 'a' ? o.pctA : o.pctB, upset: o.fav !== (g.sa > g.sb ? 'a' : 'b') };
+    }
+  }
+  const pm = playerMap || Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  for (const g of cardGames) {
+    const top = (statsByGame?.[g.id] || getGameStats(g.id)).reduce((m, s) => ((+s.pts || 0) > (m ? +m.pts || 0 : -1) ? s : m), null);
+    if (top) topScorerByGame[g.id] = { name: displayPlayerName(pm[top.player_id]?.name || ''), pts: +top.pts || 0 };
+  }
+  return { commentsEnabled, socialByGame, oddsByGame, topScorerByGame };
+}
+
 app.get('/games', (req, res) => {
   const players = getAllPlayers();
   const games = byDate(getAllGames());
@@ -10028,41 +10085,7 @@ app.get('/games', (req, res) => {
   const season = qSeason === 'all' ? 'all' : (seasons.includes(qSeason) ? qSeason : (seasons.includes(String(currentSeason)) ? String(currentSeason) : (seasons[0] || 'all')));
   const listGames = games.filter(g => (g.status === 'final' || g.status === 'complete') && !g.under_review && (season === 'all' || String(g.season) === season));
 
-  const commentsEnabled = getSetting('comments_enabled', '0') === '1';
-  let socialByGame = {};
-  if (commentsEnabled) {
-    const ids = listGames.map(g => g.id);
-    const commentCounts = getGameCommentCounts(ids);
-    const reactionCounts = getGameReactionCounts(ids);
-    const reactedIds = getReactedGameIdsForPlayer(ids, req.session?.playerPlayerId || null);
-    const latest = getLatestCommentsForGames(ids);
-    socialByGame = Object.fromEntries(ids.map(id => [id, {
-      commentsCount: commentCounts[id] || 0,
-      reactCount: reactionCounts[id] || 0,
-      reacted: reactedIds.has(id),
-      latest: latest[id] || null,
-    }]));
-  }
-
-  // Pre-game odds label (and upset tag) for every listed result — the same lib/picks.js model
-  // as the live cards, computed from games dated before each one, so it also covers games
-  // from before picks existed. None for a season's opening week (no results yet).
-  const oddsByGame = {};
-  if (pickOddsEnabled()) {
-    const playedPick = games.map(g => toPickGame(g, gameYmd)).filter(g => g.played);
-    for (const g of playedPick) {
-      if (!listGames.some(x => x.id === g.id)) continue;
-      const o = computeOdds(g, playedPick);
-      if (o?.fav) oddsByGame[g.id] = { fav: o.fav, pct: o.fav === 'a' ? o.pctA : o.pctB, upset: o.fav !== (g.sa > g.sb ? 'a' : 'b') };
-    }
-  }
-
-  // Top scorer per listed game, for the card footer.
-  const topScorerByGame = {};
-  for (const g of listGames) {
-    const top = getGameStats(g.id).reduce((m, s) => ((+s.pts || 0) > (m ? +m.pts || 0 : -1) ? s : m), null);
-    if (top) topScorerByGame[g.id] = { name: displayPlayerName(playerMap[top.player_id]?.name || ''), pts: +top.pts || 0 };
-  }
+  const { commentsEnabled, socialByGame, oddsByGame, topScorerByGame } = gameCardExtras(listGames, games, { viewerId: req.session?.playerPlayerId || null, playerMap });
 
   const upcoming = getUpcomingGames(games);
   const matchups = upcoming.map(g => matchupAsOf(g, games, playerMap));
@@ -10270,7 +10293,7 @@ app.get('/picks/rules', (req, res) => {
 
 // The full matchup preview moved onto the game page itself (one URL per game, preview before
 // tip-off and recap after). Old links — pick reminder emails, notifications, shares — land
-// there: the pick box before the final, the archived preview after it.
+// there: the pick box before the final, the recap (with the preview merged in) after it.
 app.get('/picks/:ref', (req, res) => {
   const resolved = findGameRef(req.params.ref);
   const game = resolved && getGameById(resolved.id);
@@ -12591,29 +12614,7 @@ function buildTeamPage(team, viewerId) {
   // Schedule & results: the /games result cards for this season's games.
   const games = seasonTeamGames.filter(g => g.status === 'final' || g.status === 'complete');
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-  const topScorerByGame = {};
-  for (const g of games) {
-    const top = (statsByGame[g.id] || []).reduce((m, s) => ((+s.pts || 0) > (m ? +m.pts || 0 : -1) ? s : m), null);
-    if (top) topScorerByGame[g.id] = { name: displayPlayerName(playerMap[top.player_id]?.name || ''), pts: +top.pts || 0 };
-  }
-  const commentsEnabled = getSetting('comments_enabled', '0') === '1';
-  let socialByGame = {};
-  if (commentsEnabled && games.length) {
-    const ids = games.map(g => g.id);
-    const commentCounts = getGameCommentCounts(ids), reactionCounts = getGameReactionCounts(ids);
-    const reactedIds = getReactedGameIdsForPlayer(ids, viewerId);
-    const latest = getLatestCommentsForGames(ids);
-    socialByGame = Object.fromEntries(ids.map(id => [id, { commentsCount: commentCounts[id] || 0, reactCount: reactionCounts[id] || 0, reacted: reactedIds.has(id), latest: latest[id] || null }]));
-  }
-  const oddsByGame = {};
-  if (pickOddsEnabled() && games.length) {
-    const playedPick = allGames.map(g => toPickGame(g, gameYmd)).filter(g => g.played);
-    for (const g of playedPick) {
-      if (!games.some(x => x.id === g.id)) continue;
-      const o = computeOdds(g, playedPick);
-      if (o?.fav) oddsByGame[g.id] = { fav: o.fav, pct: o.fav === 'a' ? o.pctA : o.pctB, upset: o.fav !== (g.sa > g.sb ? 'a' : 'b') };
-    }
-  }
+  const { commentsEnabled, socialByGame, oddsByGame, topScorerByGame } = gameCardExtras(games, allGames, { viewerId, playerMap, statsByGame });
 
   // Head to head, every opponent, all seasons with playoffs.
   const nextOppId = upcomingGame ? teamResult(upcomingGame, team.id).oppId : null;

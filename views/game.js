@@ -4,7 +4,7 @@ import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
 import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
-import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, meetingTile, storyHtml } from './games.js';
+import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, scorerCard, gameCard, gameCardScript, storyHtml } from './games.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
 
@@ -1376,8 +1376,9 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
 // One scrolling page with a sticky section nav (no tabs). Two states share the URL:
 //   'upcoming' — the matchup preview: pick box with odds, storyline, head to head, go-to
 //                scorers, last meetings, pre-game chatter (this used to be /picks/<game>).
-//   'final'    — recap, game flow, top performers (duel + supporting cast), box score, key
-//                plays, comments, "Who called it?" and the pre-game preview as it stood.
+//   'final'    — recap (+ the pre-game storyline), game flow, top performers (duel + cast, with
+//                the watch list), box score, team stats vs their usual, key plays, the series,
+//                comments and "Who called it?". The preview has no section of its own after the final.
 // Data comes from server.js (GET /games/:ref) and lib/game-detail.js.
 
 const ICON_PLAY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -1583,13 +1584,22 @@ function sectionNav(items, mini) {
 }
 
 // ── Final: recap, video, how it was won, game flow ───────────────────────────────────────
-function recapCard(game) {
+// story: the pre-game storyline stored when picks closed (server.js), as a "Before tip-off"
+// footer: what we expected, under what happened. Headline first; the paragraph opens in place.
+function recapCard(game, story = null) {
   const html = renderWriteup(game.game_writeup);
-  if (!html) return '';
+  if (!html && !story) return '';
+  const before = story ? `<div class="gd-before${html ? '' : ' gd-before--solo'}">
+      <span class="gd-kick gd-before__k"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Before tip-off · The storyline</span>
+      <p class="gd-before__h">“${storyHtml(story.headline)}”</p>
+      ${story.body ? `<p class="gd-before__b" id="gd-before-b" hidden>${escHtml(story.body)}</p>
+      <button type="button" class="gd-more" data-gd-before aria-expanded="false" aria-controls="gd-before-b">Read the pre-game storyline ↓</button>` : ''}
+    </div>` : '';
   return `<article id="recap" class="card gd-recap">
-    <span class="gd-kick">Recap</span>
+    ${html ? `<span class="gd-kick">Recap</span>
     <div class="gd-recap__body" data-gd-clamp>${html}</div>
-    <button type="button" class="gd-more" data-gd-clamp-btn hidden aria-expanded="false">Read the full recap →</button>
+    <button type="button" class="gd-more" data-gd-clamp-btn hidden aria-expanded="false">Read the full recap →</button>` : ''}
+    ${before}
   </article>`;
 }
 
@@ -1708,7 +1718,6 @@ function calledCard(game, called, isPlayer) {
     </div>` : ''}
     ${rows.length ? `<div class="gd-vrd">${rows.join('')}</div>` : ''}
     ${faces}
-    ${called.hasPreview ? '<a class="gd-lnk" href="#preview" data-gd-open-preview>Pre-game preview<small>Odds, storyline and matchup stats as they stood at tip-off</small><span>↓</span></a>' : ''}
   </section>`;
 }
 
@@ -1731,7 +1740,17 @@ function upNextCard(list, ymdLabel) {
 }
 
 // ── Final: top performers (duel + supporting cast) ───────────────────────────────────────
-function duelSide(s, side, potgId, say) {
+// The pre-game watch list (server.js: each side's go-to scorer in their earlier meetings): a line
+// on that player wherever they show up in Top performers, with tonight against their average.
+function watchLine(w) {
+  if (!w) return '';
+  const opp = escHtml(tc(w.opp));
+  if (w.pts == null) return `<span class="gd-watch"><span><span class="gd-kick">Watch list</span> ${w.ppg.toFixed(1)} a game vs ${opp} · Didn’t play</span></span>`;
+  const x = Math.round((w.pts - w.ppg) * 10) / 10;
+  return `<span class="gd-watch"><span><span class="gd-kick">Watch list</span> ${w.ppg.toFixed(1)} a game vs ${opp}</span><span class="gm-st__chip${x > 0 ? ' is-up' : ''}" title="${w.pts} this game">${x > 0 ? '+' : x < 0 ? '−' : '±'}${Math.abs(x).toFixed(1)}</span></span>`;
+}
+
+function duelSide(s, side, potgId, say, watchOf = () => null) {
   const color = teamColor(s.team_name);
   const tag = s.player_id === potgId ? '<span class="gd-dl__tag">PLAYER OF THE GAME</span>' : s.badge ? `<span class="gd-dl__tag gd-dl__tag--ghost">${escHtml(s.badge)}</span>` : '';
   return `<div class="gd-dl__p${side === 'b' ? ' gd-dl__p--r' : ''}">
@@ -1743,6 +1762,7 @@ function duelSide(s, side, potgId, say) {
         ${tag}
         <span class="gd-dl__nm">${playerLink(s.player_id, s.name || '', { upper: true })}<small>${dot(s.team_name, 8)}${escHtml(s.team_name)}${s.number !== '' && s.number != null ? ` · #${escHtml(String(s.number))}` : ''}</small></span>
         <span class="gd-dl__gs">Game score <b class="font-condensed">${s.gs.toFixed(1)}</b></span>
+        ${watchLine(watchOf(s.player_id))}
         ${say(s)}
       </div>
     </div>`;
@@ -1767,14 +1787,14 @@ function duelRows(a, b) {
   }).join('');
 }
 
-function castCol(game, side, list, say) {
+function castCol(game, side, list, say, watchOf = () => null) {
   const name = side === 'a' ? game.team_a_name : game.team_b_name;
   if (!list.length) return `<div class="card gd-cast__col"><div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div><p class="gd-cast__none">Nobody else reached a game score of 10.</p></div>`;
   return `<div class="card gd-cast__col">
     <div class="gd-cast__h">${dot(name, 8)}${escHtml(name)} · SUPPORTING CAST</div>
     ${list.map(s => `<div class="gd-cr">
       ${playerAvatar(s.player_id, s.name, teamColor(s.team_name), { className: 'gd-cr__av', link: true })}
-      <div><span class="gd-cr__nm">${playerLink(s.player_id, s.name || '')}</span><span class="gd-cr__ln">${s.badge ? `<span class="gd-hook">${escHtml(s.badge)}</span>` : ''}${escHtml(castLine(s))}</span>${say(s, true)}</div>
+      <div><span class="gd-cr__nm">${playerLink(s.player_id, s.name || '')}</span><span class="gd-cr__ln">${s.badge ? `<span class="gd-hook">${escHtml(s.badge)}</span>` : ''}${escHtml(castLine(s))}</span>${watchLine(watchOf(s.player_id))}${say(s, true)}</div>
       <span class="gd-cr__p"><b class="font-condensed">${n0(s.pts)}</b><span>PTS</span></span>
     </div>`).join('')}
   </div>`;
@@ -1793,47 +1813,95 @@ function sayButton(mentionable) {
 
 // say(s, small): the "Say something" button for a player (empty when comments are off).
 // panel: the section's AI writeup (sectionPanel), between the header and its description.
-function performersSection(game, dc, verdict, potgId, say = () => '', panel = '') {
+// watch: the pre-game watch list (server.js), one entry per side or null.
+function performersSection(game, dc, verdict, potgId, say = () => '', panel = '', watch = []) {
   if (!dc) return '';
+  const watched = (watch || []).filter(Boolean);
+  const watchOf = id => watched.find(w => w.id === id) || null;
+  const shown = new Set([dc.a, dc.b, ...dc.castA, ...dc.castB].map(s => s.player_id));
+  // Watched but not in the duel or the cast (a quiet night, or sat out): a line under the cast.
+  const elsewhere = watched.filter(w => !shown.has(w.id)).map(w => `<p class="gd-watch gd-watch--row">${dot(w.team, 8)}${playerLink(w.id, w.name)}${w.pts == null ? '' : ` · ${w.pts} pts`}${watchLine(w)}</p>`).join('');
+  const bothInDuel = watched.length === 2 && watched.every(w => w.id === dc.a.player_id || w.id === dc.b.player_id);
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>' })}
     ${panel}
-    <p class="gd-sd">The best player on each side, head to head. Then the rest of each team’s standouts, ranked by game score.</p>
+    <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}. Then the rest of each team’s standouts, ranked by game score.</p>
     <article class="card gd-dl" aria-label="The duel">
       <div class="gd-dl__top">
         <div class="gd-dl__bg gd-dl__bg--l" aria-hidden="true" style="--team:${teamColor(dc.a.team_name)}"><img src="${playerPhotoUrl(dc.a.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></div>
         <div class="gd-dl__bg gd-dl__bg--r" aria-hidden="true" style="--team:${teamColor(dc.b.team_name)}"><img src="${playerPhotoUrl(dc.b.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()"></div>
-        ${duelSide(dc.a, 'a', potgId, say)}
+        ${duelSide(dc.a, 'a', potgId, say, watchOf)}
         <div class="gd-dl__rows"><span class="gd-kick">Head to head</span>${duelRows(dc.a, dc.b)}</div>
-        ${duelSide(dc.b, 'b', potgId, say)}
+        ${duelSide(dc.b, 'b', potgId, say, watchOf)}
       </div>
       <div class="gd-dl__v">${verdict}</div>
     </article>
-    <div class="gd-cast">${castCol(game, 'a', dc.castA, say)}${castCol(game, 'b', dc.castB, say)}</div>
+    <div class="gd-cast">${castCol(game, 'a', dc.castA, say, watchOf)}${castCol(game, 'b', dc.castB, say, watchOf)}</div>
+    ${elsewhere}
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
   </section>`;
 }
 
 // ── Final: box score + team stats ────────────────────────────────────────────────────────
-function teamStatsCard(game, A, B) {
+// Team stats rows: [usual key (server.js MATCHUP_STATS), label, A, B, lower is better, word for the tiles].
+function teamStatRows(A, B) {
   const pc = (m, a) => (a ? +(m / a * 100).toFixed(1) : null);
-  const rows = [
-    ['FG%', pc(A.fgm, A.fga), pc(B.fgm, B.fga)],
-    ['3PT MADE', A.fg3m, B.fg3m], ['3PT%', pc(A.fg3m, A.fg3a), pc(B.fg3m, B.fg3a)],
-    ...(A.fg4a + B.fg4a ? [['4PT MADE', A.fg4m, B.fg4m]] : []),
-    ['FT%', pc(A.ftm, A.fta), pc(B.ftm, B.fta)],
-    ['REBOUNDS', A.reb, B.reb], ['ASSISTS', A.ast, B.ast], ['STEALS', A.stl, B.stl], ['BLOCKS', A.blk, B.blk],
-    ['TURNOVERS', A.to, B.to, true],
-  ].filter(r => r[1] != null && r[2] != null);
-  // Same rows as the matchup preview's Head to head (edgeRow): better side in amber.
+  return [
+    ['fg', 'FG%', pc(A.fgm, A.fga), pc(B.fgm, B.fga), false, 'FG%'],
+    ['t3m', '3PT MADE', A.fg3m, B.fg3m, false, 'threes'], ['t3p', '3PT%', pc(A.fg3m, A.fg3a), pc(B.fg3m, B.fg3a), false, '3PT%'],
+    ...(A.fg4a + B.fg4a ? [['', '4PT MADE', A.fg4m, B.fg4m, false, 'fours']] : []),
+    ['ft', 'FT%', pc(A.ftm, A.fta), pc(B.ftm, B.fta), false, 'FT%'],
+    ['reb', 'REBOUNDS', A.reb, B.reb, false, 'rebounds'], ['ast', 'ASSISTS', A.ast, B.ast, false, 'assists'],
+    ['stl', 'STEALS', A.stl, B.stl, false, 'steals'], ['blk', 'BLOCKS', A.blk, B.blk, false, 'blocks'],
+    ['to', 'TURNOVERS', A.to, B.to, true, 'turnovers'],
+  ].filter(r => r[2] != null && r[3] != null);
+}
+
+// Same rows as the matchup preview's Head to head (edgeRow): better side in amber. With
+// usual (their earlier meetings, server.js matchupAsOf), each value gets a +/− chip.
+function teamStatsCard(game, A, B, usual) {
+  const by = Object.fromEntries((usual?.rows || []).map(r => [r.key, r]));
   return `<div class="card gd-edges-card gd-cmp">
     <div class="gd-cmp__h"><span>${dot(game.team_a_name, 8)}${escHtml(String(game.team_a_name).slice(0, 3))}</span><span>${escHtml(String(game.team_b_name).slice(0, 3))}${dot(game.team_b_name, 8)}</span></div>
-    <div class="gm-edges">${rows.map(([k, a, b, low]) => edgeRow({ label: k, a, b, hi: !low, int: !k.includes('%') })).join('')}</div>
+    <div class="gm-edges">${teamStatRows(A, B).map(([key, k, a, b, low]) => edgeRow({ label: k, a, b, hi: !low, int: !k.includes('%'), ua: by[key]?.a ?? null, ub: by[key]?.b ?? null })).join('')}</div>
   </div>`;
 }
 
+// Form check over Team stats: how often the side that usually leads a stat led it again,
+// then the two biggest swings from a team's usual (relative change, so 2.6 → 5 blocks beats
+// 16.6 → 25 assists). Built from the same tiles as "How it was won".
+function formTiles(game, A, B, usual) {
+  if (!usual) return '';
+  const by = Object.fromEntries(usual.rows.map(r => [r.key, r]));
+  const lead = (x, y, low) => (x === y ? null : (low ? x < y : x > y) ? 'a' : 'b');
+  let form = 0, of = 0;
+  const swings = [];
+  for (const [key, , a, b, low, word] of teamStatRows(A, B)) {
+    const u = by[key];
+    if (!u) continue;
+    const now = lead(a, b, low), then = lead(u.a, u.b, low);
+    if (now && then) { of++; if (now === then) form++; }
+    for (const [side, v, uv] of [['a', a, u.a], ['b', b, u.b]]) {
+      if (!(uv > 0) || v === uv) continue;
+      swings.push({ side, v, uv, word, pct: word.includes('%'), rel: Math.abs(v - uv) / uv, better: low ? v < uv : v > uv });
+    }
+  }
+  swings.sort((x, y) => y.rel - x.rel);
+  const name = side => (side === 'a' ? game.team_a_name : game.team_b_name);
+  const d = s => { const x = Math.round((s.v - s.uv) * 10) / 10; return `${x > 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}`; };
+  const tile = (kick, big, who, detail, cls = '') => `<div class="gd-won__t${cls}"><span class="gd-kick">${kick}</span><div class="gd-won__v">${big}${who}</div><div class="gd-won__d">${detail}</div></div>`;
+  const tiles = [
+    of ? tile('Went to form', `<b class="font-condensed">${form}<small> / ${of}</small></b>`, '', 'Stats where the team that usually leads led again') : '',
+    ...swings.slice(0, 2).map((s, i) => tile(i ? 'Next biggest swing' : 'Biggest swing',
+      `<b class="font-condensed${s.better ? '' : ' is-down'}">${d(s)}</b>`,
+      `<span>${dot(name(s.side), 9)}${escHtml(String(name(s.side)).toUpperCase())} ${escHtml(s.word.toUpperCase())}</span>`,
+      `${s.pct ? s.v.toFixed(1) : s.v} this game · usual ${s.uv.toFixed(1)}`)),
+  ].filter(Boolean);
+  return tiles.length ? `<div class="gd-won gd-form">${tiles.join('')}</div>` : '';
+}
+
 // Box score, then team stats under it: both in the main column, the rail stays one stack.
-function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '') {
+function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null) {
   if (!stats.length) return '';
   const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
   const na = String(game.team_a_name).toUpperCase(), nb = String(game.team_b_name).toUpperCase();
@@ -1849,9 +1917,11 @@ function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '') {
       <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
     </section>
     <section id="team-stats" aria-labelledby="ts-h">
-      <div class="section-header gd-sh"><h2 id="ts-h">Team stats</h2></div>
+      <div class="section-header gd-sh gd-sh--row"><h2 id="ts-h">Team stats</h2>${usual ? '<span class="gd-sh__note">vs their usual against each other</span>' : ''}</div>
       ${statsPanel}
-      ${teamStatsCard(game, A, B)}
+      ${usual ? `<p class="gd-sd">Their usual: per-game averages in their ${usual.n} earlier meeting${usual.n === 1 ? '' : 's'} with box scores. Each chip is this game against it.</p>` : ''}
+      ${formTiles(game, A, B, usual)}
+      ${teamStatsCard(game, A, B, usual)}
     </section>`;
 }
 
@@ -1903,7 +1973,27 @@ function railTalkCard(d, title) {
   </section>`;
 }
 
-// ── The matchup preview (upcoming page body, and the archived copy after the final) ─────────
+// ── Final: the series ───────────────────────────────────────────────────────────────────────
+// The last three meetings as the standard game cards (this game is right above, in the hero),
+// with every result as a dot (oldest first, this one ringed) and the all-time lead.
+// series: server.js, null for a first meeting.
+function seriesSection(game, series) {
+  if (!series?.games?.length) return '';
+  const { results } = series;
+  const wins = name => results.filter(r => r.winner === name).length;
+  const wa = wins(game.team_a_name), wb = wins(game.team_b_name);
+  const lead = wa === wb ? `Series tied <b class="font-condensed">${wa}–${wb}</b>` : `${escHtml(tc(wa > wb ? game.team_a_name : game.team_b_name))} lead <b class="font-condensed">${Math.max(wa, wb)}–${Math.min(wa, wb)}</b>`;
+  const dots = results.map((r, i) => `<span class="gd-ser__dot${i === results.length - 1 ? ' is-now' : ''}" style="background:${teamColor(r.winner)}"></span>`).join('');
+  const label = `All ${results.length} meetings, oldest first: ${results.map(r => tc(r.winner)).join(', ')}`;
+  const n = series.games.length;
+  return `<section id="series" aria-labelledby="series-h">
+    <div class="section-header gd-sh gd-sh--row"><h2 id="series-h">The series</h2><span class="gd-ser"><span class="gd-ser__dots" role="img" aria-label="${escHtml(label)}">${dots}</span><span class="gd-ser__lead">${lead}</span></span></div>
+    <p class="gd-sd">${n === 1 ? 'Their last meeting' : `Their last ${n} meetings`} before this one.</p>
+    ${gameCardScript()}<div class="gd-cards gd-cards--${series.games.length}">${series.games.map(g => gameCard(g, { commentsEnabled: series.commentsEnabled, social: series.socialByGame[g.id], topScorer: series.topScorerByGame[g.id], odds: series.oddsByGame[g.id] || null })).join('')}</div>
+  </section>`;
+}
+
+// ── The matchup preview (the upcoming page body) ───────────────────────────────────────────
 function storyBlock(game, story, { isAdmin, regen }) {
   if (!story && !regen) return '';
   return `<article class="card gd-story" id="story">
@@ -1939,11 +2029,13 @@ function scorersBlock(m) {
   </section>`;
 }
 
-function meetingsBlock(m) {
-  if (!m.lastMeetings?.length) return '';
+// Last meetings: the standard game cards (cards = server.js gameCardExtras plus the game rows).
+function meetingsBlock(m, cards) {
+  const games = cards?.games || [];
+  if (!games.length) return '';
   return `<section id="meetings" aria-labelledby="meetings-h">
-    ${sh('meetings', m.lastMeetings.length === 1 ? 'Last meeting' : 'Last meetings', { sub: 'Tap one for its box score.' })}
-    <div class="gm-mts gd-mts">${m.lastMeetings.map(x => meetingTile(m, x)).join('')}</div>
+    ${sh('meetings', games.length === 1 ? 'Last meeting' : 'Last meetings')}
+    ${gameCardScript()}<div class="gd-cards">${games.map(g => gameCard(g, { commentsEnabled: cards.commentsEnabled, social: cards.socialByGame[g.id], topScorer: cards.topScorerByGame[g.id], odds: cards.oddsByGame[g.id] || null })).join('')}</div>
   </section>`;
 }
 
@@ -1970,23 +2062,8 @@ function pickRail(d) {
   return `<section id="picks" class="card gd-pick${state === 'open' ? ' gd-pick--open' : ''}" aria-labelledby="picks-h">${body}</section>${also}`;
 }
 
-function previewArchive(d) {
-  const p = d.preview;
-  if (!p) return '';
-  // The pre-game odds already sit in "Who called it?" in the rail, so they're not repeated here.
-  const { m, story } = p;
-  return `<details id="preview" class="gd-prev">
-    <summary><div class="section-header gd-sh gd-sh--row"><h2>Pre-game preview</h2><span class="gd-prev__tog" aria-hidden="true"></span></div><p class="gd-sd">As it stood at tip-off: storyline and matchup stats</p></summary>
-    <div class="gd-prev__in">
-      ${storyBlock(d.game, story, { isAdmin: false, regen: false })}
-      ${edgesBlock(m)}
-      ${scorersBlock(m)}
-      ${meetingsBlock(m)}
-    </div>
-  </details>`;
-}
 
-// ── Page scripts: recap clamp, box toggle, countdown, preview opener ──────
+// ── Page scripts: recap clamp, box toggle, countdown, storyline toggle ──────
 function pageScript() {
   return `<script>
 (function () {
@@ -2091,10 +2168,16 @@ function pageScript() {
     });
   }
 
-  // Links into the archived preview open it first; so does arriving with #preview.
-  function openPrev() { var p = document.getElementById('preview'); if (p) p.open = true; }
-  document.querySelectorAll('[data-gd-open-preview]').forEach(function (a) { a.addEventListener('click', openPrev); });
-  if (location.hash === '#preview') { openPrev(); var p = document.getElementById('preview'); if (p) p.scrollIntoView(); }
+  // Recap footer: the pre-game storyline paragraph opens in place.
+  document.querySelectorAll('[data-gd-before]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var body = document.getElementById(b.getAttribute('aria-controls'));
+      if (!body) return;
+      body.hidden = !body.hidden;
+      b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+      b.textContent = body.hidden ? 'Read the pre-game storyline ↓' : 'Hide the storyline ↑';
+    });
+  });
 })();
 </script>`;
 }
@@ -2119,7 +2202,7 @@ export function gamePage(d) {
       m && (p.story || d.isAdmin) ? { id: 'story', label: 'Storyline' } : null,
       m?.rows?.length ? { id: 'h2h', label: 'Head to head' } : null,
       m?.scorers?.some(Boolean) ? { id: 'watchlist', label: 'Players to watch' } : null,
-      m?.lastMeetings?.length ? { id: 'meetings', label: 'Last meetings' } : null,
+      p?.meetingCards?.games?.length ? { id: 'meetings', label: 'Last meetings' } : null,
       comments ? { ...comments, label: 'Pre-game chatter' } : null,
     ].filter(Boolean);
     return `<div class="page-content gd-page">
@@ -2131,7 +2214,7 @@ export function gamePage(d) {
       ${m ? storyBlock(game, p.story, { isAdmin: d.isAdmin, regen: p.state === 'open' || p.state === 'closed' }) : ''}
       ${m ? edgesBlock(m) : ''}
       ${m ? scorersBlock(m) : ''}
-      ${m ? meetingsBlock(m) : ''}
+      ${m ? meetingsBlock(m, p.meetingCards) : ''}
       ${talkSection(v, 'Pre-game chatter')}
     </div>
     <aside class="gd-cols__rail gd-rail--sticky">${pickRail(v)}${railTalkCard(v, 'Pre-game chatter')}</aside>
@@ -2149,8 +2232,9 @@ ${scripts}`;
   const A = teamTotals(d.stats, game.team_a_name, game.team_a_to_team);
   const B = teamTotals(d.stats, game.team_b_name, game.team_b_to_team);
   const myStat = d.myGame?.stat || null;
-  const recap = recapCard(game);
+  const recap = recapCard(game, d.storyline);
   const hasBox = d.stats.length > 0;
+  const series = seriesSection(game, d.series);
   const items = [
     recap ? { id: 'recap', label: 'Recap' } : null,
     v.showCalled ? { id: 'picks', label: 'Who called it' } : null,
@@ -2158,8 +2242,8 @@ ${scripts}`;
     d.dc ? { id: 'perf', label: 'Top performers' } : null,
     hasBox ? { id: 'box', label: 'Box score' } : null,
     d.plays.length ? { id: 'plays', label: 'Key plays' } : null,
+    series ? { id: 'series', label: 'The series' } : null,
     comments,
-    d.preview ? { id: 'preview', label: 'Pre-game preview' } : null,
   ].filter(Boolean);
   const mini = `${escHtml(String(game.team_a_name).slice(0, 3))} ${fa} <i>–</i> ${fb} ${escHtml(String(game.team_b_name).slice(0, 3))}`;
   const rail = [v.showCalled ? calledCard(game, d.called, d.isPlayer) : '', upNextCard(d.upNext, d.upNextLabel), railTalkCard(v, 'Comments')].filter(Boolean).join('');
@@ -2178,18 +2262,17 @@ ${scripts}`;
       ${videoCard(game)}
       ${hasBox ? wonBlock(d.won) : '<p class="gd-empty card">Full box scores will be available once stats are imported.</p>'}
       ${flowCard(game, d.flow)}
-      ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'))}
-      ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'))}
+      ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'), d.watch)}
+      ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'), d.usual)}
       ${plays}
+      ${series}
       ${talk}
-      ${previewArchive(v)}
     </div>
     ${rail ? `<aside class="gd-cols__rail gd-rail--sticky">${rail}</aside>` : ''}
   </div>
 </div>
 ${floater}
 ${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat)}` : ''}
-${d.preview ? matchupScript({ isAdmin: false }) : ''}
 ${d.isAdmin ? sectionRegenScript() : ''}
 ${scripts}`;
 }

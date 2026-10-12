@@ -173,12 +173,23 @@ function edgeRow(r) {
   const max = Math.max(r.a, r.b) || 1;
   const w = v => `${Math.round((v / max) * 100)}%`;
   const f = v => (r.int ? String(v) : v.toFixed(1)); // int: counts (the game page's team stats)
-  return `<div class="gm-st">
-      <span class="gm-st__v${aGood ? ' is-good' : ''}">${f(r.a)}</span>
+  // ua/ub (the game page's Team stats): each team's usual against the other, shown as a +/−
+  // chip by its value — light when better than usual (fewer turnovers counts as better).
+  const chips = r.ua != null || r.ub != null;
+  const chip = (v, u) => {
+    if (u == null) return '';
+    const x = Math.round((v - u) * 10) / 10;
+    const up = x !== 0 && (r.hi ? x > 0 : x < 0);
+    return `<span class="gm-st__chip${up ? ' is-up' : ''}" title="Usual ${u.toFixed(1)}">${x > 0 ? '+' : x < 0 ? '−' : '±'}${Math.abs(x).toFixed(1)}</span>`;
+  };
+  const va = `<span class="gm-st__v${aGood ? ' is-good' : ''}">${f(r.a)}</span>`;
+  const vb = `<span class="gm-st__v gm-st__v--b${bGood ? ' is-good' : ''}">${f(r.b)}</span>`;
+  return `<div class="gm-st${chips ? ' gm-st--chips' : ''}">
+      ${chips ? `<span class="gm-st__vc">${va}${chip(r.a, r.ua)}</span>` : va}
       <span class="gm-st__track gm-st__track--a"><span class="gm-st__bar${aGood ? ' is-good' : ''}" style="width:${w(r.a)}"></span></span>
       <span class="gm-st__lbl">${escHtml(r.label)}</span>
       <span class="gm-st__track"><span class="gm-st__bar${bGood ? ' is-good' : ''}" style="width:${w(r.b)}"></span></span>
-      <span class="gm-st__v gm-st__v--b${bGood ? ' is-good' : ''}">${f(r.b)}</span>
+      ${chips ? `<span class="gm-st__vc gm-st__vc--b">${vb}${chip(r.b, r.ub)}</span>` : vb}
     </div>`;
 }
 
@@ -436,9 +447,10 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
   </article>`;
 }
 
-// Recap card for the list — the homepage Game headlines card plus a footer (top scorer,
-// comment/react/share). The card is a stretched link so the footer buttons stay real buttons.
-function gameCard(g, { commentsEnabled, social, topScorer, odds = null }) {
+// The standard finished-game card: /games, team pages, homepage headlines and game pages all
+// use it (extras from server.js gameCardExtras; actions from gameCardScript). The card is a
+// stretched link so the footer buttons stay real buttons.
+function gameCard(g, { commentsEnabled, social = { commentsCount: 0, reactCount: 0, reacted: false }, topScorer, odds = null }) {
   const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
   const aWin = sa > sb;
   const winner = aWin ? g.team_a_name : g.team_b_name;
@@ -586,8 +598,19 @@ function gamesPageScript() {
     });
   });
 
-  // React / share on result cards
-  if (grid) grid.addEventListener('click', function (e) {
+})();
+</script>${gameCardScript()}`;
+}
+
+// React / share on gameCard footers, wherever the cards are (/games, team pages, homepage
+// headlines, game pages). Delegated on the document and armed once per page.
+function gameCardScript() {
+  return `<script>
+(function () {
+  if (window.__wkndCardActs) return;
+  window.__wkndCardActs = true;
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.gr-card')) return;
     var reactBtn = e.target.closest('[data-action="react-game"]');
     if (reactBtn) {
       reactBtn.disabled = true;
@@ -678,4 +701,4 @@ ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gamesPageScript };
+export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript };

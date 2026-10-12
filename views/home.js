@@ -3,6 +3,7 @@ import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt,
 import { moveBadge } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
+import { gameCard, gameCardScript } from './games.js';
 
 
 // ── Hero Carousel ─────────────────────────────────────────────────────────────
@@ -919,40 +920,27 @@ export function sectionRegenScript() {
 </script>`;
 }
 
-// ── Game headlines (the 4 games before the hero's, recap headline over the cover photo) ──
-// Cards without a cover photo fall back to the same team-colour glare as the standings
-// tiles. The glare/tint is the winning team's colour.
-function headlinesSection(games, summary, isAdmin, latestComments = {}) {
+// ── Game headlines (the 4 games before the hero's): the standard game card (views/games.js
+// gameCard), same as /games. server.js computes each card's extras for headlineGamesOf(games).
+export function headlineGamesOf(games) {
+  return games
+    .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(4).filter(g => boldTitle(g.game_writeup)).slice(0, 4);
+}
+
+function headlinesSection(games, summary, isAdmin, cards = {}) {
   if (!games.length) return '';
-  const cards = games.map(g => {
-    const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
-    const aWin = sa > sb;
-    const winner = aWin ? g.team_a_name : g.team_b_name;
-    const title = boldTitle(g.game_writeup) || `${g.team_a_name} ${sa}–${sb} ${g.team_b_name}`;
-    const day = new Date(`${String(g.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const dot = name => `<span class="team-dot" style="background:${teamColor(name)}"></span>`;
-    const win = w => (w ? ' is-win' : '');
-    // Same scoreboard as the hero, scaled down: team name + dot over a big number, the
-    // winner in white.
-    const side = (name, score, w) => `<span class="gh-score__team${win(w)}"><span class="gh-score__name">${dot(name)}${escHtml(name)}</span><b class="gh-score__num font-condensed">${score}</b></span>`;
-    return `<a href="/games/${encodeURIComponent(g.id)}" class="gh-card${g.has_cover ? ' has-photo' : ''}" style="--team:${teamColor(winner)}">
-      ${g.has_cover ? `<img class="gh-card__img" src="/api/photo/${encodeURIComponent(g.id)}?w=640" alt="" loading="lazy">` : ''}
-      <span class="gh-card__top"><span class="gh-card__when">${g.season ? `<span class="gh-card__season">S${escHtml(String(g.season))}</span>` : ''}<span class="gh-card__date">${escHtml(day)}</span></span></span>
-      <span class="gh-card__body">
-        <span class="gh-score">${side(g.team_a_name, sa, aWin)}<span class="gh-score__dash font-condensed">–</span>${side(g.team_b_name, sb, !aWin)}</span>
-        <span class="gh-card__title">${escHtml(title)}</span>
-        ${commentSnippet(latestComments[g.id])}
-        <span class="gh-card__cta">Read recap &rarr;</span>
-      </span>
-    </a>`;
-  }).join('\n    ');
+  const { commentsEnabled = false, socialByGame = {}, topScorerByGame = {}, oddsByGame = {} } = cards;
+  const html = games.map(g => gameCard(g, { commentsEnabled, social: socialByGame[g.id], topScorer: topScorerByGame[g.id], odds: oddsByGame[g.id] || null })).join('\n    ');
   return `<section class="home-section gh-section" aria-labelledby="gh-heading">
   <div class="section-header"><h2 id="gh-heading">Game headlines</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
   ${summaryPanel(summary, 'headlines', isAdmin)}
   <div class="gh-grid">
-    ${cards}
+    ${html}
   </div>
-</section>`;
+</section>
+${gameCardScript()}`;
 }
 
 // "LASTNAME, Firstname" → { first: 'Firstname', last: 'LASTNAME' } — split on the comma,
@@ -1047,11 +1035,11 @@ function latestPosts(posts) {
 // Page order: hero → registration banner → game headlines → season race → league leaders
 // → posts → coming up → (guests) what you get + closing CTA. Game headlines are the four
 // recaps *before* the hero's four, so the two never show the same games.
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', latestComments = {} }) {
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', headlineCards = {} }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const headlineGames = completedGames.slice(4).filter(g => boldTitle(g.game_writeup)).slice(0, 4);
+  const headlineGames = headlineGamesOf(games);
 
   const regenScript = isAdmin ? `<script>
 (function () {
@@ -1076,7 +1064,7 @@ ${regBanner ? registrationBanner(regBanner) : signupBanner ? memberSignupBannerB
 
 ${picksWidgetHtml}
 
-${headlinesSection(headlineGames, summaries.headlines, isAdmin, latestComments)}
+${headlinesSection(headlineGames, summaries.headlines, isAdmin, headlineCards)}
 
 ${standingsSection(standings, summaries.standings, isAdmin)}
 
