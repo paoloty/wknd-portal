@@ -3,7 +3,7 @@ import { teamColor, displayPlayerName, formatDate, initials, boldTitle, excerpt,
 import { moveBadge } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
-import { gameCard, gameCardScript } from './games.js';
+import { gameCard, gameCardScript, swipeScript } from './games.js';
 
 
 // ── Hero Carousel ─────────────────────────────────────────────────────────────
@@ -936,11 +936,12 @@ function headlinesSection(games, summary, isAdmin, cards = {}) {
   return `<section class="home-section gh-section" aria-labelledby="gh-heading">
   <div class="section-header"><h2 id="gh-heading">Game headlines</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
   ${summaryPanel(summary, 'headlines', isAdmin)}
-  <div class="gh-grid">
+  <div class="gh-grid swipe-row" data-swipe>
     ${html}
   </div>
 </section>
-${gameCardScript()}`;
+${gameCardScript()}
+${swipeScript()}`;
 }
 
 // "LASTNAME, Firstname" → { first: 'Firstname', last: 'LASTNAME' } — split on the comma,

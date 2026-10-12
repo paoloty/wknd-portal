@@ -1,6 +1,6 @@
 import { escHtml } from './layout.js';
 import { summaryPanel } from './home.js';
-import { calledItCard, FLAME, dayLabel, shortDayLabel, pickAvatar, barsScript } from './games.js';
+import { calledItCard, FLAME, dayLabel, shortDayLabel, pickAvatar, barsScript, swipeScript } from './games.js';
 import { teamColor } from './utils.js';
 import { openPickCard, pickBoxScript, fmtCloseTime } from './pick-box.js';
 import { fmtPts } from '../lib/picks.js';
@@ -22,35 +22,73 @@ export function resultChips(recent) {
     `<span class="pkw-chip ${r.ok ? 'is-ok' : 'is-miss'}" title="${r.ok ? 'Called it' : 'Missed'}">${r.ok ? CHECK : CROSS}</span>`).join('')}</span>`;
 }
 
-// Slot 4: the whole card links to /picks. Race leader + your own line, both from code
-// (no AI here — the write-up panel above the grid already covers the game day). Before
-// anyone is ranked it's fixed copy rather than a leaderboard with nobody on it.
-function raceCallout(w) {
-  const lead = w.leader
-    ? `<b>${escHtml(w.leader.name)}</b> leads on ${fmtPts(w.leader.net)} (${w.leader.correct}–${w.leader.wrong})${w.leader.tied > 1 ? `, tied with ${w.leader.tied - 1} other${w.leader.tied > 2 ? 's' : ''}` : ''}.`
-    : 'Nobody on the board yet. Your first final puts you in the race.';
-  const me = w.me;
-  const mine = !w.isPlayer
-    ? `<span class="pkw-side__p">Log in on any game to make your pick.</span>`
-    : me
-      ? `<div class="pkw-rec"><b class="font-condensed">${fmtPts(me.net)}</b><span>pts · ${me.correct}–${me.wrong}</span></div>
-      ${resultChips(w.recent)}
-      <span class="pkw-side__p">${me.rank ? `You're <b>#${me.rank}</b> in the race` : 'On the board after your next final'}${me.streak >= 2 ? ` · <span class="pkw-streak">${FLAME}${me.streak} in a row</span>` : ''}</span>`
-      : `<span class="pkw-side__p">No picks settled yet. Yours show up here.</span>`;
-  return `<a href="/picks" class="pkw-side pkw-call">
-      <span class="pkw-side__k">Pickmaster race · S${escHtml(String(w.season))}</span>
-      <p class="pkw-side__p">${lead} Most points at season's end wins the <b>Pickmaster</b> award.</p>
-      ${mine}
-      <span class="pkw-side__link">Picks, race &amp; results →</span>
-    </a>`;
+// ── Results mode: the race card beside the "Who called it?" game cards ──────────
+// Top 5 of each board plus your own row, with a Pickmaster / Beat the Odds switch (no switch
+// when the odds are off). Same card shell as the game cards so the row lines up. No team
+// shown on the rows: picks are personal, teams don't count here.
+const rankLbl = (rank, tied) => (tied ? `T${rank}` : String(rank));
+const fmtOdds = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}`;
+const pickerHref = (id, season) => `/picks/players/${encodeURIComponent(id)}?season=${encodeURIComponent(season)}`;
+
+function raceRow(r, kind, w, { me = false } = {}) {
+  const odds = kind === 'odds';
+  const rank = odds ? r.oddsRank : r.rank;
+  const tied = me ? (odds ? r.oddsTied : r.tied) : r.tied;
+  const isMe = me || r.playerId === w.me?.playerId;
+  return `<a href="${pickerHref(r.playerId, w.season)}" class="pkw-lb${rank === 1 ? ' is-top' : ''}${isMe ? ' is-me' : ''}${me ? ' pkw-lb--me' : ''}">
+          <span class="pkw-lb__n font-condensed">${rank ? rankLbl(rank, tied) : '–'}</span>
+          ${pickAvatar({ id: r.playerId, name: r.name, team: r.team }, 28, false)}
+          <span class="pkw-lb__nm">${me ? 'You' : escHtml(r.name)}</span>
+          <span class="pkw-lb__wl">${r.correct}–${r.wrong}</span>
+          <span class="pkw-lb__pt font-condensed">${odds ? fmtOdds(r.oddsPts) : fmtPts(r.net)}</span>
+        </a>`;
 }
 
-// The grid always has 4 slots: the cards, empty placeholders, then the race callout last.
-const SLOTS = 4;
-function fillSlots(cards, w) {
-  const n = Math.max(0, SLOTS - 1 - cards.length);
-  const empty = Array.from({ length: n }, () => '<div class="pkw-ph" aria-hidden="true"></div>');
-  return [...cards, ...empty, raceCallout(w)].join('');
+// Your own row under the top 5, the same height in every state.
+function meRow(kind, w) {
+  if (!w.isPlayer) return '<a href="/login?next=%2F" class="pkw-lb pkw-lb--me pkw-lb--note">Log in on any game to join the race →</a>';
+  if (!w.me) return '<span class="pkw-lb pkw-lb--me pkw-lb--note">You’re on the board after your first final</span>';
+  return raceRow(w.me, kind, w, { me: true });
+}
+
+function raceCard(w) {
+  const b = w.boards || { pts: [], odds: null, size: 0 };
+  const two = !!b.odds && b.pts.length > 0;
+  const list = (kind, rows, hidden) => `<div class="pkw-lb__list" data-pkw-board="${kind}"${hidden ? ' hidden' : ''}>
+        <div class="pkw-lb__head" aria-hidden="true"><span>#</span><span></span><span>Player</span><span>W–L</span><span>Pts</span></div>
+        ${rows.map(r => raceRow(r, kind, w)).join('')}
+        ${meRow(kind, w)}
+      </div>`;
+  return `<section class="pk-card pkw-race" aria-label="Pickmaster race, season ${escHtml(String(w.season))}">
+      <div class="pk-card__top">
+        <a href="/picks" class="pk-card__when">Race · S${escHtml(String(w.season))}</a>
+        ${two ? `<span class="pkw-seg" role="group" aria-label="Leaderboard"><button type="button" class="is-on" data-pkw-show="pts" aria-pressed="true">Pickmaster</button><button type="button" data-pkw-show="odds" aria-pressed="false">Beat the Odds</button></span>`
+          : b.size ? `<span class="pk-fav">${b.size} on the board</span>` : ''}
+      </div>
+      ${b.pts.length ? `${list('pts', b.pts, false)}${two ? list('odds', b.odds, true) : ''}`
+        : '<p class="pkw-lb__empty">The board fills after the first finals. Every settled pick counts.</p>'}
+      <a href="/picks" class="pk-card__prev">Full race &amp; rules →</a>
+    </section>`;
+}
+
+function raceScript() {
+  return `<script>
+(function () {
+  if (window.__wkndPkwRace) return;
+  window.__wkndPkwRace = true;
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-pkw-show]');
+    if (!btn) return;
+    var card = btn.closest('.pkw-race');
+    card.querySelectorAll('[data-pkw-show]').forEach(function (b) {
+      var on = b === btn;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    card.querySelectorAll('[data-pkw-board]').forEach(function (l) { l.hidden = l.dataset.pkwBoard !== btn.dataset.pkwShow; });
+  });
+})();
+</script>`;
 }
 
 // ── Face-off (open mode) ──────────────────────────────────────────────────────
@@ -148,8 +186,11 @@ ${barsScript()}`;
   return `<section class="home-section pkw" aria-labelledby="pkw-h">
   <div class="section-header"><h2 id="pkw-h">Who called it? <span class="section-header__sub">${escHtml(dayLabel(w.ymd))} · Final</span></h2><a href="/picks" class="section-header__link">All results →</a></div>
   ${panel}
-  <div class="pkw-grid pkw-grid--res">
-    ${fillSlots(w.cards.map(s => calledItCard(s, w.isPlayer)), w)}
+  <div class="pkw-res swipe-row" style="--cols:${Math.min(4, w.cards.length + 1)}" data-swipe>
+    ${w.cards.map(s => calledItCard(s, w.isPlayer, { maxFaces: 6 })).join('')}
+    ${raceCard(w)}
   </div>
-</section>`;
+</section>
+${raceScript()}
+${swipeScript()}`;
 }

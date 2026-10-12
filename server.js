@@ -10005,9 +10005,18 @@ function homePicksWidget(games, viewerId) {
   const season = String(getPortalCurrentSeason());
   const sp = seasonPicks(pctx, season);
   const r = viewerId ? sp.records[viewerId] : null;
+  const myRow = viewerId ? sp.board.rows.find(x => x.playerId === viewerId) : null;
+  // Top 5 of each board for the results-mode race card; ranks shared on a tie show as "T1".
+  const person = picksPerson(Object.fromEntries(getAllPlayers().map(p => [p.id, p])), Object.fromEntries(getAllTeams().map(t => [t.id, t.name])));
+  const topOf = (rows, rankKey) => rows.slice(0, 5).map(x => ({
+    ...x, ...person(x.playerId), tied: rows.filter(y => y[rankKey] === x[rankKey]).length > 1,
+  }));
   const base = {
     isPlayer: !!viewerId, season, minPicks: sp.board.minPicks,
-    me: r ? { ...r, playerId: viewerId, rank: sp.board.rows.find(x => x.playerId === viewerId)?.rank || null } : null,
+    me: r ? { ...r, ...person(viewerId), playerId: viewerId, rank: myRow?.rank || null, oddsRank: myRow?.oddsRank || null,
+      tied: !!myRow && sp.board.rows.filter(y => y.rank === myRow.rank).length > 1,
+      oddsTied: !!myRow && sp.board.oddsRows.filter(y => y.oddsRank === myRow.oddsRank).length > 1 } : null,
+    boards: { pts: topOf(sp.board.rows, 'rank'), odds: pickOddsEnabled() ? topOf(sp.board.oddsRows, 'oddsRank') : null, size: sp.board.rows.length },
     recent: recentPickResults(pctx, season, viewerId, 6),
     leader: (() => {
       const top = sp.board.rows[0];

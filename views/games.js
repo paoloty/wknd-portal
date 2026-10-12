@@ -305,20 +305,28 @@ function pickAvatar(p, size = 30, link = true) {
 }
 
 // preview: false on the preview page itself (it would link to itself).
-function calledItCard(s, isPlayer, { preview = true } = {}) {
+// Every card has the same rows in the same order (header pill, scores, result line, Odds/Fans/You,
+// one row of faces, footer link), so cards side by side line up row for row.
+// maxFaces: faces before "+N" (the homepage caps it so the row never wraps on a phone).
+function calledItCard(s, isPlayer, { preview = true, maxFaces = 10 } = {}) {
   const g = s.game;
   const winnerName = g.winner === 'a' ? g.a : g.b;
   const row = (name, score, win) => `<span class="pk-sb__row${win ? ' is-win' : ''}">${dot(name, 8)}${escHtml(name)}<b class="font-condensed">${score}</b></span>`;
   const oddsFav = g.odds?.fav ? (g.odds.fav === 'a' ? g.a : g.b) : null;
-  const shown = s.calledIt.slice(0, 10);
+  const winPct = g.odds?.fav ? (g.winner === 'a' ? g.odds.pctA : g.odds.pctB) : null;
+  const shown = s.calledIt.slice(0, maxFaces);
   const more = s.calledIt.length - shown.length;
+  const pill = s.upset ? '<span class="pk-upset">Upset</span>' : oddsFav ? '<span class="pk-fav">Favourite won</span>' : '';
+  const line = s.upset ? `${escHtml(tc(winnerName))} won with <b>${winPct}%</b> odds`
+    : oddsFav ? `${escHtml(tc(winnerName))} won as the <b>${winPct}%</b> favourite`
+    : `${escHtml(tc(winnerName))} won by <b>${Math.abs(g.sa - g.sb)}</b>`;
   return `<article class="pk-card" style="--team:${teamColor(winnerName)}">
       <div class="pk-card__top">
         <a href="/games/${encodeURIComponent(g.id)}" class="pk-card__when">${escHtml(shortDayLabel(g.ymd))} · Final</a>
-        ${s.upset ? '<span class="pk-upset">Upset</span>' : ''}
+        ${pill}
       </div>
       <div class="pk-sb">${row(g.a, g.sa, g.winner === 'a')}${row(g.b, g.sb, g.winner === 'b')}</div>
-      ${s.upset ? `<p class="pk-upset-line">${escHtml(tc(winnerName))} won with <b>${g.winner === 'a' ? g.odds.pctA : g.odds.pctB}%</b> odds</p>` : ''}
+      <p class="pk-upset-line">${line}</p>
       <div class="pk-res">
         ${oddsFav ? `<div class="pk-res__row"><span class="pk-res__k">Odds</span><span><b>${escHtml(tc(oddsFav))} ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%</b></span>${verdict(s.oddsCalled)}</div>` : ''}
         <div class="pk-res__row"><span class="pk-res__k">Fans</span>${s.total
@@ -604,6 +612,46 @@ function gamesPageScript() {
 
 // React / share on gameCard footers, wherever the cards are (/games, team pages, homepage
 // headlines, game pages). Delegated on the document and armed once per page.
+// Phone swipe rows ([data-swipe], styled by .swipe-row in styles.css): adds dots under the row
+// that follow the card in view; tapping a dot scrolls to that card. The dots are hidden by CSS
+// wherever the row is a grid (wider than a phone). Safe to include more than once.
+function swipeScript() {
+  return `<script>
+(function () {
+  if (window.__wkndSwipe) return;
+  window.__wkndSwipe = true;
+  function init(row) {
+    if (row.dataset.swipeOn) return;
+    row.dataset.swipeOn = '1';
+    var cards = Array.prototype.slice.call(row.children);
+    if (cards.length < 2) return;
+    var dots = document.createElement('div');
+    dots.className = 'swipe-dots';
+    dots.setAttribute('aria-hidden', 'true');
+    cards.forEach(function (card, i) {
+      var d = document.createElement('button');
+      d.type = 'button'; d.tabIndex = -1;
+      d.addEventListener('click', function () { row.scrollTo({ left: card.offsetLeft - row.firstElementChild.offsetLeft, behavior: 'smooth' }); });
+      dots.appendChild(d);
+    });
+    row.after(dots);
+    var raf = 0;
+    function sync() {
+      raf = 0;
+      var x = row.scrollLeft, best = 0, gap = Infinity;
+      cards.forEach(function (c, i) { var dx = Math.abs(c.offsetLeft - row.firstElementChild.offsetLeft - x); if (dx < gap) { gap = dx; best = i; } });
+      if (row.scrollLeft + row.clientWidth >= row.scrollWidth - 2) best = cards.length - 1;
+      Array.prototype.forEach.call(dots.children, function (d, i) { d.classList.toggle('is-on', i === best); });
+    }
+    row.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(sync); }, { passive: true });
+    sync();
+  }
+  function all() { document.querySelectorAll('[data-swipe]').forEach(init); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', all); else all();
+})();
+</script>`;
+}
+
 function gameCardScript() {
   return `<script>
 (function () {
@@ -701,4 +749,4 @@ ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript };
+export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
