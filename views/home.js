@@ -209,10 +209,10 @@ function heroCarousel(games, awardItems = [], papawis = null) {
 
 // ── MVP Race Sidebar ──────────────────────────────────────────────────────────
 // Takes the Player Highlights slot next to the hero while the MVP Race is switched on
-// (buildHomeMvpRace in server.js). Styled like the /mvp page's frontrunner card: the
-// leader's team-colour glare (--team), photo, italic one-line name, big score, stat tiles
-// and the start of the cached AI writeup; 2–6 are a compact ladder with plain-text
-// week-over-week movement, the same rows as the homepage leader boards.
+// (buildHomeMvpRace in server.js).
+// The /mvp #1 card, sidebar-sized (the shared .mv-card pieces in styles.css: gold podium
+// glow, faded photo, avatar ring, first over LASTNAME), then #2–6 as rows with faces, the
+// #2/#3 ranks in silver and bronze. The writeup takes the height left beside the hero.
 function mvpRaceSidebar({ season, week, final, candidates }) {
   const [lead, ...rest] = candidates;
   const ls    = lead.stats;
@@ -221,9 +221,18 @@ function mvpRaceSidebar({ season, week, final, candidates }) {
   const href  = id => `/players/${encodeURIComponent(String(id))}`;
   const when  = final ? `S${season} · FINAL` : week ? `S${season} · AFTER WEEK ${week}` : `S${season}`;
   const writeup = String(lead.writeup || '').replace(/\*\*/g, '').trim();
-  const leadName = displayPlayerName(lead.player.name).toUpperCase();
+  const nameOf = raw => {
+    const s = String(raw || ''), i = s.indexOf(',');
+    return i === -1 ? { first: '', last: s.toUpperCase() } : { first: s.slice(i + 1).trim(), last: s.slice(0, i).trim().toUpperCase() };
+  };
+  const ln = nameOf(lead.player.name);
   const leadNote = lead.prevRank === 1 ? 'Held #1' : lead.prevRank === null ? 'New this week'
     : lead.prevRank > 1 ? `Up from #${lead.prevRank}` : '';
+  const num = lead.player.number !== '' && lead.player.number != null ? ` · #${escHtml(String(lead.player.number))}` : '';
+  const rec = (ls.wins || ls.losses) ? ` · ${ls.wins}–${ls.losses}` : '';
+  const clear = rest[0] ? Math.max(0, lead.mvpScore - rest[0].mvpScore).toFixed(1) : '';
+  const initialsOf = n => `${n.first[0] || ''}${n.last[0] || ''}`;
+  const av = (id, n, cls = '') => `<span class="pl-av${cls}"><span>${escHtml(initialsOf(n))}</span><img src="${playerPhotoUrl(String(id), 192)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
 
   const rowMove = (rank, prev) => {
     if (prev === undefined) return '<span></span>';
@@ -236,32 +245,38 @@ function mvpRaceSidebar({ season, week, final, candidates }) {
 
   const rows = rest.map((c, i) => {
     const rank = i + 2;
-    return `<a href="${href(c.player.id)}" class="hmvp-row">
+    const n = nameOf(c.player.name);
+    return `<a href="${href(c.player.id)}" class="hmvp-row${rank <= 3 ? ` hmvp-row--r${rank}` : ''}" style="--team:${teamColor(c.stats.team_name)}">
     <span class="hmvp-row__rank font-condensed">${rank}</span>
-    <span class="hmvp-row__name"><span class="team-dot" style="background:${teamColor(c.stats.team_name)}"></span><span>${escHtml(displayPlayerName(c.player.name))}</span></span>
+    ${av(c.player.id, n, ' pl-av--sm')}
+    <span class="hmvp-row__name">${n.first ? `<span>${escHtml(n.first)}</span>` : ''}<b>${escHtml(n.last)}</b></span>
     ${rowMove(rank, c.prevRank)}
     <span class="hmvp-row__score font-condensed">${c.mvpScore.toFixed(1)}</span>
   </a>`;
   }).join('\n  ');
 
   const tiles = [['PPG', ls.pts], ['RPG', ls.reb], ['APG', ls.ast], ['SPG', ls.stl]]
-    .map(([k, v]) => `<span class="hmvp-tile"><b class="font-condensed">${(v / gp).toFixed(1)}</b><span>${k}</span></span>`).join('');
+    .map(([k, v]) => `<span class="mv-tile"><b class="font-condensed">${(v / gp).toFixed(1)}</b><small>${k}</small></span>`).join('');
 
-  return `<div class="card sidebar hmvp-card" style="--team:${color}">
+  return `<div class="card sidebar hmvp-card">
   <div class="hmvp-head"><span>MVP Race</span><span class="hmvp-when">${escHtml(when)}</span></div>
-  <a href="${href(lead.player.id)}" class="hmvp-lead">
-    <div class="hmvp-lead__head">
-      ${playerAvatar(lead.player.id, lead.player.name, '#f59332', { className: 'hmvp-avatar' })}
-      <div class="hmvp-lead__id">
-        <span class="hmvp-badge">FRONTRUNNER</span>
-        <span class="hmvp-lead__name${leadName.length > 16 ? ' is-long' : ''}">${escHtml(leadName)}</span>
-        <span class="hmvp-lead__team"><span class="team-dot" style="background:${color}"></span>${escHtml(String(ls.team_name || '').toUpperCase())}${leadNote ? ` · ${escHtml(leadNote)}` : ''}</span>
-      </div>
-      <div class="hmvp-lead__score"><b class="font-condensed">${lead.mvpScore.toFixed(1)}</b><span>SCORE</span></div>
-    </div>
-    <div class="hmvp-tiles">${tiles}</div>
+  <article class="mv-card mv-card--r1 hmvp-lead" style="--team:${color}">
+    <span class="mv-card__bg" aria-hidden="true"><img class="mvpx-img" src="${playerPhotoUrl(String(lead.player.id))}" alt="" loading="lazy" onerror="this.remove()"></span>
+    <span class="mv-card__ghost font-condensed" aria-hidden="true">1</span>
+    <span class="mv-card__tags"><span class="mvpx-badge mvpx-badge--solid">FRONTRUNNER</span>${leadNote ? `<span class="mvpx-move is-same">${escHtml(leadNote)}</span>` : ''}</span>
+    <span class="mv-card__id">
+      ${av(lead.player.id, ln)}
+      <span class="pl-card__who">
+        ${ln.first ? `<span class="pl-card__first">${escHtml(ln.first)}</span>` : ''}
+        <span class="pl-card__last">${escHtml(ln.last)}</span>
+        <span class="pl-card__meta"><span class="pl-team"><i style="background:${color}"></i>${escHtml(String(ls.team_name || '').toUpperCase())}${num}${rec}</span></span>
+      </span>
+      <span class="mv-card__score hmvp-lead__score"><b class="font-condensed">${lead.mvpScore.toFixed(1)}</b><small>${clear ? `+${clear} clear` : 'MVP score'}</small></span>
+    </span>
+    <span class="mv-tiles hmvp-tiles">${tiles}</span>
     ${writeup ? `<div class="hmvp-lead__body"><p>${escHtml(writeup)}</p></div>` : ''}
-  </a>
+    <a href="${href(lead.player.id)}" class="mv-card__link" aria-label="${escHtml(displayPlayerName(lead.player.name))}’s profile"></a>
+  </article>
   ${rows ? `<div class="hmvp-ladder">${rows}</div>` : ''}
   <a href="/mvp" class="hmvp-foot">Full MVP race <span>&rarr;</span></a>
 </div>
@@ -275,7 +290,7 @@ function mvpRaceSidebar({ season, week, final, candidates }) {
   if (!p) return;
   function fit(){
     var lh = parseFloat(getComputedStyle(p).lineHeight) || 18;
-    p.style.webkitLineClamp = String(Math.max(4, Math.floor(box.clientHeight / lh)));
+    p.style.webkitLineClamp = String(Math.max(3, Math.floor(box.clientHeight / lh)));
   }
   fit();
   window.addEventListener('resize', fit);
