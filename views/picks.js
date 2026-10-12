@@ -3,10 +3,11 @@ import { teamColor, avatarStack } from './utils.js';
 import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel } from './games.js';
 import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime, previewHref } from './pick-box.js';
 import { fmtPts } from '../lib/picks.js';
-import { sectionPanel, sectionRegenScript } from './home.js';
+import { sectionPanel, sectionRegenScript, summaryPanel, homeSummaryRegenScript } from './home.js';
 
 // This week's games, pickable right here (same pick box as /games, the homepage and profile).
-function openPicksSection(open, { isPlayer, closeTime }) {
+// summary: the homepage's "Who wins?" writeup (server.js homeSummaryBlock), the same copy.
+function openPicksSection(open, { isPlayer, closeTime, summary = null, isAdmin = false }) {
   if (!open.length) return '';
   const day = open[0].ymd;
   const allClosed = open.every(o => o.closed);
@@ -15,6 +16,7 @@ function openPicksSection(open, { isPlayer, closeTime }) {
       <h2 id="pkp-now-h">${allClosed ? 'Picks are in' : 'Open picks'} <span>${escHtml(dayLabel(day))} · ${allClosed ? 'results after the final' : `close ${escHtml(fmtCloseTime(closeTime))} on game day`}</span></h2>
       ${isPlayer ? pickProgress(open, '.pkp-now') : ''}
     </div>
+    ${summaryPanel(summary, 'picks', isAdmin)}
     <div class="pkp-now__grid${open.length === 1 ? ' is-one' : ''}">
       ${open.map(o => openPickCard(o, { isPlayer, next: '/picks', size: 'lg' })).join('')}
     </div>
@@ -88,7 +90,7 @@ function boardList(rows, rowFn, { name, season, viewerId, hidden = false }) {
     </div>`;
 }
 
-function racePanel({ board, oddsBoard, season, viewerId, panel = '' }) {
+function racePanel({ board, oddsBoard, season, viewerId }) {
   const body = board.length
     ? `<div class="pkp-boards" role="group" aria-label="Leaderboard">
         <button type="button" class="pkp-boards__b is-on" data-race-show="pts" aria-pressed="true">Pickmaster</button>
@@ -99,7 +101,6 @@ function racePanel({ board, oddsBoard, season, viewerId, panel = '' }) {
     : '<p class="pk-lb__empty">The board fills after the first game day\'s finals. Every settled pick counts.</p>';
   return `<section class="pk-board pkp-race" aria-labelledby="pkp-race-h">
       <div class="pk-board__head"><h2 id="pkp-race-h">Pickmaster race · S${escHtml(season)}</h2><span>${board.length} on the board</span></div>
-      ${panel}
       ${body}
       <div class="pk-board__foot">
         <p data-race-foot="pts">Most points at season's end wins the <b>Pickmaster</b> award: <b>+1</b> for a correct pick, <b>−1</b> for a miss, <b>0</b> for a game you sit out.</p>
@@ -146,7 +147,7 @@ function gameDays(days, isPlayer) {
 }
 
 // sections: the section writeups { days, race } (server.js picksSectionFacts).
-export function picksPage({ season, seasons, days, board, oddsBoard = [], callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], closeTime = '06:00', sections = {}, isAdmin = false }) {
+export function picksPage({ season, seasons, days, board, oddsBoard = [], callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], openSummary = null, closeTime = '06:00', sections = {}, isAdmin = false }) {
   const panel = key => sectionPanel(sections[key] || null, `picks_${key}:${season}`, isAdmin);
   return `<div class="page-content pkp-page">
 ${pageHeader({
@@ -159,7 +160,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
   <!-- Main column: this week's open picks, then the game days. The race sits beside them
        (pkp-side); on phones the tabs switch between game days and the race, under the picks. -->
   <div class="pkp-main">
-    ${openPicksSection(open, { isPlayer, closeTime })}
+    ${openPicksSection(open, { isPlayer, closeTime, summary: openSummary, isAdmin })}
     <div class="pkp-tabs" role="tablist" aria-label="Picks sections">
       <button type="button" class="pkp-tab is-on" role="tab" aria-selected="true" data-pkp-tab="race"><span class="pill-label">Pickmaster race</span></button>
       <button type="button" class="pkp-tab" role="tab" aria-selected="false" data-pkp-tab="days"><span class="pill-label">Game days</span></button>
@@ -171,7 +172,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
     </section>
   </div>
   <aside class="pkp-side" data-pkp-panel="race">
-    ${racePanel({ board, oddsBoard, season, viewerId, panel: board.length ? panel('race') : '' })}
+    ${racePanel({ board, oddsBoard, season, viewerId })}
     ${upsetsPanel(upsets, season)}
   </aside>
 </div>
@@ -179,7 +180,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
 </div>
 ${open.length ? pickBoxScript() : ''}
 ${picksScript()}
-${isAdmin ? sectionRegenScript() : ''}`;
+${isAdmin ? sectionRegenScript() + (open.length ? homeSummaryRegenScript() : '') : ''}`;
 }
 
 // ── One player's picks ───────────────────────────────────────────────────────

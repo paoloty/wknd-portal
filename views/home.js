@@ -988,6 +988,24 @@ export function sectionRegenScript() {
 </script>`;
 }
 
+// Admin "Regenerate" for a homepage summary block shown on another page (/picks shows the
+// "Who wins?" one). The homepage has its own copy of this inside homePage().
+export function homeSummaryRegenScript() {
+  return `<script>
+(function () {
+  document.querySelectorAll('.hs-summary__regen[data-block]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = 'Writing…';
+      fetch('/admin/home-summary/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block: btn.dataset.block }) })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed'); }); })
+        .then(function () { location.reload(); })
+        .catch(function (e) { btn.disabled = false; btn.textContent = '↺ Regenerate'; alert(e.message); });
+    });
+  });
+})();
+</script>`;
+}
+
 // ── Game headlines (the 4 games before the hero's): the standard game card (views/games.js
 // gameCard), same as /games. server.js computes each card's extras for headlineGamesOf(games).
 export function headlineGamesOf(games) {

@@ -10170,6 +10170,13 @@ app.get('/picks', (req, res) => {
   const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : String(getPortalCurrentSeason());
   const viewerId = req.session?.playerPlayerId || null;
   const pd = buildPicksPageData(season, viewerId, pctx);
+  const isCurrent = season === String(getPortalCurrentSeason());
+  const games = byDate(getAllGames());
+  const open = isCurrent ? openPicks(games, pctx, viewerId) : [];
+  // Open picks carry the homepage's "Who wins?" writeup — the same stored copy, written for
+  // logged-out readers. Only while the homepage is previewing picks (not showing results).
+  const openW = open.length ? homePicksWidget(games, null) : null;
+  const openSummary = openW?.mode === 'open' ? homeSummaryBlock('picks', { picksW: openW }) : null;
 
   res.send(renderPage(req, {
     title: `Who wins? picks · Season ${season} — WKND Basketball`,
@@ -10177,8 +10184,8 @@ app.get('/picks', (req, res) => {
     body: picksPage({
       ...pd, seasons,
       isPlayer: !!viewerId, viewerId,
-      // This week's games sit on top of the current season's page — /picks is where you pick.
-      open: season === String(getPortalCurrentSeason()) ? openPicks(byDate(getAllGames()), pctx, viewerId) : [],
+      // This week's games, current season only — /picks is where you pick.
+      open, openSummary,
       closeTime: picksCloseTime(),
       isAdmin: !!req.session?.isAdmin,
       // The facts never use the viewer's own pick, so the copy is the same for everyone.
@@ -11597,20 +11604,30 @@ List every statement in the copy that the facts do not directly support: wrong n
 function getHomeSummaries(ctx) {
   const out = {};
   for (const block of HOME_SUMMARY_BLOCKS) {
-    const f = homeSummaryFacts(block, ctx);
-    if (!f) continue;
-    let stored = null;
-    try { stored = JSON.parse(getSetting(`home_summary_${block}`, '') || 'null'); } catch {}
-    if (stored && stored.key === f.key) {
-      out[block] = { kicker: stored.kicker, headline: stored.headline, body: stored.body, notes: stored.notes || {} };
-    } else if (aiAvailable() && !homeSummaryInFlight.has(block) && Date.now() >= homeSummaryCooldownUntil) {
-      homeSummaryInFlight.add(block);
-      generateHomeSummary(block, f)
-        .catch(err => { console.error(`Home summary (${block}) failed:`, err.message); homeSummaryCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS; })
-        .finally(() => homeSummaryInFlight.delete(block));
-    }
+    const s = homeSummaryBlock(block, ctx);
+    if (s) out[block] = s;
   }
   return out;
+}
+
+// One homepage summary block: the stored copy when it matches the current facts, else null
+// (and a background rewrite starts). Also used on its own by /picks, which shows the
+// homepage's "Who wins?" writeup above its Open picks.
+function homeSummaryBlock(block, ctx) {
+  const f = homeSummaryFacts(block, ctx);
+  if (!f) return null;
+  let stored = null;
+  try { stored = JSON.parse(getSetting(`home_summary_${block}`, '') || 'null'); } catch {}
+  if (stored && stored.key === f.key) {
+    return { kicker: stored.kicker, headline: stored.headline, body: stored.body, notes: stored.notes || {} };
+  }
+  if (aiAvailable() && !homeSummaryInFlight.has(block) && Date.now() >= homeSummaryCooldownUntil) {
+    homeSummaryInFlight.add(block);
+    generateHomeSummary(block, f)
+      .catch(err => { console.error(`Home summary (${block}) failed:`, err.message); homeSummaryCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS; })
+      .finally(() => homeSummaryInFlight.delete(block));
+  }
+  return null;
 }
 
 app.post('/admin/home-summary/regenerate', requireAuth, express.json(), async (req, res) => {
@@ -13406,16 +13423,7 @@ function picksSectionFacts(pd) {
       focus: 'Sum up how the picks went, leading with the newest game day: which games the pickers called and any upset. Then at most one season-long note about the odds or the majority pick. Call the people who pick "pickers", never fans.',
     };
   }
-  if (pd.board.length) {
-    const top = pd.board.slice(0, 5).map(r => `- ${r.rank}. ${r.name}${r.team ? ` (${T(r.team)})` : ''}: ${fmtPts(r.net)} points, ${r.correct}-${r.wrong}${r.streak >= 2 ? `, ${r.streak} correct in a row` : ''}${r.weekPicks ? `, ${fmtPts(r.week)} on the latest game day` : ''}`);
-    const odds = pd.oddsOn ? pd.oddsBoard.slice(0, 3).map(r => `- ${r.oddsRank}. ${r.name}: ${r.oddsPts > 0 ? '+' : ''}${r.oddsPts.toFixed(2)}${r.upsets ? `, ${plural(r.upsets, 'upset')} called` : ''}`) : [];
-    out.race = {
-      // The race card's own header already says "Pickmaster race · S4"; the panel shows the as-of.
-      kicker: `Pickmaster race · ${pd.days.length ? `After ${summaryDay(pd.days[0].ymd)}` : `Season ${pd.season}`}`, section: 'Pickmaster race (the pick-em leaderboard)', where,
-      facts: `Pickmaster race, Season ${pd.season}: +1 point for a correct pick, -1 for a miss; most points at season's end wins the Pickmaster award. Players level on points share a rank. ${plural(pd.board.length, 'picker')} on the board. Top of the board:\n${top.join('\n')}${odds.length ? `\nBeat the Odds board (bragging rights only: a correct pick against the odds earns more):\n${odds.join('\n')}` : ''}`,
-      focus: 'Describe the Pickmaster race: who leads, by how much, and who is closest behind. Mention the Beat the Odds board only if its leader is different. Call the people who pick "pickers", never fans.',
-    };
-  }
+  // No Pickmaster race writeup: the leaderboard speaks for itself (dropped 2026-10-13).
   return sectionFactsMap('picks', pd.season, out);
 }
 
