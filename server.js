@@ -48,7 +48,7 @@ import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamDetailPage } from './views/team-detail.js';
-import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, isPapawisSignupOpenNow, papawisSignupOpensAtMs } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -131,7 +131,7 @@ import {
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
-  getPapawisLocationGeocode, setPapawisLocationGeocode,
+  getPapawisLocationGeocode, setPapawisLocationGeocode, getPapawisCover, setPapawisCover, deletePapawisCover,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
   getAllPostsAdmin, getPublicPosts, getHeadToHeadRecord, getHeadToHeadRecordForSeason,
@@ -7501,7 +7501,7 @@ app.get('/', (req, res) => {
   res.send(renderPage(req, {
     title: 'WKND Basketball League',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
+    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, papawisHero: homeHeroPapawis(), regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
       headlineCards: gameCardExtras(headlineGamesOf(games), games, { viewerId: req.session?.playerPlayerId || null, playerMap }),
       picksWidgetHtml: picksWidget(picksW, { summary: summaries.picks || null, isAdmin: !!req.session?.isAdmin }) })
   }));
@@ -10849,6 +10849,37 @@ function homeNextUpPapawis() {
     location: next.location || '', maxSlots: Number(next.max_slots) || 0,
     confirmed: Number(next.confirmed_count) || 0, waitlist: Number(next.waitlist_count) || 0,
     price: next.price_per_player ?? next.min_per_player ?? null, hasReferee: !!next.has_referee,
+  };
+}
+
+// Homepage hero slide for the next Papawis run (leads the carousel while one is posted).
+// Same court photo / map, per-head estimate and AI headline the /papawis banner uses; the
+// slot count stays hidden while sign-ups haven't opened (held-back rosters stay private).
+function homeHeroPapawis() {
+  if (getSetting('papawis_enabled', '0') !== '1') return null;
+  const today = manilaTodayStr();
+  const games = getPapawisGames();
+  const next = games
+    .filter(g => g.status !== 'cancelled' && g.status !== 'completed' && String(g.date) >= today)
+    .sort((a, b) => `${a.date}T${a.start_time || '00:00'}`.localeCompare(`${b.date}T${b.start_time || '00:00'}`))[0];
+  if (!next) return null;
+  const court = getPapawisCourtByName(next.location);
+  const mapQuery = court?.address?.trim() || next.location || '';
+  let imgUrl = null;
+  if (next.cover_ver) imgUrl = `/api/papawis-cover/${encodeURIComponent(next.id)}?v=${next.cover_ver}`;
+  else if (court?.image_url) imgUrl = `/api/papawis-court/${encodeURIComponent(court.id)}/photo`;
+  else if (mapQuery && getPapawisLocationGeocode(mapQuery)?.map_image) imgUrl = `/api/papawis-map/photo?loc=${encodeURIComponent(mapQuery)}`;
+  const confirmed = getPapawisConfirmedCount(next.id);
+  const maxSlots = Number(next.max_slots) || 0;
+  const courtRateFallback = next.court_rate_per_hour ? null : (court?.price_per_hour || null);
+  const summary = teamsSummary('papawis_summary', 'papawis', papawisSummaryFacts(games));
+  return {
+    id: next.id, date: next.date, time: formatTimeRange(next.start_time, next.end_time) || next.time_label || '',
+    location: next.location || '', imgUrl, isMap: !next.cover_ver && !court?.image_url && !!imgUrl,
+    signupsOpen: isPapawisSignupOpenNow(next), opensAt: papawisSignupOpensAtMs(next),
+    confirmed, maxSlots, waitlist: Number(next.waitlist_count) || 0,
+    price: estimatedPapawisPrice(next, Math.max(confirmed, maxSlots), courtRateFallback),
+    headline: summary?.headline || '', body: summary?.body || '',
   };
 }
 
@@ -16000,6 +16031,30 @@ app.delete('/admin/papawis/courts/:id/photo', requireAuth, (req, res) => {
   updatePapawisCourtImage(court.id, '');
   res.json({ ok: true });
 });
+// Custom cover for one run (admin upload). Wider and sharper than the 800x400 court photo,
+// since it fills the homepage hero; leads over the court photo wherever the run is shown.
+app.post('/admin/papawis/:id/cover', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  const buf = parseDataUrl(String(req.body.dataUrl || ''));
+  if (!buf) return res.status(400).json({ error: 'Invalid image data' });
+  try {
+    const out = await sharp(buf).rotate().resize(1600, 900, { fit: 'cover', position: 'attention' }).jpeg({ quality: 80, progressive: true }).toBuffer();
+    setPapawisCover(game.id, 'data:image/jpeg;base64,' + out.toString('base64'));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[papawis cover]', e.message);
+    res.status(500).json({ error: 'Could not process image.' });
+  }
+});
+app.delete('/admin/papawis/:id/cover', requireAuth, (req, res) => {
+  deletePapawisCover(req.params.id);
+  res.json({ ok: true });
+});
+app.get('/api/papawis-cover/:id', async (req, res) => {
+  await sendPlayerPhotoUrl(res, getPapawisCover(req.params.id));
+});
+
 // Same data:-URI-in-a-column storage as player photos — sendPlayerPhotoUrl is generic over
 // the url string, no player-specific logic, so it's reused as-is here.
 app.get('/api/papawis-court/:id/photo', async (req, res) => {

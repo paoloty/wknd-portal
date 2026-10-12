@@ -69,8 +69,10 @@ function firstNameOf(raw) {
   return comma === -1 ? (str.split(' ')[0] || str) : str.slice(comma + 1).trim();
 }
 
-// Court photo, else the cached dark map, else nothing (the card shows its own fallback).
+// The run's own uploaded cover, else the court photo, else the cached dark map, else
+// nothing (the card shows its own fallback).
 function courtImg(g, cls = '') {
+  if (g.cover_ver) return `<img class="${cls}" src="/api/papawis-cover/${encodeURIComponent(g.id)}?v=${encodeURIComponent(g.cover_ver)}" alt="" loading="lazy">`;
   if (g.court_image_id) return `<img class="${cls}" src="/api/papawis-court/${escHtml(g.court_image_id)}/photo" alt="" loading="lazy">`;
   if (g.has_map) return `<img class="${cls} pwx-map" src="/api/papawis-map/photo?loc=${encodeURIComponent(g.map_query || g.location)}" alt="" loading="lazy">`;
   return '';

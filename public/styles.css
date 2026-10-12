@@ -1463,6 +1463,8 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
 .hero-score__team.is-win { color: #fff; }
 .hero-score__name { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; letter-spacing: 0.12em; }
 .hero-score__num { font-size: 96px; font-weight: 800; line-height: 0.82; font-variant-numeric: tabular-nums; text-shadow: 0 2px 20px rgba(0,0,0,0.6); }
+.hero-score__of { font-size: 0.45em; color: var(--text-muted); }
+.hero-bg--map img { filter: saturate(.8); }
 .hero-score__dash { font-size: 40px; font-weight: 800; line-height: 1; color: var(--text-subtle); padding-bottom: 14px; }
 .hero-content {
   position: absolute;
@@ -4205,7 +4207,8 @@ a.player-link:hover { color: var(--amber); }
 /* :first-child would miss this on any page using pageHeader() — that renders its own
    .page-header div right before the first section, so this one is never actually the first
    child of its parent. Target that adjacency directly instead. */
-.page-header + .section-header { margin-top: 8px; }
+.page-header + .section-header,
+.page-header + section > .section-header:first-child { margin-top: 8px; }
 .section-header h2 {
   font-size: 19px;
   font-weight: 800;

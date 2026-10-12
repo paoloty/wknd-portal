@@ -722,6 +722,62 @@ function broadcastCard(game, broadcast) {
 </script>`;
 }
 
+// Custom cover for this run: shown on the homepage hero slide and the /papawis banner in
+// place of the court photo. Upload/replace/remove right here; 16:9, cropped server-side.
+function coverCard(game) {
+  const gid = escHtml(game.id);
+  const src = game.cover_ver ? `/api/papawis-cover/${encodeURIComponent(game.id)}?v=${encodeURIComponent(game.cover_ver)}` : '';
+  const chip = 'background:rgba(10,13,20,.72);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.18);color:#f4f6f9;font-size:10.5px;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer';
+  return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Cover</div>
+      <div class="p-4 flex flex-col gap-2">
+        <div id="pw-cover-wrap" style="${src ? '' : 'display:none;'}position:relative;border-radius:10px;overflow:hidden;aspect-ratio:16/9;background:#161c29">
+          <img id="pw-cover-img" src="${src}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+          <div style="position:absolute;top:8px;right:8px;display:flex;gap:6px">
+            <button type="button" id="pw-cover-remove" style="${chip}">Remove</button>
+            <label for="pw-cover-input" style="${chip}">Replace</label>
+          </div>
+        </div>
+        <label id="pw-cover-drop" for="pw-cover-input" style="${src ? 'display:none;' : 'display:flex;'}flex-direction:column;align-items:center;justify-content:center;gap:6px;aspect-ratio:16/9;border:1.5px dashed rgba(255,255,255,.18);border-radius:10px;background:var(--surface-2,#161c29);cursor:pointer">
+          <span style="font-size:12.5px;font-weight:600;color:#e2e8f0">Upload a cover</span>
+          <span style="font-size:11px;color:#64748b">Landscape, cropped to 16:9</span>
+        </label>
+        <input type="file" id="pw-cover-input" accept="image/*" style="display:none">
+        <p id="pw-cover-msg" class="text-xs text-slate-500" style="display:none"></p>
+        <p class="text-[11px] text-slate-600 leading-relaxed">Shows on the homepage banner and /papawis instead of the court photo.</p>
+      </div>
+    </div>
+<script>
+(function () {
+  var url = '/admin/papawis/${gid}/cover';
+  var wrap = document.getElementById('pw-cover-wrap'), img = document.getElementById('pw-cover-img');
+  var drop = document.getElementById('pw-cover-drop'), input = document.getElementById('pw-cover-input'), msg = document.getElementById('pw-cover-msg');
+  function show(has) { wrap.style.display = has ? '' : 'none'; drop.style.display = has ? 'none' : 'flex'; }
+  function say(t, c) { msg.textContent = t; msg.style.color = c || ''; msg.style.display = t ? 'block' : 'none'; }
+  input.addEventListener('change', function () {
+    var f = input.files && input.files[0]; if (!f) return;
+    say('Uploading…');
+    var r = new FileReader();
+    r.onload = function () {
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataUrl: r.result }) })
+        .then(function (res) { return res.json().then(function (d) { if (!res.ok) throw new Error(d.error || 'Upload failed'); }); })
+        .then(function () { img.src = '/api/papawis-cover/${gid}?v=' + Date.now(); show(true); say('Saved.', '#22c55e'); })
+        .catch(function (e) { say(e.message, '#f87171'); })
+        .finally(function () { input.value = ''; });
+    };
+    r.readAsDataURL(f);
+  });
+  document.getElementById('pw-cover-remove').addEventListener('click', function () {
+    if (!confirm('Remove this cover? The court photo shows again.')) return;
+    say('Removing…');
+    fetch(url, { method: 'DELETE' })
+      .then(function (res) { if (!res.ok) throw new Error('Remove failed'); img.src = ''; show(false); say(''); })
+      .catch(function (e) { say(e.message, '#f87171'); });
+  });
+})();
+</script>`;
+}
+
 export function adminPapawisDetailBody({ game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, reusableByPlayer = {}, courtRate = null, minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [], broadcast = null } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist');
@@ -960,6 +1016,7 @@ ${(() => {
   </div>
 
   <div class="flex flex-col gap-4">
+    ${coverCard(game)}
     ${isOpen && !isLocked ? `
     <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Teams</div>

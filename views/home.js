@@ -11,8 +11,46 @@ import { gameCard, gameCardScript, swipeScript } from './games.js';
 // Award slides (MVP/Finals MVP graphics — already have badge/name/stats baked into
 // the image itself, so no title/excerpt overlay is added; a top eyebrow link is
 // the only HTML text, kept clear of the baked-in bottom text).
-function heroCarousel(games, awardItems = []) {
-  if (!games.length && !awardItems.length) {
+// The next Papawis run leads the carousel while one is posted: court photo (or its map),
+// date/status chips, a slots + per-head "scoreboard", the /papawis AI headline and a CTA.
+// Slot counts stay hidden until sign-ups open, same as the /papawis page.
+function papawisHeroSlide(p) {
+  const utcDay = (ms, opts) => new Date(ms).toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' });
+  const dateMs = Date.parse(`${p.date}T00:00:00Z`);
+  const day = utcDay(dateMs, { weekday: 'short', month: 'short', day: 'numeric' });
+  const full = p.signupsOpen && p.maxSlots && p.confirmed >= p.maxSlots;
+  const open = Math.max(0, p.maxSlots - p.confirmed);
+  const status = !p.signupsOpen ? `Opens ${utcDay(p.opensAt + 8 * 3600e3, { weekday: 'short' })}`
+    : full ? (p.waitlist ? `Full · +${p.waitlist} waitlist` : 'Full') : `${open} open`;
+  const cta = !p.signupsOpen ? 'See the run' : full ? 'Join the waitlist' : 'Claim a slot';
+  const title = String(p.headline || '').replace(/\*\*/g, '').trim()
+    || `${utcDay(dateMs, { weekday: 'long' })} run${p.location ? ` at ${p.location}` : ''}`;
+  const body = String(p.body || '').replace(/\*\*/g, '').trim() || p.location;
+  const stat = (label, num) => `<div class="hero-score__team is-win">
+      <span class="hero-score__name">${label}</span>
+      <span class="hero-score__num font-condensed">${num}</span>
+    </div>`;
+  const board = [
+    p.signupsOpen && p.maxSlots ? stat('IN', `${p.confirmed}<small class="hero-score__of">/${p.maxSlots}</small>`) : '',
+    p.price != null ? stat('PER HEAD', `₱${Number(p.price).toLocaleString('en-US')}`) : '',
+  ].filter(Boolean);
+
+  return `<div class="hero-slide hero-slide--active">
+  ${p.imgUrl ? `<div class="hero-bg${p.isMap ? ' hero-bg--map' : ''}"><img src="${escHtml(p.imgUrl)}" alt="" fetchpriority="high"></div>` : '<div class="hero-bg"></div>'}
+  <div class="hero-flare" style="background:radial-gradient(90% 70% at 0% 0%,#f593322e 0%,transparent 60%)"></div>
+  <div class="hero-overlay"></div>
+  <div class="hero-chips"><span class="hero-chip hero-chip--season">Papawis</span><span class="hero-chip">${escHtml(day)}${p.time ? ` · ${escHtml(p.time)}` : ''}</span><span class="hero-chip hero-chip--final">${escHtml(status)}</span></div>
+  <div class="hero-content">
+    ${board.length ? `<div class="hero-score">${board.join('<span class="hero-score__dash font-condensed">·</span>')}</div>` : ''}
+    <h2 class="hero-title">${escHtml(title.slice(0, 120))}</h2>
+    ${body ? `<p class="hero-excerpt">${escHtml(body.slice(0, 280))}</p>` : ''}
+    <a href="/papawis#pw-game-${encodeURIComponent(p.id)}" class="hero-cta">${cta} <span>&rarr;</span></a>
+  </div>
+</div>`;
+}
+
+function heroCarousel(games, awardItems = [], papawis = null) {
+  if (!games.length && !awardItems.length && !papawis) {
     return `<div class="card hero-carousel hero-carousel--empty">
   <span class="hero-carousel--empty__label">No games yet</span>
 </div>`;
@@ -30,7 +68,7 @@ function heroCarousel(games, awardItems = []) {
     const body = excerpt(game.game_writeup);
     const day = new Date(`${String(game.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
-    const bg = `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt="" fetchpriority="${i === 0 ? 'high' : 'low'}"></div>`
+    const bg = `<div class="hero-bg"><img src="/api/photo/${encodeURIComponent(game.id)}" alt="" fetchpriority="${!papawis && i === 0 ? 'high' : 'low'}"></div>`
     // Without a cover photo the winner's glare carries the slide, so it's stronger.
     const flareOpacity = game.has_cover ? '2e' : '66';
     const team = (name, score, win) => `<div class="hero-score__team${win ? ' is-win' : ''}">
@@ -40,7 +78,8 @@ function heroCarousel(games, awardItems = []) {
 
     // Chips match the Game headlines cards; the scoreboard sits bottom-left above the
     // headline (hidden on phones, where the 4:5 slide keeps just chips + headline).
-    return `<div class="hero-slide${i === 0 ? ' hero-slide--active' : ''}">
+    const isActive = !papawis && i === 0;
+    return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
   ${bg}
   <div class="hero-flare" style="background:radial-gradient(90% 70% at 0% 0%,${winColor}${flareOpacity} 0%,transparent 60%)"></div>
   <div class="hero-overlay"></div>
@@ -65,7 +104,7 @@ function heroCarousel(games, awardItems = []) {
   // shared writeup, so their slide is just the strip graphic + award (and for Champions,
   // team) name as the title.
   const awardSlides = awardItems.map((it, i) => {
-    const isActive = games.length === 0 && i === 0;
+    const isActive = !papawis && games.length === 0 && i === 0;
 
     if (it.kind === 'team') {
       return `<div class="hero-slide${isActive ? ' hero-slide--active' : ''}">
@@ -94,7 +133,7 @@ function heroCarousel(games, awardItems = []) {
 </div>`;
   });
 
-  const slides = [...gameSlides, ...awardSlides];
+  const slides = [...(papawis ? [papawisHeroSlide(papawis)] : []), ...gameSlides, ...awardSlides];
 
   const dots = slides.map((_, i) =>
     `<span class="hero-dot" style="width:${i === 0 ? '22px' : '8px'};background:${i === 0 ? '#f59332' : 'rgba(255,255,255,0.25)'}"></span>`
@@ -1036,7 +1075,7 @@ function latestPosts(posts) {
 // Page order: hero → registration banner → game headlines → season race → league leaders
 // → posts → coming up → (guests) what you get + closing CTA. Game headlines are the four
 // recaps *before* the hero's four, so the two never show the same games.
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', headlineCards = {} }) {
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, papawisHero = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', headlineCards = {} }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1057,7 +1096,7 @@ export function homePage({ teams, players, games, highlights = [], mvpRace = nul
 </script>` : '';
 
   return `<div class="home-grid">
-  ${heroCarousel(completedGames.slice(0, 4), awardsGallery)}
+  ${heroCarousel(completedGames.slice(0, 4), awardsGallery, papawisHero)}
   ${mvpRace ? mvpRaceSidebar(mvpRace) : highlightsSidebar(highlights)}
 </div>
 
