@@ -1,5 +1,6 @@
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
+import { LIVENESS_SOURCE_LABEL } from './liveness-review.js';
 
 const ICON_TRASH = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M12 3.5l-.9 8a1 1 0 0 1-1 .9H3.9a1 1 0 0 1-1-.9L2 3.5"/></svg>`;
 
@@ -30,7 +31,7 @@ export function adminLivenessListBody({ captures = [] } = {}) {
     </a>
     <div class="p-3">
       <a href="${profileHref}" class="text-xs font-semibold text-slate-200 hover:text-brand truncate block no-underline" title="${escHtml(name)}">${escHtml(name)}</a>
-      <div class="text-[10px] text-slate-500 mt-0.5">Season ${escHtml(String(c.season))} &middot; ${fmtDate(c.captured_at)}</div>
+      <div class="text-[10px] text-slate-500 mt-0.5">${escHtml(LIVENESS_SOURCE_LABEL[c.via] || c.via || '')} &middot; Season ${escHtml(String(c.season))} &middot; ${fmtDate(c.captured_at)}</div>
       <div class="flex items-center justify-between mt-2.5">
         <a href="/admin/season/liveness/${escHtml(c.id)}" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300 no-underline">Compare</a>
         <button onclick="lvDelete('${escHtml(c.id)}', ${escHtml(JSON.stringify(name))})" class="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-400 hover:text-rose-300">${ICON_TRASH} Delete</button>

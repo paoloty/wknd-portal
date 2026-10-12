@@ -5,9 +5,13 @@ function fmtDate(ts) {
   return ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 }
 
-const VIA_LABEL = { inline: 'Captured on the same device', qr: 'Captured via phone (QR bridge)' };
+const VIA_LABEL = { inline: 'Captured on the same device', qr: 'Captured via phone (QR bridge)', activation: 'Captured at account activation' };
 
-export function adminLivenessReviewBody({ capture, signup, registration } = {}) {
+// Short form for cards/chips. The QR bridge is shared by Season Signup and /activate, so a
+// 'qr' row can't say which flow it came from — only that a phone took it.
+export const LIVENESS_SOURCE_LABEL = { inline: 'Season signup', qr: 'Phone (QR)', activation: 'Activation' };
+
+export function adminLivenessReviewBody({ capture, signup, registration, back = '' } = {}) {
   // signup (season_signups) only exists once the form's actually submitted — the photo
   // itself saves earlier, so someone who took it and abandoned the form has no signup row.
   // The registration always exists by this point, so it's the reliable fallback.
@@ -18,7 +22,9 @@ export function adminLivenessReviewBody({ capture, signup, registration } = {}) 
 
   return `
 <div style="max-width:640px">
-  <a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Waitlist</a>
+  ${back === 'user'
+    ? `<a href="/admin/users/${escHtml(capture.reg_id)}" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Registration</a>`
+    : `<a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Waitlist</a>`}
   <h1 class="text-xl font-bold text-slate-100 mt-2 mb-1">Liveness Check</h1>
   <div class="text-sm text-slate-400 mb-6"><a href="${profileHref}" class="text-slate-200 hover:text-brand font-semibold no-underline">${escHtml(name)}</a> &middot; Season ${escHtml(String(capture.season))}</div>
 

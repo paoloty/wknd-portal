@@ -2,6 +2,7 @@ import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
 import { maskEmail, maskPhone, maskName, maskBirthday } from '../../lib/sensitive-mask.js';
 import { emailActivityCard } from './email-status.js';
+import { LIVENESS_SOURCE_LABEL } from './liveness-review.js';
 
 const ICON_CHECK    = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
 const ICON_PLUS     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
@@ -64,7 +65,41 @@ function display(value, canViewSensitive, maskFn) {
   return canViewSensitive ? value : maskFn(value);
 }
 
-export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, isSuperAdmin = false, inSync = true, bogusFlags = [], canViewSensitive = true, emails = [] }) {
+// Super-admin-only (the caller passes livenessCapture only to them). Same photo row as the
+// waitlist's 📷 PHOTO chip — one per registration, from /activate or Season Signup.
+function livenessCard(capture, reg) {
+  const header = `
+      <div class="px-5 py-3.5 border-b border-admin-border flex items-center justify-between">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Liveness Check</div>
+        <span class="text-[10px] font-bold uppercase tracking-widest text-rose-400">Super admin only</span>
+      </div>`;
+  if (!capture) {
+    const why = reg.status !== 'approved' ? 'Taken after approval, when they set a password and activate.'
+      : reg.password_hash ? 'Password set but no photo yet — they skipped or left the activation step.'
+      : 'Not activated yet — taken right after they set a password.';
+    return `
+    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">${header}
+      <div class="px-5 py-4 text-sm text-slate-500">No photo on file. <span class="text-[11px] text-slate-600">${why}</span></div>
+    </div>`;
+  }
+  const href = `/admin/season/liveness/${escHtml(capture.id)}?from=user`;
+  return `
+    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">${header}
+      <div class="px-5 py-4 flex gap-4 items-start">
+        <a href="${href}" style="display:block;flex:0 0 96px;aspect-ratio:3/4;background:#0d1424;border:1px solid var(--admin-border);border-radius:8px;overflow:hidden">
+          <img src="/admin/season/liveness/${escHtml(capture.id)}/photo" alt="Liveness capture" loading="lazy" style="width:100%;height:100%;object-fit:cover">
+        </a>
+        <dl class="grid grid-cols-1 gap-y-3 min-w-0">
+          ${field('Source', LIVENESS_SOURCE_LABEL[capture.via] || capture.via)}
+          ${field('Captured', fmtDateTime(capture.captured_at))}
+          ${field('They were asked to', capture.prompt)}
+          <div><a href="${href}" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300 no-underline">Compare with profile photo →</a></div>
+        </dl>
+      </div>
+    </div>`;
+}
+
+export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, isSuperAdmin = false, inSync = true, bogusFlags = [], canViewSensitive = true, emails = [], livenessCapture = null }) {
   if (!reg) return `<div class="text-slate-500 text-sm">Registration not found.</div>`;
 
   let positions = [];
@@ -213,6 +248,8 @@ ${bogusFlags.length ? `
         </dl>
       </div>
     </div>
+
+    ${isSuperAdmin ? livenessCard(livenessCapture, reg) : ''}
 
     <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
       <div class="px-5 py-3.5 border-b border-admin-border">

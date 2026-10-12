@@ -5564,10 +5564,12 @@ app.get('/admin/users/:id', requireAuth, (req, res) => {
   const { inSync }   = reg.player_id ? computeSyncDiff(reg, getPlayerWithTeam(reg.player_id)) : { inSync: true };
   const bogusFlags    = detectBogusFlags(reg, getAllRegistrations());
   const canViewSensitive = canViewSensitiveData(req);
+  // Only super admins can open /admin/season/liveness/*, so only they get the capture handed in.
+  const livenessCapture = isSuperAdmin ? getLivenessCaptureByRegId(reg.id) : null;
   res.send(renderAdminPage(req, {
     title: reg.full_name,
     currentPath: '/admin/users',
-    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin, inSync, bogusFlags, canViewSensitive, emails: getEmailsForAddress(reg.email) }),
+    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin, inSync, bogusFlags, canViewSensitive, emails: getEmailsForAddress(reg.email), livenessCapture }),
   }));
 });
 
@@ -14285,7 +14287,7 @@ app.get('/admin/season/liveness/:id', requireSuperAdmin, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Liveness Check',
     currentPath: '/admin/season/waitlist',
-    body: adminLivenessReviewBody({ capture, signup, registration }),
+    body: adminLivenessReviewBody({ capture, signup, registration, back: req.query.from === 'user' ? 'user' : '' }),
   }));
 });
 
