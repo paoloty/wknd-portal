@@ -134,8 +134,6 @@ const dayLabel = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('e
 const shortDayLabel = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
 const initialsOf = name => String(name || '').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const dot = (name, size = 0) => `<span class="team-dot"${size ? ` style="width:${size}px;height:${size}px;background:${teamColor(name)}"` : ` style="background:${teamColor(name)}"`}></span>`;
-// No photo → the photo URL serves their jersey (playerJerseySvg), so always load it.
-const avatar = (cls, p) => `<img class="${cls}" src="${playerPhotoUrl(p.id || p.playerId, 96)}" alt="" loading="lazy">`;
 const gameYmdOf = raw => {
   const s = String(raw || '');
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
@@ -234,20 +232,47 @@ function edgeRow(r) {
     </div>`;
 }
 
-function scorerCard(p, side) {
-  if (!p) return `<div class="gm-fo__p gm-fo__p--empty${side === 'b' ? ' gm-fo__p--r' : ''}">No box scores yet</div>`;
+// First / LASTNAME from the raw "LASTNAME, Firstname". Previews frozen when picks closed only
+// carry the display name ("Firstname LASTNAME"): its trailing all-caps words are the last name.
+function scorerName(p) {
+  const raw = String(p.rawName || '');
+  const comma = raw.indexOf(',');
+  if (comma !== -1) return { first: raw.slice(comma + 1).trim(), last: raw.slice(0, comma).trim().toUpperCase() };
+  const words = String(p.name || '').trim().split(/\s+/);
+  let i = words.length;
+  while (i > 1 && /\p{Lu}/u.test(words[i - 1]) && words[i - 1] === words[i - 1].toUpperCase()) i--;
+  if (i === words.length) i--; // no all-caps word: the last word
+  return { first: words.slice(0, i).join(' '), last: words.slice(i).join(' ') };
+}
+
+// Players to watch: the player-card lead (photo backdrop, avatar ring, first over LASTNAME)
+// with PPG against this opponent on the right; per-meeting bars, line and best game below.
+function scorerCard(p) {
+  if (!p) return `<div class="gm-fo__p gm-fo__p--empty">No box scores yet</div>`;
   const max = Math.max(...p.series, 1);
-  return `<a href="/players/${encodeURIComponent(p.id)}" class="gm-fo__p${side === 'b' ? ' gm-fo__p--r' : ''}" style="--team:${teamColor(p.team)}">
-      <span class="gm-fo__head">
-        ${avatar('gm-fo__img', p)}
-        <span class="gm-fo__id"><b class="gm-fo__name">${escHtml(p.name)}</b><span class="gm-fo__sub">${dot(p.team, 7)}${escHtml(p.team)}${p.number !== '' && p.number != null ? ` · #${escHtml(String(p.number))}` : ''}</span></span>
+  const { first, last } = scorerName(p);
+  const num = p.number !== '' && p.number != null ? ` · #${escHtml(String(p.number))}` : '';
+  const photo = playerPhotoUrl(p.id, 192);
+  return `<a href="/players/${encodeURIComponent(p.id)}" class="gm-fo__p" style="--team:${teamColor(p.team)}">
+      <span class="gm-fo__top">
+        <img class="gm-fo__bg" src="${photo}" alt="" loading="lazy" onerror="this.remove()">
+        <span class="gm-fo__lead">
+          <span class="pl-av"><span>${escHtml(initialsOf(`${first} ${last}`))}</span><img src="${photo}" alt="" loading="lazy" onerror="this.remove()"></span>
+          <span class="pl-card__who">
+            ${first ? `<span class="pl-card__first">${escHtml(first)}</span>` : ''}
+            <span class="pl-card__last">${escHtml(last)}</span>
+            <span class="pl-card__meta"><span class="pl-team"><i style="background:${teamColor(p.team)}"></i>${escHtml(p.team)}${num} · ${p.games} ${p.games === 1 ? 'GAME' : 'GAMES'}</span></span>
+          </span>
+          <span class="gm-fo__big"><b class="font-condensed${p.lead ? ' is-lead' : ''}">${p.ppg.toFixed(1)}</b><small>PPG VS ${escHtml(p.opp)}</small></span>
+        </span>
       </span>
-      <span class="gm-fo__big"><b class="font-condensed${p.lead ? ' is-lead' : ''}">${p.ppg.toFixed(1)}</b><span>PPG vs ${escHtml(p.opp)}</span></span>
-      <span class="gm-fo__spark" data-bars${p.team === 'BLACK' ? ' style="--bar:#8a94a6"' : ''} aria-label="Points in each game against ${escHtml(tc(p.opp))}: ${p.series.join(', ')}">
-        ${p.series.map((v, i) => `<span class="gm-fo__bar${v === max ? ' is-best' : ''}" data-bar style="--i:${i};height:${Math.max(6, Math.round((v / max) * 100))}%" title="${v} pts"></span>`).join('')}
+      <span class="gm-fo__foot">
+        <span class="gm-fo__spark" data-bars${p.team === 'BLACK' ? ' style="--bar:#8a94a6"' : ''} aria-label="Points in each game against ${escHtml(tc(p.opp))}: ${p.series.join(', ')}">
+          ${p.series.map((v, i) => `<span class="gm-fo__bar${v === max ? ' is-best' : ''}" data-bar style="--i:${i};height:${Math.max(6, Math.round((v / max) * 100))}%" title="${v} pts"></span>`).join('')}
+        </span>
+        <span class="gm-fo__stats"><span><b class="font-condensed">${p.rpg.toFixed(1)}</b>REB</span><span><b class="font-condensed">${p.apg.toFixed(1)}</b>AST</span>${p.fg != null ? `<span><b class="font-condensed">${p.fg.toFixed(1)}</b>FG%</span>` : ''}</span>
+        <span class="gm-fo__best">Best vs ${escHtml(tc(p.opp))} · <b>${p.best.pts} · ${escHtml(p.best.label)}</b></span>
       </span>
-      <span class="gm-fo__stats"><span><b class="font-condensed">${p.rpg.toFixed(1)}</b>REB</span><span><b class="font-condensed">${p.apg.toFixed(1)}</b>AST</span>${p.fg != null ? `<span><b class="font-condensed">${p.fg.toFixed(1)}</b>FG%</span>` : ''}</span>
-      <span class="gm-fo__best">Best vs ${escHtml(tc(p.opp))} · <b>${p.best.pts} · ${escHtml(p.best.label)}</b></span>
     </a>`;
 }
 
@@ -431,7 +456,7 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
     const [sa, sb] = m.scorers;
     if (sa && sb) { sa.lead = sa.ppg > sb.ppg; sb.lead = sb.ppg > sa.ppg; }
     return `<div class="gm-grp">Go-to scorers · in this matchup</div>
-      <div class="gm-fo">${scorerCard(sa, 'a')}${scorerCard(sb, 'b')}<span class="gm-fo__vs font-condensed" aria-hidden="true">VS</span></div>`;
+      <div class="gm-fo">${scorerCard(sa)}${scorerCard(sb)}</div>`;
   })() : '';
 
   const meetings = m.lastMeetings.length ? `<div class="gm-grp">${m.lastMeetings.length === 1 ? 'Last meeting' : `Last ${m.lastMeetings.length} meetings`}</div>

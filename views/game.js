@@ -2025,7 +2025,7 @@ function scorersBlock(m) {
   if (sa && sb) { sa.lead = sa.ppg > sb.ppg; sb.lead = sb.ppg > sa.ppg; }
   return `<section id="watchlist" aria-labelledby="watchlist-h">
     ${sh('watchlist', 'Players to watch', { sub: 'Each side’s top scorer against this opponent.' })}
-    <div class="gm-fo gd-fo">${scorerCard(sa, 'a')}${scorerCard(sb, 'b')}<span class="gm-fo__vs font-condensed" aria-hidden="true">VS</span></div>
+    <div class="gm-fo gd-fo">${scorerCard(sa)}${scorerCard(sb)}</div>
   </section>`;
 }
 
