@@ -840,6 +840,28 @@ html { scroll-padding-top: 84px; }
 .mega__feature-score { font-size: 40px; line-height: 1; color: var(--amber); }
 .mega__feature-line { font-size: 13px; font-weight: 600; color: #a3abb9; }
 .mega__feature-cta { font-size: 13px; font-weight: 700; color: var(--amber); }
+/* Stats panel: season leaders as stacked player cards, cross-faded (views/layout.js megaLeaders) */
+.site-nav .mega-ld { gap: 12px; padding: 18px; border-color: var(--border); background: var(--surface); }
+.site-nav .mega-ld:hover { border-color: var(--border); }
+.site-nav .mega-ld .mega__feature-cta { align-self: flex-start; padding: 0; border: 0; font-weight: 700; color: var(--amber); }
+.site-nav .mega-ld .mega__feature-cta:hover { color: #fff; }
+.mega-ld__stage { display: grid; }
+.site-nav .mega-ld__slide { padding: 16px; border: 1px solid var(--border); color: inherit; font-weight: inherit; grid-area: 1 / 1; opacity: 0; visibility: hidden; transform: translateX(14px); transition: opacity .35s ease, transform .35s ease, visibility 0s linear .35s, border-color .15s; }
+.site-nav .mega-ld__slide.is-on { opacity: 1; visibility: visible; transform: none; transition: opacity .35s ease, transform .35s ease, visibility 0s, border-color .15s; }
+.site-nav .mega-ld__slide:hover { transform: none; }
+.mega-ld__slide .pl-stat b { font-size: 30px; }
+.mega-ld__cat { font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--text-subtle); white-space: nowrap; }
+.mega-ld__chips { display: flex; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+.mega-ld__chip {
+  flex: 1; min-width: 0; padding: 5px 0; border: 0; border-radius: 6px; cursor: pointer;
+  background: var(--surface-2); color: var(--text-subtle); font: 800 10px/1 'Archivo', sans-serif; letter-spacing: .06em;
+  text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background .15s, color .15s;
+}
+.mega-ld__chip:hover { color: var(--text); }
+.mega-ld__chip.is-on { background: var(--amber-dim); color: var(--amber); }
+.mega-ld__chip:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .site-nav .mega-ld__slide, .site-nav .mega-ld__slide.is-on { transition: none; transform: none; } }
 
 /* Below 1100px the bar's links don't fit — the hamburger + drawer take over. */
 @media (max-width: 1100px) {

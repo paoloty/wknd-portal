@@ -1668,7 +1668,8 @@ function getHeaderInfo(features) {
       nextPapawis = [day, next.time_label || formatTimeRange(next.start_time, ''), next.location].filter(Boolean).join(' · ');
     }
   }
-  let mvpLead = null;
+  let mvpLead = null, mvpTop = null;
+  const week = season ? getSeasonLatestWeek(season)?.week ?? null : null;
   if (features.megaMenu && features.mvpRace && season) {
     const lead = getMvpCandidates(season)
       .filter(s => s.gp >= 1)
@@ -1676,8 +1677,9 @@ function getHeaderInfo(features) {
       .sort((a, b) => b.score - a.score)[0];
     if (lead) {
       const gp = lead.s.gp;
+      mvpTop = lead;
       mvpLead = {
-        week: getSeasonLatestWeek(season)?.week ?? null,
+        week,
         name: displayPlayerName(lead.s.name),
         initials: initials(displayPlayerName(lead.s.name)),
         score: lead.score.toFixed(1),
@@ -1685,9 +1687,65 @@ function getHeaderInfo(features) {
       };
     }
   }
+  // Stats and Awards panels: player cards that roll one to the next (views/layout.js
+  // megaRoller). Each slide: who (name, team, #, photo) + one big number, a chip label,
+  // a caption and where the card links.
+  const slide = (p, extra) => {
+    const raw = String(p.name || '').trim(), comma = raw.indexOf(',');
+    const team = String(p.team || '').toUpperCase();
+    return {
+      id: p.id, team, color: teamColor(team), number: p.number, photo: playerPhotoUrl(p.id, 192),
+      first: comma === -1 ? '' : raw.slice(comma + 1).trim(),
+      last: (comma === -1 ? raw : raw.slice(0, comma)).trim().toUpperCase(),
+      initials: initials(displayPlayerName(raw)), href: `/players/${encodeURIComponent(p.id)}`, ...extra,
+    };
+  };
+  // Stats: the #1 in each homepage League leaders category.
+  let statLeaders = [];
+  if (features.megaMenu && season) {
+    try {
+      statLeaders = leaderBoards(buildLeaderPlayers(season)).map(b => {
+        const p = b.top[0];
+        return slide(p, { chip: b.label, value: p.value, valueKey: b.label, caption: `${b.title} leader`, meta: `${p.gp} GP` });
+      });
+    } catch (err) { console.error('[mega leaders]', err.message); }
+  }
+  // Awards: this season's MVP frontrunner, the latest Player of the Game, then the most
+  // recent season's MVP / DPOY / Finals MVP.
+  let awardSlides = [];
+  if (features.megaMenu) {
+    try {
+      if (mvpTop) {
+        const s = mvpTop.s;
+        awardSlides.push(slide({ ...s, team: s.team_name }, { chip: 'MVP race', value: mvpTop.score.toFixed(1), valueKey: 'MVP SCORE', caption: `S${season} frontrunner`, meta: `${(s.pts / s.gp).toFixed(1)} PPG`, href: '/mvp' }));
+      }
+      const players = getAllPlayers(), teams = getAllTeams();
+      const done = byDate(getAllGames()).filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0);
+      const h = buildHighlights(done, Object.fromEntries(players.map(p => [p.id, p])), Object.fromEntries(teams.map(t => [t.id, t])), 1)[0];
+      if (h?.player) {
+        const day = new Date(`${h.game.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        awardSlides.push(slide({ ...h.player, team: h.team?.name }, { chip: 'POTG', value: String(h.stat.pts ?? 0), valueKey: 'PTS', caption: `Player of the game · ${day}`, meta: `${h.stat.reb ?? 0} REB · ${h.stat.ast ?? 0} AST`, href: `/games/${encodeURIComponent(gameSlug(h.game))}` }));
+      }
+      const awardSeason = features.awards !== false ? getAwardSeasons()[0] : null;
+      if (awardSeason != null) {
+        const rows = getSeasonAwards(awardSeason);
+        for (const [type, label, stat] of [['mvp', 'MVP', 'ppg'], ['dpoy', 'DPOY', 'stk'], ['finals_mvp', 'FMVP', 'ppg']]) {
+          const a = rows.find(r => r.award_type === type && r.player_id);
+          if (!a) continue;
+          const gp = a.games_played || 0;
+          const value = !gp ? '—' : stat === 'stk' ? ((a.stl + a.blk) / gp).toFixed(1) : (a.pts / gp).toFixed(1);
+          awardSlides.push(slide({ id: a.player_id, name: a.player_name, team: a.team_name, number: getPlayerById(a.player_id)?.number }, {
+            chip: `S${awardSeason} ${label}`, value, valueKey: stat === 'stk' ? 'STL+BLK' : 'PPG',
+            caption: `Season ${awardSeason} ${type === 'finals_mvp' ? 'Finals MVP' : type === 'dpoy' ? 'Defensive POY' : 'MVP'}`,
+            meta: gp ? `${gp} GP` : '', href: `/awards?season=${awardSeason}`,
+          }));
+        }
+      }
+    } catch (err) { console.error('[mega awards]', err.message); }
+  }
   let tickerItems = [];
   try { tickerItems = buildTopTicker(features); } catch (err) { console.error('[ticker]', err.message); }
-  const value = { season, nextPapawis, playoffsStarted: !!(season && isPlayoffStarted(season)), mvpLead, tickerItems };
+  const value = { season, nextPapawis, playoffsStarted: !!(season && isPlayoffStarted(season)), week, mvpLead, statLeaders, awardSlides, tickerItems };
   headerInfoCache = { at: now, megaMenu: features.megaMenu, value };
   return value;
 }

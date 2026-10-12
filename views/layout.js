@@ -256,15 +256,48 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         <span class="mega__feature-cta">See the full race &rarr;</span>
       </a>`
     : '';
+  // Stats / Awards panel feature: player cards (.pl-card) stacked and cross-faded every few
+  // seconds while the panel is open (the [data-mega-roll] script). Chips jump to a card;
+  // hovering pauses the roll. Slides come from server.js getHeaderInfo.
+  const megaRoller = (title, sub, slides, cta) => slides.length
+    ? `<div class="mega__feature mega-ld" data-mega-roll>
+        <span class="mega__feature-head"><span>${title}</span>${sub ? `<span>${sub}</span>` : ''}</span>
+        <div class="mega-ld__stage">${slides.map((p, i) => {
+          const num = p.number !== '' && p.number != null ? `#${escHtml(String(p.number))}` : '';
+          return `<a href="${escHtml(p.href)}" class="pl-card pl-card--photo mega-ld__slide${i === 0 ? ' is-on' : ''}" style="--team:${p.color}"${i ? ' tabindex="-1" aria-hidden="true"' : ''}>
+            <img class="pl-card__bg" src="${escHtml(p.photo)}" alt="" loading="lazy" onerror="this.remove()">
+            ${num ? `<span class="pl-card__num font-condensed" aria-hidden="true">${num}</span>` : ''}
+            <span class="pl-card__top">
+              <span class="pl-av"><span>${escHtml(p.initials)}</span><img src="${escHtml(p.photo)}" alt="" loading="lazy" onerror="this.remove()"></span>
+              <span class="pl-card__who">
+                ${p.first ? `<span class="pl-card__first">${escHtml(p.first)}</span>` : ''}
+                <span class="pl-card__last">${escHtml(p.last)}</span>
+                <span class="pl-card__meta">${p.team ? `<span class="pl-team"><i style="background:${p.color}"></i>${escHtml(p.team)}</span>` : ''}${p.meta ? `<span>${escHtml(p.meta)}</span>` : ''}</span>
+              </span>
+            </span>
+            <span class="pl-card__foot">
+              <span class="pl-stat is-lead"><b class="font-condensed">${escHtml(p.value)}</b><small>${escHtml(p.valueKey)}</small></span>
+              <span class="mega-ld__cat">${escHtml(p.caption)}</span>
+            </span>
+          </a>`;
+        }).join('')}</div>
+        ${slides.length > 1 ? `<div class="mega-ld__chips" role="group" aria-label="${title}">${slides.map((p, i) =>
+          `<button type="button" class="mega-ld__chip${i === 0 ? ' is-on' : ''}" data-i="${i}" aria-pressed="${i === 0}">${escHtml(p.chip)}</button>`).join('')}</div>` : ''}
+        ${cta}
+      </div>`
+    : '';
+  const seasonSub = `S${escHtml(String(hdr.season))}${hdr.week ? ` · After week ${hdr.week}` : ''}`;
+  const megaLeaders = megaRoller('Season leaders', seasonSub, hdr.statLeaders || [], '<a href="/leaders" class="mega__feature-cta">See all leaders &rarr;</a>');
+  const megaAwards = megaRoller('Awards &amp; honours', '', hdr.awardSlides || [],
+    features.awards !== false ? '<a href="/awards" class="mega__feature-cta">See the season awards &rarr;</a>' : '<a href="/highlights" class="mega__feature-cta">See every highlight &rarr;</a>');
   // Mega mode (mega_menu_enabled) swaps the whole bar for the "four groups" layout:
   // Games / Stats / Awards / Community, each opening a full-width panel. Off, it's the
   // bar with direct links and plain Stats/Awards dropdowns. The top strip shows in both.
   const megaMode = !!features.megaMenu;
-  const barDropdown = (label, items, withFeature = false) => {
+  const barDropdown = (label, items, feature = '') => {
     if (!items.length) return '';
     const active = items.some(i => isActive(i.href));
     const chevron = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>`;
-    const feature = withFeature ? megaFeature : '';
     const menu = megaMode
       ? `<div class="site-nav__dropdown-menu mega"><div class="container"><div class="mega__inner${feature ? '' : ' mega__inner--solo'}">
           <div class="mega__col"><span class="mega__label">${label}</span><div class="mega__grid${feature ? '' : ' mega__grid--3'}">${items.map(i => megaCard(i.href, i.label, i.desc, i.icon)).join('')}</div></div>
@@ -303,8 +336,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   const barNav = megaMode
     ? [
       barDropdown('Games', gamesItems),
-      barDropdown('Stats', statsItems, true),
-      barDropdown('Awards', awardsItems, true),
+      barDropdown('Stats', statsItems, megaLeaders || megaFeature),
+      barDropdown('Awards', awardsItems, megaAwards || megaFeature),
       barDropdown('Community', communityItems),
     ].join('')
     : [
@@ -535,6 +568,23 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
             return;
           }
           document.querySelectorAll('.site-nav__dropdown').forEach(function(d){ d.classList.remove('is-open'); });
+        });
+        // Mega Stats/Awards panels: roll through the player cards while the panel is open and
+        // not hovered. Reduced motion: no auto-roll, the chips still switch cards.
+        document.querySelectorAll('[data-mega-roll]').forEach(function(box){
+          var slides = box.querySelectorAll('.mega-ld__slide'), chips = box.querySelectorAll('.mega-ld__chip');
+          if (slides.length < 2) return;
+          var at = 0, hover = false, dd = box.closest('.site-nav__dropdown');
+          function show(i){
+            at = (i + slides.length) % slides.length;
+            slides.forEach(function(s, k){ var on = k === at; s.classList.toggle('is-on', on); s.setAttribute('aria-hidden', on ? 'false' : 'true'); s.tabIndex = on ? 0 : -1; });
+            chips.forEach(function(c, k){ c.classList.toggle('is-on', k === at); c.setAttribute('aria-pressed', k === at ? 'true' : 'false'); });
+          }
+          chips.forEach(function(c){ c.addEventListener('click', function(e){ e.stopPropagation(); show(+c.dataset.i); }); });
+          box.addEventListener('mouseenter', function(){ hover = true; });
+          box.addEventListener('mouseleave', function(){ hover = false; });
+          if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          setInterval(function(){ if (!hover && dd && dd.classList.contains('is-open')) show(at + 1); }, 3200);
         });
         // Notification bell — same open/close mechanics as the dropdowns above, plus
         // marking everything read (once, across however many copies of the bell exist on
