@@ -7553,7 +7553,8 @@ app.get('/games/:ref', (req, res) => {
   //   series — the last three meetings as game cards, plus every result incl. this one (The series)
   //   story  — the storyline, only where one was stored when picks closed (the recap's footer)
   const asOf = matchupAsOf(game, sorted, playerMap);
-  const usual = !asOf.firstMeeting && asOf.boxMeetings ? { rows: asOf.rows, n: asOf.boxMeetings } : null;
+  // usual.form: each team's last 5 going in, the Team stats chart's "Before tip-off" state.
+  const usual = !asOf.firstMeeting && asOf.boxMeetings ? { rows: asOf.rows, n: asOf.boxMeetings, form: asOf.form } : null;
   const watch = (asOf.scorers || []).map(w => {
     if (!w) return null;
     const line = stats.find(x => x.player_id === w.id);
@@ -9968,9 +9969,10 @@ function homePicksWidget(games, viewerId) {
   const sp = seasonPicks(pctx, season);
   const r = viewerId ? sp.records[viewerId] : null;
   const myRow = viewerId ? sp.board.rows.find(x => x.playerId === viewerId) : null;
-  // Top 5 of each board for the results-mode race card; ranks shared on a tie show as "T1".
+  // Top 8 of each board for the race card (results mode shows 5, open mode 8 to fill the
+  // column beside the pick cards); ranks shared on a tie show as "T1".
   const person = picksPerson(Object.fromEntries(getAllPlayers().map(p => [p.id, p])), Object.fromEntries(getAllTeams().map(t => [t.id, t.name])));
-  const topOf = (rows, rankKey) => rows.slice(0, 5).map(x => ({
+  const topOf = (rows, rankKey) => rows.slice(0, 8).map(x => ({
     ...x, ...person(x.playerId), tied: rows.filter(y => y[rankKey] === x[rankKey]).length > 1,
   }));
   const base = {

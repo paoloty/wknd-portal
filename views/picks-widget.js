@@ -1,6 +1,6 @@
 import { escHtml } from './layout.js';
 import { summaryPanel } from './home.js';
-import { calledItCard, FLAME, dayLabel, pickAvatar, barsScript, swipeScript } from './games.js';
+import { calledItCard, dayLabel, pickAvatar, barsScript, swipeScript } from './games.js';
 import { openPickCard, pickBoxScript, fmtCloseTime } from './pick-box.js';
 import { fmtPts } from '../lib/picks.js';
 import { previewDuelSides } from './duel.js';
@@ -51,12 +51,14 @@ function meRow(kind, w) {
   return raceRow(w.me, kind, w, { me: true });
 }
 
-function raceCard(w) {
+// rows: how many of each board to list — 5 beside the results cards, 8 as the open-mode
+// column next to the pick cards.
+function raceCard(w, { rows: max = 5 } = {}) {
   const b = w.boards || { pts: [], odds: null, size: 0 };
   const two = !!b.odds && b.pts.length > 0;
   const list = (kind, rows, hidden) => `<div class="pkw-lb__list" data-pkw-board="${kind}"${hidden ? ' hidden' : ''}>
         <div class="pkw-lb__head" aria-hidden="true"><span>#</span><span></span><span>Player</span><span>W–L</span><span>Pts</span></div>
-        ${rows.map(r => raceRow(r, kind, w)).join('')}
+        ${rows.slice(0, max).map(r => raceRow(r, kind, w)).join('')}
         ${meRow(kind, w)}
       </div>`;
   return `<section class="pk-card pkw-race" aria-label="Pickmaster race, season ${escHtml(String(w.season))}">
@@ -113,23 +115,6 @@ export function faceoffCard(o, { isPlayer = false, next = '/' } = {}) {
   return openPickCard(o, { isPlayer, next, size: 'sm', middle, more: false });
 }
 
-// Race strip under the face-off: the leader, your own line, a link to /picks.
-function raceStrip(w) {
-  const lead = w.leader
-    ? `<b>${escHtml(w.leader.name)}</b> leads on ${fmtPts(w.leader.net)}${w.leader.tied > 1 ? ' (tied)' : ''}`
-    : 'Nobody on the board yet · first finals put you in';
-  const me = w.me;
-  const mine = !w.isPlayer ? 'Log in on any game to pick'
-    : me ? `You: <b>${fmtPts(me.net)}</b> (${me.correct}–${me.wrong})${me.rank ? ` · #${me.rank}` : ''}${me.streak >= 2 ? ` · <span class="pkw-streak">${FLAME}${me.streak}</span>` : ''}`
-    : 'Your picks show here once games settle';
-  return `<a href="/picks" class="pkf-race">
-      <span class="pkf-race__k">Pickmaster race · S${escHtml(String(w.season))}</span>
-      <span class="pkf-race__t">${lead}</span>
-      <span class="pkf-race__me">${mine}${w.isPlayer && me ? resultChips(w.recent) : ''}</span>
-      <span class="pkf-race__go">Picks &amp; race →</span>
-    </a>`;
-}
-
 export function picksWidget(w, { summary = null, isAdmin = false } = {}) {
   if (!w) return '';
   const panel = summaryPanel(summary, 'picks', isAdmin);
@@ -139,11 +124,12 @@ export function picksWidget(w, { summary = null, isAdmin = false } = {}) {
     return `<section class="home-section pkw" aria-labelledby="pkw-h">
   <div class="section-header"><h2 id="pkw-h">Who wins? <span class="section-header__sub">${when}</span></h2><a href="/picks" class="section-header__link">Pickmaster race →</a></div>
   ${panel}
-  <div class="pkf">
-    <div class="pkf-games${w.games.length === 1 ? ' is-one' : ''}">${w.games.map(o => faceoff(o, w)).join('')}</div>
-    ${raceStrip(w)}
+  <div class="pkf-games${w.games.length === 1 ? ' is-one' : ''}">
+    ${w.games.map(o => faceoff(o, w)).join('')}
+    ${raceCard(w, { rows: 8 })}
   </div>
 </section>
+${raceScript()}
 ${pickBoxScript()}
 ${barsScript()}`;
   }

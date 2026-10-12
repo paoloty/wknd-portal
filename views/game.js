@@ -6,6 +6,7 @@ import { sectionNavScript } from './section-nav.js';
 import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
 import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, gameCard, gameCardScript, storyHtml, scorerName, barsScript } from './games.js';
 import { duelCard, duelScale, previewDuelCards } from './duel.js';
+import { formChart, formChartOf } from './form-check.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
 
@@ -2061,6 +2062,11 @@ function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null
   const na = String(game.team_a_name).toUpperCase(), nb = String(game.team_b_name).toUpperCase();
   const first = winner === nb ? 'b' : 'a';
   const panel = (side, name) => `<div class="gd-box__panel" data-gd-box="${side}"${side === first ? '' : ' hidden'}>${teamBoxScoreTab(name, byTeam, dnpByTeam, winner, teamTurnovers)}</div>`;
+  // Team stats as the shared form chart (views/form-check.js): this game and, behind a toggle,
+  // the last 5 going in, both against their usual. No usual (first meeting, no box scores in
+  // earlier meetings): the plain comparison card.
+  const finals = Object.fromEntries(teamStatRows(A, B).filter(r => r[0]).map(([key, , a, b]) => [key, { a, b }]));
+  const fc = usual ? formChartOf({ a: game.team_a_name, b: game.team_b_name, rows: usual.rows, form: usual.form }, finals) : null;
   return `<section id="box" aria-labelledby="box-h">
       <div class="section-header gd-sh gd-sh--row"><h2 id="box-h">Box score</h2>
         <span class="gd-seg" role="group" aria-label="Team">
@@ -2073,9 +2079,12 @@ function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null
     <section id="team-stats" aria-labelledby="ts-h">
       <div class="section-header gd-sh gd-sh--row"><h2 id="ts-h">Team stats</h2>${usual ? '<span class="gd-sh__note">vs their usual against each other</span>' : ''}</div>
       ${statsPanel}
-      ${usual ? `<p class="gd-sd">Their usual: per-game averages in their ${usual.n} earlier meeting${usual.n === 1 ? '' : 's'} with box scores. Each chip is this game against it.</p>` : ''}
+      ${fc
+        ? `<p class="gd-sd">Their usual: per-game averages in their ${usual.n} earlier meeting${usual.n === 1 ? '' : 's'} with box scores.${fc.modes.includes('pre') ? ' Before tip-off shows each team’s last 5 games going in.' : ''}</p>
+      ${formChart(fc)}`
+        : `${usual ? `<p class="gd-sd">Their usual: per-game averages in their ${usual.n} earlier meeting${usual.n === 1 ? '' : 's'} with box scores. Each chip is this game against it.</p>` : ''}
       ${formTiles(game, A, B, usual)}
-      ${teamStatsCard(game, A, B, usual)}
+      ${teamStatsCard(game, A, B, usual)}`}
     </section>`;
 }
 
@@ -2164,6 +2173,16 @@ function edgesBlock(m) {
   const ranked = [...m.rows].sort((x, y) => gap(y) - gap(x));
   const top = new Set(ranked.slice(0, 5).map(r => r.key));
   const basis = m.firstMeeting ? `First meeting · Season ${escHtml(String(m.season))} per game` : `Per game in their ${m.meetings} meeting${m.meetings === 1 ? '' : 's'}${m.boxMeetings < m.meetings ? ` (${m.boxMeetings} with box scores)` : ''}, all seasons. Biggest edges first.`;
+  // The shared form chart (views/form-check.js) in its before-tip-off state: their usual vs
+  // each team's last 5. The edge rows stay for previews without it (frozen before m.form).
+  const fc = formChartOf(m);
+  if (fc) {
+    const usualIs = m.firstMeeting ? `First meeting, so their usual is each team’s Season ${escHtml(String(m.season))} per-game numbers` : `Their usual: per game in their ${m.meetings} meeting${m.meetings === 1 ? '' : 's'}${m.boxMeetings < m.meetings ? ` (${m.boxMeetings} with box scores)` : ''}, all seasons`;
+    return `<section id="h2h" aria-labelledby="h2h-h">
+    ${sh('h2h', 'Head to head', { sub: `${usualIs}. Against it: each team’s last 5 games going in.` })}
+    ${formChart(fc)}
+  </section>`;
+  }
   return `<section id="h2h" aria-labelledby="h2h-h">
     ${sh('h2h', 'Head to head', { sub: basis })}
     <div class="card gd-edges-card">
