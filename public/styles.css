@@ -8921,6 +8921,8 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
   .gd-duel, .gd-more__row { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px 4px; scroll-padding: 0 16px; scrollbar-width: none; }
   .gd-duel::-webkit-scrollbar { display: none; }
   .gd-duel > *, .gd-more__row > * { flex: 0 0 82%; scroll-snap-align: start; }
+  /* Smaller than the duel cards (82%): about one and a half a view */
+  .gd-more__row > * { flex-basis: 60%; }
   .gd-more .gm-potg-head__nav { display: none; }
 }
 
