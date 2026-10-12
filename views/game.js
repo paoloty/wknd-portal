@@ -1922,7 +1922,7 @@ function watchCard(w) {
 }
 
 // Supporting cast (both teams, highest game score first) then the watch-list players not shown above:
-// one row of small player cards, two at a time with arrows on desktop, a swipe row on phones.
+// one row of small player cards, three at a time with arrows on desktop, a swipe row on phones.
 function castRow(cast, watch, say, watchOf) {
   // Both teams together, best game score first.
   const sorted = [...cast].sort((x, y) => (y.gs || 0) - (x.gs || 0));
@@ -1932,7 +1932,7 @@ function castRow(cast, watch, say, watchOf) {
   return `<div class="gd-more">
     <div class="gd-more__h">
       <span class="gd-kick">Supporting cast${watch.length ? ' · Watch list' : ''}</span>
-      ${cards.length > 2 ? `<span class="gm-potg-head__nav"><button type="button" class="gm-potg-head__btn" data-gd-more="-1" aria-label="Previous players">${arrow('M15 18l-6-6 6-6')}</button><button type="button" class="gm-potg-head__btn" data-gd-more="1" aria-label="More players">${arrow('M9 18l6-6-6-6')}</button></span>` : ''}
+      ${cards.length > 3 ? `<span class="gm-potg-head__nav"><button type="button" class="gm-potg-head__btn" data-gd-more="-1" aria-label="Previous players">${arrow('M15 18l-6-6 6-6')}</button><button type="button" class="gm-potg-head__btn" data-gd-more="1" aria-label="More players">${arrow('M9 18l6-6-6-6')}</button></span>` : ''}
     </div>
     <div class="gd-more__row" data-gd-more-row>${cards.join('')}</div>
   </div>

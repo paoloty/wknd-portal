@@ -8892,7 +8892,18 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-more__h { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
 .gd-more__row { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 0; margin: -2px 0; }
 .gd-more__row::-webkit-scrollbar { display: none; }
-.gd-more__row > * { flex: 0 0 calc((100% - 12px) / 2); scroll-snap-align: start; }
+.gd-more__row > * { flex: 0 0 calc((100% - 24px) / 3); scroll-snap-align: start; }
+/* Three a view: tighter cards so the duel stays the bigger thing */
+.gd-more .gd-pc--sm { padding: 12px; gap: 8px; }
+.gd-more .pl-av--md { width: 34px; height: 34px; font-size: 12px; }
+.gd-more .gd-pc--sm .pl-card__top { gap: 8px; }
+.gd-more .gd-pc--sm .pl-card__first { font-size: 11.5px; }
+.gd-more .gd-pc--sm .pl-card__last { font-size: 14px; }
+.gd-more .gd-pc--sm .pl-card__meta { font-size: 10.5px; }
+.gd-more .gd-pc__pts b { font-size: 26px; }
+.gd-more .gd-pc__hook { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; padding: 2px 7px; }
+.gd-more .gd-pc__ln { font-size: 11.5px; }
+.gd-more .gd-watch { font-size: 11px; }
 .gd-cast__none { margin: 16px 0 0; font-size: 13px; color: var(--text-subtle); }
 .gd-hook--ghost { color: var(--text-muted); border-color: rgba(255,255,255,.16); }
 .gd-pc__pts--dnp b { font-size: 18px; letter-spacing: .08em; color: var(--text-muted); }
