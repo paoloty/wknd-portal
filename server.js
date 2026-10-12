@@ -34,7 +34,7 @@ import { highlightsPage } from './views/highlights.js';
 import { gamePage, reactorsWho } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
 import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext, cardSnapshot } from './views/leaders.js';
-import { renderLeaderCardPng, renderLeaderWidePng } from './lib/leader-card-image.js';
+import { renderLeaderCardPng, renderLeaderWidePng, renderMvpCardPng, renderMvpWidePng } from './lib/leader-card-image.js';
 import { roastPage, buildRoastModel, ROAST_CATS, DISASTER_CATS } from './views/roast.js';
 import { standingsPage, standingsModel, TEAM_STAT_CATS, teamStatVal, teamStatFmt, findTriangle, winnerOf } from './views/standings.js';
 import { playoffsPage, playoffsModel, computeSeeds, pairKey } from './views/playoffs.js';
@@ -197,7 +197,7 @@ import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
-import { mvpPage } from './views/mvp.js';
+import { mvpPage, mvpSnapshot, mvpSharePage } from './views/mvp.js';
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
@@ -10583,6 +10583,111 @@ app.get('/api/leaders/share/:id/card.png', async (req, res) => {
     res.end(png);
   } catch (err) {
     console.error('Leader card download error:', err);
+    res.status(500).end();
+  }
+});
+
+// ── MVP card shares ───────────────────────────────────────────────────────────
+// Share / Download on every /mvp card. Stored in leader_shares (category + mode 'mvp', one
+// row per player per season) with the card's snapshot (views/mvp.js mvpSnapshot) frozen as
+// shared; /mvp/share/:id shows the case, the images are drawn from the same snapshot.
+app.post('/api/mvp/share', express.json(), (req, res) => {
+  const season = String(req.body?.season || '');
+  const pid = String(req.body?.player_id || '');
+  if (!season || !pid) return res.status(400).json({ error: 'Missing season or player.' });
+  const top = mvpRaceTop(season);
+  const i = top.findIndex(c => String(c.player.id) === pid);
+  if (i === -1) return res.status(404).json({ error: 'Not in the MVP race.' });
+  const c = top[i];
+  c.writeup = getMvpWriteup(c.player.id, season, mvpStatsKey(c.stats)) || '';
+  const snap = mvpSnapshot(c, i + 1, top, { season, week: getSeasonLatestWeek(season)?.week ?? null, playoffsStarted: isPlayoffStarted(season) });
+  const team = String(c.stats.team_name || '');
+  const id = upsertShare({
+    id: randomBytes(4).toString('hex'),
+    season, category_id: 'mvp', mode: 'mvp', player_id: pid, player_name: c.player.name,
+    team_id: c.stats.team_id || '', team_name: team, team_color: teamColor(team),
+    stat_label: 'MVP', stat_title: 'MVP Race', stat_value: Number(snap.lead.value), stat_fmt: snap.lead.value,
+    top10: [], player_picture_url: c.player.picture_url || '', created_at: Date.now(), card: snap,
+  });
+  res.json({ id, url: `${getRequestOrigin(req)}/mvp/share/${id}` });
+});
+
+const mvpShareOf = id => {
+  const share = getShare(id);
+  if (!share || share.mode !== 'mvp') return null;
+  try { return { share, snap: JSON.parse(share.card_json) }; } catch { return null; }
+};
+
+app.get('/mvp/share/:id', (req, res) => {
+  const found = mvpShareOf(req.params.id);
+  if (!found) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/mvp', body: '<p style="padding:40px;color:var(--text-muted)">Share link not found.</p>' }));
+  const { share, snap } = found;
+  const origin = getRequestOrigin(req);
+  const name = displayPlayerName(snap.lead.name);
+  const place = snap.rank === 1 ? 'leads' : `is #${snap.rank} in`;
+  const title = `${name} · #${snap.rank} in the MVP Race (Season ${snap.season}) — WKND Basketball`;
+  const desc = `${name} ${place} the Season ${snap.season} MVP race with an MVP score of ${snap.lead.value}${snap.gap ? ` (${snap.gap})` : ''}${snap.asOf && snap.asOf !== 'Final' ? `, ${snap.asOf.toLowerCase()}` : ''}.`;
+  const imageUrl = `${origin}/api/mvp/share/${share.id}/image.png`;
+  const pageUrl = `${origin}/mvp/share/${share.id}`;
+  const metaTags = [
+    `<meta name="description" content="${escAttr(desc)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:url" content="${escAttr(pageUrl)}">`,
+    `<meta property="og:image" content="${escAttr(imageUrl)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${escAttr(title)}">`,
+    `<meta name="twitter:description" content="${escAttr(desc)}">`,
+    `<meta name="twitter:image" content="${escAttr(imageUrl)}">`,
+  ].join('\n  ');
+  res.send(renderPage(req, { title, currentPath: '/mvp', metaTags, body: mvpSharePage(snap) }));
+});
+
+async function mvpShareImage(found, kind) {
+  const { share, snap } = found;
+  const footer = ['WKNDBASKETBALL.COM', `SEASON ${snap.season}`, snap.week ? `WEEK ${snap.week}` : ''].filter(Boolean).join(' · ');
+  const key = `${share.id}|mvp-${kind}|${createHash('sha1').update(share.card_json + footer).digest('hex')}`;
+  if (leaderCardCache.has(key)) return leaderCardCache.get(key);
+  const fonts = { text: OG_TEXT, num: OG_NUM };
+  const png = kind === 'wide'
+    ? await renderMvpWidePng(snap, { loadPhoto: leaderCardPhoto, fonts, logo: await leaderCardLogoPng(), scopeLine: `Season ${snap.season}` })
+    : await renderMvpCardPng(snap, { loadPhoto: leaderCardPhoto, fonts, footer });
+  if (leaderCardCache.size > 200) leaderCardCache.delete(leaderCardCache.keys().next().value);
+  leaderCardCache.set(key, png);
+  return png;
+}
+
+app.get('/api/mvp/share/:id/image.png', async (req, res) => {
+  const found = mvpShareOf(req.params.id);
+  if (!found) return res.status(404).end();
+  try {
+    const png = await mvpShareImage(found, 'wide');
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.end(png);
+  } catch (err) {
+    console.error('MVP share image error:', err);
+    res.status(500).end();
+  }
+});
+
+// The Download button: the card, portrait, at 2×.
+app.get('/api/mvp/share/:id/card.png', async (req, res) => {
+  const found = mvpShareOf(req.params.id);
+  if (!found) return res.status(404).end();
+  try {
+    const png = await mvpShareImage(found, 'card');
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=300');
+    if (req.query.dl) res.set('Content-Disposition', 'attachment; filename="wknd-mvp-race.png"');
+    res.end(png);
+  } catch (err) {
+    console.error('MVP card download error:', err);
     res.status(500).end();
   }
 });
