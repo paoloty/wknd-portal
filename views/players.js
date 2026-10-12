@@ -30,7 +30,7 @@ const ICON_SEARCH = `<svg width="15" height="15" viewBox="0 0 16 16" fill="none"
 const ICON_PENCIL = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 
 function avatar(p, cls) {
-  return `<span class="${cls}" style="--team:${teamColor(p.team)}"><span>${escHtml(initials(`${p.first} ${p.last}`))}</span>${p.photo ? `<img src="${playerPhotoUrl(p.id, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
+  return `<span class="${cls}" style="--team:${teamColor(p.team)}"><span>${escHtml(initials(`${p.first} ${p.last}`))}</span><img src="${playerPhotoUrl(p.id, 192)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
 }
 
 // Points per game as a little line (0–30 scale), last game dotted amber.
@@ -50,10 +50,10 @@ function playerCard(p, isTop) {
   const ppg = per(p.pts, p.gp), rpg = per(p.reb, p.gp), apg = per(p.ast, p.gp);
   const pos = sortPositions(p.positions);
   const stat = (v, k, lead) => `<span class="pl-stat${lead ? ' is-lead' : ''}"><b class="font-condensed">${f1(v)}</b><small>${k}</small></span>`;
-  return `<a href="/players/${encodeURIComponent(p.id)}" class="pl-card${p.photo ? ' pl-card--photo' : ''}" style="--team:${teamColor(p.team)}"
+  return `<a href="/players/${encodeURIComponent(p.id)}" class="pl-card pl-card--photo" style="--team:${teamColor(p.team)}"
     data-name="${escHtml(`${p.first} ${p.last}`.toLowerCase())}" data-team="${escHtml(p.team)}" data-pos="${escHtml(posKey(pos))}" data-rookie="${p.rookie ? 1 : 0}"
     data-ppg="${num(ppg) || -1}" data-rpg="${num(rpg) || -1}" data-apg="${num(apg) || -1}" data-num="${p.number !== '' && p.number != null ? parseInt(p.number, 10) || 0 : 999}" data-sortname="${escHtml(`${p.last} ${p.first}`.toLowerCase())}">
-    ${p.photo ? `<img class="pl-card__bg" src="${playerPhotoUrl(p.id, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+    <img class="pl-card__bg" src="${playerPhotoUrl(p.id, 192)}" alt="" loading="lazy" onerror="this.remove()">
     ${p.number !== '' && p.number != null ? `<span class="pl-card__num font-condensed" aria-hidden="true">#${escHtml(String(p.number))}</span>` : ''}
     <span class="pl-card__top">
       ${avatar(p, 'pl-av')}

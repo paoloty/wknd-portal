@@ -134,9 +134,8 @@ const dayLabel = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('e
 const shortDayLabel = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
 const initialsOf = name => String(name || '').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const dot = (name, size = 0) => `<span class="team-dot"${size ? ` style="width:${size}px;height:${size}px;background:${teamColor(name)}"` : ` style="background:${teamColor(name)}"`}></span>`;
-const avatar = (cls, p) => p.hasPhoto
-  ? `<img class="${cls}" src="${playerPhotoUrl(p.id || p.playerId, 96)}" alt="" loading="lazy">`
-  : `<span class="${cls} gm-avatar--initials">${escHtml(initialsOf(p.name))}</span>`;
+// No photo → the photo URL serves their jersey (playerJerseySvg), so always load it.
+const avatar = (cls, p) => `<img class="${cls}" src="${playerPhotoUrl(p.id || p.playerId, 96)}" alt="" loading="lazy">`;
 const gameYmdOf = raw => {
   const s = String(raw || '');
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
@@ -157,11 +156,11 @@ function potgCard(p) {
   const won = p.team === p.winner;
   const [mine, theirs, opp] = won ? [p.ws, p.ls, p.loser] : [p.ls, p.ws, p.winner];
   const stat = (v, k, lead) => `<span class="pl-stat${lead ? ' is-lead' : ''}"><b class="font-condensed">${v}</b><small>${k}</small></span>`;
-  return `<a href="/games/${encodeURIComponent(p.gameId)}" class="pl-card${p.hasPhoto ? ' pl-card--photo' : ''}" style="--team:${teamColor(p.team)}">
-      ${p.hasPhoto ? `<img class="pl-card__bg" src="${playerPhotoUrl(p.playerId, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+  return `<a href="/games/${encodeURIComponent(p.gameId)}" class="pl-card pl-card--photo" style="--team:${teamColor(p.team)}">
+      <img class="pl-card__bg" src="${playerPhotoUrl(p.playerId, 192)}" alt="" loading="lazy" onerror="this.remove()">
       ${num ? `<span class="pl-card__num font-condensed" aria-hidden="true">${num}</span>` : ''}
       <span class="pl-card__top">
-        <span class="pl-av" style="--team:${teamColor(p.team)}"><span>${escHtml(initialsOf(`${first} ${last}`))}</span>${p.hasPhoto ? `<img src="${playerPhotoUrl(p.playerId, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>
+        <span class="pl-av" style="--team:${teamColor(p.team)}"><span>${escHtml(initialsOf(`${first} ${last}`))}</span><img src="${playerPhotoUrl(p.playerId, 192)}" alt="" loading="lazy" onerror="this.remove()"></span>
         <span class="pl-card__who">
           ${first ? `<span class="pl-card__first">${escHtml(first)}</span>` : ''}
           <span class="pl-card__last">${escHtml(last)}</span>

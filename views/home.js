@@ -1002,8 +1002,8 @@ function leaderBoardsSection(boards, summary, season, isAdmin) {
     const num = lead.number !== '' && lead.number != null ? `#${escHtml(String(lead.number))}` : '';
     // Leader block = the /players card: faded team-tinted photo behind, ghost jersey number
     return `<div class="lb-card" style="--team:${color}">
-      <a href="/players/${encodeURIComponent(String(lead.id))}" class="lb-card__lead${lead.photo ? ' lb-card__lead--photo' : ''}">
-        ${lead.photo ? `<img class="lb-card__bg" src="${playerPhotoUrl(lead.id, 192)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      <a href="/players/${encodeURIComponent(String(lead.id))}" class="lb-card__lead lb-card__lead--photo">
+        <img class="lb-card__bg" src="${playerPhotoUrl(lead.id, 192)}" alt="" loading="lazy" onerror="this.remove()">
         ${num ? `<span class="lb-card__num font-condensed" aria-hidden="true">${num}</span>` : ''}
         <span class="lb-card__head"><span class="lb-card__title">${escHtml(c.title)}</span><span class="lb-card__key">${escHtml(c.label)}</span></span>
         <span class="lb-card__row">

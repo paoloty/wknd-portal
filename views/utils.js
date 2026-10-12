@@ -154,6 +154,25 @@ export function playerPhotoUrl(id, w = 0) {
   return `/api/player/${encodeURIComponent(String(id || ''))}/photo${q ? `?${q}` : ''}`;
 }
 
+// Stand-in photo for players without one: their team's tank top with their number
+// (blank when they have none). Served by /api/player/:id/photo in place of a 404, so every
+// avatar and card backdrop that loads that URL shows it. The number is dark on light
+// jerseys and light on dark ones (Maroon, Black). It's an <img>, so web fonts can't load
+// here: condensed system fonts stand in for Saira Condensed.
+export function playerJerseySvg({ color = '#4a5263', number = '' } = {}) {
+  const hex = String(color).replace('#', '');
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const ink = 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.2 ? '#10141d' : '#e7eaf0';
+  const num = String(number ?? '').trim().slice(0, 3);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="192" height="192">
+<rect width="80" height="80" fill="#161c29"/>
+<path d="M29 14Q40 24 51 14L59 17Q56 27 61 32V80H19V32Q24 27 21 17Z" fill="${escHtml(color)}"/>
+<path d="M29 14Q40 24 51 14M59 17Q56 27 61 32M21 17Q24 27 19 32" fill="none" stroke="#000" stroke-opacity=".22" stroke-width="2"/>
+${num ? `<text x="40" y="60" text-anchor="middle" font-family="'Saira Condensed','Arial Narrow','Roboto Condensed','sans-serif-condensed',Arial,sans-serif" font-weight="800" font-size="${num.length > 2 ? 19 : 24}" fill="${ink}">${escHtml(num)}</text>` : ''}
+</svg>`;
+}
+
 // Renders a player avatar circle (initials behind, photo on top).
 // Pass link: true to wrap in an <a> pointing to /players/:id.
 // Leader/mover/MVP avatars render up to 96px, so they get the 192px photo; the rest are ≤48px.

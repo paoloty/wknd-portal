@@ -48,7 +48,7 @@ import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamDetailPage } from './views/team-detail.js';
-import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, isPapawisSignupOpenNow, papawisSignupOpensAtMs } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -5224,7 +5224,17 @@ setPhotoVersionResolver(playerPhotoVersion);
 
 app.get('/api/player/:id/photo', async (req, res) => {
   const row = getPlayerPhoto(req.params.id);
-  await sendPlayerPhoto(req, res, row?.picture_url);
+  if (row?.picture_url) return sendPlayerPhoto(req, res, row.picture_url);
+  // No photo yet: their team's jersey with their number (views/utils.js playerJerseySvg).
+  const player = row && getPlayerById(req.params.id);
+  if (!player) return res.status(404).end();
+  const team = player.team_id ? getTeamById(player.team_id) : null;
+  const svg = playerJerseySvg({ color: team ? teamColor(team.name) : '#4a5263', number: player.number });
+  const etag = `"jersey-${createHash('sha1').update(svg).digest('hex').slice(0, 12)}"`;
+  res.set('ETag', etag);
+  res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+  if (req.headers['if-none-match'] === etag) return res.status(304).end();
+  res.type('image/svg+xml').send(svg);
 });
 
 // Best available source to re-crop from: the retained pre-crop original if we have
