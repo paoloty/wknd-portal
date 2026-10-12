@@ -9309,7 +9309,15 @@ html.ssc2-lock { overflow: hidden; }
   transition: border-color .15s;
 }
 .ld-card:hover, .ld-tile:hover { border-color: rgba(255,255,255,.14); }
-.ld-card__top { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; }
+.ld-card__top { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; }
+/* Photo backdrop behind the leader, same as the /players card (.pl-card__bg) */
+.ld-card__bg, .ld-card__top::after {
+  position: absolute; top: 0; right: 0; width: 62%; height: 100%; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to left, #000 35%, transparent 100%); mask-image: linear-gradient(to left, #000 35%, transparent 100%);
+}
+.ld-card__bg { object-fit: cover; object-position: center 25%; filter: grayscale(1) blur(1.5px) contrast(1.1); opacity: .16; }
+.ld-card__top::after { content: ''; background: var(--team); mix-blend-mode: color; opacity: .28; }
+.ld-card__head, .ld-card__lead { position: relative; z-index: 1; }
 .ld-card--lg .ld-card__top { padding: 16px 20px 18px; }
 .ld-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .ld-card__title { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #a3abb9; }

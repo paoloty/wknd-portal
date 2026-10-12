@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, playerAvatar } from './utils.js';
+import { teamColor, displayPlayerName, playerAvatar, playerPhotoUrl } from './utils.js';
 
 // ── Shared PER formula — matches box score (game.js calcPer) ─────────────────
 // pts + 0.4×FGM - 0.7×FGA - 0.4×missedFT + 0.7×REB + STL + 0.7×AST + 0.7×BLK - TO
@@ -335,9 +335,14 @@ function boardCard(b, showDownload) {
   const { cat, lead } = b;
   const team = teamOf(lead.p.team_name);
   const color = teamColor(team);
-  const meta = [team, lead.p.games_played ? `${lead.p.games_played} GP` : ''].filter(Boolean).join(' · ');
+  const num = lead.p.number !== '' && lead.p.number != null ? `#${lead.p.number}` : '';
+  const meta = [team, num, lead.p.games_played ? `${lead.p.games_played} GP` : ''].filter(Boolean).join(' · ');
+  // Leader block = the /players card: faded team-tinted photo behind (a player with no
+  // photo gets their jersey from the same URL). The jersey number sits in the team line,
+  // since the share/download buttons hold the corner where /players puts it.
   return `<article class="ld-card${b.size === 'lg' ? ' ld-card--lg' : ''}" style="--team:${color}">
     <div class="ld-card__top">
+      <img class="ld-card__bg" src="${playerPhotoUrl(lead.p.id, 192)}" alt="" loading="lazy" onerror="this.remove()">
       <div class="ld-card__head">
         <span class="ld-card__title">${escHtml(b.title)}${b.sub ? `<small>${escHtml(b.sub)}</small>` : ''}</span>
         <span class="ld-card__side">
