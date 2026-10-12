@@ -316,52 +316,104 @@ export function recordModel(cat, rows, { scope, currentSeason, mode = 'rec' } = 
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
-function avatarHtml(id, raw, color) {
-  return playerAvatar(id, displayPlayerName(raw), color, { className: 'ld-av' });
+// Every card is drawn from one plain snapshot (cardSnapshot): the page (cardHtml), the
+// share link page, and the share/download images the server draws (lib/leader-card-image.js)
+// all read the same fields, so they can't drift apart. A share stores its snapshot.
+export function cardSnapshot(m) {
+  if (m.kind === 'record') {
+    const first = m.top[0];
+    const ctx = first.ctx;
+    return {
+      kind: 'record', title: m.cat.tileTitle || m.cat.title, sub: m.unit || '', badge: m.badge || '', badgeOn: !!m.badgeOn,
+      lead: { id: String(first.r.player_id || ''), name: first.r.name, number: first.r.number ?? '', team: teamOf(first.r.team_name), value: first.s },
+      game: {
+        id: String(first.r.game_id || ''),
+        line: `vs ${teamOf(ctx.opp)} · ${ctx.result}`,
+        when: [fmtDay(first.r.date), `Season ${first.r.season}`, ctx.isFinals ? 'Finals' : ctx.isPO ? 'Playoffs' : ''].filter(Boolean).join(' · '),
+      },
+      foot: m.foot || '',
+    };
+  }
+  const { lead } = m;
+  return {
+    kind: 'board', size: m.size || 'sm', title: m.title, sub: m.sub || '', key: m.cat.min || m.cat.label,
+    lead: { id: String(lead.p.id), name: lead.p.name, number: lead.p.number ?? '', team: teamOf(lead.p.team_name), gp: lead.p.games_played || 0, value: lead.s },
+    rest: m.rest.map(x => ({ id: String(x.p.id), name: x.p.name, team: teamOf(x.p.team_name), delta: x.delta || '', value: x.s })),
+  };
+}
+
+const jerseyNum = n => (n !== '' && n != null ? `#${n}` : '');
+// The player line: team as the dot only (named for screen readers / on hover), then # · GP.
+export function cardMeta(c) {
+  return c.kind === 'record'
+    ? jerseyNum(c.lead.number)
+    : [jerseyNum(c.lead.number), c.lead.gp ? `${c.lead.gp} GP` : ''].filter(Boolean).join(' · ');
 }
 
 function rowHtml(x, rank) {
-  const n = nameParts(x.p.name);
-  return `<a class="ld-row" href="${profileUrl(x.p.id)}">
+  const n = nameParts(x.name);
+  return `<a class="ld-row" href="${profileUrl(x.id)}">
         <span class="ld-row__rank font-condensed">${rank}</span>
-        <span class="team-dot" style="background:${teamColor(teamOf(x.p.team_name))}"></span>
+        <span class="team-dot" style="background:${teamColor(x.team)}"></span>
         <span class="ld-row__name">${n.first ? `<span class="ld-row__first">${escHtml(n.first)}</span>` : ''}<span class="ld-row__last">${escHtml(n.last)}</span></span>
         <span class="ld-row__delta font-condensed">${escHtml(x.delta || '')}</span>
-        <b class="ld-row__val font-condensed">${escHtml(x.s)}</b>
+        <b class="ld-row__val font-condensed">${escHtml(x.value)}</b>
       </a>`;
 }
 
-function boardCard(b, showDownload) {
-  const { cat, lead } = b;
-  const team = teamOf(lead.p.team_name);
-  const color = teamColor(team);
-  const num = lead.p.number !== '' && lead.p.number != null ? `#${lead.p.number}` : '';
-  // Team shows as the dot only (named for screen readers / on hover); the line is # · GP.
-  const meta = [num, lead.p.games_played ? `${lead.p.games_played} GP` : ''].filter(Boolean).join(' · ');
-  // Leader block = the /players card: faded team-tinted photo behind (a player with no
-  // photo gets their jersey from the same URL). The jersey number sits in the team line,
-  // since the share/download buttons hold the corner where /players puts it.
-  return `<article class="ld-card${b.size === 'lg' ? ' ld-card--lg' : ''}" style="--team:${color}">
-    <div class="ld-card__top">
-      <img class="ld-card__bg" src="${playerPhotoUrl(lead.p.id, 192)}" alt="" loading="lazy" onerror="this.remove()">
-      <div class="ld-card__head">
-        <span class="ld-card__title" title="${escHtml(b.title)}">${escHtml(b.title)}</span>
+// One card from its snapshot. acts = the share/download buttons (none on the share page).
+// Leader block = the /players card: faded team-tinted photo behind (a player with no photo
+// gets their jersey from the same URL). The jersey number sits in the player line, since
+// the buttons hold the corner where /players puts it. Record tiles: player left, record
+// right, the photo behind that block only — it stops at the game line's divider.
+export function cardHtml(c, acts = '') {
+  const color = teamColor(c.lead.team);
+  const isRec = c.kind === 'record';
+  const head = `<div class="ld-card__head">
+        <span class="ld-card__title" title="${escHtml(c.title)}">${escHtml(c.title)}</span>
         <span class="ld-card__side">
-          <span class="ld-card__acts">${shareBtn(cat, b.mode, b.season, lead, color, b.fmt)}${downloadBtn(cat, b.mode, showDownload)}</span>
+          ${isRec && c.badge ? `<span class="ld-badge${c.badgeOn ? ' is-on' : ''}">${escHtml(c.badge)}</span>` : ''}
+          ${acts ? `<span class="ld-card__acts">${acts}</span>` : ''}
         </span>
-      </div>
-      <div class="ld-card__subline">
-        <span class="ld-card__sub"${b.sub ? ` title="${escHtml(b.sub)}"` : ''}>${escHtml(b.sub)}</span>
-        <span class="ld-card__key">${escHtml(cat.min || cat.label)}</span>
-      </div>
-      <div class="ld-card__lead">
-        ${avatarHtml(lead.p.id, lead.p.name, color)}
-        <a class="ld-card__who" href="${profileUrl(lead.p.id)}">${nameHtml(lead.p.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}" role="img" aria-label="${escHtml(team)}" title="${escHtml(team)}"></span>${escHtml(meta)}</span></a>
-        <b class="ld-card__val font-condensed">${escHtml(lead.s)}</b>
-      </div>
+      </div>`;
+  const subline = isRec
+    ? (c.sub ? `<div class="ld-card__subline"><span class="ld-card__sub" title="${escHtml(c.sub)}">${escHtml(c.sub)}</span></div>` : '')
+    : `<div class="ld-card__subline">
+        <span class="ld-card__sub"${c.sub ? ` title="${escHtml(c.sub)}"` : ''}>${escHtml(c.sub)}</span>
+        <span class="ld-card__key">${escHtml(c.key)}</span>
+      </div>`;
+  const lead = `<div class="ld-card__lead">
+        ${playerAvatar(c.lead.id, displayPlayerName(c.lead.name), color, { className: 'ld-av' })}
+        <a class="ld-card__who" href="${profileUrl(c.lead.id)}">${nameHtml(c.lead.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}" role="img" aria-label="${escHtml(c.lead.team)}" title="${escHtml(c.lead.team)}"></span>${escHtml(cardMeta(c))}</span></a>
+        <b class="${isRec ? 'ld-tile__val' : 'ld-card__val'} font-condensed">${escHtml(c.lead.value)}</b>
+      </div>`;
+  const bg = `<img class="ld-card__bg" src="${playerPhotoUrl(c.lead.id, 192)}" alt="" loading="lazy" onerror="this.remove()">`;
+  if (isRec) {
+    return `<article class="ld-tile" style="--team:${color}">
+    <div class="ld-tile__top">
+      ${bg}
+      ${head}
+      ${subline}
+      ${lead}
     </div>
-    ${b.rest.length ? `<div class="ld-card__rest">${b.rest.map((x, i) => rowHtml(x, i + 2)).join('')}</div>` : ''}
+    <a class="ld-tile__game" href="/games/${encodeURIComponent(c.game.id)}"><b>${escHtml(c.game.line)}</b><span>${escHtml(c.game.when)}</span></a>
+    ${c.foot ? `<p class="ld-tile__foot">${escHtml(c.foot)}</p>` : ''}
   </article>`;
+  }
+  return `<article class="ld-card${c.size === 'lg' ? ' ld-card--lg' : ''}" style="--team:${color}">
+    <div class="ld-card__top">
+      ${bg}
+      ${head}
+      ${subline}
+      ${lead}
+    </div>
+    ${c.rest.length ? `<div class="ld-card__rest">${c.rest.map((x, i) => rowHtml(x, i + 2)).join('')}</div>` : ''}
+  </article>`;
+}
+
+function boardCard(b, showDownload) {
+  const color = teamColor(teamOf(b.lead.p.team_name));
+  return cardHtml(cardSnapshot(b), `${shareBtn(b.cat, b.mode, b.season, b.lead, color, b.fmt)}${downloadBtn(b.cat, b.mode, showDownload)}`);
 }
 
 function fmtDay(d) {
@@ -369,35 +421,10 @@ function fmtDay(d) {
   return new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function recordTile(t) {
+function recordTile(t, showDownload) {
   const first = t.top[0];
-  const team = teamOf(first.r.team_name);
-  const color = teamColor(team);
-  const ctx = first.ctx;
-  const when = [fmtDay(first.r.date), `Season ${first.r.season}`, ctx.isFinals ? 'Finals' : ctx.isPO ? 'Playoffs' : ''].filter(Boolean).join(' · ');
-  const num = first.r.number !== '' && first.r.number != null ? `#${first.r.number}` : '';
-  // Same layout as the board cards: player left, record right, the faded photo (or their
-  // jersey) behind that block only — it stops at the game line's divider.
-  return `<article class="ld-tile" style="--team:${color}">
-    <div class="ld-tile__top">
-      <img class="ld-card__bg" src="${playerPhotoUrl(first.r.player_id, 192)}" alt="" loading="lazy" onerror="this.remove()">
-      <div class="ld-card__head">
-        <span class="ld-card__title" title="${escHtml(t.cat.tileTitle || t.cat.title)}">${escHtml(t.cat.tileTitle || t.cat.title)}</span>
-        <span class="ld-card__side">
-          ${t.badge ? `<span class="ld-badge${t.badgeOn ? ' is-on' : ''}">${escHtml(t.badge)}</span>` : ''}
-          <span class="ld-card__acts">${recShareBtn(t.cat, t.scope, first, color, t.fmt, t.mode)}</span>
-        </span>
-      </div>
-      ${t.unit ? `<div class="ld-card__subline"><span class="ld-card__sub" title="${escHtml(t.unit)}">${escHtml(t.unit)}</span></div>` : ''}
-      <div class="ld-card__lead">
-        ${avatarHtml(first.r.player_id, first.r.name, color)}
-        <a class="ld-card__who" href="${profileUrl(first.r.player_id)}">${nameHtml(first.r.name)}<span class="ld-meta"><span class="team-dot" style="background:${color}" role="img" aria-label="${escHtml(team)}" title="${escHtml(team)}"></span>${escHtml(num)}</span></a>
-        <b class="ld-tile__val font-condensed">${escHtml(first.s)}</b>
-      </div>
-    </div>
-    <a class="ld-tile__game" href="/games/${encodeURIComponent(String(first.r.game_id || ''))}"><b>vs ${escHtml(teamOf(ctx.opp))} · ${escHtml(ctx.result)}</b><span>${escHtml(when)}</span></a>
-    ${t.foot ? `<p class="ld-tile__foot">${escHtml(t.foot)}</p>` : ''}
-  </article>`;
+  const color = teamColor(teamOf(first.r.team_name));
+  return cardHtml(cardSnapshot(t), `${recShareBtn(t.cat, t.scope, first, color, t.fmt, t.mode)}${downloadBtn(t.cat, t.mode, showDownload)}`);
 }
 
 // section: { id, nav, title, sub, link?, writeup, items: [board|record models], cols }
@@ -408,7 +435,7 @@ function sectionHtml(sec, showDownload) {
   <div class="section-header"><h2>${escHtml(sec.title)}${sec.sub ? ` <span class="section-header__sub">${escHtml(sec.sub)}</span>` : ''}</h2>${sec.link ? `<a href="${escHtml(sec.link.href)}" class="section-header__link">${escHtml(sec.link.label)} <span>&rarr;</span></a>` : ''}</div>
   ${sec.writeup ? `<p class="ld-desc">${escHtml(sec.writeup)}</p>` : ''}
   <div class="ld-grid ld-grid--${sec.cols || 4}">
-    ${items.map(m => m.kind === 'record' ? recordTile(m) : boardCard(m, showDownload)).join('\n    ')}
+    ${items.map(m => m.kind === 'record' ? recordTile(m, showDownload) : boardCard(m, showDownload)).join('\n    ')}
   </div>
 </section>`;
 }
@@ -703,48 +730,38 @@ ${isAdmin && regen ? `
   });` : ''}
 })();
 
+// Both buttons save the card as a share first (the server snapshots it as shown), then
+// Download fetches the server-drawn image of that card and Share copies the link.
+function shareBody(d) {
+  return JSON.stringify({
+    season: d.season, category_id: d.catId, mode: d.mode,
+    player_id: d.playerId, player_name: d.playerName, team_id: d.teamId, team_name: d.teamName, team_color: d.teamColor,
+    stat_label: d.statLabel, stat_title: d.statTitle, stat_value: parseFloat(d.statValue), stat_fmt: d.statFmt,
+    game_id: d.gameId, game_date: d.gameDate, game_opp: d.gameOpp, game_result: d.gameResult, is_playoff: d.isPlayoff,
+  });
+}
+async function saveShare(d) {
+  var r = await fetch('/api/leaders/share', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: shareBody(d) });
+  if (!r.ok) throw new Error('share failed');
+  return r.json();
+}
+
 async function downloadLeader(btn) {
   if (btn._busy) return;
   btn._busy = true;
   var icon = btn.innerHTML;
   btn.innerHTML = '&hellip;';
-  var panel = btn.closest('.ld-card, .ld-tile');
-  var asOf = (document.querySelector('[data-ld-page]') || {}).dataset ? document.querySelector('[data-ld-page]').dataset.asOf : '';
   try {
-    if (!window._h2cPro) {
-      await new Promise(function (resolve, reject) {
-        var s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas-pro/dist/html2canvas-pro.min.js';
-        s.onload = function () { window._h2cPro = window.html2canvasPro || window.html2canvas; resolve(); };
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
-    var captured = await window._h2cPro(panel, {
-      backgroundColor: null, scale: 2, useCORS: true, logging: false,
-      scrollX: -window.scrollX, scrollY: -window.scrollY,
-      onclone: function (clonedDoc, clonedEl) {
-        var acts = clonedEl.querySelector('.ld-card__acts');
-        if (acts) acts.style.display = 'none';
-      },
-    });
-    var PAD = 32, FOOTER_H = 56;
-    var W = captured.width + PAD * 2, H = captured.height + PAD * 2 + FOOTER_H;
-    var out = document.createElement('canvas');
-    out.width = W; out.height = H;
-    var ctx = out.getContext('2d');
-    ctx.fillStyle = '#0a0e16'; ctx.fillRect(0, 0, W, H);
-    ctx.drawImage(captured, PAD, PAD);
-    ctx.fillStyle = '#475569'; ctx.font = '600 20px Arial,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('WKNDBASKETBALL.COM' + (asOf ? '   \\xB7   ' + asOf : ''), W / 2, captured.height + PAD + Math.round((PAD + FOOTER_H) / 2));
-    out.toBlob(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'wknd-' + (btn.dataset.label || 'stat').toLowerCase() + '-' + btn.dataset.mode + '.png';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 'image/png');
+    var share = btn.closest('.ld-card, .ld-tile').querySelector('[onclick^="shareLeader"]');
+    var saved = await saveShare(share.dataset);
+    var r = await fetch('/api/leaders/share/' + encodeURIComponent(saved.id) + '/card.png');
+    if (!r.ok) throw new Error('image failed');
+    var url = URL.createObjectURL(await r.blob());
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'wknd-' + (share.dataset.catId || 'stat').toLowerCase() + '-' + (share.dataset.mode || '') + '.png';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     btn.innerHTML = '&#10003;';
     setTimeout(function () { btn.innerHTML = icon; btn._busy = false; }, 1500);
   } catch (e) {
@@ -758,18 +775,7 @@ async function shareLeader(btn) {
   var icon = btn.innerHTML;
   btn.innerHTML = '&hellip;';
   try {
-    var d = btn.dataset;
-    var r = await fetch('/api/leaders/share', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        season: d.season, category_id: d.catId, mode: d.mode,
-        player_id: d.playerId, player_name: d.playerName, team_id: d.teamId, team_name: d.teamName, team_color: d.teamColor,
-        stat_label: d.statLabel, stat_title: d.statTitle, stat_value: parseFloat(d.statValue), stat_fmt: d.statFmt,
-        game_id: d.gameId, game_date: d.gameDate, game_opp: d.gameOpp, game_result: d.gameResult, is_playoff: d.isPlayoff,
-      })
-    });
-    var url = (await r.json()).url;
+    var url = (await saveShare(btn.dataset)).url;
     await navigator.clipboard.writeText(url);
     btn.innerHTML = '&#10003;';
     btn.classList.add('is-copied');

@@ -33,7 +33,8 @@ import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
-import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext } from './views/leaders.js';
+import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext, cardSnapshot } from './views/leaders.js';
+import { renderLeaderCardPng, renderLeaderWidePng } from './lib/leader-card-image.js';
 import { roastPage, buildRoastModel, ROAST_CATS, DISASTER_CATS } from './views/roast.js';
 import { standingsPage, standingsModel, TEAM_STAT_CATS, teamStatVal, teamStatFmt, findTriangle, winnerOf } from './views/standings.js';
 import { playoffsPage, playoffsModel, computeSeeds, pairKey } from './views/playoffs.js';
@@ -2215,28 +2216,6 @@ function svgInitials(raw) {
   return (first + last).toUpperCase() || '?';
 }
 
-function shortName(raw) {
-  const parts = String(raw || '').split(',');
-  const last  = parts[0]?.trim() || '';
-  const first = parts[1]?.trim() || '';
-  return first ? `${first[0]}. ${last}` : last;
-}
-
-async function resolveAvatar(pictureUrl) {
-  if (!pictureUrl) return null;
-  if (String(pictureUrl).startsWith('data:')) return pictureUrl;
-  try {
-    const url = String(pictureUrl).startsWith('http')
-      ? pictureUrl
-      : `${ADMIN_URL}${pictureUrl}`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    if (!r.ok) return null;
-    const buf = await r.arrayBuffer();
-    const ct = r.headers.get('content-type') || 'image/jpeg';
-    return `data:${ct};base64,${Buffer.from(buf).toString('base64')}`;
-  } catch { return null; }
-}
-
 function buildShareAsOfLabel(share) {
   const targetSeason = (share.season === 'alltime' || !share.season)
     ? (getCurrentSeason()?.season ?? null)
@@ -2249,258 +2228,6 @@ function buildShareAsOfLabel(share) {
     asOfSeason: targetSeason,
     asOfWeek:   week,
   };
-}
-
-async function generateLeaderSvg(share) {
-  const W = 1200, H = 630;
-  const displayName = formatName(share.player_name).toUpperCase();
-  const teamName    = String(share.team_name || '').toUpperCase();
-  const color       = share.team_color || '#f59332';
-  const statStr     = String(share.stat_fmt);
-  const isRec       = share.mode === 'rec' || share.mode === 'disaster';
-  const modeLabel   = isRec ? 'SINGLE GAME'
-    : share.mode === 'po-pg' ? 'PLAYOFFS · PER GAME' : share.mode === 'po-tot' ? 'PLAYOFF TOTALS'
-    : (share.mode === 'pg' || share.mode === 'roast') ? 'PER GAME' : 'TOTALS';
-  const scopeLabel  = share.season === 'alltime' ? 'ALL TIME' : `SEASON ${share.season}`;
-  const chipTextColor = teamName === 'WHITE' ? '#10141d' : '#fff';
-
-  const { asOfLabel } = buildShareAsOfLabel(share);
-
-  // Parse top5
-  let top5 = [];
-  try { top5 = JSON.parse(share.top10_json || '[]'); } catch {}
-  top5 = top5.slice(0, 5);
-  const maxVal = top5[0]?.stat_value || 1;
-
-  // ── Card geometry — mirrors .leader-panel structure ───────────────────────
-  const CX = 32, CY = 32, CW = W - 64, CH = H - 64;  // 1136 × 566
-  const HEAD_H   = 72;
-  const HEAD_BOT = CY + HEAD_H;                        // 104
-  const TOP_H    = 168;
-  const TOP_BOT  = HEAD_BOT + TOP_H;                   // 272
-  const ROW_H     = Math.floor((CY + CH - TOP_BOT) / 4); // (598-272)/4 = 81
-  const ROW_AV_R   = 20;
-  const ROW_AV_CX  = CX + 76;                             // row avatar centre x = 108
-  const ROW_RANK_X = ROW_AV_CX - ROW_AV_R - 20;          // rank right-anchor x = 68  (20px gap to avatar)
-  const ROW_NAME_X = ROW_AV_CX + ROW_AV_R + 22;          // name start x = 150        (22px gap from avatar)
-
-  // ── Avatar — larger for visual prominence ────────────────────────────────
-  const AV_R  = 64;
-  const AV_CX = CX + 22 + AV_R;                       // 118
-  const AV_CY = HEAD_BOT + Math.round(TOP_H / 2);     // 178
-
-  // ── Info column (right of avatar) ────────────────────────────────────────
-  const INFO_X     = AV_CX + AV_R + 18;               // 200
-  const nameFontSz = displayName.length > 22 ? 20 : displayName.length > 16 ? 24 : 28;
-  const chipW      = Math.max(70, teamName.length * 10 + 32);
-  const NAME_Y     = isRec
-    ? HEAD_BOT + Math.round(TOP_H * 0.38)   // 168 — centres 3-line block (name+chip+ctx) at AV_CY
-    : HEAD_BOT + Math.round(TOP_H * 0.45);  // 180 — centres 2-line block (name+chip) at AV_CY
-  const CHIP_TOP   = NAME_Y + 14;                      // 187 — more breathing room below name
-  const CHIP_TEXT  = CHIP_TOP + 15;                    // 202 — properly centred in 22px chip height
-
-  // ── Stat — amber, right-anchored ─────────────────────────────────────────
-  const STAT_X     = CX + CW - 20;                    // 1148
-  const statFontSz = statStr.length <= 2 ? 96 : statStr.length <= 4 ? 82 : statStr.length <= 6 ? 66 : 54;
-  const STAT_Y     = HEAD_BOT + Math.round(TOP_H / 2) + Math.round(statFontSz * 0.70 / 2); // baseline to visually centre in TOP zone
-
-  const rowEntries = top5.slice(1);
-
-  // ── Hero avatar crop ──────────────────────────────────────────────────────
-  let avatarBuf = null;
-  {
-    const livePlayer = getPlayerPhoto(share.player_id);
-    const photoUrl   = await resolveAvatar(livePlayer?.picture_url);
-    if (photoUrl) {
-      try {
-        const src  = await fetchCoverImageBuffer(photoUrl);
-        const size = AV_R * 2;
-        if (src) {
-          const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${AV_R}" cy="${AV_R}" r="${AV_R}" fill="#fff"/></svg>`);
-          avatarBuf = await sharp(src)
-            .rotate()
-            .resize(size, size, { fit: 'cover', position: 'top' })
-            .composite([{ input: mask, blend: 'dest-in' }])
-            .png()
-            .toBuffer();
-        }
-      } catch {}
-    }
-  }
-
-  // ── Row avatar crops (parallel fetch) ────────────────────────────────────
-  const rowAvatarBufs = await Promise.all(rowEntries.map(async (p) => {
-    const livePlayer = getPlayerPhoto(p.player_id);
-    const photoUrl   = await resolveAvatar(livePlayer?.picture_url);
-    if (!photoUrl) return null;
-    try {
-      const src  = await fetchCoverImageBuffer(photoUrl);
-      if (!src) return null;
-      const size = ROW_AV_R * 2;
-      const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${ROW_AV_R}" cy="${ROW_AV_R}" r="${ROW_AV_R}" fill="#fff"/></svg>`);
-      return await sharp(src)
-        .rotate()
-        .resize(size, size, { fit: 'cover', position: 'top' })
-        .composite([{ input: mask, blend: 'dest-in' }])
-        .png()
-        .toBuffer();
-    } catch { return null; }
-  }));
-
-  // ── Records hero context ──────────────────────────────────────────────────
-  let heroCtxSvg = '';
-  if (isRec && top5[0]) {
-    const f        = top5[0];
-    const dateStr  = f.game_date ? new Date(f.game_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-    const resColor = String(f.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
-    const isPO     = f.is_playoff === true || f.is_playoff === 1 || f.is_playoff === '1';
-    const isFinals = f.is_finals === true || f.is_finals === 1 || f.is_finals === '1';
-    heroCtxSvg = `<text x="${INFO_X}" y="${CHIP_TEXT + 30}" font-family="${COVER_SVG_FONT}" font-size="12" fill="#475569">${escXml(dateStr)} · VS ${escXml(String(f.game_opp || '').toUpperCase())} · <tspan font-weight="700" fill="${resColor}">${escXml(String(f.game_result || ''))}</tspan>${isPO ? ` <tspan font-weight="700" fill="#f59332">PO</tspan>` : ''}${isFinals ? ` <tspan font-weight="700" fill="#f59332">F</tspan>` : ''}</text>`;
-  }
-
-  // ── Row builder ───────────────────────────────────────────────────────────
-  const ROW_STAT_X = CX + CW - 28;
-
-  function makeRow(p, i) {
-    const rank = i + 2;
-    const rowY = TOP_BOT + i * ROW_H;
-    const midY = rowY + Math.round(ROW_H / 2);
-    const tc   = escXml(p.team_color || '#64748b');
-    const nm   = escXml(formatName(p.player_name).toUpperCase());
-    const val  = escXml(p.stat_fmt);
-
-    const barW   = maxVal > 0 ? Math.min(Math.round(p.stat_value / maxVal * CW), Math.round(CW * 0.85)) : 0;
-    const barBg  = `<rect x="${CX}" y="${rowY + 1}" width="${barW}" height="${ROW_H - 2}" fill="${tc}" opacity="0.025"/>`;
-    const divider = i < 3 ? `<line x1="${CX}" y1="${rowY + ROW_H}" x2="${CX + CW}" y2="${rowY + ROW_H}" stroke="#1e293b" stroke-width="1"/>` : '';
-
-    // Avatar placeholder — photo composited as PNG layer on top of the SVG
-    const avBg   = `<circle cx="${ROW_AV_CX}" cy="${midY}" r="${ROW_AV_R}" fill="#060c19"/>`;
-    const avInit = !rowAvatarBufs[i] ? `<text x="${ROW_AV_CX}" y="${midY + 7}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="18" font-weight="800" fill="${tc}" opacity="0.5">${escXml(svgInitials(p.player_name))}</text>` : '';
-    const avRing = `<circle cx="${ROW_AV_CX}" cy="${midY}" r="${ROW_AV_R}" fill="none" stroke="${tc}" stroke-width="1.5"/>`;
-
-    if (isRec) {
-      const nameY    = midY + 1;  // two-line block centred: nameTop≈midY-12, ctxBase=midY+19
-      const ctxY     = midY + 19;
-      const dateStr  = escXml(p.game_date ? new Date(p.game_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
-      const oppStr   = escXml(String(p.game_opp || '').toUpperCase());
-      const resStr   = escXml(String(p.game_result || ''));
-      const resColor = String(p.game_result || '').startsWith('W') ? '#22c55e' : '#ef4444';
-      return `${barBg}${avBg}${avInit}${avRing}
-  <text x="${ROW_RANK_X}" y="${midY + 9}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
-  <text x="${ROW_NAME_X}" y="${nameY}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0">${nm}</text>
-  <text x="${ROW_NAME_X}" y="${ctxY}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#475569">${dateStr} · VS ${oppStr} · <tspan font-weight="700" fill="${resColor}">${resStr}</tspan></text>
-  <text x="${ROW_STAT_X}" y="${midY + 10}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
-  ${divider}`;
-    }
-
-    return `${barBg}${avBg}${avInit}${avRing}
-  <text x="${ROW_RANK_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="11" font-weight="700" fill="#475569" text-anchor="end">${rank}</text>
-  <text x="${ROW_NAME_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="15" font-weight="700" fill="#e2e8f0">${nm}</text>
-  <text x="${ROW_STAT_X}" y="${midY + 5}" font-family="${COVER_SVG_FONT}" font-size="16" font-weight="700" fill="#e2e8f0" text-anchor="end">${val}</text>
-  ${divider}`;
-  }
-
-  const rowsSvg = rowEntries.map((p, i) => makeRow(p, i)).join('\n');
-
-  // ── SVG ───────────────────────────────────────────────────────────────────
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-  <defs>
-    <clipPath id="card-clip">
-      <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16"/>
-    </clipPath>
-    <linearGradient id="topGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%"  stop-color="${escXml(color)}" stop-opacity="0.10"/>
-      <stop offset="65%" stop-color="${escXml(color)}" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="stripGrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%"  stop-color="${escXml(color)}"/>
-      <stop offset="70%" stop-color="${escXml(color)}" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-
-  <!-- Outer bg -->
-  <rect width="${W}" height="${H}" fill="#0a0e16"/>
-
-  <!-- Card base (#0d1424 surface, rx=16, 1px border) -->
-  <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16" fill="#0d1424"/>
-
-  <g clip-path="url(#card-clip)">
-    <!-- ::before color strip — 3px gradient from team color, like CSS -->
-    <rect x="${CX}" y="${CY}" width="${CW}" height="3" fill="url(#stripGrad)"/>
-
-    <!-- HEAD: full category name in amber on line 1, abbreviation + scope/mode on line 2 -->
-    <text x="${CX + 20}" y="${CY + 34}" font-family="${COVER_SVG_FONT}" font-size="14" font-weight="800" fill="#f59332" letter-spacing="2">${escXml(share.stat_title.toUpperCase())} ${isRec ? 'RECORD' : 'LEADER'}</text>
-    <text x="${CX + 20}" y="${CY + 54}" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155" letter-spacing="2">${escXml(share.stat_label)} · ${escXml(scopeLabel)}${isRec ? '' : ` · ${escXml(modeLabel)}`}${asOfLabel ? ` · ${escXml(asOfLabel)}` : ''}</text>
-    <line x1="${CX}" y1="${HEAD_BOT}" x2="${CX + CW}" y2="${HEAD_BOT}" stroke="#1e293b" stroke-width="1"/>
-
-    <!-- TOP gradient overlay -->
-    <rect x="${CX}" y="${HEAD_BOT}" width="${CW}" height="${TOP_H}" fill="url(#topGrad)"/>
-
-    <!-- Avatar: plain circle with color ring -->
-    <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R}" fill="#060c19"/>
-    ${!avatarBuf ? `<text x="${AV_CX}" y="${AV_CY + 20}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="52" font-weight="800" fill="${escXml(color)}" opacity="0.4">${escXml(svgInitials(share.player_name))}</text>` : ''}
-    <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R}" fill="none" stroke="${escXml(color)}" stroke-width="3"/>
-
-    <!-- Info: player name + team chip -->
-    <text x="${INFO_X}" y="${NAME_Y}" font-family="${COVER_SVG_FONT}" font-size="${nameFontSz}" font-weight="700" fill="#e2e8f0">${escXml(displayName)}</text>
-    <rect x="${INFO_X}" y="${CHIP_TOP}" width="${chipW}" height="22" rx="11" fill="${escXml(color)}"/>
-    <text x="${INFO_X + Math.round(chipW / 2)}" y="${CHIP_TEXT}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="10" font-weight="800" fill="${chipTextColor}" letter-spacing="2">${escXml(teamName)}</text>
-    ${heroCtxSvg}
-
-    <!-- Stat: amber, right-anchored — no redundant label, header already identifies it -->
-    <text x="${STAT_X}" y="${STAT_Y}" font-family="${COVER_SVG_FONT}" font-size="${statFontSz}" font-weight="800" fill="#f59332" text-anchor="end">${escXml(statStr)}</text>
-
-    <!-- TOP bottom border -->
-    <line x1="${CX}" y1="${TOP_BOT}" x2="${CX + CW}" y2="${TOP_BOT}" stroke="#1e293b" stroke-width="1"/>
-
-    <!-- LIST rows -->
-    ${rowsSvg}
-
-  </g>
-
-  <!-- Card border -->
-  <rect x="${CX}" y="${CY}" width="${CW}" height="${CH}" rx="16" fill="none" stroke="#1e293b" stroke-width="1.5"/>
-
-  <!-- Footer — outside card, centred in the gap below -->
-  <text x="${W / 2}" y="${H - 10}" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="9" fill="#334155" letter-spacing="3">WKNDBASKETBALL.COM</text>
-</svg>`;
-
-  // ── Compose PNG ───────────────────────────────────────────────────────────
-  // Render SVG at 2× density then resize down — produces much crisper text
-  // when Facebook recompresses the PNG to JPEG for display
-  const svgLayer = await sharp(Buffer.from(svg), { density: 144 })
-    .resize(W, H)
-    .png()
-    .toBuffer();
-  const base   = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 10, g: 14, b: 22 } } }).png().toBuffer();
-  const layers = [{ input: svgLayer, top: 0, left: 0 }];
-
-  if (avatarBuf) {
-    layers.push({ input: avatarBuf, left: AV_CX - AV_R, top: AV_CY - AV_R });
-  }
-
-  // Composite row avatars on top of their SVG placeholder circles
-  rowEntries.forEach((_, i) => {
-    if (rowAvatarBufs[i]) {
-      const rowY = TOP_BOT + i * ROW_H;
-      const midY = rowY + Math.round(ROW_H / 2);
-      layers.push({ input: rowAvatarBufs[i], left: ROW_AV_CX - ROW_AV_R, top: midY - ROW_AV_R });
-    }
-  });
-
-  try {
-    if (existsSync(COVER_LOGO_PATH)) {
-      const logo = await sharp(COVER_LOGO_PATH)
-        .ensureAlpha()
-        .resize({ width: 130, height: 34, fit: 'inside', withoutEnlargement: true })
-        .png()
-        .toBuffer();
-      // Right side of head zone, vertically centered
-      layers.push({ input: logo, left: CX + CW - 20 - 130, top: CY + Math.round((HEAD_H - 34) / 2) });
-    }
-  } catch {}
-
-  return sharp(base).composite(layers).png({ compressionLevel: 9 }).toBuffer();
 }
 
 // Mirrors derivePlayerOfTheGameFromState from the admin app.
@@ -10555,6 +10282,90 @@ app.get('/api/roster', (req, res) => {
   res.json(roster);
 });
 
+// ── Leader share cards ────────────────────────────────────────────────────────
+// A share stores the card exactly as the page shows it (cardSnapshot), found by rebuilding
+// the same page model the button sat on — so the shared/downloaded images can't disagree
+// with the card. Older shares (no card_json) get one rebuilt from their stored top 10.
+function findShareCard(season, categoryId, mode) {
+  try {
+    const current = getPortalCurrentSeason();
+    const isAll = season === 'alltime';
+    let model;
+    if (mode === 'roast' || mode === 'disaster') {
+      model = buildRoastModel({ season, players: mode === 'roast' ? buildLeaderPlayers(season) : [], gameRecords: getGameRecords(), currentSeason: current });
+    } else if (mode === 'rec') {
+      model = buildLeadersModel({ stats: 'rec', season, currentSeason: current, gameRecords: getGameRecords() });
+    } else if (mode === 'pg' || mode === 'tot' || mode === 'po-pg') {
+      const players = mode === 'po-pg' ? (isAll ? [] : getPlayoffLeaders(season)) : isAll ? buildLeaderPlayersAllTime() : buildLeaderPlayers(season);
+      model = buildLeadersModel({ stats: mode === 'po-pg' ? 'po' : mode, season, currentSeason: current, players });
+    }
+    for (const sec of model?.sections || []) {
+      const item = sec.items.find(m => m && m.cat.id === categoryId && m.mode === mode);
+      if (item) return cardSnapshot(item);
+    }
+  } catch (err) { console.error('findShareCard failed:', err.message); }
+  return null;
+}
+
+function shareCardOf(share) {
+  try { if (share.card_json) return JSON.parse(share.card_json); } catch {}
+  let top = [];
+  try { top = JSON.parse(share.top10_json || '[]'); } catch {}
+  const up = s => String(s || '').toUpperCase();
+  const lead = { id: share.player_id, name: share.player_name, number: getPlayerById(share.player_id)?.number ?? '', team: up(share.team_name), gp: 0, value: share.stat_fmt };
+  if (share.mode === 'rec' || share.mode === 'disaster') {
+    const f = top[0] || {};
+    const day = f.game_date ? new Date(`${String(f.game_date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    return {
+      kind: 'record', title: share.stat_title, sub: '', badge: '', badgeOn: false, lead,
+      game: { id: f.game_id || '', line: f.game_opp ? `vs ${up(f.game_opp)} · ${f.game_result || ''}` : '', when: day },
+      foot: top[1] ? `Next ${share.mode === 'disaster' ? 'worst' : 'best'}: ${top[1].stat_fmt} — ${displayPlayerName(top[1].player_name)}` : '',
+    };
+  }
+  return {
+    kind: 'board', size: 'lg', title: share.stat_title, sub: '', key: share.stat_label, lead,
+    rest: top.slice(1, 5).map(p => ({ id: p.player_id, name: p.player_name, team: up(p.team_name), delta: '', value: p.stat_fmt })),
+  };
+}
+
+// The leader's photo for the images, or their jersey when they have none / it won't load.
+async function leaderCardPhoto(id) {
+  const row = getPlayerPhoto(id);
+  const buf = row?.picture_url ? await fetchCoverImageBuffer(row.picture_url) : null;
+  if (buf) return buf;
+  const player = getPlayerById(id);
+  if (!player) return null;
+  const team = player.team_id ? getTeamById(player.team_id) : null;
+  return sharp(Buffer.from(playerJerseySvg({ color: team ? teamColor(team.name) : '#4a5263', number: player.number }))).resize(384, 384).png().toBuffer();
+}
+
+let leaderCardLogo;
+async function leaderCardLogoPng() {
+  if (leaderCardLogo === undefined) {
+    try { leaderCardLogo = existsSync(COVER_LOGO_PATH) ? await sharp(COVER_LOGO_PATH).ensureAlpha().resize({ width: 300, height: 80, fit: 'inside' }).png().toBuffer() : null; }
+    catch { leaderCardLogo = null; }
+  }
+  return leaderCardLogo;
+}
+
+// Rendered images, keyed by share + what's drawn, so repeat link previews don't redraw.
+const leaderCardCache = new Map();
+async function leaderShareImage(share, kind) {
+  const card = shareCardOf(share);
+  const { asOfWeek } = buildShareAsOfLabel(share);
+  const scope = share.mode === 'disaster' || share.season === 'alltime' ? 'All seasons' : `Season ${share.season}`;
+  const footer = ['WKNDBASKETBALL.COM', share.season === 'alltime' || share.mode === 'disaster' ? '' : `SEASON ${share.season}`, asOfWeek ? `WEEK ${asOfWeek}` : ''].filter(Boolean).join(' · ');
+  const key = `${share.id}|${kind}|${createHash('sha1').update(JSON.stringify(card) + footer).digest('hex')}`;
+  if (leaderCardCache.has(key)) return leaderCardCache.get(key);
+  const fonts = { text: OG_TEXT, num: OG_NUM };
+  const png = kind === 'wide'
+    ? await renderLeaderWidePng(card, { loadPhoto: leaderCardPhoto, fonts, logo: await leaderCardLogoPng(), scopeLine: [scope, asOfWeek && scope !== 'All seasons' ? `thru week ${asOfWeek}` : ''].filter(Boolean).join(' · ') })
+    : await renderLeaderCardPng(card, { loadPhoto: leaderCardPhoto, fonts, footer });
+  if (leaderCardCache.size > 200) leaderCardCache.delete(leaderCardCache.keys().next().value);
+  leaderCardCache.set(key, png);
+  return png;
+}
+
 app.post('/api/leaders/share', (req, res) => {
   const { season, category_id, mode, player_id, player_name, team_id,
           team_name, team_color, stat_label, stat_title, stat_value, stat_fmt } = req.body || {};
@@ -10644,14 +10455,17 @@ app.post('/api/leaders/share', (req, res) => {
       : [];
   }
 
+  // The card as the page shows it right now; its value wins over the one the button sent.
+  const card = findShareCard(String(season), String(category_id), String(mode));
   const id = upsertShare({
     id: randomBytes(4).toString('hex'),
     season, category_id, mode, player_id, player_name, team_id,
     team_name, team_color, stat_label, stat_title,
-    stat_value: Number(stat_value), stat_fmt,
+    stat_value: Number(stat_value), stat_fmt: card && card.lead.id === String(player_id) ? card.lead.value : stat_fmt,
     top10,
     player_picture_url: leaderPlayer?.picture_url || '',
     created_at: Date.now(),
+    card,
   });
   const url = `${getRequestOrigin(req)}/leaders/share/${id}`;
   res.json({ id, url });
@@ -10664,9 +10478,6 @@ app.get('/leaders/share/:id', (req, res) => {
   );
   const origin      = getRequestOrigin(req);
   const displayName = formatName(share.player_name);
-  const teamName    = String(share.team_name || '').toUpperCase();
-  const color       = share.team_color;
-  const isLight     = teamName === 'WHITE';
   const isRecShare  = share.mode === 'rec';
   const isAlltime   = share.season === 'alltime';
   const scopeText   = isAlltime ? 'All-Time' : `Season ${share.season}`;
@@ -10712,7 +10523,7 @@ app.get('/leaders/share/:id', (req, res) => {
     title,
     currentPath: '/leaders',
     metaTags,
-    body: leaderSharePage({ share, displayName, teamName, color, isLight }),
+    body: leaderSharePage({ share, card: shareCardOf(share) }),
   }));
 });
 
@@ -10720,7 +10531,7 @@ app.get('/api/leaders/share/:id/image.png', async (req, res) => {
   const share = getShare(req.params.id);
   if (!share) return res.status(404).end();
   try {
-    const png = await generateLeaderSvg(share);
+    const png = await leaderShareImage(share, 'wide');
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=300');
     res.end(png);
@@ -10730,29 +10541,17 @@ app.get('/api/leaders/share/:id/image.png', async (req, res) => {
   }
 });
 
+// The Download button: the card itself, portrait, at 2×.
 app.get('/api/leaders/share/:id/card.png', async (req, res) => {
   const share = getShare(req.params.id);
   if (!share) return res.status(404).end();
   try {
-    const fullPng  = await generateLeaderSvg(share);
-    const cardOnly = await sharp(fullPng).extract({ left: 32, top: 32, width: 1136, height: 566 }).toBuffer();
-    const { asOfLabel } = buildShareAsOfLabel(share);
-    const footerText = asOfLabel ? `WKNDBASKETBALL.COM   ·   ${asOfLabel}` : 'WKNDBASKETBALL.COM';
-    const FOOTER_H   = 44;
-    const footerSvg  = Buffer.from(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="1136" height="${FOOTER_H}">` +
-      `<text x="568" y="28" text-anchor="middle" font-family="${COVER_SVG_FONT}" font-size="11" fill="#334155" letter-spacing="3">${escXml(footerText)}</text>` +
-      `</svg>`
-    );
-    const result = await sharp({
-      create: { width: 1136, height: 566 + FOOTER_H, channels: 3, background: { r: 10, g: 14, b: 22 } }
-    })
-      .composite([{ input: cardOnly, top: 0, left: 0 }, { input: footerSvg, top: 566, left: 0 }])
-      .png({ compressionLevel: 9 })
-      .toBuffer();
+    const png = await leaderShareImage(share, 'card');
+    const slug = `${share.category_id}-${share.mode}`.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=300');
-    res.end(result);
+    if (req.query.dl) res.set('Content-Disposition', `attachment; filename="wknd-${slug}.png"`);
+    res.end(png);
   } catch (err) {
     console.error('Leader card download error:', err);
     res.status(500).end();
@@ -12236,7 +12035,7 @@ app.get('/leaders', (req, res) => {
     meta,
     summaryHtml: isDefault && (summary || isAdmin) ? summaryPanel(summary, 'leaders', isAdmin) : '',
     writeups,
-    showDownload: !!(req.session?.isAdmin || req.session?.playerRegId),
+    showDownload: true, // open to everyone, like Share
     asOfLabel: isAll ? 'ALL TIME' : leadersKicker(season, current).toUpperCase(),
     emptyMsg: stats === 'po'
       ? (isAll ? 'Playoff leaders are kept per season — pick a season.' : `No playoff games in Season ${season} yet.`)
@@ -12270,7 +12069,7 @@ app.get('/roast', (req, res) => {
     // Admins get a Regenerate for the section writeups (the roast has no page summary).
     summaryHtml: isDefault && isAdmin ? `<div class="ld-admin"><button type="button" class="hs-summary__regen">↺ Regenerate writeups</button></div>` : '',
     writeups,
-    showDownload: !!(req.session?.isAdmin || req.session?.playerRegId),
+    showDownload: true, // open to everyone, like Share
     asOfLabel: isAll ? 'ALL TIME' : leadersKicker(season, current).toUpperCase(),
   });
   if (req.query.partial === '1') return res.type('html').send(html);
