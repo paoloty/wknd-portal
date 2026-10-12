@@ -1184,11 +1184,46 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
       if (msg.type === 'game:react') {
         var gc = document.getElementById('game-react-count');
         if (gc) gc.textContent = msg.count;
+        if (typeof msg.who === 'string') setReactors(msg.who);
         updateFloaterState();
         return;
       }
     });
   }
+
+  // Who reacted: the faces beside React (server-rendered, swapped in live) and their list.
+  var rxSlot = document.querySelector('[data-gd-rx]');
+  function setReactors(html) { if (rxSlot) rxSlot.innerHTML = html; }
+  function closeReactors() {
+    var pop = document.querySelector('[data-gd-rx-pop]:not([hidden])');
+    if (!pop) return;
+    pop.hidden = true;
+    var who = document.querySelector('[data-gd-rx-who]');
+    if (who) who.setAttribute('aria-expanded', 'false');
+  }
+  document.addEventListener('click', function(e) {
+    var who = e.target.closest('[data-gd-rx-who]');
+    if (who) {
+      var pop = who.parentNode.querySelector('[data-gd-rx-pop]');
+      var open = pop.hidden;
+      pop.hidden = !open;
+      who.setAttribute('aria-expanded', open ? 'true' : 'false');
+      return;
+    }
+    if (!e.target.closest('[data-gd-rx-pop]')) closeReactors();
+  });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeReactors(); });
+
+  // The hero comment box's count follows the thread live.
+  var cCount = document.querySelector('[data-gd-ccount]');
+  function bumpBar(by) {
+    if (!cCount) return;
+    var n = Math.max(0, (parseInt(cCount.getAttribute('data-gd-ccount'), 10) || 0) + by);
+    cCount.setAttribute('data-gd-ccount', n);
+    cCount.textContent = n ? n + ' comment' + (n === 1 ? '' : 's') : 'Be the first';
+  }
+  document.addEventListener('gd:comment', function() { bumpBar(1); });
+  document.addEventListener('gd:uncomment', function() { bumpBar(-1); });
 
   var reactBtn = document.getElementById('game-react-btn');
   if (reactBtn) {
@@ -1205,6 +1240,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
           if (!d.ok) return;
           reactBtn.classList.toggle('is-active', d.reacted);
           document.getElementById('game-react-count').textContent = d.count;
+          if (typeof d.who === 'string') setReactors(d.who);
           var floaterReactBtn = document.getElementById('floater-react-btn');
           if (floaterReactBtn) floaterReactBtn.classList.toggle('is-active', d.reacted);
           updateFloaterState();
@@ -1423,9 +1459,47 @@ function heroActions({ game, commentsEnabled, gameReaction, watch, me = false })
   return `<span class="gd-acts${me ? ' gd-acts--me' : ''}">
       ${me ? `<button type="button" class="gd-btn gd-btn--amber gd-btn--me" data-ssc-open>${ICON_SHARE}<span>Share my stats</span></button>` : ''}
       ${watch ? `<a class="gd-btn${me ? '' : ' gd-btn--amber'}" href="#watch" title="Watch the game">${ICON_PLAY}<span class="gd-btn__l">Watch${me ? '' : ' the game'}</span></a>` : ''}
-      ${commentsEnabled ? `<button type="button" id="game-react-btn" class="gd-btn${gameReaction.reacted ? ' is-active' : ''}" title="React to this game">${ICON_FLAME}<span class="gd-btn__l">React</span><b id="game-react-count">${gameReaction.count || 0}</b></button>` : ''}
+      ${commentsEnabled ? `<span class="gd-rx"><button type="button" id="game-react-btn" class="gd-btn${gameReaction.reacted ? ' is-active' : ''}" title="React to this game">${ICON_FLAME}<span class="gd-btn__l">React</span><b id="game-react-count">${gameReaction.count || 0}</b></button><span class="gd-rx__slot" data-gd-rx>${reactorsWho(gameReaction.reactors || [])}</span></span>` : ''}
       <button type="button" id="game-share-btn" class="gd-btn" title="Share this game">${ICON_SHARE}<span class="gd-btn__l">Share</span></button>
     </span>`;
+}
+
+// Who reacted to the game, inside the React container: up to 3 faces and two last names; the
+// tap opens the full list (newest first). Also rendered by the react route for live updates.
+const surname = name => tc(String(name || '').split(',')[0]);
+function reactedAgo(ms) {
+  const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (mins < 60) return `${Math.max(1, mins)}m`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)}h`;
+  if (mins < 48 * 60) return 'Yesterday';
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
+}
+export function reactorsWho(reactors) {
+  const n = reactors.length;
+  if (!n) return '';
+  const faces = reactors.map(r => ({ id: r.id, name: r.name, team: r.team }));
+  const rows = reactors.map(r => `<a class="gd-rx__row" href="/players/${encodeURIComponent(String(r.id))}">${avatarStack([{ id: r.id, name: r.name, team: r.team }], { size: 32 })}<span class="gd-rx__i"><b>${escHtml(displayPlayerName(r.name))}</b>${r.team ? `<small>${escHtml(tc(r.team))}</small>` : ''}</span><time>${reactedAgo(r.created_at)}</time></a>`).join('');
+  return `<button type="button" class="gd-rx__who" data-gd-rx-who aria-expanded="false" aria-label="See who reacted (${n})">
+      ${avatarStack(faces, { size: 26, max: 3, moreBubble: false })}
+      <span class="gd-rx__nm"><b>${escHtml(surname(reactors[0].name))}</b>${n > 1 ? `<span class="gd-rx__wide">, <b>${escHtml(surname(reactors[1].name))}</b>${n > 2 ? ` +${n - 2}` : ''}</span><span class="gd-rx__narrow"> +${n - 1}</span>` : ''}</span>
+    </button>
+    <div class="gd-rx__pop" data-gd-rx-pop role="dialog" aria-label="Who reacted" hidden>
+      <div class="gd-rx__h"><span>Reacted · ${n}</span>${ICON_FLAME}</div>
+      <div class="gd-rx__list">${rows}</div>
+    </div>`;
+}
+
+// The hero's comment box (final games, comments on): looks like an input, opens the comments
+// with the cursor in the box through the same [data-say] handler as "Say something".
+function commentBar(d) {
+  const n = d.comments.length;
+  const me = d.viewer ? avatarStack([d.viewer], { size: 30 }) : `<span class="gd-cbar__ic">${ICON_CHAT}</span>`;
+  return `<button type="button" class="gd-cbar" data-say="">
+      <span class="gd-cbar__me">${me}</span>
+      <span class="gd-cbar__t">Say something about this game…</span>
+      <span class="gd-cbar__n" data-gd-ccount="${n}">${n ? `${n} comment${n === 1 ? '' : 's'}` : 'Be the first'}</span>
+      <span class="gd-cbar__go">${ICON_CHAT}<span>Comment</span></span>
+    </button>`;
 }
 
 // "Your game": the viewer's own line, badge and stat cards, with the big Share my stats button.
@@ -1535,7 +1609,9 @@ function finalHero(d) {
         </div>
         <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${oddsPct(heroOdds, 'b')}${recLine(ctx.recB)}</span></div>
       </div>
-      <div class="gd-hero__bot"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div>
+      ${d.commentsEnabled
+        ? `<div class="gd-hero__bot gd-hero__bot--talk"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span><div class="gd-talkrow">${commentBar(d)}${heroActions({ game, commentsEnabled: true, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div></div>`
+        : `<div class="gd-hero__bot"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: false, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div>`}
     </div>
   </section>`;
 }
@@ -2122,7 +2198,7 @@ function pageScript() {
     var talk = document.getElementById('talk');
     if (talk) talk.scrollIntoView({ behavior: 'smooth', block: 'start' });
     var v = input.value.replace(/\\s+$/, '');
-    input.value = (v ? v + ' ' : '') + b.dataset.say;
+    if (b.dataset.say) input.value = (v ? v + ' ' : '') + b.dataset.say;
     input.focus({ preventScroll: true });
     input.setSelectionRange(input.value.length, input.value.length);
     input.dispatchEvent(new Event('input', { bubbles: true }));

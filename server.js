@@ -31,7 +31,7 @@ import { picksPage, picksPlayerPage, picksPlayerSheet, picksRulesPage } from './
 import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { highlightsPage } from './views/highlights.js';
-import { gamePage } from './views/game.js';
+import { gamePage, reactorsWho } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
 import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext, cardSnapshot } from './views/leaders.js';
 import { renderLeaderCardPng, renderLeaderWidePng } from './lib/leader-card-image.js';
@@ -139,7 +139,7 @@ import {
   getSeoOverride, getAllSeoOverrides, upsertSeoOverride, deleteSeoOverride,
   getGameComments, getCommentById, getCommentWithMeta, addGameComment, deleteGameComment,
   toggleCommentReaction, getReactedCommentIdsForPlayer,
-  toggleGameReaction, getGameReactionState, getPlayersWithAccounts,
+  toggleGameReaction, getGameReactionState, getGameReactors, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
   getLatestCommentsForGames, getGameCommenterIds, getTeamPlayerIdsWithAccounts, findUnreadNotification, refreshNotification,
   setGamePick, setGamePickMargin, getGamePickCounts, getPlayerGamePicks,
@@ -7354,7 +7354,7 @@ app.get('/games/:ref', (req, res) => {
   if (commentsEnabled) {
     comments = getGameComments(game.id);
     reactedIds = getReactedCommentIdsForPlayer(comments.map(c => c.id), currentPlayerId);
-    gameReaction = getGameReactionState(game.id, currentPlayerId);
+    gameReaction = { ...getGameReactionState(game.id, currentPlayerId), reactors: getGameReactors(game.id) };
     // Anyone with a real, working login — not just players in this specific game — so a
     // comment can pull in someone unrelated to the game just to get them talking.
     mentionablePlayers = getPlayersWithAccounts();
@@ -7363,6 +7363,7 @@ app.get('/games/:ref', (req, res) => {
   const common = {
     game, ymd, ctx, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
     currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
+    viewer: req.session?.playerRegId && playerMap[currentPlayerId] ? { id: currentPlayerId, name: playerMap[currentPlayerId].name, team: playerMap[currentPlayerId].team_name } : null,
   };
   const opens = picksEnabled() ? openPicks(sorted, pctx, currentPlayerId) : [];
 
@@ -7713,8 +7714,10 @@ app.post('/games/:id/react', express.json(), (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
   const result = toggleGameReaction(game.id, playerId);
-  broadcastToGame(game.id, { type: 'game:react', count: result.count });
-  res.json({ ok: true, ...result });
+  // The faces + names beside React, rendered once here so every open page swaps in the same HTML.
+  const who = reactorsWho(getGameReactors(game.id));
+  broadcastToGame(game.id, { type: 'game:react', count: result.count, who });
+  res.json({ ok: true, ...result, who });
 });
 
 app.delete('/games/:id/comments/:commentId', (req, res) => {
