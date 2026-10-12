@@ -1,6 +1,7 @@
 import { escHtml } from './layout.js';
 import { displayPlayerName, teamColor, initials, playerPhotoUrl } from './utils.js';
 import { swipeScript } from './games.js';
+import { summaryPanel, sectionPanel, sectionRegenScript } from './home.js';
 
 // /mvp: the race as player cards (the shared .pl-card look: team glare, faded photo
 // backdrop, avatar ring, first over LASTNAME). #1 is a wide card with #2–#3 beside it,
@@ -301,7 +302,9 @@ function photoDialog(season) {
 </script>`;
 }
 
-export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false }) {
+// sections: the AI writeups (server.js mvpSectionFacts): race under the page header (full
+// kicker, like the other pages' summary panel), chase under The chase header.
+export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false, sections = {} }) {
   const kicker = `Season ${escHtml(String(season))}${playoffsStarted ? ' · Final' : week ? ` · After week ${escHtml(String(week))}` : ''}`;
   const head = (side = '') => `<header class="mvpx-head">
     <div class="mvpx-head__main ld-head">
@@ -349,6 +352,7 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
         <button type="button" class="gm-potg-head__btn" data-mv-nav="1" aria-label="More players">${arrow('M9 18l6-6-6-6')}</button>
       </span>
     </div>
+    ${rest.length >= 1 ? sectionPanel(sections.chase || null, `mvp_chase:${season}`, isAdmin) : ''}
     <div class="mv-chase swipe-row" data-swipe data-mv-row>${rest.map((c, i) => chaseCard(c, i + 4, lead, ctx)).join('')}</div>
   </section>` : '';
 
@@ -380,6 +384,7 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
 })();
 </script>
 ${swipeScript()}${isAdmin ? `
+${sectionRegenScript()}
 <script>
 (function () {
   async function regen(pid, season, btn) {
@@ -401,6 +406,7 @@ ${photoDialog(season)}` : ''}`;
 
   return `<div class="page-content mvpx">
   ${head(side)}
+  ${summaryPanel(sections.race || null, `mvp_race:${season}`, isAdmin, 'section-block')}
   <div class="mv-top${chasers.length ? '' : ' mv-top--solo'}">
     ${leadCard(lead, candidates[1], ctx)}
     ${chasers.map((c, i) => chaserCard(c, i + 2, lead, ctx)).join('')}

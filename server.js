@@ -10637,6 +10637,69 @@ function mvpPrevRanks(season, completedGames) {
   return Object.fromEntries(prev.map((p, i) => [p.id, i + 1]));
 }
 
+// The top 10 as /mvp shows it (score, stats, prevRank). The page builds its own copy with
+// league ranks and writeups; this one feeds the section writeups' admin Regenerate.
+function mvpRaceTop(season) {
+  const completed = byDate(getAllGames()).filter(isPlayedGame);
+  const prev = mvpPrevRanks(season, completed);
+  return getMvpCandidates(season)
+    .filter(s => s.gp >= 1)
+    .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s), prevRank: prev ? (prev[s.id] ?? null) : undefined }))
+    .sort((a, b) => b.mvpScore - a.mvpScore)
+    .slice(0, 10);
+}
+
+// Who led the race after each game week (Mon–Sun), replayed like mvpPrevRanks.
+function mvpWeeklyLeaders(season) {
+  const mondays = [...new Set(getAllGames()
+    .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && g.status === 'complete' && !g.under_review && g.date)
+    .map(g => { const d = new Date(String(g.date).slice(0, 10) + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); }))]
+    .sort();
+  return mondays.map((mon, i) => {
+    const next = new Date(mon + 'T00:00:00Z'); next.setUTCDate(next.getUTCDate() + 7);
+    const top = getMvpCandidates(season, next.toISOString().slice(0, 10)).filter(s => s.gp >= 1)
+      .map(s => ({ s, score: computeMvpScore(s) })).sort((a, b) => b.score - a.score)[0];
+    return top ? { week: i + 1, name: displayPlayerName(top.s.name) } : null;
+  }).filter(Boolean);
+}
+
+// /mvp section writeups: "race" under the page header, "chase" under The chase (#4–10).
+// top: the page's top 10 (mvpRaceTop shape). Gaps come pre-computed (the number guard).
+function mvpSectionFacts({ season, week, playoffsStarted, top }) {
+  if (top.length < 2) return {};
+  const T = titleCase;
+  const one = n => (Math.round(n * 10) / 10).toFixed(1);
+  const asOf = playoffsStarted ? `Season ${season} · final` : `After week ${week}`;
+  const where = 'MVP Race page';
+  const move = (c, r) => (c.prevRank === undefined ? '' : c.prevRank === null ? 'new to the top 10 this week'
+    : c.prevRank === r ? `held #${r} from last week` : `${c.prevRank > r ? 'up' : 'down'} from #${c.prevRank} last week`);
+  const line = (c, r) => {
+    const s = c.stats, gp = s.gp || 1;
+    const d = 2 * ((s.fga || 0) + 0.44 * (s.fta || 0));
+    return `- #${r} ${displayPlayerName(c.player.name)} (${T(s.team_name)}): MVP score ${one(c.mvpScore)}${move(c, r) ? `, ${move(c, r)}` : ''}; ${one(s.pts / gp)} points, ${one(s.reb / gp)} rebounds, ${one(s.ast / gp)} assists per game${d > 0 ? `, ${Math.round(s.pts / d * 100)}% true shooting` : ''}; team record ${s.wins}-${s.losses}; ${plural(s.gp, 'game')} played`;
+  };
+  const head = `Season ${season} MVP race, ${playoffsStarted ? 'final regular-season standings' : `after week ${week} of the regular season`}. The MVP score is per-game production (points, rebounds, assists, steals, blocks, minus turnovers) scaled by true shooting, team win rate and games played.`;
+  const out = {};
+  const leaders = mvpWeeklyLeaders(season);
+  const [a, b, c] = top;
+  out.race = {
+    kicker: `The race · ${asOf}`, section: 'MVP Race (the whole race, at the top of the page)', where,
+    facts: [head, 'Top 5:', ...top.slice(0, 5).map((x, i) => line(x, i + 1)),
+      `#1 leads #2 by ${one(a.mvpScore - b.mvpScore)} MVP points${c ? `; #2 leads #3 by ${one(b.mvpScore - c.mvpScore)}` : ''}.`,
+      leaders.length > 1 ? `Leader of the race after each week: ${leaders.map(l => `week ${l.week} ${l.name}`).join(', ')}.` : ''].filter(Boolean).join('\n'),
+    focus: 'Sum up the MVP race: who leads and by how much, who climbed or slipped this week, and how the top spot has changed hands over the weeks. Name at most three players and don\'t recite stat lines. The facts don\'t say how any gap changed since last week, so never say a gap closed, narrowed, shrank or widened.',
+  };
+  if (top.length > 3) {
+    out.chase = {
+      kicker: `The chase · ${asOf}`, section: 'The chase (MVP race places #4 to #10)', where,
+      facts: [head, `#3 is ${displayPlayerName(c.player.name)} on an MVP score of ${one(c.mvpScore)}.`, 'Places #4 to #10:',
+        ...top.slice(3).map((x, i) => `${line(x, i + 4)}; ${one(c.mvpScore - x.mvpScore)} MVP points behind #3`)].join('\n'),
+      focus: 'Pick the one or two most interesting stories among places #4 to #10: who is closest to the top three, and who climbed or slipped this week. Don\'t go through every player. The facts don\'t say how any gap changed since last week, so never say anyone closed in, closed a gap or fell further back.',
+    };
+  }
+  return sectionFactsMap('mvp', season, out);
+}
+
 // After an AI failure (usually provider quota), /mvp stops generating for a while so every
 // page view doesn't re-hit an exhausted quota across all fallback models.
 const MVP_AI_COOLDOWN_MS = 10 * 60 * 1000;
@@ -11834,6 +11897,7 @@ FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` 
         photo: mvpPhoto(season, c.player.id, photoMeta[c.player.id]),
       })),
       leagueSize: total,
+      sections: sectionSummaries(mvpSectionFacts({ season, week: getSeasonLatestWeek(season)?.week ?? null, playoffsStarted, top: scored }), { keep: playoffsStarted }),
       season,
       week: getSeasonLatestWeek(season)?.week ?? null,
       totalGames,
@@ -12989,7 +13053,7 @@ function gameSectionFacts(game, { stats, dc, won }) {
 // Admin: rewrite one section writeup now. block as above.
 app.post('/admin/section-summary/regenerate', requireAuth, express.json(), async (req, res) => {
   const block = String(req.body?.block || '');
-  const m = block.match(/^(standings|playoffs|picks|game)_([a-z0-9]+):(.+)$/);
+  const m = block.match(/^(standings|playoffs|picks|mvp|game)_([a-z0-9]+):(.+)$/);
   if (!m) return res.status(400).json({ error: 'Unknown block' });
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const [, page, section, param] = m;
@@ -12997,6 +13061,7 @@ app.post('/admin/section-summary/regenerate', requireAuth, express.json(), async
   if (page === 'standings') facts = standingsSectionFacts(standingsSectionData(param));
   else if (page === 'playoffs') facts = playoffsSectionFacts(playoffsSectionData(param));
   else if (page === 'picks') facts = picksSectionFacts(buildPicksPageData(param));
+  else if (page === 'mvp') facts = mvpSectionFacts({ season: param, week: getSeasonLatestWeek(param)?.week ?? null, playoffsStarted: isPlayoffStarted(param), top: mvpRaceTop(param) });
   else {
     const game = getGameById(param);
     if (!game || game.under_review) return res.status(404).json({ error: 'Unknown game' });
