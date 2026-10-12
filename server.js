@@ -11788,7 +11788,7 @@ app.get('/mvp', async (req, res) => {
           : ` (last week: #${c.prevRank}, ${c.prevRank > rank ? 'up' : 'down'} ${Math.abs(c.prevRank - rank)} spot${Math.abs(c.prevRank - rank) === 1 ? '' : 's'})`}`,
       ].join('\n');
 
-      const prompt = `You are covering the MVP race for the WKND Basketball League, a recreational league whose players read every word. Write a 2-3 sentence MVP case for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
+      const prompt = `You are covering the MVP race for the WKND Basketball League, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence MVP case' : 'Write exactly 2 short sentences (under 45 words in total) on the MVP case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
 
 THIS WEEK'S VOICE — ${mvpVoice.name}: ${mvpVoice.guide}
 
@@ -11800,6 +11800,7 @@ Rules:
 - No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
 - ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
 - Work in their MVP Race position and how it moved since last week (climbing, slipping, holding steady, or newly entering) using the exact numbers below. Do not say who they passed or who passed them.
+- Never call them the best or the most at anything (e.g. "the league's most efficient scorer") unless a rank line below says #1 for it, and never say they deserve, should win, or are the favourite for the MVP.
 - Plain text only. No markdown.
 - Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.${mvpRecentOpenings.length ? `
 - OPENING SENTENCES FROM OTHER MVP WRITEUPS (yours must not resemble these):
@@ -11809,7 +11810,7 @@ ${name} stats:\n${rankLines}
 
 FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${mvpVoice.sample}"` : ''}`;
 
-      const { text } = await generateText(prompt, { maxTokens: 300, temperature: aiTemperature() });
+      const { text } = await generateText(prompt, { maxTokens: rank <= 3 ? 300 : 160, temperature: aiTemperature() });
       setMvpWriteup(c.player.id, season, statsKey, text);
       return { ...c, writeup: text };
     } catch (err) {

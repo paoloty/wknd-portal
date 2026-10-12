@@ -1,5 +1,11 @@
 import { escHtml } from './layout.js';
 import { displayPlayerName, teamColor, initials, playerPhotoUrl } from './utils.js';
+import { swipeScript } from './games.js';
+
+// /mvp: the race as player cards (the shared .pl-card look: team glare, faded photo
+// backdrop, avatar ring, first over LASTNAME). #1 is a wide card with #2–#3 beside it,
+// #4–#10 a scrolling row of smaller cards ("The chase"). Styles: styles.css "MVP Race
+// page" (mv- prefix, plus the mvpx- head / admin / photo-dialog rules).
 
 const RANK_LABELS = ['', 'FRONTRUNNER', 'CLOSE SECOND', 'IN THE MIX'];
 
@@ -9,7 +15,8 @@ function regenBtn(playerId, season, isAdmin, playoffsStarted) {
   return `<button type="button" class="mvpx-admin-btn mvp-regen-btn" data-pid="${escHtml(String(playerId))}" data-season="${escHtml(String(season))}" title="Regenerate writeup">↺</button>`;
 }
 
-// Admin-only photo picker trigger (dialog + script at the bottom of the page).
+// Admin-only photo picker trigger (dialog + script at the bottom of the page). The picked
+// photo is the card's faded backdrop; the avatar stays the profile photo.
 function photoBtn(c, isAdmin) {
   if (!isAdmin) return '';
   return `<button type="button" class="mvpx-admin-btn mvpx-photo-btn" data-pid="${escHtml(String(c.player.id))}" data-name="${escHtml(displayPlayerName(c.player.name))}">Photo</button>`;
@@ -28,7 +35,7 @@ export function moveBadge(rank, prevRank) {
   return `<span class="mvp-move mvp-move--same">–</span>${prev}`;
 }
 
-// Movement as plain text: `short` for table cells, otherwise a sentence for the cards.
+// Movement as text: `short` for the chase cards, otherwise a phrase for #1–#3.
 function moveText(rank, prevRank, short = false) {
   if (prevRank === undefined) return { text: '', cls: '' };
   if (prevRank === null) return { text: short ? 'NEW' : 'New to the race this week', cls: 'is-new' };
@@ -38,17 +45,33 @@ function moveText(rank, prevRank, short = false) {
   return { text: short ? '–' : `Held #${rank} from last week`, cls: 'is-same' };
 }
 
-// Initials sit underneath; the photo covers them once it loads and removes itself if it
-// 404s. Crop comes from the admin's MVP photo override (object-position + scale).
-function photo(c) {
-  const p = c.photo || { url: `${playerPhotoUrl(String(c.player.id))}`, x: 50, y: 50, zoom: 1 };
+// Faded backdrop: the admin's MVP photo override (crop in --x/--y/--z, phone crop in
+// --mx/--my/--mz, swapped by .mvpx-img at the phone breakpoint), else the profile photo.
+function backdrop(c) {
+  const p = c.photo || { url: playerPhotoUrl(String(c.player.id)), x: 50, y: 25, zoom: 1 };
   const m = p.phone || p;
-  // Desktop crop in --x/--y/--z, phone crop in --mx/--my/--mz (the stylesheet swaps them
-  // at the phone breakpoint); a different phone photo comes in through <picture>.
   const vars = `--x:${p.x}%;--y:${p.y}%;--z:${p.zoom};--mx:${m.x}%;--my:${m.y}%;--mz:${m.zoom}`;
   const img = `<img class="mvpx-img" src="${escHtml(p.url)}" alt="" loading="lazy" style="${vars}" onerror="this.remove()">`;
-  return `<span class="mvpx-ph font-condensed" aria-hidden="true">${escHtml(initials(displayPlayerName(c.player.name)))}</span>
-    ${m.url && m.url !== p.url ? `<picture><source media="(max-width: 720px)" srcset="${escHtml(m.url)}">${img}</picture>` : img}`;
+  return `<span class="mv-card__bg" aria-hidden="true">${m.url && m.url !== p.url ? `<picture><source media="(max-width: 720px)" srcset="${escHtml(m.url)}">${img}</picture>` : img}</span>`;
+}
+
+function splitName(raw) {
+  const s = String(raw || '');
+  const i = s.indexOf(',');
+  return i === -1 ? { first: '', last: s.toUpperCase() } : { first: s.slice(i + 1).trim(), last: s.slice(0, i).trim().toUpperCase() };
+}
+
+// Avatar ring + first over LASTNAME + team line (the shared .pl-av / .pl-card__* pieces).
+function who(c, { avCls = '', extra = '' } = {}) {
+  const { first, last } = splitName(c.player.name);
+  const team = String(c.stats.team_name || '').toUpperCase();
+  const num = c.player.number !== '' && c.player.number != null ? ` · #${escHtml(String(c.player.number))}` : '';
+  return `<span class="pl-av${avCls}"><span>${escHtml(initials(displayPlayerName(c.player.name)))}</span><img src="${playerPhotoUrl(String(c.player.id), 192)}" alt="" loading="lazy" onerror="this.remove()"></span>
+      <span class="pl-card__who">
+        ${first ? `<span class="pl-card__first">${escHtml(first)}</span>` : ''}
+        <span class="pl-card__last">${escHtml(last)}</span>
+        <span class="pl-card__meta"><span class="pl-team"><i style="background:${teamColor(team)}"></i>${escHtml(team)}${num} · ${c.stats.gp} GP${extra}</span></span>
+      </span>`;
 }
 
 function perGame(stats) {
@@ -62,122 +85,76 @@ function perGame(stats) {
     ts:  tsDenom > 0 ? String(Math.round(stats.pts / tsDenom * 100)) : '—',
   };
 }
+const statsFoot = pg => `<span class="mv-card__foot">${[['PPG', pg.ppg], ['RPG', pg.rpg], ['APG', pg.apg], ['TS%', pg.ts]]
+  .map(([k, v]) => `<span class="pl-stat"><b class="font-condensed">${v}</b><small>${k}</small></span>`).join('')}</span>`;
 
 const href = (c) => `/players/${encodeURIComponent(String(c.player.id))}`;
+// The whole card links to the profile through a stretched link, so the admin buttons and
+// "Read the case" can sit inside the card as real buttons.
+const cardLink = c => `<a href="${href(c)}" class="mv-card__link" aria-label="${escHtml(displayPlayerName(c.player.name))}’s profile"></a>`;
+const adminTools = (c, ctx) => (ctx.isAdmin ? `<span class="mv-card__admin">${photoBtn(c, true)}${regenBtn(c.player.id, ctx.season, true, ctx.playoffsStarted)}</span>` : '');
+const missing = (ctx, cls) => (ctx.isAdmin ? `<p class="${cls} is-muted">Writeup unavailable (AI provider error or quota). Try ↺ later.</p>` : '');
 
-// ── #1 — the big card ─────────────────────────────────────────────────────────
-function leadCard(c, ctx) {
-  const name  = displayPlayerName(c.player.name);
-  const color = teamColor(c.stats.team_name);
-  const pg    = perGame(c.stats);
-  const move  = moveText(1, c.prevRank);
+// ── #1: the wide card ─────────────────────────────────────────────────────────
+function leadCard(c, second, ctx) {
+  const pg   = perGame(c.stats);
+  const move = moveText(1, c.prevRank);
   const rankNote = (r) => (r && r <= 5 ? `#${r} in league` : '');
   const tiles = [
-    ['PPG', pg.ppg, rankNote(c.ranks?.ppg)],
-    ['RPG', pg.rpg, rankNote(c.ranks?.rpg)],
-    ['APG', pg.apg, rankNote(c.ranks?.apg)],
-    ['SPG', pg.spg, rankNote(c.ranks?.spg)],
-    ['TS%', pg.ts,  rankNote(c.ranks?.ts)],
+    ['PPG', pg.ppg, c.ranks?.ppg], ['RPG', pg.rpg, c.ranks?.rpg], ['APG', pg.apg, c.ranks?.apg],
+    ['SPG', pg.spg, c.ranks?.spg], ['TS%', pg.ts, c.ranks?.ts],
   ];
-  return `<div class="mvpx-admin-wrap">
-  <a href="${href(c)}" class="mvpx-lead">
-    <div class="mvpx-lead__photo">
-      ${photo(c)}
-      <span class="mvpx-lead__rank font-condensed">1</span>
-    </div>
-    <div class="mvpx-lead__body">
-      <div class="mvpx-lead__top">
-        <div class="mvpx-lead__id">
-          <span class="mvpx-tags"><span class="mvpx-badge mvpx-badge--solid">${RANK_LABELS[1]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
-          <span class="mvpx-lead__name">${escHtml(name)}</span>
-          <span class="mvpx-team"><span class="team-dot" style="background:${color}"></span>${escHtml(String(c.stats.team_name || '').toUpperCase())} · ${c.stats.gp} GP</span>
-        </div>
-        <div class="mvpx-lead__score"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><span>MVP score</span></div>
-      </div>
-      <div class="mvpx-tiles">
-        ${tiles.map(([k, v, note]) => `<div class="mvpx-tile"><b class="font-condensed">${v}</b><span>${k}</span>${note ? `<em>${note}</em>` : ''}</div>`).join('')}
-      </div>
-      ${c.writeup
-        ? `<p class="mvpx-writeup">${escHtml(c.writeup)}</p>`
-        : ctx.isAdmin ? `<p class="mvpx-writeup is-muted">Writeup unavailable (AI provider error or quota). Try ↺ later.</p>` : ''}
-      <span class="mvpx-cta">Full profile &rarr;</span>
-    </div>
-  </a>
-  <div class="mvpx-admin">${photoBtn(c, ctx.isAdmin)}${regenBtn(c.player.id, ctx.season, ctx.isAdmin, ctx.playoffsStarted)}</div>
-</div>`;
+  const clear = second ? Math.max(0, c.mvpScore - second.mvpScore).toFixed(1) : '';
+  const rec = (c.stats.wins || c.stats.losses) ? ` · TEAM ${c.stats.wins}–${c.stats.losses}` : '';
+  return `<article class="mv-card mv-card--lead" style="--team:${teamColor(String(c.stats.team_name || ''))}">
+    ${backdrop(c)}
+    <span class="mv-card__ghost font-condensed" aria-hidden="true">1</span>
+    <span class="mv-card__tags"><span class="mvpx-badge mvpx-badge--solid">${RANK_LABELS[1]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
+    <span class="mv-card__id">
+      ${who(c, { avCls: ' mv-av--xl', extra: rec })}
+      <span class="mv-card__score mv-card__score--lead"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><small>MVP score${clear ? ` · +${clear} clear` : ''}</small></span>
+    </span>
+    <span class="mv-tiles">${tiles.map(([k, v, r]) => `<span class="mv-tile"><b class="font-condensed">${v}</b><small>${k}</small>${rankNote(r) ? `<em${r <= 2 ? ' class="is-top"' : ''}>${rankNote(r)}</em>` : ''}</span>`).join('')}</span>
+    ${c.writeup ? `<p class="mv-card__case">${escHtml(c.writeup)}</p>` : missing(ctx, 'mv-card__case')}
+    ${cardLink(c)}
+    ${adminTools(c, ctx)}
+  </article>`;
 }
 
 // ── #2 and #3 ─────────────────────────────────────────────────────────────────
 function chaserCard(c, rank, lead, ctx) {
-  const name  = displayPlayerName(c.player.name);
-  const color = teamColor(c.stats.team_name);
-  const pg    = perGame(c.stats);
-  const move  = moveText(rank, c.prevRank);
-  const gap   = Math.max(0, lead.mvpScore - c.mvpScore).toFixed(1);
-  return `<div class="mvpx-admin-wrap">
-  <a href="${href(c)}" class="mvpx-chaser">
-    <div class="mvpx-chaser__photo">
-      ${photo(c)}
-      <span class="mvpx-chaser__rank font-condensed">${rank}</span>
-    </div>
-    <div class="mvpx-chaser__body">
-      <div class="mvpx-chaser__top">
-        <div class="mvpx-chaser__id">
-          <span class="mvpx-tags"><span class="mvpx-badge">${RANK_LABELS[rank]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
-          <span class="mvpx-chaser__name">${escHtml(name)}</span>
-          <span class="mvpx-team"><span class="team-dot" style="background:${color}"></span>${escHtml(String(c.stats.team_name || '').toUpperCase())} · ${c.stats.gp} GP</span>
-        </div>
-        <div class="mvpx-chaser__score"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><span>${gap} behind #1</span></div>
-      </div>
-      <span class="mvpx-line">${pg.ppg} PPG · ${pg.rpg} RPG · ${pg.apg} APG · ${pg.ts}${pg.ts === '—' ? '' : '%'} TS</span>
-      ${c.writeup
-        ? `<p class="mvpx-writeup mvpx-writeup--sm">${escHtml(c.writeup)}</p>`
-        : ctx.isAdmin ? `<p class="mvpx-writeup mvpx-writeup--sm is-muted">Writeup unavailable. Try ↺ later.</p>` : ''}
-    </div>
-  </a>
-  <div class="mvpx-admin">${photoBtn(c, ctx.isAdmin)}${regenBtn(c.player.id, ctx.season, ctx.isAdmin, ctx.playoffsStarted)}</div>
-</div>`;
+  const move = moveText(rank, c.prevRank);
+  const gap  = Math.max(0, lead.mvpScore - c.mvpScore).toFixed(1);
+  return `<article class="mv-card mv-card--chaser" style="--team:${teamColor(String(c.stats.team_name || ''))}">
+    ${backdrop(c)}
+    <span class="mv-card__ghost font-condensed" aria-hidden="true">${rank}</span>
+    <span class="mv-card__tags"><span class="mvpx-badge">${RANK_LABELS[rank]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
+    <span class="mv-card__id">${who(c)}</span>
+    <span class="mv-card__score mv-card__score--row"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><small>${gap} behind #1</small></span>
+    ${c.writeup ? `<p class="mv-card__case mv-card__case--clamp5">${escHtml(c.writeup)}</p>` : missing(ctx, 'mv-card__case')}
+    ${statsFoot(perGame(c.stats))}
+    ${cardLink(c)}
+    ${adminTools(c, ctx)}
+  </article>`;
 }
 
-// ── #4 onwards — the table ────────────────────────────────────────────────────
-function chaseRow(c, rank, lead, ctx) {
-  const name  = displayPlayerName(c.player.name);
-  const color = teamColor(c.stats.team_name);
-  const pg    = perGame(c.stats);
-  const move  = moveText(rank, c.prevRank, true);
-  const pct   = lead.mvpScore > 0 ? Math.max(4, Math.round(c.mvpScore / lead.mvpScore * 100)) : 0;
-  // Admin Photo/↺ buttons sit in the row on desktop but would squeeze the name out on a
-  // phone, so a second copy lives in the expandable panel (shown there on phones only).
-  // An admin always gets the panel + toggle, even for a player with no writeup yet; the
-  // toggle is then phone-only, since on desktop the row already has the buttons.
-  const adminBtns = ctx.isAdmin ? `${photoBtn(c, true)}${regenBtn(c.player.id, ctx.season, true, ctx.playoffsStarted)}` : '';
-  const hasPanel = !!(c.writeup || adminBtns);
-  const toggle = hasPanel
-    ? `<button type="button" class="mvpx-toggle${c.writeup ? '' : ' mvpx-toggle--phone'}" aria-expanded="false" aria-label="${c.writeup ? `Read ${escHtml(name)}'s MVP case` : `Admin tools for ${escHtml(name)}`}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>`
-    : '<span></span>';
-  return `<div class="mvpx-row">
-  <a href="${href(c)}" class="mvpx-row__link" aria-label="${escHtml(name)}"></a>
-  <span class="mvpx-row__rank font-condensed">${rank}</span>
-  <span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>
-  <span class="mvpx-row__player">
-    <span class="mvpx-row__avatar" style="border-color:${color}">${photo(c)}</span>
-    <span class="mvpx-row__name">${escHtml(name)}</span>
-  </span>
-  <span class="mvpx-num mvpx-col-ppg font-condensed">${pg.ppg}</span>
-  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.rpg}</span>
-  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.apg}</span>
-  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.spg}</span>
-  <span class="mvpx-num mvpx-col-opt font-condensed">${pg.ts}</span>
-  <span class="mvpx-row__score">
-    <span class="mvpx-bar"><span style="width:${pct}%"></span></span>
-    <b class="font-condensed">${c.mvpScore.toFixed(1)}</b>
-  </span>
-  <span class="mvpx-row__tools">${adminBtns ? `<span class="mvpx-row__admin">${adminBtns}</span>` : ''}${toggle}</span>
-</div>
-${hasPanel ? `<div class="mvpx-row-writeup" hidden>
-  ${c.writeup ? `<p>${escHtml(c.writeup)}</p>` : ''}
-  ${adminBtns ? `<div class="mvpx-row-writeup__admin">${adminBtns}</div>` : ''}
-</div>` : ''}`;
+// ── #4 onwards: The chase ─────────────────────────────────────────────────────
+function chaseCard(c, rank, lead, ctx) {
+  const move = moveText(rank, c.prevRank, true);
+  const gap  = Math.max(0, lead.mvpScore - c.mvpScore).toFixed(1);
+  return `<article class="mv-card mv-card--sm" style="--team:${teamColor(String(c.stats.team_name || ''))}">
+    ${backdrop(c)}
+    <span class="mv-card__top">
+      <span class="mv-card__rank"><b class="font-condensed">#${rank}</b>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
+      <span class="mv-card__score"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><small>${gap} behind #1</small></span>
+    </span>
+    <span class="mv-card__id">${who(c)}</span>
+    ${c.writeup ? `<p class="mv-card__case mv-card__case--clamp3">${escHtml(c.writeup)}</p>
+    <button type="button" class="mv-card__more" aria-expanded="false">Read the case <span aria-hidden="true">&rarr;</span></button>` : missing(ctx, 'mv-card__case')}
+    ${statsFoot(perGame(c.stats))}
+    ${cardLink(c)}
+    ${adminTools(c, ctx)}
+  </article>`;
 }
 
 function photoDialog(season) {
@@ -327,9 +304,10 @@ function photoDialog(season) {
 export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false }) {
   const kicker = `Season ${escHtml(String(season))}${playoffsStarted ? ' · Final' : week ? ` · After week ${escHtml(String(week))}` : ''}`;
   const head = (side = '') => `<header class="mvpx-head">
-    <div class="mvpx-head__main">
-      <span class="mvpx-kicker"><span class="mvpx-kicker__dot" aria-hidden="true"></span>${kicker}</span>
-      <h1 class="mvpx-title">MVP Race</h1>
+    <div class="mvpx-head__main ld-head">
+      <span class="ld-kicker">${kicker}</span>
+      <h1>MVP Race</h1>
+      <p class="ld-head__meta">${playoffsStarted ? 'The final regular-season standings for Most Valuable Player.' : 'The ten best cases for Most Valuable Player, re-scored after every game week.'}</p>
     </div>
     ${side}
   </header>`;
@@ -361,32 +339,47 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
   const lead = candidates[0];
   const chasers = candidates.slice(1, 3);
   const rest = candidates.slice(3);
+  const arrow = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 
-  const chaseTable = rest.length ? `<section class="mvpx-chase card${isAdmin ? ' mvpx-chase--admin' : ''}">
-    <div class="mvpx-chase__head"><span>The chase · #4–${rest.length + 3}</span><span class="mvpx-chase__hint">Per game · bar = score vs. #1</span></div>
-    <div class="mvpx-row mvpx-row--labels" aria-hidden="true">
-      <span>Rk</span><span></span><span>Player</span>
-      <span class="mvpx-num mvpx-col-ppg">PPG</span><span class="mvpx-num mvpx-col-opt">RPG</span><span class="mvpx-num mvpx-col-opt">APG</span><span class="mvpx-num mvpx-col-opt">SPG</span><span class="mvpx-num mvpx-col-opt">TS%</span>
-      <span class="mvpx-num">Score</span><span></span>
+  const chase = rest.length ? `<section class="mv-chase-sec" aria-labelledby="mv-chase-h">
+    <div class="section-header mv-chase-head">
+      <h2 id="mv-chase-h">The chase <span class="section-header__sub">#4–${rest.length + 3} · per game</span></h2>
+      <span class="gm-potg-head__nav mv-chase-nav">
+        <button type="button" class="gm-potg-head__btn" data-mv-nav="-1" aria-label="Previous players">${arrow('M15 18l-6-6 6-6')}</button>
+        <button type="button" class="gm-potg-head__btn" data-mv-nav="1" aria-label="More players">${arrow('M9 18l6-6-6-6')}</button>
+      </span>
     </div>
-    ${rest.map((c, i) => chaseRow(c, i + 4, lead, ctx)).join('')}
+    <div class="mv-chase swipe-row" data-swipe data-mv-row>${rest.map((c, i) => chaseCard(c, i + 4, lead, ctx)).join('')}</div>
   </section>` : '';
 
   const scripts = `<script>
 (function () {
-  document.querySelectorAll('.mvpx-toggle').forEach(function (btn) {
+  // "Read the case": unclamp that card's writeup in place.
+  document.querySelectorAll('.mv-card__more').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var row = btn.closest('.mvpx-row');
-      var panel = row && row.nextElementSibling;
-      if (!panel || !panel.classList.contains('mvpx-row-writeup')) return;
-      var open = btn.getAttribute('aria-expanded') === 'true';
-      btn.setAttribute('aria-expanded', String(!open));
-      panel.hidden = open;
-      row.classList.toggle('is-expanded', !open);
+      var card = btn.closest('.mv-card');
+      var open = card.classList.toggle('is-open');
+      btn.setAttribute('aria-expanded', String(open));
+      btn.firstChild.textContent = open ? 'Show less ' : 'Read the case ';
     });
   });
+  // The chase: header arrows page the row (desktop); phones swipe it.
+  var row = document.querySelector('[data-mv-row]');
+  var btns = document.querySelectorAll('[data-mv-nav]');
+  if (!row || !btns.length) return;
+  function sync() {
+    btns[0].disabled = row.scrollLeft <= 2;
+    btns[1].disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 2;
+  }
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { row.scrollBy({ left: Number(b.dataset.mvNav) * (row.clientWidth + 16), behavior: 'smooth' }); });
+  });
+  row.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+  sync();
 })();
-</script>${isAdmin ? `
+</script>
+${swipeScript()}${isAdmin ? `
 <script>
 (function () {
   async function regen(pid, season, btn) {
@@ -408,9 +401,11 @@ ${photoDialog(season)}` : ''}`;
 
   return `<div class="page-content mvpx">
   ${head(side)}
-  ${leadCard(lead, ctx)}
-  ${chasers.length ? `<div class="mvpx-chasers">${chasers.map((c, i) => chaserCard(c, i + 2, lead, ctx)).join('')}</div>` : ''}
-  ${chaseTable}
+  <div class="mv-top${chasers.length ? '' : ' mv-top--solo'}">
+    ${leadCard(lead, candidates[1], ctx)}
+    ${chasers.map((c, i) => chaserCard(c, i + 2, lead, ctx)).join('')}
+  </div>
+  ${chase}
 </div>
 ${scripts}`;
 }
