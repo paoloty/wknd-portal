@@ -98,6 +98,7 @@ import {
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
   getMvpWriteup, getMvpWriteupsForSeason, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
+  getDpoyWriteup, getDpoyWriteupsForSeason, setDpoyWriteup, deleteDpoyWriteupForPlayer, clearDpoyWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
   insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, updateSignupTeamPref, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup, removeFromSeasonRoster,
@@ -198,6 +199,7 @@ import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl } fro
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage, mvpSnapshot, mvpSharePage } from './views/mvp.js';
+import { isMvpLocked, mvpLockState, mvpFinalists, MVP_REVEAL_MODES } from './lib/mvp-lock.js';
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
@@ -625,14 +627,20 @@ function buildTeamOgTags(req, team) {
   return tags.join('\n  ');
 }
 
-function buildMvpOgTags(req, candidates, season) {
+// Meta tags for /mvp and /dpoy (race 'dpoy'). /dpoy has no leader image of its own, so it
+// shares the Awards page card.
+function buildMvpOgTags(req, candidates, season, { locked = false, race = 'mvp' } = {}) {
+  if (race === 'dpoy') return buildDpoyOgTags(req, candidates, season, { locked });
   const origin  = getRequestOrigin(req);
   const url     = `${origin}/mvp`;
   const img     = `${origin}/og-mvp.png`;
-  const title   = `MVP Race — WKND Basketball League`;
+  const title   = locked ? `Season ${season} MVP Finalists — WKND Basketball League` : `MVP Race — WKND Basketball League`;
   const leader  = candidates[0];
   let desc;
-  if (leader) {
+  if (locked) {
+    // candidates are the finalists in alphabetical order; never say who leads.
+    desc = `The Season ${season} MVP finalists: ${candidates.map(c => displayPlayerName(c.player.name)).join(', ')}. The winner is revealed at Finals Game 2.`;
+  } else if (leader) {
     const name = displayPlayerName(leader.player.name);
     const team = String(leader.stats.team_name || '').toUpperCase();
     const gp   = leader.stats.gp;
@@ -664,6 +672,38 @@ function buildMvpOgTags(req, candidates, season) {
     `<meta name="twitter:image" content="${escAttr(img)}">`,
   ];
   return tags.join('\n  ');
+}
+
+function buildDpoyOgTags(req, candidates, season, { locked = false } = {}) {
+  const origin = getRequestOrigin(req);
+  const url    = `${origin}/dpoy`;
+  const img    = `${origin}/og/awards.png?v=${ogDayStamp()}`;
+  const title  = locked ? `Season ${season} Best Defender Finalists — WKND Basketball League` : 'Best Defender Race — WKND Basketball League';
+  const leader = candidates[0];
+  const per = (s, k) => (s.gp > 0 ? (s[k] / s.gp).toFixed(1) : '0.0');
+  const desc = locked
+    ? `The Season ${season} Best Defender finalists: ${candidates.map(c => displayPlayerName(c.player.name)).join(', ')}. The winner is revealed at Finals Game 2.`
+    : leader
+      ? `${displayPlayerName(leader.player.name)} (${String(leader.stats.team_name || '').toUpperCase()}) leads the Season ${season} Best Defender Race — ${per(leader.stats, 'stl')} SPG, ${per(leader.stats, 'blk')} BPG, ${per(leader.stats, 'reb')} RPG. Follow the updated rankings and AI-written defender cases.`
+      : `Follow the Season ${season} Best Defender Race — steals, blocks and AI-written cases for every top defender.`;
+  return [
+    `<meta name="description" content="${escAttr(desc)}">`,
+    `<link rel="canonical" href="${escAttr(url)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:url" content="${escAttr(url)}">`,
+    `<meta property="og:image" content="${escAttr(img)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="1200">`,
+    `<meta property="og:image:height" content="630">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${escAttr(title)}">`,
+    `<meta name="twitter:description" content="${escAttr(desc)}">`,
+    `<meta name="twitter:image" content="${escAttr(img)}">`,
+  ].join('\n  ');
 }
 
 // ── Page share cards (redesign) ───────────────────────────────────────────────
@@ -1670,7 +1710,8 @@ function getHeaderInfo(features) {
   }
   let mvpLead = null, mvpTop = null;
   const week = season ? getSeasonLatestWeek(season)?.week ?? null : null;
-  if (features.megaMenu && features.mvpRace && season) {
+  // No frontrunner card or slide while the MVP reveal lock is on (lib/mvp-lock.js).
+  if (features.megaMenu && features.mvpRace && season && !isMvpLocked(season)) {
     const lead = getMvpCandidates(season)
       .filter(s => s.gp >= 1)
       .map(s => ({ s, score: computeMvpScore(s) }))
@@ -4863,6 +4904,13 @@ app.get('/api/gcash-qr.png', async (req, res) => {
 const _ogMvpCache = { buf: null, ts: 0 };
 app.get('/og-mvp.png', async (req, res) => {
   try {
+    // MVP reveal lock: the leader card would give the order away, so serve the generic card.
+    if (isMvpLocked(getPortalCurrentSeason())) {
+      _ogMvpCache.buf = null;
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=600');
+      return res.end(await renderPageOgPng('home'));
+    }
     if (!_ogMvpCache.buf || Date.now() - _ogMvpCache.ts > 3_600_000) {
       const season = getPortalCurrentSeason();
       const raw = season ? getMvpCandidates(season) : [];
@@ -6713,6 +6761,8 @@ app.get('/admin/ai-writing', requireAuth, (req, res) => {
     .map(g => String(g.date).slice(0, 10)).sort().pop() || new Date().toISOString().slice(0, 10);
   const currentVoices = Object.fromEntries(['recap', 'potg', 'mvp'].map(k => [k, pickVoice(k, { date: latest }).name]));
   currentVoices.award = 'varies per article';
+  // MVP reveal lock: /mvp generates nothing (writeups or race summaries) until Finals Game 2.
+  if (isMvpLocked(getPortalCurrentSeason())) currentVoices.mvp = 'paused: MVP reveal lock';
   res.send(renderAdminPage(req, {
     title: 'AI Writing',
     currentPath: '/admin/ai-writing',
@@ -6747,6 +6797,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       playerReportsEnabled: getSetting('player_reports_enabled', '0') === '1',
       awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
+      mvpReveal:       mvpLockState(getPortalCurrentSeason()),
       homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
       megaMenuEnabled: getSetting('mega_menu_enabled', '0') === '1',
       picksEnabled: picksEnabled(),
@@ -6775,6 +6826,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     if (staticAllowed.has(key) || articleKeyRe.test(key) || homeGalleryKeyRe.test(key)) setSetting(key, String(value));
     else if ((key === 'home_nextup_card_1' || key === 'home_nextup_card_2') && nextUpKeys.has(String(value))) setSetting(key, String(value));
     else if (key === 'picks_close_time' && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) setSetting(key, String(value));
+    else if (key === 'mvp_reveal_mode' && MVP_REVEAL_MODES.includes(String(value))) setSetting(key, String(value));
   }
   res.json({ ok: true });
 });
@@ -10645,66 +10697,105 @@ app.get('/api/leaders/share/:id/card.png', async (req, res) => {
   }
 });
 
-// ── MVP card shares ───────────────────────────────────────────────────────────
-// Share / Download on every /mvp card. Stored in leader_shares (category + mode 'mvp', one
-// row per player per season) with the card's snapshot (views/mvp.js mvpSnapshot) frozen as
-// shared; /mvp/share/:id shows the case, the images are drawn from the same snapshot.
-app.post('/api/mvp/share', express.json(), (req, res) => {
-  const season = String(req.body?.season || '');
-  const pid = String(req.body?.player_id || '');
-  if (!season || !pid) return res.status(400).json({ error: 'Missing season or player.' });
-  const top = mvpRaceTop(season);
-  const i = top.findIndex(c => String(c.player.id) === pid);
-  if (i === -1) return res.status(404).json({ error: 'Not in the MVP race.' });
-  const c = top[i];
-  c.writeup = getMvpWriteup(c.player.id, season, mvpStatsKey(c.stats)) || '';
-  const snap = mvpSnapshot(c, i + 1, top, { season, week: getSeasonLatestWeek(season)?.week ?? null, playoffsStarted: isPlayoffStarted(season) });
-  const team = String(c.stats.team_name || '');
-  const id = upsertShare({
-    id: randomBytes(4).toString('hex'),
-    season, category_id: 'mvp', mode: 'mvp', player_id: pid, player_name: c.player.name,
-    team_id: c.stats.team_id || '', team_name: team, team_color: teamColor(team),
-    stat_label: 'MVP', stat_title: 'MVP Race', stat_value: Number(snap.lead.value), stat_fmt: snap.lead.value,
-    top10: [], player_picture_url: c.player.picture_url || '', created_at: Date.now(), card: snap,
+// ── MVP / Best Defender card shares ──────────────────────────────────────────
+// Share / Download on every /mvp and /dpoy card. Stored in leader_shares (category + mode =
+// the race key, 'mvp' or 'dpoy', one row per player per season) with the card's snapshot
+// (views/mvp.js mvpSnapshot) frozen as shared; /<race>/share/:id shows the case, the images
+// are drawn from the same snapshot.
+for (const raceKey of ['mvp', 'dpoy']) {
+  app.post(`/api/${raceKey}/share`, express.json(), (req, res) => {
+    const race = RACE_DATA[raceKey];
+    const season = String(req.body?.season || '');
+    const pid = String(req.body?.player_id || '');
+    if (!season || !pid) return res.status(400).json({ error: 'Missing season or player.' });
+    if (isMvpLocked(season)) return res.status(404).json({ error: `The ${race.name} is under wraps until Finals Game 2.` });
+    const top = mvpRaceTop(season, raceKey);
+    const i = top.findIndex(c => String(c.player.id) === pid);
+    if (i === -1) return res.status(404).json({ error: `Not in the ${race.name}.` });
+    const c = top[i];
+    c.writeup = race.getWriteup(c.player.id, season, race.statsKey(c.stats)) || '';
+    const snap = mvpSnapshot(c, i + 1, top, { season, week: getSeasonLatestWeek(season)?.week ?? null, playoffsStarted: isPlayoffStarted(season), race: raceKey });
+    const team = String(c.stats.team_name || '');
+    const id = upsertShare({
+      id: randomBytes(4).toString('hex'),
+      season, category_id: raceKey, mode: raceKey, player_id: pid, player_name: c.player.name,
+      team_id: c.stats.team_id || '', team_name: team, team_color: teamColor(team),
+      stat_label: race.short, stat_title: race.name, stat_value: Number(snap.lead.value), stat_fmt: snap.lead.value,
+      top10: [], player_picture_url: c.player.picture_url || '', created_at: Date.now(), card: snap,
+    });
+    res.json({ id, url: `${getRequestOrigin(req)}/${raceKey}/share/${id}` });
   });
-  res.json({ id, url: `${getRequestOrigin(req)}/mvp/share/${id}` });
-});
 
-const mvpShareOf = id => {
+  app.get(`/${raceKey}/share/:id`, (req, res) => {
+    const race = RACE_DATA[raceKey];
+    const found = mvpShareOf(req.params.id, raceKey);
+    if (!found) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: `/${raceKey}`, body: '<p style="padding:40px;color:var(--text-muted)">Share link not found.</p>' }));
+    const { share, snap } = found;
+    const origin = getRequestOrigin(req);
+    const name = displayPlayerName(snap.lead.name);
+    const place = snap.rank === 1 ? 'leads' : `is #${snap.rank} in`;
+    const title = `${name} · #${snap.rank} in the ${race.name} (Season ${snap.season}) — WKND Basketball`;
+    const desc = `${name} ${place} the Season ${snap.season} ${race.nameLower} with ${race.scoreArticle} ${race.scoreLabel} of ${snap.lead.value}${snap.gap ? ` (${snap.gap})` : ''}${snap.asOf && snap.asOf !== 'Final' ? `, ${snap.asOf.toLowerCase()}` : ''}.`;
+    const imageUrl = `${origin}/api/${raceKey}/share/${share.id}/image.png`;
+    const pageUrl = `${origin}/${raceKey}/share/${share.id}`;
+    const metaTags = [
+      `<meta name="description" content="${escAttr(desc)}">`,
+      `<meta property="og:type" content="website">`,
+      `<meta property="og:site_name" content="WKND Basketball League">`,
+      `<meta property="og:title" content="${escAttr(title)}">`,
+      `<meta property="og:description" content="${escAttr(desc)}">`,
+      `<meta property="og:url" content="${escAttr(pageUrl)}">`,
+      `<meta property="og:image" content="${escAttr(imageUrl)}">`,
+      `<meta property="og:image:type" content="image/png">`,
+      `<meta property="og:image:width" content="1200">`,
+      `<meta property="og:image:height" content="630">`,
+      `<meta name="twitter:card" content="summary_large_image">`,
+      `<meta name="twitter:title" content="${escAttr(title)}">`,
+      `<meta name="twitter:description" content="${escAttr(desc)}">`,
+      `<meta name="twitter:image" content="${escAttr(imageUrl)}">`,
+    ].join('\n  ');
+    res.send(renderPage(req, { title, currentPath: `/${raceKey}`, metaTags, body: mvpSharePage(snap) }));
+  });
+
+  app.get(`/api/${raceKey}/share/:id/image.png`, async (req, res) => {
+    const found = mvpShareOf(req.params.id, raceKey);
+    if (!found) return res.status(404).end();
+    try {
+      const png = await mvpShareImage(found, 'wide');
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=300');
+      res.end(png);
+    } catch (err) {
+      console.error(`${raceKey} share image error:`, err);
+      res.status(500).end();
+    }
+  });
+
+  // The Download button: the card, portrait, at 2×.
+  app.get(`/api/${raceKey}/share/:id/card.png`, async (req, res) => {
+    const found = mvpShareOf(req.params.id, raceKey);
+    if (!found) return res.status(404).end();
+    try {
+      const png = await mvpShareImage(found, 'card');
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=300');
+      if (req.query.dl) res.set('Content-Disposition', `attachment; filename="${RACE_DATA[raceKey].dl}"`);
+      res.end(png);
+    } catch (err) {
+      console.error(`${raceKey} card download error:`, err);
+      res.status(500).end();
+    }
+  });
+}
+
+// Shares made before the MVP reveal lock still carry a rank and score, so every share route
+// (page, preview image, download) 404s while that season is locked.
+const mvpShareOf = (id, raceKey = 'mvp') => {
   const share = getShare(id);
-  if (!share || share.mode !== 'mvp') return null;
+  if (!share || share.mode !== raceKey) return null;
+  if (isMvpLocked(share.season)) return null;
   try { return { share, snap: JSON.parse(share.card_json) }; } catch { return null; }
 };
-
-app.get('/mvp/share/:id', (req, res) => {
-  const found = mvpShareOf(req.params.id);
-  if (!found) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/mvp', body: '<p style="padding:40px;color:var(--text-muted)">Share link not found.</p>' }));
-  const { share, snap } = found;
-  const origin = getRequestOrigin(req);
-  const name = displayPlayerName(snap.lead.name);
-  const place = snap.rank === 1 ? 'leads' : `is #${snap.rank} in`;
-  const title = `${name} · #${snap.rank} in the MVP Race (Season ${snap.season}) — WKND Basketball`;
-  const desc = `${name} ${place} the Season ${snap.season} MVP race with an MVP score of ${snap.lead.value}${snap.gap ? ` (${snap.gap})` : ''}${snap.asOf && snap.asOf !== 'Final' ? `, ${snap.asOf.toLowerCase()}` : ''}.`;
-  const imageUrl = `${origin}/api/mvp/share/${share.id}/image.png`;
-  const pageUrl = `${origin}/mvp/share/${share.id}`;
-  const metaTags = [
-    `<meta name="description" content="${escAttr(desc)}">`,
-    `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
-    `<meta property="og:title" content="${escAttr(title)}">`,
-    `<meta property="og:description" content="${escAttr(desc)}">`,
-    `<meta property="og:url" content="${escAttr(pageUrl)}">`,
-    `<meta property="og:image" content="${escAttr(imageUrl)}">`,
-    `<meta property="og:image:type" content="image/png">`,
-    `<meta property="og:image:width" content="1200">`,
-    `<meta property="og:image:height" content="630">`,
-    `<meta name="twitter:card" content="summary_large_image">`,
-    `<meta name="twitter:title" content="${escAttr(title)}">`,
-    `<meta name="twitter:description" content="${escAttr(desc)}">`,
-    `<meta name="twitter:image" content="${escAttr(imageUrl)}">`,
-  ].join('\n  ');
-  res.send(renderPage(req, { title, currentPath: '/mvp', metaTags, body: mvpSharePage(snap) }));
-});
 
 async function mvpShareImage(found, kind) {
   const { share, snap } = found;
@@ -10719,36 +10810,6 @@ async function mvpShareImage(found, kind) {
   leaderCardCache.set(key, png);
   return png;
 }
-
-app.get('/api/mvp/share/:id/image.png', async (req, res) => {
-  const found = mvpShareOf(req.params.id);
-  if (!found) return res.status(404).end();
-  try {
-    const png = await mvpShareImage(found, 'wide');
-    res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=300');
-    res.end(png);
-  } catch (err) {
-    console.error('MVP share image error:', err);
-    res.status(500).end();
-  }
-});
-
-// The Download button: the card, portrait, at 2×.
-app.get('/api/mvp/share/:id/card.png', async (req, res) => {
-  const found = mvpShareOf(req.params.id);
-  if (!found) return res.status(404).end();
-  try {
-    const png = await mvpShareImage(found, 'card');
-    res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=300');
-    if (req.query.dl) res.set('Content-Disposition', 'attachment; filename="wknd-mvp-race.png"');
-    res.end(png);
-  } catch (err) {
-    console.error('MVP card download error:', err);
-    res.status(500).end();
-  }
-});
 
 // ── MVP Race ──────────────────────────────────────────────────────────────────
 const SEASON_GAMES_PER_TEAM = 6; // double round robin
@@ -10779,10 +10840,42 @@ function mvpStatsKey(s) {
   return `v2_${s.gp}_${s.pts}_${s.reb}_${s.ast}_${s.fgm}_${s.fga}_${s.ftm}_${s.fta}_${s.wins}_${s.losses}`;
 }
 
+// Best Defender race (/dpoy). The box score only has steals, blocks, rebounds (not split
+// offensive/defensive) and fouls, so: stocks weighted like the MVP score's, a small nod to
+// rebounding, a small cost per foul, then the same team-win and games-played scaling.
+function computeDpoyScore(s) {
+  const gp = s.gp;
+  const base = (s.stl / gp) * 1.5 + (s.blk / gp) * 2.0 + (s.reb / gp) * 0.3 - ((s.pf || 0) / gp) * 0.3;
+  const winRate = (s.wins + s.losses) > 0 ? s.wins / (s.wins + s.losses) : 0.5;
+  const winMult = 0.80 + winRate * 0.40;
+  const gpRatio = Math.min(1, gp / SEASON_GAMES_PER_TEAM);
+  return Math.max(0, base) * winMult * gpRatio;
+}
+function dpoyStatsKey(s) {
+  return `d1_${s.gp}_${s.stl}_${s.blk}_${s.reb}_${s.pf || 0}_${s.wins}_${s.losses}`;
+}
+
+// The two races /mvp's machinery serves (views/mvp.js RACES has the wording on the page side).
+// Both rank regular-season candidates (getMvpCandidates) and share the MVP reveal lock.
+const RACE_DATA = {
+  mvp: {
+    key: 'mvp', name: 'MVP Race', nameLower: 'MVP race', short: 'MVP', scoreLabel: 'MVP score', scoreArticle: 'an', unit: 'MVP points',
+    score: computeMvpScore, statsKey: mvpStatsKey, dl: 'wknd-mvp-race.png',
+    getWriteup: getMvpWriteup, setWriteup: setMvpWriteup, recentWriteups: getMvpWriteupsForSeason,
+    deleteWriteup: deleteMvpWriteupForPlayer, clearWriteups: clearMvpWriteupSeason,
+  },
+  dpoy: {
+    key: 'dpoy', name: 'Best Defender Race', nameLower: 'Best Defender race', short: 'Best Defender', scoreLabel: 'defense score', scoreArticle: 'a', unit: 'defense points',
+    score: computeDpoyScore, statsKey: dpoyStatsKey, dl: 'wknd-best-defender-race.png',
+    getWriteup: getDpoyWriteup, setWriteup: setDpoyWriteup, recentWriteups: getDpoyWriteupsForSeason,
+    deleteWriteup: deleteDpoyWriteupForPlayer, clearWriteups: clearDpoyWriteupSeason,
+  },
+};
+
 // Returns { playerId: rank } for the race as it stood before the latest game week, or null
 // when there is no earlier week to compare against. Players outside last week's pool are
 // absent from the map (rendered as NEW).
-function mvpPrevRanks(season, completedGames) {
+function mvpPrevRanks(season, completedGames, score = computeMvpScore) {
   const dates = completedGames
     .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && g.status === 'complete' && g.date)
     .map(g => String(g.date).slice(0, 10))
@@ -10795,25 +10888,27 @@ function mvpPrevRanks(season, completedGames) {
 
   const prev = getMvpCandidates(season, weekStart)
     .filter(s => s.gp >= 1)
-    .map(s => ({ id: s.id, score: computeMvpScore(s) }))
+    .map(s => ({ id: s.id, score: score(s) }))
     .sort((a, b) => b.score - a.score);
   return Object.fromEntries(prev.map((p, i) => [p.id, i + 1]));
 }
 
-// The top 10 as /mvp shows it (score, stats, prevRank). The page builds its own copy with
-// league ranks and writeups; this one feeds the section writeups' admin Regenerate.
-function mvpRaceTop(season) {
+// The top 10 as /mvp (or /dpoy) shows it (score, stats, prevRank). The page builds its own
+// copy with league ranks and writeups; this one feeds shares and the section Regenerate.
+// mvpScore holds the race's own score (the defense score on /dpoy).
+function mvpRaceTop(season, raceKey = 'mvp') {
+  const score = RACE_DATA[raceKey].score;
   const completed = byDate(getAllGames()).filter(isPlayedGame);
-  const prev = mvpPrevRanks(season, completed);
+  const prev = mvpPrevRanks(season, completed, score);
   return getMvpCandidates(season)
     .filter(s => s.gp >= 1)
-    .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s), prevRank: prev ? (prev[s.id] ?? null) : undefined }))
+    .map(s => ({ player: s, stats: s, mvpScore: score(s), prevRank: prev ? (prev[s.id] ?? null) : undefined }))
     .sort((a, b) => b.mvpScore - a.mvpScore)
     .slice(0, 10);
 }
 
 // Who led the race after each game week (Mon–Sun), replayed like mvpPrevRanks.
-function mvpWeeklyLeaders(season) {
+function mvpWeeklyLeaders(season, score = computeMvpScore) {
   const mondays = [...new Set(getAllGames()
     .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && g.status === 'complete' && !g.under_review && g.date)
     .map(g => { const d = new Date(String(g.date).slice(0, 10) + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); }))]
@@ -10821,46 +10916,57 @@ function mvpWeeklyLeaders(season) {
   return mondays.map((mon, i) => {
     const next = new Date(mon + 'T00:00:00Z'); next.setUTCDate(next.getUTCDate() + 7);
     const top = getMvpCandidates(season, next.toISOString().slice(0, 10)).filter(s => s.gp >= 1)
-      .map(s => ({ s, score: computeMvpScore(s) })).sort((a, b) => b.score - a.score)[0];
+      .map(s => ({ s, score: score(s) })).sort((a, b) => b.score - a.score)[0];
     return top ? { week: i + 1, name: displayPlayerName(top.s.name) } : null;
   }).filter(Boolean);
 }
 
-// /mvp section writeups: "race" under the page header, "chase" under The chase (#4–10).
-// top: the page's top 10 (mvpRaceTop shape). Gaps come pre-computed (the number guard).
-function mvpSectionFacts({ season, week, playoffsStarted, top }) {
-  if (top.length < 2) return {};
+// /mvp and /dpoy section writeups: "race" under the page header, "chase" under The chase
+// (#4–10). top: the page's top 10 (mvpRaceTop shape). Gaps come pre-computed (the number
+// guard). The MVP wording is unchanged from before /dpoy existed, so its cached summaries
+// (keyed on these facts) stay valid.
+function mvpSectionFacts({ season, week, playoffsStarted, top, race: raceKey = 'mvp' }) {
+  const isMvp = raceKey === 'mvp';
+  const race = RACE_DATA[raceKey];
+  // No AI race summary while the MVP reveal lock is on: it would name the leader. An empty
+  // map also stops a cached summary rendering and the admin Regenerate ("Nothing to summarise").
+  if (top.length < 2 || isMvpLocked(season)) return {};
   const T = titleCase;
   const one = n => (Math.round(n * 10) / 10).toFixed(1);
   const asOf = playoffsStarted ? `Season ${season} · final` : `After week ${week}`;
-  const where = 'MVP Race page';
+  const where = `${race.name} page`;
   const move = (c, r) => (c.prevRank === undefined ? '' : c.prevRank === null ? 'new to the top 10 this week'
     : c.prevRank === r ? `held #${r} from last week` : `${c.prevRank > r ? 'up' : 'down'} from #${c.prevRank} last week`);
   const line = (c, r) => {
     const s = c.stats, gp = s.gp || 1;
     const d = 2 * ((s.fga || 0) + 0.44 * (s.fta || 0));
-    return `- #${r} ${displayPlayerName(c.player.name)} (${T(s.team_name)}): MVP score ${one(c.mvpScore)}${move(c, r) ? `, ${move(c, r)}` : ''}; ${one(s.pts / gp)} points, ${one(s.reb / gp)} rebounds, ${one(s.ast / gp)} assists per game${d > 0 ? `, ${Math.round(s.pts / d * 100)}% true shooting` : ''}; team record ${s.wins}-${s.losses}; ${plural(s.gp, 'game')} played`;
+    const perGame = isMvp
+      ? `${one(s.pts / gp)} points, ${one(s.reb / gp)} rebounds, ${one(s.ast / gp)} assists per game${d > 0 ? `, ${Math.round(s.pts / d * 100)}% true shooting` : ''}`
+      : `${one(s.stl / gp)} steals, ${one(s.blk / gp)} blocks, ${one(s.reb / gp)} rebounds, ${one((s.pf || 0) / gp)} fouls per game`;
+    return `- #${r} ${displayPlayerName(c.player.name)} (${T(s.team_name)}): ${isMvp ? 'MVP score' : 'Defense score'} ${one(c.mvpScore)}${move(c, r) ? `, ${move(c, r)}` : ''}; ${perGame}; team record ${s.wins}-${s.losses}; ${plural(s.gp, 'game')} played`;
   };
-  const head = `Season ${season} MVP race, ${playoffsStarted ? 'final regular-season standings' : `after week ${week} of the regular season`}. The MVP score is per-game production (points, rebounds, assists, steals, blocks, minus turnovers) scaled by true shooting, team win rate and games played.`;
+  const head = isMvp
+    ? `Season ${season} MVP race, ${playoffsStarted ? 'final regular-season standings' : `after week ${week} of the regular season`}. The MVP score is per-game production (points, rebounds, assists, steals, blocks, minus turnovers) scaled by true shooting, team win rate and games played.`
+    : `Season ${season} Best Defender race, ${playoffsStarted ? 'final regular-season standings' : `after week ${week} of the regular season`}. The defense score is per-game steals and blocks, plus a little for rebounds and minus a little for fouls, scaled by team win rate and games played. Rebounds are not split into offensive and defensive.`;
   const out = {};
-  const leaders = mvpWeeklyLeaders(season);
+  const leaders = mvpWeeklyLeaders(season, race.score);
   const [a, b, c] = top;
   out.race = {
-    kicker: `The race · ${asOf}`, section: 'MVP Race (the whole race, at the top of the page)', where,
+    kicker: `The race · ${asOf}`, section: `${race.name} (the whole race, at the top of the page)`, where,
     facts: [head, 'Top 5:', ...top.slice(0, 5).map((x, i) => line(x, i + 1)),
-      `#1 leads #2 by ${one(a.mvpScore - b.mvpScore)} MVP points${c ? `; #2 leads #3 by ${one(b.mvpScore - c.mvpScore)}` : ''}.`,
+      `#1 leads #2 by ${one(a.mvpScore - b.mvpScore)} ${race.unit}${c ? `; #2 leads #3 by ${one(b.mvpScore - c.mvpScore)}` : ''}.`,
       leaders.length > 1 ? `Leader of the race after each week: ${leaders.map(l => `week ${l.week} ${l.name}`).join(', ')}.` : ''].filter(Boolean).join('\n'),
-    focus: 'Sum up the MVP race: who leads and by how much, who climbed or slipped this week, and how the top spot has changed hands over the weeks. Name at most three players and don\'t recite stat lines. The facts don\'t say how any gap changed since last week, so never say a gap closed, narrowed, shrank or widened.',
+    focus: `Sum up the ${race.nameLower}: who leads and by how much, who climbed or slipped this week, and how the top spot has changed hands over the weeks. Name at most three players and don't recite stat lines. The facts don't say how any gap changed since last week, so never say a gap closed, narrowed, shrank or widened.`,
   };
   if (top.length > 3) {
     out.chase = {
-      kicker: `The chase · ${asOf}`, section: 'The chase (MVP race places #4 to #10)', where,
-      facts: [head, `#3 is ${displayPlayerName(c.player.name)} on an MVP score of ${one(c.mvpScore)}.`, 'Places #4 to #10:',
-        ...top.slice(3).map((x, i) => `${line(x, i + 4)}; ${one(c.mvpScore - x.mvpScore)} MVP points behind #3`)].join('\n'),
+      kicker: `The chase · ${asOf}`, section: `The chase (${race.nameLower} places #4 to #10)`, where,
+      facts: [head, `#3 is ${displayPlayerName(c.player.name)} on ${race.scoreArticle} ${race.scoreLabel} of ${one(c.mvpScore)}.`, 'Places #4 to #10:',
+        ...top.slice(3).map((x, i) => `${line(x, i + 4)}; ${one(c.mvpScore - x.mvpScore)} ${race.unit} behind #3`)].join('\n'),
       focus: 'Pick the one or two most interesting stories among places #4 to #10: who is closest to the top three, and who climbed or slipped this week. Don\'t go through every player. The facts don\'t say how any gap changed since last week, so never say anyone closed in, closed a gap or fell further back.',
     };
   }
-  return sectionFactsMap('mvp', season, out);
+  return sectionFactsMap(raceKey, season, out);
 }
 
 // After an AI failure (usually provider quota), /mvp stops generating for a while so every
@@ -11075,7 +11181,9 @@ function buildHomeStandings(season, games) {
   // Avatar stack on each tile: the team's top five this season by MVP score (so it doubles
   // as "who's carrying this team"), topped up in roster order with players who haven't
   // logged a game yet. Count = everyone currently on the roster.
-  const mvpScoreById = Object.fromEntries(getMvpCandidates(season).filter(s => s.gp >= 1).map(s => [s.id, computeMvpScore(s)]));
+  // While the MVP reveal lock is on, order by PPG instead so the stack can't hint at the race.
+  const mvpLocked = isMvpLocked(season);
+  const mvpScoreById = Object.fromEntries(getMvpCandidates(season).filter(s => s.gp >= 1).map(s => [s.id, mvpLocked ? s.pts / s.gp : computeMvpScore(s)]));
   const rosterByTeam = {};
   for (const p of getAllPlayers()) if (p.team_id && p.status === 'active') (rosterByTeam[p.team_id] ||= []).push(p);
   const leader = rows[0];
@@ -11476,6 +11584,12 @@ app.post('/admin/home-summary/regenerate', requireAuth, express.json(), async (r
 // generation, that stays on /mvp itself. Returns null when there's no race to show yet.
 function buildHomeMvpRace(season, completedGames) {
   if (!season) return null;
+  // MVP reveal lock: the three finalists A–Z, no scores, movement or writeup (it names the rank).
+  if (isMvpLocked(season)) {
+    const finalists = mvpFinalists(getMvpCandidates(season).filter(s => s.gp >= 1), computeMvpScore)
+      .map(s => ({ player: s, stats: s }));
+    return finalists.length ? { season, locked: true, candidates: finalists } : null;
+  }
   const top = getMvpCandidates(season)
     .filter(s => s.gp >= 1)
     .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
@@ -11896,27 +12010,118 @@ app.post('/admin/mvp/photo', requireAuth, express.json({ limit: '40mb' }), async
   res.json({ ok: true });
 });
 
-app.post('/admin/mvp/regenerate', requireAuth, express.json(), (req, res) => {
-  const { player_id, season } = req.body || {};
-  const targetSeason = season || getCurrentSeason()?.season;
-  if (isPlayoffStarted(targetSeason)) {
-    return res.status(403).json({ error: 'Season locked — playoffs have started' });
-  }
-  if (player_id) deleteMvpWriteupForPlayer(player_id, season);
-  else           clearMvpWriteupSeason(season);
-  mvpAiCooldownUntil = 0; // an explicit admin regenerate always gets a fresh attempt
-  res.json({ ok: true });
-});
+// Admin ↺ on /mvp and /dpoy: drop one player's writeup (or the season's) so the next view
+// regenerates it.
+for (const raceKey of ['mvp', 'dpoy']) {
+  app.post(`/admin/${raceKey}/regenerate`, requireAuth, express.json(), (req, res) => {
+    const race = RACE_DATA[raceKey];
+    const { player_id, season } = req.body || {};
+    const targetSeason = season || getCurrentSeason()?.season;
+    if (isPlayoffStarted(targetSeason) || isMvpLocked(targetSeason)) {
+      return res.status(403).json({ error: 'Season locked — playoffs have started' });
+    }
+    if (player_id) race.deleteWriteup(player_id, season);
+    else           race.clearWriteups(season);
+    mvpAiCooldownUntil = 0; // an explicit admin regenerate always gets a fresh attempt
+    res.json({ ok: true });
+  });
+}
 
-app.get('/mvp', async (req, res) => {
+// One player's AI case for /mvp (the original MVP prompt, unchanged) or /dpoy. c: the
+// candidate (mvpScore = the race's score); ranks: league ranks by stat key; total: players
+// ranked; field: how many are on the page.
+function raceWriteupPrompt(raceKey, { c, rank, ranks, total, field, teamRec, voice, recentOpenings }) {
+  const gp  = c.stats.gp;
+  const per = k => ((c.stats[k] || 0) / gp).toFixed(1);
+  const wl  = `${teamRec.w}W-${teamRec.l}L`;
+  const name = displayPlayerName(c.player.name);
+  const pid  = c.player.id;
+  const lr = k => `league rank #${ranks[k][pid]} of ${total} players`;
+  const movement = c.prevRank === undefined ? ' (first week of rankings)'
+    : c.prevRank === null    ? ' (new to the race this week, was outside the rankings last week)'
+    : c.prevRank === rank    ? ` (unchanged from last week's #${c.prevRank})`
+    : ` (last week: #${c.prevRank}, ${c.prevRank > rank ? 'up' : 'down'} ${Math.abs(c.prevRank - rank)} spot${Math.abs(c.prevRank - rank) === 1 ? '' : 's'})`;
+  const openings = recentOpenings.length ? `
+- OPENING SENTENCES FROM OTHER ${raceKey === 'mvp' ? 'MVP' : 'BEST DEFENDER'} WRITEUPS (yours must not resemble these):
+${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '';
+  const reminder = `FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`;
+
+  if (raceKey === 'dpoy') {
+    const rankLines = [
+      `Steals per game: ${per('stl')} (${lr('spg')})`,
+      `Blocks per game: ${per('blk')} (${lr('bpg')})`,
+      `Steals + blocks per game: ${(((c.stats.stl || 0) + (c.stats.blk || 0)) / gp).toFixed(1)} (${lr('stk')})`,
+      `Rebounds per game: ${per('reb')} (${lr('rpg')})`,
+      `Fouls per game: ${per('pf')}, Team record: ${wl}, GP: ${gp}, Defense Score: ${c.mvpScore.toFixed(1)}`,
+      `Best Defender Race position: #${rank} of ${field}${movement}`,
+    ].join('\n');
+    return `You are covering the Best Defender race for the WKND Basketball League, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence Best Defender case' : 'Write exactly 2 short sentences (under 45 words in total) on the Best Defender case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real Best Defender candidate — steals, blocks, rebounding, staying out of foul trouble, and winning.
+
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+
+Rules:
+- Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
+- Do NOT start with their name.
+- Do NOT open with "With a" or "With an" — vary the sentence structure completely.
+- Lead with the most interesting or unusual thing about this player's defense.
+- This is about defense only: never mention points, scoring, shooting or assists.
+- The stats are steals, blocks, total rebounds and fouls only. Never claim anything they can't show (lockdown matchups, contested shots, deflections, charges taken, defensive rebounds).
+- No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
+- ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
+- Work in their Best Defender Race position and how it moved since last week (climbing, slipping, holding steady, or newly entering) using the exact numbers below. Do not say who they passed or who passed them.
+- Never call them the best or the most at anything unless a rank line below says #1 for it, and never say they deserve, should win, or are the favourite for Best Defender.
+- Plain text only. No markdown.
+- Celebrate the case — skip any stat that undercuts it (a tiny block number, a high foul rate); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.${openings}
+
+${name} stats:\n${rankLines}
+
+${reminder}`;
+  }
+
+  const tsDenom = 2 * (c.stats.fga + 0.44 * c.stats.fta);
+  const ts  = tsDenom > 0 ? Math.round(c.stats.pts / tsDenom * 100) + '%' : '—';
+  const fg  = c.stats.fga > 0 ? Math.round(c.stats.fgm / c.stats.fga * 100) + '%' : '—';
+  const rankLines = [
+    `PPG: ${per('pts')} (${lr('ppg')})`,
+    `RPG: ${per('reb')} (${lr('rpg')})`,
+    `APG: ${per('ast')} (${lr('apg')})`,
+    `SPG: ${per('stl')} (${lr('spg')})`,
+    `TS%: ${ts} (${lr('ts')})`,
+    `FG%: ${fg}, Record: ${wl}, GP: ${gp}, MVP Score: ${c.mvpScore.toFixed(1)}`,
+    `MVP Race position: #${rank} of ${field}${movement}`,
+  ].join('\n');
+  return `You are covering the MVP race for the WKND Basketball League, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence MVP case' : 'Write exactly 2 short sentences (under 45 words in total) on the MVP case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
+
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+
+Rules:
+- Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
+- Do NOT start with their name.
+- Do NOT open with "With a" or "With an" — vary the sentence structure completely.
+- Lead with the most interesting or unusual thing about this player's case.
+- No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
+- ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
+- Work in their MVP Race position and how it moved since last week (climbing, slipping, holding steady, or newly entering) using the exact numbers below. Do not say who they passed or who passed them.
+- Never call them the best or the most at anything (e.g. "the league's most efficient scorer") unless a rank line below says #1 for it, and never say they deserve, should win, or are the favourite for the MVP.
+- Plain text only. No markdown.
+- Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.${openings}
+
+${name} stats:\n${rankLines}
+
+${reminder}`;
+}
+
+// /mvp and /dpoy: the same page, scoring and writeup flow (RACE_DATA + views/mvp.js RACES).
+async function renderRacePage(req, res, raceKey) {
+  const race = RACE_DATA[raceKey];
   const currentSeason = getPortalCurrentSeason();
   const season = Number(req.query.season) || Number(currentSeason) || 3;
   const playoffsStarted = isPlayoffStarted(season);
   const raw = getMvpCandidates(season);
   const totalGames = getTotalSeasonGamesForMvp(season);
-  // mvp_race_enabled hides the page while a new season has no candidates yet, but a season
+  // mvp_race_enabled hides /mvp while a new season has no candidates yet, but a season
   // that already has games played (e.g. a Facebook-shared link to a past season) should stay reachable.
-  if (getSetting('mvp_race_enabled', '1') === '0' && !raw.length) return res.status(404).send(
+  if (raceKey === 'mvp' && getSetting('mvp_race_enabled', '1') === '0' && !raw.length) return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/mvp', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
   );
 
@@ -11936,23 +12141,50 @@ app.get('/mvp', async (req, res) => {
     else if (Number(g.team_b_score) > Number(g.team_a_score)) { teamRecords[b].w++; teamRecords[a].l++; }
   }
 
+  // mvpScore holds the race's own score (the defense score on /dpoy).
   const allQualified = raw
-    .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
+    .map(s => ({ player: s, stats: s, mvpScore: race.score(s) }))
     .filter(c => c.stats.gp >= 1);
 
-  // Pre-compute per-game league ranks for key stats
+  // MVP reveal lock (lib/mvp-lock.js): the top 3 A–Z as finalists. Scores, ranks, movement,
+  // writeups (they state the race position), section summaries and share links never reach
+  // the page; the candidates handed to the view carry no score at all.
+  if (isMvpLocked(season)) {
+    const finalists = mvpFinalists(allQualified, c => c.mvpScore, c => c.player.name)
+      .map(c => ({ player: c.player, stats: c.stats }));
+    const photoMeta = getMvpPhotoMeta(season);
+    return res.send(renderPage(req, {
+      title: `Season ${season} ${raceKey === 'mvp' ? 'MVP' : 'Best Defender'} Finalists — WKND Basketball League`,
+      currentPath: req.path,
+      metaTags: buildMvpOgTags(req, finalists, season, { locked: true, race: raceKey }),
+      body: mvpPage({
+        race: raceKey,
+        locked: true,
+        candidates: finalists.map(c => ({ ...c, photo: mvpPhoto(season, c.player.id, photoMeta[c.player.id]) })),
+        season,
+        isAdmin: !!req.session?.isAdmin,
+      }),
+    }));
+  }
+
+  // Pre-compute per-game league ranks for every stat either race shows or prompts with.
   function leagueRank(arr, fn) {
     const sorted = [...arr].sort((a, b) => fn(b) - fn(a));
     return Object.fromEntries(sorted.map((c, i) => [c.player.id, i + 1]));
   }
-  const rankPpg = leagueRank(allQualified, c => c.stats.pts / c.stats.gp);
-  const rankRpg = leagueRank(allQualified, c => c.stats.reb / c.stats.gp);
-  const rankApg = leagueRank(allQualified, c => c.stats.ast / c.stats.gp);
-  const rankSpg = leagueRank(allQualified, c => c.stats.stl / c.stats.gp);
-  const rankTs  = leagueRank(allQualified, c => {
-    const d = 2 * (c.stats.fga + 0.44 * c.stats.fta);
-    return d > 0 ? c.stats.pts / d : 0;
-  });
+  const pg = k => c => (c.stats[k] || 0) / c.stats.gp;
+  const ranks = {
+    ppg: leagueRank(allQualified, pg('pts')),
+    rpg: leagueRank(allQualified, pg('reb')),
+    apg: leagueRank(allQualified, pg('ast')),
+    spg: leagueRank(allQualified, pg('stl')),
+    bpg: leagueRank(allQualified, pg('blk')),
+    stk: leagueRank(allQualified, c => ((c.stats.stl || 0) + (c.stats.blk || 0)) / c.stats.gp),
+    ts:  leagueRank(allQualified, c => {
+      const d = 2 * (c.stats.fga + 0.44 * c.stats.fta);
+      return d > 0 ? c.stats.pts / d : 0;
+    }),
+  };
   const total = allQualified.length;
 
   const scored = allQualified
@@ -11961,18 +12193,19 @@ app.get('/mvp', async (req, res) => {
 
   // Last week's ranks for the up/down arrows: replay the race with every game from the
   // latest game week (Mon–Sun) excluded. No prior week → no arrows.
-  const prevRanks = mvpPrevRanks(season, completedGames);
+  const prevRanks = mvpPrevRanks(season, completedGames, race.score);
   for (const c of scored) c.prevRank = prevRanks ? (prevRanks[c.player.id] ?? null) : undefined;
 
   // Fetch or generate writeups for top candidates (locked once playoffs begin). At most 3
   // AI calls in flight — firing all 10 at once after "Regenerate All" tripped Gemini's
   // rate limit and pushed calls onto fallback models.
-  // Same weekly voice as that week's recaps/POTG, keyed on the season's latest game date.
+  // Same weekly voice as that week's recaps/POTG, keyed on the season's latest game date
+  // (both races use the 'mvp' voice feature).
   const latestGameDate = completedGames
     .filter(g => String(g.season) === String(season) && g.game_type === 'regular')
     .map(g => String(g.date).slice(0, 10)).sort().pop();
-  const mvpVoice = pickVoice('mvp', { date: latestGameDate || new Date().toISOString().slice(0, 10) });
-  const mvpRecentOpenings = getMvpWriteupsForSeason(season)
+  const voice = pickVoice('mvp', { date: latestGameDate || new Date().toISOString().slice(0, 10) });
+  const recentOpenings = race.recentWriteups(season)
     .map(w => (String(w).split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140))
     .filter(Boolean).slice(0, 10);
 
@@ -11980,96 +12213,56 @@ app.get('/mvp', async (req, res) => {
     const rank     = i + 1;
     // Keyed on stats only: writeups regenerate when the player's stats change or on manual
     // ↺, not when rank alone shifts (the rank line in the prompt is a snapshot at generation).
-    const statsKey = mvpStatsKey(c.stats);
-    const cached   = getMvpWriteup(c.player.id, season, statsKey);
+    const statsKey = race.statsKey(c.stats);
+    const cached   = race.getWriteup(c.player.id, season, statsKey);
     if (cached) return { ...c, writeup: cached };
     if (playoffsStarted) return { ...c, writeup: null };
     if (Date.now() < mvpAiCooldownUntil) return { ...c, writeup: null };
 
     try {
-      const gp  = c.stats.gp;
-      const ppg = (c.stats.pts / gp).toFixed(1);
-      const rpg = (c.stats.reb / gp).toFixed(1);
-      const apg = (c.stats.ast / gp).toFixed(1);
-      const spg = (c.stats.stl / gp).toFixed(1);
-      const tsDenom = 2 * (c.stats.fga + 0.44 * c.stats.fta);
-      const ts  = tsDenom > 0 ? Math.round(c.stats.pts / tsDenom * 100) + '%' : '—';
-      const fg  = c.stats.fga > 0 ? Math.round(c.stats.fgm / c.stats.fga * 100) + '%' : '—';
-      const teamRec = teamRecords[c.stats.team_id] ?? { w: c.stats.wins, l: c.stats.losses };
-      const wl  = `${teamRec.w}W-${teamRec.l}L`;
-      const name = displayPlayerName(c.player.name);
-      const pid  = c.player.id;
-
-      const rankLines = [
-        `PPG: ${ppg} (league rank #${rankPpg[pid]} of ${total} players)`,
-        `RPG: ${rpg} (league rank #${rankRpg[pid]} of ${total} players)`,
-        `APG: ${apg} (league rank #${rankApg[pid]} of ${total} players)`,
-        `SPG: ${spg} (league rank #${rankSpg[pid]} of ${total} players)`,
-        `TS%: ${ts} (league rank #${rankTs[pid]} of ${total} players)`,
-        `FG%: ${fg}, Record: ${wl}, GP: ${gp}, MVP Score: ${c.mvpScore.toFixed(1)}`,
-        `MVP Race position: #${rank} of ${scored.length}${
-          c.prevRank === undefined ? ' (first week of rankings)'
-          : c.prevRank === null    ? ' (new to the race this week, was outside the rankings last week)'
-          : c.prevRank === rank    ? ` (unchanged from last week's #${c.prevRank})`
-          : ` (last week: #${c.prevRank}, ${c.prevRank > rank ? 'up' : 'down'} ${Math.abs(c.prevRank - rank)} spot${Math.abs(c.prevRank - rank) === 1 ? '' : 's'})`}`,
-      ].join('\n');
-
-      const prompt = `You are covering the MVP race for the WKND Basketball League, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence MVP case' : 'Write exactly 2 short sentences (under 45 words in total) on the MVP case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
-
-THIS WEEK'S VOICE — ${mvpVoice.name}: ${mvpVoice.guide}
-
-Rules:
-- Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
-- Do NOT start with their name.
-- Do NOT open with "With a" or "With an" — vary the sentence structure completely.
-- Lead with the most interesting or unusual thing about this player's case.
-- No filler phrases like "impressive", "stellar", "remarkable", or "dominant".
-- ONLY make league-ranking claims (e.g. "leads the league in X", "top-3 in Y") if the rank data below supports it. Do not invent or assume rankings.
-- Work in their MVP Race position and how it moved since last week (climbing, slipping, holding steady, or newly entering) using the exact numbers below. Do not say who they passed or who passed them.
-- Never call them the best or the most at anything (e.g. "the league's most efficient scorer") unless a rank line below says #1 for it, and never say they deserve, should win, or are the favourite for the MVP.
-- Plain text only. No markdown.
-- Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.${mvpRecentOpenings.length ? `
-- OPENING SENTENCES FROM OTHER MVP WRITEUPS (yours must not resemble these):
-${mvpRecentOpenings.map(t => `  "${t}"`).join('\n')}` : ''}
-
-${name} stats:\n${rankLines}
-
-FINAL REMINDER — write it in the ${mvpVoice.name} voice.${mvpVoice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${mvpVoice.sample}"` : ''}`;
-
+      const prompt = raceWriteupPrompt(raceKey, {
+        c, rank, ranks, total, field: scored.length, voice, recentOpenings,
+        teamRec: teamRecords[c.stats.team_id] ?? { w: c.stats.wins, l: c.stats.losses },
+      });
       const { text } = await generateText(prompt, { maxTokens: rank <= 3 ? 300 : 160, temperature: aiTemperature() });
-      setMvpWriteup(c.player.id, season, statsKey, text);
+      race.setWriteup(c.player.id, season, statsKey, text);
       return { ...c, writeup: text };
     } catch (err) {
-      console.error(`MVP writeup failed for ${c.player.id}:`, err.message);
+      console.error(`${race.short} writeup failed for ${c.player.id}:`, err.message);
       mvpAiCooldownUntil = Date.now() + MVP_AI_COOLDOWN_MS;
       return { ...c, writeup: null };
     }
   });
 
   const photoMeta = getMvpPhotoMeta(season);
+  const week = getSeasonLatestWeek(season)?.week ?? null;
   res.send(renderPage(req, {
     title: playoffsStarted
-      ? `Season ${season} MVP Race — Final — WKND Basketball League`
-      : 'MVP Race — WKND Basketball League',
+      ? `Season ${season} ${race.name} — Final — WKND Basketball League`
+      : `${race.name} — WKND Basketball League`,
     currentPath: req.path,
-    metaTags: buildMvpOgTags(req, withWriteups, season),
+    metaTags: buildMvpOgTags(req, withWriteups, season, { race: raceKey }),
     body: mvpPage({
+      race: raceKey,
       candidates: withWriteups.map(c => ({
         ...c,
-        ranks: { ppg: rankPpg[c.player.id], rpg: rankRpg[c.player.id], apg: rankApg[c.player.id], spg: rankSpg[c.player.id], ts: rankTs[c.player.id] },
+        ranks: Object.fromEntries(Object.keys(ranks).map(k => [k, ranks[k][c.player.id]])),
         photo: mvpPhoto(season, c.player.id, photoMeta[c.player.id]),
       })),
       leagueSize: total,
-      sections: sectionSummaries(mvpSectionFacts({ season, week: getSeasonLatestWeek(season)?.week ?? null, playoffsStarted, top: scored }), { keep: playoffsStarted }),
+      sections: sectionSummaries(mvpSectionFacts({ season, week, playoffsStarted, top: scored, race: raceKey }), { keep: playoffsStarted }),
       season,
-      week: getSeasonLatestWeek(season)?.week ?? null,
+      week,
       totalGames,
       seasonGames: SEASON_GAMES_PER_TEAM,
       isAdmin: !!req.session?.isAdmin,
       playoffsStarted,
     }),
   }));
-});
+}
+
+app.get('/mvp', (req, res) => renderRacePage(req, res, 'mvp'));
+app.get('/dpoy', (req, res) => renderRacePage(req, res, 'dpoy'));
 
 // ── /leaders and /roast (views/leaders.js, views/roast.js) ───────────────────
 // One view per URL: ?stats=pg|tot|rec|po & ?season=N|alltime. The page's dropdowns fetch
@@ -13216,7 +13409,7 @@ function gameSectionFacts(game, { stats, dc, won }) {
 // Admin: rewrite one section writeup now. block as above.
 app.post('/admin/section-summary/regenerate', requireAuth, express.json(), async (req, res) => {
   const block = String(req.body?.block || '');
-  const m = block.match(/^(standings|playoffs|picks|mvp|game)_([a-z0-9]+):(.+)$/);
+  const m = block.match(/^(standings|playoffs|picks|mvp|dpoy|game)_([a-z0-9]+):(.+)$/);
   if (!m) return res.status(400).json({ error: 'Unknown block' });
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const [, page, section, param] = m;
@@ -13224,7 +13417,7 @@ app.post('/admin/section-summary/regenerate', requireAuth, express.json(), async
   if (page === 'standings') facts = standingsSectionFacts(standingsSectionData(param));
   else if (page === 'playoffs') facts = playoffsSectionFacts(playoffsSectionData(param));
   else if (page === 'picks') facts = picksSectionFacts(buildPicksPageData(param));
-  else if (page === 'mvp') facts = mvpSectionFacts({ season: param, week: getSeasonLatestWeek(param)?.week ?? null, playoffsStarted: isPlayoffStarted(param), top: mvpRaceTop(param) });
+  else if (page === 'mvp' || page === 'dpoy') facts = mvpSectionFacts({ season: param, week: getSeasonLatestWeek(param)?.week ?? null, playoffsStarted: isPlayoffStarted(param), top: mvpRaceTop(param, page), race: page });
   else {
     const game = getGameById(param);
     if (!game || game.under_review) return res.status(404).json({ error: 'Unknown game' });

@@ -10,6 +10,28 @@ import { summaryPanel, sectionPanel, sectionRegenScript } from './home.js';
 
 const RANK_LABELS = ['', 'FRONTRUNNER', 'CLOSE SECOND', 'IN THE MIX'];
 
+// The races this page renders: the MVP Race (/mvp) and the Best Defender race (/dpoy). Same
+// cards, scoring flow and share/writeup plumbing (server.js RACES); only the wording, the
+// stat set and the endpoints differ. Stat keys come from perGame().
+export const RACES = {
+  mvp: {
+    key: 'mvp', path: '/mvp', name: 'MVP Race', short: 'MVP', finalists: 'MVP Finalists',
+    scoreLabel: 'MVP score', scoresNoun: 'MVP scores', award: 'Most Valuable Player',
+    how: "Per game: points + 0.8×rebounds + 0.9×assists + 1.5×steals + 2×blocks − turnovers. That's then scaled by shooting efficiency (true shooting %), team win rate, and games played, so a hot two-game stretch can't top a full season.",
+    tiles: ['ppg', 'rpg', 'apg', 'spg', 'ts'], foot: ['ppg', 'rpg', 'apg', 'ts'], snap: ['ppg', 'rpg', 'apg', 'spg', 'ts'],
+    dl: 'wknd-mvp-race.png', shareTitle: 'WKND MVP Race', photoLabel: 'MVP Race photo',
+  },
+  dpoy: {
+    key: 'dpoy', path: '/dpoy', name: 'Best Defender Race', short: 'Best Defender', finalists: 'Best Defender Finalists',
+    scoreLabel: 'Defense score', scoresNoun: 'defense scores', award: 'Best Defender', imgTitle: 'BEST DEFENDER RACE',
+    how: "Per game: 1.5×steals + 2×blocks + 0.3×rebounds − 0.3×fouls. That's then scaled by team win rate and games played, so a hot two-game stretch can't top a full season.",
+    tiles: ['spg', 'bpg', 'stk', 'rpg', 'pf'], foot: ['spg', 'bpg', 'rpg', 'pf'], snap: ['spg', 'bpg', 'stk', 'rpg', 'pf'], card: ['spg', 'bpg', 'rpg', 'pf'],
+    dl: 'wknd-best-defender-race.png', shareTitle: 'WKND Best Defender Race', photoLabel: 'Race photo',
+  },
+};
+const STAT_LABEL = { ppg: 'PPG', rpg: 'RPG', apg: 'APG', spg: 'SPG', bpg: 'BPG', stk: 'STK', pf: 'PF', ts: 'TS%' };
+const raceOf = key => RACES[key] || RACES.mvp;
+
 // Admin-only, hidden once playoffs lock every writeup.
 function regenBtn(playerId, season, isAdmin, playoffsStarted) {
   if (!isAdmin || playoffsStarted) return '';
@@ -83,10 +105,13 @@ function perGame(stats) {
     rpg: (stats.reb / gp).toFixed(1),
     apg: (stats.ast / gp).toFixed(1),
     spg: (stats.stl / gp).toFixed(1),
+    bpg: ((stats.blk || 0) / gp).toFixed(1),
+    stk: (((stats.stl || 0) + (stats.blk || 0)) / gp).toFixed(1),
+    pf:  ((stats.pf || 0) / gp).toFixed(1),
     ts:  tsDenom > 0 ? String(Math.round(stats.pts / tsDenom * 100)) : '—',
   };
 }
-const statsFoot = pg => `<span class="mv-card__foot">${[['PPG', pg.ppg], ['RPG', pg.rpg], ['APG', pg.apg], ['TS%', pg.ts]]
+const statsFoot = (pg, keys = RACES.mvp.foot) => `<span class="mv-card__foot">${keys.map(k => [STAT_LABEL[k], pg[k]])
   .map(([k, v]) => `<span class="pl-stat"><b class="font-condensed">${v}</b><small>${k}</small></span>`).join('')}</span>`;
 
 const href = (c) => `/players/${encodeURIComponent(String(c.player.id))}`;
@@ -99,16 +124,18 @@ const missing = (ctx, cls) => (ctx.isAdmin ? `<p class="${cls} is-muted">Writeup
 const SHARE_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
 const DL_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 19h14"/></svg>';
 // Share / Download icons in a card's top row (page script: data-mv-share / data-mv-dl).
-const shareIcons = c => {
+const shareIcons = (c, race = RACES.mvp) => {
   const pid = escHtml(String(c.player.id)), name = escHtml(displayPlayerName(c.player.name));
-  return `<span class="mv-card__acts"><button type="button" class="mv-card__act" data-mv-share="${pid}" aria-label="Share ${name}’s MVP card" title="Copy a link to this card">${SHARE_ICON}</button><button type="button" class="mv-card__act" data-mv-dl="${pid}" aria-label="Download ${name}’s MVP card" title="Download this card">${DL_ICON}</button></span>`;
+  return `<span class="mv-card__acts"><button type="button" class="mv-card__act" data-mv-share="${pid}" aria-label="Share ${name}’s ${race.short} card" title="Copy a link to this card">${SHARE_ICON}</button><button type="button" class="mv-card__act" data-mv-dl="${pid}" aria-label="Download ${name}’s ${race.short} card" title="Download this card">${DL_ICON}</button></span>`;
 };
 
 // ── The shareable snapshot ────────────────────────────────────────────────────
 // One card as data: the case modal, the share page (/mvp/share/:id) and the share images
 // (lib/leader-card-image.js renderMvp*) all draw from this, so they can't drift apart.
 // move.dir: up | down | same | new | '' (no earlier week); move.text has no arrow.
-export function mvpSnapshot(c, rank, top, { season, week = null, playoffsStarted = false } = {}) {
+// race 'dpoy' adds title / scoreLabel / cardStats for the share images (lib/leader-card-image.js).
+export function mvpSnapshot(c, rank, top, { season, week = null, playoffsStarted = false, race = 'mvp' } = {}) {
+  const r = raceOf(race);
   const pg = perGame(c.stats);
   const lead = top[0], second = top[1];
   const p = c.prevRank;
@@ -120,12 +147,15 @@ export function mvpSnapshot(c, rank, top, { season, week = null, playoffsStarted
   const gap = rank === 1
     ? (second ? `+${Math.max(0, c.mvpScore - second.mvpScore).toFixed(1)} clear` : '')
     : `${Math.max(0, lead.mvpScore - c.mvpScore).toFixed(1)} behind #1`;
+  const extra = r.key === 'mvp' ? {} : {
+    title: r.imgTitle, scoreLabel: r.scoreLabel.toUpperCase(), cardStats: r.card.map(k => [STAT_LABEL[k], pg[k]]),
+  };
   return {
-    kind: 'mvp', season: String(season), week, asOf: playoffsStarted ? 'Final' : week ? `After week ${week}` : '',
+    kind: r.key, ...extra, season: String(season), week, asOf: playoffsStarted ? 'Final' : week ? `After week ${week}` : '',
     rank, label: RANK_LABELS[rank] || '', move, gap,
     record: rank === 1 && (c.stats.wins || c.stats.losses) ? `Team ${c.stats.wins}–${c.stats.losses}` : '',
     lead: { id: String(c.player.id), name: c.player.name, number: c.player.number ?? '', team: String(c.stats.team_name || '').toUpperCase(), gp: c.stats.gp, value: c.mvpScore.toFixed(1) },
-    stats: [['PPG', pg.ppg], ['RPG', pg.rpg], ['APG', pg.apg], ['SPG', pg.spg], ['TS%', pg.ts]],
+    stats: r.snap.map(k => [STAT_LABEL[k], pg[k]]),
     writeup: c.writeup || '',
   };
 }
@@ -175,19 +205,16 @@ function leadCard(c, second, ctx, snap) {
   const pg   = perGame(c.stats);
   const move = moveText(1, c.prevRank);
   const rankNote = (r) => (r && r <= 5 ? `#${r} in league` : '');
-  const tiles = [
-    ['PPG', pg.ppg, c.ranks?.ppg], ['RPG', pg.rpg, c.ranks?.rpg], ['APG', pg.apg, c.ranks?.apg],
-    ['SPG', pg.spg, c.ranks?.spg], ['TS%', pg.ts, c.ranks?.ts],
-  ];
+  const tiles = ctx.race.tiles.map(k => [STAT_LABEL[k], pg[k], c.ranks?.[k]]);
   const clear = second ? Math.max(0, c.mvpScore - second.mvpScore).toFixed(1) : '';
   const rec = (c.stats.wins || c.stats.losses) ? ` · TEAM ${c.stats.wins}–${c.stats.losses}` : '';
   return `<article class="mv-card mv-card--lead mv-card--r1" style="--team:${teamColor(String(c.stats.team_name || ''))}">
     ${backdrop(c)}
     <span class="mv-card__ghost font-condensed" aria-hidden="true">1</span>
-    <span class="mv-card__row"><span class="mv-card__tags"><span class="mvpx-badge mvpx-badge--solid">${RANK_LABELS[1]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>${shareIcons(c)}</span>
+    <span class="mv-card__row"><span class="mv-card__tags"><span class="mvpx-badge mvpx-badge--solid">${RANK_LABELS[1]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>${shareIcons(c, ctx.race)}</span>
     <span class="mv-card__id">
       ${who(c, { avCls: ' mv-av--xl', extra: rec })}
-      <span class="mv-card__score mv-card__score--lead"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><small>MVP score${clear ? ` · +${clear} clear` : ''}</small></span>
+      <span class="mv-card__score mv-card__score--lead"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><small>${ctx.race.scoreLabel}${clear ? ` · +${clear} clear` : ''}</small></span>
     </span>
     <span class="mv-tiles">${tiles.map(([k, v, r]) => `<span class="mv-tile"><b class="font-condensed">${v}</b><small>${k}</small>${rankNote(r) ? `<em${r <= 2 ? ' class="is-top"' : ''}>${rankNote(r)}</em>` : ''}</span>`).join('')}</span>
     ${c.writeup ? `<p class="mv-card__case">${escHtml(c.writeup)}</p>` : missing(ctx, 'mv-card__case')}
@@ -206,11 +233,11 @@ function chaserCard(c, rank, lead, ctx, snap) {
   return `<article class="mv-card mv-card--chaser mv-card--r${rank}" style="--team:${teamColor(String(c.stats.team_name || ''))}">
     ${backdrop(c)}
     <span class="mv-card__ghost font-condensed" aria-hidden="true">${rank}</span>
-    <span class="mv-card__row"><span class="mv-card__tags"><span class="mvpx-badge">${RANK_LABELS[rank]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>${shareIcons(c)}</span>
+    <span class="mv-card__row"><span class="mv-card__tags"><span class="mvpx-badge">${RANK_LABELS[rank]}</span>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>${shareIcons(c, ctx.race)}</span>
     <span class="mv-card__id">${who(c)}</span>
     <span class="mv-card__score mv-card__score--row"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><small>${gap} behind #1</small></span>
     ${c.writeup ? `<p class="mv-card__case mv-card__case--clamp5">${escHtml(c.writeup)}</p>${readMore(c)}` : missing(ctx, 'mv-card__case')}
-    ${statsFoot(perGame(c.stats))}
+    ${statsFoot(perGame(c.stats), ctx.race.foot)}
     ${cardLink(c)}
     ${adminTools(c, ctx)}
     ${caseTemplate(snap)}
@@ -225,23 +252,23 @@ function chaseCard(c, rank, lead, ctx, snap) {
     ${backdrop(c)}
     <span class="mv-card__row">
       <span class="mv-card__rank"><b class="font-condensed">#${rank}</b>${move.text ? `<span class="mvpx-move ${move.cls}">${escHtml(move.text)}</span>` : ''}</span>
-      ${shareIcons(c)}
+      ${shareIcons(c, ctx.race)}
     </span>
     <span class="mv-card__id">${who(c)}</span>
     <span class="mv-card__score mv-card__score--row mv-card__score--sm"><b class="font-condensed">${c.mvpScore.toFixed(1)}</b><small>${gap} behind #1</small></span>
     ${c.writeup ? `<p class="mv-card__case mv-card__case--clamp3">${escHtml(c.writeup)}</p>${readMore(c)}` : missing(ctx, 'mv-card__case')}
-    ${statsFoot(perGame(c.stats))}
+    ${statsFoot(perGame(c.stats), ctx.race.foot)}
     ${cardLink(c)}
     ${adminTools(c, ctx)}
     ${caseTemplate(snap)}
   </article>`;
 }
 
-function photoDialog(season) {
+function photoDialog(season, race = RACES.mvp) {
   return `<dialog class="mvpx-dlg" id="mvpx-photo-dlg" data-season="${escHtml(String(season))}">
   <form method="dialog" class="mvpx-dlg__form">
     <div class="mvpx-dlg__head">
-      <h2>MVP Race photo — <span data-dlg-name></span></h2>
+      <h2>${escHtml(race.photoLabel)} — <span data-dlg-name></span></h2>
       <button type="submit" value="cancel" class="mvpx-dlg__x" aria-label="Close">&times;</button>
     </div>
     <div class="mvpx-dlg__tabs" role="tablist" aria-label="Which screen">
@@ -381,15 +408,54 @@ function photoDialog(season) {
 </script>`;
 }
 
+// ── MVP reveal lock: the finalists ───────────────────────────────────────────
+// lib/mvp-lock.js. Three equal cards, A–Z, with only who they are and their season line:
+// no rank, ghost numeral, medal glow, score, movement, writeup or share buttons.
+function finalistCard(c, ctx) {
+  return `<article class="mv-card mv-card--chaser mv-card--finalist" style="--team:${teamColor(String(c.stats.team_name || ''))}">
+    ${backdrop(c)}
+    <span class="mv-card__row"><span class="mv-card__tags"><span class="mvpx-badge">FINALIST</span></span></span>
+    <span class="mv-card__id">${who(c)}</span>
+    ${statsFoot(perGame(c.stats), ctx.race.foot)}
+    ${cardLink(c)}
+    ${ctx.isAdmin ? `<span class="mv-card__admin">${photoBtn(c, true)}</span>` : ''}
+  </article>`;
+}
+
+function mvpFinalistsPage({ candidates, season, isAdmin, race }) {
+  const head = `<header class="mvpx-head">
+    <div class="mvpx-head__main ld-head">
+      <span class="ld-kicker">Season ${escHtml(String(season))}</span>
+      <h1>${escHtml(race.finalists)}</h1>
+      <p class="ld-head__meta">The three players still in the running for ${escHtml(race.award)}, listed A–Z.</p>
+    </div>
+  </header>`;
+  const banner = `<div class="card mv-reveal">
+    <span class="mvpx-badge mvpx-badge--solid">Revealed at Finals Game 2</span>
+    <p>The order and the ${escHtml(race.scoresNoun)} stay under wraps until the award is handed out at Finals Game 2.</p>
+  </div>`;
+  if (!candidates.length) return `<div class="page-content mvpx">${head}${banner}</div>`;
+  return `<div class="page-content mvpx">
+  ${head}
+  ${banner}
+  <div class="mv-top mv-top--finalists">${candidates.map(c => finalistCard(c, { isAdmin, race })).join('')}</div>
+</div>
+${isAdmin ? photoDialog(season, race) : ''}`;
+}
+
 // sections: the AI writeups (server.js mvpSectionFacts): race under the page header (full
 // kicker, like the other pages' summary panel), chase under The chase header.
-export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false, sections = {} }) {
+// locked: the MVP reveal lock is on; candidates are the finalists A–Z with no scores.
+// race: 'mvp' (default) or 'dpoy', see RACES.
+export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false, sections = {}, locked = false, race: raceKey = 'mvp' }) {
+  const race = raceOf(raceKey);
+  if (locked) return mvpFinalistsPage({ candidates, season, isAdmin, race });
   const kicker = `Season ${escHtml(String(season))}${playoffsStarted ? ' · Final' : week ? ` · After week ${escHtml(String(week))}` : ''}`;
   const head = (side = '') => `<header class="mvpx-head">
     <div class="mvpx-head__main ld-head">
       <span class="ld-kicker">${kicker}</span>
-      <h1>MVP Race</h1>
-      <p class="ld-head__meta">${playoffsStarted ? 'The final regular-season standings for Most Valuable Player.' : 'The ten best cases for Most Valuable Player, re-scored after every game week.'}</p>
+      <h1>${escHtml(race.name)}</h1>
+      <p class="ld-head__meta">${playoffsStarted ? `The final regular-season standings for ${race.award}.` : `The ten best cases for ${race.award}, re-scored after every game week.`}</p>
     </div>
     ${side}
   </header>`;
@@ -412,16 +478,16 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
         </div>`}
     <details class="mvpx-how">
       <summary>How the score works</summary>
-      <p>Per game: points + 0.8×rebounds + 0.9×assists + 1.5×steals + 2×blocks − turnovers. That's then scaled by shooting efficiency (true shooting %), team win rate, and games played, so a hot two-game stretch can't top a full season.</p>
+      <p>${race.how}</p>
     </details>
     ${isAdmin && !playoffsStarted ? `<button type="button" id="mvp-regen-all" class="mvpx-admin-btn" data-season="${escHtml(String(season))}">↺ Regenerate all</button>` : ''}
   </div>`;
 
-  const ctx = { isAdmin, season, playoffsStarted };
+  const ctx = { isAdmin, season, playoffsStarted, race };
   const lead = candidates[0];
   const chasers = candidates.slice(1, 3);
   const rest = candidates.slice(3);
-  const snap = (c, i) => mvpSnapshot(c, i + 1, candidates, { season, week, playoffsStarted });
+  const snap = (c, i) => mvpSnapshot(c, i + 1, candidates, { season, week, playoffsStarted, race: race.key });
   const arrow = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 
   const chase = rest.length ? `<section class="mv-chase-sec" aria-labelledby="mv-chase-h">
@@ -432,7 +498,7 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
         <button type="button" class="gm-potg-head__btn" data-mv-nav="1" aria-label="More players">${arrow('M9 18l6-6-6-6')}</button>
       </span>
     </div>
-    ${rest.length >= 1 ? sectionPanel(sections.chase || null, `mvp_chase:${season}`, isAdmin) : ''}
+    ${rest.length >= 1 ? sectionPanel(sections.chase || null, `${race.key}_chase:${season}`, isAdmin) : ''}
     <div class="mv-chase swipe-row" data-swipe data-mv-row>${rest.map((c, i) => chaseCard(c, i + 4, lead, ctx, snap(c, i + 3))).join('')}</div>
   </section>` : '';
 
@@ -458,7 +524,7 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
   var shares = {};
   function shareOf(pid) {
     if (shares[pid]) return shares[pid];
-    shares[pid] = fetch('/api/mvp/share', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ season: season, player_id: pid }) })
+    shares[pid] = fetch(${JSON.stringify(`/api/${race.key}/share`)}, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ season: season, player_id: pid }) })
       .then(function (r) { if (!r.ok) throw new Error('share'); return r.json(); })
       .catch(function (e) { delete shares[pid]; throw e; });
     return shares[pid];
@@ -473,17 +539,17 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
   function share(btn) {
     shareOf(btn.dataset.mvShare).then(function (s) {
       var phone = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-      if (phone && navigator.share) return navigator.share({ title: 'WKND MVP Race', url: s.url }).catch(function (e) { if (e && e.name === 'AbortError') return; throw e; });
+      if (phone && navigator.share) return navigator.share({ title: ${JSON.stringify(race.shareTitle)}, url: s.url }).catch(function (e) { if (e && e.name === 'AbortError') return; throw e; });
       return navigator.clipboard.writeText(s.url).then(function () { flash(btn, 'Link copied'); }, function () { window.prompt('Copy this link', s.url); });
     }).catch(function () { flash(btn, 'Try again'); });
   }
   function download(btn) {
     btn.disabled = true;
-    shareOf(btn.dataset.mvDl).then(function (s) { return fetch('/api/mvp/share/' + s.id + '/card.png'); })
+    shareOf(btn.dataset.mvDl).then(function (s) { return fetch(${JSON.stringify(`/api/${race.key}/share/`)} + s.id + '/card.png'); })
       .then(function (r) { if (!r.ok) throw new Error('png'); return r.blob(); })
       .then(function (blob) {
         var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'wknd-mvp-race.png';
+        a.href = URL.createObjectURL(blob); a.download = ${JSON.stringify(race.dl)};
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
       })
@@ -520,7 +586,7 @@ ${sectionRegenScript()}
 (function () {
   async function regen(pid, season, btn) {
     btn.disabled = true; btn.textContent = '…';
-    await fetch('/admin/mvp/regenerate', {
+    await fetch(${JSON.stringify(`/admin/${race.key}/regenerate`)}, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(pid ? { player_id: pid, season: season } : { season: season })
     });
@@ -533,33 +599,34 @@ ${sectionRegenScript()}
   if (all) all.addEventListener('click', function () { regen(null, this.dataset.season, this); });
 })();
 </script>
-${photoDialog(season)}` : ''}`;
+${photoDialog(season, race)}` : ''}`;
 
   return `<div class="page-content mvpx">
   ${head(side)}
-  ${summaryPanel(sections.race || null, `mvp_race:${season}`, isAdmin, 'section-block')}
+  ${summaryPanel(sections.race || null, `${race.key}_race:${season}`, isAdmin, 'section-block')}
   <div class="mv-top${chasers.length ? '' : ' mv-top--solo'}">
     ${leadCard(lead, candidates[1], ctx, snap(lead, 0))}
     ${chasers.map((c, i) => chaserCard(c, i + 2, lead, ctx, snap(c, i + 1))).join('')}
   </div>
   ${chase}
 </div>
-<dialog class="mv-dlg" id="mv-case-dlg" aria-label="MVP case"></dialog>
+<dialog class="mv-dlg" id="mv-case-dlg" aria-label="${escHtml(race.short)} case"></dialog>
 ${scripts}`;
 }
 
 // /mvp/share/:id: the shared card's full case (the same snapshot the share images are drawn
 // from, frozen when it was shared), with a way to the live race.
 export function mvpSharePage(snap) {
+  const race = raceOf(snap.kind);
   return `<div class="lsp mv-share">
   <div class="lsp-eyebrow">
-    <span class="lsp-eyebrow__cat">MVP RACE</span>
+    <span class="lsp-eyebrow__cat">${escHtml(race.name.toUpperCase())}</span>
     <span class="lsp-eyebrow__sep">·</span>
     <span>SEASON ${escHtml(snap.season)}${snap.asOf ? ` · ${escHtml(snap.asOf.toUpperCase())}` : ''}</span>
   </div>
   ${mvpCaseHtml(snap, { actions: false })}
   <div class="lsp-nav">
-    <a href="/mvp${snap.season ? `?season=${encodeURIComponent(snap.season)}` : ''}" class="lsp-nav__back">&larr; The full MVP race</a>
+    <a href="${race.path}${snap.season ? `?season=${encodeURIComponent(snap.season)}` : ''}" class="lsp-nav__back">&larr; The full ${escHtml(race.key === 'mvp' ? 'MVP race' : 'Best Defender race')}</a>
     <a href="/players/${encodeURIComponent(snap.lead.id)}" class="lsp-nav__back">Full profile &rarr;</a>
   </div>
 </div>`;

@@ -53,6 +53,7 @@ export function adminVisibilityBody({
   playerReportsEnabled = false,
   awardsEnabled = true,
   mvpEnabled = true,
+  mvpReveal = { mode: 'auto', locked: false, season: '', auto: { locked: false, note: '' } },
   homeShowRosterMoves = false,
   megaMenuEnabled = false,
   picksEnabled = true,
@@ -158,6 +159,17 @@ export function adminVisibilityBody({
         label: 'MVP Race',
         sub: `Season MVP ladder with AI-written player cases (<code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code>)`,
       })}
+      <tr class="admin-table-row">
+        <td class="admin-td" style="font-weight:600;white-space:nowrap">MVP reveal lock</td>
+        <td class="admin-td" style="color:var(--text-muted)">Keeps the Season MVP order secret until the award at Finals Game 2: <code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code> shows the three finalists A–Z with no scores, and the homepage, menu, share cards and AI writeups drop the order. Auto locks once a playoff game is on the schedule.
+          <span class="block mt-1 text-[11px]">Season ${escHtml(String(mvpReveal.season))} auto: <b>${escHtml(mvpReveal.auto.note)}</b> · now <b style="color:${mvpReveal.locked ? '#f59332' : '#22c55e'}">${mvpReveal.locked ? 'locked' : 'revealed'}</b></span></td>
+        <td class="admin-td" style="text-align:right;white-space:nowrap">
+          <select id="vis-mvp-reveal" class="admin-input" style="width:auto">
+            ${[['auto', 'Auto'], ['locked', 'Always locked'], ['revealed', 'Always revealed']].map(([v, l]) => `<option value="${v}"${mvpReveal.mode === v ? ' selected' : ''}>${l}</option>`).join('')}
+          </select>
+          <span id="vis-msg-mvp_reveal_mode" class="text-xs block mt-1 min-h-[14px]"></span>
+        </td>
+      </tr>
       ${featureRow({
         id: 'vis-mega-menu-enabled', dataKey: 'mega_menu_enabled', checked: megaMenuEnabled, msgId: 'vis-msg-mega_menu_enabled',
         label: 'Mega menu',
@@ -218,6 +230,23 @@ export function adminVisibilityBody({
   bindToggle('vis-mega-menu-enabled', 'mega_menu_enabled', 'vis-msg-mega_menu_enabled');  bindToggle('vis-picks-enabled', 'picks_enabled', 'vis-msg-picks_enabled');
   bindToggle('vis-picks-odds-enabled', 'picks_odds_enabled', 'vis-msg-picks_odds_enabled');
   bindToggle('vis-home-picks-widget', 'home_picks_widget_enabled', 'vis-msg-home_picks_widget_enabled');
+
+  var revealSel = document.getElementById('vis-mvp-reveal');
+  if (revealSel) revealSel.addEventListener('change', async function() {
+    var msg = document.getElementById('vis-msg-mvp_reveal_mode');
+    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+    try {
+      var r = await fetch('/admin/site/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mvp_reveal_mode: this.value })
+      });
+      if (!r.ok) throw new Error();
+      location.reload(); // the "now locked/revealed" line follows the new mode
+    } catch(e) {
+      msg.style.color = '#f87171'; msg.textContent = 'Error saving.';
+      setTimeout(function() { msg.textContent = ''; }, 2000);
+    }
+  });
 
   var closeInput = document.getElementById('vis-picks-close');
   if (closeInput) closeInput.addEventListener('change', async function() {

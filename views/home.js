@@ -213,7 +213,33 @@ function heroCarousel(games, awardItems = [], papawis = null) {
 // The /mvp #1 card, sidebar-sized (the shared .mv-card pieces in styles.css: gold podium
 // glow, faded photo, avatar ring, first over LASTNAME), then #2–6 as rows with faces, the
 // #2/#3 ranks in silver and bronze. The writeup takes the height left beside the hero.
-function mvpRaceSidebar({ season, week, final, candidates }) {
+// MVP reveal lock (lib/mvp-lock.js): the three finalists A–Z with their season lines.
+// Nothing here may hint at the order: no ranks, scores, movement, medal colours or writeup.
+function mvpFinalistsSidebar({ season, candidates }) {
+  const row = c => {
+    const s = c.stats, gp = s.gp || 1;
+    const raw = String(c.player.name || ''), i = raw.indexOf(',');
+    const first = i === -1 ? '' : raw.slice(i + 1).trim(), last = (i === -1 ? raw : raw.slice(0, i)).trim().toUpperCase();
+    const team = String(s.team_name || '').toUpperCase();
+    return `<a href="/players/${encodeURIComponent(String(c.player.id))}" class="hmvp-fin" style="--team:${teamColor(team)}">
+    <span class="pl-av"><span>${escHtml(`${first[0] || ''}${last[0] || ''}`)}</span><img src="${playerPhotoUrl(String(c.player.id), 192)}" alt="" loading="lazy" onerror="this.remove()"></span>
+    <span class="hmvp-fin__who">
+      <span class="hmvp-row__name">${first ? `<span>${escHtml(first)}</span>` : ''}<b>${escHtml(last)}</b></span>
+      <span class="pl-team"><i style="background:${teamColor(team)}"></i>${escHtml(team)}</span>
+    </span>
+    <span class="hmvp-fin__line font-condensed">${(s.pts / gp).toFixed(1)}<small>PPG</small> ${(s.reb / gp).toFixed(1)}<small>RPG</small> ${(s.ast / gp).toFixed(1)}<small>APG</small></span>
+  </a>`;
+  };
+  return `<div class="card sidebar hmvp-card">
+  <div class="hmvp-head"><span>MVP Finalists</span><span class="hmvp-when">S${escHtml(String(season))}</span></div>
+  <p class="hmvp-fin__note">Revealed at Finals Game 2. Listed A–Z.</p>
+  <div class="hmvp-fins">${candidates.map(row).join('\n  ')}</div>
+  <a href="/mvp" class="hmvp-foot">Meet the finalists <span>&rarr;</span></a>
+</div>`;
+}
+
+function mvpRaceSidebar({ season, week, final, candidates, locked = false }) {
+  if (locked) return mvpFinalistsSidebar({ season, candidates });
   const [lead, ...rest] = candidates;
   const ls    = lead.stats;
   const gp    = ls.gp || 1;
