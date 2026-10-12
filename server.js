@@ -9322,6 +9322,7 @@ function buildPotgMarquee(played, playerMap, count = 8) {
       line: { pts: +s.pts || 0, reb: +s.reb || 0, ast: +s.ast || 0 },
       ws, ls, winner: w, loser: l, tally,
       result: `${titleCase(w)} ${ws}–${ls} ${titleCase(l)}`,
+      writeup: String(g.potg_writeup || '').replace(/\*\*/g, '').trim(),
     });
   }
   return out;
@@ -10135,22 +10136,20 @@ app.post('/admin/games/matchup-story/regenerate', requireAuth, express.json(), a
 });
 
 app.get('/highlights', (req, res) => {
-  const players = getAllPlayers();
-  const teams = getAllTeams();
-  const games = byDate(getAllGames());
-  const playerMap = Object.fromEntries(players.map(p => [p.id, p]));
-  const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
-  const completedGames = games.filter(g =>
-    !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0
-  );
-  // Uncapped (bounded only by how many completed games have a POTG writeup) — this page
-  // is the full browsing destination, unlike the small teaser count used elsewhere.
-  const highlights = buildHighlights(completedGames, playerMap, teamMap, completedGames.length);
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const played = byDate(getAllGames()).filter(isPlayedGame);
+  // Every POTG (the /games marquee builder, uncapped), then the Season / Team filters.
+  const all = buildPotgMarquee(played, playerMap, Infinity);
+  const seasons = [...new Set(all.map(p => String(p.season)))].sort((x, y) => Number(y) - Number(x));
+  const teams = [...new Set(all.map(p => p.team))].sort();
+  const season = seasons.includes(String(req.query.season)) ? String(req.query.season) : '';
+  const team = teams.includes(String(req.query.team)) ? String(req.query.team) : '';
+  const items = all.filter(p => (!season || String(p.season) === season) && (!team || p.team === team));
 
   res.send(renderPage(req, {
-    title: 'Player Highlights — WKND Basketball League',
+    title: 'Highlights — WKND Basketball League',
     currentPath: req.path,
-    body: highlightsPage({ highlights })
+    body: highlightsPage({ items, seasons, teams, season, team })
   }));
 });
 

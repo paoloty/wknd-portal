@@ -9559,6 +9559,9 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pl-card__num-sm, .pl-card__sub { display: none; }
 .pl-team { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--text-muted); }
 .pl-team i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+/* A long meta line (date · Finals + POTG chip) truncates the date text, never the chips */
+.pl-card__meta > .pl-team, .pl-card__meta > .pl-rookie { flex-shrink: 0; }
+.pl-card__meta > span:not(.pl-team):not(.pl-rookie) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pl-rookie { padding: 2px 5px; border-radius: 4px; background: var(--amber-dim); color: var(--amber); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
 .pl-rookie--off { background: rgba(255,255,255,.06); color: var(--text-muted); }
 .pl-card__foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
@@ -9589,6 +9592,24 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
   .gm-potg { display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 0; margin: -2px 0; }
   .gm-potg::-webkit-scrollbar { display: none; }
   .gm-potg > * { flex: 0 0 calc((100% - 48px) / 4); scroll-snap-align: start; }
+}
+
+/* ── /highlights: every POTG as the shared player card, grouped by season (views/highlights.js).
+   4 across, 2 on tablets, 1 on phones (full cards, the writeup needs the width). */
+.hl-page { display: flex; flex-direction: column; gap: 28px; }
+.hl-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
+.hl-bar { display: flex; gap: 10px; flex-wrap: wrap; }
+.hl-sec { display: flex; flex-direction: column; gap: 16px; }
+.hl-sec .section-header { margin-bottom: 0; }
+.hl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.hl-empty { padding: 32px; text-align: center; color: var(--text-muted); }
+.pl-card__body { position: relative; z-index: 1; margin: 0; font-size: 13px; line-height: 1.55; color: #a3abb9;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 1100px) { .hl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .hl-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .hl-head { flex-direction: column; align-items: stretch; }
+  .hl-bar .ld-field { flex: 1; }
 }
 @media (min-width: 721px) and (max-width: 1100px) {
   .gm-potg > * { flex-basis: calc((100% - 16px) / 2); }

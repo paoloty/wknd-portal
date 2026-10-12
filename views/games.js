@@ -143,9 +143,10 @@ const gameYmdOf = raw => {
 
 // Players of the game: the /players card (.pl-card, styles.css) with this game's line in
 // the footer and the final score where /players has its sparkline. One scrolling row:
-// 4 across on desktop with arrows, a swipe row with dots on phones.
+// 4 across on desktop with arrows, a swipe row with dots on phones. /highlights passes
+// writeup: true to add the POTG blurb between the player and the footer.
 const ordinal = n => `${n}${(n % 100 >= 11 && n % 100 <= 13) ? 'TH' : (['TH', 'ST', 'ND', 'RD'][n % 10] || 'TH')}`;
-function potgCard(p) {
+function potgCard(p, { writeup = false } = {}) {
   const raw = String(p.rawName || '');
   const comma = raw.indexOf(',');
   const first = comma === -1 ? '' : raw.slice(comma + 1).trim();
@@ -165,6 +166,7 @@ function potgCard(p) {
           <span class="pl-card__meta"><span class="pl-team"><i style="background:${teamColor(p.team)}"></i>${escHtml(p.team)}</span><span>${escHtml(p.day)}${p.tag ? ` · ${escHtml(p.tag)}` : ''}</span>${p.tally ? `<span class="pl-rookie" title="Player of the Game number ${p.tally} this season">${ordinal(p.tally)} POTG</span>` : ''}</span>
         </span>
       </span>
+      ${writeup && p.writeup ? `<p class="pl-card__body">${escHtml(p.writeup)}</p>` : ''}
       <span class="pl-card__foot">
         <span class="pl-card__stats">${stat(p.line.pts, 'PTS', true)}${stat(p.line.reb, 'REB')}${stat(p.line.ast, 'AST')}</span>
         <span class="gm-pc__score"><b class="font-condensed">${mine}–${theirs}</b><small>${won ? 'WIN' : 'LOSS'} VS ${dot(opp, 6)}${escHtml(opp)}</small></span>
@@ -830,4 +832,4 @@ ${matchups.length ? pickBoxScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
+export { potgCard, calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, scorerCard, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
