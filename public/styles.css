@@ -9928,3 +9928,6 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 }
 .pkc__h2h .pkc-upset { margin-bottom: 3px; }
 .gd-called .gd-card__h .pkc-upset { align-self: center; }
+.pkc-r.is-teaser { cursor: default; }
+.pkc-r.is-teaser:hover { border-color: rgba(255,255,255,.12); }
+.pkc-r.is-teaser .pkc-r__radio { opacity: .4; }

@@ -164,6 +164,23 @@ function stakesHtml(o) {
     </div>`;
 }
 
+// Before picks open (or a game with no pick card): the same rows, not tappable, with the odds
+// pills and a note in place of the countdown. Same look as the live card.
+export function pickTeaser(g, { note = '' } = {}) {
+  const odds = g.odds || null;
+  const row = s => {
+    const team = s === 'a' ? g.a : g.b, p = odds ? (s === 'a' ? odds.pctA : odds.pctB) : null;
+    const pill = p == null ? '' : `<span class="pkc-pill${p > 50 ? ' is-fav' : ''}"><em>${p > 50 ? 'FAV' : p < 50 ? 'DOG' : 'EVEN'}</em>${p}%</span>`;
+    return `<div class="pkc-r is-teaser" style="--c:${lineOf(team)};--tint:${tintOf(team)}"><span class="pkc-r__radio"></span><span class="pkc-r__name">${dot(team, 9)}${escHtml(tc(team))}</span>${pill}</div>`;
+  };
+  return `<article class="pkc pkc--inline is-closed" aria-label="${escHtml(tc(g.a))} vs ${escHtml(tc(g.b))}">
+    <div class="pkc__body">
+      <div class="pkc-q"><b>Who wins this one?</b>${note ? `<span class="pkc-cd">${escHtml(note)}</span>` : ''}</div>
+      <div class="pkc-rows">${row('a')}${row('b')}</div>
+    </div>
+  </article>`;
+}
+
 // Remind me: one bell + email the evening before game day (server.js pickRemindState).
 const BELL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
 function remindHtml(o) {

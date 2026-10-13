@@ -4,8 +4,8 @@ import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
 import { oddsEdge } from './pick-box.js';
-import { pickCard, pickCardScript, pickResultCard } from './pick-card.js';
-import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, gameCard, gameCardScript, storyHtml, scorerName, barsScript } from './games.js';
+import { pickCard, pickCardScript, pickResultCard, pickTeaser } from './pick-card.js';
+import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, gameCard, gameCardScript, storyHtml, scorerName, barsScript } from './games.js';
 import { duelCard, duelScale, previewDuelCards } from './duel.js';
 import { formChart, formChartOf } from './form-check.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
@@ -2190,14 +2190,12 @@ function pickRail(d) {
   const { state, o, m } = picks;
   let body;
   if ((state === 'open' || state === 'closed') && o) {
-    // The shared pick card (views/pick-card.js), inline: the page hero is its header. The odds
-    // panel with "How it's figured" stays under it as the explainer.
-    body = `${pickCard(o, { variant: 'inline', isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}#picks` })}
-      ${o.odds ? oddsLine(m, o.odds) : ''}`;
+    // The shared pick card (views/pick-card.js), inline: the page hero is its header; the
+    // FAV/DOG pills carry the odds.
+    body = pickCard(o, { variant: 'inline', isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}#picks` });
   } else {
-    body = `<div class="gd-card__h"><h2 id="picks-h">Who wins?</h2></div>
-      ${picks.odds ? oddsLine(m, picks.odds) : ''}
-      <p class="gd-later">${state === 'later' ? 'Picks open closer to game day.' : 'Picks are closed for this one.'}</p>`;
+    // Picks not open yet (or closed with no card): the same rows, not tappable yet.
+    body = pickTeaser({ a: game.team_a_name, b: game.team_b_name, odds: picks.odds }, { note: state === 'later' ? 'Picks open closer to game day' : 'Picks are closed' });
   }
   // Same day's other games: compact pick cards, pickable right here.
   const also = picks.siblings?.length ? `<section class="card gd-next pkc-rail" aria-label="Same day">
@@ -2206,7 +2204,7 @@ function pickRail(d) {
     </section>` : '';
   // The amber glow is the call to action: only while picks are open.
   // The card's own question line titles the section when there's a pick card.
-  return `<section id="picks" class="card gd-pick${state === 'open' ? ' gd-pick--open' : ''}" ${(state === 'open' || state === 'closed') && o ? 'aria-label="Who wins?"' : 'aria-labelledby="picks-h"'}>${body}</section>${also}`;
+  return `<section id="picks" class="card gd-pick${state === 'open' ? ' gd-pick--open' : ''}" aria-label="Who wins?">${body}</section>${also}`;
 }
 
 
