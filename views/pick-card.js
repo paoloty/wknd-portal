@@ -91,6 +91,7 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
   };
 
   const hint = compact ? '' : `<p class="pkc-hint" data-pkc-hint>${hintHtml(o, isPlayer)}</p>`;
+  const wait = compact ? '' : waitHtml(total, isPlayer && !!mine && !o.closed && total < SPLIT_MIN);
   const guestCta = !isPlayer && !o.closed && !compact
     ? `<a class="pkc-btn pkc-btn--cta" href="/login?next=${encodeURIComponent(next)}">Log in to pick</a><p class="pkc-hint">Right picks earn points in the <a href="/picks/rules">Pickmaster race</a>.</p>` : '';
   const margin = o.marginGuess ? marginHtml(o, isPlayer, compact) : '';
@@ -113,9 +114,15 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
     <div class="pkc__body">
       ${q}
       <div class="pkc-rows${showSplit ? ' is-split' : ''}" role="radiogroup" aria-label="Who wins: ${escHtml(tc(o.a))} or ${escHtml(tc(o.b))}">${row('a')}${row('b')}</div>
-      ${guestCta}${hint}${stakes}${remind}${margin}${insight}${faces}${acts}${foot}
+      ${guestCta}${hint}${wait}${stakes}${remind}${margin}${insight}${faces}${acts}${foot}
     </div>
   </article>`;
+}
+
+// Under 5 picks the split stays hidden; this says why, and how close it is.
+function waitHtml(total, show) {
+  const n = Math.min(total, SPLIT_MIN);
+  return `<div class="pkc-wait" data-pkc-wait${show ? '' : ' hidden'}><span class="pkc-wait__pips" aria-hidden="true">${Array.from({ length: SPLIT_MIN }, (_, i) => `<i class="${i < n ? 'is-on' : ''}"></i>`).join('')}</span><span data-pkc-wait-t>${n} of ${SPLIT_MIN} picks · the split shows at ${SPLIT_MIN}</span></div>`;
 }
 
 function hintHtml(o, isPlayer) {
@@ -307,6 +314,21 @@ export function pickCardScript() {
   }
   setInterval(tick, 1000);
 
+  // Split bars grow in the first time a card scrolls into view: a CSS scale animation on the
+  // fills (.is-grow), so the bars keep their real width whether or not it runs.
+  function growIn() {
+    if (reduce || !('IntersectionObserver' in window)) return;
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        io.unobserve(e.target);
+        e.target.classList.add('is-grow', 'is-sweep');
+      });
+    }, { threshold: 0.4 });
+    document.querySelectorAll('[data-pkc] .pkc-rows.is-split').forEach(function (c) { io.observe(c); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', growIn); else growIn();
+
   function countUp(el, to) {
     if (reduce) { el.textContent = to + '%'; return; }
     var t0 = performance.now();
@@ -338,6 +360,13 @@ export function pickCardScript() {
       }
     });
     var q = card.querySelector('[data-pkc-q]'); if (q) q.textContent = mine ? 'Your pick is in' : 'Who wins this one?';
+    var wait = card.querySelector('[data-pkc-wait]');
+    if (wait) {
+      var wn = Math.min(t, SPLIT_MIN);
+      wait.hidden = !(player && mine && !closed && t < SPLIT_MIN);
+      wait.querySelectorAll('i').forEach(function (p, i) { p.classList.toggle('is-on', i < wn); });
+      var wt = wait.querySelector('[data-pkc-wait-t]'); if (wt) wt.textContent = wn + ' of ' + SPLIT_MIN + ' picks · the split shows at ' + SPLIT_MIN;
+    }
     var hint = card.querySelector('[data-pkc-hint]');
     if (hint && player && !closed) hint.innerHTML = mine ? 'You picked <b>' + esc(tc(names[mine])) + '</b>. Tap the other team to switch. <button type="button" class="pkc-link" data-pkc-remove>Remove pick</button>' : '';
     var who = card.querySelector('[data-pkc-who]');

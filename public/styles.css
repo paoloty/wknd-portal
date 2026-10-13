@@ -9709,6 +9709,17 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkc-r[disabled] { cursor: default; }
 .pkc-r__fill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0) 60%), color-mix(in srgb, var(--c) calc(var(--tint) * 100%), transparent); box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 6px 0 16px -6px var(--c); opacity: 0; transition: width .9s cubic-bezier(.22,1,.36,1), opacity .25s; }
 .pkc-rows.is-split .pkc-r__fill { opacity: 1; border-right: 3px solid var(--c); }
+/* Before the split shows, your pick still fills its row (a selection, not a share). */
+.pkc-rows:not(.is-split) .pkc-r.is-mine .pkc-r__fill { width: 100% !important; opacity: .75; }
+.pkc-rows.is-grow .pkc-r__fill { transform-origin: left center; animation: pkc-grow-x .9s cubic-bezier(.22,1,.36,1) both; }
+.pkc-rows.is-grow .pkc-r:nth-child(2) .pkc-r__fill { animation-delay: .08s; }
+@keyframes pkc-grow-x { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .pkc-rows.is-grow .pkc-r__fill { animation: none; } }
+.pkc-wait { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-subtle); }
+.pkc-wait[hidden] { display: none; }
+.pkc-wait__pips { display: inline-flex; gap: 3px; }
+.pkc-wait__pips i { width: 14px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); transition: background .3s; }
+.pkc-wait__pips i.is-on { background: var(--amber); }
 .pkc-r__fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.28) 50%, transparent 65%); transform: translateX(-120%); }
 .pkc-rows.is-sweep .pkc-r__fill::after { animation: pkc-sheen 1s cubic-bezier(.4,0,.2,1) .55s; }
 @keyframes pkc-sheen { to { transform: translateX(120%); } }
