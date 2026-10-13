@@ -61,15 +61,19 @@ function raceCard(w, { rows: max = 5 } = {}) {
         ${rows.slice(0, max).map(r => raceRow(r, kind, w)).join('')}
         ${meRow(kind, w)}
       </div>`;
-  return `<section class="pk-card pkw-race" aria-label="Pickmaster race, season ${escHtml(String(w.season))}">
-      <div class="pk-card__top">
-        <a href="/picks" class="pk-card__when">Race · S${escHtml(String(w.season))}</a>
-        ${two ? `<span class="pkw-seg" role="group" aria-label="Leaderboard"><button type="button" class="is-on" data-pkw-show="pts" aria-pressed="true">Pickmaster</button><button type="button" data-pkw-show="odds" aria-pressed="false">Beat the Odds</button></span>`
-          : b.size ? `<span class="pk-fav">${b.size} on the board</span>` : ''}
+  // Same shell as the pick cards beside it (views/pick-card.js): the tinted header band with
+  // its bottom edge, the body, and a full-width button pinned to the bottom.
+  return `<section class="pkc pkw-race" aria-label="Pickmaster race, season ${escHtml(String(w.season))}">
+      <div class="pkc__head pkw-race__head">
+        <a href="/picks" class="pkw-race__ttl"><b>Pickmaster race</b><small class="font-condensed">S${escHtml(String(w.season))}${b.size ? ` · ${b.size} on the board` : ''}</small></a>
+        ${two ? `<span class="pkw-seg" role="group" aria-label="Leaderboard"><button type="button" class="is-on" data-pkw-show="pts" aria-pressed="true">Pickmaster</button><button type="button" data-pkw-show="odds" aria-pressed="false">Beat the Odds</button></span>` : ''}
+        <div class="pkc__edge pkw-race__edge" aria-hidden="true"><i style="--c:var(--amber);flex-basis:100%"></i></div>
       </div>
-      ${b.pts.length ? `${list('pts', b.pts, false)}${two ? list('odds', b.odds, true) : ''}`
-        : '<p class="pkw-lb__empty">The board fills after the first finals. Every settled pick counts.</p>'}
-      <a href="/picks" class="pk-card__prev">Full race &amp; rules →</a>
+      <div class="pkc__body">
+        ${b.pts.length ? `${list('pts', b.pts, false)}${two ? list('odds', b.odds, true) : ''}`
+          : '<p class="pkw-lb__empty">The board fills after the first finals. Every settled pick counts.</p>'}
+        <a href="/picks" class="pkc-btn pkw-race__more">Full race &amp; rules <span class="pkc-arr">→</span></a>
+      </div>
     </section>`;
 }
 
@@ -115,7 +119,7 @@ export function picksWidget(w, { summary = null, isAdmin = false } = {}) {
   ${panel}
   <div class="pkf-games${w.games.length === 1 ? ' is-one' : ''}">
     ${w.games.map(o => faceoff(o, w)).join('')}
-    ${raceCard(w, { rows: 8 })}
+    ${raceCard(w, { rows: w.isPlayer ? 5 : 6 })}
   </div>
 </section>
 ${raceScript()}
