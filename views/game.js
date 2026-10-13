@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl } from './utils.js';
+import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl, shareIcon } from './utils.js';
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
@@ -112,7 +112,7 @@ function shareStatsModal(game, stat) {
       <div class="ssc2__acts">
         <button type="button" class="ssc2-act" id="ssc2-save" aria-label="Save">${icon('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')}<span>Save</span></button>
         <button type="button" class="ssc2-act" id="ssc2-copy" aria-label="Copy">${icon('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>')}<span>Copy</span></button>
-        <button type="button" class="ssc2-act ssc2-act--p" id="ssc2-share">${icon('<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/>')}Share to story</button>
+        <button type="button" class="ssc2-act ssc2-act--p" id="ssc2-share">${icon('<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>')}Share to story</button>
       </div>
     </div>
   </div>
@@ -1260,11 +1260,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
         navigator.share({ title: document.title, url: url }).catch(function() {});
         return;
       }
-      navigator.clipboard.writeText(url).then(function() {
-        var orig = shareBtn.innerHTML;
-        shareBtn.innerHTML = '✓';
-        setTimeout(function() { shareBtn.innerHTML = orig; }, 1500);
-      }).catch(function() {});
+      navigator.clipboard.writeText(url).then(function() { window.wkndCopied(shareBtn); }).catch(function() {});
     });
   }
 
@@ -1420,7 +1416,7 @@ function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlay
 
 const ICON_PLAY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 const ICON_FLAME = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-9z"/></svg>';
-const ICON_SHARE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>';
+const ICON_SHARE = shareIcon(16, 2);
 const ICON_CAL = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
 const ICON_CHAT = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
 

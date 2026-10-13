@@ -9958,3 +9958,12 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkp-race .pkc__body, .pkp-upsets .pkc__body { gap: 12px; }
 .pkp-race .pk-board__foot { margin-top: 2px; }
 .pkp-upsets .pkp-up:first-child { border-top: 0; padding-top: 0; }
+
+/* "Link copied to clipboard" tooltip (views/layout.js window.wkndCopied) */
+.wk-tip { position: fixed; z-index: 1000; transform: translate(-50%, -100%) translateY(4px); padding: 7px 11px; border-radius: 9px; background: var(--text); color: #0a0e16; font-size: 12.5px; font-weight: 700; white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,.45); opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; }
+.wk-tip::after { content: ''; position: absolute; left: 50%; top: 100%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--text); }
+.wk-tip.is-on { opacity: 1; transform: translate(-50%, -100%); }
+.wk-tip.is-below { transform: translate(-50%, 0) translateY(-4px); }
+.wk-tip.is-below.is-on { transform: translate(-50%, 0); }
+.wk-tip.is-below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .wk-tip { transition: none; } }

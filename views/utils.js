@@ -197,6 +197,11 @@ export function playerAvatar(id, name, color, { className = 'player-avatar', lin
 // moreBubble: false drops the bubble when the count is shown elsewhere. open: dashed "+" slots
 // after the faces (Papawis). link: false inside rows that are links themselves (nested <a>).
 // The cutout matches var(--surface); set --av-cut on className when the stack sits on another fill.
+// The site's share icon (three connected dots): every share button uses it.
+export function shareIcon(size = 15, stroke = 2.2) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`;
+}
+
 export function avatarStack(players, { size = 28, max = 6, total, link = false, moreBubble = true, open = 0, className = '', label = '' } = {}) {
   if (!players?.length && !open) return '';
   const shown = (players || []).slice(0, max);

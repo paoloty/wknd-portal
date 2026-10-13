@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials } from './utils.js';
+import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials, shareIcon } from './utils.js';
 
 // /papawis — rebuilt 2026-10-11 from the "WKND Marketplace + Papawis Redesign" canvas (variant J).
 // Every UPCOMING run gets the full block (countdown bar, photo banner, who's in, details +
@@ -26,7 +26,7 @@ const ICON = {
   pin: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59332" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>`,
   pinMuted: `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>`,
   nav: svg('M3 11l18-8-8 18-2-8-8-2z', 13, 2.2),
-  share: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"></path></svg>`,
+  share: shareIcon(13),
   list: svg('M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01', 13, 2.2),
   bell: svg('M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0', 13, 2.2),
   lock: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>`,
@@ -590,10 +590,7 @@ function papawisScript(viewer) {
       var url = location.origin + btn.dataset.url;
       if (navigator.share) { navigator.share({ title: btn.dataset.title, url: url }).catch(function () {}); }
       else if (navigator.clipboard) {
-        navigator.clipboard.writeText(url).then(function () {
-          var l = btn.querySelector('.pwx-lbl'), old = l.textContent; l.textContent = 'Link copied';
-          setTimeout(function () { l.textContent = old; }, 1600);
-        });
+        navigator.clipboard.writeText(url).then(function () { window.wkndCopied(btn); });
       }
     } else if (act === 'alerts') {
       var on = btn.dataset.on !== '1';

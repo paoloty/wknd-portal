@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, truncate, initials, avatarStack, playerPhotoUrl } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, truncate, initials, avatarStack, playerPhotoUrl, shareIcon } from './utils.js';
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
@@ -1499,7 +1499,7 @@ function nextUpWidget(pending) {
 // Styles: public/profile.css (prf- prefix).
 
 const PRF_ICON = {
-  share: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
+  share: shareIcon(16, 2),
   eye: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
   star: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.3 12 2"/></svg>',
   trophy: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>',
@@ -1623,9 +1623,7 @@ ${editing ? '' : `<script>
     b.addEventListener('click', function () {
       var url = location.origin + location.pathname, label = b.querySelector('span');
       if (navigator.share) { navigator.share({ title: document.title, url: url }).catch(function () {}); return; }
-      if (navigator.clipboard) navigator.clipboard.writeText(url).then(function () {
-        label.textContent = 'Link copied'; setTimeout(function () { label.textContent = 'Share'; }, 1800);
-      });
+      if (navigator.clipboard) navigator.clipboard.writeText(url).then(function () { window.wkndCopied(b); });
     });
   });
 })();

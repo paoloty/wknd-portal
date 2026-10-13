@@ -705,6 +705,23 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     </div>
   </div>
   ${siteFooter}`}
+<script>
+// "Link copied to clipboard": a small tooltip above whatever was tapped. Every share button
+// calls window.wkndCopied(button) once its link is on the clipboard.
+window.wkndCopied = function (el, text) {
+  var tip = document.getElementById('wk-tip');
+  if (!tip) { tip = document.createElement('div'); tip.id = 'wk-tip'; tip.className = 'wk-tip'; tip.setAttribute('role', 'status'); tip.setAttribute('aria-live', 'polite'); document.body.appendChild(tip); }
+  tip.textContent = text || 'Link copied to clipboard';
+  var r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+  tip.classList.remove('is-on', 'is-below');
+  tip.style.left = (r ? r.left + r.width / 2 : window.innerWidth / 2) + 'px';
+  var top = r ? r.top - 8 : 24;
+  if (r && r.top < 48) { tip.classList.add('is-below'); top = r.bottom + 8; }
+  tip.style.top = top + 'px';
+  void tip.offsetWidth; tip.classList.add('is-on');
+  clearTimeout(tip._t); tip._t = setTimeout(function () { tip.classList.remove('is-on'); }, 1800);
+};
+</script>
 </body>
 </html>`;
 }

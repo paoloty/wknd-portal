@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { displayPlayerName, teamColor, initials, playerPhotoUrl } from './utils.js';
+import { displayPlayerName, teamColor, initials, playerPhotoUrl, shareIcon } from './utils.js';
 
 // ── Award badge config ────────────────────────────────────────────────────────
 const AWARD_BADGE = {
@@ -86,7 +86,7 @@ function heroRow(row, type, article, season) {
     </div>
   </a>
   <button type="button" class="awd-share-btn" onclick="wkndShareFb('${shareHref}',this)" aria-label="Copy share link">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    ${shareIcon(14, 2)}
   </button>
 </div>`;
 }
@@ -188,7 +188,7 @@ ${pageHeader({ title: 'Awards', description: 'Season honors, All-WKND teams, and
 
   const shareBtnHtml = (shareKey) => shareKey
     ? `<button type="button" class="mvp-card-share-btn" onclick="wkndShareFb('/awards/share/${encodeURIComponent(season)}/${encodeURIComponent(shareKey)}',this)" aria-label="Copy share link">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        ${shareIcon(13, 2)}
       </button>`
     : '';
 
@@ -213,6 +213,7 @@ function wkndShareFb(path, btn) {
   var url = location.origin + path;
   (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.resolve(document.execCommand('copy', true, url)))
     .then(function() {
+      window.wkndCopied(btn);
       var orig = btn.innerHTML;
       btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
       btn.disabled = true;

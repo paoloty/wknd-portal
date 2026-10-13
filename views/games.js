@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl, avatarStack } from './utils.js';
+import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl, avatarStack, shareIcon } from './utils.js';
 import { summaryPanel } from './home.js';
 import { previewHref, oddsEdge } from './pick-box.js';
 import { pickCard, pickCardScript } from './pick-card.js';
@@ -120,11 +120,7 @@ export function gameListScript() {
         navigator.share({ url: url }).catch(function() {});
         return;
       }
-      navigator.clipboard.writeText(url).then(function() {
-        var orig = shareBtn.innerHTML;
-        shareBtn.innerHTML = '✓';
-        setTimeout(function() { shareBtn.innerHTML = orig; }, 1500);
-      }).catch(function() {});
+      navigator.clipboard.writeText(url).then(function() { window.wkndCopied(shareBtn); }).catch(function() {});
     }
   });
 })();
@@ -467,7 +463,7 @@ function gameCard(g, { commentsEnabled, social = { commentsCount: 0, reactCount:
   const id = encodeURIComponent(g.id);
   const actions = `${commentsEnabled ? `<a href="/games/${id}#comments" class="gr-act" aria-label="Comments"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>${social.commentsCount || 0}</span></a>
       <button type="button" class="gr-act${social.reacted ? ' is-active' : ''}" data-action="react-game" data-game-id="${escHtml(g.id)}" aria-label="React to this game"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg><span>${social.reactCount || 0}</span></button>` : ''}
-      <button type="button" class="gr-act" data-action="share-game" data-url="/games/${id}" aria-label="Share"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></button>`;
+      <button type="button" class="gr-act" data-action="share-game" data-url="/games/${id}" aria-label="Share">${shareIcon(14, 2)}</button>`;
   // No cover yet: matchup art underneath, the winning team's top scorer's photo on top when
   // there is one (it removes itself if it fails, leaving the art). See gameCardExtras.
   const standIn = !g.has_cover && topScorer?.standIn;
@@ -671,10 +667,7 @@ function gameCardScript() {
     if (shareBtn) {
       var url = window.location.origin + shareBtn.dataset.url;
       if (navigator.share) { navigator.share({ url: url }).catch(function () {}); return; }
-      navigator.clipboard.writeText(url).then(function () {
-        var orig = shareBtn.innerHTML; shareBtn.textContent = '✓';
-        setTimeout(function () { shareBtn.innerHTML = orig; }, 1500);
-      }).catch(function () {});
+      navigator.clipboard.writeText(url).then(function () { window.wkndCopied(shareBtn); }).catch(function () {});
     }
   });
 })();

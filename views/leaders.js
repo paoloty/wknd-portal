@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, playerAvatar, playerPhotoUrl } from './utils.js';
+import { teamColor, displayPlayerName, playerAvatar, playerPhotoUrl, shareIcon } from './utils.js';
 
 // ── Shared PER formula — matches box score (game.js calcPer) ─────────────────
 // pts + 0.4×FGM - 0.7×FGA - 0.4×missedFT + 0.7×REB + STL + 0.7×AST + 0.7×BLK - TO
@@ -195,7 +195,7 @@ export function fmtTotals(v)  { return String(Math.round(v)); }
 // piece below (views/roast.js).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SHARE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>`;
+const SHARE_ICON = shareIcon(15);
 const DL_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
 
 // Share/download buttons keep the data-* contract /api/leaders/share reads.
@@ -777,6 +777,7 @@ async function shareLeader(btn) {
   try {
     var url = (await saveShare(btn.dataset)).url;
     await navigator.clipboard.writeText(url);
+    window.wkndCopied(btn);
     btn.innerHTML = '&#10003;';
     btn.classList.add('is-copied');
     btn.setAttribute('aria-label', 'Link copied');

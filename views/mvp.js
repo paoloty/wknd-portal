@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { displayPlayerName, teamColor, initials, playerPhotoUrl } from './utils.js';
+import { displayPlayerName, teamColor, initials, playerPhotoUrl, shareIcon } from './utils.js';
 import { swipeScript } from './games.js';
 import { summaryPanel, sectionPanel, sectionRegenScript } from './home.js';
 
@@ -121,7 +121,7 @@ const cardLink = c => `<a href="${href(c)}" class="mv-card__link" aria-label="${
 const adminTools = (c, ctx) => (ctx.isAdmin ? `<span class="mv-card__admin">${photoBtn(c, true)}${regenBtn(c.player.id, ctx.season, true, ctx.playoffsStarted)}</span>` : '');
 const missing = (ctx, cls) => (ctx.isAdmin ? `<p class="${cls} is-muted">Writeup unavailable (AI provider error or quota). Try ↺ later.</p>` : '');
 
-const SHARE_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
+const SHARE_ICON = shareIcon(15);
 const DL_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 19h14"/></svg>';
 // Share / Download icons in a card's top row (page script: data-mv-share / data-mv-dl).
 const shareIcons = (c, race = RACES.mvp) => {
@@ -540,7 +540,7 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
     shareOf(btn.dataset.mvShare).then(function (s) {
       var phone = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
       if (phone && navigator.share) return navigator.share({ title: ${JSON.stringify(race.shareTitle)}, url: s.url }).catch(function (e) { if (e && e.name === 'AbortError') return; throw e; });
-      return navigator.clipboard.writeText(s.url).then(function () { flash(btn, 'Link copied'); }, function () { window.prompt('Copy this link', s.url); });
+      return navigator.clipboard.writeText(s.url).then(function () { window.wkndCopied(btn); }, function () { window.prompt('Copy this link', s.url); });
     }).catch(function () { flash(btn, 'Try again'); });
   }
   function download(btn) {
