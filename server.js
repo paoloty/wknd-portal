@@ -9950,7 +9950,9 @@ function openPicks(games, pctx, viewerId) {
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
       // Stakes line + Remind me (logged in only; see pickStakes / pickRemindState).
       stakes: myPick || !closed ? pickStakes(spOf(pg.season), viewerId, odds) : null,
-      remind: closed || myPick ? null : pickRemindState(pg.ymd, viewerId),
+      // Sent even when you have a pick: the button stays in the card (hidden) so removing
+      // your pick brings it back.
+      remind: closed ? null : pickRemindState(pg.ymd, viewerId),
       // The 'full' card's tabs: Go-to scorers (duelScorers) and Form check, from the same
       // as-of-tip-off matchup.
       ...(() => {

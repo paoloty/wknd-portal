@@ -134,7 +134,7 @@ function hintHtml(o, isPlayer) {
 
 function compactFoot(o, isPlayer) {
   const href = escHtml(o.href || '#'), mine = o.myPick, n = (o.faces || []).length;
-  const left = mine && isPlayer ? `You picked <b>${escHtml(tc(mine === 'a' ? o.a : o.b))}</b>` : `${n} picked`;
+  const left = mine && isPlayer ? `You picked <b>${escHtml(tc(mine === 'a' ? o.a : o.b))}</b>${o.closed ? '' : ' · <button type="button" class="pkc-link" data-pkc-remove>Remove</button>'}` : `${n} picked`;
   const right = mine && isPlayer && o.talk ? `<a class="pkc-foot__talk" href="${href}#talk">${CHAT}Talk trash${o.talkCount ? ` · ${o.talkCount}` : ''}</a>` : `<a href="${href}">Preview →</a>`;
   return `<span>${left}</span>${right}`;
 }
@@ -379,7 +379,7 @@ export function pickCardScript() {
       var right = mine && foot.dataset.talk === '1'
         ? '<a class="pkc-foot__talk" href="' + esc(href) + '#talk">' + CHAT + 'Talk trash' + (foot.dataset.talkN ? ' · ' + esc(foot.dataset.talkN) : '') + '</a>'
         : '<a href="' + esc(href) + '">Preview →</a>';
-      foot.innerHTML = '<span>' + (mine ? 'You picked <b>' + esc(tc(names[mine])) + '</b>' : n + ' picked') + '</span>' + right;
+      foot.innerHTML = '<span>' + (mine ? 'You picked <b>' + esc(tc(names[mine])) + '</b> · <button type="button" class="pkc-link" data-pkc-remove>Remove</button>' : n + ' picked') + '</span>' + right;
     }
     marginFollow(card, mine, names);
     var st = card.querySelector('[data-pkc-stake]');
@@ -472,10 +472,13 @@ export function pickCardScript() {
   function remindToggle(card, btn) {
     if (btn.dataset.busy) return;
     var on = !btn.classList.contains('is-on'), label = btn.dataset.label;
+    // One reminder per game day, so every card for that day flips together.
     var draw = function (v) {
-      btn.classList.toggle('is-on', v); btn.setAttribute('aria-pressed', v ? 'true' : 'false');
-      btn.innerHTML = v ? CHECK + '<span>We&rsquo;ll remind you <b>' + esc(label) + '</b> if you haven&rsquo;t picked</span><span class="pkc-remind__x">Undo</span>'
-        : BELL + '<span>Not sure yet? <b>Remind me</b> ' + esc(label) + '</span>';
+      document.querySelectorAll('[data-pkc-remind][data-ymd="' + CSS.escape(btn.dataset.ymd) + '"]').forEach(function (b) {
+        b.classList.toggle('is-on', v); b.setAttribute('aria-pressed', v ? 'true' : 'false');
+        b.innerHTML = v ? CHECK + '<span>We&rsquo;ll remind you <b>' + esc(label) + '</b> if you haven&rsquo;t picked</span><span class="pkc-remind__x">Undo</span>'
+          : BELL + '<span>Not sure yet? <b>Remind me</b> ' + esc(label) + '</span>';
+      });
     };
     draw(on); btn.dataset.busy = '1';
     fetch('/picks/remind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ymd: btn.dataset.ymd, on: on }) })
