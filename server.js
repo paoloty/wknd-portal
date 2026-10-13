@@ -9891,7 +9891,8 @@ function pickResultOf(g, gp, viewerId, pctx) {
   const commentsOn = getSetting('comments_enabled', '0') === '1';
   return {
     id: g.id, a: g.a, b: g.b, sa: g.sa, sb: g.sb, ymd: g.ymd, winner: g.winner, odds, upset: s.upset,
-    href: previewHref(g), counts, total: s.total, called: s.calledIt.length, faces,
+    // g is the pick-shaped game (a / b), previewHref wants a games row.
+    href: previewHref({ id: g.id, team_a_name: g.a, team_b_name: g.b }), counts, total: s.total, called: s.calledIt.length, faces,
     myPick: mine?.side || null,
     points: mine ? { net: ok ? 1 : -1, bto: odds ? oddsPoints(mine.side, ok, odds) : null } : null,
     margin: isG1 && mine?.margin_guess != null ? { guess: mine.margin_guess, actual: Math.abs(g.sa - g.sb), side: mine.side } : null,
