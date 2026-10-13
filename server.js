@@ -174,7 +174,7 @@ import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceCo
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
-import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary } from './lib/picks.js';
+import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary, oddsPoints } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody } from './views/admin/ledger.js';
@@ -7536,10 +7536,7 @@ app.get('/games/:ref', (req, res) => {
     const gp = getGamePicksWithPlayers(game.id);
     const pg = pctx.byId[game.id];
     const sg = gp.length && pg && seasonPicks(pctx, pg.season).settled.find(g => g.id === game.id);
-    if (sg) {
-      result = calledItSummary(sg, gp, currentPlayerId);
-      result.calledIt = result.calledIt.map(x => ({ id: x.player_id, name: displayPlayerName(x.player_name || ''), team: x.team_name || '' }));
-    }
+    if (sg) result = pickResultOf(sg, gp, currentPlayerId, pctx);
     if (odds || result) called = { odds, result };
   }
 
@@ -9837,6 +9834,71 @@ function pickFacesFlat(game, viewerId) {
   }).reverse();
   return out.sort((x, y) => Number(y.me) - Number(x.me));
 }
+// The stakes line on the pick card: where you stand in the Pickmaster race and where this
+// pick alone would put you. Rank is shared by points (lib/picks.js pickLeaderboard), so
+// rank-if = 1 + everyone else above that total, with "T" when someone else is level.
+// Hidden until the season has 2+ settled pick days (early ranks swing wildly) and for anyone
+// not on the board yet. bto: the Beat the Odds points a right pick on each side would earn.
+function pickStakes(sp, viewerId, odds) {
+  if (!viewerId) return null;
+  const days = new Set(sp.pickable.map(g => g.ymd)).size; // settled game days that had picks
+  const me = sp.board.rows.find(r => r.playerId === viewerId);
+  if (days < 2 || !me) return null;
+  const others = sp.board.rows.filter(r => r.playerId !== viewerId);
+  const rankAt = n => `${others.some(r => r.net === n) ? 'T' : '#'}${others.filter(r => r.net > n).length + 1}`;
+  const pts = n => (n > 0 ? `+${n}` : String(n));
+  return {
+    now: rankAt(me.net), net: pts(me.net), right: rankAt(me.net + 1), wrong: rankAt(me.net - 1),
+    bto: odds ? { a: oddsPoints('a', true, odds).toFixed(2), b: oddsPoints('b', true, odds).toFixed(2) } : null,
+  };
+}
+
+// "Remind me": one bell + email the evening before game day (7 PM Manila), for players who
+// asked and still haven't picked every open game that day. Stored per game day in settings.
+const PICK_REMIND_HM = '19:00';
+const pickRemindKey = ymd => `pick_remind_${ymd}`;
+function pickRemindList(ymd) {
+  try { return new Set(JSON.parse(getSetting(pickRemindKey(ymd), '[]') || '[]')); } catch { return new Set(); }
+}
+function pickRemindAt(ymd) { return `${addDaysYmd(ymd, -1)}T${PICK_REMIND_HM}:00+08:00`; }
+function pickRemindState(ymd, viewerId) {
+  if (!viewerId || !ymd) return null;
+  const at = pickRemindAt(ymd);
+  if (Date.parse(at) <= Date.now()) return null; // too late to schedule one
+  const day = new Date(`${addDaysYmd(ymd, -1)}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+  return { on: pickRemindList(ymd).has(viewerId), label: `${day} ${fmtCloseTime(PICK_REMIND_HM)}` };
+}
+
+// The result card (views/pick-card.js pickResultCard) for one settled game: the final, the
+// pre-game odds (as scored: the copy frozen at pick close when there is one), the pickers'
+// split, everyone's pick (public after the final), your pick and what it earned.
+function pickResultOf(g, gp, viewerId, pctx) {
+  const s = calledItSummary(g, gp, viewerId);
+  const hidden = !!pctx.settings[g.id]?.hide_odds;
+  const frozen = getGamePreview(g.id);
+  const odds = hidden ? null : (frozen?.frozen && frozen.odds) || g.odds || null;
+  const counts = { a: gp.filter(p => p.side === 'a').length, b: gp.filter(p => p.side === 'b').length };
+  const faces = gp.map(p => {
+    const name = displayPlayerName(p.player_name || '');
+    return {
+      id: p.player_id, name, ini: initials(name), color: teamColor(p.team_name), me: !!viewerId && p.player_id === viewerId,
+      side: p.side, sideColor: teamColor(p.side === 'a' ? g.a : g.b), right: p.side === g.winner,
+    };
+  }).reverse().sort((x, y) => Number(y.me) - Number(x.me) || Number(y.right) - Number(x.right));
+  const mine = viewerId ? gp.find(p => p.player_id === viewerId) : null;
+  const ok = mine ? mine.side === g.winner : null;
+  const isG1 = g.type === 'finals' && finalsGame1Id(pctx.all, g.season) === g.id;
+  const commentsOn = getSetting('comments_enabled', '0') === '1';
+  return {
+    id: g.id, a: g.a, b: g.b, sa: g.sa, sb: g.sb, ymd: g.ymd, winner: g.winner, odds, upset: s.upset,
+    href: previewHref(g), counts, total: s.total, called: s.calledIt.length, faces,
+    myPick: mine?.side || null,
+    points: mine ? { net: ok ? 1 : -1, bto: odds ? oddsPoints(mine.side, ok, odds) : null } : null,
+    margin: isG1 && mine?.margin_guess != null ? { guess: mine.margin_guess, actual: Math.abs(g.sa - g.sb), side: mine.side } : null,
+    talk: commentsOn, talkCount: commentsOn ? (getGameCommentCounts([g.id])[g.id] || 0) : 0,
+  };
+}
+
 // When picks close for an upcoming game, as an ISO time (Manila), for the card's countdown.
 // null when an admin is holding picks open (no deadline to count down to).
 function pickCloseAt(pg, setting) {
@@ -9855,6 +9917,8 @@ function openPicks(games, pctx, viewerId) {
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const commentsOn = getSetting('comments_enabled', '0') === '1';
   const talkCounts = commentsOn ? getGameCommentCounts(ids) : {};
+  const bySeason = {};
+  const spOf = season => (bySeason[season] ??= seasonPicks(pctx, season));
   return upcoming.map(g => {
     const pg = pctx.byId[g.id] || toPickGame(g, gameYmd);
     const { closed, odds } = upcomingPickState(g, pctx);
@@ -9883,8 +9947,15 @@ function openPicks(games, pctx, viewerId) {
       talk: commentsOn, talkCount: talkCounts[g.id] || 0,
       recA: recordOf(pg.a), recB: recordOf(pg.b),
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
-      // The card's Form check chart (views/form-check.js), from the same as-of-tip-off matchup.
-      formCheck: formCheckOf(matchupAsOf(g, games, playerMap)),
+      // Stakes line + Remind me (logged in only; see pickStakes / pickRemindState).
+      stakes: myPick || !closed ? pickStakes(spOf(pg.season), viewerId, odds) : null,
+      remind: closed || myPick ? null : pickRemindState(pg.ymd, viewerId),
+      // The 'full' card's tabs: Go-to scorers (duelScorers) and Form check, from the same
+      // as-of-tip-off matchup.
+      ...(() => {
+        const m = matchupAsOf(g, games, playerMap);
+        return { formCheck: formCheckOf(m), duel: duelScorers(g, m, games, playerMap) };
+      })(),
     };
   });
 }
@@ -9997,8 +10068,11 @@ function homePicksWidget(games, viewerId) {
   const lastDay = sp.pickable.length ? sp.pickable[sp.pickable.length - 1].ymd : null;
   const results = () => {
     const cards = sp.pickable.filter(g => g.ymd === lastDay).map(g => {
-      const s = calledItSummary(g, getGamePicksWithPlayers(g.id), viewerId);
+      const gp = getGamePicksWithPlayers(g.id);
+      const s = calledItSummary(g, gp, viewerId);
       s.calledIt = s.calledIt.map(p => ({ id: p.player_id, name: displayPlayerName(p.player_name || ''), team: p.team_name || '' }));
+      // The card itself (views/pick-card.js pickResultCard); the summary fields feed the AI block.
+      s.result = pickResultOf(g, gp, viewerId, pctx);
       return s;
     });
     return { ...base, mode: 'results', ymd: lastDay, cards };
@@ -10118,6 +10192,53 @@ app.get('/games', (req, res) => {
 // "Who wins?" — one pick per logged-in player per game, only while the game is upcoming.
 // The Finals Game 1 tiebreaker guess: "my side wins by N" (1–MARGIN_MAX), or null to clear.
 // Needs an existing pick on that game, and picks still open.
+// "Remind me" on a pick card: toggle tonight's-before-game-day reminder for that game day.
+app.post('/picks/remind', express.json(), (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.status(401).json({ error: 'Log in first.' });
+  if (!picksEnabled()) return res.status(404).json({ error: 'Picks are off right now.' });
+  const ymd = String(req.body?.ymd || '');
+  const games = byDate(getAllGames());
+  if (!getUpcomingGames(games).some(g => gameYmd(g.date) === ymd)) return res.status(400).json({ error: 'No picks open for that day.' });
+  if (Date.parse(pickRemindAt(ymd)) <= Date.now()) return res.status(400).json({ error: 'Too late for a reminder. Picks close soon.' });
+  const list = pickRemindList(ymd);
+  const on = req.body?.on !== false;
+  if (on) list.add(playerId); else list.delete(playerId);
+  setSetting(pickRemindKey(ymd), JSON.stringify([...list]));
+  res.json({ ok: true, on, label: pickRemindState(ymd, playerId)?.label || '' });
+});
+
+// Send due "Remind me" reminders: from 7 PM the evening before game day until picks close,
+// once per game day, to players who asked and still have an open game left to pick.
+function runPickReminders() {
+  if (!picksEnabled()) return;
+  const games = byDate(getAllGames());
+  const pctx = buildPicksContext(games);
+  const open = openPicks(games, pctx, null).filter(o => !o.closed);
+  const days = [...new Set(open.map(o => o.ymd))];
+  for (const ymd of days) {
+    if (Date.parse(pickRemindAt(ymd)) > Date.now() || getSetting(`pick_remind_sent_${ymd}`, '')) continue;
+    const asked = [...pickRemindList(ymd)];
+    setSetting(`pick_remind_sent_${ymd}`, String(Date.now()));
+    if (!asked.length) continue;
+    const dayGames = open.filter(o => o.ymd === ymd);
+    const still = asked.filter(id => { const picks = getPlayerGamePicks(dayGames.map(o => o.id), id); return dayGames.some(o => !picks[o.id]); });
+    if (!still.length) continue;
+    const matchups = dayGames.map(o => `${titleCase(o.a)} vs ${titleCase(o.b)}`).join(' and ');
+    const dayStr = new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const reach = picksReminderRecipients(still.map(id => ({ id })), ymd);
+    for (const { player: p } of reach.recipients) {
+      createNotification({
+        playerId: p.id, type: 'pick_reminder', title: `Your reminder: who wins? ${matchups}`,
+        body: `You asked us to remind you. Picks close ${fmtCloseTime(picksCloseTime())} on ${dayStr}.`, link: '/picks',
+      });
+    }
+    if (reach.emailable.length) sendPicksEmails(reach.emailable).catch(e => console.error('[pick reminders] email failed:', e.message));
+    console.log(`[pick reminders] ${ymd}: ${reach.recipients.length} bell(s), ${reach.emailable.length} email(s)`);
+  }
+}
+setInterval(() => { try { runPickReminders(); } catch (e) { console.error('[pick reminders] failed:', e.message); } }, 5 * 60 * 1000);
+
 app.post('/games/:id/pick/margin', express.json(), (req, res) => {
   const playerId = req.session?.playerPlayerId;
   if (!playerId) return res.status(401).json({ error: 'Log in to pick.' });
@@ -10202,8 +10323,11 @@ function buildPicksPageData(season, viewerId = null, pctx = buildPicksContext(by
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const person = picksPerson(playerMap, Object.fromEntries(getAllTeams().map(t => [t.id, t.name])));
   const summaries = [...sp.pickable].reverse().map(g => {
-    const s = calledItSummary(g, getGamePicksWithPlayers(g.id), viewerId);
+    const gp = getGamePicksWithPlayers(g.id);
+    const s = calledItSummary(g, gp, viewerId);
     s.calledIt = s.calledIt.map(p => person(p.player_id));
+    // The game day's result card (views/pick-card.js pickResultCard).
+    s.result = pickResultOf(g, gp, viewerId, pctx);
     return s;
   });
   const days = [];

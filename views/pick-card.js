@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
-import { teamColor, avatarStack } from './utils.js';
+import { teamColor, avatarStack, playerPhotoUrl } from './utils.js';
+import { scorerName } from './duel.js';
 import { MARGIN_MAX } from '../lib/picks.js';
 import { formCheck } from './form-check.js';
 
@@ -93,7 +94,12 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
   const guestCta = !isPlayer && !o.closed && !compact
     ? `<a class="pkc-btn pkc-btn--cta" href="/login?next=${encodeURIComponent(next)}">Log in to pick</a><p class="pkc-hint">Right picks earn points in the <a href="/picks/rules">Pickmaster race</a>.</p>` : '';
   const margin = o.marginGuess ? marginHtml(o, isPlayer, compact) : '';
-  const insight = variant === 'full' && o.formCheck ? `<div class="pkc-ins">${formCheck(o.formCheck)}</div>` : '';
+  // Stakes + Remind me live on the big cards only (/picks, the game preview); the homepage
+  // and other 'card' surfaces stay slim.
+  const big = variant === 'full' || variant === 'inline';
+  const stakes = big && isPlayer ? stakesHtml(o) : '';
+  const remind = big && isPlayer && o.remind && !o.closed ? remindHtml(o) : '';
+  const insight = variant === 'full' ? insightHtml(o) : '';
   const faces = compact ? '' : `<button type="button" class="pkc-who" data-pkc-who${(o.faces || []).length ? '' : ' disabled'}>${pickFacesRow(o, isPlayer)}</button>`;
 
   const showTalk = !!o.talk && isPlayer && !!mine;
@@ -107,7 +113,7 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
     <div class="pkc__body">
       ${q}
       <div class="pkc-rows${showSplit ? ' is-split' : ''}" role="radiogroup" aria-label="Who wins: ${escHtml(tc(o.a))} or ${escHtml(tc(o.b))}">${row('a')}${row('b')}</div>
-      ${guestCta}${hint}${margin}${insight}${faces}${acts}${foot}
+      ${guestCta}${hint}${stakes}${remind}${margin}${insight}${faces}${acts}${foot}
     </div>
   </article>`;
 }
@@ -142,13 +148,133 @@ function marginHtml(o, isPlayer, compact) {
     </div>`;
 }
 
+// Stakes: where you stand and where this pick alone would put you (server.js pickStakes). The
+// only place points show before the final. data-dog: the side whose right pick pays the
+// Beat the Odds bonus line, shown once that's your pick.
+function stakesHtml(o) {
+  const st = o.stakes;
+  if (!st) return '';
+  const odds = o.odds, dog = odds && odds.pctA !== odds.pctB ? (odds.pctA < 50 ? 'a' : 'b') : '';
+  const mine = o.myPick;
+  return `<div class="pkc-stake" data-pkc-stake data-dog="${dog}" data-bto="${dog && st.bto ? st.bto[dog] : ''}" title="Where this pick alone would move you in the Pickmaster race">
+      <span>You're <b>${escHtml(st.now)}</b> on <b>${escHtml(st.net)}</b></span>
+      <span class="pkc-stake__up"><span data-pkc-stake-r>${mine ? 'Right' : 'Call it'}</span> → ${escHtml(st.right)}</span>
+      <span class="pkc-stake__dn"><span data-pkc-stake-w>${mine ? 'Wrong' : 'Miss'}</span> → ${escHtml(st.wrong)}</span>
+      <span class="pkc-stake__bonus" data-pkc-bonus${mine && mine === dog && st.bto ? '' : ' hidden'}>Underdog call: <b>+${dog && st.bto ? st.bto[dog] : ''}</b> on Beat the Odds if right</span>
+    </div>`;
+}
+
+// Remind me: one bell + email the evening before game day (server.js pickRemindState).
+const BELL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+function remindHtml(o) {
+  const r = o.remind;
+  return `<button type="button" class="pkc-remind${r.on ? ' is-on' : ''}" data-pkc-remind data-ymd="${escHtml(o.ymd)}" data-label="${escHtml(r.label)}" aria-pressed="${r.on}"${o.myPick ? ' hidden' : ''}>${remindInner(r.on, r.label)}</button>`;
+}
+function remindInner(on, label) {
+  return on
+    ? `${CHECK}<span>We'll remind you <b>${escHtml(label)}</b> if you haven't picked</span><span class="pkc-remind__x">Undo</span>`
+    : `${BELL}<span>Not sure yet? <b>Remind me</b> ${escHtml(label)}</span>`;
+}
+
+// /picks: Go-to scorers (default) | Form check. Either one alone shows without the switch.
+function insightHtml(o) {
+  const duel = o.duel && (o.duel[0] || o.duel[1]) ? duelHtml(o) : '';
+  const form = o.formCheck ? formCheck(o.formCheck) : '';
+  if (!duel && !form) return '';
+  if (!duel || !form) return `<div class="pkc-ins">${duel || form}</div>`;
+  return `<div class="pkc-ins" data-pkc-tabs>
+      <div class="pkc-tabs" role="tablist" aria-label="Matchup insight">
+        <button type="button" role="tab" class="is-on" aria-selected="true" data-pkc-tab="duel">Go-to scorers</button>
+        <button type="button" role="tab" aria-selected="false" data-pkc-tab="form">Form check</button>
+      </div>
+      <div class="pkc-panel is-in" data-pkc-panel="duel">${duel}</div>
+      <div class="pkc-panel" data-pkc-panel="form" hidden>${form}</div>
+    </div>`;
+}
+// Each side's go-to scorer in this matchup (server.js duelScorers): PPG against the other
+// team and a bar per game (last 5), their best in amber. No meetings yet: their season instead.
+function duelHtml(o) {
+  const [pa, pb] = o.duel;
+  const max = Math.max(1, ...[pa, pb].filter(Boolean).flatMap(p => (p.series || []).slice(-5)));
+  const side = (p, k) => {
+    if (!p) return `<div class="pkc-pl pkc-pl--${k} is-empty">No box scores yet</div>`;
+    const { first, last } = scorerName(p);
+    const series = (p.series || []).slice(-5), best = Math.max(...series), bi = series.lastIndexOf(best);
+    const team = k === 'a' ? o.a : o.b;
+    return `<a class="pkc-pl pkc-pl--${k}" href="/players/${encodeURIComponent(p.id)}">
+        <span class="pkc-pl__top"><span class="av-stack__av" style="--team:${teamColor(team)};--av:40px;--av-cut:var(--surface-2)"><span aria-hidden="true">${escHtml(((first || '')[0] || '') + ((last || '')[0] || ''))}</span><img src="${playerPhotoUrl(p.id, 96)}" alt="" loading="lazy" onerror="this.remove()"></span>
+          <span class="pkc-pl__nm"><span>${escHtml(first)}</span><b>${escHtml(last)}</b></span></span>
+        <span class="pkc-pl__ppg"><b class="font-condensed">${Number(p.ppg).toFixed(1)}</b><span>PPG ${p.basis === 'season' ? 'this season' : `vs ${escHtml(tc(k === 'a' ? o.b : o.a))}`}</span></span>
+        <span class="pkc-pl__bars" aria-label="Points, last ${series.length} games: ${series.join(', ')}">${series.map((v, i) => `<span class="pkc-pl__bar" style="--i:${i}"><em>${v}</em><i class="${i === bi ? 'is-best' : ''}" style="--h:${Math.round(v / max * 42)}px;--c:${lineOf(team)}"></i></span>`).join('')}</span>
+      </a>`;
+  };
+  const basis = pa?.basis === 'season' || pb?.basis === 'season' ? 'Top scorer this season (no meetings with box scores yet)' : 'Top scorer in their meetings · points per game, oldest first';
+  return `<div class="pkc-duel">${side(pa, 'a')}<span class="pkc-duel__vs" aria-hidden="true">VS</span>${side(pb, 'b')}</div><p class="pkc-duel__note">${basis}; amber is the best.</p>`;
+}
+
+// ── pickResultCard: the same game once the final is in (replaces "Who called it?") ─────────
+//   variant 'card'   homepage results, /picks game days: header with the final score
+//   variant 'inline' the finished game page rail: the page hero has the score
+// r comes from server.js pickResultOf(). Everyone's pick is public once the game is final.
+export function pickResultCard(r, { variant = 'card', isPlayer = false } = {}) {
+  const head = variant === 'card';
+  const total = r.total || 0;
+  const pct = s => (total ? Math.round(r.counts[s] / total * 100) : 0);
+  const odds = r.odds || null;
+  const names = JSON.stringify({ a: r.a, b: r.b });
+  const day = r.ymd ? new Date(`${r.ymd}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '';
+  const header = !head ? '' : `<div class="pkc__head" style="--ca:${teamColor(r.a)};--cb:${teamColor(r.b)}">
+      <div class="pkc__teams">
+        <span class="pkc__t"><b>${dot(r.a, 10)}${escHtml(r.a)}</b><span class="pkc__score${r.winner === 'a' ? '' : ' is-lose'} font-condensed">${r.sa}</span></span>
+        <span class="pkc__h2h">${r.upset ? '<span class="pkc-upset">UPSET</span>' : '<small>Final</small>'}<b class="font-condensed pkc__day">${escHtml(day)}</b></span>
+        <span class="pkc__t pkc__t--b"><b>${escHtml(r.b)}${dot(r.b, 10)}</b><span class="pkc__score${r.winner === 'b' ? '' : ' is-lose'} font-condensed">${r.sb}</span></span>
+      </div>
+      ${odds ? `<div class="pkc__edge" role="img" aria-label="Pre-game odds: ${escHtml(tc(r.a))} ${odds.pctA}%, ${escHtml(tc(r.b))} ${odds.pctB}%"><i class="${odds.fav === 'a' ? 'is-fav' : ''}" style="--c:${lineOf(r.a)};flex-basis:${odds.pctA}%"></i><i class="${odds.fav === 'b' ? 'is-fav' : ''}" style="--c:${lineOf(r.b)}"></i></div>` : ''}
+    </div>`;
+  const row = s => {
+    const team = s === 'a' ? r.a : r.b, win = r.winner === s, isMine = r.myPick === s;
+    const p = odds ? (s === 'a' ? odds.pctA : odds.pctB) : null;
+    const oddsPill = p == null ? '' : `<span class="pkc-pill${p > 50 ? ' is-fav' : ''}"><em>${p > 50 ? 'FAV' : p < 50 ? 'DOG' : 'EVEN'}</em>${p}%</span>`;
+    return `<div class="pkc-r pkc-r--res${isMine ? ' is-mine' : ''}${win ? ' is-win' : ' is-loss'}" style="--c:${lineOf(team)};--tint:${tintOf(team)}">
+        ${win ? '<span class="pkc-r__fill" style="width:100%"></span>' : ''}
+        ${isMine ? `<span class="pkc-r__radio">${CHECK}</span>` : '<span class="pkc-r__radio"></span>'}
+        <span class="pkc-r__name">${dot(team, 9)}${escHtml(tc(team))}</span>${oddsPill}
+        <span class="pkc-r__right">${total ? `<span class="pkc-pill pkc-pill--pk${isMine ? ' is-mine' : ''}"><em>PICKS</em>${pct(s)}%</span>` : ''}<b class="pkc-r__score font-condensed">${s === 'a' ? r.sa : r.sb}</b></span>
+      </div>`;
+  };
+  const winTeam = escHtml(tc(r.winner === 'a' ? r.a : r.b));
+  const pts = r.points;
+  const fmt = n => `${n > 0 ? '+' : '−'}${Math.abs(n).toFixed(2).replace(/\.00$/, '')}`;
+  const you = !isPlayer ? '' : !r.myPick ? '<p class="pkc-hint">You didn\'t pick this one.</p>'
+    : r.myPick === r.winner
+      ? `<div class="pkc-called is-ok"><span class="pkc-called__ic">${CHECK}</span><p><b>You called it.</b> ${winTeam} won${r.upset ? ' as the underdog' : ''}.</p><span class="pkc-called__pts"><b>${fmt(pts.net)}${pts.bto != null ? ` · ${fmt(pts.bto)}` : ''}</b><small>Pickmaster${pts.bto != null ? ' · Beat the Odds' : ''}</small></span></div>`
+      : `<div class="pkc-called is-miss"><span class="pkc-called__ic">✕</span><p><b>Missed this one.</b> You picked ${escHtml(tc(r.myPick === 'a' ? r.a : r.b))}.</p><span class="pkc-called__pts"><b>${fmt(pts.net)}${pts.bto != null ? ` · ${fmt(pts.bto)}` : ''}</b><small>Pickmaster${pts.bto != null ? ' · Beat the Odds' : ''}</small></span></div>`;
+  const margin = r.margin ? `<div class="pkc-mg-res"><div><span>Your guess</span><b>${escHtml(tc(r.margin.side === 'a' ? r.a : r.b))} by ${r.margin.guess}</b></div><div><span>Actual</span><b>${winTeam} by ${r.margin.actual}</b></div><div><span>${r.margin.side === r.winner ? 'Off by' : 'Tiebreaker'}</span><b class="${r.margin.side === r.winner ? 'is-good' : ''}">${r.margin.side === r.winner ? Math.abs(r.margin.guess - r.margin.actual) : 'wrong side'}</b></div></div>` : '';
+  const proj = variant === 'inline' && odds?.fav && odds.margin != null
+    ? `<p class="pkc-hint">Odds said <b>${escHtml(tc(odds.fav === 'a' ? r.a : r.b))} by ${Math.max(1, Math.round(Math.abs(odds.margin)))}</b> · ${winTeam} won by <b>${Math.abs(r.sa - r.sb)}</b></p>` : '';
+  const callers = (r.faces || []).filter(f => f.right);
+  const stack = avatarStack(callers.map(f => ({ id: f.id, name: f.name, color: f.color, me: f.me })), { size: 26, max: 6, total: callers.length });
+  const facesText = !total ? 'Nobody picked this game' : !callers.length ? `Nobody called it · ${total} pick${total === 1 ? '' : 's'}` : `<b>${callers.length} of ${total} called it</b>`;
+  const faces = `<button type="button" class="pkc-who" data-pkc-who${total ? '' : ' disabled'}>${stack}<span class="pkc-who__t">${facesText}</span>${total ? '<span class="pkc-who__go">See all →</span>' : ''}</button>`;
+  const talk = r.talk ? `<a class="pkc-btn pkc-btn--talk" href="${escHtml(r.href)}#talk">${CHAT}Talk about it${r.talkCount ? ` <small>${r.talkCount}</small>` : ''}</a>` : '';
+  const recap = head ? `<a class="pkc-btn" href="${escHtml(r.href)}">Full recap <span class="pkc-arr">→</span></a>` : '';
+  const acts = talk || recap ? `<div class="pkc-acts${talk && recap ? ' is-two' : ''}">${talk}${recap}</div>` : '';
+  return `<article class="pkc pkc--result pkc--${variant} is-closed" data-pkc="${escHtml(r.id)}" data-names="${escHtml(names)}" data-faces="${escHtml(JSON.stringify(r.faces || []))}" data-player="${isPlayer ? '1' : ''}" data-href="${escHtml(r.href)}" data-final="1" aria-label="${escHtml(tc(r.a))} ${r.sa}, ${escHtml(tc(r.b))} ${r.sb}, final">
+    ${header}
+    <div class="pkc__body">
+      <div class="pkc-rows is-split">${row('a')}${row('b')}</div>
+      ${you}${proj}${margin}${faces}${acts}
+    </div>
+  </article>`;
+}
+
 // One script for every pick card on the page. Safe to include more than once.
 export function pickCardScript() {
   return `<script>
 (function () {
   if (window.__wkndPkc) return; window.__wkndPkc = true;
   var SPLIT_MIN = ${SPLIT_MIN}, MAX = ${MARGIN_MAX};
-  var CHECK = ${JSON.stringify(CHECK)}, CHAT = ${JSON.stringify(CHAT)};
+  var CHECK = ${JSON.stringify(CHECK)}, CHAT = ${JSON.stringify(CHAT)}, BELL = ${JSON.stringify(BELL)};
   ${closeText.toString()}
   function tc(s) { s = String(s || ''); return s.charAt(0) + s.slice(1).toLowerCase(); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
@@ -210,6 +336,14 @@ export function pickCardScript() {
       foot.innerHTML = '<span>' + (mine ? 'You picked <b>' + esc(tc(names[mine])) + '</b>' : n + ' picked') + '</span>' + right;
     }
     marginFollow(card, mine, names);
+    var st = card.querySelector('[data-pkc-stake]');
+    if (st) {
+      var r1 = st.querySelector('[data-pkc-stake-r]'), w1 = st.querySelector('[data-pkc-stake-w]'), bonus = st.querySelector('[data-pkc-bonus]');
+      if (r1) r1.textContent = mine ? 'Right' : 'Call it';
+      if (w1) w1.textContent = mine ? 'Wrong' : 'Miss';
+      if (bonus) bonus.hidden = !(mine && mine === st.dataset.dog && st.dataset.bto);
+    }
+    var rem = card.querySelector('[data-pkc-remind]'); if (rem) rem.hidden = !!mine;
     document.dispatchEvent(new CustomEvent('wknd:pick', { detail: { gameId: card.dataset.pkc, side: mine || null } }));
   }
 
@@ -288,6 +422,22 @@ export function pickCardScript() {
       .catch(function () { delete card.dataset.busy; render(card, prev, prevMine, null, null, null); flashError(card, "Couldn't save your pick. Check your connection and try again."); });
   }
 
+  // Remind me: the button flips at once; if saving fails it flips back.
+  function remindToggle(card, btn) {
+    if (btn.dataset.busy) return;
+    var on = !btn.classList.contains('is-on'), label = btn.dataset.label;
+    var draw = function (v) {
+      btn.classList.toggle('is-on', v); btn.setAttribute('aria-pressed', v ? 'true' : 'false');
+      btn.innerHTML = v ? CHECK + '<span>We&rsquo;ll remind you <b>' + esc(label) + '</b> if you haven&rsquo;t picked</span><span class="pkc-remind__x">Undo</span>'
+        : BELL + '<span>Not sure yet? <b>Remind me</b> ' + esc(label) + '</span>';
+    };
+    draw(on); btn.dataset.busy = '1';
+    fetch('/picks/remind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ymd: btn.dataset.ymd, on: on }) })
+      .then(function (r) { if (r.status === 401) { toLogin(card, null); return null; } return r.json().catch(function () { return {}; }); })
+      .then(function (d) { delete btn.dataset.busy; if (d && !d.ok) { draw(!on); flashError(card, d.error || "Couldn't set the reminder."); } })
+      .catch(function () { delete btn.dataset.busy; draw(!on); flashError(card, "Couldn't set the reminder. Check your connection."); });
+  }
+
   // "Who picked": everyone, one list. Logged-in players see each person's pick; guests don't.
   var dlg;
   function openList(card) {
@@ -300,10 +450,13 @@ export function pickCardScript() {
     }
     var list = faces.slice().sort(function (x, y) { return (y.me ? 1 : 0) - (x.me ? 1 : 0) || String(x.name).localeCompare(String(y.name)); });
     var counts = { a: 0, b: 0 }; list.forEach(function (p) { if (p.side) counts[p.side]++; });
-    var sub = player ? list.length + ' picks · ' + tc(names.a) + ' ' + counts.a + ', ' + tc(names.b) + ' ' + counts.b : list.length + ' picked. Log in to see who picked what.';
-    dlg.innerHTML = '<div class="pkc-dlg__head"><div><h2 id="pkc-dlg-h">Who picked · ' + esc(tc(names.a)) + ' vs ' + esc(tc(names.b)) + '</h2><p>' + esc(sub) + '</p></div><button type="button" class="pkc-dlg__x" aria-label="Close" data-pkc-close>✕</button></div>'
+    var sides = list.some(function (p) { return p.side; }), final = !!card.dataset.final;
+    var sub = sides ? list.length + ' pick' + (list.length === 1 ? '' : 's') + ' · ' + tc(names.a) + ' ' + counts.a + ', ' + tc(names.b) + ' ' + counts.b
+      : list.length + ' picked. Log in to see who picked what.';
+    if (final) list.sort(function (x, y) { return (y.me ? 1 : 0) - (x.me ? 1 : 0) || (y.right ? 1 : 0) - (x.right ? 1 : 0) || String(x.name).localeCompare(String(y.name)); });
+    dlg.innerHTML = '<div class="pkc-dlg__head"><div><h2 id="pkc-dlg-h">' + (final ? 'Who called it · ' : 'Who picked · ') + esc(tc(names.a)) + ' vs ' + esc(tc(names.b)) + '</h2><p>' + esc(sub) + '</p></div><button type="button" class="pkc-dlg__x" aria-label="Close" data-pkc-close>✕</button></div>'
       + '<ul class="pkc-dlg__list">' + list.map(function (p, i) {
-        var chip = p.side ? '<span class="pkc-dlg__chip"><span class="team-dot" style="background:' + esc(p.sideColor || '#888') + ';width:8px;height:8px"></span>' + esc(tc(names[p.side])) + '</span>' : '';
+        var chip = p.side ? '<span class="pkc-dlg__chip' + (final ? (p.right ? ' is-ok' : ' is-miss') : '') + '">' + (final ? (p.right ? '✓ ' : '✕ ') : '') + '<span class="team-dot" style="background:' + esc(p.sideColor || '#888') + ';width:8px;height:8px"></span>' + esc(tc(names[p.side])) + '</span>' : '';
         return '<li style="--i:' + i + '"' + (p.me ? ' class="is-me"' : '') + '><a href="/players/' + encodeURIComponent(p.id) + '"><span class="av-stack__av' + (p.me ? ' av-stack__av--me' : '') + '" style="--team:' + esc(p.color) + ';--av:32px"><span aria-hidden="true">' + esc(p.ini) + '</span><img src="/api/player/' + encodeURIComponent(p.id) + '/photo?w=96" alt="" loading="lazy" onerror="this.remove()"></span><span class="pkc-dlg__nm">' + esc(p.me ? p.name + ' · You' : p.name) + '</span></a>' + chip + '</li>';
       }).join('') + '</ul>';
     dlg.showModal();
@@ -313,6 +466,16 @@ export function pickCardScript() {
     var card = e.target.closest('[data-pkc]'); if (!card) return;
     var player = !!card.dataset.player, closed = card.classList.contains('is-closed');
     if (e.target.closest('[data-pkc-who]')) { openList(card); return; }
+    var tab = e.target.closest('[data-pkc-tab]');
+    if (tab) {
+      var box = tab.closest('[data-pkc-tabs]');
+      box.querySelectorAll('[data-pkc-tab]').forEach(function (b) { var on = b === tab; b.classList.toggle('is-on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+      box.querySelectorAll('[data-pkc-panel]').forEach(function (p) { var on = p.dataset.pkcPanel === tab.dataset.pkcTab; p.hidden = !on; p.classList.remove('is-in'); if (on) { void p.offsetWidth; p.classList.add('is-in'); } });
+      var fk = box.querySelector('[data-pkc-panel="form"] .fck'); if (fk && tab.dataset.pkcTab === 'form') { fk.classList.remove('is-in'); void fk.offsetWidth; fk.classList.add('is-in'); }
+      return;
+    }
+    var rb = e.target.closest('[data-pkc-remind]');
+    if (rb) { remindToggle(card, rb); return; }
     var step = e.target.closest('[data-pkc-step]');
     if (step) {
       var mg = card.querySelector('[data-pkc-margin]'), inp = mg.querySelector('[data-pkc-mg-in]');

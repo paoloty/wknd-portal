@@ -4,7 +4,7 @@ import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
 import { oddsEdge } from './pick-box.js';
-import { pickCard, pickCardScript } from './pick-card.js';
+import { pickCard, pickCardScript, pickResultCard } from './pick-card.js';
 import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, gameCard, gameCardScript, storyHtml, scorerName, barsScript } from './games.js';
 import { duelCard, duelScale, previewDuelCards } from './duel.js';
 import { formChart, formChartOf } from './form-check.js';
@@ -1767,34 +1767,11 @@ function flowCard(game, flow) {
 
 // ── Rail: Who called it?, Up next ────────────────────────────────────────────────────────
 function calledCard(game, called, isPlayer) {
-  if (!called) return '';
-  const { odds, result } = called;
-  const fa = n0(game.team_a_score), fb = n0(game.team_b_score);
-  const winner = fa > fb ? 'a' : 'b';
-  const T = side => tc(side === 'a' ? game.team_a_name : game.team_b_name);
-  const ok = v => (v ? '<span class="pk-ok">✓ Called it</span>' : '<span class="pk-miss">✕ Missed</span>');
-  const rows = [];
-  if (odds?.fav) {
-    const proj = Math.max(1, Math.round(Math.abs(odds.margin)));
-    rows.push(`<div class="gd-vr"><span class="gd-kick">Odds</span><span>${escHtml(T(odds.fav))} by <b>${proj}</b> · ${escHtml(T(winner))} won by <b>${Math.abs(fa - fb)}</b></span>${ok(odds.fav === winner)}</div>`);
-  }
-  if (result) {
-    rows.push(result.total
-      ? `<div class="gd-vr"><span class="gd-kick">Pickers</span><span><b>${result.pctWinner}%</b> picked ${escHtml(T(winner))} · ${result.total} pick${result.total === 1 ? '' : 's'}</span>${result.pctWinner === 50 ? '' : ok(result.fansCalled)}</div>`
-      : '<div class="gd-vr"><span class="gd-kick">Pickers</span><span>Nobody picked this game</span><span></span></div>');
-    if (isPlayer) rows.push(`<div class="gd-vr"><span class="gd-kick">You</span><span>${result.myPick ? `You picked <b>${escHtml(T(result.myPick))}</b>` : "You didn't pick"}</span>${result.myPick ? ok(result.myPick === winner) : '<span></span>'}</div>`);
-  }
-  const faces = result?.calledIt?.length ? `<div class="gd-faces">${avatarStack(result.calledIt, { size: 28, link: true, moreBubble: false })}<span><b>${result.calledIt.length}</b> called it</span></div>` : '';
+  if (!called?.result) return '';
+  // The shared result card (views/pick-card.js), inline: the page hero has the final score.
   return `<section id="picks" class="card gd-called" aria-labelledby="picks-h">
-    <div class="gd-card__h"><h2 id="picks-h">Who called it?</h2>${(odds?.fav && odds.fav !== winner) || result?.upset ? '<span class="pk-upset">Upset</span>' : ''}</div>
-    ${odds ? `<span class="gd-kick">Odds before tip-off</span>
-    <div class="gd-oline">
-      <span class="gd-oline__s${odds.fav === 'a' ? ' is-fav' : ''}">${dot(game.team_a_name, 8)}${escHtml(String(game.team_a_name).slice(0, 3))} <b class="font-condensed">${odds.pctA}%</b></span>
-      <span class="gd-obar"><span style="width:${odds.pctA}%"></span></span>
-      <span class="gd-oline__s${odds.fav === 'b' ? ' is-fav' : ''}"><b class="font-condensed">${odds.pctB}%</b> ${escHtml(String(game.team_b_name).slice(0, 3))}${dot(game.team_b_name, 8)}</span>
-    </div>` : ''}
-    ${rows.length ? `<div class="gd-vrd">${rows.join('')}</div>` : ''}
-    ${faces}
+    <div class="gd-card__h"><h2 id="picks-h">Who called it?</h2>${called.result.upset ? '<span class="pkc-upset">UPSET</span>' : ''}</div>
+    ${pickResultCard(called.result, { variant: 'inline', isPlayer })}
   </section>`;
 }
 
@@ -2444,6 +2421,6 @@ ${scripts}`;
 ${floater}
 ${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat)}` : ''}
 ${d.isAdmin ? sectionRegenScript() : ''}
-${d.upNext?.length ? pickCardScript() : ''}
+${d.upNext?.length || v.showCalled ? pickCardScript() : ''}
 ${scripts}`;
 }

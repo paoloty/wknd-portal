@@ -1,8 +1,8 @@
 import { escHtml } from './layout.js';
 import { summaryPanel } from './home.js';
-import { calledItCard, dayLabel, pickAvatar, barsScript, swipeScript } from './games.js';
+import { dayLabel, pickAvatar, barsScript, swipeScript } from './games.js';
 import { fmtCloseTime } from './pick-box.js';
-import { pickCard, pickCardScript } from './pick-card.js';
+import { pickCard, pickCardScript, pickResultCard } from './pick-card.js';
 import { fmtPts } from '../lib/picks.js';
 
 // ── Homepage "Who wins?" widget (placement A: under the registration banner) ────────────
@@ -126,10 +126,11 @@ ${barsScript()}`;
   <div class="section-header"><h2 id="pkw-h">Who called it? <span class="section-header__sub">${escHtml(dayLabel(w.ymd))} · Final</span></h2><a href="/picks" class="section-header__link">All results →</a></div>
   ${panel}
   <div class="pkw-res swipe-row" style="--cols:${Math.min(4, w.cards.length + 1)}" data-swipe>
-    ${w.cards.map(s => calledItCard(s, w.isPlayer, { maxFaces: 6 })).join('')}
+    ${w.cards.map(s => pickResultCard(s.result, { variant: 'card', isPlayer: w.isPlayer })).join('')}
     ${raceCard(w)}
   </div>
 </section>
 ${raceScript()}
+${pickCardScript()}
 ${swipeScript()}`;
 }

@@ -1,8 +1,8 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor, avatarStack } from './utils.js';
-import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel } from './games.js';
+import { pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel } from './games.js';
 import { pickProgress, fmtCloseTime, previewHref } from './pick-box.js';
-import { pickCard, pickCardScript } from './pick-card.js';
+import { pickCard, pickCardScript, pickResultCard } from './pick-card.js';
 import { fmtPts } from '../lib/picks.js';
 import { sectionPanel, sectionRegenScript, summaryPanel, homeSummaryRegenScript } from './home.js';
 
@@ -143,7 +143,7 @@ function gameDays(days, isPlayer) {
   if (!days.length) return '<div class="card pk-empty">No settled picks yet this season — results show here after each game day.</div>';
   return days.map((d, i) => `<div class="pkp-day">
       <h3 class="pkp-day__h">${escHtml(dayLabel(d.ymd))}${i === 0 ? ' <span>Latest</span>' : ''}</h3>
-      <div class="pk-cards${d.games.length === 1 ? ' pk-cards--one' : ''}">${d.games.map(s => calledItCard(s, isPlayer)).join('')}</div>
+      <div class="pk-cards${d.games.length === 1 ? ' pk-cards--one' : ''}">${d.games.map(s => pickResultCard(s.result, { variant: 'card', isPlayer })).join('')}</div>
     </div>`).join('');
 }
 
@@ -179,7 +179,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
 </div>
 <dialog class="pkp-dialog" aria-label="Player picks"><div class="pkp-dialog__in" data-pkp-sheet></div></dialog>
 </div>
-${open.length ? pickCardScript() : ''}
+${open.length || days.length ? pickCardScript() : ''}
 ${picksScript()}
 ${isAdmin ? sectionRegenScript() + (open.length ? homeSummaryRegenScript() : '') : ''}`;
 }

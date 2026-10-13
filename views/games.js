@@ -317,9 +317,6 @@ function oddsLine(m, o) {
 }
 
 const FLAME = `<svg class="pk-flame" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"/></svg>`;
-const CHECK = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`;
-const CROSS = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-const verdict = ok => (ok ? `<span class="pk-ok">${CHECK}Called it</span>` : `<span class="pk-miss">${CROSS}Missed</span>`);
 
 // Photo with initials behind it and a team-colour ring. link: false inside rows that are
 // already links themselves (a nested <a> is invalid HTML).
@@ -331,41 +328,6 @@ function pickAvatar(p, size = 30, link = true) {
     </${tag}>`;
 }
 
-// preview: false on the preview page itself (it would link to itself).
-// Every card has the same rows in the same order (header pill, scores, result line, Odds/Fans/You,
-// one row of faces, footer link), so cards side by side line up row for row.
-// maxFaces: faces before "+N" (the homepage caps it so the row never wraps on a phone).
-function calledItCard(s, isPlayer, { preview = true, maxFaces = 10 } = {}) {
-  const g = s.game;
-  const winnerName = g.winner === 'a' ? g.a : g.b;
-  const row = (name, score, win) => `<span class="pk-sb__row${win ? ' is-win' : ''}">${dot(name, 8)}${escHtml(name)}<b class="font-condensed">${score}</b></span>`;
-  const oddsFav = g.odds?.fav ? (g.odds.fav === 'a' ? g.a : g.b) : null;
-  const winPct = g.odds?.fav ? (g.winner === 'a' ? g.odds.pctA : g.odds.pctB) : null;
-  const pill = s.upset ? '<span class="pk-upset">Upset</span>' : oddsFav ? '<span class="pk-fav">Favourite won</span>' : '';
-  const line = s.upset ? `${escHtml(tc(winnerName))} won with <b>${winPct}%</b> odds`
-    : oddsFav ? `${escHtml(tc(winnerName))} won as the <b>${winPct}%</b> favourite`
-    : `${escHtml(tc(winnerName))} won by <b>${Math.abs(g.sa - g.sb)}</b>`;
-  return `<article class="pk-card" style="--team:${teamColor(winnerName)}">
-      <div class="pk-card__top">
-        <a href="/games/${encodeURIComponent(g.id)}" class="pk-card__when">${escHtml(shortDayLabel(g.ymd))} · Final</a>
-        ${pill}
-      </div>
-      <div class="pk-sb">${row(g.a, g.sa, g.winner === 'a')}${row(g.b, g.sb, g.winner === 'b')}</div>
-      <p class="pk-upset-line">${line}</p>
-      <div class="pk-res">
-        ${oddsFav ? `<div class="pk-res__row"><span class="pk-res__k">Odds</span><span><b>${escHtml(tc(oddsFav))} ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%</b></span>${verdict(s.oddsCalled)}</div>` : ''}
-        <div class="pk-res__row"><span class="pk-res__k">Fans</span>${s.total
-          ? `<span><b>${s.pctWinner}%</b> picked ${escHtml(tc(winnerName))} · ${s.total} pick${s.total === 1 ? '' : 's'}</span>${s.pctWinner === 50 ? '' : verdict(s.fansCalled)}`
-          : '<span>No picks on this game</span>'}</div>
-        ${isPlayer ? `<div class="pk-res__row"><span class="pk-res__k">You</span><span>${s.myPick ? `You picked <b>${escHtml(tc(s.myPick === 'a' ? g.a : g.b))}</b>` : "You didn't pick"}</span>${s.myPick ? verdict(s.myPick === g.winner) : ''}</div>` : ''}
-      </div>
-      ${s.calledIt.length ? `<div class="pk-called">
-        <span class="pk-called__lbl">Called it · ${s.calledIt.length}</span>
-        ${avatarStack(s.calledIt, { size: 30, max: maxFaces, link: true, className: 'pk-called__avs' })}
-      </div>` : `<div class="pk-called pk-called--none">${s.total ? 'Nobody called this one' : 'Nobody picked this game'}</div>`}
-      ${preview ? `<a href="${escHtml(previewHref(g))}#preview" class="pk-card__prev">Pre-game preview →</a>` : ''}
-    </article>`;
-}
 
 // variant 'semi' = /games Up next (storyline + pick, links to the full preview);
 // 'full' = /picks/<game>. state: 'open' | 'closed' | 'final' (the archived preview, with the
@@ -786,4 +748,4 @@ ${matchups.length ? pickCardScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
-export { scorerName, potgCard, calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
+export { scorerName, potgCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel, matchupCard, matchupScript, edgeRow, barsScript, oddsLine, meetingTile, storyHtml, gameCard, gameCardScript, gamesPageScript, swipeScript };
