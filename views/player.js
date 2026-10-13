@@ -4,7 +4,8 @@ import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
 import { BADGE_ICONS } from '../lib/badges.js';
-import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime } from './pick-box.js';
+import { pickProgress, fmtCloseTime } from './pick-box.js';
+import { pickCard, pickCardScript } from './pick-card.js';
 import { resultChips } from './picks-widget.js';
 import { fmtPts } from '../lib/picks.js';
 import { gameSlug } from '../lib/slugs.js';
@@ -793,7 +794,7 @@ function pickRecordCard(r, isOwnProfile) {
   const openHtml = own?.open?.length ? `<div class="pk-me__sec">
     <div class="pk-me__sec-h"><span>${own.open.every(o => o.closed || o.myPick) ? 'Your picks' : 'Pick now'}</span><span>${escHtml(shortDay(own.open[0].ymd))}${own.open.every(o => o.closed) ? ' · closed' : ` · closes ${escHtml(fmtCloseTime(own.closeTime))}`}</span></div>
     ${pickProgress(own.open, '.pk-me')}
-    <div class="pk-me__open">${own.open.map(o => openPickCard(o, { isPlayer: true, next: '/me', size: 'sm' })).join('')}</div>
+    <div class="pk-me__open">${own.open.map(o => pickCard(o, { variant: 'card', isPlayer: true, next: '/me' })).join('')}</div>
   </div>` : '';
   const recentHtml = own?.recent?.length ? `<div class="pk-me__sec">
     <div class="pk-me__sec-h"><span>Recent results</span></div>
@@ -819,7 +820,7 @@ function pickRecordCard(r, isOwnProfile) {
   </div>
   </div>
 </div>
-${own?.open?.length ? pickBoxScript() : ''}`;
+${own?.open?.length ? pickCardScript() : ''}`;
 }
 
 const tcase = s => String(s || '').charAt(0) + String(s || '').slice(1).toLowerCase();
@@ -1679,9 +1680,9 @@ function prfThisWeek(o) {
   const sub = open.length
     ? `${escHtml(prfWeekday(open[0].ymd))}, ${escHtml(prfDay(open[0].ymd))} game day${open.every(g => g.closed) ? ' · picks closed' : ` · picks close ${escHtml(fmtCloseTime(own.closeTime))}`}` : '';
   const body = `${note}<div class="prf-week">
-    ${open.map(g => `<div class="prf-week__pick">${openPickCard(g, { isPlayer: true, next: '/me', size: 'sm' })}</div>`).join('')}
+    ${open.map(g => `<div class="prf-week__pick">${pickCard(g, { variant: 'card', isPlayer: true, next: '/me' })}</div>`).join('')}
     ${papawis.length ? myProfileSidebar({ papawisGames: papawis }) : ''}
-  </div>${open.length ? pickBoxScript() : ''}`;
+  </div>${open.length ? pickCardScript() : ''}`;
   return prfSection('this-week', 'This week', { sub, link: o.picksOn ? prfLink('/picks', 'Pickmaster race') : '', body });
 }
 

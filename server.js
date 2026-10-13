@@ -31,6 +31,7 @@ import { formCheckOf } from './views/form-check.js';
 import { picksPage, picksPlayerPage, picksPlayerSheet, picksRulesPage } from './views/picks.js';
 import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
+import { pickFacesRow } from './views/pick-card.js';
 import { highlightsPage } from './views/highlights.js';
 import { gamePage, reactorsWho } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks } from './lib/game-detail.js';
@@ -7491,12 +7492,8 @@ app.get('/games/:ref', (req, res) => {
   if (!isFinal) {
     const p = gamePreview(game, sorted, playerMap, pctx);
     const o = opens.find(x => x.id === game.id) || null;
-    const siblings = sorted
-      .filter(g => g.id !== game.id && !g.under_review && gameYmd(g.date) === ymd && g.team_a_name && g.team_b_name)
-      .map(g => {
-        const x = opens.find(y => y.id === g.id);
-        return { a: g.team_a_name, b: g.team_b_name, href: previewHref(g), odds: x?.odds || null };
-      });
+    // The same day's other games, as compact pick cards in the rail (views/pick-card.js).
+    const siblings = opens.filter(x => x.id !== game.id && x.ymd === ymd);
     const picks = {
       state: p.state, m: p.m, story: p.story, odds: shownOdds(game.id, p.odds, pctx), o, siblings,
       duel: p.m ? duelScorers(game, p.m, sorted, playerMap) : null,
@@ -9823,21 +9820,29 @@ function settleGamePicks(gameId) {
   }
 }
 
-// Faces for the pick box (views/pick-box.js): who picked which side, the viewer first.
-// Callers only pass these to logged-in players (canSeeFaces) — guests never get names or faces.
-function pickFaces(gameId, viewerId) {
-  const out = { a: [], b: [] };
-  for (const p of getGamePicksWithPlayers(gameId)) {
-    const name = displayPlayerName(p.player_name || '');
-    out[p.side]?.push({ id: p.player_id, name, ini: initials(name), color: teamColor(p.team_name), me: p.player_id === viewerId });
-  }
-  // Newest picks first after you, so the faces up front change as people pick.
-  for (const s of ['a', 'b']) out[s].reverse().sort((x, y) => Number(y.me) - Number(x.me));
-  return out;
-}
-// Logged-in players see who picked each side, picked or not (Paolo, 2026-10-08 — the tiles show
-// faces before you pick); guests never get names or faces.
+// Logged-in players see who picked each side, picked or not (Paolo, 2026-10-08; kept after
+// the 2026-10-13 pick card review). Guests see the faces but never the sides (pickFacesFlat).
 const canSeeFaces = viewerId => !!viewerId;
+
+// The pick card's faces (views/pick-card.js): everyone who picked, one list, you first then
+// newest first. Guests see the faces too (2026-10-13) but never which side anyone took:
+// `side` is only included for logged-in viewers.
+function pickFacesFlat(game, viewerId) {
+  const withSides = canSeeFaces(viewerId);
+  const out = getGamePicksWithPlayers(game.id).map(p => {
+    const name = displayPlayerName(p.player_name || '');
+    const f = { id: p.player_id, name, ini: initials(name), color: teamColor(p.team_name), me: !!viewerId && p.player_id === viewerId };
+    if (withSides) { f.side = p.side; f.sideColor = teamColor(p.side === 'a' ? game.team_a_name : game.team_b_name); }
+    return f;
+  }).reverse();
+  return out.sort((x, y) => Number(y.me) - Number(x.me));
+}
+// When picks close for an upcoming game, as an ISO time (Manila), for the card's countdown.
+// null when an admin is holding picks open (no deadline to count down to).
+function pickCloseAt(pg, setting) {
+  if (setting?.closed === 0 || !pg.ymd) return null;
+  return `${pg.ymd}T${picksCloseTime()}:00+08:00`;
+}
 
 // Every upcoming game's pick state for one viewer — the /picks "Open picks" cards, the
 // homepage widget and the profile card all render this through openPickCard().
@@ -9848,6 +9853,8 @@ function openPicks(games, pctx, viewerId) {
   const counts = getGamePickCounts(ids);
   const mine = getPlayerGamePicks(ids, viewerId);
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const commentsOn = getSetting('comments_enabled', '0') === '1';
+  const talkCounts = commentsOn ? getGameCommentCounts(ids) : {};
   return upcoming.map(g => {
     const pg = pctx.byId[g.id] || toPickGame(g, gameYmd);
     const { closed, odds } = upcomingPickState(g, pctx);
@@ -9864,11 +9871,16 @@ function openPicks(games, pctx, viewerId) {
     return {
       id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season, href: previewHref(g),
       counts: counts[g.id], myPick, closed, odds, closeHm: picksCloseTime(),
+      closeAt: pickCloseAt(pg, pctx.settings[g.id]),
       // Finals Game 1 carries the margin-guess tiebreaker; the guess is only ever sent to its owner.
-      marginGuess: isFinalsG1 ? { mine: myPick ? (pctx.picks.find(p => p.game_id === g.id && p.player_id === viewerId)?.margin_guess ?? null) : null } : null,
-      pickers: canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null,
-      // After picking, a "Talk trash" link to the game's pre-game chatter (comments on).
-      talk: getSetting('comments_enabled', '0') === '1',
+      // seed: the odds' projected margin, so the −/+ stepper starts near a sensible number.
+      marginGuess: isFinalsG1 ? {
+        mine: myPick ? (pctx.picks.find(p => p.game_id === g.id && p.player_id === viewerId)?.margin_guess ?? null) : null,
+        seed: Math.max(1, Math.round(Math.abs(odds?.margin || 0))) || 5,
+      } : null,
+      faces: pickFacesFlat(g, viewerId),
+      // After picking, a "Talk trash" button to the game's pre-game chatter (comments on).
+      talk: commentsOn, talkCount: talkCounts[g.id] || 0,
       recA: recordOf(pg.a), recB: recordOf(pg.b),
       h2h: { a: winsOf(pg.a), b: winsOf(pg.b), meetings: meetings.length },
       // The card's Form check chart (views/form-check.js), from the same as-of-tip-off matchup.
@@ -9892,13 +9904,6 @@ function recentPickResults(pctx, season, viewerId, n = 3) {
     }));
 }
 
-// Homepage face-off for one open game: each side's go-to scorer in this matchup (from the
-// same as-of-tip-off matchup the preview uses), or — when the teams haven't met — each
-// team's top scorer this season.
-function homeFaceoff(game, games, playerMap) {
-  const m = matchupAsOf(game, games, playerMap);
-  return { scorers: duelScorers(game, m, games, playerMap), firstMeeting: m.firstMeeting };
-}
 
 // The two players in the pre-game duel (views/duel.js), for the pick card's face-off and the
 // game page's Players to watch: each side's go-to scorer in this matchup, or — no meetings
@@ -10001,10 +10006,6 @@ function homePicksWidget(games, viewerId) {
   if (lastDay && lastDay >= addDaysYmd(today, -1)) return results();
   const open = openPicks(games, pctx, viewerId);
   if (open.length) {
-    const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-    for (const o of open) {
-      o.face = homeFaceoff(games.find(g => g.id === o.id), games, playerMap);
-    }
     return { ...base, mode: 'open', ymd: open[0].ymd, closeTime: picksCloseTime(), games: open };
   }
   if (lastDay && lastDay >= addDaysYmd(today, -6)) return results();
@@ -10073,9 +10074,6 @@ app.get('/games', (req, res) => {
 
   const upcoming = getUpcomingGames(games);
   const matchups = upcoming.map(g => matchupAsOf(g, games, playerMap));
-  const upcomingIds = upcoming.map(g => g.id);
-  const pickCounts = getGamePickCounts(upcomingIds);
-  const myPicks = getPlayerGamePicks(upcomingIds, req.session?.playerPlayerId || null);
   const stories = getMatchupStories(matchups);
 
   // "Who wins?" on the Up next cards: odds + closed state + faces. The full preview, the
@@ -10089,7 +10087,8 @@ app.get('/games', (req, res) => {
     const pickStates = Object.fromEntries(upcoming.map(g => [g.id, { ...upcomingPickState(g, pctx), ymd: gameYmd(g.date), closeHm }]));
     picks = {
       states: pickStates,
-      pickers: Object.fromEntries(upcoming.map(g => [g.id, canSeeFaces(viewerId) ? pickFaces(g.id, viewerId) : null])),
+      // The shared pick card's data, same as /picks and the homepage (openPicks).
+      opens: Object.fromEntries(openPicks(games, pctx, viewerId).map(o => [o.id, o])),
     };
   }
   const previewHrefs = Object.fromEntries(upcoming.map(g => [g.id, previewHref(g)]));
@@ -10109,7 +10108,7 @@ app.get('/games', (req, res) => {
     body: gamesPage({
       games: listGames, season, seasons, currentSeason, seasonPlayedCount: seasonPlayed.length,
       summary, isAdmin: !!req.session?.isAdmin, isPlayer: !!req.session?.playerPlayerId,
-      tiles, potg, matchups, stories, pickCounts, myPicks, picks, previewHrefs,
+      tiles, potg, matchups, stories, picks, previewHrefs,
       recapDay: ctx.played.length ? gameYmd(ctx.played[0].date) : null,
       commentsEnabled, socialByGame, topScorerByGame, oddsByGame,
     }),
@@ -10146,8 +10145,9 @@ app.post('/games/:id/pick', express.json(), (req, res) => {
   if (upcomingPickState(game, buildPicksContext([game])).closed) return res.status(400).json({ error: 'Picks are closed for this game.' });
   const side = req.body?.side === 'a' || req.body?.side === 'b' ? req.body.side : null;
   setGamePick(game.id, playerId, side);
-  // Faces come back after a cancel too — the tiles keep showing them.
-  res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id], pickers: pickFaces(game.id, playerId) });
+  // Faces come back after a cancel too: the list and the row, drawn by the page's own helper.
+  const faces = pickFacesFlat(game, playerId);
+  res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id], faces, facesHtml: pickFacesRow({ faces, closed: false }, true) });
 });
 
 // ── /picks: full Pickmaster race, game-day history, upsets, per-player pick history ─────
@@ -12937,8 +12937,6 @@ function buildTeamPage(team, viewerId) {
   const upcomingGame = getUpcomingGames(allGames).find(g => teamSide(g, team.id));
   if (upcomingGame && picksEnabled()) {
     openPick = openPicks(allGames, buildPicksContext(allGames), viewerId).find(o => o.id === upcomingGame.id) || null;
-    // Same card as the homepage widget: the scorer face-off sits above the pick.
-    if (openPick) openPick.face = homeFaceoff(upcomingGame, allGames, Object.fromEntries(getAllPlayers().map(p => [p.id, p])));
   }
   const h2hMeetings = oppId => played.filter(g => teamResult(g, team.id).oppId === oppId).slice().reverse(); // oldest first
   if (upcomingGame && !openPick) {

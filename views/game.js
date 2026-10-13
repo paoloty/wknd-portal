@@ -3,7 +3,8 @@ import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, play
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
-import { pickBox, pickBoxScript, talkLink, oddsEdge } from './pick-box.js';
+import { oddsEdge } from './pick-box.js';
+import { pickCard, pickCardScript } from './pick-card.js';
 import { pickAvatar, dot, tc, shortDayLabel, matchupScript, edgeRow, oddsLine, gameCard, gameCardScript, storyHtml, scorerName, barsScript } from './games.js';
 import { duelCard, duelScale, previewDuelCards } from './duel.js';
 import { formChart, formChartOf } from './form-check.js';
@@ -1797,21 +1798,13 @@ function calledCard(game, called, isPlayer) {
   </section>`;
 }
 
-function upNextCard(list, ymdLabel) {
+// The rail's "Up next": the next game day's games as compact pick cards (views/pick-card.js),
+// pickable right here.
+function upNextCard(list, ymdLabel, isPlayer, next) {
   if (!list.length) return '';
-  return `<section class="card gd-next" aria-label="Up next">
+  return `<section class="card gd-next pkc-rail" aria-label="Up next">
     <div class="gd-card__h"><h2>Up next${ymdLabel ? ` · ${escHtml(ymdLabel)}` : ''}</h2><a href="/picks">All picks</a></div>
-    ${list.map(o => {
-      const fav = o.odds?.fav;
-      const pct = fav ? (fav === 'a' ? o.odds.pctA : o.odds.pctB) : null;
-      return `<div class="gd-nx">
-        <div>
-          <span class="gd-nx__t">${dot(o.a, 8)}${escHtml(o.a)} <i>vs</i> ${escHtml(o.b)}${dot(o.b, 8)}</span>
-          ${o.odds ? `<span class="gd-nx__o"><span class="gd-obar"><span style="width:${o.odds.pctA}%"></span></span>${fav ? `${escHtml(tc(fav === 'a' ? o.a : o.b))} ${pct}%${Math.abs(o.odds.pctA - 50) <= 5 ? ' · a coin flip' : ''}` : 'Even'}</span>` : ''}
-        </div>
-        <a class="gd-pk" href="${escHtml(o.href)}#picks">${o.myPick ? 'Picked' : o.closed ? 'View' : 'Pick'}</a>
-      </div>`;
-    }).join('')}
+    ${list.map(o => pickCard(o, { variant: 'compact', isPlayer, next })).join('')}
   </section>`;
 }
 
@@ -2220,21 +2213,23 @@ function pickRail(d) {
   const { state, o, m } = picks;
   let body;
   if ((state === 'open' || state === 'closed') && o) {
-    const total = n0(o.counts?.a) + n0(o.counts?.b);
-    body = `<div class="gd-card__h"><h2 id="picks-h">Who wins?</h2><span class="gd-card__note" data-pick-total>${state === 'closed' ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'} so far` : 'Be the first to pick'}</span></div>
-      ${pickBox(o, { isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}#picks`, oddsHtml: o.odds ? oddsLine(m, o.odds) : '', flag: true })}
-      ${d.commentsEnabled && d.isPlayer && state === 'open' ? talkLink(o.id, '#talk', !!o.myPick) : ''}`;
+    // The shared pick card (views/pick-card.js), inline: the page hero is its header. The odds
+    // panel with "How it's figured" stays under it as the explainer.
+    body = `${pickCard(o, { variant: 'inline', isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}#picks` })}
+      ${o.odds ? oddsLine(m, o.odds) : ''}`;
   } else {
     body = `<div class="gd-card__h"><h2 id="picks-h">Who wins?</h2></div>
       ${picks.odds ? oddsLine(m, picks.odds) : ''}
       <p class="gd-later">${state === 'later' ? 'Picks open closer to game day.' : 'Picks are closed for this one.'}</p>`;
   }
-  const also = picks.siblings?.length ? `<section class="card gd-next" aria-label="Same day">
-      <div class="gd-card__h"><h2>Also on ${escHtml(shortDayLabel(m.ymd))}</h2></div>
-      ${picks.siblings.map(x => `<div class="gd-nx"><div><span class="gd-nx__t">${dot(x.a, 8)}${escHtml(x.a)} <i>vs</i> ${escHtml(x.b)}${dot(x.b, 8)}</span>${x.odds ? `<span class="gd-nx__o"><span class="gd-obar"><span style="width:${x.odds.pctA}%"></span></span>${x.odds.fav ? `${escHtml(tc(x.odds.fav === 'a' ? x.a : x.b))} ${x.odds.fav === 'a' ? x.odds.pctA : x.odds.pctB}%` : 'Even'}</span>` : ''}</div><a class="gd-pk" href="${escHtml(x.href)}#picks">${state === 'open' ? 'Pick' : 'View'}</a></div>`).join('')}
+  // Same day's other games: compact pick cards, pickable right here.
+  const also = picks.siblings?.length ? `<section class="card gd-next pkc-rail" aria-label="Same day">
+      <div class="gd-card__h"><h2>Also on ${escHtml(shortDayLabel(m.ymd))}</h2><a href="/picks">All picks</a></div>
+      ${picks.siblings.map(x => pickCard(x, { variant: 'compact', isPlayer: d.isPlayer, next: `/games/${encodeURIComponent(gameSlug(game))}` })).join('')}
     </section>` : '';
   // The amber glow is the call to action: only while picks are open.
-  return `<section id="picks" class="card gd-pick${state === 'open' ? ' gd-pick--open' : ''}" aria-labelledby="picks-h">${body}</section>${also}`;
+  // The card's own question line titles the section when there's a pick card.
+  return `<section id="picks" class="card gd-pick${state === 'open' ? ' gd-pick--open' : ''}" ${(state === 'open' || state === 'closed') && o ? 'aria-label="Who wins?"' : 'aria-labelledby="picks-h"'}>${body}</section>${also}`;
 }
 
 
@@ -2397,7 +2392,7 @@ export function gamePage(d) {
 </div>
 ${floater}
 ${m ? matchupScript({ isAdmin: d.isAdmin }) : ''}
-${p?.o ? pickBoxScript() : ''}
+${p?.o || p?.siblings?.length ? pickCardScript() : ''}
 ${scripts}`;
   }
 
@@ -2421,7 +2416,7 @@ ${scripts}`;
     comments,
   ].filter(Boolean);
   const mini = `${escHtml(String(game.team_a_name).slice(0, 3))} ${fa} <i>–</i> ${fb} ${escHtml(String(game.team_b_name).slice(0, 3))}`;
-  const rail = [v.showCalled ? calledCard(game, d.called, d.isPlayer) : '', upNextCard(d.upNext, d.upNextLabel), railTalkCard(v, 'Comments')].filter(Boolean).join('');
+  const rail = [v.showCalled ? calledCard(game, d.called, d.isPlayer) : '', upNextCard(d.upNext, d.upNextLabel, d.isPlayer, `/games/${encodeURIComponent(gameSlug(game))}`), railTalkCard(v, 'Comments')].filter(Boolean).join('');
   const talk = talkSection(v, 'Comments');
   const plays = playsBlock(game, d.plays);
   // Section writeups (server.js gameSectionFacts): d.sections = { perf, stats }.
@@ -2449,5 +2444,6 @@ ${scripts}`;
 ${floater}
 ${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat)}` : ''}
 ${d.isAdmin ? sectionRegenScript() : ''}
+${d.upNext?.length ? pickCardScript() : ''}
 ${scripts}`;
 }

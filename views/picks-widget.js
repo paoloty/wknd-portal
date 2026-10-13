@@ -1,9 +1,9 @@
 import { escHtml } from './layout.js';
 import { summaryPanel } from './home.js';
 import { calledItCard, dayLabel, pickAvatar, barsScript, swipeScript } from './games.js';
-import { openPickCard, pickBoxScript, fmtCloseTime } from './pick-box.js';
+import { fmtCloseTime } from './pick-box.js';
+import { pickCard, pickCardScript } from './pick-card.js';
 import { fmtPts } from '../lib/picks.js';
-import { previewDuelSides } from './duel.js';
 
 // ── Homepage "Who wins?" widget (placement A: under the registration banner) ────────────
 // Two modes, picked in server.js (homePicksWidget):
@@ -98,21 +98,10 @@ function faceoff(o, w) {
   return faceoffCard(o, { isPlayer: w.isPlayer, next: '/' });
 }
 
-// The homepage's pick card — also the team page's "Up next" (views/team-detail.js). With a
-// Form check (o.formCheck) it's the plain pick card, chart under the pick; the scorer
-// face-off (o.face, server.js homeFaceoff) only fills in when there's no chart to show.
+// The homepage's pick card: the shared pick card (views/pick-card.js), slim 'card' variant.
+// Also the team page's "Up next" (views/team-detail.js).
 export function faceoffCard(o, { isPlayer = false, next = '/' } = {}) {
-  if (o.formCheck) return openPickCard(o, { isPlayer, next, size: 'sm', more: true });
-  const [pa, pb] = o.face?.scorers || [null, null];
-  const basis = (pa || pb)?.basis === 'season' ? 'Top scorers · this season' : 'Go-to scorers · in this matchup';
-  const middle = `<div class="pkf-duel">
-        <div class="pkf-k"><span>${basis}</span><a href="${escHtml(o.href)}">Full preview →</a></div>
-        <div class="pkf-duel__row">
-          ${previewDuelSides(pa, pb)}
-          <span class="pkf-vs font-condensed" aria-hidden="true">VS</span>
-        </div>
-      </div>`;
-  return openPickCard(o, { isPlayer, next, size: 'sm', middle, more: false });
+  return pickCard(o, { variant: 'card', isPlayer, next });
 }
 
 export function picksWidget(w, { summary = null, isAdmin = false } = {}) {
@@ -130,7 +119,7 @@ export function picksWidget(w, { summary = null, isAdmin = false } = {}) {
   </div>
 </section>
 ${raceScript()}
-${pickBoxScript()}
+${pickCardScript()}
 ${barsScript()}`;
   }
   return `<section class="home-section pkw" aria-labelledby="pkw-h">

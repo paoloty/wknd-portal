@@ -2,9 +2,8 @@ import { escHtml } from './layout.js';
 import { teamColor, initials, playerPhotoUrl } from './utils.js';
 import { gameCard, gamesPageScript } from './games.js';
 import { summaryPanel } from './home.js';
-import { openPickCard, pickBoxScript } from './pick-box.js';
 import { teamsRegenScript } from './teams.js';
-import { faceoffCard } from './picks-widget.js';
+import { pickCard, pickCardScript } from './pick-card.js';
 import { sectionNavScript } from './section-nav.js';
 
 // ── /teams/:slug ──────────────────────────────────────────────────────────────
@@ -52,9 +51,7 @@ function upNext(d) {
   if (d.openPick) {
     const when = d.openPick.ymd ? new Date(`${d.openPick.ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
     return `<span class="tms-kicker tdp-hero__kicker">Up next${when ? ` · ${escHtml(when)}` : ''} · Who wins?</span>
-      ${d.openPick.face
-        ? faceoffCard(d.openPick, { isPlayer: d.isPlayer, next: `/teams/${encodeURIComponent(d.slug)}` })
-        : openPickCard(d.openPick, { isPlayer: d.isPlayer, next: `/teams/${encodeURIComponent(d.slug)}`, size: 'sm' })}`;
+      ${pickCard(d.openPick, { variant: 'card', isPlayer: d.isPlayer, next: `/teams/${encodeURIComponent(d.slug)}` })}`;
   }
   const n = d.nextGame;
   if (!n) return '';
@@ -240,7 +237,7 @@ export function teamDetailPage(d) {
   </section>` : ''}
 </div>
 ${d.games.length ? gamesPageScript() : ''}
-${d.openPick ? pickBoxScript() : ''}
+${d.openPick ? pickCardScript() : ''}
 ${d.isAdmin ? teamsRegenScript() : ''}
 ${sectionNavScript()}`;
 }

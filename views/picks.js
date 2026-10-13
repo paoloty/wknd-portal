@@ -1,7 +1,8 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor, avatarStack } from './utils.js';
 import { calledItCard, pickAvatar, FLAME, dot, tc, dayLabel, shortDayLabel } from './games.js';
-import { openPickCard, pickBoxScript, pickProgress, fmtCloseTime, previewHref } from './pick-box.js';
+import { pickProgress, fmtCloseTime, previewHref } from './pick-box.js';
+import { pickCard, pickCardScript } from './pick-card.js';
 import { fmtPts } from '../lib/picks.js';
 import { sectionPanel, sectionRegenScript, summaryPanel, homeSummaryRegenScript } from './home.js';
 
@@ -18,7 +19,7 @@ function openPicksSection(open, { isPlayer, closeTime, summary = null, isAdmin =
     </div>
     ${summaryPanel(summary, 'picks', isAdmin)}
     <div class="pkp-now__grid${open.length === 1 ? ' is-one' : ''}">
-      ${open.map(o => openPickCard(o, { isPlayer, next: '/picks', size: 'lg' })).join('')}
+      ${open.map(o => pickCard(o, { variant: 'full', isPlayer, next: '/picks' })).join('')}
     </div>
   </section>`;
 }
@@ -178,7 +179,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
 </div>
 <dialog class="pkp-dialog" aria-label="Player picks"><div class="pkp-dialog__in" data-pkp-sheet></div></dialog>
 </div>
-${open.length ? pickBoxScript() : ''}
+${open.length ? pickCardScript() : ''}
 ${picksScript()}
 ${isAdmin ? sectionRegenScript() + (open.length ? homeSummaryRegenScript() : '') : ''}`;
 }
@@ -229,7 +230,7 @@ export function picksPlayerSheet({ player, season, record, rank, ranked, rows, i
   <div class="pkp-sheet__list">
     <div class="pkp-sheet__list-lbl">Picks · newest first</div>
     ${rowHtml}
-    <p class="pkp-sheet__note">${isSelf ? 'Your open picks are only visible to you until the final.' : 'Picks on games not played yet stay private until the final.'}</p>
+    <p class="pkp-sheet__note">${isSelf ? 'Logged-in players can see your open picks in the game\'s "Who picked" list.' : 'Open picks show in each game\'s "Who picked" list.'}</p>
   </div>
 </div>`;
 }

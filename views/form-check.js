@@ -2,7 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
 
 // ── Form check: one line chart, both teams, every stat ─────────────────────────────────
-// The "Who wins?" pick cards (pick-box.js openPickCard, /games Up next) all render this, so a
+// The "Who wins?" pick cards (pick-card.js, /picks 'full' variant) render this, so a
 // change here lands everywhere. Dashed lines = each team's usual against the other (the
 // matchup's head-to-head rows; first meeting: this season); solid = their last 5 games with
 // box scores, any opponent (server.js buildMatchup m.form).

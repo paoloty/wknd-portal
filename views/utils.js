@@ -206,7 +206,7 @@ export function avatarStack(players, { size = 28, max = 6, total, link = false, 
     if (p.guest) return `<span class="av-stack__av av-stack__av--guest" title="${escHtml(p.name || '')} (guest)">${ini}</span>`;
     const tag = link && p.id ? 'a' : 'span';
     const href = tag === 'a' ? ` href="/players/${encodeURIComponent(String(p.id))}"` : '';
-    return `<${tag}${href} class="av-stack__av" style="--team:${escHtml(p.color || teamColor(p.team))}" title="${escHtml(displayPlayerName(p.name || ''))}">${ini}<img src="${playerPhotoUrl(p.id, size > 48 ? 192 : 96)}" alt="" loading="lazy" onerror="this.remove()"></${tag}>`;
+    return `<${tag}${href} class="av-stack__av${p.me ? ' av-stack__av--me' : ''}" style="--team:${escHtml(p.color || teamColor(p.team))}" title="${escHtml(displayPlayerName(p.name || ''))}">${ini}<img src="${playerPhotoUrl(p.id, size > 48 ? 192 : 96)}" alt="" loading="lazy" onerror="this.remove()"></${tag}>`;
   }).join('');
   const bubble = moreBubble && more > 0 ? `<span class="av-stack__av av-stack__av--more">+${more}</span>` : '';
   const slots = '<span class="av-stack__av av-stack__av--open" data-open-slot aria-hidden="true">+</span>'.repeat(Math.max(0, open));

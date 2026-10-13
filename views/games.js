@@ -1,7 +1,8 @@
 import { escHtml, pageHeader } from './layout.js';
 import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl, avatarStack } from './utils.js';
 import { summaryPanel } from './home.js';
-import { pickBox, pickBoxScript, previewHref, oddsEdge, talkLink } from './pick-box.js';
+import { previewHref, oddsEdge } from './pick-box.js';
+import { pickCard, pickCardScript } from './pick-card.js';
 import { scorerName, previewDuelCards } from './duel.js';
 import { formCheck, formCheckOf } from './form-check.js';
 
@@ -369,7 +370,7 @@ function calledItCard(s, isPlayer, { preview = true, maxFaces = 10 } = {}) {
 // variant 'semi' = /games Up next (storyline + pick, links to the full preview);
 // 'full' = /picks/<game>. state: 'open' | 'closed' | 'final' (the archived preview, with the
 // pre-game odds in place of the pick) | 'later' (scheduled, picks not open yet).
-function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPlayer, pickState = null, pickers = null, variant = 'full', state = 'open', href = '', next = '/games', page = false, talk = false }) {
+function matchupCard(m, { story, isAdmin, isPlayer, pickState = null, pick: o = null, variant = 'full', state = 'open', href = '', next = '/games', page = false }) {
   const g = m.game;
   const semi = variant === 'semi';
   const leadA = m.winsA > m.winsB, leadB = m.winsB > m.winsA;
@@ -378,20 +379,14 @@ function matchupCard(m, { story, counts = { a: 0, b: 0 }, myPick, isAdmin, isPla
 
   // Who wins? — the shared pick box (views/pick-box.js) with this card's odds panel on top.
   // The bar shows the fan split; "Who picked" opens from its middle badge.
-  const total = counts.a + counts.b;
-  const { closed = false, odds = null, ymd = null, closeHm = null } = pickState || {};
-  const pick = state === 'final' || state === 'later' ? '' : pickBox({ id: g.id, a: m.a, b: m.b, counts, myPick: myPick || null, closed, odds, pickers, ymd, closeHm }, {
-    // The preview keeps the full odds panel + the Fans vs odds line; the /games card shows the
-    // odds as an edge along its photo banner instead.
-    isPlayer, next, oddsHtml: !semi && odds ? oddsLine(m, odds) : '', flag: !semi,
-  });
+  const { odds = null } = pickState || {};
+  // The shared pick card (views/pick-card.js), inline: this card's photo banner is its header.
+  const pick = state === 'final' || state === 'later' || !o ? '' : pickCard(o, { variant: 'inline', isPlayer, next });
   const pickSec = state === 'final'
     ? (odds ? `<div class="gm-grp">Pre-game odds</div>${oddsLine(m, odds)}` : '')
     : state === 'later'
       ? '<div class="gm-grp">Who wins?</div><p class="gm-later">Picks open closer to game day.</p>'
-      : pickState ? `<div class="gm-grp">Who wins? <span class="gm-grp__note" data-pick-total>${closed ? `Picks closed · ${total} pick${total === 1 ? '' : 's'}` : total ? `${total} pick${total === 1 ? '' : 's'}` : 'Be the first to pick'}</span></div>
-      ${pick}
-      ${talk && isPlayer && href ? talkLink(g.id, `${href}#talk`, !!myPick) : ''}` : '';
+      : pick ? `<div class="gm-pkc">${pick}</div>` : '';
   // /games card: each side's chance next to its record, matching the odds edge on the banner.
   const showEdge = semi && state !== 'final' && state !== 'later' && !!odds;
   const heroPct = (side, before = false) => {
@@ -726,7 +721,7 @@ function gameCardScript() {
 
 export function gamesPage({
   games, season, seasons = [], currentSeason, seasonPlayedCount = 0, summary = null, isAdmin = false, isPlayer = false,
-  tiles = [], potg = [], matchups = [], stories = {}, pickCounts = {}, myPicks = {}, picks = null, previewHrefs = {}, recapDay = null,
+  tiles = [], potg = [], matchups = [], stories = {}, picks = null, previewHrefs = {}, recapDay = null,
   commentsEnabled = false, socialByGame = {}, topScorerByGame = {}, oddsByGame = {},
 }) {
   const seasonLinks = [...seasons.map(s => ({ v: s, label: `Season ${s}` })), { v: 'all', label: 'All seasons' }]
@@ -743,7 +738,7 @@ export function gamesPage({
   const matchupsHtml = matchups.length ? `<section class="gr-sec" aria-labelledby="gr-next-h">
   <div class="section-header"><h2 id="gr-next-h">Up next <span class="section-header__sub">${escHtml(dayLabel(matchups[0].ymd))}</span></h2><a href="/picks" class="section-header__link">Picks &amp; race →</a></div>
   <div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
-    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], counts: pickCounts[m.game.id] || { a: 0, b: 0 }, myPick: myPicks[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null, pickers: picks?.pickers?.[m.game.id] || null, variant: 'semi', state: picks?.states?.[m.game.id]?.closed ? 'closed' : 'open', href: previewHrefs[m.game.id] || '/picks', talk: commentsEnabled })).join('')}
+    ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null, pick: picks?.opens?.[m.game.id] || null, variant: 'semi', state: picks?.states?.[m.game.id]?.closed ? 'closed' : 'open', href: previewHrefs[m.game.id] || '/picks' })).join('')}
   </div>
 </section>` : '';
 
@@ -787,7 +782,7 @@ ${tilesHtml}
 </div>
 ${gamesPageScript()}
 ${matchups.length || isAdmin ? matchupScript({ isAdmin }) : ''}
-${matchups.length ? pickBoxScript() : ''}`;
+${matchups.length ? pickCardScript() : ''}`;
 }
 
 // Shared with views/picks.js (the /picks page reuses the "Who called it?" cards and avatars).
