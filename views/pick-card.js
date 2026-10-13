@@ -11,14 +11,13 @@ import { formCheck } from './form-check.js';
 //   variant 'inline'  the game preview page's rail: no header (the page hero has it)
 //   variant 'compact' sidebars (finished game page "Up next"): two short rows + a footer line
 // A poll: tap a row to pick, tap the other to switch. Rows fill with the team colours once the
-// pickers' split shows (you've picked, or picks closed, and 5+ picks). Pills: FAV/DOG = the
+// pickers' split shows (you've picked, or picks closed). Pills: FAV/DOG = the
 // odds model's chance; PICKS = share of pickers. Points never show here.
 // o comes from server.js openPicks(): { id, a, b, ymd, href, counts, myPick, closed, closeAt,
 // odds, faces, talk, talkCount, recA, recB, h2h, season, marginGuess }.
 // Faces: one mixed row (avatarStack), never split by side. Sides show in the "Who picked"
 // list for logged-in players only (o.faces carries `side` only for them).
 
-const SPLIT_MIN = 5;
 const tc = s => String(s || '').charAt(0) + String(s || '').slice(1).toLowerCase();
 // Lines and fills: Black's own colour is too dark on the card, so it runs lighter here.
 const LINE = { BLACK: '#8a94a6' };
@@ -51,7 +50,9 @@ export function pickFacesRow(o, isPlayer) {
 export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks' } = {}) {
   const compact = variant === 'compact', head = variant === 'full' || variant === 'card';
   const counts = o.counts || { a: 0, b: 0 }, total = counts.a + counts.b, mine = o.myPick || null;
-  const showSplit = (o.closed || (isPlayer && !!mine)) && total >= SPLIT_MIN;
+  // The pickers' split: once you've picked (or picks have closed), from the first pick. You only
+  // see it after making your own call, so there's nothing to hold back.
+  const showSplit = (o.closed || (isPlayer && !!mine)) && total > 0;
   const pct = s => (total ? Math.round(counts[s] / total * 100) : 0);
   const odds = o.odds || null;
   const names = JSON.stringify({ a: o.a, b: o.b });
@@ -91,7 +92,6 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
   };
 
   const hint = compact ? '' : `<p class="pkc-hint" data-pkc-hint>${hintHtml(o, isPlayer)}</p>`;
-  const wait = compact ? '' : waitHtml(total, isPlayer && !!mine && !o.closed && total < SPLIT_MIN);
   const guestCta = !isPlayer && !o.closed && !compact
     ? `<a class="pkc-btn pkc-btn--cta" href="/login?next=${encodeURIComponent(next)}">Log in to pick</a><p class="pkc-hint">Right picks earn points in the <a href="/picks/rules">Pickmaster race</a>.</p>` : '';
   const margin = o.marginGuess ? marginHtml(o, isPlayer, compact) : '';
@@ -114,15 +114,9 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
     <div class="pkc__body">
       ${q}
       <div class="pkc-rows${showSplit ? ' is-split' : ''}" role="radiogroup" aria-label="Who wins: ${escHtml(tc(o.a))} or ${escHtml(tc(o.b))}">${row('a')}${row('b')}</div>
-      ${guestCta}${hint}${wait}${stakes}${remind}${margin}${insight}${faces}${acts}${foot}
+      ${guestCta}${hint}${stakes}${remind}${margin}${insight}${faces}${acts}${foot}
     </div>
   </article>`;
-}
-
-// Under 5 picks the split stays hidden; this says why, and how close it is.
-function waitHtml(total, show) {
-  const n = Math.min(total, SPLIT_MIN);
-  return `<div class="pkc-wait" data-pkc-wait${show ? '' : ' hidden'}><span class="pkc-wait__pips" aria-hidden="true">${Array.from({ length: SPLIT_MIN }, (_, i) => `<i class="${i < n ? 'is-on' : ''}"></i>`).join('')}</span><span data-pkc-wait-t>${n} of ${SPLIT_MIN} picks · the split shows at ${SPLIT_MIN}</span></div>`;
 }
 
 function hintHtml(o, isPlayer) {
@@ -297,7 +291,7 @@ export function pickCardScript() {
   return `<script>
 (function () {
   if (window.__wkndPkc) return; window.__wkndPkc = true;
-  var SPLIT_MIN = ${SPLIT_MIN}, MAX = ${MARGIN_MAX};
+  var MAX = ${MARGIN_MAX};
   var CHECK = ${JSON.stringify(CHECK)}, CHAT = ${JSON.stringify(CHAT)}, BELL = ${JSON.stringify(BELL)};
   ${closeText.toString()}
   function tc(s) { s = String(s || ''); return s.charAt(0) + s.slice(1).toLowerCase(); }
@@ -338,7 +332,7 @@ export function pickCardScript() {
   // Redraw one card after a pick / switch / remove.
   function render(card, counts, mine, faces, facesHtml, kind) {
     var names = JSON.parse(card.dataset.names), player = !!card.dataset.player, closed = card.classList.contains('is-closed');
-    var t = counts.a + counts.b, split = (closed || (player && !!mine)) && t >= SPLIT_MIN;
+    var t = counts.a + counts.b, split = (closed || (player && !!mine)) && t > 0;
     card.dataset.a = counts.a; card.dataset.b = counts.b; card.dataset.mine = mine || '';
     if (faces) card.dataset.faces = JSON.stringify(faces);
     card.classList.toggle('has-pick', !!mine);
@@ -360,13 +354,6 @@ export function pickCardScript() {
       }
     });
     var q = card.querySelector('[data-pkc-q]'); if (q) q.textContent = mine ? 'Your pick is in' : 'Who wins this one?';
-    var wait = card.querySelector('[data-pkc-wait]');
-    if (wait) {
-      var wn = Math.min(t, SPLIT_MIN);
-      wait.hidden = !(player && mine && !closed && t < SPLIT_MIN);
-      wait.querySelectorAll('i').forEach(function (p, i) { p.classList.toggle('is-on', i < wn); });
-      var wt = wait.querySelector('[data-pkc-wait-t]'); if (wt) wt.textContent = wn + ' of ' + SPLIT_MIN + ' picks · the split shows at ' + SPLIT_MIN;
-    }
     var hint = card.querySelector('[data-pkc-hint]');
     if (hint && player && !closed) hint.innerHTML = mine ? 'You picked <b>' + esc(tc(names[mine])) + '</b>. Tap the other team to switch. <button type="button" class="pkc-link" data-pkc-remove>Remove pick</button>' : '';
     var who = card.querySelector('[data-pkc-who]');
