@@ -9806,7 +9806,7 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkc-foot__talk { display: inline-flex; align-items: center; gap: 5px; }
 
 /* "Who picked" list */
-.pkc-dlg { width: min(420px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 64px)); padding: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+.pkc-dlg { width: min(420px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 64px)); margin: auto; padding: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
 .pkc-dlg::backdrop { background: rgba(5,8,14,.7); }
 .pkc-dlg[open] { animation: pkc-rise .28s cubic-bezier(.22,1,.36,1); }
 @keyframes pkc-rise { from { transform: translateY(12px); opacity: 0; } }
