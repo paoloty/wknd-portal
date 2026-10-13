@@ -9734,7 +9734,6 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkc-pill--pk.is-mine { box-shadow: inset 0 0 0 1px rgba(245,147,50,.5); }
 .pkc-pill--pk.is-mine em { background: rgba(245,147,50,.2); color: var(--amber); }
 .pkc-pill[hidden] { display: none; }
-.pkc--compact .pkc-rows.is-split .pkc-pill:not(.pkc-pill--pk) { display: none; }
 .pkc.is-closed .pkc-r { opacity: .8; }
 .pkc.is-closed .pkc-r.is-mine { opacity: 1; }
 
@@ -9831,9 +9830,13 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 /* Narrow cards (rails, phones): once the split shows, the PICKS pill takes the row's right side
    and the odds pill steps aside (the header edge / odds panel still carry the odds). */
 @container pkc (max-width: 360px) {
-  .pkc-rows.is-split .pkc-pill:not(.pkc-pill--pk) { display: none; }
+  /* Narrow cards (rails, sidebars): both pills stay, a little smaller. */
   .pkc-who__go { display: none; }
-  .pkc-r { gap: 8px; padding: 0 10px; }
+  .pkc-r { gap: 6px; padding: 0 9px; }
+  .pkc-r__right { gap: 5px; }
+  .pkc-pill { gap: 3px; padding: 2px 6px 2px 2px; font-size: 12px; }
+  .pkc-pill em { padding: 1px 4px; font-size: 9px; letter-spacing: .04em; }
+  .pkc-r__name { font-size: 14px; gap: 6px; }
 }
 @media (max-width: 380px) {
   .pkc-r { gap: 7px; padding: 0 10px; }
@@ -9924,9 +9927,6 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkc-mg-res b.is-good { color: #7fd1a0; }
 .pkc-dlg__chip.is-ok { color: #7fd1a0; }
 .pkc-dlg__chip.is-miss { color: var(--text-muted); }
-@container pkc (max-width: 360px) {
-  .pkc-r--res .pkc-pill:not(.pkc-pill--pk), .pkc-r--res .pkc-upset { display: none; }
-}
 @media (prefers-reduced-motion: reduce) {
   .pkc-panel.is-in .pkc-pl__bar i { animation: none; }
 }
@@ -9935,3 +9935,9 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkc-r.is-teaser { cursor: default; }
 .pkc-r.is-teaser:hover { border-color: rgba(255,255,255,.12); }
 .pkc-r.is-teaser .pkc-r__radio { opacity: .4; }
+@container pkc (max-width: 360px) {
+  /* Narrow result card: the points drop under the "You called it" line. */
+  .pkc-called { flex-wrap: wrap; }
+  .pkc-called p { flex: 1 1 0; min-width: 0; }
+  .pkc-called__pts { flex-basis: 100%; justify-items: start; padding-left: 36px; text-align: left; }
+}

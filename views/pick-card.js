@@ -254,10 +254,10 @@ export function pickResultCard(r, { variant = 'card', isPlayer = false } = {}) {
     const p = odds ? (s === 'a' ? odds.pctA : odds.pctB) : null;
     const oddsPill = p == null ? '' : `<span class="pkc-pill${p > 50 ? ' is-fav' : ''}"><em>${p > 50 ? 'FAV' : p < 50 ? 'DOG' : 'EVEN'}</em>${p}%</span>`;
     return `<div class="pkc-r pkc-r--res${isMine ? ' is-mine' : ''}${win ? ' is-win' : ' is-loss'}" style="--c:${lineOf(team)};--tint:${tintOf(team)}">
-        ${win ? '<span class="pkc-r__fill" style="width:100%"></span>' : ''}
+        ${total ? `<span class="pkc-r__fill" style="width:${pct(s)}%"></span>` : ''}
         ${isMine ? `<span class="pkc-r__radio">${CHECK}</span>` : '<span class="pkc-r__radio"></span>'}
         <span class="pkc-r__name">${dot(team, 9)}${escHtml(tc(team))}</span>${oddsPill}
-        <span class="pkc-r__right">${total ? `<span class="pkc-pill pkc-pill--pk${isMine ? ' is-mine' : ''}"><em>PICKS</em>${pct(s)}%</span>` : ''}<b class="pkc-r__score font-condensed">${s === 'a' ? r.sa : r.sb}</b></span>
+        <span class="pkc-r__right">${total ? `<span class="pkc-pill pkc-pill--pk${isMine ? ' is-mine' : ''}"><em>PICKS</em>${pct(s)}%</span>` : ''}</span>
       </div>`;
   };
   const winTeam = escHtml(tc(r.winner === 'a' ? r.a : r.b));
