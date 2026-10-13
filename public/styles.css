@@ -9953,3 +9953,8 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkf-games .pkc__body, .pkw-res .pkc__body { display: flex; flex-direction: column; }
 .pkf-games .pkc__body > .pkc-acts:last-child, .pkw-res .pkc__body > .pkc-acts:last-child, .pkw-race__more { margin-top: auto; }
 .pkw-race .pkw-lb__list { gap: 0; }
+
+/* /picks sidebar: race + upsets in the pick card's shell */
+.pkp-race .pkc__body, .pkp-upsets .pkc__body { gap: 12px; }
+.pkp-race .pk-board__foot { margin-top: 2px; }
+.pkp-upsets .pkp-up:first-child { border-top: 0; padding-top: 0; }

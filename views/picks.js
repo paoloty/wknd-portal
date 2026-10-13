@@ -56,13 +56,14 @@ const fmtOdds = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2
 // Movement since the game day before: ▲2 / ▼1 (nothing for no change or a first game day).
 const trendHtml = t => (t > 0 ? `<i class="pkp-lb__tr is-up">▲${t}</i>` : t < 0 ? `<i class="pkp-lb__tr is-down">▼${-t}</i>` : '');
 
-function raceRow(r, season, viewerId) {
+// tied: someone else shares this rank, shown "T1" like the homepage race card.
+function raceRow(r, season, viewerId, tied = false) {
   const sub = [
     r.team ? `${dot(r.team, 6)}${escHtml(tc(r.team))}` : '',
     r.weekPicks ? `${fmtPts(r.week)} this week` : '',
   ].filter(Boolean).join(' · ');
   return `<a href="${playerHref(r.playerId, season)}" class="pkp-lb${r.rank === 1 ? ' is-top' : ''}${r.playerId === viewerId ? ' is-me' : ''}" data-picks-player>
-      <span class="pkp-lb__rank font-condensed">${r.rank}</span>
+      <span class="pkp-lb__rank font-condensed">${tied ? 'T' : ''}${r.rank}</span>
       ${pickAvatar({ id: r.playerId, name: r.name, team: r.team }, 32, false)}
       <span class="pkp-lb__nm"><b>${escHtml(r.name)}${r.playerId === viewerId ? ' · You' : ''}</b><span>${sub}${trendHtml(r.trend)}</span></span>
       <span class="pkp-lb__rec">${r.correct}–${r.wrong}</span>
@@ -71,9 +72,9 @@ function raceRow(r, season, viewerId) {
     </a>`;
 }
 
-function oddsRow(r, season, viewerId) {
+function oddsRow(r, season, viewerId, tied = false) {
   return `<a href="${playerHref(r.playerId, season)}" class="pkp-lb${r.oddsRank === 1 ? ' is-top' : ''}${r.playerId === viewerId ? ' is-me' : ''}" data-picks-player>
-      <span class="pkp-lb__rank font-condensed">${r.oddsRank}</span>
+      <span class="pkp-lb__rank font-condensed">${tied ? 'T' : ''}${r.oddsRank}</span>
       ${pickAvatar({ id: r.playerId, name: r.name, team: r.team }, 32, false)}
       <span class="pkp-lb__nm"><b>${escHtml(r.name)}${r.playerId === viewerId ? ' · You' : ''}</b><span>${r.team ? `${dot(r.team, 6)}${escHtml(tc(r.team))}` : ''}${r.upsets ? ` · ${r.upsets} upset${r.upsets === 1 ? '' : 's'}` : ''}</span></span>
       <span class="pkp-lb__rec">${r.correct}–${r.wrong}</span>
@@ -84,24 +85,28 @@ function oddsRow(r, season, viewerId) {
 
 function boardList(rows, rowFn, { name, season, viewerId, hidden = false }) {
   const SHOW = 10;
+  const key = name === 'pts' ? 'rank' : 'oddsRank', at = {};
+  rows.forEach(r => { at[r[key]] = (at[r[key]] || 0) + 1; });
   return `<div data-race-board="${name}"${hidden ? ' hidden' : ''}>
       <div class="pkp-lb__head" aria-hidden="true"><span>#</span><span></span><span>Player</span><span>W–L</span><span>Pts</span><span>${name === 'pts' ? 'Run' : ''}</span></div>
-      <div class="pkp-lb__list${rows.length > SHOW ? ' is-capped' : ''}">${rows.map((r, i) => (i === SHOW ? '<div class="pkp-lb__rest">' : '') + rowFn(r, season, viewerId)).join('')}${rows.length > SHOW ? '</div>' : ''}</div>
+      <div class="pkp-lb__list${rows.length > SHOW ? ' is-capped' : ''}">${rows.map((r, i) => (i === SHOW ? '<div class="pkp-lb__rest">' : '') + rowFn(r, season, viewerId, at[r[key]] > 1)).join('')}${rows.length > SHOW ? '</div>' : ''}</div>
       ${rows.length > SHOW ? `<button type="button" class="gm-more pkp-lb__all" data-race-all aria-expanded="false">Show all ${rows.length}</button>` : ''}
     </div>`;
 }
 
 function racePanel({ board, oddsBoard, season, viewerId }) {
   const body = board.length
-    ? `<div class="pkp-boards" role="group" aria-label="Leaderboard">
-        <button type="button" class="pkp-boards__b is-on" data-race-show="pts" aria-pressed="true">Pickmaster</button>
-        <button type="button" class="pkp-boards__b" data-race-show="odds" aria-pressed="false">Beat the Odds</button>
-      </div>
-      ${boardList(board, raceRow, { name: 'pts', season, viewerId })}
+    ? `${boardList(board, raceRow, { name: 'pts', season, viewerId })}
       ${boardList(oddsBoard, oddsRow, { name: 'odds', season, viewerId, hidden: true })}`
     : '<p class="pk-lb__empty">The board fills after the first game day\'s finals. Every settled pick counts.</p>';
-  return `<section class="pk-board pkp-race" aria-labelledby="pkp-race-h">
-      <div class="pk-board__head"><h2 id="pkp-race-h">Pickmaster race · S${escHtml(season)}</h2><span>${board.length} on the board</span></div>
+  // Same shell as the pick cards (views/pick-card.js) and the homepage race card.
+  return `<section class="pkc pkp-race" aria-labelledby="pkp-race-h">
+      <div class="pkc__head pkw-race__head">
+        <div class="pkw-race__ttl"><b id="pkp-race-h">Pickmaster race</b><small class="font-condensed">S${escHtml(season)} · ${board.length} on the board</small></div>
+        ${board.length ? `<span class="pkw-seg" role="group" aria-label="Leaderboard"><button type="button" class="is-on" data-race-show="pts" aria-pressed="true">Pickmaster</button><button type="button" data-race-show="odds" aria-pressed="false">Beat the Odds</button></span>` : ''}
+        <div class="pkc__edge pkw-race__edge" aria-hidden="true"><i style="--c:var(--amber);flex-basis:100%"></i></div>
+      </div>
+      <div class="pkc__body">
       ${body}
       <div class="pk-board__foot">
         <p data-race-foot="pts">Most points at season's end wins the <b>Pickmaster</b> award: <b>+1</b> for a correct pick, <b>−1</b> for a miss, <b>0</b> for a game you sit out.</p>
@@ -119,15 +124,20 @@ function racePanel({ board, oddsBoard, season, viewerId }) {
           </ol>
           <p>When three or more are tied, anyone a step separates is placed, and whoever is still level starts again at head-to-head.</p>
         </details>
-        <a class="pkp-rules-link" href="/picks/rules">Full Pickmaster rules →</a>
+      </div>
+      <a class="pkc-btn" href="/picks/rules">Full Pickmaster rules <span class="pkc-arr">→</span></a>
       </div>
     </section>`;
 }
 
 function upsetsPanel(upsets, season) {
   if (!upsets.length) return '';
-  return `<section class="pk-board pkp-upsets" aria-labelledby="pkp-up-h">
-      <div class="pk-board__head"><h2 id="pkp-up-h">Upsets · S${escHtml(season)}</h2><span>Underdog won</span></div>
+  return `<section class="pkc pkp-upsets" aria-labelledby="pkp-up-h">
+      <div class="pkc__head pkw-race__head">
+        <div class="pkw-race__ttl"><b id="pkp-up-h">Upsets</b><small class="font-condensed">S${escHtml(season)} · the underdog won</small></div>
+        <div class="pkc__edge pkw-race__edge" aria-hidden="true"><i style="--c:var(--amber);flex-basis:100%"></i></div>
+      </div>
+      <div class="pkc__body">
       ${upsets.map(s => {
         const g = s.game, w = g.winner === 'a' ? g.a : g.b, l = g.winner === 'a' ? g.b : g.a;
         return `<a href="${escHtml(previewHref(g))}" class="pkp-up">
@@ -136,6 +146,7 @@ function upsetsPanel(upsets, season) {
           ${avatarStack(s.calledIt, { size: 26, max: 3, moreBubble: false })}
         </a>`;
       }).join('')}
+      </div>
     </section>`;
 }
 
