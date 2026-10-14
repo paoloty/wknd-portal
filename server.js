@@ -154,6 +154,7 @@ import {
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
+  bumpPageView, prunePageViews, setRegistrationLastSeen, clickNotification, getOwnNotificationLink,
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   createLeaguePoll, getAllLeaguePolls, getLeaguePollById, setLeaguePollStatus, getLeaguePollVotes, getMyLeaguePollVote, castLeaguePollVote,
@@ -2136,7 +2137,25 @@ function impersonationBanner(playerName) {
 </script>`;
 }
 
+// ── Engagement tracking (admin redesign step 0) ─────────────────────────────────────────
+// Counts one page view per render into the daily aggregate (lib/portal-db.js page_views),
+// keyed by the route PATTERN (/games/:id) so a game's 40 pages are one row a day. Skipped:
+// bots and link previews, the super-admin login (no player account), "view as" sessions,
+// and anything without a matched route (404s). Never throws into the page render.
+const TRACK_BOT_RE = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|discord|embedly|headless|lighthouse|curl|wget|python|node-fetch|axios/i;
+function trackPageView(req) {
+  try {
+    if (req.method !== 'GET' || !req.route?.path) return;
+    if (req.session?.impersonating) return;
+    if (req.session?.isAdmin && !req.session?.playerRegId) return;
+    if (TRACK_BOT_RE.test(req.get('user-agent') || '')) return;
+    const pattern = typeof req.route.path === 'string' ? req.route.path : req.path;
+    bumpPageView(manilaTodayStr(), pattern, req.session?.playerPlayerId || '');
+  } catch (e) { console.error('[page views]', e.message); }
+}
+
 function renderPage(req, opts) {
+  trackPageView(req);
   const origin = getRequestOrigin(req);
   // No page-specific image: the page's own redesign share card (see pageOgSpec).
   const fallbackImg = `${origin}/og/${pageOgKey(req.path)}.png?v=${ogDayStamp()}`;
@@ -2866,6 +2885,34 @@ app.use((req, res, next) => {
   if (!req.session?.impersonating || req.method === 'GET') return next();
   if (req.path === '/admin/stop-impersonating') return next();
   res.status(403).json({ error: 'Read-only while viewing as another player.' });
+});
+
+// Last seen: the first GET of each Manila day by a signed-in player stamps
+// registrations.last_seen_at (the session remembers the day, so it's one write a day, not
+// one per request). Not while viewing as another player.
+app.use((req, res, next) => {
+  const regId = req.session?.playerRegId;
+  if (regId && req.method === 'GET' && !req.session.impersonating) {
+    const today = manilaTodayStr();
+    if (req.session.seenDay !== today) {
+      try { setRegistrationLastSeen(regId); req.session.seenDay = today; }
+      catch (e) { console.error('[last seen]', e.message); }
+    }
+  }
+  next();
+});
+
+// Every bell link goes through here (views/layout.js), so a click on one notification is
+// recorded (clicked_at) apart from just opening the bell. Only the player's own
+// notifications resolve; the target must be a path on this site (no open redirect).
+app.get('/n/:id', (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.redirect(loginUrl(req));
+  const link = req.session.impersonating
+    ? getOwnNotificationLink(req.params.id, playerId)
+    : clickNotification(req.params.id, playerId);
+  const safe = typeof link === 'string' && link.startsWith('/') && !link.startsWith('//') && !link.startsWith('/\\');
+  res.redirect(safe ? link : '/');
 });
 
 async function fetchCoverImageBuffer(url) {
@@ -19035,6 +19082,16 @@ function runPapawisBroadcastJobs() {
   }).catch(e => console.error('[papawis] broadcast run failed:', e.message));
 }
 setInterval(runPapawisBroadcastJobs, 60 * 1000);
+
+// page_views keeps 180 days (lib/portal-db.js): prune at startup, then daily.
+function prunePageViewsJob() {
+  try {
+    const cutoff = new Date(Date.parse(manilaTodayStr() + 'T00:00:00Z') - 180 * 86400000).toISOString().slice(0, 10);
+    prunePageViews(cutoff);
+  } catch (e) { console.error('[page views prune]', e.message); }
+}
+prunePageViewsJob();
+setInterval(prunePageViewsJob, 24 * 60 * 60 * 1000);
 
 // ── Live game-comments WebSocket ────────────────────────────────────────────────
 // Scoped to one room per game (not a site-wide socket) — a client on /games/:id only

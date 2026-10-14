@@ -108,7 +108,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     <div class="site-nav__notif-panel">
       <div class="site-nav__notif-panel-head">Notifications</div>
       <div class="site-nav__notif-list">
-        ${notifications.length ? notifications.map(n => `<a href="${n.link ? escHtml(n.link) : '#'}" class="site-nav__notif-item${!n.read_at ? ' is-unread' : ''}">
+        ${notifications.length ? notifications.map(n => `<a href="${n.link ? `/n/${encodeURIComponent(n.id)}` : '#'}" class="site-nav__notif-item${!n.read_at ? ' is-unread' : ''}">
           <div class="site-nav__notif-item-title">${escHtml(n.title)}</div>
           ${n.body ? `<div class="site-nav__notif-item-body">${escHtml(n.body)}</div>` : ''}
           <div class="site-nav__notif-item-time">${fmtNotifTime(n.created_at)}</div>
