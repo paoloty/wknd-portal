@@ -1,16 +1,9 @@
-// Papawis admin: shared pricing helpers (also used by lib/papawis-notify.js for the reminder
-// emails) and the Activity page, which hasn't been rebuilt yet. The runs list and the run
-// page were rebuilt on views/admin/ui.js in the 2026-10 admin redesign: see
-// views/admin/papawis-runs.js and views/admin/papawis-run.js.
-import { escHtml } from '../layout.js';
-import { displayPlayerName } from '../utils.js';
+// Papawis admin: the shared pricing helpers (also used by lib/papawis-notify.js for the
+// reminder emails) and the activity event labels. The pages themselves were rebuilt on
+// views/admin/ui.js in the 2026-10 admin redesign: papawis-runs.js, papawis-run.js,
+// papawis-courts.js and papawis-activity.js.
 
-const ICON_CHEVRON_L = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
-
-function fmtLogTime(ts) {
-  return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
+// What each papawis_activity_log event reads as in the admin.
 export const ACTIVITY_LABELS = {
   registered:    { label: 'registered', color: 'text-amber-400' },
   joined:        { label: 'joined',    color: 'text-emerald-400' },
@@ -23,27 +16,9 @@ export const ACTIVITY_LABELS = {
   completion_notified: { label: 'sent payment receipt', color: 'text-sky-400' },
   announced:     { label: 'sent new-game announcement', color: 'text-sky-400' },
   slot_alerted:  { label: 'sent slot-opened alert', color: 'text-sky-400' },
+  team_notified: { label: 'told their team', color: 'text-sky-400' },
+  updated_notified: { label: 'told about a time or court change', color: 'text-sky-400' },
 };
-
-// Shared between the per-game log (Game column hidden) and the global feed (shown).
-function activityRow(e, { showGame = false } = {}) {
-  const cfg = ACTIVITY_LABELS[e.event_type] || { label: e.event_type, color: 'text-slate-400' };
-  return `<tr class="border-b border-admin-border/50 last:border-b-0">
-    <td class="px-4 py-2.5 text-sm font-medium text-slate-100">${escHtml(e.player_name || 'Someone')}</td>
-    <td class="px-4 py-2.5 text-sm ${cfg.color}">${escHtml(cfg.label)}${e.notes ? `<span class="text-xs text-slate-500"> (${escHtml(e.notes)})</span>` : ''}</td>
-    ${showGame ? `<td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(e.game_title || 'General')}</td>` : ''}
-    <td class="px-4 py-2.5 text-xs text-slate-500 text-right whitespace-nowrap">${fmtLogTime(e.created_at)}</td>
-  </tr>`;
-}
-
-function activityTableHead(showGame) {
-  return `<thead><tr>
-    <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Player</th>
-    <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Action</th>
-    ${showGame ? '<th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Game</th>' : ''}
-    <th class="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">When</th>
-  </tr></thead>`;
-}
 
 // ── Detail / manage ───────────────────────────────────────────────────────────
 // Last-resort fallback only, for when neither a court rate nor session hours are known at
@@ -105,58 +80,4 @@ export function estimatedPapawisPrice(game, confirmedCount, courtRateFallback = 
   // script below) — a saved min_per_player should win here too, otherwise the pre-game
   // reminder email quotes a different number than what Close Out will actually charge.
   return game?.min_per_player ? roundTo10(game.min_per_player) : raw;
-}
-
-// ── Activity (global feed + frequent cancellers) ─────────────────────────────
-export function adminPapawisActivityBody({ activity = [], cancellers = [], regulars = [] } = {}) {
-  const cancellerRow = (c) => `<tr class="border-b border-admin-border/50 last:border-b-0">
-      <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(c.player_name))}</td>
-      <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(c.team_name || '—')}</td>
-      <td class="px-4 py-2.5 text-sm text-slate-300 font-saira text-right">${c.cancel_count}</td>
-    </tr>`;
-
-  const regularRow = (r) => `<tr class="border-b border-admin-border/50 last:border-b-0">
-      <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(displayPlayerName(r.player_name))}</td>
-      <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(r.team_name || '—')}</td>
-      <td class="px-4 py-2.5 text-sm text-slate-300 font-saira text-right">${r.games_played}</td>
-    </tr>`;
-
-  return `
-<div class="agm-edit-bar">
-  <a href="/admin/papawis" class="agm-edit-bar__back">${ICON_CHEVRON_L} All Papawis</a>
-</div>
-
-<h2 class="text-xl font-bold tracking-tight text-slate-100 mt-4 mb-5">Papawis Activity</h2>
-
-<div class="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px] items-start">
-
-  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">All Activity</div>
-    ${activity.length ? `<table class="w-full border-collapse">
-      ${activityTableHead(true)}
-      <tbody>${activity.map(e => activityRow(e, { showGame: true })).join('')}</tbody>
-    </table>` : '<div class="px-4 py-8 text-center text-sm text-slate-500">No activity yet.</div>'}
-  </div>
-
-  <div class="flex flex-col gap-5">
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Regulars <span class="normal-case font-normal text-slate-600">— confirmed in 5+ of the last 10</span></div>
-      <table class="w-full border-collapse">
-        <tbody>
-          ${regulars.length ? regulars.map(regularRow).join('') : '<tr><td class="px-4 py-8 text-center text-sm text-slate-500">No regulars yet.</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Frequent Cancellers</div>
-      <table class="w-full border-collapse">
-        <tbody>
-          ${cancellers.length ? cancellers.map(cancellerRow).join('') : '<tr><td class="px-4 py-8 text-center text-sm text-slate-500">No repeat cancellers yet.</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-</div>`;
 }

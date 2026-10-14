@@ -213,7 +213,8 @@ import { bonusCutoff, ballotClose, isPast, fmtMoment, tallyBallots, podiumPoints
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
-import { adminPapawisActivityBody, estimatedPapawisPrice } from './views/admin/papawis.js';
+import { estimatedPapawisPrice } from './views/admin/papawis.js';
+import { adminPapawisActivityBody } from './views/admin/papawis-activity.js';
 import { adminPapawisRunsBody } from './views/admin/papawis-runs.js';
 import { adminPapawisRunBody } from './views/admin/papawis-run.js';
 import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
@@ -17744,7 +17745,7 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
 
 app.get('/admin/papawis/courts', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
-    title: 'Papawis Courts',
+    title: 'Courts',
     currentPath: '/admin/papawis/courts',
     body: adminPapawisCourtsBody({ courts: getAllPapawisCourts() }),
   }));
@@ -17869,12 +17870,14 @@ app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
 // Declared before the /:id route below so "activity" isn't swallowed as a game id.
 app.get('/admin/papawis/activity', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
-    title: 'Papawis Activity',
+    title: 'Activity',
     currentPath: '/admin/papawis/activity',
     body: adminPapawisActivityBody({
-      activity: getAllPapawisActivity(200),
+      activity: getAllPapawisActivity(500),
       cancellers: getFrequentPapawisCancellers(),
-      regulars: getFrequentPapawisPlayers(),
+      regulars: getFrequentPapawisPlayers(REGULAR_WINDOW, REGULAR_MIN_GAMES),
+      regularsRule: `${REGULAR_MIN_GAMES} of the last ${REGULAR_WINDOW} runs`,
+      query: req.query, colorById: adminTeamColorByPlayer(),
     }),
   }));
 });

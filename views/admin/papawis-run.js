@@ -275,7 +275,7 @@ function activityTab(activity) {
   if (!activity.length) return emptyState({ title: 'No activity yet', sub: 'Sign-ups, cancellations and emails show up here.' });
   const tone = t => ({ joined: 'green', promoted: 'green', cancelled: 'red', cancel_notified: 'red', waitlisted: 'amber', registered: 'amber' }[t] || 'gray');
   return `<div class="aui-panel">${timeline(activity.map(e => ({
-    who: e.player_name || 'Someone', what: `${(ACTIVITY_LABELS[e.event_type] || { label: e.event_type }).label}${e.notes ? ` (${e.notes})` : ''}`, when: fmtTime(e.created_at), tone: tone(e.event_type),
+    who: e.player_name ? displayPlayerName(e.player_name) : 'Someone', what: `${(ACTIVITY_LABELS[e.event_type] || { label: e.event_type }).label}${e.notes ? ` (${e.notes})` : ''}`, when: fmtTime(e.created_at), tone: tone(e.event_type),
   })))}</div>`;
 }
 

@@ -2082,3 +2082,11 @@ textarea.aui-input { height: auto; padding: 10px 12px; resize: vertical; line-he
 }
 
 .aui-empty__mark.is-neutral { background: var(--surface-2); color: var(--text-muted); }
+.pw-court-thumb { width: 44px; height: 44px; flex: none; border-radius: 8px; object-fit: cover; border: 1px solid var(--aui-line); display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.pw-court-thumb--empty { border-style: dashed; border-color: rgba(255,255,255,.16); color: var(--text-muted); background: rgba(255,255,255,.03); }
+.pw-cover__frame--court { aspect-ratio: 2 / 1; }
+tbody[data-court-list] tr.is-dragging { opacity: .45; }
+.pw-event { font-weight: 600; color: var(--text); }
+.pw-event.is-green { color: var(--aui-green); }
+.pw-event.is-red { color: var(--aui-red); }
+.pw-event.is-blue { color: var(--aui-blue); }

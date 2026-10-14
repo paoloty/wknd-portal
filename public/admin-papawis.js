@@ -261,10 +261,14 @@
     });
   }
 
-  // ── Cover upload ────────────────────────────────────────────────────────────────────
-  var cover = document.querySelector('[data-cover]');
-  if (cover) {
+  // ── Photo upload: run covers and court photos ───────────────────────────────────────
+  // <div data-cover data-upload="POST/DELETE url" data-img="image url"> (or data-game="<run id>"
+  // for a run's cover).
+  document.querySelectorAll('[data-cover]').forEach(function (cover) {
     var gid = cover.getAttribute('data-game');
+    var upUrl = cover.getAttribute('data-upload') || '/admin/papawis/' + gid + '/cover';
+    var imgUrl = cover.getAttribute('data-img') || '/api/papawis-cover/' + encodeURIComponent(gid);
+    var isCourt = !!cover.getAttribute('data-upload');
     var input = cover.querySelector('[data-cover-input]'), frame = cover.querySelector('[data-cover-frame]'), img = cover.querySelector('[data-cover-img]');
     var rm = cover.querySelector('[data-cover-remove]'), msg = cover.querySelector('[data-cover-msg]');
     input.addEventListener('change', function () {
@@ -272,19 +276,46 @@
       msg.textContent = 'Uploading…';
       var r = new FileReader();
       r.onload = function () {
-        post('/admin/papawis/' + gid + '/cover', { dataUrl: r.result })
-          .then(function () { img.src = '/api/papawis-cover/' + encodeURIComponent(gid) + '?v=' + Date.now(); frame.hidden = false; rm.hidden = false; msg.textContent = ''; ui().toast('Cover saved.'); })
+        post(upUrl, { dataUrl: r.result })
+          .then(function () { img.src = imgUrl + '?v=' + Date.now(); frame.hidden = false; rm.hidden = false; msg.textContent = ''; ui().toast(isCourt ? 'Photo saved.' : 'Cover saved.'); })
           .catch(function (e) { msg.textContent = ''; ui().toast(e.message, { tone: 'error' }); })
           .then(function () { input.value = ''; });
       };
       r.readAsDataURL(f);
     });
     rm.addEventListener('click', function () {
-      ui().confirm({ title: 'Remove this cover?', body: 'The court photo shows again.', sendLabel: 'Remove' }).then(function (ok) {
+      ui().confirm({ title: isCourt ? 'Remove this photo?' : 'Remove this cover?', body: isCourt ? 'Cards for this court show the map instead.' : 'The court photo shows again.', sendLabel: 'Remove' }).then(function (ok) {
         if (!ok) return;
-        fetch('/admin/papawis/' + gid + '/cover', { method: 'DELETE' })
-          .then(function (res) { if (!res.ok) throw new Error('Couldn’t remove the cover.'); frame.hidden = true; rm.hidden = true; img.src = ''; ui().toast('Cover removed.'); })
+        fetch(upUrl, { method: 'DELETE' })
+          .then(function (res) { if (!res.ok) throw new Error('Couldn’t remove it.'); frame.hidden = true; rm.hidden = true; img.src = ''; ui().toast('Removed.'); })
           .catch(function (e) { ui().toast(e.message, { tone: 'error' }); });
+      });
+    });
+  });
+
+  // ── Courts: drag to reorder (the order the court picker lists them in) ──────────────
+  var courtList = document.querySelector('tbody[data-court-list]');
+  if (courtList) {
+    var cRow = null;
+    var cSave = function () {
+      var order = [].slice.call(courtList.querySelectorAll('tr[data-id]')).map(function (r) { return r.getAttribute('data-id'); });
+      post('/admin/papawis/courts/reorder', { order: order }).then(function () { ui().toast('Court order saved.'); })
+        .catch(function (e) { ui().toast(e.message, { tone: 'error' }); setTimeout(function () { location.reload(); }, 1200); });
+    };
+    var cPlace = function (y) { var after = rowAfter(courtList, y, 'tr[data-id]'); if (after) courtList.insertBefore(cRow, after); else courtList.appendChild(cRow); };
+    courtList.querySelectorAll('tr[data-id]').forEach(function (row) {
+      row.addEventListener('dragstart', function () { cRow = row; row.classList.add('is-dragging'); });
+      row.addEventListener('dragend', function () { row.classList.remove('is-dragging'); cRow = null; });
+    });
+    courtList.addEventListener('dragover', function (e) { if (!cRow) return; e.preventDefault(); cPlace(e.clientY); });
+    courtList.addEventListener('drop', function (e) { e.preventDefault(); if (cRow) cSave(); });
+    courtList.querySelectorAll('.pw-handle').forEach(function (h) {
+      h.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'mouse') return;
+        var row = h.closest('tr'); e.preventDefault(); h.setPointerCapture(e.pointerId); cRow = row; row.classList.add('is-dragging');
+        function move(ev) { cPlace(ev.clientY); }
+        function up() { h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); row.classList.remove('is-dragging'); cSave(); cRow = null; }
+        h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
       });
     });
   }

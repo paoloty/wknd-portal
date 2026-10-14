@@ -9,7 +9,7 @@ Legend for the Mockup column:
 - **needed**: a mockup comes first; the page isn't built until it's approved.
 - **n/a**: no mockup; the page is built straight from the components.
 
-Last updated: 2026-10-15. Home, Users and Team heads are committed (dd179c5); User detail and Papawis Runs + Run page are built but not committed yet.
+Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed.
 
 ## Foundation
 
@@ -29,8 +29,8 @@ Last updated: 2026-10-15. Home, Users and Team heads are committed (dd179c5); Us
 | 4 | Members | User detail | /admin/users/:id | done | [x] |
 | 5 | Papawis | Runs, with the New run form | /admin/papawis | done | [x] |
 | 6 | Papawis | Run page (roster, teams, money, messages, activity, settings) | /admin/papawis/:id | done (desktop + phone) | [x] |
-| 7 | Papawis | Courts | /admin/papawis/courts | n/a | [ ] |
-| 8 | Papawis | Activity | /admin/papawis/activity | n/a | [ ] |
+| 7 | Papawis | Courts | /admin/papawis/courts | n/a | [x] |
+| 8 | Papawis | Activity | /admin/papawis/activity | n/a | [x] |
 | 9 | Game Day | Games | /admin/games | n/a | [ ] |
 | 10 | Game Day | Game page (box score, content, picks) | /admin/games/:id | needed | [ ] |
 | 11 | Game Day | Who wins? picks | /admin/picks | n/a | [ ] |
@@ -93,4 +93,4 @@ Last updated: 2026-10-15. Home, Users and Team heads are committed (dd179c5); Us
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Total | 52 | 6 | 4 | 6 |
+| Total | 52 | 6 | 4 | 8 |
