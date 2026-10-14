@@ -9931,8 +9931,8 @@ function seasonPicks(pctx, season) {
 }
 
 // Pickmaster: the MVP podium bonus (+1 per exact spot, from the ballot frozen at the bonus
-// cut-off) once the race is revealed. Admins (registrations.is_admin) can see the scores, so
-// they never earn it. It goes into net (points and ranks include it, /picks/rules) and
+// cut-off) once the race is revealed. Everyone with a player account can earn it, admins
+// included: while the race is locked only the super-admin login (no player account) sees scores. It goes into net (points and ranks include it, /picks/rules) and
 // r.bonus (the board's tag); the tiebreakers read correct/streak/odds, so they stay
 // game-picks-only. A bonus-only player gets an empty record so they're on the board.
 function addPodiumBonus(records, season) {
@@ -9943,7 +9943,7 @@ function addPodiumBonus(records, season) {
   if (podium.length < 3) return;
   for (const b of bonus) {
     const pts = podiumPoints(b, podium);
-    if (!pts || getRegistrationByPlayerId(b.player_id)?.is_admin) continue;
+    if (!pts) continue;
     const r = records[b.player_id] ||= { picks: 0, correct: 0, wrong: 0, net: 0, pct: 0, streak: 0, best: 0, upsets: 0, oddsPts: 0, results: [] };
     r.net += pts;
     r.bonus = pts;
@@ -13058,13 +13058,12 @@ app.get('/admin/awards/podium', requireAuth, (req, res) => {
       tally,
       ballots: ballots.map(b => {
         const bb = bonus[b.player_id];
-        const admin = !!getRegistrationByPlayerId(b.player_id)?.is_admin;
         return {
-          voter: who(b.player_id) || { id: b.player_id, name: b.player_id, team: '' }, admin,
+          voter: who(b.player_id) || { id: b.player_id, name: b.player_id, team: '' },
           picks: [b.p1, b.p2, b.p3].map(who), updatedAt: b.updated_at,
           bonus: bb ? [bb.p1, bb.p2, bb.p3].map(who) : null,
           bonusSame: !!bb && bb.p1 === b.p1 && bb.p2 === b.p2 && bb.p3 === b.p3,
-          points: podium && bb && !admin ? podiumPoints(bb, podium) : null,
+          points: podium && bb ? podiumPoints(bb, podium) : null,
         };
       }),
       missing: { count: missing.length, reachable: missing.length, emailable: missing.filter(r => r.emailable).length, names: missing.map(r => displayPlayerName(r.player.name)) },
@@ -13132,12 +13131,11 @@ function settleMvpPodium(season) {
   for (const b of ballots) {
     const spots = podiumPoints(b, podium);
     const bb = bonus[b.player_id];
-    const admin = !!getRegistrationByPlayerId(b.player_id)?.is_admin;
-    const pts = bb && !admin ? podiumPoints(bb, podium) : null;
+    const pts = bb ? podiumPoints(bb, podium) : null;
     createNotification({
       playerId: b.player_id, type: 'mvp_podium',
       title: spots === 3 ? 'Perfect podium! You called the MVP top 3 in order' : `You called ${spots} of 3 on the MVP podium`,
-      body: admin ? 'Admins don’t earn the podium bonus' : pts != null ? (pts ? `+${pts} Pickmaster bonus` : 'No bonus points this time') : 'Your bonus ballot wasn’t in before the cut-off',
+      body: pts != null ? (pts ? `+${pts} Pickmaster bonus` : 'No bonus points this time') : 'Your bonus ballot wasn’t in before the cut-off',
       link: '/mvp#mvr-h',
     });
   }

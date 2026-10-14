@@ -38,7 +38,7 @@ export function adminMvpPodiumBody({ season, locked, enabled, bonusAt, closeAt, 
       ${podium ? `<td class="admin-td">${t.place ? `<b class="text-amber-400">#${t.place}</b>` : ''}</td>` : ''}
     </tr>`).join('') : `<tr><td class="admin-td text-slate-500" colspan="7">No ballots yet.</td></tr>`;
   const ballotRows = ballots.length ? ballots.map(b => `<tr class="admin-table-row">
-      <td class="admin-td"><a href="/admin/players/${encodeURIComponent(b.voter.id)}" class="inline-flex items-center gap-2 text-slate-100 hover:text-amber-400">${dot(b.voter.team)}${escHtml(displayPlayerName(b.voter.name))}</a>${b.admin ? ' <span class="text-[10px] font-bold text-amber-400" title="Admins can see the MVP scores, so they never earn the bonus">ADMIN</span>' : ''}</td>
+      <td class="admin-td"><a href="/admin/players/${encodeURIComponent(b.voter.id)}" class="inline-flex items-center gap-2 text-slate-100 hover:text-amber-400">${dot(b.voter.team)}${escHtml(displayPlayerName(b.voter.name))}</a></td>
       ${b.picks.map(p => `<td class="admin-td">${nm(p)}</td>`).join('')}
       <td class="admin-td text-xs text-slate-400 whitespace-nowrap">${escHtml(when(b.updatedAt))}</td>
       <td class="admin-td text-xs">${!b.bonus ? '<span class="text-slate-600">none (after the cut-off)</span>' : b.bonusSame ? '<span class="text-slate-400">same</span>' : `<span class="text-amber-400" title="The ballot changed after the cut-off; the bonus uses this one">${b.bonus.map(p => (p ? escHtml(displayPlayerName(p.name).split(' ').pop()) : '—')).join(' · ')}</span>`}</td>
