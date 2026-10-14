@@ -757,7 +757,7 @@ function memberSignupBannerBig({ season, headline, message, cta }) {
 // ── Main export ───────────────────────────────────────────────────────────────
 // ── Coming up (buildHomeNextUp in server.js) ──────────────────────────────────
 // Up to four cards: League + Papawis are fixed, the rest are admin-picked on
-// /admin/visibility. Each renderer gets that card's data and returns one <article>.
+// /admin/site. Each renderer gets that card's data and returns one <article>.
 function nuDayLabel(iso) {
   const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
   if (!y) return '';

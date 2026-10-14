@@ -26,7 +26,7 @@ export function adminPostsListBody({ posts = [] } = {}) {
 
   return `
 <div class="agm-edit-bar">
-  <a href="/admin/visibility" class="admin-btn">Visibility</a>
+  
   <a href="/admin/posts/new" class="agm-new-btn">+ New Post</a>
 </div>
 

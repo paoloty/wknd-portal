@@ -17,7 +17,7 @@ export function adminSeoListBody({ overrides = [] } = {}) {
 
   return `
 <div class="agm-edit-bar">
-  <a href="/admin/visibility" class="admin-btn">Visibility</a>
+  <a href="/admin/site" class="admin-btn">Site settings</a>
   <a href="/admin/seo/new" class="agm-new-btn">+ New Override</a>
 </div>
 

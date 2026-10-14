@@ -100,7 +100,7 @@ import {
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
   getMvpWriteup, getMvpWriteupsForSeason, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
-  getMvpLockWriteup, setMvpLockWriteup, deleteMvpLockWriteup, clearMvpLockWriteups, getMvpLockOpenings,
+  getMvpLockWriteup, setMvpLockWriteup, deleteMvpLockWriteup, clearMvpLockWriteups, getMvpLockOpenings, countMvpLockWriteups,
   getMvpBallot, getMvpBonusBallot, countMvpBallots, saveMvpBallot, listMvpBallots, listMvpBonusBallots, dismissMvpBar, isMvpBarDismissed, countMvpBarDismissed,
   getDpoyWriteup, getDpoyWriteupsForSeason, setDpoyWriteup, deleteDpoyWriteupForPlayer, clearDpoyWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
@@ -181,7 +181,7 @@ import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody } from './views/admin/ledger.js';
 import { adminAwardsBody } from './views/admin/awards.js';
-import { adminVisibilityBody } from './views/admin/visibility.js';
+import { adminSiteBody } from './views/admin/site.js';
 import { adminAiWritingBody } from './views/admin/ai-writing.js';
 import { awardGraphicEditorBody } from './views/admin/award-graphic-editor.js';
 import { adminUsersBody }       from './views/admin/users.js';
@@ -199,7 +199,8 @@ import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
 import { adminCoachNotesBody } from './views/admin/coach-notes.js';
-import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl } from './views/admin/layout.js';
+import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl, expandAdminSections } from './views/admin/layout.js';
+import { settingsPanel, withSettings } from './views/admin/settings.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage, mvpLockPage, podiumBarHtml, podiumStrip, mvpSnapshot, mvpSharePage } from './views/mvp.js';
@@ -220,6 +221,7 @@ import {
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
 import { adminMvpPodiumBody } from './views/admin/mvp-podium.js';
+import { adminAwardsOverviewBody, adminRacesBody } from './views/admin/awards-hub.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
@@ -2312,9 +2314,91 @@ function applySeoOverrideTags(metaTags, override, effectiveTitle, origin) {
   return mt;
 }
 
+// opts.settings: a settings panel (views/admin/settings.js) placed under the page's header.
 function renderAdminPage(req, opts) {
-  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: getAdminAllowedSections(req), ...opts });
+  const body = opts.settings ? withSettings(opts.body, opts.settings) : opts.body;
+  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: getAdminAllowedSections(req), ...opts, body });
 }
+
+// ── Each feature's public switches, on its own admin page ──────────────────────────────
+// (moved off the old Visibility page in the 2026-10 reorganisation; /admin/site keeps the
+// site-wide ones). Keys and their owning sections: siteSettingSection.
+const codeTag = s => `<code class="text-[11px] bg-admin-border/50 px-1 rounded">${s}</code>`;
+const on = (key, def = '1') => getSetting(key, def) !== '0';
+
+function picksSettingsPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'picks_enabled', value: picksEnabled(), label: 'Who wins? picks on the site', sub: `Fan picks on ${codeTag('/picks')}, the matchup cards, the homepage widget, profiles, "Who called it?", pick records and the after-game notifications. Per-game close/reopen lives on each game's admin page.` },
+    { type: 'toggle', key: 'picks_odds_enabled', value: pickOddsEnabled(), label: 'Show odds', sub: 'Win chances on the matchup cards. Hidden until both teams have played this season; can also be hidden per game.' },
+    { type: 'toggle', key: 'home_picks_widget_enabled', value: on('home_picks_widget_enabled'), label: 'Homepage widget', sub: 'The pick widget under the homepage banner: the next game day, or "Who called it?" on game day and the day after.' },
+    { type: 'time', key: 'picks_close_time', value: picksCloseTime(), width: 'auto', label: 'Picks close at', sub: 'Game-day cut-off (Manila time). Games have no tip-off time, so picks lock at this time on the game date.' },
+  ], { title: 'Who wins? settings' });
+}
+
+function papawisSettingsPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'papawis_enabled', value: getSetting('papawis_enabled', '0') === '1', label: 'Papawis on the site', sub: `Pickup game sign-ups on ${codeTag('/papawis')}. Managing runs here works either way.` },
+  ], { title: 'Public page' });
+}
+
+function marketplaceSettingsPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'marketplace_enabled', value: getSetting('marketplace_enabled', '0') === '1', label: 'Marketplace on the site', sub: `Group-buy listings on ${codeTag('/marketplace')}. Managing listings here works either way.` },
+  ], { title: 'Public page' });
+}
+
+function postsSettingsPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'posts_enabled', value: getSetting('posts_enabled', '0') === '1', label: 'Posts on the site', sub: `League news and matchup previews on ${codeTag('/posts')}. Writing posts here works either way.` },
+  ], { title: 'Public page' });
+}
+
+function finesSettingsPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'player_reports_enabled', value: getSetting('player_reports_enabled', '0') === '1', label: 'Player reports', sub: `Adds a "Report" button on ${codeTag('/players/:id')}. A report needs a majority admin vote to reach the team heads.` },
+  ], { title: 'Public features' });
+}
+
+// Season awards: the /awards page switch, then one "public" switch per award (hidden while
+// the page is off).
+function awardsSettingsPanel() {
+  const labels = {
+    mvp: 'Season MVP', dpoy: 'Defensive Player of the Season', all_wknd_1: 'All WKND 1st Team', all_wknd_2: 'All WKND 2nd Team',
+    all_wknd_def: 'All WKND Defensive Team', scoring_champ: 'Scoring Champion', assists_leader: 'Assists Leader',
+    rebounds_leader: 'Rebounds Leader', steals_leader: 'Steals Leader', blocks_leader: 'Blocks Leader',
+    three_pm_leader: '3-Pointers Leader', four_pm_leader: '4-Pointers Leader', champion: 'Champion',
+    finals_mvp: 'Finals MVP', pickmaster: 'Pickmaster (fan award)',
+  };
+  return settingsPanel([
+    { type: 'toggle', key: 'awards_enabled', value: on('awards_enabled'), controls: '[data-award-show]', label: 'Season awards page', sub: `${codeTag('/awards')}. Release each award below as it's ready.` },
+    {
+      type: 'html',
+      html: `<div class="grid gap-x-6 py-2 border-t border-admin-border" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))" data-award-show>${AWARD_SECTION_KEYS.map(k => `<div class="flex items-center justify-between gap-3 py-1.5">
+        <span class="text-xs text-slate-400">${escHtml(labels[k] || k)}</span>
+        <span class="text-right"><label class="site-toggle site-toggle--sm" title="Show ${escHtml(labels[k] || k)}"><input type="checkbox" data-setting="award_show_${k}"${getSetting(`award_show_${k}`, '0') !== '0' ? ' checked' : ''}><span class="site-toggle__track"></span></label><span class="text-xs block min-h-[12px]" data-setting-msg></span></span>
+      </div>`).join('')}</div>`,
+    },
+  ], { title: 'Public on /awards', id: 'awards-public' });
+}
+
+function racesSettingsPanel() {
+  const st = mvpLockState(getPortalCurrentSeason());
+  return settingsPanel([
+    { type: 'toggle', key: 'mvp_race_enabled', value: on('mvp_race_enabled'), label: 'Races on the site', sub: `${codeTag('/mvp')} and ${codeTag('/dpoy')}, the homepage MVP card, and their menu links.` },
+    { type: 'select', key: 'mvp_reveal_mode', value: st.mode, reload: true, options: [['auto', 'Auto'], ['locked', 'Always locked'], ['revealed', 'Always revealed']], label: 'Reveal lock',
+      sub: `Keeps the order secret until the award at Finals Game 2. Auto locks in the regular season's final week or once a playoff game is scheduled.<span class="block mt-1">Season ${escHtml(String(st.season))} auto: <b class="text-slate-300">${escHtml(st.auto.note)}</b> · now <b style="color:${st.locked ? '#f59332' : '#22c55e'}">${st.locked ? 'locked' : 'revealed'}</b></span>` },
+  ], { title: 'Race settings' });
+}
+
+function podiumSettingsPanel() {
+  const st = mvpBallotState(getPortalCurrentSeason(), null);
+  return settingsPanel([
+    { type: 'toggle', key: 'mvp_podium_enabled', value: st.enabled, label: 'Podium ballot', sub: `While the reveal lock is on: the ballot on ${codeTag('/mvp')}, ${codeTag('/picks')}, the homepage card and the site bar. Off hides it and the rules section.` },
+    { type: 'text', key: 'mvp_bonus_close', value: getSetting('mvp_bonus_close', ''), reload: true, placeholder: 'YYYY-MM-DD HH:MM', label: 'Bonus cut-off',
+      sub: `Only ballots in before this earn the bonus. Empty = the last regular-season game day at the picks close time.<span class="block mt-1">Now: <b class="text-slate-300">${escHtml(st.bonusAt || 'not known yet (final games not on the schedule)')}</b></span>` },
+  ], { title: 'Ballot settings' });
+}
+
 
 function formatName(raw) {
   const parts = String(raw || '').split(',');
@@ -2614,7 +2698,8 @@ function loginUrl(req) {
 // ADMIN_SECTIONS keys — see registrations.admin_sections in lib/portal-db.js.
 function getAdminAllowedSections(req) {
   if (!req.session?.isAdmin || !req.session?.isElevatedPlayer) return null;
-  return getRegistrationAdminSections(getRegistration(req.session.playerRegId));
+  // expandAdminSections: keys saved before the 2026-10 menu reorganisation still work.
+  return expandAdminSections(getRegistrationAdminSections(getRegistration(req.session.playerRegId)));
 }
 
 // For routes outside /admin/* that requireAuth's automatic section-redirect never reaches
@@ -2640,7 +2725,9 @@ function requireAuth(req, res, next) {
     // every such route per-section risks breaking something a restricted admin legitimately
     // needs inside a section they DO have (e.g. the Papawis reminders toggle posts to the
     // generic /admin/site/settings, not /admin/papawis/...).
-    if (section && !allowed.includes(section.key)) {
+    // /admin/site/settings is checked per setting instead (siteSettingSection), so a Papawis
+    // admin can still flip the Papawis switches it posts.
+    if (section && !allowed.includes(section.key) && req.path !== '/admin/site/settings') {
       const target = firstAllowedAdminUrl(allowed);
       if (target && target !== req.path) return res.redirect(target);
     }
@@ -6302,7 +6389,56 @@ function pickmasterSuggestion(season, seasonStats = []) {
   return { player: row || { id: p.id, name: p.name, team_name: '' }, notes: `${fmtPts(top.net)} pts (${top.correct}–${top.wrong})${how}`, statLine: '' };
 }
 
+// ── Awards admin section (Overview, Season awards, Races, MVP podium) ─────────────────────
 app.get('/admin/awards', requireAuth, (req, res) => {
+  // Old links to the season awards page carried ?season=.
+  if (req.query.season) return res.redirect(`/admin/awards/season?season=${encodeURIComponent(req.query.season)}`);
+  const season = getPortalCurrentSeason();
+  const lock = mvpLockState(season);
+  const st = mvpBallotState(season, null);
+  const ballots = listMvpBallots(season).filter(b => b.p1 && b.p2 && b.p3);
+  let reminded = null;
+  try { reminded = JSON.parse(getSetting(`mvp_podium_reminded_${season}`, '') || 'null'); } catch { reminded = null; }
+  const filled = new Set(getSeasonAwards(season).map(a => a.award_type)).size;
+  const pub = AWARD_SECTION_KEYS.filter(k => getSetting(`award_show_${k}`, '0') !== '0').length;
+  const sp = seasonPicks(buildPicksContext(byDate(getAllGames())), season);
+  const lead = sp.board.rows[0];
+  const leader = lead ? pickmasterLeader(sp.board) : null;
+  const leadPlayer = lead && getPlayerById(lead.playerId);
+  res.send(renderAdminPage(req, {
+    title: 'Awards',
+    currentPath: '/admin/awards',
+    body: adminAwardsOverviewBody({
+      season,
+      races: { enabled: getSetting('mvp_race_enabled', '1') !== '0', locked: lock.locked, mode: lock.mode, note: lock.auto.note },
+      podium: {
+        enabled: st.enabled, locked: lock.locked, closed: st.closed, bonusOpen: st.bonusOpen, bonusAt: st.bonusAt,
+        complete: ballots.length, bonus: listMvpBonusBallots(season).filter(b => b.p1 && b.p2 && b.p3).length,
+        reminded: reminded ? new Date(reminded.at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '',
+      },
+      awards: { enabled: getSetting('awards_enabled', '1') !== '0', filled, public: pub, total: AWARD_SECTION_KEYS.length },
+      pickmaster: lead && leadPlayer ? { name: leadPlayer.name, pts: fmtPts(lead.net), record: `${lead.correct}–${lead.wrong}`, level: leader?.level || 1 } : null,
+    }),
+  }));
+});
+
+app.get('/admin/awards/races', requireAuth, (req, res) => {
+  const season = getPortalCurrentSeason();
+  res.send(renderAdminPage(req, {
+    title: 'MVP & Best Defender races',
+    currentPath: '/admin/awards/races',
+    settings: racesSettingsPanel(),
+    body: adminRacesBody({
+      season, locked: isMvpLocked(season),
+      races: [
+        { key: 'mvp', name: 'MVP Race', path: '/mvp', writeups: getMvpWriteupsForSeason(season).length, lockCards: countMvpLockWriteups(season) },
+        { key: 'dpoy', name: 'Best Defender Race', path: '/dpoy', writeups: getDpoyWriteupsForSeason(season).length, lockCards: 0 },
+      ],
+    }),
+  }));
+});
+
+app.get('/admin/awards/season', requireAuth, (req, res) => {
   const { season: currentSeason } = getCurrentSeason() || {};
   const season = Number(req.query.season) || currentSeason || 3;
   const seasons = [...new Set(getLedgerSeasons())];
@@ -6327,7 +6463,8 @@ app.get('/admin/awards', requireAuth, (req, res) => {
   );
   res.send(renderAdminPage(req, {
     title: 'Season Awards',
-    currentPath: '/admin/awards',
+    currentPath: '/admin/awards/season',
+    settings: awardsSettingsPanel(),
     body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles, seasonStats, homeGallery }),
   }));
 });
@@ -6765,8 +6902,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
 });
 
 // Feature toggles and payment config used to live on one catch-all Site Settings
-// page; visibility toggles now live on /admin/visibility, payment config on Finance.
-app.get('/admin/site', requireAuth, (req, res) => res.redirect('/admin/visibility'));
+// page; site-wide settings now live on /admin/site (Site & homepage), payment config on Finance.
 
 // ── AI Writing (voices / creativity for recaps, POTG, MVP race, award articles) ─
 app.get('/admin/ai-writing', requireAuth, (req, res) => {
@@ -6802,42 +6938,70 @@ app.post('/admin/ai-writing/reset', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/admin/visibility', requireAuth, (req, res) => {
+app.get('/admin/visibility', requireAuth, (req, res) => res.redirect(301, '/admin/site'));
+
+// Site & homepage: the site-wide settings, and what's public with a link to each switch.
+app.get('/admin/site', requireAuth, (req, res) => {
+  const flag = (key, def = '0') => (def === '1' ? getSetting(key, def) !== '0' : getSetting(key, def) === '1');
+  const lock = mvpLockState(getPortalCurrentSeason());
+  const panels = settingsPanel([
+    { type: 'toggle', key: 'comments_enabled', value: flag('comments_enabled'), label: 'Comments & reactions', sub: 'Players comment and react across the site (game pages, posts, live updates). Admins can delete inline either way.' },
+    { type: 'toggle', key: 'peer_ratings_enabled', value: flag('peer_ratings_enabled'), label: 'Player ratings', sub: `Roast-style player-to-player ratings on ${codeTag('/players/:id')}. Anonymous ratings stay masked except to the super admin.` },
+    { type: 'toggle', key: 'reg_open', value: flag('reg_open'), label: 'Join banner', sub: 'The "Join the community" registration band for logged-out visitors: on the homepage and as a small banner on other pages.' },
+  ], { title: 'Site-wide' }) + settingsPanel([
+    { type: 'toggle', key: 'mega_menu_enabled', value: flag('mega_menu_enabled'), label: 'Mega menu', sub: 'Desktop header: Stats and Awards open as full-width panels instead of small dropdowns. Phones always use the side drawer.' },
+    { type: 'toggle', key: 'home_show_roster_moves', value: flag('home_show_roster_moves'), label: 'Homepage: New/Traded', sub: "Swaps the League Leaders carousel for New/Traded players, for early in a season before there's enough game data." },
+    ...[1, 2].map((n, i) => ({ type: 'select', key: `home_nextup_card_${n}`, value: getSetting(`home_nextup_card_${n}`, HOME_NEXTUP_DEFAULTS[i]), options: HOME_NEXTUP_CARDS.map(c => [c.key, c.label]),
+      label: `Homepage "Coming up": card ${n + 2}`, sub: n === 1 ? 'After the League and Papawis cards. A card with nothing to show this week is skipped automatically.' : '' })),
+  ], { title: 'Header & homepage' });
   res.send(renderAdminPage(req, {
-    title: 'Visibility',
-    currentPath: '/admin/visibility',
-    body: adminVisibilityBody({
-      papawisEnabled:  getSetting('papawis_enabled', '0') === '1',
-      marketplaceEnabled: getSetting('marketplace_enabled', '0') === '1',
-      postsEnabled:    getSetting('posts_enabled', '0') === '1',
-      commentsEnabled: getSetting('comments_enabled', '0') === '1',
-      peerRatingsEnabled: getSetting('peer_ratings_enabled', '0') === '1',
-      playerReportsEnabled: getSetting('player_reports_enabled', '0') === '1',
-      awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
-      mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
-      mvpReveal:       mvpLockState(getPortalCurrentSeason()),
-      mvpPodiumEnabled: mvpPodiumEnabled(),
-      mvpBonusClose:   getSetting('mvp_bonus_close', ''),
-      mvpBonusNow:     mvpBallotState(getPortalCurrentSeason(), null).bonusAt,
-      homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
-      megaMenuEnabled: getSetting('mega_menu_enabled', '0') === '1',
-      picksEnabled: picksEnabled(),
-      pickOddsEnabled: pickOddsEnabled(),
-      picksCloseTime: picksCloseTime(),
-      homePicksWidgetEnabled: getSetting('home_picks_widget_enabled', '1') !== '0',
-      nextUpCardOptions: HOME_NEXTUP_CARDS,
-      nextUpCards: [1, 2].map((n, i) => getSetting(`home_nextup_card_${n}`, HOME_NEXTUP_DEFAULTS[i])),
-      sectionSettings: Object.fromEntries(AWARD_SECTION_KEYS.map(k => [`award_show_${k}`, getSetting(`award_show_${k}`, '0')])),
+    title: 'Site & homepage',
+    currentPath: '/admin/site',
+    body: adminSiteBody({
+      panels,
+      status: [
+        { label: 'Papawis', on: flag('papawis_enabled'), where: 'Papawis', href: '/admin/papawis' },
+        { label: 'Marketplace', on: flag('marketplace_enabled'), where: 'Marketplace', href: '/admin/marketplace' },
+        { label: 'Posts', on: flag('posts_enabled'), where: 'Posts', href: '/admin/posts' },
+        { label: 'Who wins? picks', on: picksEnabled(), where: 'Who wins? picks', href: '/admin/picks' },
+        { label: 'Season awards (/awards)', on: flag('awards_enabled', '1'), where: 'Season awards', href: '/admin/awards/season' },
+        { label: `MVP & Best Defender races${lock.locked ? ' (locked)' : ''}`, on: flag('mvp_race_enabled', '1'), where: 'Races', href: '/admin/awards/races' },
+        { label: 'MVP podium ballot', on: mvpPodiumEnabled(), where: 'MVP podium', href: '/admin/awards/podium' },
+        { label: 'Player reports', on: flag('player_reports_enabled'), where: 'Fines & conduct', href: '/admin/fines' },
+        { label: 'Comments & reactions', on: flag('comments_enabled'), where: 'this page', href: '/admin/site' },
+        { label: 'Player ratings', on: flag('peer_ratings_enabled'), where: 'this page', href: '/admin/site' },
+        { label: 'Join banner', on: flag('reg_open'), where: 'this page', href: '/admin/site' },
+      ],
     }),
   }));
 });
 
+// Which admin section owns each site setting. /admin/site/settings is shared by every page
+// that saves a setting, so it checks each key against the admin's sections (a Papawis-only
+// admin can flip the Papawis switches but not, say, the GCash number). Unrestricted admins
+// skip the check. Keep this in step with where each control lives in the admin.
+function siteSettingSection(key) {
+  if (/^(papawis_)/.test(key)) return 'papawis';
+  if (key === 'marketplace_enabled') return 'marketplace';
+  if (key === 'posts_enabled') return 'content';
+  if (/^picks_|^home_picks_widget_enabled$/.test(key)) return 'games-stats';
+  if (/^(awards_enabled|award_|mvp_)/.test(key)) return 'awards';
+  if (key === 'player_reports_enabled') return 'community';
+  if (/^gcash_/.test(key)) return 'finance';
+  return 'site'; // comments, ratings, header, homepage cards, join banner
+}
+
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
+  const allowedSections = getAdminAllowedSections(req);
+  if (allowedSections) {
+    const denied = Object.keys(req.body || {}).filter(k => !allowedSections.includes(siteSettingSection(k)));
+    if (denied.length) return res.status(403).json({ error: `Not allowed to change: ${denied.join(', ')}` });
+  }
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
     'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled', 'mvp_podium_enabled',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
-    'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
+    'reg_open',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
   ]);
   const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
@@ -7902,6 +8066,7 @@ app.get('/admin/posts', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Posts',
     currentPath: '/admin/posts',
+    settings: postsSettingsPanel(),
     body: adminPostsListBody({ posts }),
   }));
 });
@@ -8358,6 +8523,7 @@ app.get('/admin/picks', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Who wins? picks',
     currentPath: '/admin/picks',
+    settings: picksSettingsPanel(),
     body: adminPicksBody({
       season, seasons, isCurrent, upNext, upDay, missing, results, pickers, hasFinalsG1: !!sp.finalsG1,
       minPicks: sp.board.minPicks, oddsOn: pickOddsEnabled(), picksOn: picksEnabled(),
@@ -9714,7 +9880,7 @@ function buildGamesContext(games, playerMap) {
 
 // ── "Who wins?" picks: odds, cut-off, records (pure logic lives in lib/picks.js) ──────
 // Picks are on by default (they shipped live before these switches existed); odds and the
-// game-day cut-off are admin settings on /admin/visibility.
+// game-day cut-off are admin settings on /admin/picks (Who wins? settings).
 const picksEnabled = () => getSetting('picks_enabled', '1') !== '0';
 const pickOddsEnabled = () => getSetting('picks_odds_enabled', '1') !== '0';
 const picksCloseTime = () => {
@@ -11229,7 +11395,7 @@ function isPlayoffStarted(season) {
 // ── Homepage "Coming up" section ─────────────────────────────────────────────
 // Four cards that give people a reason to come back during the week: League (next
 // scheduled game day, or the latest results when nothing is scheduled yet) and Papawis
-// (next open run) are fixed; the other two are admin-picked on /admin/visibility
+// (next open run) are fixed; the other two are admin-picked on /admin/site
 // (home_nextup_card_1 / _2, default Marketplace + Birthdays). A picked card with nothing to
 // show this week (no listings, no birthdays…) is swapped for the next card in
 // HOME_NEXTUP_CARDS that does have content, so the row is never left with an empty card.
@@ -12718,7 +12884,8 @@ function mvpPodiumMissing(season) {
   return recipients;
 }
 
-app.get('/admin/mvp-podium', requireAuth, (req, res) => {
+app.get('/admin/mvp-podium', requireAuth, (req, res) => res.redirect(301, '/admin/awards/podium'));
+app.get('/admin/awards/podium', requireAuth, (req, res) => {
   const season = getPortalCurrentSeason();
   const locked = isMvpLocked(season);
   const people = Object.fromEntries(getAllPlayers().map(p => [String(p.id), p]));
@@ -12736,8 +12903,9 @@ app.get('/admin/mvp-podium', requireAuth, (req, res) => {
   let reminded = null;
   try { reminded = JSON.parse(getSetting(`mvp_podium_reminded_${season}`, '') || 'null'); } catch { reminded = null; }
   res.send(renderAdminPage(req, {
-    title: 'MVP podium',
-    currentPath: '/admin/mvp-podium',
+    title: 'MVP podium ballot',
+    currentPath: '/admin/awards/podium',
+    settings: podiumSettingsPanel(),
     body: adminMvpPodiumBody({
       season, locked, enabled: st.enabled, bonusAt: st.bonusAt, closeAt: st.closeAt, bonusOpen: st.bonusOpen,
       totals: {
@@ -12766,10 +12934,10 @@ app.get('/admin/mvp-podium', requireAuth, (req, res) => {
   }));
 });
 
-app.post('/admin/mvp-podium/remind', requireAuth, express.urlencoded({ extended: false }), (req, res) => {
+app.post(['/admin/awards/podium/remind', '/admin/mvp-podium/remind'], requireAuth, express.urlencoded({ extended: false }), (req, res) => {
   const season = getPortalCurrentSeason();
   const st = mvpBallotState(season, null);
-  if (!st.enabled || !isMvpLocked(season) || st.closed) return res.redirect('/admin/mvp-podium');
+  if (!st.enabled || !isMvpLocked(season) || st.closed) return res.redirect('/admin/awards/podium');
   const recipients = mvpPodiumMissing(season);
   for (const r of recipients) {
     createNotification({
@@ -12782,7 +12950,7 @@ app.post('/admin/mvp-podium/remind', requireAuth, express.urlencoded({ extended:
   const emailable = req.body?.email === '1' ? recipients.filter(r => r.emailable) : [];
   setSetting(`mvp_podium_reminded_${season}`, JSON.stringify({ at: Date.now(), bell: recipients.length, email: req.body?.email === '1' ? emailable.length : null }));
   if (emailable.length) setImmediate(() => sendPodiumEmails(emailable, st).catch(e => console.error('[podium email] send failed:', e.message)));
-  res.redirect(`/admin/mvp-podium?reminded=${recipients.length}${emailable.length ? `&emailing=${emailable.length}` : ''}`);
+  res.redirect(`/admin/awards/podium?reminded=${recipients.length}${emailable.length ? `&emailing=${emailable.length}` : ''}`);
 });
 
 // Same pacing and dev rule as sendPicksEmails: outside production only the first one goes
@@ -17027,6 +17195,7 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Papawis',
     currentPath: '/admin/papawis',
+    settings: papawisSettingsPanel(),
     body: adminPapawisListBody({
       games, papawisRemindersEnabled, papawisSlotAlertsEnabled, courts: getActivePapawisCourts(), pendingPayments,
       unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer,
@@ -17896,6 +18065,7 @@ app.get('/admin/marketplace', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Marketplace',
     currentPath: '/admin/marketplace',
+    settings: marketplaceSettingsPanel(),
     body: adminMarketplaceListBody({ listings: effectiveListings, countsById, groupLabelById }),
   }));
 });
@@ -18535,6 +18705,7 @@ app.get('/admin/fines', requireAuth, (req, res) => {
     .sort((a, b) => (b.resolved_at || 0) - (a.resolved_at || 0));
   res.send(renderAdminPage(req, {
     title: 'Fines', currentPath: '/admin/fines',
+    settings: finesSettingsPanel(),
     body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories(), summary: getFineCollectionSummary() }),
   }));
 });

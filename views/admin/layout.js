@@ -11,6 +11,7 @@ const IC = {
   finance:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4v1.5M7.5 9.5V11M5.5 6a2 2 0 0 1 4 0c0 1.5-2 2-2 3"/></svg>`,
   users:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="4.5" r="2"/><path d="M1 12c0-2.21 1.79-4 4-4"/><circle cx="10.5" cy="5" r="2.5"/><path d="M6 13c0-2.485 2.015-4.5 4.5-4.5S15 10.515 15 13"/></svg>`,
   site:      `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><circle cx="7.5" cy="7.5" r="2"/><path d="M7.5 1.5v4M7.5 9.5v4M1.5 7.5h4M9.5 7.5h4"/></svg>`,
+  podium:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 6h4v7.5h-4zM1.5 9h4v4.5h-4zM9.5 10.5h4v3h-4z"/><path d="M7.5 1.5l.6 1.2 1.3.2-.95.9.2 1.3-1.15-.6-1.15.6.2-1.3-.95-.9 1.3-.2z"/></svg>`,
   awards:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1l1.545 3.09L13 4.854l-2.75 2.687.65 3.793L7.5 9.59l-3.4 1.744.65-3.793L2 4.854l3.955-.764z"/></svg>`,
   compare:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="7.5" r="2.5"/><circle cx="11" cy="7.5" r="2.5"/><path d="M6.5 7.5h2"/></svg>`,
   coach:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4v4l2.5 1.5"/></svg>`,
@@ -28,101 +29,131 @@ const IC = {
   share:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11.5" cy="3" r="1.8"/><circle cx="3.5" cy="7.5" r="1.8"/><circle cx="11.5" cy="12" r="1.8"/><path d="M5.1 6.5l4.7-2.6M5.1 8.5l4.7 2.6"/></svg>`,
 };
 
+// The admin menu, grouped by task. `key` is the permission key stored in
+// registrations.admin_sections: it is fixed on purpose, so renaming a group's label can never
+// silently change who can open it. `hidden` items aren't shown in the menu but still belong
+// to their group, so the admin tools that live on public pages (↺ regenerate, photo pickers,
+// signup detail actions) are gated with the section they belong to.
 const NAV_GROUPS = [
   {
-    label: 'Overview',
+    key: 'overview', label: 'Overview',
     items: [
       { href: '/admin', label: 'Dashboard', icon: 'dashboard', exact: true },
     ],
   },
   {
-    label: 'Games & Stats',
+    key: 'games-stats', label: 'Game Day',
     items: [
-      { href: '/admin/games',     label: 'Games',     icon: 'games' },
-      { href: '/admin/picks',     label: 'Picks',     icon: 'picks' },
-      { href: '/admin/mvp-podium', label: 'MVP podium', icon: 'picks' },
-      { href: '/admin/players',   label: 'Players',   icon: 'players' },
-      { href: '/admin/teams',     label: 'Teams',     icon: 'teams',     soon: true },
-      { href: '/admin/standings', label: 'Standings', icon: 'standings', soon: true },
+      { href: '/admin/games',   label: 'Games',           icon: 'games' },
+      { href: '/admin/picks',   label: 'Who wins? picks', icon: 'picks' },
+      { href: '/admin/players', label: 'Players',         icon: 'players' },
+      { href: '/admin/player', hidden: true },
+      { href: '/admin/player-photo-original', hidden: true },
     ],
   },
   {
-    label: 'Content',
+    key: 'papawis', label: 'Papawis',
     items: [
-      { href: '/admin/posts',       label: 'Posts',       icon: 'posts' },
-      { href: '/admin/coach-notes', label: 'Coach Notes', icon: 'coach' },
-      { href: '/admin/compare',     label: 'Compares',    icon: 'compare' },
-      { href: '/admin/seo',         label: 'SEO Overrides', icon: 'seo' },
-      { href: '/admin/ai-writing',  label: 'AI Writing',  icon: 'pen' },
-    ],
-  },
-  {
-    label: 'Papawis',
-    items: [
-      { href: '/admin/papawis',          label: 'Manage',   icon: 'papawis', exact: true },
+      { href: '/admin/papawis',          label: 'Runs',     icon: 'papawis', exact: true },
       { href: '/admin/papawis/courts',   label: 'Courts',   icon: 'site' },
       { href: '/admin/papawis/activity', label: 'Activity', icon: 'activity' },
+      { href: '/admin/papawis-summary', hidden: true },
     ],
   },
   {
-    label: 'Marketplace',
+    key: 'awards', label: 'Awards',
+    items: [
+      { href: '/admin/awards',        label: 'Overview',      icon: 'dashboard', exact: true },
+      { href: '/admin/awards/season', label: 'Season awards', icon: 'awards' },
+      { href: '/admin/awards/races',  label: 'MVP & Best Defender', icon: 'standings' },
+      { href: '/admin/awards/podium', label: 'MVP podium ballot', icon: 'podium' },
+      { href: '/admin/mvp', hidden: true },
+      { href: '/admin/dpoy', hidden: true },
+      { href: '/admin/mvp-podium', hidden: true },
+      { href: '/admin/award-photo', hidden: true },
+    ],
+  },
+  {
+    key: 'season', label: 'Season',
+    items: [
+      { href: '/admin/seasons',         label: 'All seasons',        icon: 'standings', exact: true },
+      { href: '/admin/season',          label: 'Signups & settings', icon: 'site',      exact: true },
+      { href: '/admin/season/waitlist', label: 'Waitlist',           icon: 'users' },
+      { href: '/admin/season/returning', label: 'Returning',         icon: 'players' },
+      { href: '/admin/season/comments', label: 'Comments',           icon: 'posts' },
+      { href: '/admin/season/assessment-reviews', label: 'Assessment reviews', icon: 'coach' },
+      { href: '/admin/season/teams',    label: 'Team builder',       icon: 'teams', exact: true },
+      { href: '/admin/season/teams/sandbox', label: 'Sandbox',       icon: 'compare' },
+      { href: '/admin/season-signups', hidden: true },
+    ],
+  },
+  {
+    key: 'content', label: 'Content',
+    items: [
+      { href: '/admin/posts',       label: 'Posts',         icon: 'posts' },
+      { href: '/admin/coach-notes', label: 'Coach notes',   icon: 'coach' },
+      { href: '/admin/compare',     label: 'Compares',      icon: 'compare' },
+      { href: '/admin/seo',         label: 'SEO overrides', icon: 'seo' },
+      { href: '/admin/ai-writing',  label: 'AI writing',    icon: 'pen' },
+      { href: '/admin/home-summary', hidden: true },
+      { href: '/admin/section-summary', hidden: true },
+      { href: '/admin/teams-summary', hidden: true },
+      { href: '/admin/leaders', hidden: true },
+    ],
+  },
+  {
+    key: 'community', label: 'Community',
+    items: [
+      { href: '/admin/polls',            label: 'Polls',           icon: 'standings', exact: true },
+      { href: '/admin/fines',            label: 'Fines & conduct', icon: 'shield',    exact: true },
+      { href: '/admin/fines/categories', label: 'Fine categories', icon: 'ledger' },
+    ],
+  },
+  {
+    key: 'marketplace', label: 'Marketplace',
     items: [
       { href: '/admin/marketplace',     label: 'Listings',      icon: 'wallet', exact: true },
-      { href: '/admin/marketplace/new', label: 'New Group Buy', icon: 'games' },
+      { href: '/admin/marketplace/new', label: 'New group buy', icon: 'games' },
     ],
   },
   {
-    label: 'Finance',
+    key: 'finance', label: 'Finance',
     items: [
-      { href: '/admin/finance',        label: 'Overview', icon: 'finance', exact: true },
-      { href: '/admin/ledger',         label: 'Ledger',   icon: 'ledger' },
-      { href: '/admin/finance/gcash',  label: 'GCash',    icon: 'wallet' },
+      { href: '/admin/finance',        label: 'Summary', icon: 'finance', exact: true },
+      { href: '/admin/ledger',         label: 'Ledger',  icon: 'ledger' },
+      { href: '/admin/finance/gcash',  label: 'GCash',   icon: 'wallet' },
     ],
   },
   {
-    label: 'Members',
+    key: 'members', label: 'Members',
     items: [
       { href: '/admin/users',       label: 'Users',      icon: 'users' },
-      { href: '/admin/team-heads', label: 'Team Heads', icon: 'shield' },
+      { href: '/admin/team-heads', label: 'Team heads', icon: 'shield' },
     ],
   },
   {
-    label: 'Season',
+    key: 'site', label: 'Site',
     items: [
-      { href: '/admin/seasons',         label: 'Seasons',      icon: 'standings', exact: true },
-      { href: '/admin/season',          label: 'Manage',       icon: 'site',      exact: true },
-      { href: '/admin/season/waitlist', label: 'Waitlist',     icon: 'users' },
-      { href: '/admin/season/returning', label: 'Returning',  icon: 'players' },
-      { href: '/admin/season/comments', label: 'Comments',    icon: 'posts' },
-      { href: '/admin/season/assessment-reviews', label: 'Assessment Reviews', icon: 'coach' },
-      { href: '/admin/season/teams',    label: 'Team Builder', icon: 'teams', exact: true },
-      { href: '/admin/season/teams/sandbox', label: 'Sandbox',   icon: 'compare' },
-      { href: '/admin/awards',          label: 'Awards',       icon: 'awards' },
-    ],
-  },
-  {
-    label: 'Fines',
-    items: [
-      { href: '/admin/fines',            label: 'Cases',      icon: 'shield', exact: true },
-      { href: '/admin/fines/categories', label: 'Categories', icon: 'ledger' },
-    ],
-  },
-  {
-    label: 'Polls',
-    items: [
-      { href: '/admin/polls', label: 'Manage', icon: 'standings', exact: true },
-    ],
-  },
-  {
-    label: 'Visibility',
-    items: [
-      { href: '/admin/visibility', label: 'Visibility', icon: 'visibility', exact: true },
+      { href: '/admin/site', label: 'Site & homepage', icon: 'visibility', exact: true },
+      { href: '/admin/visibility', hidden: true },
     ],
   },
 ];
 
-function slugifyGroupLabel(label) {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+// Section keys from before the 2026-10 reorganisation, still stored on some registrations:
+// what each one grants now. A Season or Game Day admin also gets Awards (season awards and
+// the MVP podium used to live in those groups); Fines and Polls became Community; Visibility
+// became Site.
+const LEGACY_SECTION_KEYS = {
+  season: ['season', 'awards'],
+  'games-stats': ['games-stats', 'awards'],
+  fines: ['community'],
+  polls: ['community'],
+  visibility: ['site'],
+};
+export function expandAdminSections(keys) {
+  if (!keys) return keys;
+  return [...new Set(keys.flatMap(k => LEGACY_SECTION_KEYS[k] || [k]))];
 }
 
 // Derived from NAV_GROUPS itself (not a separately-maintained list) so the sections an admin
@@ -131,7 +162,7 @@ function slugifyGroupLabel(label) {
 // section list, since an elevated player-admin (the only kind this restricts) can never be
 // the true super admin anyway and would never reach them.
 export const ADMIN_SECTIONS = NAV_GROUPS.map(g => ({
-  key: slugifyGroupLabel(g.label),
+  key: g.key,
   label: g.label,
   prefixes: g.items.map(i => i.href),
 }));
@@ -190,10 +221,11 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
   // restricted admin never even sees a link to a section they can't open (requireAuth in
   // server.js is what actually blocks it; this just keeps the sidebar honest about that).
   const baseNavGroups = allowedSections
-    ? NAV_GROUPS.filter(g => allowedSections.includes(slugifyGroupLabel(g.label)))
+    ? NAV_GROUPS.filter(g => allowedSections.includes(g.key))
     : NAV_GROUPS;
   const allNavGroups = isSuperAdmin ? [...baseNavGroups, ...SUPER_ADMIN_NAV] : baseNavGroups;
-  const navHtml = allNavGroups.map(({ label, items }, gi) => {
+  const navHtml = allNavGroups.map(({ label, items: allItems }, gi) => {
+    const items = allItems.filter(i => !i.hidden);
     const itemsHtml = items.map(({ href, label: lbl, icon, exact, soon }) => {
       const active = exact ? currentPath === href : currentPath.startsWith(href);
       const base = 'flex items-center gap-2.5 mx-2 px-2.5 h-9 rounded-md text-[13px] font-medium transition-colors relative no-underline';

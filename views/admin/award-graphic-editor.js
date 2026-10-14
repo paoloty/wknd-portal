@@ -110,7 +110,7 @@ export function awardGraphicEditorBody(params) {
 
   return `
 <div class="agm-edit-bar">
-  <a href="/admin/awards?season=${escHtml(String(season))}" class="agm-edit-bar__back">${ICON_CHEVRON_L} Awards</a>
+  <a href="/admin/awards/season?season=${escHtml(String(season))}" class="agm-edit-bar__back">${ICON_CHEVRON_L} Awards</a>
   <div class="agm-edit-bar__right">
     <span id="agr-msg" class="agm-save-msg"></span>
     <button id="agr-save" class="agm-edit-bar__save">${ICON_CHECK} Save Changes</button>

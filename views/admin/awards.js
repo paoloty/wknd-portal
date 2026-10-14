@@ -288,7 +288,7 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
 
   const seasonTabs = seasons.length > 1
     ? `<div class="flex gap-2 mb-5 flex-wrap">${seasons.map(s =>
-        `<a href="/admin/awards?season=${s}" class="agm-pill${s === season ? ' is-active' : ''}"><span class="pill-label">Season ${escHtml(String(s))}</span></a>`
+        `<a href="/admin/awards/season?season=${s}" class="agm-pill${s === season ? ' is-active' : ''}"><span class="pill-label">Season ${escHtml(String(s))}</span></a>`
       ).join('')}</div>`
     : '';
 
@@ -366,7 +366,6 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Season Awards</h2>
   <div class="flex items-center gap-3">
     <span style="font-size:12px;color:var(--text-muted)">Season ${escHtml(String(season))}</span>
-    <a href="/admin/visibility" class="admin-btn">Visibility</a>
   </div>
 </div>
 ${seasonTabs}

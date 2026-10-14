@@ -268,7 +268,7 @@ export function adminPapawisListBody({
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <h2 class="text-xl font-bold tracking-tight text-slate-100">Papawis</h2>
   <div class="flex items-center gap-2">
-    <a href="/admin/visibility" class="admin-btn">Visibility</a>
+    
     <a href="/admin/papawis/courts" class="admin-btn">Courts</a>
     <a href="/admin/papawis/activity" class="admin-btn">Activity Log</a>
     <button class="agm-new-btn" id="pw-new-btn">${ICON_PLUS} New Papawis</button>

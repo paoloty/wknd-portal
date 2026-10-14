@@ -201,8 +201,8 @@ export function adminPicksBody({ season, seasons, isCurrent, kpi, upNext, upDay,
   </div>
   <div class="flex items-center gap-2">
     ${seasonSel}
-    <a href="/admin/visibility" class="admin-btn admin-btn--sm">Settings</a>
-    <a href="/admin/awards" class="admin-btn admin-btn--sm">Pickmaster award</a>
+    
+    <a href="/admin/awards/season#pickmaster" class="admin-btn admin-btn--sm">Pickmaster award</a>
     <a href="/picks" class="admin-btn admin-btn--sm" target="_blank" rel="noopener">View /picks ↗</a>
   </div>
 </div>

@@ -16,7 +16,7 @@ Every other admin feature doc assumes this scaffolding. Read this one first if y
 
 ## Primary files
 - `views/admin/layout.js` (189 lines) — shared admin shell
-- `views/admin/login.js` (48 lines), `views/admin/dashboard.js` (130 lines), `views/admin/users.js` (99 lines), `views/admin/logs.js` (65 lines), `views/admin/site.js` (263 lines)
+- `views/admin/login.js` (48 lines), `views/admin/dashboard.js` (130 lines), `views/admin/users.js` (99 lines), `views/admin/logs.js` (65 lines), `views/admin/site.js`, `views/admin/settings.js`, `views/admin/awards-hub.js`
 
 ## Key mechanics
 - **Session**: `express-session` + `SqliteStore` backed by `portal.db`, httpOnly/sameSite=lax cookie, 8h default `maxAge`, extended to 30 days with "remember me" (`server.js:1751-1758, 2216, 2238`).
@@ -27,10 +27,10 @@ Every other admin feature doc assumes this scaffolding. Read this one first if y
 - **Audit logging**: the global `/admin/*` middleware calls `insertAdminLog` on every mutating request, tagging actor type `super` vs `admin` (elevated player) based on `isElevatedPlayer`, and stripping `password`/`confirm` fields from logged request bodies. `/admin/logs` (super-admin-only) is this log's read view — it's an **audit/action log, not an error log**.
 
 ## Layout
-- `views/admin/layout.js`: dark Tailwind-CDN shell, fixed left sidebar (`NAV_GROUPS`: Content/Finance/Members/Season/Settings) plus a `SUPER_ADMIN_NAV` group (Action Logs, Sync DB in dev) appended only `if (isSuperAdmin)`. Collapses to a hamburger on mobile.
+- `views/admin/layout.js`: dark Tailwind-CDN shell, fixed left sidebar. `NAV_GROUPS` is task-based (reorganised 2026-10): Overview, Game Day (games, Who wins? picks, players), Papawis, Awards (Overview, Season awards, MVP & Best Defender races, MVP podium ballot), Season, Content, Community (polls, fines), Marketplace, Finance, Members, Site; plus `SUPER_ADMIN_NAV` appended only `if (isSuperAdmin)`. Each group has a fixed `key` (the permission key in `registrations.admin_sections`, so renaming a label never changes access) and `hidden` items that gate admin tools living on public pages (regenerate buttons, photo pickers, signup actions) with their section. `expandAdminSections` maps pre-reorganisation keys (season, games-stats, fines, polls, visibility) to the new ones. Collapses to a hamburger on mobile.
 - Completely separate visual system from the public `views/layout.js` (light marketing header/nav/dropdowns + footer) — no shared components besides `escHtml`.
 - `views/admin/dashboard.js`: KPI cards (active players, teams, games played, outstanding balance), alert banners (pending transactions/games under review), recent-results + upcoming-games lists, quick links to Players/Games/Ledger/Site Settings.
-- `views/admin/site.js` + `/admin/site/settings`: toggles for Awards page + per-award-section visibility, MVP Race, Papawis public visibility (see [[awards]], [[papawis]]); GCash settlement info shown to players (see [[ledger-balance]]); link to Season Management; per-season payment quotas (actually saved via a *separate* `/admin/ledger/quota/:season` endpoint, not this one). `POST /admin/site/settings` whitelists allowed setting keys (plus a regex for per-article award keys) before persisting via `setSetting`.
+- Settings live on each feature's own page (`views/admin/settings.js` `settingsPanel`, placed under the page header by `renderAdminPage({ settings })`): picks on /admin/picks, Papawis on /admin/papawis, Marketplace, Posts, player reports on /admin/fines, awards + races + podium under /admin/awards. `/admin/site` (Site & homepage, `views/admin/site.js`; /admin/visibility redirects there) keeps the site-wide ones (comments, ratings, join banner, mega menu, homepage cards) and a read-only "What's public right now" list. Everything saves through `POST /admin/site/settings`, which whitelists keys and checks each one against the admin's sections (`siteSettingSection`), so a restricted admin can only change their own feature's settings (e.g. not GCash from a Papawis-only account).
 
 ## Edge cases / gotchas
 - There is **no distinct editor/head/player role hierarchy in code** — just the binary `is_admin` flag + super/elevated split described above. If you're implementing the role hierarchy noted in project memory, this is the mechanism it would replace/extend.

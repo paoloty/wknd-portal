@@ -1,7 +1,7 @@
 import { escHtml } from '../layout.js';
 import { teamColor, displayPlayerName } from '../utils.js';
 
-// ── /admin/mvp-podium — the "Call the podium" ballot (server.js GET /admin/mvp-podium) ────
+// ── /admin/awards/podium — the "Call the podium" ballot (server.js GET /admin/awards/podium) ──
 // Totals, the tally (how many put each of the ten 1st / 2nd / 3rd), every ballot with its
 // frozen bonus copy, who hasn't voted, and the one-off reminder (bell + optional email).
 // Admin-only: the tally is the league's call and stays off the public pages until the reveal.
@@ -21,7 +21,7 @@ function tile(label, value, sub = '') {
 }
 
 export function adminMvpPodiumBody({ season, locked, enabled, bonusAt, closeAt, bonusOpen, totals, tally, ballots, missing, podium = null, reminded = null, msg = '' }) {
-  const status = !enabled ? '<b class="text-amber-400">The ballot is switched off</b> (Visibility → MVP podium ballot).'
+  const status = !enabled ? '<b class="text-amber-400">The ballot is switched off</b> (Ballot settings above).'
     : locked ? `Race locked · bonus ${bonusOpen ? `closes <b class="text-slate-200">${escHtml(bonusAt || 'when the last regular-season games are scheduled')}</b>` : 'closed'} · ballots close ${escHtml(closeAt || 'at Finals Game 2')}`
     : 'Race revealed: ballots are scored.';
   const tallyRows = tally.length ? tally.map((t, i) => `<tr class="admin-table-row">
@@ -45,7 +45,6 @@ export function adminMvpPodiumBody({ season, locked, enabled, bonusAt, closeAt, 
     <p class="text-xs text-slate-500 mt-0.5 max-w-2xl">${status}</p>
   </div>
   <div class="flex items-center gap-2">
-    <a href="/admin/visibility" class="admin-btn admin-btn--sm">Settings</a>
     <a href="/mvp" class="admin-btn admin-btn--sm" target="_blank" rel="noopener">View /mvp ↗</a>
   </div>
 </div>
@@ -79,7 +78,7 @@ ${locked && enabled ? `<h3 class="${kicker} mb-2">Haven’t voted</h3>
       <b class="text-slate-100">${missing.count}</b> active player${missing.count === 1 ? '' : 's'} without a complete ballot${missing.names.length ? `: <span class="text-slate-400">${missing.names.map(escHtml).join(', ')}</span>` : ''}
       ${reminded ? `<span class="block mt-1 text-amber-400">Reminder sent ${escHtml(when(reminded.at))}: ${reminded.bell} bell${reminded.email != null ? `, ${reminded.email} email${reminded.email === 1 ? '' : 's'}` : ''}</span>` : ''}
     </div>
-    <form method="post" action="/admin/mvp-podium/remind" class="inline-flex items-center gap-2 shrink-0" onsubmit="return confirm(${escHtml(JSON.stringify(reminded ? 'A reminder already went out. Send another?' : 'Send the podium reminder now?'))})">
+    <form method="post" action="/admin/awards/podium/remind" class="inline-flex items-center gap-2 shrink-0" onsubmit="return confirm(${escHtml(JSON.stringify(reminded ? 'A reminder already went out. Send another?' : 'Send the podium reminder now?'))})">
       <label class="inline-flex items-center gap-1.5 text-xs text-slate-300" title="Same rules as pick reminders: unsubscribed, bounced or shared inboxes get the bell only">
         <input type="checkbox" name="email" value="1"${missing.emailable ? ' checked' : ' disabled'}> Also email ${missing.emailable}
       </label>
