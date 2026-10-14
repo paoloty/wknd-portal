@@ -631,3 +631,316 @@ export function mvpSharePage(snap) {
   </div>
 </div>`;
 }
+
+// ── MVP reveal lock: the ten cases + "Call the podium" (server.js mvpLockTen) ─────────────
+// Shuffled server-side on every view; nothing here may hint at the order: no rank, score,
+// movement, medal colour or ghost numeral. Each card: the player-card head, the earlier
+// meeting with Sunday's opponent as depth bars (game value, dashed season average), the
+// forecast ("Sunday's job" + a question) and the 1st/2nd/3rd pick buttons. Styles: styles.css
+// "MVP lock" (mvl- prefix). The bars animate in when the card scrolls into view.
+const LOCK_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const ORD = ['1st', '2nd', '3rd'];
+
+// The meeting block (also the homepage card's, with keys = ['pts', 'reb', 'ast']).
+export function lockBars(c, { keys = null, compact = false } = {}) {
+  const bars = keys ? c.bars.filter(b => keys.includes(b.key)) : c.bars;
+  const head = c.meet
+    ? `${c.mode === 'forecast' ? `Last time vs ${escHtml(c.meet.opp)}` : `Last game · vs ${escHtml(c.meet.opp)}`} · ${escHtml(c.meet.date)} · ${escHtml(c.meet.res)}`
+    : 'Season per game';
+  const rows = bars.map((b, i) => {
+    const none = b.v == null;
+    const cls = !b.d ? '' : b.d.startsWith('−') ? ' is-down' : ' is-up';
+    return `<span class="mvl-row">
+        <small class="mvl-row__k">${b.label}</small>
+        <span class="mvl-track"><span class="mvl-fill" style="width:${none ? b.m : b.w};--i:${i}"><i></i></span>${none ? '' : `<span class="mvl-avg" style="left:${b.m}"></span>`}</span>
+        <span class="mvl-row__v"><b class="font-condensed">${none ? escHtml(b.avg) : b.v}</b>${b.d ? `<small class="${cls.trim()}">${b.d}</small>` : ''}</span>
+      </span>`;
+  }).join('');
+  const missed = c.meet && !c.meet.played ? '<span class="mvl-meet__miss">Didn’t play in that one · bars show his season</span>' : '';
+  return `<div class="mvl-meet${compact ? ' mvl-meet--sm' : ''}">
+      <span class="mvl-meet__head"><small>${head}</small>${c.line ? '<small class="mvl-meet__key"><i></i>season avg</small>' : ''}</span>
+      ${rows}
+      ${compact ? '' : `<span class="mvl-meet__foot"><span class="font-condensed">${c.line ? escHtml(c.line.shot) : ''}</span>${c.ts != null ? `<span>Season TS <b>${c.ts}%</b></span>` : ''}</span>`}
+      ${missed}
+    </div>`;
+}
+
+function lockCard(c, { isAdmin, season, canPick }) {
+  const { first, last } = splitName(c.player.name);
+  const when = c.mode === 'forecast' ? `${escHtml(c.nextDay)} · vs ${escHtml(c.opp)}` : 'Regular season done';
+  const game = c.mode === 'forecast' ? [c.team, c.opp].sort().join('|') : '';
+  const pid = escHtml(String(c.player.id));
+  return `<article class="mv-card mvl-card" style="--team:${teamColor(c.team)}" data-pid="${pid}" data-team="${escHtml(c.team)}" data-game="${escHtml(game)}"
+    data-first="${escHtml(first)}" data-last="${escHtml(last)}" data-ppg="${c.sort.ppg}" data-rpg="${c.sort.rpg}" data-apg="${c.sort.apg}" data-lastpts="${c.sort.last}">
+    ${backdrop(c)}
+    <span class="mvl-card__top"><span class="mvl-card__when">${when}</span><span class="mvl-card__mine" data-mvl-mine hidden></span></span>
+    <span class="mv-card__id mvl-card__id">${who(c)}</span>
+    ${lockBars(c)}
+    <div class="mvl-fc">
+      <small>${c.mode === 'forecast' ? 'Sunday’s job' : 'The final case'}</small>
+      <p class="mvl-fc__job">${escHtml(c.job)}</p>
+    </div>
+    <p class="mvl-fc__q">${escHtml(c.question)}</p>
+    <span class="mvl-picks" role="group" aria-label="Put ${escHtml(displayPlayerName(c.player.name))} on your podium">
+      ${ORD.map((o, i) => `<button type="button" class="mvl-pick" data-mvl-pick="${i + 1}" aria-pressed="false"${canPick ? '' : ' disabled'}>${o.toUpperCase()}</button>`).join('')}
+    </span>
+    ${cardLink(c)}
+    ${isAdmin ? `<span class="mv-card__admin">${photoBtn(c, true)}<button type="button" class="mvpx-admin-btn mvp-regen-btn" data-pid="${pid}" data-season="${escHtml(String(season))}" title="Regenerate this card's writeup">↺</button></span>` : ''}
+  </article>`;
+}
+
+function ballotStatus(b) {
+  if (!b) return '';
+  if (b.closed) return 'Ballots closed when the MVP was awarded.';
+  if (!b.loggedIn) return 'Log in with your player account to call it.';
+  const n = b.picks.filter(Boolean).length;
+  if (b.bonusOpen) return n === 3 ? '✓ Locked in for the bonus. Change it any time before the cut-off.' : `${n} of 3 picked · saves as you tap`;
+  return n === 3 ? '✓ Saved for Who called it.' : `${n} of 3 picked · saves as you tap`;
+}
+
+export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6, isAdmin = false, ballot = null, viewerId = null }) {
+  const race = RACES.mvp;
+  const forecast = ten.some(c => c.mode === 'forecast');
+  const canPick = !!(ballot && ballot.enabled && !ballot.closed);
+  const showBallot = !!(ballot && ballot.enabled);
+  const totalSlots = seasonGames * 2;
+  const pct = totalSlots ? Math.min(100, Math.round(totalGames / totalSlots * 100)) : 0;
+  const head = `<header class="mvpx-head">
+    <div class="mvpx-head__main ld-head">
+      <span class="ld-kicker">Season ${escHtml(String(season))} · ${forecast ? 'Final week' : 'Regular season done'}</span>
+      <h1>${escHtml(race.name)}</h1>
+      <p class="ld-head__meta">${forecast ? 'Ten players still have a case, and Sunday is the last chance to make it.' : 'Ten players made their case.'} The order and the scores stay hidden until the MVP is awarded at Finals Game 2.</p>
+    </div>
+    <div class="mvpx-head__side">
+      <div class="mvpx-progress">
+        <span class="mvpx-progress__label"><span>Regular season</span><span><b>${totalGames}</b> of ${totalSlots} games</span></span>
+        <span class="mvpx-progress__bar mvl-progress"><span style="width:${pct}%"></span></span>
+      </div>
+      <details class="mvpx-how"><summary>How the score works</summary><p>${race.how}</p></details>
+      ${isAdmin ? `<button type="button" id="mvp-regen-all" class="mvpx-admin-btn" data-season="${escHtml(String(season))}">↺ Regenerate all</button>` : ''}
+    </div>
+  </header>`;
+  const cut = showBallot && ballot.bonusOpen ? `Bonus closes ${ballot.bonusAt ? escHtml(ballot.bonusAt) : 'at Sunday’s tip-off'}` : showBallot ? 'Bonus ballots locked' : '';
+  const strip = `<div class="mvl-strip">${LOCK_ICON}<span><b>Locked${forecast ? ' for the final week' : ''}.</b> No ranks, no scores, no gaps. The ten are shuffled on every visit.</span>${cut ? `<span class="mvl-strip__cut">${cut}</span>` : ''}</div>`;
+
+  // Filters: Sunday's games (both teams' dots), else teams; My picks for a logged-in voter.
+  const games = forecast ? [...new Set(ten.filter(c => c.mode === 'forecast').map(c => [c.team, c.opp].sort().join('|')))] : [];
+  const teams = [...new Set(ten.map(c => c.team))].sort();
+  const dotsOf = ts => `<span class="mvl-dots">${ts.map(t => `<i style="background:${teamColor(t)}"></i>`).join('')}</span>`;
+  const tc = t => t.charAt(0) + t.slice(1).toLowerCase();
+  const chips = [`<button type="button" class="gr-chip is-on" data-mvl-filter="" aria-pressed="true">All ${ten.length}</button>`]
+    .concat(games.length
+      ? games.map(g => { const ts = g.split('|'); return `<button type="button" class="gr-chip" data-mvl-filter="game:${escHtml(g)}" aria-pressed="false">${dotsOf(ts)}${ts.map(tc).join(' v ')}</button>`; })
+      : teams.map(t => `<button type="button" class="gr-chip" data-mvl-filter="team:${escHtml(t)}" aria-pressed="false">${dotsOf([t])}${tc(t)}</button>`))
+    .concat(ballot?.loggedIn ? [`<button type="button" class="gr-chip" data-mvl-filter="mine" aria-pressed="false">My picks <span data-mvl-minecount></span></button>`] : []);
+  const toolbar = `<div class="mvl-bar" role="toolbar" aria-label="Filter and sort the ten">
+      <span class="mvl-bar__chips">${chips.join('')}</span>
+      <label class="mvl-bar__sort"><span>Sort</span>
+        <select class="form-input" data-mvl-sort aria-label="Sort the ten">
+          <option value="shuffle">Shuffled</option>
+          <option value="ppg">Points per game</option>
+          <option value="rpg">Rebounds per game</option>
+          <option value="apg">Assists per game</option>
+          ${forecast ? '<option value="lastpts">Last game vs Sunday’s team</option>' : '<option value="lastpts">Points in his last game</option>'}
+          <option value="team">Team</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </label>
+      <button type="button" class="mvl-bar__shuffle" data-mvl-shuffle aria-label="Shuffle again" title="Shuffle again"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button>
+    </div>`;
+
+  const byId = Object.fromEntries(ten.map(c => [String(c.player.id), c]));
+  const slotHtml = (pid, i) => {
+    const c = pid && byId[pid];
+    if (!c) return `<div class="mvl-slot is-empty" data-mvl-slot="${i + 1}"><b class="font-condensed">${i + 1}</b><span class="mvl-slot__hint">${canPick ? `Tap <b>${ORD[i].toUpperCase()}</b> on a player` : '—'}</span></div>`;
+    const { first, last } = splitName(c.player.name);
+    return `<div class="mvl-slot" data-mvl-slot="${i + 1}"><b class="font-condensed">${i + 1}</b>
+      <span class="pl-av mvl-slot__av" style="--team:${teamColor(c.team)}"><span>${escHtml(initials(displayPlayerName(c.player.name)))}</span><img src="${playerPhotoUrl(String(c.player.id), 96)}" alt="" loading="lazy" onerror="this.remove()"></span>
+      <span class="mvl-slot__who"><small>${escHtml(first)}</small><b>${escHtml(last)}</b></span>
+      ${canPick && ballot.loggedIn ? `<button type="button" class="mvl-slot__x" data-mvl-clear="${i + 1}" aria-label="Remove ${escHtml(last)}">×</button>` : ''}
+    </div>`;
+  };
+  const picks = ballot?.picks || [null, null, null];
+  const bonusLine = ballot && !ballot.bonusOpen && ballot.bonusPicks
+    ? `<p class="mvl-ballot__bonus">Your bonus ballot: ${ballot.bonusPicks.map((p, i) => `${i + 1}. ${p && byId[p] ? escHtml(splitName(byId[p].player.name).last) : '—'}`).join(' · ')}. Changes now only count for Who called it.</p>` : '';
+  const aside = showBallot ? `<aside class="card mvl-ballot" id="ballot" aria-labelledby="mvl-ballot-h">
+      <div class="mvl-ballot__head">
+        <span class="mvl-ballot__kicker">Your ballot</span>
+        <h2 id="mvl-ballot-h">Call the podium</h2>
+        <p>Who finishes 1st, 2nd and 3rd? Your call stays private until the reveal at Finals Game 2.</p>
+      </div>
+      <div class="mvl-slots" data-mvl-slots>${picks.map(slotHtml).join('')}</div>
+      ${ballot.loggedIn || ballot.closed ? `<p class="mvl-ballot__status" data-mvl-status role="status">${escHtml(ballotStatus(ballot))}</p>`
+        : `<a class="mvl-ballot__login" href="/login?next=${encodeURIComponent('/mvp#ballot')}">Log in to call the podium</a>`}
+      ${bonusLine}
+      <dl class="mvl-ballot__meta">
+        <div><dt>Ballots in</dt><dd class="font-condensed" data-mvl-count>${ballot.count}</dd></div>
+        <div><dt>${ballot.bonusOpen ? 'Bonus closes' : 'Ballots close'}</dt><dd>${escHtml(ballot.bonusOpen ? (ballot.bonusAt || 'Sunday tip-off') : (ballot.closeAt || 'at Finals Game 2'))}</dd></div>
+      </dl>
+      <p class="mvl-ballot__rule"><b>Pickmaster bonus:</b> +1 for each player in the exact spot, up to +3. Only the ballot you have in at the cut-off counts. <a href="/picks/rules#podium">Rules</a></p>
+    </aside>` : '';
+  const dock = showBallot ? `<a class="mvl-dock" href="#ballot" data-mvl-dock>
+      <span class="mvl-dock__lbl">Your podium · <span data-mvl-dockn>${picks.filter(Boolean).length}</span> of 3</span>
+      <span class="mvl-dock__slots">${picks.map((p, i) => `<span class="mvl-dock__slot${p ? '' : ' is-empty'}" data-mvl-dockslot="${i + 1}"><b class="font-condensed">${i + 1}</b><span>${p && byId[p] ? escHtml(splitName(byId[p].player.name).last) : 'Pick'}</span></span>`).join('')}</span>
+    </a>` : '';
+
+  const state = { picks, loggedIn: !!ballot?.loggedIn, canPick, bonusOpen: !!ballot?.bonusOpen, login: `/login?next=${encodeURIComponent('/mvp#ballot')}` };
+  return `<div class="page-content mvpx mvl${showBallot ? ' mvl--ballot' : ''}" data-mvl data-season="${escHtml(String(season))}">
+  ${head}
+  ${strip}
+  <div class="mvl-layout">
+    <section class="mvl-main" aria-labelledby="mvl-ten-h">
+      <div class="section-header"><h2 id="mvl-ten-h">The ten <span class="section-header__sub">shuffled · order means nothing</span></h2></div>
+      ${toolbar}
+      <div class="mvl-grid swipe-row" data-swipe data-mvl-grid>${ten.map(c => lockCard(c, { isAdmin, season, canPick })).join('\n')}</div>
+      <div class="card mvl-empty" data-mvl-empty hidden>No players match. <button type="button" class="mvl-empty__reset" data-mvl-filter="">Show all ten</button></div>
+    </section>
+    ${aside}
+  </div>
+  ${dock}
+</div>
+<script type="application/json" id="mvl-state">${JSON.stringify(state).replace(/</g, '\\u003c')}</script>
+${mvpLockScript()}
+${swipeScript()}${isAdmin ? `
+<script>
+(function () {
+  function regen(pid, season, btn) {
+    btn.disabled = true; btn.textContent = '…';
+    fetch('/admin/mvp/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pid ? { player_id: pid, season: season } : { season: season }) })
+      .then(function () { location.reload(); });
+  }
+  document.querySelectorAll('.mvp-regen-btn').forEach(function (b) { b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); regen(b.dataset.pid, b.dataset.season, b); }); });
+  var all = document.getElementById('mvp-regen-all');
+  if (all) all.addEventListener('click', function () { regen(null, all.dataset.season, all); });
+})();
+</script>
+${photoDialog(season, race)}` : ''}`;
+}
+
+function mvpLockScript() {
+  return `<script>
+(function () {
+  var root = document.querySelector('[data-mvl]');
+  if (!root) return;
+  var st = JSON.parse(document.getElementById('mvl-state').textContent);
+  var grid = root.querySelector('[data-mvl-grid]');
+  var cards = Array.prototype.slice.call(grid.querySelectorAll('.mvl-card'));
+  var ORD = ['1ST', '2ND', '3RD'];
+  var byId = {};
+  cards.forEach(function (c, i) { c.dataset.shuffle = i; byId[c.dataset.pid] = c; });
+
+  // Bars grow in as each card scrolls into view (static without JS or with reduced motion).
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!still && 'IntersectionObserver' in window) {
+    root.classList.add('mvl-anim');
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } });
+    }, { threshold: 0.25 });
+    cards.forEach(function (c) { io.observe(c); });
+  }
+
+  // Filter + sort.
+  var filter = '', sort = 'shuffle';
+  function apply() {
+    var mine = st.picks.filter(Boolean);
+    var list = cards.slice();
+    if (sort === 'shuffle') list.sort(function (a, b) { return a.dataset.shuffle - b.dataset.shuffle; });
+    else if (sort === 'team') list.sort(function (a, b) { return a.dataset.team.localeCompare(b.dataset.team) || a.dataset.last.localeCompare(b.dataset.last); });
+    else if (sort === 'name') list.sort(function (a, b) { return a.dataset.last.localeCompare(b.dataset.last); });
+    else list.sort(function (a, b) { return Number(b.dataset[sort]) - Number(a.dataset[sort]); });
+    var shown = 0;
+    list.forEach(function (c) {
+      var ok = !filter
+        || (filter === 'mine' && mine.indexOf(c.dataset.pid) !== -1)
+        || (filter.indexOf('game:') === 0 && c.dataset.game === filter.slice(5))
+        || (filter.indexOf('team:') === 0 && c.dataset.team === filter.slice(5));
+      c.hidden = !ok; if (ok) shown++;
+      grid.appendChild(c);
+    });
+    root.querySelector('[data-mvl-empty]').hidden = shown > 0;
+    grid.scrollLeft = 0;
+  }
+  root.addEventListener('click', function (e) {
+    var f = e.target.closest('[data-mvl-filter]');
+    if (f) {
+      filter = f.dataset.mvlFilter;
+      root.querySelectorAll('.mvl-bar [data-mvl-filter]').forEach(function (b) { var on = b.dataset.mvlFilter === filter; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+      apply();
+    }
+    if (e.target.closest('[data-mvl-shuffle]')) {
+      var order = cards.map(function (c, i) { return i; });
+      for (var i = order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = order[i]; order[i] = order[j]; order[j] = t; }
+      cards.forEach(function (c, i) { c.dataset.shuffle = order[i]; });
+      sort = 'shuffle'; root.querySelector('[data-mvl-sort]').value = 'shuffle';
+      apply();
+    }
+  });
+  root.querySelector('[data-mvl-sort]').addEventListener('change', function () { sort = this.value; apply(); });
+
+  // The ballot: a tap saves at once (rolls back on an error).
+  var slotsBox = root.querySelector('[data-mvl-slots]');
+  var statusEl = root.querySelector('[data-mvl-status]');
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]; }); }
+  function status(text) { if (statusEl) statusEl.textContent = text; }
+  function statusText() {
+    var n = st.picks.filter(Boolean).length;
+    if (n === 3) return st.bonusOpen ? '✓ Locked in for the bonus. Change it any time before the cut-off.' : '✓ Saved for Who called it.';
+    return n + ' of 3 picked · saves as you tap';
+  }
+  function paint() {
+    cards.forEach(function (c) {
+      var at = st.picks.indexOf(c.dataset.pid);
+      c.classList.toggle('is-mine', at !== -1);
+      var tag = c.querySelector('[data-mvl-mine]');
+      tag.hidden = at === -1; tag.textContent = at === -1 ? '' : 'YOUR ' + ORD[at];
+      c.querySelectorAll('[data-mvl-pick]').forEach(function (b) { var on = Number(b.dataset.mvlPick) - 1 === at; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    });
+    if (slotsBox) slotsBox.innerHTML = st.picks.map(function (pid, i) {
+      var c = pid && byId[pid];
+      if (!c) return '<div class="mvl-slot is-empty" data-mvl-slot="' + (i + 1) + '"><b class="font-condensed">' + (i + 1) + '</b><span class="mvl-slot__hint">' + (st.canPick ? 'Tap <b>' + ORD[i] + '</b> on a player' : '—') + '</span></div>';
+      var av = c.querySelector('.pl-av');
+      return '<div class="mvl-slot" data-mvl-slot="' + (i + 1) + '"><b class="font-condensed">' + (i + 1) + '</b>'
+        + '<span class="pl-av mvl-slot__av" style="--team:' + c.style.getPropertyValue('--team') + '">' + (av ? av.innerHTML : '') + '</span>'
+        + '<span class="mvl-slot__who"><small>' + esc(c.dataset.first) + '</small><b>' + esc(c.dataset.last) + '</b></span>'
+        + (st.canPick && st.loggedIn ? '<button type="button" class="mvl-slot__x" data-mvl-clear="' + (i + 1) + '" aria-label="Remove ' + esc(c.dataset.last) + '">×</button>' : '') + '</div>';
+    }).join('');
+    root.querySelectorAll('[data-mvl-dockslot]').forEach(function (s, i) {
+      var c = st.picks[i] && byId[st.picks[i]];
+      s.classList.toggle('is-empty', !c); s.querySelector('span').textContent = c ? c.dataset.last : 'Pick';
+    });
+    var dn = root.querySelector('[data-mvl-dockn]'); if (dn) dn.textContent = st.picks.filter(Boolean).length;
+    var mc = root.querySelector('[data-mvl-minecount]'); if (mc) mc.textContent = '· ' + st.picks.filter(Boolean).length;
+  }
+  var saving = 0;
+  function save(next) {
+    var prev = st.picks.slice();
+    st.picks = next; paint(); status('Saving…');
+    var mine = ++saving;
+    fetch('/api/mvp/ballot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p1: next[0], p2: next[1], p3: next[2] }) })
+      .then(function (r) { return r.json().then(function (d) { if (r.status === 401) { location.href = st.login; } if (!r.ok) throw new Error(d.error || 'Could not save.'); return d; }); })
+      .then(function (d) {
+        if (mine !== saving) return;
+        st.bonusOpen = d.bonusOpen;
+        var cnt = root.querySelector('[data-mvl-count]'); if (cnt) cnt.textContent = d.count;
+        status(statusText());
+      })
+      .catch(function (err) { if (mine !== saving) return; st.picks = prev; paint(); status(err.message); });
+  }
+  root.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-mvl-pick]');
+    var x = e.target.closest('[data-mvl-clear]');
+    if (!b && !x) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!st.loggedIn) { location.href = st.login; return; }
+    if (!st.canPick) return;
+    var next = st.picks.slice();
+    if (x) { next[Number(x.dataset.mvlClear) - 1] = null; return save(next); }
+    var pid = b.closest('.mvl-card').dataset.pid, at = Number(b.dataset.mvlPick) - 1;
+    if (next[at] === pid) next[at] = null;
+    else { var was = next.indexOf(pid); if (was !== -1) next[was] = null; next[at] = pid; }
+    save(next);
+  });
+  paint();
+})();
+</script>`;
+}

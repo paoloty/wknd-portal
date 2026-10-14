@@ -1,6 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, formatDate, boldTitle, excerpt, truncate, playerAvatar, avatarStack, playerLink, manilaTodayStr, commentSnippet, playerPhotoUrl } from './utils.js';
-import { moveBadge } from './mvp.js';
+import { moveBadge, lockBars } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
 import { gameCard, gameCardScript, swipeScript } from './games.js';
@@ -213,33 +213,103 @@ function heroCarousel(games, awardItems = [], papawis = null) {
 // The /mvp #1 card, sidebar-sized (the shared .mv-card pieces in styles.css: gold podium
 // glow, faded photo, avatar ring, first over LASTNAME), then #2–6 as rows with faces, the
 // #2/#3 ranks in silver and bronze. The writeup takes the height left beside the hero.
-// MVP reveal lock (lib/mvp-lock.js): the three finalists A–Z with their season lines.
-// Nothing here may hint at the order: no ranks, scores, movement, medal colours or writeup.
-function mvpFinalistsSidebar({ season, candidates }) {
-  const row = c => {
-    const s = c.stats, gp = s.gp || 1;
-    const raw = String(c.player.name || ''), i = raw.indexOf(',');
-    const first = i === -1 ? '' : raw.slice(i + 1).trim(), last = (i === -1 ? raw : raw.slice(0, i)).trim().toUpperCase();
-    const team = String(s.team_name || '').toUpperCase();
-    return `<a href="/players/${encodeURIComponent(String(c.player.id))}" class="hmvp-fin" style="--team:${teamColor(team)}">
-    <span class="pl-av"><span>${escHtml(`${first[0] || ''}${last[0] || ''}`)}</span><img src="${playerPhotoUrl(String(c.player.id), 192)}" alt="" loading="lazy" onerror="this.remove()"></span>
-    <span class="hmvp-fin__who">
-      <span class="hmvp-row__name">${first ? `<span>${escHtml(first)}</span>` : ''}<b>${escHtml(last)}</b></span>
-      <span class="pl-team"><i style="background:${teamColor(team)}"></i>${escHtml(team)}</span>
-    </span>
-    <span class="hmvp-fin__line font-condensed">${(s.pts / gp).toFixed(1)}<small>PPG</small> ${(s.reb / gp).toFixed(1)}<small>RPG</small> ${(s.ast / gp).toFixed(1)}<small>APG</small></span>
-  </a>`;
+// MVP reveal lock (lib/mvp-lock.js): the ten cases, one at a time (server.js mvpLockTen,
+// shuffled per view, cached forecasts only). Every player gets a turn: all ten faces stay on
+// the card as a picker, the case auto-advances, and each visit picks up where the visitor's
+// last one stopped (localStorage; a first visit starts at a random case). Every case uses the
+// same template and fixed text heights. Then the viewer's podium, linking to /mvp#ballot.
+// Nothing here may hint at the order: no ranks, scores, movement or medal colours.
+function mvpLockSidebar({ season, ten, ballot }) {
+  const split = raw => {
+    const s = String(raw || ''), i = s.indexOf(',');
+    return i === -1 ? { first: '', last: s.toUpperCase() } : { first: s.slice(i + 1).trim(), last: s.slice(0, i).trim().toUpperCase() };
   };
-  return `<div class="card sidebar hmvp-card">
-  <div class="hmvp-head"><span>MVP Finalists</span><span class="hmvp-when">S${escHtml(String(season))}</span></div>
-  <p class="hmvp-fin__note">Revealed at Finals Game 2. Listed A–Z.</p>
-  <div class="hmvp-fins">${candidates.map(row).join('\n  ')}</div>
-  <a href="/mvp" class="hmvp-foot">Meet the finalists <span>&rarr;</span></a>
-</div>`;
+  const av = (c, cls = '') => `<span class="pl-av${cls}" style="--team:${teamColor(c.team)}"><span>${escHtml(split(c.player.name).first.charAt(0) + split(c.player.name).last.charAt(0))}</span><img src="${playerPhotoUrl(String(c.player.id), 96)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
+  const faces = ten.map((c, i) => `<button type="button" class="hml-face" data-hml-go="${i}" aria-label="${escHtml(displayPlayerName(c.player.name))}'s case" aria-pressed="false">${av(c)}</button>`).join('');
+  const cases = ten.map((c, i) => {
+    const { first, last } = split(c.player.name);
+    const num = c.player.number !== '' && c.player.number != null ? ` · #${escHtml(String(c.player.number))}` : '';
+    return `<div class="hml-case" data-hml-case="${i}" style="--team:${teamColor(c.team)}"${i ? ' hidden' : ''}>
+      <span class="hml-case__top"><span>${c.mode === 'forecast' ? `${escHtml(c.nextDay)} · vs ${escHtml(c.opp)}` : 'Regular season done'}</span></span>
+      <a class="hml-case__who" href="/players/${encodeURIComponent(String(c.player.id))}">${av(c, ' hml-case__av')}<span><small>${escHtml(first)}</small><b>${escHtml(last)}</b><span class="pl-team"><i style="background:${teamColor(c.team)}"></i>${escHtml(c.team)}${num}</span></span></a>
+      ${lockBars(c, { keys: ['pts', 'reb', 'ast'], compact: true })}
+      <p class="hml-case__q">${escHtml(c.question)}</p>
+    </div>`;
+  }).join('');
+  const byId = Object.fromEntries(ten.map(c => [String(c.player.id), c]));
+  const picks = ballot?.picks || [null, null, null];
+  const n = picks.filter(Boolean).length;
+  const slots = picks.map((p, i) => {
+    const c = p && byId[p];
+    return `<span class="hml-slot${c ? '' : ' is-empty'}"><b class="font-condensed">${i + 1}</b>${c ? `${av(c, ' hml-slot__av')}<span>${escHtml(split(c.player.name).last)}</span>` : '<span>Pick</span>'}</span>`;
+  }).join('');
+  const show = ballot && ballot.enabled;
+  const cta = !show ? '' : ballot.closed ? ''
+    : !ballot.loggedIn ? `<a class="hml-cta" href="/login?next=${encodeURIComponent('/mvp#ballot')}">Log in to call the podium</a>`
+    : n === 3 ? `<a class="hml-cta hml-cta--quiet" href="/mvp#ballot">${ballot.bonusOpen ? '✓ Locked in for the bonus · change it' : '✓ Saved · change it'}</a>`
+    : `<a class="hml-cta" href="/mvp#ballot">${n ? `Pick your ${['1st', '2nd', '3rd'][picks.indexOf(null)]}` : 'Call the podium'}${ballot.bonusOpen ? ' · up to +3' : ''}</a>`;
+  return `<div class="card sidebar hmvp-card hml" data-hml>
+  <div class="hmvp-head"><span>MVP Race</span><span class="hml-lock">Locked</span></div>
+  <div class="hml-body">
+    <div class="hml-faces" role="group" aria-label="The ten">${faces}</div>
+    <div class="hml-stage">
+      <span class="hml-nav">
+        <button type="button" class="hml-nav__btn" data-hml-step="-1" aria-label="Previous case"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <span class="font-condensed"><b data-hml-n>1</b> / ${ten.length}</span>
+        <button type="button" class="hml-nav__btn" data-hml-step="1" aria-label="Next case"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
+      </span>
+      ${cases}
+      <span class="hml-timer" aria-hidden="true"><span data-hml-timer></span></span>
+    </div>
+    ${show ? `<div class="hml-slots">${slots}</div>${cta}` : ''}
+  </div>
+  <a href="/mvp" class="hmvp-foot">All ten cases <span>&rarr;</span>${show && ballot.bonusOpen && ballot.bonusAt ? `<small class="hml-foot__cut">Bonus closes ${escHtml(ballot.bonusAt.split(' · ')[0])}</small>` : ''}</a>
+</div>
+<script>
+(function () {
+  var box = document.querySelector('[data-hml]');
+  if (!box || box.dataset.on) return;
+  box.dataset.on = '1';
+  var cases = box.querySelectorAll('[data-hml-case]'), faces = box.querySelectorAll('[data-hml-go]');
+  var nEl = box.querySelector('[data-hml-n]'), bar = box.querySelector('[data-hml-timer]');
+  var N = cases.length, KEY = 'wknd-mvp-case-${escHtml(String(season))}', MS = 7000;
+  var ids = Array.prototype.map.call(cases, function (c) { return c.querySelector('a').getAttribute('href'); });
+  var at = Math.floor(Math.random() * N);
+  try { var last = localStorage.getItem(KEY); var k = ids.indexOf(last); if (k !== -1) at = (k + 1) % N; } catch (e) {}
+  function show(i) {
+    at = (i + N) % N;
+    Array.prototype.forEach.call(cases, function (c, j) { c.hidden = j !== at; });
+    Array.prototype.forEach.call(faces, function (f, j) { f.classList.toggle('is-on', j === at); f.setAttribute('aria-pressed', j === at ? 'true' : 'false'); });
+    nEl.textContent = at + 1;
+    try { localStorage.setItem(KEY, ids[at]); } catch (e) {}
+    restart();
+  }
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var t = 0, paused = false;
+  function restart() {
+    clearTimeout(t);
+    if (bar) { bar.style.transition = 'none'; bar.style.width = '0'; }
+    if (still || paused) return;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { if (bar) { bar.style.transition = 'width ' + MS + 'ms linear'; bar.style.width = '100%'; } }); });
+    t = setTimeout(function () { show(at + 1); }, MS);
+  }
+  box.addEventListener('click', function (e) {
+    var g = e.target.closest('[data-hml-go]'), s = e.target.closest('[data-hml-step]');
+    if (g) show(Number(g.dataset.hmlGo)); else if (s) show(at + Number(s.dataset.hmlStep));
+  });
+  var stage = box.querySelector('.hml-stage');
+  function pause(on) { paused = on; restart(); }
+  stage.addEventListener('mouseenter', function () { pause(true); });
+  stage.addEventListener('mouseleave', function () { pause(false); });
+  stage.addEventListener('touchstart', function () { pause(true); }, { passive: true });
+  document.addEventListener('visibilitychange', function () { pause(document.hidden); });
+  show(at);
+})();
+</script>`;
 }
 
-function mvpRaceSidebar({ season, week, final, candidates, locked = false }) {
-  if (locked) return mvpFinalistsSidebar({ season, candidates });
+function mvpRaceSidebar({ season, week, final, candidates, locked = false, ten, ballot }) {
+  if (locked) return mvpLockSidebar({ season, ten, ballot });
   const [lead, ...rest] = candidates;
   const ls    = lead.stats;
   const gp    = ls.gp || 1;

@@ -248,8 +248,30 @@ export function picksPlayerSheet({ player, season, record, rank, ranked, rows, i
 
 // ── /picks/rules — the Pickmaster rules in plain language ───────────────────────────────
 // Same card + section styling as /rules (legal-*). The numbers here must match lib/picks.js:
-// net scoring, the tiebreak order (TIEBREAK_STEPS) and the 35–65% odds clamp.
-export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine = '' }) {
+// net scoring, the tiebreak order (TIEBREAK_STEPS) and the 35–65% odds clamp. podium: the MVP
+// podium bonus (lib/mvp-ballot.js) while site setting mvp_podium_enabled is on, else null.
+export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine = '', podium = null }) {
+  const cutoff = podium?.bonusAt ? `on ${escHtml(podium.bonusAt)} (Manila time)` : 'on the last regular-season game day (Manila time)';
+  const podiumSection = podium ? `<div class="legal-section" id="podium">
+    <h2 class="legal-section__heading">MVP podium bonus</h2>
+    <div class="legal-section__body">
+      <p>Once a season, pick who finishes <strong>1st, 2nd and 3rd in the Season MVP race</strong>. Make your pick on <a href="/mvp#ballot">/mvp</a>.</p>
+      <ul>
+        <li><strong>+1 for each player in the exact spot</strong>, up to <strong>+3</strong>. A miss is 0, never a minus.</li>
+        <li><strong>Only your ballot as it stood when picks closed ${cutoff} scores.</strong> You can still make or change a ballot until the MVP is awarded at Finals Game 2, but later changes only count for Who called it, not for points. Once the regular season ends, the MVP order is fixed and could be worked out from the box scores.</li>
+        <li>The bonus is added to your points when the MVP is awarded at Finals Game 2, and shows as its own line on the leaderboard.</li>
+        <li>Admins who can see the MVP scores can't earn the bonus.</li>
+      </ul>
+      <table class="pkr-table">
+        <thead><tr><th>If the podium is 1 Player A · 2 Player B · 3 Player C</th><th>Bonus</th></tr></thead>
+        <tbody>
+          <tr><td>A · B · C</td><td class="font-condensed">+3</td></tr>
+          <tr><td>A · C · B</td><td class="font-condensed">+1</td></tr>
+          <tr><td>B · C · A</td><td class="font-condensed">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>` : '';
   const section = (heading, content) => `<div class="legal-section">
     <h2 class="legal-section__heading">${escHtml(heading)}</h2>
     <div class="legal-section__body">${content}</div>
@@ -259,10 +281,11 @@ export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine =
     <p class="pkp-crumb"><a href="/picks">← Who wins? picks</a></p>
     <div class="legal-header">
       <h1 class="legal-title">Pickmaster rules</h1>
-      <p class="legal-updated">Season 4 · in effect from the October 11, 2026 games</p>
+      <p class="legal-updated">Season 4 · in effect from the October 11, 2026 games${podium ? ' · updated October 15, 2026: MVP podium bonus added' : ''}</p>
     </div>
     <div class="card legal-card">
       ${section('The short version', `<p>Pick who wins each game. A correct pick is <strong>+1</strong>, a wrong one is <strong>−1</strong>, and a game you don't pick is <strong>0</strong>. Most points when the season ends is the <strong>Pickmaster</strong>.</p>
+      ${podium ? '<p>Plus one bonus pick a season: the <a href="#podium">MVP podium</a>, worth up to <strong>+3</strong>.</p>' : ''}
       ${prizeLine ? `<p>${escHtml(prizeLine)}</p>` : ''}`)}
       ${section('Making a pick', `<ul>
         <li>Log in with your player account, then tap a team on any open game: on the homepage, <a href="/picks">/picks</a>, a game page or your profile.</li>
@@ -289,7 +312,9 @@ export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine =
         <li><strong>Finals margin guess.</strong> Closest guess wins (see below).</li>
         <li>Still level: <strong>co-Pickmasters</strong>.</li>
       </ol>
-      <p>With three or more tied, anyone a step separates is placed, and whoever is still level starts again at head-to-head.</p>`)}
+      <p>With three or more tied, anyone a step separates is placed, and whoever is still level starts again at head-to-head.</p>
+      ${podium ? '<p>The tiebreakers count game picks only. The MVP podium bonus counts in Points and nowhere else.</p>' : ''}`)}
+      ${podiumSection}
       ${section('Beat the Odds', `<p>A second leaderboard for calling upsets. Bragging rights only; it doesn't decide the prize except as tiebreaker 4.</p>
       <ul>
         <li>A correct pick earns <strong>2 × (100% − the odds on your side)</strong>. A wrong pick costs <strong>2 × the odds on your side</strong>.</li>
@@ -309,6 +334,7 @@ export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine =
         <li><strong>Cancelled games</strong>, or games without a final result, score nothing for anyone. If Finals Game 1 is cancelled, the margin guesses on it don't count.</li>
         <li><strong>Score corrections:</strong> if a final score is corrected, every pick on that game is rescored. Beat the Odds points stay based on the odds shown at close.</li>
         <li>Rules are set before the season's picks are scored. Any change only applies to games after it's announced.</li>
+        ${podium ? `<li><strong>MVP podium:</strong> the bonus is scored against the podium announced at Finals Game 2. If Finals Game 2 is cancelled, it's scored when the MVP is awarded.</li>` : ''}
       </ul>`)}
       ${section('Questions', '<p>Ask an admin, or message the league page. <a href="/picks">See the race →</a></p>')}
     </div>

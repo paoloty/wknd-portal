@@ -100,6 +100,8 @@ import {
   getTeamRatingTotals, getPlayerRecentStats, getPlayerGamePts, getPlayerWinRate, getTotalSeasonGames,
   deleteUnlockedRating,
   getMvpWriteup, getMvpWriteupsForSeason, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
+  getMvpLockWriteup, setMvpLockWriteup, deleteMvpLockWriteup, clearMvpLockWriteups, getMvpLockOpenings,
+  getMvpBallot, getMvpBonusBallot, countMvpBallots, saveMvpBallot,
   getDpoyWriteup, getDpoyWriteupsForSeason, setDpoyWriteup, deleteDpoyWriteupForPlayer, clearDpoyWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
@@ -200,8 +202,9 @@ import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
-import { mvpPage, mvpSnapshot, mvpSharePage } from './views/mvp.js';
-import { isMvpLocked, mvpLockState, mvpFinalists, MVP_REVEAL_MODES } from './lib/mvp-lock.js';
+import { mvpPage, mvpLockPage, mvpSnapshot, mvpSharePage } from './views/mvp.js';
+import { isMvpLocked, mvpLockState, mvpFinalists, MVP_REVEAL_MODES, SEASON_GAMES_PER_TEAM } from './lib/mvp-lock.js';
+import { bonusCutoff, ballotClose, isPast, fmtMoment } from './lib/mvp-ballot.js';
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
@@ -636,12 +639,12 @@ function buildMvpOgTags(req, candidates, season, { locked = false, race = 'mvp' 
   const origin  = getRequestOrigin(req);
   const url     = `${origin}/mvp`;
   const img     = `${origin}/og-mvp.png`;
-  const title   = locked ? `Season ${season} MVP Finalists — WKND Basketball League` : `MVP Race — WKND Basketball League`;
+  const title   = locked ? `Season ${season} MVP Race — Call the podium — WKND Basketball League` : `MVP Race — WKND Basketball League`;
   const leader  = candidates[0];
   let desc;
   if (locked) {
-    // candidates are the finalists in alphabetical order; never say who leads.
-    desc = `The Season ${season} MVP finalists: ${candidates.map(c => displayPlayerName(c.player.name)).join(', ')}. The winner is revealed at Finals Game 2.`;
+    // Reveal lock: never name anyone (any order would hint) or say who leads.
+    desc = `Ten players still have a case for Season ${season} MVP. The order stays hidden until the award at Finals Game 2 — call the podium.`;
   } else if (leader) {
     const name = displayPlayerName(leader.player.name);
     const team = String(leader.stats.team_name || '').toUpperCase();
@@ -6808,6 +6811,9 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
       awardsEnabled:   getSetting('awards_enabled', '1') !== '0',
       mvpEnabled:      getSetting('mvp_race_enabled', '1') !== '0',
       mvpReveal:       mvpLockState(getPortalCurrentSeason()),
+      mvpPodiumEnabled: mvpPodiumEnabled(),
+      mvpBonusClose:   getSetting('mvp_bonus_close', ''),
+      mvpBonusNow:     mvpBallotState(getPortalCurrentSeason(), null).bonusAt,
       homeShowRosterMoves: getSetting('home_show_roster_moves', '0') === '1',
       megaMenuEnabled: getSetting('mega_menu_enabled', '0') === '1',
       picksEnabled: picksEnabled(),
@@ -6824,7 +6830,7 @@ app.get('/admin/visibility', requireAuth, (req, res) => {
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
-    'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled',
+    'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled', 'mvp_podium_enabled',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open', 'reg_deadline', 'reg_venue', 'reg_schedule', 'reg_fee',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -6837,6 +6843,11 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     else if ((key === 'home_nextup_card_1' || key === 'home_nextup_card_2') && nextUpKeys.has(String(value))) setSetting(key, String(value));
     else if (key === 'picks_close_time' && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) setSetting(key, String(value));
     else if (key === 'mvp_reveal_mode' && MVP_REVEAL_MODES.includes(String(value))) setSetting(key, String(value));
+    else if (key === 'mvp_bonus_close') {
+      const v = String(value || '').trim();
+      if (v && !/^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d$/.test(v)) return res.status(400).json({ error: 'Use YYYY-MM-DD HH:MM' });
+      setSetting(key, v);
+    }
   }
   res.json({ ok: true });
 });
@@ -7257,7 +7268,7 @@ app.get('/', (req, res) => {
   // MVP Race takes over the hero sidebar while it's switched on (Visibility → MVP Race);
   // falls back to Player Highlights when it's off or the season has no candidates yet.
   const mvpRace = getSetting('mvp_race_enabled', '1') !== '0'
-    ? buildHomeMvpRace(getPortalCurrentSeason(), completedGames)
+    ? buildHomeMvpRace(getPortalCurrentSeason(), completedGames, req.session?.playerPlayerId || null)
     : null;
   const standings = buildHomeStandings(getPortalCurrentSeason(), games);
   const nextUp = buildHomeNextUp({
@@ -10405,7 +10416,10 @@ app.get('/picks/rules', (req, res) => {
   res.send(renderPage(req, {
     title: 'Pickmaster rules — WKND Basketball',
     currentPath: '/picks',
-    body: picksRulesPage({ closeTime: picksCloseTime(), oddsOn: pickOddsEnabled(), prizeLine: PICKS_PRIZE_LINE }),
+    body: picksRulesPage({
+      closeTime: picksCloseTime(), oddsOn: pickOddsEnabled(), prizeLine: PICKS_PRIZE_LINE,
+      podium: mvpPodiumEnabled() ? { bonusAt: mvpBallotState(getPortalCurrentSeason(), null).bonusAt } : null,
+    }),
   }));
 });
 
@@ -11006,7 +11020,7 @@ async function mvpShareImage(found, kind) {
 }
 
 // ── MVP Race ──────────────────────────────────────────────────────────────────
-const SEASON_GAMES_PER_TEAM = 6; // double round robin
+// SEASON_GAMES_PER_TEAM (6, double round robin) lives in lib/mvp-lock.js with the final-week lock rule.
 
 function computeMvpScore(s) {
   const gp  = s.gp;
@@ -11786,13 +11800,13 @@ app.post('/admin/home-summary/regenerate', requireAuth, express.json(), async (r
 // Same scoring, ordering and week-over-week movement as /mvp, but read-only on writeups:
 // only an already-cached one is shown for the leader — the homepage never triggers AI
 // generation, that stays on /mvp itself. Returns null when there's no race to show yet.
-function buildHomeMvpRace(season, completedGames) {
+function buildHomeMvpRace(season, completedGames, viewerId = null) {
   if (!season) return null;
-  // MVP reveal lock: the three finalists A–Z, no scores, movement or writeup (it names the rank).
+  // MVP reveal lock: the ten cases shuffled (mvpLockTen) with cached forecasts only, and the
+  // viewer's podium ballot. No score, rank or movement reaches the card.
   if (isMvpLocked(season)) {
-    const finalists = mvpFinalists(getMvpCandidates(season).filter(s => s.gp >= 1), computeMvpScore)
-      .map(s => ({ player: s, stats: s }));
-    return finalists.length ? { season, locked: true, candidates: finalists } : null;
+    const ten = mvpLockTen(season).map(c => cachedLockWriteup(c, season));
+    return ten.length ? { season, locked: true, ten, ballot: mvpBallotState(season, viewerId) } : null;
   }
   const top = getMvpCandidates(season)
     .filter(s => s.gp >= 1)
@@ -12221,6 +12235,13 @@ for (const raceKey of ['mvp', 'dpoy']) {
     const race = RACE_DATA[raceKey];
     const { player_id, season } = req.body || {};
     const targetSeason = season || getCurrentSeason()?.season;
+    // While the reveal lock is on, /mvp shows the forecast cards: ↺ regenerates those instead.
+    if (raceKey === 'mvp' && isMvpLocked(targetSeason)) {
+      if (player_id) deleteMvpLockWriteup(player_id, targetSeason);
+      else clearMvpLockWriteups(targetSeason);
+      mvpAiCooldownUntil = 0;
+      return res.json({ ok: true });
+    }
     if (isPlayoffStarted(targetSeason) || isMvpLocked(targetSeason)) {
       return res.status(403).json({ error: 'Season locked — playoffs have started' });
     }
@@ -12315,6 +12336,310 @@ ${name} stats:\n${rankLines}
 ${reminder}`;
 }
 
+// ── MVP reveal lock: the ten cases + "Call the podium" ─────────────────────────
+// While the race is locked (lib/mvp-lock.js), /mvp and the homepage MVP card show the top ten
+// SHUFFLED, with no score, rank or movement. Each case carries forecast facts: Sunday's
+// opponent (the team's next regular game; before it's on the schedule, the one opponent it
+// has met only once in the double round robin) and the player's line from their earlier
+// meeting. With no regular game left the facts fall back to his latest game ('final' mode).
+const LOCK_BAR_MAX = { pts: 25, reb: 16, ast: 8, stl: 6 };
+const LOCK_BAR_KEYS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL']];
+
+function shuffled(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+// One box-score row → the card's numbers. 4-pointers count as field goals.
+function lockLine(row) {
+  const fgm = (row.fg2m || 0) + (row.fg3m || 0) + (row.fg4m || 0);
+  const fga = fgm + (row.fg2m_miss || 0) + (row.fg3m_miss || 0) + (row.fg4m_miss || 0);
+  const tpa = (row.fg3m || 0) + (row.fg3m_miss || 0), fta = (row.ftm || 0) + (row.ft_miss || 0);
+  const notes = [`${fgm}-${fga} FG`];
+  if (tpa >= 4) notes.push(`${row.fg3m || 0}-${tpa} 3PT`);
+  if (fta >= 4) notes.push(`${row.ftm || 0}-${fta} FT`);
+  if ((row.turnover || 0) >= 3) notes.push(`${row.turnover} TO`);
+  if ((row.blk || 0) >= 2) notes.push(`${row.blk} BLK`);
+  return {
+    pts: row.pts || 0, reb: row.reb || 0, ast: row.ast || 0, stl: row.stl || 0, blk: row.blk || 0, tov: row.turnover || 0,
+    fgm, fga, tpm: row.fg3m || 0, tpa, ftm: row.ftm || 0, fta, shot: notes.slice(0, 3).join(' · '),
+  };
+}
+
+function mvpLockTen(season) {
+  const s = String(season);
+  const seasonGames = byDate(getAllGames()).filter(g => String(g.season) === s);
+  const regular = seasonGames.filter(g => (g.game_type || 'regular') === 'regular');
+  const done = g => g.status === 'complete' || g.status === 'final';
+  const publicDone = regular.filter(g => done(g) && !g.under_review);
+  const teamName = {};
+  for (const g of seasonGames) { teamName[g.team_a_id] = g.team_a_name; teamName[g.team_b_id] = g.team_b_name; }
+  const teamIds = Object.keys(teamName);
+  const recs = {};
+  for (const g of publicDone) {
+    const a = Number(g.team_a_score), b = Number(g.team_b_score);
+    for (const [t, us, them] of [[g.team_a_id, a, b], [g.team_b_id, b, a]]) {
+      recs[t] ||= { w: 0, l: 0 };
+      if (us > them) recs[t].w++; else if (them > us) recs[t].l++;
+    }
+  }
+  const nextOpp = tid => {
+    const up = regular.filter(g => !done(g) && (g.team_a_id === tid || g.team_b_id === tid) && g.date)
+      .sort((x, y) => String(x.date).localeCompare(String(y.date)))[0];
+    if (up) return up.team_a_id === tid ? up.team_b_id : up.team_a_id;
+    const played = regular.filter(done);
+    const mine = played.filter(g => g.team_a_id === tid || g.team_b_id === tid);
+    if (mine.length >= SEASON_GAMES_PER_TEAM) return null;
+    const short = teamIds.filter(o => o !== tid && mine.filter(g => g.team_a_id === o || g.team_b_id === o).length < 2);
+    return short.length === 1 ? short[0] : null;
+  };
+  const rowFor = (g, pid) => getGameStats(g.id).find(r => r.player_id === pid) || null;
+  const result = (g, tid) => {
+    const us = g.team_a_id === tid ? Number(g.team_a_score) : Number(g.team_b_score);
+    const them = g.team_a_id === tid ? Number(g.team_b_score) : Number(g.team_a_score);
+    return `${us > them ? 'W' : us < them ? 'L' : 'T'} ${us}-${them}`;
+  };
+  const dateLbl = g => new Date(`${String(g.date).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).toUpperCase();
+
+  const top = getMvpCandidates(season).filter(c => c.gp >= 1)
+    .map(c => ({ c, score: computeMvpScore(c) }))
+    .sort((a, b) => b.score - a.score).slice(0, 10).map(x => x.c);
+
+  return shuffled(top).map(st => {
+    const tid = st.team_id, gp = st.gp;
+    const avg = { pts: st.pts / gp, reb: st.reb / gp, ast: st.ast / gp, stl: st.stl / gp };
+    const tsDenom = 2 * (st.fga + 0.44 * st.fta);
+    const opp = nextOpp(tid);
+    const upGame = opp && regular.filter(g => !done(g) && g.date && (g.team_a_id === tid || g.team_b_id === tid)).sort((x, y) => String(x.date).localeCompare(String(y.date)))[0];
+    let mode = opp ? 'forecast' : 'final', meetGame = null, row = null;
+    if (opp) {
+      meetGame = publicDone.filter(g => (g.team_a_id === tid && g.team_b_id === opp) || (g.team_b_id === tid && g.team_a_id === opp)).pop() || null;
+      row = meetGame && rowFor(meetGame, st.id);
+    } else {
+      for (const g of [...publicDone].reverse()) {
+        if (g.team_a_id !== tid && g.team_b_id !== tid) continue;
+        row = rowFor(g, st.id);
+        if (row) { meetGame = g; break; }
+      }
+    }
+    const line = row ? lockLine(row) : null;
+    const meetOpp = meetGame ? (meetGame.team_a_id === tid ? meetGame.team_b_id : meetGame.team_a_id) : opp;
+    const bars = LOCK_BAR_KEYS.map(([k, label]) => {
+      const v = line ? line[k] : null, a = avg[k];
+      const pct = x => `${Math.min(100, Math.round((x / LOCK_BAR_MAX[k]) * 100))}%`;
+      const d = v == null ? null : v - a;
+      return { key: k, label, v, avg: a.toFixed(1), w: v == null ? '0%' : pct(v), m: pct(a), d: d == null ? '' : `${d > 0.05 ? '+' : d < -0.05 ? '−' : '±'}${Math.abs(d).toFixed(1)}` };
+    });
+    return {
+      player: st, stats: st, mode,
+      team: String(st.team_name || '').toUpperCase(),
+      record: recs[tid] || { w: 0, l: 0 },
+      opp: opp ? String(teamName[opp] || '').toUpperCase() : null,
+      nextDay: upGame ? new Date(`${String(upGame.date).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }).toUpperCase() : 'SUN',
+      oppRecord: opp ? (recs[opp] || { w: 0, l: 0 }) : null,
+      meet: meetGame ? { opp: String(teamName[meetOpp] || '').toUpperCase(), date: dateLbl(meetGame), res: result(meetGame, tid), played: !!row } : null,
+      line, bars, avg,
+      ts: tsDenom > 0 ? Math.round((st.pts / tsDenom) * 100) : null,
+      sort: { ppg: avg.pts, rpg: avg.reb, apg: avg.ast, last: line ? line.pts : -1 },
+    };
+  });
+}
+
+// The facts block the forecast prompt sees, and the key it's cached on.
+function lockFacts(c) {
+  const name = displayPlayerName(c.player.name);
+  const one = n => (Math.round(n * 10) / 10).toFixed(1);
+  const lines = [
+    `Player: ${name} (${c.team}), ${c.stats.gp} games played this regular season.`,
+    `Season per game: ${one(c.avg.pts)} points, ${one(c.avg.reb)} rebounds, ${one(c.avg.ast)} assists, ${one(c.avg.stl)} steals${c.ts != null ? `, ${c.ts}% true shooting` : ''}.`,
+    `${c.team} record: ${c.record.w}-${c.record.l}.`,
+  ];
+  if (c.mode === 'forecast') {
+    lines.push(`Next game (the last of the regular season): vs ${c.opp} (${c.oppRecord.w}-${c.oppRecord.l}).`);
+    if (c.meet) lines.push(`Their earlier meeting this season (${c.meet.date}): ${c.team} ${c.meet.res.startsWith('W') ? 'won' : 'lost'} ${c.meet.res.slice(2)}.`);
+  } else if (c.meet) {
+    lines.push(`The regular season is over. His last game: ${c.meet.date} vs ${c.meet.opp}, ${c.team} ${c.meet.res.startsWith('W') ? 'won' : 'lost'} ${c.meet.res.slice(2)}.`);
+  }
+  if (c.line) {
+    const L = c.line, diff = (v, a) => { const d = v - a; return Math.abs(d) < 0.05 ? 'level with his average' : `${one(Math.abs(d))} ${d > 0 ? 'over' : 'under'} his average`; };
+    lines.push(`His line in that game: ${L.pts} points (${diff(L.pts, c.avg.pts)}), ${L.reb} rebounds (${diff(L.reb, c.avg.reb)}), ${L.ast} assists (${diff(L.ast, c.avg.ast)}), ${L.stl} steals, ${L.blk} blocks, ${L.tov} turnovers; ${L.fgm}-of-${L.fga} from the field, ${L.tpm}-of-${L.tpa} from three, ${L.ftm}-of-${L.fta} at the line.`);
+  } else if (c.meet && !c.meet.played) {
+    lines.push('He did not play in that game.');
+  }
+  return lines.join('\n');
+}
+
+// The one thing each forecast is about, chosen in code so the model only has to phrase it
+// (left to itself it told a 4-of-16 shooter to "repeat" that line). In order: a stat well
+// under his average, a cold shooting night, a stat well over his average, else the result.
+function lockAngle(c) {
+  const L = c.line;
+  if (c.mode !== 'forecast' || !L || !c.meet) return null;
+  const one = n => (Math.round(n * 10) / 10).toFixed(1);
+  const word = { pts: 'points', reb: 'rebounds', ast: 'assists' };
+  // Swings weighted like the MVP score (points 1, rebounds 0.8, assists 0.9), so a 1.8-assist
+  // dip doesn't outrank a 6-point one just because the assist average is small.
+  const weight = { pts: 1, reb: 0.8, ast: 0.9 };
+  const rel = ['pts', 'reb', 'ast'].map(k => ({ k, v: L[k], a: c.avg[k], r: (L[k] - c.avg[k]) * weight[k] }));
+  const low = rel.reduce((m, x) => (x.r < m.r ? x : m)), high = rel.reduce((m, x) => (x.r > m.r ? x : m));
+  const fg = L.fga ? L.fgm / L.fga : null, seasonFg = c.stats.fga ? c.stats.fgm / c.stats.fga : null;
+  const won = c.meet.res.startsWith('W');
+  const result = `${c.team} ${won ? 'won' : 'lost'} that game ${c.meet.res.slice(2)}`;
+  if (low.r <= -3) return `FIX: his ${word[low.k]}. He had ${low.v}, ${one(low.a - low.v)} under his average of ${one(low.a)}. ${result}. Getting the ${word[low.k]} back up is Sunday's job.`;
+  if (fg != null && seasonFg != null && L.fga >= 8 && fg <= seasonFg - 0.1) return `FIX: his shooting. He went ${L.fgm}-of-${L.fga} from the field. ${result}. A cleaner shooting night is Sunday's job.`;
+  if (high.r >= 3) return `REPEAT: his ${word[high.k]}. He had ${high.v}, ${one(high.v - high.a)} over his average of ${one(high.a)}. ${result}. Doing that again is Sunday's job.`;
+  return `RESULT: ${result}, with ${L.pts} points, ${L.reb} rebounds and ${L.ast} assists from him. ${won ? 'Doing it again' : 'Flipping that result'} is Sunday's job.`;
+}
+
+function lockPrompt(c, facts, voice, openings) {
+  const forecast = c.mode === 'forecast';
+  const angle = lockAngle(c);
+  return `You write one card on the WKND Basketball League's MVP page, a recreational league whose players read every word. The MVP race is LOCKED: its order, scores and gaps are secret until the award.
+
+Return JSON with two fields:
+- "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his MVP case.'}
+- "question": one short question, at most 14 words, ending with "?", ${forecast ? 'on how he wins Sunday or makes his case in it' : 'on whether he has done enough'}.
+
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+Use the voice lightly: a word or two of flavour at most. Clear, correct English always wins; never bend grammar for the voice.
+
+${angle ? `THE ANGLE (decided for you; the job and the question are about this and nothing else):
+${angle}
+Example of the shape (other facts): "Six under his scoring average last time, on 5-of-19. Get the points back and the win follows." Question example: "Do the points come back on Sunday?"` : 'Shape: name the one or two things from his season and last game that make his case, then ask whether it is enough.'}
+
+Rules:
+- Use ONLY the facts below. Every number you write must appear in them.
+- No vague coaching ("shoot better", "be more consistent", "make more shots", "boost his FG%"): point at the exact number instead.
+- Season figures describe his season, never a target for one game (don't say he must shoot his season true shooting % on Sunday).
+- No streaks, no shot types or locations beyond what the line shows (threes vs the rest), no "contested", "open", "rim" or "paint" claims as facts. A question may ask about them.
+- Copy shooting lines exactly as written ("5-of-19"); never recompute them. Write every number as digits, never as words.
+- Never mention the MVP race, ranks, positions, scores, gaps, leading, trailing, frontrunner, favourite, "in the running", or who deserves the award.
+- Never mention any other player.
+- Never claim anything a box score can't show: no tactics, defensive schemes, matchups, intentions, effort, injuries, crowd or mood.
+- No league rankings and no season-best or season-worst claims.
+- Do not start with his name. No filler words like "impressive", "stellar", "remarkable" or "dominant". Plain text, no markdown.${openings.length ? `
+- Don't echo these openings from other cards: ${openings.map(t => `"${String(t).split(/(?<=[.!?])\s/)[0].slice(0, 90)}"`).join('; ')}` : ''}
+
+Facts:
+${facts}`;
+}
+
+// The number guard: every number in the text must appear in the facts, every "5-of-17" and
+// score must appear exactly, and every "13 points"-style pair must match a pair in the facts
+// (a "5-of-19" passed the loose check once because 19 was his scoring average).
+const LOCK_STAT_WORD = { points: 'points', rebounds: 'rebounds', boards: 'rebounds', assists: 'assists', steals: 'steals', blocks: 'blocks', turnovers: 'turnovers' };
+// Models sometimes write "5‑of‑19" with a non-breaking hyphen, which hid it from the check.
+const lockDashes = s => String(s).replace(/[‐-―−]/g, '-');
+function lockNumbersOk(text, facts) {
+  const t = lockDashes(text).toLowerCase(), f = lockDashes(facts).toLowerCase();
+  const have = new Set(f.match(/\d+(?:\.\d+)?/g) || []);
+  if (!(t.match(/\d+(?:\.\d+)?/g) || []).every(n => have.has(n))) return false;
+  if (!(t.match(/\d+-of-\d+|\d+-\d+/g) || []).every(p => f.includes(p))) return false;
+  // Numbers must be digits so the checks above see them ("three" stays: it's a shot type).
+  if (/\b(two|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/.test(t)) return false;
+  const pairs = new Set([...f.matchAll(/(\d+(?:\.\d+)?) (points|rebounds|assists|steals|blocks|turnovers)/g)].map(m => `${m[1]} ${m[2]}`));
+  return [...t.matchAll(/(\d+(?:\.\d+)?)[- ](points?|rebounds?|boards?|assists?|steals?|blocks?|turnovers?)\b/g)]
+    .every(m => pairs.has(`${m[1]} ${LOCK_STAT_WORD[m[2].replace(/s?$/, 's')]}`));
+}
+
+function lockFallback(c) {
+  const L = c.line;
+  if (!c.meet || !L) {
+    return c.mode === 'forecast'
+      ? { job: `${c.stats.gp} games in, at ${(c.avg.pts).toFixed(1)} points and ${(c.avg.reb).toFixed(1)} rebounds a game. One regular-season game left.`, question: 'What does he bring to the last one?' }
+      : { job: `A regular season of ${(c.avg.pts).toFixed(1)} points, ${(c.avg.reb).toFixed(1)} rebounds and ${(c.avg.ast).toFixed(1)} assists a game.`, question: 'Has he done enough?' };
+  }
+  const n = (v, w) => `${v} ${v === 1 ? w : `${w}s`}`;
+  const line = `${n(L.pts, 'point')}, ${n(L.reb, 'rebound')} and ${n(L.ast, 'assist')} in the ${c.meet.res.slice(2)} ${c.meet.res.startsWith('W') ? 'win' : 'loss'}`;
+  return c.mode === 'forecast'
+    ? { job: `Last time against ${titleCase(c.opp)}: ${line}.`, question: 'What does he bring to the rematch?' }
+    : { job: `His last game: ${line}.`, question: 'Has he done enough?' };
+}
+
+const lockKey = (c, facts) => createHash('sha1').update(`v3|${c.mode}|${facts}`).digest('hex').slice(0, 16);
+
+// Cached writeup or the plain fallback, never an AI call (the homepage card).
+function cachedLockWriteup(c, season) {
+  const hit = getMvpLockWriteup(c.player.id, season, lockKey(c, lockFacts(c) + (lockAngle(c) || '')));
+  return hit ? { ...c, job: hit.job, question: hit.question, ai: true } : { ...c, ...lockFallback(c), ai: false };
+}
+
+// Writeups for the ten: cached ones, else (generate=true, /mvp only) one AI call each, at most
+// three in flight; a failed number guard retries once, then the plain fallback is shown (and
+// not stored, so the next view tries again). The homepage passes generate=false.
+async function mvpLockWriteups(ten, season, { generate = false } = {}) {
+  const latest = getAllGames().filter(g => String(g.season) === String(season) && (g.game_type || 'regular') === 'regular' && g.date)
+    .map(g => String(g.date).slice(0, 10)).sort().pop();
+  const voice = pickVoice('mvp', { date: latest || manilaTodayStr() });
+  const openings = getMvpLockOpenings(season);
+  return mapWithConcurrency(ten, 3, async c => {
+    const facts = lockFacts(c);
+    const key = lockKey(c, facts + (lockAngle(c) || ''));
+    const cached = getMvpLockWriteup(c.player.id, season, key);
+    if (cached) return { ...c, job: cached.job, question: cached.question, ai: true };
+    if (!generate || !aiAvailable() || Date.now() < mvpAiCooldownUntil) return { ...c, ...lockFallback(c), ai: false };
+    const schema = { type: 'object', properties: { job: { type: 'string' }, question: { type: 'string' } }, required: ['job', 'question'] };
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const { data } = await generateJson(lockPrompt(c, facts, voice, openings), schema, { temperature: Math.min(aiTemperature(), 0.7), maxTokens: 260 });
+        const job = lockDashes(data?.job || '').trim(), question = lockDashes(data?.question || '').trim();
+        const { first: fn, last: ln } = (n => { const i = n.indexOf(','); return { first: n.slice(i + 1).trim().split(' ')[0].toLowerCase(), last: n.slice(0, i).trim().toLowerCase() }; })(String(c.player.name));
+        const named = new RegExp(`^(${[fn, ln].filter(Boolean).map(x => x.replace(/[^a-z]/g, '')).join('|')})\\b`, 'i').test(job);
+        if (job && !named && question.endsWith('?') && lockNumbersOk(`${job} ${question}`, `${facts}\n${lockAngle(c) || ''}`)) {
+          setMvpLockWriteup(c.player.id, season, key, job, question);
+          return { ...c, job, question, ai: true };
+        }
+      }
+    } catch (err) {
+      console.error(`MVP lock writeup failed for ${c.player.id}:`, err.message);
+      mvpAiCooldownUntil = Date.now() + MVP_AI_COOLDOWN_MS;
+    }
+    return { ...c, ...lockFallback(c), ai: false };
+  });
+}
+
+const mvpPodiumEnabled = () => getSetting('mvp_podium_enabled', '1') !== '0';
+
+// The viewer's ballot + the two cut-offs. viewerId = the logged-in player's id (or null).
+function mvpBallotState(season, viewerId) {
+  const games = getAllGames();
+  const closeTime = picksCloseTime();
+  const bonusAt = bonusCutoff(games, season, closeTime, getSetting('mvp_bonus_close', ''));
+  const closeAt = ballotClose(games, season, closeTime);
+  const today = manilaTodayStr(), hm = manilaHmNow();
+  const ballot = viewerId ? getMvpBallot(season, viewerId) : null;
+  const bonus = viewerId ? getMvpBonusBallot(season, viewerId) : null;
+  return {
+    enabled: mvpPodiumEnabled(),
+    loggedIn: !!viewerId,
+    picks: ballot ? [ballot.p1, ballot.p2, ballot.p3] : [null, null, null],
+    bonusPicks: bonus ? [bonus.p1, bonus.p2, bonus.p3] : null,
+    bonusOpen: !isPast(bonusAt, today, hm),
+    bonusAt: fmtMoment(bonusAt),
+    closed: isPast(closeAt, today, hm),
+    closeAt: fmtMoment(closeAt),
+    count: countMvpBallots(season),
+  };
+}
+
+app.post('/api/mvp/ballot', express.json(), (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.status(401).json({ error: 'Log in to call the podium.' });
+  const season = getPortalCurrentSeason();
+  if (!mvpPodiumEnabled() || !isMvpLocked(season)) return res.status(404).json({ error: 'The podium ballot is closed.' });
+  const state = mvpBallotState(season, playerId);
+  if (state.closed) return res.status(400).json({ error: 'Ballots closed when the MVP was awarded.' });
+  const ids = new Set(mvpLockTen(season).map(c => String(c.player.id)));
+  const picks = ['p1', 'p2', 'p3'].map(k => (req.body?.[k] ? String(req.body[k]) : null));
+  const chosen = picks.filter(Boolean);
+  if (chosen.some(id => !ids.has(id)) || new Set(chosen).size !== chosen.length) {
+    return res.status(400).json({ error: 'Pick three different players from the ten.' });
+  }
+  saveMvpBallot(season, playerId, { p1: picks[0], p2: picks[1], p3: picks[2] }, state.bonusOpen);
+  res.json({ ok: true, ...mvpBallotState(season, playerId) });
+});
+
 // /mvp and /dpoy: the same page, scoring and writeup flow (RACE_DATA + views/mvp.js RACES).
 async function renderRacePage(req, res, raceKey) {
   const race = RACE_DATA[raceKey];
@@ -12353,6 +12678,26 @@ async function renderRacePage(req, res, raceKey) {
   // MVP reveal lock (lib/mvp-lock.js): the top 3 A–Z as finalists. Scores, ranks, movement,
   // writeups (they state the race position), section summaries and share links never reach
   // the page; the candidates handed to the view carry no score at all.
+  if (isMvpLocked(season) && raceKey === 'mvp') {
+    // The ten cases, shuffled, with forecast writeups and the podium ballot (mvpLockTen).
+    const ten = await mvpLockWriteups(mvpLockTen(season), season, { generate: true });
+    const photoMeta = getMvpPhotoMeta(season);
+    const current = String(season) === String(getPortalCurrentSeason());
+    return res.send(renderPage(req, {
+      title: `Season ${season} MVP Race — Call the podium — WKND Basketball League`,
+      currentPath: req.path,
+      metaTags: buildMvpOgTags(req, ten, season, { locked: true }),
+      body: mvpLockPage({
+        ten: ten.map(c => ({ ...c, photo: mvpPhoto(season, c.player.id, photoMeta[c.player.id]) })),
+        season,
+        totalGames,
+        seasonGames: SEASON_GAMES_PER_TEAM,
+        isAdmin: !!req.session?.isAdmin,
+        ballot: current ? mvpBallotState(season, req.session?.playerPlayerId || null) : null,
+        viewerId: req.session?.playerPlayerId || null,
+      }),
+    }));
+  }
   if (isMvpLocked(season)) {
     const finalists = mvpFinalists(allQualified, c => c.mvpScore, c => c.player.name)
       .map(c => ({ player: c.player, stats: c.stats }));

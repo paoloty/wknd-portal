@@ -54,6 +54,9 @@ export function adminVisibilityBody({
   awardsEnabled = true,
   mvpEnabled = true,
   mvpReveal = { mode: 'auto', locked: false, season: '', auto: { locked: false, note: '' } },
+  mvpPodiumEnabled = true,
+  mvpBonusClose = '',
+  mvpBonusNow = '',
   homeShowRosterMoves = false,
   megaMenuEnabled = false,
   picksEnabled = true,
@@ -161,13 +164,27 @@ export function adminVisibilityBody({
       })}
       <tr class="admin-table-row">
         <td class="admin-td" style="font-weight:600;white-space:nowrap">MVP reveal lock</td>
-        <td class="admin-td" style="color:var(--text-muted)">Keeps the Season MVP order secret until the award at Finals Game 2: <code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code> shows the three finalists A–Z with no scores, and the homepage, menu, share cards and AI writeups drop the order. Auto locks once a playoff game is on the schedule.
+        <td class="admin-td" style="color:var(--text-muted)">Keeps the Season MVP order secret until the award at Finals Game 2: <code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code> shows the top ten shuffled with forecast writeups and no scores, and the homepage, menu, share cards and AI writeups drop the order. Auto locks in the regular season's final week (every team has one game left) or once a playoff game is on the schedule.
           <span class="block mt-1 text-[11px]">Season ${escHtml(String(mvpReveal.season))} auto: <b>${escHtml(mvpReveal.auto.note)}</b> · now <b style="color:${mvpReveal.locked ? '#f59332' : '#22c55e'}">${mvpReveal.locked ? 'locked' : 'revealed'}</b></span></td>
         <td class="admin-td" style="text-align:right;white-space:nowrap">
           <select id="vis-mvp-reveal" class="admin-input" style="width:auto">
             ${[['auto', 'Auto'], ['locked', 'Always locked'], ['revealed', 'Always revealed']].map(([v, l]) => `<option value="${v}"${mvpReveal.mode === v ? ' selected' : ''}>${l}</option>`).join('')}
           </select>
           <span id="vis-msg-mvp_reveal_mode" class="text-xs block mt-1 min-h-[14px]"></span>
+        </td>
+      </tr>
+      ${featureRow({
+        id: 'vis-mvp-podium', dataKey: 'mvp_podium_enabled', checked: mvpPodiumEnabled, msgId: 'vis-msg-mvp_podium_enabled',
+        label: 'MVP podium ballot',
+        sub: `While the reveal lock is on: players call the 1st–3rd podium on <code class="text-[11px] bg-admin-border/50 px-1 rounded">/mvp</code> and the homepage card (+1 Pickmaster bonus per exact spot, rules on /picks/rules). Off hides the ballot and the rules section.`,
+      })}
+      <tr class="admin-table-row">
+        <td class="admin-td" style="font-weight:600;white-space:nowrap">Podium bonus cut-off</td>
+        <td class="admin-td" style="color:var(--text-muted)">Only ballots in before this moment earn the bonus. Leave empty to use the last regular-season game day at the picks close time.
+          <span class="block mt-1 text-[11px]">Now: <b>${escHtml(mvpBonusNow || 'not known yet (final games not on the schedule)')}</b></span></td>
+        <td class="admin-td" style="text-align:right;white-space:nowrap">
+          <input id="vis-mvp-bonus-close" class="admin-input" style="width:170px" placeholder="YYYY-MM-DD HH:MM" value="${escHtml(mvpBonusClose)}">
+          <span id="vis-msg-mvp_bonus_close" class="text-xs block mt-1 min-h-[14px]"></span>
         </td>
       </tr>
       ${featureRow({
@@ -230,6 +247,20 @@ export function adminVisibilityBody({
   bindToggle('vis-mega-menu-enabled', 'mega_menu_enabled', 'vis-msg-mega_menu_enabled');  bindToggle('vis-picks-enabled', 'picks_enabled', 'vis-msg-picks_enabled');
   bindToggle('vis-picks-odds-enabled', 'picks_odds_enabled', 'vis-msg-picks_odds_enabled');
   bindToggle('vis-home-picks-widget', 'home_picks_widget_enabled', 'vis-msg-home_picks_widget_enabled');
+
+  bindToggle('vis-mvp-podium', 'mvp_podium_enabled', 'vis-msg-mvp_podium_enabled');
+  var bonusInput = document.getElementById('vis-mvp-bonus-close');
+  if (bonusInput) bonusInput.addEventListener('change', async function() {
+    var msg = document.getElementById('vis-msg-mvp_bonus_close');
+    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
+    try {
+      var r = await fetch('/admin/site/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mvp_bonus_close: this.value.trim() }) });
+      if (!r.ok) throw new Error();
+      location.reload();
+    } catch(e) {
+      msg.style.color = '#f87171'; msg.textContent = 'Use YYYY-MM-DD HH:MM, or leave empty.';
+    }
+  });
 
   var revealSel = document.getElementById('vis-mvp-reveal');
   if (revealSel) revealSel.addEventListener('change', async function() {
