@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { displayPlayerName, teamColor, initials, playerPhotoUrl, shareIcon } from './utils.js';
+import { displayPlayerName, teamColor, initials, playerPhotoUrl, shareIcon, avatarStack } from './utils.js';
 import { swipeScript } from './games.js';
 import { summaryPanel, sectionPanel, sectionRegenScript } from './home.js';
 
@@ -447,7 +447,7 @@ ${isAdmin ? photoDialog(season, race) : ''}`;
 // kicker, like the other pages' summary panel), chase under The chase header.
 // locked: the MVP reveal lock is on; candidates are the finalists A–Z with no scores.
 // race: 'mvp' (default) or 'dpoy', see RACES.
-export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false, sections = {}, locked = false, race: raceKey = 'mvp' }) {
+export function mvpPage({ candidates = [], season, week = null, totalGames, seasonGames, isAdmin = false, playoffsStarted = false, sections = {}, locked = false, race: raceKey = 'mvp', called = null }) {
   const race = raceOf(raceKey);
   if (locked) return mvpFinalistsPage({ candidates, season, isAdmin, race });
   const kicker = `Season ${escHtml(String(season))}${playoffsStarted ? ' · Final' : week ? ` · After week ${escHtml(String(week))}` : ''}`;
@@ -608,6 +608,7 @@ ${photoDialog(season, race)}` : ''}`;
     ${leadCard(lead, candidates[1], ctx, snap(lead, 0))}
     ${chasers.map((c, i) => chaserCard(c, i + 2, lead, ctx, snap(c, i + 1))).join('')}
   </div>
+  ${calledSection(called)}
   ${chase}
 </div>
 <dialog class="mv-dlg" id="mv-case-dlg" aria-label="${escHtml(race.short)} case"></dialog>
@@ -887,7 +888,7 @@ function mvpLockScript() {
     if (n === 3) return st.bonusOpen ? '✓ Locked in for the bonus. Change it any time before the cut-off.' : '✓ Saved for Who called it.';
     return n + ' of 3 picked · saves as you tap';
   }
-  function paint() {
+  function paint(prev) {
     cards.forEach(function (c) {
       var at = st.picks.indexOf(c.dataset.pid);
       c.classList.toggle('is-mine', at !== -1);
@@ -910,11 +911,35 @@ function mvpLockScript() {
     });
     var dn = root.querySelector('[data-mvl-dockn]'); if (dn) dn.textContent = st.picks.filter(Boolean).length;
     var mc = root.querySelector('[data-mvl-minecount]'); if (mc) mc.textContent = '· ' + st.picks.filter(Boolean).length;
+    if (prev) celebrate(prev);
+  }
+  // A slot that just got a player: the pressed button and the YOUR 1ST tag pop, the ballot
+  // slot and the dock slot slide in (CSS .is-pop / .is-new; off with reduced motion).
+  function flash(el, cls) {
+    if (!el || !el.offsetParent) return; // hidden (the dock on desktop): no animation would end
+    el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
+    el.addEventListener('animationend', function done(e) {
+      if (e.target !== el) return; // a child's animation bubbling up
+      el.classList.remove(cls); el.removeEventListener('animationend', done);
+    });
+  }
+  function celebrate(prev) {
+    st.picks.forEach(function (pid, i) {
+      if (!pid || pid === prev[i]) return;
+      var c = byId[pid];
+      if (c) {
+        flash(c.querySelector('[data-mvl-pick="' + (i + 1) + '"]'), 'is-pop');
+        flash(c.querySelector('[data-mvl-mine]'), 'is-pop');
+        flash(c, 'is-picked');
+      }
+      if (slotsBox) flash(slotsBox.querySelector('[data-mvl-slot="' + (i + 1) + '"]'), 'is-new');
+      flash(root.querySelector('[data-mvl-dockslot="' + (i + 1) + '"]'), 'is-new');
+    });
   }
   var saving = 0;
   function save(next) {
     var prev = st.picks.slice();
-    st.picks = next; paint(); status('Saving…');
+    st.picks = next; paint(prev); status('Saving…');
     var mine = ++saving;
     fetch('/api/mvp/ballot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p1: next[0], p2: next[1], p3: next[2] }) })
       .then(function (r) { return r.json().then(function (d) { if (r.status === 401) { location.href = st.login; } if (!r.ok) throw new Error(d.error || 'Could not save.'); return d; }); })
@@ -940,6 +965,197 @@ function mvpLockScript() {
     else { var was = next.indexOf(pid); if (was !== -1) next[was] = null; next[at] = pid; }
     save(next);
   });
+  paint();
+})();
+</script>`;
+}
+
+// ── After the reveal: "Who called it" (server.js mvpPodiumReveal) ─────────────────────────
+// Three cards under the podium: your ballot (exact spots + your Pickmaster bonus), who the
+// league put 1st, and the perfect podiums. Styles: styles.css "MVP lock" (mvr- prefix).
+function calledSection(called) {
+  if (!called) return '';
+  const nameOf = p => escHtml(splitName(p.name).last || '—');
+  const placeTag = n => (n === 1 ? 'MVP' : n === 2 ? '2ND' : n === 3 ? '3RD' : '');
+  const mine = called.mine
+    ? `<b class="mvr-big font-condensed">${called.mine.spots}<small> of 3 spots</small></b>
+      <div class="mvr-rows">${called.mine.picks.map((p, i) => `<span class="mvr-row${called.mine.exact[i] ? ' is-ok' : ''}"><b class="font-condensed">${i + 1}</b><span>${nameOf(p)}</span><small>${called.mine.exact[i] ? '✓ exact' : (() => { const at = called.podium.findIndex(x => x.id === p.id); return at === -1 ? 'off the podium' : `finished ${['1st', '2nd', '3rd'][at]}`; })()}</small></span>`).join('')}</div>
+      ${called.bonus != null ? `<p class="mvr-note">Pickmaster bonus: <b>+${called.bonus}</b> (from your ballot at the cut-off)</p>` : '<p class="mvr-note">No bonus ballot: this one was in after the cut-off.</p>'}`
+    : '<p class="mvr-note">You didn’t call the podium this season.</p>';
+  const firsts = called.firsts.map(f => `<span class="mvr-bar">
+      <span class="mvr-bar__lbl"><span>${nameOf(f)}${placeTag(f.place) ? ` <i>${placeTag(f.place)}</i>` : ''}</span><b class="font-condensed">${f.pct}%</b></span>
+      <span class="mvr-bar__track"><span style="width:${f.pct}%;--team:${teamColor(f.team)}"${f.place === 1 ? ' class="is-mvp"' : ''}></span></span>
+    </span>`).join('') + (called.othersPct ? `<span class="mvr-bar"><span class="mvr-bar__lbl"><span>Others</span><b class="font-condensed">${called.othersPct}%</b></span><span class="mvr-bar__track"><span style="width:${called.othersPct}%"></span></span></span>` : '');
+  return `<section class="mvr" aria-labelledby="mvr-h">
+    <div class="section-header"><h2 id="mvr-h">Who called it <span class="section-header__sub">${called.total} ballot${called.total === 1 ? '' : 's'}</span></h2></div>
+    <div class="mvr-grid">
+      <div class="card mvr-card"><span class="mvr-kicker">Your ballot</span>${mine}</div>
+      <div class="card mvr-card"><span class="mvr-kicker">The league’s #1</span><h3>Who ballots put 1st</h3>${firsts}</div>
+      <div class="card mvr-card"><span class="mvr-kicker">Called it</span><h3>Perfect podiums</h3>
+        ${called.perfect.length ? `<span class="mvr-perfect">${avatarStack(called.perfect, { size: 34, max: 8, link: true })}<span><b>${called.perfect.length}</b> got all three, in order</span></span>` : '<p class="mvr-note">Nobody got all three in order.</p>'}
+        <dl class="mvr-stats"><div><dt>Picked the MVP</dt><dd>${called.pickedMvp}%</dd></div><div><dt>Right three, any order</dt><dd>${called.rightThree}%</dd></div></dl>
+      </div>
+    </div>
+  </section>`;
+}
+
+// ── The podium attention bar (every page, above the header) ───────────────────────────────
+// Only for a logged-in player with no complete ballot who hasn't closed it, while the bonus
+// is open (server.js podiumBarState). The whole bar is one link to the ballot; × sits outside
+// the link and removes it for good (POST /api/mvp/bar/dismiss). Desktop counts down to the
+// cut-off (amber in the final 24 hours); phones get one compact row with no countdown.
+// deadline: epoch ms of the bonus cut-off, or null when the schedule can't say yet.
+export function podiumBarHtml({ deadline = null, faces = [] }) {
+  const CHEV = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>';
+  const last = deadline && deadline - Date.now() < 24 * 3600 * 1000;
+  const av = (f, i) => `<span class="pl-av pdb-av${i >= 3 ? ' pdb-av--wide' : ''}" style="--team:${teamColor(f.team)}"><span>${escHtml(initials(displayPlayerName(f.name)))}</span><img src="${playerPhotoUrl(String(f.id), 96)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
+  const tile = (k, u) => `<span class="pdb-tile" data-pdb-${k}><b class="font-condensed">--</b><small>${u}</small></span>`;
+  return `<div class="pdb${last ? ' is-last' : ''}" data-pdb${deadline ? ` data-deadline="${deadline}"` : ''}>
+  <a class="pdb__link" href="/mvp#ballot">
+    <span class="pdb__faces">${faces.map(av).join('')}</span>
+    <span class="pdb__text"><span class="pdb__last">Last day: </span><b>Ten cases. Your call.</b><span class="pdb__wide"> Pick the MVP podium for up to</span><span class="pdb__narrow"> MVP podium ·</span> <em>+3<span class="pdb__wide"> Pickmaster points</span><span class="pdb__narrow"> pts</span></em></span>
+    ${deadline ? `<span class="pdb__count"><small class="pdb__count-lbl">${last ? 'Last day · closes in' : 'Closes in'}</small>${tile('d', 'DAYS')}${tile('h', 'HRS')}${tile('m', 'MIN')}${tile('s', 'SEC')}</span>` : '<span class="pdb__count pdb__count--text">Closes Sunday 6 AM</span>'}
+    <span class="pdb__cta"><span class="pdb__wide">Click to pick</span><span class="pdb__narrow">Tap to pick</span>${CHEV}</span>
+  </a>
+  <button type="button" class="pdb__x" data-pdb-x aria-label="Hide this for good"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+<script>
+(function () {
+  var bar = document.querySelector('[data-pdb]');
+  if (!bar) return;
+  var end = Number(bar.dataset.deadline || 0);
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function tick() {
+    if (!end) return;
+    var left = Math.max(0, end - Date.now());
+    if (!left) { bar.remove(); return; }
+    var s = Math.floor(left / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    var last = left < 86400000;
+    bar.classList.toggle('is-last', last);
+    var dt = bar.querySelector('[data-pdb-d]'); dt.hidden = last; dt.querySelector('b').textContent = d;
+    bar.querySelector('[data-pdb-h] b').textContent = pad(h);
+    bar.querySelector('[data-pdb-m] b').textContent = pad(m);
+    bar.querySelector('[data-pdb-s] b').textContent = pad(s % 60);
+    var lbl = bar.querySelector('.pdb__count-lbl'); if (lbl) lbl.textContent = last ? 'Last day · closes in' : 'Closes in';
+  }
+  tick(); setInterval(tick, 1000);
+  bar.querySelector('[data-pdb-x]').addEventListener('click', function () {
+    bar.remove();
+    fetch('/api/mvp/bar/dismiss', { method: 'POST' }).catch(function () {});
+  });
+})();
+</script>`;
+}
+
+// ── The season-pick strip + picker (/picks, under Open picks) ────────────────────────────
+// ballot = server.js mvpBallotState; ten = mvpLockLite ([{ id, name, team, ppg }]); scored =
+// after the reveal, mvpPodiumReveal's view of your ballot. The picker is a <dialog> (a bottom
+// sheet on phones) with the ten and 1/2/3 buttons; it saves on tap through /api/mvp/ballot,
+// same rules as /mvp. Styles: styles.css "Season-pick strip" (pss- prefix).
+export function podiumStrip({ ballot = null, ten = [], scored = null }) {
+  const byId = Object.fromEntries(ten.map(p => [String(p.id), p]));
+  const ORDS = ['1st', '2nd', '3rd'];
+  const av = p => `<span class="pl-av pss-av" style="--team:${teamColor(p.team)}"><span>${escHtml(initials(displayPlayerName(p.name)))}</span><img src="${playerPhotoUrl(String(p.id), 96)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
+  if (scored) {
+    if (!scored.mine) return '';
+    return `<section class="pss" aria-label="Your MVP podium">
+    <span class="pss__lbl"><span class="pss__kick">Season pick · scored</span><b>Your podium: ${scored.bonus != null ? `+${scored.bonus}` : `${scored.mine.spots} of 3`}</b><small>${scored.mine.spots} of 3 spots exact</small></span>
+    <span class="pss__slots">${scored.mine.picks.map((p, i) => `<span class="pss-slot"><b class="font-condensed">${i + 1}</b><span>${escHtml(splitName(p.name).last)}</span><small>${scored.mine.exact[i] ? '✓' : '✗'}</small></span>`).join('')}</span>
+    <a class="pss__link" href="/mvp#mvr-h">Who called it →</a>
+  </section>`;
+  }
+  if (!ballot || !ballot.enabled || !ten.length) return '';
+  const slotHtml = (pid, i) => {
+    const p = pid && byId[pid];
+    return p ? `<span class="pss-slot" data-pss-slot="${i}"><b class="font-condensed">${i + 1}</b>${av(p)}<span>${escHtml(splitName(p.name).last)}</span></span>`
+      : `<span class="pss-slot is-empty" data-pss-slot="${i}"><b class="font-condensed">${i + 1}</b><span>Pick</span></span>`;
+  };
+  const n = ballot.picks.filter(Boolean).length;
+  const action = ballot.closed ? '<span class="pss__note">Ballots closed</span>'
+    : !ballot.loggedIn ? `<a class="pss-btn" href="/login?next=${encodeURIComponent('/picks')}">Log in to call it</a>`
+    : !ballot.bonusOpen ? `<span class="pss__locked"><b>Bonus ballot locked</b><button type="button" class="pss__change" data-pss-open>Change for Who called it →</button></span>`
+    : `<button type="button" class="pss-btn${n === 3 ? ' pss-btn--quiet' : ''}" data-pss-open data-pss-cta>${n === 3 ? '✓ Locked in · change' : n ? `Pick your ${ORDS[ballot.picks.indexOf(null)]}` : 'Call the podium'}</button>`;
+  const rows = ten.map(p => `<li class="pss-row" data-pid="${escHtml(String(p.id))}">
+      ${av(p)}
+      <span class="pss-row__who"><b>${escHtml(splitName(p.name).last)}</b> <span>${escHtml(splitName(p.name).first)}</span><small><i style="background:${teamColor(p.team)}"></i>${escHtml(p.team)} · ${escHtml(p.ppg)} PPG</small></span>
+      <span class="pss-row__picks">${[1, 2, 3].map(k => `<button type="button" class="pss-pick" data-pss-pick="${k}" aria-pressed="false" aria-label="${escHtml(splitName(p.name).last)} ${ORDS[k - 1]}">${k}</button>`).join('')}</span>
+    </li>`).join('');
+  const state = { picks: ballot.picks, bonusOpen: ballot.bonusOpen, names: Object.fromEntries(ten.map(p => [p.id, splitName(p.name).last])) };
+  return `<section class="pss" aria-label="Season pick: the MVP podium" data-pss>
+    <span class="pss__lbl"><span class="pss__kick">Season pick · up to +3</span><b>Call the MVP podium</b><small>${ballot.bonusOpen ? `Bonus closes ${escHtml(ballot.bonusAt ? ballot.bonusAt.split(' · ').join(', ') : 'Sunday 6 AM')}` : 'Scored at Finals Game 2'}</small></span>
+    <span class="pss__slots" data-pss-slots>${ballot.picks.map(slotHtml).join('')}</span>
+    ${action}
+  </section>
+  ${ballot.loggedIn && !ballot.closed ? `<dialog class="pss-dlg" data-pss-dlg aria-labelledby="pss-dlg-h">
+    <div class="pss-dlg__head"><span><span class="pss__kick">Season pick · up to +3</span><h2 id="pss-dlg-h">Call the MVP podium</h2></span><button type="button" class="pss-dlg__x" data-pss-close aria-label="Close">×</button></div>
+    <span class="pss__slots" data-pss-slots>${ballot.picks.map(slotHtml).join('')}</span>
+    <p class="pss-dlg__hint" data-pss-status>The ten, shuffled · tap 1, 2 or 3 · saves as you tap</p>
+    <ul class="pss-list" data-pss-list>${rows}</ul>
+    <a class="pss-dlg__more" href="/mvp">Read every case on /mvp →</a>
+  </dialog>
+  <script type="application/json" id="pss-state">${JSON.stringify(state).replace(/</g, '\\u003c')}</script>
+  ${podiumStripScript()}` : ''}`;
+}
+
+function podiumStripScript() {
+  return `<script>
+(function () {
+  var box = document.querySelector('[data-pss]'), dlg = document.querySelector('[data-pss-dlg]');
+  if (!box || !dlg) return;
+  var st = JSON.parse(document.getElementById('pss-state').textContent);
+  var list = dlg.querySelector('[data-pss-list]'), statusEl = dlg.querySelector('[data-pss-status]');
+  var ORD = ['1st', '2nd', '3rd'];
+  // Shuffle the ten each visit (the order means nothing).
+  var items = Array.prototype.slice.call(list.children);
+  while (items.length) { var j = Math.floor(Math.random() * items.length); list.appendChild(items[j]); items.splice(j, 1); }
+  function rowOf(pid) { return list.querySelector('[data-pid="' + pid + '"]'); }
+  function slotHtml(pid, i) {
+    var r = pid && rowOf(pid);
+    if (!r) return '<span class="pss-slot is-empty" data-pss-slot="' + i + '"><b class="font-condensed">' + (i + 1) + '</b><span>Pick</span></span>';
+    return '<span class="pss-slot" data-pss-slot="' + i + '"><b class="font-condensed">' + (i + 1) + '</b>' + r.querySelector('.pss-av').outerHTML + '<span>' + st.names[pid] + '</span></span>';
+  }
+  function paint(prev) {
+    document.querySelectorAll('[data-pss-slots]').forEach(function (s) { s.innerHTML = st.picks.map(slotHtml).join(''); });
+    list.querySelectorAll('.pss-row').forEach(function (r) {
+      var at = st.picks.indexOf(r.dataset.pid);
+      r.classList.toggle('is-mine', at !== -1);
+      r.querySelectorAll('[data-pss-pick]').forEach(function (b) { var on = Number(b.dataset.pssPick) - 1 === at; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    });
+    var n = st.picks.filter(Boolean).length, cta = box.querySelector('[data-pss-cta]');
+    if (cta) { cta.textContent = n === 3 ? '✓ Locked in · change' : n ? 'Pick your ' + ORD[st.picks.indexOf(null)] : 'Call the podium'; cta.classList.toggle('pss-btn--quiet', n === 3); }
+    if (prev) st.picks.forEach(function (pid, i) {
+      if (!pid || pid === prev[i]) return;
+      document.querySelectorAll('[data-pss-slot="' + i + '"]').forEach(function (el) { el.classList.add('is-new'); });
+      var b = rowOf(pid) && rowOf(pid).querySelector('[data-pss-pick="' + (i + 1) + '"]'); if (b) b.classList.add('is-pop');
+    });
+  }
+  var saving = 0;
+  function save(next) {
+    var prev = st.picks.slice(); st.picks = next; paint(prev); statusEl.textContent = 'Saving…';
+    var mine = ++saving;
+    fetch('/api/mvp/ballot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p1: next[0], p2: next[1], p3: next[2] }) })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Could not save.'); return d; }); })
+      .then(function () {
+        if (mine !== saving) return;
+        var done = st.picks.every(Boolean);
+        statusEl.textContent = done ? (st.bonusOpen ? '✓ Locked in for the bonus. Change it any time before the cut-off.' : '✓ Saved for Who called it.') : st.picks.filter(Boolean).length + ' of 3 picked · saves as you tap';
+        // The site bar has done its job: a quick confirmation, then it goes.
+        var bar = document.querySelector('[data-pdb]');
+        if (bar && done) { bar.querySelector('.pdb__link').innerHTML = '<span class="pdb__text"><b>You\\u2019re in.</b> Your podium counts for the bonus.</span>'; setTimeout(function () { bar.remove(); }, 3500); }
+      })
+      .catch(function (err) { if (mine !== saving) return; st.picks = prev; paint(); statusEl.textContent = err.message; });
+  }
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-pss-open]')) { e.preventDefault(); dlg.showModal(); return; }
+    if (e.target.closest('[data-pss-close]') || e.target === dlg) { dlg.close(); return; }
+    var b = e.target.closest('[data-pss-pick]');
+    if (!b) return;
+    var pid = b.closest('.pss-row').dataset.pid, at = Number(b.dataset.pssPick) - 1, next = st.picks.slice();
+    if (next[at] === pid) next[at] = null;
+    else { var was = next.indexOf(pid); if (was !== -1) next[was] = null; next[at] = pid; }
+    save(next);
+  });
+  document.addEventListener('animationend', function (e) { if (e.target.classList) e.target.classList.remove('is-new', 'is-pop'); });
   paint();
 })();
 </script>`;

@@ -91,6 +91,8 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
       </button>`;
   };
 
+  // The MVP podium cross-link (server.js openPicks mvpCases): only while the bonus is open.
+  const mvpLink = o.mvpCases && !compact ? `<a class="pkc-mvp" href="/mvp"><b>${o.mvpCases} MVP case${o.mvpCases === 1 ? '' : 's'}</b> play in this one · <span>Call the podium →</span></a>` : '';
   const hint = compact ? '' : `<p class="pkc-hint" data-pkc-hint>${hintHtml(o, isPlayer)}</p>`;
   const guestCta = !isPlayer && !o.closed && !compact
     ? `<a class="pkc-btn pkc-btn--cta" href="/login?next=${encodeURIComponent(next)}">Log in to pick</a><p class="pkc-hint">Right picks earn points in the <a href="/picks/rules">Pickmaster race</a>.</p>` : '';
@@ -114,7 +116,7 @@ export function pickCard(o, { variant = 'card', isPlayer = false, next = '/picks
     <div class="pkc__body">
       ${q}
       <div class="pkc-rows${showSplit ? ' is-split' : ''}" role="radiogroup" aria-label="Who wins: ${escHtml(tc(o.a))} or ${escHtml(tc(o.b))}">${row('a')}${row('b')}</div>
-      ${guestCta}${hint}${stakes}${remind}${margin}${insight}${faces}${acts}${foot}
+      ${guestCta}${hint}${mvpLink}${stakes}${remind}${margin}${insight}${faces}${acts}${foot}
     </div>
   </article>`;
 }

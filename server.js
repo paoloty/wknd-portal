@@ -13,7 +13,7 @@ import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
 import CleanCSS from 'clean-css';
 import { parseWriteup } from './lib/writeup.js';
-import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, picksReminderEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
+import { sendMail, approvedEmail, rejectedEmail, resetPasswordEmail, seasonQualifiedEmail, seasonNotSelectedEmail, paymentSubmittedEmail, jerseyRequestEmail, picksReminderEmail, podiumReminderEmail, ADMIN_TEST_EMAIL } from './lib/mailer.js';
 import { PICKS_PRIZE_LINE, picksUnsubscribeUrl, verifyPicksUnsubscribe, picksEmailFacts, writePicksEmail } from './lib/picks-email.js';
 import {
   birthdaysAround, runBirthdayAutomation, autoSendState, birthdayFacts, defaultBirthdayMessage, writeBirthdayMessage,
@@ -101,7 +101,7 @@ import {
   deleteUnlockedRating,
   getMvpWriteup, getMvpWriteupsForSeason, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
   getMvpLockWriteup, setMvpLockWriteup, deleteMvpLockWriteup, clearMvpLockWriteups, getMvpLockOpenings,
-  getMvpBallot, getMvpBonusBallot, countMvpBallots, saveMvpBallot,
+  getMvpBallot, getMvpBonusBallot, countMvpBallots, saveMvpBallot, listMvpBallots, listMvpBonusBallots, dismissMvpBar, isMvpBarDismissed, countMvpBarDismissed,
   getDpoyWriteup, getDpoyWriteupsForSeason, setDpoyWriteup, deleteDpoyWriteupForPlayer, clearDpoyWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
   getSetting, setSetting,
@@ -202,9 +202,9 @@ import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl } from './views/admin/layout.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
-import { mvpPage, mvpLockPage, mvpSnapshot, mvpSharePage } from './views/mvp.js';
+import { mvpPage, mvpLockPage, podiumBarHtml, podiumStrip, mvpSnapshot, mvpSharePage } from './views/mvp.js';
 import { isMvpLocked, mvpLockState, mvpFinalists, MVP_REVEAL_MODES, SEASON_GAMES_PER_TEAM } from './lib/mvp-lock.js';
-import { bonusCutoff, ballotClose, isPast, fmtMoment } from './lib/mvp-ballot.js';
+import { bonusCutoff, ballotClose, isPast, fmtMoment, tallyBallots, podiumPoints } from './lib/mvp-ballot.js';
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
@@ -219,6 +219,7 @@ import {
   verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
+import { adminMvpPodiumBody } from './views/admin/mvp-podium.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
 import { adminPostsListBody, adminPostEditorBody } from './views/admin/posts.js';
 import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
@@ -2262,7 +2263,10 @@ function renderPage(req, opts) {
   const features = getFeatureFlags();
   const headerInfo = focused ? null : getHeaderInfo(features);
 
-  return layout({ ticker: focused ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features, headerInfo, origin, notifications, unreadNotificationCount, navPlayer, ...opts, title, body, metaTags });
+  // The MVP podium bar (above the top strip) for a player who still has to call the podium.
+  const siteBar = focused ? '' : podiumBarFor(req, opts.currentPath);
+
+  return layout({ ticker: focused ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features, headerInfo, origin, notifications, unreadNotificationCount, navPlayer, siteBar, ...opts, title, body, metaTags });
 }
 
 // Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
@@ -6774,8 +6778,9 @@ app.get('/admin/ai-writing', requireAuth, (req, res) => {
     .map(g => String(g.date).slice(0, 10)).sort().pop() || new Date().toISOString().slice(0, 10);
   const currentVoices = Object.fromEntries(['recap', 'potg', 'mvp'].map(k => [k, pickVoice(k, { date: latest }).name]));
   currentVoices.award = 'varies per article';
-  // MVP reveal lock: /mvp generates nothing (writeups or race summaries) until Finals Game 2.
-  if (isMvpLocked(getPortalCurrentSeason())) currentVoices.mvp = 'paused: MVP reveal lock';
+  // MVP reveal lock: the ranked writeups and race summaries pause, but the locked /mvp
+  // forecast cards (mvpLockWriteups) still write in this voice.
+  if (isMvpLocked(getPortalCurrentSeason())) currentVoices.mvp = `${currentVoices.mvp} (reveal lock: forecast cards only)`;
   res.send(renderAdminPage(req, {
     title: 'AI Writing',
     currentPath: '/admin/ai-writing',
@@ -9749,10 +9754,31 @@ function seasonPicks(pctx, season) {
   const pickedIds = new Set(pctx.picks.map(p => p.game_id));
   const pickable = settled.filter(g => pickedIds.has(g.id));
   const records = buildPickRecords(pctx.picks, pickable, scoringOdds(pickable, pctx));
+  addPodiumBonus(records, season);
   // Tiebreak step 5 only counts once Finals Game 1 has a final.
   const finalsG1 = finalsGame1Id(pctx.all, season);
   const guesses = marginGuessDiffs(pctx.picks, settled.find(g => g.id === finalsG1));
   return { settled, pickable, records, finalsG1, board: pickLeaderboard(records, guesses), callers: callerRecords(settled, pctx.picks) };
+}
+
+// Pickmaster: the MVP podium bonus (+1 per exact spot, from the ballot frozen at the bonus
+// cut-off) once the race is revealed. Admins (registrations.is_admin) can see the scores, so
+// they never earn it. It goes into net (points and ranks include it, /picks/rules) and
+// r.bonus (the board's tag); the tiebreakers read correct/streak/odds, so they stay
+// game-picks-only. A bonus-only player gets an empty record so they're on the board.
+function addPodiumBonus(records, season) {
+  if (!mvpPodiumEnabled()) return;
+  const bonus = listMvpBonusBallots(season);
+  if (!bonus.length || isMvpLocked(season)) return;
+  const podium = mvpTop3(season);
+  if (podium.length < 3) return;
+  for (const b of bonus) {
+    const pts = podiumPoints(b, podium);
+    if (!pts || getRegistrationByPlayerId(b.player_id)?.is_admin) continue;
+    const r = records[b.player_id] ||= { picks: 0, correct: 0, wrong: 0, net: 0, pct: 0, streak: 0, best: 0, upsets: 0, oddsPts: 0, results: [] };
+    r.net += pts;
+    r.bonus = pts;
+  }
 }
 
 // Closed/odds state for one upcoming game.
@@ -9931,6 +9957,9 @@ function openPicks(games, pctx, viewerId) {
   const talkCounts = commentsOn ? getGameCommentCounts(ids) : {};
   const bySeason = {};
   const spOf = season => (bySeason[season] ??= seasonPicks(pctx, season));
+  // MVP podium cross-link: how many of the locked ten play in this game, while the bonus is open.
+  const cur = getPortalCurrentSeason();
+  const podiumTen = cur && mvpPodiumEnabled() && isMvpLocked(cur) && mvpBallotState(cur, null).bonusOpen ? mvpLockLite(cur) : [];
   return upcoming.map(g => {
     const pg = pctx.byId[g.id] || toPickGame(g, gameYmd);
     const { closed, odds } = upcomingPickState(g, pctx);
@@ -9946,6 +9975,7 @@ function openPicks(games, pctx, viewerId) {
     const winsOf = t => meetings.filter(x => (x.sa > x.sb ? x.a : x.b) === t).length;
     return {
       id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season, href: previewHref(g),
+      mvpCases: String(pg.season) === String(cur) ? podiumTen.filter(p => [String(g.team_a_name).toUpperCase(), String(g.team_b_name).toUpperCase()].includes(p.team)).length : 0,
       counts: counts[g.id], myPick, closed, odds, closeHm: picksCloseTime(),
       closeAt: pickCloseAt(pg, pctx.settings[g.id]),
       // Finals Game 1 carries the margin-guess tiebreaker; the guess is only ever sent to its owner.
@@ -10323,6 +10353,7 @@ app.get('/picks', (req, res) => {
       open, openSummary,
       closeTime: picksCloseTime(),
       isAdmin: !!req.session?.isAdmin,
+      podium: picksPodiumStrip(season, viewerId),
       // The facts never use the viewer's own pick, so the copy is the same for everyone.
       sections: sectionSummaries(picksSectionFacts(pd), { keep: season !== String(getPortalCurrentSeason()) }),
     }),
@@ -11808,6 +11839,7 @@ function buildHomeMvpRace(season, completedGames, viewerId = null) {
     const ten = mvpLockTen(season).map(c => cachedLockWriteup(c, season));
     return ten.length ? { season, locked: true, ten, ballot: mvpBallotState(season, viewerId) } : null;
   }
+  settleMvpPodium(season); // the podium result notifications, once, after the reveal
   const top = getMvpCandidates(season)
     .filter(s => s.gp >= 1)
     .map(s => ({ player: s, stats: s, mvpScore: computeMvpScore(s) }))
@@ -12617,9 +12649,215 @@ function mvpBallotState(season, viewerId) {
     bonusPicks: bonus ? [bonus.p1, bonus.p2, bonus.p3] : null,
     bonusOpen: !isPast(bonusAt, today, hm),
     bonusAt: fmtMoment(bonusAt),
+    // Epoch ms of the cut-off (Manila = UTC+8), for the live countdown.
+    bonusAtMs: bonusAt ? Date.UTC(...bonusAt.ymd.split('-').map((v, i) => Number(v) - (i === 1 ? 1 : 0)), ...bonusAt.hm.split(':').map(Number)) - 8 * 3600 * 1000 : null,
     closed: isPast(closeAt, today, hm),
     closeAt: fmtMoment(closeAt),
     count: countMvpBallots(season),
+  };
+}
+
+// The ten, light (id, name, team, PPG, Sunday's opponent) for the bar, /picks and the pick
+// cards. mvpLockTen reads ten box scores, so this is cached for a minute (one shuffle for
+// everyone in that minute; the pickers reshuffle client-side).
+let _lockLite = { key: '', at: 0, list: [] };
+function mvpLockLite(season) {
+  const key = String(season);
+  if (_lockLite.key === key && Date.now() - _lockLite.at < 60_000) return _lockLite.list;
+  const list = mvpLockTen(season).map(c => ({ id: String(c.player.id), name: c.player.name, team: c.team, ppg: c.avg.pts.toFixed(1), opp: c.opp }));
+  _lockLite = { key, at: Date.now(), list };
+  return list;
+}
+
+// The site-wide podium bar: a logged-in player with no complete ballot who hasn't closed it,
+// while the bonus is open. Not on /mvp itself (the ballot is right there).
+function podiumBarFor(req, path = '') {
+  const pid = req.session?.playerPlayerId;
+  if (!pid || !req.session?.playerRegId || String(path).startsWith('/mvp')) return '';
+  if (!mvpPodiumEnabled()) return '';
+  const season = getPortalCurrentSeason();
+  if (!season || !isMvpLocked(season) || isMvpBarDismissed(season, pid)) return '';
+  const st = mvpBallotState(season, pid);
+  if (st.closed || !st.bonusOpen || st.picks.every(Boolean)) return '';
+  if (st.bonusAtMs && st.bonusAtMs <= Date.now()) return '';
+  return podiumBarHtml({ deadline: st.bonusAtMs, faces: mvpLockLite(season) });
+}
+
+app.post('/api/mvp/bar/dismiss', (req, res) => {
+  const pid = req.session?.playerPlayerId;
+  const season = getPortalCurrentSeason();
+  if (pid && season) dismissMvpBar(season, pid);
+  res.json({ ok: true });
+});
+
+// The official podium (top three by the MVP score, regular season) once the race is revealed.
+function mvpTop3(season) {
+  return getMvpCandidates(season).filter(c => c.gp >= 1)
+    .map(c => ({ id: String(c.id), score: computeMvpScore(c) }))
+    .sort((a, b) => b.score - a.score).slice(0, 3).map(x => x.id);
+}
+
+// /picks: the season-pick strip for the current season (the ballot while locked, your score
+// after the reveal), or nothing.
+function picksPodiumStrip(season, viewerId) {
+  const cur = getPortalCurrentSeason();
+  if (!mvpPodiumEnabled() || String(season) !== String(cur)) return '';
+  if (isMvpLocked(cur)) return podiumStrip({ ballot: mvpBallotState(cur, viewerId), ten: mvpLockLite(cur) });
+  const called = mvpPodiumReveal(cur, mvpTop3(cur), viewerId);
+  return called ? podiumStrip({ scored: called }) : '';
+}
+
+// ── /admin/mvp-podium: who voted who, totals, and the one-off reminder ─────────────────────
+function mvpPodiumMissing(season) {
+  const voted = new Set(listMvpBallots(season).filter(b => b.p1 && b.p2 && b.p3).map(b => b.player_id));
+  const { recipients } = selectBroadcastRecipients(undefined, { optOutColumn: 'picks_email_optout', exclude: id => voted.has(id) });
+  return recipients;
+}
+
+app.get('/admin/mvp-podium', requireAuth, (req, res) => {
+  const season = getPortalCurrentSeason();
+  const locked = isMvpLocked(season);
+  const people = Object.fromEntries(getAllPlayers().map(p => [String(p.id), p]));
+  const teams = Object.fromEntries(getAllTeams().map(t => [String(t.id), t.name]));
+  const who = id => { const p = id && people[id]; return p ? { id, name: p.name, team: teams[p.team_id] || '' } : null; };
+  const ballots = listMvpBallots(season);
+  const bonus = Object.fromEntries(listMvpBonusBallots(season).map(b => [b.player_id, b]));
+  const complete = ballots.filter(b => b.p1 && b.p2 && b.p3);
+  const podium = locked ? null : mvpTop3(season);
+  const tallied = tallyBallots(complete);
+  const tally = Object.entries(tallied).map(([id, votes]) => ({ ...who(id), id, votes, place: podium ? podium.indexOf(id) + 1 : 0 }))
+    .sort((a, b) => b.votes[0] - a.votes[0] || b.votes[1] - a.votes[1] || b.votes[2] - a.votes[2]);
+  const st = mvpBallotState(season, null);
+  const missing = locked ? mvpPodiumMissing(season) : [];
+  let reminded = null;
+  try { reminded = JSON.parse(getSetting(`mvp_podium_reminded_${season}`, '') || 'null'); } catch { reminded = null; }
+  res.send(renderAdminPage(req, {
+    title: 'MVP podium',
+    currentPath: '/admin/mvp-podium',
+    body: adminMvpPodiumBody({
+      season, locked, enabled: st.enabled, bonusAt: st.bonusAt, closeAt: st.closeAt, bonusOpen: st.bonusOpen,
+      totals: {
+        complete: complete.length, partial: ballots.length - complete.length,
+        bonus: Object.values(bonus).filter(b => b.p1 && b.p2 && b.p3).length,
+        dismissed: countMvpBarDismissed(season),
+        perfect: podium ? complete.filter(b => podiumPoints(b, podium) === 3).length : 0,
+      },
+      tally,
+      ballots: ballots.map(b => {
+        const bb = bonus[b.player_id];
+        const admin = !!getRegistrationByPlayerId(b.player_id)?.is_admin;
+        return {
+          voter: who(b.player_id) || { id: b.player_id, name: b.player_id, team: '' }, admin,
+          picks: [b.p1, b.p2, b.p3].map(who), updatedAt: b.updated_at,
+          bonus: bb ? [bb.p1, bb.p2, bb.p3].map(who) : null,
+          bonusSame: !!bb && bb.p1 === b.p1 && bb.p2 === b.p2 && bb.p3 === b.p3,
+          points: podium && bb && !admin ? podiumPoints(bb, podium) : null,
+        };
+      }),
+      missing: { count: missing.length, reachable: missing.length, emailable: missing.filter(r => r.emailable).length, names: missing.map(r => displayPlayerName(r.player.name)) },
+      podium: podium ? podium.map(who) : null,
+      reminded,
+      msg: req.query.reminded ? `Reminder sent: ${req.query.reminded} bell notification${req.query.reminded === '1' ? '' : 's'}${req.query.emailing ? `, ${req.query.emailing} email${req.query.emailing === '1' ? '' : 's'} going out now` : ''}.` : '',
+    }),
+  }));
+});
+
+app.post('/admin/mvp-podium/remind', requireAuth, express.urlencoded({ extended: false }), (req, res) => {
+  const season = getPortalCurrentSeason();
+  const st = mvpBallotState(season, null);
+  if (!st.enabled || !isMvpLocked(season) || st.closed) return res.redirect('/admin/mvp-podium');
+  const recipients = mvpPodiumMissing(season);
+  for (const r of recipients) {
+    createNotification({
+      playerId: r.player.id, type: 'mvp_podium_reminder',
+      title: 'Call the MVP podium: up to +3 Pickmaster points',
+      body: st.bonusOpen && st.bonusAt ? `Bonus closes ${st.bonusAt}` : 'Pick who finishes 1st, 2nd and 3rd',
+      link: '/mvp#ballot',
+    });
+  }
+  const emailable = req.body?.email === '1' ? recipients.filter(r => r.emailable) : [];
+  setSetting(`mvp_podium_reminded_${season}`, JSON.stringify({ at: Date.now(), bell: recipients.length, email: req.body?.email === '1' ? emailable.length : null }));
+  if (emailable.length) setImmediate(() => sendPodiumEmails(emailable, st).catch(e => console.error('[podium email] send failed:', e.message)));
+  res.redirect(`/admin/mvp-podium?reminded=${recipients.length}${emailable.length ? `&emailing=${emailable.length}` : ''}`);
+});
+
+// Same pacing and dev rule as sendPicksEmails: outside production only the first one goes
+// (and lib/mailer.js redirects it to the admin inbox).
+async function sendPodiumEmails(list, st) {
+  const season = getPortalCurrentSeason();
+  const faces = shuffled(mvpLockLite(season)).map(p => ({ name: displayPlayerName(p.name), color: teamColor(p.team) }));
+  const url = `${(process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '')}/mvp#ballot`;
+  let first = true;
+  for (const { player, reg, email } of IS_DEV ? list.slice(0, 1) : list) {
+    if (!first) await new Promise(r => setTimeout(r, 600));
+    first = false;
+    const unsub = picksUnsubscribeUrl(reg.id);
+    try {
+      await sendMail({
+        to: email, ...podiumReminderEmail({ name: player.name, faces, closeLabel: st.bonusOpen ? st.bonusAt : '', url, unsubscribeUrl: unsub }), ref: reg.id,
+        headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+      });
+    } catch (e) {
+      console.error(`[podium email] ${email}: ${e.message}`);
+    }
+  }
+}
+
+// Once per season, when the race is revealed: a bell notification for every complete ballot
+// ("You called 2 of 3" + the bonus). The flag is set before sending, so a crash mid-loop
+// can't double-send. Called from /mvp and the homepage, whichever renders first.
+function settleMvpPodium(season) {
+  if (!mvpPodiumEnabled() || isMvpLocked(season)) return;
+  const key = `mvp_podium_notified_${season}`;
+  if (getSetting(key, '')) return;
+  const ballots = listMvpBallots(season).filter(b => b.p1 && b.p2 && b.p3);
+  if (!ballots.length) return;
+  const podium = mvpTop3(season);
+  if (podium.length < 3) return;
+  setSetting(key, String(Date.now()));
+  const bonus = Object.fromEntries(listMvpBonusBallots(season).map(b => [b.player_id, b]));
+  for (const b of ballots) {
+    const spots = podiumPoints(b, podium);
+    const bb = bonus[b.player_id];
+    const admin = !!getRegistrationByPlayerId(b.player_id)?.is_admin;
+    const pts = bb && !admin ? podiumPoints(bb, podium) : null;
+    createNotification({
+      playerId: b.player_id, type: 'mvp_podium',
+      title: spots === 3 ? 'Perfect podium! You called the MVP top 3 in order' : `You called ${spots} of 3 on the MVP podium`,
+      body: admin ? 'Admins don’t earn the podium bonus' : pts != null ? (pts ? `+${pts} Pickmaster bonus` : 'No bonus points this time') : 'Your bonus ballot wasn’t in before the cut-off',
+      link: '/mvp#mvr-h',
+    });
+  }
+}
+
+// After the reveal: "Who called it" on /mvp. podium = the official top three ids. The final
+// ballots (mvp_ballots) feed the league's call; the points come from the bonus copies.
+function mvpPodiumReveal(season, podium, viewerId) {
+  if (podium.length < 3 || isMvpLocked(season)) return null;
+  const ballots = listMvpBallots(season).filter(b => b.p1 && b.p2 && b.p3);
+  if (!ballots.length) return null;
+  const people = Object.fromEntries(getAllPlayers().map(p => [String(p.id), p]));
+  const teams = Object.fromEntries(getAllTeams().map(t => [String(t.id), t.name]));
+  const who = id => { const p = people[id]; return p ? { id, name: p.name, team: teams[p.team_id] || '' } : { id, name: '', team: '' }; };
+  const n = ballots.length;
+  const firstTally = tallyBallots(ballots);
+  const firsts = Object.entries(firstTally).filter(([, t]) => t[0] > 0)
+    .map(([id, t]) => ({ ...who(id), n: t[0], pct: Math.round((t[0] / n) * 100), place: podium.indexOf(id) + 1 }))
+    .sort((a, b) => b.n - a.n);
+  const top3 = new Set(podium);
+  const perfect = ballots.filter(b => podiumPoints(b, podium) === 3).map(b => who(String(b.player_id)));
+  const mine = viewerId ? ballots.find(b => b.player_id === viewerId) : null;
+  const bonus = viewerId ? getMvpBonusBallot(season, viewerId) : null;
+  return {
+    total: n,
+    podium: podium.map(who),
+    firsts: firsts.slice(0, 4),
+    othersPct: firsts.slice(4).reduce((s, f) => s + f.pct, 0),
+    perfect,
+    pickedMvp: Math.round((ballots.filter(b => b.p1 === podium[0]).length / n) * 100),
+    rightThree: Math.round((ballots.filter(b => ['p1', 'p2', 'p3'].every(k => top3.has(b[k]))).length / n) * 100),
+    mine: mine ? { picks: [mine.p1, mine.p2, mine.p3].map(who), exact: [mine.p1, mine.p2, mine.p3].map((id, i) => id === podium[i]), spots: podiumPoints(mine, podium) } : null,
+    bonus: bonus ? podiumPoints(bonus, podium) : null,
   };
 }
 
@@ -12806,6 +13044,7 @@ async function renderRacePage(req, res, raceKey) {
       seasonGames: SEASON_GAMES_PER_TEAM,
       isAdmin: !!req.session?.isAdmin,
       playoffsStarted,
+      called: raceKey === 'mvp' ? (settleMvpPodium(season), mvpPodiumReveal(season, scored.slice(0, 3).map(c => String(c.player.id)), req.session?.playerPlayerId || null)) : null,
     }),
   }));
 }

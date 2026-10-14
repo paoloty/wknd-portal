@@ -276,15 +276,18 @@ function mvpLockSidebar({ season, ten, ballot }) {
   var ids = Array.prototype.map.call(cases, function (c) { return c.querySelector('a').getAttribute('href'); });
   var at = Math.floor(Math.random() * N);
   try { var last = localStorage.getItem(KEY); var k = ids.indexOf(last); if (k !== -1) at = (k + 1) % N; } catch (e) {}
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!still) box.classList.add('hml-anim');
   function show(i) {
     at = (i + N) % N;
-    Array.prototype.forEach.call(cases, function (c, j) { c.hidden = j !== at; });
+    Array.prototype.forEach.call(cases, function (c, j) { c.hidden = j !== at; c.classList.remove('is-in'); });
+    // Replay the bar grow for the case that just came in.
+    void cases[at].offsetWidth; cases[at].classList.add('is-in');
     Array.prototype.forEach.call(faces, function (f, j) { f.classList.toggle('is-on', j === at); f.setAttribute('aria-pressed', j === at ? 'true' : 'false'); });
     nEl.textContent = at + 1;
     try { localStorage.setItem(KEY, ids[at]); } catch (e) {}
     restart();
   }
-  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var t = 0, paused = false;
   function restart() {
     clearTimeout(t);

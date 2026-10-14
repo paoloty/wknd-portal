@@ -61,6 +61,7 @@ function raceRow(r, season, viewerId, tied = false) {
   const sub = [
     r.team ? `${dot(r.team, 6)}${escHtml(tc(r.team))}` : '',
     r.weekPicks ? `${fmtPts(r.week)} this week` : '',
+    r.bonus ? `<span class="pkp-lb__bonus">+${r.bonus} podium</span>` : '',
   ].filter(Boolean).join(' · ');
   return `<a href="${playerHref(r.playerId, season)}" class="pkp-lb${r.rank === 1 ? ' is-top' : ''}${r.playerId === viewerId ? ' is-me' : ''}" data-picks-player>
       <span class="pkp-lb__rank font-condensed">${tied ? 'T' : ''}${r.rank}</span>
@@ -109,7 +110,7 @@ function racePanel({ board, oddsBoard, season, viewerId }) {
       <div class="pkc__body">
       ${body}
       <div class="pk-board__foot">
-        <p data-race-foot="pts">Most points at season's end wins the <b>Pickmaster</b> award: <b>+1</b> for a correct pick, <b>−1</b> for a miss, <b>0</b> for a game you sit out.</p>
+        <p data-race-foot="pts">Most points at season's end wins the <b>Pickmaster</b> award: <b>+1</b> for a correct pick, <b>−1</b> for a miss, <b>0</b> for a game you sit out, plus the <a href="/picks/rules#podium">MVP podium bonus</a> (up to +3).</p>
         <p data-race-foot="odds" hidden>Bragging rights, no prize. A correct pick on the side the odds doubted earns more (up to +1.30); a miss on the side they backed costs more. Games without odds count ±1.</p>
         <details class="pkp-ties">
           <summary>How ties are broken</summary>
@@ -159,7 +160,7 @@ function gameDays(days, isPlayer) {
 }
 
 // sections: the section writeups { days, race } (server.js picksSectionFacts).
-export function picksPage({ season, seasons, days, board, oddsBoard = [], callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], openSummary = null, closeTime = '06:00', sections = {}, isAdmin = false }) {
+export function picksPage({ season, seasons, days, board, oddsBoard = [], callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], openSummary = null, closeTime = '06:00', sections = {}, isAdmin = false, podium = '' }) {
   const panel = key => sectionPanel(sections[key] || null, `picks_${key}:${season}`, isAdmin);
   return `<div class="page-content pkp-page">
 ${pageHeader({
@@ -173,6 +174,7 @@ ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
        (pkp-side); on phones the tabs switch between game days and the race, under the picks. -->
   <div class="pkp-main">
     ${openPicksSection(open, { isPlayer, closeTime, summary: openSummary, isAdmin })}
+    ${podium}
     <div class="pkp-tabs" role="tablist" aria-label="Picks sections">
       <button type="button" class="pkp-tab is-on" role="tab" aria-selected="true" data-pkp-tab="race"><span class="pill-label">Pickmaster race</span></button>
       <button type="button" class="pkp-tab" role="tab" aria-selected="false" data-pkp-tab="days"><span class="pill-label">Game days</span></button>
