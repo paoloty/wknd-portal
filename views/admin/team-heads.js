@@ -1,111 +1,59 @@
+// /admin/team-heads: who heads each team (admin redesign, 2026-10-15; rebuilt on ui.js).
+// A team head is a normal registered player granted one extra privilege, scoped to their
+// team, not folded into is_admin/isElevatedPlayer (docs/agents/features/admin-core.md).
+// It gates /fines (file and vote on cases) and /team (the team's payment status).
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
+import { pageHeader, dataGrid, avatar, button, banner, drawer, field, playerPicker } from './ui.js';
 
-function headRow(h) {
-  return `<tr class="border-b border-admin-border/40 last:border-0">
-    <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(displayPlayerName(h.player_name))}</td>
-    <td class="px-4 py-3 text-xs text-slate-500">${escHtml(h.team_name)}</td>
-    <td class="px-4 py-3 text-right"><button class="admin-btn admin-btn--sm admin-btn--danger" onclick="revokeHead('${escHtml(h.id)}', ${escHtml(JSON.stringify(displayPlayerName(h.player_name)))})">Revoke</button></td>
-  </tr>`;
-}
+const fmtDate = ts => (ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 
-// A team head is a normal registered player granted one extra privilege, scoped to their
-// team — not folded into is_admin/isElevatedPlayer (docs/agents/features/admin-core.md).
-// Started out gating only Fines (/fines), now also gates the payments-status page (/team),
-// hence living under Members rather than nested under Fines.
-export function adminTeamHeadsBody({ heads = [], teams = [], players = [] } = {}) {
-  const teamOptions = teams.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}</option>`).join('');
-  const playersData = JSON.stringify(players.map(p => ({ id: p.id, name: displayPlayerName(p.name) }))).replace(/</g, '\\u003c');
-  return `
-<div class="mb-6">
-  <h2 class="text-xl font-bold tracking-tight text-slate-100">Team Heads / Coaches</h2>
-  <p class="text-sm text-slate-500 mt-0.5">${heads.length} head${heads.length === 1 ? '' : 's'} — can vote on and file fine cases at <code class="text-[11px] bg-admin-border/50 px-1 rounded">/fines</code> and view their team's payment status at <code class="text-[11px] bg-admin-border/50 px-1 rounded">/team</code>, logged in as themselves.</p>
-</div>
+export function adminTeamHeadsBody({ heads = [], teams = [], players = [], teamColor = {}, query = {} } = {}) {
+  const rows = heads.map(h => ({ ...h, name: displayPlayerName(h.player_name), color: teamColor[h.team_id] || '' }));
+  const teamName = Object.fromEntries(teams.map(t => [t.id, t.name]));
 
-<div class="grid gap-5" style="grid-template-columns:1fr 360px;align-items:start">
-  <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
-    <div class="px-5 py-3.5 border-b border-admin-border">
-      <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Current Heads</div>
-    </div>
-    ${heads.length === 0
-      ? `<div class="p-8 text-center text-sm text-slate-500">No team heads yet — grant access from the panel on the right.</div>`
-      : `<table class="w-full border-collapse"><tbody>${heads.map(headRow).join('')}</tbody></table>`}
-  </div>
-
-  <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden" style="position:sticky;top:24px">
-    <div class="px-5 py-3.5 border-b border-admin-border">
-      <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Grant Access</div>
-    </div>
-    <div class="px-5 py-4 flex flex-col gap-3">
-      <div>
-        <label class="admin-field-label">Team</label>
-        <select id="head-team" class="admin-input">${teamOptions}</select>
-      </div>
-      <div style="position:relative">
-        <label class="admin-field-label">Player</label>
-        <input id="head-player-search" type="text" class="admin-input" placeholder="Search players…" autocomplete="off">
-        <input type="hidden" id="head-player-id">
-        <div id="head-player-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:220px;overflow-y:auto"></div>
-      </div>
-      <div id="head-msg" class="text-xs text-error" style="display:none"></div>
-      <button class="agm-new-btn" id="head-grant-btn">Grant Access</button>
-      <p class="text-[11px] text-slate-600 mt-1">Heads log in through the normal player login — no separate password.</p>
-    </div>
-  </div>
-</div>
-
-<style>.priv-search-result{display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:#94a3b8;background:transparent;border:none;border-bottom:1px solid rgba(28,40,64,.5);cursor:pointer}.priv-search-result:hover{background:rgba(255,255,255,.04);color:#e2e8f0}</style>
-<script>
-(function() {
-  var PLAYERS = ${playersData};
-  var input = document.getElementById('head-player-search');
-  var hidden = document.getElementById('head-player-id');
-  var dropdown = document.getElementById('head-player-dropdown');
-  input.addEventListener('input', function() {
-    hidden.value = '';
-    var q = this.value.trim().toLowerCase();
-    if (!q) { dropdown.style.display = 'none'; return; }
-    var results = PLAYERS.filter(function(p) { return p.name.toLowerCase().includes(q); }).slice(0, 10);
-    dropdown.innerHTML = results.length
-      ? results.map(function(p) { return '<button type="button" class="priv-search-result" data-id="' + p.id + '" data-name="' + p.name.replace(/"/g, '&quot;') + '">' + p.name + '</button>'; }).join('')
-      : '<div style="padding:10px 14px;font-size:12px;color:#475569">No matching players</div>';
-    dropdown.style.display = 'block';
-  });
-  dropdown.addEventListener('click', function(e) {
-    var btn = e.target.closest('.priv-search-result');
-    if (!btn || !btn.dataset.id) return;
-    hidden.value = btn.dataset.id;
-    input.value = btn.dataset.name;
-    dropdown.style.display = 'none';
-  });
-  document.addEventListener('click', function(e) {
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
+  const grid = dataGrid({
+    id: 'heads', baseUrl: '/admin/team-heads', query,
+    rows, rowKey: r => r.id, noun: ['head', 'heads'],
+    search: { placeholder: 'Search heads', text: r => `${r.name} ${r.team_name}` },
+    filters: teams.length > 1 ? [{ key: 'team', label: 'Team', options: teams.map(t => [t.id, t.name]), test: (r, v) => r.team_id === v }] : [],
+    defaultSort: 'team',
+    // Grouped under team headings only while sorted by team.
+    groupBy: !query.sort || String(query.sort).replace('-', '') === 'team' ? r => r.team_name : null,
+    columns: [
+      { key: 'name', label: 'Head', primary: true, sort: r => r.name.toLowerCase(),
+        cell: r => `${avatar(r.name, r.color)}<span class="aui-cell__title">${escHtml(r.name)}</span>` },
+      { key: 'team', label: 'Team', sort: r => `${String(r.team_name).padEnd(20)}${r.name}`, bare: true,
+        cell: r => `<span class="aui-dot" style="background:${/^#[0-9a-f]{3,8}$/i.test(r.color) ? r.color : '#4a5263'}"></span>${escHtml(r.team_name)}` },
+      { key: 'since', label: 'Head since', num: true, sort: r => r.created_at || 0, cell: r => escHtml(fmtDate(r.created_at)) || '<span class="aui-muted">—</span>' },
+    ],
+    rowHref: r => `/admin/players/${r.player_id}`,
+    rowMenu: r => [
+      { label: 'Player profile', href: `/admin/players/${r.player_id}` },
+      { label: 'Their team page', href: '/team', external: true },
+      'sep',
+      { label: 'Revoke access…', danger: true, post: `/admin/team-heads/${r.id}/revoke`, done: `${r.name} is no longer a ${r.team_name} head.`,
+        confirm: { title: `Revoke ${r.name}’s head access?`, body: `They can no longer file or vote on fines, or see ${r.team_name}’s payment status. Their player account is unchanged.`, send: 'Revoke' } },
+    ],
+    actionsHtml: button('+ Add a head', { kind: 'primary', attrs: 'data-drawer-open="add-head"' }),
+    empty: { title: 'No team heads yet', sub: 'Add one with “+ Add a head”.' },
   });
 
-  document.getElementById('head-grant-btn').addEventListener('click', async function() {
-    var msg = document.getElementById('head-msg');
-    msg.style.display = 'none';
-    if (!hidden.value) { msg.textContent = 'Pick a player from the list.'; msg.style.display = 'block'; return; }
-    var btn = this; btn.disabled = true;
-    try {
-      var r = await fetch('/admin/team-heads', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId: document.getElementById('head-team').value, playerId: hidden.value }),
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      location.reload();
-    } catch (e) { msg.textContent = e.message; msg.style.display = 'block'; btn.disabled = false; }
+  const add = drawer({
+    id: 'add-head', eyebrow: 'Team heads', title: 'Add a head',
+    bodyHtml: `<form id="add-head-form" data-json-action="/admin/team-heads" data-done="Head added." style="display:flex;flex-direction:column;gap:14px">
+      ${field({ label: 'Team', name: 'teamId', type: 'select', options: teams.map(t => [t.id, t.name]) })}
+      ${playerPicker({ name: 'playerId', label: 'Player', multiple: false, placeholder: 'Search players',
+        options: players.map(p => ({ id: p.id, name: displayPlayerName(p.name), color: teamColor[p.team_id] || '', meta: teamName[p.team_id] || '' })) })}
+      <p class="aui-field__help" style="margin:0">Heads log in with their normal player account; there’s no separate password.</p>
+    </form>`,
+    footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Add head', { kind: 'primary', type: 'submit', attrs: 'form="add-head-form"' })}`,
   });
-})();
 
-window.revokeHead = async function(id, name) {
-  if (!confirm('Revoke head/coach access for ' + name + '?')) return;
-  try {
-    var r = await fetch('/admin/team-heads/' + id + '/revoke', { method: 'POST' });
-    if (!r.ok) throw new Error('Failed');
-    location.reload();
-  } catch (e) { alert(e.message); }
-};
-</script>`;
+  return `<div class="aui-page">
+    ${pageHeader({ title: 'Team heads', sub: `${rows.length} ${rows.length === 1 ? 'head' : 'heads'} across ${new Set(rows.map(r => r.team_id)).size} teams` })}
+    ${banner('info', 'Heads file and vote on fine cases at /fines and see their team’s payment status at /team, logged in as themselves.')}
+    ${grid}
+    ${add}
+  </div>`;
 }

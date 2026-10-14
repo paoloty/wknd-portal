@@ -38,7 +38,7 @@ const NAV_GROUPS = [
   {
     key: 'overview', label: 'Overview',
     items: [
-      { href: '/admin', label: 'Dashboard', icon: 'dashboard', exact: true },
+      { href: '/admin', label: 'Home', icon: 'dashboard', exact: true },
     ],
   },
   {
@@ -213,50 +213,63 @@ const SUPER_ADMIN_NAV = [
   },
 ];
 
-export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null }) {
+// The sidebar icon for each group (the group row is what you see; items sit under it).
+const GROUP_ICON = {
+  overview: 'dashboard', 'games-stats': 'games', papawis: 'papawis', awards: 'awards', season: 'standings',
+  content: 'posts', community: 'activity', marketplace: 'wallet', finance: 'finance', members: 'users', site: 'site',
+  super: 'shield',
+};
+
+// The admin shell (admin redesign, 2026-10-15; mockup: canvas "A · Clubhouse v2"). Rebuilt
+// from scratch with its own .ashell-* styles (public/admin.css, "Admin shell"), not Tailwind:
+//   sidebar  = brand, season pill, one row per menu group (icon, label, count, chevron; its
+//              pages fold out underneath, one group open at a time), who's signed in
+//   top bar  = where you are (group / page), View site; on a phone also the menu button
+//   content  = the page body
+// The Tailwind CDN still loads for pages not rebuilt yet; drop it once none use it.
+export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, season = '', me = null }) {
   const v = cssVer ? `?v=${cssVer}` : '';
 
-  // allowedSections null = unrestricted (every admin before this feature existed, and the
-  // true super admin always) — otherwise hide whichever nav groups aren't in the list, so a
-  // restricted admin never even sees a link to a section they can't open (requireAuth in
-  // server.js is what actually blocks it; this just keeps the sidebar honest about that).
-  const baseNavGroups = allowedSections
-    ? NAV_GROUPS.filter(g => allowedSections.includes(g.key))
-    : NAV_GROUPS;
+  // allowedSections null = unrestricted (the true super admin always). Otherwise only the
+  // groups in the list show; requireAuth in server.js is what actually blocks the rest.
+  const baseNavGroups = allowedSections ? NAV_GROUPS.filter(g => allowedSections.includes(g.key)) : NAV_GROUPS;
   const allNavGroups = isSuperAdmin ? [...baseNavGroups, ...SUPER_ADMIN_NAV] : baseNavGroups;
-  const navHtml = allNavGroups.map(({ label, items: allItems }, gi) => {
+
+  const isActive = ({ href, exact }) => (exact ? currentPath === href : currentPath === href || currentPath.startsWith(href + '/'));
+  let crumbGroup = '';
+  const navHtml = allNavGroups.map(({ key = 'super', label, items: allItems }) => {
     const items = allItems.filter(i => !i.hidden);
-    const itemsHtml = items.map(({ href, label: lbl, icon, exact, soon }) => {
-      const active = exact ? currentPath === href : currentPath.startsWith(href);
-      const base = 'flex items-center gap-2.5 mx-2 px-2.5 h-9 rounded-md text-[13px] font-medium transition-colors relative no-underline';
-      const state = active
-        ? 'bg-brand/10 text-brand'
-        : soon
-          ? 'text-slate-600 opacity-40 pointer-events-none'
-          : 'text-slate-400 hover:bg-white/[.04] hover:text-slate-200';
-      return `<a href="${href}" class="${base} ${state}"${soon ? ' tabindex="-1" aria-disabled="true"' : ''}>
-        <span class="flex items-center shrink-0 ${active ? 'opacity-100' : 'opacity-60'}">${IC[icon] || ''}</span>
-        <span>${escHtml(lbl)}</span>
-        ${soon ? `<span class="ml-auto text-[9px] font-bold uppercase tracking-wide text-slate-500 bg-white/[.06] px-1.5 py-0.5 rounded">Soon</span>` : ''}
+    if (!items.length) return '';
+    const groupActive = items.some(isActive) || allItems.some(i => i.hidden && isActive(i));
+    if (groupActive && key !== 'overview') crumbGroup = label;
+    const n = Number(navBadges[key]) || 0;
+    const badge = n ? `<span class="admin-nav__badge">${n}</span>` : '';
+    const icon = `<span class="admin-nav__icon" aria-hidden="true">${IC[GROUP_ICON[key]] || IC.dashboard}</span>`;
+    if (items.length === 1) {
+      const [it] = items;
+      const on = isActive(it);
+      return `<a href="${it.href}" class="admin-nav__row${on ? ' is-active' : ''}"${on ? ' aria-current="page"' : ''}>
+        <span class="admin-nav__label">${icon}<span>${escHtml(key === 'overview' ? it.label : label)}</span></span>${badge}
       </a>`;
+    }
+    const itemsHtml = items.map(it => {
+      const on = isActive(it);
+      return `<a href="${it.href}" class="admin-nav__item${on ? ' is-active' : ''}"${on ? ' aria-current="page"' : ''}>${escHtml(it.label)}</a>`;
     }).join('');
-    const isGroupActive = items.some(({ href, exact }) =>
-      exact ? currentPath === href : currentPath.startsWith(href));
-    const collapsible = items.length > 1;
-    const open = !collapsible || isGroupActive;
-
-    const header = collapsible
-      ? `<button type="button" class="nav-group-toggle w-full flex items-center justify-between px-[18px] pt-1.5 pb-1 bg-transparent border-0 cursor-pointer text-slate-500/70 hover:text-slate-400 transition-colors" aria-expanded="${open}">
-          <span class="text-[9.5px] font-bold tracking-[.12em] uppercase">${escHtml(label)}</span>
-          <span class="nav-group-chevron transition-transform duration-150 ${open ? '' : '-rotate-90'}">${IC.chevron}</span>
-        </button>`
-      : `<div class="px-[18px] pt-1.5 pb-1 text-[9.5px] font-bold tracking-[.12em] uppercase text-slate-500/70">${escHtml(label)}</div>`;
-
-    return `<div class="py-1.5 ${gi > 0 ? 'border-t border-admin-border mt-1.5 pt-2.5' : ''}">
-      ${header}
-      <div class="nav-group-items ${open ? '' : 'hidden'}">${itemsHtml}</div>
+    return `<div class="admin-nav__group">
+      <button type="button" class="admin-nav__row nav-group-toggle${groupActive ? ' is-current' : ''}" aria-expanded="${groupActive}">
+        <span class="admin-nav__label">${icon}<span>${escHtml(label)}</span></span>
+        <span class="admin-nav__end">${badge}<span class="admin-nav__chev" aria-hidden="true">${IC.chevron}</span></span>
+      </button>
+      <div class="admin-nav__items"${groupActive ? '' : ' hidden'}>${itemsHtml}</div>
     </div>`;
   }).join('');
+
+  const who = me || { name: isSuperAdmin ? 'Super admin' : 'Admin', role: isSuperAdmin ? 'Full access' : 'Admin' };
+  const initials = String(who.name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'A';
+  const crumb = crumbGroup
+    ? `<span class="ashell__crumb-group">${escHtml(crumbGroup)}</span><span class="ashell__crumb-sep" aria-hidden="true">/</span><span class="ashell__crumb-page">${escHtml(title)}</span>`
+    : `<span class="ashell__crumb-page">${escHtml(title)}</span>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -267,27 +280,29 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon-32.png" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@1,900&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The site's own self-hosted fonts (Archivo + Saira Condensed). -->
+  <link rel="preload" href="/fonts/archivo-k3kPo8UDI-1M0wlSV9XAw6lQkqWY8Q82sLydOxI.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css${v}">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
+          // The site's palette (public/styles.css :root), for pages not rebuilt yet. Hex, not
+          // rgba, so /50-style opacity modifiers keep working.
           colors: {
             brand:            '#f59332',
-            'admin-bg':       '#020817',
-            'admin-surface':  '#0d1424',
-            'admin-surface2': '#131d2e',
-            'admin-border':   '#1e293b',
-            'admin-border2':  '#2a3a52',
+            'admin-bg':       '#0a0e16',
+            'admin-surface':  '#10141d',
+            'admin-surface2': '#161c29',
+            'admin-border':   '#1c2230',
+            'admin-border2':  '#2a3142',
             success:          '#34d399',
             error:            '#f87171',
           },
           fontFamily: {
-            sans:  ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-            saira: ['"Space Grotesk"', 'sans-serif'],
+            sans:  ['Archivo', 'system-ui', '-apple-system', 'sans-serif'],
+            saira: ['"Saira Condensed"', 'sans-serif'],
           },
         },
       },
@@ -297,67 +312,65 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
   <link rel="stylesheet" href="/admin.css${v}">
   ${gaSnippet}
 </head>
-<body class="admin-body bg-admin-bg text-slate-200 font-sans antialiased min-h-screen">
+<body class="admin-body ashell">
+  <a class="ashell__skip" href="#admin-main">Skip to content</a>
+  <div class="ashell__overlay" data-shell-close hidden></div>
 
-  <div class="hidden fixed inset-0 bg-black/65 z-40 backdrop-blur-[2px] [&.is-open]:block" id="admin-overlay"></div>
-
-  <nav class="fixed top-0 left-0 bottom-0 w-60 bg-admin-surface border-r border-admin-border flex flex-col z-50 overflow-hidden -translate-x-full transition-transform duration-200 ease-out [&.is-open]:translate-x-0 md:translate-x-0 md:transition-none" id="admin-sidebar">
-    <a href="/admin" class="flex items-center gap-2.5 px-4 h-14 border-b border-admin-border shrink-0 no-underline">
-      ${wkndBall('w-[26px] h-[26px] shrink-0')}
-      <span class="leading-tight"><span class="admin-wordmark text-[17px] text-slate-100">WKND</span><em class="block not-italic text-[10px] font-medium text-slate-500 tracking-wide uppercase">Admin Console</em></span>
-    </a>
-    <div class="flex-1 overflow-y-auto py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:w-0">${navHtml}</div>
-    <div class="shrink-0 p-2 border-t border-admin-border flex flex-col gap-0.5">
-      <a href="/" target="_blank" rel="noopener" class="flex items-center gap-2 px-2.5 h-8 rounded-md text-xs font-medium text-slate-500 hover:bg-white/[.04] hover:text-slate-400 transition-colors no-underline">
-        ${IC.external} View Portal
+  <aside class="ashell__side" id="ashell-side" aria-label="Admin menu">
+    <div class="ashell__brand-row">
+      <a href="/admin" class="ashell__brand" aria-label="WKND Admin home">
+        ${wkndBall('ashell__ball')}
+        <span class="ashell__brand-text"><span class="ashell__wordmark">WKND</span><span class="ashell__brand-sub">Admin</span></span>
       </a>
-      <a href="/logout" class="flex items-center gap-2 px-2.5 h-8 rounded-md text-xs font-medium text-slate-500 hover:bg-error/10 hover:text-error transition-colors no-underline">
-        ${IC.signout} Sign out
-      </a>
+      <button type="button" class="ashell__icon-btn ashell__close" data-shell-close aria-label="Close menu">×</button>
     </div>
-  </nav>
+    ${season ? `<a class="ashell__season" href="/admin/season" title="Season settings"><span class="ashell__season-dot" aria-hidden="true"></span><span>${escHtml(season)}</span><span class="ashell__season-chev" aria-hidden="true">${IC.chevron}</span></a>` : ''}
+    <nav class="admin-nav" aria-label="Admin sections">${navHtml}</nav>
+    <div class="ashell__me">
+      <span class="ashell__me-avatar" aria-hidden="true">${escHtml(initials)}</span>
+      <span class="ashell__me-text"><span class="ashell__me-name">${escHtml(who.name)}</span><span class="ashell__me-role">${escHtml(who.role)}</span></span>
+      <a class="ashell__icon-btn" href="/logout" aria-label="Sign out" title="Sign out">${IC.signout}</a>
+    </div>
+  </aside>
 
-  <div class="md:ml-60">
-    <header class="flex md:hidden border-b border-admin-border bg-admin-surface px-4 items-center justify-between sticky top-0 z-30" style="height:52px">
-      <button class="w-9 h-9 bg-transparent border-0 cursor-pointer p-1 flex flex-col items-center justify-center gap-[5px]" id="admin-menu-btn" aria-label="Open navigation">
-        <span class="block w-[18px] h-[1.5px] bg-slate-400 rounded-sm"></span>
-        <span class="block w-[18px] h-[1.5px] bg-slate-400 rounded-sm"></span>
-        <span class="block w-[18px] h-[1.5px] bg-slate-400 rounded-sm"></span>
-      </button>
-      <a href="/admin" class="flex items-center gap-1.5 no-underline"><span class="admin-wordmark text-[16px] text-slate-100">WKND</span>${wkndBall('w-[14px] h-[14px]')}<span class="text-xs font-medium text-slate-500 ml-1">Admin</span></a>
-      <a href="/logout" class="text-xs text-slate-500 hover:text-error no-underline">Sign out</a>
-    </header>
-
-    <main>
-      <div class="p-4 pb-10 md:p-8 md:pb-14">
-        ${body}
+  <div class="ashell__main">
+    <header class="ashell__top">
+      <button type="button" class="ashell__icon-btn ashell__menu-btn" data-shell-open aria-label="Open menu" aria-controls="ashell-side" aria-expanded="false"><span></span><span></span><span></span></button>
+      <a href="/admin" class="ashell__top-brand" aria-label="WKND Admin home"><span class="ashell__wordmark">WKND</span><span class="ashell__brand-sub">Admin</span></a>
+      <div class="ashell__crumb">${crumb}</div>
+      <div class="ashell__top-actions">
+        <a class="aui-btn aui-btn--ghost aui-btn--sm" href="/" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a>
       </div>
-    </main>
+    </header>
+    <main class="ashell__content" id="admin-main">${body}</main>
   </div>
 
   <script>
   (function() {
-    var btn     = document.getElementById('admin-menu-btn');
-    var sidebar = document.getElementById('admin-sidebar');
-    var overlay = document.getElementById('admin-overlay');
-    function open()  { sidebar.classList.add('is-open');  overlay.classList.add('is-open');  document.body.style.overflow = 'hidden'; }
-    function close() { sidebar.classList.remove('is-open'); overlay.classList.remove('is-open'); document.body.style.overflow = ''; }
-    if (btn) btn.addEventListener('click', function() { sidebar.classList.contains('is-open') ? close() : open(); });
-    overlay.addEventListener('click', close);
+    var side = document.getElementById('ashell-side');
+    var overlay = document.querySelector('.ashell__overlay');
+    var openBtn = document.querySelector('[data-shell-open]');
+    function open()  { side.classList.add('is-open'); overlay.hidden = false; openBtn.setAttribute('aria-expanded', 'true'); document.body.style.overflow = 'hidden'; }
+    function close() { side.classList.remove('is-open'); overlay.hidden = true; openBtn.setAttribute('aria-expanded', 'false'); document.body.style.overflow = ''; }
+    openBtn.addEventListener('click', open);
+    document.querySelectorAll('[data-shell-close]').forEach(function(b) { b.addEventListener('click', close); });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && side.classList.contains('is-open')) close(); });
 
-    document.querySelectorAll('.nav-group-toggle').forEach(function(toggle) {
-      var itemsEl   = toggle.nextElementSibling;
-      var chevronEl = toggle.querySelector('.nav-group-chevron');
+    // One group open at a time.
+    var toggles = document.querySelectorAll('.nav-group-toggle');
+    toggles.forEach(function(toggle) {
       toggle.addEventListener('click', function() {
-        var willOpen = itemsEl.classList.contains('hidden');
-        itemsEl.classList.toggle('hidden', !willOpen);
-        chevronEl.classList.toggle('-rotate-90', !willOpen);
-        toggle.setAttribute('aria-expanded', String(willOpen));
+        var willOpen = toggle.getAttribute('aria-expanded') !== 'true';
+        toggles.forEach(function(t) {
+          var isOpen = t === toggle && willOpen;
+          t.setAttribute('aria-expanded', String(isOpen));
+          t.nextElementSibling.hidden = !isOpen;
+        });
       });
     });
   })();
   </script>
-
+  <script src="/admin-ui.js${v}" defer></script>
 </body>
 </html>`;
 }

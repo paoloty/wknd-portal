@@ -194,7 +194,8 @@ import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
-import { adminDashboardBody } from './views/admin/dashboard.js';
+import { adminHomeBody } from './views/admin/home.js';
+import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
 import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
@@ -244,7 +245,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // break caching (this only runs once at process start, so the value is still stable across
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
-const CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/styles.css')).mtimeMs); } catch { return Date.now(); } })();
+// Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -2338,7 +2340,12 @@ function applySeoOverrideTags(metaTags, override, effectiveTitle, origin) {
 // opts.settings: a settings panel (views/admin/settings.js) placed under the page's header.
 function renderAdminPage(req, opts) {
   const body = opts.settings ? withSettings(opts.body, opts.settings) : opts.body;
-  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: getAdminAllowedSections(req), ...opts, body });
+  const allowed = getAdminAllowedSections(req);
+  // Who's signed in, for the sidebar footer. The shared super-admin login has no name.
+  const me = req.session?.isElevatedPlayer
+    ? { name: req.session.playerName || 'Admin', role: allowed ? `Admin · ${ADMIN_SECTIONS.filter(x => allowed.includes(x.key)).map(x => x.label).join(', ')}` : 'Admin' }
+    : { name: 'Super admin', role: 'Full access' };
+  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: allowed, navBadges: adminNavBadges(), season: `Season ${getPortalCurrentSeason()}`, me, ...opts, body });
 }
 
 // ── Each feature's public switches, on its own admin page ──────────────────────────────
@@ -5741,45 +5748,364 @@ app.post('/auth/facebook/disconnect', express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/admin', requireAuth, (req, res) => {
-  const players        = getAllPlayers();
-  const teams          = getAllTeams();
-  const recentGames    = getRecentPlayedGames();
-  const upcoming       = getScheduledGames();
-  const financeSummary = getAllSummary();
-  const pendingTx      = getPendingTransactions();
-  const underReview    = getGamesUnderReviewCount();
-  const activePlayers  = getActivePlayerCount();
-  const gamesPlayed    = getPlayedGamesCount();
-  const pendingUsers   = getAllRegistrations().filter(r => r.status === 'pending').length;
-  const openFineCases  = getFineCasesByStatus('open');
-  const today          = manilaTodayStr();
-  const nextPapawis    = getPapawisGames()
-    .filter(g => g.date >= today && g.status !== 'cancelled' && g.status !== 'completed')
-    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)[0] || null;
-  const isSuperAdmin   = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
-  const recentActivity = isSuperAdmin ? getAdminLogs(8) : [];
-  // Birthdays (with ages) are super-admin only, same as /admin/birthdays.
-  let birthdays = [];
-  if (isSuperAdmin) {
-    // Only players who qualify (active in the last 3 months) are listed.
+// ── Admin: Engagement Home (redesign step 1, 2026-10-15; view: views/admin/home.js) ──────
+// The to-do list, sorted by what moves engagement most: the podium ballot, picks, the next
+// Papawis run and the last game's page first, then approvals and money. Each item only
+// shows to an admin whose sections include it. Sends reuse the feature pages' own routes
+// (with back=home), always behind a confirm; above 40 emails the count has to be typed.
+const HOME_TYPE_TO_CONFIRM = 40;
+const homeMidnight = ymd => Date.parse(`${ymd}T00:00:00+08:00`);
+const homeDaysOut = ymd => Math.round((homeMidnight(ymd) - homeMidnight(manilaTodayStr())) / 86400000);
+const homeWhen = ymd => {
+  const n = homeDaysOut(ymd);
+  return n <= 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`;
+};
+const homeDay = ymd => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+const homeAgo = ms => {
+  const m = Math.max(1, Math.round((Date.now() - ms) / 60000));
+  return m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
+};
+const homeSetting = key => { try { return JSON.parse(getSetting(key, '') || 'null'); } catch { return null; } };
+const homePlural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const homeDevNote = () => (IS_DEV ? ' Outside production only the first email goes out, to your own inbox.' : '');
+const homeConfirm = (title, bell, email, what) => ({
+  title,
+  body: `Bell to ${bell}, email to ${email}.${what ? ` ${what}` : ''}${homeDevNote()}`,
+  type: email > HOME_TYPE_TO_CONFIRM ? String(email) : '',
+  send: 'Send',
+});
+
+function homeActor(req) { return currentAdminActor(req).id; }
+
+function buildAdminHome(req) {
+  const allowedSections = getAdminAllowedSections(req);
+  const can = key => !allowedSections || allowedSections.includes(key);
+  const isSuper = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  const today = manilaTodayStr();
+  const now = Date.now();
+  const items = [];
+  const kpis = [];
+
+  // ── MVP podium ballot ──
+  const season = getPortalCurrentSeason();
+  if (can('awards')) {
+    const st = mvpBallotState(season, null);
+    if (st.enabled && isMvpLocked(season) && !st.closed) {
+      const voted = listMvpBallots(season).filter(b => b.p1 && b.p2 && b.p3).length;
+      const missing = mvpPodiumMissing(season);
+      const email = missing.filter(r => r.emailable).length;
+      const eligible = voted + missing.length;
+      const reminded = homeSetting(`mvp_podium_reminded_${season}`);
+      const due = st.bonusOpen && st.bonusAt ? `bonus closes ${st.bonusAt}` : st.closeAt ? `closes ${st.closeAt}` : 'open now';
+      kpis.push({ label: 'Podium ballots', value: String(voted), of: `/ ${eligible}`, delta: due, deltaTone: 'amber', href: '/admin/awards/podium' });
+      if (missing.length) {
+        items.push({
+          key: `podium:${season}`, cat: 'eng', tag: 'MVP', rank: 10,
+          hot: !reminded, done: !!reminded,
+          title: voted ? `${homePlural(missing.length, 'player')} haven’t called the podium` : 'Nobody has called the MVP podium yet',
+          due: reminded ? `reminded ${homeAgo(reminded.at)} ago` : due,
+          text: 'A complete ballot is worth up to +3 Pickmaster points.',
+          pct: eligible ? (voted / eligible) * 100 : 0, meta: `${voted} of ${eligible} voted`,
+          action: reminded
+            ? { type: 'link', label: 'Open ballot', href: '/admin/awards/podium' }
+            : { type: 'form', label: `Remind ${missing.length}`, url: '/admin/awards/podium/remind', fields: { email: '1', back: 'home' },
+                confirm: homeConfirm(`Remind ${homePlural(missing.length, 'player')} to call the podium?`, missing.length, email, 'Players who turned off pick emails get the bell only.') },
+        });
+      }
+    }
+  }
+
+  // ── Who wins? picks for the next game day ──
+  if (can('games-stats') && picksEnabled()) {
+    const games = byDate(getAllGames());
+    const pctx = buildPicksContext(games);
+    const upNext = adminUpNext(games, pctx);
+    const open = upNext.filter(u => !u.closed);
+    const missing = picksMissing(upNext, pctx);
+    if (open.length && missing) {
+      const ymd = open[0].ymd;
+      const picked = missing.accounts - missing.list.length;
+      const closeLabel = `closes ${homeDay(ymd).split(',')[0]} ${fmtCloseTime(picksCloseTime())}`;
+      kpis.push({ label: `Picked ${homeDay(ymd).split(',')[0]}`, value: String(picked), of: `/ ${missing.accounts}`, delta: closeLabel, href: '/admin/picks' });
+      const emailed = picksEmailedIds(ymd);
+      const targets = missing.list.filter(p => !emailed.has(p.id));
+      const reach = targets.length ? picksReminderRecipients(targets, ymd) : { recipients: [], emailable: [] };
+      const reminded = homeSetting(`picks_reminded_${ymd}`);
+      const matchups = open.map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');
+      if (missing.list.length) {
+        const canSend = reach.recipients.length > 0 && !reminded;
+        items.push({
+          key: `picks:${ymd}`, cat: 'eng', tag: 'PICK', rank: 20,
+          hot: canSend && homeDaysOut(ymd) <= 3, done: !!reminded,
+          title: `${homePlural(missing.list.length, 'member')} haven’t picked ${homeDay(ymd).split(',')[0]}`,
+          due: reminded ? `reminded ${homeAgo(reminded.at)} ago` : closeLabel,
+          text: matchups,
+          pct: missing.accounts ? (picked / missing.accounts) * 100 : 0, meta: `${picked} of ${missing.accounts} picked`,
+          action: canSend
+            ? { type: 'form', label: `Remind ${reach.recipients.length}`, url: '/admin/picks/remind', fields: { ids: targets.map(p => p.id), email: '1', back: 'home' },
+                confirm: homeConfirm(`Remind ${homePlural(reach.recipients.length, 'player')} to pick?`, reach.recipients.length, reach.emailable.length, 'Only active members are reached; anyone already emailed for this game day gets the bell only.') }
+            : { type: 'link', label: 'Open picks', href: '/admin/picks' },
+        });
+      }
+    }
+  }
+
+  // ── The next Papawis run ──
+  if (can('papawis')) {
+    const run = getPapawisGames()
+      .filter(g => g.date >= today && g.status === 'open' && !g.signups_locked_at)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))[0];
+    if (run) {
+      const signups = getPapawisSignups(run.id);
+      const confirmed = signups.filter(s => s.status === 'confirmed').length;
+      const waitlist = signups.filter(s => s.status === 'waitlist' || s.status === 'waitlisted').length;
+      const max = run.max_slots || 0;
+      const left = Math.max(0, max - confirmed);
+      const title = run.title || 'Papawis';
+      kpis.push({ label: `Papawis ${homeDay(run.date).split(',')[0]}`, value: String(confirmed), of: max ? `/ ${max}` : '', delta: left ? `${homePlural(left, 'slot')} left` : `full${waitlist ? ` · ${waitlist} waiting` : ''}`, deltaTone: left ? 'gray' : 'green', href: `/admin/papawis/${run.id}` });
+      const where = [run.location, run.time_label].filter(Boolean).join(' · ');
+      const scheduled = run.announce_send_at && !run.announced_at;
+      if (!run.announced_at && !scheduled && left > 0) {
+        const pv = papawisAnnouncementPreview(run);
+        if (pv.total) {
+          items.push({
+            key: `papawis-announce:${run.id}`, cat: 'eng', tag: 'RUN', rank: 30, hot: true,
+            title: `${title} isn’t announced yet`, due: homeWhen(run.date),
+            text: `${where ? `${where}. ` : ''}${confirmed} of ${max} signed up so far.`,
+            pct: max ? (confirmed / max) * 100 : null, meta: `${confirmed} of ${max} slots`,
+            action: { type: 'json', label: run.open_days_before ? 'Announce at sign-up open' : 'Announce', url: `/admin/papawis/${encodeURIComponent(run.id)}/announce`, done: 'Announcement sent',
+              confirm: homeConfirm(`Announce ${title} to ${homePlural(pv.total, 'regular')}?`, pv.total, pv.emailable, 'Regulars already on the roster are skipped.') },
+          });
+        }
+      } else if (left > 0) {
+        items.push({
+          key: `papawis-slots:${run.id}:${left}`, cat: 'eng', tag: 'RUN', rank: 35, hot: false,
+          title: `${title} has ${homePlural(left, 'open slot')}`, due: homeWhen(run.date),
+          text: `${where ? `${where}. ` : ''}${scheduled ? 'The announcement goes out when sign-ups open.' : `Announced${run.announced_count ? ` to ${run.announced_count} by email` : ''}.`}`,
+          pct: max ? (confirmed / max) * 100 : null, meta: `${confirmed} of ${max} slots`,
+          action: { type: 'link', label: 'Open run', href: `/admin/papawis/${run.id}` },
+        });
+      }
+    }
+  }
+
+  // ── The latest game's page: everything players open after a game ──
+  if (can('games-stats')) {
+    const last = getRecentPlayedGames().find(g => !g.under_review);
+    const g = last && getGameById(last.id);
+    if (g && homeDaysOut(g.date) >= -14) {
+      const chips = [
+        { label: 'Recap', ok: !!String(g.game_writeup || '').trim() },
+        { label: 'POTG', ok: !!String(g.potg_writeup || '').trim() },
+        { label: 'Cover', ok: !!g.has_cover },
+        { label: 'YouTube', ok: !!String(g.youtube_url || '').trim() },
+      ];
+      const missingChips = chips.filter(c => !c.ok);
+      if (missingChips.length) {
+        items.push({
+          key: `game-content:${g.id}:${missingChips.map(c => c.label).join('-')}`, cat: 'eng', tag: 'GAME', rank: 40, hot: false,
+          title: `${homeDay(g.date).split(',').slice(0, 2).join(',')} game page is missing ${homePlural(missingChips.length, 'thing')}`,
+          due: `${g.team_a_name} ${g.team_a_score}–${g.team_b_score} ${g.team_b_name}`,
+          chips, action: { type: 'link', label: 'Open game', href: `/admin/games/${g.id}` },
+        });
+      }
+    }
+  }
+
+  // ── Approvals ──
+  if (can('members')) {
+    const pending = getAllRegistrations().filter(r => r.status === 'pending');
+    if (pending.length) {
+      const oldest = Math.min(...pending.map(r => r.created_at || now));
+      items.push({
+        key: `accounts:${pending.length}:${oldest}`, cat: 'appr', tag: 'NEW', rank: 50,
+        title: `${homePlural(pending.length, 'account')} waiting for approval`, due: `oldest ${homeAgo(oldest)}`,
+        text: 'New members can’t pick, comment or join Papawis until they’re approved.',
+        action: { type: 'link', label: 'Review', href: '/admin/users' },
+      });
+    }
+  }
+  if (can('games-stats')) {
+    const n = getGamesUnderReviewCount();
+    if (n) items.push({
+      key: `review:${n}`, cat: 'appr', tag: 'REV', rank: 55,
+      title: `${homePlural(n, 'game')} under review`, due: 'hidden from the site',
+      text: 'A game under review stays off every public page until you clear it.',
+      action: { type: 'link', label: 'Open games', href: '/admin/games' },
+    });
+  }
+  if (can('community')) {
+    const cases = getFineCasesByStatus('open');
+    if (cases.length) items.push({
+      key: `fines:${cases.length}`, cat: 'appr', tag: 'FINE', rank: 60,
+      title: `${homePlural(cases.length, 'fine case')} waiting for a decision`, due: `oldest ${homeAgo(Math.min(...cases.map(c => c.created_at || now)))}`,
+      action: { type: 'link', label: 'Open fines', href: '/admin/fines' },
+    });
+  }
+
+  // ── Money ──
+  if (can('finance')) {
+    const tx = getPendingTransactions();
+    if (tx.length) {
+      const total = tx.reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+      items.push({
+        key: `payments:${tx.length}`, cat: 'money', tag: '₱', rank: 70,
+        title: `${homePlural(tx.length, 'payment')} to confirm`, due: `₱${total.toLocaleString('en-PH', { maximumFractionDigits: 0 })} total`,
+        action: { type: 'link', label: 'Open ledger', href: '/admin/ledger' },
+      });
+    }
+  }
+
+  // ── Birthday emails to send by hand (super admin, same rule as /admin/birthdays) ──
+  if (isSuper) {
     const list = birthdaysAround(today, { back: 7, forward: 7 }).filter(e => e.activity?.active);
     const drafts = getBirthdayEmailsForYears(list.map(e => e.year));
     const state = autoSendState();
-    birthdays = list.map(e => ({ ...e, status: birthdayEmailStatus(e, drafts.get(`${e.player.id}:${e.year}`), state) }));
+    const toAct = list.filter(e => birthdayEmailStatus(e, drafts.get(`${e.player.id}:${e.year}`), state).attention).length;
+    if (toAct) items.push({
+      key: `birthdays:${today}:${toAct}`, cat: 'eng', tag: 'BDAY', rank: 45,
+      title: `${homePlural(toAct, 'birthday email')} to send by hand`, due: 'this week',
+      action: { type: 'link', label: 'Open birthdays', href: '/admin/birthdays' },
+    });
   }
-  res.send(renderAdminPage(req, {
-    title: 'Dashboard',
-    currentPath: '/admin',
-    body: adminDashboardBody({
-      players, teams, recentGames, upcoming, financeSummary, pendingTx, underReview, activePlayers, gamesPlayed,
-      pendingUsers, openFineCases, nextPapawis, isSuperAdmin, recentActivity, birthdays,
-    }),
-  }));
+
+  // Snoozed items drop out until tomorrow; done ones sink below the open ones.
+  const snoozed = getActiveAdminSnoozes(homeActor(req));
+  const visible = items.filter(i => !snoozed.has(i.key)).sort((a, b) => (a.done - b.done) || (b.hot - a.hot) || (a.rank - b.rank));
+
+  // ── The week's numbers ──
+  const week = 7 * 86400000;
+  const members = countApprovedMembers();
+  const active = countActiveMembersSince(now - week);
+  const viewerDays = getViewerDaysSince(new Date(now - 8 * week + 8 * 3600000).toISOString().slice(0, 10));
+  const weekly = [];
+  for (let w = 7; w >= 0; w--) {
+    const from = new Date(now - (w + 1) * week + 8 * 3600000).toISOString().slice(0, 10);
+    const to = new Date(now - w * week + 8 * 3600000).toISOString().slice(0, 10);
+    weekly.push(new Set(viewerDays.filter(r => r.day > from && r.day <= to).map(r => r.player_id)).size);
+  }
+  const firstWeek = weekly.findIndex(n => n > 0);
+  const spark = firstWeek >= 0 && weekly.length - firstWeek >= 2 ? weekly.slice(firstWeek) : null;
+  const diff = spark ? spark[spark.length - 1] - spark[spark.length - 2] : 0;
+  kpis.unshift({
+    label: 'Active members this week', value: String(active), of: `/ ${members}`, spark,
+    delta: spark && diff ? `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)} vs last week` : 'logged in or visited in 7 days',
+    deltaTone: spark && diff ? (diff > 0 ? 'green' : 'red') : 'gray',
+  });
+  const monthStart = homeMidnight(`${today.slice(0, 7)}-01`);
+  const prevMonth = new Date(monthStart - 86400000 + 8 * 3600000).toISOString().slice(0, 7);
+  const prevStart = homeMidnight(`${prevMonth}-01`);
+  const newThis = countRegistrationsBetween(monthStart, now);
+  const newPrev = countRegistrationsBetween(prevStart, monthStart);
+  const monthName = ym => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-US', { month: 'short' });
+  kpis.push({
+    label: `New accounts · ${monthName(today.slice(0, 7))}`, value: String(newThis),
+    delta: `${newThis >= newPrev ? '▲' : '▼'} vs ${newPrev} in ${monthName(prevMonth)}`, deltaTone: newThis >= newPrev ? 'green' : 'red',
+    href: can('members') ? '/admin/users' : '',
+  });
+
+  // ── Slipping away: regulars gone quiet ──
+  let quiet = null;
+  if (can('members') || can('papawis')) {
+    const days = 21;
+    const next = getPapawisGames().filter(g => g.date >= today && g.status === 'open' && !g.signups_locked_at)
+      .sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+    const message = next
+      ? { title: 'We miss you on the court', body: `${next.title || 'Papawis'} is ${homeWhen(next.date)}. Grab a slot before it fills.`, link: `/papawis#pw-game-${next.id}` }
+      : { title: 'We miss you on the court', body: 'See what you missed and make your picks for the next game day.', link: '/' };
+    const list = getQuietRegulars({ quietDays: days }).map(r => ({
+      id: r.player_id, name: displayPlayerName(r.player_name), color: r.team_color || '',
+      usually: r.runs >= 2 ? `Papawis, ${r.runs} runs` : r.picks >= 3 ? `Picks, ${r.picks} games` : `Comments`,
+      lastSeen: `${Math.round((now - r.last_at) / 86400000)} days`,
+      nudgedAgo: r.nudged_at && now - r.nudged_at < 14 * 86400000 ? homeAgo(r.nudged_at) : '',
+    }));
+    quiet = { days, list, message };
+  }
+
+  // ── Live: what players did lately (repeats folded) ──
+  const papawisName = t => (!t ? 'Papawis' : t.toLowerCase().includes('papawis') ? t : `Papawis ${t}`);
+  const feed = [];
+  for (const f of getPlayerActivityFeed(60)) {
+    const sig = `${f.player_id}|${f.kind}|${f.a}|${f.b}|${f.ref}`;
+    const prev = feed[feed.length - 1];
+    if (prev && prev.sig === sig && prev.at - f.at < 30 * 60000) continue;
+    const vs = `${titleCase(f.a)} vs ${titleCase(f.b)}`;
+    const what = {
+      pick: `picked ${titleCase(f.a)} over ${titleCase(f.b)}`,
+      papawis_joined: `joined ${papawisName(f.a)}`,
+      papawis_waitlisted: `joined the waitlist for ${papawisName(f.a)}`,
+      comment: `commented on ${vs}`,
+      react: `reacted to ${vs}`,
+      share: f.a === 'save' ? 'saved a stat card' : f.a === 'copy' ? 'copied a stat card link' : 'shared a stat card',
+      ballot: 'called the MVP podium',
+    }[f.kind];
+    if (!what) continue;
+    feed.push({ sig, at: f.at, name: displayPlayerName(f.player_name), color: f.team_color || '', what });
+    if (feed.length >= 10) break;
+  }
+
+  const open = visible.filter(i => !i.done).length;
+  const nextGame = getScheduledGames()[0];
+  const lead = nextGame ? `Next game day is ${homeWhen(gameYmd(nextGame))}.` : '';
+  return {
+    eyebrow: new Date(`${today}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+    sub: `${lead} ${open ? `${homePlural(open, 'thing')} to do, sorted by what moves engagement most.` : 'Nothing waiting on you.'}`.trim(),
+    kpis: kpis.slice(0, 4), items: visible, snoozedCount: items.length - visible.length, quiet, feed, now,
+  };
+}
+
+// Counts on the sidebar's group rows, for every admin page.
+function adminNavBadges() {
+  try {
+    return {
+      'games-stats': getGamesUnderReviewCount(),
+      community: getFineCasesByStatus('open').length,
+      finance: getPendingTransactions().length,
+      members: getAllRegistrations().filter(r => r.status === 'pending').length,
+    };
+  } catch { return {}; }
+}
+
+app.get('/admin', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, { title: 'Home', currentPath: '/admin', body: adminHomeBody(buildAdminHome(req)) }));
+});
+
+// "Later" on a to-do item: hidden for this admin until Manila midnight.
+app.post('/admin/home/snooze', requireAuth, express.json(), (req, res) => {
+  const key = String(req.body?.key || '').slice(0, 120);
+  if (!key) return res.status(400).json({ error: 'Missing item.' });
+  const tomorrow = homeMidnight(manilaTodayStr()) + 86400000;
+  snoozeAdminItem(homeActor(req), key, tomorrow);
+  res.json({ ok: true });
+});
+app.post('/admin/home/unsnooze', requireAuth, express.json(), (req, res) => {
+  unsnoozeAdminItem(homeActor(req), String(req.body?.key || ''));
+  res.json({ ok: true });
+});
+
+// Nudge quiet regulars: one bell each, at most once per 14 days per player. No email yet;
+// group emails go through lib/broadcast.js once it exists (plan step 2).
+app.post('/admin/home/nudge', requireAuth, express.urlencoded({ extended: false }), (req, res) => {
+  const ids = new Set([].concat(req.body?.ids || []).map(String));
+  const allowedSections = getAdminAllowedSections(req);
+  if (allowedSections && !allowedSections.includes('members') && !allowedSections.includes('papawis')) return res.redirect('/admin');
+  const home = buildAdminHome(req);
+  const targets = (home.quiet?.list || []).filter(p => ids.has(p.id) && !p.nudgedAgo);
+  for (const p of targets) {
+    createNotification({ playerId: p.id, type: 'quiet_nudge', title: home.quiet.message.title, body: home.quiet.message.body, link: home.quiet.message.link });
+  }
+  const msg = targets.length ? `Nudge sent to ${targets.length === 1 ? targets[0].name : `${targets.length} players`}` : 'Nobody to nudge: they were nudged in the last 14 days.';
+  res.redirect(`/admin?toast=${encodeURIComponent(msg)}`);
 });
 
 // ── Admin: Registrations ──────────────────────────────────────────────────────
 app.get('/admin/registrations', requireAuth, (req, res) => res.redirect('/admin/users'));
+
+// Player id → their team's colour (teams table first), for avatar rings in admin grids.
+function adminTeamColorByPlayer() {
+  const teams = Object.fromEntries(getAllTeams().map(t => [t.id, t.color || teamColor(t.name)]));
+  return Object.fromEntries(getAllPlayers().map(p => [p.id, teams[p.team_id] || '']));
+}
 
 app.get('/admin/users', requireAuth, (req, res) => {
   const registrations = getAllRegistrations();
@@ -5787,7 +6113,11 @@ app.get('/admin/users', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Users',
     currentPath: '/admin/users',
-    body: adminUsersBody({ registrations: withFlags, canViewSensitive: canViewSensitiveData(req), accountEmails: getLatestEmailsByRef(['approved', 'set_password']) }),
+    body: adminUsersBody({
+      registrations: withFlags, canViewSensitive: canViewSensitiveData(req), accountEmails: getLatestEmailsByRef(['approved', 'set_password']),
+      teamColorByPlayer: adminTeamColorByPlayer(),
+      isSuperAdmin: !!req.session?.isAdmin && !req.session?.isElevatedPlayer, query: req.query,
+    }),
   }));
 });
 
@@ -8597,22 +8927,25 @@ app.get('/admin/picks', requireAuth, (req, res) => {
 // In-app nudge (bell notification, no email) to everyone who hasn't picked every open game
 // on the next game day. Remembers when it went out so the page can say so.
 app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: false }), (req, res) => {
-  if (!picksEnabled()) return res.redirect('/admin/picks');
+  // back=home: sent from the Engagement Home, so go back there with a toast.
+  const home = req.body?.back === 'home';
+  const nothing = () => res.redirect(home ? `/admin?toast=${encodeURIComponent('Nobody left to remind.')}` : '/admin/picks');
+  if (!picksEnabled()) return nothing();
   const games = byDate(getAllGames());
   const pctx = buildPicksContext(games);
   const upNext = adminUpNext(games, pctx);
   const missing = picksMissing(upNext, pctx);
-  if (!missing?.list.length) return res.redirect('/admin/picks');
+  if (!missing?.list.length) return nothing();
   // The page's checklist posts the chosen players as `ids`; only those get reminded.
   const chosen = new Set([].concat(req.body?.ids || []).map(String));
   const emailedIds = picksEmailedIds(upNext.find(u => !u.closed)?.ymd);
   const targets = missing.list.filter(p => chosen.has(p.id) && !emailedIds.has(p.id));
-  if (!targets.length) return res.redirect('/admin/picks');
+  if (!targets.length) return nothing();
   const open = upNext.filter(u => !u.closed);
   const matchups = open.map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');
   const dayStr = new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   const reach = picksReminderRecipients(targets, open[0].ymd);
-  if (!reach.recipients.length) return res.redirect('/admin/picks');
+  if (!reach.recipients.length) return nothing();
   for (const { player: p } of reach.recipients) {
     createNotification({
       playerId: p.id, type: 'pick_reminder',
@@ -8626,6 +8959,7 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
   // background — the page shows the tally from picks_emailed_<day> once it's done.
   const recipients = req.body?.email === '1' ? reach.emailable : [];
   if (recipients.length) setImmediate(() => sendPicksEmails(recipients).catch(e => console.error('[picks email] send failed:', e.message)));
+  if (home) return res.redirect(`/admin?toast=${encodeURIComponent(`Pick reminder sent: ${reach.recipients.length} bell${reach.recipients.length === 1 ? '' : 's'}${recipients.length ? `, ${IS_DEV ? 1 : recipients.length} email${(IS_DEV ? 1 : recipients.length) === 1 ? '' : 's'} going out now` : ''}`)}`);
   res.redirect(`/admin/picks?reminded=${reach.recipients.length}${recipients.length ? `&emailing=${IS_DEV ? 1 : recipients.length}` : ''}`);
 });
 
@@ -13124,7 +13458,8 @@ app.get('/admin/awards/podium', requireAuth, (req, res) => {
 app.post(['/admin/awards/podium/remind', '/admin/mvp-podium/remind'], requireAuth, express.urlencoded({ extended: false }), (req, res) => {
   const season = getPortalCurrentSeason();
   const st = mvpBallotState(season, null);
-  if (!st.enabled || !isMvpLocked(season) || st.closed) return res.redirect('/admin/awards/podium');
+  const home = req.body?.back === 'home';
+  if (!st.enabled || !isMvpLocked(season) || st.closed) return res.redirect(home ? `/admin?toast=${encodeURIComponent('The podium ballot isn’t open.')}` : '/admin/awards/podium');
   const recipients = mvpPodiumMissing(season);
   for (const r of recipients) {
     createNotification({
@@ -13137,6 +13472,7 @@ app.post(['/admin/awards/podium/remind', '/admin/mvp-podium/remind'], requireAut
   const emailable = req.body?.email === '1' ? recipients.filter(r => r.emailable) : [];
   setSetting(`mvp_podium_reminded_${season}`, JSON.stringify({ at: Date.now(), bell: recipients.length, email: req.body?.email === '1' ? emailable.length : null }));
   if (emailable.length) setImmediate(() => sendPodiumEmails(emailable, st).catch(e => console.error('[podium email] send failed:', e.message)));
+  if (home) return res.redirect(`/admin?toast=${encodeURIComponent(`Podium reminder sent: ${recipients.length} bell${recipients.length === 1 ? '' : 's'}${emailable.length ? `, ${IS_DEV ? 1 : emailable.length} email${(IS_DEV ? 1 : emailable.length) === 1 ? '' : 's'} going out now` : ''}`)}`);
   res.redirect(`/admin/awards/podium?reminded=${recipients.length}${emailable.length ? `&emailing=${emailable.length}` : ''}`);
 });
 
@@ -16659,7 +16995,10 @@ app.post('/admin/papawis/:id/announce', requireAuth, express.json(), async (req,
   try {
     const result = await announcePapawisGame(req.params.id);
     if (result.error) return res.status(400).json({ error: result.error });
-    res.json({ ok: true, ...result });
+    const message = result.scheduled
+      ? `Announcement scheduled for ${new Date(result.scheduled).toLocaleString('en-US', { timeZone: 'Asia/Manila', weekday: 'short', hour: 'numeric', minute: '2-digit' })}, when sign-ups open`
+      : `Announced: ${result.sent} email${result.sent === 1 ? '' : 's'} sent`;
+    res.json({ ok: true, ...result, message });
   } catch (e) {
     res.status(500).json({ error: `Announcement failed: ${e.message}` });
   }
@@ -18861,7 +19200,10 @@ app.get('/admin/fines/heads', requireAuth, (req, res) => res.redirect('/admin/te
 app.get('/admin/team-heads', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Team Heads', currentPath: '/admin/team-heads',
-    body: adminTeamHeadsBody({ heads: getAllTeamHeads(), teams: getAllTeams(), players: getAllPlayers() }),
+    body: adminTeamHeadsBody({
+      heads: getAllTeamHeads(), teams: getAllTeams(), players: getAllPlayers(), query: req.query,
+      teamColor: Object.fromEntries(getAllTeams().map(t => [t.id, t.color || teamColor(t.name)])),
+    }),
   }));
 });
 app.post('/admin/team-heads', requireAuth, express.json(), (req, res) => {
