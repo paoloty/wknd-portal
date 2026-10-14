@@ -24,13 +24,19 @@ export function adminMvpPodiumBody({ season, locked, enabled, bonusAt, closeAt, 
   const status = !enabled ? '<b class="text-amber-400">The ballot is switched off</b> (Ballot settings above).'
     : locked ? `Race locked · bonus ${bonusOpen ? `closes <b class="text-slate-200">${escHtml(bonusAt || 'when the last regular-season games are scheduled')}</b>` : 'closed'} · ballots close ${escHtml(closeAt || 'at Finals Game 2')}`
     : 'Race revealed: ballots are scored.';
-  const tallyRows = tally.length ? tally.map((t, i) => `<tr class="admin-table-row">
-      <td class="admin-td text-slate-500">${i + 1}</td>
+  // Fan rank by points (3 for a 1st-place vote, 2 for 2nd, 1 for 3rd; server.js), T for ties.
+  // showActual (super admin only): the real rank and MVP score beside it, ordered by real rank.
+  const showActual = tally.some(t => t.actual);
+  const actualCells = t => (showActual ? `<td class="admin-td font-bold ${t.actual?.rank <= 3 ? 'text-amber-400' : 'text-slate-300'}">${t.actual ? `#${t.actual.rank}` : '—'}</td>
+      <td class="admin-td text-slate-400" style="font-family:'Space Grotesk',sans-serif">${t.actual ? t.actual.score.toFixed(1) : '—'}</td>` : '');
+  const tallyRows = tally.length ? tally.map(t => `<tr class="admin-table-row">
+      ${actualCells(t)}
+      <td class="admin-td font-bold ${t.rank === 1 ? 'text-amber-400' : 'text-slate-400'}">${t.rank ? `${t.tied ? 'T' : ''}${t.rank}` : '<span class="text-slate-600">—</span>'}</td>
       <td class="admin-td"><a href="/admin/players/${encodeURIComponent(t.id)}" class="inline-flex items-center gap-2 text-slate-100 hover:text-amber-400">${dot(t.team)}${escHtml(displayPlayerName(t.name))}</a></td>
-      ${t.votes.map((v, k) => `<td class="admin-td font-semibold ${v ? 'text-slate-100' : 'text-slate-600'}">${v}${v && totals.complete ? ` <span class="text-xs text-slate-500">${Math.round((v / totals.complete) * 100)}%</span>` : ''}</td>`).join('')}
-      <td class="admin-td font-bold">${t.votes[0] + t.votes[1] + t.votes[2]}</td>
+      <td class="admin-td font-extrabold text-slate-100" style="font-family:'Space Grotesk',sans-serif">${t.pts}</td>
+      ${t.votes.map(v => `<td class="admin-td font-semibold ${v ? 'text-slate-100' : 'text-slate-600'}">${v}${v && totals.complete ? ` <span class="text-xs text-slate-500">${Math.round((v / totals.complete) * 100)}%</span>` : ''}</td>`).join('')}
       ${podium ? `<td class="admin-td">${t.place ? `<b class="text-amber-400">#${t.place}</b>` : ''}</td>` : ''}
-    </tr>`).join('') : `<tr><td class="admin-td text-slate-500" colspan="6">No ballots yet.</td></tr>`;
+    </tr>`).join('') : `<tr><td class="admin-td text-slate-500" colspan="7">No ballots yet.</td></tr>`;
   const ballotRows = ballots.length ? ballots.map(b => `<tr class="admin-table-row">
       <td class="admin-td"><a href="/admin/players/${encodeURIComponent(b.voter.id)}" class="inline-flex items-center gap-2 text-slate-100 hover:text-amber-400">${dot(b.voter.team)}${escHtml(displayPlayerName(b.voter.name))}</a>${b.admin ? ' <span class="text-[10px] font-bold text-amber-400" title="Admins can see the MVP scores, so they never earn the bonus">ADMIN</span>' : ''}</td>
       ${b.picks.map(p => `<td class="admin-td">${nm(p)}</td>`).join('')}
@@ -57,10 +63,10 @@ ${msg ? `<div class="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500
   ${podium ? tile('Perfect podiums', totals.perfect, 'all three, in order') : ''}
 </div>
 ${podium ? `<div class="${panel} px-4 py-3 mb-6 text-sm text-slate-300"><span class="${kicker} mr-2">Official podium</span>${podium.map((p, i) => `<b class="text-slate-100">${i + 1}. ${nm(p)}</b>`).join(' · ')}</div>` : ''}
-<h3 class="${kicker} mb-2">Who voted who</h3>
+<h3 class="${kicker} mb-2">Who voted who <span class="normal-case tracking-normal font-normal text-slate-600">· ranked by points: 3 per 1st-place vote, 2 per 2nd, 1 per 3rd</span></h3>
 <div class="${panel} overflow-auto mb-6">
   <table class="admin-table">
-    <thead><tr><th class="admin-th">#</th><th class="admin-th">Player</th><th class="admin-th">Votes for 1st</th><th class="admin-th">2nd</th><th class="admin-th">3rd</th><th class="admin-th">Total</th>${podium ? '<th class="admin-th">Finished</th>' : ''}</tr></thead>
+    <thead><tr>${showActual ? '<th class="admin-th" title="Real rank by the MVP score (super admin only)">Actual #</th><th class="admin-th">MVP score</th>' : ''}<th class="admin-th" title="Fan rank by points">Fan #</th><th class="admin-th">Player</th><th class="admin-th" title="3 per 1st-place vote, 2 per 2nd, 1 per 3rd">Points</th><th class="admin-th">1st votes</th><th class="admin-th">2nd</th><th class="admin-th">3rd</th>${podium ? '<th class="admin-th">Finished</th>' : ''}</tr></thead>
     <tbody>${tallyRows}</tbody>
   </table>
 </div>

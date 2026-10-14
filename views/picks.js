@@ -258,11 +258,11 @@ export function picksRulesPage({ closeTime = '06:00', oddsOn = true, prizeLine =
   const podiumSection = podium ? `<div class="legal-section" id="podium">
     <h2 class="legal-section__heading">MVP podium bonus</h2>
     <div class="legal-section__body">
-      <p>Once a season, pick who finishes <strong>1st, 2nd and 3rd in the Season MVP race</strong>. Make your pick on <a href="/mvp#ballot">/mvp</a>.</p>
+      <p>Once a season, pick who finishes <strong>1st, 2nd and 3rd in the Season MVP race</strong>. Make your pick on <a href="/mvp#ballot">/mvp</a> or under Season pick on <a href="/picks">/picks</a>.</p>
       <ul>
         <li><strong>+1 for each player in the exact spot</strong>, up to <strong>+3</strong>. A miss is 0, never a minus.</li>
         <li><strong>Only your ballot as it stood when picks closed ${cutoff} scores.</strong> You can still make or change a ballot until the MVP is awarded at Finals Game 2, but later changes only count for Who called it, not for points. Once the regular season ends, the MVP order is fixed and could be worked out from the box scores.</li>
-        <li>The bonus is added to your points when the MVP is awarded at Finals Game 2, and shows as its own line on the leaderboard.</li>
+        <li>The bonus is added to your points when the MVP is awarded at Finals Game 2, and shows on the leaderboard as a <strong>+N podium</strong> tag next to your name.</li>
         <li>Admins who can see the MVP scores can't earn the bonus.</li>
       </ul>
       <table class="pkr-table">

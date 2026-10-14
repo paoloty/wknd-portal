@@ -650,7 +650,8 @@ export function lockBars(c, { keys = null, compact = false } = {}) {
     : 'Season per game';
   const rows = bars.map((b, i) => {
     const none = b.v == null;
-    const cls = !b.d ? '' : b.d.startsWith('−') ? ' is-down' : ' is-up';
+    const worse = b.inv ? b.d.startsWith('+') : b.d.startsWith('−');
+    const cls = !b.d ? '' : worse ? ' is-down' : ' is-up';
     return `<span class="mvl-row">
         <small class="mvl-row__k">${b.label}</small>
         <span class="mvl-track"><span class="mvl-fill" style="width:${none ? b.m : b.w};--i:${i}"><i></i></span>${none ? '' : `<span class="mvl-avg" style="left:${b.m}"></span>`}</span>
@@ -661,7 +662,7 @@ export function lockBars(c, { keys = null, compact = false } = {}) {
   return `<div class="mvl-meet${compact ? ' mvl-meet--sm' : ''}">
       <span class="mvl-meet__head"><small>${head}</small>${c.line ? '<small class="mvl-meet__key"><i></i>season avg</small>' : ''}</span>
       ${rows}
-      ${compact ? '' : `<span class="mvl-meet__foot"><span class="font-condensed">${c.line ? escHtml(c.line.shot) : ''}</span>${c.ts != null ? `<span>Season TS <b>${c.ts}%</b></span>` : ''}</span>`}
+      ${compact ? '' : `<span class="mvl-meet__foot"><span class="font-condensed">${c.line ? escHtml(c.line.shot) : ''}</span>${c.foot ? `<span>${escHtml(c.foot[0])} <b>${escHtml(c.foot[1])}</b></span>` : ''}</span>`}
       ${missed}
     </div>`;
 }
@@ -672,7 +673,7 @@ function lockCard(c, { isAdmin, season, canPick }) {
   const game = c.mode === 'forecast' ? [c.team, c.opp].sort().join('|') : '';
   const pid = escHtml(String(c.player.id));
   return `<article class="mv-card mvl-card" style="--team:${teamColor(c.team)}" data-pid="${pid}" data-team="${escHtml(c.team)}" data-game="${escHtml(game)}"
-    data-first="${escHtml(first)}" data-last="${escHtml(last)}" data-ppg="${c.sort.ppg}" data-rpg="${c.sort.rpg}" data-apg="${c.sort.apg}" data-lastpts="${c.sort.last}">
+    data-first="${escHtml(first)}" data-last="${escHtml(last)}" ${Object.entries(c.sort).map(([k, v]) => ` data-sort-${k}="${v}"`).join('')}>
     ${backdrop(c)}
     <span class="mvl-card__top"><span class="mvl-card__when">${when}</span><span class="mvl-card__mine" data-mvl-mine hidden></span></span>
     <span class="mv-card__id mvl-card__id">${who(c)}</span>
@@ -699,8 +700,11 @@ function ballotStatus(b) {
   return n === 3 ? '✓ Saved for Who called it.' : `${n} of 3 picked · saves as you tap`;
 }
 
-export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6, isAdmin = false, ballot = null, viewerId = null }) {
-  const race = RACES.mvp;
+// race: 'mvp' (with the podium ballot) or 'dpoy' (the Best Defender race: defensive bars and
+// writeups, no ballot; server.js passes ballot = null).
+export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6, isAdmin = false, ballot = null, viewerId = null, race: raceKey = 'mvp' }) {
+  const race = raceOf(raceKey);
+  const dpoy = race.key === 'dpoy';
   const forecast = ten.some(c => c.mode === 'forecast');
   const canPick = !!(ballot && ballot.enabled && !ballot.closed);
   const showBallot = !!(ballot && ballot.enabled);
@@ -710,7 +714,7 @@ export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6,
     <div class="mvpx-head__main ld-head">
       <span class="ld-kicker">Season ${escHtml(String(season))} · ${forecast ? 'Final week' : 'Regular season done'}</span>
       <h1>${escHtml(race.name)}</h1>
-      <p class="ld-head__meta">${forecast ? 'Ten players still have a case, and Sunday is the last chance to make it.' : 'Ten players made their case.'} The order and the scores stay hidden until the MVP is awarded at Finals Game 2.</p>
+      <p class="ld-head__meta">${forecast ? 'Ten players still have a case, and Sunday is the last chance to make it.' : 'Ten players made their case.'} The order and the scores stay hidden until the ${dpoy ? 'Best Defender award' : 'MVP is awarded'} at Finals Game 2.</p>
     </div>
     <div class="mvpx-head__side">
       <div class="mvpx-progress">
@@ -739,10 +743,10 @@ export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6,
       <label class="mvl-bar__sort"><span>Sort</span>
         <select class="form-input" data-mvl-sort aria-label="Sort the ten">
           <option value="shuffle">Shuffled</option>
-          <option value="ppg">Points per game</option>
-          <option value="rpg">Rebounds per game</option>
-          <option value="apg">Assists per game</option>
-          ${forecast ? '<option value="lastpts">Last game vs Sunday’s team</option>' : '<option value="lastpts">Points in his last game</option>'}
+          ${(dpoy
+            ? [['spg', 'Steals per game'], ['bpg', 'Blocks per game'], ['rpg', 'Rebounds per game'], ['last', forecast ? 'Stocks last game vs Sunday’s team' : 'Stocks in his last game']]
+            : [['ppg', 'Points per game'], ['rpg', 'Rebounds per game'], ['apg', 'Assists per game'], ['last', forecast ? 'Last game vs Sunday’s team' : 'Points in his last game']])
+            .map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
           <option value="team">Team</option>
           <option value="name">Name A–Z</option>
         </select>
@@ -807,7 +811,7 @@ ${swipeScript()}${isAdmin ? `
 (function () {
   function regen(pid, season, btn) {
     btn.disabled = true; btn.textContent = '…';
-    fetch('/admin/mvp/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pid ? { player_id: pid, season: season } : { season: season }) })
+    fetch(${JSON.stringify(`/admin/${race.key}/regenerate`)}, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pid ? { player_id: pid, season: season } : { season: season }) })
       .then(function () { location.reload(); });
   }
   document.querySelectorAll('.mvp-regen-btn').forEach(function (b) { b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); regen(b.dataset.pid, b.dataset.season, b); }); });
@@ -848,7 +852,7 @@ function mvpLockScript() {
     if (sort === 'shuffle') list.sort(function (a, b) { return a.dataset.shuffle - b.dataset.shuffle; });
     else if (sort === 'team') list.sort(function (a, b) { return a.dataset.team.localeCompare(b.dataset.team) || a.dataset.last.localeCompare(b.dataset.last); });
     else if (sort === 'name') list.sort(function (a, b) { return a.dataset.last.localeCompare(b.dataset.last); });
-    else list.sort(function (a, b) { return Number(b.dataset[sort]) - Number(a.dataset[sort]); });
+    else list.sort(function (a, b) { return Number(b.getAttribute('data-sort-' + sort)) - Number(a.getAttribute('data-sort-' + sort)); });
     var shown = 0;
     list.forEach(function (c) {
       var ok = !filter

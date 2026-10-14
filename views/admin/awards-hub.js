@@ -84,12 +84,19 @@ export function adminRacesBody({ season, locked, races }) {
 <div class="grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
   ${races.map(r => `<div class="${panel} p-5 flex flex-col gap-3">
     <div class="flex items-center justify-between"><h3 class="text-[15px] font-bold text-slate-100">${escHtml(r.name)}</h3><a href="${r.path}" class="text-xs text-amber-400" target="_blank" rel="noopener">${escHtml(r.path)} ↗</a></div>
-    <div class="text-[13px] text-slate-400">${locked && r.key === 'mvp'
-      ? `Locked: ${codeTagSm('/mvp')} shows the ten forecast cards (${r.lockCards} written). Regenerate rewrites them on the next visit.`
-      : locked ? 'Locked: the finalists page shows, with no writeups.'
+    <div class="text-[13px] text-slate-400">${locked
+      ? `Locked: ${codeTagSm(r.path)} shows the ten forecast cards (${r.lockCards} written). Regenerate rewrites them on the next visit.`
       : `${r.writeups} player case${r.writeups === 1 ? '' : 's'} written this season. Regenerate rewrites them on the next visit to ${escHtml(r.path)}.`}</div>
+    ${r.standings ? `<div class="rounded-md border border-admin-border overflow-hidden">
+      <div class="px-3 py-2 border-b border-admin-border flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500"><span>Actual standings</span><span class="normal-case tracking-normal font-normal">super admin only${locked ? ' · hidden from the public' : ''}</span></div>
+      <table class="w-full text-[13px]">${r.standings.map(p => `<tr class="border-t border-admin-border/60 first:border-t-0">
+        <td class="px-3 py-1.5 w-8 font-bold ${p.rank <= 3 ? 'text-amber-400' : 'text-slate-500'}">${p.rank}</td>
+        <td class="px-1 py-1.5 text-slate-200">${escHtml(displayPlayerName(p.name))} <span class="text-[11px] text-slate-500">${escHtml(p.team)}</span></td>
+        <td class="px-3 py-1.5 text-right text-slate-300" style="font-family:'Space Grotesk',sans-serif">${p.score.toFixed(1)}</td>
+      </tr>`).join('')}</table>
+    </div>` : ''}
     <div class="flex flex-wrap items-center gap-2 mt-auto">
-      ${!locked || r.key === 'mvp' ? `<button type="button" class="admin-btn admin-btn--sm" data-regen="${escHtml(r.key)}" data-season="${escHtml(String(season))}">↺ Regenerate all writeups</button>` : ''}
+      <button type="button" class="admin-btn admin-btn--sm" data-regen="${escHtml(r.key)}" data-season="${escHtml(String(season))}">↺ Regenerate all writeups</button>
       <a href="${r.path}" class="admin-btn admin-btn--sm" target="_blank" rel="noopener">Photos (on ${escHtml(r.path)}) ↗</a>
       <span class="text-xs text-slate-500" data-regen-msg="${escHtml(r.key)}"></span>
     </div>

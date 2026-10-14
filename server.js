@@ -101,6 +101,7 @@ import {
   deleteUnlockedRating,
   getMvpWriteup, getMvpWriteupsForSeason, setMvpWriteup, deleteMvpWriteupForPlayer, clearMvpWriteupSeason,
   getMvpLockWriteup, setMvpLockWriteup, deleteMvpLockWriteup, clearMvpLockWriteups, getMvpLockOpenings, countMvpLockWriteups,
+  getDpoyLockWriteup, setDpoyLockWriteup, deleteDpoyLockWriteup, clearDpoyLockWriteups, getDpoyLockOpenings, countDpoyLockWriteups,
   getMvpBallot, getMvpBonusBallot, countMvpBallots, saveMvpBallot, listMvpBallots, listMvpBonusBallots, dismissMvpBar, isMvpBarDismissed, countMvpBarDismissed,
   getDpoyWriteup, getDpoyWriteupsForSeason, setDpoyWriteup, deleteDpoyWriteupForPlayer, clearDpoyWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
@@ -686,11 +687,12 @@ function buildDpoyOgTags(req, candidates, season, { locked = false } = {}) {
   const origin = getRequestOrigin(req);
   const url    = `${origin}/dpoy`;
   const img    = `${origin}/og/awards.png?v=${ogDayStamp()}`;
-  const title  = locked ? `Season ${season} Best Defender Finalists — WKND Basketball League` : 'Best Defender Race — WKND Basketball League';
+  const title  = locked ? `Season ${season} Best Defender Race — WKND Basketball League` : 'Best Defender Race — WKND Basketball League';
   const leader = candidates[0];
   const per = (s, k) => (s.gp > 0 ? (s[k] / s.gp).toFixed(1) : '0.0');
   const desc = locked
-    ? `The Season ${season} Best Defender finalists: ${candidates.map(c => displayPlayerName(c.player.name)).join(', ')}. The winner is revealed at Finals Game 2.`
+    // Reveal lock: never name anyone (any order would hint) or say who leads.
+    ? `Ten players still have a case for Season ${season} Best Defender. The order stays hidden until the award at Finals Game 2.`
     : leader
       ? `${displayPlayerName(leader.player.name)} (${String(leader.stats.team_name || '').toUpperCase()}) leads the Season ${season} Best Defender Race — ${per(leader.stats, 'stl')} SPG, ${per(leader.stats, 'blk')} BPG, ${per(leader.stats, 'reb')} RPG. Follow the updated rankings and AI-written defender cases.`
       : `Follow the Season ${season} Best Defender Race — steals, blocks and AI-written cases for every top defender.`;
@@ -6430,9 +6432,10 @@ app.get('/admin/awards/races', requireAuth, (req, res) => {
     settings: racesSettingsPanel(),
     body: adminRacesBody({
       season, locked: isMvpLocked(season),
+      // The real top 10 per race, super admin only (raceStandings).
       races: [
-        { key: 'mvp', name: 'MVP Race', path: '/mvp', writeups: getMvpWriteupsForSeason(season).length, lockCards: countMvpLockWriteups(season) },
-        { key: 'dpoy', name: 'Best Defender Race', path: '/dpoy', writeups: getDpoyWriteupsForSeason(season).length, lockCards: 0 },
+        { key: 'mvp', name: 'MVP Race', path: '/mvp', writeups: getMvpWriteupsForSeason(season).length, lockCards: countMvpLockWriteups(season), standings: req.session?.isElevatedPlayer ? null : raceStandings(season, 'mvp').slice(0, 10) },
+        { key: 'dpoy', name: 'Best Defender Race', path: '/dpoy', writeups: getDpoyWriteupsForSeason(season).length, lockCards: countDpoyLockWriteups(season), standings: req.session?.isElevatedPlayer ? null : raceStandings(season, 'dpoy').slice(0, 10) },
       ],
     }),
   }));
@@ -12434,9 +12437,11 @@ for (const raceKey of ['mvp', 'dpoy']) {
     const { player_id, season } = req.body || {};
     const targetSeason = season || getCurrentSeason()?.season;
     // While the reveal lock is on, /mvp shows the forecast cards: ↺ regenerates those instead.
-    if (raceKey === 'mvp' && isMvpLocked(targetSeason)) {
-      if (player_id) deleteMvpLockWriteup(player_id, targetSeason);
-      else clearMvpLockWriteups(targetSeason);
+    if (isMvpLocked(targetSeason)) {
+      const del = raceKey === 'mvp' ? deleteMvpLockWriteup : deleteDpoyLockWriteup;
+      const clear = raceKey === 'mvp' ? clearMvpLockWriteups : clearDpoyLockWriteups;
+      if (player_id) del(player_id, targetSeason);
+      else clear(targetSeason);
       mvpAiCooldownUntil = 0;
       return res.json({ ok: true });
     }
@@ -12540,8 +12545,13 @@ ${reminder}`;
 // opponent (the team's next regular game; before it's on the schedule, the one opponent it
 // has met only once in the double round robin) and the player's line from their earlier
 // meeting. With no regular game left the facts fall back to his latest game ('final' mode).
-const LOCK_BAR_MAX = { pts: 25, reb: 16, ast: 8, stl: 6 };
-const LOCK_BAR_KEYS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL']];
+// The Best Defender race (/dpoy) gets the same lock with defensive bars and writeups, and no
+// ballot. Bars per race: [key, label, scale max, inv]; inv = more is worse (fouls), so its
+// delta reads the other way.
+const LOCK_BARS = {
+  mvp: [['pts', 'PTS', 25], ['reb', 'REB', 16], ['ast', 'AST', 8], ['stl', 'STL', 6]],
+  dpoy: [['stl', 'STL', 6], ['blk', 'BLK', 4], ['reb', 'REB', 16], ['pf', 'PF', 5, true]],
+};
 
 function shuffled(arr) {
   const a = [...arr];
@@ -12560,12 +12570,13 @@ function lockLine(row) {
   if ((row.turnover || 0) >= 3) notes.push(`${row.turnover} TO`);
   if ((row.blk || 0) >= 2) notes.push(`${row.blk} BLK`);
   return {
-    pts: row.pts || 0, reb: row.reb || 0, ast: row.ast || 0, stl: row.stl || 0, blk: row.blk || 0, tov: row.turnover || 0,
+    pts: row.pts || 0, reb: row.reb || 0, ast: row.ast || 0, stl: row.stl || 0, blk: row.blk || 0, tov: row.turnover || 0, pf: row.pf || 0,
     fgm, fga, tpm: row.fg3m || 0, tpa, ftm: row.ftm || 0, fta, shot: notes.slice(0, 3).join(' · '),
   };
 }
 
-function mvpLockTen(season) {
+function mvpLockTen(season, raceKey = 'mvp') {
+  const dpoy = raceKey === 'dpoy';
   const s = String(season);
   const seasonGames = byDate(getAllGames()).filter(g => String(g.season) === s);
   const regular = seasonGames.filter(g => (g.game_type || 'regular') === 'regular');
@@ -12600,13 +12611,14 @@ function mvpLockTen(season) {
   };
   const dateLbl = g => new Date(`${String(g.date).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).toUpperCase();
 
+  const score = dpoy ? computeDpoyScore : computeMvpScore;
   const top = getMvpCandidates(season).filter(c => c.gp >= 1)
-    .map(c => ({ c, score: computeMvpScore(c) }))
+    .map(c => ({ c, score: score(c) }))
     .sort((a, b) => b.score - a.score).slice(0, 10).map(x => x.c);
 
   return shuffled(top).map(st => {
     const tid = st.team_id, gp = st.gp;
-    const avg = { pts: st.pts / gp, reb: st.reb / gp, ast: st.ast / gp, stl: st.stl / gp };
+    const avg = { pts: st.pts / gp, reb: st.reb / gp, ast: st.ast / gp, stl: st.stl / gp, blk: (st.blk || 0) / gp, pf: (st.pf || 0) / gp };
     const tsDenom = 2 * (st.fga + 0.44 * st.fta);
     const opp = nextOpp(tid);
     const upGame = opp && regular.filter(g => !done(g) && g.date && (g.team_a_id === tid || g.team_b_id === tid)).sort((x, y) => String(x.date).localeCompare(String(y.date)))[0];
@@ -12622,12 +12634,14 @@ function mvpLockTen(season) {
       }
     }
     const line = row ? lockLine(row) : null;
+    // /dpoy's footnote is the defensive line, not the shooting one.
+    if (line && dpoy) line.shot = `${line.stl + line.blk} stocks · ${line.pf} foul${line.pf === 1 ? '' : 's'}`;
     const meetOpp = meetGame ? (meetGame.team_a_id === tid ? meetGame.team_b_id : meetGame.team_a_id) : opp;
-    const bars = LOCK_BAR_KEYS.map(([k, label]) => {
+    const bars = LOCK_BARS[raceKey].map(([k, label, max, inv]) => {
       const v = line ? line[k] : null, a = avg[k];
-      const pct = x => `${Math.min(100, Math.round((x / LOCK_BAR_MAX[k]) * 100))}%`;
+      const pct = x => `${Math.min(100, Math.round((x / max) * 100))}%`;
       const d = v == null ? null : v - a;
-      return { key: k, label, v, avg: a.toFixed(1), w: v == null ? '0%' : pct(v), m: pct(a), d: d == null ? '' : `${d > 0.05 ? '+' : d < -0.05 ? '−' : '±'}${Math.abs(d).toFixed(1)}` };
+      return { key: k, label, v, inv: !!inv, avg: a.toFixed(1), w: v == null ? '0%' : pct(v), m: pct(a), d: d == null ? '' : `${d > 0.05 ? '+' : d < -0.05 ? '−' : '±'}${Math.abs(d).toFixed(1)}` };
     });
     return {
       player: st, stats: st, mode,
@@ -12639,7 +12653,11 @@ function mvpLockTen(season) {
       meet: meetGame ? { opp: String(teamName[meetOpp] || '').toUpperCase(), date: dateLbl(meetGame), res: result(meetGame, tid), played: !!row } : null,
       line, bars, avg,
       ts: tsDenom > 0 ? Math.round((st.pts / tsDenom) * 100) : null,
-      sort: { ppg: avg.pts, rpg: avg.reb, apg: avg.ast, last: line ? line.pts : -1 },
+      foot: dpoy ? ['Season fouls', `${avg.pf.toFixed(1)}/g`] : (tsDenom > 0 ? ['Season TS', `${Math.round((st.pts / tsDenom) * 100)}%`] : null),
+      // Sort keys (views/mvp.js lockSorts): per game, then the last game's headline number.
+      sort: dpoy
+        ? { spg: avg.stl, bpg: avg.blk, rpg: avg.reb, last: line ? line.stl + line.blk : -1 }
+        : { ppg: avg.pts, rpg: avg.reb, apg: avg.ast, last: line ? line.pts : -1 },
     };
   });
 }
@@ -12723,10 +12741,94 @@ Facts:
 ${facts}`;
 }
 
+// ── The Best Defender versions (/dpoy): defense only, same guard and cache rules ──────────
+function dpoyLockFacts(c) {
+  const name = displayPlayerName(c.player.name);
+  const one = n => (Math.round(n * 10) / 10).toFixed(1);
+  const lines = [
+    `Player: ${name} (${c.team}), ${c.stats.gp} games played this regular season.`,
+    `Season per game: ${one(c.avg.stl)} steals, ${one(c.avg.blk)} blocks, ${one(c.avg.reb)} rebounds, ${one(c.avg.pf)} fouls.`,
+    `${c.team} record: ${c.record.w}-${c.record.l}.`,
+  ];
+  if (c.mode === 'forecast') {
+    lines.push(`Next game (the last of the regular season): vs ${c.opp} (${c.oppRecord.w}-${c.oppRecord.l}).`);
+    if (c.meet) lines.push(`Their earlier meeting this season (${c.meet.date}): ${c.team} ${c.meet.res.startsWith('W') ? 'won' : 'lost'} ${c.meet.res.slice(2)}.`);
+  } else if (c.meet) {
+    lines.push(`The regular season is over. His last game: ${c.meet.date} vs ${c.meet.opp}, ${c.team} ${c.meet.res.startsWith('W') ? 'won' : 'lost'} ${c.meet.res.slice(2)}.`);
+  }
+  if (c.line) {
+    const L = c.line, diff = (v, a) => { const d = v - a; return Math.abs(d) < 0.05 ? 'level with his average' : `${one(Math.abs(d))} ${d > 0 ? 'over' : 'under'} his average`; };
+    lines.push(`His line in that game: ${L.stl} steals (${diff(L.stl, c.avg.stl)}), ${L.blk} blocks (${diff(L.blk, c.avg.blk)}), ${L.reb} rebounds (${diff(L.reb, c.avg.reb)}), ${L.pf} fouls (${diff(L.pf, c.avg.pf)}).`);
+  } else if (c.meet && !c.meet.played) {
+    lines.push('He did not play in that game.');
+  }
+  return lines.join('\n');
+}
+
+// Weighted like the defense score (steals 1.5, blocks 2, rebounds 0.3); a foul-heavy night
+// (2+ over his average) is its own thing to fix.
+function dpoyLockAngle(c) {
+  const L = c.line;
+  if (c.mode !== 'forecast' || !L || !c.meet) return null;
+  const one = n => (Math.round(n * 10) / 10).toFixed(1);
+  const word = { stl: 'steals', blk: 'blocks', reb: 'rebounds' };
+  const weight = { stl: 1.5, blk: 2, reb: 0.3 };
+  const rel = ['stl', 'blk', 'reb'].map(k => ({ k, v: L[k], a: c.avg[k], r: (L[k] - c.avg[k]) * weight[k] }));
+  const low = rel.reduce((m, x) => (x.r < m.r ? x : m)), high = rel.reduce((m, x) => (x.r > m.r ? x : m));
+  const won = c.meet.res.startsWith('W');
+  const result = `${c.team} ${won ? 'won' : 'lost'} that game ${c.meet.res.slice(2)}`;
+  if (L.pf - c.avg.pf >= 2) return `FIX: his fouls. He had ${L.pf}, ${one(L.pf - c.avg.pf)} over his average of ${one(c.avg.pf)}. ${result}. Staying out of foul trouble is Sunday's job.`;
+  if (low.r <= -1.5) return `FIX: his ${word[low.k]}. He had ${low.v}, ${one(low.a - low.v)} under his average of ${one(low.a)}. ${result}. Getting the ${word[low.k]} back up is Sunday's job.`;
+  if (high.r >= 1.5) return `REPEAT: his ${word[high.k]}. He had ${high.v}, ${one(high.v - high.a)} over his average of ${one(high.a)}. ${result}. Doing that again is Sunday's job.`;
+  return `RESULT: ${result}, with ${L.stl} steals, ${L.blk} blocks and ${L.reb} rebounds from him. ${won ? 'Doing it again' : 'Flipping that result'} is Sunday's job.`;
+}
+
+function dpoyLockPrompt(c, facts, voice, openings) {
+  const forecast = c.mode === 'forecast';
+  const angle = dpoyLockAngle(c);
+  return `You write one card on the WKND Basketball League's Best Defender page, a recreational league whose players read every word. The Best Defender race is LOCKED: its order, scores and gaps are secret until the award.
+
+Return JSON with two fields:
+- "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do on defense in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his Best Defender case.'}
+- "question": one short question, at most 14 words, ending with "?", ${forecast ? 'on how he wins Sunday on defense' : 'on whether he has done enough'}.
+
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+Use the voice lightly: a word or two of flavour at most. Clear, correct English always wins; never bend grammar for the voice.
+
+${angle ? `THE ANGLE (decided for you; the job and the question are about this and nothing else):
+${angle}
+Example of the shape (other facts): "Just 1 steal last time, 1.8 under his average. Get his hands back in the passing lanes and the win follows." Question example: "Do the steals come back on Sunday?"` : 'Shape: name the one or two defensive numbers from his season and last game that make his case, then ask whether it is enough.'}
+
+Rules:
+- This is about defense only: never mention points, scoring, shooting, assists or turnovers.
+- The stats are steals, blocks, total rebounds and fouls only. Never claim anything they can't show: no contested shots, deflections, charges, lockdown matchups, defensive rebounds or who he guarded.
+- Use ONLY the facts below. Every number you write must appear in them. Write every number as digits, never as words.
+- Season figures describe his season, never a target for one game.
+- Never mention the Best Defender race, ranks, positions, scores, gaps, leading, trailing, frontrunner, favourite, "in the running", or who deserves the award.
+- Never mention any other player. No league rankings and no season-best or season-worst claims.
+- Do not start with his name. No filler words like "impressive", "stellar", "remarkable" or "dominant". Plain text, no markdown.${openings.length ? `
+- Don't echo these openings from other cards: ${openings.map(t => `"${String(t).split(/(?<=[.!?])\s/)[0].slice(0, 90)}"`).join('; ')}` : ''}
+
+Facts:
+${facts}`;
+}
+
+function dpoyLockFallback(c) {
+  const L = c.line;
+  const n = (v, w) => `${v} ${v === 1 ? w : `${w}s`}`;
+  if (!c.meet || !L) {
+    return { job: `${n(c.stats.gp, 'game')} in, at ${c.avg.stl.toFixed(1)} steals and ${c.avg.blk.toFixed(1)} blocks a game.`, question: c.mode === 'forecast' ? 'What does he bring to the last one?' : 'Has he done enough?' };
+  }
+  const line = `${n(L.stl, 'steal')}, ${n(L.blk, 'block')} and ${n(L.reb, 'rebound')} in the ${c.meet.res.slice(2)} ${c.meet.res.startsWith('W') ? 'win' : 'loss'}`;
+  return c.mode === 'forecast'
+    ? { job: `Last time against ${titleCase(c.opp)}: ${line}.`, question: 'What does he bring to the rematch?' }
+    : { job: `His last game: ${line}.`, question: 'Has he done enough?' };
+}
+
 // The number guard: every number in the text must appear in the facts, every "5-of-17" and
 // score must appear exactly, and every "13 points"-style pair must match a pair in the facts
 // (a "5-of-19" passed the loose check once because 19 was his scoring average).
-const LOCK_STAT_WORD = { points: 'points', rebounds: 'rebounds', boards: 'rebounds', assists: 'assists', steals: 'steals', blocks: 'blocks', turnovers: 'turnovers' };
+const LOCK_STAT_WORD = { points: 'points', rebounds: 'rebounds', boards: 'rebounds', assists: 'assists', steals: 'steals', blocks: 'blocks', turnovers: 'turnovers', fouls: 'fouls' };
 // Models sometimes write "5‑of‑19" with a non-breaking hyphen, which hid it from the check.
 const lockDashes = s => String(s).replace(/[‐-―−]/g, '-');
 function lockNumbersOk(text, facts) {
@@ -12736,8 +12838,8 @@ function lockNumbersOk(text, facts) {
   if (!(t.match(/\d+-of-\d+|\d+-\d+/g) || []).every(p => f.includes(p))) return false;
   // Numbers must be digits so the checks above see them ("three" stays: it's a shot type).
   if (/\b(two|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/.test(t)) return false;
-  const pairs = new Set([...f.matchAll(/(\d+(?:\.\d+)?) (points|rebounds|assists|steals|blocks|turnovers)/g)].map(m => `${m[1]} ${m[2]}`));
-  return [...t.matchAll(/(\d+(?:\.\d+)?)[- ](points?|rebounds?|boards?|assists?|steals?|blocks?|turnovers?)\b/g)]
+  const pairs = new Set([...f.matchAll(/(\d+(?:\.\d+)?) (points|rebounds|assists|steals|blocks|turnovers|fouls)/g)].map(m => `${m[1]} ${m[2]}`));
+  return [...t.matchAll(/(\d+(?:\.\d+)?)[- ](points?|rebounds?|boards?|assists?|steals?|blocks?|turnovers?|fouls?)\b/g)]
     .every(m => pairs.has(`${m[1]} ${LOCK_STAT_WORD[m[2].replace(/s?$/, 's')]}`));
 }
 
@@ -12766,11 +12868,20 @@ function cachedLockWriteup(c, season) {
 // Writeups for the ten: cached ones, else (generate=true, /mvp only) one AI call each, at most
 // three in flight; a failed number guard retries once, then the plain fallback is shown (and
 // not stored, so the next view tries again). The homepage passes generate=false.
-async function mvpLockWriteups(ten, season, { generate = false } = {}) {
+// Per race: the facts, angle, prompt and fallback, and where its writeups are cached.
+const LOCK_WRITERS = {
+  mvp: { facts: lockFacts, angle: lockAngle, prompt: lockPrompt, fallback: lockFallback, get: getMvpLockWriteup, set: setMvpLockWriteup, openings: getMvpLockOpenings },
+  dpoy: { facts: dpoyLockFacts, angle: dpoyLockAngle, prompt: dpoyLockPrompt, fallback: dpoyLockFallback, get: getDpoyLockWriteup, set: setDpoyLockWriteup, openings: getDpoyLockOpenings },
+};
+
+async function mvpLockWriteups(ten, season, { generate = false, race = 'mvp' } = {}) {
+  const W = LOCK_WRITERS[race];
   const latest = getAllGames().filter(g => String(g.season) === String(season) && (g.game_type || 'regular') === 'regular' && g.date)
     .map(g => String(g.date).slice(0, 10)).sort().pop();
   const voice = pickVoice('mvp', { date: latest || manilaTodayStr() });
-  const openings = getMvpLockOpenings(season);
+  const openings = W.openings(season);
+  const lockFacts = W.facts, lockAngle = W.angle, lockPrompt = W.prompt, lockFallback = W.fallback;
+  const getMvpLockWriteup = W.get, setMvpLockWriteup = W.set;
   return mapWithConcurrency(ten, 3, async c => {
     const facts = lockFacts(c);
     const key = lockKey(c, facts + (lockAngle(c) || ''));
@@ -12790,7 +12901,7 @@ async function mvpLockWriteups(ten, season, { generate = false } = {}) {
         }
       }
     } catch (err) {
-      console.error(`MVP lock writeup failed for ${c.player.id}:`, err.message);
+      console.error(`${race.toUpperCase()} lock writeup failed for ${c.player.id}:`, err.message);
       mvpAiCooldownUntil = Date.now() + MVP_AI_COOLDOWN_MS;
     }
     return { ...c, ...lockFallback(c), ai: false };
@@ -12856,6 +12967,16 @@ app.post('/api/mvp/bar/dismiss', (req, res) => {
   res.json({ ok: true });
 });
 
+// A race's real standings (regular season, by its score): [{ id, rank, score }] best first.
+// Admin pages show them to the super admin only, even while the race is locked.
+function raceStandings(season, raceKey = 'mvp') {
+  const score = raceKey === 'dpoy' ? computeDpoyScore : computeMvpScore;
+  return getMvpCandidates(season).filter(c => c.gp >= 1)
+    .map(c => ({ id: String(c.id), name: c.name, team: String(c.team_name || '').toUpperCase(), score: score(c) }))
+    .sort((a, b) => b.score - a.score)
+    .map((c, i) => ({ ...c, rank: i + 1 }));
+}
+
 // The official podium (top three by the MVP score, regular season) once the race is revealed.
 function mvpTop3(season) {
   return getMvpCandidates(season).filter(c => c.gp >= 1)
@@ -12896,8 +13017,28 @@ app.get('/admin/awards/podium', requireAuth, (req, res) => {
   const complete = ballots.filter(b => b.p1 && b.p2 && b.p3);
   const podium = locked ? null : mvpTop3(season);
   const tallied = tallyBallots(complete);
-  const tally = Object.entries(tallied).map(([id, votes]) => ({ ...who(id), id, votes, place: podium ? podium.indexOf(id) + 1 : 0 }))
-    .sort((a, b) => b.votes[0] - a.votes[0] || b.votes[1] - a.votes[1] || b.votes[2] - a.votes[2]);
+  // The league's call: 3 points per 1st-place vote, 2 per 2nd, 1 per 3rd, ranked by points
+  // (then 1st-place votes, then 2nd). Equal points and votes share a rank. Admin only.
+  const tally = Object.entries(tallied).map(([id, votes]) => ({ ...who(id), id, votes, pts: votes[0] * 3 + votes[1] * 2 + votes[2], place: podium ? podium.indexOf(id) + 1 : 0 }))
+    .sort((a, b) => b.pts - a.pts || b.votes[0] - a.votes[0] || b.votes[1] - a.votes[1]);
+  tally.forEach((t, i) => {
+    const prev = tally[i - 1];
+    t.rank = prev && prev.pts === t.pts && prev.votes[0] === t.votes[0] && prev.votes[1] === t.votes[1] ? prev.rank : i + 1;
+  });
+  tally.forEach(t => { t.tied = tally.filter(x => x.rank === t.rank).length > 1; });
+  // Actual rank vs fan rank, super admin only: a player-admin seeing the real order and gaps
+  // while the race is locked is exactly what the lock exists to stop. The ten with no votes
+  // are listed too, so every case is compared.
+  const superAdmin = !req.session?.isElevatedPlayer;
+  if (superAdmin) {
+    const actual = raceStandings(season, 'mvp');
+    for (const a of actual.slice(0, 10)) {
+      if (!tally.some(t => t.id === a.id)) tally.push({ ...who(a.id), id: a.id, votes: [0, 0, 0], pts: 0, rank: null, tied: false, place: podium ? podium.indexOf(a.id) + 1 : 0 });
+    }
+    const byId = Object.fromEntries(actual.map(a => [a.id, a]));
+    for (const t of tally) t.actual = byId[t.id] || null;
+    tally.sort((a, b) => (a.actual?.rank ?? 999) - (b.actual?.rank ?? 999));
+  }
   const st = mvpBallotState(season, null);
   const missing = locked ? mvpPodiumMissing(season) : [];
   let reminded = null;
@@ -13088,22 +13229,24 @@ async function renderRacePage(req, res, raceKey) {
   // MVP reveal lock (lib/mvp-lock.js): the top 3 A–Z as finalists. Scores, ranks, movement,
   // writeups (they state the race position), section summaries and share links never reach
   // the page; the candidates handed to the view carry no score at all.
-  if (isMvpLocked(season) && raceKey === 'mvp') {
-    // The ten cases, shuffled, with forecast writeups and the podium ballot (mvpLockTen).
-    const ten = await mvpLockWriteups(mvpLockTen(season), season, { generate: true });
+  if (isMvpLocked(season)) {
+    // The ten cases, shuffled, with forecast writeups (mvpLockTen); /mvp also has the podium
+    // ballot, /dpoy doesn't.
+    const ten = await mvpLockWriteups(mvpLockTen(season, raceKey), season, { generate: true, race: raceKey });
     const photoMeta = getMvpPhotoMeta(season);
     const current = String(season) === String(getPortalCurrentSeason());
     return res.send(renderPage(req, {
-      title: `Season ${season} MVP Race — Call the podium — WKND Basketball League`,
+      title: raceKey === 'mvp' ? `Season ${season} MVP Race — Call the podium — WKND Basketball League` : `Season ${season} Best Defender Race — WKND Basketball League`,
       currentPath: req.path,
-      metaTags: buildMvpOgTags(req, ten, season, { locked: true }),
+      metaTags: buildMvpOgTags(req, ten, season, { locked: true, race: raceKey }),
       body: mvpLockPage({
+        race: raceKey,
         ten: ten.map(c => ({ ...c, photo: mvpPhoto(season, c.player.id, photoMeta[c.player.id]) })),
         season,
         totalGames,
         seasonGames: SEASON_GAMES_PER_TEAM,
         isAdmin: !!req.session?.isAdmin,
-        ballot: current ? mvpBallotState(season, req.session?.playerPlayerId || null) : null,
+        ballot: current && raceKey === 'mvp' ? mvpBallotState(season, req.session?.playerPlayerId || null) : null,
         viewerId: req.session?.playerPlayerId || null,
       }),
     }));
