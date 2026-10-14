@@ -1021,27 +1021,52 @@ export function podiumBarHtml({ deadline = null, faces = [] }) {
 </div>
 <script>
 (function () {
-  var bar = document.querySelector('[data-pdb]');
-  if (!bar) return;
-  var end = Number(bar.dataset.deadline || 0);
+  var top = document.querySelector('[data-pdb]');
+  if (!top) return;
+  // The bar sits at the top of the page; once it scrolls out of view a copy slides up docked
+  // at the bottom of the screen (pages have their own sticky bars up top), and slides away
+  // again when the top one is back in view.
+  var dock = top.cloneNode(true);
+  dock.removeAttribute('data-pdb');
+  dock.setAttribute('data-pdb-dock', '');
+  dock.classList.add('pdb--dock');
+  dock.setAttribute('aria-hidden', 'true');
+  dock.inert = true;
+  document.body.appendChild(dock);
+  var bars = [top, dock];
+  function gone() { bars.forEach(function (b) { b.remove(); }); }
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      var off = !es[0].isIntersecting && es[0].boundingClientRect.top < 0;
+      dock.classList.toggle('is-on', off);
+      dock.setAttribute('aria-hidden', off ? 'false' : 'true');
+      dock.inert = !off;
+    }).observe(top);
+  }
+  var end = Number(top.dataset.deadline || 0);
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function tick() {
     if (!end) return;
     var left = Math.max(0, end - Date.now());
-    if (!left) { bar.remove(); return; }
+    if (!left) { gone(); return; }
     var s = Math.floor(left / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
     var last = left < 86400000;
-    bar.classList.toggle('is-last', last);
-    var dt = bar.querySelector('[data-pdb-d]'); dt.hidden = last; dt.querySelector('b').textContent = d;
-    bar.querySelector('[data-pdb-h] b').textContent = pad(h);
-    bar.querySelector('[data-pdb-m] b').textContent = pad(m);
-    bar.querySelector('[data-pdb-s] b').textContent = pad(s % 60);
-    var lbl = bar.querySelector('.pdb__count-lbl'); if (lbl) lbl.textContent = last ? 'Last day · closes in' : 'Closes in';
+    bars.forEach(function (bar) {
+      if (!bar.querySelector('[data-pdb-d]')) return;
+      bar.classList.toggle('is-last', last);
+      var dt = bar.querySelector('[data-pdb-d]'); dt.hidden = last; dt.querySelector('b').textContent = d;
+      bar.querySelector('[data-pdb-h] b').textContent = pad(h);
+      bar.querySelector('[data-pdb-m] b').textContent = pad(m);
+      bar.querySelector('[data-pdb-s] b').textContent = pad(s % 60);
+      var lbl = bar.querySelector('.pdb__count-lbl'); if (lbl) lbl.textContent = last ? 'Last day · closes in' : 'Closes in';
+    });
   }
   tick(); setInterval(tick, 1000);
-  bar.querySelector('[data-pdb-x]').addEventListener('click', function () {
-    bar.remove();
-    fetch('/api/mvp/bar/dismiss', { method: 'POST' }).catch(function () {});
+  bars.forEach(function (bar) {
+    bar.querySelector('[data-pdb-x]').addEventListener('click', function () {
+      gone();
+      fetch('/api/mvp/bar/dismiss', { method: 'POST' }).catch(function () {});
+    });
   });
 })();
 </script>`;
@@ -1140,8 +1165,10 @@ function podiumStripScript() {
         var done = st.picks.every(Boolean);
         statusEl.textContent = done ? (st.bonusOpen ? '✓ Locked in for the bonus. Change it any time before the cut-off.' : '✓ Saved for Who called it.') : st.picks.filter(Boolean).length + ' of 3 picked · saves as you tap';
         // The site bar has done its job: a quick confirmation, then it goes.
-        var bar = document.querySelector('[data-pdb]');
-        if (bar && done) { bar.querySelector('.pdb__link').innerHTML = '<span class="pdb__text"><b>You\\u2019re in.</b> Your podium counts for the bonus.</span>'; setTimeout(function () { bar.remove(); }, 3500); }
+        if (done) document.querySelectorAll('[data-pdb], [data-pdb-dock]').forEach(function (bar) {
+          bar.querySelector('.pdb__link').innerHTML = '<span class="pdb__text"><b>You\u2019re in.</b> Your podium counts for the bonus.</span>';
+          setTimeout(function () { bar.remove(); }, 3500);
+        });
       })
       .catch(function (err) { if (mine !== saving) return; st.picks = prev; paint(); statusEl.textContent = err.message; });
   }
