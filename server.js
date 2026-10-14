@@ -12698,13 +12698,17 @@ function mvpTop3(season) {
 }
 
 // /picks: the season-pick strip for the current season (the ballot while locked, your score
-// after the reveal), or nothing.
+// after the reveal), or nothing. top: lead the page while the bonus is open (it closes once
+// and is worth up to +3); after the cut-off it sits under Open picks.
 function picksPodiumStrip(season, viewerId) {
   const cur = getPortalCurrentSeason();
-  if (!mvpPodiumEnabled() || String(season) !== String(cur)) return '';
-  if (isMvpLocked(cur)) return podiumStrip({ ballot: mvpBallotState(cur, viewerId), ten: mvpLockLite(cur) });
+  if (!mvpPodiumEnabled() || String(season) !== String(cur)) return { html: '', top: false };
+  if (isMvpLocked(cur)) {
+    const ballot = mvpBallotState(cur, viewerId);
+    return { html: podiumStrip({ ballot, ten: mvpLockLite(cur) }), top: ballot.bonusOpen && !ballot.closed };
+  }
   const called = mvpPodiumReveal(cur, mvpTop3(cur), viewerId);
-  return called ? podiumStrip({ scored: called }) : '';
+  return { html: called ? podiumStrip({ scored: called }) : '', top: false };
 }
 
 // ── /admin/mvp-podium: who voted who, totals, and the one-off reminder ─────────────────────

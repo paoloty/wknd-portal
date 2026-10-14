@@ -160,7 +160,7 @@ function gameDays(days, isPlayer) {
 }
 
 // sections: the section writeups { days, race } (server.js picksSectionFacts).
-export function picksPage({ season, seasons, days, board, oddsBoard = [], callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], openSummary = null, closeTime = '06:00', sections = {}, isAdmin = false, podium = '' }) {
+export function picksPage({ season, seasons, days, board, oddsBoard = [], callers, upsets, pickers, oddsOn, isPlayer, viewerId, open = [], openSummary = null, closeTime = '06:00', sections = {}, isAdmin = false, podium = { html: '', top: false } }) {
   const panel = key => sectionPanel(sections[key] || null, `picks_${key}:${season}`, isAdmin);
   return `<div class="page-content pkp-page">
 ${pageHeader({
@@ -168,13 +168,14 @@ ${pageHeader({
     description: `${open.length ? `Make this week's picks, then follow every call and the Pickmaster race${oddsOn ? ' — and how the odds are doing' : ''}.` : `Every call, the Pickmaster race${oddsOn ? ', and how the odds are doing' : ''}.`} <a href="/picks/rules" class="pkp-rules-link">How scoring works →</a>`,
     actions: seasonTabs(seasons, season, '/picks'),
   })}
+${podium.top ? podium.html : ''}
 ${statTiles({ callers, upsets, pickers, ranked: board.length, oddsOn })}
 <div class="pkp-grid">
   <!-- Main column: this week's open picks, then the game days. The race sits beside them
        (pkp-side); on phones the tabs switch between game days and the race, under the picks. -->
   <div class="pkp-main">
     ${openPicksSection(open, { isPlayer, closeTime, summary: openSummary, isAdmin })}
-    ${podium}
+    ${podium.top ? '' : podium.html}
     <div class="pkp-tabs" role="tablist" aria-label="Picks sections">
       <button type="button" class="pkp-tab is-on" role="tab" aria-selected="true" data-pkp-tab="race"><span class="pill-label">Pickmaster race</span></button>
       <button type="button" class="pkp-tab" role="tab" aria-selected="false" data-pkp-tab="days"><span class="pill-label">Game days</span></button>

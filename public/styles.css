@@ -8243,6 +8243,8 @@ a.pk-av:hover { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--amber); 
 
 /* /picks — Open picks on top */
 .pkp-now { margin-bottom: 28px; }
+.pkp-main > .pss { margin-bottom: 28px; } /* the season-pick strip: same gap as Open picks above it */
+.pkp-page > .pss { margin-bottom: 24px; } /* leading the page while the bonus is open */
 .pkp-now__head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 10px 20px; margin-bottom: 14px; }
 .pkp-now__head h2 { font-size: 13px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
 .pkp-now__head h2 span { margin-left: 8px; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-muted); }
