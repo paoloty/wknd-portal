@@ -1992,3 +1992,93 @@ textarea.aui-input { height: auto; padding: 10px 12px; resize: vertical; line-he
 .ashell__icon-btn.ashell__close { display: none; }
 .admin-nav > * { flex: none; }
 @media (max-width: 900px) { .ashell__icon-btn.ashell__close { display: inline-flex; } }
+
+/* ── Page layout helpers (user detail, Papawis run, …) ─────── */
+.aui-cols { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.aui-cols__main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.aui-cols__side { flex: 1 1 320px; max-width: 400px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.aui-panel { padding: 16px 18px; border-radius: var(--aui-card); background: var(--surface); border: 1px solid var(--aui-line); }
+.aui-panel--accent { border-color: var(--aui-amber-line); }
+.aui-panel--flush { padding: 6px; }
+.aui-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.aui-row-between { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.aui-stack { display: flex; flex-direction: column; gap: 10px; }
+.aui-inline-form { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; }
+.aui-quote { margin: 0; padding: 14px 18px; border-radius: var(--aui-card); background: var(--surface); border: 1px solid var(--aui-line); color: #c9cfdb; font-style: italic; line-height: 1.5; }
+.aui-photo { display: block; width: 84px; flex: none; aspect-ratio: 3 / 4; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.aui-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Radio rows with a face, used for "which player is this?" */
+.aui-choices { display: flex; flex-direction: column; gap: 6px; }
+.aui-choice { position: relative; display: block; cursor: pointer; }
+.aui-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.aui-choice__body { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); background: transparent; }
+.aui-choice__body .aui-cell__stack { flex: 1; }
+.aui-choice:hover .aui-choice__body { border-color: rgba(255,255,255,.16); }
+.aui-choice input:checked + .aui-choice__body { border-color: rgba(245,147,50,.5); background: rgba(245,147,50,.08); }
+.aui-choice input:focus-visible + .aui-choice__body { outline: 2px solid var(--amber); outline-offset: 2px; }
+/* Action list: rows of title + help + chevron */
+.aui-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 56px; padding: 10px 12px; border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.aui-action + .aui-action { box-shadow: 0 -1px 0 rgba(255,255,255,.05); }
+.aui-action:hover { background: rgba(255,255,255,.04); }
+.aui-action__label { font-weight: 600; font-size: 13px; line-height: 1.2; }
+.aui-action__chev { color: var(--text-muted); font-size: 18px; line-height: 1; display: inline-flex; align-items: center; }
+.aui-action.is-danger .aui-action__label { color: var(--aui-red); }
+/* Checkbox grid */
+.aui-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.aui-check { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); font-size: 13px; color: var(--text); cursor: pointer; line-height: 1; }
+.aui-check input { width: 16px; height: 16px; accent-color: var(--amber); margin: 0; }
+.aui-check:has(input:checked) { border-color: rgba(245,147,50,.4); background: rgba(245,147,50,.06); }
+.aui-muted { color: var(--text-muted); font-size: 12.5px; }
+
+/* ── Papawis (views/admin/papawis-runs.js, papawis-run.js) ──── */
+.pw-slots { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.pw-slots__track { width: 80px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; display: inline-block; }
+.pw-slots__fill { display: block; height: 100%; background: var(--amber); border-radius: 3px; }
+.pw-side { display: inline-flex; align-items: center; justify-content: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 1; letter-spacing: .02em; }
+.pw-side--light { background: #e7eaf0; color: #0a0e16; }
+.pw-side--dark { background: #0a0e16; color: #e7eaf0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+.pw-handle { display: inline-flex; align-items: center; justify-content: center; width: 18px; color: var(--text-muted); cursor: grab; touch-action: none; font-size: 14px; line-height: 1; user-select: none; }
+.pw-roster__n { width: 64px; white-space: nowrap; }
+.pw-roster__n .aui-num { color: var(--text-2); font-size: 15px; margin-left: 6px; }
+.pw-roster__actions { white-space: nowrap; text-align: right; }
+.pw-roster__actions > * + * { margin-left: 6px; }
+.pw-roster__empty td { padding: 14px 18px !important; color: var(--text-muted); font-size: 13px; }
+.pw-roster tbody + tbody .aui-grid__group td { border-top: 1px solid rgba(255,255,255,.08); }
+.pw-roster tbody.is-drag-over { outline: 2px dashed rgba(245,147,50,.45); outline-offset: -2px; }
+.pw-roster tbody.is-drag-blocked { outline: 2px dashed rgba(248,113,113,.45); outline-offset: -2px; }
+.pw-roster tr.is-dragging, .pw-team__row.is-dragging { opacity: .45; }
+.pw-paid { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.pw-hint { font-size: 12px; color: var(--text-2); line-height: 1.4; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pw-hint--green { color: var(--aui-green); }
+.pw-hint--blue { color: var(--aui-blue); }
+.pw-pending { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.05); }
+.pw-pending:last-child { padding-bottom: 0; border-bottom: 0; }
+.pw-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pw-team { background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); overflow: hidden; }
+.pw-team__head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.05); font-weight: 700; }
+.pw-team__head .aui-num { font-size: 18px; color: var(--text-2); }
+.pw-team__list { list-style: none; margin: 0; padding: 4px 0; min-height: 56px; }
+.pw-team__list.is-drag-over { background: rgba(245,147,50,.05); }
+.pw-team__row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,.04); cursor: grab; }
+.pw-team__row:last-child { border-bottom: 0; }
+.pw-team__empty { padding: 16px; color: var(--text-muted); font-size: 13px; text-align: center; }
+.pw-calc { margin: 14px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.pw-calc > div { display: flex; justify-content: space-between; align-items: center; color: var(--text-2); }
+.pw-calc > div[hidden] { display: none; }
+.pw-calc dt, .pw-calc dd { margin: 0; }
+.pw-calc dd { font-family: 'Saira Condensed', sans-serif; font-size: 15px; color: var(--text); }
+.pw-calc__total { padding-top: 6px; border-top: 1px solid rgba(255,255,255,.08); font-weight: 700; color: var(--text) !important; }
+.pw-calc__total dd { font-size: 18px; color: var(--amber); }
+.pw-cover { display: flex; flex-direction: column; gap: 10px; }
+.pw-cover__frame { width: 100%; max-width: 360px; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.pw-cover__frame[hidden] { display: none; }
+.pw-cover__frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+@media (max-width: 640px) {
+  .pw-teams { grid-template-columns: minmax(0, 1fr); }
+  .pw-roster .aui-grid__row td.pw-roster__n { order: -3; width: auto; }
+  .pw-roster .aui-grid__row td.pw-roster__actions { flex: 1 1 100%; text-align: left; order: 5; }
+  .pw-roster .aui-grid__row td.pw-roster__actions:empty { display: none; }
+  .pw-roster .aui-grid__group { display: block; }
+}
+
+.aui-empty__mark.is-neutral { background: var(--surface-2); color: var(--text-muted); }

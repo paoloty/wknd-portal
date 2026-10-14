@@ -125,13 +125,20 @@
   }
 
   // Forms that post JSON (drawers on grid pages): <form data-json-action="/url" data-done="…">.
-  // Repeated names become arrays. On success: reload with a toast; on error: error toast.
+  // Repeated names become arrays; a name ending in [] is always an array (even with one or
+  // no values). data-confirm on the form asks first. On success: go to data-then (default:
+  // this page) with a toast; on error: error toast.
   document.addEventListener('submit', function (e) {
     var form = e.target;
     if (!form.matches || !form.matches('form[data-json-action]')) return;
     e.preventDefault();
+    askFor(form).then(function (ok) { if (ok) sendJsonForm(form); });
+  });
+  function sendJsonForm(form) {
     var data = {};
+    form.querySelectorAll('[name$="[]"]').forEach(function (el) { data[el.name.slice(0, -2)] = []; });
     new FormData(form).forEach(function (v, k) {
+      if (k.slice(-2) === '[]') { data[k.slice(0, -2)].push(v); return; }
       if (k in data) data[k] = [].concat(data[k], v); else data[k] = v;
     });
     var submits = document.querySelectorAll('[type=submit][form="' + form.id + '"], form[data-json-action] [type=submit]');
@@ -140,18 +147,20 @@
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (!res.ok || res.d.error) throw new Error(res.d.error || 'Couldn’t save that.');
-        location.href = withToast(form.getAttribute('data-then') || location.href, res.d.message || form.getAttribute('data-done') || 'Saved.');
+        // data-then may hold {id}: replaced by the id the server returns (e.g. a new record).
+        var then = (form.getAttribute('data-then') || location.href).replace('{id}', encodeURIComponent(res.d.id || ''));
+        location.href = withToast(then, res.d.message || form.getAttribute('data-done') || 'Saved.');
       })
       .catch(function (err) {
         submits.forEach(function (b) { b.disabled = false; });
         toast(err.message, { tone: 'error' });
       });
-  });
+  }
 
   // Forms that need a confirm first.
   document.addEventListener('submit', function (e) {
     var form = e.target;
-    if (!form.matches || !form.matches('form[data-confirm]') || form.__auiOk) return;
+    if (!form.matches || !form.matches('form[data-confirm]') || form.matches('[data-json-action]') || form.__auiOk) return;
     e.preventDefault();
     askFor(form).then(function (ok) {
       if (!ok) return;
@@ -173,7 +182,8 @@
         var label = jb.textContent;
         jb.disabled = true;
         jb.textContent = 'Sending…';
-        fetch(jb.getAttribute('data-post-json'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        // data-body: the JSON to send (default {}); data-method: e.g. DELETE (default POST).
+        fetch(jb.getAttribute('data-post-json'), { method: jb.getAttribute('data-method') || 'POST', headers: { 'Content-Type': 'application/json' }, body: jb.getAttribute('data-body') || '{}' })
           .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
           .then(function (res) {
             if (!res.ok || res.d.error) throw new Error(res.d.error || 'Something went wrong.');
@@ -352,8 +362,16 @@
       sw.setAttribute('aria-checked', String(on));
       var post = sw.getAttribute('data-switch-post');
       if (post) {
-        fetch(post, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: sw.getAttribute('data-switch'), on: on }) })
-          .then(function (r) { if (!r.ok) throw new Error(); toast((on ? 'Turned on: ' : 'Turned off: ') + sw.getAttribute('aria-label')); })
+        // data-switch-setting: a site setting, posted as { <key>: '1' | '0' } (/admin/site/settings).
+        var payload = {};
+        if (sw.hasAttribute('data-switch-setting')) payload[sw.getAttribute('data-switch')] = on ? '1' : '0';
+        else payload = { key: sw.getAttribute('data-switch'), on: on };
+        fetch(post, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+          .then(function (r) {
+            if (!r.ok) throw new Error();
+            var msg = (on ? 'Turned on: ' : 'Turned off: ') + sw.getAttribute('aria-label');
+            if (sw.hasAttribute('data-switch-reload')) location.href = withToast(location.href, msg); else toast(msg);
+          })
           .catch(function () { sw.setAttribute('aria-checked', String(!on)); toast('Couldn’t save that switch.', { tone: 'error' }); });
       } else {
         var hid = sw.parentNode.querySelector('input[type=hidden][name="' + sw.getAttribute('data-switch') + '"]');

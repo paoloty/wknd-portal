@@ -1,576 +1,302 @@
+// /admin/users/:id: one person's account (admin redesign, 2026-10-15; mockup: canvas
+// "Members · User detail"). Rebuilt from scratch on views/admin/ui.js. Tabs (?tab=):
+// Profile, Account, Admin access (super admin), Emails, Activity. The right column is the
+// approval decision for a pending user, account actions for an approved one.
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
 import { maskEmail, maskPhone, maskName, maskBirthday } from '../../lib/sensitive-mask.js';
-import { emailActivityCard } from './email-status.js';
+import { emailStatus } from './email-status.js';
 import { LIVENESS_SOURCE_LABEL } from './liveness-review.js';
+import {
+  personStrip, badge, banner, pageTabs, section, facts, timeline, dataGrid, drawer, field, playerPicker,
+  button, toggleRow, emptyState,
+} from './ui.js';
 
-const ICON_CHECK    = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
-const ICON_PLUS     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
-const ICON_X        = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
-const ICON_REFRESH  = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
-const ICON_UNDO     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5h7a3 3 0 1 1 0 6H6"/><path d="M5 1.5L2 4.5 5 7.5"/></svg>`;
-const ICON_EXTERNAL = `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8"/><polyline points="9.5 1 13 1 13 4.5"/><line x1="7" y1="7" x2="13" y2="1"/></svg>`;
+const attr = s => escHtml(String(s ?? ''));
+const fmtDate = ts => (ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+const fmtDateTime = ts => (ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+const STATUS = { pending: ['Pending', 'blue'], approved: ['Approved', 'green'], rejected: ['Rejected', 'gray'] };
+const EMAIL_TONE = { complained: 'red', bounced: 'red', failed: 'red', clicked: 'green', opened: 'green', delivered: 'gray', delayed: 'amber', sent: 'gray' };
 
-function fmtDate(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+// "LAST, First" → "First LAST"
+function displayName(full) {
+  const [last, first] = String(full || '').split(',').map(s => s.trim());
+  return first ? `${first} ${last}` : (last || '');
 }
 
-const STATUS_BADGE = {
-  pending:  { label: 'Pending',  cls: 'bg-amber-500/15 text-amber-400' },
-  approved: { label: 'Approved', cls: 'bg-green-500/15 text-green-400' },
-  rejected: { label: 'Rejected', cls: 'bg-red-500/15  text-red-400'   },
-};
-
-function badge(status) {
-  const b = STATUS_BADGE[status] || STATUS_BADGE.pending;
-  return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${b.cls}">${b.label}</span>`;
-}
-
-function passwordStatus(reg) {
+function passwordState(reg) {
   if (reg.password_hash) return 'set';
-  if (reg.pw_token && reg.pw_token_exp) return reg.pw_token_exp > Date.now() ? 'pending' : 'expired';
+  if (reg.pw_token && reg.pw_token_exp) return reg.pw_token_exp > Date.now() ? 'waiting' : 'expired';
   return 'none';
 }
 
-const PW_STATUS_BADGE = {
-  set:     { label: '✓ Password Set',      cls: 'bg-green-500/15 text-green-400' },
-  pending: { label: '⚠ Awaiting Password', cls: 'bg-amber-500/15 text-amber-400' },
-  expired: { label: '⏱ Link Expired',      cls: 'bg-red-500/15 text-red-400'    },
-  none:    { label: 'No Link Sent',        cls: 'bg-slate-500/15 text-slate-400' },
-};
-
-function passwordBadge(status) {
-  const b = PW_STATUS_BADGE[status] || PW_STATUS_BADGE.none;
-  return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${b.cls}">${b.label}</span>`;
+// Players this registration probably already is: same surname first, then first name and
+// birthday. Strongest first, at most four.
+function suggestMatches(reg, players) {
+  const [rl = '', rf = ''] = String(reg.full_name || '').split(',').map(s => s.trim().toLowerCase());
+  if (!rl) return [];
+  return players.map(p => {
+    const pl = String(p.last_name || '').toLowerCase(), pf = String(p.first_name || '').toLowerCase();
+    let score = 0; const why = [];
+    if (pl && pl === rl) { score += 60; why.push('same surname'); } else if (pl && (pl.includes(rl) || rl.includes(pl))) { score += 35; why.push('similar surname'); }
+    if (!score) return null;
+    if (pf && rf && pf === rf) { score += 30; why.push('same first name'); } else if (pf && rf && pf[0] === rf[0]) { score += 10; why.push('same initial'); }
+    if (p.birthday && reg.birthday && p.birthday === reg.birthday) { score += 10; why.push('same birthday'); }
+    return { p, score, why };
+  }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 4);
 }
 
-function fmtDateTime(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+function profileTab(reg, positions, canViewSensitive, show) {
+  const birthdayHtml = canViewSensitive
+    ? `<form class="aui-inline-form" data-json-action="/admin/users/${attr(reg.id)}/birthday" data-done="Birthday saved.">
+        <input class="aui-input" type="date" name="birthday" value="${attr(reg.birthday || '')}" aria-label="Birthday" style="width:auto">
+        ${button('Save', { kind: 'secondary', size: 'sm', type: 'submit' })}
+      </form>`
+    : `${escHtml(reg.birthday ? maskBirthday(reg.birthday) : '—')} <span class="aui-muted">· restricted</span>`;
+  const v = x => escHtml(x || '—');
+  return `
+    ${section({ title: 'Personal', bodyHtml: `<div class="aui-panel">${facts([
+      ['Full name', v(reg.full_name)], ['Email', v(show(reg.email, maskEmail))], ['Phone', v(show(reg.phone, maskPhone))],
+      ['Birthday', birthdayHtml], reg.gender ? ['Gender', v(reg.gender)] : null,
+    ])}</div>` })}
+    ${section({ title: 'Their game', bodyHtml: `<div class="aui-panel">${facts([
+      ['Positions', positions.length ? `<span class="aui-cell__badges">${positions.map(p => badge(p, 'gray')).join('')}</span>` : '—'],
+      ['Height', v(reg.height ? `${reg.height} cm` : '')], ['Weight', v(reg.weight ? `${reg.weight} kg` : '')],
+      ['Dominant hand', v(reg.dominant_hand)], ['Experience', v(reg.experience)], reg.jersey_pref ? ['Jersey preference', v(reg.jersey_pref)] : null,
+    ])}</div>` })}
+    ${section({ title: 'More', bodyHtml: `<div class="aui-panel">${facts([
+      ['Referred by', v(reg.referred_by)], ['Emergency contact', v(show(reg.emergency_name, maskName))], ['Emergency phone', v(show(reg.emergency_phone, maskPhone))],
+      reg.social_handle ? ['Social', v(reg.social_handle)] : null, reg.notes ? ['Admin notes', v(reg.notes)] : null,
+    ])}</div>` })}
+    ${reg.motto ? section({ title: 'Quick bio', bodyHtml: `<blockquote class="aui-quote">“${escHtml(reg.motto)}”</blockquote>` }) : ''}`;
 }
 
-function field(label, value, opts = {}) {
-  if (!value) return '';
-  return `<div>
-    <dt class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">${label}</dt>
-    <dd class="text-sm text-slate-200 ${opts.capitalize ? 'capitalize' : ''}">${escHtml(value)}</dd>
+function accountTab(reg, linkedName, linkedTeam, inSync, isSuperAdmin) {
+  const pw = passwordState(reg);
+  const pwBadge = { set: badge('Set', 'green'), waiting: badge('Awaiting password', 'amber'), expired: badge('Link expired', 'red'), none: badge('No link sent', 'gray') }[pw];
+  const rows = [
+    ['Logs in with', reg.facebook_id ? `Facebook ${badge('Connected', 'green')}` : reg.password_hash ? 'Password' : 'Not set up yet'],
+    ['Password', `<span class="aui-cell__badges">${pwBadge}${pw === 'waiting' ? `<span class="aui-muted">link expires ${escHtml(fmtDateTime(reg.pw_token_exp))}</span>` : ''}</span>`],
+    ['Last login', escHtml(fmtDateTime(reg.last_login_at) || 'Never')],
+    ['Last seen', escHtml(fmtDateTime(reg.last_seen_at) || '—')],
+    ['Submitted', escHtml(fmtDate(reg.created_at))],
+    ['Approved', escHtml(fmtDate(reg.approved_at) || '—')],
+    ['Emails', escHtml(`Picks ${reg.picks_email_optout ? 'off' : 'on'} · Papawis ${reg.papawis_email_optout ? 'off' : 'on'}`)],
+  ];
+  const linked = reg.player_id
+    ? `<div class="aui-panel aui-row-between">
+        <div><div class="aui-cell__title">${escHtml(linkedName || 'Unknown player')}</div><div class="aui-cell__sub">${escHtml(linkedTeam || 'No team')}${isSuperAdmin ? ` · ${inSync ? 'details match this account' : 'details differ from this account'}` : ''}</div></div>
+        <div class="aui-row">${button('Open player', { kind: 'secondary', size: 'sm', href: `/admin/players/${reg.player_id}` })}
+        ${isSuperAdmin ? button('Relink…', { kind: 'secondary', size: 'sm', attrs: 'data-drawer-open="relink"' }) : ''}
+        ${isSuperAdmin ? button(inSync ? 'Sync details to player' : 'Re-sync to player', { kind: inSync ? 'ghost' : 'primary', size: 'sm', attrs: `data-post-json="/admin/users/${attr(reg.id)}/sync" data-done="Player details updated from this account." data-confirm data-confirm-title="Copy this account’s details onto the player?" data-confirm-body="Fills the player record from the registration; blank fields are skipped." data-confirm-send="Sync"` }) : ''}</div>
+      </div>`
+    : `<div class="aui-panel aui-muted">Not linked to a player yet.</div>`;
+  return `${section({ title: 'Sign-in', bodyHtml: `<div class="aui-panel">${facts(rows)}</div>` })}
+    ${section({ title: 'Linked player', bodyHtml: linked })}`;
+}
+
+function accessTab(reg, sectionsList) {
+  if (reg.status !== 'approved') return emptyState({ title: 'Approve them first', sub: 'Admin access is only for approved members.' });
+  let allowed = [];
+  try { allowed = JSON.parse(reg.admin_sections || '[]') || []; } catch {}
+  const isAdmin = !!reg.is_admin;
+  const switches = `<div class="aui-panel">
+    ${toggleRow({ label: 'Admin access', help: 'Can open the admin with their own login.', name: 'admin', on: isAdmin, post: `/admin/users/${reg.id}/toggle-admin`, reload: true })}
+    ${isAdmin ? toggleRow({ label: 'Can see private details', help: 'Phones, birthdays and emergency contacts unmasked.', name: 'sensitive', on: !!reg.can_view_sensitive, post: `/admin/users/${reg.id}/toggle-sensitive`, reload: true }) : ''}
   </div>`;
+  const sections = isAdmin ? section({
+    title: 'Sections they can open', note: '· none ticked = every section',
+    bodyHtml: `<form class="aui-panel" data-json-action="/admin/users/${attr(reg.id)}/sections" data-done="Sections saved.">
+      <div class="aui-checks">${sectionsList.map(s => `<label class="aui-check"><input type="checkbox" name="sections[]" value="${attr(s.key)}"${allowed.includes(s.key) ? ' checked' : ''}><span>${escHtml(s.label)}</span></label>`).join('')}</div>
+      <div class="aui-row" style="margin-top:14px">${button('Save sections', { kind: 'primary', size: 'sm', type: 'submit' })}<span class="aui-muted">The sidebar only shows what they can open.</span></div>
+    </form>`,
+  }) : '';
+  return `${banner('info', 'Super admin only. Switches save as you flip them; the page reloads to show what changed.')}
+    ${section({ title: 'Access', bodyHtml: switches })}${sections}`;
 }
 
-// Only garbles a value that actually exists — an admin without access shouldn't see a
-// masked placeholder implying data was collected when the field was really left blank.
-function display(value, canViewSensitive, maskFn) {
-  if (!value) return value;
-  return canViewSensitive ? value : maskFn(value);
+function emailsTab(emails, query, regId) {
+  return dataGrid({
+    id: 'emails', baseUrl: `/admin/users/${regId}`, query: { ...query, view: '' },
+    keep: { tab: 'emails' },
+    rows: emails.map(e => ({ ...e, st: emailStatus(e) })), rowKey: e => e.id, noun: ['email', 'emails'],
+    defaultSort: '-sent', perPage: 20,
+    columns: [
+      { key: 'subject', label: 'Email', primary: true, sort: e => String(e.subject || '').toLowerCase(), cell: e => `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(e.subject || e.kind || 'Email')}</span><span class="aui-cell__sub">${escHtml(e.kind || '')}</span></span>` },
+      { key: 'status', label: 'Status', bare: true, cell: e => (e.st ? badge(e.st.label, EMAIL_TONE[e.st.key] || 'gray') : '') },
+      { key: 'sent', label: 'Sent', num: true, sort: e => e.sent_at || 0, cell: e => escHtml(fmtDateTime(e.sent_at)) },
+    ],
+    empty: { title: 'No emails yet', sub: 'Approval, password and reminder emails show up here.' },
+  });
 }
 
-// Super-admin-only (the caller passes livenessCapture only to them). Same photo row as the
-// waitlist's 📷 PHOTO chip — one per registration, from /activate or Season Signup.
+function activityTab(reg, logs, emails, actorLabel) {
+  const items = [];
+  if (reg.created_at) items.push({ at: reg.created_at, who: displayName(reg.full_name), what: 'registered', tone: 'gray' });
+  if (reg.approved_at) items.push({ at: reg.approved_at, who: 'Admin', what: 'approved the account', tone: 'green' });
+  if (reg.last_login_at) items.push({ at: reg.last_login_at, who: displayName(reg.full_name), what: 'last logged in', tone: 'gray' });
+  for (const e of emails.slice(0, 15)) items.push({ at: e.sent_at, who: 'WKND', what: `emailed “${e.subject || e.kind}”`, tone: 'gray' });
+  for (const l of logs) items.push({ at: l.created_at, who: actorLabel(l), what: (l.path.split('/').pop() || '').replace(/-/g, ' '), tone: 'amber' });
+  items.sort((a, b) => b.at - a.at);
+  if (!items.length) return emptyState({ title: 'Nothing yet' });
+  return `<div class="aui-panel">${timeline(items.slice(0, 40).map(i => ({ ...i, when: fmtDateTime(i.at) })))}</div>`;
+}
+
+function approveCard(reg, players, teamColor, name) {
+  const matches = suggestMatches(reg, players);
+  const best = matches[0] && matches[0].score >= 90 ? matches[0].p.id : '';
+  const opt = (value, inner, checked) => `<label class="aui-choice"><input type="radio" name="player_id" value="${attr(value)}"${checked ? ' checked' : ''}><span class="aui-choice__body">${inner}</span></label>`;
+  const rows = matches.map(m => opt(m.p.id, `
+      ${avatarFor(m.p, teamColor)}
+      <span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(displayPlayerName(m.p.name))}</span><span class="aui-cell__sub">${escHtml([m.p.team_name, m.why.join(', ')].filter(Boolean).join(' · '))}</span></span>
+      ${badge(m.score >= 90 ? 'Strong match' : m.score >= 60 ? 'Likely' : 'Possible', m.score >= 90 ? 'green' : 'gray')}`, m.p.id === best)).join('');
+  return section({
+    title: 'Approve',
+    bodyHtml: `<form class="aui-panel aui-panel--accent" data-json-action="/admin/users/${attr(reg.id)}/approve" data-done="${attr(name)} approved. A set-password email is on its way."
+        data-confirm data-confirm-title="Approve ${attr(name)}?" data-confirm-body="They get an email with a link to set their password." data-confirm-send="Approve">
+      <p class="aui-muted" style="margin:0 0 12px">Link them to the player they already are, or create a new player.</p>
+      <div class="aui-choices">
+        ${rows}
+        ${opt('other', `<span class="aui-cell__stack"><span class="aui-cell__title">Someone else</span><span class="aui-cell__sub">Search every player below</span></span>`, !best && !!matches.length)}
+        ${opt('', `<span class="aui-cell__stack"><span class="aui-cell__title">Don’t link a player</span><span class="aui-cell__sub">Approve the account only</span></span>`, false)}
+      </div>
+      <div style="margin-top:10px">${playerPicker({ name: 'player_id_other', label: 'Search all players', multiple: false, placeholder: 'Type a name',
+        options: players.map(p => ({ id: p.id, name: displayPlayerName(p.name), color: teamColor[p.team_id] || '', meta: p.team_name || '' })) })}</div>
+      <div class="aui-stack" style="margin-top:14px">
+        ${button('Approve', { kind: 'primary', type: 'submit', attrs: 'style="width:100%"' })}
+        <div class="aui-row">
+          ${button('Create new player', { kind: 'secondary', attrs: `style="flex:1" data-post-json="/admin/users/${attr(reg.id)}/create" data-done="Player created and ${attr(name)} approved." data-confirm data-confirm-title="Create a new player for ${attr(name)}?" data-confirm-body="Makes a player record from this registration, approves the account and emails a set-password link." data-confirm-send="Create and approve"` })}
+          ${button('Reject…', { kind: 'danger', attrs: 'style="flex:1" data-drawer-open="reject"' })}
+        </div>
+      </div>
+      <p class="aui-field__help" style="margin:12px 0 0">Reject asks for an optional reason and emails it to them.</p>
+    </form>`,
+  });
+}
+
+function avatarFor(p, teamColor) {
+  const n = displayPlayerName(p.name);
+  const initials = n.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const c = teamColor[p.team_id];
+  return `<span class="aui-avatar" style="width:30px;height:30px;box-shadow:0 0 0 2px ${/^#[0-9a-f]{3,8}$/i.test(c || '') ? c : 'rgba(255,255,255,.18)'}" aria-hidden="true">${escHtml(initials)}</span>`;
+}
+
+function accountActions(reg, isSuperAdmin, name, emailShown) {
+  const pw = passwordState(reg);
+  const a = (label, help, attrs, danger = false) => `<button type="button" class="aui-action${danger ? ' is-danger' : ''}" ${attrs}><span class="aui-cell__stack"><span class="aui-action__label">${escHtml(label)}</span><span class="aui-cell__sub">${escHtml(help)}</span></span><span class="aui-action__chev" aria-hidden="true">›</span></button>`;
+  const id = attr(reg.id);
+  const list = [];
+  if (reg.status === 'approved' && reg.email) list.push(a(pw === 'set' ? 'Send password reset' : 'Resend set-password link', `Emails a fresh link to ${emailShown}`,
+    `data-post-json="/admin/users/${id}/send-reset" data-done="Email sent to ${attr(name)}." data-confirm data-confirm-title="Email ${attr(name)} a new link?" data-confirm-body="It goes to ${attr(emailShown)} and works for 48 hours." data-confirm-send="Send email"`));
+  if (isSuperAdmin && reg.status === 'approved' && reg.player_id) list.push(a('View as this player', 'Read-only, from their side of the site',
+    `data-post-json="/admin/impersonate/${attr(reg.player_id)}" data-then="/me" data-done="Viewing as ${attr(name)}" data-confirm data-confirm-title="View the site as ${attr(name)}?" data-confirm-body="Read-only. Stop from the bar at the top of the site." data-confirm-send="View as"`));
+  if (isSuperAdmin && reg.status === 'approved') list.push(a('Relink to a different player', 'Doesn’t email them; just repoints the link', 'data-drawer-open="relink"'));
+  if (isSuperAdmin && reg.status !== 'pending') list.push(a('Reset to pending', 'Back to the approval queue; the player record is untouched',
+    `data-post-json="/admin/users/${id}/reset" data-done="${attr(name)} is back in the approval queue." data-confirm data-confirm-title="Reset ${attr(name)} to pending?" data-confirm-body="Unlinks the player and clears the approval. The player record is not changed." data-confirm-send="Reset"`, true));
+  if (!list.length) return '';
+  return section({ title: reg.status === 'rejected' ? 'Rejected' : 'Account actions', bodyHtml: `<div class="aui-panel aui-panel--flush">${list.join('')}</div>` });
+}
+
 function livenessCard(capture, reg) {
-  const header = `
-      <div class="px-5 py-3.5 border-b border-admin-border flex items-center justify-between">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Liveness Check</div>
-        <span class="text-[10px] font-bold uppercase tracking-widest text-rose-400">Super admin only</span>
-      </div>`;
+  const head = `Liveness photo`;
   if (!capture) {
     const why = reg.status !== 'approved' ? 'Taken after approval, when they set a password and activate.'
-      : reg.password_hash ? 'Password set but no photo yet — they skipped or left the activation step.'
-      : 'Not activated yet — taken right after they set a password.';
-    return `
-    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">${header}
-      <div class="px-5 py-4 text-sm text-slate-500">No photo on file. <span class="text-[11px] text-slate-600">${why}</span></div>
-    </div>`;
+      : reg.password_hash ? 'Password set but no photo yet: they skipped or left the activation step.'
+      : 'Not activated yet: it’s taken right after they set a password.';
+    return section({ title: head, note: '· super admin', bodyHtml: `<div class="aui-panel aui-muted">No photo on file. ${escHtml(why)}</div>` });
   }
-  const href = `/admin/season/liveness/${escHtml(capture.id)}?from=user`;
-  return `
-    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">${header}
-      <div class="px-5 py-4 flex gap-4 items-start">
-        <a href="${href}" style="display:block;flex:0 0 96px;aspect-ratio:3/4;background:#0d1424;border:1px solid var(--admin-border);border-radius:8px;overflow:hidden">
-          <img src="/admin/season/liveness/${escHtml(capture.id)}/photo" alt="Liveness capture" loading="lazy" style="width:100%;height:100%;object-fit:cover">
-        </a>
-        <dl class="grid grid-cols-1 gap-y-3 min-w-0">
-          ${field('Source', LIVENESS_SOURCE_LABEL[capture.via] || capture.via)}
-          ${field('Captured', fmtDateTime(capture.captured_at))}
-          ${field('They were asked to', capture.prompt)}
-          <div><a href="${href}" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300 no-underline">Compare with profile photo →</a></div>
-        </dl>
-      </div>
-    </div>`;
+  const href = `/admin/season/liveness/${attr(capture.id)}?from=user`;
+  return section({ title: head, note: '· super admin', bodyHtml: `<div class="aui-panel aui-row" style="align-items:flex-start">
+    <a href="${href}" class="aui-photo"><img src="/admin/season/liveness/${attr(capture.id)}/photo" alt="Liveness capture" loading="lazy"></a>
+    <div class="aui-stack" style="gap:6px">
+      <span class="aui-cell__title">${escHtml(LIVENESS_SOURCE_LABEL[capture.via] || capture.via || '')}</span>
+      <span class="aui-cell__sub">${escHtml(fmtDateTime(capture.captured_at))}</span>
+      ${capture.prompt ? `<span class="aui-cell__sub">Asked to: ${escHtml(capture.prompt)}</span>` : ''}
+      <a href="${href}" class="aui-link">Compare with profile photo</a>
+    </div>
+  </div>` });
 }
 
-export function adminUserDetailBody({ reg, players = [], linkedPlayer = null, isSuperAdmin = false, inSync = true, bogusFlags = [], canViewSensitive = true, emails = [], livenessCapture = null }) {
-  if (!reg) return `<div class="text-slate-500 text-sm">Registration not found.</div>`;
-
+export function adminUserDetailBody({
+  reg, players = [], linkedPlayer = null, isSuperAdmin = false, inSync = true, bogusFlags = [], canViewSensitive = true,
+  emails = [], livenessCapture = null, tab = 'profile', query = {}, teamColor = {}, signup = null, logs = [], sectionsList = [],
+}) {
+  if (!reg) return emptyState({ title: 'User not found', sub: 'They may have been removed. Go back to Users.' });
   let positions = [];
   try { positions = JSON.parse(reg.positions || '[]'); } catch {}
+  const show = (value, maskFn) => (!value ? value : canViewSensitive ? value : maskFn(value));
+  const name = displayName(reg.full_name) || reg.email;
+  const emailShown = show(reg.email, maskEmail) || '';
+  const linkedName = linkedPlayer ? displayPlayerName(linkedPlayer.name || `${linkedPlayer.last_name}, ${linkedPlayer.first_name}`) : '';
+  const linkedTeam = linkedPlayer?.team_name || '';
+  const color = linkedPlayer ? teamColor[linkedPlayer.team_id] || '' : '';
 
-  const playersData = JSON.stringify(
-    players.map(p => ({
-      id: p.id,
-      first_name: p.first_name || '',
-      last_name: p.last_name || '',
-      team_name: p.team_name || '',
-    }))
-  ).replace(/</g, '\\u003c');
+  const [statusLabel, statusTone] = STATUS[reg.status] || STATUS.pending;
+  let adminSections = [];
+  try { adminSections = JSON.parse(reg.admin_sections || '[]') || []; } catch {}
+  const badges = [
+    badge(statusLabel, statusTone),
+    reg.is_admin ? badge(adminSections.length ? `Admin · ${sectionsList.filter(s => adminSections.includes(s.key)).map(s => s.label).join(', ')}` : 'Admin', 'amber') : '',
+    bogusFlags.length ? badge('Flagged', 'red') : '',
+  ].join('');
+  const sub = [linkedTeam, linkedPlayer?.number ? `#${linkedPlayer.number}` : '', reg.status === 'pending' ? `registered ${fmtDate(reg.created_at)}` : reg.approved_at ? `member since ${fmtDate(reg.approved_at)}` : '',
+    reg.last_seen_at || reg.last_login_at ? `last seen ${fmtDate(Math.max(reg.last_seen_at || 0, reg.last_login_at || 0))}` : ''].filter(Boolean).join(' · ');
 
-  // Linked player info
-  const linkedName = linkedPlayer
-    ? displayPlayerName(`${(linkedPlayer.last_name || '').toUpperCase()}, ${linkedPlayer.first_name || ''}`)
-    : null;
+  const strip = personStrip({
+    name, color, sub, badgeHtml: `<span class="aui-cell__badges">${badges}</span>`,
+    links: [
+      { label: 'User account', href: `/admin/users/${reg.id}`, active: true },
+      reg.player_id ? { label: 'Player profile', href: `/admin/players/${reg.player_id}` } : null,
+      signup ? { label: `Season ${signup.season} signup`, href: `/admin/season/signups/${signup.id}` } : null,
+      isSuperAdmin ? { label: 'Action log', href: `/admin/logs?user=${reg.id}` } : null,
+    ],
+  });
 
-  // Actions panel
-  let actionsHtml = '';
-  if (reg.status === 'pending') {
-    actionsHtml = `
-<div class="space-y-4">
-  <div>
-    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2" id="picker-label">Suggested matches</div>
-    <div id="match-chips" class="flex flex-col gap-1.5 mb-3"></div>
-    <div style="position:relative">
-      <input id="player-search" type="text" placeholder="Search all players…" autocomplete="off"
-        class="admin-input">
-      <div id="player-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:220px;overflow-y:auto"></div>
+  const tabs = [
+    ['profile', 'Profile'], ['account', 'Account'], isSuperAdmin ? ['access', 'Admin access'] : null, ['emails', 'Emails', emails.length || ''], ['activity', 'Activity'],
+  ].filter(Boolean);
+  const current = tabs.some(t => t[0] === tab) ? tab : 'profile';
+  const tabsHtml = pageTabs(tabs.map(([k, label, count]) => ({ label, count, href: `/admin/users/${reg.id}${k === 'profile' ? '' : `?tab=${k}`}`, active: k === current })));
+
+  const actorLabel = l => (l.actor_type === 'super' ? 'Super admin' : l.actor || 'Admin');
+  const main = {
+    profile: () => profileTab(reg, positions, canViewSensitive, show),
+    account: () => accountTab(reg, linkedName, linkedTeam, inSync, isSuperAdmin),
+    access: () => accessTab(reg, sectionsList),
+    emails: () => emailsTab(emails, query, reg.id),
+    activity: () => activityTab(reg, logs, emails, actorLabel),
+  }[current]();
+
+  const side = [
+    reg.status === 'pending' ? approveCard(reg, players, teamColor, name) : accountActions(reg, isSuperAdmin, name, emailShown),
+    isSuperAdmin ? livenessCard(livenessCapture, reg) : '',
+  ].join('');
+
+  const relink = isSuperAdmin && reg.status === 'approved' ? drawer({
+    id: 'relink', eyebrow: name, title: 'Relink to a different player',
+    bodyHtml: `<form id="relink-form" class="aui-stack" data-json-action="/admin/users/${attr(reg.id)}/relink" data-done="Relinked. No email was sent.">
+      ${playerPicker({ name: 'player_id', label: 'Player', multiple: false, selected: reg.player_id ? [reg.player_id] : [],
+        options: players.map(p => ({ id: p.id, name: displayPlayerName(p.name), color: teamColor[p.team_id] || '', meta: p.team_name || '' })) })}
+      <p class="aui-field__help" style="margin:0">Doesn’t email them. Copies this account’s details onto the new player.</p>
+    </form>`,
+    footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Relink', { kind: 'primary', type: 'submit', attrs: 'form="relink-form"' })}`,
+  }) : '';
+  const reject = reg.status === 'pending' ? drawer({
+    id: 'reject', eyebrow: name, title: 'Reject registration',
+    bodyHtml: `<form id="reject-form" class="aui-stack" data-json-action="/admin/users/${attr(reg.id)}/reject" data-done="${attr(name)} rejected.">
+      ${field({ label: 'Reason (optional, included in the email)', name: 'notes', type: 'textarea', rows: 4, placeholder: 'e.g. We couldn’t confirm who you are. Message us on Facebook.' })}
+    </form>`,
+    footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Reject and email', { kind: 'danger', type: 'submit', attrs: 'form="reject-form"' })}`,
+  }) : '';
+
+  return `<div class="aui-page">
+    ${strip}
+    ${bogusFlags.length ? banner('error', `Flagged for review: ${bogusFlags.join(' · ')}`) : ''}
+    ${tabsHtml}
+    <div class="aui-cols">
+      <div class="aui-cols__main">${main}</div>
+      ${side ? `<aside class="aui-cols__side">${side}</aside>` : ''}
     </div>
-    <div id="selected-player-label" class="text-[11px] text-slate-500 mt-2">No player selected — will approve without linking.</div>
-  </div>
-
-  <div style="display:flex;flex-direction:column;gap:10px;padding-top:12px;border-top:1px solid var(--border-2)">
-    <button data-action="approve" onclick="doAction(this.dataset.action)" class="admin-btn admin-btn--success admin-btn--block">
-      ${ICON_CHECK} Approve &amp; Link
-    </button>
-    <button data-action="create" onclick="doAction(this.dataset.action)" class="admin-btn admin-btn--block">
-      ${ICON_PLUS} Create Player
-    </button>
-    <button onclick="openReject()" class="admin-btn admin-btn--danger admin-btn--block">
-      ${ICON_X} Reject
-    </button>
-  </div>
-</div>`;
-  } else if (reg.status === 'approved') {
-    const adminToggle = isSuperAdmin ? `
-  <hr style="border:none;border-top:1px solid var(--border-2);margin:4px 0">
-  <button onclick="toggleAdmin()" id="admin-toggle-btn" class="admin-btn admin-btn--block ${reg.is_admin ? 'admin-btn--danger' : 'admin-btn--success'}" style="font-size:12px">
-    ${reg.is_admin ? '🔒 Revoke Admin Access' : '🛡 Grant Admin Access'}
-  </button>` : '';
-    const sendResetBtn = `
-  <button data-action="send-reset" onclick="doAction(this.dataset.action)" class="admin-btn admin-btn--block">
-    ${ICON_REFRESH} Send Password Reset Link
-  </button>`;
-    const syncControl = !isSuperAdmin ? '' : inSync
-      ? `<button data-action="sync" onclick="doAction(this.dataset.action)" class="text-[11px] text-slate-500 hover:text-slate-300 transition-colors" style="background:none;border:none;padding:0;cursor:pointer;text-align:left">Force sync to player →</button>`
-      : `<button data-action="sync" onclick="doAction(this.dataset.action)" class="admin-btn admin-btn--block">
-    ${ICON_REFRESH} Re-sync to Player
-  </button>`;
-    const relinkBlock = `
-  <hr style="border:none;border-top:1px solid var(--border-2);margin:4px 0">
-  <div>
-    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Relink to a different player</div>
-    <div style="position:relative">
-      <input id="relink-search" type="text" placeholder="Search all players…" autocomplete="off"
-        class="admin-input">
-      <div id="relink-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:220px;overflow-y:auto"></div>
-    </div>
-    <div id="relink-selected-label" class="text-[11px] text-slate-500 mt-2">Won't send an email — just repoints the link.</div>
-    <button id="relink-confirm-btn" onclick="doRelink()" class="admin-btn admin-btn--block mt-2" disabled>
-      ${ICON_REFRESH} Relink Player
-    </button>
+    ${relink}${reject}
   </div>`;
-    const superAdminBlock = isSuperAdmin ? `
-  ${syncControl}
-  ${relinkBlock}
-  <hr style="border:none;border-top:1px solid var(--border-2);margin:4px 0">
-  <button onclick="confirmReset()" class="admin-btn admin-btn--muted admin-btn--block">
-    ${ICON_UNDO} Reset to Pending
-  </button>${adminToggle}` : `
-  <p class="text-[11px] text-slate-600">Only super admins can re-sync, relink, reset, or grant admin access.</p>`;
-    actionsHtml = `
-<div style="display:flex;flex-direction:column;gap:6px">
-  ${linkedName ? `<a href="/players/${escHtml(reg.player_id)}" target="_blank" class="admin-btn admin-btn--block no-underline">
-    ${ICON_EXTERNAL} View Player
-  </a>` : ''}${sendResetBtn}${superAdminBlock}
-</div>`;
-  } else if (reg.status === 'rejected') {
-    actionsHtml = isSuperAdmin ? `
-<div style="display:flex;flex-direction:column;gap:6px">
-  <button onclick="confirmReset()" class="admin-btn admin-btn--muted admin-btn--block">
-    ${ICON_UNDO} Reset to Pending
-  </button>
-</div>` : `<p class="text-[11px] text-slate-600">Only super admins can reset a rejected user.</p>`;
-  }
-
-  return `
-<div class="mb-6 flex flex-wrap items-center gap-3">
-  <a href="/admin/users" class="text-slate-500 hover:text-slate-300 text-sm no-underline transition-colors">← Users</a>
-  <span class="text-slate-700">/</span>
-  <span class="text-sm text-slate-400">${escHtml(reg.full_name)}</span>
-  ${badge(reg.status)}
-  ${isSuperAdmin ? `<a href="/admin/logs?user=${escHtml(reg.id)}" class="text-[11px] text-slate-500 hover:text-slate-300 no-underline transition-colors ml-auto">View Activity Log →</a>` : ''}
-</div>
-
-${bogusFlags.length ? `
-<div class="bg-red-500/10 border border-red-500/30 rounded-xl px-5 py-3.5 mb-5">
-  <div class="text-[10px] font-bold uppercase tracking-wider text-red-400 mb-1.5">⚑ Flagged for review</div>
-  <ul class="text-xs text-red-300/90 space-y-0.5 pl-4" style="list-style:disc">
-    ${bogusFlags.map(f => `<li>${escHtml(f)}</li>`).join('')}
-  </ul>
-</div>` : ''}
-
-<div class="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_380px] items-start">
-
-  <!-- Left: registration details -->
-  <div class="space-y-5">
-
-    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-admin-border flex items-center justify-between">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Personal Info</div>
-        ${passwordBadge(passwordStatus(reg))}
-      </div>
-      <div class="px-5 py-4">
-        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-          ${field('Full Name', reg.full_name)}
-          ${field('Email', display(reg.email, canViewSensitive, maskEmail))}
-          ${field('Phone', display(reg.phone, canViewSensitive, maskPhone))}
-          ${canViewSensitive ? `
-          <div>
-            <dt class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">Birthday</dt>
-            <dd class="flex items-center gap-2">
-              <input id="birthday-input" type="date" value="${escHtml(reg.birthday || '')}"
-                class="admin-input" style="width:auto">
-              <button onclick="saveBirthday()" class="text-[11px] font-semibold text-brand hover:opacity-80 transition-opacity">Save</button>
-              <span id="birthday-msg" class="text-[11px] text-slate-500"></span>
-            </dd>
-          </div>` : `
-          <div>
-            <dt class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">Birthday</dt>
-            <dd class="text-sm text-slate-200">${reg.birthday ? escHtml(maskBirthday(reg.birthday)) : '—'} <span class="text-[11px] text-slate-600">— Restricted, ask a super admin for access</span></dd>
-          </div>`}
-        </dl>
-      </div>
-    </div>
-
-    ${isSuperAdmin ? livenessCard(livenessCapture, reg) : ''}
-
-    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-admin-border">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Your Game</div>
-      </div>
-      <div class="px-5 py-4 space-y-4">
-        ${positions.length ? `<div>
-          <dt class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Positions</dt>
-          <div class="flex gap-2 flex-wrap">
-            ${positions.map(p => `<span class="px-3 py-1 text-xs font-bold bg-admin-border/60 text-slate-300 rounded-md">${escHtml(p)}</span>`).join('')}
-          </div>
-        </div>` : ''}
-        <dl class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-          ${field('Height', reg.height ? reg.height + ' cm' : '')}
-          ${field('Weight', reg.weight ? reg.weight + ' kg' : '')}
-          ${field('Dominant Hand', reg.dominant_hand, { capitalize: true })}
-        </dl>
-      </div>
-    </div>
-
-    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-admin-border">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">A Few More Things</div>
-      </div>
-      <div class="px-5 py-4 space-y-4">
-        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-          ${field('Experience', reg.experience, { capitalize: true })}
-          ${field('Referred By', reg.referred_by)}
-          ${field('Emergency Contact', display(reg.emergency_name, canViewSensitive, maskName))}
-          ${field('Emergency Phone', display(reg.emergency_phone, canViewSensitive, maskPhone))}
-        </dl>
-        ${reg.motto ? `<div>
-          <dt class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Quick Bio</dt>
-          <blockquote class="text-sm text-slate-300 italic leading-relaxed bg-admin-border/20 rounded-lg px-4 py-3 border-l-2 border-brand/40">"${escHtml(reg.motto)}"</blockquote>
-        </div>` : ''}
-      </div>
-    </div>
-
-    <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-admin-border">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Timeline</div>
-      </div>
-      <div class="px-5 py-4">
-        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-          ${field('Submitted', fmtDate(reg.created_at))}
-          ${field('Approved', reg.approved_at ? fmtDate(reg.approved_at) : '')}
-          ${field('Last Login', reg.last_login_at ? fmtDateTime(reg.last_login_at) : '')}
-          ${linkedName ? field('Linked Player', linkedName) : ''}
-          ${reg.notes ? field('Notes', reg.notes) : ''}
-        </dl>
-      </div>
-    </div>
-
-    ${emailActivityCard(emails)}
-
-  </div>
-
-  <!-- Right: actions -->
-  <div class="bg-admin-surface border border-admin-border rounded-xl overflow-hidden lg:sticky lg:top-6">
-    <div class="px-5 py-3.5 border-b border-admin-border">
-      <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Admin Actions</div>
-    </div>
-    <div class="px-5 py-4">
-      ${actionsHtml}
-    </div>
-  </div>
-
-</div>
-
-<!-- Reject modal -->
-<div id="reject-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">
-  <div class="bg-admin-surface border border-admin-border rounded-xl p-6" style="width:100%;max-width:420px">
-    <div class="text-sm font-bold text-slate-200 mb-3">Reject Registration</div>
-    <textarea id="reject-notes" rows="3" placeholder="Reason (optional)…"
-      class="admin-input mb-3"></textarea>
-    <div class="flex justify-end gap-2">
-      <button onclick="document.getElementById('reject-backdrop').style.display='none'" class="admin-btn">${ICON_X} Cancel</button>
-      <button id="reject-confirm" class="admin-btn admin-btn--danger">${ICON_X} Confirm Reject</button>
-    </div>
-  </div>
-</div>
-
-<style>
-.match-chip { display:block; width:100%; text-align:left; padding:9px 14px; font-size:13px; background:rgba(28,40,64,.4); border:1px solid #1c2840; border-radius:8px; color:#94a3b8; cursor:pointer; transition:border-color .15s,color .15s,background .15s; }
-.match-chip:hover { border-color:#f59332; color:#e2e8f0; }
-.match-chip.selected { border-color:#f59332; background:rgba(245,147,50,.1); color:#f59332; }
-.search-result { display:block; width:100%; text-align:left; padding:10px 14px; font-size:13px; color:#94a3b8; background:transparent; border:none; border-bottom:1px solid rgba(28,40,64,.5); cursor:pointer; transition:background .1s; }
-.search-result:last-child { border-bottom:none; }
-.search-result:hover { background:rgba(255,255,255,.04); color:#e2e8f0; }
-</style>
-
-<script>
-(function() {
-  var PLAYERS   = ${playersData};
-  var REG_NAME  = ${JSON.stringify(reg.full_name)};
-  var REG_ID    = ${JSON.stringify(reg.id)};
-  var _selectedPlayerId = '';
-
-  // ── Player matching ──────────────────────────────────────────────────────
-  function playerDisplay(p) {
-    return p.first_name + ' ' + p.last_name + (p.team_name ? ' (' + p.team_name + ')' : '');
-  }
-
-  function findMatches() {
-    var parts   = (REG_NAME || '').split(',');
-    var regLast = parts[0].trim().toLowerCase();
-    if (!regLast) return [];
-    return PLAYERS.filter(function(p) {
-      var pLast = (p.last_name || '').toLowerCase();
-      return pLast && (pLast.includes(regLast) || regLast.includes(pLast));
-    });
-  }
-
-  function setSelected(id, label) {
-    _selectedPlayerId = id || '';
-    var el = document.getElementById('selected-player-label');
-    if (el) el.textContent = id ? ('Selected: ' + label) : 'No player selected — will approve without linking.';
-    document.querySelectorAll('.match-chip').forEach(function(c) {
-      c.classList.toggle('selected', c.dataset.pid === id);
-    });
-  }
-
-  // ── Build picker (only for pending) ──────────────────────────────────────
-  var chipsEl = document.getElementById('match-chips');
-  if (chipsEl) {
-    var matches = findMatches();
-    var labelEl = document.getElementById('picker-label');
-
-    if (matches.length) {
-      matches.forEach(function(p) {
-        var btn = document.createElement('button');
-        btn.className = 'match-chip';
-        btn.dataset.pid = p.id;
-        btn.textContent = playerDisplay(p);
-        chipsEl.appendChild(btn);
-      });
-      chipsEl.addEventListener('click', function(e) {
-        var btn = e.target.closest('.match-chip');
-        if (!btn) return;
-        var wasSelected = btn.classList.contains('selected');
-        setSelected(wasSelected ? '' : btn.dataset.pid, wasSelected ? '' : btn.textContent.trim());
-        if (!wasSelected) { var inp = document.getElementById('player-search'); if (inp) inp.value = ''; }
-      });
-      // Auto-select if exactly one match
-      if (matches.length === 1) setSelected(matches[0].id, playerDisplay(matches[0]));
-    } else {
-      chipsEl.remove();
-      if (labelEl) labelEl.textContent = 'Link to existing player';
-    }
-
-    // Search
-    var input    = document.getElementById('player-search');
-    var dropdown = document.getElementById('player-dropdown');
-    if (input && dropdown) {
-      input.addEventListener('input', function() {
-        var q = this.value.trim().toLowerCase();
-        if (!q) { dropdown.style.display = 'none'; return; }
-        var results = PLAYERS.filter(function(p) {
-          return playerDisplay(p).toLowerCase().includes(q);
-        }).slice(0, 10);
-        dropdown.innerHTML = results.length
-          ? results.map(function(p) {
-              return '<button class="search-result" data-pid="' + p.id + '">' + playerDisplay(p) + '</button>';
-            }).join('')
-          : '<div style="padding:10px 14px;font-size:12px;color:#475569">No results</div>';
-        dropdown.style.display = 'block';
-      });
-      dropdown.addEventListener('click', function(e) {
-        var btn = e.target.closest('.search-result');
-        if (!btn) return;
-        setSelected(btn.dataset.pid, btn.textContent.trim());
-        input.value = btn.textContent.trim();
-        dropdown.style.display = 'none';
-      });
-      document.addEventListener('click', function(e) {
-        if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
-      });
-    }
-  }
-
-  // ── Relink (approved registrations only) ─────────────────────────────────
-  var relinkInput    = document.getElementById('relink-search');
-  var relinkDropdown = document.getElementById('relink-dropdown');
-  var relinkBtn      = document.getElementById('relink-confirm-btn');
-  var relinkLabel    = document.getElementById('relink-selected-label');
-  var _relinkPlayerId = '';
-
-  if (relinkInput && relinkDropdown) {
-    relinkInput.addEventListener('input', function() {
-      var q = this.value.trim().toLowerCase();
-      _relinkPlayerId = '';
-      if (relinkBtn) relinkBtn.disabled = true;
-      if (!q) { relinkDropdown.style.display = 'none'; return; }
-      var results = PLAYERS.filter(function(p) {
-        return playerDisplay(p).toLowerCase().includes(q);
-      }).slice(0, 10);
-      relinkDropdown.innerHTML = results.length
-        ? results.map(function(p) {
-            return '<button class="search-result" data-pid="' + p.id + '">' + playerDisplay(p) + '</button>';
-          }).join('')
-        : '<div style="padding:10px 14px;font-size:12px;color:#475569">No results</div>';
-      relinkDropdown.style.display = 'block';
-    });
-    relinkDropdown.addEventListener('click', function(e) {
-      var btn = e.target.closest('.search-result');
-      if (!btn) return;
-      _relinkPlayerId = btn.dataset.pid;
-      relinkInput.value = btn.textContent.trim();
-      relinkDropdown.style.display = 'none';
-      if (relinkBtn)   relinkBtn.disabled = false;
-      if (relinkLabel) relinkLabel.textContent = 'Will relink to: ' + btn.textContent.trim() + ' — no email sent.';
-    });
-    document.addEventListener('click', function(e) {
-      if (!relinkInput.contains(e.target) && !relinkDropdown.contains(e.target)) relinkDropdown.style.display = 'none';
-    });
-  }
-
-  window.doRelink = async function() {
-    if (!_relinkPlayerId) return;
-    if (!confirm('Relink this registration to the selected player? No email will be sent.')) return;
-    try {
-      var resp = await fetch('/admin/users/' + REG_ID + '/relink', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: _relinkPlayerId }),
-      });
-      var j = await resp.json();
-      if (!resp.ok) throw new Error(j.error || 'Failed');
-      location.href = '/admin/users/' + REG_ID;
-    } catch(e) { alert(e.message); }
-  };
-
-  // ── Actions ───────────────────────────────────────────────────────────────
-  window.doAction = async function(action) {
-    var playerId = _selectedPlayerId || '';
-    if (action === 'approve' && !playerId) {
-      if (!confirm('No player selected — approve without linking?')) return;
-    }
-    if (action === 'send-reset' && !confirm("Send a password reset link to " + REG_NAME + "'s email?")) return;
-    try {
-      var resp = await fetch('/admin/users/' + REG_ID + '/' + action, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: playerId }),
-      });
-      var j = await resp.json();
-      if (!resp.ok) throw new Error(j.error || 'Failed');
-      location.href = '/admin/users/' + REG_ID;
-    } catch(e) { alert(e.message); }
-  };
-
-  window.confirmReset = async function() {
-    if (!confirm('Reset this registration back to pending? The player record will not be affected.')) return;
-    try {
-      var resp = await fetch('/admin/users/' + REG_ID + '/reset', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-      });
-      var j = await resp.json();
-      if (!resp.ok) throw new Error(j.error || 'Failed');
-      location.href = '/admin/users/' + REG_ID;
-    } catch(e) { alert(e.message); }
-  };
-
-  window.toggleAdmin = async function() {
-    var btn = document.getElementById('admin-toggle-btn');
-    var isAdmin = btn && btn.textContent.trim().startsWith('🔒');
-    var msg = isAdmin ? 'Revoke admin access for this user?' : 'Grant admin access to this user? They will be able to access the admin panel.';
-    if (!confirm(msg)) return;
-    try {
-      var resp = await fetch('/admin/users/' + REG_ID + '/toggle-admin', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-      });
-      var j = await resp.json();
-      if (!resp.ok) throw new Error(j.error || 'Failed');
-      location.reload();
-    } catch(e) { alert(e.message); }
-  };
-
-  window.saveBirthday = async function() {
-    var val = document.getElementById('birthday-input').value;
-    var msg = document.getElementById('birthday-msg');
-    if (!val) { msg.textContent = 'Pick a date first.'; return; }
-    try {
-      var resp = await fetch('/admin/users/' + REG_ID + '/birthday', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ birthday: val }),
-      });
-      var j = await resp.json();
-      if (!resp.ok) throw new Error(j.error || 'Failed');
-      msg.textContent = 'Saved ✓';
-      msg.style.color = '#4ade80';
-      setTimeout(function() { msg.textContent = ''; }, 3000);
-    } catch(e) {
-      msg.textContent = e.message;
-      msg.style.color = '#f87171';
-    }
-  };
-
-  window.openReject = function() {
-    document.getElementById('reject-notes').value = '';
-    document.getElementById('reject-backdrop').style.display = 'flex';
-  };
-
-  var confirmBtn = document.getElementById('reject-confirm');
-  if (confirmBtn) {
-    confirmBtn.addEventListener('click', async function() {
-      var notes = document.getElementById('reject-notes').value.trim();
-      document.getElementById('reject-backdrop').style.display = 'none';
-      try {
-        var resp = await fetch('/admin/users/' + REG_ID + '/reject', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notes }),
-        });
-        var j = await resp.json();
-        if (!resp.ok) throw new Error(j.error || 'Failed');
-        location.href = '/admin/users/' + REG_ID;
-      } catch(e) { alert(e.message); }
-    });
-  }
-})();
-</script>`;
 }

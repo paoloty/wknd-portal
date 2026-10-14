@@ -195,6 +195,7 @@ import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminHomeBody } from './views/admin/home.js';
+import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
 import { adminPicksBody } from './views/admin/picks.js';
@@ -212,7 +213,9 @@ import { bonusCutoff, ballotClose, isPast, fmtMoment, tallyBallots, podiumPoints
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
-import { adminPapawisListBody, adminPapawisDetailBody, adminPapawisActivityBody, adminPapawisTeamsBody, estimatedPapawisPrice } from './views/admin/papawis.js';
+import { adminPapawisActivityBody, estimatedPapawisPrice } from './views/admin/papawis.js';
+import { adminPapawisRunsBody } from './views/admin/papawis-runs.js';
+import { adminPapawisRunBody } from './views/admin/papawis-run.js';
 import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
 import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody, adminMarketplaceEditBody } from './views/admin/marketplace.js';
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
@@ -246,7 +249,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -2363,11 +2366,7 @@ function picksSettingsPanel() {
   ], { title: 'Who wins? settings' });
 }
 
-function papawisSettingsPanel() {
-  return settingsPanel([
-    { type: 'toggle', key: 'papawis_enabled', value: getSetting('papawis_enabled', '0') === '1', label: 'Papawis on the site', sub: `Pickup game sign-ups on ${codeTag('/papawis')}. Managing runs here works either way.` },
-  ], { title: 'Public page' });
-}
+// (Papawis switches now live on the runs page itself: views/admin/papawis-runs.js.)
 
 function marketplaceSettingsPanel() {
   return settingsPanel([
@@ -6147,7 +6146,9 @@ function computeSyncDiff(reg, player) {
 app.get('/admin/users/:id', requireAuth, (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/users', body: '<p class="text-slate-500">Registration not found.</p>' }));
-  const players      = getAllPlayers();
+  const teams        = getAllTeams();
+  const teamName     = Object.fromEntries(teams.map(t => [t.id, t.name]));
+  const players      = getAllPlayers().map(p => ({ ...p, team_name: teamName[p.team_id] || '' }));
   const linkedPlayer = reg.player_id ? players.find(p => p.id === reg.player_id) : null;
   const isSuperAdmin = !req.session?.isElevatedPlayer;
   const { inSync }   = reg.player_id ? computeSyncDiff(reg, getPlayerWithTeam(reg.player_id)) : { inSync: true };
@@ -6156,9 +6157,16 @@ app.get('/admin/users/:id', requireAuth, (req, res) => {
   // Only super admins can open /admin/season/liveness/*, so only they get the capture handed in.
   const livenessCapture = isSuperAdmin ? getLivenessCaptureByRegId(reg.id) : null;
   res.send(renderAdminPage(req, {
-    title: reg.full_name,
+    title: (reg.full_name || '').split(',').reverse().map(s => s.trim()).filter(Boolean).join(' ') || 'User',
     currentPath: '/admin/users',
-    body: adminUserDetailBody({ reg, players, linkedPlayer, isSuperAdmin, inSync, bogusFlags, canViewSensitive, emails: getEmailsForAddress(reg.email), livenessCapture }),
+    body: adminUserDetailBody({
+      reg, players, linkedPlayer, isSuperAdmin, inSync, bogusFlags, canViewSensitive, emails: getEmailsForAddress(reg.email), livenessCapture,
+      tab: String(req.query.tab || 'profile'), query: req.query,
+      teamColor: Object.fromEntries(teams.map(t => [t.id, t.color || teamColor(t.name)])),
+      signup: getLatestSeasonSignupForReg(reg.id),
+      logs: isSuperAdmin ? getAdminLogsForUser(reg.id, reg.email, 40) : [],
+      sectionsList: ADMIN_SECTIONS,
+    }),
   }));
 });
 
@@ -6173,7 +6181,10 @@ function makeSetPasswordUrl(req, regId) {
 app.post('/admin/users/:id/approve', requireAuth, express.json(), async (req, res) => {
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
-  const player_id = req.body?.player_id || '';
+  // The approve form sends player_id = a suggested match, '' (don't link) or 'other' with the
+  // picked player in player_id_other.
+  const player_id = (req.body?.player_id === 'other' ? req.body?.player_id_other : req.body?.player_id) || '';
+  if (req.body?.player_id === 'other' && !player_id) return res.status(400).json({ error: 'Pick a player, or choose “Don’t link a player”.' });
   updateRegistration(reg.id, { status: 'approved', player_id, notes: reg.notes || '', approved_at: Date.now() });
   if (player_id) mergeRegistrationIntoPlayer(player_id, reg);
   if (reg.email) {
@@ -17720,12 +17731,13 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
   }
 
   res.send(renderAdminPage(req, {
-    title: 'Papawis',
+    title: 'Runs',
     currentPath: '/admin/papawis',
-    settings: papawisSettingsPanel(),
-    body: adminPapawisListBody({
-      games, papawisRemindersEnabled, papawisSlotAlertsEnabled, courts: getActivePapawisCourts(), pendingPayments,
-      unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer,
+    body: adminPapawisRunsBody({
+      games, courts: getActivePapawisCourts(), pendingPayments, unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer,
+      papawisEnabled: getSetting('papawis_enabled', '0') === '1', remindersEnabled: papawisRemindersEnabled, slotAlertsEnabled: papawisSlotAlertsEnabled,
+      regularsCount: getFrequentPapawisPlayers(REGULAR_WINDOW, REGULAR_MIN_GAMES).length, today: manilaTodayStr(), query: req.query,
+      colorById: adminTeamColorByPlayer(),
     }),
   }));
 });
@@ -17833,7 +17845,9 @@ app.get('/api/papawis-map/photo', async (req, res) => {
 });
 
 app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
-  const { title, date, start_time, end_time, location, max_slots, open_days_before } = req.body;
+  const { title, date, start_time, end_time, max_slots, open_days_before } = req.body;
+  // The New run drawer's court list ends with "Other…", whose text arrives as location_other.
+  const location = req.body.location === '__other__' ? req.body.location_other : req.body.location;
   if (!date) return res.status(400).json({ error: 'Date is required.' });
   const defaultTitle = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
     + ' (' + new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')';
@@ -17904,7 +17918,11 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).send('Not found');
   const signups = getPapawisSignups(req.params.id);
-  const players = getAllPlayers();
+  const teamsAll = getAllTeams();
+  const teamNameById = Object.fromEntries(teamsAll.map(t => [t.id, t.name]));
+  const playersWithTeam = getAllPlayers().map(p => ({ ...p, team_name: teamNameById[p.team_id] || '' }));
+  // Signups carry the player's league team by name; rings take that team's colour.
+  const colorByTeam = Object.fromEntries(teamsAll.map(t => [t.name, t.color || teamColor(t.name)]));
   const activity = getPapawisActivityForGame(req.params.id);
   const today = new Date(manilaTodayStr() + 'T00:00:00');
   const gameDate = new Date(game.date + 'T00:00:00');
@@ -17955,8 +17973,11 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: game.title || 'Papawis',
     currentPath: '/admin/papawis',
-    body: adminPapawisDetailBody({
-      game, signups, players, activity, daysLeft, unlinkedByPlayer, reusableByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts(),
+    body: adminPapawisRunBody({
+      game, signups, players: playersWithTeam, activity, daysLeft, unlinkedByPlayer, reusableByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts(),
+      tab: String(req.query.tab || 'roster'), ver: CSS_VER,
+      teamRoster: req.query.tab === 'teams' ? getPapawisConfirmedForTeams(game.id) : [],
+      colorByTeam, colorById: adminTeamColorByPlayer(),
       broadcast: {
         state: papawisBroadcastState(),
         preview: game.status === 'open' ? papawisAnnouncementPreview(game) : null,
@@ -17995,11 +18016,9 @@ app.get('/admin/papawis/:id/teams', requireAuth, (req, res) => {
       });
     });
   }
-  res.send(renderAdminPage(req, {
-    title: `Teams — ${game.title || 'Papawis'}`,
-    currentPath: '/admin/papawis',
-    body: adminPapawisTeamsBody({ game, roster }),
-  }));
+  // The teams themselves are shown on the run page's Teams tab (admin redesign); this
+  // address is now just the deliberate "build teams" step that tab's button links to.
+  res.redirect(`/admin/papawis/${game.id}?tab=teams`);
 });
 
 app.post('/admin/papawis/:id/teams/reshuffle', requireAuth, (req, res) => {
@@ -18066,7 +18085,15 @@ app.post('/admin/papawis/:id/autofill-regulars', requireAuth, (req, res) => {
   if (!papawisLockCheck(req.params.id, res)) return;
   const result = autofillPapawisRegulars(req.params.id);
   if (result.error) return res.status(404).json({ error: 'Game not found.' });
-  res.json({ ok: true, added: result.added, skipped: result.skipped });
+  // One line for the toast: who was added, and why the rest were skipped.
+  const conf = result.added.filter(a => a.status === 'confirmed').length;
+  const reasons = { link_expired: 'never finished account setup', dormant: 'not logged in for 3+ months', no_valid_email: 'no valid email', bounced: 'no valid email',
+    inactive: 'inactive', not_approved: 'no approved account', already_listed: 'already listed', unpaid: 'unpaid balance', probation: 'on probation' };
+  const tally = {};
+  for (const s of result.skipped) { const r = reasons[s.reason] || s.reason; tally[r] = (tally[r] || 0) + 1; }
+  const skippedText = Object.entries(tally).map(([r, n]) => `${n} ${r}`).join(', ');
+  const message = `Added ${result.added.length} regular${result.added.length === 1 ? '' : 's'}${result.added.length ? ` (${conf} confirmed, ${result.added.length - conf} waitlisted)` : ''}.${result.skipped.length ? ` Skipped ${result.skipped.length}: ${skippedText}.` : ''}`;
+  res.json({ ok: true, added: result.added, skipped: result.skipped, message });
 });
 
 app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
@@ -18113,7 +18140,8 @@ app.post('/admin/papawis/:id/signups/:signupId/confirm-deposit', requireAuth, ex
     if (!confirmTransaction(txId)) return res.status(400).json({ error: 'Could not confirm that payment.' });
     notifyLedgerEvent({ playerId: tx.player_id, type: 'payment', amount: tx.amount, notes: tx.notes });
   } else {
-    const amount = Number(req.body?.amount) || 0;
+    // The deposit picker's last option is "Other amount", typed into amount_other.
+    const amount = Number(req.body?.amount === '__other__' ? req.body?.amount_other : req.body?.amount) || 0;
     if (minDeposit && amount < minDeposit) {
       return res.status(400).json({ error: `Deposit must be at least ₱${minDeposit.toLocaleString()} — the highest papawis price on record.` });
     }
@@ -18167,6 +18195,8 @@ app.post('/admin/papawis/:id/signups/reorder', requireAuth, express.json(), (req
 app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
+  // The Settings tab's court list ends with "Other…", whose text arrives as location_other.
+  if (req.body?.location === '__other__') req.body.location = req.body.location_other || '';
 
   const newLocation = req.body?.location !== undefined ? String(req.body.location || '').trim() : game.location;
   const newStart = req.body?.start_time !== undefined ? req.body.start_time : game.start_time;
@@ -18373,7 +18403,7 @@ app.post('/admin/papawis/:id/send-payment-emails', requireAuth, async (req, res)
   if (game.status !== 'completed') return res.status(400).json({ error: 'Game must be completed first.' });
   try {
     const { sent, errors } = await sendPapawisCompletionEmails(game.id, game.price_per_player);
-    res.json({ ok: true, sent, errors });
+    res.json({ ok: true, sent, errors, message: `Payment emails sent to ${sent} ${sent === 1 ? 'player' : 'players'}${errors.length ? ` (${errors.length} failed)` : ''}.` });
   } catch (e) {
     res.status(500).json({ error: 'Failed to send.' });
   }

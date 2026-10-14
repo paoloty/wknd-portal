@@ -9,7 +9,7 @@ Legend for the Mockup column:
 - **needed**: a mockup comes first; the page isn't built until it's approved.
 - **n/a**: no mockup; the page is built straight from the components.
 
-Last updated: 2026-10-15.
+Last updated: 2026-10-15. Home, Users and Team heads are committed (dd179c5); User detail and Papawis Runs + Run page are built but not committed yet.
 
 ## Foundation
 
@@ -26,9 +26,9 @@ Last updated: 2026-10-15.
 | 1 | Overview | Home | /admin | done | [x] |
 | 2 | Members | Users | /admin/users | n/a | [x] |
 | 3 | Members | Team heads | /admin/team-heads | n/a | [x] |
-| 4 | Members | User detail | /admin/users/:id | needed | [ ] |
-| 5 | Papawis | Runs, with the New run form | /admin/papawis | n/a | [ ] |
-| 6 | Papawis | Run page (roster, teams, money, messages, activity, settings) | /admin/papawis/:id | needed | [ ] |
+| 4 | Members | User detail | /admin/users/:id | done | [x] |
+| 5 | Papawis | Runs, with the New run form | /admin/papawis | done | [x] |
+| 6 | Papawis | Run page (roster, teams, money, messages, activity, settings) | /admin/papawis/:id | done (desktop + phone) | [x] |
 | 7 | Papawis | Courts | /admin/papawis/courts | n/a | [ ] |
 | 8 | Papawis | Activity | /admin/papawis/activity | n/a | [ ] |
 | 9 | Game Day | Games | /admin/games | n/a | [ ] |
@@ -91,6 +91,6 @@ Last updated: 2026-10-15.
 
 ## Counts
 
-| | Pages | Mockups needed | Mockups done | Built |
+| | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Total | 52 | 8 | 1 | 3 |
+| Total | 52 | 6 | 4 | 6 |

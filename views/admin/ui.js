@@ -83,9 +83,10 @@ export function button(label, { kind = 'secondary', size = '', href = '', type =
     : `<button type="${type}" class="${cls}" ${attrs}>${escHtml(label)}</button>`;
 }
 
-export function emptyState({ title, sub = '' }) {
+// done: true shows a green check ("all caught up"); otherwise a neutral mark.
+export function emptyState({ title, sub = '', done = false }) {
   return `<div class="aui-empty">
-    <span class="aui-empty__mark" aria-hidden="true">✓</span>
+    <span class="aui-empty__mark${done ? '' : ' is-neutral'}" aria-hidden="true">${done ? '✓' : '–'}</span>
     <div class="aui-empty__title">${escHtml(title)}</div>
     ${sub ? `<div class="aui-empty__sub">${escHtml(sub)}</div>` : ''}
   </div>`;
@@ -176,7 +177,8 @@ export function dataGrid(o) {
   const [one, many] = o.noun || ['row', 'rows'];
 
   // The URL params this grid owns, so every link keeps the others.
-  const state = { view: view === views[0] ? '' : view.key, q: text, sort: sortRaw === (o.defaultSort || '') ? '' : sortRaw, d: dense ? 'compact' : '' };
+  // o.keep: extra params every grid link carries (e.g. { tab: 'emails' } on a tabbed page).
+  const state = { ...(o.keep || {}), view: view === views[0] ? '' : view.key, q: text, sort: sortRaw === (o.defaultSort || '') ? '' : sortRaw, d: dense ? 'compact' : '' };
   for (const f of filters) state[f.key] = f.value;
   const url = patch => gridUrl(o.baseUrl, state, patch);
 
@@ -205,14 +207,14 @@ export function dataGrid(o) {
   }).join('')}</nav>` : '';
 
   // Toolbar: one GET form (search + selects); hidden inputs keep the rest of the state.
-  const keep = Object.entries({ view: state.view, sort: state.sort, d: state.d }).filter(([, v]) => v).map(([k, v]) => `<input type="hidden" name="${k}" value="${attr(v)}">`).join('');
+  const keep = Object.entries({ ...(o.keep || {}), view: state.view, sort: state.sort, d: state.d }).filter(([, v]) => v).map(([k, v]) => `<input type="hidden" name="${k}" value="${attr(v)}">`).join('');
   const searchHtml = o.search ? `<label class="aui-search"><span class="aui-search__icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6" cy="6" r="4.5"/><path d="M9.5 9.5 13 13"/></svg></span><input type="search" name="q" value="${attr(text)}" placeholder="${attr(o.search.placeholder || 'Search')}" aria-label="${attr(o.search.placeholder || 'Search')}" data-autosubmit-search></label>` : '';
   const selectsHtml = filters.map(f => `<label class="aui-filter"><span>${escHtml(f.label)}</span><select class="aui-input" name="${attr(f.key)}" data-autosubmit><option value="">All</option>${f.options.map(([v, l]) => `<option value="${attr(v)}"${String(v) === f.value ? ' selected' : ''}>${escHtml(l)}</option>`).join('')}</select></label>`).join('');
   const chips = [
     ...(text ? [{ label: `“${text}”`, href: url({ q: '', page: '' }) }] : []),
     ...filters.filter(f => f.value).map(f => ({ label: `${f.label}: ${(f.options.find(([v]) => String(v) === f.value) || [null, f.value])[1]}`, href: url({ [f.key]: '', page: '' }) })),
   ];
-  const chipsHtml = chips.length ? `<div class="aui-chips">${chips.map(c => `<a class="aui-chip" href="${attr(c.href)}" aria-label="Remove filter ${attr(c.label)}">${escHtml(c.label)}<span aria-hidden="true">×</span></a>`).join('')}<a class="aui-chips__clear" href="${attr(gridUrl(o.baseUrl, { view: state.view, d: state.d }, {}))}">Clear all</a></div>` : '';
+  const chipsHtml = chips.length ? `<div class="aui-chips">${chips.map(c => `<a class="aui-chip" href="${attr(c.href)}" aria-label="Remove filter ${attr(c.label)}">${escHtml(c.label)}<span aria-hidden="true">×</span></a>`).join('')}<a class="aui-chips__clear" href="${attr(gridUrl(o.baseUrl, { ...(o.keep || {}), view: state.view, d: state.d }, {}))}">Clear all</a></div>` : '';
   const densityHtml = `<div class="aui-density" role="group" aria-label="Row density"><a href="${attr(url({ d: '' }))}"${dense ? '' : ' aria-current="true"'}>Comfortable</a><a href="${attr(url({ d: 'compact' }))}"${dense ? ' aria-current="true"' : ''}>Compact</a></div>`;
   const toolbar = `<div class="aui-grid__toolbar" data-grid-toolbar>
     <form class="aui-grid__filters" method="get" action="${attr(o.baseUrl)}" role="search">${keep}${searchHtml}${selectsHtml}${chipsHtml}</form>
@@ -322,11 +324,12 @@ export function segmented({ name, value, options, label = '' }) {
   return `<div class="aui-segmented" role="radiogroup"${label ? ` aria-label="${attr(label)}"` : ''}>${options.map(([v, l]) => `<label><input type="radio" name="${attr(name)}" value="${attr(v)}"${String(v) === String(value) ? ' checked' : ''}><span>${escHtml(l)}</span></label>`).join('')}</div>`;
 }
 
-// A switch row. With `post`, flipping it saves right away (JSON { on }) and toasts;
+// A switch row. With `post`, flipping it saves right away (JSON { key, on }, or { <name>: '1'|'0' }
+// with `setting` for /admin/site/settings) and toasts;
 // without, it fills a hidden input for the surrounding form.
-export function toggleRow({ label, help = '', name, on = false, post = '' }) {
+export function toggleRow({ label, help = '', name, on = false, post = '', reload = false, setting = false }) {
   return `<div class="aui-toggle-row"><div><div class="aui-toggle-row__label">${escHtml(label)}</div>${help ? `<div class="aui-toggle-row__help">${escHtml(help)}</div>` : ''}</div>
-    <button type="button" class="aui-switch" role="switch" aria-checked="${on}" aria-label="${attr(label)}" data-switch="${attr(name)}"${post ? ` data-switch-post="${attr(post)}"` : ''}><span></span></button>
+    <button type="button" class="aui-switch" role="switch" aria-checked="${on}" aria-label="${attr(label)}" data-switch="${attr(name)}"${post ? ` data-switch-post="${attr(post)}"` : ''}${reload ? ' data-switch-reload' : ''}${setting ? ' data-switch-setting' : ''}><span></span></button>
     ${post ? '' : `<input type="hidden" name="${attr(name)}" value="${on ? '1' : '0'}">`}</div>`;
 }
 

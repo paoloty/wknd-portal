@@ -61,7 +61,7 @@ function todoSection(items, snoozedCount) {
     </div>
     <div class="ahome-todo" id="ahome-todo">
       ${items.map(todoItem).join('')}
-      <div data-empty${items.length ? ' hidden' : ''}>${emptyState({ title: 'You’re all caught up', sub: 'Nothing here needs you right now.' })}</div>
+      <div data-empty${items.length ? ' hidden' : ''}>${emptyState({ title: 'You’re all caught up', sub: 'Nothing here needs you right now.', done: true })}</div>
     </div>
   </section>`;
 }
