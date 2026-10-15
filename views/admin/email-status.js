@@ -7,7 +7,8 @@ export function emailStatus(row) {
   if (!row) return null;
   if (row.complained_at) return { key: 'complained', label: 'Marked spam', cls: 'bg-red-500/15 text-red-400',     at: row.complained_at };
   if (row.bounced_at)    return { key: 'bounced',    label: 'Bounced',     cls: 'bg-red-500/15 text-red-400',     at: row.bounced_at };
-  if (row.failed_at)     return { key: 'failed',     label: 'Failed',      cls: 'bg-red-500/15 text-red-400',     at: row.failed_at };
+  if (row.failed_at || row.status === 'failed') return { key: 'failed', label: 'Failed', cls: 'bg-red-500/15 text-red-400', at: row.failed_at || row.sent_at };
+  if (row.status === 'sending') return { key: 'sending', label: 'Sending', cls: 'bg-slate-500/15 text-slate-400', at: row.sent_at };
   if (row.clicked_at)    return { key: 'clicked',    label: 'Clicked',     cls: 'bg-green-500/15 text-green-400', at: row.clicked_at };
   if (row.opened_at)     return { key: 'opened',     label: 'Opened',      cls: 'bg-green-500/15 text-green-400', at: row.opened_at };
   if (row.delivered_at)  return { key: 'delivered',  label: 'Delivered',   cls: 'bg-slate-500/15 text-slate-300', at: row.delivered_at };

@@ -195,7 +195,7 @@ import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminHomeBody } from './views/admin/home.js';
-import { sendBroadcast, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe } from './lib/broadcast.js';
+import { sendBroadcast, startCampaign, finishCampaign, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe } from './lib/broadcast.js';
 import { leagueNudgeEmail } from './lib/mailer.js';
 import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
 import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
@@ -8981,19 +8981,21 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
   const dayStr = new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   const reach = picksReminderRecipients(targets, open[0].ymd);
   if (!reach.recipients.length) return nothing();
+  const recipients = req.body?.email === '1' ? reach.emailable : [];
+  const bellTitle = `Who wins? ${matchups}`;
+  const bellBody = `Make your pick${open.length === 1 ? '' : 's'} before ${fmtCloseTime(picksCloseTime())} on ${dayStr}.`;
+  const campaignId = startCampaign({
+    kind: 'pick_reminder', title: bellTitle, body: bellBody, link: '/picks', segment: `not_picked:${open[0].ymd}`,
+    channels: recipients.length ? 'bell+email' : 'bell', createdBy: req.session?.playerName || 'admin',
+  });
   for (const { player: p } of reach.recipients) {
-    createNotification({
-      playerId: p.id, type: 'pick_reminder',
-      title: `Who wins? ${matchups}`,
-      body: `Make your pick${open.length === 1 ? '' : 's'} before ${fmtCloseTime(picksCloseTime())} on ${dayStr}.`,
-      link: '/picks',
-    });
+    createNotification({ playerId: p.id, type: 'pick_reminder', title: bellTitle, body: bellBody, link: '/picks', broadcastId: campaignId });
   }
+  finishCampaign(campaignId, { bells: reach.recipients.length });
   setSetting(`picks_reminded_${open[0].ymd}`, JSON.stringify({ at: Date.now(), count: reach.recipients.length }));
   // "Also email them": the emailable ones (the rest still got the bell above). Sent in the
   // background — the page shows the tally from picks_emailed_<day> once it's done.
-  const recipients = req.body?.email === '1' ? reach.emailable : [];
-  if (recipients.length) setImmediate(() => sendPicksEmails(recipients).catch(e => console.error('[picks email] send failed:', e.message)));
+  if (recipients.length) setImmediate(() => sendPicksEmails(recipients, { campaignId, bells: reach.recipients.length }).catch(e => console.error('[picks email] send failed:', e.message)));
   if (home) return res.redirect(`/admin?toast=${encodeURIComponent(`Pick reminder sent: ${reach.recipients.length} bell${reach.recipients.length === 1 ? '' : 's'}${recipients.length ? `, ${IS_DEV ? 1 : recipients.length} email${(IS_DEV ? 1 : recipients.length) === 1 ? '' : 's'} going out now` : ''}`)}`);
   res.redirect(`/admin/picks?reminded=${reach.recipients.length}${recipients.length ? `&emailing=${IS_DEV ? 1 : recipients.length}` : ''}`);
 });
@@ -9075,7 +9077,9 @@ function picksEmailedIds(ymd) {
   try { return new Set(ymd ? JSON.parse(getSetting(`picks_emailed_ids_${ymd}`, '[]') || '[]') : []); } catch { return new Set(); }
 }
 
-async function sendPicksEmails(recipients) {
+// campaign: { campaignId, bells } from startCampaign(), so each email carries the campaign
+// id and the campaign row gets the final email count.
+async function sendPicksEmails(recipients, { campaignId = '', bells = 0 } = {}) {
   const c = picksEmailContext();
   if (!c) return;
   const draft = await ensurePicksDraft(c);
@@ -9094,7 +9098,7 @@ async function sendPicksEmails(recipients) {
     const unsub = picksUnsubscribeUrl(reg.id);
     try {
       const ok = await sendMail({
-        to: email, ...picksEmailFor(c, draft, player.id, reg.id), ref: reg.id,
+        to: email, ...picksEmailFor(c, draft, player.id, reg.id), ref: reg.id, broadcastId: campaignId,
         headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
       });
       if (ok) { sent++; emailedIds.add(player.id); }
@@ -9105,6 +9109,7 @@ async function sendPicksEmails(recipients) {
   }
   setSetting(`picks_emailed_ids_${c.ymd}`, JSON.stringify([...emailedIds]));
   setSetting(`picks_emailed_${c.ymd}`, JSON.stringify({ at: Date.now(), sent, failed, of: list.length, source: draft.source }));
+  finishCampaign(campaignId, { bells, emails: sent });
 }
 
 // Preview exactly what a player would get (the first player still missing picks, else any
@@ -10856,13 +10861,14 @@ function runPickReminders() {
     const matchups = dayGames.map(o => `${titleCase(o.a)} vs ${titleCase(o.b)}`).join(' and ');
     const dayStr = new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const reach = picksReminderRecipients(still.map(id => ({ id })), ymd);
+    const bell = { title: `Your reminder: who wins? ${matchups}`, body: `You asked us to remind you. Picks close ${fmtCloseTime(picksCloseTime())} on ${dayStr}.`, link: '/picks' };
+    // The players asked for this one, so it's a campaign outside the caps.
+    const campaignId = startCampaign({ kind: 'pick_remind_me', ...bell, segment: `asked:${ymd}`, channels: reach.emailable.length ? 'bell+email' : 'bell', createdBy: 'auto' });
     for (const { player: p } of reach.recipients) {
-      createNotification({
-        playerId: p.id, type: 'pick_reminder', title: `Your reminder: who wins? ${matchups}`,
-        body: `You asked us to remind you. Picks close ${fmtCloseTime(picksCloseTime())} on ${dayStr}.`, link: '/picks',
-      });
+      createNotification({ playerId: p.id, type: 'pick_reminder', ...bell, broadcastId: campaignId });
     }
-    if (reach.emailable.length) sendPicksEmails(reach.emailable).catch(e => console.error('[pick reminders] email failed:', e.message));
+    finishCampaign(campaignId, { bells: reach.recipients.length });
+    if (reach.emailable.length) sendPicksEmails(reach.emailable, { campaignId, bells: reach.recipients.length }).catch(e => console.error('[pick reminders] email failed:', e.message));
     console.log(`[pick reminders] ${ymd}: ${reach.recipients.length} bell(s), ${reach.emailable.length} email(s)`);
   }
 }
@@ -13674,7 +13680,7 @@ function mvpPodiumMissing(season) {
 // Already has a podium reminder email (email_log, last 60 days). Once a reminder has gone
 // out, the button only resends — bell + email — to the emailable ones without one, i.e.
 // the sends that failed (e.g. Resend quota). Bell-only players already had their bell.
-const podiumEmailed = regId => (getLatestEmailForRef(['podium_reminder'], regId)?.sent_at || 0) > Date.now() - 60 * 86400000;
+const podiumEmailed = regId => (getLatestEmailForRef(['podium_reminder'], regId, { sentOnly: true })?.sent_at || 0) > Date.now() - 60 * 86400000;
 const podiumMissedEmail = missing => missing.filter(r => r.emailable && !podiumEmailed(r.reg.id));
 
 app.get('/admin/mvp-podium',requireAuth, (req, res) => res.redirect(301, '/admin/awards/podium'));
@@ -13764,44 +13770,49 @@ app.post(['/admin/awards/podium/remind', '/admin/mvp-podium/remind'], requireAut
   let prev = null;
   try { prev = JSON.parse(getSetting(`mvp_podium_reminded_${season}`, '') || 'null'); } catch { prev = null; }
   const recipients = prev ? podiumMissedEmail(mvpPodiumMissing(season)) : mvpPodiumMissing(season);
-  for (const r of recipients) {
-    createNotification({
-      playerId: r.player.id, type: 'mvp_podium_reminder',
-      title: 'Call the MVP podium: up to +3 Pickmaster points',
-      body: st.bonusOpen && st.bonusAt ? `Bonus closes ${st.bonusAt}` : 'Pick who finishes 1st, 2nd and 3rd',
-      link: '/mvp#ballot',
-    });
-  }
   const emailable = prev ? recipients : req.body?.email === '1' ? recipients.filter(r => r.emailable) : [];
+  const bell = {
+    title: 'Call the MVP podium: up to +3 Pickmaster points',
+    body: st.bonusOpen && st.bonusAt ? `Bonus closes ${st.bonusAt}` : 'Pick who finishes 1st, 2nd and 3rd',
+    link: '/mvp#ballot',
+  };
+  const campaignId = startCampaign({
+    kind: prev ? 'mvp_podium_resend' : 'mvp_podium_reminder', ...bell, segment: prev ? `missed_email:${season}` : `no_ballot:${season}`,
+    channels: emailable.length ? 'bell+email' : 'bell', createdBy: req.session?.playerName || 'admin',
+  });
+  for (const r of recipients) createNotification({ playerId: r.player.id, type: 'mvp_podium_reminder', ...bell, broadcastId: campaignId });
+  finishCampaign(campaignId, { bells: recipients.length });
   // A resend keeps the first reminder's record and notes the resend beside it.
   setSetting(`mvp_podium_reminded_${season}`, JSON.stringify(prev
     ? { ...prev, resent: { at: Date.now(), count: recipients.length } }
     : { at: Date.now(), bell: recipients.length, email: req.body?.email === '1' ? emailable.length : null }));
-  if (emailable.length) setImmediate(() => sendPodiumEmails(emailable, st).catch(e => console.error('[podium email] send failed:', e.message)));
+  if (emailable.length) setImmediate(() => sendPodiumEmails(emailable, st, { campaignId, bells: recipients.length }).catch(e => console.error('[podium email] send failed:', e.message)));
   if (home) return res.redirect(`/admin?toast=${encodeURIComponent(`Podium reminder sent: ${recipients.length} bell${recipients.length === 1 ? '' : 's'}${emailable.length ? `, ${IS_DEV ? 1 : emailable.length} email${(IS_DEV ? 1 : emailable.length) === 1 ? '' : 's'} going out now` : ''}`)}`);
   res.redirect(`/admin/awards/podium?reminded=${recipients.length}${emailable.length ? `&emailing=${emailable.length}` : ''}`);
 });
 
 // Same pacing and dev rule as sendPicksEmails: outside production only the first one goes
 // (and lib/mailer.js redirects it to the admin inbox).
-async function sendPodiumEmails(list, st) {
+async function sendPodiumEmails(list, st, { campaignId = '', bells = 0 } = {}) {
   const season = getPortalCurrentSeason();
   const faces = shuffled(mvpLockLite(season)).map(p => ({ name: displayPlayerName(p.name), color: teamColor(p.team) }));
   const url = `${(process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '')}/mvp#ballot`;
-  let first = true;
+  let first = true, sent = 0;
   for (const { player, reg, email } of IS_DEV ? list.slice(0, 1) : list) {
     if (!first) await new Promise(r => setTimeout(r, 600));
     first = false;
     const unsub = picksUnsubscribeUrl(reg.id);
     try {
-      await sendMail({
-        to: email, ...podiumReminderEmail({ name: player.name, faces, closeLabel: st.bonusOpen ? st.bonusAt : '', url, unsubscribeUrl: unsub }), ref: reg.id,
+      const ok = await sendMail({
+        to: email, ...podiumReminderEmail({ name: player.name, faces, closeLabel: st.bonusOpen ? st.bonusAt : '', url, unsubscribeUrl: unsub }), ref: reg.id, broadcastId: campaignId,
         headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
       });
+      if (ok) sent++;
     } catch (e) {
       console.error(`[podium email] ${email}: ${e.message}`);
     }
   }
+  finishCampaign(campaignId, { bells, emails: sent });
 }
 
 // Once per season, when the race is revealed: a bell notification for every complete ballot
@@ -16961,19 +16972,22 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   // Email confirmed players — itemized breakdown of exactly what they were charged,
   // matching the review screen line for line.
   const emailErrors = [];
+  // One campaign for the whole batch (outside the caps), so a failed email can be retried.
+  const campaignId = startCampaign({ kind: 'season_results', title: `Season ${season} results`, segment: `season:${season}`, createdBy: req.session?.playerName || 'admin' });
+  let emailsSent = 0;
   for (const p of allSignups.filter(p => p.status === 'confirmed')) {
     if (!p.email) continue;
     const row = chargeById[p.id];
     const teamName = teamById[teamBySignup[p.id] || '']?.name || '';
     try {
-      await sendMail({ to: p.email, ref: p.id, ...seasonQualifiedEmail({
+      if (await sendMail({ to: p.email, ref: p.id, broadcastId: campaignId, ...seasonQualifiedEmail({
         name: p.full_name, season, teamName,
         quotaAmount: row?.quotaAmount || 0,
         topAmount: row?.topAmount || 0, jerseyTop: row?.jerseyTop || '',
         shortsAmount: row?.shortsAmount || 0, jerseyShorts: row?.jerseyShorts || '', pockets: !!row?.pockets,
         extraAmount: row?.extraAmount || 0, extraLabel: row?.extraLabel || '',
         total: row?.total ?? quotaAmount,
-      }) });
+      }) })) emailsSent++;
     } catch(e) { emailErrors.push({ email: p.email, signupId: p.id, kind: 'confirmed' }); }
   }
 
@@ -16981,9 +16995,10 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   for (const p of notSelected) {
     if (!p.email) continue;
     try {
-      await sendMail({ to: p.email, ref: p.id, ...seasonNotSelectedEmail({ name: p.full_name, season }) });
+      if (await sendMail({ to: p.email, ref: p.id, broadcastId: campaignId, ...seasonNotSelectedEmail({ name: p.full_name, season }) })) emailsSent++;
     } catch(e) { emailErrors.push({ email: p.email, signupId: p.id, kind: 'not_selected' }); }
   }
+  finishCampaign(campaignId, { emails: emailsSent });
 
   setSetting('season_draft_status', 'started');
   setSetting('season_signup_open', '0');
