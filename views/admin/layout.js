@@ -1,6 +1,7 @@
 import { escHtml, wkndBall } from '../layout.js';
 
 const IC = {
+  bell:      `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5V7a4 4 0 0 1 8 0v3.5l1 1.5h-10l1-1.5z"/><path d="M6 13.5a1.6 1.6 0 0 0 3 0"/></svg>`,
   dashboard: `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="8.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="8.5" width="5" height="5" rx="1"/><rect x="8.5" y="8.5" width="5" height="5" rx="1"/></svg>`,
   picks:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="6"/><circle cx="7.5" cy="7.5" r="2.5"/><path d="M7.5 1.5v2M7.5 11.5v2M1.5 7.5h2M11.5 7.5h2"/></svg>`,
   games:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="12" height="10" rx="1.5"/><path d="M5 3V1.5M10 3V1.5"/><path d="M1.5 7h12"/></svg>`,
@@ -39,6 +40,13 @@ const NAV_GROUPS = [
     key: 'overview', label: 'Overview',
     items: [
       { href: '/admin', label: 'Home', icon: 'dashboard', exact: true },
+    ],
+  },
+  {
+    key: 'reach', label: 'Reach',
+    items: [
+      { href: '/admin/reach',      label: 'Message players', icon: 'bell', exact: true },
+      { href: '/admin/reach/sent', label: 'Sent log',        icon: 'activity' },
     ],
   },
   {
@@ -215,7 +223,7 @@ const SUPER_ADMIN_NAV = [
 
 // The sidebar icon for each group (the group row is what you see; items sit under it).
 const GROUP_ICON = {
-  overview: 'dashboard', 'games-stats': 'games', papawis: 'papawis', awards: 'awards', season: 'standings',
+  overview: 'dashboard', reach: 'bell', 'games-stats': 'games', papawis: 'papawis', awards: 'awards', season: 'standings',
   content: 'posts', community: 'activity', marketplace: 'wallet', finance: 'finance', members: 'users', site: 'site',
   super: 'shield',
 };

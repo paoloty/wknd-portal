@@ -1,195 +1,76 @@
+// /admin/players: every player (admin redesign, 2026-10-15). Rebuilt from scratch on
+// views/admin/ui.js: one data grid (search, Active / Inactive / All / No photo, Team and
+// Season filters, sortable OVR and games) with Recompute ratings in the header. Each row
+// opens /admin/players/:id (views/admin/player-detail.js). Browser bits:
+// public/admin-players.js.
 import { escHtml } from '../layout.js';
-import { displayPlayerName, teamColor } from '../utils.js';
-import { ovrColor } from '../../lib/ratings.js';
+import { displayPlayerName } from '../utils.js';
+import { pageHeader, dataGrid, badge, button, avatar } from './ui.js';
 
-const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
-const ICON_RECOMPUTE = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
+const attr = s => escHtml(String(s ?? ''));
 
-function ovrBadge(ovr) {
-  if (ovr == null) return `<span class="text-xs text-slate-500">—</span>`;
-  const color = ovrColor(ovr);
-  return `<span class="font-saira text-lg font-extrabold leading-none" style="color:${color}">${ovr}</span>`;
-}
-
-function miniBar(val, color) {
-  if (val == null) return `<span class="text-xs text-slate-500">—</span>`;
-  const pct = Math.round((val / 99) * 100);
-  return `<div class="flex items-center gap-1.5">
-    <div class="w-10 h-1 bg-admin-border rounded-full overflow-hidden shrink-0">
-      <div style="width:${pct}%;height:100%;background:${color};border-radius:99px"></div>
-    </div>
-    <span class="text-xs font-semibold" style="color:${color}">${val}</span>
-  </div>`;
-}
-
-function posChips(positions) {
+export function parsePositions(raw) {
   try {
-    const arr = typeof positions === 'string' ? JSON.parse(positions) : (positions || []);
-    if (!arr.length) return '';
-    return arr.map(p => `<span class="text-[10px] bg-admin-border/50 text-slate-500 px-1.5 py-0.5 rounded ml-1">${escHtml(p)}</span>`).join('');
-  } catch { return ''; }
+    const arr = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []);
+    return Array.isArray(arr) ? arr.filter(Boolean) : [];
+  } catch { return []; }
 }
 
-export function adminPlayersBody({ players = [], seasons = [], season = '', teams = [] } = {}) {
-  const seasonPills = seasons.map(s =>
-    `<button class="agm-pill${String(s) === String(season) ? ' is-active' : ''}" data-season="${escHtml(String(s))}"><span class="pill-label">${escHtml('Season ' + s)}</span></button>`
-  ).join('');
+// players: getPlayersWithRatings(season) rows. gpById: games played in that season (or all
+// time). canViewAs: player ids with an approved account (super admin only, else empty).
+export function adminPlayersBody({ players = [], seasons = [], season = '', teams = [], gpById = {}, colorByTeam = {}, canViewAs = new Set(), query = {}, ver = '' } = {}) {
+  const rows = players.map(p => ({
+    ...p,
+    display: displayPlayerName(p.name),
+    pos: parsePositions(p.positions),
+    gp: Number(gpById[p.id] || 0),
+    inactive: p.status === 'inactive',
+  }));
+  const active = rows.filter(r => !r.inactive).length;
+  const seasonLabel = season ? `Season ${season}` : 'all time';
+  const enc = encodeURIComponent;
 
-  const teamPills = teams.map(t =>
-    `<button class="agm-pill" data-fteam="${escHtml(t.name.toLowerCase())}"><span class="pill-label">${escHtml(t.name)}</span></button>`
-  ).join('');
+  const grid = dataGrid({
+    id: 'players', baseUrl: '/admin/players', query,
+    rows, rowKey: r => r.id, noun: ['player', 'players'], perPage: 50,
+    views: [
+      { key: 'active', label: 'Active', test: r => !r.inactive },
+      { key: 'inactive', label: 'Inactive', test: r => r.inactive },
+      { key: 'all', label: 'All', test: () => true },
+      { key: 'nophoto', label: 'No photo', test: r => !r.inactive && !r.picture_url },
+    ],
+    search: { placeholder: 'Search name, team or number', text: r => `${r.display} ${r.team_name || ''} #${r.number || ''}` },
+    filters: [
+      { key: 'team', label: 'Team', options: [...teams.map(t => [t.name, t.name]), ['__none', 'No team']], test: (r, v) => (v === '__none' ? !r.team_name : r.team_name === v) },
+      // Season only picks which ratings and games the grid shows (the server reads it).
+      { key: 'season', label: 'Season', options: seasons.map(s => [String(s), `Season ${s}`]), test: () => true },
+    ],
+    defaultSort: '-ovr',
+    columns: [
+      { key: 'name', label: 'Player', primary: true, sort: r => r.display.toLowerCase(), cell: r => `<span class="aui-who">${avatar(r.display, colorByTeam[r.team_name] || '', { size: 32, playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.display)}</span><span class="aui-cell__sub">${escHtml(r.team_name || 'No team')}</span></span></span>` },
+      { key: 'number', label: '#', num: true, nowrap: true, sort: r => (r.number === '' || r.number == null ? null : (Number(r.number) || 0)), cell: r => (r.number !== '' && r.number != null ? `<span class="aui-num">${escHtml(r.number)}</span>` : '<span class="aui-muted">—</span>') },
+      { key: 'pos', label: 'Positions', phone: false, cell: r => (r.pos.length ? `<span class="aui-cell__badges">${r.pos.map(p => badge(p, 'gray')).join('')}</span>` : '<span class="aui-muted">—</span>') },
+      { key: 'gp', label: 'GP', num: true, sort: r => r.gp, cell: r => `<span class="aui-num">${r.gp}</span>` },
+      { key: 'ovr', label: 'OVR', num: true, sort: r => r.eff_overall ?? null, cell: r => (r.eff_overall != null ? `<span class="apl-ovr apl-ovr--sm">${escHtml(r.eff_overall)}</span>` : '<span class="aui-muted">—</span>') },
+      { key: 'status', label: 'Status', bare: true, phone: false, sort: r => (r.inactive ? 1 : 0), cell: r => badge(r.inactive ? 'Inactive' : 'Active', r.inactive ? 'gray' : 'green') },
+    ],
+    rowHref: r => `/admin/players/${enc(r.id)}`,
+    rowMenu: r => [
+      { label: 'Open', href: `/admin/players/${enc(r.id)}` },
+      { label: 'Ratings and stats', href: `/admin/players/${enc(r.id)}?tab=ratings${season ? `&season=${enc(season)}` : ''}` },
+      { label: 'Public profile', href: `/players/${enc(r.id)}`, external: true },
+      canViewAs.has(r.id) ? 'sep' : null,
+      canViewAs.has(r.id) ? { label: 'View as this player', post: `/admin/impersonate/${enc(r.id)}`, then: '/me', done: `Viewing as ${r.display}`,
+        confirm: { title: `View the site as ${r.display}?`, body: 'Read-only. Stop from the bar at the top of the site.', send: 'View as' } } : null,
+    ],
+    empty: { title: 'No players yet', sub: 'Players are created when a registration is approved.' },
+  });
 
-  const rows = players.map(p => {
-    const name     = displayPlayerName(p.name);
-    const color    = teamColor(p.team_name);
-    const off      = (p.eff_scoring != null && p.eff_shooting != null)
-      ? Math.round((p.eff_scoring + p.eff_shooting) / 2) : null;
-    const isRated  = p.eff_overall != null;
-    const inactive = p.status === 'inactive';
+  const recompute = button('Recompute ratings', { kind: 'secondary', attrs: `data-apl-recompute-all data-season="${attr(season)}" data-title="Recompute ratings for ${attr(seasonLabel)}?" data-body="Rebuilds every player’s ratings from their games. Overrides you set stay as they are."` });
 
-    return `<tr class="agm-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors"
-      data-id="${escHtml(p.id)}"
-      data-q="${escHtml(name.toLowerCase())}"
-      data-team="${escHtml((p.team_name || '').toLowerCase())}"
-      data-status="${inactive ? 'inactive' : 'active'}"
-      ${inactive ? 'style="opacity:0.4"' : ''}>
-      <td class="px-4 py-3">
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full shrink-0" style="background:${color}"></span>
-          <div class="min-w-0">
-            <span class="text-xs font-medium text-slate-200">${escHtml(name)}</span>
-            ${inactive ? `<span class="text-[10px] bg-slate-700/40 text-slate-500 px-1.5 py-0.5 rounded ml-1.5">Inactive</span>` : ''}
-            ${posChips(p.positions)}
-          </div>
-        </div>
-      </td>
-      <td class="px-4 py-3 text-center">${ovrBadge(p.eff_overall)}</td>
-      <td class="px-4 py-3">${miniBar(off, '#f59332')}</td>
-      <td class="px-4 py-3">${miniBar(p.eff_defense, '#06b6d4')}</td>
-      <td class="px-4 py-3">${miniBar(p.eff_usage, '#22c55e')}</td>
-      <td class="px-4 py-3">${miniBar(p.eff_iq, '#94a3b8')}</td>
-      <td class="px-4 py-3 text-right">
-        <a href="/admin/players/${escHtml(p.id)}${season ? '?season='+encodeURIComponent(season) : ''}" class="agm-edit-link">Edit ${ICON_CHEVRON_R}</a>
-      </td>
-    </tr>`;
-  }).join('');
-
-  return `
-<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-  <h2 class="text-xl font-bold tracking-tight text-slate-100">Players</h2>
-  <div class="flex items-center gap-2">
-    <button id="plr-recompute-all" class="admin-btn admin-btn--inline-action" style="align-self:center">${ICON_RECOMPUTE} Recompute</button>
-    <input type="search" id="plr-search" class="agm-search" placeholder="Search players…">
+  return `<div class="aui-page">
+    ${pageHeader({ title: 'Players', sub: `${active} active · ${rows.length} in all · ratings for ${seasonLabel}`, actionsHtml: recompute })}
+    ${grid}
   </div>
-</div>
-
-<div class="mb-4 flex flex-wrap gap-3">
-  ${seasons.length ? `<div class="flex flex-wrap items-center gap-1.5" id="plr-season-pills">
-    <button class="agm-pill${!season ? ' is-active' : ''}" data-season=""><span class="pill-label">All Time</span></button>
-    ${seasonPills}
-  </div>` : ''}
-  <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fteam=""><span class="pill-label">All Teams</span></button>
-    ${teamPills}
-  </div>
-  <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" id="plr-show-active"><span class="pill-label">Active</span></button>
-    <button class="agm-pill" id="plr-show-inactive"><span class="pill-label">Inactive</span></button>
-    <button class="agm-pill" id="plr-show-all"><span class="pill-label">All</span></button>
-  </div>
-</div>
-
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
-  <table class="w-full border-collapse has-col-dividers has-freeze-col">
-    <thead>
-      <tr>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Player</th>
-        <th class="px-4 py-2.5 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">OVR</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">OFF</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">DEF</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">USG</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">IQ</th>
-        <th class="px-4 py-2.5 border-b border-admin-border"></th>
-      </tr>
-    </thead>
-    <tbody id="plr-tbody">
-      ${rows || '<tr><td colspan="7" class="px-4 py-10 text-center text-sm text-slate-500">No players found.</td></tr>'}
-    </tbody>
-  </table>
-</div>
-
-<div id="plr-recompute-msg" hidden class="mt-3 rounded-lg text-[13px] px-3.5 py-2.5"></div>
-
-<script>
-  // ── Season filter (reload) ────────────────────────────────────────────────
-  document.querySelectorAll('[data-season]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      var s = this.dataset.season;
-      window.location.href = '/admin/players' + (s ? '?season=' + encodeURIComponent(s) : '');
-    });
-  });
-
-  // ── Team filter ───────────────────────────────────────────────────────────
-  var fteam = '';
-  document.querySelectorAll('[data-fteam]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      fteam = this.dataset.fteam;
-      document.querySelectorAll('[data-fteam]').forEach(function(x){ x.classList.toggle('is-active', x.dataset.fteam === fteam); });
-      applyFilters();
-    });
-  });
-
-  // ── Active/inactive filter ────────────────────────────────────────────────
-  var fstatus = 'active';
-  ['plr-show-active','plr-show-inactive','plr-show-all'].forEach(function(id) {
-    document.getElementById(id).addEventListener('click', function() {
-      fstatus = id === 'plr-show-active' ? 'active' : id === 'plr-show-inactive' ? 'inactive' : 'all';
-      ['plr-show-active','plr-show-inactive','plr-show-all'].forEach(function(x) {
-        document.getElementById(x).classList.toggle('is-active', x === id);
-      });
-      applyFilters();
-    });
-  });
-
-  // ── Search ────────────────────────────────────────────────────────────────
-  document.getElementById('plr-search').addEventListener('input', applyFilters);
-
-  function applyFilters() {
-    var q = document.getElementById('plr-search').value.toLowerCase().trim();
-    document.querySelectorAll('#plr-tbody .agm-row').forEach(function(r) {
-      var teamOk   = !fteam || r.dataset.team === fteam;
-      var statusOk = fstatus === 'all' || r.dataset.status === fstatus;
-      var searchOk = !q || r.dataset.q.includes(q);
-      r.style.display = (teamOk && statusOk && searchOk) ? '' : 'none';
-    });
-  }
-
-  // ── Recompute All ─────────────────────────────────────────────────────────
-  document.getElementById('plr-recompute-all').addEventListener('click', async function() {
-    var btn = this;
-    btn.disabled = true; btn.style.opacity = '0.6';
-    var msg = document.getElementById('plr-recompute-msg');
-    try {
-      var season = new URLSearchParams(window.location.search).get('season') || '';
-      var r = await fetch('/admin/players/recompute-all', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: season })
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      msg.removeAttribute('hidden');
-      msg.style.cssText = 'background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#22c55e;border-radius:8px;font-size:13px;padding:10px 14px;margin-top:12px';
-      msg.textContent = 'Recomputed ' + j.count + ' players. Reloading…';
-      setTimeout(function(){ location.reload(); }, 900);
-    } catch(err) {
-      msg.removeAttribute('hidden');
-      msg.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:8px;font-size:13px;padding:10px 14px;margin-top:12px';
-      msg.textContent = err.message;
-      btn.disabled = false; btn.style.opacity = '';
-    }
-  });
-
-  // Apply default filter on load
-  applyFilters();
-</script>`;
+  <script src="/admin-players.js${ver ? `?v=${ver}` : ''}" defer></script>`;
 }

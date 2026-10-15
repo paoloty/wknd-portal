@@ -9,7 +9,7 @@ Legend for the Mockup column:
 - **needed**: a mockup comes first; the page isn't built until it's approved.
 - **n/a**: no mockup; the page is built straight from the components.
 
-Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed.
+Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. Game Day and Message players are built, not yet committed.
 
 ## Foundation
 
@@ -31,11 +31,11 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed.
 | 6 | Papawis | Run page (roster, teams, money, messages, activity, settings) | /admin/papawis/:id | done (desktop + phone) | [x] |
 | 7 | Papawis | Courts | /admin/papawis/courts | n/a | [x] |
 | 8 | Papawis | Activity | /admin/papawis/activity | n/a | [x] |
-| 9 | Game Day | Games | /admin/games | n/a | [ ] |
-| 10 | Game Day | Game page (box score, content, picks) | /admin/games/:id | needed | [ ] |
-| 11 | Game Day | Who wins? picks | /admin/picks | n/a | [ ] |
-| 12 | Game Day | Players | /admin/players | n/a | [ ] |
-| 13 | Game Day | Player detail | /admin/players/:id | needed | [ ] |
+| 9 | Game Day | Games | /admin/games | n/a | [x] |
+| 10 | Game Day | Game page (box score, content, picks) | /admin/games/:id | done | [x] |
+| 11 | Game Day | Who wins? picks | /admin/picks | n/a | [x] |
+| 12 | Game Day | Players | /admin/players | n/a | [x] |
+| 13 | Game Day | Player detail | /admin/players/:id | done | [x] |
 | 14 | Awards | Overview | /admin/awards | n/a | [ ] |
 | 15 | Awards | Season awards | /admin/awards/season | n/a | [ ] |
 | 16 | Awards | MVP and Best Defender races | /admin/awards/races | n/a | [ ] |
@@ -78,8 +78,8 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed.
 
 ## New features from the plan
 
-- [ ] Auto-nudges: pick reminder, podium, notify on publish, season nudges. Includes Papawis email pacing. Mockup n/a.
-- [ ] Message players: composer with segments, Sent log. Mockup needed.
+- [x] Auto-nudges: pick reminder, podium, notify on publish, season nudges. Includes Papawis email pacing. Mockup n/a. (lib/broadcast.js; switches on each feature page)
+- [x] Message players: composer with segments, Sent log. Mockup done. (/admin/reach, /admin/reach/sent; sends through lib/broadcast.js)
 - [ ] Insights, after 4 to 6 weeks of tracking data. Mockup needed.
 
 ## Cleanup
@@ -93,4 +93,4 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed.
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Total | 52 | 6 | 4 | 8 |
+| Total | 52 | 4 | 6 | 13 |

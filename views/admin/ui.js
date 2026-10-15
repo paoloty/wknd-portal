@@ -156,7 +156,7 @@ function confirmData(c) {
   return ` data-confirm data-confirm-title="${attr(c.title)}" data-confirm-body="${attr(c.body || '')}"${c.type ? ` data-confirm-type="${attr(c.type)}"` : ''}${c.send ? ` data-confirm-send="${attr(c.send)}"` : ''}`;
 }
 
-// A ⋯ menu: [{ label, href } | { label, post, body, confirm, danger, done, then } | 'sep']
+// A ⋯ menu: [{ label, href } | { label, post, method, body, confirm, danger, done, then } | 'sep']
 export function menu(items, label = 'Actions') {
   const list = (items || []).filter(Boolean);
   if (!list.length) return '';
@@ -164,7 +164,7 @@ export function menu(items, label = 'Actions') {
     if (it === 'sep') return '<div class="aui-menu__sep" role="separator"></div>';
     const cls = `aui-menu__item${it.danger ? ' is-danger' : ''}`;
     if (it.href) return `<a role="menuitem" class="${cls}" href="${attr(it.href)}"${it.external ? ' target="_blank" rel="noopener"' : ''}>${escHtml(it.label)}</a>`;
-    return `<button type="button" role="menuitem" class="${cls}" data-post-json="${attr(it.post)}"${it.body ? ` data-body="${attr(JSON.stringify(it.body))}"` : ''}${it.then ? ` data-then="${attr(it.then)}"` : ''} data-done="${attr(it.done || 'Done.')}"${confirmData(it.confirm)}>${escHtml(it.label)}</button>`;
+    return `<button type="button" role="menuitem" class="${cls}" data-post-json="${attr(it.post)}"${it.method ? ` data-method="${attr(it.method)}"` : ''}${it.body ? ` data-body="${attr(JSON.stringify(it.body))}"` : ''}${it.then ? ` data-then="${attr(it.then)}"` : ''} data-done="${attr(it.done || 'Done.')}"${confirmData(it.confirm)}>${escHtml(it.label)}</button>`;
   }).join('');
   return `<details class="aui-menu"><summary class="aui-menu__btn" aria-label="${attr(label)}">⋯</summary><div class="aui-menu__list" role="menu">${inner}</div></details>`;
 }

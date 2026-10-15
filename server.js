@@ -133,7 +133,7 @@ import {
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   logShareCardAction, getAllShareCardLog,
-  getPapawisGamesForPlayer,
+  getPapawisGamesForPlayer, getPapawisHistoryForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
@@ -195,12 +195,17 @@ import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminHomeBody } from './views/admin/home.js';
-import { sendBroadcast, startCampaign, finishCampaign, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe } from './lib/broadcast.js';
+import { sendBroadcast, startCampaign, finishCampaign, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe, underEmailCaps } from './lib/broadcast.js';
+import { getRecentBroadcasts, getBroadcastStats } from './lib/portal-db.js';
+import { adminReachComposeBody, adminReachSentBody } from './views/admin/reach.js';
 import { leagueNudgeEmail } from './lib/mailer.js';
 import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
 import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
-import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
+import { adminGamesListBody } from './views/admin/games.js';
+import { adminGameDetailBody } from './views/admin/game.js';
+import { buildBoxScoreData } from './views/game.js';
+import { setGameType } from './lib/portal-db.js';
 import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
@@ -253,7 +258,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -2360,16 +2365,6 @@ function renderAdminPage(req, opts) {
 // site-wide ones). Keys and their owning sections: siteSettingSection.
 const codeTag = s => `<code class="text-[11px] bg-admin-border/50 px-1 rounded">${s}</code>`;
 const on = (key, def = '1') => getSetting(key, def) !== '0';
-
-function picksSettingsPanel() {
-  return settingsPanel([
-    { type: 'toggle', key: 'picks_enabled', value: picksEnabled(), label: 'Who wins? picks on the site', sub: `Fan picks on ${codeTag('/picks')}, the matchup cards, the homepage widget, profiles, "Who called it?", pick records and the after-game notifications. Per-game close/reopen lives on each game's admin page.` },
-    { type: 'toggle', key: 'picks_odds_enabled', value: pickOddsEnabled(), label: 'Show odds', sub: 'Win chances on the matchup cards. Hidden until both teams have played this season; can also be hidden per game.' },
-    { type: 'toggle', key: 'home_picks_widget_enabled', value: on('home_picks_widget_enabled'), label: 'Homepage widget', sub: 'The pick widget under the homepage banner: the next game day, or "Who called it?" on game day and the day after.' },
-    { type: 'time', key: 'picks_close_time', value: picksCloseTime(), width: 'auto', label: 'Picks close at', sub: 'Game-day cut-off (Manila time). Games have no tip-off time, so picks lock at this time on the game date.' },
-    { type: 'toggle', key: 'picks_auto_remind', value: on('picks_auto_remind'), label: 'Automatic pick reminder', sub: 'At 6 PM the day before game day, everyone still missing picks gets a bell and the reminder email, unless you already sent one for that day. Live site only.' },
-  ], { title: 'Who wins? settings' });
-}
 
 // (Papawis switches now live on the runs page itself: views/admin/papawis-runs.js.)
 
@@ -7625,13 +7620,17 @@ app.get('/admin/finance/gcash', requireAuth, (req, res) => {
 // ── Admin players routes ──────────────────────────────────────────────────────
 app.get('/admin/players', requireAuth, (req, res) => {
   const seasons = getGameSeasons();
-  const season  = req.query.season || '';
+  const season  = seasons.map(String).includes(String(req.query.season || '')) ? String(req.query.season) : '';
   const players = getPlayersWithRatings(season || null);
   const teams   = getAllTeams();
+  const gpById  = Object.fromEntries(getStatsBySeason(season || null).map(s => [s.player_id, s.games_played]));
+  const colorByTeam = Object.fromEntries(teams.map(t => [t.name, t.color || teamColor(t.name)]));
+  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  const canViewAs = new Set(isSuperAdmin ? getAllRegistrations().filter(r => r.status === 'approved' && r.player_id).map(r => r.player_id) : []);
   res.send(renderAdminPage(req, {
     title: 'Players',
     currentPath: '/admin/players',
-    body: adminPlayersBody({ players, seasons, season, teams }),
+    body: adminPlayersBody({ players, seasons, season, teams, gpById, colorByTeam, canViewAs, query: req.query, ver: CSS_VER }),
   }));
 });
 
@@ -7642,19 +7641,28 @@ app.get('/admin/players/:id', requireAuth, (req, res) => {
     body: '<p style="padding:40px;color:var(--text-muted)">Player not found.</p>',
   }));
   const seasons    = getGameSeasons();
-  const season     = req.query.season || '';
+  const season     = seasons.map(String).includes(String(req.query.season || '')) ? String(req.query.season) : '';
+  const tab        = String(req.query.tab || 'profile');
   const rating     = getPlayerRating(player.id, season || null);
+  const overallRating = season ? getPlayerRating(player.id, null) : rating;
   const stats      = getOnePlayerStats(player.id, season || null);
-  const teams      = getAllTeams();
+  const teams      = getAllTeams().map(t => ({ ...t, color: t.color || teamColor(t.name) }));
   const currentSlug = getSlugForEntity('player', player.id);
   const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   const canDelete = !playerHasActivity(player.id);
   const linkedReg = getRegistrationByPlayerId(player.id);
   const canImpersonate = isSuperAdmin && !!linkedReg && linkedReg.status === 'approved';
+  const careerGames = canDelete ? 0 : (getOnePlayerStats(player.id, null)?.games_played || 0);
+  const deleteReason = careerGames
+    ? `Has ${careerGames} game${careerGames === 1 ? '' : 's'}, so they can only be set Inactive.`
+    : 'Has payments, Papawis history or an award on record, so they can only be set Inactive.';
   res.send(renderAdminPage(req, {
     title: displayPlayerName(player.name),
     currentPath: '/admin/players',
-    body: adminPlayerDetailBody({ player, rating, stats, seasons, season, teams, currentSlug, isSuperAdmin, canDelete, canImpersonate }),
+    body: adminPlayerDetailBody({
+      player, rating, overallRating, stats, seasons, season, teams, currentSlug, isSuperAdmin, canDelete, canImpersonate, linkedReg, deleteReason, tab,
+      history: getPapawisHistoryForPlayer(player.id, 30), today: manilaTodayStr(), ver: CSS_VER,
+    }),
   }));
 });
 
@@ -8744,12 +8752,13 @@ const jsonLarge = express.json({ limit: '20mb' });
 app.get('/admin/games', requireAuth, (req, res) => {
   const games = getAllGames();
   const teams = getAllTeams();
-  const seasons = [...new Set(games.map(g => g.season).filter(Boolean))].sort((a, b) => b - a);
   const currentSeason = getCurrentSeason()?.season ?? 1;
+  const pickCounts = {};
+  for (const p of buildPicksContext(games).picks) pickCounts[p.game_id] = (pickCounts[p.game_id] || 0) + 1;
   res.send(renderAdminPage(req, {
     title: 'Games',
     currentPath: '/admin/games',
-    body: adminGamesListBody({ games, seasons, teams, currentSeason }),
+    body: adminGamesListBody({ games, teams, currentSeason, pickCounts, query: req.query }),
   }));
 });
 
@@ -8804,7 +8813,10 @@ app.get('/admin/games/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: `${game.team_a_name} vs ${game.team_b_name}`,
     currentPath: '/admin/games',
-    body: adminGameDetailBody({ game, players, stats, dnpPlayers, quarterScores, statCorrections, picksPanel }),
+    body: adminGameDetailBody({
+      game, tab: String(req.query.tab || 'box'), players, stats, dnpPlayers, quarterScores, statCorrections, picksPanel,
+      teams: getAllTeams(), colorById: adminTeamColorByPlayer(), box: buildBoxScoreData(game, stats, dnpPlayers),
+    }),
   }));
 });
 
@@ -8812,7 +8824,8 @@ app.get('/admin/games/:id', requireAuth, (req, res) => {
 app.post('/admin/games/:id/picks', requireAuth, jsonSmall, (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
-  const { closed, hide_odds } = req.body || {};
+  const { closed } = req.body || {};
+  const hide_odds = req.body?.key === 'hide_odds' ? !!req.body.on : req.body?.hide_odds;
   if (closed !== undefined) {
     if (!['auto', 'closed', 'open'].includes(closed)) return res.status(400).json({ error: 'Invalid value' });
     setGamePickClosed(game.id, closed === 'auto' ? null : closed === 'closed');
@@ -8938,9 +8951,10 @@ app.get('/admin/picks', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Who wins? picks',
     currentPath: '/admin/picks',
-    settings: picksSettingsPanel(),
     body: adminPicksBody({
       season, seasons, isCurrent, upNext, upDay, missing, results, pickers, hasFinalsG1: !!sp.finalsG1,
+      query: req.query, teams: getAllTeams(), colorById: adminTeamColorByPlayer(),
+      settings: { homeWidget: on('home_picks_widget_enabled'), autoRemind: on('picks_auto_remind'), closeTime: picksCloseTime() },
       minPicks: sp.board.minPicks, oddsOn: pickOddsEnabled(), picksOn: picksEnabled(),
       msg: req.query.reminded
         ? `Reminder sent to ${req.query.reminded} player${req.query.reminded === '1' ? '' : 's'}.${req.query.emailing ? ` Emailing ${req.query.emailing} of them now; refresh in a minute for the tally.` : ''}`
@@ -9215,7 +9229,7 @@ app.post('/admin/games/:id/potg', requireAuth, jsonSmall, (req, res) => {
 app.post('/admin/games/:id/review', requireAuth, jsonSmall, (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
-  updateGameReview(game.id, req.body.under_review);
+  updateGameReview(game.id, req.body?.key === 'published' ? !req.body.on : Number(req.body.under_review) ? 1 : 0);
   settleGamePicks(game.id);
   res.json({ ok: true });
 });
@@ -9232,6 +9246,8 @@ app.post('/admin/games/:id/save', requireAuth, jsonSmall, (req, res) => {
     under_review:         b.status           !== undefined ? (b.status === 'draft' ? 1 : 0) : game.under_review,
     date:                 b.date             !== undefined ? String(b.date)              : game.date,
   });
+  if (b.game_type !== undefined) setGameType(game.id, String(b.game_type));
+  if (b.overtime !== undefined) setGameOvertime(game.id, Number(b.overtime) || 0);
   settleGamePicks(game.id);
   res.json({ ok: true });
 });
@@ -11052,6 +11068,211 @@ async function runAutoNudges() {
 }
 setTimeout(() => { runAutoNudges(); }, 90 * 1000);
 setInterval(() => { runAutoNudges(); }, 5 * 60 * 1000);
+
+// ── Message players (/admin/reach) ───────────────────────────────────────────────────────
+// The composer and the Sent log (views/admin/reach.js). Segments are worked out here, and
+// every send goes through sendBroadcast (caps, unsubscribes, broadcasts row) like the
+// automatic nudges. Pick-related segments respect the picks email opt-out; the rest the
+// league one.
+const REACH_LINKS = [
+  { value: '/picks', label: 'Who wins? picks (/picks)', cta: 'Make your picks' },
+  { value: '/papawis', label: 'Papawis (/papawis)', cta: 'See the run' },
+  { value: '/mvp', label: 'MVP race (/mvp)', cta: 'See the race' },
+  { value: '/season-signup', label: 'Season sign-up', cta: 'Sign up' },
+  { value: '/games', label: 'Games (/games)', cta: 'See the games' },
+  { value: '/', label: 'Homepage', cta: 'Open WKND' },
+  { value: '__other__', label: 'Other link…', cta: 'Open' },
+];
+
+function reachSegments({ team = '', ids = [] } = {}) {
+  const active = getActivePlayers();
+  const activeIds = active.map(p => p.id);
+  const segs = [{ key: 'all', label: 'All active members', help: 'Logged in within 90 days', pool: activeIds }];
+
+  let notPicked = null, dayStr = '';
+  if (picksEnabled()) {
+    const games = byDate(getAllGames());
+    const pctx = buildPicksContext(games);
+    const upNext = adminUpNext(games, pctx);
+    const open = upNext.filter(u => !u.closed);
+    if (open.length) {
+      dayStr = new Date(`${open[0].ymd}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      notPicked = picksMissing(upNext, pctx)?.list.map(p => p.id) || [];
+    }
+  }
+  segs.push(notPicked
+    ? { key: 'notpicked', label: `Haven’t picked (${dayStr})`, help: 'Still missing a pick', pool: notPicked, optOut: 'picks_email_optout' }
+    : { key: 'notpicked', label: 'Haven’t picked', help: 'No picks open right now', disabled: true });
+
+  const season = getPortalCurrentSeason();
+  const st = mvpBallotState(season, null);
+  if (st.enabled && isMvpLocked(season) && !st.closed) {
+    const voted = new Set(listMvpBallots(season).filter(b => b.p1 && b.p2 && b.p3).map(b => b.player_id));
+    segs.push({ key: 'podium', label: 'No podium ballot', help: 'While the ballot is open', pool: activeIds.filter(id => !voted.has(id)), optOut: 'picks_email_optout' });
+  } else segs.push({ key: 'podium', label: 'No podium ballot', help: 'The ballot isn’t open', disabled: true });
+
+  segs.push({ key: 'regulars', label: 'Papawis regulars', help: `Played ${REGULAR_MIN_GAMES} of the last ${REGULAR_WINDOW} runs`, pool: getFrequentPapawisPlayers(REGULAR_WINDOW, REGULAR_MIN_GAMES).map(r => r.player_id) });
+
+  const teamName = getAllTeams().find(t => t.id === team)?.name || '';
+  segs.push({ key: 'team', label: 'One team', help: teamName ? `${teamName}, current roster` : 'Pick the team below', pool: team ? active.filter(p => p.team_id === team).map(p => p.id) : [], segLabel: teamName ? `Team ${teamName}` : 'One team' });
+
+  const sig = getSetting('signup_target_season', '');
+  if (sig && getSetting('season_signup_open', '0') === '1') {
+    const signedUp = new Set(getSeasonSignups(sig).map(s => s.player_id).filter(Boolean));
+    segs.push({ key: 'signup', label: `Not signed up for Season ${sig}`, help: 'Sign-ups are open', pool: activeIds.filter(id => !signedUp.has(id)) });
+  } else segs.push({ key: 'signup', label: 'Not signed up', help: 'Season sign-ups are closed', disabled: true });
+
+  segs.push({ key: 'slipping', label: 'Slipping away', help: 'Regulars not seen for 21+ days', pool: getQuietRegulars({ quietDays: 21, limit: 200 }).map(r => r.player_id) });
+
+  const known = new Set(active.map(p => p.id));
+  segs.push({ key: 'pick', label: 'Choose players', help: 'Pick names one by one', pool: ids.filter(id => known.has(id)), segLabel: `${ids.length} chosen player${ids.length === 1 ? '' : 's'}` });
+  return segs;
+}
+
+// Who a segment reaches: the shared gates, then the email caps.
+function reachCounts(s) {
+  if (!s || s.disabled) return { bell: 0, email: 0, bellOnly: 0, capped: 0, skipped: 0, recipients: [] };
+  const { recipients, skipped } = selectBroadcastRecipients(s.pool, { optOutColumn: s.optOut || 'league_email_optout' });
+  const emailable = recipients.filter(r => r.emailable);
+  const under = emailable.filter(r => underEmailCaps(r.email));
+  const skippedTotal = skipped.noValidEmail + skipped.inactive + skipped.notApproved + skipped.linkExpired + skipped.dormant + skipped.excluded;
+  return { bell: recipients.length, email: under.length, bellOnly: recipients.length - emailable.length, capped: emailable.length - under.length, skipped: skippedTotal, recipients };
+}
+
+function reachParams(src) {
+  const ids = (Array.isArray(src.ids) ? src.ids : String(src.ids || '').split(',')).map(s => String(s).trim()).filter(Boolean);
+  return { seg: String(src.seg || 'all'), team: String(src.team || ''), ids, ch: src.ch === 'bell' ? 'bell' : 'both' };
+}
+
+const REACH_KIND_LABELS = {
+  admin_message: 'Message', pick_reminder: 'Pick reminder', pick_remind_me: 'Picks: asked to be reminded',
+  mvp_podium_reminder: 'Podium reminder', mvp_podium_resend: 'Podium reminder, resend', season_results: 'Season results',
+  papawis_announce: 'Papawis announcement', papawis_slot: 'Papawis slot alert', post_published: 'Post published',
+  poll_opened: 'Poll opened', season_signup_open: 'Season sign-ups open', season_returning: 'Season: last season’s players',
+};
+function reachSegLabel(seg) {
+  const [k, v] = String(seg || '').split(':');
+  const day = v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : v;
+  return ({
+    not_picked: `Haven’t picked (${day})`, asked: `Asked to be reminded (${day})`, no_ballot: 'No podium ballot',
+    active_players: 'All active', not_signed_up: `Not signed up (Season ${v})`, returning_not_signed_up: `Last season, not signed up (Season ${v})`,
+    season: `Season ${v} players`,
+  })[k] || seg || '—';
+}
+
+app.get('/admin/reach', requireAuth, (req, res) => {
+  const p = reachParams(req.query);
+  const teams = getAllTeams().filter(t => getActivePlayers().some(pl => pl.team_id === t.id)).map(t => ({ id: t.id, name: t.name, color: t.color || teamColor(t.name) }));
+  const team = p.team || teams[0]?.id || '';
+  const segs = reachSegments({ team, ids: p.ids });
+  const seg = segs.find(s => s.key === p.seg && !s.disabled) ? p.seg : 'all';
+  const colors = adminTeamColorByPlayer();
+  const pickOptions = getActivePlayers().map(pl => ({ id: pl.id, name: displayPlayerName(pl.name), color: colors[pl.id] || '' }));
+  const myReg = req.session?.playerRegId ? getRegistration(req.session.playerRegId) : null;
+  res.send(renderAdminPage(req, {
+    title: 'Message players',
+    body: adminReachComposeBody({
+      segments: segs.map(s => ({ key: s.key, label: s.label, help: s.help, disabled: !!s.disabled, n: s.disabled ? 0 : reachCounts(s).bell })),
+      seg, teams, team, pickOptions, picked: p.ids, ch: p.ch,
+      counts: reachCounts(segs.find(s => s.key === seg)), links: REACH_LINKS,
+      sentCount: getRecentBroadcasts(500).length, isDev: IS_DEV, myEmail: myReg?.email || ADMIN_NOTIFY_EMAIL,
+    }),
+  }));
+});
+
+app.get('/admin/reach/count', requireAuth, (req, res) => {
+  const p = reachParams(req.query);
+  const s = reachSegments({ team: p.team, ids: p.ids }).find(x => x.key === p.seg);
+  const { recipients, ...counts } = reachCounts(s);
+  res.json({ ...counts, label: s?.segLabel || s?.label || '' });
+});
+
+// The link a send points at: a page on this site (path) or a full URL on it.
+function reachLink(body) {
+  let link = String(body.link || '/');
+  if (link === '__other__') {
+    const raw = String(body.link_other || '').trim();
+    const live = (process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '');
+    link = raw.startsWith(live) ? raw.slice(live.length) || '/' : raw;
+  }
+  if (!/^\/(?!\/)[^\s]*$/.test(link)) return null;
+  return link;
+}
+
+function reachMessage(body) {
+  const title = String(body.title || '').trim().slice(0, 90);
+  const text = String(body.body || '').trim().slice(0, 400);
+  const link = reachLink(body);
+  const cta = String(body.cta || '').trim().slice(0, 40) || 'Open WKND';
+  if (!title) return { error: 'Add a headline first.' };
+  if (!link) return { error: 'That link isn’t a page on the site. Use a path like /games.' };
+  return { title, text, link, cta, firstLine: text.split('\n')[0] || '' };
+}
+
+function reachEmail(m, r, optOut) {
+  const live = (process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '');
+  const unsub = optOut === 'picks_email_optout' ? picksUnsubscribeUrl(r.reg.id) : leagueUnsubscribeUrl(r.reg.id);
+  return {
+    ...leagueNudgeEmail({ name: r.player.name, subject: m.title, heading: m.title, lines: m.text.split(/\n+/).filter(Boolean), cta: m.cta, url: `${live}${m.link}`, unsubscribeUrl: unsub, label: 'League update' }),
+    headers: unsubscribeHeaders(unsub),
+  };
+}
+
+app.post('/admin/reach/send', requireAuth, express.json(), (req, res) => {
+  const m = reachMessage(req.body || {});
+  if (m.error) return res.status(400).json({ error: m.error });
+  const p = reachParams(req.body || {});
+  const s = reachSegments({ team: p.team, ids: p.ids }).find(x => x.key === p.seg);
+  if (!s || s.disabled) return res.status(400).json({ error: 'That group isn’t available right now.' });
+  const { recipients } = reachCounts(s);
+  if (!recipients.length) return res.status(400).json({ error: 'Nobody in that group can be reached.' });
+  // A double-click (or a resend of the same message to the same group) within 10 minutes is ignored.
+  const dedupeKey = `manual:${createHash('sha1').update(JSON.stringify([m.title, m.text, m.link, p.seg, p.team, [...p.ids].sort(), p.ch])).digest('hex').slice(0, 16)}:${Math.floor(Date.now() / 600000)}`;
+  if (getBroadcastByDedupe(dedupeKey)) return res.status(409).json({ error: 'That exact message just went to this group.' });
+  const optOut = s.optOut || 'league_email_optout';
+  const withEmail = p.ch === 'both';
+  const emails = withEmail ? recipients.filter(r => r.emailable && underEmailCaps(r.email)).length : 0;
+  // Outside the live site sendBroadcast sends one email at most (to the admin inbox).
+  const emailsOut = IS_DEV ? Math.min(emails, 1) : emails;
+  // Bells are written straight away; emails go out 0.6 s apart in the background.
+  sendBroadcast({
+    kind: 'admin_message', dedupeKey, segment: s.segLabel || s.label, createdBy: req.session?.playerName || 'Admin',
+    title: m.title, body: m.firstLine, link: m.link, recipients,
+    email: withEmail ? async r => reachEmail(m, r, optOut) : null,
+  }).then(r => console.log(`[reach] "${m.title}": ${r.bell} bell(s), ${r.email} email(s), ${r.capped || 0} capped, ${r.failed || 0} failed`))
+    .catch(e => console.error(`[reach] send failed: ${e.message}`));
+  const n = recipients.length;
+  res.json({ ok: true, message: withEmail && emailsOut ? `Sent ${n} bell${n === 1 ? '' : 's'}. ${emailsOut} email${emailsOut === 1 ? '' : 's'} going out over the next ${Math.max(1, Math.ceil(emailsOut * 0.6 / 60))} min.` : `Sent ${n} bell${n === 1 ? '' : 's'}.` });
+});
+
+app.post('/admin/reach/test', requireAuth, express.json(), async (req, res) => {
+  const m = reachMessage(req.body || {});
+  if (m.error) return res.status(400).json({ error: m.error });
+  const myReg = req.session?.playerRegId ? getRegistration(req.session.playerRegId) : null;
+  const to = myReg?.email || ADMIN_NOTIFY_EMAIL;
+  if (myReg?.player_id) createNotification({ playerId: myReg.player_id, type: 'admin_message', title: `[Test] ${m.title}`, body: m.firstLine, link: m.link });
+  const fake = { player: { name: myReg?.full_name || 'Admin' }, reg: { id: myReg?.id || 'test' } };
+  const ok = req.body?.ch === 'bell' ? true : await sendMail({ to, ...reachEmail(m, fake, 'league_email_optout'), subject: `[Test] ${m.title}` });
+  if (!ok) return res.status(500).json({ error: 'The test email didn’t go out.' });
+  res.json({ ok: true, message: req.body?.ch === 'bell' ? (myReg?.player_id ? 'Test bell sent to you.' : 'No player account to ring; nothing sent.') : `Test sent to ${to}${myReg?.player_id ? ', bell too' : ''}.` });
+});
+
+app.get('/admin/reach/sent', requireAuth, (req, res) => {
+  const list = getRecentBroadcasts(500);
+  const stats = getBroadcastStats();
+  const rows = list.map(b => {
+    const st = stats[b.id] || {};
+    return {
+      id: b.id, title: b.title || '', kindLabel: REACH_KIND_LABELS[b.kind] || b.kind, segLabel: reachSegLabel(b.segment),
+      by: b.created_by === 'auto' ? 'Automatic' : (b.created_by || 'Admin'), auto: b.created_by === 'auto',
+      bell: st.bells ?? b.bell_count ?? 0, taps: st.taps || 0,
+      email: st.sent ?? b.email_count ?? 0, opened: st.opened || 0, clicked: st.clicked || 0,
+      created_at: b.created_at,
+      whenLabel: new Date(b.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
+    };
+  });
+  res.send(renderAdminPage(req, { title: 'Sent log', body: adminReachSentBody({ rows, query: req.query, sentCount: list.length }) }));
+});
 
 // League-emails unsubscribe (season nudges and other league news). GET asks first, so link
 // scanners can't unsubscribe anyone; POST does it, for the button and one-click unsubscribe.

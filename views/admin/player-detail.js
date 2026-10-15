@@ -1,626 +1,218 @@
+// /admin/players/:id: one player (admin redesign, 2026-10-15; mockup: canvas "Players ·
+// Player detail"). Rebuilt from scratch on views/admin/ui.js. A header with the photo (✎ to
+// change it, click the face to re-crop) and links to the same person elsewhere, then tabs
+// (?tab=): Profile (bio and details), Ratings and stats (?season=), Papawis (runs and
+// probation), Settings (team, status, profile address, delete). Every action posts to the
+// same routes as before and updates the page in place. Browser bits (photo crop, the
+// switches and selects that save as you change them, the season picker):
+// public/admin-players.js.
 import { escHtml } from '../layout.js';
-import { displayPlayerName, teamColor } from '../utils.js';
-import { ovrColor } from '../../lib/ratings.js';
+import { displayPlayerName } from '../utils.js';
+import {
+  avatar, badge, breadcrumb, button, emptyState, field, fieldGrid, formCard, formSection, pageTabs,
+  saveBar, section, segmented, statStrip, toggleRow,
+} from './ui.js';
+import { parsePositions } from './players.js';
 
-const ICON_CHEVRON_L = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
-const ICON_RECOMPUTE = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6.5A4.5 4.5 0 1 1 8 2.5"/><path d="M8 1v3h3"/></svg>`;
-const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
-const ICON_X         = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
-const ICON_TRASH     = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M12 3.5l-.9 8a1 1 0 0 1-1 .9H3.9a1 1 0 0 1-1-.9L2 3.5"/></svg>`;
-const ICON_EYE       = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7s2.5-4.5 6-4.5S13 7 13 7s-2.5 4.5-6 4.5S1 7 1 7z"/><circle cx="7" cy="7" r="2"/></svg>`;
-
+const attr = s => escHtml(String(s ?? ''));
+const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
 const ATTRS = [
-  { key: 'scoring',     label: 'Scoring',     color: '#f59332' },
-  { key: 'shooting',    label: 'Shooting',    color: '#f59332' },
-  { key: 'playmaking',  label: 'Playmaking',  color: '#06b6d4' },
-  { key: 'rebounding',  label: 'Rebounding',  color: '#06b6d4' },
-  { key: 'defense',     label: 'Defense',     color: '#22c55e' },
-  { key: 'iq',          label: 'IQ',          color: '#94a3b8' },
-  { key: 'usage',       label: 'Usage',       color: '#22c55e' },
+  ['overall', 'Overall'], ['scoring', 'Scoring'], ['shooting', 'Shooting'], ['playmaking', 'Playmaking'],
+  ['rebounding', 'Rebounding'], ['defense', 'Defense'], ['iq', 'IQ'], ['usage', 'Usage'],
 ];
+const peso = n => `₱${Number(n || 0).toLocaleString()}`;
+const fmtDay = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '');
+const fmtDate = ts => (ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
 
-function ratingBar(val, color) {
-  if (val == null) return `<div class="h-1 bg-admin-border rounded-full"></div>`;
-  const pct = Math.round((val / 99) * 100);
-  return `<div class="h-1 bg-admin-border rounded-full overflow-hidden">
-    <div style="width:${pct}%;height:100%;background:${color};border-radius:99px"></div>
-  </div>`;
-}
-
-function eff(rating, key) {
-  if (!rating) return null;
-  return rating[key + '_ovr'] ?? rating[key] ?? null;
-}
-
-export function adminPlayerDetailBody({ player, rating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false, canDelete = false, canImpersonate = false } = {}) {
-  const name  = displayPlayerName(player.name);
-  const color = teamColor(player.team_name);
-  const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-
-  const seasonPills = seasons.map(s =>
-    `<a href="/admin/players/${escHtml(player.id)}?season=${encodeURIComponent(s)}" class="agm-pill${String(s) === String(season) ? ' is-active' : ''}" style="font-size:11px"><span class="pill-label">S${escHtml(String(s))}</span></a>`
-  ).join('');
-
-  // ── OVR ──────────────────────────────────────────────────────────────────
-  const effOvr = eff(rating, 'overall');
-  const ovrColor_ = ovrColor(effOvr);
-
-  // ── Stat reference ────────────────────────────────────────────────────────
-  const gp  = stats?.games_played ?? 0;
-  const avg = n => gp > 0 ? (n / gp).toFixed(1) : '—';
-  const fg3a = (stats?.fg3m ?? 0) + (stats?.fg3m_miss ?? 0);
-  const fg3pct = fg3a > 0 ? Math.round(((stats?.fg3m ?? 0) / fg3a) * 100) + '%' : '—';
-
-  const statCell = (lbl, val) =>
-    `<div class="text-center">
-      <div class="text-[10px] text-slate-500 uppercase tracking-widest mb-0.5">${lbl}</div>
-      <div class="text-sm font-bold text-slate-200 font-saira">${val}</div>
-    </div>`;
-
-  const statsGrid = `<div class="grid grid-cols-4 gap-2 pt-3 mt-2.5 border-t border-admin-border">
-    ${statCell('GP',  String(gp))}
-    ${statCell('PPG', avg(stats?.pts ?? 0))}
-    ${statCell('RPG', avg(stats?.reb ?? 0))}
-    ${statCell('APG', avg(stats?.ast ?? 0))}
-    ${statCell('SPG', avg(stats?.stl ?? 0))}
-    ${statCell('BPG', avg(stats?.blk ?? 0))}
-    ${statCell('3P%', fg3pct)}
-    ${statCell('TOV', avg(stats?.turnover ?? 0))}
-  </div>`;
-
-  // ── Rating attribute rows ─────────────────────────────────────────────────
-  const attrRows = ATTRS.map(({ key, label, color: c }) => {
-    const computed  = rating?.[key] ?? null;
-    const override  = rating?.[key + '_ovr'] ?? null;
-    const effective = override ?? computed;
-    return `<div class="grid items-center gap-2.5 py-2 border-b border-admin-border/50 last:border-b-0" style="grid-template-columns:90px 1fr 72px">
-      <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">${label}</div>
-      <div>${ratingBar(effective, c)}</div>
-      <div class="flex items-center gap-1.5">
-        <span class="text-xs text-slate-500 min-w-[20px] text-right">${computed ?? '—'}</span>
-        <input type="number" name="${key}_ovr" min="1" max="99" placeholder="—" value="${override ?? ''}"
-          class="admin-input" style="width:44px;text-align:center"
-          title="Override">
+// ── Header ─────────────────────────────────────────────────────────────────────────────
+function header(p, { name, color, rating, linkedReg, slug, canImpersonate }) {
+  const pos = parsePositions(p.positions);
+  const ovr = rating ? (rating.overall_ovr ?? rating.overall ?? null) : null;
+  const sub = [p.team_name || 'No team', p.number !== '' && p.number != null ? `#${p.number}` : '', pos.join(' / '), p.height || ''].filter(Boolean).join(' · ');
+  const id = encodeURIComponent(p.id);
+  const links = [
+    `<a class="aui-person__link is-active" href="/admin/players/${id}" aria-current="page">Player admin</a>`,
+    linkedReg ? `<a class="aui-person__link" href="/admin/users/${attr(linkedReg.id)}">User account</a>` : '',
+    `<a class="aui-person__link" href="/players/${attr(encodeURIComponent(slug || p.id))}" target="_blank" rel="noopener">Public profile ↗</a>`,
+    `<a class="aui-person__link" href="/admin/papawis/activity?q=${attr(encodeURIComponent(name))}">Papawis activity</a>`,
+    canImpersonate ? `<button type="button" class="aui-person__link apl-link-btn" data-post-json="/admin/impersonate/${id}" data-then="/me" data-done="Viewing as ${attr(name)}"
+      data-confirm data-confirm-title="View the site as ${attr(name)}?" data-confirm-body="You see the site exactly as they do (read-only) until you stop from the bar at the top of the site." data-confirm-send="View as">View as player</button>` : '',
+  ].join('');
+  return `<div class="aui-person apl-head">
+    <div class="aui-person__who">
+      <div class="apl-photo">
+        <button type="button" class="apl-photo__face" data-apl-recrop${p.picture_url ? '' : ' disabled'} aria-label="${p.picture_url ? 'Re-crop photo' : 'No photo yet'}" title="${p.picture_url ? 'Re-crop photo' : 'No photo yet'}">${avatar(name, color, { size: 64, playerId: p.id })}</button>
+        <button type="button" class="apl-photo__edit" data-apl-photo-pick aria-label="Change photo" title="Change photo">✎</button>
+        <input type="file" accept="image/*,.heic,.heif" data-apl-photo-input hidden>
       </div>
-    </div>`;
+      <div class="apl-head__text">
+        <div class="apl-head__line">
+          <span class="apl-head__name">${escHtml(name)}</span>
+          ${badge(p.status === 'inactive' ? 'Inactive' : 'Active', p.status === 'inactive' ? 'gray' : 'green')}
+          ${p.papawis_probation ? badge('Papawis probation', 'amber') : ''}
+          ${ovr != null ? `<span class="apl-ovr">${escHtml(ovr)}</span><span class="apl-ovr__label">OVR</span>` : ''}
+        </div>
+        <span class="aui-person__sub">${escHtml(sub)}</span>
+      </div>
+    </div>
+    <nav class="aui-person__links" aria-label="${attr(name)} across the admin">${links}</nav>
+  </div>`;
+}
+
+// The crop dialog (the site's shared .pcp-* crop look, same as the public profile page).
+function cropDialog() {
+  return `<div class="pcp-backdrop" data-apl-crop hidden>
+    <div class="pcp-modal" role="dialog" aria-modal="true" aria-labelledby="apl-crop-title">
+      <div class="pcp-modal__header"><span class="pcp-modal__title" id="apl-crop-title">Crop photo</span><button type="button" class="pcp-modal__close" data-apl-crop-close aria-label="Close">✕</button></div>
+      <div class="pcp-modal__body"><img data-apl-crop-img src="" alt="" style="max-width:100%;display:block"></div>
+      <div class="pcp-modal__hint">Line up the eyes with the dashed line and keep the head inside the oval, so photos look the same across players.</div>
+      <div class="pcp-modal__footer">${button('Cancel', { kind: 'ghost', attrs: 'data-apl-crop-close' })}${button('Crop and save', { kind: 'primary', attrs: 'data-apl-crop-save' })}</div>
+    </div>
+  </div>`;
+}
+
+// ── Profile ────────────────────────────────────────────────────────────────────────────
+function profileTab(p) {
+  const pos = parsePositions(p.positions);
+  const f = (label, name, value, extra = {}) => field({ label, name, value: value ?? '', ...extra });
+  const chips = `<div class="apl-pos" role="group" aria-label="Positions">${POSITIONS.map(x => `<label class="apl-pos__chip"><input type="checkbox" name="positions[]" value="${x}"${pos.includes(x) ? ' checked' : ''}><span>${x}</span></label>`).join('')}</div>`;
+  return `<form id="apl-profile" data-json-action="/admin/players/${attr(p.id)}/bio" data-done="Profile saved." data-dirty-watch>
+    ${formCard([
+      formSection({ title: 'Basics', sub: 'How they’re listed everywhere.', bodyHtml: fieldGrid([
+        f('First name', 'first_name', p.first_name), f('Last name', 'last_name', p.last_name),
+        f('Nickname', 'nickname', p.nickname), f('Jersey number', 'number', p.number, { placeholder: 'e.g. 23', attrs: 'inputmode="numeric"' }),
+      ].join('')) }),
+      formSection({ title: 'Body', sub: 'Used for team balance in Papawis.', bodyHtml: fieldGrid([
+        f('Height', 'height', p.height, { placeholder: 'e.g. 178 cm' }), f('Weight', 'weight', p.weight, { placeholder: 'e.g. 74 kg' }),
+        f('Wingspan', 'wingspan', p.wingspan), f('Dominant hand', 'dominant_hand', p.dominant_hand, { placeholder: 'Right / Left' }),
+      ].join('')) }),
+      formSection({ title: 'Background', sub: 'Shown on their public profile.', bodyHtml: `<div class="aui-fields apl-fields-3">${[
+        f('Hometown', 'hometown', p.hometown), f('School', 'school', p.school), f('Years playing', 'years_playing', p.years_playing),
+      ].join('')}</div>${fieldGrid([
+        f('Instagram', 'social_instagram', p.social_instagram, { placeholder: '@handle' }), f('X / Twitter', 'social_twitter', p.social_twitter, { placeholder: '@handle' }),
+      ].join(''))}` }),
+      formSection({ title: 'Positions', sub: 'Pick all they play.', bodyHtml: chips }),
+      formSection({ title: 'Bio', sub: 'Shown on their public profile.', bodyHtml: field({ label: 'Bio', name: 'writeup', type: 'textarea', rows: 5, value: p.writeup || '' }) }),
+    ].join(''))}
+  </form>
+  ${saveBar({ label: 'Save profile', form: 'apl-profile' })}`;
+}
+
+// ── Ratings and stats ──────────────────────────────────────────────────────────────────
+function ratingsTab(p, { rating, stats, seasons, season }) {
+  const gp = Number(stats?.games_played) || 0;
+  const avg = k => (gp > 0 ? (Number(stats?.[k] || 0) / gp).toFixed(1) : '—');
+  const fg3a = Number(stats?.fg3m || 0) + Number(stats?.fg3m_miss || 0);
+  const strip = statStrip([
+    { label: 'GP', value: String(gp) }, { label: 'PPG', value: avg('pts') }, { label: 'RPG', value: avg('reb') }, { label: 'APG', value: avg('ast') },
+    { label: 'SPG', value: avg('stl') }, { label: 'BPG', value: avg('blk') }, { label: '3P%', value: fg3a > 0 ? `${Math.round((Number(stats.fg3m || 0) / fg3a) * 100)}%` : '—' }, { label: 'TOV', value: avg('turnover') },
+  ]);
+  const picker = `<div class="apl-season" data-apl-season data-base="/admin/players/${attr(encodeURIComponent(p.id))}?tab=ratings">${segmented({
+    name: 'season', value: season || 'all', label: 'Season', options: [['all', 'All time'], ...seasons.map(s => [String(s), `Season ${s}`])],
+  })}</div>`;
+  const recompute = button('Recompute from games', { kind: 'secondary', size: 'sm', attrs: `data-post-json="/admin/players/${attr(p.id)}/recompute" data-body="${attr(JSON.stringify({ season: season || '' }))}" data-done="Ratings recomputed from games."` });
+  const rows = ATTRS.map(([key, label]) => {
+    const calc = rating?.[key] ?? null;
+    const over = rating?.[`${key}_ovr`] ?? null;
+    const eff = over ?? calc;
+    const pct = eff != null ? Math.max(2, Math.min(100, Math.round((eff / 99) * 100))) : 0;
+    return `<tr class="${key === 'overall' ? 'apl-attr--overall' : ''}">
+      <td class="apl-attr__name">${escHtml(label)}</td>
+      <td><span class="apl-rating"><span class="apl-bar"><span class="apl-bar__fill" style="width:${pct}%"></span></span><span class="apl-rating__n">${eff ?? '—'}</span>${over != null ? badge('Override', 'amber') : ''}</span></td>
+      <td class="is-num"><span class="apl-calc">${calc ?? '—'}</span></td>
+      <td><input class="aui-input apl-override" type="number" name="${key}_ovr" min="1" max="99" step="1" inputmode="numeric" placeholder="—" value="${over ?? ''}" aria-label="Override ${attr(label)}"></td>
+    </tr>`;
   }).join('');
-
-  // ── Profile fields ────────────────────────────────────────────────────────
-  const d = player;
-  const field = (label, id, val, ph = '') =>
-    `<div><label class="admin-field-label">${label}</label>
-     <input type="text" id="${id}" class="admin-input mt-1" value="${escHtml(val || '')}" placeholder="${ph}"></div>`;
-
-  const positions = (() => { try { return JSON.parse(player.positions || '[]'); } catch { return []; } })();
-
-  const posOpts = ['PG','SG','SF','PF','C'].map(pos =>
-    `<label class="inline-flex items-center gap-1.5 mr-3 text-sm cursor-pointer text-slate-300">
-      <input type="checkbox" class="pos-check accent-brand" value="${pos}"${positions.includes(pos) ? ' checked' : ''}> ${pos}
-    </label>`
-  ).join('');
-
-  const teamOpts = teams.map(t =>
-    `<option value="${escHtml(t.id)}"${t.id === player.team_id ? ' selected' : ''}>${escHtml(t.name)}</option>`
-  ).join('');
-
-  const isInactive = player.status === 'inactive';
-
-  return `
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
-<div class="agm-edit-bar">
-  <a href="/admin/players" class="agm-edit-bar__back">${ICON_CHEVRON_L} Players</a>
-  <div class="agm-edit-bar__right">
-    <span id="save-msg" class="agm-save-msg"></span>
-    <button id="plr-save-all" class="agm-edit-bar__save">${ICON_CHECK} Save Changes</button>
-  </div>
-</div>
-
-<div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_300px] items-start">
-
-  <!-- ── Main column ─────────────────────────────────────────────────────── -->
-  <div class="flex flex-col gap-4">
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Photo &amp; Number</div>
-      <div class="p-4">
-        <div class="flex items-center gap-5">
-          <div class="relative shrink-0">
-            <div id="plr-photo-wrap" class="w-16 h-16 rounded-full overflow-hidden bg-admin-border flex items-center justify-center">
-              ${player.picture_url
-                ? `<img id="plr-photo-img" src="/api/player/${escHtml(player.id)}/photo" class="w-full h-full object-cover object-top cursor-pointer" title="Click to re-crop" alt="">`
-                : `<span class="text-xl font-extrabold text-slate-500">${escHtml(initials)}</span>`}
-            </div>
-            <label for="plr-photo-input" title="Change photo" class="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center cursor-pointer border-2 border-admin-bg">
-              <svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.5A1.5 1.5 0 0 1 2.5 3h.68L4.1 1.5h5.8L10.82 3H11.5A1.5 1.5 0 0 1 13 4.5v6A1.5 1.5 0 0 1 11.5 12h-9A1.5 1.5 0 0 1 1 10.5v-6z"/><circle cx="7" cy="7.5" r="2"/></svg>
-            </label>
-            <input type="file" id="plr-photo-input" accept="image/*" class="hidden">
-          </div>
-          <div>
-            <label class="admin-field-label">Jersey Number</label>
-            <input type="text" id="val-number" class="admin-input mt-1.5" value="${escHtml(player.number || '')}"
-              placeholder="e.g. 23" style="width:80px;text-align:center">
-          </div>
-          <div id="photo-msg" class="text-xs text-slate-500"></div>
-        </div>
-      </div>
+  const table = `<form data-json-action="/admin/players/${attr(p.id)}/ratings" data-done="Ratings saved.">
+    <input type="hidden" name="season" value="${attr(season || '')}">
+    <div class="aui-table-wrap">
+      <table class="aui-table apl-attrs">
+        <thead><tr><th scope="col">Attribute</th><th scope="col">Rating</th><th scope="col" class="is-num">From games</th><th scope="col">Override</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="apl-attrs__foot"><span class="aui-muted">Overrides (1–99) win over the numbers from games until cleared. Leave blank for none.</span>${button('Save ratings', { kind: 'primary', size: 'sm', type: 'submit' })}</div>
     </div>
+  </form>`;
+  return `<div class="aui-row-between">${picker}${recompute}</div>
+    <div class="apl-stats">${strip}</div>
+    ${rating ? '' : `<p class="aui-muted apl-note">No ratings ${season ? `for Season ${escHtml(season)}` : 'yet'}. Recompute from games, or set overrides.</p>`}
+    ${table}`;
+}
 
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Bio</div>
-      <div class="p-4">
-        <label class="admin-field-label">Writeup</label>
-        <textarea id="val-writeup" class="admin-input mt-1.5" rows="5" style="resize:vertical">${escHtml(player.writeup || '')}</textarea>
-      </div>
-    </div>
-
-    ${isSuperAdmin ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">URL Slug</div>
-      <div class="p-4">
-        <label class="admin-field-label">Player URL</label>
-        <div class="flex items-center gap-2 mt-1.5">
-          <span class="text-[11px] text-slate-500 shrink-0">/players/</span>
-          <input type="text" id="slug-input" class="admin-input flex-1" value="${escHtml(currentSlug || '')}" placeholder="e.g. juan-dela-cruz">
-          <button onclick="saveSlug()" class="admin-btn" style="white-space:nowrap">Save</button>
-        </div>
-        <div id="slug-msg" class="text-[11px] mt-1.5 text-slate-500"></div>
-      </div>
-    </div>` : ''}
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Profile</div>
-      <div class="p-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          ${field('First Name',    'val-first_name',    d.first_name)}
-          ${field('Last Name',     'val-last_name',     d.last_name)}
-          ${field('Nickname',      'val-nickname',      d.nickname)}
-          ${field('Hometown',      'val-hometown',      d.hometown)}
-          ${field('School',        'val-school',        d.school)}
-          ${field('Height',        'val-height',        d.height,        'e.g. 6\'2"')}
-          ${field('Weight',        'val-weight',        d.weight,        'e.g. 185 lbs')}
-          ${field('Wingspan',      'val-wingspan',      d.wingspan)}
-          ${field('Dominant Hand', 'val-dominant_hand', d.dominant_hand, 'Left / Right')}
-          ${field('Years Playing', 'val-years_playing', d.years_playing)}
-          ${field('Instagram',     'val-social_instagram', d.social_instagram, '@handle')}
-          ${field('Twitter / X',   'val-social_twitter',   d.social_twitter,   '@handle')}
-        </div>
-        <label class="admin-field-label">Positions</label>
-        <div class="mt-2">${posOpts}</div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
-  <div class="flex flex-col gap-4">
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Player</div>
-      <div class="p-4">
-        <div class="mb-3">
-          <label class="admin-field-label">Team</label>
-          <select id="val-team" class="admin-input mt-1">
-            <option value="">— No Team —</option>
-            ${teamOpts}
-          </select>
-        </div>
-        <div${canImpersonate ? ' class="mb-3"' : ''}>
-          <label class="admin-field-label">Status</label>
-          <select id="val-status" class="admin-input mt-1">
-            <option value="active"${!isInactive ? ' selected' : ''}>Active</option>
-            <option value="inactive"${isInactive ? ' selected' : ''}>Inactive</option>
-          </select>
-        </div>
-        ${canImpersonate ? `<button id="plr-impersonate-btn" type="button" class="admin-btn admin-btn--block">${ICON_EYE} View as this player</button>` : ''}
-      </div>
-    </div>
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Papawis Probation</div>
-      <div class="p-4">
-        <label class="flex items-center gap-2 text-xs text-slate-300">
-          <input type="checkbox" id="val-papawis-probation" class="accent-amber-400"${player.papawis_probation ? ' checked' : ''}>
-          On probation — joining Papawis holds them pending a deposit instead of a normal slot
-        </label>
-        <textarea id="val-papawis-probation-note" class="admin-input mt-2" rows="2" placeholder="Reason (optional) — e.g. new player, late payment last time">${escHtml(player.papawis_probation_note || '')}</textarea>
-        <div class="flex items-center gap-2 mt-2">
-          <button type="button" class="admin-btn admin-btn--sm" id="plr-probation-save">Save</button>
-          <span id="plr-probation-msg" class="text-[11px] text-slate-500"></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-admin-border">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Ratings</span>
-        <button id="plr-recompute" class="admin-btn admin-btn--sm">${ICON_RECOMPUTE} Recompute</button>
-      </div>
-      <div class="p-4">
-
-        ${seasons.length ? `<div class="flex flex-wrap gap-1 mb-3">
-          <a href="/admin/players/${escHtml(player.id)}" class="agm-pill${!season ? ' is-active' : ''}" style="font-size:11px"><span class="pill-label">All</span></a>
-          ${seasonPills}
-        </div>` : ''}
-
-        <div class="flex items-baseline gap-2.5 mb-2">
-          <span class="font-saira font-extrabold leading-none" style="font-size:40px;color:${ovrColor_}">${effOvr ?? '—'}</span>
-          <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-widest">OVR</span>
-          ${effOvr != null ? `<span class="text-[11px] text-slate-500">${escHtml(player.team_name || '')}</span>` : ''}
-        </div>
-
-        ${statsGrid}
-
-        <form id="ratings-form" class="mt-1.5">
-          <div class="text-[10px] text-slate-500 text-right pb-1 pt-2">Calc → Override</div>
-          ${attrRows}
-          <div class="flex items-center gap-2.5 py-2.5">
-            <div class="flex-1 text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Overall Override</div>
-            <input type="number" name="overall_ovr" min="1" max="99" placeholder="—"
-              value="${rating?.overall_ovr ?? ''}"
-              class="admin-input" style="width:44px;text-align:center">
-          </div>
-          <span id="ratings-msg" class="text-xs block mb-2"></span>
-          <button type="submit" class="agm-new-btn admin-btn--block">${ICON_CHECK} Save Ratings</button>
-        </form>
-      </div>
-    </div>
-
-    ${canDelete ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Danger Zone</div>
-      <div class="p-4">
-        <p class="text-[11px] text-slate-500 leading-relaxed mb-3">No games, payments, papawis history, or awards on record yet — safe to remove entirely instead of just marking inactive.</p>
-        <button id="plr-delete-btn" class="admin-btn admin-btn--danger admin-btn--block">${ICON_TRASH} Delete Player</button>
-      </div>
-    </div>` : ''}
-
-  </div>
-</div>
-
-<div class="pcp-backdrop" id="pcp-backdrop" hidden>
-  <div class="pcp-modal">
-    <div class="pcp-modal__header">
-      <span class="pcp-modal__title">Crop Photo</span>
-      <button class="pcp-modal__close" id="pcp-close">&#x2715;</button>
-    </div>
-    <div class="pcp-modal__body">
-      <img id="pcp-img" src="" alt="" style="max-width:100%;display:block">
-    </div>
-    <div class="pcp-modal__hint">Line up the eyes with the dashed line and keep the head inside the oval — this keeps photos consistent across players.</div>
-    <div class="pcp-modal__footer">
-      <button class="admin-btn" id="pcp-cancel">${ICON_X} Cancel</button>
-      <button class="agm-new-btn" id="pcp-save">${ICON_CHECK} Crop &amp; Save</button>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"><\/script>
-<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"><\/script>
-<script>
-  var PLAYER_ID = '${escHtml(player.id)}';
-  var SEASON    = '${escHtml(String(season ?? ''))}';
-
-  // ── Photo crop modal ──────────────────────────────────────────────────────
-  (function() {
-    var fileInput = document.getElementById('plr-photo-input');
-    var backdrop  = document.getElementById('pcp-backdrop');
-    var cropImg   = document.getElementById('pcp-img');
-    var saveBtn   = document.getElementById('pcp-save');
-    var saveBtnOrigHtml = saveBtn.innerHTML;
-    var photoMsg  = document.getElementById('photo-msg');
-    var cropper   = null;
-    var pendingOriginalDataUrl = null;
-
-    function setPhotoMsg(text, color) {
-      photoMsg.style.color = color || '';
-      photoMsg.textContent = text || '';
-    }
-
-    // Neither sharp (server-side) nor Chromium/Firefox (client-side <img>) can decode HEIC —
-    // the default photo format on iPhones — so a straight-off-the-phone upload would silently
-    // break the crop step or fail to process server-side. Convert to JPEG in-browser first;
-    // everything downstream (crop canvas, server compressSourceImage) just sees a normal JPEG.
-    function isHeic(file) {
-      var type = (file.type || '').toLowerCase();
-      if (type === 'image/heic' || type === 'image/heif') return true;
-      return /\\.hei[cf]$/i.test(file.name || '');
-    }
-
-    function readAsDataUrl(fileOrBlob) {
-      return new Promise(function(resolve, reject) {
-        var reader = new FileReader();
-        reader.onload = function(e) { resolve(e.target.result); };
-        reader.onerror = function() { reject(new Error('read failed')); };
-        reader.readAsDataURL(fileOrBlob);
-      });
-    }
-
-    function openCrop(src) {
-      cropImg.src = src;
-      backdrop.hidden = false;
-      document.body.style.overflow = 'hidden';
-      if (cropper) { cropper.destroy(); }
-      cropper = new Cropper(cropImg, {
-        aspectRatio: 1,
-        viewMode: 1,
-        dragMode: 'move',
-        autoCropArea: 0.6,
-        guides: true,
-        highlight: false,
-        cropBoxMovable: true,
-        cropBoxResizable: true,
-        toggleDragModeOnDblclick: false,
-        ready: function() {
-          var cropBox = backdrop.querySelector('.cropper-crop-box');
-          if (cropBox && !cropBox.querySelector('.pcp-head-guide')) {
-            var guide = document.createElement('div');
-            guide.className = 'pcp-head-guide';
-            guide.innerHTML =
-              '<div class="pcp-head-guide__oval"></div>' +
-              '<div class="pcp-head-guide__eyeline"></div>';
-            cropBox.appendChild(guide);
-          }
-          var body = backdrop.querySelector('.pcp-modal__body');
-          if (body && !body.querySelector('.pcp-zoom-ctrl')) {
-            var ctrl = document.createElement('div');
-            ctrl.className = 'pcp-zoom-ctrl';
-            ctrl.innerHTML =
-              '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-reset" aria-label="Reset crop" title="Reset crop">&#8635;</button>' +
-              '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-out" aria-label="Zoom out">−</button>' +
-              '<button type="button" class="pcp-zoom-btn" id="pcp-zoom-in" aria-label="Zoom in">+</button>';
-            body.appendChild(ctrl);
-            ctrl.querySelector('#pcp-zoom-reset').addEventListener('click', function() { cropper.reset(); });
-            ctrl.querySelector('#pcp-zoom-out').addEventListener('click', function() { cropper.zoom(-0.1); });
-            ctrl.querySelector('#pcp-zoom-in').addEventListener('click', function() { cropper.zoom(0.1); });
-          }
-        },
-      });
-    }
-
-    function closeCrop() {
-      backdrop.hidden = true;
-      document.body.style.overflow = '';
-      if (cropper) { cropper.destroy(); cropper = null; }
-      fileInput.value = '';
-      pendingOriginalDataUrl = null;
-      saveBtn.disabled = false;
-      saveBtn.innerHTML = saveBtnOrigHtml;
-    }
-
-    fileInput.addEventListener('change', function() {
-      var file = this.files[0];
-      if (!file) return;
-      setPhotoMsg('', '');
-
-      var converting = isHeic(file);
-      var prep;
-      if (converting) {
-        setPhotoMsg('Converting HEIC photo…', '#94a3b8');
-        prep = heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 }).then(function(result) {
-          return Array.isArray(result) ? result[0] : result;
-        });
-      } else {
-        prep = Promise.resolve(file);
-      }
-
-      prep
-        .then(readAsDataUrl)
-        .then(function(dataUrl) {
-          if (converting) setPhotoMsg('Converted from HEIC.', '#22c55e');
-          pendingOriginalDataUrl = dataUrl;
-          openCrop(dataUrl);
-        })
-        .catch(function() {
-          fileInput.value = '';
-          setPhotoMsg(
-            converting
-              ? "Couldn't convert this HEIC photo — try exporting it as JPEG first."
-              : "Couldn't read this file — try a different photo.",
-            '#f87171'
-          );
-        });
-    });
-
-    document.getElementById('pcp-close').addEventListener('click', closeCrop);
-    document.getElementById('pcp-cancel').addEventListener('click', closeCrop);
-    backdrop.addEventListener('click', function(e) { if (e.target === backdrop) closeCrop(); });
-
-    var photoImg = document.getElementById('plr-photo-img');
-    if (photoImg) {
-      photoImg.addEventListener('click', function() {
-        pendingOriginalDataUrl = null;
-        openCrop('/api/player/' + PLAYER_ID + '/photo-source?t=' + Date.now());
-      });
-    }
-
-    saveBtn.addEventListener('click', function() {
-      if (!cropper) return;
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
-      var canvas = cropper.getCroppedCanvas({ width: 400, height: 400, imageSmoothingQuality: 'high' });
-      var dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-      fetch('/admin/players/' + PLAYER_ID + '/photo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: dataUrl, originalDataUrl: pendingOriginalDataUrl || '' })
-      }).then(function(r) {
-        return r.json().catch(function() { return {}; }).then(function(d) { return { ok: r.ok, d: d }; });
-      }).then(function(res) {
-        if (!res.ok) { setPhotoMsg(res.d.error || 'Upload failed.', '#f87171'); saveBtn.disabled = false; saveBtn.innerHTML = saveBtnOrigHtml; return; }
-        var wrap = document.getElementById('plr-photo-wrap');
-        wrap.innerHTML = '';
-        var img = document.createElement('img');
-        img.src = '/api/player/' + PLAYER_ID + '/photo?t=' + Date.now();
-        img.style.cssText = 'width:100%;height:100%;object-fit:cover;object-position:top';
-        wrap.appendChild(img);
-        setPhotoMsg('Photo saved.', '#22c55e');
-        closeCrop();
-      }).catch(function() {
-        setPhotoMsg('Network error — try again.', '#f87171');
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = saveBtnOrigHtml;
-      });
-    });
-  })();
-
-  // ── Single save (bio + number + profile + team + status) ──────────────────
-  document.getElementById('plr-save-all').addEventListener('click', async function() {
-    var btn = this;
-    var origHtml = btn.innerHTML;
-    var msg = document.getElementById('save-msg');
-    btn.disabled = true; btn.textContent = 'Saving…';
-    msg.className = 'agm-save-msg'; msg.textContent = '';
-
-    var positions = [...document.querySelectorAll('.pos-check:checked')].map(function(c){ return c.value; });
-    var body = {
-      first_name:       document.getElementById('val-first_name').value.trim(),
-      last_name:        document.getElementById('val-last_name').value.trim(),
-      number:           document.getElementById('val-number').value.trim(),
-      writeup:          document.getElementById('val-writeup').value,
-      team_id:          document.getElementById('val-team').value,
-      status:           document.getElementById('val-status').value,
-      nickname:         document.getElementById('val-nickname').value,
-      hometown:         document.getElementById('val-hometown').value,
-      school:           document.getElementById('val-school').value,
-      height:           document.getElementById('val-height').value,
-      weight:           document.getElementById('val-weight').value,
-      wingspan:         document.getElementById('val-wingspan').value,
-      dominant_hand:    document.getElementById('val-dominant_hand').value,
-      years_playing:    document.getElementById('val-years_playing').value,
-      social_instagram: document.getElementById('val-social_instagram').value,
-      social_twitter:   document.getElementById('val-social_twitter').value,
-      positions:        positions,
-    };
-
-    try {
-      var r = await fetch('/admin/players/' + PLAYER_ID + '/bio', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      msg.className = 'agm-save-msg agm-save-msg--ok';
-      msg.textContent = 'Saved.';
-    } catch(err) {
-      msg.className = 'agm-save-msg agm-save-msg--err';
-      msg.textContent = err.message;
-    } finally { btn.disabled = false; btn.innerHTML = origHtml; }
-  });
-
-  // ── Papawis probation save (own button — not part of the bulk bio save) ────
-  var probBtn = document.getElementById('plr-probation-save');
-  if (probBtn) {
-    probBtn.addEventListener('click', function() {
-      var msg = document.getElementById('plr-probation-msg');
-      probBtn.disabled = true; msg.style.color = 'var(--text-muted)'; msg.textContent = 'Saving…';
-      fetch('/admin/players/' + PLAYER_ID + '/papawis-probation', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          on: document.getElementById('val-papawis-probation').checked,
-          note: document.getElementById('val-papawis-probation-note').value,
-        })
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        probBtn.disabled = false;
-        if (d.ok) { msg.style.color = '#22c55e'; msg.textContent = 'Saved.'; }
-        else { msg.style.color = '#f87171'; msg.textContent = d.error || 'Failed.'; }
-      })
-      .catch(function() { probBtn.disabled = false; msg.style.color = '#f87171'; msg.textContent = 'Network error.'; });
-    });
+// ── Papawis ────────────────────────────────────────────────────────────────────────────
+function runStatus(s, today) {
+  if (s.status === 'cancelled') return ['Cancelled', 'red', s.cancelled_at ? `Cancelled ${fmtDate(s.cancelled_at)}` : 'Cancelled'];
+  if (s.game_status === 'cancelled') return ['Run cancelled', 'gray', 'The run was called off'];
+  if (s.status === 'pending') return ['Pending deposit', 'amber', 'Held until their deposit is confirmed'];
+  if (s.status === 'waitlist') return s.game_status === 'completed' || s.date < today ? ['Waitlisted', 'gray', 'Didn’t get a slot'] : ['Waitlist', 'blue', 'On the waitlist'];
+  if (s.game_status === 'completed') {
+    const price = s.price_per_player != null ? peso(s.price_per_player) : '';
+    return s.paid_at ? ['Paid', 'green', `Paid ${price}`.trim()] : ['Owes', 'red', price ? `Owes ${price}` : 'Not paid yet'];
   }
+  if (s.date < today) return ['Played', 'gray', 'Waiting for close-out'];
+  return ['Upcoming', 'gray', 'Confirmed'];
+}
 
-  // ── Ratings overrides save ────────────────────────────────────────────────
-  document.getElementById('ratings-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    var btn = e.target.querySelector('[type=submit]');
-    var origHtml = btn.innerHTML;
-    var msg = document.getElementById('ratings-msg');
-    btn.disabled = true; btn.textContent = 'Saving…';
-    try {
-      var r = await fetch('/admin/players/' + PLAYER_ID + '/ratings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...Object.fromEntries(new FormData(e.target)), season: SEASON })
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      msg.style.color = '#22c55e'; msg.textContent = 'Saved. Reloading…';
-      setTimeout(function(){ location.reload(); }, 600);
-    } catch(err) {
-      msg.style.color = '#f87171'; msg.textContent = err.message;
-      btn.disabled = false; btn.innerHTML = origHtml;
-    }
-  });
+function papawisTab(p, { history, today }) {
+  const runs = history.length ? `<div class="aui-panel aui-panel--flush">${history.map(s => {
+    const [label, tone, what] = runStatus(s, today);
+    const sub = [fmtDay(s.date), s.location, s.guest_name ? `Guest: ${s.guest_name}` : '', what].filter(Boolean).join(' · ');
+    return `<a class="aui-action apl-run" href="/admin/papawis/${attr(encodeURIComponent(s.game_id))}"><span class="aui-cell__stack"><span class="aui-action__label">${escHtml(s.title || 'Papawis')}</span><span class="aui-cell__sub">${escHtml(sub)}</span></span>${badge(label, tone)}</a>`;
+  }).join('')}</div>` : emptyState({ title: 'No Papawis runs yet', sub: 'Runs they sign up for show up here.' });
+  const probation = `<form class="aui-panel aui-stack" data-apl-probation="/admin/players/${attr(p.id)}/papawis-probation">
+    ${toggleRow({ label: 'On probation', help: 'Their sign-ups wait for a deposit you confirm.', name: 'probation', on: !!p.papawis_probation })}
+    ${field({ label: 'Reason (admins only)', name: 'note', type: 'textarea', rows: 3, value: p.papawis_probation_note || '', placeholder: 'e.g. New player, or late payment last time',
+      help: p.papawis_probation ? 'Saves when you click away.' : 'Turn probation on to give a reason.', attrs: p.papawis_probation ? '' : 'disabled' })}
+  </form>`;
+  return `<div class="aui-cols">
+    <div class="aui-cols__main">${section({ title: 'Recent runs', note: history.length ? `· ${history.length === 30 ? 'last 30' : history.length}` : '', bodyHtml: runs })}</div>
+    <aside class="aui-cols__side">${section({ title: 'Probation', bodyHtml: probation })}</aside>
+  </div>`;
+}
 
-  // ── Slug save ────────────────────────────────────────────────────────────
-  window.saveSlug = async function() {
-    var input = document.getElementById('slug-input');
-    var msg   = document.getElementById('slug-msg');
-    if (!input) return;
-    var slug = input.value.trim();
-    if (!slug) { msg.style.color = '#f87171'; msg.textContent = 'Slug cannot be empty.'; return; }
-    try {
-      var r = await fetch('/admin/players/' + PLAYER_ID + '/slug', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug }),
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      input.value = j.slug;
-      msg.style.color = '#4ade80'; msg.textContent = 'Saved ✓ — new URL: /players/' + j.slug;
-      setTimeout(function() { msg.textContent = ''; }, 4000);
-    } catch(err) {
-      msg.style.color = '#f87171'; msg.textContent = err.message;
-    }
-  };
+// ── Settings ───────────────────────────────────────────────────────────────────────────
+function settingsTab(p, { teams, slug, isSuperAdmin, canDelete, deleteReason, name }) {
+  const id = attr(p.id);
+  const teamStatus = formSection({ title: 'Team and status', sub: 'Saves as you change it.', bodyHtml: fieldGrid([
+    field({ label: 'Team', name: 'team_id', type: 'select', value: p.team_id || '', options: [...teams.map(t => [t.id, t.name]), ['', 'No team']], attrs: `data-apl-autosave="/admin/players/${id}/team"` }),
+    field({ label: 'Status', name: 'status', type: 'select', value: p.status === 'inactive' ? 'inactive' : 'active', options: [['active', 'Active'], ['inactive', 'Inactive']], attrs: `data-apl-autosave="/admin/players/${id}/status"` }),
+  ].join('')) });
+  const address = isSuperAdmin ? formSection({ title: 'Profile address', sub: 'Super admin only.', bodyHtml: `<form class="aui-inline-form apl-slug" data-json-action="/admin/players/${id}/slug" data-done="Profile address saved.">
+      <label class="aui-input aui-input--affix apl-slug__box"><span class="aui-input__pre">/players/</span><input name="slug" value="${attr(slug || '')}" placeholder="e.g. juan-dela-cruz" aria-label="Profile address" required></label>
+      ${button('Save', { kind: 'secondary', type: 'submit' })}
+    </form>
+    <span class="aui-field__help">Letters, numbers and dashes. The old address stops working.</span>` }) : '';
+  const del = formSection({ title: 'Delete player', sub: 'Only for players with no games, payments, Papawis or awards.', bodyHtml: canDelete
+    ? `<div class="aui-row">${button('Delete player…', { kind: 'danger', attrs: `data-post-json="/admin/players/${id}" data-method="DELETE" data-then="/admin/players" data-done="${attr(name)} deleted." data-confirm data-confirm-title="Delete ${attr(name)}?" data-confirm-body="Removes the player for good. This can’t be undone." data-confirm-send="Delete"` })}</div>`
+    : `<div class="aui-row">${button('Delete player…', { kind: 'danger', attrs: 'disabled' })}<span class="aui-muted">${escHtml(deleteReason)}</span></div>` });
+  return formCard(teamStatus + address + del);
+}
 
-  // ── Recompute ─────────────────────────────────────────────────────────────
-  document.getElementById('plr-recompute').addEventListener('click', async function() {
-    var btn = this; btn.disabled = true; btn.style.opacity = '0.6';
-    var msg = document.getElementById('ratings-msg');
-    try {
-      var r = await fetch('/admin/players/' + PLAYER_ID + '/recompute', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: SEASON })
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      msg.style.color = '#22c55e'; msg.textContent = 'Recomputed. Reloading…';
-      setTimeout(function(){ location.reload(); }, 600);
-    } catch(err) {
-      msg.style.color = '#f87171'; msg.textContent = err.message;
-      btn.disabled = false; btn.style.opacity = '';
-    }
-  });
+export function adminPlayerDetailBody({
+  player, rating = null, overallRating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false,
+  canDelete = false, canImpersonate = false, linkedReg = null, history = [], tab = 'profile', deleteReason = '', today = '', ver = '',
+} = {}) {
+  const p = player;
+  const name = displayPlayerName(p.name);
+  const team = teams.find(t => t.id === p.team_id);
+  const color = team?.color || '';
+  const base = `/admin/players/${encodeURIComponent(p.id)}`;
+  const tabs = [['profile', 'Profile'], ['ratings', 'Ratings and stats'], ['papawis', 'Papawis', history.length || ''], ['settings', 'Settings']];
+  const current = tabs.some(t => t[0] === tab) ? tab : 'profile';
+  const tabsHtml = pageTabs(tabs.map(([k, label, count]) => ({ label, count, href: k === 'profile' ? base : `${base}?tab=${k}`, active: k === current })));
+  const main = {
+    profile: () => profileTab(p),
+    ratings: () => ratingsTab(p, { rating, stats, seasons, season }),
+    papawis: () => papawisTab(p, { history, today }),
+    settings: () => settingsTab(p, { teams, slug: currentSlug, isSuperAdmin, canDelete, deleteReason, name }),
+  }[current]();
 
-  // ── View as this player ──────────────────────────────────────────────────
-  var impersonateBtn = document.getElementById('plr-impersonate-btn');
-  if (impersonateBtn) {
-    impersonateBtn.addEventListener('click', function() {
-      if (!confirm('View the site as ' + ${JSON.stringify(name)} + '? You will see the site exactly as they do (read-only) until you return to admin.')) return;
-      impersonateBtn.disabled = true; impersonateBtn.textContent = 'Loading…';
-      fetch('/admin/impersonate/' + PLAYER_ID, { method: 'POST' })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
-        .then(function(res) {
-          if (res.ok) { window.location.href = '/me'; }
-          else { alert(res.body.error || 'Failed'); impersonateBtn.disabled = false; impersonateBtn.innerHTML = '${ICON_EYE} View as this player'; }
-        })
-        .catch(function() { alert('Network error'); impersonateBtn.disabled = false; impersonateBtn.innerHTML = '${ICON_EYE} View as this player'; });
-    });
-  }
-
-  // ── Delete player ─────────────────────────────────────────────────────────
-  var deleteBtn = document.getElementById('plr-delete-btn');
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', function() {
-      if (!confirm('Delete this player entirely? This cannot be undone.')) return;
-      deleteBtn.disabled = true; deleteBtn.textContent = 'Deleting…';
-      fetch('/admin/players/' + PLAYER_ID, { method: 'DELETE' })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
-        .then(function(res) {
-          if (res.ok) { window.location.href = '/admin/players'; }
-          else { alert(res.body.error || 'Failed'); deleteBtn.disabled = false; deleteBtn.innerHTML = '${ICON_TRASH} Delete Player'; }
-        })
-        .catch(function() { alert('Network error'); deleteBtn.disabled = false; deleteBtn.innerHTML = '${ICON_TRASH} Delete Player'; });
-    });
-  }
-</script>`;
+  return `<div class="aui-page apl-detail" data-apl-player="${attr(p.id)}">
+    ${breadcrumb([{ label: 'Players', href: '/admin/players' }, { label: name }])}
+    ${header(p, { name, color, rating: overallRating, linkedReg, slug: currentSlug, canImpersonate })}
+    ${tabsHtml}
+    ${main}
+    ${cropDialog()}
+  </div>
+  <script src="/admin-players.js${ver ? `?v=${ver}` : ''}" defer></script>`;
 }

@@ -1,1313 +1,164 @@
+// /admin/games: every league game (admin redesign, 2026-10-15; mockup: canvas "Data grid",
+// Game Day). Rebuilt from scratch on views/admin/ui.js: the shared data grid with views for
+// what needs doing (upcoming, box score to import, drafts, missing content), New game and
+// Final score in drawers. The game page itself is views/admin/game.js.
+// Browser side (Final score drawer, series field): public/admin-games.js.
 import { escHtml } from '../layout.js';
-import { displayPlayerName, teamColor, playerLink, manilaTodayStr } from '../utils.js';
-import { buildBoxScoreData, gameLeadersTab, teamComparisonTab, lineScoreTab } from '../game.js';
+import { manilaTodayStr } from '../utils.js';
+import { pageHeader, dataGrid, statStrip, badge, button, drawer, field, fieldGrid } from './ui.js';
 
-const ICON_IMPORT    = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v7.5M4.5 6L7 8.5 9.5 6"/><path d="M2 10v1.5A1.5 1.5 0 0 0 3.5 13h7A1.5 1.5 0 0 0 12 11.5V10"/></svg>`;
-const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
-const ICON_PLUS      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
-const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
-const ICON_X         = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
+const attr = s => escHtml(String(s ?? ''));
+const fmtDate = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—');
+const fmtDow = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric' }) : '');
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-const fmtDate = d => d
-  ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  : '—';
-const fmtDateLong = d => d
-  ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-  : '';
+// Where a game is in its life: scheduled → score only (needs the box score) → draft → live.
+export function gameState(g) {
+  const noScore = Number(g.team_a_score) + Number(g.team_b_score) === 0;
+  if (g.scheduled === 1 || g.status === 'scheduled' || noScore) return 'upcoming';
+  if (g.status === 'final') return 'score';
+  if (g.under_review) return 'draft';
+  return 'live';
+}
+export const STATE_BADGE = {
+  upcoming: ['Upcoming', 'blue'], score: ['Needs box score', 'amber'], draft: ['Draft', 'amber'], live: ['Live', 'green'],
+};
+export const TYPE_LABEL = { regular: 'Regular season', playoff: 'Playoff', finals: 'Finals' };
+export const otLabel = ot => (Number(ot) > 1 ? `${Number(ot)}OT` : Number(ot) === 1 ? 'OT' : '');
 
-function isUpcoming(game) {
-  return game.scheduled === 1 || (Number(game.team_a_score) + Number(game.team_b_score)) === 0;
+// The content a live game page wants. A score-only game only takes a cover.
+export function contentChecks(g) {
+  const st = gameState(g);
+  if (st === 'upcoming') return [];
+  if (st === 'score') return [['Box score', false], ['Cover', !!g.has_cover]];
+  return [
+    ['Recap', !!String(g.game_writeup || '').replace(/<[^>]*>/g, '').trim()],
+    ['Player of the game', !!String(g.potg_writeup || '').trim()],
+    ['Cover', !!g.has_cover],
+    ['YouTube', !!String(g.youtube_url || '').trim()],
+  ];
+}
+const missingCount = g => contentChecks(g).filter(([, ok]) => !ok).length;
+
+function matchup(g, colors) {
+  const st = gameState(g);
+  const a = Number(g.team_a_score), b = Number(g.team_b_score);
+  const win = st === 'upcoming' || a === b ? '' : a > b ? 'a' : 'b';
+  const team = (name, side) => `<span class="agl-team${win === side ? ' is-win' : ''}"><i class="agl-dot" style="background:${attr(colors[side])}"></i>${escHtml(name)}</span>`;
+  const mid = st === 'upcoming' ? '<span class="agl-vs">vs</span>'
+    : `<span class="agl-score">${a}<span aria-hidden="true">–</span>${b}</span>${otLabel(g.overtime) ? `<span class="agl-ot">${otLabel(g.overtime)}</span>` : ''}`;
+  return `<span class="agl-match">${team(g.team_a_name, 'a')}${mid}${team(g.team_b_name, 'b')}</span>`;
 }
 
-function statusBadge(game) {
-  if (isUpcoming(game) || game.status === 'scheduled') return `<span class="agm-badge agm-badge--amber">Upcoming</span>`;
-  if (game.status === 'final')    return `<span class="agm-badge agm-badge--blue">Final</span>`;
-  if (game.under_review)          return `<span class="agm-badge agm-badge--gray">Draft</span>`;
-  return `<span class="agm-badge agm-badge--green">Live</span>`;
+function checksCell(g) {
+  const list = contentChecks(g);
+  if (!list.length) return '<span class="aui-muted">—</span>';
+  const short = { Recap: 'R', 'Player of the game': 'P', Cover: 'C', YouTube: 'Y', 'Box score': 'B' };
+  return `<span class="agl-checks">${list.map(([l, ok]) => `<span class="agl-check${ok ? ' is-on' : ''}" title="${attr(`${l}: ${ok ? 'done' : 'missing'}`)}">${short[l]}</span>`).join('')}</span>`;
 }
 
-function otLabel(ot) {
-  const n = Number(ot) || 0;
-  return n === 0 ? '' : n === 1 ? 'OT' : `OT${n}`;
-}
+export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, pickCounts = {}, query = {} }) {
+  const colorOf = Object.fromEntries(teams.map(t => [t.id, t.color || '']));
+  const nameColor = Object.fromEntries(teams.map(t => [String(t.name).toUpperCase(), t.color || '']));
+  const colors = g => ({ a: colorOf[g.team_a_id] || nameColor[String(g.team_a_name).toUpperCase()] || '', b: colorOf[g.team_b_id] || nameColor[String(g.team_b_name).toUpperCase()] || '' });
+  const today = manilaTodayStr();
+  const seasons = [...new Set(games.map(g => String(g.season || '')).filter(Boolean))].sort((x, y) => Number(y) - Number(x));
 
-// ── Games list ────────────────────────────────────────────────────────────────
-export function adminGamesListBody({ games = [], seasons = [], teams = [], currentSeason = 1 } = {}) {
-  const rows = games.map(g => {
-    const scoreA = Number(g.team_a_score), scoreB = Number(g.team_b_score);
-    const winner = !g.scheduled && (scoreA !== scoreB) ? (scoreA > scoreB ? 'a' : 'b') : '';
-    const contentDots = [
-      `<span class="agm-dot${g.game_writeup ? ' agm-dot--on' : ''}" title="Recap"></span>`,
-      `<span class="agm-dot${g.youtube_url  ? ' agm-dot--on' : ''}" title="YouTube"></span>`,
-      `<span class="agm-dot${g.has_cover    ? ' agm-dot--on' : ''}" title="Cover"></span>`,
-    ].join('');
-    const isUpcom  = isUpcoming(g);
-    const isFinal  = g.status === 'final';
-    const statusKey = isUpcom ? 'upcoming' : isFinal ? 'final' : g.under_review ? 'draft' : 'live';
-    const typeKey   = g.game_type === 'playoff' ? 'playoff' : g.game_type === 'finals' ? 'finals' : 'regular';
-    const ot        = Number(g.overtime) || 0;
-    const otLbl     = otLabel(ot);
+  const upcoming = games.filter(g => gameState(g) === 'upcoming' && g.date >= today).sort((x, y) => (x.date < y.date ? -1 : 1));
+  const strip = statStrip([
+    { label: upcoming[0] ? `Next game day · ${fmtDate(upcoming[0].date)}` : 'Next game day', value: upcoming[0] ? String(upcoming.filter(g => g.date === upcoming[0].date).length) : '—', of: upcoming[0] ? ' games' : '' },
+    { label: 'Box scores to import', value: String(games.filter(g => gameState(g) === 'score' || (gameState(g) === 'upcoming' && g.date < today)).length) },
+    { label: 'Drafts', value: String(games.filter(g => gameState(g) === 'draft').length) },
+    { label: 'Live games missing content', value: String(games.filter(g => gameState(g) === 'live' && missingCount(g)).length) },
+  ]);
 
-    const scoreCell = isUpcom
-      ? `<span class="agm-vs">vs</span>`
-      : `<span class="agm-score">${scoreA} – ${scoreB}${otLbl ? `<span style="font-size:10px;font-weight:700;color:var(--amber);margin-left:4px">${otLbl}</span>` : ''}</span>`;
+  const grid = dataGrid({
+    id: 'games', baseUrl: '/admin/games', query,
+    rows: games, rowKey: g => g.id, noun: ['game', 'games'],
+    views: [
+      { key: 'all', label: 'All', test: () => true },
+      { key: 'upcoming', label: 'Upcoming', test: g => gameState(g) === 'upcoming' },
+      { key: 'import', label: 'Needs box score', test: g => gameState(g) === 'score' || (gameState(g) === 'upcoming' && g.date < today) },
+      { key: 'draft', label: 'Drafts', test: g => gameState(g) === 'draft' },
+      { key: 'content', label: 'Missing content', test: g => gameState(g) === 'live' && missingCount(g) > 0 },
+    ],
+    search: { placeholder: 'Search teams', text: g => `${g.team_a_name} ${g.team_b_name}` },
+    filters: [
+      ...(seasons.length > 1 ? [{ key: 'season', label: 'Season', options: seasons.map(s => [s, `Season ${s}`]), test: (g, v) => String(g.season) === v }] : []),
+      { key: 'type', label: 'Type', options: Object.entries(TYPE_LABEL), test: (g, v) => (g.game_type || 'regular') === v },
+    ],
+    defaultSort: '-date', perPage: 30,
+    columns: [
+      { key: 'date', label: 'Date', num: true, nowrap: true, sort: g => `${g.date}|${g.id}`, cell: g => `${escHtml(fmtDate(g.date))}<div class="aui-cell__sub agl-sub">${escHtml(fmtDow(g.date))}</div>` },
+      { key: 'match', label: 'Game', primary: true, cell: g => matchup(g, colors(g)) },
+      { key: 'type', label: 'Type', bare: true, phone: false, sort: g => g.game_type || 'regular', cell: g => badge(TYPE_LABEL[g.game_type] || 'Regular season', g.game_type === 'finals' ? 'amber' : g.game_type === 'playoff' ? 'blue' : 'gray') },
+      { key: 'status', label: 'Status', bare: true, sort: g => gameState(g), cell: g => {
+        const st = gameState(g);
+        const fin = st === 'upcoming' ? button('Final score', { kind: 'secondary', size: 'sm', attrs: `data-final-open="${attr(g.id)}" data-a="${attr(g.team_a_name)}" data-b="${attr(g.team_b_name)}"` }) : '';
+        return `<span class="aui-cell__badges">${badge(...STATE_BADGE[st])}${fin}</span>`;
+      } },
+      { key: 'content', label: 'Content', bare: true, sort: g => -missingCount(g), cell: checksCell },
+      { key: 'picks', label: 'Picks', num: true, phone: false, sort: g => pickCounts[g.id] || 0, cell: g => (pickCounts[g.id] ? String(pickCounts[g.id]) : '<span class="aui-muted">—</span>') },
+      { key: 'season', label: 'Season', num: true, phone: false, sort: g => Number(g.season) || 0, cell: g => escHtml(g.season || '—') },
+    ],
+    rowHref: g => `/admin/games/${g.id}`,
+    rowMenu: g => {
+      const st = gameState(g);
+      const ot = st === 'upcoming' ? [] : ['sep', ...[0, 1, 2, 3].filter(n => n !== (Number(g.overtime) || 0)).map(n => ({ label: n ? `Mark ${otLabel(n)}` : 'Mark regulation', post: `/admin/games/${g.id}/overtime`, body: { overtime: n }, done: n ? `Marked ${otLabel(n)}.` : 'Marked regulation.' }))];
+      return [
+        { label: 'Open game', href: `/admin/games/${g.id}` },
+        st !== 'upcoming' ? { label: 'Content', href: `/admin/games/${g.id}?tab=content` } : null,
+        { label: 'Picks', href: `/admin/games/${g.id}?tab=picks` },
+        { label: 'View on site', href: `/games/${g.id}`, external: true },
+        ...ot,
+      ];
+    },
+    actionsHtml: button('+ New game', { kind: 'primary', attrs: 'data-drawer-open="new-game"' }),
+    empty: { title: 'No games yet', sub: 'Create one with “+ New game”.' },
+  });
 
-    const otEdit = !isUpcom
-      ? `<select class="agm-ot-sel admin-input ml-2" style="width:auto;display:inline-block" data-gid="${escHtml(g.id)}" title="Overtime periods">
-          <option value="0"${ot===0?' selected':''}>REG</option>
-          <option value="1"${ot===1?' selected':''}>OT</option>
-          <option value="2"${ot===2?' selected':''}>OT2</option>
-          <option value="3"${ot===3?' selected':''}>OT3</option>
-        </select>`
-      : '';
-
-    const markFinalBtn = isUpcom
-      ? `<button class="agm-final-btn" data-gid="${escHtml(g.id)}" data-name="${escHtml(g.team_a_name + ' vs ' + g.team_b_name)}">Final Score</button>`
-      : '';
-
-    return `<tr class="agm-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors"
-      data-type="${typeKey}"
-      data-status="${statusKey}"
-      data-season="${escHtml(g.season || '')}"
-      data-q="${escHtml((g.team_a_name + ' ' + g.team_b_name).toLowerCase())}">
-      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(g.date)}</td>
-      <td class="px-4 py-3">
-        <span class="${winner === 'a' ? 'agm-team--win' : 'text-slate-400 text-sm'}">${escHtml(g.team_a_name)}</span>
-        ${scoreCell}
-        <span class="${winner === 'b' ? 'agm-team--win' : 'text-slate-400 text-sm'}">${escHtml(g.team_b_name)}</span>
-      </td>
-      <td class="px-4 py-3">
-        <span class="agm-type${typeKey === 'playoff' ? ' agm-type--po' : typeKey === 'finals' ? ' agm-type--finals' : ''}">${typeKey === 'playoff' ? 'PO' : typeKey === 'finals' ? 'F' : 'RS'}</span>
-      </td>
-      <td class="px-4 py-3 text-xs text-slate-500">${escHtml(g.season || '—')}</td>
-      <td class="px-4 py-3">${statusBadge(g)}</td>
-      <td class="px-4 py-3"><span class="agm-dots">${contentDots}</span>${otEdit}</td>
-      <td class="px-4 py-3">
-        <div class="flex items-center justify-end gap-1.5">
-          ${markFinalBtn}
-          <a href="/admin/games/${escHtml(g.id)}" class="agm-edit-link">Edit ${ICON_CHEVRON_R}</a>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-
-  const seasonPills = seasons.map(s =>
-    `<button class="agm-pill" data-fs="${escHtml(s)}"><span class="pill-label">${escHtml(s)}</span></button>`
-  ).join('');
-
-  const teamOpts = teams.map(t =>
-    `<option value="${escHtml(t.id)}">${escHtml(t.name)}</option>`
-  ).join('');
-
-  // New games default to the next game day — the coming Sunday (today, if it's Sunday) in
-  // Manila time — rather than today: creating Sunday's games midweek and forgetting to change
-  // the date used to save them under the day they were created. Still editable for playoffs
-  // or any off-day game.
+  // New games default to the next game day: the coming Sunday (today, if it's Sunday) in
+  // Manila time. Creating Sunday's games midweek used to save them under the day they were
+  // made when nobody changed the date.
   const nextSunday = (() => {
-    const [y, m, d] = manilaTodayStr().split('-').map(Number);
+    const [y, m, d] = today.split('-').map(Number);
     const t = new Date(Date.UTC(y, m - 1, d));
     t.setUTCDate(t.getUTCDate() + ((7 - t.getUTCDay()) % 7));
     return t.toISOString().slice(0, 10);
   })();
+  const teamOpts = [['', 'Pick a team…'], ...teams.map(t => [t.id, t.name])];
+  const newGame = drawer({
+    id: 'new-game', eyebrow: 'Game Day', title: 'New game',
+    bodyHtml: `<form id="new-game-form" data-json-action="/admin/games" data-then="/admin/games/{id}" data-done="Game created.">${fieldGrid(`
+        ${field({ label: 'Date', name: 'date', type: 'date', value: nextSunday, required: true, help: 'Defaults to the coming Sunday.' })}
+        ${field({ label: 'Season', name: 'season', type: 'number', value: String(currentSeason), required: true, attrs: 'min="1" step="1"' })}
+        ${field({ label: 'Team A', name: 'team_a_id', type: 'select', options: teamOpts, required: true })}
+        ${field({ label: 'Team B', name: 'team_b_id', type: 'select', options: teamOpts, required: true })}
+        ${field({ label: 'Type', name: 'game_type', type: 'select', value: 'regular', options: Object.entries(TYPE_LABEL), attrs: 'data-game-type' })}
+        <div data-series hidden>${field({ label: 'Series', name: 'series_id', type: 'select', options: [['semi-1', 'semi-1 (#1 vs #4)'], ['semi-2', 'semi-2 (#2 vs #3)']], help: 'Groups the games of one playoff series.', attrs: 'disabled' })}</div>`)}
+    </form>`,
+    footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Create game', { kind: 'primary', type: 'submit', attrs: 'form="new-game-form"' })}`,
+  });
 
-  return `
-<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-  <h2 class="text-xl font-bold tracking-tight text-slate-100">Games</h2>
-  <div class="flex items-center gap-2">
-    <input type="search" id="agm-search" class="agm-search" placeholder="Search teams…">
-    <button class="agm-new-btn" id="agm-new-btn">${ICON_PLUS} New Game</button>
+  // One Final score drawer; public/admin-games.js points it at the row's game.
+  const finalScore = drawer({
+    id: 'final-score', eyebrow: 'Final score', title: 'Mark as final',
+    bodyHtml: `<form id="final-form" data-json-action="" data-done="Final score saved. Picks are settled.">
+      <p class="aui-muted agl-final-note">Saves the score only, so picks can settle. Import the game file later for the box score.</p>
+      ${fieldGrid(`
+        ${field({ label: 'Team A', name: 'team_a_score', type: 'number', required: true, attrs: 'min="0" step="1" inputmode="numeric" data-final-a' })}
+        ${field({ label: 'Team B', name: 'team_b_score', type: 'number', required: true, attrs: 'min="0" step="1" inputmode="numeric" data-final-b' })}
+        ${field({ label: 'Overtime', name: 'overtime', type: 'select', wide: true, value: '0', options: [['0', 'Regulation'], ['1', 'OT'], ['2', '2OT'], ['3', '3OT']] })}`)}
+    </form>`,
+    footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Save final score', { kind: 'primary', type: 'submit', attrs: 'form="final-form"' })}`,
+  });
+
+  return `<div class="aui-page">
+    ${pageHeader({ eyebrow: 'Game Day', title: 'Games', sub: `${plural(games.length, 'game')}. Open one for its box score, recap, player of the game and picks.`, actionsHtml: button('Who wins? picks', { kind: 'secondary', href: '/admin/picks' }) })}
+    ${strip}
+    ${grid}
+    ${newGame}
+    ${finalScore}
   </div>
-</div>
-
-<div class="agm-modal-backdrop" id="agm-modal-backdrop" hidden>
-  <div class="agm-modal">
-    <div class="agm-modal-header">
-      <h3 class="agm-modal-title">New Game</h3>
-      <button class="agm-modal-close" id="agm-modal-close" aria-label="Close">✕</button>
-    </div>
-    <div class="agm-modal-body">
-      <div class="agm-modal-field">
-        <label class="agm-modal-label">Date</label>
-        <input type="date" id="ng-date" class="agm-modal-input" value="${nextSunday}">
-      </div>
-      <div class="agm-modal-field">
-        <label class="agm-modal-label">Team A</label>
-        <select id="ng-team-a" class="agm-modal-select">
-          <option value="">Select team…</option>
-          ${teamOpts}
-        </select>
-      </div>
-      <div class="agm-modal-field">
-        <label class="agm-modal-label">Team B</label>
-        <select id="ng-team-b" class="agm-modal-select">
-          <option value="">Select team…</option>
-          ${teamOpts}
-        </select>
-      </div>
-      <div class="agm-modal-row">
-        <div class="agm-modal-field">
-          <label class="agm-modal-label">Season</label>
-          <input type="number" id="ng-season" class="agm-modal-input" value="${escHtml(String(currentSeason))}" min="1" step="1">
-        </div>
-        <div class="agm-modal-field">
-          <label class="agm-modal-label">Type</label>
-          <select id="ng-type" class="agm-modal-select">
-            <option value="regular">Regular Season</option>
-            <option value="playoff">Playoff (Semi)</option>
-            <option value="finals">Finals</option>
-          </select>
-        </div>
-      </div>
-      <div class="agm-modal-field" id="ng-series-wrap" hidden>
-        <label class="agm-modal-label">Series ID <span style="font-weight:400;color:var(--text-muted)">(groups games in same series)</span></label>
-        <select id="ng-series" class="agm-modal-select">
-          <option value="semi-1">semi-1 &nbsp;(#1 vs #4)</option>
-          <option value="semi-2">semi-2 &nbsp;(#2 vs #3)</option>
-        </select>
-      </div>
-      <p class="agm-modal-err" id="ng-err" hidden></p>
-    </div>
-    <div class="agm-modal-footer">
-      <button class="agm-new-btn agm-new-btn--ghost" id="agm-modal-cancel">${ICON_X} Cancel</button>
-      <button class="agm-new-btn" id="ng-submit">${ICON_CHECK} Create Game</button>
-    </div>
-  </div>
-</div>
-
-<div class="agm-modal-backdrop" id="agm-final-backdrop" hidden>
-  <div class="agm-modal">
-    <div class="agm-modal-header">
-      <h3 class="agm-modal-title">Mark as Final</h3>
-      <button class="agm-modal-close" id="agm-final-close" aria-label="Close">✕</button>
-    </div>
-    <div class="agm-modal-body">
-      <p id="agm-final-name" class="text-xs text-slate-400 mb-3"></p>
-      <div class="agm-modal-row">
-        <div class="agm-modal-field">
-          <label class="agm-modal-label">Team A Score</label>
-          <input type="number" id="agm-final-score-a" class="agm-modal-input" min="0" step="1" placeholder="0">
-        </div>
-        <div class="agm-modal-field">
-          <label class="agm-modal-label">Team B Score</label>
-          <input type="number" id="agm-final-score-b" class="agm-modal-input" min="0" step="1" placeholder="0">
-        </div>
-      </div>
-      <div class="agm-modal-field">
-        <label class="agm-modal-label">Overtime</label>
-        <select id="agm-final-ot" class="agm-modal-select">
-          <option value="0">Regulation</option>
-          <option value="1">OT (1 overtime)</option>
-          <option value="2">OT2 (2 overtimes)</option>
-          <option value="3">OT3 (3 overtimes)</option>
-        </select>
-      </div>
-      <p class="agm-modal-err" id="agm-final-err" hidden></p>
-    </div>
-    <div class="agm-modal-footer">
-      <button class="admin-btn" id="agm-final-cancel">${ICON_X} Cancel</button>
-      <button class="agm-new-btn" id="agm-final-submit">${ICON_CHECK} Confirm Final Score</button>
-    </div>
-  </div>
-</div>
-
-<div class="mb-4 flex flex-wrap gap-3">
-  <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-ft=""><span class="pill-label">All</span></button>
-    <button class="agm-pill" data-ft="regular"><span class="pill-label">Regular</span></button>
-    <button class="agm-pill" data-ft="playoff"><span class="pill-label">Playoff</span></button>
-  </div>
-  <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fst=""><span class="pill-label">All Status</span></button>
-    <button class="agm-pill" data-fst="live"><span class="pill-label">Live</span></button>
-    <button class="agm-pill" data-fst="draft"><span class="pill-label">Draft</span></button>
-    <button class="agm-pill" data-fst="final"><span class="pill-label">Final</span></button>
-    <button class="agm-pill" data-fst="upcoming"><span class="pill-label">Upcoming</span></button>
-  </div>
-  ${seasons.length > 1 ? `<div class="flex flex-wrap items-center gap-1.5">${seasonPills}</div>` : ''}
-</div>
-
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
-  <table class="w-full border-collapse has-col-dividers has-freeze-col">
-    <thead>
-      <tr>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap">Date</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Matchup</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Type</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Season</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border">Status</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border" title="Recap · YouTube · Cover">R · Y · C</th>
-        <th class="px-4 py-2.5 border-b border-admin-border"></th>
-      </tr>
-    </thead>
-    <tbody id="agm-tbody">
-      ${rows || '<tr><td colspan="7" class="px-4 py-10 text-center text-sm text-slate-500">No games found.</td></tr>'}
-    </tbody>
-  </table>
-</div>
-
-<script>
-(function(){
-  var ft = '', fst = '', fs = '';
-
-  function apply() {
-    var q = document.getElementById('agm-search').value.toLowerCase().trim();
-    document.querySelectorAll('#agm-tbody .agm-row').forEach(function(r) {
-      var show = (!ft  || r.dataset.type   === ft)
-              && (!fst || r.dataset.status === fst)
-              && (!fs  || r.dataset.season === fs)
-              && (!q   || r.dataset.q.includes(q));
-      r.style.display = show ? '' : 'none';
-    });
-  }
-
-  document.querySelectorAll('[data-ft]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      ft = this.dataset.ft;
-      document.querySelectorAll('[data-ft]').forEach(function(x){ x.classList.toggle('is-active', x.dataset.ft === ft); });
-      apply();
-    });
-  });
-  document.querySelectorAll('[data-fst]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      fst = this.dataset.fst;
-      document.querySelectorAll('[data-fst]').forEach(function(x){ x.classList.toggle('is-active', x.dataset.fst === fst); });
-      apply();
-    });
-  });
-  document.querySelectorAll('[data-fs]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      var val = this.dataset.fs;
-      fs = (fs === val) ? '' : val;
-      document.querySelectorAll('[data-fs]').forEach(function(x){ x.classList.toggle('is-active', x.dataset.fs === fs); });
-      apply();
-    });
-  });
-  document.getElementById('agm-search').addEventListener('input', apply);
-
-  // Inline OT selects
-  document.querySelectorAll('.agm-ot-sel').forEach(function(sel) {
-    sel.addEventListener('change', function() {
-      var gid = this.dataset.gid;
-      var ot  = Number(this.value);
-      fetch('/admin/games/' + encodeURIComponent(gid) + '/overtime', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ overtime: ot })
-      }).catch(function() {});
-    });
-  });
-
-  // Mark as Final modal
-  var finalBackdrop = document.getElementById('agm-final-backdrop');
-  var finalGid = null;
-  function openFinalModal(gid, name) {
-    finalGid = gid;
-    document.getElementById('agm-final-name').textContent = name;
-    document.getElementById('agm-final-score-a').value = '';
-    document.getElementById('agm-final-score-b').value = '';
-    document.getElementById('agm-final-ot').value = '0';
-    document.getElementById('agm-final-err').hidden = true;
-    finalBackdrop.hidden = false;
-    document.getElementById('agm-final-score-a').focus();
-  }
-  function closeFinalModal() { finalBackdrop.hidden = true; finalGid = null; }
-  document.getElementById('agm-final-close').addEventListener('click', closeFinalModal);
-  document.getElementById('agm-final-cancel').addEventListener('click', closeFinalModal);
-  finalBackdrop.addEventListener('click', function(e) { if (e.target === finalBackdrop) closeFinalModal(); });
-
-  document.querySelectorAll('.agm-final-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      openFinalModal(this.dataset.gid, this.dataset.name);
-    });
-  });
-
-  document.getElementById('agm-final-submit').addEventListener('click', function() {
-    var scoreA = document.getElementById('agm-final-score-a').value.trim();
-    var scoreB = document.getElementById('agm-final-score-b').value.trim();
-    var ot     = document.getElementById('agm-final-ot').value;
-    var errEl  = document.getElementById('agm-final-err');
-    var btn    = this;
-    var origHtml = btn.innerHTML;
-    if (scoreA === '' || scoreB === '') {
-      errEl.textContent = 'Both scores are required.'; errEl.hidden = false; return;
-    }
-    errEl.hidden = true;
-    btn.disabled = true; btn.textContent = 'Saving…';
-    fetch('/admin/games/' + encodeURIComponent(finalGid) + '/final', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ team_a_score: Number(scoreA), team_b_score: Number(scoreB), overtime: Number(ot) })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.ok) { location.reload(); return; }
-      errEl.textContent = data.error || 'Failed to save.'; errEl.hidden = false;
-      btn.disabled = false; btn.innerHTML = origHtml;
-    })
-    .catch(function() {
-      errEl.textContent = 'Network error.'; errEl.hidden = false;
-      btn.disabled = false; btn.innerHTML = origHtml;
-    });
-  });
-
-  // New Game modal
-  var backdrop = document.getElementById('agm-modal-backdrop');
-  function openModal() { backdrop.hidden = false; document.getElementById('ng-date').focus(); }
-  function closeModal() { backdrop.hidden = true; document.getElementById('ng-err').hidden = true; }
-  document.getElementById('agm-new-btn').addEventListener('click', openModal);
-  document.getElementById('agm-modal-close').addEventListener('click', closeModal);
-  document.getElementById('agm-modal-cancel').addEventListener('click', closeModal);
-  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) closeModal(); });
-
-  // Show/hide series field based on type
-  document.getElementById('ng-type').addEventListener('change', function() {
-    document.getElementById('ng-series-wrap').hidden = this.value !== 'playoff';
-  });
-
-  document.getElementById('ng-submit').addEventListener('click', function() {
-    var date     = document.getElementById('ng-date').value.trim();
-    var teamA    = document.getElementById('ng-team-a').value;
-    var teamB    = document.getElementById('ng-team-b').value;
-    var season   = document.getElementById('ng-season').value.trim();
-    var type     = document.getElementById('ng-type').value;
-    var seriesId = type === 'playoff' ? document.getElementById('ng-series').value : '';
-    var errEl    = document.getElementById('ng-err');
-    var btn      = this;
-    var origHtml = btn.innerHTML;
-
-    if (!date || !teamA || !teamB || !season) {
-      errEl.textContent = 'All fields are required.'; errEl.hidden = false; return;
-    }
-    if (teamA === teamB) {
-      errEl.textContent = 'Team A and Team B must be different.'; errEl.hidden = false; return;
-    }
-    errEl.hidden = true;
-    btn.disabled = true; btn.textContent = 'Creating…';
-
-    fetch('/admin/games', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: date, team_a_id: teamA, team_b_id: teamB, season: Number(season), game_type: type, series_id: seriesId })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.ok) {
-        window.location.href = '/admin/games/' + data.id;
-      } else {
-        errEl.textContent = data.error || 'Failed to create game.'; errEl.hidden = false;
-        btn.disabled = false; btn.innerHTML = origHtml;
-      }
-    })
-    .catch(function() {
-      errEl.textContent = 'Network error.'; errEl.hidden = false;
-      btn.disabled = false; btn.textContent = 'Create Game';
-    });
-  });
-})();
-</script>`;
-}
-
-const ICON_CHEVRON_L = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
-const ICON_TRASH = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M12 3.5l-.9 8a1 1 0 0 1-1 .9H3.9a1 1 0 0 1-1-.9L2 3.5"/></svg>`;
-const ICON_CAMERA = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.5A1.5 1.5 0 0 1 2.5 3h.68L4.1 1.5h5.8L10.82 3H11.5A1.5 1.5 0 0 1 13 4.5v6A1.5 1.5 0 0 1 11.5 12h-9A1.5 1.5 0 0 1 1 10.5v-6z"/><circle cx="7" cy="7.5" r="2"/></svg>`;
-
-function fmtFrac(made, miss) {
-  const att = made + miss;
-  return att === 0 ? '—' : `${made}/${att}`;
-}
-
-// ── Admin-only editable box score (not used on the public site) ─────────────
-// Same visual table as the public teamBoxScore() in views/game.js (reuses its bs-* CSS
-// classes), but each row has an Edit toggle. Editing swaps that row's static numbers for
-// inputs in place and tints the row to mark it as live; Save diffs against the row's original
-// values and only PATCHes the fields that actually changed via
-// /admin/games/:id/stats/:playerId, one request per changed field (each becomes its own
-// Stat Correction History entry).
-//
-// Unlike the public table, the first shot group here is "2-POINTERS" (raw fg2m/fg2m_miss)
-// rather than "FIELD GOALS" (fg2m+fg3m+fg4m combined) — editing a *combined* made/attempt
-// count would be ambiguous to turn back into the three underlying columns, so the admin
-// table shows all four shot types (2/3/4/FT) as their own raw, directly-editable group.
-const EDIT_ICON  = `<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 1.5l3 3-8 8-3.5 1 1-3.5z"/></svg>`;
-const SAVE_ICON  = `<svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
-const CANCEL_ICON = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="1.5" x2="1.5" y2="9.5"/></svg>`;
-
-const inputStyle = 'width:30px;background:transparent;border:none;border-bottom:1px dashed var(--amber, #f59332);color:inherit;font:inherit;text-align:center;padding:0;display:none';
-
-function shotGroupCells(stat, made, miss) {
-  const att = made + miss;
-  const pct = att ? Math.round(made / att * 100) + '%' : '–';
-  return `<td class="bs-stat">
-      <span class="v-s">${made || '–'}</span><input class="v-i" type="number" min="0" step="1" data-role="made" data-stat="${stat}" value="${made}" style="${inputStyle}">
-    </td>
-    <td class="bs-stat">
-      <span class="v-s">${att || '–'}</span><input class="v-i" type="number" min="0" step="1" data-role="att" data-stat="${stat}" value="${att}" style="${inputStyle}">
-    </td>
-    <td class="bs-stat bs-pct"><span class="v-pct" data-stat="${stat}">${pct}</span></td>`;
-}
-
-function countCell(field, value) {
-  return `<td class="bs-stat">
-    <span class="v-s">${Number(value) || 0}</span><input class="v-i" type="number" min="0" step="1" data-field="${field}" value="${Number(value) || 0}" style="${inputStyle}">
-  </td>`;
-}
-
-function perOf(p) {
-  const fgm = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
-  const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
-  const ftm = Number(p.ftm), fta = ftm + Number(p.ft_miss);
-  return (Number(p.pts) + 0.4 * fgm - 0.7 * fga - 0.4 * (fta - ftm) +
-    0.7 * Number(p.reb) + Number(p.stl) + 0.7 * Number(p.ast) +
-    0.7 * Number(p.blk) - Number(p.turnover)).toFixed(1);
-}
-
-function editableRow(p, gameId) {
-  const pid = escHtml(p.player_id);
-  const orig = {
-    fg2m: Number(p.fg2m) || 0, fg2m_miss: Number(p.fg2m_miss) || 0,
-    fg3m: Number(p.fg3m) || 0, fg3m_miss: Number(p.fg3m_miss) || 0,
-    fg4m: Number(p.fg4m) || 0, fg4m_miss: Number(p.fg4m_miss) || 0,
-    ftm: Number(p.ftm) || 0, ft_miss: Number(p.ft_miss) || 0,
-    reb: Number(p.reb) || 0, ast: Number(p.ast) || 0, stl: Number(p.stl) || 0,
-    blk: Number(p.blk) || 0, turnover: Number(p.turnover) || 0, pts: Number(p.pts) || 0,
-  };
-  return `<tr class="bs-edit-row" data-game-id="${escHtml(gameId)}" data-player-id="${pid}" data-orig='${escHtml(JSON.stringify(orig))}'>
-      <td class="bs-name">${playerLink(p.player_id, p.name || '')}</td>
-      ${shotGroupCells('fg2', orig.fg2m, orig.fg2m_miss)}
-      ${shotGroupCells('fg3', orig.fg3m, orig.fg3m_miss)}
-      ${shotGroupCells('fg4', orig.fg4m, orig.fg4m_miss)}
-      ${shotGroupCells('ft', orig.ftm, orig.ft_miss)}
-      ${countCell('reb', orig.reb)}
-      ${countCell('ast', orig.ast)}
-      ${countCell('stl', orig.stl)}
-      ${countCell('blk', orig.blk)}
-      ${countCell('turnover', orig.turnover)}
-      <td class="bs-stat bs-pts"><span class="v-pts">${orig.pts}</span></td>
-      <td class="bs-stat bs-per"><span class="v-per">${perOf(orig)}</span></td>
-      <td class="bs-stat bs-edit-actions">
-        <button type="button" class="bs-act bs-act-edit" title="Edit">${EDIT_ICON}</button>
-        <button type="button" class="bs-act bs-act-save" title="Save" style="display:none">${SAVE_ICON}</button>
-        <button type="button" class="bs-act bs-act-cancel" title="Cancel" style="display:none">${CANCEL_ICON}</button>
-      </td>
-    </tr>`;
-}
-
-export function adminInlineBoxScore(players, teamName, gameId, dnpPlayers = [], teamTurnovers = 0) {
-  const n = teamName.toUpperCase();
-  if (!players.length) return `<p class="tabs-empty">No stats for ${escHtml(n)}.</p>`;
-  const sorted = [...players].sort((a, b) => Number(b.pts) - Number(a.pts));
-
-  const sum = (key) => sorted.reduce((s, p) => s + Number(p[key] || 0), 0);
-  const tot = {
-    fg2m: sum('fg2m'), fg2m_miss: sum('fg2m_miss'), fg3m: sum('fg3m'), fg3m_miss: sum('fg3m_miss'),
-    fg4m: sum('fg4m'), fg4m_miss: sum('fg4m_miss'), ftm: sum('ftm'), ft_miss: sum('ft_miss'),
-    reb: sum('reb'), ast: sum('ast'), stl: sum('stl'), blk: sum('blk'), turnover: sum('turnover'), pts: sum('pts'),
-  };
-  const teamTotalTurnovers = tot.turnover + (Number(teamTurnovers) || 0);
-  const pctOf = (m, ms) => (m + ms) ? Math.round(m / (m + ms) * 100) + '%' : '–';
-
-  return `<div class="bs-block">
-  <div class="bs-scroll">
-    <table class="bs-table">
-      <thead>
-        <tr>
-          <th class="bs-name" rowspan="2">PLAYER</th>
-          <th colspan="3" class="bs-group">2-POINTERS</th>
-          <th colspan="3" class="bs-group">3-POINTERS</th>
-          <th colspan="3" class="bs-group">4-POINTERS</th>
-          <th colspan="3" class="bs-group">FREE THROWS</th>
-          <th class="bs-stat" rowspan="2">REB</th>
-          <th class="bs-stat" rowspan="2">AST</th>
-          <th class="bs-stat" rowspan="2">STL</th>
-          <th class="bs-stat" rowspan="2">BLK</th>
-          <th class="bs-stat" rowspan="2">TO</th>
-          <th class="bs-stat bs-pts" rowspan="2">PTS</th>
-          <th class="bs-stat bs-per" rowspan="2">PER</th>
-          <th class="bs-stat" rowspan="2" style="width:50px">EDIT</th>
-        </tr>
-        <tr class="bs-subhead">
-          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
-          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
-          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
-          <th class="bs-stat">M</th><th class="bs-stat">A</th><th class="bs-stat bs-pct">%</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${sorted.map(p => editableRow(p, gameId)).join('')}
-        ${dnpPlayers.map(p => `<tr class="bs-dnp">
-          <td class="bs-dnp__cell" colspan="21">
-            ${playerLink(p.id, p.name)} <span class="dnp-pill">DNP</span>
-          </td>
-        </tr>`).join('')}
-        <tr class="bs-totals">
-          <td class="bs-name">TEAM</td>
-          <td class="bs-stat">${tot.fg2m}</td><td class="bs-stat">${tot.fg2m + tot.fg2m_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.fg2m, tot.fg2m_miss)}</td>
-          <td class="bs-stat">${tot.fg3m}</td><td class="bs-stat">${tot.fg3m + tot.fg3m_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.fg3m, tot.fg3m_miss)}</td>
-          <td class="bs-stat">${tot.fg4m}</td><td class="bs-stat">${tot.fg4m + tot.fg4m_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.fg4m, tot.fg4m_miss)}</td>
-          <td class="bs-stat">${tot.ftm}</td><td class="bs-stat">${tot.ftm + tot.ft_miss}</td><td class="bs-stat bs-pct">${pctOf(tot.ftm, tot.ft_miss)}</td>
-          <td class="bs-stat">${tot.reb}</td>
-          <td class="bs-stat">${tot.ast}</td>
-          <td class="bs-stat">${tot.stl}</td>
-          <td class="bs-stat">${tot.blk}</td>
-          <td class="bs-stat">${teamTotalTurnovers}</td>
-          <td class="bs-stat bs-pts">${tot.pts}</td>
-          <td class="bs-stat bs-per">–</td>
-          <td class="bs-stat"></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  ${teamTurnovers > 0 ? `<div class="bs-team-to-note">Includes ${teamTurnovers} team turnover${teamTurnovers === 1 ? '' : 's'} (shot clock, etc.) not charged to a player.</div>` : ''}
-</div>`;
-}
-
-function statCorrectionsCard(statCorrections, players) {
-  const nameById = Object.fromEntries(players.map(p => [p.id, displayPlayerName(p.name || '')]));
-  // The shared /admin audit middleware logs every mutating request regardless of outcome, so a
-  // rejected edit (unknown/non-editable field, 400) lands here too. Those never reached
-  // updateGamePlayerStat, so old_value was never stamped onto the body — use its presence to
-  // filter out failed attempts and only show corrections that actually wrote to the DB.
-  const applied = statCorrections.filter(log => {
-    try { return 'old_value' in JSON.parse(log.details || '{}'); } catch { return false; }
-  });
-  if (!applied.length) return '';
-  const rows = applied.slice(0, 20).map(log => {
-    const details = JSON.parse(log.details);
-    const m = log.path.match(/\/stats\/([^/]+)$/);
-    const playerName = nameById[m?.[1]] || m?.[1] || 'Unknown player';
-    const when = new Date(log.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-    return `<div class="text-xs text-slate-400 py-1.5 border-b border-admin-border/50 last:border-b-0">
-      <span class="text-slate-200 font-medium">${escHtml(playerName)}</span>
-      · ${escHtml(String(details.field || ''))}:
-      <span class="text-slate-500">${escHtml(String(details.old_value ?? '—'))}</span> →
-      <b class="text-slate-200">${escHtml(String(details.value ?? ''))}</b>
-      <div class="text-[10px] text-slate-600 mt-0.5">${escHtml(log.actor)} · ${when}</div>
-    </div>`;
-  }).join('');
-  return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Stat Correction History</div>
-    <div class="p-4">${rows}</div>
-  </div>`;
-}
-
-// ── Game detail / edit ────────────────────────────────────────────────────────
-// "Who wins?" sidebar card: counts, who picked what (with pick times, so a late switch is
-// visible), and the per-game overrides — close/reopen picks and hide odds.
-function picksPanelCard(game, pp) {
-  if (!pp) return '';
-  const id = encodeURIComponent(game.id);
-  const side = s => (s === 'a' ? game.team_a_name : game.team_b_name);
-  const fmtTime = ms => new Date(ms + 8 * 3600 * 1000).toISOString().replace('T', ' ').slice(5, 16);
-  const groups = ['a', 'b'].map(s => {
-    const list = pp.picks.filter(p => p.side === s);
-    return `<div class="mb-3">
-      <div class="flex items-center gap-2 text-xs font-bold text-slate-200 mb-1"><span class="team-dot" style="background:${teamColor(side(s))}"></span>${escHtml(side(s))} <span class="text-slate-500 font-semibold">${list.length}</span></div>
-      ${list.length ? `<ul class="text-xs text-slate-400 leading-relaxed">${list.map(p => `<li class="flex justify-between gap-2"><span>${escHtml(p.player_name || p.player_id)}</span><span class="text-slate-600 whitespace-nowrap">${fmtTime(p.created_at)}</span></li>`).join('')}</ul>` : '<p class="text-xs text-slate-600">No picks</p>'}
-    </div>`;
-  }).join('');
-  const o = pp.odds;
-  const oddsLine = o
-    ? `${escHtml(game.team_a_name)} ${o.pctA}% · ${o.pctB}% ${escHtml(game.team_b_name)}`
-    : 'No odds yet (a team has no games this season)';
-  const state = pp.upcoming
-    ? (pp.closedNow ? '<span class="text-amber-400">Closed</span>' : '<span class="text-emerald-400">Open</span>')
-    : '<span class="text-slate-500">Game no longer upcoming</span>';
-  return `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" id="agm-picks">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500 flex justify-between"><span>Who wins? picks</span><span>${pp.picks.length} total</span></div>
-      <div class="p-4">
-        <div class="text-xs text-slate-400 mb-3">Picks: ${state}${pp.upcoming ? ` · auto-closes ${escHtml(pp.closeTime)} on game day` : ''}${pp.settledAt ? ' · results sent' : ''}</div>
-        ${pp.finalsNote ? `<div class="text-xs text-amber-400 mb-3">${escHtml(pp.finalsNote)}</div>` : ''}
-        ${pp.upcoming ? `<div class="mb-3">
-          <label class="admin-field-label">Pick window</label>
-          <select id="agm-picks-closed" class="admin-input">
-            <option value="auto"${pp.override === 'auto' ? ' selected' : ''}>Automatic (game-day cut-off)</option>
-            <option value="closed"${pp.override === 'closed' ? ' selected' : ''}>Closed now</option>
-            <option value="open"${pp.override === 'open' ? ' selected' : ''}>Keep open (ignore cut-off)</option>
-          </select>
-        </div>` : ''}
-        <div class="mb-3">
-          <div class="admin-field-label">Odds</div>
-          <div class="text-xs text-slate-300 mb-1.5">${oddsLine}</div>
-          ${pp.upcoming ? `<label class="flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" id="agm-picks-hide-odds"${pp.hideOdds ? ' checked' : ''}> Hide odds for this game</label>` : ''}
-        </div>
-        <span class="text-xs block min-h-[14px] mb-2" id="agm-picks-msg"></span>
-        ${groups}
-      </div>
-    </div>
-<script>
-(function(){
-  var msg = document.getElementById('agm-picks-msg');
-  function save(body) {
-    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-muted)';
-    fetch('/admin/games/${id}/picks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(function (r) { if (!r.ok) throw new Error(); msg.style.color = '#22c55e'; msg.textContent = 'Saved.'; })
-      .catch(function () { msg.style.color = '#f87171'; msg.textContent = 'Error saving.'; });
-  }
-  var sel = document.getElementById('agm-picks-closed');
-  if (sel) sel.addEventListener('change', function () { save({ closed: sel.value }); });
-  var hide = document.getElementById('agm-picks-hide-odds');
-  if (hide) hide.addEventListener('change', function () { save({ hide_odds: hide.checked }); });
-})();
-</script>`;
-}
-
-export function adminGameDetailBody({ game, players = [], stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null } = {}) {
-  const perOf = (p) => {
-    const fgm = Number(p.fg2m) + Number(p.fg3m) + Number(p.fg4m || 0);
-    const fga = fgm + Number(p.fg2m_miss) + Number(p.fg3m_miss) + Number(p.fg4m_miss || 0);
-    const ftm = Number(p.ftm), fta = ftm + Number(p.ft_miss);
-    return Number(p.pts) + 0.4 * fgm - 0.7 * fga - 0.4 * (fta - ftm) +
-      0.7 * Number(p.reb) + Number(p.stl) + 0.7 * Number(p.ast) +
-      0.7 * Number(p.blk) - Number(p.turnover);
-  };
-
-  const winnerName = Number(game.team_a_score) >= Number(game.team_b_score)
-    ? game.team_a_name : game.team_b_name;
-
-  const top5 = [...stats]
-    .filter(s => String(s.team_name || '').toUpperCase() === winnerName.toUpperCase())
-    .sort((a, b) => perOf(b) - perOf(a))
-    .slice(0, 5);
-
-  const autoPotgId = top5[0]?.player_id ?? null;
-  const selectedPotgId = game.manual_potg_player_id || autoPotgId;
-
-  if (game.manual_potg_player_id && !top5.find(p => p.player_id === game.manual_potg_player_id)) {
-    const manual = stats.find(s => s.player_id === game.manual_potg_player_id);
-    if (manual) top5.push(manual);
-  }
-
-  const playerOpts = top5.length
-    ? top5.map(p => {
-        const sel = p.player_id === selectedPotgId ? ' selected' : '';
-        return `<option value="${escHtml(p.player_id)}"${sel}>${escHtml(displayPlayerName(p.name || ''))} — PER ${perOf(p).toFixed(1)}</option>`;
-      }).join('')
-    : `<option value="" disabled selected>No stats available</option>`;
-
-  const scoreA = Number(game.team_a_score), scoreB = Number(game.team_b_score);
-  const winA = !isUpcoming(game) && scoreA > scoreB;
-  const winB = !isUpcoming(game) && scoreB > scoreA;
-  const isScheduled = isUpcoming(game);
-  const isFinal = game.status === 'final';
-  const needsImport = isScheduled || isFinal;
-  const isLive = !isScheduled && !isFinal && !game.under_review;
-  const id = escHtml(game.id);
-
-  const colorA = teamColor(game.team_a_name);
-  const colorB = teamColor(game.team_b_name);
-
-  const writeupRaw = game.game_writeup || '';
-  const recapInitHtml = writeupRaw.trim().startsWith('<')
-    ? writeupRaw
-    : writeupRaw
-      ? '<p>' + escHtml(writeupRaw).replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>') + '</p>'
-      : '';
-
-  // Shared portal tab data
-  const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
-  const nameA = game.team_a_name.toUpperCase();
-  const nameB = game.team_b_name.toUpperCase();
-
-  return `
-${!isScheduled && !isFinal ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">` : ''}
-
-<div class="agm-edit-bar">
-  <a href="/admin/games" class="agm-edit-bar__back">${ICON_CHEVRON_L} All Games</a>
-  <div class="agm-edit-bar__right">
-    <span id="save-msg" class="agm-save-msg"></span>
-    <button id="agm-save-all" class="agm-edit-bar__save">${isScheduled || isFinal ? 'Save Date' : 'Save Changes'}</button>
-  </div>
-</div>
-
-<div class="card agm-game-header">
-  <div class="agm-game-header__teams">
-    <div class="agm-game-header__team">
-      <span class="team-dot" style="background:${colorA}"></span>
-      <span class="${winA ? 'agm-team--win' : ''}">${escHtml(game.team_a_name)}</span>
-      ${!isScheduled ? `<span class="agm-game-header__score${winA ? ' agm-game-header__score--win' : ''}">${scoreA}</span>` : ''}
-    </div>
-    <span class="agm-vs">${isScheduled ? 'vs' : '–'}</span>
-    <div class="agm-game-header__team">
-      ${!isScheduled ? `<span class="agm-game-header__score${winB ? ' agm-game-header__score--win' : ''}">${scoreB}</span>` : ''}
-      <span class="${winB ? 'agm-team--win' : ''}">${escHtml(game.team_b_name)}</span>
-      <span class="team-dot" style="background:${colorB}"></span>
-    </div>
-  </div>
-  <div class="agm-game-header__meta">
-    <span>${fmtDateLong(game.date)}</span>
-    <span class="agm-sep">·</span>
-    <span>${game.game_type === 'playoff' ? 'Playoff (Semi)' : game.game_type === 'finals' ? 'Finals' : 'Regular Season'}${game.season ? ` · Season ${escHtml(game.season)}` : ''}</span>
-    <span class="agm-sep">·</span>
-    ${statusBadge(game)}
-    <a href="/games/${id}" target="_blank" class="agm-view-link">View on site ↗</a>
-  </div>
-</div>
-
-<div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_300px] items-start">
-
-  <div class="flex flex-col gap-4 min-w-0">
-    ${needsImport ? `
-    <div class="bg-admin-surface border border-admin-border rounded-lg p-5 flex gap-4 items-start">
-      <div class="text-brand mt-0.5 shrink-0">${ICON_IMPORT}</div>
-      <div class="flex-1 min-w-0">
-        <h3 class="text-sm font-semibold text-slate-200 mb-1">Import Game Results</h3>
-        <p class="text-xs text-slate-500 mb-4 leading-relaxed">${isFinal ? 'Score has been confirmed. Import the full game file to add box scores and player stats.' : 'Export the game file from the wknd-stats admin app, then upload it here to import the final score, box score, and player stats into this game.'}</p>
-        <label class="agm-file-label" id="agm-file-label">
-          <input type="file" id="agm-file-input" accept=".json" style="display:none">
-          <span class="agm-file-placeholder" id="agm-file-placeholder">Choose exported file (.json)…</span>
-          <span class="agm-file-browse">Browse</span>
-        </label>
-        <div class="agm-import-actions">
-          <button class="agm-import-trigger" id="agm-import-trigger" disabled>
-            ${ICON_IMPORT} Import Results
-          </button>
-        </div>
-        <div class="agm-progress-wrap" id="agm-import-progress">
-          <div class="agm-progress-bar-track"><div class="agm-progress-bar-fill" id="agm-import-bar"></div></div>
-          <div class="agm-progress-label" id="agm-import-label">Uploading…</div>
-        </div>
-      </div>
-    </div>
-    ` : ''}
-    ${!isScheduled && !isFinal ? `
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">YouTube</div>
-      <div class="p-4">
-        <input id="val-yt" type="url" class="admin-input" placeholder="https://youtube.com/watch?v=…" value="${escHtml(game.youtube_url || '')}">
-      </div>
-    </div>
-
-    <div class="card game-tabs">
-      <div class="game-tabs__nav">
-        <button class="game-tabs__tab game-tabs__tab--active" data-gtab="recap">Recap</button>
-        ${!isFinal ? `
-        <button class="game-tabs__tab" data-gtab="bst-a"><span class="team-dot" style="background:${colorA}"></span>${escHtml(game.team_a_name)}</button>
-        <button class="game-tabs__tab" data-gtab="bst-b"><span class="team-dot" style="background:${colorB}"></span>${escHtml(game.team_b_name)}</button>
-        <button class="game-tabs__tab" data-gtab="leaders">Leaders</button>
-        <button class="game-tabs__tab" data-gtab="comparison">Team Comparison</button>
-        <button class="game-tabs__tab" data-gtab="linescore">Line Score</button>
-        ` : ''}
-      </div>
-      <div id="adm-tab-recap" class="game-tabs__body adm-recap-body">
-        <div class="agm-gen-context">
-          <label class="admin-field-label" for="gen-recap-context">Extra context for AI <span class="agm-gen-context__hint">(optional, not saved)</span></label>
-          <textarea id="gen-recap-context" class="admin-input agm-textarea agm-textarea--short" rows="2" maxlength="1500" placeholder="e.g. Joel played through an ankle injury. First game back for Kix. Focus more on the defense in Q4."></textarea>
-        </div>
-        <div class="agm-gen-bar">
-          <button class="agm-gen-btn" id="btn-gen-recap">✦ Generate with AI</button>
-          <span class="agm-gen-status" id="gen-recap-status"></span>
-        </div>
-        <div id="recap-quill"></div>
-      </div>
-      ${!isFinal ? `
-      <div id="adm-tab-bst-a" class="game-tabs__body game-tabs__body--hidden">
-        ${adminInlineBoxScore(byTeam[nameA] || [], nameA, game.id, dnpByTeam[nameA] || [], teamTurnovers[nameA] || 0)}
-      </div>
-      <div id="adm-tab-bst-b" class="game-tabs__body game-tabs__body--hidden">
-        ${adminInlineBoxScore(byTeam[nameB] || [], nameB, game.id, dnpByTeam[nameB] || [], teamTurnovers[nameB] || 0)}
-      </div>
-      <div id="adm-tab-leaders" class="game-tabs__body game-tabs__body--hidden">
-        ${gameLeadersTab(game, stats)}
-      </div>
-      <div id="adm-tab-comparison" class="game-tabs__body game-tabs__body--hidden">
-        ${teamComparisonTab(game, stats)}
-      </div>
-      <div id="adm-tab-linescore" class="game-tabs__body game-tabs__body--hidden">
-        ${lineScoreTab(game, quarterScores)}
-      </div>
-      ` : ''}
-    </div>
-    ` : ''}
-  </div>
-
-  <div class="flex flex-col gap-4">
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">${isScheduled || isFinal ? 'Schedule' : 'Publish'}</div>
-      <div class="p-4">
-        ${!isScheduled && !isFinal ? `
-        <div class="mb-3">
-          <label class="admin-field-label">Status</label>
-          <select id="pub-status" class="admin-input">
-            <option value="live"${isLive ? ' selected' : ''}>Live</option>
-            <option value="draft"${game.under_review ? ' selected' : ''}>Draft</option>
-          </select>
-        </div>
-        ` : ''}
-        <div>
-          <label class="admin-field-label">Date</label>
-          <input type="date" id="pub-date" class="admin-input" value="${escHtml(game.date || '')}">
-        </div>
-      </div>
-    </div>
-
-    ${picksPanelCard(game, picksPanel)}
-
-    ${!isScheduled && !isFinal ? `
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Player of the Game</div>
-      <div class="p-4">
-        <div class="mb-3">
-          <select id="val-potg-player" class="admin-input">${playerOpts}</select>
-        </div>
-        <div class="mb-2">
-          <label class="admin-field-label">Write-up</label>
-          <textarea id="val-potg" class="admin-input agm-textarea" rows="4" placeholder="Write about the player of the game…">${escHtml(game.potg_writeup || '')}</textarea>
-        </div>
-        <div class="agm-gen-bar agm-gen-bar--sm">
-          <button class="agm-gen-btn agm-gen-btn--sm" id="btn-gen-potg">✦ Generate</button>
-          <span class="agm-gen-status" id="gen-potg-status"></span>
-        </div>
-      </div>
-    </div>
-    ` : ''}
-
-    ${!isScheduled ? `
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Cover Image</div>
-      <div class="p-4">
-        ${game.has_cover
-          ? `<div class="agm-cover-slot">
-               <img src="/admin/games/${id}/cover-img" class="agm-cover-img" id="cover-img" alt="">
-               <div class="agm-cover-btns">
-                 <label class="agm-cover-btn" for="cover-file" title="Change image">${ICON_CAMERA}</label>
-                 <button class="agm-cover-btn agm-cover-btn--del" id="btn-cover-del" title="Remove image">${ICON_TRASH}</button>
-               </div>
-             </div>`
-          : `<label class="agm-cover-canvas" for="cover-file">
-               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-               <span class="agm-cover-canvas__label">Upload cover image</span>
-             </label>`
-        }
-        <input type="file" id="cover-file" accept="image/jpeg,image/png,image/webp" style="display:none">
-        <div id="cover-progress" style="display:none">
-          <div class="agm-cover-progress">
-            <div class="agm-cover-progress-track"><div class="agm-cover-progress-fill" id="cover-bar"></div></div>
-            <span class="text-xs text-slate-500 whitespace-nowrap" id="cover-status"></span>
-          </div>
-        </div>
-        <span class="text-xs text-slate-500 mt-2 block" id="cover-status-text"></span>
-      </div>
-    </div>
-    ` : ''}
-
-    ${!isScheduled && !isFinal ? statCorrectionsCard(statCorrections, players) : ''}
-
-    <div class="pt-1">
-      <button id="agm-delete-btn" class="admin-btn admin-btn--danger">${ICON_TRASH} Delete game</button>
-    </div>
-
-  </div>
-
-</div>
-
-${!isScheduled && !isFinal ? `<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>` : ''}
-<script>
-(function(){
-  ${!isScheduled && !isFinal ? `
-  var quill = new Quill('#recap-quill', {
-    theme: 'snow',
-    placeholder: 'Write the game recap here…',
-    modules: { toolbar: [['bold','italic','underline'],[{list:'ordered'},{list:'bullet'}],['link','clean']] }
-  });
-  quill.clipboard.dangerouslyPasteHTML(${JSON.stringify(recapInitHtml)});
-  // Quill's root.innerHTML almost always carries a trailing <p><br></p> for
-  // whatever empty line the cursor is resting on — strip only leading and
-  // trailing empty paragraphs before save so that artifact doesn't ship as a
-  // blank gap on the public page. Deliberately leaves every interior
-  // paragraph untouched, even if blank, so real content can never be caught.
-  // DOM-based (not regex) — this text sits inside a template literal, and
-  // backslash escapes in a regex literal don't survive that intact.
-  function cleanEditorHtml(html) {
-    var div = document.createElement('div');
-    div.innerHTML = html;
-    function isEmptyP(el) {
-      return !!el && (el.tagName === 'P' || el.tagName === 'DIV') && !el.textContent.trim() && !el.querySelector('img, video, iframe');
-    }
-    while (isEmptyP(div.firstElementChild)) div.firstElementChild.remove();
-    while (isEmptyP(div.lastElementChild)) div.lastElementChild.remove();
-    return div.innerHTML.trim();
-  }
-  ` : ''}
-
-  async function doSave() {
-    var btn = document.getElementById('agm-save-all');
-    var msg = document.getElementById('save-msg');
-    btn.disabled = true;
-    btn.textContent = 'Saving…';
-    var body = { date: document.getElementById('pub-date').value };
-    ${!isScheduled && !isFinal ? `
-    body.game_writeup = cleanEditorHtml(quill.root.innerHTML);
-    body.youtube_url  = document.getElementById('val-yt').value;
-    ` : ''}
-    ${!isScheduled && !isFinal ? `
-    body.potg_writeup   = document.getElementById('val-potg').value;
-    body.potg_player_id = document.getElementById('val-potg-player').value;
-    body.status         = document.getElementById('pub-status').value;
-    ` : ''}
-    try {
-      var r = await fetch('/admin/games/${id}/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Error');
-      msg.className = 'agm-save-msg agm-save-msg--ok';
-      msg.textContent = 'Saved';
-      setTimeout(function(){ msg.textContent = ''; msg.className = 'agm-save-msg'; }, 2500);
-    } catch(e) {
-      msg.className = 'agm-save-msg agm-save-msg--err';
-      msg.textContent = e.message;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '${isScheduled || isFinal ? 'Save Date' : 'Save Changes'}';
-    }
-  }
-
-  document.getElementById('agm-save-all').addEventListener('click', doSave);
-
-  // AI Generate — Recap
-  var btnGenRecap = document.getElementById('btn-gen-recap');
-  if (btnGenRecap) {
-    btnGenRecap.addEventListener('click', async function() {
-      var status = document.getElementById('gen-recap-status');
-      btnGenRecap.disabled = true; btnGenRecap.textContent = 'Generating…';
-      status.textContent = ''; status.className = 'agm-gen-status';
-      try {
-        var potgSel = document.getElementById('val-potg-player');
-        var ctxEl = document.getElementById('gen-recap-context');
-        var r = await fetch('/admin/games/${id}/generate-recap', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ player_id: potgSel ? potgSel.value : null, context: ctxEl ? ctxEl.value : '' }) });
-        var j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'AI error');
-        quill.clipboard.dangerouslyPasteHTML(
-          '<p>' + j.writeup.replace(/\\n\\n+/g, '</p><p>').replace(/\\n/g, '<br>') + '</p>'
-        );
-        status.textContent = 'Generated'; status.className = 'agm-gen-status agm-gen-status--ok';
-      } catch(e) {
-        status.textContent = e.message; status.className = 'agm-gen-status agm-gen-status--err';
-      } finally {
-        btnGenRecap.disabled = false; btnGenRecap.textContent = '✦ Generate with AI';
-      }
-    });
-  }
-
-  // AI Generate — POTG
-  var btnGenPotg = document.getElementById('btn-gen-potg');
-  if (btnGenPotg) {
-    btnGenPotg.addEventListener('click', async function() {
-      var status = document.getElementById('gen-potg-status');
-      btnGenPotg.disabled = true; btnGenPotg.textContent = 'Generating…';
-      status.textContent = ''; status.className = 'agm-gen-status';
-      try {
-        var r = await fetch('/admin/games/${id}/generate-potg', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ player_id: document.getElementById('val-potg-player').value }) });
-        var j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'AI error');
-        document.getElementById('val-potg').value = j.writeup;
-        status.textContent = 'Generated'; status.className = 'agm-gen-status agm-gen-status--ok';
-      } catch(e) {
-        status.textContent = e.message; status.className = 'agm-gen-status agm-gen-status--err';
-      } finally {
-        btnGenPotg.disabled = false; btnGenPotg.textContent = '✦ Generate';
-      }
-    });
-  }
-
-  var gtNav = document.querySelector('.game-tabs__nav');
-  if (gtNav) {
-    gtNav.addEventListener('click', function(e) {
-      var btn = e.target.closest('[data-gtab]');
-      if (!btn) return;
-      document.querySelectorAll('.game-tabs__tab').forEach(function(b) { b.classList.remove('game-tabs__tab--active'); });
-      document.querySelectorAll('[id^="adm-tab-"]').forEach(function(b) { b.classList.add('game-tabs__body--hidden'); });
-      btn.classList.add('game-tabs__tab--active');
-      document.getElementById('adm-tab-' + btn.dataset.gtab).classList.remove('game-tabs__body--hidden');
-    });
-  }
-
-  // ── Inline box score editing ────────────────────────────────────────────────
-  var EDIT_ROW_BG = 'rgba(245,147,50,0.08)';
-
-  function setRowMode(tr, editing) {
-    tr.querySelectorAll('.v-s').forEach(function(el) { el.style.display = editing ? 'none' : ''; });
-    tr.querySelectorAll('.v-i').forEach(function(el) { el.style.display = editing ? 'inline-block' : 'none'; });
-    tr.querySelector('.bs-act-edit').style.display   = editing ? 'none' : '';
-    tr.querySelector('.bs-act-save').style.display   = editing ? '' : 'none';
-    tr.querySelector('.bs-act-cancel').style.display = editing ? '' : 'none';
-    tr.style.background = editing ? EDIT_ROW_BG : '';
-    var nameCell = tr.querySelector('.bs-name');
-    if (nameCell) nameCell.style.background = editing ? EDIT_ROW_BG : '';
-  }
-
-  function resetRowInputs(tr, orig) {
-    tr.querySelectorAll('.v-i[data-stat]').forEach(function(inp) {
-      var stat = inp.dataset.stat, role = inp.dataset.role;
-      var madeField = stat === 'ft' ? 'ftm' : stat + 'm';
-      var missField = stat === 'ft' ? 'ft_miss' : stat + 'm_miss';
-      inp.value = role === 'made' ? orig[madeField] : (orig[madeField] + orig[missField]);
-    });
-    tr.querySelectorAll('.v-i[data-field]').forEach(function(inp) {
-      inp.value = orig[inp.dataset.field];
-    });
-  }
-
-  function perFromOrig(o) {
-    var fgm = o.fg2m + o.fg3m + o.fg4m, fga = fgm + o.fg2m_miss + o.fg3m_miss + o.fg4m_miss;
-    var fta = o.ftm + o.ft_miss;
-    return (o.pts + 0.4*fgm - 0.7*fga - 0.4*(fta - o.ftm) + 0.7*o.reb + o.stl + 0.7*o.ast + 0.7*o.blk - o.turnover).toFixed(1);
-  }
-
-  function collectRowChanges(tr, orig) {
-    var changes = {};
-    ['fg2', 'fg3', 'fg4', 'ft'].forEach(function(stat) {
-      var madeField = stat === 'ft' ? 'ftm' : stat + 'm';
-      var missField = stat === 'ft' ? 'ft_miss' : stat + 'm_miss';
-      var madeInp = tr.querySelector('.v-i[data-role="made"][data-stat="' + stat + '"]');
-      var attInp  = tr.querySelector('.v-i[data-role="att"][data-stat="' + stat + '"]');
-      var made = Math.max(0, parseInt(madeInp.value, 10) || 0);
-      var att  = Math.max(0, parseInt(attInp.value, 10) || 0);
-      var miss = Math.max(0, att - made);
-      if (made !== orig[madeField]) changes[madeField] = made;
-      if (miss !== orig[missField]) changes[missField] = miss;
-    });
-    ['reb', 'ast', 'stl', 'blk', 'turnover'].forEach(function(field) {
-      var inp = tr.querySelector('.v-i[data-field="' + field + '"]');
-      var val = Math.max(0, parseInt(inp.value, 10) || 0);
-      if (val !== orig[field]) changes[field] = val;
-    });
-    return changes;
-  }
-
-  document.querySelectorAll('.bs-edit-row').forEach(function(tr) {
-    var gameId = tr.dataset.gameId, playerId = tr.dataset.playerId;
-
-    tr.querySelector('.bs-act-edit').addEventListener('click', function() {
-      setRowMode(tr, true);
-    });
-
-    tr.querySelector('.bs-act-cancel').addEventListener('click', function() {
-      resetRowInputs(tr, JSON.parse(tr.dataset.orig));
-      setRowMode(tr, false);
-    });
-
-    tr.querySelector('.bs-act-save').addEventListener('click', async function() {
-      var saveBtn = this;
-      var orig = JSON.parse(tr.dataset.orig);
-      var changes = collectRowChanges(tr, orig);
-      if (!Object.keys(changes).length) { setRowMode(tr, false); return; }
-
-      saveBtn.disabled = true;
-      var next = Object.assign({}, orig);
-      var lastPts = orig.pts;
-      try {
-        for (var field in changes) {
-          var r = await fetch('/admin/games/' + gameId + '/stats/' + playerId, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ field: field, value: changes[field] }),
-          });
-          var data = await r.json();
-          if (data.error) throw new Error(data.error);
-          next[field] = changes[field];
-          lastPts = data.pts;
-        }
-        next.pts = lastPts;
-        tr.dataset.orig = JSON.stringify(next);
-
-        // Refresh this row's static M/A/% cells, REB..TO, PTS and PER from the new totals.
-        ['fg2', 'fg3', 'fg4', 'ft'].forEach(function(stat) {
-          var madeField = stat === 'ft' ? 'ftm' : stat + 'm';
-          var missField = stat === 'ft' ? 'ft_miss' : stat + 'm_miss';
-          var made = next[madeField], att = next[madeField] + next[missField];
-          var madeInp = tr.querySelector('.v-i[data-role="made"][data-stat="' + stat + '"]');
-          var attInp  = tr.querySelector('.v-i[data-role="att"][data-stat="' + stat + '"]');
-          madeInp.value = made; attInp.value = att;
-          madeInp.previousElementSibling.textContent = made || '–';
-          attInp.previousElementSibling.textContent = att || '–';
-          var pctEl = tr.querySelector('.v-pct[data-stat="' + stat + '"]');
-          pctEl.textContent = att ? Math.round(made / att * 100) + '%' : '–';
-        });
-        ['reb', 'ast', 'stl', 'blk', 'turnover'].forEach(function(field) {
-          var inp = tr.querySelector('.v-i[data-field="' + field + '"]');
-          inp.value = next[field];
-          inp.previousElementSibling.textContent = next[field] || 0;
-        });
-        tr.querySelector('.v-pts').textContent = next.pts;
-        tr.querySelector('.v-per').textContent = perFromOrig(next);
-        setRowMode(tr, false);
-      } catch (e) {
-        alert(e.message || 'Save failed. Check your connection and try again.');
-      } finally {
-        saveBtn.disabled = false;
-      }
-    });
-  });
-
-  document.getElementById('agm-delete-btn').addEventListener('click', async function() {
-    if (!confirm('Delete this game? This will also remove all player stats and cannot be undone.')) return;
-    var btn = this;
-    btn.disabled = true;
-    try {
-      var r = await fetch('/admin/games/${id}', { method: 'DELETE' });
-      if (r.ok) { window.location.href = '/admin/games'; return; }
-      var j = await r.json();
-      throw new Error(j.error || 'Error');
-    } catch(e) {
-      alert(e.message);
-      btn.disabled = false;
-    }
-  });
-
-  ${needsImport ? `
-  var fileInput = document.getElementById('agm-file-input');
-  var fileLabel = document.getElementById('agm-file-label');
-  var filePlaceholder = document.getElementById('agm-file-placeholder');
-  var importTrigger = document.getElementById('agm-import-trigger');
-  if (fileInput) {
-    fileInput.addEventListener('change', function() {
-      var f = fileInput.files[0];
-      if (f) {
-        filePlaceholder.textContent = f.name;
-        fileLabel.classList.add('agm-file-label--has-file');
-        importTrigger.disabled = false;
-      }
-    });
-    importTrigger.addEventListener('click', async function() {
-      var file = fileInput.files[0];
-      if (!file) return;
-      importTrigger.disabled = true;
-      importTrigger.innerHTML = '${ICON_IMPORT} Importing…';
-      var progressWrap = document.getElementById('agm-import-progress');
-      var progressBar  = document.getElementById('agm-import-bar');
-      var progressLabel = document.getElementById('agm-import-label');
-      progressWrap.classList.add('agm-progress-wrap--visible');
-      progressBar.style.width = '0%';
-      progressLabel.textContent = 'Reading file…';
-      try {
-        var text = await file.text();
-        var payload = JSON.parse(text);
-        var body = JSON.stringify(payload);
-        var result = await new Promise(function(resolve, reject) {
-          var xhr = new XMLHttpRequest();
-          xhr.open('POST', '/admin/games/${id}/import');
-          xhr.setRequestHeader('Content-Type', 'application/json');
-          var serverStart = null;
-          var ticker = null;
-          xhr.upload.onprogress = function(e) {
-            if (!e.lengthComputable) return;
-            var pct = Math.round(e.loaded / e.total * 100);
-            progressBar.style.width = pct + '%';
-            progressLabel.textContent = 'Uploading… ' + pct + '%';
-          };
-          xhr.upload.onload = function() {
-            progressBar.style.width = '100%';
-            progressLabel.textContent = 'Processing on server… 0s';
-            serverStart = Date.now();
-            ticker = setInterval(function() {
-              var s = Math.round((Date.now() - serverStart) / 1000);
-              progressLabel.textContent = 'Processing on server… ' + s + 's';
-            }, 1000);
-          };
-          xhr.onload = function() {
-            clearInterval(ticker);
-            try {
-              var data = JSON.parse(xhr.responseText);
-              if (xhr.status >= 200 && xhr.status < 300) { resolve(data); }
-              else { reject(new Error(data.error || 'Import failed')); }
-            } catch(e) { reject(new Error('Invalid response')); }
-          };
-          xhr.onerror = function() { clearInterval(ticker); reject(new Error('Network error')); };
-          xhr.send(body);
-        });
-        if (result && result.swapped) {
-          progressLabel.textContent = 'Done — file had the teams reversed, so they were swapped to match. Reloading…';
-          setTimeout(function() { location.reload(); }, 2500);
-        } else {
-          progressLabel.textContent = 'Done! Reloading…';
-          location.reload();
-        }
-      } catch (e) {
-        progressWrap.classList.remove('agm-progress-wrap--visible');
-        filePlaceholder.textContent = 'Error: ' + e.message;
-        filePlaceholder.style.color = '#f87171';
-        importTrigger.disabled = false;
-        importTrigger.innerHTML = '${ICON_IMPORT} Import Results';
-      }
-    });
-  }
-  ` : ''}
-  ${!isScheduled ? `
-  var coverFile = document.getElementById('cover-file');
-  if (coverFile) {
-    coverFile.addEventListener('change', async function() {
-      var file = this.files[0];
-      if (!file) return;
-      var progressWrap = document.getElementById('cover-progress');
-      var progressBar  = document.getElementById('cover-bar');
-      var statusEl     = document.getElementById('cover-status');
-      var statusText   = document.getElementById('cover-status-text');
-      progressWrap.style.display = 'block';
-      statusText.textContent = '';
-      progressBar.style.width = '0%';
-      statusEl.textContent = 'Compressing…';
-      try {
-        var dataUrl = await new Promise(function(resolve, reject) {
-          var img = new Image();
-          var objUrl = URL.createObjectURL(file);
-          img.onload = function() {
-            URL.revokeObjectURL(objUrl);
-            var MAX_W = 1200, MAX_H = 900;
-            var w = img.naturalWidth, h = img.naturalHeight;
-            var ratio = Math.min(MAX_W / w, MAX_H / h, 1);
-            var canvas = document.createElement('canvas');
-            canvas.width  = Math.round(w * ratio);
-            canvas.height = Math.round(h * ratio);
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', 0.85));
-          };
-          img.onerror = reject;
-          img.src = objUrl;
-        });
-        statusEl.textContent = 'Uploading… 0%';
-        var body = JSON.stringify({ dataUrl: dataUrl });
-        await new Promise(function(resolve, reject) {
-          var xhr = new XMLHttpRequest();
-          xhr.open('POST', '/admin/games/${id}/cover');
-          xhr.setRequestHeader('Content-Type', 'application/json');
-          xhr.upload.onprogress = function(e) {
-            if (!e.lengthComputable) return;
-            var pct = Math.round(e.loaded / e.total * 100);
-            progressBar.style.width = pct + '%';
-            statusEl.textContent = 'Uploading… ' + pct + '%';
-          };
-          xhr.upload.onload = function() {
-            progressBar.style.width = '100%';
-            statusEl.textContent = 'Saving…';
-          };
-          xhr.onload = function() {
-            if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else reject(new Error('Upload failed'));
-          };
-          xhr.onerror = function() { reject(new Error('Network error')); };
-          xhr.send(body);
-        });
-        statusEl.textContent = 'Done!';
-        location.reload();
-      } catch {
-        progressWrap.style.display = 'none';
-        statusText.textContent = 'Upload failed';
-      }
-    });
-  }
-  var delCover = document.getElementById('btn-cover-del');
-  if (delCover) {
-    delCover.addEventListener('click', async function() {
-      if (!confirm('Remove the cover image?')) return;
-      var r = await fetch('/admin/games/${id}/cover', { method: 'DELETE' });
-      if (r.ok) location.reload();
-    });
-  }
-  ` : ''}
-})();
-</script>`;
+  <script src="/admin-games.js" defer></script>`;
 }
