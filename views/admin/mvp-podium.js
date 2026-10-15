@@ -81,15 +81,22 @@ ${locked && enabled ? `<h3 class="${kicker} mb-2">Haven’t voted</h3>
 <div class="${panel} p-4 mb-6">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div class="text-sm text-slate-300 min-w-0 max-w-3xl">
-      <b class="text-slate-100">${missing.count}</b> active player${missing.count === 1 ? '' : 's'} without a complete ballot${missing.names.length ? `: <span class="text-slate-400">${missing.names.map(escHtml).join(', ')}</span>` : ''}
-      ${reminded ? `<span class="block mt-1 text-amber-400">Reminder sent ${escHtml(when(reminded.at))}: ${reminded.bell} bell${reminded.email != null ? `, ${reminded.email} email${reminded.email === 1 ? '' : 's'}` : ''}</span>` : ''}
+      <b class="text-slate-100">${missing.count}</b> active player${missing.count === 1 ? '' : 's'} without a complete ballot${missing.names.length && !reminded ? `: <span class="text-slate-400">${missing.names.map(escHtml).join(', ')}</span>` : ''}
+      ${reminded ? `<span class="block mt-1 text-amber-400">Reminder sent ${escHtml(when(reminded.at))}: ${reminded.bell} bell${reminded.bell === 1 ? '' : 's'}${reminded.email != null ? `, ${reminded.email} email${reminded.email === 1 ? '' : 's'}` : ''}${reminded.resent ? ` · resent to ${reminded.resent.count} ${escHtml(when(reminded.resent.at))}` : ''}</span>` : ''}
+      ${reminded ? [
+        ['Missed the email', missing.resend, 'text-slate-100'],
+        ['Already emailed', missing.emailed, 'text-slate-500'],
+        ['Bell only (unsubscribed, bounced or shared inbox)', missing.bellOnly, 'text-slate-500'],
+      ].filter(([, list]) => list.length).map(([label, list, tone]) => `<span class="block mt-1.5 text-xs"><b class="text-slate-400">${label} (${list.length}):</b> <span class="${tone}">${list.map(escHtml).join(', ')}</span></span>`).join('') : ''}
     </div>
-    <form method="post" action="/admin/awards/podium/remind" class="inline-flex items-center gap-2 shrink-0" onsubmit="return confirm(${escHtml(JSON.stringify(reminded ? 'A reminder already went out. Send another?' : 'Send the podium reminder now?'))})">
-      <label class="inline-flex items-center gap-1.5 text-xs text-slate-300" title="Same rules as pick reminders: unsubscribed, bounced or shared inboxes get the bell only. Anyone who already got the podium email isn't emailed again.">
-        <input type="checkbox" name="email" value="1"${missing.emailable ? ' checked' : ' disabled'}> Also email ${missing.emailable}${missing.emailed ? ` <span class="text-slate-500">(${missing.emailed} already emailed)</span>` : ''}
+    ${reminded ? `<form method="post" action="/admin/awards/podium/remind" class="shrink-0" onsubmit="return confirm(${escHtml(JSON.stringify(`Resend the bell and email to the ${missing.resend.length} who missed the email?`))})">
+      <button type="submit" class="admin-btn admin-btn--sm admin-btn--success" title="Only players who haven’t voted and have no podium email on record"${missing.resend.length ? '' : ' disabled'}>Resend to ${missing.resend.length}</button>
+    </form>` : `<form method="post" action="/admin/awards/podium/remind" class="inline-flex items-center gap-2 shrink-0" onsubmit="return confirm('Send the podium reminder now?')">
+      <label class="inline-flex items-center gap-1.5 text-xs text-slate-300" title="Same rules as pick reminders: unsubscribed, bounced or shared inboxes get the bell only">
+        <input type="checkbox" name="email" value="1"${missing.emailable ? ' checked' : ' disabled'}> Also email ${missing.emailable}
       </label>
-      <button type="submit" class="admin-btn admin-btn--sm admin-btn--success"${missing.reachable ? '' : ' disabled'}>${reminded ? 'Remind again' : 'Send reminder'}</button>
-    </form>
+      <button type="submit" class="admin-btn admin-btn--sm admin-btn--success"${missing.reachable ? '' : ' disabled'}>Send reminder</button>
+    </form>`}
   </div>
 </div>` : ''}`;
 }
