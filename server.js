@@ -195,6 +195,9 @@ import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminHomeBody } from './views/admin/home.js';
+import { sendBroadcast, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe } from './lib/broadcast.js';
+import { leagueNudgeEmail } from './lib/mailer.js';
+import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
 import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
 import { adminGamesListBody, adminGameDetailBody } from './views/admin/games.js';
@@ -2364,6 +2367,7 @@ function picksSettingsPanel() {
     { type: 'toggle', key: 'picks_odds_enabled', value: pickOddsEnabled(), label: 'Show odds', sub: 'Win chances on the matchup cards. Hidden until both teams have played this season; can also be hidden per game.' },
     { type: 'toggle', key: 'home_picks_widget_enabled', value: on('home_picks_widget_enabled'), label: 'Homepage widget', sub: 'The pick widget under the homepage banner: the next game day, or "Who called it?" on game day and the day after.' },
     { type: 'time', key: 'picks_close_time', value: picksCloseTime(), width: 'auto', label: 'Picks close at', sub: 'Game-day cut-off (Manila time). Games have no tip-off time, so picks lock at this time on the game date.' },
+    { type: 'toggle', key: 'picks_auto_remind', value: on('picks_auto_remind'), label: 'Automatic pick reminder', sub: 'At 6 PM the day before game day, everyone still missing picks gets a bell and the reminder email, unless you already sent one for that day. Live site only.' },
   ], { title: 'Who wins? settings' });
 }
 
@@ -2375,9 +2379,23 @@ function marketplaceSettingsPanel() {
   ], { title: 'Public page' });
 }
 
+function pollsSettingsPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'polls_notify_on_open', value: on('polls_notify_on_open'), label: 'Tell players about new polls', sub: `A bell notification to every active member when a poll for players opens on ${codeTag('/polls')}. Live site only.` },
+  ], { title: 'Notifications' });
+}
+
+function seasonNudgesPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'season_auto_nudges', value: on('season_auto_nudges'), label: 'Sign-up reminders',
+      sub: 'When sign-ups open, every active member who hasn’t signed up gets a bell and an email. Three days later, last season’s players who still haven’t signed up get one more. Respects the league-emails unsubscribe. Live site only.' },
+  ], { title: 'Automatic reminders' });
+}
+
 function postsSettingsPanel() {
   return settingsPanel([
     { type: 'toggle', key: 'posts_enabled', value: getSetting('posts_enabled', '0') === '1', label: 'Posts on the site', sub: `League news and matchup previews on ${codeTag('/posts')}. Writing posts here works either way.` },
+    { type: 'toggle', key: 'posts_notify_on_publish', value: on('posts_notify_on_publish'), label: 'Tell players when a post goes up', sub: 'A bell notification to every active member when a post is published (or a scheduled one goes live). Live site only.' },
   ], { title: 'Public page' });
 }
 
@@ -2424,6 +2442,7 @@ function podiumSettingsPanel() {
     { type: 'toggle', key: 'mvp_podium_enabled', value: st.enabled, label: 'Podium ballot', sub: `While the reveal lock is on: the ballot on ${codeTag('/mvp')}, ${codeTag('/picks')}, the homepage card and the site bar. Off hides it and the rules section.` },
     { type: 'text', key: 'mvp_bonus_close', value: getSetting('mvp_bonus_close', ''), reload: true, placeholder: 'YYYY-MM-DD HH:MM', label: 'Bonus cut-off',
       sub: `Only ballots in before this earn the bonus. Empty = the last regular-season game day at the picks close time.<span class="block mt-1">Now: <b class="text-slate-300">${escHtml(st.bonusAt || 'not known yet (final games not on the schedule)')}</b></span>` },
+    { type: 'toggle', key: 'mvp_podium_auto_remind', value: on('mvp_podium_auto_remind'), label: 'Automatic podium reminder', sub: 'Once the ballot locks, everyone without a ballot gets a bell and an email, once per season, unless you already reminded them. Live site only.' },
   ], { title: 'Ballot settings' });
 }
 
@@ -7375,7 +7394,9 @@ app.get('/admin/site', requireAuth, (req, res) => {
 function siteSettingSection(key) {
   if (/^(papawis_)/.test(key)) return 'papawis';
   if (key === 'marketplace_enabled') return 'marketplace';
-  if (key === 'posts_enabled') return 'content';
+  if (key === 'posts_enabled' || key === 'posts_notify_on_publish') return 'content';
+  if (/^polls_/.test(key)) return 'community';
+  if (/^season_/.test(key)) return 'season';
   if (/^picks_|^home_picks_widget_enabled$/.test(key)) return 'games-stats';
   if (/^(awards_enabled|award_|mvp_)/.test(key)) return 'awards';
   if (key === 'player_reports_enabled') return 'community';
@@ -7392,6 +7413,8 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
     'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled', 'mvp_podium_enabled',
+    // Auto-nudges (lib/broadcast.js): one switch per feature page.
+    'picks_auto_remind', 'mvp_podium_auto_remind', 'posts_notify_on_publish', 'polls_notify_on_open', 'season_auto_nudges',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
@@ -10845,6 +10868,211 @@ function runPickReminders() {
 }
 setInterval(() => { try { runPickReminders(); } catch (e) { console.error('[pick reminders] failed:', e.message); } }, 5 * 60 * 1000);
 
+// ── Auto-nudges (admin redesign plan, step 2, 2026-10-15) ──────────────────────────────
+// Automatic group sends through lib/broadcast.js (dedupe, caps of 1 group email a day and 3
+// a week per player, 600 ms pacing, unsubscribe respected). Each one has a switch on its
+// feature's admin page, on by default:
+//   • picks_auto_remind        6 PM the day before game day: everyone still missing picks
+//                              (skips anyone who asked for their own "Remind me", and runs
+//                              only if no admin has already sent a reminder for that day)
+//   • mvp_podium_auto_remind   once per season, when the podium ballot is locked and open
+//   • posts_notify_on_publish  a bell when a post goes public (published, or scheduled and due)
+//   • polls_notify_on_open     a bell when a poll for players opens
+//   • season_auto_nudges       when season sign-ups open: everyone not signed up; 3 days later,
+//                              last season's players who still haven't signed up
+// Live site only (AUTO_NUDGES_IN_DEV=1 runs it elsewhere for testing, and lib/broadcast.js
+// still sends just one email there), between 9 AM and 9 PM Manila.
+const AUTO_PICK_REMIND_HM = '18:00';
+const SEASON_RETURNING_AFTER_DAYS = 3;
+let autoNudgesRunning = false;
+const manilaYmdOf = ms => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+const nudgeOn = key => getSetting(key, '1') === '1';
+
+async function autoPickReminder() {
+  if (!picksEnabled() || !nudgeOn('picks_auto_remind')) return;
+  const games = byDate(getAllGames());
+  const pctx = buildPicksContext(games);
+  const upNext = adminUpNext(games, pctx);
+  const open = upNext.filter(u => !u.closed);
+  if (!open.length) return;
+  const ymd = open[0].ymd;
+  const dayBefore = manilaYmdOf(Date.parse(`${ymd}T00:00:00+08:00`) - 86400000);
+  if (Date.now() < Date.parse(`${dayBefore}T${AUTO_PICK_REMIND_HM}:00+08:00`)) return;
+  if (getSetting(`picks_reminded_${ymd}`, '')) return; // an admin already reminded this game day
+  const dedupeKey = `auto_picks:${ymd}`;
+  if (getBroadcastByDedupe(dedupeKey)) return;
+  const missing = picksMissing(upNext, pctx);
+  if (!missing?.list.length) return;
+  const asked = pickRemindList(ymd);
+  const reach = picksReminderRecipients(missing.list.filter(p => !asked.has(p.id)), ymd);
+  if (!reach.recipients.length) return;
+  const matchups = open.filter(u => u.ymd === ymd).map(u => `${titleCase(u.a)} vs ${titleCase(u.b)}`).join(' and ');
+  const dayStr = new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const c = picksEmailContext();
+  const draft = c ? await ensurePicksDraft(c) : null;
+  const emailed = picksEmailedIds(ymd);
+  const result = await sendBroadcast({
+    kind: 'pick_reminder', dedupeKey, segment: `not_picked:${ymd}`,
+    title: `Who wins? ${matchups}`, body: `Make your pick${open.length === 1 ? '' : 's'} before ${fmtCloseTime(picksCloseTime())} on ${dayStr}.`, link: '/picks',
+    recipients: reach.recipients,
+    email: c && draft ? async r => {
+      emailed.add(r.player.id);
+      return { ...picksEmailFor(c, draft, r.player.id, r.reg.id), headers: unsubscribeHeaders(picksUnsubscribeUrl(r.reg.id)) };
+    } : null,
+  });
+  setSetting(`picks_emailed_ids_${ymd}`, JSON.stringify([...emailed]));
+  setSetting(`picks_reminded_${ymd}`, JSON.stringify({ at: Date.now(), count: result.bell, email: result.email, auto: true }));
+  console.log(`[auto-nudges] pick reminder ${ymd}: ${result.bell} bell(s), ${result.email} email(s), ${result.capped || 0} over the email cap`);
+}
+
+async function autoPodiumNudge() {
+  if (!nudgeOn('mvp_podium_auto_remind')) return;
+  const season = getPortalCurrentSeason();
+  const st = mvpBallotState(season, null);
+  if (!st.enabled || !isMvpLocked(season) || st.closed) return;
+  if (getSetting(`mvp_podium_reminded_${season}`, '')) return; // already reminded (by hand or before)
+  const dedupeKey = `auto_podium:${season}`;
+  if (getBroadcastByDedupe(dedupeKey)) return;
+  const missing = mvpPodiumMissing(season);
+  if (!missing.length) return;
+  const faces = shuffled(mvpLockLite(season)).map(p => ({ name: displayPlayerName(p.name), color: teamColor(p.team) }));
+  const url = `${(process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '')}/mvp#ballot`;
+  const result = await sendBroadcast({
+    kind: 'mvp_podium_reminder', dedupeKey, segment: `no_ballot:${season}`,
+    title: 'Call the MVP podium: up to +3 Pickmaster points', body: st.bonusOpen && st.bonusAt ? `Bonus closes ${st.bonusAt}` : 'Pick who finishes 1st, 2nd and 3rd', link: '/mvp#ballot',
+    recipients: missing,
+    email: async r => ({ ...podiumReminderEmail({ name: r.player.name, faces, closeLabel: st.bonusOpen ? st.bonusAt : '', url, unsubscribeUrl: picksUnsubscribeUrl(r.reg.id) }), headers: unsubscribeHeaders(picksUnsubscribeUrl(r.reg.id)) }),
+  });
+  setSetting(`mvp_podium_reminded_${season}`, JSON.stringify({ at: Date.now(), bell: result.bell, email: result.email, auto: true }));
+  console.log(`[auto-nudges] podium ${season}: ${result.bell} bell(s), ${result.email} email(s)`);
+}
+
+// Posts and polls already public when this first ran are remembered, not announced.
+function publishSeen() { try { return new Set(JSON.parse(getSetting('auto_publish_seen', '[]') || '[]')); } catch { return new Set(); } }
+async function autoPublishNotices() {
+  const seen = publishSeen();
+  const posts = getSetting('posts_enabled', '0') === '1' ? getPublicPosts() : [];
+  const polls = getAllLeaguePolls().filter(p => p.status === 'open' && p.visibility === 'players');
+  const fresh = [...posts.map(p => ({ key: `post:${p.id}`, p, type: 'post' })), ...polls.map(p => ({ key: `poll:${p.id}`, p, type: 'poll' }))].filter(x => !seen.has(x.key));
+  if (!fresh.length) return;
+  for (const x of fresh) {
+    seen.add(x.key);
+    setSetting('auto_publish_seen', JSON.stringify([...seen]));
+    if (x.type === 'post' && !nudgeOn('posts_notify_on_publish')) continue;
+    if (x.type === 'poll' && !nudgeOn('polls_notify_on_open')) continue;
+    const { recipients } = selectBroadcastRecipients();
+    const result = x.type === 'post'
+      ? await sendBroadcast({ kind: 'post_published', dedupeKey: x.key, segment: 'active_players', title: `New on WKND: ${x.p.title}`, body: 'Tap to read it.', link: `/posts/${x.p.slug}`, recipients })
+      : await sendBroadcast({ kind: 'poll_opened', dedupeKey: x.key, segment: 'active_players', title: `New poll: ${x.p.question}`, body: 'Cast your vote.', link: '/polls', recipients });
+    console.log(`[auto-nudges] ${x.key}: ${result.bell} bell(s)`);
+  }
+}
+
+async function autoSeasonNudges() {
+  if (!nudgeOn('season_auto_nudges') || getSetting('season_signup_open', '0') !== '1') return;
+  const sig = getSetting('signup_target_season', '');
+  if (!sig) return;
+  const openedKey = `season_signup_opened_at_${sig}`;
+  let openedAt = Number(getSetting(openedKey, '0'));
+  if (!openedAt) { openedAt = Date.now(); setSetting(openedKey, String(openedAt)); }
+  const signedUp = new Set(getSeasonSignups(sig).map(s => s.player_id).filter(Boolean));
+  const deadline = getSetting('season_signup_deadline', '').trim();
+  const signupUrl = `${(process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '')}/season-signup`;
+  const emailFor = (heading, lines, subject) => async r => ({
+    ...leagueNudgeEmail({ name: r.player.name, subject, heading, lines, cta: 'Sign up', url: signupUrl, unsubscribeUrl: leagueUnsubscribeUrl(r.reg.id), label: `Season ${sig}` }),
+    headers: unsubscribeHeaders(leagueUnsubscribeUrl(r.reg.id)),
+  });
+  // 1. Sign-ups are open: every active member who hasn't signed up.
+  const openKey = `season_open:${sig}`;
+  if (!getBroadcastByDedupe(openKey) && !getSetting(`season_open_nudged_${sig}`, '')) {
+    const { recipients } = selectBroadcastRecipients(undefined, { optOutColumn: 'league_email_optout', exclude: id => signedUp.has(id) });
+    setSetting(`season_open_nudged_${sig}`, String(Date.now()));
+    if (recipients.length) {
+      const result = await sendBroadcast({
+        kind: 'season_signup_open', dedupeKey: openKey, segment: `not_signed_up:${sig}`,
+        title: `Season ${sig} sign-ups are open`, body: deadline ? `Sign up by ${deadline}.` : 'Sign up to play this season.', link: '/season-signup', recipients,
+        email: emailFor('Season {name}, sign-ups are open', [`Season ${sig} of WKND Basketball is taking sign-ups now.`, deadline ? `Sign up by ${deadline} to be considered for a team.` : 'Sign up early to be considered for a team.'], `WKND Season ${sig}: sign-ups are open`),
+      });
+      console.log(`[auto-nudges] season ${sig} open: ${result.bell} bell(s), ${result.email} email(s)`);
+    }
+    return; // the follow-up waits for a later run
+  }
+  // 2. A few days later: last season's players who still haven't signed up.
+  const retKey = `season_returning:${sig}`;
+  if (Date.now() - openedAt < SEASON_RETURNING_AFTER_DAYS * 86400000 || getBroadcastByDedupe(retKey) || getSetting(`season_returning_nudged_${sig}`, '')) return;
+  const prev = getCurrentSeason()?.season;
+  const prevIds = prev ? getSeasonPlayerStats(prev).map(p => p.id).filter(id => id && !signedUp.has(id)) : [];
+  setSetting(`season_returning_nudged_${sig}`, String(Date.now()));
+  if (!prevIds.length) return;
+  const { recipients } = selectBroadcastRecipients(prevIds, { optOutColumn: 'league_email_optout' });
+  if (!recipients.length) return;
+  const result = await sendBroadcast({
+    kind: 'season_returning', dedupeKey: retKey, segment: `returning_not_signed_up:${sig}`,
+    title: `Your Season ${sig} spot is waiting`, body: deadline ? `You played last season. Sign up by ${deadline} to keep your spot in the mix.` : 'You played last season. Sign up to be in the mix again.', link: '/season-signup', recipients,
+    email: emailFor('{name}, we want you back', [`You played Season ${prev}. Season ${sig} sign-ups are open and we haven’t seen yours yet.`, deadline ? `Sign up by ${deadline}.` : 'It takes a couple of minutes.'], `WKND Season ${sig}: we haven’t seen your sign-up`),
+  });
+  console.log(`[auto-nudges] season ${sig} returning: ${result.bell} bell(s), ${result.email} email(s)`);
+}
+
+// The very first run remembers what's already out (public posts, open polls, a season whose
+// sign-ups are already open) so deploying this doesn't announce old news.
+function seedAutoNudges() {
+  if (getSetting('auto_nudges_seeded', '')) return;
+  const seen = publishSeen();
+  for (const p of getPublicPosts()) seen.add(`post:${p.id}`);
+  for (const p of getAllLeaguePolls()) seen.add(`poll:${p.id}`);
+  setSetting('auto_publish_seen', JSON.stringify([...seen]));
+  const sig = getSetting('signup_target_season', '');
+  if (sig && getSetting('season_signup_open', '0') === '1') {
+    setSetting(`season_open_nudged_${sig}`, 'seeded');
+    setSetting(`season_returning_nudged_${sig}`, 'seeded');
+  }
+  setSetting('auto_nudges_seeded', String(Date.now()));
+}
+
+async function runAutoNudges() {
+  if (IS_DEV && process.env.AUTO_NUDGES_IN_DEV !== '1') return;
+  const h = manilaHourNow();
+  if (h < 9 || h >= 21 || autoNudgesRunning) return;
+  autoNudgesRunning = true;
+  try {
+    seedAutoNudges();
+    for (const [name, fn] of [['picks', autoPickReminder], ['podium', autoPodiumNudge], ['publish', autoPublishNotices], ['season', autoSeasonNudges]]) {
+      try { await fn(); } catch (e) { console.error(`[auto-nudges] ${name} failed:`, e.message); }
+    }
+  } finally {
+    autoNudgesRunning = false;
+  }
+}
+setTimeout(() => { runAutoNudges(); }, 90 * 1000);
+setInterval(() => { runAutoNudges(); }, 5 * 60 * 1000);
+
+// League-emails unsubscribe (season nudges and other league news). GET asks first, so link
+// scanners can't unsubscribe anyone; POST does it, for the button and one-click unsubscribe.
+function leagueUnsubPage(req, { title, bodyHtml }) {
+  return renderPage(req, { title, currentPath: '/', body: `<div class="container"><div class="page-content"><div class="card card--lg papawis-unsub">${bodyHtml}</div></div></div>` });
+}
+app.get('/emails/unsubscribe', (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyLeagueUnsubscribe(regId, token)) {
+    return res.status(400).send(leagueUnsubPage(req, { title: 'Link expired', bodyHtml: '<h1 class="papawis-unsub__title">This unsubscribe link isn\'t valid</h1><p class="papawis-unsub__text">Message a league admin and we\'ll take you off the list.</p>' }));
+  }
+  res.send(leagueUnsubPage(req, {
+    title: 'Unsubscribe',
+    bodyHtml: `<h1 class="papawis-unsub__title">Stop league update emails?</h1>
+      <p class="papawis-unsub__text">You won't get emails about season sign-ups and other league news. Picks and Papawis emails have their own unsubscribe links, and bell notifications on the site keep working.</p>
+      <form method="post" action="/emails/unsubscribe?r=${encodeURIComponent(regId)}&amp;t=${encodeURIComponent(token)}">
+        <button type="submit" class="pw-btn pw-btn--primary">Unsubscribe</button>
+      </form>`,
+  }));
+});
+app.post('/emails/unsubscribe', express.urlencoded({ extended: false }), (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyLeagueUnsubscribe(regId, token)) return res.status(400).send('Invalid link');
+  setLeagueEmailOptout(regId, true);
+  res.send(leagueUnsubPage(req, { title: 'Unsubscribed', bodyHtml: '<h1 class="papawis-unsub__title">You\'re unsubscribed</h1><p class="papawis-unsub__text">No more league update emails. You can still find everything on the site.</p>' }));
+});
+
 app.post('/games/:id/pick/margin', express.json(), (req, res) => {
   const playerId = req.session?.playerPlayerId;
   if (!playerId) return res.status(401).json({ error: 'Log in to pick.' });
@@ -11768,6 +11996,52 @@ function mvpSectionFacts({ season, week, playoffsStarted, top, race: raceKey = '
     };
   }
   return sectionFactsMap(raceKey, season, out);
+}
+
+// The locked page's writeup under The ten (mvpLockTen shape). The facts list the ten A–Z
+// with no score, rank or movement, so the copy can't leak the order; A–Z also keeps the
+// facts key stable across the per-visit shuffle.
+function mvpLockSectionFacts(season, ten, raceKey = 'mvp') {
+  if (ten.length < 2) return {};
+  const isMvp = raceKey === 'mvp';
+  const race = RACE_DATA[raceKey];
+  const T = titleCase;
+  const one = n => (Math.round(n * 10) / 10).toFixed(1);
+  const forecast = ten.some(c => c.mode === 'forecast');
+  const line = c => {
+    const a = c.avg;
+    const perGame = isMvp
+      ? `${one(a.pts)} points, ${one(a.reb)} rebounds, ${one(a.ast)} assists per game${c.ts != null ? `, ${c.ts}% true shooting` : ''}`
+      : `${one(a.stl)} steals, ${one(a.blk)} blocks, ${one(a.reb)} rebounds, ${one(a.pf)} fouls per game`;
+    // No single-game lines (the cards show them): drafts kept passing them off as averages.
+    const next = c.mode === 'forecast' && c.opp ? `; plays ${T(c.opp)} in the final week` : '';
+    return `- ${displayPlayerName(c.player.name)} (${T(c.team)}, team record ${c.record.w}-${c.record.l}): season averages of ${perGame}; ${plural(c.stats.gp, 'game')} played${next}`;
+  };
+  // Everything below comes off the A–Z list, never the shuffled one, or the key would change.
+  const sorted = [...ten].sort((a, b) => displayPlayerName(a.player.name).localeCompare(displayPlayerName(b.player.name)));
+  const byTeam = {};
+  for (const c of sorted) byTeam[T(c.team)] = (byTeam[T(c.team)] || 0) + 1;
+  // Each final-week game once (both teams' players name it, and drafts counted it twice).
+  // With how many of the ten play in each, so the writer doesn't count them up itself.
+  const gameKey = c => [T(c.team), T(c.opp)].sort().join(' vs ');
+  const games = [...new Set(sorted.filter(c => c.mode === 'forecast' && c.opp).map(gameKey))].map(g => {
+    const inIt = sorted.filter(c => c.mode === 'forecast' && c.opp && gameKey(c) === g).map(c => displayPlayerName(c.player.name));
+    return `${g}, with ${inIt.length} of the ten in it (${inIt.join(', ')})`;
+  });
+  const facts = [
+    `Season ${season} ${race.name}: the ten (10) players still in the race, ${forecast ? 'with one regular-season week left' : 'with the regular season finished'}. The order and the scores are hidden until the award is given at Finals Game 2. Listed A to Z; the list order means nothing.`,
+    `Players per team among the ten: ${Object.entries(byTeam).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t, n]) => `${t} ${n}`).join(', ')}.`,
+    games.length ? `Final-week games (one game each): ${games.join('; ')}.` : '',
+    'The ten:', ...sorted.map(line),
+  ].filter(Boolean).join('\n');
+  return sectionFactsMap(raceKey, season, {
+    ten: {
+      kicker: `The ten · ${forecast ? 'Final week' : 'Regular season done'}`,
+      section: `The ten (the hidden ${race.nameLower}, shuffled, no ranks)`, where: `${race.name} page`,
+      facts,
+      focus: `Set the scene for the ten hidden ${isMvp ? 'MVP' : 'Best Defender'} cases in one angle only: ${forecast ? 'the final-week game with the most of the ten in it, and one or two of the players in that game' : 'how the ten split across the teams, with one or two contrasting cases'}. Every per-game number is a season average: say so, never tie it to one game. Never rank them, never say or hint who leads, is ahead, is the favourite, should win, or is on the podium, and never guess the order. Name at most three players. The body is 1-2 short sentences, nothing more.`,
+    },
+  });
 }
 
 // After an AI failure (usually provider quota), /mvp stops generating for a while so every
@@ -13641,6 +13915,7 @@ async function renderRacePage(req, res, raceKey) {
         isAdmin: !!req.session?.isAdmin,
         ballot: current && raceKey === 'mvp' ? mvpBallotState(season, req.session?.playerPlayerId || null) : null,
         viewerId: req.session?.playerPlayerId || null,
+        sections: sectionSummaries(mvpLockSectionFacts(season, ten, raceKey)),
       }),
     }));
   }
@@ -14902,6 +15177,7 @@ app.post('/admin/section-summary/regenerate', requireAuth, express.json(), async
   if (page === 'standings') facts = standingsSectionFacts(standingsSectionData(param));
   else if (page === 'playoffs') facts = playoffsSectionFacts(playoffsSectionData(param));
   else if (page === 'picks') facts = picksSectionFacts(buildPicksPageData(param));
+  else if ((page === 'mvp' || page === 'dpoy') && isMvpLocked(param)) facts = mvpLockSectionFacts(param, mvpLockTen(param, page), page);
   else if (page === 'mvp' || page === 'dpoy') facts = mvpSectionFacts({ season: param, week: getSeasonLatestWeek(param)?.week ?? null, playoffsStarted: isPlayoffStarted(param), top: mvpRaceTop(param, page), race: page });
   else {
     const game = getGameById(param);
@@ -15986,6 +16262,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Season Management',
     currentPath: '/admin/season',
+    settings: seasonNudgesPanel(),
     body: adminSeasonBody({ sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons }),
   }));
 });
@@ -17670,6 +17947,7 @@ app.get('/admin/polls', requireAuth, (req, res) => {
   const polls = getAllLeaguePolls().map(p => ({ ...p, votes: getLeaguePollVotes(p.id) }));
   res.send(renderAdminPage(req, {
     title: 'League Polls',
+    settings: pollsSettingsPanel(),
     currentPath: '/admin/polls',
     body: adminPollsBody({ polls }),
   }));

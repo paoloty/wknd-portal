@@ -702,7 +702,8 @@ function ballotStatus(b) {
 
 // race: 'mvp' (with the podium ballot) or 'dpoy' (the Best Defender race: defensive bars and
 // writeups, no ballot; server.js passes ballot = null).
-export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6, isAdmin = false, ballot = null, viewerId = null, race: raceKey = 'mvp' }) {
+// sections: { ten } (server.js mvpLockSectionFacts), the writeup under The ten.
+export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6, isAdmin = false, ballot = null, viewerId = null, race: raceKey = 'mvp', sections = {} }) {
   const race = raceOf(raceKey);
   const dpoy = race.key === 'dpoy';
   const forecast = ten.some(c => c.mode === 'forecast');
@@ -796,6 +797,7 @@ export function mvpLockPage({ ten = [], season, totalGames = 0, seasonGames = 6,
   <div class="mvl-layout">
     <section class="mvl-main" aria-labelledby="mvl-ten-h">
       <div class="section-header"><h2 id="mvl-ten-h">The ten <span class="section-header__sub">shuffled · order means nothing</span></h2></div>
+      ${sectionPanel(sections.ten || null, `${race.key}_ten:${season}`, isAdmin)}
       ${toolbar}
       <div class="mvl-grid swipe-row" data-swipe data-mvl-grid>${ten.map(c => lockCard(c, { isAdmin, season, canPick })).join('\n')}</div>
       <div class="card mvl-empty" data-mvl-empty hidden>No players match. <button type="button" class="mvl-empty__reset" data-mvl-filter="">Show all ten</button></div>
@@ -819,7 +821,8 @@ ${swipeScript()}${isAdmin ? `
   if (all) all.addEventListener('click', function () { regen(null, all.dataset.season, all); });
 })();
 </script>
-${photoDialog(season, race)}` : ''}`;
+${photoDialog(season, race)}
+${sectionRegenScript()}` : ''}`;
 }
 
 function mvpLockScript() {
