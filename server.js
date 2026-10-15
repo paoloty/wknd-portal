@@ -13671,8 +13671,11 @@ function mvpPodiumMissing(season) {
   const { recipients } = selectBroadcastRecipients(undefined, { optOutColumn: 'picks_email_optout', exclude: id => voted.has(id) });
   return recipients;
 }
+// Already has a podium reminder email (email_log, last 60 days), so "Remind again" only
+// emails the ones a failed send (e.g. Resend quota) left out. They still get the bell.
+const podiumEmailed = regId => (getLatestEmailForRef(['podium_reminder'], regId)?.sent_at || 0) > Date.now() - 60 * 86400000;
 
-app.get('/admin/mvp-podium', requireAuth, (req, res) => res.redirect(301, '/admin/awards/podium'));
+app.get('/admin/mvp-podium',requireAuth, (req, res) => res.redirect(301, '/admin/awards/podium'));
 app.get('/admin/awards/podium', requireAuth, (req, res) => {
   const season = getPortalCurrentSeason();
   const locked = isMvpLocked(season);
@@ -13733,7 +13736,11 @@ app.get('/admin/awards/podium', requireAuth, (req, res) => {
           points: podium && bb ? podiumPoints(bb, podium) : null,
         };
       }),
-      missing: { count: missing.length, reachable: missing.length, emailable: missing.filter(r => r.emailable).length, names: missing.map(r => displayPlayerName(r.player.name)) },
+      missing: {
+        count: missing.length, reachable: missing.length, names: missing.map(r => displayPlayerName(r.player.name)),
+        emailable: missing.filter(r => r.emailable && !podiumEmailed(r.reg.id)).length,
+        emailed: missing.filter(r => r.emailable && podiumEmailed(r.reg.id)).length,
+      },
       podium: podium ? podium.map(who) : null,
       reminded,
       msg: req.query.reminded ? `Reminder sent: ${req.query.reminded} bell notification${req.query.reminded === '1' ? '' : 's'}${req.query.emailing ? `, ${req.query.emailing} email${req.query.emailing === '1' ? '' : 's'} going out now` : ''}.` : '',
@@ -13755,7 +13762,7 @@ app.post(['/admin/awards/podium/remind', '/admin/mvp-podium/remind'], requireAut
       link: '/mvp#ballot',
     });
   }
-  const emailable = req.body?.email === '1' ? recipients.filter(r => r.emailable) : [];
+  const emailable = req.body?.email === '1' ? recipients.filter(r => r.emailable && !podiumEmailed(r.reg.id)) : [];
   setSetting(`mvp_podium_reminded_${season}`, JSON.stringify({ at: Date.now(), bell: recipients.length, email: req.body?.email === '1' ? emailable.length : null }));
   if (emailable.length) setImmediate(() => sendPodiumEmails(emailable, st).catch(e => console.error('[podium email] send failed:', e.message)));
   if (home) return res.redirect(`/admin?toast=${encodeURIComponent(`Podium reminder sent: ${recipients.length} bell${recipients.length === 1 ? '' : 's'}${emailable.length ? `, ${IS_DEV ? 1 : emailable.length} email${(IS_DEV ? 1 : emailable.length) === 1 ? '' : 's'} going out now` : ''}`)}`);
