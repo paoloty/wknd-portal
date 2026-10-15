@@ -8,7 +8,7 @@ import { maskEmail, maskPhone, maskName, maskBirthday } from '../../lib/sensitiv
 import { emailStatus } from './email-status.js';
 import { LIVENESS_SOURCE_LABEL } from './liveness-review.js';
 import {
-  personStrip, badge, banner, pageTabs, section, facts, timeline, dataGrid, drawer, field, playerPicker,
+  personStrip, avatar, badge, banner, pageTabs, section, facts, timeline, dataGrid, drawer, field, playerPicker,
   button, toggleRow, emptyState,
 } from './ui.js';
 
@@ -175,10 +175,7 @@ function approveCard(reg, players, teamColor, name) {
 }
 
 function avatarFor(p, teamColor) {
-  const n = displayPlayerName(p.name);
-  const initials = n.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
-  const c = teamColor[p.team_id];
-  return `<span class="aui-avatar" style="width:30px;height:30px;box-shadow:0 0 0 2px ${/^#[0-9a-f]{3,8}$/i.test(c || '') ? c : 'rgba(255,255,255,.18)'}" aria-hidden="true">${escHtml(initials)}</span>`;
+  return avatar(displayPlayerName(p.name), teamColor[p.team_id] || '', { size: 30, playerId: p.id });
 }
 
 function accountActions(reg, isSuperAdmin, name, emailShown) {
@@ -243,7 +240,7 @@ export function adminUserDetailBody({
     reg.last_seen_at || reg.last_login_at ? `last seen ${fmtDate(Math.max(reg.last_seen_at || 0, reg.last_login_at || 0))}` : ''].filter(Boolean).join(' · ');
 
   const strip = personStrip({
-    name, color, sub, badgeHtml: `<span class="aui-cell__badges">${badges}</span>`,
+    name, color, sub, playerId: reg.player_id || '', badgeHtml: `<span class="aui-cell__badges">${badges}</span>`,
     links: [
       { label: 'User account', href: `/admin/users/${reg.id}`, active: true },
       reg.player_id ? { label: 'Player profile', href: `/admin/players/${reg.player_id}` } : null,

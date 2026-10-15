@@ -22,7 +22,7 @@ export function adminTeamHeadsBody({ heads = [], teams = [], players = [], teamC
     groupBy: !query.sort || String(query.sort).replace('-', '') === 'team' ? r => r.team_name : null,
     columns: [
       { key: 'name', label: 'Head', primary: true, sort: r => r.name.toLowerCase(),
-        cell: r => `${avatar(r.name, r.color)}<span class="aui-cell__title">${escHtml(r.name)}</span>` },
+        cell: r => `${avatar(r.name, r.color, { playerId: r.player_id })}<span class="aui-cell__title">${escHtml(r.name)}</span>` },
       { key: 'team', label: 'Team', sort: r => `${String(r.team_name).padEnd(20)}${r.name}`, bare: true,
         cell: r => `<span class="aui-dot" style="background:${/^#[0-9a-f]{3,8}$/i.test(r.color) ? r.color : '#4a5263'}"></span>${escHtml(r.team_name)}` },
       { key: 'since', label: 'Head since', num: true, sort: r => r.created_at || 0, cell: r => escHtml(fmtDate(r.created_at)) || '<span class="aui-muted">—</span>' },

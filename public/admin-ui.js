@@ -148,8 +148,8 @@
       .then(function (res) {
         if (!res.ok || res.d.error) throw new Error(res.d.error || 'Couldn’t save that.');
         // data-then may hold {id}: replaced by the id the server returns (e.g. a new record).
-        var then = (form.getAttribute('data-then') || location.href).replace('{id}', encodeURIComponent(res.d.id || ''));
-        location.href = withToast(then, res.d.message || form.getAttribute('data-done') || 'Saved.');
+        var then = (form.getAttribute('data-then') || '').replace('{id}', encodeURIComponent(res.d.id || ''));
+        after(then, res.d.message || form.getAttribute('data-done') || 'Saved.');
       })
       .catch(function (err) {
         submits.forEach(function (b) { b.disabled = false; });
@@ -163,11 +163,7 @@
     if (!form.matches || !form.matches('form[data-confirm]') || form.matches('[data-json-action]') || form.__auiOk) return;
     e.preventDefault();
     askFor(form).then(function (ok) {
-      if (!ok) return;
-      form.__auiOk = true;
-      var btn = form.querySelector('[type=submit]');
-      if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
-      form.submit();
+      if (ok) ajaxSubmit(form); // in the background; lands wherever the server redirects
     });
   }, true);
 
@@ -188,7 +184,7 @@
           .then(function (res) {
             if (!res.ok || res.d.error) throw new Error(res.d.error || 'Something went wrong.');
             var msg = res.d.message || jb.getAttribute('data-done') || 'Done.';
-            location.href = withToast(jb.getAttribute('data-then'), msg);
+            after(jb.getAttribute('data-then'), msg);
           })
           .catch(function (err) {
             jb.disabled = false;
@@ -308,7 +304,7 @@
       (function next() {
         if (i >= ids.length) {
           var msg = (btn.getAttribute('data-done') || 'Done.').replace('{n}', done) + (failed ? ' ' + failed + ' failed.' : '');
-          location.href = withToast(location.href, msg);
+          refreshWith(msg);
           return;
         }
         btn.textContent = 'Working… ' + (i + 1) + '/' + ids.length;
@@ -370,7 +366,7 @@
           .then(function (r) {
             if (!r.ok) throw new Error();
             var msg = (on ? 'Turned on: ' : 'Turned off: ') + sw.getAttribute('aria-label');
-            if (sw.hasAttribute('data-switch-reload')) location.href = withToast(location.href, msg); else toast(msg);
+            if (sw.hasAttribute('data-switch-reload')) refreshWith(msg); else toast(msg);
           })
           .catch(function () { sw.setAttribute('aria-checked', String(!on)); toast('Couldn’t save that switch.', { tone: 'error' }); });
       } else {
@@ -385,8 +381,20 @@
     document.querySelectorAll('details.aui-menu[open]').forEach(function (d) { d.removeAttribute('open'); });
   });
 
+  // Set up the parts of a page that need per-element wiring. Runs on load and again after
+  // the content area is swapped in place (see "In-place updates" below); each element is
+  // only wired once.
+  function initDynamic(root) {
+    root = root || document;
+    initSavebars(root);
+    initPickers(root);
+    refreshFilters();
+  }
+
   // ── Save bar: shows once a watched form changes ───────────────────────────────────
-  document.querySelectorAll('form[data-dirty-watch]').forEach(function (form) {
+  function initSavebars(root) {
+  root.querySelectorAll('form[data-dirty-watch]').forEach(function (form) {
+    if (form.__auiInit) return; form.__auiInit = true;
     var bar = document.querySelector('[data-savebar]');
     if (!bar) return;
     var show = function () { bar.hidden = false; };
@@ -394,9 +402,12 @@
     form.addEventListener('change', show);
     form.addEventListener('reset', function () { setTimeout(function () { bar.hidden = true; }, 0); });
   });
+  }
 
   // ── Player picker ──────────────────────────────────────────────────────────────────
-  document.querySelectorAll('[data-picker]').forEach(function (pk) {
+  function initPickers(root) {
+  root.querySelectorAll('[data-picker]').forEach(function (pk) {
+    if (pk.__auiInit) return; pk.__auiInit = true;
     var opts = [];
     try { opts = JSON.parse(pk.getAttribute('data-options') || '[]'); } catch (e) {}
     var sel = [];
@@ -414,7 +425,14 @@
       var a = el('span', 'aui-avatar');
       a.style.width = a.style.height = size + 'px';
       a.style.boxShadow = '0 0 0 2px ' + (/^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : 'rgba(255,255,255,.18)');
-      a.textContent = o.name.split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase();
+      a.style.fontSize = Math.max(9, Math.round(size * 0.36)) + 'px';
+      a.appendChild(el('span', 'aui-avatar__text', o.name.split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase()));
+      if (o.photo) {
+        var im = el('img', 'aui-avatar__img');
+        im.alt = ''; im.loading = 'lazy'; im.src = o.photo;
+        im.onerror = function () { im.remove(); };
+        a.appendChild(im);
+      }
       a.setAttribute('aria-hidden', 'true');
       return a;
     }
@@ -467,20 +485,121 @@
     });
     render();
   });
+  }
 
-  // One-time message carried in the URL (after a form post or a JSON action).
-  try {
-    var params = new URLSearchParams(location.search);
-    var msg = params.get('toast');
-    if (msg) {
-      toast(msg.slice(0, 300), params.get('toastTone') === 'error' ? { tone: 'error' } : {});
-      params.delete('toast');
-      params.delete('toastTone');
-      var q = params.toString();
-      history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+  // ── In-place updates ────────────────────────────────────────────────────────────────
+  // After an action succeeds, and when moving around a grid or between tabs, the page
+  // fetches its own fresh HTML and swaps just the content area (#admin-main), instead of a
+  // full reload: the sidebar, scroll position and focus stay put. Pages show the result of
+  // the action exactly as a reload would, since the server renders them the same way.
+  // Anything that goes to a different page still navigates normally.
+  var samePage = function (url) { return new URL(url, location.origin).pathname === location.pathname; };
+
+  // Show and drop a ?toast= message carried in a URL; returns the URL without it.
+  function takeToast(url) {
+    var u = new URL(url, location.origin);
+    var msg = u.searchParams.get('toast');
+    if (msg) toast(msg.slice(0, 300), u.searchParams.get('toastTone') === 'error' ? { tone: 'error' } : {});
+    u.searchParams.delete('toast');
+    u.searchParams.delete('toastTone');
+    return u.pathname + u.search + u.hash;
+  }
+
+  function swapIn(html, url, opts) {
+    opts = opts || {};
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var fresh = doc.getElementById('admin-main');
+    var main = document.getElementById('admin-main');
+    if (!fresh || !main) { location.href = url; return; }
+    // Remember the focused field (e.g. the grid search box) so typing isn't interrupted.
+    var active = document.activeElement;
+    var focusName = active && main.contains(active) && active.name ? active.name : '';
+    var caret = focusName && typeof active.selectionStart === 'number' ? active.selectionStart : null;
+    var y = window.scrollY;
+    main.innerHTML = fresh.innerHTML;
+    document.title = doc.title;
+    // Sidebar counts (things waiting) may have changed.
+    var oldRows = document.querySelectorAll('.admin-nav__row'), newRows = doc.querySelectorAll('.admin-nav__row');
+    oldRows.forEach(function (row, i) {
+      var nb = newRows[i] && newRows[i].querySelector('.admin-nav__badge');
+      var ob = row.querySelector('.admin-nav__badge');
+      if (nb && ob) ob.textContent = nb.textContent;
+      else if (ob && !nb) ob.remove();
+      else if (nb && !ob) { var end = row.querySelector('.admin-nav__end') || row; end.insertBefore(nb.cloneNode(true), end.firstChild); }
+    });
+    var clean = takeToast(url);
+    if (opts.push) history.pushState(null, '', clean); else history.replaceState(null, '', clean);
+    window.scrollTo(0, opts.top ? 0 : y);
+    if (focusName) {
+      var again = main.querySelector('[name="' + focusName + '"]');
+      if (again) { again.focus(); if (caret !== null && again.setSelectionRange) try { again.setSelectionRange(caret, caret); } catch (e) {} }
     }
+    initDynamic(main);
+    document.dispatchEvent(new CustomEvent('admin:updated'));
+  }
+
+  // Fetch a page and swap it in (or navigate if it turns out to be a different page).
+  function softLoad(url, opts) {
+    return fetch(url, { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok || !samePage(r.url)) { location.href = r.url || url; return; }
+        return r.text().then(function (html) { swapIn(html, r.url, opts); });
+      })
+      .catch(function () { location.href = url; });
+  }
+  // Re-render the current page in place with a toast.
+  function refreshWith(msg) {
+    return softLoad(withToast(location.href, msg));
+  }
+  // After an action: stay here (in place) or go to `then` if it's another page.
+  function after(then, msg) {
+    if (!then || samePage(then)) refreshWith(msg);
+    else location.href = withToast(then, msg);
+  }
+
+  // Submit an ordinary <form> in the background; the server's redirect decides where we land.
+  function ajaxSubmit(form) {
+    var method = (form.getAttribute('method') || 'GET').toUpperCase();
+    var action = form.getAttribute('action') || location.pathname;
+    var data = new URLSearchParams(new FormData(form));
+    if (method === 'GET') [].slice.call(data.keys()).forEach(function (k) { if (!data.get(k)) data.delete(k); }); // keep the address tidy
+    var url = method === 'GET' ? action + (action.indexOf('?') < 0 ? '?' : '&') + data.toString() : action;
+    var btn = form.querySelector('[type=submit]');
+    var label = btn && btn.textContent;
+    if (btn && method !== 'GET') { btn.disabled = true; btn.textContent = 'Sending…'; }
+    return fetch(url, method === 'GET' ? { credentials: 'same-origin' } : { method: method, credentials: 'same-origin', body: data })
+      .then(function (r) {
+        if (!r.ok || !samePage(r.url)) { location.href = r.url; return; }
+        return r.text().then(function (html) { swapIn(html, r.url, { push: method === 'GET' }); });
+      })
+      .catch(function () { if (btn) { btn.disabled = false; btn.textContent = label; } toast('Couldn’t reach the server.', { tone: 'error' }); });
+  }
+
+  // Grid toolbars (search and filters) load in place.
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form.matches || !form.matches('[data-grid] form[role="search"]')) return;
+    e.preventDefault();
+    ajaxSubmit(form);
+  });
+  // Links within a grid (views, sorting, pages, density) and page tabs load in place.
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a || a.target || a.hasAttribute('download')) return;
+    if (!a.closest('.aui-views, .aui-tabs, .aui-grid__sort, .aui-pager, .aui-density, .aui-chips')) return;
+    if (!samePage(a.href)) return;
+    e.preventDefault();
+    softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs') });
+  });
+  window.addEventListener('popstate', function () { softLoad(location.href); });
+
+  // One-time message carried in the URL of a full page load.
+  try {
+    var cleanNow = takeToast(location.href);
+    if (cleanNow !== location.pathname + location.search + location.hash) history.replaceState(null, '', cleanNow);
   } catch (e) { /* old browser: no toast */ }
 
-  refreshFilters();
-  window.adminUi = { toast: toast, confirm: confirmDialog };
+  initDynamic(document);
+  window.adminUi = { toast: toast, confirm: confirmDialog, refresh: refreshWith, softLoad: softLoad };
 })();

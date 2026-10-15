@@ -6040,7 +6040,7 @@ function buildAdminHome(req) {
       ballot: 'called the MVP podium',
     }[f.kind];
     if (!what) continue;
-    feed.push({ sig, at: f.at, name: displayPlayerName(f.player_name), color: f.team_color || '', what });
+    feed.push({ sig, at: f.at, name: displayPlayerName(f.player_name), color: f.team_color || '', what, playerId: f.player_id });
     if (feed.length >= 10) break;
   }
 

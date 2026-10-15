@@ -6,6 +6,7 @@
 // Every helper returns an HTML string. Text arguments are escaped here; arguments named
 // *Html are trusted markup the caller built.
 import { escHtml } from '../layout.js';
+import { playerPhotoUrl } from '../utils.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
@@ -93,10 +94,17 @@ export function emptyState({ title, sub = '', done = false }) {
 }
 
 // Initials in a team-coloured ring (colour from the teams table, never hard-coded).
-export function avatar(name, color = '', { size = 28 } = {}) {
+// A face in a team-coloured ring. With playerId it loads the player's photo
+// (/api/player/:id/photo always answers: their photo, or the team-jersey stand-in the site
+// uses); without one (guests, accounts not linked to a player), or if the image fails, it
+// shows the initials, centred both ways.
+export function avatar(name, color = '', { size = 28, playerId = '' } = {}) {
   const initials = String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const ring = /^#[0-9a-f]{3,8}$/i.test(color) ? color : 'rgba(255,255,255,.18)';
-  return `<span class="aui-avatar" style="width:${size}px;height:${size}px;box-shadow:0 0 0 2px ${ring}" aria-hidden="true">${escHtml(initials)}</span>`;
+  const img = playerId
+    ? `<img class="aui-avatar__img" src="${attr(playerPhotoUrl(playerId, size > 48 ? 160 : 96))}" alt="" loading="lazy" decoding="async" onerror="this.remove()">`
+    : '';
+  return `<span class="aui-avatar" style="width:${size}px;height:${size}px;font-size:${Math.max(9, Math.round(size * 0.36))}px;box-shadow:0 0 0 2px ${ring}" aria-hidden="true"><span class="aui-avatar__text">${escHtml(initials)}</span>${img}</span>`;
 }
 
 // "5m", "3h", "2d"
@@ -342,7 +350,8 @@ export function saveBar({ label = 'Save', form = '' } = {}) {
 // Searchable people picker. options: [{ id, name, color, meta }]; selected: ids. Posts one
 // hidden input per pick, named `name`.
 export function playerPicker({ name, label, options, selected = [], multiple = true, placeholder = 'Type a name' }) {
-  const data = escHtml(JSON.stringify(options.map(o => ({ id: String(o.id), name: o.name, color: o.color || '', meta: o.meta || '' }))));
+  // photo: every option id here is a player id, so each gets its face (false to skip).
+  const data = escHtml(JSON.stringify(options.map(o => ({ id: String(o.id), name: o.name, color: o.color || '', meta: o.meta || '', photo: o.photo === false ? '' : (o.photo || playerPhotoUrl(o.id, 96)) }))));
   return `<div class="aui-field is-wide"><span class="aui-field__label">${escHtml(label)}</span>
     <div class="aui-picker" data-picker data-name="${attr(name)}" data-multiple="${multiple}" data-options="${data}" data-selected="${attr(JSON.stringify(selected.map(String)))}">
       <div class="aui-picker__box"><span class="aui-picker__chips" data-picker-chips></span><input type="text" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-label="${attr(label)}" placeholder="${attr(placeholder)}" data-picker-input autocomplete="off"></div>
@@ -371,8 +380,8 @@ export function drawer({ id, eyebrow = '', title, bodyHtml, footerHtml = '' }) {
 // ── Detail blocks ──────────────────────────────────────────────────────────────────────
 
 // One person and every admin page they appear on. links: [{ label, href, count, active }]
-export function personStrip({ name, color = '', sub = '', badgeHtml = '', links = [] }) {
-  return `<div class="aui-person"><div class="aui-person__who">${avatar(name, color, { size: 40 })}<div><div class="aui-person__name">${escHtml(name)}</div>${sub ? `<div class="aui-person__sub">${escHtml(sub)}</div>` : ''}</div>${badgeHtml}</div>
+export function personStrip({ name, color = '', sub = '', badgeHtml = '', links = [], playerId = '' }) {
+  return `<div class="aui-person"><div class="aui-person__who">${avatar(name, color, { size: 48, playerId })}<div><div class="aui-person__name">${escHtml(name)}</div>${sub ? `<div class="aui-person__sub">${escHtml(sub)}</div>` : ''}</div>${badgeHtml}</div>
     <nav class="aui-person__links" aria-label="${attr(name)} across the admin">${links.filter(Boolean).map(l => `<a class="aui-person__link${l.active ? ' is-active' : ''}" href="${attr(l.href)}"${l.active ? ' aria-current="page"' : ''}>${escHtml(l.label)}${l.count ? ` <span class="aui-num">${escHtml(l.count)}</span>` : ''}</a>`).join('')}</nav></div>`;
 }
 

@@ -50,7 +50,7 @@ function moneyToChase(unpaidSignups, pendingPayments, unlinkedByPlayer, reusable
       const cands = (unlinkedByPlayer[s.player_id] || []).filter(c => c.date >= s.game_date);
       const reuse = (reusableByPlayer[s.player_id] || []).filter(c => c.date >= s.game_date);
       return `<tr class="aui-grid__row">
-        <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, colorById[s.player_id] || '')}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${s.guest_name ? `<span class="aui-cell__sub">for guest ${escHtml(s.guest_name)}</span>` : ''}</span></span></td>
+        <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, colorById[s.player_id] || '', { playerId: s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${s.guest_name ? `<span class="aui-cell__sub">for guest ${escHtml(s.guest_name)}</span>` : ''}</span></span></td>
         <td data-label="Run"><a class="aui-link" href="/admin/papawis/${attr(s.game_id)}?tab=money">${escHtml(s.game_title || 'Papawis')}</a><div class="aui-cell__sub">${escHtml(fmtDate(s.game_date))}</div></td>
         <td class="is-num" data-label="Amount">${peso(s.price_per_player)}</td>
         <td class="is-bare" data-label="Status">${paidCell({ id: s.game_id }, s, cands, reuse)}</td>
@@ -60,7 +60,7 @@ function moneyToChase(unpaidSignups, pendingPayments, unlinkedByPlayer, reusable
     const name = displayPlayerName(t.player_name || '');
     const what = /deposit/i.test(t.category || '') ? 'Deposit' : 'Game payment';
     return `<tr class="aui-grid__row">
-      <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, colorById[t.player_id] || '')}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span><span class="aui-cell__sub">${escHtml(what)}${t.reference_no ? ` · ref ${escHtml(t.reference_no)}` : ''}</span></span></span></td>
+      <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, colorById[t.player_id] || '', { playerId: t.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span><span class="aui-cell__sub">${escHtml(what)}${t.reference_no ? ` · ref ${escHtml(t.reference_no)}` : ''}</span></span></span></td>
       <td data-label="Run"><span class="aui-muted">${escHtml(fmtDate(t.date))}</span></td>
       <td class="is-num" data-label="Amount">${peso(t.amount)}</td>
       <td class="is-bare" data-label="Status"><span class="pw-paid">${badge('To confirm', 'amber')}<span class="aui-row">

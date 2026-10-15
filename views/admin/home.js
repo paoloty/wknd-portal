@@ -69,7 +69,7 @@ function todoSection(items, snoozedCount) {
 function quietSection(quiet) {
   if (!quiet?.list?.length) return '';
   const rows = quiet.list.map(p => `<tr>
-    <td><span class="aui-who">${avatar(p.name, p.color)}${escHtml(p.name)}</span></td>
+    <td><span class="aui-who">${avatar(p.name, p.color, { playerId: p.id })}${escHtml(p.name)}</span></td>
     <td>${escHtml(p.usually)}</td>
     <td class="aui-num">${escHtml(p.lastSeen)}</td>
     <td>${p.nudgedAgo
@@ -94,7 +94,7 @@ function quietSection(quiet) {
 function feedSection(feed, now) {
   const body = feed.length
     ? `<div class="ahome-feed">${feed.map(f => `<div class="ahome-feed__row">
-        ${avatar(f.name, f.color, { size: 26 })}
+        ${avatar(f.name, f.color, { size: 26, playerId: f.playerId })}
         <div class="ahome-feed__text"><b>${escHtml(f.name)}</b> ${escHtml(f.what)}</div>
         <span class="ahome-feed__ago">${ago(f.at, now)}</span>
       </div>`).join('')}</div>`

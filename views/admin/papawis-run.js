@@ -82,7 +82,7 @@ function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPa
   const cleanMenu = menuItems.filter((m, i, a) => !(m === 'sep' && (i === 0 || i === a.length - 1)));
   return `<tr class="aui-grid__row"${canManage ? ' draggable="true"' : ''} data-id="${attr(s.id)}" data-status="${attr(s.status)}" data-name="${attr(name)}" data-paid="${s.paid_at ? 1 : 0}">
     <td class="pw-roster__n">${canManage ? '<span class="pw-handle" aria-hidden="true" title="Drag to reorder">⠿</span>' : ''}<span class="aui-num">${n}</span></td>
-    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '')}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span></span></td>
+    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '', { playerId: s.guest_name ? '' : s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span></span></td>
     <td class="is-bare${s.team ? '' : ' is-desk'}" data-label="Side">${sideBadge(s.team)}</td>
     ${showPaid ? `<td class="is-bare" data-label="Paid">${paidCell(game, s, (unlinkedByPlayer[s.player_id] || []), (reusableByPlayer[s.player_id] || []))}</td>` : ''}
     <td class="is-num is-desk" data-label="Signed up">${escHtml(fmtTime(s.signed_up_at))}</td>

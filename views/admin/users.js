@@ -75,7 +75,7 @@ export function adminUsersBody({ registrations = [], canViewSensitive = true, ac
     defaultSort: '-joined',
     columns: [
       { key: 'name', label: 'Name', primary: true, sort: r => r.name.toLowerCase(),
-        cell: r => `${avatar(r.name, r.color)}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}</span><span class="aui-cell__sub">${escHtml(r.email_shown || '')}</span></span>` },
+        cell: r => `${avatar(r.name, r.color, { playerId: r.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}</span><span class="aui-cell__sub">${escHtml(r.email_shown || '')}</span></span>` },
       { key: 'status', label: 'Status', bare: true, sort: r => `${r.status}${r.pw || ''}`, cell: statusCell },
       { key: 'positions', label: 'Positions', phone: false, cell: r => escHtml(positions(r.positions)) || '<span class="aui-muted">—</span>' },
       { key: 'phone', label: 'Phone', phone: false, nowrap: true, cell: r => escHtml(r.phone_shown) || '<span class="aui-muted">—</span>' },

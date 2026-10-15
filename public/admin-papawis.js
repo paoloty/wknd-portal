@@ -9,19 +9,30 @@
 (function () {
   'use strict';
   var ui = function () { return window.adminUi || { toast: function (t) { alert(t); }, confirm: function (o) { return Promise.resolve(window.confirm(o.title)); } }; };
-  var run = document.getElementById('pw-run');
-  var cfg = {};
-  try { cfg = JSON.parse(run ? run.getAttribute('data-config') : '{}') || {}; } catch (e) { cfg = {}; }
 
   function post(url, data, method) {
     return fetch(url, { method: method || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok || d.error) throw new Error(d.error || 'Something went wrong.'); return d; }); });
   }
+  // Re-render this page in place (public/admin-ui.js), falling back to a full reload.
   function reloadWith(msg) {
+    if (window.adminUi && window.adminUi.refresh) { window.adminUi.refresh(msg); return; }
     var u = new URL(location.href);
     u.searchParams.set('toast', msg);
     location.href = u.pathname + u.search;
   }
+
+  // After a failed save, show what the server actually has.
+  function resync() {
+    if (window.adminUi && window.adminUi.softLoad) window.adminUi.softLoad(location.href); else location.reload();
+  }
+
+  // Everything below wires elements on the page. It runs on load and again whenever
+  // admin-ui.js swaps the content area in place (the 'admin:updated' event).
+  function init() {
+  var run = document.getElementById('pw-run');
+  var cfg = {};
+  try { cfg = JSON.parse(run ? run.getAttribute('data-config') : '{}') || {}; } catch (e) { cfg = {}; }
 
   // ── Form helpers ─────────────────────────────────────────────────────────────────────
   // "Other…" in a court list reveals the free-text field next to it.
@@ -83,7 +94,7 @@
       post('/admin/papawis/' + cfg.id + '/signups/' + id + '/status', { status: to })
         .then(function () { return persist(to); })
         .then(function () { reloadWith(to === 'confirmed' ? 'Moved to confirmed.' : 'Moved to the waitlist.'); })
-        .catch(function (e) { ui().toast(e.message, { tone: 'error' }); setTimeout(function () { location.reload(); }, 1200); });
+        .catch(function (e) { ui().toast(e.message, { tone: 'error' }); setTimeout(resync, 1200); });
     };
     var renumber = function () {
       rosterLists.forEach(function (list) { rowsOf(list).forEach(function (r, i) { var n = r.querySelector('.pw-roster__n .aui-num'); if (n) n.textContent = i + 1; }); });
@@ -145,7 +156,7 @@
       post('/admin/papawis/' + cfg.id + '/teams/assign', { signup_id: tRow.getAttribute('data-id'), team: to })
         .then(function () { return tPersist(to); })
         .then(function () { ui().toast('Moved to ' + (to === 'dark' ? 'Dark' : 'Light') + '.'); })
-        .catch(function (e) { ui().toast(e.message, { tone: 'error' }); setTimeout(function () { location.reload(); }, 1200); });
+        .catch(function (e) { ui().toast(e.message, { tone: 'error' }); setTimeout(resync, 1200); });
     };
     var tPlace = function (list, y) {
       var empty = list.querySelector('.pw-team__empty'); if (empty) empty.remove();
@@ -300,7 +311,7 @@
     var cSave = function () {
       var order = [].slice.call(courtList.querySelectorAll('tr[data-id]')).map(function (r) { return r.getAttribute('data-id'); });
       post('/admin/papawis/courts/reorder', { order: order }).then(function () { ui().toast('Court order saved.'); })
-        .catch(function (e) { ui().toast(e.message, { tone: 'error' }); setTimeout(function () { location.reload(); }, 1200); });
+        .catch(function (e) { ui().toast(e.message, { tone: 'error' }); setTimeout(resync, 1200); });
     };
     var cPlace = function (y) { var after = rowAfter(courtList, y, 'tr[data-id]'); if (after) courtList.insertBefore(cRow, after); else courtList.appendChild(cRow); };
     courtList.querySelectorAll('tr[data-id]').forEach(function (row) {
@@ -319,4 +330,8 @@
       });
     });
   }
+  }
+
+  init();
+  document.addEventListener('admin:updated', init);
 })();

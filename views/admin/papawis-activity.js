@@ -22,7 +22,7 @@ function peopleList(rows, countKey, unit, colorById) {
   if (!rows.length) return '';
   return `<div class="aui-panel aui-panel--flush">${rows.map(r => {
     const name = displayPlayerName(r.player_name);
-    return `<a class="aui-action" href="/admin/players/${attr(r.player_id)}"><span class="aui-who">${avatar(name, colorById[r.player_id] || '', { size: 26 })}<span class="aui-cell__stack"><span class="aui-action__label">${escHtml(name)}</span><span class="aui-cell__sub">${escHtml(r.team_name || 'No team')}</span></span></span><span class="aui-num" title="${attr(unit)}">${r[countKey]}</span></a>`;
+    return `<a class="aui-action" href="/admin/players/${attr(r.player_id)}"><span class="aui-who">${avatar(name, colorById[r.player_id] || '', { size: 26, playerId: r.player_id })}<span class="aui-cell__stack"><span class="aui-action__label">${escHtml(name)}</span><span class="aui-cell__sub">${escHtml(r.team_name || 'No team')}</span></span></span><span class="aui-num" title="${attr(unit)}">${r[countKey]}</span></a>`;
   }).join('')}</div>`;
 }
 
@@ -41,7 +41,7 @@ export function adminPapawisActivityBody({ activity = [], cancellers = [], regul
     search: { placeholder: 'Search player or run', text: e => `${e.name} ${e.game_title || ''}` },
     defaultSort: '-when',
     columns: [
-      { key: 'name', label: 'Player', primary: true, sort: e => e.name.toLowerCase(), cell: e => `<span class="aui-who">${avatar(e.name, colorById[e.player_id] || '', { size: 26 })}<span class="aui-cell__title">${escHtml(e.name)}</span></span>` },
+      { key: 'name', label: 'Player', primary: true, sort: e => e.name.toLowerCase(), cell: e => `<span class="aui-who">${avatar(e.name, colorById[e.player_id] || '', { size: 26, playerId: e.player_id })}<span class="aui-cell__title">${escHtml(e.name)}</span></span>` },
       { key: 'what', label: 'What', bare: true, sort: e => e.event_type, cell: e => `<span class="pw-event ${TONE[e.kind] || ''}">${escHtml((ACTIVITY_LABELS[e.event_type] || { label: e.event_type }).label)}</span>${e.notes ? `<div class="aui-cell__sub">${escHtml(e.notes)}</div>` : ''}` },
       { key: 'run', label: 'Run', sort: e => e.game_title || '', cell: e => (e.game_id ? `<a class="aui-link" href="/admin/papawis/${attr(e.game_id)}?tab=activity">${escHtml(e.game_title || 'Papawis')}</a>` : '<span class="aui-muted">General</span>') },
       { key: 'when', label: 'When', num: true, sort: e => e.created_at, cell: e => escHtml(fmtTime(e.created_at)) },
