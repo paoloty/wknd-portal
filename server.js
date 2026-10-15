@@ -2771,6 +2771,19 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
 
 const app = express();
 
+// One URL per page for search engines: www. goes to the bare domain and a trailing slash
+// is dropped (/games/ → /games), both permanently. GET/HEAD only, so webhooks and form
+// posts are never redirected.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0].toLowerCase();
+  const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  const trimmed = req.path.length > 1 && req.path.endsWith('/') ? req.path.replace(/\/+$/, '') || '/' : req.path;
+  if (host === `www.${SITE_HOST}`) return res.redirect(301, `${SITE_ORIGIN}${trimmed}${qs}`);
+  if (trimmed !== req.path) return res.redirect(301, `${trimmed}${qs}`);
+  next();
+});
+
 // Registered before the session and body-parser middleware: the signature is computed over
 // the exact raw bytes, so this route needs the unparsed body, and Resend has no session.
 app.post('/webhooks/resend', express.raw({ type: '*/*', limit: '256kb' }), (req, res) => {
