@@ -7,7 +7,7 @@
 //   • Send test to me, and the confirm dialog's wording (type the number past 40 emails)
 (function () {
   'use strict';
-  var ui = function () { return window.adminUi || { toast: function (t) { alert(t); } }; };
+  var ui = function () { return window.adminUi || { toast: function (t) { if (window.console) console.warn(t); } }; };
   var plural = function (n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); };
 
   function init() {
@@ -44,7 +44,8 @@
         b.textContent = (!both && (k === 'email' || k === 'bellOnly' || k === 'capped')) ? '—' : String(counts[k]);
       });
       var who = label ? '“' + label + '”' : 'this group';
-      sum.textContent = !n ? 'Nobody in ' + who + ' can be reached.'
+      sum.textContent = p.seg === 'pick' && !p.ids ? 'Pick at least one player.'
+        : !n ? 'Nobody in ' + who + ' can be reached.'
         : both ? plural(n, 'bell') + ' and ' + plural(e, 'email') + ' to ' + who
         : plural(n, 'bell') + ' to ' + who + ', no email';
       send.textContent = !n ? 'Send' : both ? 'Send to ' + plural(n, 'player') : 'Send ' + plural(n, 'bell');

@@ -9,7 +9,7 @@
 // Cropper.js and heic2any load only when someone actually changes a photo.
 (function () {
   'use strict';
-  var ui = function () { return window.adminUi || { toast: function (t) { alert(t); }, confirm: function (o) { return Promise.resolve(window.confirm(o.title)); } }; };
+  var ui = function () { return window.adminUi || { toast: function (t) { console.log(t); }, confirm: function () { return Promise.resolve(false); } }; };
 
   function post(url, data) {
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) })

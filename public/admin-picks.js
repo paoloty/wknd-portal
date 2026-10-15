@@ -7,7 +7,7 @@
 //   • the per-game pick window (POST /admin/games/:id/picks { closed })
 (function () {
   'use strict';
-  var ui = function () { return window.adminUi || { toast: function (t) { alert(t); }, refresh: function () { location.reload(); } }; };
+  var ui = function () { return window.adminUi || { toast: function (t) { console.log(t); }, refresh: function () { location.reload(); } }; };
   var plural = function (n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); };
 
   function sync() {

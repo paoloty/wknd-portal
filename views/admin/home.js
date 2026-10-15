@@ -31,9 +31,9 @@ function actionHtml(a, hot) {
 function todoItem(it) {
   const hot = it.hot && !it.done;
   const chips = it.chips?.length
-    ? `<div class="ahome-item__chips">${it.chips.map(c => badge(`${c.ok ? '✓' : '✕'} ${c.label}`, c.ok ? 'green' : 'red')).join('')}</div>`
+    ? `<div class="ahome-item__chips">${it.chips.filter(c => !c.ok).map(c => badge(`✕ ${c.label}`, 'red')).join('')}</div>`
     : '';
-  return `<article class="ahome-item${hot ? ' is-hot' : ''}${it.done ? ' is-done' : ''}" data-item data-cat="${attr(it.cat)}">
+  return `<article class="ahome-item${hot ? ' is-hot' : ''}${it.done ? ' is-done' : ''}"${it.done ? '' : ` data-item data-cat="${attr(it.cat)}"`}>
     <span class="ahome-item__tag" aria-hidden="true">${escHtml(it.tag)}</span>
     <div class="ahome-item__body">
       <div class="ahome-item__top"><span class="ahome-item__title">${escHtml(it.title)}</span>${it.due ? badge(it.due, hot ? 'amber' : it.done ? 'green' : 'gray') : ''}</div>
@@ -48,8 +48,11 @@ function todoItem(it) {
   </article>`;
 }
 
+// Finished to-dos (already reminded or nudged) fold into one closed "Done" line at the end,
+// outside the filters.
 function todoSection(items, snoozedCount) {
   const open = items.filter(i => !i.done);
+  const done = items.filter(i => i.done);
   const count = cat => open.filter(i => cat === 'all' || i.cat === cat).length;
   const filters = `<div class="aui-seg" role="tablist" aria-label="Filter the to-do list" data-filter-group="ahome-todo">
     ${FILTERS.map(([k, l], i) => `<button type="button" role="tab" data-filter="${k}" aria-selected="${i === 0}">${l} <span data-count>${count(k)}</span></button>`).join('')}
@@ -60,8 +63,9 @@ function todoSection(items, snoozedCount) {
       ${filters}
     </div>
     <div class="ahome-todo" id="ahome-todo">
-      ${items.map(todoItem).join('')}
-      <div data-empty${items.length ? ' hidden' : ''}>${emptyState({ title: 'You’re all caught up', sub: 'Nothing here needs you right now.', done: true })}</div>
+      ${open.map(todoItem).join('')}
+      <div data-empty${open.length ? ' hidden' : ''}>${emptyState({ title: 'You’re all caught up', sub: 'Nothing here needs you right now.', done: true })}</div>
+      ${done.length ? `<details class="ahome-done"><summary class="ahome-done__sum"><span>Done</span><span class="aui-views__n">${done.length}</span><span class="ahome-done__hint">already reminded or nudged</span></summary><div class="ahome-todo">${done.map(todoItem).join('')}</div></details>` : ''}
     </div>
   </section>`;
 }
@@ -70,22 +74,22 @@ function quietSection(quiet) {
   if (!quiet?.list?.length) return '';
   const rows = quiet.list.map(p => `<tr>
     <td><span class="aui-who">${avatar(p.name, p.color, { playerId: p.id })}${escHtml(p.name)}</span></td>
-    <td>${escHtml(p.usually)}</td>
+    <td class="ahome-desk">${escHtml(p.usually)}</td>
     <td class="aui-num">${escHtml(p.lastSeen)}</td>
     <td>${p.nudgedAgo
-      ? button(`Nudged ${p.nudgedAgo} ago`, { kind: 'done', size: 'sm', attrs: 'disabled' })
+      ? button(p.nudgedAgo === 'just now' ? 'Nudged just now' : `Nudged ${p.nudgedAgo} ago`, { kind: 'done', size: 'sm', attrs: 'disabled' })
       : `<form method="post" action="/admin/home/nudge" ${confirmAttrs({ title: `Nudge ${p.name}?`, body: `A bell notification: “${quiet.message.title}. ${quiet.message.body}”`, send: 'Nudge' })}><input type="hidden" name="ids" value="${attr(p.id)}">${button('Nudge', { kind: 'secondary', size: 'sm', type: 'submit' })}</form>`}</td>
   </tr>`).join('');
   const todo = quiet.list.filter(p => !p.nudgedAgo);
   const all = todo.length > 1
-    ? `<form method="post" action="/admin/home/nudge" ${confirmAttrs({ title: `Nudge ${todo.length} quiet regulars?`, body: `Each gets a bell notification: “${quiet.message.title}. ${quiet.message.body}”`, send: 'Nudge all' })}>${todo.map(p => `<input type="hidden" name="ids" value="${attr(p.id)}">`).join('')}<button type="submit" class="aui-link">Nudge all ${todo.length}</button></form>`
+    ? `<form method="post" action="/admin/home/nudge" ${confirmAttrs({ title: `Nudge ${todo.length} quiet regulars?`, body: `Each gets a bell notification: “${quiet.message.title}. ${quiet.message.body}”`, send: 'Nudge all' })}>${todo.map(p => `<input type="hidden" name="ids" value="${attr(p.id)}">`).join('')}<button type="submit" class="aui-link ahome-tap">Nudge all ${todo.length}</button></form>`
     : '';
   return section({
     title: 'Slipping away',
     note: `· regulars not seen for ${quiet.days}+ days`,
     asideHtml: all,
     bodyHtml: `<div class="aui-table-wrap"><table class="aui-table">
-      <thead><tr><th>Player</th><th>Usually</th><th>Last seen</th><th><span class="sr-only">Nudge</span></th></tr></thead>
+      <thead><tr><th>Player</th><th class="ahome-desk">Usually</th><th>Last seen</th><th><span class="sr-only">Nudge</span></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`,
   });

@@ -40,7 +40,7 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. G
 | 15 | Awards | Season awards | /admin/awards/season | n/a | [ ] |
 | 16 | Awards | MVP and Best Defender races | /admin/awards/races | n/a | [ ] |
 | 17 | Awards | MVP podium ballot | /admin/awards/podium | n/a | [ ] |
-| 18 | Awards | Award graphic editor | /admin/awards/:season/:type/graphic | done | [ ] |
+| 18 | Awards | Award graphic editor | /admin/awards/:season/:type/graphic | done | [x] |
 | 19 | Awards | Award photo picker | /admin/award-photo/… | n/a | [ ] |
 | 20 | Season | All seasons | /admin/seasons | n/a | [ ] |
 | 21 | Season | Signups and settings | /admin/season | n/a | [ ] |
@@ -51,9 +51,9 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. G
 | 26 | Season | Assessment reviews | /admin/season/assessment-reviews | n/a | [ ] |
 | 27 | Season | Assessment detail | /admin/season/assessments/:id | n/a | [ ] |
 | 28 | Season | Liveness checks and detail | /admin/season/liveness | n/a | [ ] |
-| 29 | Season | Team builder | /admin/season/teams | done | [ ] |
+| 29 | Season | Team builder | /admin/season/teams | done | [x] |
 | 30 | Season | Team builder review | /admin/season/teams/review | n/a | [ ] |
-| 31 | Season | Team builder sandbox | /admin/season/teams/sandbox | done | [ ] |
+| 31 | Season | Team builder sandbox | /admin/season/teams/sandbox | done | [x] |
 | 32 | Community | Polls | /admin/polls | n/a | [ ] |
 | 33 | Community | Fines and conduct | /admin/fines | n/a | [ ] |
 | 34 | Community | Fine categories | /admin/fines/categories | n/a | [ ] |
@@ -61,7 +61,7 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. G
 | 36 | Marketplace | New and edit group buy | /admin/marketplace/new | n/a | [ ] |
 | 37 | Marketplace | Listing page | /admin/marketplace/:id | n/a | [ ] |
 | 38 | Finance | Summary | /admin/finance | n/a | [ ] |
-| 39 | Finance | Ledger | /admin/ledger | done | [ ] |
+| 39 | Finance | Ledger | /admin/ledger | done | [x] |
 | 40 | Finance | GCash | /admin/finance/gcash | n/a | [ ] |
 | 41 | Content | Posts | /admin/posts | n/a | [ ] |
 | 42 | Content | Coach notes | /admin/coach-notes | n/a | [ ] |
@@ -93,4 +93,4 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. G
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Total | 52 | 0 | 10 | 13 |
+| Total | 52 | 0 | 10 | 17 |

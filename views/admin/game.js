@@ -32,11 +32,10 @@ function hero(game, colors, st) {
   const played = st !== 'upcoming';
   const win = !played || a === b ? '' : a > b ? 'a' : 'b';
   const team = (name, side) => `<span class="agd-hero__team${win === side ? ' is-win' : ''}"><i class="agl-dot" style="background:${attr(colors[side])}"></i>${escHtml(name)}</span>`;
-  const checks = contentChecks(game).map(([l, ok]) => `<span class="agd-check${ok ? ' is-on' : ''}">${ok ? '✓' : '✕'} ${escHtml(l)}</span>`).join('');
+  const checks = contentChecks(game).filter(([, ok]) => !ok).map(([l]) => `<span class="agd-check">✕ ${escHtml(l)}</span>`).join('');
   const meta = [fmtDateLong(game.date), TYPE_LABEL[game.game_type] || 'Regular season', game.season ? `Season ${game.season}` : '', otLabel(game.overtime)].filter(Boolean).join(' · ');
   const more = menu([
-    st !== 'upcoming' ? { label: 'Re-import game file', href: '#import' } : null,
-    { label: 'Settings', href: `/admin/games/${game.id}?tab=settings` },
+    st !== 'upcoming' && st !== 'score' ? { label: 'Re-import game file', href: `/admin/games/${game.id}#import` } : null,
     { label: 'All games', href: '/admin/games' },
   ]);
   return `<header class="agd-hero">
@@ -222,8 +221,9 @@ function picksTab({ game, st, pp, colors, colorById }) {
     { label: 'Picks', value: String(total) },
     { label: `Picked ${game.team_a_name}`, value: String(sides.a.length), of: total ? ` · ${pct('a')}%` : '' },
     { label: `Picked ${game.team_b_name}`, value: String(sides.b.length), of: total ? ` · ${pct('b')}%` : '' },
-    { label: played ? 'Odds before' : 'Odds', value: o?.fav ? `${o.fav === 'a' ? game.team_a_name : game.team_b_name} ${o.fav === 'a' ? o.pctA : o.pctB}%` : '—' },
+    { label: played ? 'Odds before' : 'Odds', value: o?.pctA != null ? `${o.pctA}% · ${o.pctB}%` : '—', of: o?.pctA != null ? '' : '' },
   ]);
+  const oddsLine = o?.pctA != null ? `${game.team_a_name} ${o.pctA}% · ${o.pctB}% ${game.team_b_name}` : 'No odds yet: a team has no games this season.';
   const state = pp.upcoming
     ? (pp.closedNow ? `Picks are closed${pp.override === 'closed' ? ' (closed by hand)' : ''}.` : `Picks are open. They close at ${pp.closeTime} on game day${pp.override === 'open' ? ', unless kept open by hand' : ''}.`)
     : pp.settledAt ? `Picks closed when the game started. Results went out ${fmtWhen(pp.settledAt)}.` : 'Picks closed when the game started. Results go out once the game is final and published.';
@@ -240,6 +240,7 @@ function picksTab({ game, st, pp, colors, colorById }) {
       ${list ? `<ul class="agd-pickers">${list}</ul>` : '<p class="aui-muted agd-pickcol__none">No picks</p>'}</section>`;
   };
   return `${strip}
+    <p class="aui-muted agd-odds">${escHtml(oddsLine)}</p>
     ${banner('info', state)}
     ${pp.finalsNote ? banner('warn', pp.finalsNote) : ''}
     ${controls}
@@ -265,7 +266,7 @@ function settingsTab({ game, st, statCorrections, nameById }) {
     ${fieldGrid(`${field({ label: 'Date', name: 'date', type: 'date', value: game.date || '', required: true })}
       ${field({ label: 'Type', name: 'game_type', type: 'select', value: game.game_type || 'regular', options: Object.entries(TYPE_LABEL), help: game.game_type === 'playoff' ? 'Set a Finals game to Finals so Game 1 gets the margin-guess tiebreaker.' : '' })}
       ${st !== 'upcoming' ? field({ label: 'Overtime', name: 'overtime', type: 'select', value: String(n(game.overtime)), options: [['0', 'Regulation'], ['1', 'OT'], ['2', '2OT'], ['3', '3OT']] }) : ''}
-      ${field({ label: 'Season', name: 'season_ro', value: String(game.season || ''), attrs: 'readonly disabled', help: 'Set when the game was created.' })}`)}
+      <div class="aui-field"><span class="aui-field__label">Season</span><span class="agd-ro">Season ${escHtml(String(game.season || '—'))}</span><span class="aui-field__help">Set when the game was created.</span></div>`)}
   </form>`;
   const publish = st === 'live' || st === 'draft'
     ? `<div class="aui-panel">${toggleRow({ label: 'Published', help: 'Off = Draft: hidden from every public page.', name: 'published', on: st === 'live', post: `/admin/games/${game.id}/review`, reload: true })}</div>`

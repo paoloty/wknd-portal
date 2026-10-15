@@ -1,719 +1,338 @@
+// /admin/ledger and /admin/ledger/:id (admin redesign, 2026-10-15; mockup: canvas "Ledger").
+// Rebuilt from scratch on views/admin/ui.js. The list page: owed / credit / collected / to
+// confirm tiles, payments waiting for a confirm (oldest first), every player's all-time
+// balance on the shared data grid, the player in a drawer (?player=<id>) and one "Charge or
+// record payment" drawer. The player page is the full history on the same kit. Browser
+// side: public/admin-ui.js (actions, toasts, in-place refresh) + public/admin-ledger.js.
 import { escHtml } from '../layout.js';
-import { displayPlayerName, teamColor, PAYMENT_CATEGORIES as CATEGORIES } from '../utils.js';
+import { displayPlayerName, PAYMENT_CATEGORIES } from '../utils.js';
+import { outlineDarkRings } from './season-teams.js';
+import { pageHeader, dataGrid, section, badge, button, drawer, field, fieldGrid, segmented, menu, avatar, playerPicker, breadcrumb, personStrip, progress } from './ui.js';
 
-const METHOD_LABELS = { cash: 'Cash', gcash: 'GCash', bank: 'Bank Transfer', other: 'Other' };
+const attr = s => escHtml(String(s ?? ''));
+const EPS = 0.005;
+const money = n => Math.abs(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+const peso = n => `₱${money(n)}`;
+const METHODS = [['cash', 'Cash'], ['gcash', 'GCash'], ['bank', 'Bank transfer'], ['other', 'Other']];
+const methodLabel = m => (METHODS.find(([k]) => k === m) || [null, m || ''])[1];
+const thisYear = new Date().getFullYear();
+const fmtDate = d => {
+  if (!d) return '';
+  const dt = new Date(`${d}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return String(d);
+  return dt.toLocaleDateString('en-US', dt.getFullYear() === thisYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+};
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-const fmt     = n => `PHP ${Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
-const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+// Balance convention (player_financials / getAllBalances): positive = owes, negative = credit.
+export function balanceText(b) {
+  const n = Number(b) || 0;
+  return n > EPS ? `Owes ${peso(n)}` : n < -EPS ? `Credit ${peso(n)}` : 'Settled';
+}
+const balanceTone = b => (b > EPS ? 'aui-neg' : b < -EPS ? 'aui-pos' : 'aui-muted');
 
-const ICON_CHEVRON_R = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 2.5l3 3-3 3"/></svg>`;
-const ICON_EYE       = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 7c0 0 2.2-4 6-4s6 4 6 4-2.2 4-6 4-6-4-6-4z"/><circle cx="7" cy="7" r="1.6"/></svg>`;
-const ICON_PLUS      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6.5" y1="2" x2="6.5" y2="11"/><line x1="2" y1="6.5" x2="11" y2="6.5"/></svg>`;
-const ICON_CHECK     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
-const ICON_COPY      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M1 9V2.5A1.5 1.5 0 0 1 2.5 1H9"/></svg>`;
-const ICON_VOID      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="5"/><path d="M3.5 9.5l6-6"/></svg>`;
-const ICON_TRASH     = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h9M5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M10 3.5l-.7 7a.5.5 0 0 1-.5.5H4.2a.5.5 0 0 1-.5-.5L3 3.5"/></svg>`;
+// The season param: missing → the latest ledger season; '' or 'all' → all time.
+const seasonParam = season => (season ? String(season) : 'all');
+const seasonLabel = season => (season ? `Season ${season}` : 'All time');
 
-function statusBadge(status) {
-  if (status === 'confirmed') return `<span class="agm-badge agm-badge--green">confirmed</span>`;
-  if (status === 'voided')    return `<span class="agm-badge agm-badge--gray">voided</span>`;
-  return `<span class="agm-badge agm-badge--amber">pending</span>`;
+// Only http(s), relative and data:image screenshots are ever linked, and always through the
+// /admin/ledger/transaction/:id/screenshot route — the stored value never lands in the page.
+export function isSafeScreenshot(u) {
+  const s = String(u || '').trim();
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(s)) return true;
+  // Same rule as the screenshot route: no "//", no "/\", no spaces or control characters.
+  return !/[\s\x00-\x1f\x7f\\]/.test(s) && (/^https?:\/\/[^/]/i.test(s) || /^\/(?![/\\])/.test(s));
+}
+const shotLink = tx => (isSafeScreenshot(tx.screenshot_url)
+  ? `<a class="aui-link" href="/admin/ledger/transaction/${encodeURIComponent(tx.id)}/screenshot" target="_blank" rel="noopener">Screenshot</a>`
+  : '');
+
+// Canonical category for a stored value ("papawis" → "Papawis"); '' when it isn't one of ours.
+const canonCategory = c => PAYMENT_CATEGORIES.find(x => x.toLowerCase() === String(c || '').trim().replace(/[_-]+/g, ' ').toLowerCase()) || '';
+
+function seasonSwitch(hrefFor, seasons, season) {
+  const opts = [['', 'All time'], ...seasons.map(s => [s, `S${s}`])];
+  return `<nav class="alg-seasons" aria-label="Season">${opts.map(([v, l]) => {
+    const on = String(v) === String(season);
+    return `<a class="alg-seasons__opt${on ? ' is-on' : ''}" href="${attr(hrefFor(seasonParam(v)))}"${on ? ' aria-current="true"' : ''}>${escHtml(l)}</a>`;
+  }).join('')}</nav>`;
 }
 
-function balanceColor(bal) {
-  if (bal > 0) return '#ef4444';
-  if (bal < 0) return '#22c55e';
-  return '#64748b';
+// Tiles: the kit's stat strip cells, with a tone and a quiet second line.
+function tiles(items, cls = '') {
+  return `<div class="aui-stats alg-stats${cls ? ` ${cls}` : ''}">${items.map(t => `<div class="aui-stats__cell">
+      <div class="aui-stats__label">${escHtml(t.label)}</div>
+      <div class="aui-stats__value${t.tone ? ` ${t.tone}` : ''}">${escHtml(t.value)}</div>
+      ${t.subHtml ? `<div class="alg-stats__sub">${t.subHtml}</div>` : t.sub ? `<div class="alg-stats__sub">${escHtml(t.sub)}</div>` : ''}
+    </div>`).join('')}</div>`;
 }
 
-function statTile(label, value, color = '#e2e8f0') {
-  return `<div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4">
-    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">${escHtml(label)}</div>
-    <div class="text-xl font-bold font-saira" style="color:${color}">${value}</div>
-  </div>`;
+function feeCell(paid, quota) {
+  if (!quota) return '<span class="aui-muted">—</span>';
+  const pct = Math.round((paid / quota) * 100);
+  return `<span class="alg-fee${pct >= 100 ? ' is-done' : ''}">${progress(pct, { label: `${Math.min(pct, 100)}%` })}</span>`;
 }
 
-function quotaBar(paid, quota) {
-  if (!quota) return '';
-  const pct = Math.min(100, Math.round((paid / quota) * 100));
-  const color = pct >= 100 ? '#22c55e' : pct >= 50 ? '#f59332' : '#ef4444';
-  return `<div class="mt-1 flex items-center gap-1.5">
-    <div class="flex-1 h-1 bg-admin-border rounded-full overflow-hidden">
-      <div style="width:${pct}%;height:100%;background:${color};border-radius:99px"></div>
-    </div>
-    <span class="text-[10px] font-bold whitespace-nowrap" style="color:${color}">${pct}%</span>
-  </div>`;
+// ── To confirm: pending entries, oldest first, confirmed or voided in place ───────────────
+function confirmQueue(pending, colorById, { showName = true, season = '' } = {}) {
+  if (!pending.length) return '<div class="aui-panel alg-clear">✓ Nothing waiting. Every payment is confirmed.</div>';
+  return `<div class="alg-queue">${pending.map(tx => {
+    const name = displayPlayerName(tx.player_name || '');
+    const cat = canonCategory(tx.category);
+    const what = [tx.type === 'charge' ? 'Charge' : methodLabel(tx.payment_method) || 'Payment', fmtDate(tx.date), tx.reference_no ? `Ref ${tx.reference_no}` : ''].filter(Boolean).join(' · ');
+    const opts = [['', 'No category'], ...PAYMENT_CATEGORIES.map(c => [c, c])];
+    return `<form class="alg-q" data-json-action="/admin/ledger/transaction/${attr(tx.id)}/confirm" data-done="${attr(`Confirmed ${name}’s ${peso(tx.amount)}.`)}">
+      ${showName ? avatar(name, colorById[tx.player_id] || '', { size: 34, playerId: tx.player_id }) : ''}
+      <span class="alg-q__who">${showName ? `<a class="alg-q__name" href="/admin/ledger?season=${encodeURIComponent(seasonParam(season))}&player=${encodeURIComponent(tx.player_id)}">${escHtml(name)}</a>` : ''}<span class="alg-q__sub">${escHtml(what)}</span></span>
+      <span class="alg-q__meta">
+        <select class="aui-input alg-q__cat" name="category" aria-label="Category for ${attr(name)}’s ${attr(peso(tx.amount))}">${opts.map(([v, l]) => `<option value="${attr(v)}"${v === cat ? ' selected' : ''}>${escHtml(l)}</option>`).join('')}</select>
+        <span class="alg-q__shot">${shotLink(tx)}</span>
+      </span>
+      <b class="alg-q__amt">${peso(tx.amount)}</b>
+      <span class="alg-q__actions">
+        <button type="submit" class="aui-btn aui-btn--primary aui-btn--sm alg-q__go">Confirm</button>
+        ${button('Void', { kind: 'ghost', size: 'sm', attrs: `data-post-json="/admin/ledger/transaction/${attr(tx.id)}/void" data-done="Voided." data-confirm data-confirm-title="${attr(`Void ${name}’s ${peso(tx.amount)}?`)}" data-confirm-body="It stays in the history but never counts toward the balance." data-confirm-send="Void"` })}
+      </span>
+    </form>`;
+  }).join('')}</div>`;
 }
 
-function categoryOpts(selected = '') {
-  return CATEGORIES.map(c => `<option value="${escHtml(c)}"${selected === c ? ' selected' : ''}>${escHtml(c)}</option>`).join('');
+// ⋯ menu for one transaction (drawer list and the full history grid).
+function txMenu(tx) {
+  const amt = peso(tx.amount);
+  return [
+    tx.status === 'pending' ? { label: 'Confirm', post: `/admin/ledger/transaction/${tx.id}/confirm`, body: { category: canonCategory(tx.category) || tx.category || '' }, done: `Confirmed ${amt}.` } : null,
+    tx.status !== 'voided' ? { label: 'Void', post: `/admin/ledger/transaction/${tx.id}/void`, done: 'Voided.', confirm: { title: `Void this ${amt} ${tx.type}?`, body: 'It stays in the history but never counts toward the balance.', send: 'Void' } } : null,
+    'sep',
+    { label: 'Delete', post: `/admin/ledger/transaction/${tx.id}`, method: 'DELETE', danger: true, done: 'Deleted.', confirm: { title: `Delete this ${amt} ${tx.type}?`, body: 'It disappears from the history for good. Void keeps a record instead.', send: 'Delete' } },
+  ];
 }
 
-// Dropdown of known season values only — no free-text entry, so a manually
-// added transaction can never end up with a malformed season like "Season 3"
-// instead of "3" (which is what broke the Awards page season tabs before).
-// Always includes `selected` even if it's not otherwise in `seasons`, so the
-// currently-filtered season stays choosable even before it has any
-// transactions of its own yet.
-function seasonOpts(seasons, selected = '') {
-  const all = selected && !seasons.includes(selected) ? [selected, ...seasons] : seasons;
-  return all.map(s => `<option value="${escHtml(s)}"${String(s) === String(selected) ? ' selected' : ''}>Season ${escHtml(String(s))}</option>`).join('');
-}
+const txTitle = tx => canonCategory(tx.category) || tx.category || tx.notes || (tx.type === 'charge' ? 'Charge' : 'Payment');
+const txAmount = tx => `<b class="alg-amt ${tx.status === 'voided' ? 'is-void' : tx.type === 'charge' ? 'aui-neg' : 'aui-pos'}">${tx.type === 'charge' ? '−' : '+'}${peso(tx.amount)}</b>`;
+const STATUS = { pending: ['Pending', 'amber'], voided: ['Voided', 'gray'], confirmed: ['Confirmed', 'green'] };
 
-function addTransactionForm(playerId, today, season, seasons = []) {
-  return `<div id="lgr-msg" hidden class="rounded-lg text-[13px] px-3.5 py-2.5 mb-3.5"></div>
-  <form id="lgr-form">
-    <input type="hidden" name="player_id" value="${escHtml(playerId)}">
-    <div class="grid grid-cols-2 gap-3">
-      <div>
-        <label class="admin-field-label">Type</label>
-        <select name="type" class="admin-input mt-1">
-          <option value="charge">Charge</option>
-          <option value="payment">Payment</option>
-        </select>
-      </div>
-      <div>
-        <label class="admin-field-label">Amount (PHP)</label>
-        <input type="number" name="amount" class="admin-input mt-1" min="0.01" step="0.01" placeholder="0.00" required>
-      </div>
-      <div>
-        <label class="admin-field-label">Category</label>
-        <select name="category" class="admin-input mt-1"><option value="">— None —</option>${categoryOpts()}</select>
-      </div>
-      <div>
-        <label class="admin-field-label">Status</label>
-        <select name="status" class="admin-input mt-1">
-          <option value="confirmed">Confirmed</option>
-          <option value="pending">Pending</option>
-        </select>
-      </div>
-      <div>
-        <label class="admin-field-label">Method</label>
-        <select name="payment_method" class="admin-input mt-1">
-          <option value="cash">Cash</option>
-          <option value="gcash">GCash</option>
-          <option value="bank">Bank Transfer</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-      <div>
-        <label class="admin-field-label">Date</label>
-        <input type="date" name="date" class="admin-input mt-1" value="${today}" required>
-      </div>
-      <div>
-        <label class="admin-field-label">Season</label>
-        <select name="season" class="admin-input mt-1">${seasonOpts(seasons, season)}</select>
-      </div>
-      <div>
-        <label class="admin-field-label">Notes</label>
-        <input type="text" name="notes" class="admin-input mt-1" placeholder="e.g. Season 3 Quota">
-      </div>
-      <div class="col-span-2">
-        <label class="admin-field-label">Reference No. <span class="font-normal text-slate-500">(optional)</span></label>
-        <input type="text" name="reference_no" class="admin-input mt-1" placeholder="GCash ref, bank ref…">
-      </div>
-      <div class="col-span-2" style="display:flex">
-        <button type="submit" id="lgr-submit" class="admin-btn">${ICON_PLUS} Add Transaction</button>
-      </div>
-    </div>
+// ── The charge / payment drawer (list page: many players; player page: one) ──────────────
+function chargeDrawer({ id, action, seasons, season, players = null, playerId = '', playerName = '' }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const seasonOpts = [...new Set([season, ...seasons].filter(Boolean).map(String))].map(s => [s, `Season ${s}`]);
+  const who = players
+    ? `<fieldset class="alg-fs" data-alg-picked-fs disabled hidden><div class="aui-field is-wide"><span class="aui-field__label">Players</span><div class="alg-picked" data-alg-picked></div></div></fieldset>
+       <fieldset class="alg-fs" data-alg-picker-fs>${playerPicker({ name: 'player_ids[]', label: 'Players', options: players, placeholder: 'Type a name' })}</fieldset>`
+    : `<input type="hidden" name="player_id" value="${attr(playerId)}">`;
+  const form = `<form id="${attr(id)}-form" class="alg-form" data-alg-txform data-json-action="${attr(action)}" data-done="Saved.">
+    ${who}
+    ${segmented({ name: 'type', value: 'charge', label: 'Type', options: [['charge', 'Charge'], ['payment', 'Payment']] })}
+    ${fieldGrid(`
+      ${field({ label: 'Amount', name: 'amount', type: 'money', required: true, placeholder: '0', attrs: 'data-alg-amount' })}
+      ${field({ label: 'Category', name: 'category', type: 'select', options: [['', 'No category'], ...PAYMENT_CATEGORIES.map(c => [c, c])], attrs: 'data-alg-category' })}
+      ${field({ label: 'Status', name: 'status', type: 'select', value: 'confirmed', options: [['confirmed', 'Confirmed'], ['pending', 'Pending']], attrs: 'data-alg-status' })}
+      ${field({ label: 'Date', name: 'date', type: 'date', value: today, required: true })}
+      ${field({ label: 'Method', name: 'payment_method', type: 'select', value: 'gcash', options: METHODS })}
+      ${field({ label: 'Season', name: 'season', type: 'select', value: season || seasonOpts[0]?.[0] || '', options: seasonOpts.length ? seasonOpts : [['', 'None']] })}
+      ${field({ label: 'Reference no.', name: 'reference_no', placeholder: 'Optional' })}
+      ${field({ label: 'Notes', name: 'notes', wide: true, placeholder: 'Shown to the player' })}`)}
+    <p class="alg-note" data-alg-note></p>
   </form>`;
+  return drawer({
+    id, eyebrow: players ? 'Ledger' : playerName, title: 'Add a charge',
+    bodyHtml: form,
+    footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}<button type="submit" form="${attr(id)}-form" class="aui-btn aui-btn--primary" data-alg-go>Save</button>`,
+  });
 }
 
-const TH = `px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-admin-border whitespace-nowrap`;
+// ── /admin/ledger ─────────────────────────────────────────────────────────────────────────
+export function adminLedgerBody({
+  players = [], allPlayers = [], balMap = {}, lastActivityMap = {}, seasons = [], season = '', quota = 0,
+  feePaidByPlayer = {}, pending = [], latestRefByPlayer = {}, collected = 0, colorById = {}, query = {}, open = null,
+} = {}) {
+  const sp = seasonParam(season);
+  const rows = players.map(p => {
+    const b = balMap[p.id] || {};
+    return {
+      id: p.id, name: displayPlayerName(p.name), team: p.team_name || '', color: colorById[p.id] || p.team_color || '',
+      bal: Number(b.balance) || 0, pending: Number(b.pending_count) || 0, ref: latestRefByPlayer[p.id] || '',
+      fee: Number(feePaidByPlayer[p.id]) || 0, last: lastActivityMap[p.id] || '',
+    };
+  });
 
-// ── Player profile financial card (used on player admin page) ─────────────────
-export function playerFinancialSection(fin, transactions, playerName, playerId) {
-  const bal = Number(fin?.current_balance ?? 0);
+  // Owed and credit are totalled separately, over every balance on the books (all time).
+  const allBal = Object.values(balMap).map(b => Number(b.balance) || 0);
+  const owed = allBal.filter(b => b > EPS), credit = allBal.filter(b => b < -EPS);
+  const sum = a => a.reduce((t, n) => t + n, 0);
+  const stats = tiles([
+    { label: 'Owed to the league', value: peso(sum(owed)), tone: 'aui-tone--red', sub: `${plural(owed.length, 'player')} · all time` },
+    { label: 'Players in credit', value: peso(sum(credit)), tone: 'aui-tone--green', sub: `${plural(credit.length, 'player')} · all time` },
+    { label: season ? `Collected, Season ${season}` : 'Collected, all time', value: peso(collected), ...(season && !quota ? { subHtml: 'No season fee set · <a class="aui-link" href="/admin/season">Set the season fee</a>' } : { sub: season ? `Season fee ${peso(quota)} each` : 'Confirmed payments' }) },
+    { label: 'To confirm', value: String(pending.length), tone: pending.length ? 'aui-tone--amber' : '', sub: pending.length === 1 ? 'payment waiting' : 'payments waiting' },
+  ]);
 
-  const txRows = transactions.length
-    ? transactions.slice(0, 5).map(tx => `
-    <tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors">
-      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(tx.date)}</td>
-      <td class="px-4 py-3 text-xs" style="color:${tx.type==='charge'?'#ef4444':'#22c55e'}">${tx.type === 'charge' ? 'Charge' : 'Payment'}</td>
-      <td class="px-4 py-3 text-sm font-semibold" style="color:${tx.type === 'charge' ? '#ef4444' : '#22c55e'}">${fmt(tx.amount)}</td>
-      <td class="px-4 py-3 text-sm text-slate-300">${escHtml(tx.notes || '—')}${tx.reference_no ? `<div class="text-[10px] text-slate-500 mt-0.5">Ref: ${escHtml(tx.reference_no)}</div>` : ''}</td>
-      <td class="px-4 py-3">${statusBadge(tx.status)}</td>
-    </tr>`).join('')
-    : `<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-slate-500">No transactions yet.</td></tr>`;
+  const teams = [...new Set(rows.map(r => r.team).filter(Boolean))].sort();
+  const openHref = r => `/admin/ledger?season=${encodeURIComponent(sp)}&player=${encodeURIComponent(r.id)}`;
+  const columns = [
+    { key: 'player', label: 'Player', primary: true, sort: r => r.name.toLowerCase(),
+      cell: r => `${avatar(r.name, r.color, { size: 32, playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}</span><span class="aui-cell__sub">${escHtml(r.team || 'No team')}</span></span>` },
+    { key: 'balance', label: 'Balance', num: true, sort: r => r.bal, cell: r => `<span class="${balanceTone(r.bal)}">${escHtml(balanceText(r.bal))}</span>` },
+    season ? { key: 'fee', label: `Season ${season} fee`, phone: false, sort: r => r.fee, cell: r => feeCell(r.fee, quota) } : null,
+    { key: 'pending', label: 'Pending', bare: true, sort: r => r.pending,
+      cell: r => (r.pending ? `<span class="aui-cell__stack alg-pend">${badge(`${r.pending} to confirm`, 'amber')}${r.ref ? `<span class="aui-cell__sub">Ref ${escHtml(r.ref)}</span>` : ''}</span>` : '<span class="aui-muted alg-desk">—</span>') },
+    { key: 'last', label: 'Last activity', phone: false, sort: r => r.last, cell: r => (r.last ? escHtml(fmtDate(r.last)) : '<span class="aui-muted">—</span>') },
+  ].filter(Boolean);
 
-  return `<div class="bg-admin-surface border border-admin-border rounded-lg mt-5 overflow-hidden">
-  <div class="flex items-center justify-between px-4 py-3 border-b border-admin-border">
-    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Account Balance</span>
-    <a href="/admin/ledger/${escHtml(playerId)}" class="agm-edit-link">${ICON_EYE} Full ledger</a>
+  const grid = dataGrid({
+    id: 'alg-balances', baseUrl: '/admin/ledger', query, keep: { season: sp },
+    rows, rowKey: r => r.id, noun: ['player', 'players'],
+    views: [
+      { key: 'all', label: 'All', test: () => true },
+      { key: 'owes', label: 'Owes', test: r => r.bal > EPS },
+      { key: 'pending', label: 'Pending', test: r => r.pending > 0 },
+      { key: 'credit', label: 'In credit', test: r => r.bal < -EPS },
+      { key: 'settled', label: 'Settled', test: r => Math.abs(r.bal) <= EPS },
+    ],
+    search: { placeholder: 'Search players', text: r => `${r.name} ${r.team}` },
+    filters: teams.length ? [{ key: 'team', label: 'Team', options: [...teams.map(t => [t, t]), ['none', 'No team']], test: (r, v) => (v === 'none' ? !r.team : r.team === v) }] : [],
+    defaultSort: '-balance', perPage: 50,
+    columns,
+    rowHref: openHref,
+    bulk: [{ label: 'Charge or record payment', eachUrl: '#alg-charge' }],
+    footer: list => {
+      const o = list.filter(r => r.bal > EPS), c = list.filter(r => r.bal < -EPS);
+      return `<tr><td colspan="${columns.length + 1}">${plural(list.length, 'player')} · ${peso(sum(o.map(r => r.bal)))} owed · ${peso(sum(c.map(r => r.bal)))} in credit</td></tr>`;
+    },
+    actionsHtml: button('+ Charge or payment', { kind: 'primary', attrs: 'data-alg-charge' }),
+    empty: { title: 'No players on the ledger', sub: 'Players show here once they’re confirmed for the season or have a charge or payment.' },
+  });
+
+  // Copy summary: everyone who owes or is in credit, most owed first.
+  const owing = rows.filter(r => Math.abs(r.bal) > EPS).sort((a, b) => b.bal - a.bal);
+  const summaryText = [
+    `WKND ledger · ${seasonLabel(season)}`,
+    `Owed to the league: ${peso(sum(owed))} (${plural(owed.length, 'player')})`,
+    `In credit: ${peso(sum(credit))} (${plural(credit.length, 'player')})`,
+    `Collected${season ? `, Season ${season}` : ''}: ${peso(collected)}`,
+    '',
+    ...owing.map(r => `${r.name} — ${balanceText(r.bal)}`),
+  ].join('\n');
+
+  const pickerPlayers = allPlayers
+    .map(p => ({ id: p.id, name: displayPlayerName(p.name), color: colorById[p.id] || p.team_color || '', meta: p.team_name || '' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return outlineDarkRings(`<div class="aui-page alg" data-alg-page>
+    ${pageHeader({
+      eyebrow: 'Finance', title: 'Ledger',
+      sub: 'Every player’s balance. Balances are all-time; the season pick changes the fee progress and what’s collected.',
+      actionsHtml: `${seasonSwitch(s => `/admin/ledger?season=${encodeURIComponent(s)}`, seasons, season)}${button('Copy summary', { kind: 'secondary', attrs: `data-alg-copy="${attr(summaryText)}"` })}`,
+    })}
+    ${stats}
+    ${section({ title: 'To confirm', note: '· payments players sent in, oldest first', bodyHtml: confirmQueue(pending, colorById, { season }) })}
+    ${section({ title: 'Balances', bodyHtml: grid })}
+    ${open ? playerDrawer(open, { season, quota, colorById }) : ''}
+    ${chargeDrawer({ id: 'alg-charge', action: '/admin/ledger/bulk-charge', seasons, season, players: pickerPlayers })}
   </div>
-  <div class="grid grid-cols-3 border-b border-admin-border">
-    <div class="px-4 py-3 border-r border-admin-border">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Balance</div>
-      <div class="text-base font-bold font-saira" style="color:${balanceColor(bal)}">${fmt(bal)}</div>
-    </div>
-    <div class="px-4 py-3 border-r border-admin-border">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Paid</div>
-      <div class="text-base font-semibold font-saira text-success">${fmt(fin?.total_paid ?? 0)}</div>
-    </div>
-    <div class="px-4 py-3">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Charged</div>
-      <div class="text-base font-semibold font-saira text-error">${fmt(fin?.total_outstanding ?? 0)}</div>
-    </div>
-  </div>
-  <table class="w-full border-collapse has-col-dividers has-freeze-col">
-    <thead>
-      <tr>
-        <th class="${TH}">Date</th>
-        <th class="${TH}">Type</th>
-        <th class="${TH}">Amount</th>
-        <th class="${TH}">For</th>
-        <th class="${TH}">Status</th>
-      </tr>
-    </thead>
-    <tbody>${txRows}</tbody>
-  </table>
-</div>`;
+  <script src="/admin-ledger.js" defer></script>`);
 }
 
-// ── Ledger list page ──────────────────────────────────────────────────────────
-export function adminLedgerBody({ players = [], txByPlayer = {}, seasons = [], season = '', quota = 0, summary = {}, balMap = {}, lastActivityMap = {} } = {}) {
-  const teams = [...new Set(players.map(p => p.team_name).filter(Boolean))];
-
-  // balMap is always the all-time balance now (see server.js) regardless of the season
-  // filter, so sorting by it is meaningful in both "All Time" and season-filtered views —
-  // no more only-sorts-when-a-season-is-picked.
-  const sorted = [...players].sort((a, b) => {
-    const bA = Number(balMap[a.id]?.balance ?? 0);
-    const bB = Number(balMap[b.id]?.balance ?? 0);
-    return bB - bA;
+// The player drawer on /admin/ledger (?player=<id>); server-rendered open, so every action
+// inside it re-renders it with fresh numbers.
+function playerDrawer({ player, fin, transactions, seasonPaid, feePaid }, { season, quota, colorById }) {
+  const name = displayPlayerName(player.name);
+  const bal = Number(fin?.current_balance) || 0;
+  const t = [
+    { label: 'Balance', value: balanceText(bal), tone: balanceTone(bal) === 'aui-muted' ? '' : balanceTone(bal) },
+    { label: season ? `Paid, Season ${season}` : 'Paid, all time', value: peso(season ? seasonPaid : fin?.total_paid) },
+    season && quota
+      ? { label: 'Season fee', value: `${Math.min(100, Math.round((feePaid / quota) * 100))}%`, sub: `${peso(feePaid)} of ${peso(quota)}` }
+      : { label: 'Charged, all time', value: peso(fin?.total_outstanding) },
+  ];
+  const recent = transactions.slice(0, 8);
+  const list = recent.length
+    ? `<div class="alg-txs">${recent.map(tx => {
+        const sub = [tx.type === 'charge' ? 'Charge' : 'Payment', fmtDate(tx.date), tx.season ? `S${tx.season}` : '', tx.reference_no ? `Ref ${tx.reference_no}` : ''].filter(Boolean).join(' · ');
+        return `<div class="alg-tx${tx.status === 'voided' ? ' is-void' : ''}">
+          <span class="alg-tx__what"><span class="alg-tx__title">${escHtml(txTitle(tx))}</span><span class="alg-tx__sub">${escHtml(sub)}</span></span>
+          ${tx.status !== 'confirmed' ? badge(...STATUS[tx.status] || STATUS.pending) : ''}
+          ${txAmount(tx)}
+          ${menu(txMenu(tx), 'Transaction actions')}
+        </div>`;
+      }).join('')}</div>`
+    : '<p class="aui-muted alg-none">No charges or payments yet.</p>';
+  const more = transactions.length > recent.length ? `<p class="aui-muted alg-none">${plural(transactions.length - recent.length, 'older entry', 'older entries')} in the full history.</p>` : '';
+  const html = drawer({
+    id: 'alg-player', eyebrow: `${player.team_name || 'No team'} · Ledger`, title: name,
+    bodyHtml: `<div class="alg-player" data-alg-player="${attr(player.id)}">${tiles(t, 'alg-stats--3')}${list}${more}</div>`,
+    footerHtml: `<a class="aui-link alg-history" href="/admin/ledger/${encodeURIComponent(player.id)}?season=${encodeURIComponent(seasonParam(season))}">Open full history</a>
+      ${button('+ Add transaction', { kind: 'primary', attrs: `data-alg-add="${attr(player.id)}" data-alg-add-name="${attr(name)}"` })}`,
   });
-
-  const seasonPills = seasons.map(s =>
-    `<button class="agm-pill${s === season ? ' is-active' : ''}" data-season="${escHtml(s)}"><span class="pill-label">${escHtml(s)}</span></button>`
-  ).join('');
-
-  const teamPills = teams.map(t =>
-    `<button class="agm-pill" data-fteam="${escHtml(t.toLowerCase())}"><span class="pill-label">${escHtml(t)}</span></button>`
-  ).join('');
-
-  const rows = sorted.map(p => {
-    const name    = displayPlayerName(p.name);
-    const color   = teamColor(p.team_name);
-    const sbal    = balMap[p.id];
-    const bal     = Number(sbal?.balance ?? 0);
-    // balMap's own "paid" is always all-time (see the comment above), but the quota bar below
-    // is compared against one season's flat quota — mixing an all-time numerator with a
-    // season-specific denominator made anyone who'd played a prior season (and so had built up
-    // an all-time total already well past a single season's quota) show a maxed-out bar
-    // regardless of what they'd actually paid *this* season. Scope "paid" to the selected
-    // season instead, from the same already-season-filtered list the rest of this row uses.
-    const seasonPaid = (txByPlayer[p.id] || [])
-      .filter(t => t.status === 'confirmed' && t.type === 'payment')
-      .reduce((s, t) => s + t.amount, 0);
-    const paid    = season ? seasonPaid : Number(sbal?.paid ?? 0);
-    const pendingTx = (txByPlayer[p.id] || []).filter(t => t.status === 'pending');
-    const pending = Number(sbal?.pending_count ?? pendingTx.length ?? 0);
-    // The single most recent pending transaction's own reference number (not just any
-    // pending one) — the thing admin actually needs to eyeball right here to match a
-    // payment against a bank/GCash statement, without opening the full per-player ledger.
-    const pendingRef = pendingTx[0]?.reference_no || '';
-    const balKey  = bal > 0 ? 'owed' : 'settled';
-    const balLabel = bal === 0 ? 'Settled' : fmt(Math.abs(bal));
-    const lastActivity = lastActivityMap[p.id] || '';
-
-    return `<tr class="agm-row border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors"
-      data-q="${escHtml(name.toLowerCase() + ' ' + (p.team_name || '').toLowerCase())}"
-      data-team="${escHtml((p.team_name || '').toLowerCase())}"
-      data-bal="${balKey}"
-      data-pid="${escHtml(p.id)}"
-      data-name="${escHtml(name.toLowerCase())}"
-      data-balnum="${bal}"
-      data-pending="${pending}"
-      data-lastactivity="${escHtml(lastActivity)}">
-      <td class="px-4 py-3">
-        <label class="inline-flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" class="lgr-check accent-brand" value="${escHtml(p.id)}">
-          <span class="w-2 h-2 rounded-full shrink-0" style="background:${color}"></span>
-          <span class="text-xs text-slate-200">${escHtml(name)}</span>
-        </label>
-      </td>
-      <td class="px-4 py-3 font-semibold text-sm" style="color:${balanceColor(bal)}">
-        ${escHtml(balLabel)}
-        ${quota ? quotaBar(paid, quota) : ''}
-      </td>
-      <td class="px-4 py-3">
-        ${pending > 0
-          ? `<span class="agm-badge agm-badge--amber">${pending} pending</span>${pendingRef ? `<div class="text-[10px] text-slate-500 mt-0.5">Ref: ${escHtml(pendingRef)}</div>` : ''}`
-          : `<span class="text-slate-600 text-xs">–</span>`}
-      </td>
-      <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(lastActivity)}</td>
-      <td class="px-4 py-3 text-right">
-        <a href="/admin/ledger/${escHtml(p.id)}${season ? `?season=${encodeURIComponent(season)}` : ''}" class="agm-edit-link">View ${ICON_CHEVRON_R}</a>
-      </td>
-    </tr>`;
-  }).join('');
-
-  const visibleCount = players.length;
-  const visibleTotal = sorted.reduce((s, p) => s + Number(balMap[p.id]?.balance ?? 0), 0);
-
-  const today = new Date().toISOString().split('T')[0];
-
-  const summaryStrip = season ? `
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-  ${statTile('Total Outstanding', fmt(summary.total_outstanding ?? 0), '#ef4444')}
-  ${statTile('Total Collected', fmt(summary.total_paid ?? 0), '#22c55e')}
-  ${statTile('Pending Transactions', String(summary.pending_count ?? 0), '#f59332')}
-  ${statTile('Quota', quota ? fmt(quota) : 'Not set')}
-</div>` : '';
-
-  return `
-<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-  <h2 class="text-xl font-bold tracking-tight text-slate-100">Ledger</h2>
-  <div class="flex items-center gap-2">
-    <button id="lgr-export-btn" class="admin-btn admin-btn--inline-action" style="align-self:center">${ICON_COPY} Copy</button>
-    <button id="lgr-bulk-btn" class="agm-new-btn">${ICON_PLUS} Bulk Charge</button>
-    <input type="search" id="lgr-search" class="agm-search" placeholder="Search players…">
-  </div>
-</div>
-
-${season ? `
-<div class="flex items-center gap-2 py-2 mb-2">
-  <span class="text-xs text-slate-500">Season quota:</span>
-  <span class="text-sm font-semibold text-slate-200">${quota ? fmt(quota) : 'Not set'}</span>
-  ${!quota ? `<a href="/admin/season" class="text-[11px] text-slate-500 border border-admin-border rounded px-2 py-0.5 no-underline hover:border-brand/50 transition-colors">Set season fee</a>` : ''}
-</div>` : ''}
-
-<div class="mb-4 flex flex-wrap gap-3">
-  ${seasons.length ? `<div class="flex flex-wrap items-center gap-1.5" id="lgr-season-pills">
-    <button class="agm-pill${!season ? ' is-active' : ''}" data-season=""><span class="pill-label">All Time</span></button>
-    ${seasonPills}
-  </div>` : ''}
-  <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fteam=""><span class="pill-label">All Teams</span></button>
-    ${teamPills}
-  </div>
-  <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill is-active" data-fbal=""><span class="pill-label">All</span></button>
-    <button class="agm-pill" data-fbal="owed"><span class="pill-label">Owed</span></button>
-    <button class="agm-pill" data-fbal="settled"><span class="pill-label">Settled</span></button>
-  </div>
-  <div class="flex flex-wrap items-center gap-1.5">
-    <button class="agm-pill" id="lgr-pending-toggle"><span class="pill-label">⏳ Pending only</span></button>
-  </div>
-</div>
-
-${summaryStrip}
-
-<div id="lgr-totals" class="text-xs text-slate-500 mb-2">${visibleCount} player${visibleCount === 1 ? '' : 's'} · ${fmt(visibleTotal)} outstanding</div>
-
-<div id="lgr-bulk-panel" hidden class="mb-4">
-  <div class="bg-admin-surface border border-admin-border rounded-lg p-5">
-    <div class="flex items-center justify-between mb-4">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Bulk Charge / Payment</div>
-      <button id="lgr-bulk-close" class="agm-icon-btn" title="Close">&times;</button>
-    </div>
-    <div id="lgr-bulk-msg" hidden class="rounded-lg text-[13px] px-3.5 py-2.5 mb-3.5"></div>
-    <div class="grid grid-cols-3 gap-3">
-      <div>
-        <label class="admin-field-label">Type</label>
-        <select id="blk-type" class="admin-input mt-1">
-          <option value="charge">Charge</option>
-          <option value="payment">Payment</option>
-        </select>
-      </div>
-      <div>
-        <label class="admin-field-label">Amount (PHP)</label>
-        <input type="number" id="blk-amount" class="admin-input mt-1" min="0.01" step="0.01" placeholder="0.00">
-      </div>
-      <div>
-        <label class="admin-field-label">Category</label>
-        <select id="blk-category" class="admin-input mt-1"><option value="">— None —</option>${categoryOpts()}</select>
-      </div>
-      <div>
-        <label class="admin-field-label">Status</label>
-        <select id="blk-status" class="admin-input mt-1">
-          <option value="confirmed">Confirmed</option>
-          <option value="pending">Pending</option>
-        </select>
-      </div>
-      <div>
-        <label class="admin-field-label">Date</label>
-        <input type="date" id="blk-date" class="admin-input mt-1" value="${today}">
-      </div>
-      <div>
-        <label class="admin-field-label">Season</label>
-        <select id="blk-season" class="admin-input mt-1">${seasonOpts(seasons, season)}</select>
-      </div>
-      <div class="col-span-3">
-        <label class="admin-field-label">Notes</label>
-        <input type="text" id="blk-notes" class="admin-input mt-1" placeholder="e.g. Season 3 Quota">
-      </div>
-    </div>
-    <div class="mt-4 flex items-center gap-2">
-      <button id="blk-select-all" class="admin-btn">${ICON_CHECK} Select All</button>
-      <span id="blk-count" class="text-xs text-slate-500">0 players selected</span>
-      <button id="blk-submit" class="admin-btn" style="margin-left:auto">${ICON_CHECK} Apply to Selected</button>
-    </div>
-  </div>
-</div>
-
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
-  <table class="w-full border-collapse has-col-dividers has-freeze-col">
-    <thead>
-      <tr>
-        <th class="${TH} lgr-sortable" data-sort="name" style="cursor:pointer;user-select:none">Player <span class="lgr-sort-arrow"></span></th>
-        <th class="${TH} lgr-sortable" data-sort="balnum" style="cursor:pointer;user-select:none">Balance <span class="lgr-sort-arrow"></span></th>
-        <th class="${TH} lgr-sortable" data-sort="pending" style="cursor:pointer;user-select:none">Pending <span class="lgr-sort-arrow"></span></th>
-        <th class="${TH} lgr-sortable" data-sort="lastactivity" style="cursor:pointer;user-select:none">Last Activity <span class="lgr-sort-arrow"></span></th>
-        <th class="${TH}"></th>
-      </tr>
-    </thead>
-    <tbody id="lgr-tbody">
-      ${rows || '<tr><td colspan="5" class="px-4 py-10 text-center text-sm text-slate-500">No players found.</td></tr>'}
-    </tbody>
-  </table>
-</div>
-
-<script>
-(function(){
-  var fteam = '', fbal = '', fpending = false, currentSeason = '${escHtml(season)}';
-
-  // ── Filters ───────────────────────────────────────────────────────────────
-  // "Pending only" is a separate on/off toggle rather than a third data-fbal option —
-  // owed/settled and having a pending transaction are independent (a settled player can
-  // still have a fresh pending charge, an owed one might have no pending activity at all),
-  // so it needs to AND with the other filters rather than replace them.
-  function apply() {
-    var q = document.getElementById('lgr-search').value.toLowerCase().trim();
-    var visibleCount = 0, visibleTotal = 0;
-    document.querySelectorAll('#lgr-tbody .agm-row').forEach(function(r) {
-      var show = (!fteam || r.dataset.team === fteam)
-              && (!fbal  || r.dataset.bal  === fbal)
-              && (!fpending || Number(r.dataset.pending) > 0)
-              && (!q     || r.dataset.q.includes(q));
-      r.style.display = show ? '' : 'none';
-      if (show) { visibleCount++; visibleTotal += Number(r.dataset.balnum); }
-    });
-    var totalsEl = document.getElementById('lgr-totals');
-    if (totalsEl) totalsEl.textContent = visibleCount + (visibleCount === 1 ? ' player · ' : ' players · ') + fmtPeso(visibleTotal) + ' outstanding';
-  }
-  // Mirrors fmt() server-side (views/admin/ledger.js) exactly, so the totals line reads
-  // the same before and after any filter/search interaction touches it.
-  function fmtPeso(n) {
-    return 'PHP ' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  }
-  document.querySelectorAll('[data-fteam]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      fteam = this.dataset.fteam;
-      document.querySelectorAll('[data-fteam]').forEach(function(x){ x.classList.toggle('is-active', x.dataset.fteam === fteam); });
-      apply();
-    });
-  });
-  document.querySelectorAll('[data-fbal]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      fbal = this.dataset.fbal;
-      document.querySelectorAll('[data-fbal]').forEach(function(x){ x.classList.toggle('is-active', x.dataset.fbal === fbal); });
-      apply();
-    });
-  });
-  document.getElementById('lgr-pending-toggle').addEventListener('click', function() {
-    fpending = !fpending;
-    this.classList.toggle('is-active', fpending);
-    apply();
-  });
-  document.getElementById('lgr-search').addEventListener('input', apply);
-  apply();
-
-  // ── Sorting ───────────────────────────────────────────────────────────────
-  // Client-side, like the filters above — reorders the existing rows rather than
-  // reloading, and doesn't fight with the show/hide filtering since that only ever
-  // touches display, never DOM order. Defaults to Balance descending, matching the
-  // order the server already rendered, so the arrow is correct without an extra sort
-  // on load actually changing anything.
-  var sortKey = 'balnum', sortDir = -1;
-  function applySort() {
-    var tbody = document.getElementById('lgr-tbody');
-    var rows = Array.prototype.slice.call(tbody.querySelectorAll('.agm-row'));
-    rows.sort(function(a, b) {
-      if (sortKey === 'name' || sortKey === 'lastactivity') {
-        return sortDir * a.dataset[sortKey].localeCompare(b.dataset[sortKey]);
-      }
-      return sortDir * (Number(a.dataset[sortKey]) - Number(b.dataset[sortKey]));
-    });
-    rows.forEach(function(r) { tbody.appendChild(r); });
-    document.querySelectorAll('.lgr-sortable').forEach(function(th) {
-      var active = th.dataset.sort === sortKey;
-      th.style.color = active ? '#f59332' : '';
-      th.querySelector('.lgr-sort-arrow').textContent = active ? (sortDir === 1 ? '▲' : '▼') : '';
-    });
-  }
-  document.querySelectorAll('.lgr-sortable').forEach(function(th) {
-    th.addEventListener('click', function() {
-      var key = th.dataset.sort;
-      if (sortKey === key) sortDir *= -1;
-      else { sortKey = key; sortDir = key === 'name' ? 1 : -1; }
-      applySort();
-    });
-  });
-  applySort();
-
-  // ── Season pills (reload page) ────────────────────────────────────────────
-  document.querySelectorAll('[data-season]').forEach(function(b) {
-    b.addEventListener('click', function() {
-      var s = this.dataset.season;
-      window.location.href = '/admin/ledger' + (s ? '?season=' + encodeURIComponent(s) : '');
-    });
-  });
-
-  // ── Bulk charge ───────────────────────────────────────────────────────────
-  var bulkPanel = document.getElementById('lgr-bulk-panel');
-  var bulkCount = document.getElementById('blk-count');
-  document.getElementById('lgr-bulk-btn').addEventListener('click', function() { bulkPanel.hidden = false; });
-  document.getElementById('lgr-bulk-close').addEventListener('click', function() { bulkPanel.hidden = true; });
-  function updateCount() {
-    var n = document.querySelectorAll('.lgr-check:checked').length;
-    bulkCount.textContent = n + ' player' + (n === 1 ? '' : 's') + ' selected';
-  }
-  document.querySelectorAll('.lgr-check').forEach(function(c) { c.addEventListener('change', updateCount); });
-  document.getElementById('blk-select-all').addEventListener('click', function() {
-    var checks = document.querySelectorAll('#lgr-tbody .agm-row:not([style*="none"]) .lgr-check');
-    var allChecked = [...checks].every(function(c){ return c.checked; });
-    checks.forEach(function(c){ c.checked = !allChecked; });
-    updateCount();
-  });
-  document.getElementById('blk-submit').addEventListener('click', async function() {
-    var pids = [...document.querySelectorAll('.lgr-check:checked')].map(function(c){ return c.value; });
-    if (!pids.length) return;
-    var amount = parseFloat(document.getElementById('blk-amount').value);
-    var date   = document.getElementById('blk-date').value;
-    if (!amount || !date) { alert('Amount and date are required.'); return; }
-    var msg = document.getElementById('lgr-bulk-msg');
-    var btn = this;
-    var origHtml = btn.innerHTML;
-    btn.disabled = true; btn.textContent = 'Applying…';
-    try {
-      var r = await fetch('/admin/ledger/bulk-charge', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          player_ids: pids, amount,
-          type:     document.getElementById('blk-type').value,
-          status:   document.getElementById('blk-status').value,
-          date,
-          notes:    document.getElementById('blk-notes').value,
-          season:   document.getElementById('blk-season').value,
-          category: document.getElementById('blk-category').value,
-        })
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      msg.removeAttribute('hidden');
-      msg.style.cssText = 'background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#22c55e;border-radius:8px;font-size:13px;padding:10px 14px;margin-bottom:14px';
-      msg.textContent = 'Applied to ' + j.count + ' players. Reloading…';
-      setTimeout(function(){ location.reload(); }, 900);
-    } catch(err) {
-      msg.removeAttribute('hidden');
-      msg.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:8px;font-size:13px;padding:10px 14px;margin-bottom:14px';
-      msg.textContent = err.message;
-      btn.disabled = false; btn.innerHTML = origHtml;
-    }
-  });
-
-  // ── Clipboard export ──────────────────────────────────────────────────────
-  document.getElementById('lgr-export-btn').addEventListener('click', function() {
-    var lines = ['WKND League — ' + (currentSeason || 'All Time') + ' Balance Summary', ''];
-    document.querySelectorAll('#lgr-tbody .agm-row').forEach(function(r) {
-      if (r.style.display === 'none') return;
-      var name = r.querySelector('span.text-xs.text-slate-200')?.textContent?.trim() || '';
-      var bal  = r.querySelector('td:nth-child(2)')?.firstChild?.textContent?.trim() || '';
-      if (name) lines.push(name + ' — ' + bal);
-    });
-    navigator.clipboard.writeText(lines.join('\\n')).then(function() {
-      var btn = document.getElementById('lgr-export-btn');
-      btn.textContent = '✓ Copied';
-      setTimeout(function(){ btn.innerHTML = '${ICON_COPY} Copy'; }, 2000);
-    });
-  });
-})();
-</script>`;
+  // Rendered open: this drawer only exists when ?player= asks for it.
+  return html.replace(' hidden data-drawer', ' data-drawer data-alg-open');
 }
 
-// ── Ledger player detail page ─────────────────────────────────────────────────
-export function adminLedgerPlayerBody({ player, fin = {}, transactions = [], seasons = [], season = '', quota = 0 } = {}) {
-  const name  = displayPlayerName(player.name);
-  const color = teamColor(player.team_name);
-  const bal   = Number(fin.current_balance ?? 0);
-  const today = new Date().toISOString().split('T')[0];
+// ── /admin/ledger/:id ─────────────────────────────────────────────────────────────────────
+export function adminLedgerPlayerBody({ player, fin = {}, transactions = [], seasons = [], season = '', quota = 0, feePaid = 0, pending = [], colorById = {}, query = {} } = {}) {
+  const name = displayPlayerName(player.name);
+  const sp = seasonParam(season);
+  const bal = Number(fin.current_balance) || 0;
+  // Season tiles count only that season's rows (unseasoned ones are all-time only), like the drawer.
+  const confirmed = transactions.filter(t => t.status === 'confirmed' && (!season || String(t.season ?? '') === String(season)));
+  const paid = confirmed.filter(t => t.type === 'payment').reduce((s, t) => s + t.amount, 0);
+  const charged = confirmed.filter(t => t.type === 'charge').reduce((s, t) => s + t.amount, 0);
 
-  const seasonBal  = transactions.filter(t => t.status === 'confirmed' && t.type === 'charge').reduce((s, t) => s + t.amount, 0)
-                   - transactions.filter(t => t.status === 'confirmed' && t.type === 'payment').reduce((s, t) => s + t.amount, 0);
-  const seasonPaid = transactions.filter(t => t.status === 'confirmed' && t.type === 'payment').reduce((s, t) => s + t.amount, 0);
+  const stats = tiles([
+    { label: 'Balance, all time', value: balanceText(bal), tone: balanceTone(bal) === 'aui-muted' ? '' : balanceTone(bal) },
+    { label: season ? `Paid, Season ${season}` : 'Paid, all time', value: peso(season ? paid : fin.total_paid) },
+    season && quota
+      ? { label: `Season ${season} fee`, value: `${Math.min(100, Math.round((feePaid / quota) * 100))}%`, sub: `${peso(feePaid)} of ${peso(quota)}` }
+      : { label: season ? `Charged, Season ${season}` : 'Charged, all time', value: peso(season ? charged : fin.total_outstanding) },
+  ], 'alg-stats--3');
 
-  const seasonPills = seasons.map(s =>
-    `<a href="/admin/ledger/${escHtml(player.id)}?season=${encodeURIComponent(s)}" class="agm-pill${s === season ? ' is-active' : ''}"><span class="pill-label">${escHtml(s)}</span></a>`
-  ).join('');
-
-  const txRows = transactions.length
-    ? transactions.map(tx => {
-        const isCharge   = tx.type === 'charge';
-        const canConfirm = tx.status === 'pending';
-        const canVoid    = tx.status === 'confirmed';
-
-        const refLine = tx.reference_no ? `<div class="text-[10px] text-slate-500 mt-0.5">Ref: ${escHtml(tx.reference_no)}</div>` : '';
-        const notesCell = canConfirm
-          ? `${escHtml(tx.notes || '—')}${refLine}
-             ${tx.screenshot_url ? `<a href="${tx.screenshot_url}" target="_blank" class="ml-1.5 text-[10px] text-brand hover:underline">📷 screenshot</a>` : ''}
-             <input type="text" id="cat-${escHtml(tx.id)}" class="admin-input mt-1.5" style="max-width:180px" placeholder="Category — e.g. papawis" value="${escHtml(tx.category || '')}">`
-          : `${escHtml(tx.notes || '—')}${refLine}
-             ${tx.screenshot_url ? `<a href="${tx.screenshot_url}" target="_blank" class="ml-1.5 text-[10px] text-brand hover:underline">📷 screenshot</a>` : ''}
-             ${tx.category ? `<span class="ml-1.5 text-[10px] text-slate-500 bg-admin-border/50 px-1.5 py-0.5 rounded-full">${escHtml(tx.category)}</span>` : ''}`;
-
-        const statusCell = canConfirm
-          ? `<button onclick="lgrConfirm('${escHtml(tx.id)}')" id="status-${escHtml(tx.id)}" class="agm-badge agm-badge--amber cursor-pointer hover:opacity-80" title="Click to confirm">pending</button>`
-          : statusBadge(tx.status);
-
-        const actionBtns = `
-          <button id="btn-void-${escHtml(tx.id)}"   onclick="lgrVoid('${escHtml(tx.id)}')"   class="agm-icon-btn" title="Void"   ${canVoid ? '' : 'style="display:none"'}>${ICON_VOID}</button>
-          <button id="btn-delete-${escHtml(tx.id)}" onclick="lgrDelete('${escHtml(tx.id)}')" class="agm-icon-btn agm-icon-btn--danger" title="Delete">${ICON_TRASH}</button>`;
-
-        return `<tr class="border-b border-admin-border/50 last:border-b-0 hover:bg-white/[.015] transition-colors" id="txrow-${escHtml(tx.id)}">
-          <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(tx.date)}</td>
-          <td class="px-4 py-3 text-xs" style="color:${isCharge ? '#ef4444' : '#22c55e'}">${isCharge ? 'Charge' : 'Payment'}</td>
-          <td class="px-4 py-3 text-sm font-semibold font-saira" style="color:${isCharge ? '#ef4444' : '#22c55e'}">${fmt(tx.amount)}</td>
-          <td class="px-4 py-3 text-sm text-slate-300">${notesCell}</td>
-          <td class="px-4 py-3 text-xs text-slate-500">${escHtml(tx.season || '—')}</td>
-          <td class="px-4 py-3" id="status-cell-${escHtml(tx.id)}">${statusCell}</td>
-          <td class="px-4 py-3 text-xs text-slate-500">${escHtml(METHOD_LABELS[tx.payment_method] || tx.payment_method || '—')}</td>
-          <td class="px-4 py-3">
-            <div class="flex items-center gap-1.5 justify-end">${actionBtns}</div>
-          </td>
-        </tr>`;
-      }).join('')
-    : `<tr><td colspan="8" class="px-4 py-10 text-center text-sm text-slate-500">No transactions yet.</td></tr>`;
-
-  return `
-<div class="mb-5 flex flex-wrap items-center gap-2.5">
-  <a href="/admin/ledger${season ? '?season='+encodeURIComponent(season) : ''}" class="text-sm text-slate-500 hover:text-slate-300 no-underline transition-colors">← Ledger</a>
-  <span class="text-admin-border">/</span>
-  <h2 class="text-xl font-bold tracking-tight text-slate-100">${escHtml(name)}</h2>
-  <span class="w-2 h-2 rounded-full" style="background:${color}"></span>
-  <span class="text-sm text-slate-500">${escHtml(player.team_name || '')}</span>
-</div>
-
-${seasons.length ? `<div class="mb-4 flex flex-wrap items-center gap-1.5">
-  <a href="/admin/ledger/${escHtml(player.id)}?season=" class="agm-pill${!season ? ' is-active' : ''}"><span class="pill-label">All Time</span></a>
-  ${seasonPills}
-</div>` : ''}
-
-<div class="grid grid-cols-3 gap-3 mb-5">
-  ${statTile('All Time Balance', fmt(bal), balanceColor(bal))}
-  ${statTile('All Time Paid', fmt(fin.total_paid ?? 0), '#22c55e')}
-  ${quota && season
-    ? `<div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4">
-        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">Quota Progress</div>
-        <div class="text-xl font-bold font-saira text-slate-100">${fmt(seasonPaid)} <span class="text-sm text-slate-500">/ ${fmt(quota)}</span></div>
-        ${quotaBar(seasonPaid, quota)}
-      </div>`
-    : statTile(season ? 'Season Charged' : 'Total Charged', fmt(season ? (seasonBal + seasonPaid) : (fin.total_outstanding ?? 0)), '#ef4444')}
-</div>
-
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto mb-5">
-  <table class="w-full border-collapse has-col-dividers has-freeze-col">
-    <thead>
-      <tr>
-        <th class="${TH}">Date</th>
-        <th class="${TH}">Type</th>
-        <th class="${TH}">Amount</th>
-        <th class="${TH}">Notes</th>
-        <th class="${TH}">Season</th>
-        <th class="${TH}">Status</th>
-        <th class="${TH}">Method</th>
-        <th class="${TH}"></th>
-      </tr>
-    </thead>
-    <tbody id="lgr-tx-tbody">${txRows}</tbody>
-  </table>
-</div>
-
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-  <div class="px-5 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Add Transaction</div>
-  <div class="p-5">
-    ${addTransactionForm(player.id, today, season, seasons)}
-  </div>
-</div>
-
-<script>
-  // ── Confirm (in-place via status badge click) ─────────────────────────────
-  window.lgrConfirm = async function(id) {
-    if (!confirm('Mark this transaction as confirmed?')) return;
-    var catInput = document.getElementById('cat-' + id);
-    try {
-      var r = await fetch('/admin/ledger/transaction/' + id + '/confirm', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: catInput ? catInput.value.trim() : undefined })
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      var statusCell = document.getElementById('status-cell-' + id);
-      if (statusCell) statusCell.innerHTML = '<span class="agm-badge agm-badge--green">confirmed</span>';
-      var voidBtn = document.getElementById('btn-void-' + id);
-      if (voidBtn) voidBtn.style.display = '';
-      var row = document.getElementById('txrow-' + id);
-      if (row) { row.style.transition = 'background .15s'; row.style.background = 'rgba(34,197,94,.07)'; setTimeout(function(){ row.style.background = ''; }, 900); }
-    } catch(err) { alert(err.message); }
-  };
-
-  // ── Void (in-place) ───────────────────────────────────────────────────────
-  window.lgrVoid = async function(id) {
-    if (!confirm('Void this transaction? It will be kept in history but reversed.')) return;
-    try {
-      var r = await fetch('/admin/ledger/transaction/' + id + '/void', { method: 'POST' });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      var statusCell = document.getElementById('status-cell-' + id);
-      if (statusCell) statusCell.innerHTML = '<span class="agm-badge agm-badge--gray">voided</span>';
-      var voidBtn = document.getElementById('btn-void-' + id);
-      if (voidBtn) voidBtn.style.display = 'none';
-      var row = document.getElementById('txrow-' + id);
-      if (row) row.style.opacity = '0.5';
-    } catch(err) { alert(err.message); }
-  };
-
-  // ── Delete (fade out) ─────────────────────────────────────────────────────
-  window.lgrDelete = async function(id) {
-    if (!confirm('Delete this transaction? This cannot be undone.')) return;
-    try {
-      var r = await fetch('/admin/ledger/transaction/' + id, { method: 'DELETE' });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      var row = document.getElementById('txrow-' + id);
-      if (row) {
-        row.style.transition = 'opacity .25s, transform .25s';
-        row.style.opacity = '0';
-        row.style.transform = 'translateX(6px)';
-        setTimeout(function(){ row.remove(); }, 260);
-      }
-    } catch(err) { alert(err.message); }
-  };
-
-  // ── Add transaction ───────────────────────────────────────────────────────
-  var lgrForm = document.getElementById('lgr-form');
-  if (lgrForm) lgrForm.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    var btn = document.getElementById('lgr-submit');
-    var msg = document.getElementById('lgr-msg');
-    btn.disabled = true; btn.textContent = 'SAVING...';
-    try {
-      var res = await fetch('/admin/ledger/transaction', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.fromEntries(new FormData(e.target)))
-      });
-      var json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed');
-      msg.removeAttribute('hidden');
-      msg.style.cssText = 'background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#22c55e;border-radius:8px;font-size:13px;padding:10px 14px;margin-bottom:14px';
-      msg.textContent = 'Saved. Reloading...';
-      setTimeout(function(){ location.reload(); }, 800);
-    } catch(err) {
-      msg.removeAttribute('hidden');
-      msg.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:8px;font-size:13px;padding:10px 14px;margin-bottom:14px';
-      msg.textContent = err.message;
-      btn.disabled = false; btn.textContent = 'ADD TRANSACTION';
-    }
+  const rowsWithKey = transactions.map((t, i) => ({ ...t, _i: i }));
+  const grid = dataGrid({
+    id: 'alg-history', baseUrl: `/admin/ledger/${encodeURIComponent(player.id)}`, query, keep: { season: sp },
+    rows: rowsWithKey, rowKey: t => t.id, noun: ['entry', 'entries'],
+    views: [
+      { key: 'all', label: 'All', test: () => true },
+      { key: 'pending', label: 'Pending', test: t => t.status === 'pending' },
+      { key: 'confirmed', label: 'Confirmed', test: t => t.status === 'confirmed' },
+      { key: 'voided', label: 'Voided', test: t => t.status === 'voided' },
+    ],
+    search: { placeholder: 'Search notes, category, ref', text: t => `${t.category} ${t.notes} ${t.reference_no}` },
+    filters: [{ key: 'type', label: 'Type', options: [['charge', 'Charges'], ['payment', 'Payments']], test: (t, v) => t.type === v }],
+    defaultSort: '-date', perPage: 50,
+    columns: [
+      { key: 'date', label: 'Date', nowrap: true, bare: true, sort: t => `${t.date}|${String(1e6 - t._i).padStart(7, '0')}`, cell: t => escHtml(fmtDate(t.date)) },
+      { key: 'what', label: 'What', primary: true, sort: t => txTitle(t).toLowerCase(),
+        cell: t => {
+          const sub = [t.type === 'charge' ? 'Charge' : 'Payment', t.category && t.notes ? t.notes : '', t.reference_no ? `Ref ${t.reference_no}` : ''].filter(Boolean).join(' · ');
+          return `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(txTitle(t))}</span><span class="aui-cell__sub">${escHtml(sub)}${isSafeScreenshot(t.screenshot_url) ? ` · ${shotLink(t)}` : ''}</span></span>`;
+        } },
+      { key: 'amount', label: 'Amount', num: true, bare: true, sort: t => (t.type === 'charge' ? -1 : 1) * t.amount, cell: txAmount },
+      // Badge only the states that need a look (like the drawer); confirmed is the norm.
+      { key: 'status', label: 'Status', bare: true, sort: t => t.status, cell: t => (t.status === 'confirmed' ? '<span class="aui-muted alg-desk">Confirmed</span>' : badge(...(STATUS[t.status] || STATUS.pending))) },
+      { key: 'season', label: 'Season', phone: false, sort: t => Number(t.season) || 0, cell: t => (t.season ? escHtml(`S${t.season}`) : '<span class="aui-muted">—</span>') },
+      { key: 'method', label: 'Method', phone: false, cell: t => (t.payment_method ? escHtml(methodLabel(t.payment_method)) : '<span class="aui-muted">—</span>') },
+    ],
+    rowMenu: txMenu,
+    footer: list => {
+      const c = list.filter(t => t.status === 'confirmed');
+      const ch = c.filter(t => t.type === 'charge').reduce((s, t) => s + t.amount, 0);
+      const pd = c.filter(t => t.type === 'payment').reduce((s, t) => s + t.amount, 0);
+      return `<tr><td colspan="7">${plural(list.length, 'entry', 'entries')} · charged ${peso(ch)} · paid ${peso(pd)}</td></tr>`;
+    },
+    empty: { title: 'No charges or payments yet', sub: season ? `Nothing in Season ${season}. Try All time.` : 'Add one with “+ Add transaction”.' },
   });
-</script>`;
+
+  return outlineDarkRings(`<div class="aui-page alg" data-alg-page>
+    ${breadcrumb([{ label: 'Ledger', href: `/admin/ledger?season=${encodeURIComponent(sp)}` }, { label: name }])}
+    ${personStrip({ name, color: colorById[player.id] || '', playerId: player.id, sub: player.team_name || 'No team', links: [{ label: 'Ledger', href: `/admin/ledger/${encodeURIComponent(player.id)}`, active: true }, { label: 'Player', href: `/admin/players/${encodeURIComponent(player.id)}` }] })}
+    <div class="aui-row-between">
+      ${seasonSwitch(s => `/admin/ledger/${encodeURIComponent(player.id)}?season=${encodeURIComponent(s)}`, seasons, season)}
+      ${button('+ Add transaction', { kind: 'primary', attrs: 'data-alg-add-one' })}
+    </div>
+    ${stats}
+    ${pending.length ? section({ title: 'To confirm', note: '· all seasons, oldest first', bodyHtml: confirmQueue(pending, colorById, { showName: false }) }) : ''}
+    ${section({ title: 'History', note: `· ${seasonLabel(season)}`, bodyHtml: grid })}
+    ${chargeDrawer({ id: 'alg-add', action: '/admin/ledger/transaction', seasons, season, playerId: player.id, playerName: name })}
+  </div>
+  <script src="/admin-ledger.js" defer></script>`);
 }

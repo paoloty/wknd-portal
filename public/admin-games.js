@@ -14,6 +14,10 @@
     if (!dr || !form) return;
     form.reset();
     form.setAttribute('data-json-action', '/admin/games/' + encodeURIComponent(b.getAttribute('data-final-open')) + '/final');
+    form.setAttribute('data-confirm', '');
+    form.setAttribute('data-confirm-title', 'Save the final score?');
+    form.setAttribute('data-confirm-body', 'Picks for this game settle and results go out.');
+    form.setAttribute('data-confirm-send', 'Save score');
     var title = dr.querySelector('.aui-drawer__title');
     if (title) title.textContent = b.getAttribute('data-a') + ' vs ' + b.getAttribute('data-b');
     var la = form.querySelector('[data-final-a]'), lb = form.querySelector('[data-final-b]');

@@ -40,7 +40,8 @@ function runStatus(game, confirmedCount) {
 
 // Paid status for a confirmed signup on a completed run, with the "possible match" and
 // "one payment, two games" suggestions the old page had (see the route for how they're found).
-export function paidCell(game, s, candidates = [], reusable = []) {
+export function paidCell(game, s, candidates = [], reusable = [], { unpaidBadge = true } = {}) {
+  const unpaid = unpaidBadge ? badge('Unpaid', 'red') : '';
   const base = `/admin/papawis/${game.id}/signups/${s.id}`;
   if (s.paid_at) {
     return postBtn('Paid ✓', `${base}/paid`, { kind: 'done', data: { paid: false }, done: `${signupName(s)} marked unpaid.`,
@@ -51,39 +52,40 @@ export function paidCell(game, s, candidates = [], reusable = []) {
       ${postBtn('Link here too', `${base}/link-payment`, { kind: 'secondary', data: { tx_id: c.id }, done: 'Payment linked.' })}</span>`).join('');
   if (candidates.length === 1) {
     const c = candidates[0];
-    return `<div class="pw-paid">${badge('Unpaid', 'red')}<span class="pw-hint">Possible match: ${peso(c.amount)} paid ${escHtml(fmtDay(c.date))}</span>
+    return `<div class="pw-paid">${unpaid}<span class="pw-hint">Possible match: ${peso(c.amount)} paid ${escHtml(fmtDay(c.date))}</span>
       <span class="aui-row">${postBtn('Link', `${base}/link-payment`, { kind: 'primary', data: { tx_id: c.id }, done: 'Payment linked.' })}${mark('Mark paid instead')}</span>${reuse}</div>`;
   }
   if (candidates.length > 1) {
-    return `<div class="pw-paid">${badge('Unpaid', 'red')}<a class="aui-link" href="/admin/ledger/${attr(s.player_id)}" target="_blank" rel="noopener">${candidates.length} unconfirmed payments: check the ledger</a>${mark('Mark paid')}${reuse}</div>`;
+    return `<div class="pw-paid">${unpaid}<a class="aui-link" href="/admin/ledger/${attr(s.player_id)}" target="_blank" rel="noopener">${candidates.length} unconfirmed payments: check the ledger</a>${mark('Mark paid')}${reuse}</div>`;
   }
-  return `<div class="pw-paid">${badge('Unpaid', 'red')}${reuse}${mark('Mark paid')}</div>`;
+  return `<div class="pw-paid">${unpaid}${reuse}${mark('Mark paid')}</div>`;
 }
 
 function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPaid, unlinkedByPlayer, reusableByPlayer }) {
   const name = signupName(s);
   const canNotify = canManage && !s.guest_name && s.status === 'confirmed' && s.team && s.reminder_sent_at && !s.team_notified_at;
   const sub = s.guest_name ? `Guest of ${displayPlayerName(s.player_name)}` : (s.team_name || '');
+  // One visible action at most (Confirm, for the waitlist); the rest live in the ⋯ menu.
   const actions = [];
-  if (canNotify) actions.push(postBtn('Notify team', `/admin/papawis/${game.id}/signups/${s.id}/notify-team`, { done: `${name} emailed their team.`,
-    confirm: { title: `Email ${name} that they’re on Team ${teamLabel(s.team)}?`, body: 'Their reminder went out before teams were set. This is a one-time catch-up email.', send: 'Send email' } }));
-  if (canManage) {
-    actions.push(s.status === 'waitlist'
-      ? (isConfirmedFull ? button('Confirm', { kind: 'secondary', size: 'sm', attrs: 'disabled title="Confirmed is full"' })
-        : postBtn('Confirm', `/admin/papawis/${game.id}/signups/${s.id}/status`, { data: { status: 'confirmed' }, done: `${name} moved to confirmed.` }))
-      : postBtn('To waitlist', `/admin/papawis/${game.id}/signups/${s.id}/status`, { kind: 'ghost', data: { status: 'waitlist' }, done: `${name} moved to the waitlist.` }));
+  if (canManage && s.status === 'waitlist') {
+    actions.push(isConfirmedFull ? button('Confirm', { kind: 'secondary', size: 'sm', attrs: 'disabled title="Confirmed is full"' })
+      : postBtn('Confirm', `/admin/papawis/${game.id}/signups/${s.id}/status`, { data: { status: 'confirmed' }, done: `${name} moved to confirmed.` }));
   }
   const menuItems = [
+    canNotify ? { label: `Email their team (${teamLabel(s.team)})`, post: `/admin/papawis/${game.id}/signups/${s.id}/notify-team`, done: `${name} emailed their team.`,
+      confirm: { title: `Email ${name} that they’re on Team ${teamLabel(s.team)}?`, body: 'Their reminder went out before teams were set. This is a one-time catch-up email.', send: 'Send email' } } : null,
+    canManage && s.status === 'confirmed' ? { label: 'Move to the waitlist', post: `/admin/papawis/${game.id}/signups/${s.id}/status`, body: { status: 'waitlist' }, done: `${name} moved to the waitlist.` } : null,
     !s.guest_name && s.player_id ? { label: 'Open player', href: `/admin/players/${s.player_id}` } : null,
     canManage ? 'sep' : null,
     canManage ? { label: 'Remove…', danger: true, post: `/admin/papawis/${game.id}/remove/${s.id}`, done: `${name} removed.`,
       confirm: { title: `Remove ${name}?`, body: s.status === 'confirmed' ? 'The first person on the waitlist moves up.' : 'They come off the waitlist.', send: 'Remove' } } : null,
   ].filter(Boolean);
   const cleanMenu = menuItems.filter((m, i, a) => !(m === 'sep' && (i === 0 || i === a.length - 1)));
+  const side = s.status === 'confirmed' ? s.team : '';
   return `<tr class="aui-grid__row"${canManage ? ' draggable="true"' : ''} data-id="${attr(s.id)}" data-status="${attr(s.status)}" data-name="${attr(name)}" data-paid="${s.paid_at ? 1 : 0}">
     <td class="pw-roster__n">${canManage ? '<span class="pw-handle" aria-hidden="true" title="Drag to reorder">⠿</span>' : ''}<span class="aui-num">${n}</span></td>
-    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '', { playerId: s.guest_name ? '' : s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span></span></td>
-    <td class="is-bare${s.team ? '' : ' is-desk'}" data-label="Side">${sideBadge(s.team)}</td>
+    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '', { playerId: s.guest_name ? '' : s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span>${side ? `<span class="pw-side-inline">${sideBadge(side)}</span>` : ''}</span></td>
+    <td class="is-bare is-desk" data-label="Side">${sideBadge(side)}</td>
     ${showPaid ? `<td class="is-bare" data-label="Paid">${paidCell(game, s, (unlinkedByPlayer[s.player_id] || []), (reusableByPlayer[s.player_id] || []))}</td>` : ''}
     <td class="is-num is-desk" data-label="Signed up">${escHtml(fmtTime(s.signed_up_at))}</td>
     <td class="pw-roster__actions">${actions.join('')}</td>
@@ -188,7 +190,7 @@ function moneyTab(game, { confirmed, isOpen, isCompleted, courtRate, unlinkedByP
         { label: 'Still owed', value: peso((confirmed.length - paid) * (game.price_per_player || 0)) }])}
       ${breakdown ? `<p class="aui-muted" style="margin:0">${escHtml(breakdown)}</p>` : ''}
       ${section({ title: 'Payments', asideHtml: postBtn('Email payment reminders', `/admin/papawis/${game.id}/send-payment-emails`, { done: 'Payment emails sent.',
-          confirm: { title: `Email all ${confirmed.length} players their total?`, body: 'Each gets what they owe for this run and a link to settle up. Nobody is charged again.', send: 'Send emails' } }),
+          confirm: { title: `Email everyone charged (${confirmed.length}) their total?`, body: 'Each gets what they owe for this run and a link to settle up. Nobody is charged again.', send: 'Send emails' } }),
         bodyHtml: rosterTable(game, [{ status: 'confirmed', label: `Charged · ${confirmed.length}`, rows: confirmed, empty: 'Nobody was charged.' }],
           { canManage: false, showPaid: true, isConfirmedFull: true, colorByTeam, unlinkedByPlayer, reusableByPlayer }) })}`;
   }
@@ -241,15 +243,13 @@ function messagesTab(game, broadcast, { isOpen, isLocked, isCompleted }) {
       status = `Announced ${fmtStamp(game.announced_at)}: ${plural(game.announced_count || 0, 'email')} sent.`; tone = 'green';
       action = postBtn('Announce again', `/admin/papawis/${game.id}/announce`, { done: 'Announced again.', confirm: { title: 'Announce this run again?', body: 'Regulars who aren’t on the roster get another email.', send: 'Announce again' } });
     } else {
-      status = 'Not announced yet.'; tone = 'amber';
+      status = 'Regulars haven’t heard about this run.'; tone = 'amber';
       const n = preview?.total || 0, e = preview?.emailable || 0;
       action = postBtn(game.open_days_before ? 'Announce at sign-up open' : `Announce to ${plural(n, 'regular')}`, `/admin/papawis/${game.id}/announce`, { kind: 'primary', done: 'Announcement sent.',
         confirm: { title: `Announce ${game.title || 'this run'} to ${plural(n, 'regular')}?`, body: `Bell to ${n}, email to ${e}. Regulars already on the roster are skipped.`, send: 'Announce', type: e > 40 ? String(e) : '' } });
     }
-    const reach = preview && !game.announced_at && !isLocked ? statStrip([
-      { label: 'Regulars', value: String(preview.total) }, { label: 'By email', value: String(preview.emailable) }, { label: 'Bell only', value: String(preview.optedOut) },
-      { label: 'Skipped', value: String((preview.noValidEmail || 0) + (preview.dormant || 0)) },
-    ]) : '';
+    const reach = preview && !game.announced_at && !isLocked
+      ? `<p class="aui-muted" style="margin:0">${plural(preview.total, 'regular')} · ${preview.emailable} by email · ${preview.optedOut} bell only · ${(preview.noValidEmail || 0) + (preview.dormant || 0)} skipped</p>` : '';
     parts.push(section({ title: 'New-run announcement', bodyHtml: `<div class="aui-panel aui-stack">
       <div class="aui-row">${badge(game.announced_at ? 'Announced' : scheduled ? 'Scheduled' : isLocked ? 'Locked' : 'Not announced', tone)}<span class="aui-muted">${escHtml(status)}</span></div>
       ${reach}
@@ -338,21 +338,20 @@ export function adminPapawisRunBody({
     button('View on site ↗', { kind: 'ghost', href: `/papawis#pw-game-${game.id}`, attrs: 'target="_blank" rel="noopener"' }),
     isOpen ? postBtn(isLocked ? 'Unlock roster' : 'Lock roster', `/admin/papawis/${game.id}/${isLocked ? 'unlock' : 'lock'}`, { kind: 'secondary', size: '', done: isLocked ? 'Roster unlocked.' : 'Roster locked.',
       confirm: isLocked ? { title: 'Unlock the roster?', body: 'Sign-ups and teams become editable again.', send: 'Unlock' } : { title: 'Lock the roster?', body: 'Sign-ups and teams freeze until you unlock. Do this once you’ve sent the list out.', send: 'Lock' } }) : '',
-    canAnnounce ? button('Announce', { kind: 'primary', href: `/admin/papawis/${game.id}?tab=messages` }) : '',
   ].join('');
 
   const banners = [
-    isLocked ? banner('warn', 'The roster is locked: sign-ups and team changes are frozen.') : '',
+    isOpen && isLocked ? banner('warn', 'The roster is locked: sign-ups and team changes are frozen.') : '',
     scheduled ? banner('info', `Sign-ups open ${fmtDay(addDays(game.date, -game.open_days_before))}, 8:00 AM. Until then the run shows as Scheduled.`) : '',
-    canAnnounce && !scheduled ? banner('warn', 'Not announced yet: regulars haven’t heard about this run.', `<a class="aui-link" href="/admin/papawis/${attr(game.id)}?tab=messages">Open messages</a>`) : '',
-    pending.length && tab !== 'roster' ? banner('warn', `${plural(pending.length, 'player')} waiting on a deposit.`, `<a class="aui-link" href="/admin/papawis/${attr(game.id)}">Open roster</a>`) : '',
+    canAnnounce && !scheduled && tab !== 'messages' ? banner('warn', 'Not announced yet: regulars haven’t heard about this run.', `<a class="aui-link" href="/admin/papawis/${attr(game.id)}?tab=messages">Open messages</a>`) : '',
+    isOpen && pending.length && tab !== 'roster' ? banner('warn', `${plural(pending.length, 'player')} waiting on a deposit.`, `<a class="aui-link" href="/admin/papawis/${attr(game.id)}">Open roster</a>`) : '',
   ].join('');
 
   const paidCount = confirmed.filter(s => s.paid_at).length;
   const stats = statStrip([
     { label: 'Confirmed', value: String(confirmed.length), of: `/${game.max_slots}` },
     { label: 'Waitlist', value: String(waitlist.length) },
-    pending.length ? { label: 'Pending deposit', value: String(pending.length) } : null,
+    isOpen && pending.length ? { label: 'Pending deposit', value: String(pending.length) } : null,
     isCompleted ? { label: 'Paid', value: String(paidCount), of: `/${confirmed.length}` } : null,
     isCompleted ? { label: 'Per player', value: peso(game.price_per_player) } : { label: daysLeft >= 0 ? 'Starts' : 'Played', value: daysLeft === 0 ? 'today' : daysLeft === 1 ? 'tomorrow' : daysLeft > 0 ? `in ${daysLeft} days` : `${-daysLeft} days ago` },
   ].filter(Boolean));
@@ -362,7 +361,7 @@ export function adminPapawisRunBody({
     isOpen ? ['teams', 'Teams', ''] : null,
     ['money', 'Money', ''],
     ['messages', 'Messages', ''],
-    ['activity', 'Activity', activity.length || ''],
+    ['activity', 'Activity', ''],
     ['settings', 'Settings', ''],
   ].filter(Boolean);
   const current = tabs.some(t => t[0] === tab) ? tab : 'roster';
@@ -371,7 +370,7 @@ export function adminPapawisRunBody({
   const rosterOpts = { canManage, isConfirmedFull, colorByTeam, showPaid: false, unlinkedByPlayer, reusableByPlayer };
   const content = {
     roster: () => [
-      canManage ? pendingDeposits(game, pending, minDeposit, unconfirmedDepositByPlayer) : '',
+      isOpen ? pendingDeposits(game, pending, minDeposit, unconfirmedDepositByPlayer) : '', // confirming a deposit works while locked too
       rosterTable(game, [
         { status: 'confirmed', label: `Confirmed · ${confirmed.length}/${game.max_slots}`, rows: confirmed, empty: 'No one confirmed yet.' },
         { status: 'waitlist', label: `Waitlist · ${waitlist.length}`, rows: waitlist, empty: 'Nobody waiting.' },
@@ -390,9 +389,9 @@ export function adminPapawisRunBody({
     completed: isCompleted, confirmed: confirmed.map(signupName), waitlist: waitlist.map(signupName), paid: confirmed.map(s => !!s.paid_at) };
   return `<div class="aui-page" id="pw-run" data-config="${attr(JSON.stringify(config))}">
     ${pageHeader({ title: game.title || 'Papawis', sub, actionsHtml: actions })}
-    <div class="aui-row" style="margin-top:-10px">${badge(statusLabel, statusTone)}${isLocked ? badge('Roster locked', 'gray') : ''}${game.announced_at ? badge('Announced', 'green') : ''}</div>
+    <div class="aui-row" style="margin-top:-10px">${badge(statusLabel, statusTone)}</div>
     ${banners}
-    ${stats}
+    ${current === 'money' && isCompleted ? '' : stats}
     ${tabsHtml}
     ${content}
   </div>

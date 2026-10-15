@@ -2362,3 +2362,486 @@ a.agd-name:hover { color: var(--amber); }
   .apl-rating .aui-badge { display: none; }
   .apl-override { width: 60px; }
 }
+
+/* ── Phone: less on each screen (review pass, 2026-10-15) ─────────────────────────────── */
+@media (max-width: 900px) {
+  .aui-cols__side { max-width: none; flex-basis: 100%; }
+}
+@media (max-width: 640px) {
+  .aui-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aui-stats__value { font-size: 22px; }
+  .aui-head__sub { font-size: 13px; }
+  .aui-page { gap: 16px; }
+}
+.apk-pick { display: flex; flex-direction: column; gap: 10px; }
+.apk-pick > summary { width: max-content; cursor: pointer; font-size: 13px; font-weight: 600; list-style: none; }
+.apk-pick > summary::-webkit-details-marker { display: none; }
+.apk-pick[open] > summary { margin-bottom: 10px; }
+@media (max-width: 640px) {
+  .agd-boxhead__hint { display: none; }
+  .agd-hero { padding: 16px; }
+  .agd-hero__score b { font-size: 32px; }
+}
+
+/* ── Ledger (views/admin/ledger.js) ── */
+/* Season switch: links styled like the kit's segmented control. */
+.alg-seasons { display: inline-flex; flex-wrap: wrap; max-width: 100%; background: var(--surface); border: 1px solid var(--aui-line); border-radius: 10px; padding: 3px; }
+.alg-seasons__opt { height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; line-height: 1; color: var(--text-2) !important; text-decoration: none; white-space: nowrap; }
+.alg-seasons__opt:hover { color: var(--text) !important; }
+.alg-seasons__opt.is-on { background: var(--surface-2); color: var(--text) !important; }
+/* Tiles: 4 across (3 in the player views), 2×2 on a phone. */
+.alg-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.alg-stats.alg-stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.alg-stats .aui-stats__cell { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; min-width: 0; }
+.alg-stats .aui-stats__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alg-stats .aui-stats__value { line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alg-stats__sub { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* To confirm: one card, one row per entry. */
+.alg-clear { color: var(--aui-green); font-size: 13px; }
+.alg-queue { background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); overflow: hidden; }
+.alg-q { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0; padding: 14px 18px; }
+.alg-q + .alg-q { border-top: 1px solid rgba(255,255,255,.05); }
+.alg-q__who { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.alg-q__name { font-weight: 700; font-size: 13.5px; color: var(--text) !important; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alg-q__name:hover { color: var(--amber) !important; }
+.alg-q__sub { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+.alg-q__meta { display: flex; align-items: center; gap: 14px; }
+.alg-q__cat.aui-input { width: 160px; }
+.alg-q__shot { min-width: 76px; display: inline-flex; align-items: center; }
+.alg-q__amt { font-family: 'Saira Condensed', sans-serif; font-size: 18px; font-weight: 700; color: var(--text); min-width: 76px; text-align: right; }
+.alg-q__actions { display: flex; gap: 6px; }
+/* Amounts and the small transaction list in the player drawer. */
+.alg-amt { font-family: 'Saira Condensed', sans-serif; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.alg-amt.is-void { color: var(--text-muted); text-decoration: line-through; }
+.alg-fee .aui-progress__track { max-width: 160px; }
+.alg-fee.is-done .aui-progress__fill { background: var(--aui-green); }
+.alg-fee .aui-progress__label { min-width: 34px; text-align: right; }
+.alg-pend { gap: 4px; align-items: flex-start; }
+.alg-player { display: flex; flex-direction: column; gap: 16px; }
+.alg-player .alg-stats { background: var(--bg); }
+.alg-player .alg-stats .aui-stats__value { font-size: 21px; }
+.alg-txs { display: flex; flex-direction: column; }
+.alg-tx { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.05); }
+.alg-tx__what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.alg-tx__title { font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alg-tx__sub { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alg-tx.is-void .alg-tx__title { color: var(--text-2); }
+.alg-tx .alg-amt { min-width: 72px; text-align: right; }
+.alg-none { margin: 0; }
+#alg-player .aui-drawer__panel { max-width: 520px; }
+#alg-player .aui-drawer__foot { justify-content: space-between; align-items: center; }
+/* Charge / payment drawer */
+.alg-form { display: flex; flex-direction: column; gap: 16px; margin: 0; }
+.alg-fs { border: 0; margin: 0; padding: 0; min-width: 0; }
+.alg-fs[hidden] { display: none; }
+.alg-picked { display: flex; flex-wrap: wrap; gap: 6px; }
+.alg-picked__chip { height: 28px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1; }
+.alg-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+@media (max-width: 640px) {
+  .alg-stats, .alg-stats.alg-stats--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .alg-stats--3 .aui-stats__cell:last-child { grid-column: 1 / -1; }
+  .alg .aui-head__actions { width: 100%; }
+  .alg-q { padding: 14px; }
+  .alg-q__who { flex: 1 1 0; }
+  .alg-q__meta { order: 3; flex: 1 1 100%; justify-content: space-between; }
+  .alg-q__cat.aui-input { width: auto; flex: 1; max-width: 220px; }
+  .alg-q__actions { order: 4; flex: 1 1 100%; justify-content: flex-end; }
+  .alg-q__actions .aui-btn--primary { flex: 1; }
+  .alg-desk { display: none; }
+  #alg-balances .aui-grid__row td.is-primary { flex: 1 1 0; }
+  #alg-balances .aui-grid__row td.is-num { order: -1; margin-left: auto; padding-right: 4px !important; font-size: 15px; }
+  #alg-balances .aui-grid__row td.is-num::before { content: none; }
+  #alg-balances .aui-grid__row td.is-bare:has(.alg-desk) { display: none; }
+  #alg-balances .aui-grid__row td.is-bare { flex: 1 1 100%; padding-left: 52px !important; }
+  #alg-balances .alg-pend { flex-direction: row; align-items: center; gap: 8px; }
+  #alg-player .aui-drawer__foot { flex-wrap: wrap; }
+  #alg-history .aui-grid__row { padding-right: 44px; }
+}
+
+/* ── Award graphic editor (views/admin/award-graphic-editor.js) ── */
+.agx-main { gap: 12px; }
+.agx-views button, .agx-count button { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.agx-gridcheck { min-height: 32px; font-size: 12.5px; color: var(--text-2); }
+.agx-gridcheck[hidden], .agx-pane[hidden], .agx .aui-btn[hidden] { display: none; }
+.agx-note { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.45; }
+.agx-pane { display: flex; flex-direction: column; gap: 12px; }
+.agx-real { display: block; width: 100%; height: auto; aspect-ratio: 1200 / 630; border-radius: 12px; border: 1px solid var(--aui-line-2); background: var(--surface); }
+.agx-form { display: none; }
+.agx [data-savebar] > span { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The live mock: same geometry as the real 1200×630 PNG. Text sizes are cqw of the canvas
+   width (computed server-side from the SVG's px), so it scales with the column. */
+.agx-canvas { position: relative; width: 100%; overflow: hidden; border-radius: 12px; background: #020817; border: 1px solid var(--aui-line-2); container-type: inline-size; outline: none; }
+.agx-canvas:focus-visible { box-shadow: 0 0 0 2px var(--amber); }
+.agx-banner { position: absolute; top: 0; left: 0; width: 100%; z-index: 6; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; padding: 0 3%; background: #020817; border-bottom: 3px solid transparent; pointer-events: none; }
+.agx-banner__bar { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; }
+.agx-banner__side { display: flex; flex-direction: column; gap: 2px; }
+.agx-banner__side.is-end { align-items: flex-end; }
+.agx-banner__eyebrow { font-weight: 700; letter-spacing: .2em; color: #475569; opacity: .85; text-transform: uppercase; line-height: 1.2; }
+.agx-banner__label { color: #f1f5f9; font-weight: 800; letter-spacing: .03em; line-height: 1.2; }
+.agx-banner__season { color: #64748b; font-weight: 800; letter-spacing: .03em; line-height: 1.2; }
+.agx-strip { position: absolute; top: 0; height: 100%; overflow: hidden; box-sizing: border-box; border-left: 2px solid #0d1424; }
+.agx-strip.is-first { border-left: none; }
+.agx-strip[hidden] { display: none; }
+/* top = BANNER_H / H (72/630): the real compositor places the photo tile at row 72 and its
+   bottom 72px fall off the canvas. The frame stays the full tile height so the strip's
+   overflow clips the same slice, keeping the pan/zoom maths identical to the server's. */
+.agx-frame { position: absolute; top: 11.4286%; left: 0; right: 0; height: 100%; overflow: hidden; cursor: grab; touch-action: pan-y; }
+.agx-strip.is-selected .agx-frame { touch-action: none; }
+.agx-frame.is-dragging { cursor: grabbing; }
+.agx-img { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; }
+.agx-shade { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.agx-bar { position: absolute; left: 0; right: 0; bottom: 0; height: .7937%; z-index: 3; pointer-events: none; }
+.agx-text { position: absolute; left: 4%; right: 4%; bottom: 3%; z-index: 3; pointer-events: none; text-align: center; color: #f1f5f9; }
+.agx-text--hero { z-index: 5; }
+.agx-t-team { font-weight: 700; line-height: 1; letter-spacing: .08em; }
+.agx-pill { display: inline-flex; align-items: center; justify-content: center; gap: .45em; border: 1.5px solid var(--amber); color: var(--amber); border-radius: 999px; font-weight: 800; line-height: 1; letter-spacing: .06em; padding: 0 .7cqw; white-space: nowrap; }
+.agx-pill__icon { height: 1.4em; width: auto; flex-shrink: 0; fill: currentColor; }
+.agx-t-stats { font-weight: 700; color: var(--amber); letter-spacing: .03em; line-height: 1; }
+.agx-t-val { font-weight: 800; color: var(--amber); line-height: 1; }
+.agx-t-unit { font-weight: 700; letter-spacing: .12em; line-height: 1; }
+.agx-t-first { color: #64748b; line-height: 1; }
+.agx-t-last { font-weight: 800; letter-spacing: .02em; line-height: 1; }
+.agx-ring { position: absolute; top: calc(11.4286% + 3px); left: 3px; right: 3px; bottom: 3px; z-index: 7; border-radius: 4px; box-shadow: inset 0 0 0 2px var(--amber); pointer-events: none; display: none; }
+.agx-strip.is-selected .agx-ring { display: block; }
+.agx-vline { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; z-index: 8; border-left: 1px dashed rgba(245,147,50,.5); pointer-events: none; display: none; }
+.agx-guides { position: absolute; inset: 0; z-index: 8; pointer-events: none; display: none; }
+.agx-guides i { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(245,147,50,.65); }
+.agx-canvas.is-grid .agx-guides, .agx-canvas.is-grid .agx-vline { display: block; }
+
+/* Side panel */
+.agx-count-panel { display: flex; flex-direction: column; gap: 12px; }
+.agx-panel-title { font-weight: 700; color: var(--text); line-height: 1.2; }
+.agx-count { width: max-content; max-width: 100%; gap: 2px; }
+.agx-count button { min-width: 32px; padding: 0 8px; }
+.agx-list { padding: 0; overflow: hidden; }
+.agx-list__title { padding: 14px 18px 10px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); line-height: 1; }
+.agx-item { border-top: 1px solid rgba(255,255,255,.05); }
+.agx-item[hidden], .agx-item__body[hidden] { display: none; }
+.agx-item.is-open { background: rgba(245,147,50,.04); }
+.agx-item__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; }
+.agx-item__pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.agx-item__text { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.agx-item__title, .agx-item__sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
+.agx-item__title { font-weight: 600; color: var(--text); }
+.agx-item__sub { font-size: 12px; color: var(--text-muted); }
+.agx-item__dirty { color: var(--amber); }
+.agx-num { width: 36px; height: 36px; flex: none; display: inline-flex; align-items: center; justify-content: center; line-height: 1; border-radius: 8px; background: var(--surface-2); color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.agx-item.is-open .agx-num { box-shadow: 0 0 0 2px var(--amber); color: var(--text); }
+.agx-item__body { display: flex; flex-direction: column; gap: 14px; padding: 2px 18px 18px; }
+.agx-zoom { display: flex; flex-direction: column; gap: 6px; }
+.agx-zoom .aui-btn--sm { height: 28px; padding: 0 8px; }
+.agx-zoom__label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); line-height: 1; }
+.agx-zoom__label b { color: var(--text); font-family: 'Saira Condensed', sans-serif; font-size: 14px; font-weight: 700; }
+.agx-range { width: 100%; margin: 0; accent-color: var(--amber); }
+@media (max-width: 640px) {
+  .agx-item__row { padding: 12px 14px; }
+  .agx-item__body { padding: 2px 14px 16px; }
+  .agx-list__title { padding: 14px 14px 10px; }
+}
+/* Once the panel drops under the image it takes the full width. */
+@media (max-width: 1180px) {
+  .agx-side { max-width: none; }
+}
+
+/* ── Team builder (views/admin/season-teams.js) ── */
+/* Team builder + Sandbox board, rebuilt 2026-10-15 (public/admin-team-builder.js). */
+.atb.aui-page { max-width: 1440px; }
+.atb-num { font-family: 'Saira Condensed', sans-serif; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+.atb-num.is-amber { color: var(--amber); }
+.atb-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; display: inline-block; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.atb-eyebrow { display: flex; align-items: center; gap: 8px; }
+.atb-eyebrow .aui-badge { letter-spacing: .04em; }
+
+/* Status steps + publish switch */
+.atb-status { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.atb-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 auto; }
+.atb-step { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--aui-line); }
+.atb-step.is-now { border-color: rgba(245,147,50,.45); }
+.atb-step__mark { width: 24px; height: 24px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; line-height: 1; background: var(--surface-2); color: var(--text-muted); }
+.atb-step.is-done .atb-step__mark { background: var(--aui-green-bg); color: var(--aui-green); }
+.atb-step.is-now .atb-step__mark { background: var(--aui-amber-bg); color: var(--amber); }
+.atb-step__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.atb-step__text b { font-size: 13px; color: var(--text); line-height: 1.2; }
+.atb-step__text span { font-size: 11.5px; color: var(--text-2); line-height: 1.2; }
+.atb-pub { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+
+/* Balance strip */
+.atb-balance { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); overflow: hidden; }
+.atb-balance__cell { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; min-width: 0; }
+.atb-balance__cell + .atb-balance__cell { border-left: 1px solid rgba(255,255,255,.05); }
+.atb-balance__label { font-size: 11.5px; color: var(--text-2); }
+.atb-balance__row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.atb-balance__row b { font-size: 24px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atb-balance__note { font-size: 11.5px; font-weight: 600; }
+
+/* Sandbox source */
+.atb-source { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center; justify-content: space-between; }
+.atb-source__text { display: flex; flex-direction: column; gap: 4px; flex: 1 1 280px; min-width: 0; }
+.atb-source__text b { color: var(--text); }
+.atb-source__text span { font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+.atb-source__pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.atb-source__season .aui-input { width: auto; min-width: 120px; }
+
+/* Board: pool beside the team columns */
+.atb-board { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.atb-side { flex: 1 1 340px; max-width: 420px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.atb-teams { flex: 999 1 560px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+
+/* Pool */
+.atb-pool { background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); overflow: hidden; }
+.atb-pool__head { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid rgba(255,255,255,.05); }
+.atb-pool__title { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text); }
+.atb-pool__search input { width: 100%; }
+.atb-pos { display: flex; gap: 4px; }
+.atb-pos button { flex: 1; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid rgba(255,255,255,.1); background: transparent; color: var(--text-2); font: inherit; font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer; }
+.atb-pos button[aria-pressed="true"] { border-color: rgba(245,147,50,.5); background: rgba(245,147,50,.12); color: var(--amber); }
+.atb-cols, .atb-pool .atb-p { display: grid; grid-template-columns: minmax(0, 1fr) 36px 36px 36px 54px; gap: 8px; align-items: center; }
+.atb-board.is-locked .atb-cols, .atb-board.is-locked .atb-pool .atb-p { grid-template-columns: minmax(0, 1fr) 36px 36px 36px; }
+.atb-p__main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.atb-cols { padding: 8px 16px; }
+.atb-cols button { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; height: 22px; padding: 0; border: 0; background: none; font: inherit; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; line-height: 1; text-transform: uppercase; color: var(--text-muted); cursor: pointer; }
+.atb-cols button:first-child { justify-content: flex-start; }
+.atb-cols button:hover, .atb-cols button.is-on { color: var(--text); }
+.atb-pool__empty { margin: 0; padding: 18px 16px; border-top: 1px solid rgba(255,255,255,.05); font-size: 13px; color: var(--text-muted); text-align: center; }
+.atb-pool__empty[hidden] { display: none; }
+
+/* Player rows */
+.atb-list { list-style: none; margin: 0; padding: 0; min-height: 8px; }
+.atb-list--pool { min-height: 48px; }
+.atb-list.is-over { background: rgba(245,147,50,.05); box-shadow: inset 0 0 0 2px rgba(245,147,50,.35); }
+.atb-p { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid rgba(255,255,255,.05); }
+.atb-p[hidden] { display: none !important; }
+.atb-p[draggable="true"] { cursor: grab; }
+.atb-p:hover { background: rgba(255,255,255,.02); }
+.atb-p.is-dragging { opacity: .4; }
+.atb-pool .atb-p { padding: 8px 16px; }
+.atb-p__who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.atb-p__name { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; font-size: 13px; color: var(--text); line-height: 1.2; }
+.atb-p__n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.atb-p__sub { font-size: 11.5px; color: var(--text-2); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atb-new { flex: none; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; border-radius: 6px; font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: .04em; background: var(--aui-green-bg); color: var(--aui-green); }
+.atb-p .atb-num { text-align: right; font-size: 15px; color: #c9cfdb; }
+.atb-p .atb-p__ovr { font-size: 16px; font-weight: 700; color: var(--amber); }
+.atb-team .atb-p .atb-p__ovr { color: #c9cfdb; font-weight: 600; font-size: 15px; }
+.atb-team .atb-p__off, .atb-team .atb-p__def { display: none; }
+.atb-pool .atb-p__out { display: none; }
+.atb-icon { flex: none; height: 28px; min-width: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,.1); background: transparent; color: var(--text-2); font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1; cursor: pointer; }
+.atb-icon:hover, .atb-icon[aria-expanded="true"] { background: rgba(255,255,255,.06); color: var(--text); }
+.atb-p__out { border-color: transparent; padding: 0; width: 28px; font-size: 15px; color: var(--text-muted); }
+/* The player (face + name) is itself the Move… button, so team rows only need the ×;
+   the pool also shows a plain "Move" for discoverability. */
+.atb-p__main[role="button"] { cursor: pointer; border-radius: 8px; }
+.atb-p__main[role="button"]:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.atb-p__main[role="button"]:hover .atb-p__n { color: var(--amber); }
+.atb-team .atb-p__move { display: none; }
+@media (max-width: 640px) { .atb-team .atb-p__move { display: inline-flex; } }
+
+/* Team columns */
+.atb-team { background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); min-width: 0; display: flex; flex-direction: column; }
+.atb-team__head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-bottom: 1px solid rgba(255,255,255,.05); min-height: 52px; box-sizing: border-box; }
+.atb-team__name { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atb-team__count { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.atb-meters { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+.atb-meter { display: grid; grid-template-columns: 30px minmax(0, 1fr) 26px; gap: 8px; align-items: center; font-size: 11px; color: var(--text-2); }
+.atb-meter__track { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; display: block; }
+.atb-meter__fill { display: block; height: 100%; border-radius: 3px; background: var(--text-muted); transition: width .3s ease; }
+.atb-meter__fill.is-ovr { background: var(--amber); }
+.atb-meter b { text-align: right; font-size: 14px; color: var(--text); }
+.atb-team .atb-list { flex: 1; }
+.atb-drop { margin: 8px 14px 14px; min-height: 44px; border-radius: 10px; border: 1px dashed rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; padding: 0 12px; font-size: 12px; color: var(--text-muted); text-align: center; line-height: 1.3; }
+.atb-drop__tap { display: none; }
+@media (hover: none), (max-width: 640px) {
+  .atb-drop { display: none; }
+  .atb-list:not(:has(.atb-p)) > .atb-drop { display: flex; }
+  .atb-drop__drag { display: none; }
+  .atb-drop__tap { display: inline; }
+}
+.atb-add { min-height: 160px; border-radius: var(--aui-card); border: 1px dashed rgba(255,255,255,.14); background: transparent; color: var(--text-2); font: inherit; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 1; cursor: pointer; }
+.atb-add:hover { background: rgba(255,255,255,.03); color: var(--text); }
+.atb-noteams { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 20px; border-radius: var(--aui-card); border: 1px dashed rgba(255,255,255,.12); text-align: center; }
+.atb-noteams b { color: var(--text); }
+.atb-noteams > span { font-size: 13px; color: var(--text-2); }
+.atb-noteams__league { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.atb-chip { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.1); font-size: 12px; font-weight: 600; line-height: 1; color: var(--text); }
+.atb-chip .atb-dot { width: 8px; height: 8px; }
+
+/* Move to… popover */
+.atb-movemenu { position: absolute; top: 0; right: auto; z-index: 70; min-width: 220px; max-width: calc(100vw - 16px); }
+.atb-movemenu__title { padding: 8px 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atb-movemenu .aui-menu__item { gap: 10px; }
+.atb-movemenu .aui-menu__item small { margin-left: auto; padding-left: 12px; font-size: 11.5px; color: var(--text-muted); }
+.atb-movemenu .aui-menu__item[disabled] { opacity: .55; cursor: default; background: none; }
+.atb-movemenu__none { padding: 10px; font-size: 13px; color: var(--text-2); }
+
+/* Sandbox vs the real draft */
+.atb-compare { background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); overflow: hidden; }
+.atb-compare__head { padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 4px; }
+.atb-compare__head b { color: var(--text); }
+.atb-compare__head span { font-size: 12.5px; color: var(--text-2); line-height: 1.4; }
+.atb-compare__row { display: grid; grid-template-columns: minmax(0, 1fr) 48px 58px 40px; gap: 8px; align-items: center; padding: 9px 16px; border-top: 1px solid rgba(255,255,255,.05); font-size: 13px; }
+.atb-compare__row > :not(:first-child) { text-align: right; }
+.atb-compare__row .atb-num { font-size: 16px; color: var(--text); }
+.atb-compare__row .atb-num.is-amber { color: var(--amber); font-weight: 700; }
+.atb-compare__row.is-head { padding-top: 6px; padding-bottom: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.atb-compare__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atb-compare__name .atb-dot { width: 8px; height: 8px; }
+.atb-compare__d { font-size: 12px; font-weight: 700; }
+.atb-compare__foot { margin: 0; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,.05); font-size: 12.5px; color: var(--text-2); }
+.atb-compare__foot[hidden] { display: none; }
+
+/* Team drawer: colour swatches */
+.atb-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.atb-swatch { position: relative; cursor: pointer; }
+.atb-swatch input { position: absolute; opacity: 0; pointer-events: none; }
+.atb-swatch span { width: 32px; height: 32px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+.atb-swatch input:checked + span { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--amber); }
+.atb-swatch input:focus-visible + span { outline: 2px solid var(--amber); outline-offset: 4px; }
+
+.atb-savebar { border-color: var(--aui-amber-line); }
+
+@media (max-width: 900px) {
+  .atb-side { max-width: none; flex-basis: 100%; }
+  .atb-teams { flex-basis: 100%; }
+}
+@media (max-width: 640px) {
+  .atb-balance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .atb-balance__cell:nth-child(3) { border-left: 0; }
+  .atb-balance__cell:nth-child(n+3) { border-top: 1px solid rgba(255,255,255,.05); }
+  .atb-steps { flex-basis: 100%; flex-wrap: nowrap; gap: 6px; }
+  .atb-step { flex: 1 1 0; min-width: 0; padding: 8px 10px; gap: 8px; }
+  .atb-step__mark { width: 20px; height: 20px; font-size: 11px; }
+  .atb-step__text span { display: none; }
+  .atb-teams { grid-template-columns: minmax(0, 1fr); }
+  .atb-cols, .atb-pool .atb-p { grid-template-columns: minmax(0, 1fr) 30px 30px 30px 54px; gap: 6px; }
+  .atb-source__pick, .atb-source__pick .aui-segmented { width: 100%; }
+  .atb-savebar > span { flex: 1 1 100%; }
+  .atb-savebar .aui-savebar__actions { margin-left: auto; }
+}
+
+/* ── Review fixes: Papawis and phone tap sizes (2026-10-15) ───────────────────────────── */
+.pw-side-inline { display: none; }
+.pw-courts .aui-cell__sub, .pw-courts .aui-cell__title { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .pw-side-inline { display: inline-flex; margin-left: 8px; flex: none; }
+  .aui-stats__cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .aui-btn--sm { min-height: 36px; }
+  .aui-menu__btn { width: 36px; height: 36px; }
+  .pw-handle { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; font-size: 16px; }
+}
+
+/* ── Review fixes: Game Day and grid phone cards (2026-10-15) ─────────────────────────── */
+.agl-missing { font-size: 12.5px; color: #f87171; font-weight: 600; }
+.agl-done { font-size: 12.5px; color: var(--text-subtle); }
+.apk-bar span:first-child { background: #c9cfdb; }
+.apk-bar span + span { background: #4a5263; opacity: 1; }
+.agd-odds { margin: -8px 0 0; font-size: 13px; }
+.agd-ro { display: inline-flex; align-items: center; height: 36px; font-size: 13.5px; color: var(--text-muted); }
+.agd-act { position: sticky; right: 0; background: var(--surface); }
+@media (max-width: 640px) {
+  .aui-grid__row:has(> td.aui-grid__menu .aui-menu) { padding-right: 44px; }
+  .agd-icon { width: 36px; height: 36px; }
+  .agd-act { width: 84px; }
+}
+
+/* ── Review fixes: team builder, ledger, award graphic ── */
+/* Very dark team colours (Black) get a light outline so the dot doesn't vanish on navy. */
+.atb-dot.is-dark { box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
+/* Toasts sit above a visible sticky save bar instead of covering it. */
+body:has(.aui-savebar:not([hidden])) .aui-toasts { bottom: 88px; }
+/* Ledger: Confirm in the queue is a plain-width button, not a full-width amber bar. */
+.alg-q__go { min-width: 84px; }
+/* Ledger: the "Set the season fee" link may wrap rather than be cut off. */
+.alg-stats__sub:has(a) { white-space: normal; line-height: 1.35; }
+/* Desktop with a mouse: pool rows drag, so they drop the Move column and the names get room. */
+@media (min-width: 641px) and (hover: hover) {
+  .atb-pool .atb-p__move, .atb-cols > span[aria-hidden]:last-child { display: none; }
+  .atb-cols, .atb-pool .atb-p { grid-template-columns: minmax(0, 1fr) 36px 36px 36px; }
+}
+@media (max-width: 640px) {
+  body:has(.aui-savebar:not([hidden])) .aui-toasts { bottom: 136px; }
+  /* One control per team row on a phone: Move (it has "Back to the pool"). */
+  .atb-team .atb-p__out { display: none; }
+  /* 36px tap targets: Move, sort headers, position chips, the publish switch. */
+  .atb-icon { height: 36px; min-width: 36px; }
+  .atb-cols { padding-top: 0; padding-bottom: 0; }
+  .atb-cols button { height: 36px; }
+  .atb-pos button { height: 36px; }
+  .atb-pub .aui-switch { position: relative; }
+  .atb-pub .aui-switch::after { content: ''; position: absolute; inset: -7px -4px; }
+  /* Ledger queue: Confirm keeps its size beside Void; amber outline, not a solid bar. */
+  .alg-q__actions .aui-btn--primary.alg-q__go { flex: none; height: 36px; background: transparent; border-color: rgba(245,147,50,.45); color: var(--amber) !important; }
+  .alg-q__actions .aui-btn--sm { height: 36px; }
+  /* A lone last tile in a 2-up stat strip spans the row (drawer + player page strips). */
+  .alg-stats .aui-stats__cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+/* ── Review fixes: Home, Members, Reach ── */
+/* Choices as plain rows with dividers inside their one panel (no tiles: no cards in cards).
+   The picked row keeps an amber edge and title. */
+.aui-choices--rows { gap: 0; }
+.aui-choices--rows .aui-choice + .aui-choice { border-top: 1px solid rgba(255,255,255,.05); }
+.aui-choices--rows .aui-choice__body { min-height: 52px; padding: 8px 4px 8px 12px; border: 0; border-radius: 0; background: transparent; box-shadow: inset 2px 0 0 transparent; }
+.aui-choices--rows .aui-choice:hover .aui-choice__body { border: 0; background: rgba(255,255,255,.02); }
+.aui-choices--rows .aui-choice input:checked + .aui-choice__body { border: 0; background: transparent; box-shadow: inset 2px 0 0 var(--amber); }
+.aui-choices--rows .aui-choice input:checked + .aui-choice__body .aui-cell__title { color: var(--amber); }
+.aui-choices--rows .aui-choice input:focus-visible + .aui-choice__body { outline-offset: -2px; }
+.aui-checks--rows { gap: 0 24px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.aui-checks--rows .aui-check { min-height: 40px; padding: 0 2px; border: 0; border-bottom: 1px solid rgba(255,255,255,.05); border-radius: 0; color: var(--text-2); }
+.aui-checks--rows .aui-check:has(input:checked) { border-color: rgba(255,255,255,.05); background: transparent; color: var(--text); font-weight: 600; }
+
+/* Switches: 22px to look at, 36px to tap. */
+.aui-switch { position: relative; }
+.aui-switch::after { content: ""; position: absolute; inset: -7px -6px; }
+
+/* Person strip: the page you're on is quiet, not a filled amber pill. */
+.aui-person__link.is-active { background: var(--surface-2); color: var(--text) !important; border-color: transparent; }
+
+/* Home */
+.aui-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; line-height: 1; }
+.ahome-done { border-top: 1px solid var(--aui-line); padding-top: 4px; }
+.ahome-done__sum { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; color: var(--text-2); line-height: 1; }
+.ahome-done__sum::-webkit-details-marker { display: none; }
+.ahome-done__sum::before { content: "\203A"; display: inline-flex; align-items: center; justify-content: center; width: 12px; transition: transform .15s; }
+.ahome-done[open] > .ahome-done__sum::before { transform: rotate(90deg); }
+.ahome-done__hint { font-weight: 400; color: var(--text-muted); }
+.ahome-done > .ahome-todo { margin-top: 8px; }
+.ahome-tap, .aud-tap { display: inline-flex; align-items: center; min-height: 36px; }
+
+/* Users and user detail */
+.ausers-open { margin-top: 12px; }
+.aud-date { width: auto; }
+.aud-min0 { min-width: 0; }
+.aud-help { margin: 0; }
+.aud-sections__save { margin-top: 14px; }
+.aud-approve__lead { margin: 0 0 6px; }
+.aud-approve__search { margin-top: 12px; }
+.aud-approve__actions { margin-top: 14px; }
+.aud-approve__actions > .aui-btn { width: 100%; }
+.aud-approve__actions .aui-row > .aui-btn { flex: 1; }
+.aud-live { align-items: flex-start; }
+.aud-live__text { gap: 6px; min-width: 0; }
+.aud .aui-cols__side .aui-cell__stack { min-width: 0; }
+.aud .aui-cols__side .aui-cell__title, .aud .aui-cols__side .aui-cell__sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Team heads */
+.ath-form { gap: 14px; }
+.ath-help { margin: 0; }
+
+@media (max-width: 900px) {
+  .aud-side--first { order: -1; }
+}
+@media (max-width: 640px) {
+  .aui-seg button { height: 36px; }
+  .aui-person__link { height: 36px; }
+  .ahome-item__tag, .ahome-desk, .ahome-done__hint { display: none; }
+  #users .aui-grid__check, #users [data-grid-bulk] { display: none !important; }
+  /* Message players: who it reaches sits right above the send bar. */
+  #reach-form { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 16px; }
+  #reach-form > .aui-cols__main, #reach-form > .aui-cols__side { display: contents; }
+  #reach-form .reach-step { order: 1; }
+  #reach-form .reach-dev { order: 2; }
+  #reach-form .reach-who { order: 3; }
+  #reach-form .reach-sendbar { order: 4; }
+  #reach-form .reach-prev { order: 5; }
+}

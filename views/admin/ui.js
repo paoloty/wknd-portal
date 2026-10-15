@@ -175,7 +175,14 @@ export function dataGrid(o) {
   const view = views.find(v => v.key === q0.view) || views[0];
   const text = String(q0.q || '').trim();
   const filters = (o.filters || []).map(f => ({ ...f, value: String(q0[f.key] || '') }));
-  const cols = o.columns;
+  // On a phone a row becomes a card: the primary cell, its bare cells (badges), and at most
+  // three labelled values. phone: true / false on a column overrides that default.
+  let labelled = 0;
+  const cols = o.columns.map(c => {
+    if (c.primary || c.bare || c.phone === false || c.phone === true) return c;
+    labelled++;
+    return labelled > 3 ? { ...c, phone: false } : c;
+  });
   const sortRaw = String(q0.sort || o.defaultSort || '');
   const sortKey = sortRaw.replace(/^-/, '');
   const sortDir = sortRaw.startsWith('-') ? -1 : 1;
@@ -223,8 +230,9 @@ export function dataGrid(o) {
     ...filters.filter(f => f.value).map(f => ({ label: `${f.label}: ${(f.options.find(([v]) => String(v) === f.value) || [null, f.value])[1]}`, href: url({ [f.key]: '', page: '' }) })),
   ];
   const chipsHtml = chips.length ? `<div class="aui-chips">${chips.map(c => `<a class="aui-chip" href="${attr(c.href)}" aria-label="Remove filter ${attr(c.label)}">${escHtml(c.label)}<span aria-hidden="true">×</span></a>`).join('')}<a class="aui-chips__clear" href="${attr(gridUrl(o.baseUrl, { ...(o.keep || {}), view: state.view, d: state.d }, {}))}">Clear all</a></div>` : '';
-  const densityHtml = `<div class="aui-density" role="group" aria-label="Row density"><a href="${attr(url({ d: '' }))}"${dense ? '' : ' aria-current="true"'}>Comfortable</a><a href="${attr(url({ d: 'compact' }))}"${dense ? ' aria-current="true"' : ''}>Compact</a></div>`;
-  const toolbar = `<div class="aui-grid__toolbar" data-grid-toolbar>
+  // o.minimal (short lists): no density switch, and no toolbar at all when it would be empty.
+  const densityHtml = o.minimal ? '' : `<div class="aui-density" role="group" aria-label="Row density"><a href="${attr(url({ d: '' }))}"${dense ? '' : ' aria-current="true"'}>Comfortable</a><a href="${attr(url({ d: 'compact' }))}"${dense ? ' aria-current="true"' : ''}>Compact</a></div>`;
+  const toolbar = o.minimal && !searchHtml && !selectsHtml && !chipsHtml && !o.actionsHtml ? '' : `<div class="aui-grid__toolbar" data-grid-toolbar>
     <form class="aui-grid__filters" method="get" action="${attr(o.baseUrl)}" role="search">${keep}${searchHtml}${selectsHtml}${chipsHtml}</form>
     <div class="aui-grid__tools">${densityHtml}${o.actionsHtml || ''}</div>
   </div>`;
@@ -317,8 +325,9 @@ export function formCard(sectionsHtml) { return `<div class="aui-fcard">${sectio
 export function fieldGrid(fieldsHtml) { return `<div class="aui-fields">${fieldsHtml}</div>`; }
 
 // One field. type: text | email | number | date | time | textarea | select | money
-export function field({ label, name, value = '', type = 'text', help = '', error = '', options = [], rows = 3, placeholder = '', required = false, wide = false, attrs = '' }) {
-  const id = `f-${String(name).replace(/[^a-z0-9_-]/gi, '')}`;
+// id: pass one when the same field name appears more than once on a page (e.g. a drawer per row).
+export function field({ label, name, value = '', type = 'text', help = '', error = '', options = [], rows = 3, placeholder = '', required = false, wide = false, attrs = '', id: idIn = '' }) {
+  const id = idIn || `f-${String(name).replace(/[^a-z0-9_-]/gi, '')}`;
   const common = `id="${id}" name="${attr(name)}"${required ? ' required' : ''}${error ? ' aria-invalid="true"' : ''}${placeholder ? ` placeholder="${attr(placeholder)}"` : ''} ${attrs}`;
   let control;
   if (type === 'textarea') control = `<textarea class="aui-input" rows="${rows}" ${common}>${escHtml(value)}</textarea>`;

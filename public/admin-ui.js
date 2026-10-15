@@ -293,8 +293,10 @@
     var grid = btn.closest('[data-grid]');
     var ids = syncBulk(grid);
     if (!ids.length) return;
-    var title = (btn.getAttribute('data-bulk-title') || '').replace('{n}', ids.length);
-    var body = (btn.getAttribute('data-bulk-body') || '').replace('{n}', ids.length);
+    // {n} is the count, {s} an "s" unless the count is 1 ("Sent {n} email{s}.").
+    var plural = function (s, n) { return s.replace('{n}', n).replace('{s}', n === 1 ? '' : 's'); };
+    var title = plural(btn.getAttribute('data-bulk-title') || '', ids.length);
+    var body = plural(btn.getAttribute('data-bulk-body') || '', ids.length);
     var ask = title ? confirmDialog({ title: title, body: body, sendLabel: btn.textContent }) : Promise.resolve(true);
     ask.then(function (ok) {
       if (!ok) return;
@@ -303,7 +305,7 @@
       btn.disabled = true;
       (function next() {
         if (i >= ids.length) {
-          var msg = (btn.getAttribute('data-done') || 'Done.').replace('{n}', done) + (failed ? ' ' + failed + ' failed.' : '');
+          var msg = plural(btn.getAttribute('data-done') || 'Done.', done) + (failed ? ' ' + failed + ' failed.' : '');
           refreshWith(msg);
           return;
         }
@@ -354,6 +356,15 @@
     // Switches
     var sw = t.closest && t.closest('[data-switch]');
     if (sw) {
+      // data-confirm on a switch asks first; data-confirm-when="on"|"off" only in that direction.
+      var want = sw.getAttribute('aria-checked') !== 'true';
+      var when = sw.getAttribute('data-confirm-when');
+      if (sw.hasAttribute('data-confirm') && (!when || when === (want ? 'on' : 'off'))) {
+        askFor(sw).then(function (ok) { if (ok) flipSwitch(sw); });
+      } else flipSwitch(sw);
+    }
+  });
+  function flipSwitch(sw) {
       var on = sw.getAttribute('aria-checked') !== 'true';
       sw.setAttribute('aria-checked', String(on));
       var post = sw.getAttribute('data-switch-post');
@@ -373,8 +384,7 @@
         var hid = sw.parentNode.querySelector('input[type=hidden][name="' + sw.getAttribute('data-switch') + '"]');
         if (hid) { hid.value = on ? '1' : '0'; hid.dispatchEvent(new Event('input', { bubbles: true })); }
       }
-    }
-  });
+  }
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
     document.querySelectorAll('[data-drawer]:not([hidden])').forEach(function (d) { d.hidden = true; });
@@ -385,6 +395,11 @@
   // the content area is swapped in place (see "In-place updates" below); each element is
   // only wired once.
   function initDynamic(root) {
+    // A tab bar wider than a phone scrolls; keep the active tab in view.
+    root.querySelectorAll('.aui-tabs, .aui-views').forEach(function (bar) {
+      var on = bar.querySelector('.is-active');
+      if (on && bar.scrollWidth > bar.clientWidth) bar.scrollLeft = Math.max(0, on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2);
+    });
     root = root || document;
     initSavebars(root);
     initPickers(root);
@@ -547,6 +562,9 @@
       })
       .catch(function () { location.href = url; });
   }
+  // A visible save bar means a watched form has unsaved edits.
+  function hasUnsaved() { return !!document.querySelector('[data-savebar]:not([hidden])'); }
+  window.addEventListener('beforeunload', function (e) { if (hasUnsaved()) { e.preventDefault(); e.returnValue = ''; } });
   // Re-render the current page in place with a toast.
   function refreshWith(msg) {
     return softLoad(withToast(location.href, msg));
@@ -587,10 +605,12 @@
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     var a = e.target.closest && e.target.closest('a[href]');
     if (!a || a.target || a.hasAttribute('download')) return;
-    if (!a.closest('.aui-views, .aui-tabs, .aui-grid__sort, .aui-pager, .aui-density, .aui-chips')) return;
+    if (!a.closest('.aui-views, .aui-tabs, .aui-grid__sort, .aui-pager, .aui-density, .aui-chips, .aui-menu')) return;
     if (!samePage(a.href)) return;
     e.preventDefault();
-    softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs') });
+    var go = function () { softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs, .aui-menu') }); };
+    if (!hasUnsaved()) { go(); return; }
+    confirmDialog({ title: 'Discard your unsaved changes?', body: 'You haven’t saved them yet.', sendLabel: 'Discard' }).then(function (ok) { if (ok) go(); });
   });
   window.addEventListener('popstate', function () { softLoad(location.href); });
 
@@ -601,5 +621,5 @@
   } catch (e) { /* old browser: no toast */ }
 
   initDynamic(document);
-  window.adminUi = { toast: toast, confirm: confirmDialog, refresh: refreshWith, softLoad: softLoad };
+  window.adminUi = { hasUnsaved: hasUnsaved, toast: toast, confirm: confirmDialog, refresh: refreshWith, softLoad: softLoad };
 })();

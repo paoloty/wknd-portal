@@ -25,9 +25,9 @@ function photoBlock(c) {
 
 function courtFields(c = {}) {
   return fieldGrid(`
-    ${field({ label: 'Name', name: 'name', value: c.name || '', required: true, wide: true, placeholder: 'e.g. Cloverleaf Basketball Court, Makati' })}
-    ${field({ label: 'Rate per hour', name: 'price', type: 'money', value: c.price_per_hour || '' })}
-    ${field({ label: 'Address (optional)', name: 'address', value: c.address || '', wide: true, help: 'Used to find the map. Leave blank if the name alone pins the venue.' })}`);
+    ${field({ id: `f-${c.id || 'new'}-name`, label: 'Name', name: 'name', value: c.name || '', required: true, wide: true, placeholder: 'e.g. Cloverleaf Basketball Court, Makati' })}
+    ${field({ id: `f-${c.id || 'new'}-price`, label: 'Rate per hour', name: 'price', type: 'money', value: c.price_per_hour || '' })}
+    ${field({ id: `f-${c.id || 'new'}-address`, label: 'Address (optional)', name: 'address', value: c.address || '', wide: true, help: 'Used to find the map. Leave blank if the name alone pins the venue.' })}`);
 }
 
 export function adminPapawisCourtsBody({ courts = [] } = {}) {
@@ -47,7 +47,7 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
       ])}</td>
     </tr>`).join('');
 
-  const table = courts.length ? `<div class="aui-grid__card"><div class="aui-grid__scroll"><table class="aui-grid__table">
+  const table = courts.length ? `<div class="aui-grid__card"><div class="aui-grid__scroll"><table class="aui-grid__table pw-roster pw-courts">
       <thead><tr><th class="pw-roster__n"></th><th>Court</th><th class="is-num">Rate</th><th>Status</th><th></th><th class="aui-grid__menu"><span class="sr-only">Actions</span></th></tr></thead>
       <tbody data-court-list>${rows}</tbody>
     </table></div><div class="aui-grid__pager"><span>Drag ⠿ to reorder: the court picker lists them in this order.</span><span>${courts.length} courts</span></div></div>`

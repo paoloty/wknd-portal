@@ -26,7 +26,8 @@ function faces(list, colorById, max = 8) {
 }
 
 function bar(pctA, colA, colB) {
-  return `<span class="apk-bar" aria-hidden="true"><span style="width:${pctA}%;background:${attr(colA)}"></span><span style="width:${100 - pctA}%;background:${attr(colB)}"></span></span>`;
+  // Neutral fills: team colours are only for dots (black would vanish on navy anyway).
+  return `<span class="apk-bar" aria-hidden="true"><span style="width:${pctA}%"></span><span style="width:${100 - pctA}%"></span></span>`;
 }
 
 function upNextCard(u, colorOf, colorById) {
@@ -50,7 +51,7 @@ function upNextCard(u, colorOf, colorById) {
     </header>
     <div class="apk-lines">
       ${o ? `<div class="apk-line"><span>Odds${u.hideOdds ? ' <span class="aui-muted">(hidden on the site)</span>' : ''}</span><b>${escHtml(tc(u.a))} ${o.pctA}% · ${o.pctB}% ${escHtml(tc(u.b))}</b></div>${bar(o.pctA, colorOf(u.a), colorOf(u.b))}` : '<div class="apk-line"><span>Odds</span><span class="aui-muted">None yet (a team has no games this season)</span></div>'}
-      <div class="apk-line"><span>Fans · ${total}</span><b>${escHtml(tc(u.a))} ${fanA}% · ${100 - fanA}% ${escHtml(tc(u.b))}</b></div>${bar(fanA, colorOf(u.a), colorOf(u.b))}
+      ${total ? `<div class="apk-line"><span>Fans · ${total}</span><b>${escHtml(tc(u.a))} ${fanA}% · ${100 - fanA}% ${escHtml(tc(u.b))}</b></div>${bar(fanA, colorOf(u.a), colorOf(u.b))}` : '<div class="apk-line"><span>Fans</span><span class="aui-muted">No picks yet</span></div>'}
       ${disagree ? `<p class="apk-disagree">Fans lean ${escHtml(tc(fanFav === 'a' ? u.a : u.b))}, the odds like ${escHtml(tc(o.fav === 'a' ? u.a : u.b))}.</p>` : ''}
     </div>
     <div class="apk-ctl">
@@ -78,19 +79,20 @@ function missingPanel(m) {
   return `<form class="aui-panel apk-remind" id="picks-remind" method="post" action="/admin/picks/remind"
       data-confirm data-confirm-title="Send the pick reminder?" data-confirm-body="" data-confirm-send="Send reminder" data-reminded="${m.remindedAt ? 1 : ''}">
     <div class="apk-remind__head">
-      <span class="aui-cell__stack"><span class="aui-cell__title">${m.list.length} of ${m.accounts} players with an account haven’t picked ${m.games > 1 ? 'every game' : 'yet'}</span>
+      <span class="aui-cell__stack"><span class="aui-cell__title">${m.list.length} of ${m.accounts} haven’t picked ${m.games > 1 ? 'every game' : 'yet'}${m.alreadyEmailed ? ` · ${m.alreadyEmailed} already emailed` : ''}</span>
         <span class="aui-cell__sub"><span data-sel-count>${people.filter(p => p.reach !== 'skip').length}</span> ticked to remind</span></span>
       <span class="aui-row">
         ${button('Copy names', { kind: 'ghost', size: 'sm', attrs: `data-copy-names="${attr(m.list.map(p => p.name).join(', '))}"` })}
         ${button('Preview email', { kind: 'secondary', size: 'sm', href: '/admin/picks/email/preview', attrs: 'target="_blank" rel="noopener"' })}
       </span>
     </div>
+    <details class="apk-pick"${people.length <= 12 ? ' open' : ''}><summary class="aui-link">Choose who gets it</summary>
     <div class="aui-row apk-sel">
       <button type="button" class="aui-link" data-sel="all">All</button><button type="button" class="aui-link" data-sel="none">None</button><button type="button" class="aui-link" data-sel="email">Only emailable</button>
     </div>
     <div class="apk-people">${people.map(p => `<label class="apk-person${p.reach === 'skip' ? ' is-off' : ''}" title="${attr(p.note)}">
         <input type="checkbox" name="ids" value="${attr(p.id)}" data-reach="${p.reach}"${p.reach === 'skip' ? ' disabled' : ' checked'}>
-        ${avatar(p.name, '', { size: 22, playerId: p.id })}<span class="apk-person__name">${escHtml(p.name)}</span>${tag[p.reach]}</label>`).join('')}</div>
+        ${avatar(p.name, '', { size: 22, playerId: p.id })}<span class="apk-person__name">${escHtml(p.name)}</span>${tag[p.reach]}</label>`).join('')}</div></details>
     ${notes.length ? `<ul class="apk-notes">${notes.map(n => `<li>${escHtml(n)}</li>`).join('')}</ul>` : ''}
     <div class="apk-remind__foot">
       <label class="aui-check" title="Players who unsubscribed, reported spam or share an inbox get the bell only"><input type="checkbox" name="email" value="1"${m.emailable ? ' checked' : ' disabled'}><span>Also email <span data-email-count>${m.emailable}</span> of them</span></label>
@@ -136,14 +138,14 @@ function pickersGrid(rows, { season, hasFinalsG1, query, colorById }) {
     columns: [
       { key: 'rank', label: '#', num: true, sort: r => r.rank ?? 1e9, cell: r => (r.rank ? `<b class="${r.rank === 1 ? 'apk-first' : ''}">${r.rank}</b>` : '<span class="aui-muted">—</span>') },
       { key: 'name', label: 'Player', primary: true, sort: r => r.name.toLowerCase(), cell: r => `<span class="aui-who">${avatar(r.name, colorById[r.id] || '', { playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}</span><span class="aui-cell__sub">${escHtml(r.team || 'No team')}</span></span></span>` },
-      { key: 'picks', label: 'Picks', num: true, sort: r => r.picks, cell: r => String(r.picks) },
+      { key: 'picks', label: 'Picks', num: true, phone: false, sort: r => r.picks, cell: r => String(r.picks) },
       { key: 'correct', label: 'Called', num: true, sort: r => r.correct, cell: r => String(r.correct) },
-      { key: 'net', label: 'Pts', num: true, sort: r => (r.settled ? r.net : -1e9), cell: r => (r.settled ? escHtml(fmtPts(r.net)) : '<span class="aui-muted">—</span>') },
+      { key: 'net', label: 'Pts', num: true, phone: true, sort: r => (r.settled ? r.net : -1e9), cell: r => (r.settled ? escHtml(fmtPts(r.net)) : '<span class="aui-muted">—</span>') },
       { key: 'odds', label: 'Odds pts', num: true, phone: false, sort: r => r.oddsPts, cell: r => (r.settled ? r.oddsPts.toFixed(2) : '<span class="aui-muted">—</span>') },
       { key: 'streak', label: 'Streak', num: true, phone: false, sort: r => r.streak, cell: r => (r.streak >= 2 ? `<span class="apk-streak">${r.streak}</span>` : '<span class="aui-muted">—</span>') },
       { key: 'upsets', label: 'Upsets', num: true, phone: false, sort: r => r.upsets, cell: r => String(r.upsets || 0) },
       ...(hasFinalsG1 ? [{ key: 'margin', label: 'Finals guess', num: true, phone: false, sort: r => r.marginGuess ?? -1, cell: r => (r.marginGuess != null ? `by ${r.marginGuess}` : '<span class="aui-muted">—</span>') }] : []),
-      { key: 'last', label: 'Last pick', nowrap: true, sort: r => r.last?.at || 0, cell: r => (r.last ? `${escHtml(shortDay(r.last.ymd))} · ${escHtml(tc(r.last.team))}${r.missingNext ? `<div class="aui-cell__sub apk-warn">No pick yet this week</div>` : ''}` : '') },
+      { key: 'last', label: 'Last pick', nowrap: true, sort: r => r.last?.at || 0, cell: r => (r.last ? `${escHtml(shortDay(r.last.ymd))} · ${escHtml(tc(r.last.team))}${r.missingNext ? '<div class="aui-cell__sub">No pick yet this week</div>' : ''}` : '') },
     ],
     rowHref: r => `/admin/players/${encodeURIComponent(r.id)}`,
     empty: { title: 'Nobody has picked this season yet' },
@@ -152,10 +154,10 @@ function pickersGrid(rows, { season, hasFinalsG1, query, colorById }) {
 
 function settingsBlock(s) {
   return `<div class="aui-panel">
-    ${toggleRow({ label: 'Who wins? picks on the site', help: 'Fan picks on /picks, the matchup cards, the homepage widget, profiles and the after-game notifications.', name: 'picks_enabled', on: s.picksOn, post: '/admin/site/settings', setting: true, reload: true })}
-    ${toggleRow({ label: 'Show odds', help: 'Win chances on the matchup cards. Hidden until both teams have played this season; can also be hidden per game.', name: 'picks_odds_enabled', on: s.oddsOn, post: '/admin/site/settings', setting: true, reload: true })}
-    ${toggleRow({ label: 'Homepage widget', help: 'The pick widget under the homepage banner: the next game day, or “Who called it?” on game day and the day after.', name: 'home_picks_widget_enabled', on: s.homeWidget, post: '/admin/site/settings', setting: true })}
-    ${toggleRow({ label: 'Automatic pick reminder', help: 'At 6 PM the day before game day, everyone still missing picks gets a bell and the reminder email, unless you already sent one. Live site only.', name: 'picks_auto_remind', on: s.autoRemind, post: '/admin/site/settings', setting: true })}
+    ${toggleRow({ label: 'Who wins? picks on the site', help: '/picks, matchup cards, the homepage widget and profiles.', name: 'picks_enabled', on: s.picksOn, post: '/admin/site/settings', setting: true, reload: true })}
+    ${toggleRow({ label: 'Show odds', help: 'Win chances on matchup cards, once both teams have played.', name: 'picks_odds_enabled', on: s.oddsOn, post: '/admin/site/settings', setting: true, reload: true })}
+    ${toggleRow({ label: 'Homepage widget', help: 'Under the homepage banner.', name: 'home_picks_widget_enabled', on: s.homeWidget, post: '/admin/site/settings', setting: true })}
+    ${toggleRow({ label: 'Automatic pick reminder', help: '6 PM the day before, to anyone still missing picks. Live site only.', name: 'picks_auto_remind', on: s.autoRemind, post: '/admin/site/settings', setting: true })}
     <form class="apk-close" data-json-action="/admin/site/settings" data-done="Cut-off saved.">
       <span class="aui-cell__stack"><span class="aui-cell__title">Picks close at</span><span class="aui-cell__sub">Game-day cut-off, Manila time. Games have no tip-off time, so picks lock at this time on the game date.</span></span>
       <span class="aui-row">${field({ label: 'Time', name: 'picks_close_time', type: 'time', value: s.closeTime, required: true })}${button('Save', { kind: 'secondary', size: 'sm', type: 'submit' })}</span>
@@ -168,11 +170,10 @@ export function adminPicksBody({ season, seasons, isCurrent, kpi, upNext, upDay,
   const colorOf = name => colorByName[String(name || '').toUpperCase()] || '';
   const rec = r => (r.of ? `${r.called} of ${r.of}` : '—');
   const strip = statStrip([
-    { label: `Picks · ${plural(kpi.pickers, 'picker')}`, value: String(kpi.picks) },
-    { label: `Reach · of ${kpi.accounts} with an account`, value: kpi.accounts ? `${Math.round((kpi.pickers / kpi.accounts) * 100)}%` : '—' },
-    { label: 'Fans called · majority won', value: rec(kpi.callers.fans) },
-    ...(kpi.oddsOn ? [{ label: `Odds called · ${plural(kpi.upsets, 'upset')}`, value: rec(kpi.oddsRecord) }] : []),
-    { label: kpi.leader ? `Pickmaster · ${fmtPts(kpi.leader.net)} pts (${kpi.leader.correct}–${kpi.leader.wrong})` : 'Pickmaster', value: kpi.leader ? kpi.leader.name : '—' },
+    { label: `Picks · ${kpi.pickers} pickers`, value: String(kpi.picks) },
+    { label: `Reach · of ${kpi.accounts}`, value: kpi.accounts ? `${Math.round((kpi.pickers / kpi.accounts) * 100)}%` : '—' },
+    kpi.oddsOn ? { label: `Odds called · ${plural(kpi.upsets, 'upset')}`, value: rec(kpi.oddsRecord) } : { label: 'Fans called', value: rec(kpi.callers.fans) },
+    { label: kpi.leader ? `Pickmaster · ${fmtPts(kpi.leader.net)} pts` : 'Pickmaster', value: kpi.leader ? kpi.leader.name.split(' ').pop() : '—' },
   ]);
   const seasonTabs = seasons.length > 1 ? pageTabs(seasons.map(s => ({ label: `Season ${s}`, href: `/admin/picks?season=${encodeURIComponent(s)}`, active: s === season }))) : '';
   const upNextHtml = !isCurrent ? '' : section({

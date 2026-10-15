@@ -11,7 +11,7 @@
 // re-render (admin:updated), since #admin-main is replaced.
 (function () {
   'use strict';
-  var ui = function () { return window.adminUi || { toast: function (t) { alert(t); }, refresh: function () { location.reload(); } }; };
+  var ui = function () { return window.adminUi || { toast: function (t) { console.log(t); }, refresh: function () { location.reload(); } }; };
   var root = function () { return document.getElementById('agd'); };
   var gameId = function () { var r = root(); return r ? r.getAttribute('data-game') : ''; };
   function store(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch (e) { return null; } }
@@ -230,7 +230,15 @@
         xhr.onerror = function () { reject(new Error('Couldn’t reach the server.')); };
         xhr.send(JSON.stringify({ dataUrl: dataUrl }));
       });
-    }).then(function () { ui().refresh('Cover saved.'); })
+    }).then(function () {
+      if (ui().hasUnsaved && ui().hasUnsaved()) {
+        var img = box.querySelector('.agd-cover__img');
+        var src = '/admin/games/' + encodeURIComponent(box.getAttribute('data-cover-game')) + '/cover-img?v=' + Date.now();
+        if (img) img.src = src; else { var e = box.querySelector('.agd-cover__empty'); if (e) { var n = document.createElement('img'); n.className = 'agd-cover__img'; n.alt = 'Cover'; n.src = src; e.replaceWith(n); } }
+        status.textContent = 'Cover saved. Your other edits are still unsaved.';
+        ui().toast('Cover saved.');
+      } else ui().refresh('Cover saved.');
+    })
       .catch(function (err) { status.textContent = 'Shown on the game page and share cards'; ui().toast(err.message, { tone: 'error' }); input.value = ''; });
   }
 

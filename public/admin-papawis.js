@@ -8,7 +8,7 @@
 //   • small form helpers: title from date, "Other…" court, deposit "Other amount"
 (function () {
   'use strict';
-  var ui = function () { return window.adminUi || { toast: function (t) { alert(t); }, confirm: function (o) { return Promise.resolve(window.confirm(o.title)); } }; };
+  var ui = function () { return window.adminUi || { toast: function (t) { console.log(t); }, confirm: function () { return Promise.resolve(false); } }; };
 
   function post(url, data, method) {
     return fetch(url, { method: method || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) })
@@ -152,7 +152,7 @@
       tCount();
       if (to === tFrom) { if (to) tPersist(to).catch(function () {}); return; }
       tRow.setAttribute('data-team', to);
-      if (!to) return; // "Unassigned" isn't a real side
+      if (!to) { ui().toast('Drag them into Light or Dark: unassigned isn’t saved.', { tone: 'error' }); setTimeout(resync, 900); return; }
       post('/admin/papawis/' + cfg.id + '/teams/assign', { signup_id: tRow.getAttribute('data-id'), team: to })
         .then(function () { return tPersist(to); })
         .then(function () { ui().toast('Moved to ' + (to === 'dark' ? 'Dark' : 'Light') + '.'); })
@@ -225,6 +225,7 @@
     var complete = document.querySelector('[data-calc-complete]');
     if (complete) complete.addEventListener('click', function () {
       var price = Number(priceEl.value) || 0;
+      if (!count) { ui().toast('Nobody is confirmed, so there’s no one to charge. Cancel the run from Settings instead.', { tone: 'error' }); return; }
       if (price <= 0) { ui().toast('Enter a price per player first.', { tone: 'error' }); priceEl.focus(); return; }
       ui().confirm({ title: 'Close out and charge ' + peso(price) + ' to ' + count + ' players?', body: 'Marks the run completed and adds the charge to every confirmed player. This can’t be undone from here.', sendLabel: 'Charge ' + count + ' players', typeToConfirm: count > 40 ? String(count) : '' })
         .then(function (ok) {

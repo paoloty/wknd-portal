@@ -51,9 +51,9 @@ function moneyToChase(unpaidSignups, pendingPayments, unlinkedByPlayer, reusable
       const reuse = (reusableByPlayer[s.player_id] || []).filter(c => c.date >= s.game_date);
       return `<tr class="aui-grid__row">
         <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, colorById[s.player_id] || '', { playerId: s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${s.guest_name ? `<span class="aui-cell__sub">for guest ${escHtml(s.guest_name)}</span>` : ''}</span></span></td>
-        <td data-label="Run"><a class="aui-link" href="/admin/papawis/${attr(s.game_id)}?tab=money">${escHtml(s.game_title || 'Papawis')}</a><div class="aui-cell__sub">${escHtml(fmtDate(s.game_date))}</div></td>
-        <td class="is-num" data-label="Amount">${peso(s.price_per_player)}</td>
-        <td class="is-bare" data-label="Status">${paidCell({ id: s.game_id }, s, cands, reuse)}</td>
+        <td class="is-bare" data-label="Run"><a class="aui-link" href="/admin/papawis/${attr(s.game_id)}?tab=money">${escHtml(s.game_title || 'Papawis')}</a></td>
+        <td class="is-num is-bare" data-label="Amount">${peso(s.price_per_player)}</td>
+        <td class="is-bare" data-label="Status">${paidCell({ id: s.game_id }, s, cands, reuse, { unpaidBadge: false })}</td>
       </tr>`;
     }
     const t = r.t;
@@ -102,12 +102,13 @@ export function adminPapawisRunsBody({
     ],
     search: { placeholder: 'Search title or court', text: g => `${g.title} ${g.location}` },
     filters: courts.length > 1 ? [{ key: 'court', label: 'Court', options: courts.map(c => [c.name, c.name]), test: (g, v) => g.location === v }] : [],
-    defaultSort: '-date', perPage: 25,
+    // Upcoming reads soonest first; past views newest first.
+    defaultSort: !query.view || query.view === 'upcoming' ? 'date' : '-date', perPage: 25,
     columns: [
-      { key: 'date', label: 'Date', num: true, sort: g => g.date, cell: g => `${escHtml(fmtDate(g.date))}<div class="aui-cell__sub" style="font-family:Archivo,sans-serif">${escHtml(fmtDow(g.date))}</div>` },
+      { key: 'date', label: 'Date', num: true, bare: true, sort: g => g.date, cell: g => `${escHtml(fmtDate(g.date))}<div class="aui-cell__sub" style="font-family:Archivo,sans-serif">${escHtml(fmtDow(g.date))}</div>` },
       { key: 'title', label: 'Run', primary: true, sort: g => String(g.title || '').toLowerCase(), cell: g => `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(g.title || 'Papawis')}</span><span class="aui-cell__sub">${escHtml(g.location || 'No court set')}</span></span>` },
       { key: 'slots', label: 'Slots', bare: true, sort: g => g.confirmed_count || 0, cell: slotsCell },
-      { key: 'price', label: 'Price', num: true, sort: g => g.price_per_player || 0, cell: g => (g.price_per_player != null ? peso(g.price_per_player) : '<span class="aui-muted">—</span>') },
+      { key: 'price', label: 'Price', num: true, phone: false, sort: g => g.price_per_player || 0, cell: g => (g.price_per_player != null ? peso(g.price_per_player) : '<span class="aui-muted">—</span>') },
       { key: 'status', label: 'Status', bare: true, cell: g => statusBadges(g, today) },
     ],
     rowHref: g => `/admin/papawis/${g.id}`,
@@ -143,7 +144,7 @@ export function adminPapawisRunsBody({
   });
 
   return `<div class="aui-page">
-    ${pageHeader({ title: 'Runs', sub: 'Pickup games. Open one to manage its roster, teams, money and messages.', actionsHtml: `${button('Courts', { kind: 'secondary', href: '/admin/papawis/courts' })}${button('Activity', { kind: 'secondary', href: '/admin/papawis/activity' })}` })}
+    ${pageHeader({ title: 'Runs', sub: 'Pickup games. Open one to manage its roster, teams, money and messages.' })}
     ${stats}
     ${grid}
     ${section({ title: 'Money to chase', note: '· every run, oldest first', asideHtml: '<a class="aui-link" href="/admin/ledger">Open the ledger</a>', bodyHtml: moneyToChase(unpaidSignups, pendingPayments, unpaidUnlinkedByPlayer, unpaidReusableByPlayer, colorById) })}

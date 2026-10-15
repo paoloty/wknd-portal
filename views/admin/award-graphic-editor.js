@@ -1,366 +1,205 @@
+// /admin/awards/:season/:type/graphic: the award share-image editor (admin redesign,
+// 2026-10-15; mockup: canvas "Award graphic"). Rebuilt from scratch on views/admin/ui.js.
+// Left: a live 1200×630 mock of the share image (Edit) or the real PNG the site serves
+// (What the site shows). Right: the photos (MVP / Best Defender / Finals MVP, one player
+// across 1..8 photos) or the players (team grids and stat leaders, one column each); the
+// selected one opens its zoom, Replace photo…, Use profile photo and Centre it. Nothing is
+// saved until Save graphic in the sticky save bar.
+// Browser side (drag, zoom, nudge, photo count, save): public/admin-award-graphic.js.
+// Saves go to the same routes as before: POST …/columns (photo count, hero types only) then
+// POST …/graphic with only the strips that changed.
 import { escHtml } from '../layout.js';
+import { outlineDarkRings } from './season-teams.js';
+import { pageHeader, button, badge, avatar, saveBar } from './ui.js';
 
-const ICON_CHEVRON_L = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5L5 7l4 4.5"/></svg>`;
-const ICON_CHECK      = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5l3 3 6-7"/></svg>`;
+const attr = s => escHtml(String(s ?? ''));
 
-// Fixed layout constants shared with buildOgStripPng()/buildTeamAwardOgSvg()/buildStatLeadersOgSvg()
-// in server.js. H must stay in sync so pan/zoom offsets computed here mean the same
-// thing as the ones the real PNG generator applies.
+// Fixed layout constants shared with buildOgStripPng()/buildPlayerAwardOgPng() in server.js.
+// The photo tile starts at row BANNER_H and is a full H tall, so pan/zoom offsets computed
+// here mean the same thing as the ones the real PNG generator applies.
 const CANVAS_W = 1200, CANVAS_H = 630, BANNER_H = 72;
 
-// Mirrors AWARD_ICON_PATH in server.js — MVP/DPOY badge icons.
+// Mirrors AWARD_ICON_PATH in server.js: the MVP crown / Best Defender shield in the pill.
 const PILL_ICON_SVG = {
-  crown:  `<svg viewBox="0 0 24 20" class="agr-strip__pill-icon"><path d="M2 6l4 4 6-8 6 8 4-4-2 11H4L2 6z"/></svg>`,
-  shield: `<svg viewBox="0 0 24 26" class="agr-strip__pill-icon"><path d="M12 1l10 4v7c0 6.5-4.3 11-10 13-5.7-2-10-6.5-10-13V5l10-4z"/></svg>`,
+  crown:  `<svg viewBox="0 0 24 20" class="agx-pill__icon" aria-hidden="true"><path d="M2 6l4 4 6-8 6 8 4-4-2 11H4L2 6z"/></svg>`,
+  shield: `<svg viewBox="0 0 24 26" class="agx-pill__icon" aria-hidden="true"><path d="M12 1l10 4v7c0 6.5-4.3 11-10 13-5.7-2-10-6.5-10-13V5l10-4z"/></svg>`,
 };
 
-// A bare photo-only strip — no text, no pill, no bottom bar (hero mode's text/bar are
-// canvas-level overlays rendered once, not per-photo). Used for MVP/DPOY's image slots.
-function photoStripHtml(opts) {
-  const { leftPct, widthPct, dataAttrs, photoUrl, shadeCss } = opts;
-  return `
-    <div class="agr-strip" style="left:${leftPct}%;width:${widthPct}%" ${dataAttrs}>
-      <div class="agr-strip__frame">
-        <img class="agr-strip__img" src="${escHtml(photoUrl)}" alt="" draggable="false">
-      </div>
-      <div class="agr-strip__shade" style="background:${escHtml(shadeCss)}" aria-hidden="true"></div>
-      <div class="agr-strip__vline" aria-hidden="true"></div>
-      <div class="agr-strip__ctl">
-        <button type="button" class="agr-ctl-btn" data-action="zoom-out" aria-label="Zoom out">−</button>
-        <button type="button" class="agr-ctl-btn" data-action="zoom-in" aria-label="Zoom in">+</button>
-        <button type="button" class="agr-ctl-btn" data-action="replace" title="Replace this photo" aria-label="Replace photo">⤒</button>
-        <button type="button" class="agr-ctl-btn" data-action="reset" title="Reset to default" aria-label="Reset">&#8635;</button>
-      </div>
-      <input type="file" class="agr-strip__file" accept="image/*" hidden>
-    </div>`;
+const STATE_LABEL = { profile: 'Profile photo', moved: 'Moved', replaced: 'Replaced' };
+// Only a non-default photo gets a badge: gray for Moved, amber for Replaced.
+const stateBadge = state => (state === 'profile' ? '' : badge(STATE_LABEL[state], state === 'replaced' ? 'amber' : 'gray'));
+const stateOf = (custom, x, y, zoom) => (custom ? 'replaced'
+  : Math.abs(x - 50) >= 0.5 || Math.abs(y - 50) >= 0.5 || Math.abs(zoom - 1) >= 0.01 ? 'moved' : 'profile');
+
+// One photo strip on the mock. Everything the browser needs to edit it rides on data-*:
+// the saved crop, whether a replacement photo is saved, and the profile photo to fall back to.
+function strip({ key, i, n, hidden, s, shadeCss, playerId, slot, innerHtml = '' }) {
+  const w = 100 / n;
+  return `<div class="agx-strip${i === 0 ? ' is-first' : ''}" data-strip="${key}" data-player-id="${attr(playerId)}"${slot != null ? ` data-slot="${slot}"` : ''}
+      data-ox="${s.offsetX}" data-oy="${s.offsetY}" data-zoom="${s.zoom}" data-custom="${s.custom ? 1 : 0}"
+      data-src="${attr(s.photoUrl)}" data-profile="${attr(s.profileUrl)}"
+      style="left:${(i * w).toFixed(4)}%;width:${w.toFixed(4)}%"${hidden ? ' hidden' : ''}>
+    <div class="agx-frame"><img class="agx-img" src="${attr(s.photoUrl)}" alt="" draggable="false"></div>
+    <div class="agx-shade" style="background:${attr(shadeCss)}" aria-hidden="true"></div>
+    ${innerHtml}
+    <div class="agx-vline" aria-hidden="true"></div>
+    <span class="agx-ring" aria-hidden="true"></span>
+  </div>`;
 }
 
-export function awardGraphicEditorBody(params) {
-  const { season, type, badgeLabel, badgeColor, ogImagePath, bannerFs, mode } = params;
+// One row in the side list; the selected one opens its controls.
+function item({ key, hidden, thumbHtml, title, sub, state }) {
+  return `<div class="agx-item" data-item="${key}"${hidden ? ' hidden' : ''}>
+    <div class="agx-item__row">
+      <button type="button" class="agx-item__pick" data-pick="${key}" aria-expanded="false">
+        ${thumbHtml}
+        <span class="agx-item__text"><span class="agx-item__title">${escHtml(title)}</span><span class="agx-item__sub"><span>${escHtml(sub)}</span><span class="agx-item__dirty" data-dirty-note hidden> · unsaved</span></span></span>
+      </button>
+      <span data-state-badge>${stateBadge(state)}</span>
+    </div>
+    <div class="agx-item__body" data-item-body hidden>
+      <div class="agx-zoom">
+        <div class="aui-row-between"><label class="agx-zoom__label" for="agx-zoom-${key}">Zoom <b data-zoom-label>1.00×</b></label>${button('Centre it', { kind: 'ghost', size: 'sm', attrs: 'data-act="centre"' })}</div>
+        <input type="range" class="agx-range" id="agx-zoom-${key}" min="100" max="300" step="5" value="100" data-zoom-range aria-label="Zoom ${attr(title)}">
+      </div>
+      <div class="aui-row">
+        ${button('Replace photo…', { size: 'sm', attrs: 'data-act="replace"' })}
+        ${button('Use profile photo', { size: 'sm', attrs: 'data-act="profile"' })}
+      </div>
+    </div>
+  </div>`;
+}
+
+export function awardGraphicEditorBody(p) {
+  const { season, type, mode, title, badgeLabel, badgeColor, ogImagePath, bannerFs, ver = '' } = p;
+  const hero = mode === 'hero';
   const bannerPct = (BANNER_H / CANVAS_H) * 100;
 
-  let stripsHtml, extraOverlayHtml, headerControlsHtml, saveKeyJs;
+  let stripsHtml, overlayHtml = '', itemsHtml, countHtml = '', config;
 
-  if (mode === 'hero') {
-    const { hero, photoSlots, columnCount, maxColumns } = params;
-    const stripPct = 100 / photoSlots.length;
-
-    stripsHtml = photoSlots.map((slot, i) => photoStripHtml({
-      leftPct: (i * stripPct).toFixed(4), widthPct: stripPct.toFixed(4),
-      dataAttrs: `data-slot="${slot.slot}" data-default-photo="/api/player/${encodeURIComponent(params.hero._playerId || '')}/photo" data-offset-x="${slot.offsetX}" data-offset-y="${slot.offsetY}" data-zoom="${slot.zoom}"`,
-      photoUrl: slot.photoUrl, shadeCss: slot.shadeCss,
+  if (hero) {
+    const { hero: h, slots, columnCount, maxColumns, shadeOne, shadeMany } = p;
+    stripsHtml = slots.map((s, i) => strip({
+      key: i, i, n: columnCount, hidden: i >= columnCount, s, slot: i, playerId: h.playerId,
+      shadeCss: columnCount > 1 ? shadeMany : shadeOne,
     })).join('');
-
-    // Bottom accent bar spans the full canvas in the real SVG (one <rect>, not per-photo),
-    // so it's a canvas-level overlay here too, not attached to any single photo slot.
-    extraOverlayHtml = `
-    <div class="agr-strip__bar" style="background:${escHtml(hero.teamColor)}" aria-hidden="true"></div>
-    <div class="agr-hero-text" aria-hidden="true">
-      ${hero.teamName ? `<div class="agr-strip__team" style="color:${escHtml(hero.teamColor)};font-size:${hero.teamFs}cqw">${escHtml(hero.teamName)}</div>` : ''}
-      <div class="agr-strip__pill" style="background:${escHtml(hero.pillColor)};color:${escHtml(hero.pillTextColor)};border-color:transparent;font-size:${hero.pillFs}cqw;height:${hero.pillHFs}cqw;margin-top:${hero.pillGap}cqw">${hero.pillIcon ? PILL_ICON_SVG[hero.pillIcon] : ''}${escHtml(hero.pillLabel)}</div>
-      ${hero.statLine ? `<div class="agr-strip__stats" style="font-size:${hero.statsFs}cqw;margin-top:${hero.statsGap}cqw">${escHtml(hero.statLine)}</div>` : ''}
-      <div class="agr-strip__first" style="font-size:${hero.firstFs}cqw;margin-top:${hero.firstGap}cqw">${escHtml(hero.first)}</div>
-      <div class="agr-strip__last" style="font-size:${hero.lastFs}cqw;margin-top:${hero.lastGap}cqw">${escHtml(hero.last)}</div>
+    // The bottom bar and the name/pill/stats are drawn once across the whole image, on top
+    // of every photo, exactly like the real SVG overlay.
+    overlayHtml = `
+    <div class="agx-bar" style="background:${attr(h.teamColor)}" aria-hidden="true"></div>
+    <div class="agx-text agx-text--hero" aria-hidden="true">
+      ${h.teamName ? `<div class="agx-t-team" style="color:${attr(h.teamColor)};font-size:${h.teamFs}cqw">${escHtml(h.teamName)}</div>` : ''}
+      <div class="agx-pill" style="background:${attr(h.pillColor)};color:${attr(h.pillTextColor)};border-color:transparent;font-size:${h.pillFs}cqw;height:${h.pillHFs}cqw;margin-top:${h.pillGap}cqw">${h.pillIcon ? PILL_ICON_SVG[h.pillIcon] : ''}${escHtml(h.pillLabel)}</div>
+      ${h.statLine ? `<div class="agx-t-stats" style="font-size:${h.statsFs}cqw;margin-top:${h.statsGap}cqw">${escHtml(h.statLine)}</div>` : ''}
+      <div class="agx-t-first" style="font-size:${h.firstFs}cqw;margin-top:${h.firstGap}cqw">${escHtml(h.first)}</div>
+      <div class="agx-t-last" style="font-size:${h.lastFs}cqw;margin-top:${h.lastGap}cqw">${escHtml(h.last)}</div>
     </div>`;
-
-    headerControlsHtml = `<label class="agr-grid-toggle">
-        Images
-        <select id="agr-col-count" class="admin-input" style="width:56px">
-          ${Array.from({ length: maxColumns }, (_, i) => i + 1).map(n =>
-            `<option value="${n}"${n === columnCount ? ' selected' : ''}>${n}</option>`).join('')}
-        </select>
-      </label>`;
-    saveKeyJs = 'slot';
+    itemsHtml = slots.map((s, i) => item({
+      key: i, hidden: i >= columnCount,
+      thumbHtml: `<span class="agx-num" aria-hidden="true">${i + 1}</span>`,
+      title: `Photo ${i + 1}`, sub: h.displayName,
+      state: stateOf(s.custom, s.offsetX, s.offsetY, s.zoom),
+    })).join('');
+    countHtml = `<div class="aui-panel agx-count-panel">
+      <div class="agx-panel-title">Photos across the image</div>
+      <div class="aui-seg agx-count" role="radiogroup" aria-label="Number of photos">${Array.from({ length: maxColumns }, (_, i) => i + 1).map(n =>
+        `<button type="button" role="radio" data-count="${n}" aria-checked="${n === columnCount}" aria-selected="${n === columnCount}">${n}</button>`).join('')}</div>
+      <p class="agx-note">Changing this keeps your other edits. Photos past the new count are dropped when you save.</p>
+    </div>`;
+    config = { season: String(season), type, mode, playerId: h.playerId, count: columnCount, shadeOne, shadeMany, og: ogImagePath };
   } else {
-    const { columns } = params;
-    const stripPct = 100 / columns.length;
-
-    stripsHtml = columns.map((col, i) => `
-    <div class="agr-strip" style="left:${(i * stripPct).toFixed(4)}%;width:${stripPct.toFixed(4)}%"
-         data-player-id="${escHtml(col.player_id)}"
-         data-default-photo="/api/player/${encodeURIComponent(col.player_id)}/photo"
-         data-offset-x="${col.offsetX}" data-offset-y="${col.offsetY}" data-zoom="${col.zoom}">
-      <div class="agr-strip__frame">
-        <img class="agr-strip__img" src="${escHtml(col.photoUrl)}" alt="" draggable="false">
+    const { columns } = p;
+    stripsHtml = columns.map((c, i) => strip({
+      key: i, i, n: columns.length, s: c, playerId: c.player_id, shadeCss: c.shadeCss,
+      innerHtml: `<div class="agx-text" aria-hidden="true">
+        ${c.pillLabel ? `<div class="agx-pill" style="border-color:${attr(c.pillColor)};color:${attr(c.pillColor)};font-size:${c.pillFs}cqw;height:${c.pillHFs}cqw;margin-top:${c.pillGap}cqw">${escHtml(c.pillLabel)}</div>` : ''}
+        ${c.statLine ? `<div class="agx-t-stats" style="font-size:${c.statsFs}cqw;margin-top:${c.statsGap}cqw">${escHtml(c.statLine)}</div>` : ''}
+        ${c.statVal ? `<div class="agx-t-val" style="font-size:${c.statValFs}cqw;margin-top:${c.statValGap}cqw">${escHtml(c.statVal)}</div>
+        <div class="agx-t-unit" style="color:${attr(c.pillColor)};font-size:${c.statUnitFs}cqw;margin-top:${c.statUnitGap}cqw">${escHtml(c.statUnit)}</div>` : ''}
+        <div class="agx-t-first" style="font-size:${c.firstFs}cqw;margin-top:${c.firstGap}cqw">${escHtml(c.first)}</div>
+        <div class="agx-t-last" style="font-size:${c.lastFs}cqw;margin-top:${c.lastGap}cqw">${escHtml(c.last)}</div>
       </div>
-      <div class="agr-strip__shade" style="background:${escHtml(col.shadeCss)}" aria-hidden="true"></div>
-      <div class="agr-strip__text" aria-hidden="true">
-        ${col.pillLabel ? `<div class="agr-strip__pill" style="border-color:${escHtml(col.pillColor)};color:${escHtml(col.pillColor)};font-size:${col.pillFs}cqw;height:${col.pillHFs}cqw;margin-top:${col.pillGap}cqw">${escHtml(col.pillLabel)}</div>` : ''}
-        ${col.statLine ? `<div class="agr-strip__stats" style="font-size:${col.statsFs}cqw;margin-top:${col.statsGap}cqw">${escHtml(col.statLine)}</div>` : ''}
-        ${col.statVal ? `<div class="agr-strip__stat-val" style="font-size:${col.statValFs}cqw;margin-top:${col.statValGap}cqw">${escHtml(col.statVal)}</div>
-        <div class="agr-strip__stat-unit" style="color:${escHtml(col.pillColor)};font-size:${col.statUnitFs}cqw;margin-top:${col.statUnitGap}cqw">${escHtml(col.statUnit)}</div>` : ''}
-        <div class="agr-strip__first" style="font-size:${col.firstFs}cqw;margin-top:${col.firstGap}cqw">${escHtml(col.first)}</div>
-        <div class="agr-strip__last" style="font-size:${col.lastFs}cqw;margin-top:${col.lastGap}cqw">${escHtml(col.last)}</div>
-      </div>
-      <div class="agr-strip__bar" style="background:${escHtml(col.teamColor)}" aria-hidden="true"></div>
-      <div class="agr-strip__vline" aria-hidden="true"></div>
-      <div class="agr-strip__ctl">
-        <button type="button" class="agr-ctl-btn" data-action="zoom-out" aria-label="Zoom out">−</button>
-        <button type="button" class="agr-ctl-btn" data-action="zoom-in" aria-label="Zoom in">+</button>
-        <button type="button" class="agr-ctl-btn" data-action="replace" title="Replace photo for this graphic" aria-label="Replace photo">⤒</button>
-        <button type="button" class="agr-ctl-btn" data-action="reset" title="Reset to default" aria-label="Reset">&#8635;</button>
-      </div>
-      <input type="file" class="agr-strip__file" accept="image/*" hidden>
-    </div>`).join('');
-
-    extraOverlayHtml = '';
-    headerControlsHtml = '';
-    saveKeyJs = null;
-  }
-
-  return `
-<div class="agm-edit-bar">
-  <a href="/admin/awards/season?season=${escHtml(String(season))}" class="agm-edit-bar__back">${ICON_CHEVRON_L} Awards</a>
-  <div class="agm-edit-bar__right">
-    <span id="agr-msg" class="agm-save-msg"></span>
-    <button id="agr-save" class="agm-edit-bar__save">${ICON_CHECK} Save Changes</button>
-  </div>
-</div>
-
-<div class="agr-wrap">
-  <div class="agr-title-row">
-    <div>
-      <h1 class="agr-title">${escHtml(badgeLabel)} <span class="agr-title__season">Season ${escHtml(String(season))}</span></h1>
-      <p class="agr-hint">${mode === 'hero'
-        ? 'Drag a photo to reposition it, scroll or use +/− to zoom, or replace it. The name/stats overlay is fixed — only the photo(s) behind it can be adjusted.'
-        : 'Drag a photo to reposition it, scroll or use +/− to zoom. The grid and text are fixed — only the photo behind each column can be adjusted or replaced.'}</p>
-    </div>
-    <div style="display:flex;align-items:center;gap:16px">
-      ${headerControlsHtml}
-      <label class="agr-grid-toggle">
-        <input type="checkbox" id="agr-grid-check">
-        Alignment grid
-      </label>
-    </div>
-  </div>
-
-  <div class="agr-canvas" id="agr-canvas" style="aspect-ratio:${CANVAS_W}/${CANVAS_H}">
-    <div class="agr-banner" style="height:${bannerPct.toFixed(4)}%;border-bottom-color:${escHtml(badgeColor)}44">
-      <div class="agr-banner__bar" style="background:${escHtml(badgeColor)}" aria-hidden="true"></div>
-      <div class="agr-banner__left">
-        <span class="agr-banner__eyebrow" style="color:${escHtml(badgeColor)};font-size:${bannerFs.eyebrow}cqw">WKND BASKETBALL</span>
-        <span class="agr-banner__label" style="font-size:${bannerFs.title}cqw">${escHtml(badgeLabel)}</span>
-      </div>
-      <div class="agr-banner__right">
-        <span class="agr-banner__eyebrow" style="font-size:${bannerFs.eyebrow}cqw">SEASON</span>
-        <span class="agr-banner__season" style="font-size:${bannerFs.season}cqw">${escHtml(String(season))}</span>
-      </div>
-    </div>
-    ${stripsHtml}
-    ${extraOverlayHtml}
-    <div class="agr-grid-overlay" aria-hidden="true">
-      <div class="agr-grid-overlay__h" style="top:33.333%"></div>
-      <div class="agr-grid-overlay__h" style="top:50%"></div>
-      <div class="agr-grid-overlay__h" style="top:66.667%"></div>
-    </div>
-  </div>
-
-  <div class="agr-preview">
-    <div class="agr-preview__head">
-      <span>Actual rendered image (after saving)</span>
-      <button type="button" id="agr-preview-refresh" class="admin-btn admin-btn--sm">Refresh</button>
-    </div>
-    <img id="agr-preview-img" class="agr-preview__img" src="${escHtml(ogImagePath)}?bust=${Date.now()}" alt="">
-  </div>
-</div>
-
-<script>
-(function() {
-  var SEASON = ${JSON.stringify(String(season))};
-  var TYPE   = ${JSON.stringify(type)};
-  var OG_IMAGE_PATH = ${JSON.stringify(ogImagePath)};
-  var SAVE_KEY = ${JSON.stringify(saveKeyJs)}; // 'slot' for hero mode, null for grid mode (uses player_id)
-  var HERO_PLAYER_ID = ${JSON.stringify(mode === 'hero' ? params.hero._playerId : null)};
-
-  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-  // ── Column/image count (hero mode only) ─────────────────────────────────────
-  var colSelect = document.getElementById('agr-col-count');
-  if (colSelect) {
-    colSelect.addEventListener('change', function() {
-      colSelect.disabled = true;
-      fetch('/admin/awards/' + encodeURIComponent(SEASON) + '/' + encodeURIComponent(TYPE) + '/columns', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count: colSelect.value }),
-      }).then(function(r) {
-        if (!r.ok) throw new Error('failed');
-        location.reload();
-      }).catch(function() {
-        colSelect.disabled = false;
-        alert('Could not update image count.');
+      <div class="agx-bar" style="background:${attr(c.teamColor)}" aria-hidden="true"></div>`,
+    })).join('');
+    // Stat leaders: one player can lead two stats. Photo overrides are keyed by player
+    // (award_photo_overrides: season, award_type, player_id, slot=0), so those two columns
+    // share one crop/photo; the browser mirrors an edit onto both so the mock shows what
+    // the real PNG will. Splitting them would need a per-column key (a schema change).
+    const seen = {};
+    itemsHtml = columns.map((c, i) => {
+      const twin = seen[c.player_id];
+      seen[c.player_id] = seen[c.player_id] || c.label;
+      return item({
+        key: i,
+        thumbHtml: avatar(c.displayName, c.teamColor, { size: 36, playerId: c.player_id }),
+        title: c.displayName,
+        sub: twin ? `${c.label} · same photo as ${twin}` : c.label,
+        state: stateOf(c.custom, c.offsetX, c.offsetY, c.zoom),
       });
-    });
+    }).join('');
+    config = { season: String(season), type, mode, count: columns.length, og: ogImagePath };
   }
 
-  var GRID_KEY = 'agr-grid-visible';
-  var canvas     = document.getElementById('agr-canvas');
-  var gridCheck  = document.getElementById('agr-grid-check');
-  var gridWanted = localStorage.getItem(GRID_KEY) === '1';
-  gridCheck.checked = gridWanted;
-  canvas.classList.toggle('agr-canvas--grid', gridWanted);
-  gridCheck.addEventListener('change', function() {
-    canvas.classList.toggle('agr-canvas--grid', gridCheck.checked);
-    localStorage.setItem(GRID_KEY, gridCheck.checked ? '1' : '0');
-  });
+  const hint = hero
+    ? 'One player across up to 8 photos. The name, pill and stats are drawn once on top.'
+    : type === 'stat-leaders'
+      ? 'One column per stat leader, each with its own name and number.'
+      : 'One column per player, each with its own name, position and stat line.';
 
-  var strips = Array.prototype.slice.call(document.querySelectorAll('.agr-strip'));
-  var state  = {};
-  var msg    = document.getElementById('agr-msg');
+  return outlineDarkRings(`<div class="aui-page agx" id="agx" data-config="${attr(JSON.stringify(config))}">
+    <nav class="aui-crumbs" aria-label="Back"><a href="/admin/awards/season?season=${encodeURIComponent(season)}">← Season awards</a></nav>
+    ${pageHeader({
+      eyebrow: `Award graphic · Season ${season}`, title, sub: hint,
+      actionsHtml: button('Open share image ↗', { href: ogImagePath, attrs: 'target="_blank" rel="noopener"' }),
+    })}
+    <div class="aui-cols">
+      <section class="aui-cols__main agx-main" aria-label="Graphic">
+        <div class="aui-row-between">
+          <div class="aui-seg agx-views" role="tablist" aria-label="View">
+            <button type="button" role="tab" data-view="edit" aria-selected="true">Edit</button>
+            <button type="button" role="tab" data-view="site" aria-selected="false">What the site shows</button>
+          </div>
+          <label class="aui-check agx-gridcheck" data-view-only="edit"><input type="checkbox" data-grid-toggle>Alignment grid</label>
+        </div>
 
-  function clearMsg() { msg.className = 'agm-save-msg'; msg.textContent = ''; }
+        <div class="agx-pane" data-pane="edit">
+          <div class="agx-canvas" id="agx-canvas" tabindex="0" aria-label="Live preview. Arrow keys nudge the selected photo." style="aspect-ratio:${CANVAS_W}/${CANVAS_H}">
+            <div class="agx-banner" style="height:${bannerPct.toFixed(4)}%;border-bottom-color:${attr(badgeColor)}44" aria-hidden="true">
+              <div class="agx-banner__bar" style="background:${attr(badgeColor)}"></div>
+              <div class="agx-banner__side">
+                <span class="agx-banner__eyebrow" style="color:${attr(badgeColor)};font-size:${bannerFs.eyebrow}cqw">WKND BASKETBALL</span>
+                <span class="agx-banner__label" style="font-size:${bannerFs.title}cqw">${escHtml(badgeLabel)}</span>
+              </div>
+              <div class="agx-banner__side is-end">
+                <span class="agx-banner__eyebrow" style="font-size:${bannerFs.eyebrow}cqw">SEASON</span>
+                <span class="agx-banner__season" style="font-size:${bannerFs.season}cqw">${escHtml(String(season))}</span>
+              </div>
+            </div>
+            ${stripsHtml}
+            ${overlayHtml}
+            <div class="agx-guides" aria-hidden="true"><i style="top:33.333%"></i><i style="top:50%"></i><i style="top:66.667%"></i></div>
+          </div>
+          <p class="agx-note">Drag a photo to move it · zoom with the slider, or scroll over the selected photo · arrow keys nudge it by 1%.</p>
+        </div>
 
-  strips.forEach(function(strip) {
-    var key       = SAVE_KEY === 'slot' ? strip.dataset.slot : strip.dataset.playerId;
-    var img       = strip.querySelector('.agr-strip__img');
-    var frame     = strip.querySelector('.agr-strip__frame');
-    var fileInput = strip.querySelector('.agr-strip__file');
+        <div class="agx-pane" data-pane="site" hidden>
+          <img class="agx-real" data-real alt="The share image as the site serves it" width="${CANVAS_W}" height="${CANVAS_H}">
+          <div class="aui-row-between agx-note"><span>This is the file the site shares. It updates when you save.</span>${button('Refresh', { size: 'sm', attrs: 'data-real-refresh' })}</div>
+        </div>
+      </section>
 
-    var st = {
-      offsetX: parseFloat(strip.dataset.offsetX) || 50,
-      offsetY: parseFloat(strip.dataset.offsetY) || 50,
-      zoom: parseFloat(strip.dataset.zoom) || 1,
-      newPhotoDataUrl: null,
-      clear: false,
-    };
-    state[key] = st;
+      <aside class="aui-cols__side agx-side" aria-label="Photos">
+        ${countHtml}
+        <div class="aui-panel agx-list">
+          <div class="agx-list__title">${hero ? 'Photos' : 'Players'}</div>
+          ${itemsHtml}
+        </div>
+      </aside>
+    </div>
 
-    function applyTransform() {
-      var fw = frame.clientWidth, fh = frame.clientHeight;
-      if (!img.naturalWidth || !img.naturalHeight || !fw || !fh) return;
-      var baseScale = Math.max(fw / img.naturalWidth, fh / img.naturalHeight);
-      var scale     = baseScale * st.zoom;
-      var scaledW   = img.naturalWidth  * scale;
-      var scaledH   = img.naturalHeight * scale;
-      var maxLeft   = Math.max(0, scaledW - fw);
-      var maxTop    = Math.max(0, scaledH - fh);
-      var left      = maxLeft * (st.offsetX / 100);
-      var top       = maxTop  * (st.offsetY / 100);
-      img.style.width  = scaledW + 'px';
-      img.style.height = scaledH + 'px';
-      img.style.left   = (-left) + 'px';
-      img.style.top    = (-top) + 'px';
-    }
-
-    if (img.complete && img.naturalWidth) applyTransform();
-    img.addEventListener('load', applyTransform);
-    window.addEventListener('resize', applyTransform);
-
-    var dragging = false, startX = 0, startY = 0, startOx = 50, startOy = 50;
-
-    function pointFromEvent(e) {
-      var t = e.touches && e.touches[0];
-      return { x: t ? t.clientX : e.clientX, y: t ? t.clientY : e.clientY };
-    }
-
-    function onDown(e) {
-      dragging = true;
-      var p = pointFromEvent(e);
-      startX = p.x; startY = p.y;
-      startOx = st.offsetX; startOy = st.offsetY;
-      frame.classList.add('is-dragging');
-      e.preventDefault();
-    }
-    function onMove(e) {
-      if (!dragging) return;
-      var fw = frame.clientWidth, fh = frame.clientHeight;
-      var baseScale = Math.max(fw / img.naturalWidth, fh / img.naturalHeight);
-      var scale = baseScale * st.zoom;
-      var scaledW = img.naturalWidth * scale, scaledH = img.naturalHeight * scale;
-      var maxLeft = Math.max(0, scaledW - fw), maxTop = Math.max(0, scaledH - fh);
-      var p = pointFromEvent(e);
-      var dx = p.x - startX, dy = p.y - startY;
-      st.offsetX = maxLeft ? clamp(startOx - (dx / maxLeft) * 100, 0, 100) : 50;
-      st.offsetY = maxTop  ? clamp(startOy - (dy / maxTop)  * 100, 0, 100) : 50;
-      applyTransform();
-      clearMsg();
-    }
-    function onUp() { dragging = false; frame.classList.remove('is-dragging'); }
-
-    frame.addEventListener('mousedown', onDown);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    frame.addEventListener('touchstart', onDown, { passive: false });
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onUp);
-
-    frame.addEventListener('wheel', function(e) {
-      e.preventDefault();
-      st.zoom = clamp(st.zoom + (e.deltaY < 0 ? 0.08 : -0.08), 1, 3);
-      applyTransform();
-      clearMsg();
-    }, { passive: false });
-
-    strip.querySelector('[data-action="zoom-in"]').addEventListener('click', function() {
-      st.zoom = clamp(st.zoom + 0.15, 1, 3); applyTransform(); clearMsg();
-    });
-    strip.querySelector('[data-action="zoom-out"]').addEventListener('click', function() {
-      st.zoom = clamp(st.zoom - 0.15, 1, 3); applyTransform(); clearMsg();
-    });
-    strip.querySelector('[data-action="reset"]').addEventListener('click', function() {
-      st.offsetX = 50; st.offsetY = 50; st.zoom = 1;
-      st.newPhotoDataUrl = null; st.clear = true;
-      img.src = strip.dataset.defaultPhoto + '?t=' + Date.now();
-      applyTransform();
-      clearMsg();
-    });
-    strip.querySelector('[data-action="replace"]').addEventListener('click', function() {
-      fileInput.click();
-    });
-    fileInput.addEventListener('change', function() {
-      var file = this.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        st.newPhotoDataUrl = e.target.result;
-        st.clear = false;
-        img.src = e.target.result;
-        applyTransform();
-        clearMsg();
-      };
-      reader.readAsDataURL(file);
-    });
-  });
-
-  document.getElementById('agr-preview-refresh').addEventListener('click', function() {
-    document.getElementById('agr-preview-img').src =
-      OG_IMAGE_PATH + '?bust=' + Date.now();
-  });
-
-  var saveBtn = document.getElementById('agr-save');
-  var saveBtnOrigHtml = saveBtn.innerHTML;
-
-  saveBtn.addEventListener('click', function() {
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving…';
-    var overrides = Object.keys(state).map(function(key) {
-      var st = state[key];
-      var item = {
-        player_id: SAVE_KEY === 'slot' ? HERO_PLAYER_ID : key,
-        offset_x: st.offsetX, offset_y: st.offsetY, zoom: st.zoom,
-        newPhotoDataUrl: st.newPhotoDataUrl,
-        clear: st.clear,
-      };
-      if (SAVE_KEY === 'slot') item.slot = Number(key);
-      return item;
-    });
-    fetch('/admin/awards/' + encodeURIComponent(SEASON) + '/' + encodeURIComponent(TYPE) + '/graphic', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ overrides: overrides }),
-    }).then(function(r) {
-      if (!r.ok) throw new Error('failed');
-      msg.className = 'agm-save-msg agm-save-msg--ok';
-      msg.textContent = 'Saved.';
-      document.getElementById('agr-preview-img').src =
-        OG_IMAGE_PATH + '?bust=' + Date.now();
-    }).catch(function() {
-      msg.className = 'agm-save-msg agm-save-msg--err';
-      msg.textContent = 'Save failed.';
-    }).finally(function() {
-      saveBtn.disabled = false;
-      saveBtn.innerHTML = saveBtnOrigHtml;
-    });
-  });
-})();
-</script>`;
+    <form id="agx-form" class="agx-form" novalidate></form>
+    ${saveBar({ label: 'Save graphic', form: 'agx-form' })}
+    <input type="file" accept="image/*" data-file hidden>
+  </div>
+  <script src="/admin-award-graphic.js${ver ? `?v=${ver}` : ''}" defer></script>`);
 }

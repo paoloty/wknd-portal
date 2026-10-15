@@ -17,11 +17,8 @@ function tabs(active, sentCount) {
   ]);
 }
 
-const header = () => pageHeader({
-  eyebrow: 'Reach',
-  title: 'Message players',
-  sub: 'One message to a group: a bell on the site, and an email if you want. Same caps and unsubscribes as the automatic reminders.',
-});
+const header = (title = 'Message players', sub = 'One message to a group: a bell on the site, and an email if you want. Same caps and unsubscribes as the automatic reminders.') =>
+  pageHeader({ eyebrow: 'Reach', title, sub });
 
 // The "Who it reaches" rows; public/admin-reach.js refills them from /admin/reach/count.
 export function reachRows(r, withEmail) {
@@ -56,7 +53,7 @@ export function adminReachComposeBody({ segments, seg, teams, team, pickOptions,
     <div class="aui-cols__main">
       <section class="aui-panel reach-step">
         <h2 class="reach-step__title">1 · Who</h2>
-        <div class="aui-choices">${segList}</div>
+        <div class="aui-choices aui-choices--rows">${segList}</div>
         ${teamChips}
         ${picker}
       </section>
@@ -85,18 +82,18 @@ export function adminReachComposeBody({ segments, seg, teams, team, pickOptions,
       </div>
     </div>
     <aside class="aui-cols__side">
-      ${isDev ? banner('info', 'Not the live site: at most one email goes out, and it lands in the admin inbox.') : ''}
-      <section class="aui-panel aui-panel--flush">
+      ${isDev ? `<div class="reach-dev">${banner('info', 'Not the live site: at most one email goes out, and it lands in the admin inbox.')}</div>` : ''}
+      <section class="aui-panel aui-panel--flush reach-who">
         <h2 class="reach-side__title">Who it reaches</h2>
         <div class="reach-rows" data-reach-rows>${reachRows(counts, withEmail)}</div>
       </section>
-      <section>
+      <section class="reach-prev">
         <h2 class="reach-side__title reach-side__title--out">Bell preview</h2>
         <div class="reach-bell"><span class="reach-bell__logo" aria-hidden="true">W</span>
           <span class="aui-cell__stack"><span class="aui-cell__title" data-prev-title>Your headline</span><span class="aui-cell__sub" data-prev-first>The first line of your message</span></span>
           <span class="reach-bell__when">now</span></div>
       </section>
-      <section data-reach-show-email${withEmail ? '' : ' hidden'}>
+      <section class="reach-prev" data-reach-show-email${withEmail ? '' : ' hidden'}>
         <h2 class="reach-side__title reach-side__title--out">Email preview</h2>
         <div class="reach-mail">
           <div class="reach-mail__brand">WKND LEAGUE</div>
@@ -132,19 +129,19 @@ export function adminReachSentBody({ rows, query, sentCount }) {
     columns: [
       { key: 'title', label: 'Message', primary: true, sort: r => r.title.toLowerCase(),
         cell: r => `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.title || '(no headline)')}</span><span class="aui-cell__sub">${escHtml(r.kindLabel)}</span></span>` },
-      { key: 'to', label: 'Sent to', cell: r => escHtml(r.segLabel) },
-      { key: 'by', label: 'By', bare: true, cell: r => badge(r.auto ? 'Automatic' : r.by, r.auto ? 'blue' : 'amber') },
-      { key: 'bell', label: 'Bells', num: true, sort: r => r.bell, cell: r => String(r.bell) },
-      { key: 'taps', label: 'Tapped', num: true, sort: r => (r.bell ? r.taps / r.bell : -1), cell: r => pct(r.taps, r.bell) },
-      { key: 'email', label: 'Emails', num: true, sort: r => r.email, cell: r => String(r.email) },
-      { key: 'opened', label: 'Opened', num: true, sort: r => (r.email ? r.opened / r.email : -1), cell: r => pct(r.opened, r.email) },
-      { key: 'clicked', label: 'Clicked', num: true, sort: r => (r.email ? r.clicked / r.email : -1), cell: r => pct(r.clicked, r.email) },
-      { key: 'when', label: 'When', nowrap: true, sort: r => r.created_at, cell: r => escHtml(r.whenLabel) },
+      { key: 'to', label: 'Sent to', phone: false, cell: r => escHtml(r.segLabel) },
+      { key: 'by', label: 'By', bare: true, cell: r => badge(r.auto ? 'Automatic' : r.by, r.auto ? 'blue' : 'gray') },
+      { key: 'bell', label: 'Bells', num: true, phone: true, sort: r => r.bell, cell: r => String(r.bell) },
+      { key: 'taps', label: 'Tapped', num: true, phone: false, sort: r => (r.bell ? r.taps / r.bell : -1), cell: r => pct(r.taps, r.bell) },
+      { key: 'email', label: 'Emails', num: true, phone: true, sort: r => r.email, cell: r => String(r.email) },
+      { key: 'opened', label: 'Opened', num: true, phone: false, sort: r => (r.email ? r.opened / r.email : -1), cell: r => pct(r.opened, r.email) },
+      { key: 'clicked', label: 'Clicked', num: true, phone: false, sort: r => (r.email ? r.clicked / r.email : -1), cell: r => pct(r.clicked, r.email) },
+      { key: 'when', label: 'When', nowrap: true, phone: true, sort: r => r.created_at, cell: r => escHtml(r.whenLabel) },
     ],
     defaultSort: '-when', perPage: 25,
     empty, noun: ['send', 'sends'],
   });
-  return `<div class="aui-page">${header()}${tabs('sent', sentCount)}
+  return `<div class="aui-page">${header('Sent log', '')}${tabs('sent', sentCount)}
     <p class="reach-note">Every group send, automatic or by hand. Opens and clicks fill in as people read them. Apple Mail counts some unread emails as opened.</p>
     ${rows.length ? grid : emptyState(empty)}</div>`;
 }

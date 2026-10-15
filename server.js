@@ -112,7 +112,7 @@ import {
   insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, getAssessmentsBySeason, getLatestPlayerRating,
   upsertAssessmentReview, getAssessmentReviews, getAssessmentReviewsBySeason, deleteAssessmentReview,
   playerPlayedSeason, getPlayerCurrentTeam,
-  getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams,
+  getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams, getSeasonTeamById, getSeasonRosterRows, getSandboxSignupSeason, replaceSeasonDraft,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber, getLatestRosterSeason,
   setJerseyRequestToken, getSeasonSignupByJerseyToken, submitJerseyDetails, setSeasonSignupShorts,
   setSeasonSignupChargeAdjustments,
@@ -182,7 +182,7 @@ import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedF
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
 import { adminLedgerBody, adminLedgerPlayerBody } from './views/admin/ledger.js';
-import { adminAwardsBody } from './views/admin/awards.js';
+import { adminAwardsBody, AWARD_LABELS } from './views/admin/awards.js';
 import { adminSiteBody } from './views/admin/site.js';
 import { adminAiWritingBody } from './views/admin/ai-writing.js';
 import { awardGraphicEditorBody } from './views/admin/award-graphic-editor.js';
@@ -258,7 +258,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -6031,7 +6031,7 @@ function buildAdminHome(req) {
       id: r.player_id, name: displayPlayerName(r.player_name), color: r.team_color || '',
       usually: r.runs >= 2 ? `Papawis, ${r.runs} runs` : r.picks >= 3 ? `Picks, ${r.picks} games` : `Comments`,
       lastSeen: `${Math.round((now - r.last_at) / 86400000)} days`,
-      nudgedAgo: r.nudged_at && now - r.nudged_at < 14 * 86400000 ? homeAgo(r.nudged_at) : '',
+      nudgedAgo: r.nudged_at && now - r.nudged_at < 14 * 86400000 ? (now - r.nudged_at < 60000 ? 'just now' : homeAgo(r.nudged_at)) : '',
     }));
     quiet = { days, list, message };
   }
@@ -6097,16 +6097,21 @@ app.post('/admin/home/unsnooze', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-// Nudge quiet regulars: one bell each, at most once per 14 days per player. No email yet;
-// group emails go through lib/broadcast.js once it exists (plan step 2).
+// Nudge quiet regulars: one bell each, at most once per 14 days per player, no email. Logged
+// as a lib/broadcast.js campaign (kind quiet_nudge) so it shows in Reach → Sent log.
 app.post('/admin/home/nudge', requireAuth, express.urlencoded({ extended: false }), (req, res) => {
   const ids = new Set([].concat(req.body?.ids || []).map(String));
   const allowedSections = getAdminAllowedSections(req);
   if (allowedSections && !allowedSections.includes('members') && !allowedSections.includes('papawis')) return res.redirect('/admin');
   const home = buildAdminHome(req);
   const targets = (home.quiet?.list || []).filter(p => ids.has(p.id) && !p.nudgedAgo);
-  for (const p of targets) {
-    createNotification({ playerId: p.id, type: 'quiet_nudge', title: home.quiet.message.title, body: home.quiet.message.body, link: home.quiet.message.link });
+  if (targets.length) {
+    const m = home.quiet.message;
+    const campaignId = startCampaign({ kind: 'quiet_nudge', title: m.title, body: m.body, link: m.link, segment: 'slipping', channels: 'bell', createdBy: req.session?.playerName || 'admin' });
+    for (const p of targets) {
+      createNotification({ playerId: p.id, type: 'quiet_nudge', title: m.title, body: m.body, link: m.link, broadcastId: campaignId });
+    }
+    finishCampaign(campaignId, { bells: targets.length });
   }
   const msg = targets.length ? `Nudge sent to ${targets.length === 1 ? targets[0].name : `${targets.length} players`}` : 'Nobody to nudge: they were nudged in the last 14 days.';
   res.redirect(`/admin?toast=${encodeURIComponent(msg)}`);
@@ -6197,9 +6202,13 @@ app.post('/admin/users/:id/approve', requireAuth, express.json(), async (req, re
   const reg = getRegistration(req.params.id);
   if (!reg) return res.status(404).json({ error: 'Not found' });
   // The approve form sends player_id = a suggested match, '' (don't link) or 'other' with the
-  // picked player in player_id_other.
-  const player_id = (req.body?.player_id === 'other' ? req.body?.player_id_other : req.body?.player_id) || '';
-  if (req.body?.player_id === 'other' && !player_id) return res.status(400).json({ error: 'Pick a player, or choose “Don’t link a player”.' });
+  // picked player in player_id_other. A pick in "Search all players" wins unless a suggested
+  // match is the chosen option.
+  const choice = String(req.body?.player_id || '');
+  const other = String(req.body?.player_id_other || '');
+  const player_id = other && (!choice || choice === 'other') ? other : choice === 'other' ? '' : choice;
+  if (choice === 'other' && !player_id) return res.status(400).json({ error: 'Pick a player, or choose “Don’t link a player”.' });
+  if (player_id && !getPlayerWithTeam(player_id)) return res.status(400).json({ error: 'That player wasn’t found. Pick again.' });
   updateRegistration(reg.id, { status: 'approved', player_id, notes: reg.notes || '', approved_at: Date.now() });
   if (player_id) mergeRegistrationIntoPlayer(player_id, reg);
   if (reg.email) {
@@ -6207,7 +6216,7 @@ app.post('/admin/users/:id/approve', requireAuth, express.json(), async (req, re
     const { url: setPasswordUrl } = makeSetPasswordUrl(req, reg.id);
     sendMail({ to: reg.email, ref: reg.id, ...approvedEmail({ name, setPasswordUrl }) }).catch(e => console.error('[mailer]', e.message));
   }
-  res.json({ ok: true });
+  res.json({ ok: true, player_id });
 });
 
 app.post('/admin/users/:id/create', requireAuth, express.json(), (req, res) => {
@@ -6940,15 +6949,24 @@ function getAwardGraphicRows(season, type) {
     .slice(0, 5);
 }
 
+// Drops the cached share image AND the text-free homepage carousel copy (gallery-image.png),
+// so a saved crop shows in both. MVP/DPOY/Finals MVP clear every player's entry for the type
+// (by prefix), since the confirmed player may have changed since it was cached.
 function clearAwardOgCache(season, type, playerId) {
   if (SINGLE_PHOTO_AWARD_TYPES.has(type)) {
-    if (playerId) _awardOgCache.delete(`player-${season}-${type}-${playerId}`);
+    const prefixes = [`player-${season}-${type}-`, `player-gallery-${season}-${type}-`];
+    for (const k of [..._awardOgCache.keys()]) if (prefixes.some(p => k.startsWith(p))) _awardOgCache.delete(k);
     return;
   }
-  const cacheKey = type === 'stat-leaders' ? `stat-leaders-${season}`
-    : `team-${season}-${type}`;
-  _awardOgCache.delete(cacheKey);
+  if (type === 'stat-leaders') { _awardOgCache.delete(`stat-leaders-${season}`); return; }
+  _awardOgCache.delete(`team-${season}-${type}`);
+  _awardOgCache.delete(`team-gallery-${season}-${type}`);
 }
+
+// The editor loads a saved replacement photo from its own URL instead of inlining the stored
+// data URL into the page (up to 8 of them on MVP).
+const awardPhotoUrl = (season, type, playerId, slot) =>
+  `/admin/award-photo/${season}/${encodeURIComponent(type)}/${encodeURIComponent(playerId)}/${slot}?v=${Date.now()}`;
 
 const px2cqw = px => +(px / 1200 * 100).toFixed(3);
 const OG_NAVY = '#020817';
@@ -6985,6 +7003,7 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
 
   const isSingle = SINGLE_PHOTO_AWARD_TYPES.has(type);
   const badgeLabel = type === 'stat-leaders' ? 'Statistical Leaders' : AWARD_OG_BADGE[type].label;
+  const title = `${type === 'stat-leaders' ? 'Stat leaders' : (AWARD_LABELS[type] || badgeLabel)} graphic`;
   const badgeColor = type === 'stat-leaders' ? '#f59332' : AWARD_OG_BADGE[type].bg;
   const bannerFs = { eyebrow: px2cqw(9), title: px2cqw(22), season: px2cqw(18) };
 
@@ -7001,7 +7020,8 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
     const lastPx = last.length > 12 ? 64 : last.length > 9 ? 74 : 90;
 
     const hero = {
-      _playerId: row.player_id,
+      playerId: row.player_id,
+      displayName: name,
       teamName: String(row.team_name || '').toUpperCase(),
       teamColor: row.team_color || '#4a5263',
       pillLabel: badgeLabel,
@@ -7016,13 +7036,15 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
       statsGap: px2cqw(Math.round(30.8 - 0.2 * lastPx)),
     };
 
-    const photoSlots = Array.from({ length: columnCount }, (_, slot) => {
+    // Every possible slot goes to the page (those past the count hidden), so the photo count
+    // can change in place without losing edits.
+    const profileUrl = playerPhotoUrl(row.player_id);
+    const slots = Array.from({ length: MAX_AWARD_COLUMNS }, (_, slot) => {
       const override = overridesBySlot[slot] || null;
+      const custom = !!override?.photo_url;
       return {
-        slot,
-        teamColor: row.team_color || '#4a5263',
-        shadeCss: columnCount > 1 ? stripShadeGradient(row.team_color) : heroShadeGradient(row.team_color),
-        photoUrl: (override && override.photo_url) || playerPhotoUrl(row.player_id),
+        custom, profileUrl,
+        photoUrl: custom ? awardPhotoUrl(season, type, row.player_id, slot) : profileUrl,
         offsetX: override ? override.offset_x : 50,
         offsetY: override ? override.offset_y : 50,
         zoom: override ? override.zoom : 1,
@@ -7032,11 +7054,12 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
     const ogImagePath = `/api/awards/${season}/${type}/${encodeURIComponent(row.player_id)}/og-image.png`;
 
     return res.send(renderAdminPage(req, {
-      title: 'Edit Award Graphic',
+      title,
       currentPath: '/admin/awards',
       body: awardGraphicEditorBody({
-        season, type, badgeLabel, badgeColor, ogImagePath, bannerFs,
-        mode: 'hero', hero, photoSlots, columnCount, maxColumns: MAX_AWARD_COLUMNS,
+        season, type, title, badgeLabel, badgeColor, ogImagePath, bannerFs, ver: CSS_VER,
+        mode: 'hero', hero, slots, columnCount, maxColumns: MAX_AWARD_COLUMNS,
+        shadeOne: heroShadeGradient(row.team_color), shadeMany: stripShadeGradient(row.team_color),
       }),
     }));
   }
@@ -7066,8 +7089,14 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
     const lastPx = FS_PX.last;
     const statSplit = kind === 'stat' ? statLeaderValueUnit(row) : null;
     const override = overrides[row.player_id] || null;
+    const custom = !!override?.photo_url;
+    const profileUrl = playerPhotoUrl(row.player_id);
     return {
       player_id: row.player_id,
+      displayName: name,
+      // The line under the name in the editor's list: the stat, or the position.
+      label: kind === 'stat' ? (AWARD_LABELS[row.award_type] || pillLabel) : (POS_FULL_OG[row.notes] ? POS_FULL_OG[row.notes].toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : 'Player'),
+      custom, profileUrl,
       first, last,
       pillLabel, pillColor, pillIcon: null, pillTextColor: null,
       teamName: '',
@@ -7076,11 +7105,10 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
       statUnit: statSplit ? statSplit.unit : '',
       teamColor: row.team_color || '#4a5263',
       shadeCss: stripShadeGradient(row.team_color),
-      photoUrl: (override && override.photo_url) || playerPhotoUrl(row.player_id),
+      photoUrl: custom ? awardPhotoUrl(season, type, row.player_id, 0) : profileUrl,
       offsetX: override ? override.offset_x : 50,
       offsetY: override ? override.offset_y : 50,
       zoom: override ? override.zoom : 1,
-      hasCustomPhoto: !!(override && override.photo_url),
       teamFs: px2cqw(12),
       pillFs: px2cqw(FS_PX.pill),
       pillHFs: px2cqw(FS_PX.pillH),
@@ -7101,9 +7129,9 @@ app.get('/admin/awards/:season/:type/graphic', requireAuth, (req, res) => {
   const ogImagePath = `/api/awards/${season}/${type}/og-image.png`;
 
   res.send(renderAdminPage(req, {
-    title: 'Edit Award Graphic',
+    title,
     currentPath: '/admin/awards',
-    body: awardGraphicEditorBody({ season, type, badgeLabel, badgeColor, columns, ogImagePath, bannerFs, mode: 'grid' }),
+    body: awardGraphicEditorBody({ season, type, title, badgeLabel, badgeColor, columns, ogImagePath, bannerFs, mode: 'grid', ver: CSS_VER }),
   }));
 });
 
@@ -7148,7 +7176,8 @@ app.post('/admin/awards/:season/:type/graphic', requireAuth, express.json({ limi
     const existingRow = isSingle
       ? getAwardPhotoOverridesForPlayer(season, type, player_id)[slot]
       : existing[player_id];
-    let photo_url = existingRow?.photo_url || '';
+    // profile_photo: back to the profile photo (drops a saved replacement, keeps the crop).
+    let photo_url = item.profile_photo ? '' : (existingRow?.photo_url || '');
     if (item.newPhotoDataUrl) {
       const buf = parseDataUrl(item.newPhotoDataUrl);
       if (buf) { try { photo_url = await compressSourceImage(buf); } catch (err) { console.error('override photo compress error:', err); } }
@@ -7431,40 +7460,57 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
+// /admin/ledger season param: missing → the latest ledger season; '' or 'all' → all time.
+function ledgerSeasonFromQuery(q, seasons) {
+  if (q === undefined) return seasons[0] || '';
+  const s = String(q);
+  return s === 'all' ? '' : s;
+}
+
 app.get('/admin/ledger', requireAuth, (req, res) => {
-  // Balance is never season-scoped (see below) — always the true running balance
-  // (player_financials, via getAllBalances) regardless of which season pill is active. The
-  // season pills below only filter which transactions are listed, not what "balance" means.
+  // Balances are never season-scoped: always the true all-time running balance. The season
+  // pick only changes the fee progress column and "Collected".
   const balMap   = Object.fromEntries(getAllBalances().map(r => [r.player_id, r]));
-  // Overview scopes to players actually rostered for the current season, plus anyone with
-  // real ledger history (e.g. a Papawis-only player who never registered this season but
-  // still has confirmed charges/payments) — a genuinely never-active past player still
-  // shouldn't pad the "who's here / what's outstanding" headline count, but someone with
-  // actual money on the books must stay reachable from this list, not just their own
-  // /admin/ledger/:id page, or there'd be no way to find them here at all.
+  // Rostered for the current season, plus anyone with real ledger history (a Papawis-only
+  // player who never registered must stay reachable from this list).
   const currentSeasonPlayerIds = getConfirmedSeasonPlayerIds(getPortalCurrentSeason());
   const visiblePlayerIds = new Set([...currentSeasonPlayerIds, ...Object.keys(balMap)]);
-  const players  = getAllPlayers().filter(p => visiblePlayerIds.has(p.id));
+  const allPlayers = getAllPlayers();
+  const players  = allPlayers.filter(p => visiblePlayerIds.has(p.id));
   const seasons  = getLedgerSeasons();
-  const season   = req.query.season ?? '';
+  const season   = ledgerSeasonFromQuery(req.query.season, seasons);
   const quota    = season ? getSeasonQuota(season) : 0;
-  // Charged/paid/pending are legitimate season-scoped reporting ("how much came in this
-  // season") — total_outstanding is not, and always comes from the all-time figure even
-  // when a season is selected. A debt doesn't reset when a new season starts; a
-  // season-scoped "Total Outstanding" was undercounting anything not tagged with that
-  // season (which is most charge types — only Season Fee auto-tags a season), making it
-  // look like less was owed than actually was.
-  const allSummary = getAllSummary();
-  const summary  = season ? { ...getSeasonSummary(season), total_outstanding: allSummary.total_outstanding } : allSummary;
-  // Same "never season-scoped" reasoning as balance — see getLastTransactionDates.
-  const lastActivityMap = getLastTransactionDates();
-  const allTx    = season ? getAllTransactionsBySeason(season) : getAllTransactions();
-  const txByPlayer = {};
-  for (const tx of allTx) (txByPlayer[tx.player_id] ??= []).push(tx);
+  // Fee progress counts Season Fee payments tagged with that season only, the same rule as
+  // Finance's getSeasonFeePaid.
+  const feePaidByPlayer = {};
+  if (season) for (const t of getAllTransactionsBySeason(season)) {
+    if (t.season === season && t.category === 'Season Fee' && t.type === 'payment' && t.status === 'confirmed') feePaidByPlayer[t.player_id] = (feePaidByPlayer[t.player_id] || 0) + t.amount;
+  }
+  // One scope for everything pending: all time. getPendingTransactions is newest first, so
+  // the first ref seen per player is their latest pending ref.
+  const pendingNewest = getPendingTransactions();
+  const latestRefByPlayer = {};
+  for (const t of pendingNewest) if (t.reference_no && !latestRefByPlayer[t.player_id]) latestRefByPlayer[t.player_id] = t.reference_no;
+  const collected = Number((season ? getSeasonSummary(season) : getAllSummary()).total_paid) || 0;
+  // ?player=<id> renders that player's drawer open.
+  let open = null;
+  const openPlayer = req.query.player ? getPlayerWithTeam(String(req.query.player)) : null;
+  if (openPlayer) {
+    const transactions = getPlayerTransactions(openPlayer.id);
+    const confirmedPay = transactions.filter(t => t.status === 'confirmed' && t.type === 'payment');
+    open = {
+      player: openPlayer, fin: getPlayerFinancials(openPlayer.id), transactions,
+      seasonPaid: season ? confirmedPay.filter(t => t.season === season).reduce((s, t) => s + t.amount, 0) : 0,
+      feePaid: feePaidByPlayer[openPlayer.id] || 0,
+    };
+  }
   res.send(renderAdminPage(req, {
-    title: 'Player Ledger',
+    title: 'Ledger',
     currentPath: '/admin/ledger',
-    body: adminLedgerBody({ players, txByPlayer, seasons, season, quota, summary, balMap, lastActivityMap }),
+    body: adminLedgerBody({
+      players, allPlayers, balMap, lastActivityMap: getLastTransactionDates(), seasons, season, quota, feePaidByPlayer,
+      pending: [...pendingNewest].reverse(), latestRefByPlayer, collected, colorById: adminTeamColorByPlayer(), query: req.query, open,
+    }),
   }));
 });
 
@@ -7472,18 +7518,40 @@ app.get('/admin/ledger/:id', requireAuth, (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).send(renderAdminPage(req, {
     title: 'Not Found', currentPath: '/admin/ledger',
-    body: '<p style="padding:40px;color:var(--text-muted)">Player not found.</p>',
+    body: '<div class="aui-page"><div class="aui-empty"><div class="aui-empty__title">Player not found</div><a class="aui-link" href="/admin/ledger">Back to the ledger</a></div></div>',
   }));
   const seasons = getLedgerSeasons();
-  const season  = 'season' in req.query ? req.query.season : (seasons[0] || '');
+  const season  = ledgerSeasonFromQuery(req.query.season, seasons);
   const fin     = getPlayerFinancials(player.id) ?? {};
-  const txs     = season ? getPlayerTransactionsBySeason(player.id, season) : getPlayerTransactions(player.id);
+  const allTxs  = getPlayerTransactions(player.id);
+  const txs     = season ? getPlayerTransactionsBySeason(player.id, season) : allTxs;
   const quota   = season ? getSeasonQuota(season) : 0;
+  const feePaid = season ? allTxs
+    .filter(t => t.season === season && t.category === 'Season Fee' && t.type === 'payment' && t.status === 'confirmed')
+    .reduce((s, t) => s + t.amount, 0) : 0;
+  const pending = allTxs.filter(t => t.status === 'pending').reverse().map(t => ({ ...t, player_name: player.name }));
   res.send(renderAdminPage(req, {
-    title: `${displayPlayerName(player.name)} — Ledger`,
+    title: `${displayPlayerName(player.name)} · Ledger`,
     currentPath: '/admin/ledger',
-    body: adminLedgerPlayerBody({ player, fin, transactions: txs, seasons, season, quota }),
+    body: adminLedgerPlayerBody({ player, fin, transactions: txs, seasons, season, quota, feePaid, pending, colorById: adminTeamColorByPlayer(), query: req.query }),
   }));
+});
+
+// A player-submitted proof-of-payment screenshot. Stored as a data:image URL (settle-balance)
+// or, for older rows, a link; only image data and http(s)/relative links are ever served.
+app.get('/admin/ledger/transaction/:id/screenshot', requireAuth, (req, res) => {
+  const tx = getTransactionById(req.params.id);
+  const u = String(tx?.screenshot_url || '').trim();
+  const m = u.match(/^data:(image\/(?:png|jpe?g|gif|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (m) {
+    res.set({ 'Content-Type': m[1].toLowerCase(), 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=300' });
+    return res.send(Buffer.from(m[2], 'base64'));
+  }
+  // Same-site paths only start with one "/": "//x" and "/\x" (browsers read a backslash as a
+  // slash) would be protocol-relative, and stray control characters or spaces get stripped by
+  // browsers into the same thing, so none of those are ever redirected to.
+  if (!/[\s\x00-\x1f\x7f\\]/.test(u) && (/^https?:\/\/[^/]/i.test(u) || /^\/(?![/\\])/.test(u))) return res.redirect(u);
+  res.status(404).send('No screenshot');
 });
 
 // Shared by every real "money moved" event below — a confirmed charge or a confirmed
@@ -7548,7 +7616,7 @@ app.post('/admin/ledger/transaction/:id/confirm', requireAuth, express.json(), (
 
 app.post('/admin/ledger/transaction/:id/void', requireAuth, (req, res) => {
   const ok = voidTransaction(req.params.id);
-  if (!ok) return res.status(400).json({ error: 'Transaction not found or not confirmed.' });
+  if (!ok) return res.status(400).json({ error: 'Transaction not found, or already voided.' });
   res.json({ ok: true });
 });
 
@@ -7559,17 +7627,25 @@ app.delete('/admin/ledger/transaction/:id', requireAuth, (req, res) => {
 });
 
 app.post('/admin/ledger/bulk-charge', requireAuth, express.json(), (req, res) => {
-  const { player_ids, amount, type, payment_method, date, status, notes, season, category } = req.body;
-  if (!player_ids?.length || !amount || !date) return res.status(400).json({ error: 'player_ids, amount, and date are required.' });
+  const { player_ids, amount, type, payment_method, date, status, notes, season, category, reference_no } = req.body;
+  if (!player_ids?.length || !amount || !date) return res.status(400).json({ error: 'Pick at least one player, and fill in the amount and date.' });
   const parsed = parseFloat(amount);
   if (isNaN(parsed) || parsed <= 0) return res.status(400).json({ error: 'Amount must be a positive number.' });
-  const finalStatus = status || 'confirmed';
-  for (const pid of player_ids) {
+  const txType = type || 'charge';
+  if (!['payment', 'charge'].includes(txType)) return res.status(400).json({ error: 'Invalid transaction type.' });
+  if (status && !['confirmed', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
+  // Same rule as a single add (POST /admin/ledger/transaction): a Papawis Deposit is always
+  // recorded pending, so confirming it is what promotes the player's held signup.
+  const finalStatus = category === 'Papawis Deposit' ? 'pending' : (status || 'confirmed');
+  const ids = [...new Set([].concat(player_ids).map(String).filter(Boolean))];
+  for (const pid of ids) {
     const id = randomBytes(6).toString('hex');
-    recordTransaction({ id, player_id: pid, amount: parsed, type: type || 'charge', payment_method: payment_method || '', date, status: finalStatus, notes: notes || '', reference_no: '', season: season || '', category: category || '' });
-    if (finalStatus === 'confirmed') notifyLedgerEvent({ playerId: pid, type: type || 'charge', amount: parsed, notes });
+    recordTransaction({ id, player_id: pid, amount: parsed, type: txType, payment_method: payment_method || '', date, status: finalStatus, notes: notes || '', reference_no: reference_no || '', season: season || '', category: category || '' });
+    if (finalStatus === 'confirmed') notifyLedgerEvent({ playerId: pid, type: txType, amount: parsed, notes });
   }
-  res.json({ ok: true, count: player_ids.length });
+  const n = ids.length;
+  const what = txType === 'charge' ? `Charged ${n} player${n === 1 ? '' : 's'}` : `Recorded ${n} payment${n === 1 ? '' : 's'}`;
+  res.json({ ok: true, count: n, message: finalStatus === 'pending' ? `${what}, pending your confirm.` : `${what}.` });
 });
 
 app.get('/admin/finance', requireAuth, (req, res) => {
@@ -9011,7 +9087,8 @@ app.post('/admin/picks/remind', requireAuth, express.urlencoded({ extended: fals
   // background — the page shows the tally from picks_emailed_<day> once it's done.
   if (recipients.length) setImmediate(() => sendPicksEmails(recipients, { campaignId, bells: reach.recipients.length }).catch(e => console.error('[picks email] send failed:', e.message)));
   if (home) return res.redirect(`/admin?toast=${encodeURIComponent(`Pick reminder sent: ${reach.recipients.length} bell${reach.recipients.length === 1 ? '' : 's'}${recipients.length ? `, ${IS_DEV ? 1 : recipients.length} email${(IS_DEV ? 1 : recipients.length) === 1 ? '' : 's'} going out now` : ''}`)}`);
-  res.redirect(`/admin/picks?reminded=${reach.recipients.length}${recipients.length ? `&emailing=${IS_DEV ? 1 : recipients.length}` : ''}`);
+  const nEmail = recipients.length ? (IS_DEV ? 1 : recipients.length) : 0;
+  res.redirect(`/admin/picks?toast=${encodeURIComponent(`Reminder sent to ${reach.recipients.length} player${reach.recipients.length === 1 ? '' : 's'}.${nEmail ? ` Emailing ${nEmail} now.` : ''}`)}`);
 });
 
 // ── "Who wins?" reminder email (copy: lib/picks-email.js, template: lib/mailer.js) ──────
@@ -11141,7 +11218,8 @@ function reachCounts(s) {
 
 function reachParams(src) {
   const ids = (Array.isArray(src.ids) ? src.ids : String(src.ids || '').split(',')).map(s => String(s).trim()).filter(Boolean);
-  return { seg: String(src.seg || 'all'), team: String(src.team || ''), ids, ch: src.ch === 'bell' ? 'bell' : 'both' };
+  // Bell only unless Bell + email is chosen.
+  return { seg: String(src.seg || 'all'), team: String(src.team || ''), ids, ch: src.ch === 'both' ? 'both' : 'bell' };
 }
 
 const REACH_KIND_LABELS = {
@@ -11149,6 +11227,7 @@ const REACH_KIND_LABELS = {
   mvp_podium_reminder: 'Podium reminder', mvp_podium_resend: 'Podium reminder, resend', season_results: 'Season results',
   papawis_announce: 'Papawis announcement', papawis_slot: 'Papawis slot alert', post_published: 'Post published',
   poll_opened: 'Poll opened', season_signup_open: 'Season sign-ups open', season_returning: 'Season: last season’s players',
+  quiet_nudge: 'Slipping-away nudge',
 };
 function reachSegLabel(seg) {
   const [k, v] = String(seg || '').split(':');
@@ -11156,7 +11235,7 @@ function reachSegLabel(seg) {
   return ({
     not_picked: `Haven’t picked (${day})`, asked: `Asked to be reminded (${day})`, no_ballot: 'No podium ballot',
     active_players: 'All active', not_signed_up: `Not signed up (Season ${v})`, returning_not_signed_up: `Last season, not signed up (Season ${v})`,
-    season: `Season ${v} players`,
+    season: `Season ${v} players`, slipping: 'Slipping away',
   })[k] || seg || '—';
 }
 
@@ -11195,7 +11274,9 @@ function reachLink(body) {
     const live = (process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '');
     link = raw.startsWith(live) ? raw.slice(live.length) || '/' : raw;
   }
-  if (!/^\/(?!\/)[^\s]*$/.test(link)) return null;
+  // A path on this site only: no "//" (protocol-relative) and no backslash, which browsers
+  // read as "/" (so "/\evil.example" would leave the site).
+  if (!/^\/[^\s\\]*$/.test(link) || link.includes('//')) return null;
   return link;
 }
 
@@ -11264,7 +11345,7 @@ app.get('/admin/reach/sent', requireAuth, (req, res) => {
     const st = stats[b.id] || {};
     return {
       id: b.id, title: b.title || '', kindLabel: REACH_KIND_LABELS[b.kind] || b.kind, segLabel: reachSegLabel(b.segment),
-      by: b.created_by === 'auto' ? 'Automatic' : (b.created_by || 'Admin'), auto: b.created_by === 'auto',
+      by: b.created_by === 'auto' ? 'Automatic' : (!b.created_by || b.created_by.toLowerCase() === 'admin' ? 'Admin' : b.created_by), auto: b.created_by === 'auto',
       bell: st.bells ?? b.bell_count ?? 0, taps: st.taps || 0,
       email: st.sent ?? b.email_count ?? 0, opened: st.opened || 0, clicked: st.clicked || 0,
       created_at: b.created_at,
@@ -16833,11 +16914,17 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   }
 
   res.send(renderAdminPage(req, {
-    title: 'Team Builder',
+    title: 'Team builder',
     currentPath: '/admin/season/teams',
     body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus, leagueTeams, rosterPublished }),
   }));
 });
+
+// Once the real season is started its draft is locked: fees were charged against it, and a
+// save would flip season_draft_status back to 'draft' and reopen Start Season (a second
+// charge). The sandbox ('sandbox' season) is never locked.
+const realDraftLocked = season => String(season) !== 'sandbox' && getSetting('season_draft_status', '') === 'started';
+const DRAFT_LOCKED_MSG = 'This season has started, so its teams are locked.';
 
 // Lets rosters (and, for team heads, jersey-number entry) show up on the public /my-team
 // page before the season officially starts — independent of "Start Season", which locks
@@ -16852,7 +16939,8 @@ app.post('/admin/season/teams/publish', requireAuth, express.json(), (req, res) 
 
 app.post('/admin/season/teams/create', requireAuth, express.json(), (req, res) => {
   const { season, name, color } = req.body || {};
-  if (!season || !name) return res.status(400).json({ error: 'season and name required' });
+  if (!season || !String(name || '').trim()) return res.status(400).json({ error: 'Give the team a name.' });
+  if (realDraftLocked(season)) return res.status(400).json({ error: DRAFT_LOCKED_MSG });
   const id = `st_${Date.now()}_${randomBytes(4).toString('hex')}`;
   const teams = getSeasonTeams(season);
   upsertSeasonTeam(id, season, name.trim(), color || '#f59332', teams.length);
@@ -16865,6 +16953,7 @@ app.post('/admin/season/teams/create', requireAuth, express.json(), (req, res) =
 app.post('/admin/season/teams/seed-from-league', requireAuth, express.json(), (req, res) => {
   const { season } = req.body || {};
   if (!season) return res.status(400).json({ error: 'season required' });
+  if (realDraftLocked(season)) return res.status(400).json({ error: DRAFT_LOCKED_MSG });
   if (getSeasonTeams(season).length) return res.status(400).json({ error: 'This season already has teams.' });
   getAllTeams().forEach((t, i) => {
     const id = `st_${Date.now()}_${randomBytes(4).toString('hex')}`;
@@ -16874,103 +16963,171 @@ app.post('/admin/season/teams/seed-from-league', requireAuth, express.json(), (r
 });
 
 app.post('/admin/season/teams/:id/delete', requireAuth, express.json(), (req, res) => {
-  deleteSeasonTeam(req.params.id);
-  res.json({ ok: true });
+  const team = getSeasonTeamById(req.params.id);
+  if (!team) return res.status(404).json({ error: 'That team is already gone.' });
+  if (realDraftLocked(team.season)) return res.status(400).json({ error: DRAFT_LOCKED_MSG });
+  deleteSeasonTeam(team.id); // its players go back to the pool (roster rows removed too)
+  res.json({ ok: true, message: `Removed ${team.name}. Its players are back in the pool.` });
 });
 
 app.post('/admin/season/teams/save', requireAuth, express.json(), (req, res) => {
   const { season, teams = [], assignments = [] } = req.body || {};
   if (!season) return res.status(400).json({ error: 'season required' });
-  // Update team names/colors
-  for (const t of teams) {
-    if (t.id && t.name) upsertSeasonTeam(t.id, season, t.name.trim(), t.color || '#f59332', t.sort_order ?? 0);
+  if (realDraftLocked(season)) return res.status(400).json({ error: DRAFT_LOCKED_MSG });
+  // Update team names/colors — only this season's own teams.
+  const own = new Set(getSeasonTeams(season).map(t => t.id));
+  for (const t of Array.isArray(teams) ? teams : []) {
+    if (t.id && own.has(t.id) && String(t.name || '').trim()) upsertSeasonTeam(t.id, season, String(t.name).trim(), t.color || '#f59332', t.sort_order ?? 0);
   }
   // Save roster assignments
-  saveSeasonRoster(season, assignments.filter(a => a.team_id));
-  setSetting('season_draft_status', 'draft');
+  saveSeasonRoster(season, (Array.isArray(assignments) ? assignments : []).filter(a => a && a.signup_id && own.has(a.team_id)));
+  // Only the real season has a draft status; the sandbox must never touch it.
+  if (String(season) !== 'sandbox') setSetting('season_draft_status', 'draft');
   res.json({ ok: true });
 });
 
-app.get('/admin/season/teams/sandbox', requireAuth, (req, res) => {
-  const currentSeason = getPortalCurrentSeason();
-  const source        = req.query.source === 'waitlist' ? 'waitlist' : 'players';
-  const season        = req.query.season || currentSeason;
-
-  let players;
-  if (source === 'waitlist') {
-    players = getSeasonSignupsWithStats(season)
-      // Sandbox is scratch space for experimenting with team splits before anyone's actually
-      // confirmed — waitlisted signups are fair game here even though the real Team Builder
-      // (season-teams.js's confirmedPlayers filter) only pools confirmed ones. Rejected/
-      // withdrawn stay excluded since those are explicitly out of consideration.
-      .filter(s => s.status === 'confirmed' || s.status === 'waitlisted')
+// Sandbox pool sources. 'signups' and 'waitlist' are sign-ups for a season (ids are
+// season_signups ids, ratings = each player's latest rating, same as the real builder);
+// 'players' is everyone active, rated on a past season's ratings (ids are player ids).
+function sandboxPool(source, season) {
+  if (source === 'signups' || source === 'waitlist') {
+    return getSeasonSignupsWithStats(season)
+      // Waitlisted sign-ups are fair game in the 'waitlist' pool even though the real builder
+      // only pools confirmed ones. Rejected/withdrawn stay out.
+      .filter(s => s.status === 'confirmed' || (source === 'waitlist' && s.status === 'waitlisted'))
       .map(s => ({
         id:           s.id,
+        player_id:    s.player_id || '',
         full_name:    signupDisplayName(s) || s.email || s.id,
         positions:    s.positions || '[]',
-        height:       s.height    || '',
         rating:       s.rating    ?? null,
         off_rating:   s.off_rating ?? null,
         def_rating:   s.def_rating ?? null,
-        picture_url:  s.picture_url || '',
         career_games: s.career_games ?? 0,
         status:       'confirmed',
         jersey_top:   s.jersey_top    || null,
         jersey_shorts: s.jersey_shorts || null,
         _sandbox:     true,
       }));
-  } else {
-    players = getPlayersWithRatings(season)
-      .filter(p => p.status === 'active')
-      .map(p => {
-        const parts    = String(p.name || '').split(',');
-        const fullName = parts.length >= 2 ? `${parts[1].trim()} ${parts[0].trim()}` : p.name;
-        return {
-          id:           p.id,
-          full_name:    fullName,
-          positions:    p.positions || '[]',
-          height:       '',
-          rating:       p.eff_overall ?? null,
-          off_rating:   p.eff_scoring  ?? null,
-          def_rating:   p.eff_defense  ?? null,
-          picture_url:  p.picture_url || '',
-          career_games: p.career_games ?? 0,
-          status:       'confirmed',
-          jersey_top:   null,
-          jersey_shorts: null,
-          _sandbox:     true,
-        };
-      });
   }
+  return getPlayersWithRatings(season)
+    .filter(p => p.status === 'active')
+    .map(p => {
+      const parts    = String(p.name || '').split(',');
+      const fullName = parts.length >= 2 ? `${parts[1].trim()} ${parts[0].trim()}` : p.name;
+      return {
+        id:           p.id,
+        player_id:    p.id,
+        full_name:    fullName,
+        positions:    p.positions || '[]',
+        rating:       p.eff_overall ?? null,
+        off_rating:   p.eff_scoring  ?? null,
+        def_rating:   p.eff_defense  ?? null,
+        career_games: p.career_games ?? 0,
+        status:       'confirmed',
+        jersey_top:   null,
+        jersey_shorts: null,
+        _sandbox:     true,
+      };
+    });
+}
 
-  // Build source option lists
+app.get('/admin/season/teams/sandbox', requireAuth, (req, res) => {
+  const currentSeason = getPortalCurrentSeason();
+  const sigSeason     = getSetting('signup_target_season', '');
+  // No source asked for: open on the pool the saved split was built from (its sign-up
+  // season, read from the saved rows), so it shows up instead of an empty board and a
+  // save can't wipe it. Player-id rows fall back to the current season's players.
+  const savedSigSeason = req.query.source ? '' : getSandboxSignupSeason();
+  const source        = ['signups', 'waitlist', 'players'].includes(req.query.source) ? req.query.source : (savedSigSeason ? 'waitlist' : 'players');
+  const season        = String(req.query.season || (source === 'players' ? currentSeason : savedSigSeason || sigSeason || currentSeason));
+  const players       = sandboxPool(source, season);
+
+  // Source option lists
   const gameSeasons    = getGameSeasons();   // ['3','2','1'] newest-first
   const signupSeasons  = getSignupStatsBySeason()
     .filter(s => s.confirmed > 0 || s.waitlisted > 0)
     .map(s => s.season);
 
   const teams      = getSeasonTeams('sandbox');
-  const rosterRows = getSeasonRoster('sandbox');
+  const teamIds    = new Set(teams.map(t => t.id));
+  const playerById = new Map(players.map(p => [p.id, p]));
+  const rosterRows = getSeasonRosterRows('sandbox');   // no join: ids may be player ids
   const rosterMap  = {};
+  let otherPool = 0;   // saved assignments for players who aren't in this pool
   for (const row of rosterRows) {
-    const player = players.find(p => p.id === row.signup_id);
-    if (player) {
-      if (!rosterMap[row.team_id]) rosterMap[row.team_id] = [];
-      rosterMap[row.team_id].push(player);
-    }
+    if (!teamIds.has(row.team_id)) continue;
+    const player = playerById.get(row.signup_id);
+    if (!player) { otherPool++; continue; }
+    (rosterMap[row.team_id] ||= []).push(player);
   }
 
+  // "Sandbox vs the real draft": the real season's teams with their average OVR, and which
+  // real team each pool player is on (keyed by sign-up id and player id, so it works for
+  // every pool source).
+  const realTeams = [];
+  const realTeamOf = {};
+  if (sigSeason) {
+    const rt = getSeasonTeams(sigSeason);
+    const signups = getSeasonSignupsWithStats(sigSeason).filter(s => s.status === 'confirmed');
+    for (const t of rt) {
+      const on = signups.filter(s => s.assigned_team_id === t.id);
+      const rated = on.map(s => s.rating).filter(v => v != null && v !== '');
+      realTeams.push({ name: t.name, color: t.color, ovr: rated.length ? Math.round(rated.reduce((a, b) => a + Number(b), 0) / rated.length) : null });
+    }
+    const nameOf = Object.fromEntries(rt.map(t => [t.id, t.name]));
+    for (const s of signups) {
+      const n = nameOf[s.assigned_team_id];
+      if (!n) continue;
+      realTeamOf[s.id] = n;
+      if (s.player_id) realTeamOf[s.player_id] = n;
+    }
+  }
+  for (const p of players) p.real_team = realTeamOf[p.id] || '';
+
   res.send(renderAdminPage(req, {
-    title: 'Team Builder — Sandbox',
+    title: 'Team builder — Sandbox',
     body: adminSeasonTeamsBody({
       sigSeason: 'sandbox',
       players,
       teams,
       rosterMap,
       isSandbox:    true,
-      sandboxSource: { source, season: String(season), gameSeasons, signupSeasons },
+      sandboxSource: { source, season, gameSeasons, signupSeasons, targetSeason: sigSeason, otherPool },
+      compare: { season: sigSeason, teams: realTeams, started: getSetting('season_draft_status', '') === 'started' },
     }),
   }));
+});
+
+// Copy the saved sandbox split into the real season's draft (replaces its teams and
+// assignments). Only while the real season hasn't started, and only for players who are
+// confirmed sign-ups of that season (pool players are matched by sign-up id or player id).
+app.post('/admin/season/teams/sandbox/copy', requireAuth, express.json(), (req, res) => {
+  const season = getSetting('signup_target_season', '');
+  if (!season) return res.status(400).json({ error: 'There is no season open for sign-ups.' });
+  if (realDraftLocked(season)) return res.status(400).json({ error: DRAFT_LOCKED_MSG });
+  const sTeams = getSeasonTeams('sandbox');
+  if (!sTeams.length) return res.status(400).json({ error: 'The sandbox has no teams to copy.' });
+  const signups = getSeasonSignupsWithStats(season).filter(s => s.status === 'confirmed');
+  const signupOf = new Map();
+  for (const s of signups) { signupOf.set(s.id, s.id); if (s.player_id) signupOf.set(s.player_id, s.id); }
+  const idMap = {};
+  sTeams.forEach((t, i) => { idMap[t.id] = `st_${Date.now()}_${randomBytes(4).toString('hex')}_${i}`; });
+  const assignments = [];
+  const seen = new Set();
+  for (const r of getSeasonRosterRows('sandbox')) {
+    const sid = signupOf.get(r.signup_id);
+    if (!sid || !idMap[r.team_id] || seen.has(sid)) continue;
+    seen.add(sid);
+    assignments.push({ signup_id: sid, team_id: idMap[r.team_id] });
+  }
+  if (!assignments.length) return res.status(400).json({ error: `None of the sandbox players are confirmed Season ${season} sign-ups, so nothing would carry over. The real draft was left as it is.` });
+  // Sandbox colours are often all amber: a team named like a league team takes its colour.
+  const leagueColor = new Map(getAllTeams().map(t => [String(t.name).trim().toLowerCase(), t.color]));
+  const newTeams = sTeams.map(t => ({ id: idMap[t.id], name: t.name, color: leagueColor.get(String(t.name).trim().toLowerCase()) || t.color }));
+  replaceSeasonDraft(season, newTeams, assignments);
+  setSetting('season_draft_status', 'draft');
+  res.json({ ok: true, message: `Copied ${sTeams.length} teams and ${assignments.length} players to the Season ${season} draft.` });
 });
 
 app.post('/admin/season/teams/sandbox/clear', requireAuth, express.json(), (req, res) => {
@@ -19766,7 +19923,7 @@ app.get('/admin/fines/heads', requireAuth, (req, res) => res.redirect('/admin/te
 
 app.get('/admin/team-heads', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
-    title: 'Team Heads', currentPath: '/admin/team-heads',
+    title: 'Team heads', currentPath: '/admin/team-heads',
     body: adminTeamHeadsBody({
       heads: getAllTeamHeads(), teams: getAllTeams(), players: getAllPlayers(), query: req.query,
       teamColor: Object.fromEntries(getAllTeams().map(t => [t.id, t.color || teamColor(t.name)])),
@@ -19775,9 +19932,16 @@ app.get('/admin/team-heads', requireAuth, (req, res) => {
 });
 app.post('/admin/team-heads', requireAuth, express.json(), (req, res) => {
   const { teamId, playerId } = req.body || {};
-  if (!teamId || !playerId) return res.status(400).json({ error: 'Team and player are required.' });
-  addTeamHead(teamId, playerId);
-  res.json({ ok: true });
+  if (!teamId || !playerId) return res.status(400).json({ error: 'Pick a team and a player.' });
+  const team = getAllTeams().find(t => t.id === String(teamId));
+  if (!team) return res.status(400).json({ error: 'That team wasn’t found.' });
+  const player = getPlayerWithTeam(String(playerId));
+  if (!player) return res.status(400).json({ error: 'That player wasn’t found.' });
+  if (getAllTeamHeads().some(h => h.team_id === team.id && h.player_id === player.id)) {
+    return res.status(400).json({ error: `${displayPlayerName(player.name)} already heads ${team.name}.` });
+  }
+  addTeamHead(team.id, player.id);
+  res.json({ ok: true, message: `${displayPlayerName(player.name)} now heads ${team.name}.` });
 });
 app.post('/admin/team-heads/:id/revoke', requireAuth, (req, res) => {
   removeTeamHead(req.params.id);

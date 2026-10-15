@@ -9,7 +9,7 @@ import { pageHeader, dataGrid, statStrip, badge, button, drawer, field, fieldGri
 
 const attr = s => escHtml(String(s ?? ''));
 const fmtDate = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—');
-const fmtDow = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric' }) : '');
+const fmtDow = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' }) : '');
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 // Where a game is in its life: scheduled → score only (needs the box score) → draft → live.
@@ -30,7 +30,7 @@ export const otLabel = ot => (Number(ot) > 1 ? `${Number(ot)}OT` : Number(ot) ==
 export function contentChecks(g) {
   const st = gameState(g);
   if (st === 'upcoming') return [];
-  if (st === 'score') return [['Box score', false], ['Cover', !!g.has_cover]];
+  if (st === 'score') return [['Cover', !!g.has_cover]]; // the state badge already says the box score is missing
   return [
     ['Recap', !!String(g.game_writeup || '').replace(/<[^>]*>/g, '').trim()],
     ['Player of the game', !!String(g.potg_writeup || '').trim()],
@@ -52,9 +52,9 @@ function matchup(g, colors) {
 
 function checksCell(g) {
   const list = contentChecks(g);
-  if (!list.length) return '<span class="aui-muted">—</span>';
-  const short = { Recap: 'R', 'Player of the game': 'P', Cover: 'C', YouTube: 'Y', 'Box score': 'B' };
-  return `<span class="agl-checks">${list.map(([l, ok]) => `<span class="agl-check${ok ? ' is-on' : ''}" title="${attr(`${l}: ${ok ? 'done' : 'missing'}`)}">${short[l]}</span>`).join('')}</span>`;
+  if (!list.length) return '';
+  const missing = list.filter(([, ok]) => !ok).map(([l]) => l);
+  return missing.length ? `<span class="agl-missing">No ${escHtml(missing.join(', ').replace('Player of the game', 'POTG'))}</span>` : '<span class="agl-done">✓ All set</span>';
 }
 
 export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, pickCounts = {}, query = {} }) {
@@ -66,7 +66,7 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
 
   const upcoming = games.filter(g => gameState(g) === 'upcoming' && g.date >= today).sort((x, y) => (x.date < y.date ? -1 : 1));
   const strip = statStrip([
-    { label: upcoming[0] ? `Next game day · ${fmtDate(upcoming[0].date)}` : 'Next game day', value: upcoming[0] ? String(upcoming.filter(g => g.date === upcoming[0].date).length) : '—', of: upcoming[0] ? ' games' : '' },
+    { label: upcoming[0] ? `Next game day · ${fmtDate(upcoming[0].date)}` : 'Next game day', value: upcoming[0] ? String(upcoming.filter(g => g.date === upcoming[0].date).length) : '—', of: upcoming[0] ? (upcoming.filter(g => g.date === upcoming[0].date).length === 1 ? ' game' : ' games') : '' },
     { label: 'Box scores to import', value: String(games.filter(g => gameState(g) === 'score' || (gameState(g) === 'upcoming' && g.date < today)).length) },
     { label: 'Drafts', value: String(games.filter(g => gameState(g) === 'draft').length) },
     { label: 'Live games missing content', value: String(games.filter(g => gameState(g) === 'live' && missingCount(g)).length) },
@@ -77,7 +77,7 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
     rows: games, rowKey: g => g.id, noun: ['game', 'games'],
     views: [
       { key: 'all', label: 'All', test: () => true },
-      { key: 'upcoming', label: 'Upcoming', test: g => gameState(g) === 'upcoming' },
+      { key: 'upcoming', label: 'Upcoming', test: g => gameState(g) === 'upcoming' && g.date >= today },
       { key: 'import', label: 'Needs box score', test: g => gameState(g) === 'score' || (gameState(g) === 'upcoming' && g.date < today) },
       { key: 'draft', label: 'Drafts', test: g => gameState(g) === 'draft' },
       { key: 'content', label: 'Missing content', test: g => gameState(g) === 'live' && missingCount(g) > 0 },
@@ -89,13 +89,13 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
     ],
     defaultSort: '-date', perPage: 30,
     columns: [
-      { key: 'date', label: 'Date', num: true, nowrap: true, sort: g => `${g.date}|${g.id}`, cell: g => `${escHtml(fmtDate(g.date))}<div class="aui-cell__sub agl-sub">${escHtml(fmtDow(g.date))}</div>` },
+      { key: 'date', label: 'Date', num: true, nowrap: true, bare: true, sort: g => `${g.date}|${g.id}`, cell: g => `${escHtml(fmtDate(g.date))}<div class="aui-cell__sub agl-sub">${escHtml(fmtDow(g.date))}</div>` },
       { key: 'match', label: 'Game', primary: true, cell: g => matchup(g, colors(g)) },
-      { key: 'type', label: 'Type', bare: true, phone: false, sort: g => g.game_type || 'regular', cell: g => badge(TYPE_LABEL[g.game_type] || 'Regular season', g.game_type === 'finals' ? 'amber' : g.game_type === 'playoff' ? 'blue' : 'gray') },
+      { key: 'type', label: 'Type', bare: true, phone: false, sort: g => g.game_type || 'regular', cell: g => (g.game_type === 'finals' || g.game_type === 'playoff' ? badge(TYPE_LABEL[g.game_type], g.game_type === 'finals' ? 'amber' : 'blue') : '') },
       { key: 'status', label: 'Status', bare: true, sort: g => gameState(g), cell: g => {
         const st = gameState(g);
         const fin = st === 'upcoming' ? button('Final score', { kind: 'secondary', size: 'sm', attrs: `data-final-open="${attr(g.id)}" data-a="${attr(g.team_a_name)}" data-b="${attr(g.team_b_name)}"` }) : '';
-        return `<span class="aui-cell__badges">${badge(...STATE_BADGE[st])}${fin}</span>`;
+        return `<span class="aui-cell__badges">${st === 'live' ? '' : badge(...STATE_BADGE[st])}${fin}</span>`;
       } },
       { key: 'content', label: 'Content', bare: true, sort: g => -missingCount(g), cell: checksCell },
       { key: 'picks', label: 'Picks', num: true, phone: false, sort: g => pickCounts[g.id] || 0, cell: g => (pickCounts[g.id] ? String(pickCounts[g.id]) : '<span class="aui-muted">—</span>') },

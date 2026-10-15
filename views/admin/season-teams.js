@@ -1,768 +1,261 @@
+// Team builder (GET /admin/season/teams) and its Sandbox (GET /admin/season/teams/sandbox),
+// rebuilt on the admin UI kit 2026-10-15 from the TeamBuilder + Sandbox mockups. One board:
+// the pool ("Not on a team") beside the team columns, a live balance strip, a sticky save
+// bar. Drag with a mouse, or use Move on any player (keyboard and phones). Board behaviour:
+// public/admin-team-builder.js. Styles: "Team builder" block at the end of public/admin.css.
 import { escHtml } from '../layout.js';
 import { signupDisplayName } from '../utils.js';
+import { pageHeader, button, banner, avatar, drawer, menu, badge } from './ui.js';
 
-const TEAM_COLORS = [
-  '#f59332', '#3b82f6', '#ef4444', '#22c55e',
-  '#a855f7', '#ec4899', '#14b8a6', '#f97316',
-];
+const attr = s => escHtml(String(s ?? ''));
+const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
+const EXTRA_COLORS = ['#3b82f6', '#b91c1c', '#e2e8f0', '#64748b', '#22c55e', '#a855f7', '#14b8a6', '#f97316', '#ec4899', '#eab308'];
 
-const POS_ORDER = { PG: 0, SG: 1, SF: 2, PF: 3, C: 4 };
-const POSITIONS  = ['PG', 'SG', 'SF', 'PF', 'C'];
+const num = v => (v == null || v === '' || isNaN(Number(v)) ? null : Math.round(Number(v)));
+// Very dark team colours (Black) vanish on the navy admin, so their dots and avatar rings
+// get a light outline. Rough luminance of a #rgb / #rrggbb colour, 0–1.
+export function isDarkColor(c) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
+  if (!m) return false;
+  const h = m[1].length === 3 ? m[1].split('').map(x => x + x).join('') : m[1];
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.2;
+}
+const dot = c => `<span class="atb-dot${isDarkColor(c) ? ' is-dark' : ''}" style="background:${attr(c)}"></span>`;
+// Adds the light outline to every dark avatar ring in a chunk of admin HTML (rings come from
+// ui.js avatar() as "box-shadow:0 0 0 2px <colour>"). Used on the team builder, ledger and
+// award graphic pages.
+export function outlineDarkRings(html) {
+  return String(html).replace(/box-shadow:0 0 0 2px (#[0-9a-f]{3}(?:[0-9a-f]{3})?)(?=[;"])/gi, (m, c) => (isDarkColor(c) ? `${m},0 0 0 3px rgba(255,255,255,.35)` : m));
+}
+const avg = (list, k) => { const v = list.map(p => p[k]).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
 
-// Single 6-column row structure used in both pool and team tables.
-// CSS hides rating cols (4-6) inside .team-col so only the pool shows them.
-function playerRow(p, teamColor = '') {
+// One shape for every pool source (sign-ups, sandbox sign-ups, a past season's players).
+function normalise(p) {
   let positions = [];
-  try { positions = JSON.parse(p.positions || '[]'); } catch(e) {}
-  const primaryPos  = positions[0] || '';
-  const posDisplay  = positions.slice(0, 2).join('/');
-  const posOrder    = POS_ORDER[primaryPos] ?? 99;
-  const accent      = teamColor || '#1e293b';
-  const displayName = signupDisplayName(p) || '—';
-  const initials    = escHtml(displayName.charAt(0).toUpperCase());
-  const pic         = p.picture_url || '';
-  const isNew       = (p.career_games ?? 0) === 0;
-
-  const rTd = (val, cls) => val != null && val !== ''
-    ? `<td class="rating-td text-center text-[11px] font-bold px-2 py-1.5 ${cls}">${val}</td>`
-    : `<td class="rating-td text-center text-[11px] px-2 py-1.5 text-slate-700">—</td>`;
-
-  const subtext = (!p._sandbox && p.jersey_top)
-    ? `<div class="text-[9px] text-slate-700 mt-px">Top: ${escHtml(p.jersey_top)}${p.jersey_shorts ? ` · Shorts: ${escHtml(p.jersey_shorts)}` : ''}</div>`
-    : (p.height ? `<div class="text-[9px] text-slate-600 mt-px">${escHtml(p.height)}</div>` : '');
-
-  const avatarHtml = pic
-    ? `<img class="player-avatar-img" src="${escHtml(pic)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;object-position:top center;flex-shrink:0">`
-    : `<div class="player-avatar-init" style="width:28px;height:28px;border-radius:50%;background:#1e293b;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#64748b">${initials}</div>`;
-
-  return `<tr class="player-row" draggable="true"
-    data-signup-id="${escHtml(p.id)}"
-    data-rating="${p.rating ?? ''}"
-    data-off-rating="${p.off_rating ?? ''}"
-    data-def-rating="${p.def_rating ?? ''}"
-    data-name="${escHtml(displayName.toLowerCase())}"
-    data-display-name="${escHtml(displayName)}"
-    data-primary-pos="${escHtml(primaryPos)}"
-    data-pos-order="${posOrder}">
-    <td style="width:0;padding:0;border-left:3px solid ${escHtml(accent)}"></td>
-    <td class="px-2 py-1.5 text-[12px] font-semibold text-slate-200 max-w-[190px]">
-      <div style="display:flex;align-items:center;gap:7px;min-width:0">
-        ${avatarHtml}
-        <div style="min-width:0;flex:1">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="truncate">${escHtml(displayName)}</span>
-            ${isNew ? `<span style="font-size:8px;font-weight:800;letter-spacing:.08em;padding:1px 4px;border-radius:3px;background:#22c55e18;color:#22c55e;border:1px solid #22c55e33;flex-shrink:0;line-height:1.4">NEW</span>` : ''}
-          </div>
-          ${subtext}
-        </div>
-      </div>
-    </td>
-    <td class="px-1.5 py-1.5 text-[10px] text-slate-500 whitespace-nowrap min-w-[36px]">${escHtml(posDisplay || '—')}</td>
-    ${rTd(p.rating,     'text-amber-400')}
-    ${rTd(p.off_rating, 'text-blue-400')}
-    ${rTd(p.def_rating, 'text-green-400')}
-  </tr>`;
+  try { positions = JSON.parse(p.positions || '[]'); } catch { positions = []; }
+  // Jersey sizes, labelled: "Size M" when top and shorts match, else "Top M · Shorts L".
+  const top = String(p.jersey_top || '').trim(), shorts = String(p.jersey_shorts || '').trim();
+  const sizes = top && top === shorts ? `Size ${top}` : [top && `Top ${top}`, shorts && `Shorts ${shorts}`].filter(Boolean).join(' · ');
+  return {
+    id: String(p.id),
+    playerId: String(p.player_id || ''),
+    name: signupDisplayName(p) || p.full_name || '—',
+    pos: positions.filter(Boolean).slice(0, 2).join('/'),
+    primary: positions[0] || '',
+    ovr: num(p.rating), off: num(p.off_rating), def: num(p.def_rating),
+    isNew: (p.career_games ?? 0) === 0,
+    sizes,
+    realTeam: p.real_team || '',
+  };
 }
 
-function teamColumn(team, players) {
-  const rows = players.map(p => playerRow(p, team.color)).join('');
-  const hint = players.length === 0
-    ? `<tr class="drop-hint"><td colspan="6" class="text-center py-6 text-[11px] text-slate-700">Drop players here</td></tr>`
-    : '';
+// A player on the board. The same element sits in the pool or a team; CSS shows OFF/DEF in
+// the pool and the × in a team.
+function playerItem(p, color, locked) {
+  const sub = [p.pos || 'No position', p.sizes].filter(Boolean).join(' · ');
+  return `<li class="atb-p" data-id="${attr(p.id)}" data-name="${attr(p.name.toLowerCase())}" data-display="${attr(p.name)}" data-pos="${attr(p.primary)}" data-ovr="${p.ovr ?? ''}" data-off="${p.off ?? ''}" data-def="${p.def ?? ''}" data-real-team="${attr(p.realTeam)}"${locked ? '' : ' draggable="true"'}>
+    <span class="atb-p__main"${locked ? '' : ` role="button" tabindex="0" data-atb-move aria-haspopup="menu" aria-label="Move ${attr(p.name)} to…"`}>${avatar(p.name, color, { size: 32, playerId: p.playerId })}<span class="atb-p__who"><span class="atb-p__name"><span class="atb-p__n">${escHtml(p.name)}</span>${p.isNew ? '<span class="atb-new">NEW</span>' : ''}</span><span class="atb-p__sub">${escHtml(sub)}</span></span></span>
+    <b class="atb-num atb-p__ovr">${p.ovr ?? '–'}</b><span class="atb-num atb-p__off">${p.off ?? '–'}</span><span class="atb-num atb-p__def">${p.def ?? '–'}</span>
+    ${locked ? '' : `<button type="button" class="atb-icon atb-p__move" data-atb-move aria-haspopup="menu" tabindex="-1" aria-hidden="true">Move</button>
+    <button type="button" class="atb-icon atb-p__out" data-atb-out aria-label="Send ${attr(p.name)} back to the pool">×</button>`}
+  </li>`;
+}
 
-  // Compute initial averages server-side for first render
-  const numOf = (arr, key) => arr.map(p => p[key]).filter(v => v != null && v !== '');
-  const avg = (vals) => vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-  const initOvr = avg(numOf(players, 'rating'));
-  const initOff = avg(numOf(players, 'off_rating'));
-  const initDef = avg(numOf(players, 'def_rating'));
+function meters(players) {
+  return `<div class="atb-meters">${[['OVR', 'ovr'], ['OFF', 'off'], ['DEF', 'def']].map(([l, k]) => {
+    const v = avg(players, k);
+    return `<div class="atb-meter" data-meter="${k}"><span>${l}</span><span class="atb-meter__track"><span class="atb-meter__fill${k === 'ovr' ? ' is-ovr' : ''}" style="width:${v ?? 0}%"></span></span><b class="atb-num">${v ?? '–'}</b></div>`;
+  }).join('')}</div>`;
+}
 
-  const statPill = (val, color, cls) => `
-    <div class="stat-${escHtml(cls)}-pill" style="display:flex;align-items:center;gap:6px">
-      <span style="font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#475569;width:22px;flex-shrink:0">${escHtml(cls.toUpperCase())}</span>
-      <div style="flex:1;height:5px;background:#0a1120;border-radius:3px;overflow:hidden;min-width:0">
-        <div class="stat-fill" style="height:100%;border-radius:3px;background:${escHtml(color)};width:${val ?? 0}%;transition:width .45s cubic-bezier(.4,0,.2,1)"></div>
+function teamCard(team, players, locked) {
+  const sorted = players.slice().sort((a, b) => (b.ovr ?? -1) - (a.ovr ?? -1));
+  const opts = locked ? '' : `<details class="aui-menu"><summary class="aui-menu__btn" aria-label="${attr(team.name)} options">⋯</summary><div class="aui-menu__list" role="menu">
+      <button type="button" role="menuitem" class="aui-menu__item" data-atb-edit>Rename or recolour…</button>
+      <div class="aui-menu__sep" role="separator"></div>
+      <button type="button" role="menuitem" class="aui-menu__item is-danger" data-atb-remove>Remove team…</button>
+    </div></details>`;
+  return `<article class="atb-team" data-team-id="${attr(team.id)}" data-color="${attr(team.color)}" data-name="${attr(team.name)}" aria-label="${attr(team.name)}">
+    <div class="atb-team__head">${dot(team.color)}<b class="atb-team__name">${escHtml(team.name)}</b><span class="atb-team__count" data-count>${players.length} ${players.length === 1 ? 'player' : 'players'}</span>${opts}</div>
+    ${meters(players)}
+    <ul class="atb-list" data-atb-zone="${attr(team.id)}">${sorted.map(p => playerItem(p, team.color, locked)).join('')}${locked ? '' : '<li class="atb-drop" aria-hidden="true"><span class="atb-drop__drag">Drop players here</span><span class="atb-drop__tap">No players yet. Use Move on a player.</span></li>'}</ul>
+  </article>`;
+}
+
+function poolPanel(pool, locked) {
+  const sorted = pool.slice().sort((a, b) => (b.ovr ?? -1) - (a.ovr ?? -1));
+  return `<section class="atb-pool" aria-label="Not on a team">
+    <div class="atb-pool__head">
+      <div class="atb-pool__title"><b>Not on a team</b><span class="aui-badge aui-badge--amber" data-atb-pool-count>${pool.length}</span></div>
+      <label class="aui-search atb-pool__search"><span class="aui-search__icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6" cy="6" r="4.5"/><path d="M9.5 9.5 13 13"/></svg></span><input type="search" placeholder="Search players" aria-label="Search players" data-atb-search autocomplete="off"></label>
+      <div class="atb-pos" role="group" aria-label="Filter by position">${POSITIONS.map(p => `<button type="button" aria-pressed="false" data-atb-pos="${p}">${p}</button>`).join('')}</div>
+    </div>
+    <div class="atb-cols" role="group" aria-label="Sort the pool">
+      <button type="button" data-atb-sort="name">Player</button>
+      <button type="button" data-atb-sort="ovr" class="is-on" aria-label="Sort by OVR">OVR <span aria-hidden="true">↓</span></button>
+      <button type="button" data-atb-sort="off" aria-label="Sort by OFF">OFF</button>
+      <button type="button" data-atb-sort="def" aria-label="Sort by DEF">DEF</button>
+      ${locked ? '' : '<span aria-hidden="true"></span>'}
+    </div>
+    <ul class="atb-list atb-list--pool" data-atb-zone="">${sorted.map(p => playerItem(p, '', locked)).join('')}</ul>
+    <p class="atb-pool__empty" data-atb-pool-empty${pool.length ? ' hidden' : ''}>Everyone is on a team.</p>
+    <p class="atb-pool__empty" data-atb-pool-nomatch hidden>No one in the pool matches.</p>
+  </section>`;
+}
+
+function swatches(colors) {
+  return `<div class="atb-swatches" role="radiogroup" aria-label="Team colour">${colors.map((c, i) => `<label class="atb-swatch"><input type="radio" name="color" value="${attr(c)}"${i === 0 ? ' checked' : ''}><span style="background:${attr(c)}" aria-label="${attr(c)}"></span></label>`).join('')}</div>`;
+}
+
+export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null, leagueTeams = [], rosterPublished = false, compare = null } = {}) {
+  const locked = !isSandbox && draftStatus === 'started';
+  const confirmed = players.filter(p => p.status === 'confirmed');
+  const byTeam = {};
+  const assigned = new Set();
+  for (const t of teams) {
+    byTeam[t.id] = (rosterMap[t.id] || []).map(normalise);
+    byTeam[t.id].forEach(p => assigned.add(p.id));
+  }
+  const pool = confirmed.filter(p => !assigned.has(String(p.id))).map(normalise);
+  const season = isSandbox ? (sandboxSource?.targetSeason || '') : sigSeason;
+  const poolSeason = isSandbox ? (sandboxSource?.season || '') : sigSeason;
+  // Once the rosters are published, every save shows on /my-team straight away.
+  const PUBLISHED_LINE = 'Published: players see changes as soon as you save.';
+
+  // Header
+  const moreItems = isSandbox
+    ? [{ label: 'Back to the team builder', href: '/admin/season/teams' },
+       ...(compare?.season && !compare.started ? [{ label: 'Copy to the real builder…', copy: true }] : []),
+       'sep',
+       { label: 'Clear sandbox…', post: '/admin/season/teams/sandbox/clear', danger: true, done: 'Sandbox cleared.', confirm: { title: 'Clear the sandbox?', body: 'Removes every sandbox team and assignment. The real season isn’t touched.', send: 'Clear sandbox' } }]
+    : [{ label: 'Open the sandbox', href: '/admin/season/teams/sandbox' },
+       { label: 'Download jersey sizes (CSV)', href: `/admin/season/teams/export-jerseys?season=${encodeURIComponent(sigSeason)}` },
+       ...(locked ? [{ label: 'Download charges (CSV)', href: `/admin/season/teams/export-charges?season=${encodeURIComponent(sigSeason)}` }] : [])];
+  // menu() can't carry the copy action, so it gets its own item.
+  let moreHtml = menu(moreItems.filter(i => !i.copy), 'More actions');
+  if (moreItems.some(i => i.copy)) moreHtml = moreHtml.replace('<div class="aui-menu__sep"', '<button type="button" role="menuitem" class="aui-menu__item" data-atb-copy>Copy to the real builder…</button><div class="aui-menu__sep"');
+  const actions = locked
+    ? moreHtml
+    : `${button('Auto-balance…', { attrs: 'data-atb-balance' })}${isSandbox ? '' : button('Review and start season →', { kind: 'primary', attrs: 'data-atb-review' })}${moreHtml}`;
+  const header = isSandbox
+    ? `<header class="aui-head">
+        <div class="aui-head__text">
+          <div class="aui-head__eyebrow atb-eyebrow">${poolSeason ? `Season ${escHtml(poolSeason)}` : 'Team builder'} ${badge('Sandbox', 'blue')}</div>
+          <h1 class="aui-head__title">Try a team split</h1>
+          <p class="aui-head__sub">Same board as the team builder. Nothing here touches the real season, its draft or anyone’s fees.</p>
+        </div>
+        <div class="aui-head__actions">${actions}</div>
+      </header>`
+    : pageHeader({
+        eyebrow: `Season ${sigSeason}`,
+        title: 'Team builder',
+        sub: locked
+          ? `${confirmed.length} confirmed sign-ups on ${teams.length} teams.`
+          : `${confirmed.length} confirmed sign-ups. Drag players onto teams, or use Move. ${rosterPublished ? PUBLISHED_LINE : 'Nothing changes for players until you publish.'}`,
+        actionsHtml: actions,
+      });
+
+  // Status (real season): Draft → Published → Started, with the publish switch beside it.
+  let statusHtml = '';
+  if (!isSandbox) {
+    const hasDraft = teams.length > 0 && (draftStatus === 'draft' || draftStatus === 'started');
+    const st = locked
+      ? [hasDraft ? 'done' : 'next', rosterPublished ? 'done' : 'next', 'done']
+      : [hasDraft ? 'done' : 'now', rosterPublished ? 'done' : (hasDraft ? 'now' : 'next'), rosterPublished ? 'now' : 'next'];
+    const steps = [
+      ['Draft', hasDraft ? 'Teams saved as a draft' : locked ? 'No teams drafted' : 'Not saved yet'],
+      ['Published', 'Players see their team on /my-team'],
+      ['Started', locked ? 'Fees charged, teams locked' : 'Season fees charged, builder locked'],
+    ];
+    statusHtml = `<div class="atb-status">
+      <ol class="atb-steps" aria-label="Season status">${steps.map(([l, s], i) => `<li class="atb-step is-${st[i]}"${i === 1 ? ' data-atb-step-pub' : ''}${i === 2 ? ' data-atb-step-start' : ''}><span class="atb-step__mark" aria-hidden="true">${st[i] === 'done' ? '✓' : st[i] === 'now' ? '•' : ''}</span><span class="atb-step__text"><b>${escHtml(l)}</b><span>${escHtml(s)}</span></span></li>`).join('')}</ol>
+      <div class="atb-pub"><span id="atb-pub-label">Published to players</span><button type="button" class="aui-switch" role="switch" aria-checked="${rosterPublished}" aria-labelledby="atb-pub-label" data-atb-publish><span></span></button></div>
+    </div>`;
+  }
+
+  // Sandbox: where the pool comes from.
+  let sourceHtml = '';
+  if (isSandbox && sandboxSource) {
+    const { source, season: srcSeason, gameSeasons = [], signupSeasons = [], targetSeason = '', otherPool = 0 } = sandboxSource;
+    const sigOpts = [...new Set([targetSeason, ...signupSeasons].filter(Boolean).map(String))];
+    const note = {
+      signups: `Confirmed sign-ups for Season ${srcSeason}. Ratings: each player’s latest rating, the same numbers the real builder uses.`,
+      waitlist: `Confirmed and waitlisted sign-ups for Season ${srcSeason}. Ratings: each player’s latest rating.`,
+      players: `Everyone active, rated on their Season ${srcSeason} ratings (with overrides), so numbers can differ from the real builder.`,
+    }[source];
+    const seasonSelect = (list, label) => list.length > 1 || (list.length && !list.includes(String(srcSeason)))
+      ? `<label class="atb-source__season"><span class="sr-only">${escHtml(label)}</span><select class="aui-input" data-atb-source-season aria-label="${attr(label)}">${list.map(s => `<option value="${attr(s)}"${String(s) === String(srcSeason) ? ' selected' : ''}>Season ${escHtml(s)}</option>`).join('')}</select></label>`
+      : '';
+    sourceHtml = `<section class="aui-panel atb-source" data-atb-source-panel data-source="${attr(source)}" data-season="${attr(srcSeason)}" data-target="${attr(targetSeason)}" data-latest-game-season="${attr(gameSeasons[0] || '')}">
+      <div class="atb-source__text"><b>Who’s in the pool</b><span>${escHtml(note)}</span></div>
+      <div class="atb-source__pick">
+        <div class="aui-segmented" role="radiogroup" aria-label="Pool source">
+          ${[['signups', 'Sign-ups'], ['waitlist', 'Sign-ups + waitlist'], ['players', 'A past season’s players']].map(([v, l]) => `<label><input type="radio" name="atb-source" value="${v}"${v === source ? ' checked' : ''} data-atb-source><span>${escHtml(l)}</span></label>`).join('')}
+        </div>
+        ${source === 'players' ? seasonSelect(gameSeasons.map(String), 'Season') : seasonSelect(sigOpts, 'Sign-up season')}
       </div>
-      <span class="stat-val font-saira" style="font-size:12px;font-weight:700;width:22px;text-align:right;color:${val != null ? escHtml(color) : '#334155'}">${val ?? '—'}</span>
+    </section>
+    ${otherPool ? banner('warn', `${otherPool} saved ${otherPool === 1 ? 'assignment is' : 'assignments are'} for players in another pool, so ${otherPool === 1 ? 'it isn’t' : 'they aren’t'} shown. Saving here replaces ${otherPool === 1 ? 'it' : 'them'}.`) : ''}`;
+  }
+
+  // Sandbox: compared with the real draft (by team name).
+  const compareHtml = isSandbox && compare ? `<section class="atb-compare" aria-label="Sandbox vs the real draft">
+      <div class="atb-compare__head"><b>Sandbox vs the real draft</b><span>${compare.season && (compare.teams || []).length ? `Team average OVR against Season ${escHtml(compare.season)}, matched by team name.` : 'There’s no real draft to compare with yet.'}</span></div>
+      <div class="atb-compare__rows" data-atb-compare></div>
+      <p class="atb-compare__foot" data-atb-compare-foot></p>
+    </section>` : '';
+
+  const colors = [...new Set([...leagueTeams.map(t => t.color), ...teams.map(t => t.color), ...EXTRA_COLORS].filter(c => /^#[0-9a-f]{3,8}$/i.test(c || '')).map(c => c.toLowerCase()))].slice(0, 12);
+  const used = new Set(teams.map(t => (t.color || '').toLowerCase()));
+  const firstFree = colors.find(c => !used.has(c)) || colors[0];
+  const colorList = [firstFree, ...colors.filter(c => c !== firstFree)];
+
+  const emptyTeams = !teams.length ? `<div class="atb-noteams">
+      ${locked ? '' : '<b>No teams yet</b>'}
+      <span>${locked ? 'No teams were drafted this season.' : !isSandbox && leagueTeams.length ? `Start from the league’s ${leagueTeams.length} teams, or add your own.` : 'Add a team to start the split.'}</span>
+      ${!isSandbox && leagueTeams.length && !locked ? `<div class="atb-noteams__league">${leagueTeams.map(t => `<span class="atb-chip">${dot(t.color)}${escHtml(t.name)}</span>`).join('')}</div>${button(`Use these ${leagueTeams.length} teams`, { kind: 'primary', size: 'sm', attrs: 'data-atb-seed' })}` : ''}
+    </div>` : '';
+
+  const board = `<div class="atb-board${locked ? ' is-locked' : ''}">
+      <div class="atb-side">${compareHtml}${poolPanel(pool, locked)}</div>
+      <section class="atb-teams" aria-label="Teams">
+        ${emptyTeams}
+        ${teams.map(t => teamCard(t, byTeam[t.id] || [], locked)).join('')}
+        ${locked ? '' : '<button type="button" class="atb-add" data-atb-add><span aria-hidden="true">＋</span> Add a team</button>'}
+      </section>
     </div>`;
 
-  return `<div class="team-col" data-team-id="${escHtml(team.id)}">
-    <!-- Team name + controls -->
-    <div class="flex items-center gap-1.5 mb-1.5">
-      <span class="team-dot w-2 h-2 rounded-full shrink-0" style="background:${escHtml(team.color)}"></span>
-      <input class="team-name-input admin-input flex-1 min-w-0" data-team-id="${escHtml(team.id)}" value="${escHtml(team.name)}">
-      <input type="color" class="team-color-input" data-team-id="${escHtml(team.id)}" value="${escHtml(team.color)}"
-        style="width:24px;height:24px;border:1px solid #1e293b;border-radius:4px;background:none;cursor:pointer;padding:1px;flex-shrink:0">
-      <button class="team-delete-btn text-slate-700 hover:text-error text-lg leading-none p-0 bg-transparent border-0 cursor-pointer shrink-0" data-team-id="${escHtml(team.id)}" title="Remove team">×</button>
-    </div>
+  const balance = locked ? '' : `<div class="atb-balance" data-atb-balance-strip>${[['OVR spread', 'ovr'], ['OFF spread', 'off'], ['DEF spread', 'def'], ['Roster sizes', 'size']].map(([l, k]) => `<div class="atb-balance__cell" data-spread="${k}"><span class="atb-balance__label">${escHtml(l)}</span><span class="atb-balance__row"><b class="atb-num">–</b><span class="atb-balance__note"></span></span></div>`).join('')}</div>`;
 
-    <!-- Running team averages -->
-    <div class="team-stats-bar px-2.5 py-2 bg-admin-bg rounded-md mb-2" style="display:flex;flex-direction:column;gap:4px" data-team-id="${escHtml(team.id)}">
-      ${statPill(initOvr, '#f59332', 'ovr')}
-      ${statPill(initOff, '#3b82f6', 'off')}
-      ${statPill(initDef, '#22c55e', 'def')}
-      <div style="text-align:right;margin-top:1px">
-        <span class="stat-count" style="font-size:10px;color:#334155">${players.length}p</span>
-      </div>
-    </div>
+  const saveBar = locked ? '' : `<div class="aui-savebar atb-savebar" data-atb-savebar hidden>
+      <span><b data-atb-dirty>Unsaved changes</b> · <span data-atb-savenote>${isSandbox ? 'saves to the sandbox only' : rosterPublished ? PUBLISHED_LINE : 'saved as a draft; players see nothing until you publish'}</span></span>
+      <div class="aui-savebar__actions"><button type="button" class="aui-btn aui-btn--ghost" data-atb-discard>Discard</button><button type="button" class="aui-btn aui-btn--primary" data-atb-save>${isSandbox ? 'Save sandbox' : 'Save draft'}</button></div>
+    </div>`;
 
-    <!-- Drop zone -->
-    <div class="drop-zone border-2 border-dashed border-admin-border rounded-lg overflow-hidden transition-colors" data-team-id="${escHtml(team.id)}">
-      <table class="player-table w-full" style="border-collapse:collapse">
-        <tbody class="player-tbody" data-team-id="${escHtml(team.id)}">${rows}${hint}</tbody>
-      </table>
-    </div>
-  </div>`;
-}
+  const teamDrawer = locked ? '' : drawer({
+    id: 'atb-team-drawer',
+    eyebrow: isSandbox ? 'Sandbox' : `Season ${sigSeason}`,
+    title: 'Add a team',
+    bodyHtml: `<form id="atb-team-form" class="aui-stack" data-atb-team-form novalidate>
+        <input type="hidden" name="team_id" value="">
+        <label class="aui-field"><span class="aui-field__label">Team name</span><input class="aui-input" name="name" maxlength="40" autocomplete="off" required placeholder="e.g. Blue"></label>
+        <div class="aui-field"><span class="aui-field__label">Colour</span>${swatches(colorList)}<span class="aui-field__help">Shown as the team’s dot and avatar rings.</span></div>
+      </form>`,
+    footerHtml: `<button type="button" class="aui-btn aui-btn--ghost" data-drawer-close>Cancel</button><button type="submit" form="atb-team-form" class="aui-btn aui-btn--primary" data-atb-team-submit>Add team</button>`,
+  });
 
-export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null, leagueTeams = [], rosterPublished = false } = {}) {
-  const confirmedPlayers = players.filter(p => p.status === 'confirmed');
+  const config = { season: sigSeason, sandbox: isSandbox, locked, published: !isSandbox && !!rosterPublished, targetSeason: season, real: compare?.teams || [] };
 
-  const assignedIds = new Set(
-    Object.values(rosterMap).flatMap(arr => arr.map(p => p.id))
-  );
-  const unassigned = confirmedPlayers.filter(p => !assignedIds.has(p.id));
-
-  const teamCols     = teams.map(t => teamColumn(t, rosterMap[t.id] || [])).join('');
-  const colorPickers = TEAM_COLORS.map(c =>
-    `<button class="color-swatch w-5 h-5 rounded shrink-0" data-color="${c}" style="background:${c};border:2px solid transparent;cursor:pointer"></button>`
-  ).join('');
-
-  const isStarted = !isSandbox && draftStatus === 'started';
-
-  const poolHint = unassigned.length === 0
-    ? `<tr class="drop-hint"><td colspan="6" class="text-center py-4 text-[11px] text-slate-700">All players assigned to teams</td></tr>`
-    : '';
-
-  const posFilterBtns = POSITIONS.map(pos =>
-    `<button class="pos-filter-btn text-[10px] font-bold px-2.5 py-0.5 border border-admin-border rounded text-slate-500 bg-transparent cursor-pointer transition-all hover:border-slate-600" data-pos="${pos}">${pos}</button>`
-  ).join('');
-
-  const TH_CLS = 'px-2 py-1.5 text-[9.5px] font-bold tracking-widest uppercase text-slate-500 bg-admin-bg whitespace-nowrap';
-
-  return `
-<style>
-  #teams-board { display:grid; grid-template-columns:repeat(${teams.length || 1}, minmax(0, 1fr)); gap:14px; align-items:start; }
-
-  .player-row { cursor:grab; user-select:none; }
-  .player-row:hover td { background:rgba(255,255,255,.025); }
-  .player-table tbody tr { border-bottom:1px solid #0f1827; }
-  .player-table tbody tr:last-child { border-bottom:none; }
-
-  /* Hide OVR/OFF/DEF inside team drop zones — visible only in the pool */
-  .team-col .player-table .rating-td { display:none; }
-
-  .drop-zone.drag-over { border-color:#f59332 !important; background:#f5933208; }
-  [data-sort-col] { cursor:pointer; }
-  [data-sort-col]:hover { color:#94a3b8; }
-  .pos-filter-btn.is-active { border-color:#f59332; color:#f59332; background:#f5933215; }
-</style>
-
-<div>
-  <!-- Page header -->
-  <div class="flex items-start justify-between gap-4 flex-wrap mb-5">
-    <div>
-      <a href="${isSandbox ? '/admin/season/teams' : '/admin/season'}" class="text-[11px] text-slate-500 hover:text-slate-300 no-underline inline-flex items-center gap-1 mb-1">← ${isSandbox ? 'Team Builder' : 'Season Management'}</a>
-      <h1 class="m-0 text-xl font-extrabold text-slate-100">
-        Team Builder
-        ${isSandbox
-          ? `<span class="ml-2 align-middle text-[12px] font-bold px-2.5 py-0.5 rounded-md" style="background:#a855f71a;color:#a855f7;border:1px solid #a855f733">Sandbox</span>`
-          : `<span class="text-brand"> Season ${escHtml(String(sigSeason))}</span>`}
-      </h1>
-      ${isSandbox && sandboxSource ? (() => {
-        const { source, season, gameSeasons = [], signupSeasons = [] } = sandboxSource;
-        const srcLabel = source === 'waitlist' ? `Waitlist — Season ${season}` : `Players — Season ${season}`;
-        const playerOpts = gameSeasons.map(s =>
-          `<option value="players:${escHtml(s)}" ${source === 'players' && season === String(s) ? 'selected' : ''}>Players — Season ${escHtml(s)}</option>`
-        ).join('');
-        const waitlistOpts = signupSeasons.map(s =>
-          `<option value="waitlist:${escHtml(s)}" ${source === 'waitlist' && season === String(s) ? 'selected' : ''}>Waitlist — Season ${escHtml(s)}</option>`
-        ).join('');
-        const hasOptions = gameSeasons.length || signupSeasons.length;
-        return hasOptions ? `
-          <div class="flex items-center gap-2 mt-1.5">
-            <span class="text-[10px] text-slate-600 uppercase tracking-widest font-bold">Source:</span>
-            <select id="sandbox-source-select" class="admin-input" style="width:auto">
-              ${playerOpts}
-              ${waitlistOpts}
-            </select>
-            <button id="sandbox-source-load" class="agm-new-btn text-[11px] py-1 px-3">Load</button>
-          </div>` : `<p class="text-[11px] text-slate-500 mt-0.5 mb-0">Source: ${escHtml(srcLabel)}</p>`;
-      })() : ''}
-    </div>
-    <div class="flex items-center gap-2 flex-wrap">
-      ${isStarted ? `<span class="text-[11px] font-bold px-3 py-1 rounded-full" style="background:#22c55e1a;color:#22c55e;border:1px solid #22c55e33">SEASON STARTED</span>` : ''}
-      ${!isSandbox ? `<button id="publish-roster-btn" class="text-[11px] font-bold px-3 py-1 rounded-full cursor-pointer" data-published="${rosterPublished ? '1' : '0'}"
-          style="${rosterPublished
-            ? 'background:#22c55e1a;color:#22c55e;border:1px solid #22c55e33'
-            : 'background:transparent;color:#64748b;border:1px solid #334155'}"
-          title="Controls visibility on the public /my-team page — separate from Start Season">
-          ${rosterPublished ? '● Published to Players' : '○ Not Published'}
-        </button>` : ''}
-      <button id="auto-balance-btn" class="agm-new-btn" ${isStarted ? 'disabled' : ''}>⚡ Auto-Balance</button>
-      <button id="save-draft-btn" class="agm-new-btn" ${isStarted ? 'disabled' : ''}>${isSandbox ? 'Save' : 'Save Draft'}</button>
-      ${!isStarted && !isSandbox ? `<button id="review-start-btn" class="text-[12px] font-bold px-4 py-1.5 rounded-md border-0 cursor-pointer bg-green-500 text-admin-bg">Review &amp; Start Season →</button>` : ''}
-      ${isSandbox ? `<button id="clear-sandbox-btn" class="text-[12px] font-semibold px-3.5 py-1.5 rounded-md cursor-pointer bg-transparent border border-admin-border text-slate-500 hover:text-slate-300">Clear</button>` : ''}
-      <span id="builder-msg" class="text-[11px]"></span>
-    </div>
+  return outlineDarkRings(`<div class="aui-page atb" id="atb" data-config="${attr(JSON.stringify(config))}">
+    ${header}
+    ${locked ? banner('ok', 'Season started — teams are locked. Fees were charged against this draft, so it can’t be changed here.') : ''}
+    ${statusHtml}
+    ${sourceHtml}
+    ${balance}
+    ${board}
+    ${saveBar}
+    ${teamDrawer}
   </div>
-
-  ${!isStarted ? `
-  <!-- Add team toolbar -->
-  <div class="flex items-center gap-2 flex-wrap mb-4 px-3.5 py-2.5 bg-admin-surface border border-admin-border rounded-lg">
-    <input id="new-team-name" class="admin-input" style="width:10rem" placeholder="Team name">
-    <div class="flex gap-1 items-center" id="color-swatches">${colorPickers}</div>
-    <button id="add-team-btn" class="agm-new-btn">+ Add Team</button>
-  </div>` : ''}
-
-  <!-- Teams grid -->
-  ${teams.length > 0
-    ? `<div id="teams-board">${teamCols}</div>`
-    : `<div id="teams-board" class="border-2 border-dashed border-admin-border rounded-xl p-10 text-center mb-4">
-        <p class="text-slate-700 text-[13px] m-0 mb-3">Add a team above to get started.</p>
-        ${!isSandbox && leagueTeams.length > 0 ? `
-        <div class="flex flex-col items-center gap-2.5">
-          <div class="flex items-center gap-1.5">
-            ${leagueTeams.map(t => `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" style="background:${escHtml(t.color)}1a;color:${escHtml(t.color)};border:1px solid ${escHtml(t.color)}33">${escHtml(t.name)}</span>`).join('')}
-          </div>
-          <button id="seed-league-btn" class="agm-new-btn">Use These ${leagueTeams.length} Teams</button>
-        </div>` : ''}
-      </div>`}
-
-  <!-- Unassigned pool -->
-  <div class="mt-6 pt-5 border-t border-admin-border">
-    <div class="flex items-center justify-between gap-2 flex-wrap mb-2.5">
-      <div class="text-[10px] font-bold text-slate-500 tracking-widest uppercase">
-        Unassigned <span id="unassigned-count" class="text-slate-600">(${unassigned.length})</span>
-      </div>
-      <div class="flex items-center gap-2 flex-wrap">
-        <input id="pool-search" type="text" placeholder="Search…"
-          class="admin-input" style="width:9rem">
-        <div class="flex gap-1">${posFilterBtns}</div>
-        <span id="filter-status" class="text-[10px] text-slate-600 min-w-[50px]"></span>
-      </div>
-    </div>
-
-    <div class="drop-zone border-2 border-dashed border-admin-border rounded-lg overflow-hidden transition-colors" id="unassigned-pool">
-      <table class="player-table w-full" style="border-collapse:collapse">
-        <thead>
-          <tr class="border-b border-admin-border">
-            <th style="width:0;padding:0"></th>
-            <th data-sort-col="name" class="${TH_CLS} text-left pl-3">Name<span class="sort-ind"> ↕</span></th>
-            <th data-sort-col="pos"  class="${TH_CLS} text-left">Pos<span class="sort-ind"> ↕</span></th>
-            <th data-sort-col="ovr"  class="${TH_CLS} text-center text-amber-500/70">OVR<span class="sort-ind"> ↕</span></th>
-            <th data-sort-col="off"  class="${TH_CLS} text-center text-blue-400/70">OFF<span class="sort-ind"> ↕</span></th>
-            <th data-sort-col="def"  class="${TH_CLS} text-center text-green-400/70">DEF<span class="sort-ind"> ↕</span></th>
-          </tr>
-        </thead>
-        <tbody id="unassigned-pool-tbody">
-          ${unassigned.map(p => playerRow(p)).join('')}
-          ${poolHint}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-
-<script>
-(function() {
-  var SEASON = ${JSON.stringify(sigSeason)};
-  var dragging = null;
-
-  // ── Team stats ───────────────────────────────────────────────────────────
-  function avgStat(rows, attr) {
-    var vals = rows.map(function(r) { return parseFloat(r.dataset[attr]); }).filter(function(v) { return !isNaN(v); });
-    return vals.length ? Math.round(vals.reduce(function(a,b){return a+b;}, 0) / vals.length) : null;
-  }
-
-  function updateTeamStats(col) {
-    var tbody = col.querySelector('.player-tbody');
-    var bar   = col.querySelector('.team-stats-bar');
-    if (!tbody || !bar) return;
-    var rows  = Array.from(tbody.querySelectorAll('tr.player-row'));
-    var ovr   = avgStat(rows, 'rating');
-    var off   = avgStat(rows, 'offRating');
-    var def   = avgStat(rows, 'defRating');
-
-    function setPill(cls, val, color) {
-      var pill = bar.querySelector('.stat-' + cls + '-pill');
-      if (!pill) return;
-      var fill  = pill.querySelector('.stat-fill');
-      var valEl = pill.querySelector('.stat-val');
-      if (fill)  fill.style.width = (val != null ? val : 0) + '%';
-      if (valEl) { valEl.textContent = val != null ? val : '—'; valEl.style.color = val != null ? color : '#334155'; }
-    }
-    setPill('ovr', ovr, '#f59332');
-    setPill('off', off, '#3b82f6');
-    setPill('def', def, '#22c55e');
-    var cnt = bar.querySelector('.stat-count');
-    if (cnt) cnt.textContent = rows.length + 'p';
-  }
-
-  function updateAllTeamStats() {
-    document.querySelectorAll('.team-col').forEach(updateTeamStats);
-  }
-
-  // ── Hint row helper ──────────────────────────────────────────────────────
-  function createHintRow(text) {
-    var tr = document.createElement('tr');
-    tr.className = 'drop-hint';
-    var td = document.createElement('td');
-    td.colSpan = 6;
-    td.className = 'text-center py-4 text-[11px] text-slate-700';
-    td.textContent = text;
-    tr.appendChild(td);
-    return tr;
-  }
-
-  // ── Drag and drop ────────────────────────────────────────────────────────
-  function bindRow(row) {
-    row.addEventListener('dragstart', function(e) {
-      dragging = row;
-      e.dataTransfer.effectAllowed = 'move';
-
-      // Ghost: avatar circle + name only
-      var ghost = document.createElement('div');
-      ghost.style.cssText = 'position:fixed;top:-9999px;left:0;background:#0d1424;border:1px solid #1e293b;border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#e2e8f0;white-space:nowrap;font-family:inherit;';
-      var name = this.dataset.displayName || '';
-      var srcImg = this.querySelector('.player-avatar-img');
-      if (srcImg) {
-        var av = srcImg.cloneNode(false);
-        av.style.cssText = 'width:28px;height:28px;border-radius:50%;object-fit:cover;object-position:top center;flex-shrink:0;';
-        ghost.appendChild(av);
-      } else {
-        var av = document.createElement('div');
-        av.style.cssText = 'width:28px;height:28px;border-radius:50%;background:#1e293b;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#64748b;';
-        av.textContent = name.charAt(0).toUpperCase();
-        ghost.appendChild(av);
-      }
-      var nameEl = document.createElement('span');
-      nameEl.textContent = name;
-      ghost.appendChild(nameEl);
-      document.body.appendChild(ghost);
-      e.dataTransfer.setDragImage(ghost, 24, 20);
-      setTimeout(function() { ghost.remove(); }, 0);
-
-      setTimeout(function() { row.style.opacity = '.35'; }, 0);
-    });
-    row.addEventListener('dragend', function() {
-      row.style.opacity = '';
-      dragging = null;
-      document.querySelectorAll('.drop-zone').forEach(function(z) { z.classList.remove('drag-over'); });
-    });
-  }
-
-  function getTbody(zone) {
-    return zone.id === 'unassigned-pool'
-      ? document.getElementById('unassigned-pool-tbody')
-      : zone.querySelector('.player-tbody');
-  }
-
-  // Finds the row whose vertical midpoint the pointer is currently above, so a drop lands
-  // wherever it visually looks like it should instead of always jumping to the end of the
-  // list — same technique as the papawis admin roster board (views/admin/papawis.js).
-  function rowAfterPoint(tbody, y) {
-    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr.player-row')).filter(function(r) { return r !== dragging; });
-    var closest = null, closestOffset = -Infinity;
-    rows.forEach(function(r) {
-      var box = r.getBoundingClientRect();
-      var offset = y - box.top - box.height / 2;
-      if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = r; }
-    });
-    return closest;
-  }
-
-  function bindZone(zone) {
-    zone.addEventListener('dragover', function(e) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      zone.classList.add('drag-over');
-      if (!dragging) return;
-      var tbody = getTbody(zone);
-      if (!tbody) return;
-      // Reorders live as the pointer moves — moving the dragged row into place here (rather
-      // than waiting for drop) is what makes a mid-list drop actually land where the pointer
-      // is, and also what carries the row across zones as it crosses a boundary.
-      var hint = tbody.querySelector('tr.drop-hint');
-      if (hint) hint.remove();
-      var after = rowAfterPoint(tbody, e.clientY);
-      if (after == null) tbody.appendChild(dragging);
-      else tbody.insertBefore(dragging, after);
-    });
-    zone.addEventListener('dragleave', function(e) {
-      if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
-    });
-    zone.addEventListener('drop', function(e) {
-      e.preventDefault();
-      zone.classList.remove('drag-over');
-      if (!dragging) return;
-
-      var isPool = zone.id === 'unassigned-pool';
-      var tbody  = getTbody(zone);
-      if (!tbody) return;
-
-      // dragover already moved the row into its final position — drop just finishes the
-      // styling/bookkeeping, it doesn't re-place the row (appendChild here would undo
-      // whatever mid-list position the pointer actually dropped it at).
-      var accentTd = dragging.querySelector('td:first-child');
-      if (accentTd) {
-        if (isPool) {
-          accentTd.style.borderLeftColor = '#1e293b';
-        } else {
-          var col = document.querySelector('.team-col[data-team-id="' + zone.dataset.teamId + '"]');
-          var color = col ? col.querySelector('.team-color-input').value : '#1e293b';
-          accentTd.style.borderLeftColor = color;
-        }
-      }
-
-      if (isPool) dragging.style.display = '';
-      dragging.style.opacity = '';
-
-      restoreHints();
-      updateAllTeamStats();
-      updateUnassignedCount();
-      if (isPool) applyFilters();
-    });
-  }
-
-  function restoreHints() {
-    document.querySelectorAll('.player-tbody').forEach(function(tbody) {
-      if (!tbody.querySelector('tr.player-row') && !tbody.querySelector('tr.drop-hint'))
-        tbody.appendChild(createHintRow('Drop players here'));
-    });
-    var pool = document.getElementById('unassigned-pool-tbody');
-    if (pool && !pool.querySelector('tr.player-row') && !pool.querySelector('tr.drop-hint'))
-      pool.appendChild(createHintRow('All players assigned to teams'));
-  }
-
-  function updateUnassignedCount() {
-    var pool = document.getElementById('unassigned-pool-tbody');
-    var el   = document.getElementById('unassigned-count');
-    if (el && pool) el.textContent = '(' + pool.querySelectorAll('tr.player-row').length + ')';
-  }
-
-  document.querySelectorAll('tr.player-row').forEach(bindRow);
-  document.querySelectorAll('.drop-zone').forEach(bindZone);
-
-  // ── Position filter + search ─────────────────────────────────────────────
-  var activePosFilters = new Set();
-  var searchQuery = '';
-
-  function applyFilters() {
-    var pool = document.getElementById('unassigned-pool-tbody');
-    if (!pool) return;
-    var rows = Array.from(pool.querySelectorAll('tr.player-row'));
-    var visible = 0;
-    rows.forEach(function(row) {
-      var show = (activePosFilters.size === 0 || activePosFilters.has(row.dataset.primaryPos))
-              && (!searchQuery || row.dataset.name.includes(searchQuery));
-      row.style.display = show ? '' : 'none';
-      if (show) visible++;
-    });
-    var st = document.getElementById('filter-status');
-    if (st) st.textContent = (activePosFilters.size || searchQuery) ? visible + ' / ' + rows.length : '';
-  }
-
-  document.querySelectorAll('.pos-filter-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var pos = this.dataset.pos;
-      if (activePosFilters.has(pos)) { activePosFilters.delete(pos); this.classList.remove('is-active'); }
-      else                           { activePosFilters.add(pos);    this.classList.add('is-active'); }
-      applyFilters();
-    });
-  });
-
-  var si = document.getElementById('pool-search');
-  if (si) si.addEventListener('input', function() { searchQuery = this.value.trim().toLowerCase(); applyFilters(); });
-
-  // ── Sort pool ────────────────────────────────────────────────────────────
-  var sortCol = null, sortDir = 1;
-  document.querySelectorAll('[data-sort-col]').forEach(function(th) {
-    th.addEventListener('click', function() {
-      var col = this.dataset.sortCol;
-      sortDir = (sortCol === col) ? sortDir * -1 : 1;
-      sortCol = col;
-      document.querySelectorAll('[data-sort-col] .sort-ind').forEach(function(ind) {
-        ind.textContent = ind.parentElement.dataset.sortCol === sortCol ? (sortDir === 1 ? ' ↑' : ' ↓') : ' ↕';
-      });
-      var tbody = document.getElementById('unassigned-pool-tbody');
-      Array.from(tbody.querySelectorAll('tr.player-row'))
-        .sort(function(a, b) {
-          var v;
-          if      (col === 'pos') v = Number(a.dataset.posOrder)           - Number(b.dataset.posOrder);
-          else if (col === 'ovr') v = parseFloat(a.dataset.rating    || 0) - parseFloat(b.dataset.rating    || 0);
-          else if (col === 'off') v = parseFloat(a.dataset.offRating || 0) - parseFloat(b.dataset.offRating || 0);
-          else if (col === 'def') v = parseFloat(a.dataset.defRating || 0) - parseFloat(b.dataset.defRating || 0);
-          else                    v = (a.dataset.name || '').localeCompare(b.dataset.name || '');
-          return v * sortDir;
-        })
-        .forEach(function(r) { tbody.appendChild(r); });
-    });
-  });
-
-  // ── Team color live update ───────────────────────────────────────────────
-  document.querySelectorAll('.team-color-input').forEach(function(input) {
-    input.addEventListener('input', function() {
-      var col = document.querySelector('.team-col[data-team-id="' + this.dataset.teamId + '"]');
-      if (!col) return;
-      col.querySelector('.team-dot').style.background = this.value;
-      col.querySelectorAll('.player-tbody td:first-child').forEach(function(td) {
-        td.style.borderLeftColor = input.value;
-      });
-    });
-  });
-
-  // ── Color swatches ───────────────────────────────────────────────────────
-  var pickedColor = '${escHtml(TEAM_COLORS[0])}';
-  document.querySelectorAll('.color-swatch').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      document.querySelectorAll('.color-swatch').forEach(function(b) { b.style.borderColor = 'transparent'; });
-      this.style.borderColor = '#fff';
-      pickedColor = this.dataset.color;
-    });
-  });
-  var firstSwatch = document.querySelector('.color-swatch');
-  if (firstSwatch) firstSwatch.style.borderColor = '#fff';
-
-  // ── Add team ─────────────────────────────────────────────────────────────
-  var addTeamBtn = document.getElementById('add-team-btn');
-  if (addTeamBtn) addTeamBtn.addEventListener('click', async function() {
-    var inp = document.getElementById('new-team-name');
-    var name = inp.value.trim();
-    if (!name) { inp.focus(); return; }
-    addTeamBtn.disabled = true; addTeamBtn.textContent = 'Adding…';
-    try {
-      var r = await fetch('/admin/season/teams/create', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: SEASON, name, color: pickedColor }),
-      });
-      if (!r.ok) throw new Error();
-      location.reload();
-    } catch(e) { addTeamBtn.disabled = false; addTeamBtn.textContent = '+ Add Team'; alert('Error creating team.'); }
-  });
-
-  // ── Publish toggle ───────────────────────────────────────────────────────
-  var publishBtn = document.getElementById('publish-roster-btn');
-  if (publishBtn) publishBtn.addEventListener('click', async function() {
-    var next = publishBtn.dataset.published !== '1';
-    publishBtn.disabled = true;
-    try {
-      var r = await fetch('/admin/season/teams/publish', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: SEASON, published: next }),
-      });
-      if (!r.ok) throw new Error();
-      location.reload();
-    } catch(e) { publishBtn.disabled = false; alert('Error updating publish state.'); }
-  });
-
-  // ── Seed from league teams ──────────────────────────────────────────────
-  var seedBtn = document.getElementById('seed-league-btn');
-  if (seedBtn) seedBtn.addEventListener('click', async function() {
-    seedBtn.disabled = true; seedBtn.textContent = 'Loading…';
-    try {
-      var r = await fetch('/admin/season/teams/seed-from-league', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: SEASON }),
-      });
-      if (!r.ok) throw new Error();
-      location.reload();
-    } catch(e) { seedBtn.disabled = false; seedBtn.textContent = 'Use These Teams'; alert('Error loading league teams.'); }
-  });
-
-  // ── Delete team ───────────────────────────────────────────────────────────
-  document.querySelectorAll('.team-delete-btn').forEach(function(btn) {
-    btn.addEventListener('click', async function() {
-      if (!confirm('Remove this team? Players will return to unassigned.')) return;
-      try {
-        var r = await fetch('/admin/season/teams/' + this.dataset.teamId + '/delete', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-        });
-        if (!r.ok) throw new Error();
-        location.reload();
-      } catch(e) { alert('Error deleting team.'); }
-    });
-  });
-
-  // ── Build data for save ───────────────────────────────────────────────────
-  function buildAssignments() {
-    var out = [];
-    document.querySelectorAll('.team-col').forEach(function(col) {
-      col.querySelectorAll('.player-tbody tr.player-row').forEach(function(row) {
-        out.push({ signup_id: row.dataset.signupId, team_id: col.dataset.teamId });
-      });
-    });
-    var pool = document.getElementById('unassigned-pool-tbody');
-    if (pool) pool.querySelectorAll('tr.player-row').forEach(function(row) {
-      out.push({ signup_id: row.dataset.signupId, team_id: '' });
-    });
-    return out;
-  }
-
-  function buildTeamUpdates() {
-    return Array.from(document.querySelectorAll('.team-col')).map(function(col, i) {
-      return {
-        id:         col.dataset.teamId,
-        name:       col.querySelector('.team-name-input').value.trim(),
-        color:      col.querySelector('.team-color-input').value,
-        sort_order: i,
-      };
-    });
-  }
-
-  // ── Save draft ────────────────────────────────────────────────────────────
-  var saveDraftBtn = document.getElementById('save-draft-btn');
-  if (saveDraftBtn) saveDraftBtn.addEventListener('click', async function() {
-    var msg = document.getElementById('builder-msg');
-    saveDraftBtn.disabled = true; msg.textContent = 'Saving…'; msg.className = 'text-[11px] text-slate-400';
-    try {
-      var r = await fetch('/admin/season/teams/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: SEASON, teams: buildTeamUpdates(), assignments: buildAssignments() }),
-      });
-      if (!r.ok) throw new Error();
-      msg.className = 'text-[11px] text-green-400'; msg.textContent = 'Saved.';
-    } catch(e) { msg.className = 'text-[11px] text-error'; msg.textContent = 'Error saving.'; }
-    saveDraftBtn.disabled = false;
-    setTimeout(function() { msg.textContent = ''; }, 2500);
-  });
-
-  // ── Auto-balance ──────────────────────────────────────────────────────────
-  // Round 1: continuous snake across all position groups (C→PF→SF→SG→PG) so
-  //          the direction carries over — T1 never gets first pick every time.
-  // Round 2: greedy — each overflow/unlabeled player goes to the team with the
-  //          lowest current OVR sum, tightening the spread as much as possible.
-  var autoBtn = document.getElementById('auto-balance-btn');
-  if (autoBtn) autoBtn.addEventListener('click', function() {
-    var cols = Array.from(document.querySelectorAll('.team-col'));
-    if (!cols.length) { alert('Add at least one team first.'); return; }
-    if (!confirm('Auto-balance will reassign all players by position and rating. Continue?')) return;
-
-    var POS_DRAFT = ['C', 'PF', 'SF', 'SG', 'PG'];
-    var n       = cols.length;
-    var tbodies = cols.map(function(c) { return c.querySelector('.player-tbody'); });
-
-    // Detach all rows
-    var allRows = Array.from(document.querySelectorAll('tr.player-row'));
-    allRows.forEach(function(r) { r.remove(); });
-    tbodies.forEach(function(tb) { if (tb) tb.querySelectorAll('tr.drop-hint').forEach(function(h) { h.remove(); }); });
-
-    // Group by primary position, sort each by OVR desc
-    var groups = {};
-    POS_DRAFT.forEach(function(p) { groups[p] = []; });
-    groups[''] = [];
-    allRows.forEach(function(row) {
-      var pos = row.dataset.primaryPos || '';
-      (groups[pos] !== undefined ? groups[pos] : groups['']).push(row);
-    });
-
-    function sortOvr(arr) {
-      return arr.slice().sort(function(a, b) { return parseFloat(b.dataset.rating || 0) - parseFloat(a.dataset.rating || 0); });
-    }
-    Object.keys(groups).forEach(function(k) { groups[k] = sortOvr(groups[k]); });
-
-    var assignments = cols.map(function() { return []; });
-
-    // Round 1: continuous snake — idx/dir carry over between position groups
-    var snakeIdx = 0, snakeDir = 1;
-    function snake(players) {
-      players.forEach(function(row) {
-        assignments[snakeIdx].push(row);
-        snakeIdx += snakeDir;
-        if (snakeIdx >= n) { snakeDir = -1; snakeIdx = n - 1; }
-        if (snakeIdx < 0)  { snakeDir =  1; snakeIdx = 0; }
-      });
-    }
-
-    var overflow = [];
-    POS_DRAFT.forEach(function(pos) {
-      snake(groups[pos].slice(0, n));
-      overflow = overflow.concat(groups[pos].slice(n));
-    });
-
-    // Round 2: greedy — weakest team (by OVR sum) gets each remaining player
-    function teamOvrSum(i) {
-      return assignments[i].reduce(function(acc, r) { return acc + parseFloat(r.dataset.rating || 0); }, 0);
-    }
-    sortOvr(overflow.concat(groups[''])).forEach(function(row) {
-      var best = 0;
-      for (var i = 1; i < n; i++) { if (teamOvrSum(i) < teamOvrSum(best)) best = i; }
-      assignments[best].push(row);
-    });
-
-    // Apply
-    cols.forEach(function(col, i) {
-      var tbody = tbodies[i];
-      if (!tbody) return;
-      var color = col.querySelector('.team-color-input').value;
-      assignments[i].forEach(function(row) {
-        var td = row.querySelector('td:first-child');
-        if (td) td.style.borderLeftColor = color;
-        row.style.opacity = ''; row.style.display = '';
-        tbody.appendChild(row);
-      });
-      if (!tbody.querySelector('tr.player-row')) tbody.appendChild(createHintRow('Drop players here'));
-    });
-
-    var pool = document.getElementById('unassigned-pool-tbody');
-    if (pool) { pool.querySelectorAll('tr.drop-hint').forEach(function(h) { h.remove(); }); pool.appendChild(createHintRow('All players assigned to teams')); }
-
-    // Reset filters
-    activePosFilters.clear(); searchQuery = '';
-    var poolSearch = document.getElementById('pool-search');
-    if (poolSearch) poolSearch.value = '';
-    document.querySelectorAll('.pos-filter-btn').forEach(function(b) { b.classList.remove('is-active'); });
-    var fs = document.getElementById('filter-status');
-    if (fs) fs.textContent = '';
-
-    updateAllTeamStats();
-    updateUnassignedCount();
-  });
-
-  // ── Clear sandbox ─────────────────────────────────────────────────────────
-  var clearBtn = document.getElementById('clear-sandbox-btn');
-  if (clearBtn) clearBtn.addEventListener('click', async function() {
-    if (!confirm('Clear all sandbox teams and assignments?')) return;
-    clearBtn.disabled = true; clearBtn.textContent = 'Clearing…';
-    try {
-      await fetch('/admin/season/teams/sandbox/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      location.reload();
-    } catch(e) { clearBtn.disabled = false; clearBtn.textContent = 'Clear'; alert('Error.'); }
-  });
-
-  // ── Review & Start Season ────────────────────────────────────────────────
-  // The actual charge/email/lock action now lives on its own page
-  // (/admin/season/teams/review) — this just makes sure whatever's currently
-  // dragged around here is saved before navigating there, so the review screen
-  // reflects the live board state, not whatever was last explicitly saved.
-  var reviewBtn = document.getElementById('review-start-btn');
-  if (reviewBtn) reviewBtn.addEventListener('click', async function() {
-    reviewBtn.disabled = true; reviewBtn.textContent = 'Saving…';
-    try {
-      await fetch('/admin/season/teams/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: SEASON, teams: buildTeamUpdates(), assignments: buildAssignments() }),
-      });
-      window.location.href = '/admin/season/teams/review';
-    } catch (e) {
-      reviewBtn.disabled = false; reviewBtn.textContent = 'Review & Start Season →';
-      alert('Could not save the draft before continuing — try again.');
-    }
-  });
-
-  // ── Sandbox source switcher ───────────────────────────────────────────────
-  var sandboxLoadBtn = document.getElementById('sandbox-source-load');
-  if (sandboxLoadBtn) sandboxLoadBtn.addEventListener('click', function() {
-    var sel = document.getElementById('sandbox-source-select');
-    if (!sel) return;
-    var parts = sel.value.split(':');
-    var src = parts[0], season = parts[1];
-    window.location.href = '/admin/season/teams/sandbox?source=' + encodeURIComponent(src) + '&season=' + encodeURIComponent(season);
-  });
-
-  // ── Init ──────────────────────────────────────────────────────────────────
-  updateAllTeamStats();
-})();
-</script>`;
+  <script src="/admin-team-builder.js" defer></script>`);
 }
