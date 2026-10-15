@@ -402,6 +402,19 @@ function getRequestOrigin(req) {
   return `${proto}://${host}`;
 }
 
+// Canonical links, og:url and the sitemap always name the live site, whatever host served
+// the request (staging tunnel, localhost, www.), so search engines index one copy of each page.
+const SITE_ORIGIN = (process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '');
+const SITE_HOST = new URL(SITE_ORIGIN).hostname;
+function isProdHost(req) {
+  return String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0].toLowerCase() === SITE_HOST;
+}
+
+// <script type="application/ld+json"> for a page's head; < escaped so text can't close the tag.
+function jsonLdTag(data) {
+  return `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`;
+}
+
 function escAttr(str) {
   return String(str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -434,7 +447,7 @@ function buildGameOgTags(req, game) {
   const isCompleted = scoreA + scoreB > 0;
   const title      = gamePageTitle(game);
   const scoreLabel = `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
-  const url        = `${origin}/games/${encodeURIComponent(gameSlug(game))}`;
+  const url        = `${SITE_ORIGIN}/games/${encodeURIComponent(gameSlug(game))}`;
   const desc       = writeupDescription(game.game_writeup) || 'Game recap, box score, and player stats from WKND Basketball League.';
   const img        = isCompleted ? `${origin}/api/cover/${encodeURIComponent(game.id)}.png` : null;
 
@@ -480,6 +493,22 @@ function buildGameOgTags(req, game) {
     `<meta name="twitter:data1" content="${escAttr(scoreLabel)}">`,
   );
 
+  // League games have no venue on file, so location is the region the league plays in.
+  tags.push(jsonLdTag({
+    '@context': 'https://schema.org',
+    '@type': 'SportsEvent',
+    name: `${titleCase(game.team_a_name)} ${scoreA}–${scoreB} ${titleCase(game.team_b_name)}`,
+    url,
+    sport: 'Basketball',
+    ...(game.date ? { startDate: gameYmd(game.date) } : {}),
+    eventStatus: 'https://schema.org/EventScheduled',
+    homeTeam: { '@type': 'SportsTeam', name: titleCase(game.team_a_name) },
+    awayTeam: { '@type': 'SportsTeam', name: titleCase(game.team_b_name) },
+    location: { '@type': 'Place', name: 'Metro Manila', address: { '@type': 'PostalAddress', addressRegion: 'Metro Manila', addressCountry: 'PH' } },
+    organizer: { '@type': 'SportsOrganization', name: 'WKND Basketball League', url: SITE_ORIGIN },
+    ...(isCompleted ? { description: desc } : {}),
+  }));
+
   if (img) {
     tags.push(
       `<meta name="twitter:image" content="${escAttr(img)}">`,
@@ -493,7 +522,7 @@ function buildGameOgTags(req, game) {
 function buildMarketplaceOgTags(req, listing) {
   const origin = getRequestOrigin(req);
   const title  = listing.title;
-  const url    = `${origin}/marketplace/${encodeURIComponent(listing.id)}`;
+  const url    = `${SITE_ORIGIN}/marketplace/${encodeURIComponent(listing.id)}`;
   const desc   = firstParagraph(listing.description) || 'Check out this item on the WKND Basketball League Marketplace.';
   let photos = [];
   try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
@@ -536,7 +565,7 @@ function buildMarketplaceOgTags(req, listing) {
 
 function buildPostOgTags(req, post) {
   const origin = getRequestOrigin(req);
-  const url    = `${origin}/posts/${encodeURIComponent(post.slug)}`;
+  const url    = `${SITE_ORIGIN}/posts/${encodeURIComponent(post.slug)}`;
   const desc   = firstParagraph(post.body_html) || 'League news from WKND Basketball League.';
   const img    = `${origin}/og/posts.png?v=${ogDayStamp()}`;
   const publishedIso = post.publish_at ? new Date(post.publish_at).toISOString() : null;
@@ -566,7 +595,7 @@ function buildPlayerOgTags(req, player, totals) {
   const origin  = getRequestOrigin(req);
   const name    = displayPlayerName(player.name);
   const team    = String(player.team_name || '').toUpperCase();
-  const url     = `${origin}/players/${encodeURIComponent(playerSlug(player))}`;
+  const url     = `${SITE_ORIGIN}/players/${encodeURIComponent(playerSlug(player))}`;
   const hasPhoto = !!player.picture_url;
   // Version hash: short fingerprint of the stored photo so the og:image URL
   // changes whenever the photo is replaced, bypassing social-crawler caches.
@@ -606,7 +635,17 @@ function buildPlayerOgTags(req, player, totals) {
     `<meta property="og:url" content="${escAttr(url)}">`,
     `<meta property="profile:first_name" content="${escAttr(firstName)}">`,
     `<meta property="profile:last_name" content="${escAttr(lastName)}">`,
+    jsonLdTag({
+      '@context': 'https://schema.org',
+      '@type': 'Person',
+      name,
+      url,
+      ...(hasPhoto ? { image: `${SITE_ORIGIN}/api/player/${encodeURIComponent(player.id)}/photo` } : {}),
+      ...(team ? { memberOf: { '@type': 'SportsTeam', name: `${titleCase(team)} — WKND Basketball` } } : {}),
+    }),
   ];
+  // No games yet: a thin page, kept out of search (and out of the sitemap).
+  if (!totals?.games_played) tags.push('<meta name="robots" content="noindex, follow">');
 
   tags.push(
     `<meta property="og:image" content="${escAttr(img)}">`,
@@ -630,7 +669,7 @@ function buildPlayerOgTags(req, player, totals) {
 function buildTeamOgTags(req, team) {
   const origin   = getRequestOrigin(req);
   const teamName = String(team.name || '').toUpperCase();
-  const url      = `${origin}/teams/${encodeURIComponent(teamSlug(team))}`;
+  const url      = `${SITE_ORIGIN}/teams/${encodeURIComponent(teamSlug(team))}`;
   const title    = `${teamName} — WKND Basketball`;
   const desc     = `${teamName} team — roster, stats, and standings on WKND Basketball League.`;
 
@@ -656,7 +695,7 @@ function buildTeamOgTags(req, team) {
 function buildMvpOgTags(req, candidates, season, { locked = false, race = 'mvp' } = {}) {
   if (race === 'dpoy') return buildDpoyOgTags(req, candidates, season, { locked });
   const origin  = getRequestOrigin(req);
-  const url     = `${origin}/mvp`;
+  const url     = `${SITE_ORIGIN}/mvp`;
   const img     = `${origin}/og-mvp.png`;
   const title   = locked ? `Season ${season} MVP Race — Call the podium — WKND Basketball League` : `MVP Race — WKND Basketball League`;
   const leader  = candidates[0];
@@ -700,7 +739,7 @@ function buildMvpOgTags(req, candidates, season, { locked = false, race = 'mvp' 
 
 function buildDpoyOgTags(req, candidates, season, { locked = false } = {}) {
   const origin = getRequestOrigin(req);
-  const url    = `${origin}/dpoy`;
+  const url    = `${SITE_ORIGIN}/dpoy`;
   const img    = `${origin}/og/awards.png?v=${ogDayStamp()}`;
   const title  = locked ? `Season ${season} Best Defender Race — WKND Basketball League` : 'Best Defender Race — WKND Basketball League';
   const leader = candidates[0];
@@ -853,6 +892,26 @@ function buildBrandOgSvg({ kicker = '', title = 'WKND', sub = '', panel = null }
   ${ogPanel(panel)}
 </svg>`;
 }
+
+// Search-result descriptions for pages that don't write their own (renderPage adds them).
+// A manual override at /admin/seo still wins.
+const PAGE_DESCRIPTIONS = {
+  '/': 'WKND Basketball is a weekend basketball league and community in Metro Manila: game results, standings, player stats, recaps and Papawis pickup runs.',
+  '/games': 'Every WKND Basketball game: final scores, box scores, recaps and Player of the Game spotlights.',
+  '/standings': 'WKND Basketball League standings: team records, head-to-head results and the playoff picture.',
+  '/playoffs': 'The WKND Basketball playoff bracket: every series, every result and the road to the title.',
+  '/leaders': 'WKND Basketball league leaders: the top scorers, rebounders, playmakers and defenders per game.',
+  '/players': 'Every WKND Basketball player: profiles, career stats and game logs.',
+  '/teams': 'WKND Basketball teams: White, Black, Blue and Maroon rosters, averages and results.',
+  '/highlights': 'Every WKND Basketball Player of the Game spotlight, newest first.',
+  '/awards': 'WKND Basketball season awards: MVP, Finals MVP, All-WKND teams and every honour.',
+  '/badges': 'Every badge a WKND Basketball player can earn, and who has them.',
+  '/picks': 'Call the winner of every WKND Basketball game and climb the Pickmaster standings.',
+  '/posts': 'Previews, recaps and announcements from WKND Basketball.',
+  '/marketplace': 'Jerseys, gear and group buys for the WKND Basketball community.',
+  '/register': 'Join WKND Basketball, a weekend basketball league in Metro Manila: league games, stats, recaps and a community that shows up. Sign up for the next season.',
+  '/front-office': 'The people who run WKND Basketball.',
+};
 
 // Which share card a page path gets ('/' and anything unlisted get the home card).
 const PAGE_OG_KEYS = {
@@ -2183,7 +2242,35 @@ function renderPage(req, opts) {
     `<meta name="twitter:card" content="summary_large_image">`,
     `<meta name="twitter:image" content="${escAttr(fallbackImg)}">`,
   ].join('\n  ');
-  const existing = opts.metaTags || '';
+  let existing = opts.metaTags || '';
+  // Defaults for pages that don't build their own: a canonical on the live domain (path
+  // only; ?season= kept so past seasons index as their own pages) and a description.
+  // Error pages get noindex instead of a canonical.
+  const defaults = [];
+  if (opts.noindex || /^Not (Found|Authorized)/.test(opts.title || '')) {
+    defaults.push('<meta name="robots" content="noindex, follow">');
+  } else if (!existing.includes('rel="canonical"')) {
+    const season = /^\d+$/.test(String(req.query?.season || '')) ? `?season=${req.query.season}` : '';
+    const canonical = `${SITE_ORIGIN}${req.path}${season}`;
+    defaults.push(`<link rel="canonical" href="${escAttr(canonical)}">`, `<meta property="og:url" content="${escAttr(canonical)}">`);
+  }
+  const pageDesc = PAGE_DESCRIPTIONS[String(req.path).replace(/\/+$/, '') || '/'];
+  if (pageDesc && !existing.includes('name="description"')) {
+    defaults.push(
+      `<meta name="description" content="${escAttr(pageDesc)}">`,
+      `<meta property="og:description" content="${escAttr(pageDesc)}">`,
+      `<meta name="twitter:description" content="${escAttr(pageDesc)}">`,
+    );
+  }
+  if (opts.title && !existing.includes('og:title')) {
+    defaults.push(
+      `<meta property="og:type" content="website">`,
+      `<meta property="og:site_name" content="WKND Basketball League">`,
+      `<meta property="og:title" content="${escAttr(opts.title)}">`,
+      `<meta name="twitter:title" content="${escAttr(opts.title)}">`,
+    );
+  }
+  if (defaults.length) existing = defaults.join('\n  ') + (existing ? '\n  ' + existing : '');
   let metaTags = existing.includes('og:image') ? existing : (existing ? existing + '\n  ' + fallbackMeta : fallbackMeta);
   let title = opts.title;
   const seoOverride = getSeoOverride(req.path);
@@ -2706,6 +2793,13 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000 }
 }));
 app.use(express.urlencoded({ extended: false }));
+
+// Staging and local dev serve the same pages as prod: keep every response on them out of
+// search results (robots.txt below also disallows everything on those hosts).
+app.use((req, res, next) => {
+  if (!isProdHost(req)) res.set('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
 
 // Registered ahead of express.static so these two paths hit the minified, cached-in-memory
 // version instead of the raw source file — everything else in public/ still goes through
@@ -8057,7 +8151,8 @@ app.get('/', (req, res) => {
 });
 
 app.get('/robots.txt', (req, res) => {
-  const origin = getRequestOrigin(req);
+  if (!isProdHost(req)) return res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+  const origin = SITE_ORIGIN;
   res.type('text/plain').send(
 `User-agent: *
 Disallow: /admin/
@@ -8077,7 +8172,7 @@ Sitemap: ${origin}/sitemap.xml
 // and posts show up here automatically the moment they exist, with no separate build
 // or regeneration step needed.
 app.get('/sitemap.xml', (req, res) => {
-  const origin = getRequestOrigin(req);
+  const origin = SITE_ORIGIN;
   const flags  = getFeatureFlags();
   const isoDate = ms => ms ? new Date(ms).toISOString().slice(0, 10) : undefined;
 
@@ -8099,7 +8194,9 @@ app.get('/sitemap.xml', (req, res) => {
   if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' }, { loc: '/picks/rules', priority: '0.3', changefreq: 'monthly' });
 
   for (const t of getAllTeams())   urls.push({ loc: `/teams/${teamSlug(t)}`,     priority: '0.6', changefreq: 'weekly' });
-  for (const p of getAllPlayers()) urls.push({ loc: `/players/${playerSlug(p)}`, priority: '0.5', changefreq: 'weekly' });
+  // Only players with at least one game: an empty profile is a thin page (also noindexed).
+  const playedIds = new Set(getAllPlayerCareerTotals().map(r => r.player_id));
+  for (const p of getAllPlayers()) if (playedIds.has(p.id)) urls.push({ loc: `/players/${playerSlug(p)}`, priority: '0.5', changefreq: 'weekly' });
   // Each game's page is also its matchup preview (the old /picks/<game> pages redirect there),
   // so upcoming games change daily.
   const upcomingIds = new Set(getUpcomingGames(byDate(getAllGames())).map(g => g.id));
@@ -8133,7 +8230,7 @@ app.get('/games/:ref', (req, res) => {
   const resolved = findGameRef(req.params.ref);
   if (!resolved) return notFound();
   const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
-  if (resolved.slug) return res.redirect(302, `/games/${resolved.slug}${qs}`);
+  if (resolved.slug) return res.redirect(301, `/games/${resolved.slug}${qs}`);
 
   const game = getGameById(resolved.id);
   if (!game || game.under_review) return notFound();
@@ -8247,7 +8344,14 @@ app.get('/games/:ref', (req, res) => {
     ? new Date(`${upNext[0].ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
 
   res.send(renderPage(req, {
-    title: `${gamePageTitle(game)} — WKND Basketball League`,
+    // Scoreline first so "wknd blue vs maroon" searches match even when the AI headline
+    // doesn't name the teams; the headline alone stays the og:title for share cards.
+    title: (() => {
+      const scoreline = `${T(game.team_a_name)} ${Number(game.team_a_score)}–${Number(game.team_b_score)} ${T(game.team_b_name)}`;
+      const headline = writeupTitle(game.game_writeup);
+      const namesTeams = headline && [game.team_a_name, game.team_b_name].every(t => headline.toLowerCase().includes(String(t).toLowerCase()));
+      return `${namesTeams ? headline : headline ? `${scoreline}: ${headline}` : scoreline} — WKND Basketball`;
+    })(),
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game),
     body: gamePage({
@@ -14628,8 +14732,7 @@ app.get('/roast', (req, res) => {
   });
   if (req.query.partial === '1') return res.type('html').send(html);
 
-  const origin    = getRequestOrigin(req);
-  const roastUrl  = `${origin}/roast`;
+  const roastUrl  = `${SITE_ORIGIN}/roast`;
   const roastDesc = `The flip side of the leaders board. Season ${current || ''} worst performers, funniest stat disasters, and dubious awards — only on WKND Basketball.`;
   const roastMetaTags = [
     `<meta name="description" content="${escAttr(roastDesc)}">`,
@@ -15171,7 +15274,7 @@ app.get('/teams/:ref', (req, res) => {
     title: 'Not Found', currentPath: '/teams',
     body: comingSoonPage({ label: 'Team Not Found', description: 'This team could not be found.' })
   }));
-  if (resolved.slug) return res.redirect(302, `/teams/${resolved.slug}`);
+  if (resolved.slug) return res.redirect(301, `/teams/${resolved.slug}`);
 
   const team = getTeamById(resolved.id);
   const d = buildTeamPage(team, req.session?.playerPlayerId || null);
@@ -15603,7 +15706,7 @@ app.get('/players/:ref', async (req, res) => {
     body: comingSoonPage({ label: 'Player Not Found', description: 'This player could not be found.' })
   }));
   // Keep the query string (e.g. ?view=public) across the id → slug redirect.
-  if (resolved.slug) return res.redirect(302, `/players/${resolved.slug}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
+  if (resolved.slug) return res.redirect(301, `/players/${resolved.slug}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
 
   const player      = getPlayerWithTeam(resolved.id);
   if (!player) return res.status(404).send(renderPage(req, {
@@ -17649,8 +17752,8 @@ app.get('/papawis', (req, res) => {
   }
 
   const origin = getRequestOrigin(req);
-  const papawisUrl  = `${origin}/papawis`;
-  const papawisDesc = 'Pickup games with limited slots. First come, first served — see the schedule, who\'s in, and join the waitlist.';
+  const papawisUrl  = `${SITE_ORIGIN}/papawis`;
+  const papawisDesc = 'Papawis: WKND Basketball\'s pickup basketball runs in Metro Manila. Limited slots, first come, first served — see the schedule, who\'s in, and join the waitlist.';
   const papawisImg  = `${origin}/og/papawis.png?v=${ogDayStamp()}`;
   const papawisMetaTags = [
     `<meta name="description" content="${escAttr(papawisDesc)}">`,

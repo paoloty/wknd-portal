@@ -1593,6 +1593,7 @@ function finalHero(d) {
     s.n <= 1 ? 'First meeting' : s.a === s.b ? `All-time series tied ${s.a}–${s.b}` : `${tc(s.a > s.b ? game.team_a_name : game.team_b_name)} lead the all-time series ${Math.max(s.a, s.b)}–${Math.min(s.a, s.b)}`,
   ].filter(Boolean);
   return `<section class="gd-hero" aria-label="Final score">
+    <h1 class="sr-only">${escHtml(tc(game.team_a_name))} ${fa}–${fb} ${escHtml(tc(game.team_b_name))}: WKND Basketball Season ${escHtml(String(game.season))} ${typeLabel(game)}</h1>
     ${game.has_cover ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(game.id)}" alt="" fetchpriority="high">` : ''}
     <div class="gd-hero__shade"></div>
     <div class="gd-hero__glare" style="background:${heroGlare(game, winner)}"></div>
@@ -1626,6 +1627,7 @@ function upcomingHero(d) {
   const chip = state === 'open' ? 'Picks open' : state === 'closed' ? 'Picks closed' : 'Coming up';
   const closeAt = state === 'open' && picks.o?.closeHm && ymd ? `${ymd}T${picks.o.closeHm}:00+08:00` : '';
   return `<section class="gd-hero gd-hero--up" aria-label="Upcoming game">
+    <h1 class="sr-only">${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}: WKND Basketball Season ${escHtml(String(game.season))} ${typeLabel(game)} preview</h1>
     ${slide ? `<img class="gd-hero__img" src="/api/photo/${encodeURIComponent(slide)}" alt="" fetchpriority="high">` : ''}
     <div class="gd-hero__shade"></div>
     <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>

@@ -1221,6 +1221,7 @@ export function homePage({ teams, players, games, highlights = [], mvpRace = nul
 </script>` : '';
 
   return `<div class="home-grid">
+  <h1 class="sr-only">WKND Basketball: weekend basketball league in Metro Manila</h1>
   ${heroCarousel(completedGames.slice(0, 4), awardsGallery, papawisHero)}
   ${mvpRace ? mvpRaceSidebar(mvpRace) : highlightsSidebar(highlights)}
 </div>

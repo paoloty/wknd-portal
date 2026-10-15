@@ -1596,7 +1596,7 @@ function prfHero(o) {
   <div class="player-hero__avatar-wrap prf-hero__avatar-wrap">
     <div class="player-hero__avatar prf-hero__avatar" style="border-color:${color}">
       <span>${escHtml(initials(player.name))}</span>
-      <img id="player-avatar-img" src="${playerPhotoUrl(player.id)}" alt="" loading="lazy" onerror="this.style.display='none'">
+      <img id="player-avatar-img" src="${playerPhotoUrl(player.id)}" alt="${escHtml(displayPlayerName(player.name))}" loading="lazy" onerror="this.style.display='none'">
     </div>
     ${canEditPhoto ? photoUploadOverlay() : photoLightbox()}
   </div>
