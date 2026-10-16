@@ -210,6 +210,7 @@ import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt } from './lib/portal-db.js';
 import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
+import { askToRateCourt } from './lib/court-rate-ask.js';
 import {
   getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, saveCourtRating, getCourtRating,
   moderateCourtRating, toggleCourtRatingHelpful, getCourtOpenSlots, getCourtOpenSlot, addCourtOpenSlot, deleteCourtOpenSlot, setCourtSlotRun,
@@ -9467,6 +9468,25 @@ app.delete('/admin/games/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// League game final at a court: ask everyone in the box score to rate the court (once per
+// court, lib/court-rate-ask.js). Runs on the final score, the box score import and publish;
+// waits until the game is published, has a score, a court and players.
+function askLeagueCourtRatings(gameId) {
+  try {
+    const g = getGameById(gameId);
+    if (!g || g.under_review || !g.court_id || !(Number(g.team_a_score) + Number(g.team_b_score) > 0)) return;
+    const court = getPapawisCourtById(g.court_id);
+    const playerIds = getLeagueAppearancesForGames([g.id]).map(r => r.player_id);
+    if (!court || !playerIds.length) return;
+    const tc = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    const a = Number(g.team_a_score), b = Number(g.team_b_score);
+    const score = a >= b ? `${tc(g.team_a_name)} ${a}–${b} ${tc(g.team_b_name)}` : `${tc(g.team_b_name)} ${b}–${a} ${tc(g.team_a_name)}`;
+    const day = new Date(`${String(g.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    askToRateCourt({ court, playerIds, kind: 'league', gameLine: `${score} · ${day}`, ref: g.id })
+      .catch(e => console.error('[court rate ask: league]', e.message));
+  } catch (e) { console.error('[court rate ask: league]', e.message); }
+}
+
 app.post('/admin/games/:id/final', requireAuth, jsonSmall, (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
@@ -9476,6 +9496,7 @@ app.post('/admin/games/:id/final', requireAuth, jsonSmall, (req, res) => {
   markGameFinal(game.id, { teamAScore: scoreA, teamBScore: scoreB, overtime: Number(req.body.overtime) || 0 });
   settleGamePicks(game.id);
   res.json({ ok: true });
+  setImmediate(() => askLeagueCourtRatings(game.id));
 });
 
 app.post('/admin/games/:id/overtime', requireAuth, jsonSmall, (req, res) => {
@@ -9498,6 +9519,7 @@ app.post('/admin/games/:id/review', requireAuth, jsonSmall, (req, res) => {
   updateGameReview(game.id, req.body?.key === 'published' ? !req.body.on : Number(req.body.under_review) ? 1 : 0);
   settleGamePicks(game.id);
   res.json({ ok: true });
+  setImmediate(() => askLeagueCourtRatings(game.id));
 });
 
 app.post('/admin/games/:id/save', requireAuth, jsonSmall, (req, res) => {
@@ -10048,6 +10070,7 @@ app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
     console.log(`[import] done in ${Date.now() - t0}ms`);
     res.json({ ok: true, swapped, teamAScore: Number(g.teamAScore), teamBScore: Number(g.teamBScore) });
     setImmediate(() => settleGamePicks(game.id));
+    setImmediate(() => askLeagueCourtRatings(game.id));
 
     // Auto-recompute ratings for all players in this game (non-blocking, after response)
     setImmediate(() => {
@@ -17950,6 +17973,11 @@ app.get('/courts/:slug', (req, res) => {
   const { p, games } = courtPageData(court);
   // A hidden or not-yet-played court: admins can still preview it, everyone else gets a 404.
   if (!p.live && !req.session?.isAdmin) return notFound();
+  // A star tapped in the rating email while logged out: log in first, then back here with
+  // the stars picked.
+  if (req.query.rate && !req.session?.playerPlayerId && courtFlags().ratings) {
+    return res.redirect(`/login?next=${encodeURIComponent(`/courts/${court.slug}?rate=${Math.min(5, Math.max(1, Math.round(Number(req.query.rate)) || 5))}`)}`);
+  }
   if (!getPapawisLocationGeocode(court.address || court.name)) geocodePapawisLocation(court.address || court.name).catch(() => {});
   const listGames = [...games].reverse();
   const allPlayers = getAllPlayers();
@@ -18006,8 +18034,10 @@ function courtViewerExtras(req, court, p, allPlayers) {
     const rows = getCourtRatings(court.id);
     out.ratings = summarizeRatings(rows);
     out.helpfulByMe = new Set(getCourtRatingHelpfulBy(court.id, viewerId));
-    out.canRate = !!viewerId && p.memberIds.includes(viewerId);
-    out.lastRunYmd = viewerId ? p.lastRun[viewerId] || '' : '';
+    out.canRate = !!viewerId && p.raterIds.includes(viewerId);
+    out.lastRunYmd = viewerId ? p.lastPlayed[viewerId] || '' : '';
+    // From the rating email: ?rate=N picks that many stars in the form.
+    out.preRate = Math.min(5, Math.max(0, Math.round(Number(req.query.rate) || 0)));
     out.myRating = out.canRate ? getMyCourtRating(court.id, viewerId) : null;
   }
   if (flags.votes) {
@@ -18031,7 +18061,7 @@ app.post('/courts/:slug/rate', express.json(), (req, res) => {
   const viewerId = req.session?.playerPlayerId;
   if (!viewerId) return res.status(401).json({ error: 'Log in to rate this court.' });
   const { p } = courtPageData(court);
-  if (!p.memberIds.includes(viewerId)) return res.status(403).json({ error: 'Only players who played a run here can rate it.' });
+  if (!p.raterIds.includes(viewerId)) return res.status(403).json({ error: 'Only players who played a run or a league game here can rate it.' });
   const b = req.body || {};
   const stars = Math.round(Number(b.stars));
   if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ error: 'Pick 1 to 5 stars.' });

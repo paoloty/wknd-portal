@@ -204,7 +204,7 @@ function ratingsSection(p, court, x) {
       <div><span class="crt-rt__h">The court</span><div class="crt-rt__body">${R.aspects.length ? R.aspects.map(a => `<div class="crt-bar"><span>${escHtml(a.label)}</span><span class="crt-track" role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow="${a.avg}" aria-label="${escHtml(`${a.label} ${a.avg} out of 5`)}"><i${a.avg < 3.5 ? ' class="lo"' : ''} style="width:${Math.round(a.avg / 5 * 100)}%"></i></span><em>${a.avg.toFixed(1)}</em></div>`).join('') : '<p class="crt-empty">No court scores yet.</p>'}</div></div>
     </div>
     ${R.good.length || R.bad.length ? `<div class="crt-tagline"><span>Players love</span><div>${R.good.map(t => `<span class="crt-pill">${escHtml(`${t.label} · ${t.n}`)}</span>`).join('') || '<span class="crt-muted">Nothing yet</span>'}${R.bad.length ? `<span class="crt-tagsep">Could be better</span>${R.bad.map(t => `<span class="crt-pill">${escHtml(`${t.label} · ${t.n}`)}</span>`).join('')}` : ''}</div></div>` : ''}`
-    : `<div class="crt-rate-empty"><b>${R.n ? `${plural(R.n, 'rating')} so far` : 'Ratings are open'}</b><span>${escHtml(`The score shows once ${RATING_MIN_FOR_SCORE} players have rated this court${R.n ? `: ${plural(left, 'more')} to go` : ''}. Only players who played a run here can rate it.`)}</span></div>`;
+    : `<div class="crt-rate-empty"><b>${R.n ? `${plural(R.n, 'rating')} so far` : 'Ratings are open'}</b><span>${escHtml(`The score shows once ${RATING_MIN_FOR_SCORE} players have rated this court${R.n ? `: ${plural(left, 'more')} to go` : ''}. Only players who played a run or a league game here can rate it.`)}</span></div>`;
   const reviews = R.reviews.slice(0, 6).map(r => {
     const mine = x.viewerId === r.player_id;
     const on = x.helpfulByMe?.has(r.id);
@@ -218,7 +218,7 @@ function ratingsSection(p, court, x) {
   }).join('');
   return `<section class="crt-sec" id="crt-say" aria-labelledby="crt-say-h">${sh('Players say', { id: 'crt-say-h', link: x.canRate ? '<a class="section-header__link" href="#crt-rate">Rate this court</a>' : '' })}
     <div class="card">${scoreBlock}${reviews}${x.canRate ? rateForm(x) : ''}
-      <p class="crt-notice">${ICON.shield}<span>Only players who checked in to a run here can rate, and every rating shows their name. Written reviews are checked before they appear, and the court can reply.</span></p>
+      <p class="crt-notice">${ICON.shield}<span>Only players who played a run or a league game here can rate, and every rating shows their name. Written reviews are checked before they appear, and the court can reply.</span></p>
     </div></section>`;
 }
 
@@ -230,7 +230,7 @@ function rateForm(x) {
   const tagBtn = ([k, l]) => `<button type="button" class="crt-tagbtn" aria-pressed="${tags.has(k) ? 'true' : 'false'}" data-tag="${escHtml(k)}">${escHtml(l)}</button>`;
   return `<form class="crt-rateform" id="crt-rate" data-rate-form>
     <div class="crt-rateform__top"><b>${m ? 'Your rating' : `You played here${when ? ` ${escHtml(when)}` : ''}. How was it?`}</b>
-      <div class="crt-starin" role="radiogroup" aria-label="Your rating">${[1, 2, 3, 4, 5].map(i => `<label><input type="radio" name="stars" value="${i}"${m?.stars === i ? ' checked' : ''}${i === 1 ? ' required' : ''}><span aria-label="${plural(i, 'star')}">${star(true, 26)}</span></label>`).join('')}</div></div>
+      <div class="crt-starin" role="radiogroup" aria-label="Your rating">${[1, 2, 3, 4, 5].map(i => `<label><input type="radio" name="stars" value="${i}"${(x.preRate || m?.stars) === i ? ' checked' : ''}${i === 1 ? ' required' : ''}><span aria-label="${plural(i, 'star')}">${star(true, 26)}</span></label>`).join('')}</div></div>
     <div class="crt-aspin">${RATING_ASPECTS.map(([k, l]) => `<div class="crt-aspin__row" role="radiogroup" aria-label="${escHtml(l)}"><span>${escHtml(l)}${k === 'airflow' ? ' <small>5 = cool</small>' : ''}</span><div>${[1, 2, 3, 4, 5].map(i => `<label><input type="radio" name="asp_${k}" value="${i}"${Number(aspects[k]) === i ? ' checked' : ''}><span>${i}</span></label>`).join('')}</div></div>`).join('')}</div>
     <div class="crt-tagin" role="group" aria-label="Quick tags">${RATING_TAGS_GOOD.map(tagBtn).join('')}<span class="crt-tagsep">Could be better</span>${RATING_TAGS_BAD.map(tagBtn).join('')}</div>
     <label class="crt-field crt-field--full"><span>Anything else? <em>Optional</em></span><textarea name="body" maxlength="600" rows="3" placeholder="What should someone know before their first run here?">${escHtml(m?.body || '')}</textarea></label>
@@ -450,8 +450,9 @@ const SCRIPT = `<script>
       b.setAttribute('aria-pressed', d.on ? 'true' : 'false'); b.querySelector('span').textContent = d.count;
     }).catch(function () {});
   }); });
-  // Rating form.
+  // Rating form. From the rating email (?rate=N): the stars are picked, bring the form into view.
   document.querySelectorAll('[data-rate-form]').forEach(function (f) {
+    if (/[?&]rate=/.test(location.search)) setTimeout(function () { f.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' }); }, 300);
     f.querySelectorAll('[data-tag]').forEach(function (t) { t.addEventListener('click', function () { t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); }); });
     f.addEventListener('submit', function (e) {
       e.preventDefault();
