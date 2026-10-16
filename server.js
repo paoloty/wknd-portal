@@ -154,7 +154,7 @@ import {
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
-  bumpPageView, prunePageViews, setRegistrationLastSeen, clickNotification, getOwnNotificationLink,
+  bumpPageView, prunePageViews, bumpCtaClick, getCtaClickTotals, getGuestPageViews, setRegistrationLastSeen, clickNotification, getOwnNotificationLink,
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   createLeaguePoll, getAllLeaguePolls, getLeaguePollById, setLeaguePollStatus, getLeaguePollVotes, getMyLeaguePollVote, castLeaguePollVote,
@@ -2230,6 +2230,19 @@ function trackPageView(req) {
   } catch (e) { console.error('[page views]', e.message); }
 }
 
+// Calls to action whose clicks are counted (data-cta="<key>" links, beaconed by views/layout.js).
+// Labels are what the admin home's "Site clicks" list shows.
+const CTA_KEYS = {
+  'player-join':      'Player page · Join the next season',
+  'player-papawis':   'Player page · See Papawis runs',
+  'player-messenger': 'Player page · Message us',
+  'player-fb':        'Player page · Follow on Facebook',
+  'register-messenger': 'Register · Message us',
+  'papawis-messenger':  'Papawis · Message us',
+  'footer-messenger': 'Footer · Messenger',
+  'footer-fb':        'Footer · Facebook',
+};
+
 function renderPage(req, opts) {
   trackPageView(req);
   const origin = getRequestOrigin(req);
@@ -2815,6 +2828,16 @@ app.use(express.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   if (!isProdHost(req)) res.set('X-Robots-Tag', 'noindex, nofollow');
   next();
+});
+
+app.post('/api/cta/:key', (req, res) => {
+  const key = String(req.params.key || '');
+  try {
+    const skip = !CTA_KEYS[key] || req.session?.impersonating || (req.session?.isAdmin && !req.session?.playerRegId)
+      || TRACK_BOT_RE.test(req.get('user-agent') || '');
+    if (!skip) bumpCtaClick(manilaTodayStr(), key);
+  } catch (e) { console.error('[cta]', e.message); }
+  res.status(204).end();
 });
 
 // Registered ahead of express.static so these two paths hit the minified, cached-in-memory
@@ -6175,6 +6198,11 @@ function buildAdminHome(req) {
     eyebrow: new Date(`${today}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
     sub: `${lead} ${open ? `${homePlural(open, 'thing')} to do, sorted by what moves engagement most.` : 'Nothing waiting on you.'}`.trim(),
     kpis: kpis.slice(0, 4), items: visible, snoozedCount: items.length - visible.length, quiet, feed, now,
+    clicks: (() => {
+      const since = addDaysYmd(today, -29);
+      const totals = getCtaClickTotals(since);
+      return { guestPlayerViews: getGuestPageViews('/players/:ref', since), rows: Object.entries(CTA_KEYS).map(([key, label]) => ({ key, label, n: totals[key] || 0 })) };
+    })(),
   };
 }
 
@@ -15880,6 +15908,8 @@ app.get('/players/:ref', async (req, res) => {
     body: playerPage({
       player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord,
       isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
+      // Guests only (mostly people who searched the player's name): join / Papawis / Facebook card.
+      joinCta: !req.session?.playerRegId && !req.session?.isAdmin ? { regOpen: getSetting('reg_open', '0') === '1', papawis: !!getFeatureFlags().papawis } : null,
       champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
       balanceAmount, balanceTransactions: isOwnProfile && balanceAmount > 0 ? balanceTransactions : [], papawisGames, coachNote, latestPoll, papawisEmailsOn,
       papawisProbation: isOwnProfile && !!player.papawis_probation && !(minDeposit != null && papawisBalance <= -minDeposit),

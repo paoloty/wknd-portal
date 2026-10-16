@@ -440,7 +440,7 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
       </div>
       ${alertsBtn}
     </header>
-    <p class="pwx-desc">Pickup runs with limited slots. First come, first served.</p>
+    <p class="pwx-desc">Pickup runs in Makati, Mandaluyong and Pasig, with limited slots. First come, first served. Questions? <a href="https://m.me/wkndbasketball" target="_blank" rel="noopener" data-cta="papawis-messenger">Message us on Messenger</a>.</p>
 
     <div class="pwx-runs">${runs}</div>
 

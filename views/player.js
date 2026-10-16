@@ -1742,6 +1742,41 @@ function prfMySeason(o) {
 }
 
 // ── Public: this season vs career + recent games ───────────────────────────────
+// Guests' card (views/player.js playerPage): people who found a player by searching their name.
+// Registration open → join; closed → the next Papawis run; neither → follow on Facebook.
+export const MESSENGER_URL = 'https://m.me/wkndbasketball';
+const FACEBOOK_URL = 'https://www.facebook.com/wkndbasketball';
+function prfJoinCard(o) {
+  const cta = o.joinCta;
+  if (!cta) return '';
+  const first = escHtml(displayPlayerName(o.player.name).split(' ')[0] || 'them');
+  const ext = 'target="_blank" rel="noopener"';
+  let head, text, primary;
+  if (cta.regOpen) {
+    head = `Want a profile like ${first}’s?`;
+    text = 'Stats, game logs and highlights for every game you play. Weekend basketball in Makati, Mandaluyong and Pasig.';
+    primary = '<a class="prf-btn prf-btn--amber" href="/register" data-cta="player-join">Join the next season &rarr;</a>';
+  } else if (cta.papawis) {
+    head = `Play with ${first} at the next Papawis run`;
+    text = 'Open pickup runs in Makati, Mandaluyong and Pasig. Limited slots, first come, first served.';
+    primary = '<a class="prf-btn prf-btn--amber" href="/papawis" data-cta="player-papawis">See Papawis runs &rarr;</a>';
+  } else {
+    head = `Want a profile like ${first}’s?`;
+    text = 'Registration for the next season opens soon. Follow us on Facebook to hear first.';
+    primary = `<a class="prf-btn prf-btn--amber" href="${FACEBOOK_URL}" ${ext} data-cta="player-fb">Follow on Facebook &rarr;</a>`;
+  }
+  const links = [
+    `<a class="prf-join__link" href="${MESSENGER_URL}" ${ext} data-cta="player-messenger">Questions? Message us</a>`,
+    cta.regOpen || cta.papawis ? `<a class="prf-join__link" href="${FACEBOOK_URL}" ${ext} data-cta="player-fb">Follow on Facebook</a>` : '',
+  ].filter(Boolean).join('<span aria-hidden="true">·</span>');
+  return `<section class="prf-sec prf-join" id="join" aria-label="Join WKND Basketball">
+  <div class="card prf-join__card">
+    <div class="prf-join__text"><span class="prf-join__k">WKND Basketball</span><h2 class="prf-join__h">${head}</h2><p class="prf-join__p">${text}</p></div>
+    <div class="prf-join__actions">${primary}<span class="prf-join__links">${links}</span></div>
+  </div>
+</section>`;
+}
+
 function prfPublicSeason(o) {
   const reg = prfRegular(o.statsByType);
   const cur = reg[0];
@@ -1883,7 +1918,7 @@ export function playerPage(o) {
       prfCommunity(d, true, pollInToday), prfCareer(d), prfAccount(d),
     ];
   } else {
-    sections = [prfPublicSeason(d), prfRecentGames(d), prfBadges(d, false), prfCommunity(d, false, false), prfCareer(d)];
+    sections = [prfPublicSeason(d), prfJoinCard(d), prfRecentGames(d), prfBadges(d, false), prfCommunity(d, false, false), prfCareer(d)];
   }
   const NAV = own
     ? { today: 'Today', 'this-week': 'This week', 'my-season': 'My season', badges: 'Badges', community: 'Community', career: 'Career', account: 'Account' }

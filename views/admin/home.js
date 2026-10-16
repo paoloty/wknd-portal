@@ -106,7 +106,22 @@ function feedSection(feed, now) {
   return section({ title: 'Live', asideHtml: '<span class="ahome-live">Players, not admins</span>', bodyHtml: body });
 }
 
-export function adminHomeBody({ eyebrow, sub, kpis = [], items = [], snoozedCount = 0, quiet = null, feed = [], now = Date.now() }) {
+// Calls to action on the public site (join card, Messenger, Facebook): clicks in the last
+// 30 days, logged by POST /api/cta/:key. Guest views of player pages give the join card a rate.
+function clicksSection(clicks) {
+  if (!clicks) return '';
+  const join = clicks.rows.find(r => r.key === 'player-join')?.n || 0;
+  const rate = clicks.guestPlayerViews ? `${((join / clicks.guestPlayerViews) * 100).toFixed(1)}%` : '—';
+  const rows = [...clicks.rows].sort((a, b) => b.n - a.n).map(r =>
+    `<div class="ahome-clicks__row"><span>${escHtml(r.label)}</span><b>${r.n}</b></div>`).join('');
+  return section({ title: 'Site clicks', note: '· last 30 days', bodyHtml: `<div class="ahome-clicks">
+    <div class="ahome-clicks__row ahome-clicks__row--lead"><span>Guest views of player pages</span><b>${clicks.guestPlayerViews}</b></div>
+    <div class="ahome-clicks__row ahome-clicks__row--lead"><span>Join card click rate</span><b>${rate}</b></div>
+    ${rows}
+  </div>` });
+}
+
+export function adminHomeBody({ eyebrow, sub, kpis = [], items = [], snoozedCount = 0, quiet = null, feed = [], clicks = null, now = Date.now() }) {
   return `<div class="ahome">
     ${pageHeader({ eyebrow, title: 'This week', sub })}
     ${kpis.length ? `<div class="aui-kpis">${kpis.map(kpi).join('')}</div>` : ''}
@@ -115,7 +130,7 @@ export function adminHomeBody({ eyebrow, sub, kpis = [], items = [], snoozedCoun
         ${todoSection(items, snoozedCount)}
         ${quietSection(quiet)}
       </div>
-      <div class="ahome__side">${feedSection(feed, now)}</div>
+      <div class="ahome__side">${feedSection(feed, now)}${clicksSection(clicks)}</div>
     </div>
   </div>`;
 }

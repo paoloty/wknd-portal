@@ -2845,3 +2845,9 @@ body:has(.aui-savebar:not([hidden])) .aui-toasts { bottom: 88px; }
   #reach-form .reach-sendbar { order: 4; }
   #reach-form .reach-prev { order: 5; }
 }
+
+/* Admin home: Site clicks (views/admin/home.js clicksSection) */
+.ahome-clicks { display: flex; flex-direction: column; }
+.ahome-clicks__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 2px; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 13px; line-height: 1; color: var(--text-muted, #8a93a4); }
+.ahome-clicks__row b { color: var(--text, #e7eaf0); font-variant-numeric: tabular-nums; }
+.ahome-clicks__row--lead { color: var(--text, #e7eaf0); }

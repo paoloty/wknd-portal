@@ -430,8 +430,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     ]],
   ].map(([t, links]) => [t, links.filter(Boolean)]).filter(([, links]) => links.length);
   const footerChevron = `<svg class="site-footer__chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
-  const footerTile = (href, label, svg) =>
-    `<a href="${href}" class="site-footer__tile" target="_blank" rel="noopener" aria-label="${label}">${svg}</a>`;
+  const footerTile = (href, label, svg, cta = '') =>
+    `<a href="${href}" class="site-footer__tile" target="_blank" rel="noopener" aria-label="${label}"${cta ? ` data-cta="${cta}"` : ''}>${svg}</a>`;
   const siteFooter = `<footer class="site-footer">
     <div class="container">
       <div class="site-footer__inner">
@@ -439,7 +439,8 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
           ${wkndLogo('site-footer__logo')}
           <p class="site-footer__tagline">Ball is life. Every weekend in Makati, Mandaluyong and Pasig.</p>
           <div class="site-footer__social">
-            ${footerTile('https://www.facebook.com/wkndbasketball', 'Facebook', '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>')}
+            ${footerTile('https://m.me/wkndbasketball', 'Message us on Messenger', '<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.14.26.35.27.57l.05 1.78c.02.57.6.94 1.12.71l1.98-.87c.17-.08.36-.09.54-.04.91.25 1.87.38 2.9.38 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm6 7.46l-2.94 4.66a1.5 1.5 0 0 1-2.17.4l-2.34-1.75a.6.6 0 0 0-.72 0l-3.16 2.4c-.42.32-.97-.18-.69-.63l2.94-4.66a1.5 1.5 0 0 1 2.17-.4l2.34 1.75a.6.6 0 0 0 .72 0l3.16-2.4c.42-.32.97.18.69.63z"/></svg>', 'footer-messenger')}
+            ${footerTile('https://www.facebook.com/wkndbasketball', 'Facebook', '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>', 'footer-fb')}
             ${footerTile('https://www.instagram.com/wknd.basketball', 'Instagram', '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/></svg>')}
             ${footerTile('https://www.youtube.com/@wkndbasketball', 'YouTube', '<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#10141d"/></svg>')}
           </div>
@@ -724,6 +725,13 @@ window.wkndCopied = function (el, text) {
   void tip.offsetWidth; tip.classList.add('is-on');
   clearTimeout(tip._t); tip._t = setTimeout(function () { tip.classList.remove('is-on'); }, 1800);
 };
+</script>
+<script>
+// Counts clicks on calls to action (data-cta="<key>"), see POST /api/cta/:key in server.js.
+document.addEventListener('click', function (e) {
+  var a = e.target.closest && e.target.closest('[data-cta]');
+  if (a && navigator.sendBeacon) navigator.sendBeacon('/api/cta/' + encodeURIComponent(a.getAttribute('data-cta')));
+});
 </script>
 </body>
 </html>`;

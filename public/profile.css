@@ -167,3 +167,19 @@ a.prf-line:hover b { color: var(--amber); }
   .prf-sec--fold:not(.is-open) .section-header { margin-bottom: 0; }
   .prf-sec--fold .section-header__link { margin-left: auto; }
 }
+
+/* Guests' join card (views/player.js prfJoinCard) */
+.prf-join__card { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.prf-join__text { min-width: 0; }
+.prf-join__k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); }
+.prf-join__h { margin: 6px 0 4px; font-size: 20px; font-weight: 800; line-height: 1.2; color: var(--text); }
+.prf-join__p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+.prf-join__actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
+.prf-join__links { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-subtle); }
+.prf-join__link { color: var(--text-muted); line-height: 1; }
+.prf-join__link:hover { color: var(--text); }
+@media (max-width: 640px) {
+  .prf-join__card { flex-direction: column; align-items: stretch; gap: 16px; }
+  .prf-join__actions { align-items: stretch; }
+  .prf-join__links { justify-content: center; }
+}
