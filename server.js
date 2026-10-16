@@ -896,7 +896,7 @@ function buildBrandOgSvg({ kicker = '', title = 'WKND', sub = '', panel = null }
 // Search-result descriptions for pages that don't write their own (renderPage adds them).
 // A manual override at /admin/seo still wins.
 const PAGE_DESCRIPTIONS = {
-  '/': 'WKND Basketball is a weekend basketball league and community in Metro Manila: game results, standings, player stats, recaps and Papawis pickup runs.',
+  '/': 'WKND Basketball is a weekend basketball league and community playing in Makati, Mandaluyong and Pasig: game results, standings, player stats, recaps and Papawis pickup runs.',
   '/games': 'Every WKND Basketball game: final scores, box scores, recaps and Player of the Game spotlights.',
   '/standings': 'WKND Basketball League standings: team records, head-to-head results and the playoff picture.',
   '/playoffs': 'The WKND Basketball playoff bracket: every series, every result and the road to the title.',
@@ -909,7 +909,7 @@ const PAGE_DESCRIPTIONS = {
   '/picks': 'Call the winner of every WKND Basketball game and climb the Pickmaster standings.',
   '/posts': 'Previews, recaps and announcements from WKND Basketball.',
   '/marketplace': 'Jerseys, gear and group buys for the WKND Basketball community.',
-  '/register': 'Join WKND Basketball, a weekend basketball league in Metro Manila: league games, stats, recaps and a community that shows up. Sign up for the next season.',
+  '/register': 'Join WKND Basketball, a weekend basketball league in Makati, Mandaluyong and Pasig: league games, stats, recaps and a community that shows up. Sign up for the next season.',
   '/front-office': 'The people who run WKND Basketball.',
 };
 
@@ -17766,7 +17766,7 @@ app.get('/papawis', (req, res) => {
 
   const origin = getRequestOrigin(req);
   const papawisUrl  = `${SITE_ORIGIN}/papawis`;
-  const papawisDesc = 'Papawis: WKND Basketball\'s pickup basketball runs in Metro Manila. Limited slots, first come, first served — see the schedule, who\'s in, and join the waitlist.';
+  const papawisDesc = 'Pickup basketball runs in Makati, Mandaluyong and Pasig. Limited slots, first come, first served — see the schedule, who\'s in, and join the waitlist.';
   const papawisImg  = `${origin}/og/papawis.png?v=${ogDayStamp()}`;
   const papawisMetaTags = [
     `<meta name="description" content="${escAttr(papawisDesc)}">`,
