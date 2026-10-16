@@ -33,12 +33,18 @@
 .crt-pill--amber { height: 20px; padding: 0 8px; font-size: 10.5px; font-weight: 700; color: var(--amber); background: transparent; border-color: rgba(245,147,50,.35); }
 
 /* Gallery: equal cards, up to three across */
-.crt-gal { margin-top: 16px; container-type: inline-size; }
+/* Gallery: the lead photo stays put beside a row of the rest that scrolls. One height for all:
+   lead (its own shape) + two 4:3 cards + a peek of the next fill the width. */
+.crt-gal { margin-top: 16px; container-type: inline-size; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--c-gap); align-items: start; }
+.crt-gal--solo { grid-template-columns: minmax(0, 1fr); }
+.crt-gal__more { min-width: 0; }
 .crt-gal__track { display: flex; gap: var(--c-gap); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .crt-gal__track::-webkit-scrollbar { display: none; }
 /* One height for every photo; the lead card keeps its photo's shape, the rest are 4:3 (set inline):
    the first --gal-n cards fill the row, so height = row width minus gaps, over their ratios. */
-.crt-gal__card { position: relative; flex: 0 0 auto; height: calc((100cqw * var(--gal-fill, 1) - (var(--gal-n) - 1) * var(--c-gap)) / var(--gal-r)); max-height: 420px; margin: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); scroll-snap-align: start; }
+.crt-gal__card { position: relative; flex: 0 0 auto; height: calc((100cqw - 2 * var(--c-gap)) / (var(--gal-r0) + 3.0667)); max-height: 380px; aspect-ratio: 4 / 3; margin: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); scroll-snap-align: start; }
+.crt-gal__lead { aspect-ratio: var(--gal-r0); }
+.crt-gal--solo .crt-gal__lead { width: 100%; height: auto; max-height: 420px; }
 .crt-gal__card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .crt-gal__card figcaption { position: absolute; inset: auto 0 0 0; padding: 40px var(--c-pad) var(--c-pad); background: linear-gradient(180deg, rgba(10,14,22,0), rgba(10,14,22,.85)); display: flex; flex-direction: column; gap: 8px; }
 .crt-gal__card figcaption b { font-size: 15px; color: #fff; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -342,7 +348,7 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 @media (max-width: 900px) {
   .crt-top { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .crt-rail__track > *, .crt-rail--more .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap) * 2) / 2.25); }
-  .crt-gal__card { height: calc((100cqw * 0.9 - var(--c-gap)) / (var(--gal-r0) + 1.3333)); }
+  .crt-gal__card { height: calc((100cqw - 2 * var(--c-gap)) / (var(--gal-r0) + 1.8667)); }
   .crt-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-report { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -352,7 +358,12 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 }
 @media (max-width: 760px) {
   .crt { --c-pad: 16px; --c-sec: 32px; padding-bottom: 0; }
-  .crt-gal__card { height: calc(100cqw * 0.86 / var(--gal-r0)); max-height: none; max-width: 100%; }
+  .crt-gal { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .crt-gal__lead { width: 100%; height: auto; max-height: none; }
+  .crt-gal__card:not(.crt-gal__lead) { height: 112px; }
+  .crt-gal__card:not(.crt-gal__lead) figcaption { padding: 24px 10px 10px; gap: 4px; }
+  .crt-gal__card:not(.crt-gal__lead) figcaption b { font-size: 12px; }
+  .crt-gal__card:not(.crt-gal__lead) .crt-kicker { font-size: 9px; }
   .crt-gal__btns { display: none; }
   .crt-chips, .crt-chips--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-chip:nth-child(odd) { border-left: 0; }

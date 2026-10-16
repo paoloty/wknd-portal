@@ -33,20 +33,21 @@ const stars = (v, label = '') => `<span class="crt-stars"${label ? ` role="img" 
 const avatar = (id, name) => `<span class="crt-av"><span>${escHtml(initials(name))}</span><img src="${playerPhotoUrl(id, 96)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
 const sh = (title, { sub = '', id = '', link = '' } = {}) => `<div class="section-header crt-sh"><h2${id ? ` id="${id}"` : ''}>${escHtml(title)}${sub ? ` <span class="section-header__sub">${escHtml(sub)}</span>` : ''}</h2>${link}</div>`;
 
-// ── Gallery: equal cards, three across, scroll for more ──
+// ── Gallery: the lead photo stays put (its own shape, so the court photo shows whole); the
+// rest scroll beside it as standard 4:3 cards at the same height. Phones: lead on top, the
+// rest as a smaller strip under it. ──
 function gallery(p) {
   const ph = p.photos;
   if (!ph.length) return '';
-  const per = Math.min(3, ph.length);
-  // One height for every card. The lead photo keeps its own shape (the court photo is 2:1, so
-  // it shows whole); the rest are the standard 4:3 card. The first `per` cards fill the row,
-  // so the height is the row width over their summed ratios.
   const r0 = Number(ph[0].ratio) || 16 / 9;
-  const r = (x, i) => (i ? 4 / 3 : r0);
-  const sum = ph.slice(0, per).reduce((a, x, i) => a + r(x, i), 0);
-  return `<section class="crt-gal" style="--gal-n:${per};--gal-r:${sum.toFixed(4)};--gal-r0:${r0.toFixed(4)};--gal-fill:${ph.length > per ? 0.93 : 1}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
-    <div class="crt-gal__track">${ph.map((x, i) => `<figure class="crt-gal__card" style="aspect-ratio:${r(x, i).toFixed(4)}"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i < per ? (i ? '' : ' fetchpriority="high"') : ' loading="lazy"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`).join('')}</div>
-    ${railBar(ph.length, per, 'photos')}
+  const rest = ph.slice(1);
+  const card = (x, i, cls) => `<figure class="${cls}"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i ? (i < 3 ? '' : ' loading="lazy"') : ' fetchpriority="high"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`;
+  return `<section class="crt-gal${rest.length ? '' : ' crt-gal--solo'}" style="--gal-r0:${r0.toFixed(4)}" aria-label="Photos of ${escHtml(p.name)}">
+    ${card(ph[0], 0, 'crt-gal__card crt-gal__lead')}
+    ${rest.length ? `<div class="crt-gal__more" data-crt-gallery>
+      <div class="crt-gal__track">${rest.map((x, i) => card(x, i + 1, 'crt-gal__card')).join('')}</div>
+      ${railBar(rest.length, Math.min(2, rest.length), 'photos')}
+    </div>` : ''}
   </section>`;
 }
 
