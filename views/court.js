@@ -6,6 +6,7 @@
 import { escHtml } from './layout.js';
 import { avatarStack, shareIcon, playerPhotoUrl, initials, displayPlayerName } from './utils.js';
 import { gameCard, gameCardScript } from './games.js';
+import { sectionNavScript } from './section-nav.js';
 import { courtInfoTags, parseJson, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, RATING_MIN_FOR_SCORE } from '../lib/court-page.js';
 
 const MESSENGER_URL = 'https://m.me/wkndbasketball';
@@ -37,8 +38,12 @@ function gallery(p) {
   const ph = p.photos;
   if (!ph.length) return '';
   const per = Math.min(3, ph.length);
-  return `<section class="crt-gal crt-gal--${per}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
-    <div class="crt-gal__track">${ph.map((x, i) => `<figure class="crt-gal__card"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i < per ? (i ? '' : ' fetchpriority="high"') : ' loading="lazy"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`).join('')}</div>
+  // One height for every card, each as wide as its photo's shape (no cropping): the first
+  // `per` cards fill the row exactly, so the height is the row width over their summed ratios.
+  const r = x => Number(x.ratio) || 16 / 9;
+  const sum = ph.slice(0, per).reduce((a, x) => a + r(x), 0);
+  return `<section class="crt-gal" style="--gal-n:${per};--gal-r:${sum.toFixed(4)};--gal-r0:${r(ph[0]).toFixed(4)}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
+    <div class="crt-gal__track">${ph.map((x, i) => `<figure class="crt-gal__card" style="aspect-ratio:${r(x).toFixed(4)}"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i < per ? (i ? '' : ' fetchpriority="high"') : ' loading="lazy"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`).join('')}</div>
     ${railBar(ph.length, per, 'photos')}
   </section>`;
 }
@@ -330,12 +335,18 @@ function dock(p) {
   return `<div class="crt-dock"><div><b>${escHtml(`${ymdLabel(r.ymd, { weekday: 'short', month: 'short', day: 'numeric' })}${r.time ? ` · ${r.time}` : ''}`)}</b><span>${escHtml(max ? (full ? 'Full · waitlist open' : `${plural(max - r.confirmed, 'slot')} left`) : 'Papawis run')}</span></div><a class="crt-btn crt-btn--amber crt-btn--sm" href="/papawis#pw-game-${encodeURIComponent(r.id)}">${full ? 'Join the waitlist' : 'Sign up'}</a></div>`;
 }
 
+// The site's sticky "on this page" bar (.gd-snav + views/section-nav.js, as on game, team and
+// player pages): pins under the header, glides to a section on click, lights the one in view,
+// shows the court name once pinned. The run button rides at its right end on desktop.
 function jumpbar(p, x, sections) {
   const r = p.nextRun;
   const max = Number(r?.max_slots) || 0;
   const full = r && max && r.confirmed >= max;
-  return `<div class="crt-jumpbar"><nav class="crt-jump" aria-label="On this page">${sections.map(([id, l], i) => `<a href="#${id}"${i ? '' : ' class="on"'}>${escHtml(l)}</a>`).join('')}</nav>
-    ${r ? `<div class="crt-jump__cta"><span>${escHtml(`${ymdLabel(r.ymd, { weekday: 'short', month: 'short', day: 'numeric' })}${full ? ' · full' : ''}`)}</span><a class="crt-btn crt-btn--amber crt-btn--sm" href="/papawis#pw-game-${encodeURIComponent(r.id)}">${full ? 'Join the waitlist' : 'Sign up'}</a></div>` : ''}</div>`;
+  return `<nav class="gd-snav crt-snav" data-gd-snav aria-label="On this page">
+    <span class="gd-snav__mini">${escHtml(p.name)}</span>
+    ${sections.map(([id, l], i) => `<a href="#${id}" data-spy="${id}"${i ? '' : ' class="is-on"'}>${escHtml(l)}</a>`).join('')}
+    ${r ? `<a class="crt-btn crt-btn--amber crt-btn--sm crt-snav__cta" href="/papawis#pw-game-${encodeURIComponent(r.id)}">${full ? 'Join the waitlist' : 'Sign up'}</a>` : ''}
+  </nav>`;
 }
 
 const SCRIPT = `<script>
@@ -345,29 +356,40 @@ const SCRIPT = `<script>
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Something went wrong. Try again.'); return d; }); });
   }
-  // Gallery: arrows, dots and count follow the scroll.
+  // Scrolling rows (photos, league games): cards can differ in width, so stops, the count and
+  // the dots come from where each card actually starts.
   document.querySelectorAll('[data-crt-gallery], [data-crt-rail]').forEach(function (g) {
     var track = g.querySelector('.crt-gal__track, .crt-rail__track'), cards = [].slice.call(track.children);
-    var dots = [].slice.call(g.querySelectorAll('.crt-gal__dots i')), count = g.querySelector('[data-gal-count]');
+    var dotsBox = g.querySelector('.crt-gal__dots'), count = g.querySelector('[data-gal-count]');
     var prev = g.querySelector('[data-step="-1"]'), next = g.querySelector('[data-step="1"]');
     if (!prev) return;
-    var gap = function () { return cards[1] ? cards[1].offsetLeft - cards[0].offsetLeft - cards[0].offsetWidth : 0; };
-    var perView = function () { return Math.max(1, Math.round((track.clientWidth + gap()) / (cards[0].offsetWidth + gap()))); };
-    var first = function () { return Math.round(track.scrollLeft / (cards[0].offsetWidth + gap())); };
+    var stops = [], dots = [];
+    function left(c) { return c.offsetLeft - track.offsetLeft; }
+    function build() {
+      var max = track.scrollWidth - track.clientWidth;
+      stops = cards.map(left).filter(function (x) { return x < max - 4; });
+      stops.push(max);
+      dotsBox.innerHTML = ''; dots = stops.map(function () { var i = document.createElement('i'); dotsBox.appendChild(i); return i; });
+      sync();
+    }
+    function at() { var x = track.scrollLeft, k = 0; stops.forEach(function (s, i) { if (Math.abs(s - x) < Math.abs(stops[k] - x)) k = i; }); return k; }
     function sync() {
-      var pv = perView(), i = Math.min(first(), cards.length - pv), pages = cards.length - pv + 1;
-      dots.forEach(function (d, k) { d.hidden = k >= pages; d.classList.toggle('on', k === i); });
-      count.textContent = (pv > 1 ? (i + 1) + '\\u2013' + (i + pv) : (i + 1)) + ' of ' + cards.length;
-      prev.disabled = track.scrollLeft < 4;
-      next.disabled = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
+      var x = track.scrollLeft, w = track.clientWidth;
+      var shown = cards.map(function (c, i) { var l = left(c); return l >= x - 4 && l + c.offsetWidth <= x + w + 4 ? i : -1; }).filter(function (i) { return i >= 0; });
+      var a = shown.length ? shown[0] + 1 : 1, b = shown.length ? shown[shown.length - 1] + 1 : 1;
+      count.textContent = (a === b ? a : a + '\\u2013' + b) + ' of ' + cards.length;
+      var k = at(); dots.forEach(function (d, i) { d.classList.toggle('on', i === k); });
+      prev.disabled = x < 4;
+      next.disabled = x + w >= track.scrollWidth - 4;
     }
     [prev, next].forEach(function (b) { b.addEventListener('click', function () {
-      var i = Math.max(0, Math.min(cards.length - 1, first() + Number(b.dataset.step)));
-      track.scrollTo({ left: cards[i].offsetLeft - track.offsetLeft, behavior: smooth ? 'smooth' : 'auto' });
+      var k = Math.max(0, Math.min(stops.length - 1, at() + Number(b.dataset.step)));
+      track.scrollTo({ left: stops[k], behavior: smooth ? 'smooth' : 'auto' });
     }); });
     track.addEventListener('scroll', function () { requestAnimationFrame(sync); }, { passive: true });
-    window.addEventListener('resize', sync);
-    sync();
+    window.addEventListener('resize', build);
+    if (document.readyState === 'complete') build(); else window.addEventListener('load', build);
+    build();
   });
   // Getting there: load Leaflet only when the map comes near, then a dark map with an amber pin.
   var mapEl = document.querySelector('[data-crt-map]');
@@ -394,12 +416,6 @@ const SCRIPT = `<script>
       document.body.appendChild(js);
     };
     if ('IntersectionObserver' in window) { var mo = new IntersectionObserver(function (es) { if (es[0].isIntersecting) { mo.disconnect(); start(); } }, { rootMargin: '400px' }); mo.observe(mapEl); } else start();
-  }
-  // Jump bar follows the section in view.
-  var links = [].slice.call(document.querySelectorAll('.crt-jump a'));
-  if (links.length && 'IntersectionObserver' in window) {
-    var io = new IntersectionObserver(function (es) { es.forEach(function (en) { if (en.isIntersecting) links.forEach(function (a) { a.classList.toggle('on', a.getAttribute('href') === '#' + en.target.id); }); }); }, { rootMargin: '-45% 0px -50% 0px' });
-    links.forEach(function (a) { var t = document.getElementById(a.getAttribute('href').slice(1)); if (t) io.observe(t); });
   }
   // Share this run: copy the run link.
   document.querySelectorAll('[data-share]').forEach(function (b) { b.addEventListener('click', function () {
@@ -489,6 +505,7 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
   ${dock(p)}
 </div>
 ${games.length ? gameCardScript() : ''}
+${sectionNavScript()}
 ${SCRIPT}`;
 }
 

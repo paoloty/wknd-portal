@@ -10,7 +10,7 @@
 .crt-muted { color: var(--text-muted); font-size: 14px; line-height: 1.5; }
 .crt-h1 { margin: 0; font-size: clamp(32px, 5vw, 46px); line-height: 1.05; font-weight: 800; letter-spacing: -.02em; color: var(--text); text-wrap: balance; }
 .crt-ico { color: var(--amber); flex-shrink: 0; }
-.crt-sec { margin-top: var(--c-sec); scroll-margin-top: 140px; }
+.crt-sec { margin-top: var(--c-sec); scroll-margin-top: calc(var(--gd-top, 85px) + 82px); }
 .crt-sh { margin-bottom: var(--c-head); }
 .crt-sh h2 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .crt-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--amber); line-height: 1; }
@@ -33,12 +33,12 @@
 .crt-pill--amber { height: 20px; padding: 0 8px; font-size: 10.5px; font-weight: 700; color: var(--amber); background: transparent; border-color: rgba(245,147,50,.35); }
 
 /* Gallery: equal cards, up to three across */
-.crt-gal { margin-top: 16px; }
+.crt-gal { margin-top: 16px; container-type: inline-size; }
 .crt-gal__track { display: flex; gap: var(--c-gap); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .crt-gal__track::-webkit-scrollbar { display: none; }
-.crt-gal__card { position: relative; flex: 0 0 calc((100% - var(--c-gap) * 2) / 3); aspect-ratio: 4 / 3; max-width: 100%; margin: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); scroll-snap-align: start; }
-.crt-gal--2 .crt-gal__card { flex-basis: calc((100% - var(--c-gap)) / 2); aspect-ratio: 16 / 9; }
-.crt-gal--1 .crt-gal__card { flex-basis: 100%; aspect-ratio: 21 / 9; }
+/* One height for every photo, each card the shape of its photo (aspect-ratio set inline):
+   the first --gal-n cards fill the row, so height = row width minus gaps, over their ratios. */
+.crt-gal__card { position: relative; flex: 0 0 auto; height: calc((100cqw - (var(--gal-n) - 1) * var(--c-gap)) / var(--gal-r)); max-height: 420px; margin: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); scroll-snap-align: start; }
 .crt-gal__card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .crt-gal__card figcaption { position: absolute; inset: auto 0 0 0; padding: 40px var(--c-pad) var(--c-pad); background: linear-gradient(180deg, rgba(10,14,22,0), rgba(10,14,22,.85)); display: flex; flex-direction: column; gap: 8px; }
 .crt-gal__card figcaption b { font-size: 15px; color: #fff; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -100,12 +100,11 @@
 .crt-partnerline a { display: inline-flex; align-items: center; gap: 4px; color: var(--amber); font-weight: 700; white-space: nowrap; }
 
 /* Jump bar (desktop) and the phone dock */
-.crt-jumpbar { position: sticky; top: var(--header-h, 64px); z-index: 10; display: flex; align-items: center; gap: var(--c-gap); margin-top: 28px; padding-block: 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
-.crt-jump { flex: 1; min-width: 0; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
-.crt-jump::-webkit-scrollbar { display: none; }
-.crt-jump a { flex-shrink: 0; height: 34px; padding: 0 14px; border-radius: 999px; display: flex; align-items: center; font-size: 13px; font-weight: 600; color: var(--text-muted); line-height: 1; border: 1px solid transparent; }
-.crt-jump a.on { color: var(--text); border-color: var(--c-line); }
-.crt-jump__cta { flex-shrink: 0; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-muted); line-height: 1; }
+/* Sticky section bar: the site's .gd-snav (styles.css) with the run button at its right end */
+.crt-snav { margin: 28px 0 0; }
+.crt-snav__cta { flex-shrink: 0; margin-left: auto; }
+.crt-snav .crt-snav__cta::after { display: none; }
+.crt-snav a.crt-snav__cta { color: #0a0e16; height: 36px; padding: 0 14px; }
 .crt-dock { display: none; }
 
 /* Rows that line up: lead | text | action */
@@ -336,7 +335,8 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 
 @media (max-width: 900px) {
   .crt-top { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .crt-gal__card, .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap)) / 2); }
+  .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap)) / 2); }
+  .crt-gal__card { height: calc((100cqw - var(--c-gap)) / (var(--gal-r0) + 1.7778)); }
   .crt-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-report { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -346,10 +346,10 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 }
 @media (max-width: 760px) {
   .crt { --c-pad: 16px; --c-sec: 32px; padding-bottom: 0; }
-  .crt-gal__card, .crt-gal--2 .crt-gal__card { flex-basis: 100%; aspect-ratio: 4 / 3; }
+  .crt-gal__card { height: calc(100cqw / var(--gal-r0)); max-height: none; max-width: 100%; }
   .crt-gal__btns { display: none; }
   .crt-chips, .crt-chips--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .crt-jumpbar { display: none; }
+  .crt-snav__cta { display: none; }
   .crt-rw { grid-template-columns: 84px minmax(0, 1fr); }
   .crt-rw > .crt-btn, .crt-rw > .crt-rw__link { grid-column: 1 / -1; }
   .crt-rw > .crt-rw__link { justify-self: start; }
@@ -381,3 +381,4 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
   .crt-dock span { font-size: 12px; color: var(--text-muted); line-height: 1.2; }
 }
 @media (prefers-reduced-motion: reduce) { .crt-gal__dots i { transition: none; } }
+.crt-snav a.crt-snav__cta:hover { color: #0a0e16; }
