@@ -430,7 +430,9 @@ function writeupTitle(text) {
 
 function writeupDescription(text) {
   const { body } = parseWriteup(text);
-  return body.slice(0, 200);
+  // Search snippets cut off around 160 characters: end on a whole word.
+  if (body.length <= 160) return body;
+  return body.slice(0, 157).replace(/\s+\S*$/, '') + '…';
 }
 
 export function gamePageTitle(game) {
@@ -899,12 +901,13 @@ function buildBrandOgSvg({ kicker = '', title = 'WKND', sub = '', panel = null }
 // Search-result descriptions for pages that don't write their own (renderPage adds them).
 // A manual override at /admin/seo still wins.
 const PAGE_DESCRIPTIONS = {
-  '/': 'WKND Basketball is a weekend basketball league and community playing in Makati, Mandaluyong and Pasig: game results, standings, player stats, recaps and Papawis pickup runs.',
+  '/': 'Weekend basketball league and community in Makati, Mandaluyong and Pasig: game results, standings, player stats, recaps and Papawis pickup runs.',
   '/games': 'Every WKND Basketball game: final scores, box scores, recaps and Player of the Game spotlights.',
   '/standings': 'WKND Basketball League standings: team records, head-to-head results and the playoff picture.',
   '/playoffs': 'The WKND Basketball playoff bracket: every series, every result and the road to the title.',
   '/leaders': 'WKND Basketball league leaders: the top scorers, rebounders, playmakers and defenders per game.',
-  '/players': 'Every WKND Basketball player: profiles, career stats and game logs.',
+  '/players': 'Every WKND Basketball player: profiles, per-game averages, career stats and full game logs from every season of the league.',
+  '/picks/rules': 'How the WKND Basketball Pickmaster works: pick the winner of every game, how picks are scored, the tiebreakers and the prize.',
   '/teams': 'WKND Basketball teams: White, Black, Blue and Maroon rosters, averages and results.',
   '/highlights': 'Every WKND Basketball Player of the Game spotlight, newest first.',
   '/awards': 'WKND Basketball season awards: MVP, Finals MVP, All-WKND teams and every honour.',
