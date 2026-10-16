@@ -457,7 +457,12 @@ function buildGameOgTags(req, game, court = null) {
   const title      = gamePageTitle(game);
   const scoreLabel = `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
   const url        = `${SITE_ORIGIN}/games/${encodeURIComponent(gameSlug(game))}`;
-  const desc       = writeupDescription(game.game_writeup) || 'Game recap, box score, and player stats from WKND Basketball League.';
+  // No recap yet: name the teams, score and date so every game's description is unique.
+  const when       = game.date ? new Date(`${gameYmd(game.date)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const typeLabel  = gameTypeLabel(game);
+  const desc       = writeupDescription(game.game_writeup) || (isCompleted
+    ? `${scoreLabel}${typeLabel ? ` (${typeLabel})` : ''}${when ? ` on ${when}` : ''}. Box score, player stats and game recap from WKND Basketball League.`
+    : `${game.team_a_name} vs ${game.team_b_name}${when ? ` on ${when}` : ''}. Matchup preview, box score and player stats from WKND Basketball League.`);
   const img        = isCompleted ? `${origin}/api/cover/${encodeURIComponent(game.id)}.png` : null;
 
   const publishedIso = game.date ? (() => { try { return new Date(game.date).toISOString(); } catch { return null; } })() : null;
@@ -631,6 +636,8 @@ function buildPlayerOgTags(req, player, totals) {
     desc += ` · ${ppg} PPG, ${rpg} RPG, ${apg} APG`;
   }
   desc += ' · WKND Basketball League';
+  // Few details: add a closing line so the description isn't too short for search snippets.
+  if (desc.length < 90) desc += '. Career stats, season averages and game-by-game numbers.';
 
   const nameParts = String(player.name || '').split(',');
   const lastName  = nameParts[0]?.trim() || '';
@@ -683,7 +690,7 @@ function buildTeamOgTags(req, team) {
   const teamName = String(team.name || '').toUpperCase();
   const url      = `${SITE_ORIGIN}/teams/${encodeURIComponent(teamSlug(team))}`;
   const title    = `${teamName} — WKND Basketball`;
-  const desc     = `${teamName} team — roster, stats, and standings on WKND Basketball League.`;
+  const desc     = `${teamName} team — roster, season averages, results, standings and player stats on WKND Basketball League.`;
 
   const tags = [
     `<meta name="description" content="${escAttr(desc)}">`,
@@ -8204,7 +8211,7 @@ app.get('/', (req, res) => {
   }
 
   res.send(renderPage(req, {
-    title: 'WKND Basketball League',
+    title: 'WKND Basketball League | Makati, Mandaluyong & Pasig',
     currentPath: req.path,
     body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, papawisHero: homeHeroPapawis(), regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
       headlineCards: gameCardExtras(headlineGamesOf(games), games, { viewerId: req.session?.playerPlayerId || null, playerMap }),
@@ -8417,7 +8424,9 @@ app.get('/games/:ref', (req, res) => {
       const scoreline = `${T(game.team_a_name)} ${Number(game.team_a_score)}–${Number(game.team_b_score)} ${T(game.team_b_name)}`;
       const headline = writeupTitle(game.game_writeup);
       const namesTeams = headline && [game.team_a_name, game.team_b_name].every(t => headline.toLowerCase().includes(String(t).toLowerCase()));
-      return `${namesTeams ? headline : headline ? `${scoreline}: ${headline}` : scoreline} — WKND Basketball`;
+      // A headline that already carries the score stands alone (no "81–96 … 81-96" repeat).
+      const hasScore = headline && /\d+\s*[-–‑]\s*\d+/.test(headline);
+      return seoTitle(namesTeams || hasScore ? headline : headline ? `${scoreline}: ${headline}` : scoreline);
     })(),
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game, court),
@@ -10135,6 +10144,15 @@ function addDaysYmd(ymd, days) {
 }
 const isPlayedGame = g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0;
 const titleCase = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+// Search results cut titles at ~60 characters: keep the brand suffix only when it fits.
+const seoTitle = (base, suffix = ' — WKND Basketball') => (base + suffix).length <= 60 ? base + suffix : base;
+// "BANLAO, Ian" → "Ian Banlao" for <title>s (the on-page LASTNAME style reads as shouting in search results).
+const searchPlayerName = raw => {
+  const [last = '', first = ''] = String(raw || '').split(',').map(x => x.trim());
+  // Unicode-aware (titleCase's \b splits "NUÑEZ" into "NuñEz").
+  const tc = s => s.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, p, c) => p + c.toUpperCase());
+  return first ? `${first} ${tc(last)}` : tc(last);
+};
 const shortDay = ymd => (ymd ? new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
 
 // "Upcoming" = still scheduled, dated today or later, within the next 14 days. The date
@@ -15357,7 +15375,7 @@ app.get('/teams/:ref', (req, res) => {
   const d = buildTeamPage(team, req.session?.playerPlayerId || null);
   const summary = d.isCurrent ? teamsSummary(`teams_summary_team_${team.id}`, `team:${team.id}`, teamPageSummaryFacts(d)) : null;
   res.send(renderPage(req, {
-    title: `${String(team.name).toUpperCase()} — WKND Basketball`,
+    title: `${titleCase(team.name)} Team — Roster & Stats | WKND Basketball`,
     currentPath: '/teams',
     metaTags: `${buildTeamOgTags(req, team)}\n  <link rel="stylesheet" href="/teams.css?v=${TEAMS_CSS_VER}">`,
     body: teamDetailPage({ ...d, summary, isAdmin: !!req.session?.isAdmin, isPlayer: !!req.session?.playerPlayerId }),
@@ -15923,7 +15941,7 @@ app.get('/players/:ref', async (req, res) => {
   // Scoped to the Papawis-only balance, so an unrelated season fee doesn't keep it showing.
   const minDeposit = isOwnProfile && player.papawis_probation ? getMaxPapawisPrice() : null;
   res.send(renderPage(req, {
-    title: `${displayName} — WKND Basketball`,
+    title: `${searchPlayerName(player.name)} — Stats & Profile | WKND Basketball`,
     currentPath: '/players',
     isOwnProfile,
     metaTags: `${buildPlayerOgTags(req, player, totals)}\n  <link rel="stylesheet" href="/profile.css?v=${PROFILE_CSS_VER}">`,
@@ -17890,7 +17908,7 @@ function liveCourtSlugByName() {
 app.get('/courts', (req, res) => {
   const courts = liveCourts();
   res.send(renderPage(req, {
-    title: 'Basketball Courts in Makati, Mandaluyong & Pasig | WKND Basketball',
+    title: 'Courts in Makati, Mandaluyong & Pasig | WKND Basketball',
     currentPath: '/papawis',
     metaTags: [
       jsonLdTag({ '@context': 'https://schema.org', '@type': 'ItemList', name: 'WKND Basketball courts', itemListElement: courts.map(({ court, p }, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name, url: courtUrl(court) })) }),
@@ -17914,7 +17932,7 @@ app.get('/courts/:slug', (req, res) => {
     title: p.title,
     currentPath: '/papawis',
     metaTags: buildCourtOgTags(court, p) + (p.live ? '' : '\n  <meta name="robots" content="noindex, follow">'),
-    body: courtPage({ court, p, games: listGames, extras, isLoggedIn: !!req.session?.playerRegId }),
+    body: courtPage({ court, p, games: listGames, extras, isLoggedIn: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin }),
   }));
 });
 
@@ -17988,7 +18006,7 @@ app.get('/papawis', (req, res) => {
   const viewer = vp ? { id: vp.id, name: vp.name, teamName: vp.team_id ? (getTeamById(vp.team_id)?.name || '') : '' } : null;
 
   res.send(renderPage(req, {
-    title: 'Papawis — WKND Basketball',
+    title: 'Papawis: Pickup Basketball in Makati, Mandaluyong & Pasig',
     currentPath: '/papawis',
     metaTags: `${papawisMetaTags}\n  <link rel="stylesheet" href="/papawis.css?v=${PAPAWIS_CSS_VER}">`,
     body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, summary, isAdmin, alertsOn }),

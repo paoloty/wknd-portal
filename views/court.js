@@ -30,7 +30,7 @@ const fmtStat = (s) => {
   }
 };
 
-function hero(p, court) {
+function hero(p, court, isAdmin) {
   const facts = [
     p.playedRuns ? [String(p.playedRuns), `Papawis run${p.playedRuns === 1 ? '' : 's'} played`] : null,
     p.players ? [String(p.players), 'players have run here'] : null,
@@ -41,7 +41,7 @@ function hero(p, court) {
   return `<section class="crt-hero${bg ? '' : ' crt-hero--plain'}" aria-label="Court">
     ${bg}<div class="crt-hero__shade"></div>
     <div class="crt-hero__in">
-      <nav class="crt-crumbs" aria-label="Breadcrumb"><a href="/papawis">Papawis</a><span aria-hidden="true">/</span><a href="/courts">Courts</a></nav>
+      <div class="crt-hero__top"><nav class="crt-crumbs" aria-label="Breadcrumb"><a href="/papawis">Papawis</a><span aria-hidden="true">/</span><a href="/courts">Courts</a></nav>${isAdmin ? `<a class="crt-btn crt-btn--ghost crt-btn--sm" href="/admin/papawis/courts/${encodeURIComponent(court.id)}">Edit this court</a>` : ''}</div>
       <span class="crt-kicker">Basketball court${p.city ? ` · ${escHtml(p.city)}` : ''}</span>
       <h1 class="crt-h1">${escHtml(p.name)}</h1>
       ${court.address ? `<p class="crt-addr">${ICON.pin}<span>${escHtml(court.address)}</span></p>` : ''}
@@ -264,9 +264,9 @@ const SCRIPT = `<script>
 })();
 </script>`;
 
-export function courtPage({ court, p, games = [], extras = {}, isLoggedIn = false }) {
+export function courtPage({ court, p, games = [], extras = {}, isLoggedIn = false, isAdmin = false }) {
   return `<div class="page-content crt">
-  ${hero(p, court)}
+  ${hero(p, court, isAdmin)}
   <div class="crt-cols">
     <div class="crt-main">
       ${about(court)}

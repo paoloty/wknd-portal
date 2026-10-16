@@ -39,7 +39,7 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
         <span class="aui-cell__stack"><a class="aui-cell__title" href="/admin/papawis/courts/${attr(encodeURIComponent(c.id))}">${escHtml(c.name)}</a>${c.address ? `<span class="aui-cell__sub">${escHtml(c.address)}</span>` : ''}</span></span></td>
       <td class="is-num" data-label="Rate">${c.price_per_hour > 0 ? `${peso(c.price_per_hour)}<span class="aui-muted">/hr</span>` : '<span class="aui-muted">Not set</span>'}</td>
       <td class="is-bare" data-label="Status">${c.active ? badge('Active', 'green') : badge('Inactive', 'gray')}</td>
-      <td class="pw-roster__actions">${button('Edit', { kind: 'secondary', size: 'sm', attrs: `data-drawer-open="court-${attr(c.id)}"` })}</td>
+      <td class="pw-roster__actions"><span style="display:flex;gap:6px;justify-content:flex-end">${button('Court page', { kind: 'primary', size: 'sm', href: `/admin/papawis/courts/${encodeURIComponent(c.id)}` })}${button('Edit', { kind: 'secondary', size: 'sm', attrs: `data-drawer-open="court-${attr(c.id)}"` })}</span></td>
       <td class="aui-grid__menu">${menu([
         { label: 'Court page', href: `/admin/papawis/courts/${c.id}` },
         c.active
@@ -56,7 +56,8 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
 
   const editors = courts.map(c => drawer({
     id: `court-${c.id}`, eyebrow: 'Court', title: c.name,
-    bodyHtml: `<form id="court-form-${attr(c.id)}" data-json-action="/admin/papawis/courts/${attr(c.id)}" data-done="Court saved.">${courtFields(c)}</form>${photoBlock(c)}`,
+    bodyHtml: `<form id="court-form-${attr(c.id)}" data-json-action="/admin/papawis/courts/${attr(c.id)}" data-done="Court saved.">${courtFields(c)}</form>${photoBlock(c)}
+      <a class="aui-btn aui-btn--secondary" style="margin-top:16px;width:100%" href="/admin/papawis/courts/${attr(encodeURIComponent(c.id))}">Edit court page, info &amp; gallery →</a>`,
     footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Save court', { kind: 'primary', type: 'submit', attrs: `form="court-form-${attr(c.id)}"` })}`,
   })).join('');
   const add = drawer({
