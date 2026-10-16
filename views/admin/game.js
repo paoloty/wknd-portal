@@ -33,7 +33,7 @@ function hero(game, colors, st) {
   const win = !played || a === b ? '' : a > b ? 'a' : 'b';
   const team = (name, side) => `<span class="agd-hero__team${win === side ? ' is-win' : ''}"><i class="agl-dot" style="background:${attr(colors[side])}"></i>${escHtml(name)}</span>`;
   const checks = contentChecks(game).filter(([, ok]) => !ok).map(([l]) => `<span class="agd-check">✕ ${escHtml(l)}</span>`).join('');
-  const meta = [fmtDateLong(game.date), TYPE_LABEL[game.game_type] || 'Regular season', game.season ? `Season ${game.season}` : '', otLabel(game.overtime)].filter(Boolean).join(' · ');
+  const meta = [fmtDateLong(game.date), TYPE_LABEL[game.game_type] || 'Regular season', game.season ? `Season ${game.season}` : '', otLabel(game.overtime), game.court_name || ''].filter(Boolean).join(' · ');
   const more = menu([
     st !== 'upcoming' && st !== 'score' ? { label: 'Re-import game file', href: `/admin/games/${game.id}#import` } : null,
     { label: 'All games', href: '/admin/games' },
@@ -260,27 +260,35 @@ function correctionsList(statCorrections, nameById) {
   }));
 }
 
-function settingsTab({ game, st, statCorrections, nameById }) {
+// Court options: active courts, plus the game's current court if it was since switched off.
+function courtOptions(courts, currentId = '') {
+  const list = courts.filter(c => c.active || c.id === currentId);
+  return [['', 'Not set'], ...list.map(c => [c.id, c.name])];
+}
+
+function settingsTab({ game, st, statCorrections, nameById, courts }) {
   const id = attr(game.id);
   const gameForm = `<form id="game-settings" class="aui-panel" data-json-action="/admin/games/${id}/save" data-done="Game saved." data-dirty-watch>
     ${fieldGrid(`${field({ label: 'Date', name: 'date', type: 'date', value: game.date || '', required: true })}
       ${field({ label: 'Type', name: 'game_type', type: 'select', value: game.game_type || 'regular', options: Object.entries(TYPE_LABEL), help: game.game_type === 'playoff' ? 'Set a Finals game to Finals so Game 1 gets the margin-guess tiebreaker.' : '' })}
       ${st !== 'upcoming' ? field({ label: 'Overtime', name: 'overtime', type: 'select', value: String(n(game.overtime)), options: [['0', 'Regulation'], ['1', 'OT'], ['2', '2OT'], ['3', '3OT']] }) : ''}
-      <div class="aui-field"><span class="aui-field__label">Season</span><span class="agd-ro">Season ${escHtml(String(game.season || '—'))}</span><span class="aui-field__help">Set when the game was created.</span></div>`)}
+      <div class="aui-field"><span class="aui-field__label">Season</span><span class="agd-ro">Season ${escHtml(String(game.season || '—'))}</span><span class="aui-field__help">Set when the game was created.</span></div>
+      ${field({ label: 'Court', name: 'court_id', type: 'select', value: game.court_id || '', options: courtOptions(courts, game.court_id), help: 'Shown on the game page. Courts are managed under Papawis → Courts.' })}`)}
+    <label class="aui-check" style="margin-top:12px"><input type="checkbox" name="court_whole_day" value="1"><span>Use this court for every game on this day</span></label>
   </form>`;
   const publish = st === 'live' || st === 'draft'
     ? `<div class="aui-panel">${toggleRow({ label: 'Published', help: 'Off = Draft: hidden from every public page.', name: 'published', on: st === 'live', post: `/admin/games/${game.id}/review`, reload: true })}</div>`
     : '<p class="aui-muted">Publishing comes after the game file is imported.</p>';
   const del = `<div class="aui-panel agd-danger"><span class="aui-cell__stack"><span class="aui-cell__title">Delete game</span><span class="aui-cell__sub">Removes the game and every player’s stats from it. This can’t be undone.</span></span>
     ${button('Delete game…', { kind: 'danger', attrs: `data-post-json="/admin/games/${id}" data-method="DELETE" data-then="/admin/games" data-done="Game deleted." data-confirm data-confirm-title="Delete ${attr(`${game.team_a_name} vs ${game.team_b_name}`)}?" data-confirm-body="Every player’s stats from this game go too. This can’t be undone." data-confirm-send="Delete game"` })}</div>`;
-  return `${section({ title: 'Game', note: '· date, type and overtime', bodyHtml: gameForm })}
+  return `${section({ title: 'Game', note: '· date, type, overtime and court', bodyHtml: gameForm })}
     ${section({ title: 'On the site', bodyHtml: publish })}
     ${st === 'live' || st === 'draft' ? section({ title: 'Stat corrections', note: '· every change to the box score', bodyHtml: `<div class="aui-panel">${correctionsList(statCorrections, nameById)}</div>` }) : ''}
     ${section({ title: 'Danger zone', bodyHtml: del })}
     ${saveBar({ label: 'Save game', form: 'game-settings' })}`;
 }
 
-export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null, players = [], teams = [], colorById = {}, box }) {
+export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null, players = [], teams = [], colorById = {}, box, courts = [] }) {
   const st = gameState(game);
   const colorByName = Object.fromEntries(teams.map(t => [String(t.name).toUpperCase(), t.color || '']));
   const colorOfTeam = name => colorByName[String(name || '').toUpperCase()] || '';
@@ -312,7 +320,7 @@ export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers 
     box: () => boxTab({ game, st, stats, dnpPlayers, quarterScores, colors, potgId, teamA: game.team_a_name, teamB: game.team_b_name, ...box }),
     content: () => contentTab({ game, st, stats, colors, colorOfTeam }),
     picks: () => picksTab({ game, st, pp: picksPanel, colors, colorById }),
-    settings: () => settingsTab({ game, st, statCorrections, nameById }),
+    settings: () => settingsTab({ game, st, statCorrections, nameById, courts }),
   }[current]();
 
   return `<div class="aui-page agd" id="agd" data-game="${attr(game.id)}">

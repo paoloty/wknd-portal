@@ -1589,6 +1589,7 @@ function finalHero(d) {
   const s = ctx.series;
   const meta = [
     longDay(d.ymd),
+    d.court?.name || '',
     flow && winner && flow.trailedBy >= 8 ? `Came back from ${flow.trailedBy} down` : flow && winner && !flow.forGood && flow.trailedBy === 0 ? 'Led wire to wire' : '',
     s.n <= 1 ? 'First meeting' : s.a === s.b ? `All-time series tied ${s.a}–${s.b}` : `${tc(s.a > s.b ? game.team_a_name : game.team_b_name)} lead the all-time series ${Math.max(s.a, s.b)}–${Math.min(s.a, s.b)}`,
   ].filter(Boolean);
@@ -1633,7 +1634,7 @@ function upcomingHero(d) {
     <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>
     ${oddsEdge(game.team_a_name, game.team_b_name, heroOdds)}
     <div class="gd-hero__in">
-      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}</span><a href="#picks" class="gd-chip${state === 'open' ? ' gd-chip--live' : ''}">${chip}</a></div>
+      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}${d.court?.name ? ` · ${escHtml(d.court.name)}` : ''}</span><a href="#picks" class="gd-chip${state === 'open' ? ' gd-chip--live' : ''}">${chip}</a></div>
       <div class="gd-board">
         <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}${oddsPct(heroOdds, 'a')}</span></div>
         <div class="gd-when">

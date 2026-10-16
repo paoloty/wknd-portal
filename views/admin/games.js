@@ -57,7 +57,7 @@ function checksCell(g) {
   return missing.length ? `<span class="agl-missing">No ${escHtml(missing.join(', ').replace('Player of the game', 'POTG'))}</span>` : '<span class="agl-done">✓ All set</span>';
 }
 
-export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, pickCounts = {}, query = {} }) {
+export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, pickCounts = {}, query = {}, courts = [] }) {
   const colorOf = Object.fromEntries(teams.map(t => [t.id, t.color || '']));
   const nameColor = Object.fromEntries(teams.map(t => [String(t.name).toUpperCase(), t.color || '']));
   const colors = g => ({ a: colorOf[g.team_a_id] || nameColor[String(g.team_a_name).toUpperCase()] || '', b: colorOf[g.team_b_id] || nameColor[String(g.team_b_name).toUpperCase()] || '' });
@@ -135,6 +135,7 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
         ${field({ label: 'Team A', name: 'team_a_id', type: 'select', options: teamOpts, required: true })}
         ${field({ label: 'Team B', name: 'team_b_id', type: 'select', options: teamOpts, required: true })}
         ${field({ label: 'Type', name: 'game_type', type: 'select', value: 'regular', options: Object.entries(TYPE_LABEL), attrs: 'data-game-type' })}
+        ${field({ label: 'Court', name: 'court_id', type: 'select', options: [['', 'Not set'], ...courts.filter(c => c.active).map(c => [c.id, c.name])], help: 'Where the game is played. Shown on the game page.' })}
         <div data-series hidden>${field({ label: 'Series', name: 'series_id', type: 'select', options: [['semi-1', 'semi-1 (#1 vs #4)'], ['semi-2', 'semi-2 (#2 vs #3)']], help: 'Groups the games of one playoff series.', attrs: 'disabled' })}</div>`)}
     </form>`,
     footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Create game', { kind: 'primary', type: 'submit', attrs: 'form="new-game-form"' })}`,

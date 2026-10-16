@@ -205,7 +205,7 @@ import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveM
 import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
-import { setGameType } from './lib/portal-db.js';
+import { setGameType, setGamesCourt } from './lib/portal-db.js';
 import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
@@ -440,7 +440,7 @@ export function gamePageTitle(game) {
     || `${game.team_a_name} ${scoreA}–${scoreB} ${game.team_b_name}`;
 }
 
-function buildGameOgTags(req, game) {
+function buildGameOgTags(req, game, court = null) {
   const origin = getRequestOrigin(req);
   const scoreA = Number(game.team_a_score);
   const scoreB = Number(game.team_b_score);
@@ -493,7 +493,10 @@ function buildGameOgTags(req, game) {
     `<meta name="twitter:data1" content="${escAttr(scoreLabel)}">`,
   );
 
-  // League games have no venue on file, so location is the region the league plays in.
+  // The game's court when one is on file; otherwise the region the league plays in.
+  const location = court
+    ? { '@type': 'Place', name: court.name, address: court.address ? { '@type': 'PostalAddress', streetAddress: court.address, addressCountry: 'PH' } : { '@type': 'PostalAddress', addressRegion: 'Metro Manila', addressCountry: 'PH' } }
+    : { '@type': 'Place', name: 'Metro Manila', address: { '@type': 'PostalAddress', addressRegion: 'Metro Manila', addressCountry: 'PH' } };
   tags.push(jsonLdTag({
     '@context': 'https://schema.org',
     '@type': 'SportsEvent',
@@ -504,7 +507,7 @@ function buildGameOgTags(req, game) {
     eventStatus: 'https://schema.org/EventScheduled',
     homeTeam: { '@type': 'SportsTeam', name: titleCase(game.team_a_name) },
     awayTeam: { '@type': 'SportsTeam', name: titleCase(game.team_b_name) },
-    location: { '@type': 'Place', name: 'Metro Manila', address: { '@type': 'PostalAddress', addressRegion: 'Metro Manila', addressCountry: 'PH' } },
+    location,
     organizer: { '@type': 'SportsOrganization', name: 'WKND Basketball League', url: SITE_ORIGIN },
     ...(isCompleted ? { description: desc } : {}),
   }));
@@ -8247,6 +8250,7 @@ app.get('/games/:ref', (req, res) => {
 
   const game = getGameById(resolved.id);
   if (!game || game.under_review) return notFound();
+  const court = game.court_id ? getPapawisCourtById(game.court_id) : null;
 
   const allGames = getAllGames();
   const sorted = byDate(allGames);
@@ -8271,7 +8275,7 @@ app.get('/games/:ref', (req, res) => {
   }
 
   const common = {
-    game, ymd, ctx, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
+    game, court, ymd, ctx, commentsEnabled, comments, reactedIds, gameReaction, mentionablePlayers,
     currentPlayerId, isPlayer: !!req.session?.playerRegId, isAdmin: isAdminWithSection(req, 'games-stats'),
     viewer: req.session?.playerRegId && playerMap[currentPlayerId] ? { id: currentPlayerId, name: playerMap[currentPlayerId].name, team: playerMap[currentPlayerId].team_name } : null,
   };
@@ -8294,7 +8298,7 @@ app.get('/games/:ref', (req, res) => {
     return res.send(renderPage(req, {
       title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} — WKND Basketball League`,
       currentPath: req.path,
-      metaTags: buildGameOgTags(req, game),
+      metaTags: buildGameOgTags(req, game, court),
       body: gamePage({ ...common, state: 'upcoming', picks }),
     }));
   }
@@ -8366,7 +8370,7 @@ app.get('/games/:ref', (req, res) => {
       return `${namesTeams ? headline : headline ? `${scoreline}: ${headline}` : scoreline} — WKND Basketball`;
     })(),
     currentPath: req.path,
-    metaTags: buildGameOgTags(req, game),
+    metaTags: buildGameOgTags(req, game, court),
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
       flow, plays, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
@@ -8951,7 +8955,7 @@ app.get('/admin/games', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Games',
     currentPath: '/admin/games',
-    body: adminGamesListBody({ games, teams, currentSeason, pickCounts, query: req.query }),
+    body: adminGamesListBody({ games, teams, currentSeason, pickCounts, query: req.query, courts: getAllPapawisCourts() }),
   }));
 });
 
@@ -8960,6 +8964,7 @@ app.post('/admin/games', requireAuth, jsonSmall, (req, res) => {
   if (!date || !team_a_id || !team_b_id || !season) return res.status(400).json({ error: 'Missing required fields' });
   try {
     const id = createGame({ date, teamAId: team_a_id, teamBId: team_b_id, season, gameType: game_type || 'regular', seriesId: series_id || '' });
+    if (req.body.court_id && getPapawisCourtById(String(req.body.court_id))) setGamesCourt([id], String(req.body.court_id));
     res.json({ ok: true, id });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -9007,8 +9012,9 @@ app.get('/admin/games/:id', requireAuth, (req, res) => {
     title: `${game.team_a_name} vs ${game.team_b_name}`,
     currentPath: '/admin/games',
     body: adminGameDetailBody({
-      game, tab: String(req.query.tab || 'box'), players, stats, dnpPlayers, quarterScores, statCorrections, picksPanel,
-      teams: getAllTeams(), colorById: adminTeamColorByPlayer(), box: buildBoxScoreData(game, stats, dnpPlayers),
+      game: { ...game, court_name: getPapawisCourtById(game.court_id)?.name || '' },
+      tab: String(req.query.tab || 'box'), players, stats, dnpPlayers, quarterScores, statCorrections, picksPanel,
+      teams: getAllTeams(), colorById: adminTeamColorByPlayer(), box: buildBoxScoreData(game, stats, dnpPlayers), courts: getAllPapawisCourts(),
     }),
   }));
 });
@@ -9442,6 +9448,14 @@ app.post('/admin/games/:id/save', requireAuth, jsonSmall, (req, res) => {
   });
   if (b.game_type !== undefined) setGameType(game.id, String(b.game_type));
   if (b.overtime !== undefined) setGameOvertime(game.id, Number(b.overtime) || 0);
+  if (b.court_id !== undefined) {
+    const courtId = String(b.court_id || '');
+    if (courtId && !getPapawisCourtById(courtId)) return res.status(400).json({ error: 'Unknown court' });
+    // "Every game on this day": same game day as this game's (possibly just-changed) date.
+    const ymd = gameYmd(b.date !== undefined ? String(b.date) : game.date);
+    const ids = b.court_whole_day && ymd ? getAllGames().filter(g => gameYmd(g.date) === ymd).map(g => g.id) : [game.id];
+    setGamesCourt(ids, courtId);
+  }
   settleGamePicks(game.id);
   res.json({ ok: true });
 });
