@@ -208,8 +208,13 @@ import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt } from './lib/portal-db.js';
-import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES } from './lib/court-page.js';
-import { courtPage, courtsIndexPage } from './views/court.js';
+import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD } from './lib/court-page.js';
+import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
+import {
+  getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, saveCourtRating, getCourtRating,
+  moderateCourtRating, toggleCourtRatingHelpful, getCourtOpenSlots, getCourtOpenSlot, addCourtOpenSlot, deleteCourtOpenSlot, setCourtSlotRun,
+  markCourtSlotReached, getCourtSlotVoterIds, getCourtSlotVotesBy, toggleCourtSlotVote, addCourtRequest, getCourtRequests, setCourtRequestStatus,
+} from './lib/portal-db.js';
 import { COURT_SEEDS } from './lib/court-seeds.js';
 import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
@@ -7601,6 +7606,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
     'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled', 'mvp_podium_enabled',
+    'papawis_court_ratings_enabled', 'papawis_court_votes_enabled', 'papawis_court_requests_enabled', 'papawis_court_partner_enabled',
     // Auto-nudges (lib/broadcast.js): one switch per feature page.
     'picks_auto_remind', 'mvp_podium_auto_remind', 'posts_notify_on_publish', 'polls_notify_on_open', 'season_auto_nudges',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
@@ -17825,7 +17831,7 @@ function courtPageData(court) {
     && (g.status === 'final' || g.status === 'complete') && Number(g.team_a_score) + Number(g.team_b_score) > 0);
   const p = buildCourtPage(court, {
     runs, signups: getPapawisSignupsForRuns(runIds), firstRuns: getPapawisFirstRuns(), coverVers: getPapawisCoverVersions(runIds),
-    games, scoring: getScoringForGames(games.map(g => g.id)), today: manilaTodayStr(),
+    games, leagueApps: getLeagueAppearancesForGames(games.map(g => g.id)), today: manilaTodayStr(),
   });
   return { p, games };
 }
@@ -17885,6 +17891,7 @@ function buildCourtOgTags(court, p) {
       { '@type': 'ListItem', position: 2, name: 'Courts', item: `${SITE_ORIGIN}/courts` },
       { '@type': 'ListItem', position: 3, name: p.name, item: url },
     ] }),
+    jsonLdTag({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: courtFaqItems(p, courtFlags()).map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) }),
     `<link rel="stylesheet" href="/courts.css?v=${COURTS_CSS_VER}">`,
   ].join('\n  ');
 }
@@ -17945,12 +17952,162 @@ app.get('/courts/:slug', (req, res) => {
   if (!p.live && !req.session?.isAdmin) return notFound();
   if (!getPapawisLocationGeocode(court.address || court.name)) geocodePapawisLocation(court.address || court.name).catch(() => {});
   const listGames = [...games].reverse();
-  const extras = listGames.length ? gameCardExtras(listGames, getAllGames(), { viewerId: req.session?.playerPlayerId || null, playerMap: Object.fromEntries(getAllPlayers().map(x => [x.id, x])) }) : {};
+  const allPlayers = getAllPlayers();
+  const extras = listGames.length ? gameCardExtras(listGames, getAllGames(), { viewerId: req.session?.playerPlayerId || null, playerMap: Object.fromEntries(allPlayers.map(x => [x.id, x])) }) : {};
   res.send(renderPage(req, {
     title: p.title,
     currentPath: '/papawis',
     metaTags: buildCourtOgTags(court, p) + (p.live ? '' : '\n  <meta name="robots" content="noindex, follow">'),
-    body: courtPage({ court, p, games: listGames, extras, isLoggedIn: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin }),
+    body: courtPage({ court, p, games: listGames, extras, extra: courtViewerExtras(req, court, p, allPlayers), isLoggedIn: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin }),
+  }));
+});
+
+// ── Court page extras: ratings, run votes, rent requests, partner page ──────────────────
+// Each has its own switch (Papawis → Courts → a court → "Court page features"), off by default.
+const courtFlags = () => ({
+  ratings: getSetting('papawis_court_ratings_enabled', '0') === '1',
+  votes: getSetting('papawis_court_votes_enabled', '0') === '1',
+  requests: getSetting('papawis_court_requests_enabled', '0') === '1',
+  partner: getSetting('papawis_court_partner_enabled', '0') === '1',
+});
+// Everything on the court page that depends on who is looking.
+function courtViewerExtras(req, court, p, allPlayers) {
+  const flags = courtFlags();
+  const viewerId = req.session?.playerPlayerId || null;
+  const out = { flags, viewerId, shareUrl: '' };
+  const teamColorById = Object.fromEntries(getAllTeams().map(t => [t.id, t.color]));
+  // The next run: who's in (faces), the waitlist, and the price the /papawis card quotes.
+  if (p.nextRun) {
+    const sign = getPapawisSignups(p.nextRun.id);
+    const conf = sign.filter(x => x.status === 'confirmed');
+    out.nextFaces = conf.filter(x => !x.guest_name).map(x => ({ id: x.player_id, name: x.player_name, color: teamColorById[x.team_id] }));
+    out.nextConfirmed = conf.length;
+    out.nextWaitlist = sign.filter(x => x.status === 'waitlist').length;
+    const full = getPapawisGame(p.nextRun.id) || p.nextRun;
+    out.nextPrice = estimatedPapawisPrice(full, Math.max(conf.length, Number(full.max_slots) || 0), full.court_rate_per_hour ? null : (court.price_per_hour || null));
+  }
+  // Who plays here, logged in: current teammates and anyone you've been in a run with.
+  if (viewerId) {
+    const here = new Set(p.memberIds);
+    const me = allPlayers.find(x => x.id === viewerId);
+    const mates = me ? allPlayers.filter(x => x.team_id === me.team_id && x.id !== viewerId && here.has(x.id)) : [];
+    const ranWith = getPapawisCoPlayerIds(viewerId).filter(id => here.has(id) && !mates.some(m => m.id === id));
+    const byId = Object.fromEntries(allPlayers.map(x => [x.id, x]));
+    out.known = { teammates: mates.length, ranWith: ranWith.length, faces: [...mates.map(x => x.id), ...ranWith].slice(0, 5).map(id => byId[id]).filter(Boolean).map(x => ({ id: x.id, name: x.name, color: teamColorById[x.team_id] })), playedHere: here.has(viewerId) };
+  }
+  if (p.nextRun) out.shareUrl = `${SITE_ORIGIN}/papawis?utm_source=share&utm_medium=court&utm_campaign=${encodeURIComponent(court.slug)}#pw-game-${encodeURIComponent(p.nextRun.id)}`;
+  if (flags.ratings) {
+    const rows = getCourtRatings(court.id);
+    out.ratings = summarizeRatings(rows);
+    out.helpfulByMe = new Set(getCourtRatingHelpfulBy(court.id, viewerId));
+    out.canRate = !!viewerId && p.memberIds.includes(viewerId);
+    out.lastRunYmd = viewerId ? p.lastRun[viewerId] || '' : '';
+    out.myRating = out.canRate ? getMyCourtRating(court.id, viewerId) : null;
+  }
+  if (flags.votes) {
+    const today = manilaTodayStr();
+    out.slots = getCourtOpenSlots(court.id).filter(x => x.date >= today);
+    out.myVotes = new Set(getCourtSlotVotesBy(court.id, viewerId));
+  }
+  return out;
+}
+const courtBySlugOr404 = (req, res) => {
+  const court = getPapawisCourtBySlug(req.params.slug);
+  if (!court || court.page_hidden) { res.status(404).json({ error: 'Court not found.' }); return null; }
+  return court;
+};
+
+// Rate a court: only players who checked in to a run there. Stars count right away; written
+// text waits for an admin.
+app.post('/courts/:slug/rate', express.json(), (req, res) => {
+  if (!courtFlags().ratings) return res.status(404).json({ error: 'Not found.' });
+  const court = courtBySlugOr404(req, res); if (!court) return;
+  const viewerId = req.session?.playerPlayerId;
+  if (!viewerId) return res.status(401).json({ error: 'Log in to rate this court.' });
+  const { p } = courtPageData(court);
+  if (!p.memberIds.includes(viewerId)) return res.status(403).json({ error: 'Only players who played a run here can rate it.' });
+  const b = req.body || {};
+  const stars = Math.round(Number(b.stars));
+  if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ error: 'Pick 1 to 5 stars.' });
+  const aspects = {};
+  for (const [k] of RATING_ASPECTS) { const v = Math.round(Number(b.aspects?.[k])); if (v >= 1 && v <= 5) aspects[k] = v; }
+  const okTags = new Set([...RATING_TAGS_GOOD, ...RATING_TAGS_BAD].map(([k]) => k));
+  const tags = [...new Set([].concat(b.tags || []).map(String).filter(t => okTags.has(t)))];
+  const body = String(b.body || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+  const { bodyStatus } = saveCourtRating({ courtId: court.id, playerId: viewerId, stars, aspects, tags, body });
+  res.json({ ok: true, message: bodyStatus === 'pending' ? 'Thanks! Your stars count now. Your review shows once it’s checked.' : 'Thanks for rating this court.' });
+});
+app.post('/courts/:slug/ratings/:id/helpful', express.json(), (req, res) => {
+  if (!courtFlags().ratings) return res.status(404).json({ error: 'Not found.' });
+  const viewerId = req.session?.playerPlayerId;
+  if (!viewerId) return res.status(401).json({ error: 'Log in first.' });
+  const rating = getCourtRating(req.params.id);
+  if (!rating || rating.hidden) return res.status(404).json({ error: 'Not found.' });
+  if (rating.player_id === viewerId) return res.status(400).json({ error: 'That’s your own review.' });
+  res.json({ ok: true, ...toggleCourtRatingHelpful(rating.id, viewerId) });
+});
+
+// Vote for a run in an open time. At the threshold the admins get an email (once); when an
+// admin links the run, every voter gets a bell notification (admin route below).
+app.post('/courts/slots/:id/vote', express.json(), (req, res) => {
+  if (!courtFlags().votes) return res.status(404).json({ error: 'Not found.' });
+  const viewerId = req.session?.playerPlayerId;
+  if (!viewerId) return res.status(401).json({ error: 'Log in to vote.' });
+  const slot = getCourtOpenSlot(req.params.id);
+  if (!slot || slot.date < manilaTodayStr()) return res.status(404).json({ error: 'That time is no longer open.' });
+  if (slot.run_id) return res.status(400).json({ error: 'This run is already posted. Sign up on the Papawis page.' });
+  const out = toggleCourtSlotVote(slot.id, viewerId);
+  if (out.votes >= slot.threshold && !slot.reached_at) {
+    markCourtSlotReached(slot.id);
+    const court = getPapawisCourtById(slot.court_id);
+    const when = `${new Date(`${slot.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}${slot.start_time ? `, ${formatTimeRange(slot.start_time, slot.end_time)}` : ''}`;
+    sendMail({ to: ADMIN_NOTIFY_EMAIL, kind: 'court-vote', ref: slot.id, subject: `Run vote reached ${slot.threshold}: ${court?.name || 'court'} ${when}`,
+      html: `<p>${out.votes} players voted for a run at <b>${escHtml(court?.name || '')}</b> on ${escHtml(when)}.</p><p>Post the run on the Papawis admin, then link it on the court page so the voters get told: <a href="${getRequestOrigin(req)}/admin/papawis/courts/${encodeURIComponent(slot.court_id)}#court-slots">open the court</a>.</p>` })
+      .catch(e => console.error('[court vote mail]', e.message));
+  }
+  res.json({ ok: true, ...out, threshold: slot.threshold });
+});
+
+// Rent the court: a request to the court (and WKND). No login needed; the court confirms
+// directly and is paid directly. A light per-IP limit keeps the form from being abused.
+const courtRequestHits = new Map();
+app.post('/courts/:slug/request', express.json(), (req, res) => {
+  if (!courtFlags().requests) return res.status(404).json({ error: 'Not found.' });
+  const court = courtBySlugOr404(req, res); if (!court) return;
+  const ip = req.ip || '';
+  const recent = (courtRequestHits.get(ip) || []).filter(t => Date.now() - t < 3600000);
+  if (recent.length >= 5) return res.status(429).json({ error: 'Too many requests. Try again in an hour.' });
+  const b = req.body || {};
+  const clean = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const date = clean(b.date, 10), start = clean(b.start, 5), name = clean(b.name, 80), contact = clean(b.contact, 80), note = clean(b.note, 500);
+  const hours = Math.min(6, Math.max(1, Number(b.hours) || 2));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < manilaTodayStr()) return res.status(400).json({ error: 'Pick a date from today on.' });
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(start)) return res.status(400).json({ error: 'Pick a start time.' });
+  if (!name || !contact) return res.status(400).json({ error: 'Add your name and a mobile number.' });
+  recent.push(Date.now()); courtRequestHits.set(ip, recent);
+  const id = addCourtRequest({ courtId: court.id, date, start, hours, size: b.size, name, contact, note, playerId: req.session?.playerPlayerId || '' });
+  const when = `${new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}, ${formatTimeRange(start, '')}, ${hours} hour${hours === 1 ? '' : 's'}`;
+  const html = `<p><b>${escHtml(name)}</b> asked to rent <b>${escHtml(courtDisplayName(court))}</b>.</p>
+    <p>When: ${escHtml(when)}<br>Court: ${b.size === 'half' ? 'Half court' : 'Full court'}<br>Contact: ${escHtml(contact)}${note ? `<br>Note: ${escHtml(note)}` : ''}</p>
+    <p>Please reply to them directly. Sent from the court page on WKND Basketball.</p>`;
+  const to = [ADMIN_NOTIFY_EMAIL, court.partner && court.partner_email ? court.partner_email : ''].filter(Boolean);
+  for (const t of to) sendMail({ to: t, kind: 'court-request', ref: id, subject: `Court request: ${courtDisplayName(court)}, ${when}`, html }).catch(e => console.error('[court request mail]', e.message));
+  res.json({ ok: true, message: 'Request sent. The court will reply to you directly.' });
+});
+
+// The partner page: what WKND brings a court, for its owners. Not indexed.
+app.get('/courts/:slug/partner', (req, res) => {
+  const court = getPapawisCourtBySlug(req.params.slug);
+  const notFound = () => res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' }));
+  if (!court || (!courtFlags().partner && !req.session?.isAdmin)) return notFound();
+  const { p } = courtPageData(court);
+  if (!p.live && !req.session?.isAdmin) return notFound();
+  const ratings = courtFlags().ratings ? summarizeRatings(getCourtRatings(court.id)) : null;
+  res.send(renderPage(req, {
+    title: `${p.name} × WKND Basketball`,
+    currentPath: '/papawis',
+    metaTags: `<meta name="robots" content="noindex, follow">\n  <link rel="stylesheet" href="/courts.css?v=${COURTS_CSS_VER}">`,
+    body: courtPartnerPage({ court, p, ratings, flags: courtFlags() }),
   }));
 });
 
@@ -18811,9 +18968,14 @@ app.get('/admin/papawis/courts/:id', requireAuth, (req, res) => {
   if (!court) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/papawis/courts', body: '<p class="aui-muted" style="padding:40px">Court not found.</p>' }));
   if (!court.slug) court.slug = ensurePapawisCourtSlug(court.id);
   const { p } = courtPageData(court);
+  const today = manilaTodayStr();
   res.send(renderAdminPage(req, {
     title: p.name, currentPath: '/admin/papawis/courts',
-    body: adminPapawisCourtBody({ court, p, info: normalizeCourtInfo(parseCourtJson(court.info_json, {})), aiOn: aiAvailable() }),
+    body: adminPapawisCourtBody({
+      court, p, info: normalizeCourtInfo(parseCourtJson(court.info_json, {})), aiOn: aiAvailable(), flags: courtFlags(),
+      ratings: getCourtRatings(court.id), slots: getCourtOpenSlots(court.id).filter(x => x.date >= today), requests: getCourtRequests(court.id),
+      runs: getPapawisGames().filter(g => String(g.date).slice(0, 10) >= today && g.status !== 'cancelled' && g.status !== 'completed'),
+    }),
   }));
 });
 
@@ -18840,6 +19002,8 @@ app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, re
     gallery_main: String(b.gallery_main || ''),
     seo_title: clean(b.seo_title, 120).trim(),
     seo_description: clean(b.seo_description, 300).trim(),
+    partner: b.partner_on === '1' ? 1 : 0,
+    partner_email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(b.partner_email || '').trim()) ? String(b.partner_email).trim().slice(0, 120) : '',
   });
   liveCourtsCache = null;
   res.json({ ok: true });
@@ -18910,6 +19074,56 @@ List every statement in the text that the facts do not directly support: wrong o
   const problems = (data.problems || []).map(x => String(x).slice(0, 200)).filter(Boolean);
   return problems.length ? problems : ['unspecified inaccuracy'];
 }
+// Open times on a court page (players vote for a run in them).
+app.post('/admin/papawis/courts/:id/slots', requireAuth, express.json(), (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  const b = req.body || {};
+  const date = String(b.slot_date || ''), start = String(b.slot_start || ''), end = String(b.slot_end || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < manilaTodayStr()) return res.status(400).json({ error: 'Pick a date from today on.' });
+  if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end) || end <= start) return res.status(400).json({ error: 'Set a start and an end time.' });
+  addCourtOpenSlot({ courtId: court.id, date, start, end, threshold: b.slot_threshold });
+  res.json({ ok: true, message: 'Open time added.' });
+});
+app.post('/admin/papawis/court-slots/:id/delete', requireAuth, express.json(), (req, res) => {
+  if (!getCourtOpenSlot(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  deleteCourtOpenSlot(req.params.id);
+  res.json({ ok: true });
+});
+// Link the Papawis run made for an open time: every voter gets a bell notification.
+app.post('/admin/papawis/court-slots/:id/run', requireAuth, express.json(), (req, res) => {
+  const slot = getCourtOpenSlot(req.params.id);
+  if (!slot) return res.status(404).json({ error: 'Not found.' });
+  const run = getPapawisGame(String(req.body?.run_id || ''));
+  if (!run) return res.status(400).json({ error: 'Pick a run.' });
+  const firstLink = !slot.run_id;
+  setCourtSlotRun(slot.id, run.id);
+  if (firstLink) {
+    const court = getPapawisCourtById(slot.court_id);
+    const when = new Date(`${String(run.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    for (const pid of getCourtSlotVoterIds(slot.id)) {
+      createNotification({ playerId: pid, type: 'court_vote_run', title: `Your vote worked: a run at ${court ? courtDisplayName(court) : 'the court'} is up`, body: `${when}. Sign-ups are on the Papawis page.`, link: `/papawis#pw-game-${encodeURIComponent(run.id)}` });
+    }
+  }
+  res.json({ ok: true, message: firstLink ? 'Run linked. Voters were notified.' : 'Run updated.' });
+});
+// Ratings: approve or reject a written review, hide or show a rating, reply as the court.
+app.post('/admin/papawis/court-ratings/:id', requireAuth, express.json(), (req, res) => {
+  const b = req.body || {};
+  const opts = {};
+  if (b.action === 'approve') opts.bodyStatus = 'approved';
+  if (b.action === 'reject') opts.bodyStatus = 'rejected';
+  if (b.action === 'hide') opts.hidden = true;
+  if (b.action === 'show') opts.hidden = false;
+  if (typeof b.reply === 'string') opts.ownerReply = b.reply.slice(0, 500);
+  if (!moderateCourtRating(req.params.id, opts)) return res.status(404).json({ error: 'Not found.' });
+  res.json({ ok: true });
+});
+app.post('/admin/papawis/court-requests/:id', requireAuth, express.json(), (req, res) => {
+  setCourtRequestStatus(req.params.id, req.body?.status);
+  res.json({ ok: true });
+});
+
 app.post('/admin/papawis/courts/:id/writeup/approve', requireAuth, express.json(), (req, res) => {
   const court = getPapawisCourtById(req.params.id);
   if (!court?.writeup_draft) return res.status(400).json({ error: 'No draft to use.' });

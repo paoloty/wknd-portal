@@ -2,12 +2,17 @@
 // rate and photo stay in the Courts list drawer; this page holds everything the public page
 // adds: city, "Good to know" info, the About writeup, the gallery, visibility and search text.
 import { escHtml } from '../layout.js';
-import { pageHeader, section, button, badge, breadcrumb, field, fieldGrid, toggleRow, saveBar, banner, facts } from './ui.js';
-import { COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES } from '../../lib/court-page.js';
+import { pageHeader, section, button, badge, breadcrumb, field, fieldGrid, toggleRow, saveBar, banner, facts, menu, emptyState, ago } from './ui.js';
+import { COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, parseJson } from '../../lib/court-page.js';
+import { displayPlayerName, formatTimeRange } from '../utils.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
-export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true }) {
+const dayLabel = ymd => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+const TAG_LABEL = Object.fromEntries([...RATING_TAGS_GOOD, ...RATING_TAGS_BAD]);
+const ASPECT_LABEL = Object.fromEntries(RATING_ASPECTS);
+
+export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags = {}, ratings = [], slots = [], requests = [], runs = [] }) {
   const id = attr(court.id);
   const pageUrl = `/courts/${encodeURIComponent(court.slug)}`;
   const status = court.page_hidden
@@ -77,6 +82,77 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true }) {
       ${field({ label: 'Description', name: 'seo_description', type: 'textarea', rows: 2, value: court.seo_description || '', wide: true, help: 'Blank = automatic, and it updates with every run. Keep it under 160 characters.' })}`)}
   </div>`;
 
+  // Court page features: one switch each, for every court page at once.
+  const features = `<div class="aui-panel acrt-panel">
+    ${toggleRow({ label: 'Player ratings', help: 'Stars, court scores and reviews from players who checked in to a run here. Written reviews wait for your OK. The score shows from 5 ratings.', name: 'papawis_court_ratings_enabled', on: !!flags.ratings, post: '/admin/site/settings', setting: true })}
+    ${toggleRow({ label: 'Vote for a run', help: 'Open times you list below. Players tap I\'m in; at the target you get an email, post the run, and link it so voters are told.', name: 'papawis_court_votes_enabled', on: !!flags.votes, post: '/admin/site/settings', setting: true })}
+    ${toggleRow({ label: 'Rent the court', help: 'A request form on the page. Requests email you, and the court too when it is a partner with an email set.', name: 'papawis_court_requests_enabled', on: !!flags.requests, post: '/admin/site/settings', setting: true })}
+    ${toggleRow({ label: 'Partner page', help: 'The "Run this court?" link and the owner page at /courts/<court>/partner (admins can preview it while off).', name: 'papawis_court_partner_enabled', on: !!flags.partner, post: '/admin/site/settings', setting: true })}
+  </div>`;
+
+  // Open times + votes. A separate form from the page form (no nested forms).
+  const runOpts = [['', 'Pick the run'], ...runs.map(g => [g.id, `${dayLabel(String(g.date).slice(0, 10))} · ${formatTimeRange(g.start_time, g.end_time)} · ${g.location}`])];
+  const slotRows = slots.length ? `<div class="acrt-rows">${slots.map(x => {
+    const state = x.run_id ? badge('Run linked', 'green') : x.votes >= x.threshold ? badge('Target reached', 'amber') : badge(`${x.votes} of ${x.threshold}`, 'gray');
+    return `<div class="acrt-row">
+      <div class="acrt-row__main"><b>${escHtml(dayLabel(x.date))} · ${escHtml(formatTimeRange(x.start_time, x.end_time))}</b><span class="aui-muted">${x.votes} vote${x.votes === 1 ? '' : 's'} · target ${x.threshold}</span></div>
+      ${state}
+      ${menu([{ label: 'Delete this time', post: `/admin/papawis/court-slots/${x.id}/delete`, danger: true, done: 'Open time deleted.', confirm: { title: 'Delete this open time?', body: 'Its votes go too.' } }])}
+      <form class="acrt-row__form" id="slot-run-${attr(x.id)}" data-json-action="/admin/papawis/court-slots/${attr(x.id)}/run" data-done="Saved.">
+        <select class="aui-input" name="run_id" aria-label="Papawis run for this time">${runOpts.map(([v, l]) => `<option value="${attr(v)}"${v === x.run_id ? ' selected' : ''}>${escHtml(l)}</option>`).join('')}</select>
+        ${button(x.run_id ? 'Update' : 'Link run', { kind: 'secondary', size: 'sm', type: 'submit' })}
+      </form>
+    </div>`;
+  }).join('')}</div>` : `<p class="aui-muted acrt-foot" style="margin:0">No open times yet. Add the times the court has free; players vote for a run in them.</p>`;
+  const slotsBlock = `<div class="aui-panel acrt-panel">
+    <form id="slot-add" class="acrt-slotform" data-json-action="/admin/papawis/courts/${id}/slots" data-done="Open time added.">
+      ${fieldGrid(`${field({ label: 'Date', name: 'slot_date', type: 'date', required: true })}${field({ label: 'Start', name: 'slot_start', type: 'time', value: '20:00', required: true })}${field({ label: 'End', name: 'slot_end', type: 'time', value: '22:00', required: true })}${field({ label: 'Votes needed', name: 'slot_threshold', type: 'number', value: '16', attrs: 'min="2" max="40"' })}`)}
+      ${button('Add open time', { kind: 'primary', size: 'sm', type: 'submit' })}
+    </form>
+    ${slotRows}
+  </div>`;
+
+  // Ratings: pending reviews first.
+  const order = { pending: 0, approved: 1, none: 2, rejected: 3 };
+  const rated = [...ratings].sort((a, b) => (order[a.body_status] ?? 9) - (order[b.body_status] ?? 9) || b.created_at - a.created_at);
+  const ratingRows = rated.length ? `<div class="acrt-rows">${rated.map(x => {
+    const tags = parseJson(x.tags_json, []).map(t => TAG_LABEL[t]).filter(Boolean);
+    const asp = Object.entries(parseJson(x.aspects_json, {})).map(([k, v]) => `${ASPECT_LABEL[k] || k} ${v}`);
+    const st = x.hidden ? badge('Hidden', 'gray') : x.body_status === 'pending' ? badge('Review waiting', 'amber') : x.body_status === 'approved' ? badge('Review live', 'green') : x.body_status === 'rejected' ? badge('Review rejected', 'red') : badge('Stars only', 'gray');
+    return `<div class="acrt-row acrt-row--rating">
+      <div class="acrt-row__main"><b>${escHtml(displayPlayerName(x.player_name || ''))} · ${x.stars}★</b>
+        <span class="aui-muted">${escHtml([ago(x.updated_at), asp.join(', '), tags.join(', ')].filter(Boolean).join(' · '))}</span>
+        ${x.body ? `<p class="acrt-row__text">${escHtml(x.body)}</p>` : ''}
+        <form class="acrt-row__form" id="reply-${attr(x.id)}" data-json-action="/admin/papawis/court-ratings/${attr(x.id)}" data-done="Reply saved.">
+          <input class="aui-input" name="reply" value="${attr(x.owner_reply)}" placeholder="Reply as the court (optional)" aria-label="Reply as the court">
+          ${button('Save reply', { kind: 'ghost', size: 'sm', type: 'submit' })}
+        </form>
+      </div>
+      ${st}
+      ${menu([
+        x.body_status === 'pending' && { label: 'Approve review', post: `/admin/papawis/court-ratings/${x.id}`, body: { action: 'approve' }, done: 'Review is live.' },
+        x.body_status === 'pending' && { label: 'Reject review', post: `/admin/papawis/court-ratings/${x.id}`, body: { action: 'reject' }, done: 'Review rejected. The stars still count.' },
+        x.hidden ? { label: 'Show rating', post: `/admin/papawis/court-ratings/${x.id}`, body: { action: 'show' }, done: 'Rating shown.' }
+          : { label: 'Hide rating', post: `/admin/papawis/court-ratings/${x.id}`, body: { action: 'hide' }, danger: true, done: 'Rating hidden.', confirm: { title: 'Hide this rating?', body: 'Its stars stop counting and the review comes off the page.' } },
+      ])}
+    </div>`;
+  }).join('')}</div>` : `<p class="aui-muted acrt-foot" style="margin:0">No ratings yet. Players who checked in to a run here can rate the court once ratings are on.</p>`;
+
+  const reqRows = requests.length ? `<div class="acrt-rows">${requests.map(x => `<div class="acrt-row">
+      <div class="acrt-row__main"><b>${escHtml(x.name)} · ${escHtml(x.contact)}</b>
+        <span class="aui-muted">${escHtml(`${dayLabel(x.date)}, ${formatTimeRange(x.start_time, '')}, ${x.hours}h, ${x.court_size === 'half' ? 'half court' : 'full court'} · sent ${ago(x.created_at)}`)}</span>
+        ${x.note ? `<p class="acrt-row__text">${escHtml(x.note)}</p>` : ''}</div>
+      ${x.status === 'done' ? badge('Handled', 'green') : badge('New', 'amber')}
+      ${menu([{ label: x.status === 'done' ? 'Mark as new' : 'Mark as handled', post: `/admin/papawis/court-requests/${x.id}`, body: { status: x.status === 'done' ? 'new' : 'done' }, done: 'Saved.' }])}
+    </div>`).join('')}</div>` : `<p class="aui-muted acrt-foot" style="margin:0">No requests yet.</p>`;
+
+  const partnerUrl = `/courts/${encodeURIComponent(court.slug)}/partner`;
+  const partner = `<div class="aui-panel acrt-panel">
+    ${toggleRow({ label: 'Partner court', help: 'The court claimed its page: a "Partner court" mark on owner replies, and rent requests go to the email below too.', name: 'partner_on', on: !!court.partner })}
+    ${fieldGrid(field({ label: 'Court email for rent requests', name: 'partner_email', type: 'email', value: court.partner_email || '', placeholder: 'bookings@court.com', wide: true, help: 'Optional. Only used for rent requests; never shown on the site.' }))}
+    ${facts([['Partner page', `<a class="acrt-link" href="${attr(partnerUrl)}" target="_blank" rel="noopener">wkndbasketball.com${escHtml(partnerUrl)} ↗</a>`]])}
+  </div>`;
+
   return `<div class="aui-page">
     ${breadcrumb([{ label: 'Papawis', href: '/admin/papawis' }, { label: 'Courts', href: '/admin/papawis/courts' }, { label: p.name }])}
     ${pageHeader({ eyebrow: p.city || 'Court', title: p.name, sub: court.address || '', actionsHtml: button('View on site ↗', { kind: 'secondary', href: pageUrl, attrs: 'target="_blank" rel="noopener"' }) })}
@@ -86,7 +162,12 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true }) {
       ${section({ title: 'About this court', note: '· the writeup at the top of the page', bodyHtml: writeup })}
       ${section({ title: 'Gallery', note: `· ${p.photos.length} of ${p.allPhotos.length} shown`, bodyHtml: gallery })}
       ${section({ title: 'Search', note: '· how the page shows on Google', bodyHtml: seo })}
+      ${section({ title: 'Partner', note: '· when the court has claimed its page', bodyHtml: partner })}
     </form>
+    ${section({ title: 'Court page features', note: '· switches for every court page', bodyHtml: features })}
+    ${section({ title: 'Open times', note: '· players vote for a run in these', id: 'court-slots', asideHtml: flags.votes ? '' : badge('Off', 'gray'), bodyHtml: slotsBlock })}
+    ${section({ title: 'Ratings', note: `· ${ratings.length} rating${ratings.length === 1 ? '' : 's'}`, asideHtml: flags.ratings ? '' : badge('Off', 'gray'), bodyHtml: `<div class="aui-panel">${ratingRows}</div>` })}
+    ${section({ title: 'Rent requests', note: `· ${requests.filter(x => x.status !== 'done').length} new`, asideHtml: flags.requests ? '' : badge('Off', 'gray'), bodyHtml: `<div class="aui-panel">${reqRows}</div>` })}
     ${saveBar({ label: 'Save court page', form: 'court-page-form' })}
   </div>`;
 }
