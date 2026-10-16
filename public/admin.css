@@ -1822,6 +1822,7 @@ a.aui-kpi:hover { border-color: var(--aui-line-2); }
 .aui-field__error { font-size: 12px; color: var(--aui-red); }
 .aui-field.is-error .aui-field__label { color: var(--aui-red); }
 .aui-input { width: 100%; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.1); background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px; color-scheme: dark; box-sizing: border-box; }
+.aui-input::placeholder { color: var(--text-subtle, #5b6475); opacity: 1; }
 textarea.aui-input { height: auto; padding: 10px 12px; resize: vertical; line-height: 1.45; }
 .aui-input:focus, .aui-input--affix:focus-within { outline: none; border-color: rgba(245,147,50,.6); box-shadow: 0 0 0 3px rgba(245,147,50,.12); }
 .aui-field.is-error .aui-input { border-color: rgba(248,113,113,.6); }
@@ -2852,14 +2853,28 @@ body:has(.aui-savebar:not([hidden])) .aui-toasts { bottom: 88px; }
 .ahome-clicks__row b { color: var(--text, #e7eaf0); font-variant-numeric: tabular-nums; }
 .ahome-clicks__row--lead { color: var(--text, #e7eaf0); }
 
-/* Admin court page (views/admin/papawis-court.js): gallery picker + Google-style preview */
-.acrt-gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.acrt-gal__item { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; }
-.acrt-gal__item img { display: block; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; background: rgba(255,255,255,.04); }
-.acrt-gal__item .aui-check { width: max-content; }
-.acrt-gal__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.acrt-gal__meta b { font-size: 11px; letter-spacing: .06em; color: var(--amber, #f59332); }
+/* Admin court page (views/admin/papawis-court.js). The sections sit inside the save form, so
+   the form carries the page's section gap. */
+.acrt-form { display: flex; flex-direction: column; gap: 28px; }
+.acrt-panel { display: flex; flex-direction: column; gap: 16px; }
+.acrt-panel > .aui-btn { align-self: flex-start; }
+.acrt-link { color: var(--amber, #f59332); text-decoration: none; word-break: break-all; }
+.acrt-link:hover { text-decoration: underline; }
+.acrt-check { margin-top: 12px; width: max-content; max-width: 100%; }
+.acrt-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.acrt-hint { font-size: 12px; }
+.acrt-foot { margin: 12px 0 0; font-size: 12px; }
+.acrt-draft { margin-bottom: 12px; border-color: rgba(245,147,50,.38); }
+.acrt-draft__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.acrt-draft__text { margin: 12px 0 0; white-space: pre-line; line-height: 1.65; font-size: 14px; }
+.acrt-gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.acrt-gal__item { display: flex; flex-direction: column; gap: 10px; padding: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; min-width: 0; }
+.acrt-gal__item img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: rgba(255,255,255,.04); }
+.acrt-gal__meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.acrt-gal__meta b { font-size: 11px; letter-spacing: .06em; color: var(--amber, #f59332); line-height: 1; }
 .acrt-gal__meta small { font-size: 12px; color: var(--text-muted, #8a93a4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acrt-gal__ctl { display: flex; gap: 8px; }
+.acrt-gal__ctl .aui-check { flex: 1 1 0; justify-content: center; }
 .acrt-serp { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; margin-bottom: 14px; border-radius: 10px; background: #fff; max-width: 600px; }
 .acrt-serp__url { font-size: 12px; color: #4d5156; }
 .acrt-serp__title { font-size: 18px; font-weight: 400; color: #1a0dab; line-height: 1.3; }

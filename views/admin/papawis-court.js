@@ -14,67 +14,73 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true }) {
     ? badge('Hidden', 'gray')
     : p.live ? badge('Live', 'green') : badge('Not played yet', 'amber');
   const statusLine = court.page_hidden
-    ? 'Hidden by you. Turn the page on to show it again.'
-    : p.live ? `Live at ${pageUrl} and in the sitemap.` : 'Goes live by itself after the first run or league game here.';
+    ? 'Hidden by you. Switch it on to show the page again.'
+    : p.live ? 'Live on the site and in the sitemap.' : 'Goes live by itself after the first run or league game here.';
 
-  const page = `<div class="aui-panel">
+  const page = `<div class="aui-panel acrt-panel">
     ${toggleRow({ label: 'Show the court page', help: statusLine, name: 'page_on', on: !court.page_hidden })}
     ${facts([
-      ['Address', escHtml(pageUrl)],
+      ['Page address', `<a class="acrt-link" href="${attr(pageUrl)}" target="_blank" rel="noopener">wkndbasketball.com${escHtml(pageUrl)} ↗</a>`],
       ['Played here', escHtml(`${p.playedRuns} Papawis run${p.playedRuns === 1 ? '' : 's'} · ${p.finalsCount} league game${p.finalsCount === 1 ? '' : 's'}`)],
-      ['Name, address, rate, photo', `<a href="/admin/papawis/courts">Edit in the Courts list</a>`],
     ])}
+    ${button('Edit name, address, rate & photo', { kind: 'secondary', size: 'sm', href: '/admin/papawis/courts' })}
   </div>`;
 
-  const details = `<div class="aui-panel">${fieldGrid(`
-    ${field({ label: 'City', name: 'city', type: 'select', value: court.city || '', options: [['', p.city ? `Auto: ${p.city}` : 'Not set'], ...COURT_CITIES.map(c => [c, c])], help: 'Shown on the page and used in its search title.' })}`)}
-  </div>`;
-
-  const infoFields = COURT_INFO_FIELDS.map(f => field({
-    label: f.label, name: `info_${f.key}`, type: f.type || 'text', value: info[f.key] || '', options: f.options || [],
-    placeholder: f.placeholder || '', wide: !!f.wide, help: f.adminOnly ? 'Admin-only unless you switch it on below.' : '',
-  })).join('');
-  const infoBlock = `<div class="aui-panel">${fieldGrid(infoFields)}
-    <label class="aui-check" style="margin-top:12px;width:max-content"><input type="checkbox" name="info_contact_public" value="1"${info.contact_public ? ' checked' : ''}><span>Show the court contact on the public page</span></label>
+  // City first, then the short fields in pairs (no half-empty rows), then the long ones.
+  const f = Object.fromEntries(COURT_INFO_FIELDS.map(x => [x.key, x]));
+  const infoField = (x, extra = {}) => field({
+    label: x.label, name: `info_${x.key}`, type: x.type || 'text', value: info[x.key] || '', options: x.options || [],
+    placeholder: x.placeholder ? `e.g. ${x.placeholder}` : '', ...extra,
+  });
+  const infoBlock = `<div class="aui-panel">${fieldGrid(`
+      ${field({ label: 'City', name: 'city', type: 'select', value: court.city || '', options: [['', p.city ? `Automatic (${p.city})` : 'Not set'], ...COURT_CITIES.map(c => [c, c])] })}
+      ${['setting', 'floor', 'aircon', 'lights', 'parking', 'restrooms', 'nearby'].map(k => infoField(f[k])).join('')}
+      ${infoField(f.directions, { wide: true })}
+      ${infoField(f.notes, { wide: true })}
+      ${field({ label: f.contact.label, name: 'info_contact', value: info.contact || '', placeholder: 'e.g. 0917 123 4567 (front desk)', wide: true, help: 'Only you see this, unless you tick the box below.' })}`)}
+    <label class="aui-check acrt-check"><input type="checkbox" name="info_contact_public" value="1"${info.contact_public ? ' checked' : ''}><span>Show the court contact on the public page</span></label>
   </div>`;
 
   const draft = court.writeup_draft
-    ? `<div class="aui-panel" style="margin-bottom:12px">
-        ${banner('info', 'AI draft ready. Read it, then use it or edit the live text below.')}
-        <p style="white-space:pre-line;line-height:1.6;margin:12px 0">${escHtml(court.writeup_draft)}</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${button('Use this draft', { kind: 'primary', attrs: `data-post-json="/admin/papawis/courts/${id}/writeup/approve" data-done="Writeup is live."` })}
-          ${button('Discard draft', { kind: 'ghost', attrs: `data-post-json="/admin/papawis/courts/${id}/writeup/discard" data-done="Draft discarded."` })}
+    ? `<div class="aui-panel acrt-draft">
+        <div class="acrt-draft__head">${badge('AI draft', 'amber')}<span class="aui-muted">Read it, then use it or keep editing the live text.</span></div>
+        <p class="acrt-draft__text">${escHtml(court.writeup_draft)}</p>
+        <div class="acrt-actions">
+          ${button('Use this draft', { kind: 'primary', size: 'sm', attrs: `data-post-json="/admin/papawis/courts/${id}/writeup/approve" data-done="Writeup is live."` })}
+          ${button('Discard', { kind: 'ghost', size: 'sm', attrs: `data-post-json="/admin/papawis/courts/${id}/writeup/discard" data-done="Draft discarded."` })}
         </div>
       </div>` : '';
-  const writeup = `${draft}<div class="aui-panel">${fieldGrid(field({ label: 'Live text', name: 'writeup', type: 'textarea', rows: 6, wide: true, value: court.writeup || '', placeholder: 'Empty: the page leaves this section out.', help: 'Blank line between paragraphs. Every number should match the stats on the page.' }))}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-      ${aiOn ? button(court.writeup ? 'Regenerate draft' : 'Generate draft', { kind: 'secondary', attrs: `data-post-json="/admin/papawis/courts/${id}/writeup/generate" data-done="Draft ready."` }) : '<span class="aui-muted">AI drafts need an AI provider key.</span>'}
+  const writeup = `${draft}<div class="aui-panel">${fieldGrid(field({ label: 'Live text', name: 'writeup', type: 'textarea', rows: 6, wide: true, value: court.writeup || '', placeholder: 'Two short paragraphs about the court, or use Generate draft below.', help: 'Leave a blank line between paragraphs. Empty = the page skips this section.' }))}
+    <div class="acrt-actions">
+      ${aiOn ? button(court.writeup ? 'Regenerate draft' : 'Generate draft', { kind: 'secondary', size: 'sm', attrs: `data-post-json="/admin/papawis/courts/${id}/writeup/generate" data-done="Draft ready."` }) : '<span class="aui-muted">AI drafts need an AI provider key.</span>'}
+      <span class="aui-muted acrt-hint">Written from this court’s own numbers and fact-checked. You approve it before it goes live.</span>
     </div></div>`;
 
   const shown = new Set(p.photos.map(x => x.key));
+  const mainKey = court.gallery_main || p.allPhotos[0]?.key;
   const gallery = p.allPhotos.length
     ? `<div class="aui-panel"><div class="acrt-gal">${p.allPhotos.map(ph => `<div class="acrt-gal__item">
         <img src="${attr(ph.src)}" alt="" loading="lazy">
         <div class="acrt-gal__meta"><b>${escHtml(ph.tag)}</b><small>${escHtml(ph.caption)}</small></div>
-        <label class="aui-check"><input type="checkbox" name="gallery_show[]" value="${attr(ph.key)}"${shown.has(ph.key) ? ' checked' : ''}><span>Show</span></label>
-        <label class="aui-check"><input type="radio" name="gallery_main" value="${attr(ph.key)}"${(court.gallery_main || p.allPhotos[0].key) === ph.key ? ' checked' : ''}><span>Main</span></label>
+        <div class="acrt-gal__ctl">
+          <label class="aui-check"><input type="checkbox" name="gallery_show[]" value="${attr(ph.key)}"${shown.has(ph.key) ? ' checked' : ''}><span>Show</span></label>
+          <label class="aui-check"><input type="radio" name="gallery_main" value="${attr(ph.key)}"${mainKey === ph.key ? ' checked' : ''}><span>Main photo</span></label>
+        </div>
       </div>`).join('')}</div>
-      <p class="aui-muted" style="margin:10px 0 0">Photos come in by themselves: the court photo, Papawis run covers and league game covers at this court.</p></div>`
-    : `<div class="aui-panel"><p class="aui-muted" style="margin:0">No photos yet. Add a court photo in the Courts list, or a cover on a run or game here.</p></div>`;
+      <p class="aui-muted acrt-foot">Photos come in by themselves: the court photo, Papawis run covers and league game covers at this court.</p></div>`
+    : `<div class="aui-panel"><p class="aui-muted acrt-foot">No photos yet. Add a court photo with “Edit name, address, rate &amp; photo”, or a cover on a run or game here.</p></div>`;
 
   const seo = `<div class="aui-panel">
-    <div class="acrt-serp"><span class="acrt-serp__url">wkndbasketball.com › courts › ${escHtml(court.slug)}</span><b class="acrt-serp__title">${escHtml(p.title)}</b><span class="acrt-serp__desc">${escHtml(p.description)}</span></div>
-    ${fieldGrid(`${field({ label: 'Title override', name: 'seo_title', value: court.seo_title || '', placeholder: p.autoTitle, wide: true, help: `Leave blank for the automatic one. ${p.autoTitle.length} characters now; keep it under 60.` })}
-      ${field({ label: 'Description override', name: 'seo_description', type: 'textarea', rows: 2, value: court.seo_description || '', placeholder: p.autoDescription, wide: true, help: 'Leave blank for the automatic one (it updates with every run). Keep it under 160 characters.' })}`)}
+    <div class="acrt-serp" aria-label="Google preview"><span class="acrt-serp__url">wkndbasketball.com › courts › ${escHtml(court.slug)}</span><b class="acrt-serp__title">${escHtml(p.title)}</b><span class="acrt-serp__desc">${escHtml(p.description)}</span></div>
+    ${fieldGrid(`${field({ label: 'Title', name: 'seo_title', value: court.seo_title || '', wide: true, help: `Blank = automatic (the preview above, ${p.autoTitle.length} characters). Keep it under 60.` })}
+      ${field({ label: 'Description', name: 'seo_description', type: 'textarea', rows: 2, value: court.seo_description || '', wide: true, help: 'Blank = automatic, and it updates with every run. Keep it under 160 characters.' })}`)}
   </div>`;
 
   return `<div class="aui-page">
     ${breadcrumb([{ label: 'Papawis', href: '/admin/papawis' }, { label: 'Courts', href: '/admin/papawis/courts' }, { label: p.name }])}
-    ${pageHeader({ eyebrow: p.city || 'Court', title: p.name, sub: court.address || '', actionsHtml: `${status}${button('View on site', { kind: 'secondary', href: pageUrl, attrs: 'target="_blank" rel="noopener"' })}` })}
-    <form id="court-page-form" data-json-action="/admin/papawis/courts/${id}/page" data-done="Court page saved." data-dirty-watch>
-      ${section({ title: 'Public page', bodyHtml: page })}
-      ${section({ title: 'Details', bodyHtml: details })}
+    ${pageHeader({ eyebrow: p.city || 'Court', title: p.name, sub: court.address || '', actionsHtml: button('View on site ↗', { kind: 'secondary', href: pageUrl, attrs: 'target="_blank" rel="noopener"' }) })}
+    <form id="court-page-form" class="acrt-form" data-json-action="/admin/papawis/courts/${id}/page" data-done="Court page saved." data-dirty-watch>
+      ${section({ title: 'Public page', asideHtml: status, bodyHtml: page })}
       ${section({ title: 'Court info', note: '· “Good to know” on the page; only filled fields show', bodyHtml: infoBlock })}
       ${section({ title: 'About this court', note: '· the writeup at the top of the page', bodyHtml: writeup })}
       ${section({ title: 'Gallery', note: `· ${p.photos.length} of ${p.allPhotos.length} shown`, bodyHtml: gallery })}
