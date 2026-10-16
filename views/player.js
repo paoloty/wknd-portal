@@ -1775,6 +1775,7 @@ function prfJoinCard(o) {
   ].filter(Boolean).join('<span aria-hidden="true">·</span>');
   return `<section class="prf-sec prf-join" id="join" aria-label="Join WKND Basketball">
   <div class="card prf-join__card">
+    <span class="prf-join__icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5v19M5.3 5.3c2.6 2.4 2.6 11 0 13.4M18.7 5.3c-2.6 2.4-2.6 11 0 13.4"/></svg></span>
     <div class="prf-join__text"><span class="prf-join__k">WKND Basketball</span><h2 class="prf-join__h">${head}</h2><p class="prf-join__p">${text}</p></div>
     <div class="prf-join__actions">${primary}<span class="prf-join__links">${links}</span></div>
   </div>

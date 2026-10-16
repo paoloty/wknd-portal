@@ -168,18 +168,27 @@ a.prf-line:hover b { color: var(--amber); }
   .prf-sec--fold .section-header__link { margin-left: auto; }
 }
 
-/* Guests' join card (views/player.js prfJoinCard) */
-.prf-join__card { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.prf-join__text { min-width: 0; }
-.prf-join__k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); }
-.prf-join__h { margin: 6px 0 4px; font-size: 20px; font-weight: 800; line-height: 1.2; color: var(--text); }
+/* Guests' join card (views/player.js prfJoinCard). No section header of its own, so it takes the
+   header's 36px gap; the amber edge + corner glow make it the one call to action on the page. */
+.prf-join { margin-top: 36px; }
+.prf .prf-join__card { display: flex; align-items: center; gap: 22px; padding: 26px 28px; border-color: rgba(245, 147, 50, .38);
+  background: radial-gradient(120% 160% at 100% 0%, rgba(245, 147, 50, .16) 0%, rgba(245, 147, 50, 0) 55%), var(--surface); }
+.prf-join__icon { width: 56px; height: 56px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: rgba(245, 147, 50, .14); color: var(--amber); }
+.prf-join__text { flex: 1 1 auto; min-width: 0; }
+.prf-join__k { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--amber); line-height: 1; }
+.prf-join__h { margin: 8px 0 6px; font-size: 24px; font-weight: 800; line-height: 1.15; letter-spacing: -.01em; color: var(--text); }
 .prf-join__p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-muted); }
-.prf-join__actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
+.prf-join__actions { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; flex-shrink: 0; }
+.prf-join__actions .prf-btn { min-height: 48px; padding: 0 24px; font-size: 15px; font-weight: 700; }
 .prf-join__links { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-subtle); }
 .prf-join__link { color: var(--text-muted); line-height: 1; }
 .prf-join__link:hover { color: var(--text); }
 @media (max-width: 640px) {
-  .prf-join__card { flex-direction: column; align-items: stretch; gap: 16px; }
+  .prf-join { margin-top: 28px; }
+  .prf-join__card { flex-direction: column; align-items: stretch; gap: 16px; padding: 22px 18px; text-align: center; }
+  .prf-join__icon { align-self: center; width: 48px; height: 48px; }
+  .prf-join__h { font-size: 21px; }
   .prf-join__actions { align-items: stretch; }
   .prf-join__links { justify-content: center; }
 }
