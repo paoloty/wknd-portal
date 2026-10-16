@@ -39,12 +39,7 @@ function gallery(p) {
   const per = Math.min(3, ph.length);
   return `<section class="crt-gal crt-gal--${per}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
     <div class="crt-gal__track">${ph.map((x, i) => `<figure class="crt-gal__card"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i < per ? (i ? '' : ' fetchpriority="high"') : ' loading="lazy"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`).join('')}</div>
-    ${ph.length > per ? `<div class="crt-gal__bar">
-      <div class="crt-gal__dots" aria-hidden="true">${ph.slice(0, ph.length - per + 1).map((_, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>
-      <div class="crt-gal__right"><span class="crt-gal__count" data-gal-count>${per > 1 ? `1–${per}` : '1'} of ${ph.length}</span>
-        <div class="crt-gal__btns"><button type="button" class="crt-gal__nav" data-step="-1" aria-label="Previous photos" disabled>${ICON.prev}</button><button type="button" class="crt-gal__nav" data-step="1" aria-label="Next photos">${ICON.next}</button></div>
-      </div>
-    </div>` : ''}
+    ${railBar(ph.length, per, 'photos')}
   </section>`;
 }
 
@@ -247,10 +242,25 @@ function runs(p) {
       <span class="crt-rw__link">See the teams ${ICON.chev}</span></a>`).join('')}</div></section>`;
 }
 
+// Arrows, count and dots under a scrolling row (photos, league games); the script drives them.
+function railBar(total, per, label) {
+  if (total <= per) return '';
+  return `<div class="crt-gal__bar">
+      <div class="crt-gal__dots" aria-hidden="true">${Array.from({ length: total - per + 1 }, (_, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>
+      <div class="crt-gal__right"><span class="crt-gal__count" data-gal-count>${per > 1 ? `1–${per}` : '1'} of ${total}</span>
+        <div class="crt-gal__btns"><button type="button" class="crt-gal__nav" data-step="-1" aria-label="Previous ${label}" disabled>${ICON.prev}</button><button type="button" class="crt-gal__nav" data-step="1" aria-label="Next ${label}">${ICON.next}</button></div>
+      </div>
+    </div>`;
+}
+
+// League games: the standard /games card, in a row that scrolls (three across on desktop).
 function league(games, extras) {
   if (!games.length) return '';
   return `<section class="crt-sec" id="crt-league" aria-labelledby="crt-league-h">${sh('League games here', { id: 'crt-league-h', sub: 'WKND Basketball League', link: '<a class="section-header__link" href="/games">All games</a>' })}
-    <div class="crt-games">${games.map(g => gameCard(g, { commentsEnabled: extras.commentsEnabled, social: extras.socialByGame?.[g.id] || { commentsCount: 0, reactCount: 0, reacted: false }, topScorer: extras.topScorerByGame?.[g.id], odds: extras.oddsByGame?.[g.id] || null })).join('')}</div></section>`;
+    <div class="crt-rail" data-crt-rail>
+      <div class="crt-rail__track">${games.map(g => gameCard(g, { commentsEnabled: extras.commentsEnabled, social: extras.socialByGame?.[g.id] || { commentsCount: 0, reactCount: 0, reacted: false }, topScorer: extras.topScorerByGame?.[g.id], odds: extras.oddsByGame?.[g.id] || null })).join('')}</div>
+      ${railBar(games.length, Math.min(3, games.length), 'games')}
+    </div></section>`;
 }
 
 function rent(p, court, x) {
@@ -273,13 +283,20 @@ function rent(p, court, x) {
     </form></div></section>`;
 }
 
-function there(p, court) {
+function there(p, court, x) {
   const info = p.info || {};
   const tags = courtInfoTags(info);
   const notes = [['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
-  return `<section class="crt-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h', link: `<a class="section-header__link" href="${escHtml(mapsHref(court))}" target="_blank" rel="noopener">Open in Google Maps ↗</a>` })}
+  const pin = x.pin;
+  const href = pin ? `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}` : mapsHref(court);
+  // A real map (Leaflet, OSM tiles recoloured dark, amber pin), loaded when the section comes near.
+  // No pin on file: the old static map image, linking out.
+  const map = pin
+    ? `<div class="crt-there__map crt-map" data-crt-map data-lat="${pin.lat}" data-lng="${pin.lng}" data-name="${escHtml(p.name)}" data-href="${escHtml(href)}" role="region" aria-label="Map of ${escHtml(p.name)}"><a class="crt-map__fallback" href="${escHtml(href)}" target="_blank" rel="noopener">Open the map ↗</a></div>`
+    : `<a class="crt-there__map" href="${escHtml(href)}" target="_blank" rel="noopener" aria-label="Open ${escHtml(p.name)} in Google Maps"><img src="/api/papawis-map/photo?loc=${encodeURIComponent(court.address || court.name)}" alt="Map showing ${escHtml(p.name)}${p.city ? `, ${escHtml(p.city)}` : ''}" loading="lazy" onerror="this.remove()"></a>`;
+  return `<section class="crt-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h', link: `<a class="section-header__link" href="${escHtml(href)}" target="_blank" rel="noopener">Open in Google Maps ↗</a>` })}
     <div class="card crt-there">
-      <a class="crt-there__map" href="${escHtml(mapsHref(court))}" target="_blank" rel="noopener" aria-label="Open ${escHtml(p.name)} in Google Maps"><img src="/api/papawis-map/photo?loc=${encodeURIComponent(court.address || court.name)}" alt="Map showing ${escHtml(p.name)}${p.city ? `, ${escHtml(p.city)}` : ''}" loading="lazy" onerror="this.remove()"></a>
+      ${map}
       <div class="crt-there__info">
         ${court.address ? `<div class="crt-note"><b>Address</b><p>${escHtml(court.address)}</p></div>` : ''}
         ${notes.map(([k, v]) => `<div class="crt-note"><b>${escHtml(k)}</b><p>${escHtml(v)}</p></div>`).join('')}
@@ -329,8 +346,8 @@ const SCRIPT = `<script>
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Something went wrong. Try again.'); return d; }); });
   }
   // Gallery: arrows, dots and count follow the scroll.
-  document.querySelectorAll('[data-crt-gallery]').forEach(function (g) {
-    var track = g.querySelector('.crt-gal__track'), cards = [].slice.call(track.children);
+  document.querySelectorAll('[data-crt-gallery], [data-crt-rail]').forEach(function (g) {
+    var track = g.querySelector('.crt-gal__track, .crt-rail__track'), cards = [].slice.call(track.children);
     var dots = [].slice.call(g.querySelectorAll('.crt-gal__dots i')), count = g.querySelector('[data-gal-count]');
     var prev = g.querySelector('[data-step="-1"]'), next = g.querySelector('[data-step="1"]');
     if (!prev) return;
@@ -352,6 +369,32 @@ const SCRIPT = `<script>
     window.addEventListener('resize', sync);
     sync();
   });
+  // Getting there: load Leaflet only when the map comes near, then a dark map with an amber pin.
+  var mapEl = document.querySelector('[data-crt-map]');
+  if (mapEl) {
+    var started = false;
+    var start = function () {
+      if (started) return; started = true;
+      var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
+      var js = document.createElement('script'); js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      js.onload = function () {
+        var lat = Number(mapEl.dataset.lat), lng = Number(mapEl.dataset.lng);
+        mapEl.innerHTML = '';
+        var map = L.map(mapEl, { center: [lat, lng], zoom: 16, scrollWheelZoom: false });
+        map.attributionControl.setPrefix(false);
+        // OpenStreetMap's own tiles (keyless, credited); courts.css recolours the tile layer navy.
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19,
+          attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a>' }).addTo(map);
+        var icon = L.divIcon({ className: 'crt-pin', html: '<span></span>', iconSize: [28, 36], iconAnchor: [14, 34], popupAnchor: [0, -30] });
+        var pop = document.createElement('div'), b = document.createElement('b'), a = document.createElement('a');
+        b.textContent = mapEl.dataset.name; a.textContent = 'Directions in Google Maps'; a.href = mapEl.dataset.href; a.target = '_blank'; a.rel = 'noopener';
+        pop.appendChild(b); pop.appendChild(document.createElement('br')); pop.appendChild(a);
+        L.marker([lat, lng], { icon: icon, title: mapEl.dataset.name }).addTo(map).bindPopup(pop);
+      };
+      document.body.appendChild(js);
+    };
+    if ('IntersectionObserver' in window) { var mo = new IntersectionObserver(function (es) { if (es[0].isIntersecting) { mo.disconnect(); start(); } }, { rootMargin: '400px' }); mo.observe(mapEl); } else start();
+  }
   // Jump bar follows the section in view.
   var links = [].slice.call(document.querySelectorAll('.crt-jump a'));
   if (links.length && 'IntersectionObserver' in window) {
@@ -440,7 +483,7 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
   ${runs(p)}
   ${league(games, extras)}
   ${rent(p, court, x)}
-  ${there(p, court)}
+  ${there(p, court, x)}
   ${faq(p, x)}
   ${isLoggedIn ? '' : `<section class="card crt-cta" aria-label="Play here"><div><span class="crt-kicker">Play here</span><b>Weekend basketball in Makati, Mandaluyong and Pasig</b><span class="crt-muted">League seasons with stats and recaps, plus Papawis pickup runs.</span></div><div class="crt-cta__btns"><a class="crt-btn crt-btn--amber" href="/register" data-cta="court-join">Join the next season</a><a class="crt-btn crt-btn--ghost" href="${MESSENGER_URL}" target="_blank" rel="noopener" data-cta="court-messenger">Message us</a></div></section>`}
   ${dock(p)}

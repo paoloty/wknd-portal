@@ -208,7 +208,7 @@ import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt } from './lib/portal-db.js';
-import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD } from './lib/court-page.js';
+import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
 import {
   getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, saveCourtRating, getCourtRating,
@@ -17842,7 +17842,7 @@ const courtUrl = court => `${SITE_ORIGIN}/courts/${encodeURIComponent(court.slug
 function buildCourtOgTags(court, p) {
   const url = courtUrl(court);
   const img = p.photos[0] ? `${SITE_ORIGIN}${p.photos[0].src}` : `${SITE_ORIGIN}/og/papawis.png?v=${ogDayStamp()}`;
-  const geo = getPapawisLocationGeocode(court.address || court.name);
+  const geo = courtPin(court);
   const place = {
     '@type': 'SportsActivityLocation',
     name: p.name,
@@ -17970,11 +17970,17 @@ const courtFlags = () => ({
   requests: getSetting('papawis_court_requests_enabled', '0') === '1',
   partner: getSetting('papawis_court_partner_enabled', '0') === '1',
 });
+// The map pin: the exact one an admin set, else the address geocode (can be approximate).
+function courtPin(court) {
+  if (court.map_lat != null && court.map_lng != null) return { lat: court.map_lat, lng: court.map_lng, exact: true };
+  const g = getPapawisLocationGeocode(court.address || court.name);
+  return g?.lat ? { lat: g.lat, lng: g.lng, exact: false } : null;
+}
 // Everything on the court page that depends on who is looking.
 function courtViewerExtras(req, court, p, allPlayers) {
   const flags = courtFlags();
   const viewerId = req.session?.playerPlayerId || null;
-  const out = { flags, viewerId, shareUrl: '' };
+  const out = { flags, viewerId, shareUrl: '', pin: courtPin(court) };
   const teamColorById = Object.fromEntries(getAllTeams().map(t => [t.id, t.color]));
   // The next run: who's in (faces), the waitlist, and the price the /papawis card quotes.
   if (p.nextRun) {
@@ -19002,6 +19008,9 @@ app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, re
     gallery_main: String(b.gallery_main || ''),
     seo_title: clean(b.seo_title, 120).trim(),
     seo_description: clean(b.seo_description, 300).trim(),
+    extra_facts: String(b.extra_facts || '').split('\n').map(s => s.trim().slice(0, 160)).filter(Boolean).slice(0, 20).join('\n'),
+    map_lat: parseMapPin(b.map_pin)?.lat ?? null,
+    map_lng: parseMapPin(b.map_pin)?.lng ?? null,
     partner: b.partner_on === '1' ? 1 : 0,
     partner_email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(b.partner_email || '').trim()) ? String(b.partner_email).trim().slice(0, 120) : '',
   });
@@ -19074,6 +19083,35 @@ List every statement in the text that the facts do not directly support: wrong o
   const problems = (data.problems || []).map(x => String(x).slice(0, 200)).filter(Boolean);
   return problems.length ? problems : ['unspecified inaccuracy'];
 }
+// Extra facts helper: an admin pastes notes (e.g. Google reviews they read, the court's own
+// page) and gets candidate facts back to tick. Nothing is saved here; ticked facts go into the
+// Extra facts box, which the admin saves. Facts only: no opinions, praise, quotes or names.
+app.post('/admin/papawis/courts/:id/facts/suggest', requireAuth, express.json({ limit: '200kb' }), async (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI provider is set up.' });
+  const text = String(req.body?.text || '').slice(0, 12000).trim();
+  if (text.length < 20) return res.status(400).json({ error: 'Paste some notes or reviews first.' });
+  const prompt = `From the notes below about the basketball venue "${courtDisplayName(court)}", list concrete, checkable facts about the venue itself.
+
+Include only things a visitor could verify: facilities and amenities (air-conditioning, scoreboard, lockers, showers, restrooms, parking and how it works, food or drinks on site, number of courts, floor type, seating, lights), how to get there (nearby stations, landmarks, entrances), and rules a visitor needs (shoes, booking). Keep numbers only if the notes state them.
+Leave out: opinions and quality words ("great", "clean", "best", "well-maintained"), anything about specific people, staff names, quotes, complaints, prices that may change, and anything you are unsure of.
+Each fact is one short plain sentence, under 15 words, in neutral wording. At most 12 facts. If there are none, return an empty list.
+
+NOTES
+${text}`;
+  const schema = { type: 'object', properties: { facts: { type: 'array', items: { type: 'string' } } }, required: ['facts'] };
+  try {
+    const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500 });
+    const have = new Set(courtExtraFacts(court).map(f => f.toLowerCase()));
+    const facts = [...new Set((data.facts || []).map(f => String(f).replace(/\s+/g, ' ').trim().slice(0, 160)).filter(f => f && !have.has(f.toLowerCase())))].slice(0, 12);
+    res.json({ ok: true, facts });
+  } catch (e) {
+    console.error('[court facts suggest]', e.message);
+    res.status(502).json({ error: 'The AI provider failed. Try again in a minute.' });
+  }
+});
+
 // Open times on a court page (players vote for a run in them).
 app.post('/admin/papawis/courts/:id/slots', requireAuth, express.json(), (req, res) => {
   const court = getPapawisCourtById(req.params.id);

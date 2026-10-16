@@ -3032,3 +3032,9 @@ select.aui-input { padding-left: 9px; }
   .acrt-row > .aui-menu { grid-column: 2; justify-self: end; }
   .acrt-row__form { flex-wrap: wrap; }
 }
+.acrt-facts { display: flex; flex-direction: column; gap: 12px; }
+.acrt-suggest { border: 1px solid rgba(255,255,255,.08); border-radius: 10px; }
+.acrt-suggest summary { cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 600; color: var(--amber, #f59332); }
+.acrt-suggest__body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.acrt-suggest__body .acrt-actions { margin-top: 0; }
+.acrt-suggest__list { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }

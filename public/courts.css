@@ -237,12 +237,33 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 .crt-met b { font-size: 17px; font-weight: 800; line-height: 1; height: 17px; display: flex; align-items: center; }
 .crt-met b.crt-met__ok { color: var(--amber); }
 .crt-met span { font-size: 12px; color: var(--text-muted); line-height: 1; white-space: nowrap; }
-.crt-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--c-gap); }
+/* League games: the standard game card in a scrolling row (same bar as the photos) */
+.crt-rail__track { display: flex; gap: var(--c-gap); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 0; margin: -2px 0; }
+.crt-rail__track::-webkit-scrollbar { display: none; }
+.crt-rail__track > * { flex: 0 0 calc((100% - var(--c-gap) * 2) / 3); min-width: 0; scroll-snap-align: start; }
 
 /* Getting there */
 .crt-there { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; }
 .crt-there__map { display: block; min-height: 220px; background: var(--surface-2); border-right: 1px solid var(--border); }
 .crt-there__map img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Real map (Leaflet + OSM tiles, recoloured) */
+.crt-map { position: relative; min-height: 300px; height: 100%; border-radius: var(--radius) 0 0 var(--radius); overflow: hidden; z-index: 0; }
+.crt-map__fallback { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--amber); }
+.crt-map.leaflet-container { background: #0e1220; font: inherit; }
+/* Dark, navy-leaning map from the light OSM tiles: only the tile layer is filtered, so the pin
+   and controls keep their real colours. */
+.crt .crt-map .leaflet-tile-pane { filter: invert(1) hue-rotate(200deg) saturate(.35) brightness(.82) contrast(.92); }
+.crt-pin span { position: relative; display: block; width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--amber); box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.crt-pin span::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: #0a0e16; }
+.crt .crt-map .leaflet-control-zoom { border: 1px solid var(--c-line) !important; border-radius: 10px; overflow: hidden; }
+.crt .crt-map .leaflet-control-zoom a { width: 32px; height: 32px; line-height: 32px; background: var(--surface); color: var(--text); border-bottom-color: var(--border); }
+.crt .crt-map .leaflet-control-zoom a:hover { background: var(--surface-2); color: var(--amber); }
+.crt .crt-map .leaflet-control-attribution { background: rgba(10,14,22,.75); color: var(--text-muted); font-size: 10px; }
+.crt .crt-map .leaflet-control-attribution a { color: var(--c-soft); }
+.crt .crt-map .leaflet-popup-content-wrapper, .crt-map .leaflet-popup-tip { background: var(--surface); color: var(--text); border: 1px solid var(--c-line); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.crt .crt-map .leaflet-popup-content { margin: 12px 14px; font-size: 13px; line-height: 1.5; }
+.crt .crt-map .leaflet-popup-content a { color: var(--amber); font-weight: 600; }
+.crt .crt-map .leaflet-popup-close-button { color: var(--text-muted) !important; }
 .crt-there__info { padding: var(--c-pad); display: flex; flex-direction: column; gap: var(--c-gap); }
 .crt-note { display: flex; flex-direction: column; gap: 6px; }
 .crt-note b { font-size: 12px; font-weight: 700; color: var(--text-muted); line-height: 1; }
@@ -315,7 +336,7 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 
 @media (max-width: 900px) {
   .crt-top { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .crt-gal__card { flex-basis: calc((100% - var(--c-gap)) / 2); }
+  .crt-gal__card, .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap)) / 2); }
   .crt-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-report { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -347,7 +368,8 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
   .crt-there__map { min-height: 160px; height: 160px; border-right: 0; border-bottom: 1px solid var(--border); }
   .crt-fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-formfoot .crt-btn { width: 100%; }
-  .crt-games { grid-template-columns: minmax(0, 1fr); }
+  .crt-rail__track > * { flex-basis: 86%; }
+  .crt-map { min-height: 220px; height: 220px; border-radius: var(--radius) var(--radius) 0 0; }
   .crt-report { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-report div:not(:nth-child(3n+1)) { border-left: 0; }
   .crt-report div:nth-child(even) { border-left: 1px solid var(--border); }

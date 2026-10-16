@@ -8,6 +8,47 @@ import { displayPlayerName, formatTimeRange } from '../utils.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
+// "Suggest facts": posts the pasted notes, lists the facts that come back as ticks, and adds
+// the ticked ones to the Extra facts box (the save bar then saves them with the page).
+// Re-binds on admin:updated, since admin pages update in place.
+const SUGGEST_SCRIPT = `<script>
+(function () {
+  function bind() {
+    var btn = document.querySelector('[data-suggest-facts]');
+    if (!btn || btn.__bound) return; btn.__bound = true;
+    var text = document.querySelector('[data-suggest-text]'), list = document.querySelector('[data-suggest-list]'), msg = document.querySelector('[data-suggest-msg]');
+    var box = document.querySelector('[data-extra-facts]');
+    btn.addEventListener('click', function () {
+      btn.disabled = true; msg.textContent = 'Reading…'; list.hidden = true; list.innerHTML = '';
+      fetch(btn.getAttribute('data-suggest-facts'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.value }) })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Failed.'); return d; }); })
+        .then(function (d) {
+          if (!d.facts.length) { msg.textContent = 'No new facts found in that text.'; return; }
+          msg.textContent = 'Tick the ones you know are true, then add them.';
+          d.facts.forEach(function (f) {
+            var l = document.createElement('label'); l.className = 'aui-check';
+            var i = document.createElement('input'); i.type = 'checkbox'; i.value = f; i.checked = true;
+            var s = document.createElement('span'); s.textContent = f;
+            l.appendChild(i); l.appendChild(s); list.appendChild(l);
+          });
+          var add = document.createElement('button'); add.type = 'button'; add.className = 'aui-btn aui-btn--primary aui-btn--sm'; add.textContent = 'Add ticked facts';
+          add.addEventListener('click', function () {
+            var picked = [].slice.call(list.querySelectorAll('input:checked')).map(function (i) { return i.value; });
+            if (!picked.length) return;
+            box.value = (box.value.trim() ? box.value.trim() + '\\n' : '') + picked.join('\\n');
+            box.dispatchEvent(new Event('input', { bubbles: true }));
+            list.hidden = true; list.innerHTML = ''; text.value = '';
+            msg.textContent = picked.length + ' added to Extra facts. Save the page to keep them.';
+          });
+          list.appendChild(add); list.hidden = false;
+        })
+        .catch(function (e) { msg.textContent = e.message; })
+        .then(function () { btn.disabled = false; });
+    });
+  }
+  bind(); document.addEventListener('admin:updated', bind);
+})();
+</script>`;
 const dayLabel = ymd => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 const TAG_LABEL = Object.fromEntries([...RATING_TAGS_GOOD, ...RATING_TAGS_BAD]);
 const ASPECT_LABEL = Object.fromEntries(RATING_ASPECTS);
@@ -45,6 +86,21 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
       ${field({ label: text.notes.label, name: 'info_notes', value: info.notes || '', placeholder: `e.g. ${text.notes.placeholder}`, wide: true })}
       ${field({ label: text.contact.label, name: 'info_contact', value: info.contact || '', placeholder: `e.g. ${text.contact.placeholder}`, wide: true, help: 'Only you see this, unless you tick the box below.' })}`)}
     <label class="aui-check acrt-check"><input type="checkbox" name="info_contact_public" value="1"${info.contact_public ? ' checked' : ''}><span>Show the court contact on the public page</span></label>
+    ${fieldGrid(field({ label: 'Map pin', name: 'map_pin', value: court.map_lat != null ? `${court.map_lat}, ${court.map_lng}` : '', placeholder: 'Paste a Google Maps link or 14.5806, 121.0536', wide: true,
+      help: court.map_lat != null ? 'The court page map uses this exact pin. Clear it to fall back to the address.' : 'Empty: the map uses the address, which can land on the city centre. In Google Maps, right-click the court and copy the numbers, or paste the share link.' }))}
+    <div class="acrt-facts">
+      ${fieldGrid(field({ label: 'Extra facts for the writeup', name: 'extra_facts', type: 'textarea', rows: 5, value: court.extra_facts || '', wide: true, attrs: 'data-extra-facts',
+        placeholder: 'Air-conditioned court\nScoreboard and game clock\nLockers and showers on the 2nd floor',
+        help: 'One fact per line, things you checked yourself (the front desk, the court’s page, reviews you read). The About writeup can use these. No opinions or quotes.' }))}
+      <details class="acrt-suggest">
+        <summary>Suggest facts from notes or reviews</summary>
+        <div class="acrt-suggest__body">
+          <textarea class="aui-input" rows="5" data-suggest-text placeholder="Paste notes, the court’s own page text, or reviews you read. Only facts come back, never opinions or quotes. Nothing here is saved."></textarea>
+          <div class="acrt-actions">${button('Suggest facts', { kind: 'secondary', size: 'sm', attrs: `data-suggest-facts="/admin/papawis/courts/${id}/facts/suggest"` })}<span class="aui-muted acrt-hint" data-suggest-msg></span></div>
+          <div class="acrt-suggest__list" data-suggest-list hidden></div>
+        </div>
+      </details>
+    </div>
   </div>`;
 
   const draft = court.writeup_draft
@@ -169,5 +225,6 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
     ${section({ title: 'Ratings', note: `· ${ratings.length} rating${ratings.length === 1 ? '' : 's'}`, asideHtml: flags.ratings ? '' : badge('Off', 'gray'), bodyHtml: `<div class="aui-panel">${ratingRows}</div>` })}
     ${section({ title: 'Rent requests', note: `· ${requests.filter(x => x.status !== 'done').length} new`, asideHtml: flags.requests ? '' : badge('Off', 'gray'), bodyHtml: `<div class="aui-panel">${reqRows}</div>` })}
     ${saveBar({ label: 'Save court page', form: 'court-page-form' })}
+    ${SUGGEST_SCRIPT}
   </div>`;
 }
