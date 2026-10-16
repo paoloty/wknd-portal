@@ -208,8 +208,9 @@ import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt } from './lib/portal-db.js';
-import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, COURT_INFO_FIELDS, COURT_CITIES } from './lib/court-page.js';
+import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES } from './lib/court-page.js';
 import { courtPage, courtsIndexPage } from './views/court.js';
+import { COURT_SEEDS } from './lib/court-seeds.js';
 import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
@@ -17894,6 +17895,23 @@ function liveCourts() {
     .sort((a, b) => (b.p.playedRuns + b.p.finalsCount) - (a.p.playedRuns + a.p.finalsCount) || a.p.name.localeCompare(b.p.name));
 }
 
+// One-time starting content for the court pages (lib/court-seeds.js): the About text lands
+// as a draft for the admin to approve, and the ticks fill only a court with no info yet.
+if (getSetting('court_seeds_v1', '') !== 'done') {
+  try {
+    for (const [slug, seed] of Object.entries(COURT_SEEDS)) {
+      const court = getPapawisCourtBySlug(slug);
+      if (!court) continue;
+      const info = parseCourtJson(court.info_json, {});
+      const fields = {};
+      if (!court.writeup && !court.writeup_draft && seed.draft) Object.assign(fields, { writeup_draft: seed.draft, writeup_at: Date.now() });
+      if (!Object.keys(info).length && seed.info && Object.keys(seed.info).length) fields.info_json = JSON.stringify(seed.info);
+      if (Object.keys(fields).length) updatePapawisCourtPage(court.id, fields);
+    }
+    setSetting('court_seeds_v1', 'done');
+  } catch (e) { console.error('[court seeds]', e.message); }
+}
+
 // Court name → slug for courts with a live page, for linking run locations (/papawis). Cached
 // for 5 minutes; admin saves on a court page clear it.
 let liveCourtsCache = null;
@@ -18795,7 +18813,7 @@ app.get('/admin/papawis/courts/:id', requireAuth, (req, res) => {
   const { p } = courtPageData(court);
   res.send(renderAdminPage(req, {
     title: p.name, currentPath: '/admin/papawis/courts',
-    body: adminPapawisCourtBody({ court, p, info: parseCourtJson(court.info_json, {}), aiOn: aiAvailable() }),
+    body: adminPapawisCourtBody({ court, p, info: normalizeCourtInfo(parseCourtJson(court.info_json, {})), aiOn: aiAvailable() }),
   }));
 });
 
@@ -18805,7 +18823,11 @@ app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, re
   const b = req.body || {};
   const clean = (v, n = 300) => String(v ?? '').replace(/\s+$/g, '').slice(0, n);
   const info = {};
-  for (const f of COURT_INFO_FIELDS) { const v = clean(b[`info_${f.key}`], 400).trim(); if (v) info[f.key] = v; }
+  if (COURT_TYPES.some(([k]) => k === b.info_setting)) info.setting = b.info_setting;
+  if (COURT_FLOORS.some(([k]) => k === b.info_floor)) info.floor = b.info_floor;
+  const featureKeys = new Set(COURT_FEATURES.flatMap(g => g.items.map(([k]) => k)));
+  info.features = [].concat(b.features || []).map(String).filter(k => featureKeys.has(k));
+  for (const f of COURT_TEXT_FIELDS) { const v = clean(b[`info_${f.key}`], 400).trim(); if (v) info[f.key] = v; }
   if (b.info_contact_public) info.contact_public = true;
   const { p } = courtPageData(court);
   const show = new Set([].concat(b['gallery_show[]'] || b.gallery_show || []).map(String));
@@ -18843,21 +18865,23 @@ Keep the voice light: this text also has to read well to someone who found the p
 FACTS (the only facts you may use):
 ${factsText}
 
-Write 2 short paragraphs, 70 to 120 words in total, plain text, no headings, no bullet points, no emoji, no hashtags.
-- First paragraph: what and where the court is (use the court name and the city in the first sentence), and what WKND does there.
-- Second paragraph: what a run or game here is like, using the numbers above, and a closing line inviting people to play.
+Write 3 paragraphs, 150 to 220 words in total, plain text, no headings, no bullet points, no emoji, no hashtags.
+- Paragraph 1: what and where the court is (court name and city in the first sentence) and how to get there.
+- Paragraph 2: what the venue is like: the court and its features, and what else is there, using only the facts.
+- Paragraph 3: what playing here with WKND is like (run length, players, referee, if the facts say so) and a closing line inviting people to play.
+- Do NOT say how many times WKND has played here or how many runs, games, players, members or sign-ups there have been. The page shows those stats elsewhere.
 - Use digits for numbers. Never invent a number, a feature of the court, a price or a date that is not in the facts.
-- Do not say how often runs happen ("every Saturday", "weekly", "monthly") or what a "typical" time is unless a fact says exactly that. The earliest start time is just the earliest, not the usual one.
+- Do not say how often runs happen ("every Saturday", "weekly", "monthly") unless a fact says exactly that.
 - No claims of fame or rank ("legendary", "the best", "the hotspot", "always packed") unless a fact supports them.
 - Separate the paragraphs with one blank line.${issue ? `\n\nYour last draft was rejected: ${issue}. Fix that.` : ''}`;
     try {
-      const { text } = await generateText(prompt, { maxTokens: 400, temperature: Math.min(aiTemperature(), 0.8) });
+      const { text } = await generateText(prompt, { maxTokens: 700, temperature: Math.min(aiTemperature(), 0.8) });
       const out = String(text || '').replace(/^["“]|["”]$/g, '').replace(/\*\*/g, '').trim();
       const nums = out.match(/\d+(?:[.,]\d+)?/g) || [];
       const bad = nums.filter(n => !allowed.has(n));
       const words = out.split(/\s+/).length;
       if (bad.length) { issue = `it used numbers not in the facts (${bad.join(', ')})`; continue; }
-      if (words < 40 || words > 160) { issue = `it was ${words} words`; continue; }
+      if (words < 120 || words > 260) { issue = `it was ${words} words, aim for 150 to 220`; continue; }
       const problems = await factCheckCourtWriteup(factsText, out);
       if (problems.length) { issue = `a fact check found claims the facts don't support: ${problems.join('; ')}`; continue; }
       updatePapawisCourtPage(court.id, { writeup_draft: out, writeup_at: Date.now() });
@@ -18879,7 +18903,7 @@ ${text}
 FACTS
 ${factsText}
 
-List every statement in the text that the facts do not directly support: wrong or invented numbers, how often runs happen ("every Saturday", "weekly", "3 runs a month"), a "typical" or "usual" time or day that no fact states, court features not in the facts, and claims of fame or rank ("legendary", "best", "hotspot", "always packed"). Friendly tone and an invitation to play are fine. If everything is supported, return accurate=true and an empty problems list.`;
+List every statement in the text that the facts do not directly support: wrong or invented numbers, counts of how many runs, games, players or members there have been, how often runs happen ("every Saturday", "weekly", "3 runs a month"), a "typical" or "usual" time or day that no fact states, court features or amenities not in the facts (food, drinks, a mall), descriptions of quality the facts do not state ("clean", "new", "spacious"), "always" claims, and claims of fame or rank ("legendary", "best", "hotspot", "always packed"). Friendly tone and an invitation to play are fine. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = { type: 'object', properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } }, required: ['accurate', 'problems'] };
   const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 300 });
   if (data.accurate) return [];

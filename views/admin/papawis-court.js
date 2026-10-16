@@ -3,7 +3,7 @@
 // adds: city, "Good to know" info, the About writeup, the gallery, visibility and search text.
 import { escHtml } from '../layout.js';
 import { pageHeader, section, button, badge, breadcrumb, field, fieldGrid, toggleRow, saveBar, banner, facts } from './ui.js';
-import { COURT_INFO_FIELDS, COURT_CITIES } from '../../lib/court-page.js';
+import { COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES } from '../../lib/court-page.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
@@ -26,24 +26,25 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true }) {
     ${button('Edit name, address, rate & photo', { kind: 'secondary', size: 'sm', href: '/admin/papawis/courts' })}
   </div>`;
 
-  // City first, then the short fields in pairs (no half-empty rows), then the long ones.
-  const f = Object.fromEntries(COURT_INFO_FIELDS.map(x => [x.key, x]));
-  const infoField = (x, extra = {}) => field({
-    label: x.label, name: `info_${x.key}`, type: x.type || 'text', value: info[x.key] || '', options: x.options || [],
-    placeholder: x.placeholder ? `e.g. ${x.placeholder}` : '', ...extra,
-  });
-  const infoBlock = `<div class="aui-panel">${fieldGrid(`
-      ${field({ label: 'City', name: 'city', type: 'select', value: court.city || '', options: [['', p.city ? `Automatic (${p.city})` : 'Not set'], ...COURT_CITIES.map(c => [c, c])] })}
-      ${['setting', 'floor', 'aircon', 'lights', 'parking', 'restrooms', 'nearby'].map(k => infoField(f[k])).join('')}
-      ${infoField(f.directions, { wide: true })}
-      ${infoField(f.notes, { wide: true })}
-      ${field({ label: f.contact.label, name: 'info_contact', value: info.contact || '', placeholder: 'e.g. 0917 123 4567 (front desk)', wide: true, help: 'Only you see this, unless you tick the box below.' })}`)}
+  // Ticks so every court page reads the same; text only where a tick can't say it.
+  const radios = (name, opts, cur) => `<div class="acrt-ticks">${[['', 'Not set'], ...opts].map(([k, l]) => `<label class="aui-check"><input type="radio" name="${name}" value="${attr(k)}"${(cur || '') === k ? ' checked' : ''}><span>${escHtml(l)}</span></label>`).join('')}</div>`;
+  const feats = new Set(info.features || []);
+  const tick = (title, html) => `<div class="acrt-tickgroup"><span class="aui-field__label">${escHtml(title)}</span>${html}</div>`;
+  const text = Object.fromEntries(COURT_TEXT_FIELDS.map(x => [x.key, x]));
+  const infoBlock = `<div class="aui-panel acrt-info">
+    ${fieldGrid(field({ label: 'City', name: 'city', type: 'select', value: court.city || '', options: [['', p.city ? `Automatic (${p.city})` : 'Not set'], ...COURT_CITIES.map(c => [c, c])] }))}
+    ${tick('Court type', radios('info_setting', COURT_TYPES, info.setting))}
+    ${tick('Floor', radios('info_floor', COURT_FLOORS, info.floor))}
+    ${COURT_FEATURES.map(g => tick(g.group, `<div class="acrt-ticks">${g.items.map(([k, l]) => `<label class="aui-check"><input type="checkbox" name="features[]" value="${attr(k)}"${feats.has(k) ? ' checked' : ''}><span>${escHtml(l)}</span></label>`).join('')}</div>`)).join('')}
+    ${fieldGrid(`${field({ label: text.directions.label, name: 'info_directions', value: info.directions || '', placeholder: `e.g. ${text.directions.placeholder}`, wide: true })}
+      ${field({ label: text.notes.label, name: 'info_notes', value: info.notes || '', placeholder: `e.g. ${text.notes.placeholder}`, wide: true })}
+      ${field({ label: text.contact.label, name: 'info_contact', value: info.contact || '', placeholder: `e.g. ${text.contact.placeholder}`, wide: true, help: 'Only you see this, unless you tick the box below.' })}`)}
     <label class="aui-check acrt-check"><input type="checkbox" name="info_contact_public" value="1"${info.contact_public ? ' checked' : ''}><span>Show the court contact on the public page</span></label>
   </div>`;
 
   const draft = court.writeup_draft
     ? `<div class="aui-panel acrt-draft">
-        <div class="acrt-draft__head">${badge('AI draft', 'amber')}<span class="aui-muted">Read it, then use it or keep editing the live text.</span></div>
+        <div class="acrt-draft__head">${badge('Draft', 'amber')}<span class="aui-muted">Read it, then use it or keep editing the live text.</span></div>
         <p class="acrt-draft__text">${escHtml(court.writeup_draft)}</p>
         <div class="acrt-actions">
           ${button('Use this draft', { kind: 'primary', size: 'sm', attrs: `data-post-json="/admin/papawis/courts/${id}/writeup/approve" data-done="Writeup is live."` })}
@@ -81,7 +82,7 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true }) {
     ${pageHeader({ eyebrow: p.city || 'Court', title: p.name, sub: court.address || '', actionsHtml: button('View on site ↗', { kind: 'secondary', href: pageUrl, attrs: 'target="_blank" rel="noopener"' }) })}
     <form id="court-page-form" class="acrt-form" data-json-action="/admin/papawis/courts/${id}/page" data-done="Court page saved." data-dirty-watch>
       ${section({ title: 'Public page', asideHtml: status, bodyHtml: page })}
-      ${section({ title: 'Court info', note: '· “Good to know” on the page; only filled fields show', bodyHtml: infoBlock })}
+      ${section({ title: 'Court info', note: '· ticked items show as tags on the page', bodyHtml: infoBlock })}
       ${section({ title: 'About this court', note: '· the writeup at the top of the page', bodyHtml: writeup })}
       ${section({ title: 'Gallery', note: `· ${p.photos.length} of ${p.allPhotos.length} shown`, bodyHtml: gallery })}
       ${section({ title: 'Search', note: '· how the page shows on Google', bodyHtml: seo })}

@@ -4,11 +4,12 @@
 import { escHtml } from './layout.js';
 import { playerAvatar } from './utils.js';
 import { gameCard, gameCardScript } from './games.js';
-import { COURT_INFO_FIELDS } from '../lib/court-page.js';
+import { courtInfoTags } from '../lib/court-page.js';
 
 const MESSENGER_URL = 'https://m.me/wkndbasketball';
 const ymdLabel = (ymd, opts) => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', opts);
 const ICON = {
+  check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>',
   pin: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>',
   out: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7"/><path d="M8 7h9v9"/></svg>',
   chart: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>',
@@ -152,7 +153,8 @@ function league(p, games, extras) {
 
 function courtCard(p, court) {
   const info = p.info || {};
-  const rows = COURT_INFO_FIELDS.filter(f => info[f.key] && (!f.adminOnly || info.contact_public)).map(f => [f.label, info[f.key]]);
+  const tags = courtInfoTags(info);
+  const rows = [['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
   return `<section class="crt-sec" aria-labelledby="crt-court-h">
     <div class="section-header"><h2 id="crt-court-h">The court</h2></div>
     <div class="card crt-court">
@@ -160,8 +162,9 @@ function courtCard(p, court) {
       <dl class="crt-dl">
         ${court.address ? `<div><dt>Address</dt><dd>${escHtml(court.address)}</dd></div>` : ''}
         ${p.city ? `<div><dt>City</dt><dd>${escHtml(p.city)}</dd></div>` : ''}
-        ${rows.map(([k, v]) => `<div><dt>${escHtml(k)}</dt><dd>${escHtml(v)}</dd></div>`).join('')}
       </dl>
+      ${tags.length ? `<ul class="crt-tags" aria-label="Court features">${tags.map(t => `<li>${ICON.check}${escHtml(t)}</li>`).join('')}</ul>` : ''}
+      ${rows.map(([k, v]) => `<div class="crt-note"><b>${escHtml(k)}</b><p>${escHtml(v)}</p></div>`).join('')}
       <a class="crt-link" href="${escHtml(mapsHref(court))}" target="_blank" rel="noopener">Open in Google Maps ${ICON.out}</a>
     </div>
   </section>`;

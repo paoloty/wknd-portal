@@ -133,6 +133,12 @@
 .crt-dl dt { color: var(--text-muted); flex-shrink: 0; }
 .crt-dl dd { margin: 0; text-align: right; color: var(--text); }
 .crt-court .crt-link { padding: 12px 20px 18px; }
+.crt-tags { list-style: none; margin: 0; padding: 14px 20px 2px; display: flex; flex-wrap: wrap; gap: 6px; }
+.crt-tags li { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1; }
+.crt-tags li svg { color: var(--amber); flex-shrink: 0; }
+.crt-note { padding: 12px 20px 0; }
+.crt-note b { display: block; font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+.crt-note p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); }
 
 /* Play here */
 .crt-cta { margin-top: 36px; padding: 22px 20px; display: flex; flex-direction: column; gap: 10px; }
