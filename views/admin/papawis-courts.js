@@ -36,11 +36,12 @@ export function adminPapawisCourtsBody({ courts = [] } = {}) {
       <td class="is-primary" data-label="Court"><span class="aui-who">${c.image_url
         ? `<img class="pw-court-thumb" src="/api/papawis-court/${attr(encodeURIComponent(c.id))}/photo" alt="" loading="lazy">`
         : '<span class="pw-court-thumb pw-court-thumb--empty" aria-hidden="true">—</span>'}
-        <span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(c.name)}</span>${c.address ? `<span class="aui-cell__sub">${escHtml(c.address)}</span>` : ''}</span></span></td>
+        <span class="aui-cell__stack"><a class="aui-cell__title" href="/admin/papawis/courts/${attr(encodeURIComponent(c.id))}">${escHtml(c.name)}</a>${c.address ? `<span class="aui-cell__sub">${escHtml(c.address)}</span>` : ''}</span></span></td>
       <td class="is-num" data-label="Rate">${c.price_per_hour > 0 ? `${peso(c.price_per_hour)}<span class="aui-muted">/hr</span>` : '<span class="aui-muted">Not set</span>'}</td>
       <td class="is-bare" data-label="Status">${c.active ? badge('Active', 'green') : badge('Inactive', 'gray')}</td>
       <td class="pw-roster__actions">${button('Edit', { kind: 'secondary', size: 'sm', attrs: `data-drawer-open="court-${attr(c.id)}"` })}</td>
       <td class="aui-grid__menu">${menu([
+        { label: 'Court page', href: `/admin/papawis/courts/${c.id}` },
         c.active
           ? { label: 'Deactivate…', danger: true, post: `/admin/papawis/courts/${c.id}/toggle`, body: { active: false }, done: `${c.name} deactivated.`, confirm: { title: `Deactivate ${c.name}?`, body: 'It leaves the court picker and the price calculator. Past runs keep their location.', send: 'Deactivate' } }
           : { label: 'Activate', post: `/admin/papawis/courts/${c.id}/toggle`, body: { active: true }, done: `${c.name} is active again.` },

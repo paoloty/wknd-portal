@@ -233,7 +233,7 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   const address = g.map_query && g.map_query !== g.location
     ? g.map_query.replace(new RegExp(`^${String(g.location || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,\\s*`, 'i'), '')
     : '';
-  const placeLine = `<span class="pwx-place">${ICON.pin}<span><b>${escHtml(court)}</b>${address ? ` · ${escHtml(address)}` : ''}</span></span>`;
+  const placeLine = `<span class="pwx-place">${ICON.pin}<span><b>${g.court_slug ? `<a href="/courts/${encodeURIComponent(g.court_slug)}">${escHtml(court)}</a>` : escHtml(court)}</b>${address ? ` · ${escHtml(address)}` : ''}</span></span>`;
   const placeBtns = `<span class="pwx-btnrow">
       ${mapsQ ? `<a class="pwx-sbtn" href="${googleMapsUrl(mapsQ)}" target="_blank" rel="noopener">${ICON.nav}${lbl('Directions')}</a>` : ''}
       <button class="pwx-sbtn" type="button" data-pwx-act="share" data-url="/papawis#pw-game-${escHtml(g.id)}" data-title="${escHtml(g.title || 'Papawis')}">${ICON.share}${lbl('Share')}</button>
@@ -400,7 +400,7 @@ function pastCard(g, signups, { isLoggedIn, hidden }) {
       </div>
       <div class="pwx-past__body">
         <span class="pwx-k">${escHtml(kick)}</span>
-        <span class="pwx-place">${ICON.pin}<span class="pwx-past__court">${escHtml(g.location || 'Papawis')}</span></span>
+        <span class="pwx-place">${ICON.pin}<span class="pwx-past__court">${g.court_slug ? `<a href="/courts/${encodeURIComponent(g.court_slug)}">${escHtml(g.location)}</a>` : escHtml(g.location || 'Papawis')}</span></span>
         ${meta ? `<span class="pwx-past__meta">${escHtml(meta)}</span>` : ''}
         <span class="pwx-btnrow">
           ${isLoggedIn ? `<button class="pwx-sbtn" type="button" data-pwx-act="see-all" data-game="${escHtml(g.id)}">${ICON.list}${lbl(cta)}</button>` : `<a class="pwx-sbtn" href="/login?next=/papawis&amp;ref=papawis">${ICON.list}${lbl(cta)}</a>`}

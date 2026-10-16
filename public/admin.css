@@ -2851,3 +2851,16 @@ body:has(.aui-savebar:not([hidden])) .aui-toasts { bottom: 88px; }
 .ahome-clicks__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 2px; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 13px; line-height: 1; color: var(--text-muted, #8a93a4); }
 .ahome-clicks__row b { color: var(--text, #e7eaf0); font-variant-numeric: tabular-nums; }
 .ahome-clicks__row--lead { color: var(--text, #e7eaf0); }
+
+/* Admin court page (views/admin/papawis-court.js): gallery picker + Google-style preview */
+.acrt-gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.acrt-gal__item { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; }
+.acrt-gal__item img { display: block; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; background: rgba(255,255,255,.04); }
+.acrt-gal__item .aui-check { width: max-content; }
+.acrt-gal__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.acrt-gal__meta b { font-size: 11px; letter-spacing: .06em; color: var(--amber, #f59332); }
+.acrt-gal__meta small { font-size: 12px; color: var(--text-muted, #8a93a4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acrt-serp { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; margin-bottom: 14px; border-radius: 10px; background: #fff; max-width: 600px; }
+.acrt-serp__url { font-size: 12px; color: #4d5156; }
+.acrt-serp__title { font-size: 18px; font-weight: 400; color: #1a0dab; line-height: 1.3; }
+.acrt-serp__desc { font-size: 13px; color: #4d5156; line-height: 1.5; }

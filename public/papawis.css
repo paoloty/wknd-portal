@@ -320,3 +320,5 @@ td.pw-team-row__name--dark, th.pw-team-row__name--dark { border-left: none; }
   .pw-team-row__name-full { display: none; }
   .pw-team-row__name-short { display: inline; }
 }
+.pwx-place a, .pwx-past__court a { color: inherit; text-decoration: underline; text-decoration-color: rgba(245,147,50,.5); text-underline-offset: 3px; }
+.pwx-place a:hover, .pwx-past__court a:hover { color: var(--amber); }

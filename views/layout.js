@@ -419,6 +419,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     ]],
     ['Community', [
       features.papawis ? ['/papawis', 'Papawis'] : null,
+      ['/courts', 'Courts'],
       features.posts ? ['/posts', 'Posts'] : null,
       isPlayer ? ['/polls', 'Polls'] : null,
       features.marketplace ? ['/marketplace', 'Marketplace'] : null,

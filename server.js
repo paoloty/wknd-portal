@@ -138,6 +138,8 @@ import {
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
+  getPapawisCourtBySlug, ensurePapawisCourtSlug, updatePapawisCourtPage, getPapawisRunsAtCourt, getPapawisSignupsForRuns,
+  getPapawisFirstRuns, getPapawisCoverVersions, getGameIdsAtCourt, getScoringForGames,
   getPapawisLocationGeocode, setPapawisLocationGeocode, getPapawisCover, setPapawisCover, deletePapawisCover,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
@@ -206,6 +208,8 @@ import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt } from './lib/portal-db.js';
+import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, COURT_INFO_FIELDS, COURT_CITIES } from './lib/court-page.js';
+import { courtPage, courtsIndexPage } from './views/court.js';
 import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
@@ -228,6 +232,7 @@ import { adminPapawisRunBody } from './views/admin/papawis-run.js';
 import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
 import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody, adminMarketplaceEditBody } from './views/admin/marketplace.js';
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
+import { adminPapawisCourtBody } from './views/admin/papawis-court.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
 import {
@@ -267,6 +272,8 @@ const TEAMS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirn
 const PLAYERS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/players.css')).mtimeMs); } catch { return Date.now(); } })();
 // /papawis (public/papawis.css), versioned the same way.
 const PAPAWIS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/papawis.css')).mtimeMs); } catch { return Date.now(); } })();
+// /courts and /courts/:slug (public/courts.css), versioned the same way.
+const COURTS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/courts.css')).mtimeMs); } catch { return Date.now(); } })();
 
 // Minified once at process start (same lifecycle as CSS_VER — both only change on a
 // restart, which is also the only time the underlying file can change anyway) rather than
@@ -274,7 +281,7 @@ const PAPAWIS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__di
 // to serving the original file as-is instead of a broken empty response.
 const MINIFIED_CSS = (() => {
   const cache = {};
-  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css']) {
+  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css', 'courts.css']) {
     try {
       const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
       const out = new CleanCSS({}).minify(raw);
@@ -917,6 +924,7 @@ const PAGE_DESCRIPTIONS = {
   '/marketplace': 'Jerseys, gear and group buys for the WKND Basketball community.',
   '/register': 'Join WKND Basketball, a weekend basketball league in Makati, Mandaluyong and Pasig: league games, stats, recaps and a community that shows up. Sign up for the next season.',
   '/front-office': 'The people who run WKND Basketball.',
+  '/courts': 'Basketball courts in Makati, Mandaluyong and Pasig where WKND plays: Papawis pickup runs, league games, photos and stats for each court.',
 };
 
 // Which share card a page path gets ('/' and anything unlisted get the home card).
@@ -2247,6 +2255,8 @@ const CTA_KEYS = {
   'activate-gc':      'Members · Community chat (welcome screen)',
   'me-gc':            'Members · Community chat (My Profile)',
   'papawis-gc':       'Members · Community chat (Papawis)',
+  'court-join':       'Court page · Join the next season',
+  'court-messenger':  'Court page · Message us',
 };
 
 function renderPage(req, opts) {
@@ -2853,7 +2863,7 @@ app.post('/api/cta/:key', (req, res) => {
 // express.static unchanged. Safe to cache for a full year: the URL is always requested
 // with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
 // invalidating this one.
-app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css'], (req, res) => {
+app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css', '/courts.css'], (req, res) => {
   const file = req.path.slice(1);
   const minified = MINIFIED_CSS[file];
   if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
@@ -8242,6 +8252,10 @@ app.get('/sitemap.xml', (req, res) => {
   if (flags.mvpRace) urls.push({ loc: '/mvp',    priority: '0.5', changefreq: 'weekly' });
   if (flags.mvpRace) urls.push({ loc: '/dpoy',   priority: '0.5', changefreq: 'weekly' });
   if (flags.papawis) urls.push({ loc: '/papawis', priority: '0.5', changefreq: 'weekly' });
+  // Court pages: only courts with a live page (something played there, not hidden).
+  const courtsLive = liveCourts();
+  if (courtsLive.length) urls.push({ loc: '/courts', priority: '0.6', changefreq: 'weekly' });
+  for (const { court, p } of courtsLive) urls.push({ loc: `/courts/${encodeURIComponent(court.slug)}`, priority: '0.6', changefreq: p.nextRun ? 'daily' : 'weekly' });
   if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
   if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' }, { loc: '/picks/rules', priority: '0.3', changefreq: 'monthly' });
 
@@ -17782,6 +17796,128 @@ app.post('/admin/papawis-summary/regenerate', requireAuth, express.json(), async
   }
 });
 
+// ── Court pages (/courts, /courts/:slug) ─────────────────────────────────────────────────
+// One court's runs, sign-ups and finished league games, through lib/court-page.js.
+function courtPageData(court) {
+  const runs = getPapawisRunsAtCourt(court.name);
+  const runIds = runs.map(r => r.id);
+  const gameIds = new Set(getGameIdsAtCourt(court.id));
+  const games = byDate(getAllGames()).reverse().filter(g => gameIds.has(g.id) && !g.under_review
+    && (g.status === 'final' || g.status === 'complete') && Number(g.team_a_score) + Number(g.team_b_score) > 0);
+  const p = buildCourtPage(court, {
+    runs, signups: getPapawisSignupsForRuns(runIds), firstRuns: getPapawisFirstRuns(), coverVers: getPapawisCoverVersions(runIds),
+    games, scoring: getScoringForGames(games.map(g => g.id)), today: manilaTodayStr(),
+  });
+  return { p, games };
+}
+const courtUrl = court => `${SITE_ORIGIN}/courts/${encodeURIComponent(court.slug)}`;
+
+// Title/description/canonical/og plus structured data: the court as a SportsActivityLocation
+// (address, map pin, photo), its upcoming runs as SportsEvents, and a breadcrumb trail.
+function buildCourtOgTags(court, p) {
+  const url = courtUrl(court);
+  const img = p.photos[0] ? `${SITE_ORIGIN}${p.photos[0].src}` : `${SITE_ORIGIN}/og/papawis.png?v=${ogDayStamp()}`;
+  const geo = getPapawisLocationGeocode(court.address || court.name);
+  const place = {
+    '@type': 'SportsActivityLocation',
+    name: p.name,
+    url,
+    image: img,
+    description: p.description,
+    address: { '@type': 'PostalAddress', ...(p.street ? { streetAddress: p.street } : {}), ...(p.city ? { addressLocality: p.city } : {}), addressRegion: 'Metro Manila', addressCountry: 'PH' },
+    ...(geo?.lat ? { geo: { '@type': 'GeoCoordinates', latitude: geo.lat, longitude: geo.lng } } : {}),
+    ...(court.address ? { hasMap: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.address)}` } : {}),
+  };
+  const events = p.upcoming.slice(0, 3).filter(r => r.start_time).map(r => ({
+    '@context': 'https://schema.org',
+    '@type': 'SportsEvent',
+    name: `Papawis pickup basketball at ${p.name}`,
+    sport: 'Basketball',
+    startDate: `${String(r.date).slice(0, 10)}T${r.start_time}:00+08:00`,
+    ...(r.end_time ? { endDate: `${String(r.date).slice(0, 10)}T${r.end_time}:00+08:00` } : {}),
+    eventStatus: 'https://schema.org/EventScheduled',
+    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    location: place,
+    image: img,
+    url: `${SITE_ORIGIN}/papawis#pw-game-${encodeURIComponent(r.id)}`,
+    organizer: { '@type': 'SportsOrganization', name: 'WKND Basketball League', url: SITE_ORIGIN },
+    ...(Number(r.price_per_player) || Number(r.min_per_player) ? { offers: { '@type': 'Offer', price: Number(r.price_per_player) || Number(r.min_per_player), priceCurrency: 'PHP', availability: 'https://schema.org/InStock', url: `${SITE_ORIGIN}/papawis` } } : {}),
+  }));
+  return [
+    `<meta name="description" content="${escAttr(p.description)}">`,
+    `<link rel="canonical" href="${escAttr(url)}">`,
+    `<meta property="og:type" content="place">`,
+    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:locale" content="en_US">`,
+    `<meta property="og:title" content="${escAttr(p.title)}">`,
+    `<meta property="og:description" content="${escAttr(p.description)}">`,
+    `<meta property="og:url" content="${escAttr(url)}">`,
+    `<meta property="og:image" content="${escAttr(img)}">`,
+    `<meta property="og:image:alt" content="${escAttr(p.photos[0]?.alt || p.name)}">`,
+    ...(geo?.lat ? [`<meta property="place:location:latitude" content="${geo.lat}">`, `<meta property="place:location:longitude" content="${geo.lng}">`] : []),
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${escAttr(p.title)}">`,
+    `<meta name="twitter:description" content="${escAttr(p.description)}">`,
+    `<meta name="twitter:image" content="${escAttr(img)}">`,
+    jsonLdTag({ '@context': 'https://schema.org', ...place }),
+    ...events.map(jsonLdTag),
+    jsonLdTag({ '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
+      { '@type': 'ListItem', position: 2, name: 'Courts', item: `${SITE_ORIGIN}/courts` },
+      { '@type': 'ListItem', position: 3, name: p.name, item: url },
+    ] }),
+    `<link rel="stylesheet" href="/courts.css?v=${COURTS_CSS_VER}">`,
+  ].join('\n  ');
+}
+
+// Courts with a public page: something was played there and the admin hasn't hidden it.
+function liveCourts() {
+  return getAllPapawisCourts().filter(c => c.slug).map(court => ({ court, p: courtPageData(court).p })).filter(x => x.p.live)
+    .sort((a, b) => (b.p.playedRuns + b.p.finalsCount) - (a.p.playedRuns + a.p.finalsCount) || a.p.name.localeCompare(b.p.name));
+}
+
+// Court name → slug for courts with a live page, for linking run locations (/papawis). Cached
+// for 5 minutes; admin saves on a court page clear it.
+let liveCourtsCache = null;
+const normCourtName = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+function liveCourtSlugByName() {
+  if (!liveCourtsCache || Date.now() - liveCourtsCache.at > 300000) {
+    liveCourtsCache = { at: Date.now(), map: new Map(liveCourts().map(({ court }) => [normCourtName(court.name), court.slug])) };
+  }
+  return liveCourtsCache.map;
+}
+
+app.get('/courts', (req, res) => {
+  const courts = liveCourts();
+  res.send(renderPage(req, {
+    title: 'Basketball Courts in Makati, Mandaluyong & Pasig | WKND Basketball',
+    currentPath: '/papawis',
+    metaTags: [
+      jsonLdTag({ '@context': 'https://schema.org', '@type': 'ItemList', name: 'WKND Basketball courts', itemListElement: courts.map(({ court, p }, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name, url: courtUrl(court) })) }),
+      `<link rel="stylesheet" href="/courts.css?v=${COURTS_CSS_VER}">`,
+    ].join('\n  '),
+    body: courtsIndexPage({ courts }),
+  }));
+});
+
+app.get('/courts/:slug', (req, res) => {
+  const court = getPapawisCourtBySlug(req.params.slug);
+  const notFound = () => res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Court not found.</p></div>' }));
+  if (!court) return notFound();
+  const { p, games } = courtPageData(court);
+  // A hidden or not-yet-played court: admins can still preview it, everyone else gets a 404.
+  if (!p.live && !req.session?.isAdmin) return notFound();
+  if (!getPapawisLocationGeocode(court.address || court.name)) geocodePapawisLocation(court.address || court.name).catch(() => {});
+  const listGames = [...games].reverse();
+  const extras = listGames.length ? gameCardExtras(listGames, getAllGames(), { viewerId: req.session?.playerPlayerId || null, playerMap: Object.fromEntries(getAllPlayers().map(x => [x.id, x])) }) : {};
+  res.send(renderPage(req, {
+    title: p.title,
+    currentPath: '/papawis',
+    metaTags: buildCourtOgTags(court, p) + (p.live ? '' : '\n  <meta name="robots" content="noindex, follow">'),
+    body: courtPage({ court, p, games: listGames, extras, isLoggedIn: !!req.session?.playerRegId }),
+  }));
+});
+
 app.get('/papawis', (req, res) => {
   if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).send(
     renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })
@@ -17793,6 +17929,7 @@ app.get('/papawis', (req, res) => {
   // if the location hasn't been geocoded yet either, the old plain no-banner layout).
   for (const g of games) {
     const court = getPapawisCourtByName(g.location);
+    g.court_slug = liveCourtSlugByName().get(normCourtName(g.location)) || '';
     g.court_image_id = court?.image_url ? court.id : null;
     g.map_query = court?.address?.trim() || g.location;
     // Same estimate the pre-game reminder email quotes (lib/papawis-notify.js) — shown on
@@ -18614,6 +18751,7 @@ app.post('/admin/papawis/courts', requireAuth, express.json(), (req, res) => {
   const { name, price, address } = req.body || {};
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Court name is required.' });
   const id = addPapawisCourt(name, price, address);
+  ensurePapawisCourtSlug(id);
   res.json({ ok: true, id });
 });
 // Registered before the /:id route below — otherwise Express would match this path as
@@ -18631,6 +18769,118 @@ app.post('/admin/papawis/courts/reorder', requireAuth, express.json(), (req, res
   reorderPapawisCourts(order);
   res.json({ ok: true });
 });
+// ── Admin: one court's public page (views/admin/papawis-court.js) ─────────────────────────
+app.get('/admin/papawis/courts/:id', requireAuth, (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/papawis/courts', body: '<p class="aui-muted" style="padding:40px">Court not found.</p>' }));
+  if (!court.slug) court.slug = ensurePapawisCourtSlug(court.id);
+  const { p } = courtPageData(court);
+  res.send(renderAdminPage(req, {
+    title: p.name, currentPath: '/admin/papawis/courts',
+    body: adminPapawisCourtBody({ court, p, info: parseCourtJson(court.info_json, {}), aiOn: aiAvailable() }),
+  }));
+});
+
+app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  const b = req.body || {};
+  const clean = (v, n = 300) => String(v ?? '').replace(/\s+$/g, '').slice(0, n);
+  const info = {};
+  for (const f of COURT_INFO_FIELDS) { const v = clean(b[`info_${f.key}`], 400).trim(); if (v) info[f.key] = v; }
+  if (b.info_contact_public) info.contact_public = true;
+  const { p } = courtPageData(court);
+  const show = new Set([].concat(b['gallery_show[]'] || b.gallery_show || []).map(String));
+  updatePapawisCourtPage(court.id, {
+    city: COURT_CITIES.includes(b.city) ? b.city : '',
+    info_json: JSON.stringify(info),
+    writeup: clean(b.writeup, 4000).trim(),
+    page_hidden: b.page_on === '0' ? 1 : 0,
+    gallery_hidden_json: JSON.stringify(p.allPhotos.map(x => x.key).filter(k => !show.has(k))),
+    gallery_main: String(b.gallery_main || ''),
+    seo_title: clean(b.seo_title, 120).trim(),
+    seo_description: clean(b.seo_description, 300).trim(),
+  });
+  liveCourtsCache = null;
+  res.json({ ok: true });
+});
+
+// "About this court" AI draft: facts from lib/court-page.js only, and every number in the
+// draft has to appear in them (same guard as the section writeups), else it retries.
+app.post('/admin/papawis/courts/:id/writeup/generate', requireAuth, express.json(), async (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  if (!aiAvailable()) return res.status(400).json({ error: 'No AI provider is set up.' });
+  const { p } = courtPageData(court);
+  const factsText = p.facts.join('\n');
+  const allowed = new Set(factsText.match(/\d+(?:[.,]\d+)?/g) || []);
+  const voice = pickVoice('home', { date: manilaTodayStr() });
+  let issue = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const prompt = `You write the "About this court" paragraph on a basketball court's page for WKND Basketball, a weekend basketball league and pickup community ("Papawis" = our pickup runs) in Makati, Mandaluyong and Pasig, Philippines.
+
+Voice: ${voice.name}. ${voice.guide}
+Keep the voice light: this text also has to read well to someone who found the page on Google.
+
+FACTS (the only facts you may use):
+${factsText}
+
+Write 2 short paragraphs, 70 to 120 words in total, plain text, no headings, no bullet points, no emoji, no hashtags.
+- First paragraph: what and where the court is (use the court name and the city in the first sentence), and what WKND does there.
+- Second paragraph: what a run or game here is like, using the numbers above, and a closing line inviting people to play.
+- Use digits for numbers. Never invent a number, a feature of the court, a price or a date that is not in the facts.
+- Do not say how often runs happen ("every Saturday", "weekly", "monthly") or what a "typical" time is unless a fact says exactly that. The earliest start time is just the earliest, not the usual one.
+- No claims of fame or rank ("legendary", "the best", "the hotspot", "always packed") unless a fact supports them.
+- Separate the paragraphs with one blank line.${issue ? `\n\nYour last draft was rejected: ${issue}. Fix that.` : ''}`;
+    try {
+      const { text } = await generateText(prompt, { maxTokens: 400, temperature: Math.min(aiTemperature(), 0.8) });
+      const out = String(text || '').replace(/^["“]|["”]$/g, '').replace(/\*\*/g, '').trim();
+      const nums = out.match(/\d+(?:[.,]\d+)?/g) || [];
+      const bad = nums.filter(n => !allowed.has(n));
+      const words = out.split(/\s+/).length;
+      if (bad.length) { issue = `it used numbers not in the facts (${bad.join(', ')})`; continue; }
+      if (words < 40 || words > 160) { issue = `it was ${words} words`; continue; }
+      const problems = await factCheckCourtWriteup(factsText, out);
+      if (problems.length) { issue = `a fact check found claims the facts don't support: ${problems.join('; ')}`; continue; }
+      updatePapawisCourtPage(court.id, { writeup_draft: out, writeup_at: Date.now() });
+      return res.json({ ok: true, message: 'Draft ready. Read it, then use it or edit it.' });
+    } catch (e) {
+      console.error('[court writeup]', e.message);
+      return res.status(502).json({ error: 'The AI provider failed. Try again in a minute.' });
+    }
+  }
+  res.status(422).json({ error: `Couldn't get a clean draft (${issue}). Try again, or write it by hand.` });
+});
+// Second pass at temperature 0: every claim in the draft must be backed by the facts.
+async function factCheckCourtWriteup(factsText, text) {
+  const prompt = `Check this "About this court" text for a basketball court page against the facts.
+
+TEXT
+${text}
+
+FACTS
+${factsText}
+
+List every statement in the text that the facts do not directly support: wrong or invented numbers, how often runs happen ("every Saturday", "weekly", "3 runs a month"), a "typical" or "usual" time or day that no fact states, court features not in the facts, and claims of fame or rank ("legendary", "best", "hotspot", "always packed"). Friendly tone and an invitation to play are fine. If everything is supported, return accurate=true and an empty problems list.`;
+  const schema = { type: 'object', properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } }, required: ['accurate', 'problems'] };
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 300 });
+  if (data.accurate) return [];
+  const problems = (data.problems || []).map(x => String(x).slice(0, 200)).filter(Boolean);
+  return problems.length ? problems : ['unspecified inaccuracy'];
+}
+app.post('/admin/papawis/courts/:id/writeup/approve', requireAuth, express.json(), (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court?.writeup_draft) return res.status(400).json({ error: 'No draft to use.' });
+  updatePapawisCourtPage(court.id, { writeup: court.writeup_draft, writeup_draft: '' });
+  res.json({ ok: true });
+});
+app.post('/admin/papawis/courts/:id/writeup/discard', requireAuth, express.json(), (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  updatePapawisCourtPage(court.id, { writeup_draft: '' });
+  res.json({ ok: true });
+});
+
 app.post('/admin/papawis/courts/:id', requireAuth, express.json(), (req, res) => {
   const { name, price, address } = req.body || {};
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Court name is required.' });
