@@ -335,7 +335,6 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 9px; font-weight: 800; color: var(--text-muted);
-  font-family: 'Saira Condensed', sans-serif;
 }
 .awd-av__img {
   position: absolute; inset: 0;

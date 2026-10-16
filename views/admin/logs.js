@@ -10,7 +10,7 @@ function fmtTime(ts) {
 function methodBadge(method) {
   const colors = { POST: '#f59332', DELETE: '#f87171', PATCH: '#a78bfa', PUT: '#60a5fa' };
   const c = colors[method] || '#64748b';
-  return `<span style="font-size:10px;font-weight:700;color:${c};font-family:'Saira Condensed',sans-serif;letter-spacing:.04em">${escHtml(method)}</span>`;
+  return `<span style="font-size:10px;font-weight:700;color:${c};font-variant-numeric:tabular-nums;letter-spacing:.04em">${escHtml(method)}</span>`;
 }
 
 function actorBadge(type) {

@@ -487,7 +487,7 @@ a.agm-new-btn, a.agm-new-btn:link, a.agm-new-btn:visited { color: #020817 !impor
 .agm-team--win  { font-weight: 700; }
 .agm-vs { color: var(--text-muted); font-size: 12px; margin: 0 8px; }
 .agm-score {
-  font-family: 'Saira Condensed', sans-serif;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-muted);
@@ -776,7 +776,7 @@ a.agm-new-btn, a.agm-new-btn:link, a.agm-new-btn:visited { color: #020817 !impor
   gap: 8px;
 }
 .agm-game-header__score {
-  font-family: 'Saira Condensed', sans-serif;
+  font-family: var(--aui-emph);
   font-size: 30px;
   font-weight: 700;
   line-height: 1;
@@ -1024,7 +1024,7 @@ a.agm-new-btn, a.agm-new-btn:link, a.agm-new-btn:visited { color: #020817 !impor
 .admin-stat-value {
   font-size: 30px;
   font-weight: 800;
-  font-family: 'Saira Condensed', sans-serif;
+  font-family: var(--aui-emph);
   color: var(--amber);
   line-height: 1;
 }
@@ -1560,7 +1560,7 @@ a.agm-new-btn, a.agm-new-btn:link, a.agm-new-btn:visited { color: #020817 !impor
 a.aui-kpi:hover { border-color: var(--aui-line-2); }
 .aui-kpi__label { font-size: 12px; color: var(--text-2); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aui-kpi__row { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
-.aui-kpi__value { display: flex; align-items: baseline; gap: 6px; font-family: 'Saira Condensed', sans-serif; }
+.aui-kpi__value { display: flex; align-items: baseline; gap: 6px; font-family: var(--aui-emph); }
 .aui-kpi__value b { font-size: 38px; font-weight: 700; line-height: 1; color: var(--text); }
 .aui-kpi__value span { font-size: 18px; color: var(--text-muted); }
 .aui-kpi__delta { font-size: 12px; font-weight: 600; }
@@ -1646,7 +1646,7 @@ a.aui-kpi:hover { border-color: var(--aui-line-2); }
 .ahome__cols { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
 .ahome__main { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
 .ahome__side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
-.ahome__count { font-family: 'Saira Condensed', sans-serif; color: var(--amber); font-size: 20px; font-weight: 700; }
+.ahome__count { font-family: var(--aui-emph); color: var(--amber); font-size: 20px; font-weight: 700; }
 .ahome-todo { display: flex; flex-direction: column; gap: 10px; }
 .ahome-item { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 16px 18px; border-radius: var(--aui-card); background: var(--surface); border: 1px solid var(--aui-line); }
 .ahome-item.is-hot { border-color: var(--aui-amber-line); }
@@ -1732,7 +1732,7 @@ a.aui-kpi:hover { border-color: var(--aui-line-2); }
 .aui-grid__sort.is-on span { opacity: 1; color: var(--amber); }
 .aui-grid__table td { padding: 11px 8px; border-top: 1px solid rgba(255,255,255,.05); vertical-align: middle; color: var(--text-2); }
 .aui-grid.is-dense .aui-grid__table td { padding-top: 6px; padding-bottom: 6px; }
-.aui-grid__table td.is-num { font-family: 'Saira Condensed', sans-serif; font-size: 15px; color: var(--text); white-space: nowrap; }
+.aui-grid__table td.is-num { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--text); white-space: nowrap; }
 .aui-grid__table td.is-nowrap { white-space: nowrap; }
 .aui-grid__table th:first-child, .aui-grid__table td:first-child { padding-left: 18px; }
 .aui-grid__table th:last-child, .aui-grid__table td:last-child { padding-right: 14px; }
@@ -1753,7 +1753,7 @@ a.aui-kpi:hover { border-color: var(--aui-line-2); }
 .aui-pager { display: flex; gap: 6px; align-items: center; }
 .aui-pager__btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid rgba(255,255,255,.1); color: var(--text) !important; font-size: 16px; text-decoration: none; }
 .aui-pager__btn.is-off { color: #3a4252 !important; }
-.aui-pager__n { font-family: 'Saira Condensed', sans-serif; font-size: 14px; color: var(--text); min-width: 44px; text-align: center; }
+.aui-pager__n { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 14px; color: var(--text); min-width: 44px; text-align: center; }
 /* Cell helpers */
 .aui-cell__title { font-weight: 600; color: var(--text); }
 .aui-cell__sub { font-size: 11.5px; color: var(--text-muted); }
@@ -1827,7 +1827,7 @@ textarea.aui-input { height: auto; padding: 10px 12px; resize: vertical; line-he
 .aui-input:focus, .aui-input--affix:focus-within { outline: none; border-color: rgba(245,147,50,.6); box-shadow: 0 0 0 3px rgba(245,147,50,.12); }
 .aui-field.is-error .aui-input { border-color: rgba(248,113,113,.6); }
 .aui-input--affix { display: flex; align-items: center; padding: 0; overflow: hidden; }
-.aui-input--affix input { flex: 1; min-width: 0; height: 100%; padding: 0 12px; border: 0; background: transparent; color: var(--text); font-family: 'Saira Condensed', sans-serif; font-size: 15px; outline: none; }
+.aui-input--affix input { flex: 1; min-width: 0; height: 100%; padding: 0 12px; border: 0; background: transparent; color: var(--text); font-family: inherit; font-variant-numeric: tabular-nums; font-size: 15px; outline: none; }
 .aui-input__pre { padding: 0 10px; height: 100%; display: flex; align-items: center; color: var(--text-muted); border-right: 1px solid rgba(255,255,255,.08); }
 .aui-segmented { display: inline-flex; background: var(--bg); border: 1px solid rgba(255,255,255,.1); border-radius: 9px; padding: 2px; width: max-content; max-width: 100%; flex-wrap: wrap; }
 .aui-segmented input { position: absolute; opacity: 0; pointer-events: none; }
@@ -1913,7 +1913,7 @@ textarea.aui-input { height: auto; padding: 10px 12px; resize: vertical; line-he
 .aui-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); overflow: hidden; }
 .aui-stats__cell { padding: 12px 16px; box-shadow: -1px 0 0 rgba(255,255,255,.05), 0 -1px 0 rgba(255,255,255,.05); }
 .aui-stats__label { font-size: 11.5px; color: var(--text-2); }
-.aui-stats__value { font-family: 'Saira Condensed', sans-serif; font-weight: 700; font-size: 26px; line-height: 1.1; color: var(--text); }
+.aui-stats__value { font-family: var(--aui-emph); font-weight: 700; font-size: 26px; line-height: 1.1; color: var(--text); }
 .aui-stats__value span { font-size: 15px; color: var(--text-muted); font-weight: 600; margin-left: 2px; }
 .aui-page { display: flex; flex-direction: column; gap: 20px; max-width: 1240px; }
 @media (max-width: 640px) {
@@ -2067,7 +2067,7 @@ textarea.aui-input { height: auto; padding: 10px 12px; resize: vertical; line-he
 .pw-calc > div { display: flex; justify-content: space-between; align-items: center; color: var(--text-2); }
 .pw-calc > div[hidden] { display: none; }
 .pw-calc dt, .pw-calc dd { margin: 0; }
-.pw-calc dd { font-family: 'Saira Condensed', sans-serif; font-size: 15px; color: var(--text); }
+.pw-calc dd { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--text); }
 .pw-calc__total { padding-top: 6px; border-top: 1px solid rgba(255,255,255,.08); font-weight: 700; color: var(--text) !important; }
 .pw-calc__total dd { font-size: 18px; color: var(--amber); }
 .pw-cover { display: flex; flex-direction: column; gap: 10px; }
@@ -2102,7 +2102,7 @@ tbody[data-court-list] tr.is-dragging { opacity: .45; }
 .reach-step { display: flex; flex-direction: column; gap: 12px; }
 .reach-step__title { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); line-height: 1; }
 .reach-seg .aui-choice__body { min-height: 56px; padding: 10px 14px; border-radius: 12px; justify-content: space-between; }
-.reach-seg__n { font-family: 'Saira Condensed', sans-serif; font-size: 20px; font-weight: 700; color: var(--text-muted); line-height: 1; display: inline-flex; align-items: center; }
+.reach-seg__n { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; color: var(--text-muted); line-height: 1; display: inline-flex; align-items: center; }
 .reach-seg input:checked + .aui-choice__body .reach-seg__n { color: var(--amber); }
 .reach-seg .aui-choice__body.is-disabled { opacity: .45; cursor: not-allowed; }
 .reach-teams { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -2119,7 +2119,7 @@ tbody[data-court-list] tr.is-dragging { opacity: .45; }
 .reach-side__title--out { padding: 0 2px 8px; }
 .reach-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; font-size: 13px; line-height: 1.3; }
 .reach-row + .reach-row { border-top: 1px solid rgba(255,255,255,.05); }
-.reach-row b { font-family: 'Saira Condensed', sans-serif; font-size: 18px; line-height: 1; display: inline-flex; align-items: center; }
+.reach-row b { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 18px; line-height: 1; display: inline-flex; align-items: center; }
 .reach-row.is-muted { color: var(--text-muted); }
 .reach-row.is-faint { color: var(--text-subtle); }
 .reach-bell { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--aui-card); background: var(--surface); border: 1px solid var(--aui-line); }
@@ -2142,7 +2142,7 @@ tbody[data-court-list] tr.is-dragging { opacity: .45; }
 .agl-team { display: inline-flex; align-items: center; gap: 7px; color: var(--text-muted); line-height: 1; }
 .agl-team.is-win { color: var(--text); font-weight: 700; }
 .agl-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; background: rgba(255,255,255,.2); }
-.agl-score { display: inline-flex; align-items: center; gap: 6px; font-family: 'Saira Condensed', sans-serif; font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; }
+.agl-score { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; }
 .agl-score span { color: var(--text-subtle); }
 .agl-vs { font-size: 12px; color: var(--text-subtle); line-height: 1; }
 .agl-ot { height: 18px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 6px; background: rgba(245,147,50,.14); color: var(--amber); font-size: 10.5px; font-weight: 700; line-height: 1; }
@@ -2155,7 +2155,7 @@ tbody[data-court-list] tr.is-dragging { opacity: .45; }
 .agd-hero { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px; border-radius: var(--aui-card); background: var(--surface); border: 1px solid var(--aui-line); }
 .agd-hero__main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .agd-hero__score { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
-.agd-hero__score b { font-family: 'Saira Condensed', sans-serif; font-size: 40px; font-weight: 700; line-height: 1; color: var(--text); }
+.agd-hero__score b { font-family: var(--aui-emph); font-size: 40px; font-weight: 700; line-height: 1; color: var(--text); }
 .agd-hero__dash, .agd-hero__vs { color: var(--text-subtle); font-size: 20px; line-height: 1; }
 .agd-hero__team { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: var(--text-muted); line-height: 1; letter-spacing: .02em; }
 .agd-hero__team.is-win { color: var(--text); }
@@ -2170,7 +2170,7 @@ tbody[data-court-list] tr.is-dragging { opacity: .45; }
 .agd-lines__cell { flex: 1 0 84px; display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; }
 .agd-lines__cell + .agd-lines__cell { border-left: 1px solid rgba(255,255,255,.05); }
 .agd-lines__cell span { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-subtle); line-height: 1; }
-.agd-lines__cell b { font-family: 'Saira Condensed', sans-serif; font-size: 18px; line-height: 1; color: var(--text); white-space: nowrap; }
+.agd-lines__cell b { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 18px; line-height: 1; color: var(--text); white-space: nowrap; }
 .agd-lines__cell.is-final { background: rgba(245,147,50,.05); }
 .agd-lines__cell.is-final b { color: var(--amber); }
 .agd-boxhead { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
@@ -2181,7 +2181,7 @@ tbody[data-court-list] tr.is-dragging { opacity: .45; }
 .agd-table th { padding: 10px 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-subtle); text-align: left; white-space: nowrap; border-bottom: 1px solid var(--aui-line); }
 .agd-table th:first-child, .agd-table td:first-child { padding-left: 16px; position: sticky; left: 0; background: var(--surface); z-index: 1; }
 .agd-table td { padding: 8px; border-top: 1px solid rgba(255,255,255,.05); vertical-align: middle; white-space: nowrap; }
-.agd-table .is-num { text-align: right; font-family: 'Saira Condensed', sans-serif; font-size: 15px; color: #c9cfdb; }
+.agd-table .is-num { text-align: right; font-family: inherit; font-variant-numeric: tabular-nums; font-size: 15px; color: #c9cfdb; }
 .agd-table th.is-num { font-family: inherit; font-size: 10.5px; color: var(--text-subtle); }
 .agd-table .agd-pts { font-weight: 700; color: var(--text); }
 .agd-table tfoot td { font-weight: 700; color: var(--text); border-top: 1px solid var(--aui-line-2); }
@@ -2194,7 +2194,7 @@ tbody[data-court-list] tr.is-dragging { opacity: .45; }
 a.agd-name:hover { color: var(--amber); }
 .agd-e { display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; color: var(--text-subtle); }
 .agd-e[hidden], .agd-v[hidden], .agd-act [hidden] { display: none; }
-.agd-in { width: 46px; height: 30px; padding: 0 4px; text-align: center; font-family: 'Saira Condensed', sans-serif; font-size: 15px; -moz-appearance: textfield; }
+.agd-in { width: 46px; height: 30px; padding: 0 4px; text-align: center; font-family: inherit; font-variant-numeric: tabular-nums; font-size: 15px; -moz-appearance: textfield; }
 .agd-in::-webkit-outer-spin-button, .agd-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .agd-act { width: 72px; text-align: right; padding-right: 12px !important; }
 .agd-act__view, .agd-act__edit { display: inline-flex; gap: 4px; justify-content: flex-end; }
@@ -2261,7 +2261,7 @@ a.agd-name:hover { color: var(--amber); }
 .apk-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.05); }
 .apk-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .apk-side__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
-.apk-side__head b { font-family: 'Saira Condensed', sans-serif; font-size: 18px; line-height: 1; }
+.apk-side__head b { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 18px; line-height: 1; }
 .apk-note { font-size: 11.5px; }
 .apk-faces { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .apk-face { display: inline-flex; border-radius: 50%; }
@@ -2312,7 +2312,7 @@ a.agd-name:hover { color: var(--amber); }
 }
 
 /* ── Players (views/admin/players.js, player-detail.js) ── */
-.apl-ovr { display: inline-flex; align-items: center; font-family: 'Saira Condensed', sans-serif; font-weight: 700; font-size: 22px; line-height: 1; color: var(--amber); }
+.apl-ovr { display: inline-flex; align-items: center; font-family: var(--aui-emph); font-weight: 700; font-size: 22px; line-height: 1; color: var(--amber); }
 .apl-ovr--sm { font-size: 17px; }
 .apl-ovr__label { display: inline-flex; align-items: center; font-size: 11px; line-height: 1; color: var(--text-2); }
 .apl-head__text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -2339,8 +2339,8 @@ a.agd-name:hover { color: var(--amber); }
 .apl-rating { display: flex; align-items: center; gap: 10px; }
 .apl-bar { width: 180px; max-width: 40vw; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; flex: none; }
 .apl-bar__fill { display: block; height: 100%; border-radius: 3px; background: var(--text-2); }
-.apl-rating__n { min-width: 22px; font-family: 'Saira Condensed', sans-serif; font-size: 16px; font-weight: 700; line-height: 1; color: var(--text); }
-.apl-calc { font-family: 'Saira Condensed', sans-serif; font-size: 15px; color: var(--text-2); }
+.apl-rating__n { min-width: 22px; font-family: inherit; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 700; line-height: 1; color: var(--text); }
+.apl-calc { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--text-2); }
 .apl-override { width: 72px; text-align: right; display: inline-block; }
 .apl-attrs__foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 18px; border-top: 1px solid rgba(255,255,255,.05); font-size: 12px; }
 .apl-stats .aui-stats { grid-template-columns: repeat(8, minmax(0, 1fr)); }
@@ -2409,10 +2409,10 @@ a.agd-name:hover { color: var(--amber); }
 .alg-q__meta { display: flex; align-items: center; gap: 14px; }
 .alg-q__cat.aui-input { width: 160px; }
 .alg-q__shot { min-width: 76px; display: inline-flex; align-items: center; }
-.alg-q__amt { font-family: 'Saira Condensed', sans-serif; font-size: 18px; font-weight: 700; color: var(--text); min-width: 76px; text-align: right; }
+.alg-q__amt { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; color: var(--text); min-width: 76px; text-align: right; }
 .alg-q__actions { display: flex; gap: 6px; }
 /* Amounts and the small transaction list in the player drawer. */
-.alg-amt { font-family: 'Saira Condensed', sans-serif; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.alg-amt { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 700; white-space: nowrap; }
 .alg-amt.is-void { color: var(--text-muted); text-decoration: line-through; }
 .alg-fee .aui-progress__track { max-width: 160px; }
 .alg-fee.is-done .aui-progress__fill { background: var(--aui-green); }
@@ -2533,7 +2533,7 @@ a.agd-name:hover { color: var(--amber); }
 .agx-zoom { display: flex; flex-direction: column; gap: 6px; }
 .agx-zoom .aui-btn--sm { height: 28px; padding: 0 8px; }
 .agx-zoom__label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); line-height: 1; }
-.agx-zoom__label b { color: var(--text); font-family: 'Saira Condensed', sans-serif; font-size: 14px; font-weight: 700; }
+.agx-zoom__label b { color: var(--text); font-family: inherit; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 700; }
 .agx-range { width: 100%; margin: 0; accent-color: var(--amber); }
 @media (max-width: 640px) {
   .agx-item__row { padding: 12px 14px; }
@@ -2548,7 +2548,7 @@ a.agd-name:hover { color: var(--amber); }
 /* ── Team builder (views/admin/season-teams.js) ── */
 /* Team builder + Sandbox board, rebuilt 2026-10-15 (public/admin-team-builder.js). */
 .atb.aui-page { max-width: 1440px; }
-.atb-num { font-family: 'Saira Condensed', sans-serif; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+.atb-num { font-family: inherit; font-variant-numeric: tabular-nums; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
 .atb-num.is-amber { color: var(--amber); }
 .atb-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; display: inline-block; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
 .atb-eyebrow { display: flex; align-items: center; gap: 8px; }
@@ -2882,3 +2882,133 @@ body:has(.aui-savebar:not([hidden])) .aui-toasts { bottom: 88px; }
 .acrt-info { display: flex; flex-direction: column; gap: 18px; }
 .acrt-tickgroup { display: flex; flex-direction: column; gap: 8px; }
 .acrt-ticks { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ── Look and feel pass (2026-10-17) ──────────────────────────────────────────────────────
+   Paolo's rules (docs/admin-rebuild-checklist.md, Design rules): no Saira Condensed in
+   content (numbers in tables, cards and lists use Archivo with even-width digits); Saira only
+   on numbers that need emphasis; content uses the full container width; one spacing scale;
+   professional and plain, nothing decorative. */
+:root {
+  --aui-emph: 'Saira', 'Archivo', sans-serif;
+  --aui-gap: 24px;     /* between sections and columns */
+  --aui-gap-sm: 12px;  /* inside a section: heading to body, between rows of controls */
+  --aui-pad: 18px;     /* inside every card and panel */
+}
+@media (max-width: 640px) {
+  :root { --aui-gap: 16px; --aui-gap-sm: 10px; --aui-pad: 14px; }
+}
+
+/* Numbers in content: body font, body sizes, aligned digits. */
+.aui-grid__table td.is-num, .agd-table .is-num, .pw-calc dd, .apl-calc, .aui-pager__n { font-size: 13.5px; }
+.agl-score { font-size: 15px; gap: 5px; }
+.agd-lines__cell b, .reach-row b, .apk-side__head b, .alg-q__amt { font-size: 15px; font-weight: 700; }
+.reach-seg__n { font-size: 15px; }
+.apl-rating__n, .alg-amt { font-size: 14px; }
+.agd-in { font-size: 13.5px; }
+.agx-zoom__label b { font-size: 13px; }
+.aui-input--affix input { font-size: 13.5px; }
+
+/* Emphasised numbers: Saira, weight 600, a little smaller than the old condensed sizes. */
+.aui-kpi__value, .aui-stats__value, .ahome__count, .agd-hero__score b, .apl-ovr { font-weight: 600; letter-spacing: 0; }
+.aui-stats__value { font-size: 24px; }
+.agd-hero__score b { font-size: 36px; }
+.apl-ovr { font-size: 20px; }
+
+/* Full container width: no capped page or side columns. */
+.aui-page, .ahome, .atb.aui-page { max-width: none; }
+.aui-cols__main { flex: 2 1 560px; }
+.aui-cols__side, .atb-side { flex: 1 1 320px; max-width: none; }
+
+/* One spacing scale. */
+.aui-page, .ahome { gap: var(--aui-gap); }
+.aui-cols, .aui-cols__main, .aui-cols__side, .atb-side { gap: var(--aui-gap); }
+.aui-section { gap: var(--aui-gap-sm); }
+.aui-panel, .aui-fsec, .agd-hero, .aui-person { padding: var(--aui-pad); }
+.aui-panel--flush { padding: 6px; }
+.aui-stats__cell { padding: 14px var(--aui-pad); }
+.aui-fsec { gap: var(--aui-gap); }
+
+/* ── Alignment and spacing audit (2026-10-17) ──────────────────────────────────────────────
+   Everything below snaps the rebuilt admin pages to the one spacing scale above:
+   --aui-gap between sections and columns, --aui-gap-sm inside a section, --aui-pad inside
+   every card. Rows inside a flush (6px) panel pad by --aui-pad minus 6px so their text lands
+   on the same inset as a normal panel's. */
+
+/* Section heads are as tall as a 36px control, so a head with a button and one without
+   start their cards on the same line across columns. */
+.aui-section__head { min-height: 36px; }
+
+/* In-page breadcrumbs sit a small gap above the card they label, not a full section gap. */
+.aui-page > .aui-crumbs { margin-bottom: calc(var(--aui-gap-sm) - var(--aui-gap)); }
+
+/* Home: same gaps and card padding as every other page. */
+.ahome__cols, .ahome__main, .ahome__side { gap: var(--aui-gap); }
+.aui-kpi, .ahome-item { padding: var(--aui-pad); }
+.ahome-feed__row, .ahome-clicks__row { padding-left: 0; padding-right: 0; }
+/* A count next to a section title is a label, not an emphasised number. */
+.ahome__count { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 700; }
+
+/* OVR in the players list is a table number (Saira stays on the OVR in a player's header). */
+.apl-ovr.apl-ovr--sm { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; }
+
+/* Facts grids keep the same columns whatever the item count, so a 2-item card lines up
+   with the 3-column card above it. */
+.aui-facts { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+
+/* A small button beside a 36px field, select or segmented control takes the same height. */
+:is(.aui-inline-form, .aui-row, .aui-row-between, .agd-boxhead, .agd-pickctl__row):has(> .aui-input, > input:not([type=hidden]):not([type=file]), > select, > .aui-segmented, > .aui-seg, > .aui-search, > .aui-field, > .alg-seasons, > .apl-season) > .aui-btn--sm { height: 36px; }
+
+/* Field text insets match: select text sits where input text does (Chrome adds ~3px inside
+   a select), and the player picker's typed text lines up with a normal input's. */
+select.aui-input { padding-left: 9px; }
+.aui-picker__box input { padding: 0 6px; }
+
+/* Toggle rows and timelines: the card padding is the only space at the top and bottom. */
+:is(.aui-panel, .aui-fsec__body) > .aui-toggle-row:first-child { padding-top: 0; }
+:is(.aui-panel, .aui-fsec__body) > .aui-toggle-row:last-child { padding-bottom: 0; }
+.aui-timeline__item:last-child { padding-bottom: 0; }
+
+/* Rows inside flush panels land on the normal card inset. */
+.reach-side__title { padding: 12px calc(var(--aui-pad) - 6px) 8px; }
+.reach-side__title--out { padding: 0 0 8px; }
+.reach-row { padding-left: calc(var(--aui-pad) - 6px); padding-right: calc(var(--aui-pad) - 6px); }
+.agd-pickcol__head { padding: 12px calc(var(--aui-pad) - 6px); }
+.agd-pickcol__none { padding: 14px calc(var(--aui-pad) - 6px); }
+.agd-picker { padding-left: calc(var(--aui-pad) - 6px); padding-right: calc(var(--aui-pad) - 6px); }
+.apk-res > summary, div.apk-res { padding-left: calc(var(--aui-pad) - 6px); padding-right: calc(var(--aui-pad) - 6px); }
+.apk-res__more { padding-left: calc(var(--aui-pad) - 6px + 76px); padding-right: calc(var(--aui-pad) - 6px); }
+/* The award-graphic photo list is a list panel (its rows carry the padding); the token
+   padding above had doubled it. */
+.aui-panel.agx-list { padding: 0; }
+
+/* Cards side by side: column gap from the scale, equal heights. */
+.agd-body { gap: var(--aui-gap); }
+.pw-teams, .agd-pickcols { gap: var(--aui-gap); align-items: stretch; }
+.atb-board { gap: var(--aui-gap); }
+.atb-teams { gap: var(--aui-gap-sm); align-items: stretch; }
+.atb-teams > .atb-add { align-self: start; }
+
+/* Game box score and quarter strip: first column on the card inset. */
+.agd-table th:first-child, .agd-table td:first-child { padding-left: var(--aui-pad); }
+.agd-lines__cell { padding: 12px var(--aui-pad); }
+/* Ledger stat strips: same cell padding as every other stat strip. */
+.alg-stats .aui-stats__cell { padding: 14px var(--aui-pad); }
+.pw-team__head, .pw-team__row { padding-left: var(--aui-pad); padding-right: var(--aui-pad); }
+
+/* Scroll boxes contain their absolutely positioned bits (sr-only header labels), which
+   otherwise escaped and scrolled the whole page sideways on a phone. */
+.agd-tablewrap, .aui-grid__scroll, .aui-table-wrap, .agd-lines { position: relative; }
+
+/* Name + sub-line cells truncate instead of pushing past the card. */
+.aui-who { max-width: 100%; }
+.aui-who > .aui-cell__stack { overflow: hidden; }
+.aui-who > .aui-cell__stack > * { overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 640px) {
+  /* Phone row cards: even inner padding on all sides, ⋯ menu inside the same inset. */
+  .aui-grid__row { padding: 12px var(--aui-pad); }
+  .aui-grid__row td.aui-grid__menu { top: 8px; right: 6px; }
+}
+@media (max-width: 760px) {
+  .apk-res__more { padding-left: calc(var(--aui-pad) - 6px); }
+}

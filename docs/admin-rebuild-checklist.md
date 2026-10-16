@@ -82,6 +82,22 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. G
 - [x] Message players: composer with segments, Sent log. Mockup done. (/admin/reach, /admin/reach/sent; sends through lib/broadcast.js)
 - [ ] Insights, after 4 to 6 weeks of tracking data. Mockup needed.
 
+## Design rules (Paolo, 2026-10-17)
+
+Every admin page follows these:
+
+- **No Saira Condensed in content areas.** Tables, cards, lists, box scores and form values use Archivo.
+- **Saira (regular width) only on numbers that need emphasis:** stat-strip values, a score in a page header, a total. Self-host it with the other fonts, not from Google at runtime.
+- **Symmetry:** one spacing scale for the whole admin. Equal gaps between sections, equal padding in cards, columns and rows aligned, and controls in a row the same height.
+- **Full container width for content.** No narrow capped columns or half-width panels leaving empty space.
+- **Professional, clean and slick, not fancy.** No gradients, glows, oversized display type or decorative badges.
+- **Not cramped,** especially on phones: one main action per area, badges only for exceptions, and a check at phone width before a page is done.
+
+## Look and feel pass
+
+- [x] Fonts (Saira only for emphasis, Archivo in content), full width, spacing tokens: done 2026-10-17.
+- [x] Alignment and equal-spacing audit of every built page and tab: done 2026-10-17 (38 views at desktop and phone).
+
 ## Cleanup
 
 - [ ] Remove the Tailwind CDN from the admin once no page uses it.

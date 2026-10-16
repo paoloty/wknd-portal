@@ -130,7 +130,7 @@ ${rows.length === 0
 <style>
 .cmp-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .cmp-stat { text-align: center; }
-.cmp-stat__val { font-size: 20px; font-weight: 800; color: var(--text); font-family: 'Saira Condensed', sans-serif; line-height: 1; }
+.cmp-stat__val { font-size: 20px; font-weight: 800; color: var(--text); font-family: 'Saira', 'Archivo', sans-serif; line-height: 1; }
 .cmp-stat__val--win { color: #f59332; }
 .cmp-stat__lbl { font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-top: 2px; }
 </style>

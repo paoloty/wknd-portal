@@ -43,7 +43,7 @@ export function adminPapawisActivityBody({ activity = [], cancellers = [], regul
     columns: [
       { key: 'name', label: 'Player', primary: true, sort: e => e.name.toLowerCase(), cell: e => `<span class="aui-who">${avatar(e.name, colorById[e.player_id] || '', { size: 26, playerId: e.player_id })}<span class="aui-cell__title">${escHtml(e.name)}</span></span>` },
       { key: 'what', label: 'What', bare: true, sort: e => e.event_type, cell: e => `<span class="pw-event ${TONE[e.kind] || ''}">${escHtml((ACTIVITY_LABELS[e.event_type] || { label: e.event_type }).label)}</span>${e.notes ? `<div class="aui-cell__sub">${escHtml(e.notes)}</div>` : ''}` },
-      { key: 'run', label: 'Run', sort: e => e.game_title || '', cell: e => (e.game_id ? `<a class="aui-link" href="/admin/papawis/${attr(e.game_id)}?tab=activity">${escHtml(e.game_title || 'Papawis')}</a>` : '<span class="aui-muted">General</span>') },
+      { key: 'run', label: 'Run', nowrap: true, sort: e => e.game_title || '', cell: e => (e.game_id ? `<a class="aui-link" href="/admin/papawis/${attr(e.game_id)}?tab=activity">${escHtml(e.game_title || 'Papawis')}</a>` : '<span class="aui-muted">General</span>') },
       { key: 'when', label: 'When', num: true, sort: e => e.created_at, cell: e => escHtml(fmtTime(e.created_at)) },
     ],
     empty: { title: 'No activity yet', sub: 'Sign-ups, cancellations and emails show up here.' },
