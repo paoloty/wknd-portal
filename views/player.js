@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, formatDate, truncate, initials, avatarStack, playerPhotoUrl, shareIcon } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, truncate, initials, avatarStack, playerPhotoUrl, shareIcon, COMMUNITY_GC_URL } from './utils.js';
 import { FOCUS_LABELS, FOCUS_VIDEOS } from '../lib/player-analysis.js';
 import { RATING_CATEGORIES } from '../lib/peer-ratings.js';
 import { ICON_CHECK as POLL_ICON_CHECK } from './polls.js';
@@ -1564,7 +1564,7 @@ function prfTile({ label, chip = null, value, small = '', segs = null, sub = '',
       ${segs ? `<div class="prf-segs" aria-label="${segs.done} of ${segs.total} picked">${Array.from({ length: segs.total }, (_, i) => `<i${i < segs.done ? ' class="on"' : ''}></i>`).join('')}</div>` : ''}
       ${sub ? `<div class="prf-kpi__sub">${escHtml(sub)}</div>` : ''}
     </div>
-    ${cta ? `<a href="${escHtml(cta.href)}" class="prf-kpi__cta${cta.quiet ? ' prf-kpi__cta--quiet' : ''}">${escHtml(cta.text)} <span>&rarr;</span></a>` : ''}
+    ${cta ? `<a href="${escHtml(cta.href)}" class="prf-kpi__cta${cta.quiet ? ' prf-kpi__cta--quiet' : ''}"${cta.attrs ? ` ${cta.attrs}` : ''}>${escHtml(cta.text)} <span>&rarr;</span></a>` : ''}
   </div>`;
 }
 
@@ -1660,6 +1660,10 @@ function prfToday(o) {
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
   if (next) {
     tiles.push(prfTile({ label: 'NEXT PAPAWIS', chip: next.any_confirmed ? { kind: 'ok', text: 'IN' } : { kind: 'due', text: 'WAITLIST' }, value: prfDay(next.date), sub: [prfWeekday(next.date), next.any_confirmed ? 'Confirmed' : 'Waitlist', next.title].filter(Boolean).join(' · '), cta: { href: '/papawis', text: 'View', quiet: true } }));
+  }
+  // Until they've clicked through to the community chat from anywhere on the site.
+  if (o.showGcInvite) {
+    tiles.push(prfTile({ label: 'COMMUNITY CHAT', value: 'GC', sub: 'Run updates, last-minute Papawis slots and game-day banter.', cta: { href: COMMUNITY_GC_URL, text: 'Join the chat', attrs: 'target="_blank" rel="noopener" data-cta="me-gc"' } }));
   }
   const body = tiles.length
     ? `<div class="prf-kpis">${tiles.join('')}</div>`

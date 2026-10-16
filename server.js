@@ -154,7 +154,7 @@ import {
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
-  bumpPageView, prunePageViews, bumpCtaClick, getCtaClickTotals, getGuestPageViews, setRegistrationLastSeen, clickNotification, getOwnNotificationLink,
+  bumpPageView, prunePageViews, bumpCtaClick, getCtaClickTotals, getGuestPageViews, markPlayerCta, playerCtaDone, setRegistrationLastSeen, clickNotification, getOwnNotificationLink,
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   createLeaguePoll, getAllLeaguePolls, getLeaguePollById, setLeaguePollStatus, getLeaguePollVotes, getMyLeaguePollVote, castLeaguePollVote,
@@ -2241,6 +2241,9 @@ const CTA_KEYS = {
   'papawis-messenger':  'Papawis · Message us',
   'footer-messenger': 'Footer · Messenger',
   'footer-fb':        'Footer · Facebook',
+  'activate-gc':      'Members · Community chat (welcome screen)',
+  'me-gc':            'Members · Community chat (My Profile)',
+  'papawis-gc':       'Members · Community chat (Papawis)',
 };
 
 function renderPage(req, opts) {
@@ -2836,6 +2839,8 @@ app.post('/api/cta/:key', (req, res) => {
     const skip = !CTA_KEYS[key] || req.session?.impersonating || (req.session?.isAdmin && !req.session?.playerRegId)
       || TRACK_BOT_RE.test(req.get('user-agent') || '');
     if (!skip) bumpCtaClick(manilaTodayStr(), key);
+    // Opened the community chat from anywhere: /me stops showing its invite tile.
+    if (key.endsWith('-gc') && req.session?.playerPlayerId && !req.session?.impersonating) markPlayerCta(req.session.playerPlayerId, 'gc');
   } catch (e) { console.error('[cta]', e.message); }
   res.status(204).end();
 });
@@ -15909,6 +15914,7 @@ app.get('/players/:ref', async (req, res) => {
       player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord,
       isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
       // Guests only (mostly people who searched the player's name): join / Papawis / Facebook card.
+      showGcInvite: isOwnProfile && !playerCtaDone(resolved.id, 'gc'),
       joinCta: !req.session?.playerRegId && !req.session?.isAdmin ? { regOpen: getSetting('reg_open', '0') === '1', papawis: !!getFeatureFlags().papawis } : null,
       champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
       balanceAmount, balanceTransactions: isOwnProfile && balanceAmount > 0 ? balanceTransactions : [], papawisGames, coachNote, latestPoll, papawisEmailsOn,

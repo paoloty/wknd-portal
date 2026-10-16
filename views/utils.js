@@ -251,3 +251,7 @@ export function commentSnippet(c) {
   const body = String(c.body || '').replace(/\s+/g, ' ').trim();
   return `<span class="gr-talk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><b>${escHtml(first)}</b><span>${escHtml(body.length > 80 ? `${body.slice(0, 78)}…` : body)}</span></span>`;
 }
+
+// The members' Messenger community chat. Invite link: shown to signed-in players only
+// (activation welcome, /me Today, /papawis), never on public pages, so it doesn't leak to bots.
+export const COMMUNITY_GC_URL = 'https://m.me/cm/AbZhN58LyjTNv6h1/';

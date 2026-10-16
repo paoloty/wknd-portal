@@ -1,4 +1,5 @@
 import { escHtml } from './layout.js';
+import { COMMUNITY_GC_URL } from './utils.js';
 import { authShell, playerCard } from './auth-shell.js';
 
 // Activation step 2 of 2 — "Snap your game face". Shown once, right after a first-time
@@ -50,7 +51,8 @@ export function activatePage({ prompt = '', card = {} } = {}) {
           <button type="button" class="au-btn au-btn--amber" id="gf-use">Use this photo</button>
         </div>
         <div class="au-ok hidden" id="gf-done" role="status">Got it — you're verified. Welcome in!</div>
-        <a class="au-btn au-btn--amber au-btn--block hidden" id="gf-go" href="/me">Go to My Profile →</a>
+        <a class="au-btn au-btn--amber au-btn--block hidden" id="gf-gc" href="${COMMUNITY_GC_URL}" target="_blank" rel="noopener" data-cta="activate-gc">Join the community chat →</a>
+        <a class="au-btn au-btn--ghost au-btn--block hidden" id="gf-go" href="/me">Go to My Profile</a>
         <div class="au-error hidden" id="gf-error" role="alert"></div>
 
         <div style="display:flex;justify-content:center" id="gf-skip-row">
@@ -104,7 +106,7 @@ export function activatePage({ prompt = '', card = {} } = {}) {
     stopStream();
     if (ws) { try { ws.close(); } catch (e) {} ws = null; }
     [ $('gf-start'), snapBtn, confirmRow, qr, guide, $('gf-skip-row') ].forEach(function (el) { show(el, false); });
-    show($('gf-done'), true); show($('gf-go'), true); setError('');
+    show($('gf-done'), true); show($('gf-gc'), true); show($('gf-go'), true); setError('');
     consent.disabled = true;
     // Put the selfie on the card — this browser only.
     var av = $('gfc-av');

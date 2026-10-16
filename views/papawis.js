@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials, shareIcon } from './utils.js';
+import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials, shareIcon, COMMUNITY_GC_URL } from './utils.js';
 
 // /papawis — rebuilt 2026-10-11 from the "WKND Marketplace + Papawis Redesign" canvas (variant J).
 // Every UPCOMING run gets the full block (countdown bar, photo banner, who's in, details +
@@ -440,7 +440,9 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
       </div>
       ${alertsBtn}
     </header>
-    <p class="pwx-desc">Pickup runs in Makati, Mandaluyong and Pasig, with limited slots. First come, first served. Questions? <a href="https://m.me/wkndbasketball" target="_blank" rel="noopener" data-cta="papawis-messenger">Message us on Messenger</a>.</p>
+    <p class="pwx-desc">Pickup runs in Makati, Mandaluyong and Pasig, with limited slots. First come, first served. ${isLoggedIn
+      ? `Run updates and last-minute slots are in the <a href="${COMMUNITY_GC_URL}" target="_blank" rel="noopener" data-cta="papawis-gc">community chat</a>.`
+      : 'Questions? <a href="https://m.me/wkndbasketball" target="_blank" rel="noopener" data-cta="papawis-messenger">Message us on Messenger</a>.'}</p>
 
     <div class="pwx-runs">${runs}</div>
 
