@@ -36,7 +36,7 @@
 .crt-gal { margin-top: 16px; container-type: inline-size; }
 .crt-gal__track { display: flex; gap: var(--c-gap); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .crt-gal__track::-webkit-scrollbar { display: none; }
-/* One height for every photo, each card the shape of its photo (aspect-ratio set inline):
+/* One height for every photo; the lead card keeps its photo's shape, the rest are 4:3 (set inline):
    the first --gal-n cards fill the row, so height = row width minus gaps, over their ratios. */
 .crt-gal__card { position: relative; flex: 0 0 auto; height: calc((100cqw * var(--gal-fill, 1) - (var(--gal-n) - 1) * var(--c-gap)) / var(--gal-r)); max-height: 420px; margin: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); scroll-snap-align: start; }
 .crt-gal__card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -342,7 +342,7 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 @media (max-width: 900px) {
   .crt-top { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .crt-rail__track > *, .crt-rail--more .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap) * 2) / 2.25); }
-  .crt-gal__card { height: calc((100cqw * 0.9 - var(--c-gap)) / (var(--gal-r0) + 1.7778)); }
+  .crt-gal__card { height: calc((100cqw * 0.9 - var(--c-gap)) / (var(--gal-r0) + 1.3333)); }
   .crt-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-report { grid-template-columns: repeat(3, minmax(0, 1fr)); }

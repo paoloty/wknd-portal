@@ -38,12 +38,14 @@ function gallery(p) {
   const ph = p.photos;
   if (!ph.length) return '';
   const per = Math.min(3, ph.length);
-  // One height for every card, each as wide as its photo's shape (no cropping): the first
-  // `per` cards fill the row exactly, so the height is the row width over their summed ratios.
-  const r = x => Number(x.ratio) || 16 / 9;
-  const sum = ph.slice(0, per).reduce((a, x) => a + r(x), 0);
-  return `<section class="crt-gal" style="--gal-n:${per};--gal-r:${sum.toFixed(4)};--gal-r0:${r(ph[0]).toFixed(4)};--gal-fill:${ph.length > per ? 0.93 : 1}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
-    <div class="crt-gal__track">${ph.map((x, i) => `<figure class="crt-gal__card" style="aspect-ratio:${r(x).toFixed(4)}"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i < per ? (i ? '' : ' fetchpriority="high"') : ' loading="lazy"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`).join('')}</div>
+  // One height for every card. The lead photo keeps its own shape (the court photo is 2:1, so
+  // it shows whole); the rest are the standard 4:3 card. The first `per` cards fill the row,
+  // so the height is the row width over their summed ratios.
+  const r0 = Number(ph[0].ratio) || 16 / 9;
+  const r = (x, i) => (i ? 4 / 3 : r0);
+  const sum = ph.slice(0, per).reduce((a, x, i) => a + r(x, i), 0);
+  return `<section class="crt-gal" style="--gal-n:${per};--gal-r:${sum.toFixed(4)};--gal-r0:${r0.toFixed(4)};--gal-fill:${ph.length > per ? 0.93 : 1}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
+    <div class="crt-gal__track">${ph.map((x, i) => `<figure class="crt-gal__card" style="aspect-ratio:${r(x, i).toFixed(4)}"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i < per ? (i ? '' : ' fetchpriority="high"') : ' loading="lazy"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`).join('')}</div>
     ${railBar(ph.length, per, 'photos')}
   </section>`;
 }
