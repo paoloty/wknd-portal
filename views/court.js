@@ -42,7 +42,7 @@ function gallery(p) {
   // `per` cards fill the row exactly, so the height is the row width over their summed ratios.
   const r = x => Number(x.ratio) || 16 / 9;
   const sum = ph.slice(0, per).reduce((a, x) => a + r(x), 0);
-  return `<section class="crt-gal" style="--gal-n:${per};--gal-r:${sum.toFixed(4)};--gal-r0:${r(ph[0]).toFixed(4)}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
+  return `<section class="crt-gal" style="--gal-n:${per};--gal-r:${sum.toFixed(4)};--gal-r0:${r(ph[0]).toFixed(4)};--gal-fill:${ph.length > per ? 0.93 : 1}" aria-label="Photos of ${escHtml(p.name)}" data-crt-gallery>
     <div class="crt-gal__track">${ph.map((x, i) => `<figure class="crt-gal__card" style="aspect-ratio:${r(x).toFixed(4)}"><img src="${escHtml(x.src)}" alt="${escHtml(x.alt)}"${i < per ? (i ? '' : ' fetchpriority="high"') : ' loading="lazy"'}><figcaption><span class="crt-kicker">${escHtml(x.tag)}</span><b>${escHtml(x.caption)}</b></figcaption></figure>`).join('')}</div>
     ${railBar(ph.length, per, 'photos')}
   </section>`;
@@ -53,11 +53,13 @@ function head(p, court, x, isAdmin) {
   const n = p.numbers;
   const commute = (p.info.directions || '').split(/(?<=\.)\s/)[0] || court.address || '';
   const r = x.flags.ratings && x.ratings?.showScore ? x.ratings : null;
+  // label, value, context: one strip card, the numbers in Saira.
+  const lg = n.league.games, pw = n.papawis.runs;
   const chips = [
-    n.games && [String(n.games), `${n.games === 1 ? 'game' : 'games'} here${n.sinceShort ? ` since ${n.sinceShort}` : ''}`],
-    n.players && [String(n.players), 'different players'],
-    n.players >= 5 && [`${n.cameBackPct}%`, 'came back for more'],
-    n.papawis.fastestH != null && [dh(n.papawis.fastestH), 'fastest run sell-out'],
+    n.games && ['Games here', String(n.games), [pw && plural(pw, 'run'), lg && plural(lg, 'league game')].filter(Boolean).join(' · ')],
+    n.players && ['Players', String(n.players), n.since ? `since ${n.since}` : 'have played here'],
+    p.players >= 5 && ['Came back', `${n.cameBackPct}%`, `${plural(n.cameBack, 'player')} ran here 2+ times`],
+    n.papawis.fastestH != null && ['Fastest sell-out', dh(n.papawis.fastestH), p.fastest ? `the ${ymdLabel(p.fastest.ymd, { month: 'short', day: 'numeric' })} run` : 'first sign-up to full'],
   ].filter(Boolean).slice(0, 4);
   const paras = String(court.writeup || '').split(/\n{2,}/).map(t => t.trim()).filter(Boolean);
   return `<header class="crt-head">
@@ -66,7 +68,7 @@ function head(p, court, x, isAdmin) {
       <h1 class="crt-h1">${escHtml(p.name)}</h1>
       ${commute ? `<p class="crt-line">${ICON.pin}<span>${escHtml(commute)}</span></p>` : ''}
       ${r ? `<div class="crt-rateline">${stars(r.avg)}<b>${r.avg.toFixed(1)}</b><span>${plural(r.n, 'player rating')}</span><a href="#crt-say">What players say</a></div>` : ''}
-      ${chips.length ? `<div class="crt-chips crt-chips--${chips.length}">${chips.map(([v, l]) => `<div class="crt-chip"><b class="crt-num">${escHtml(v)}</b><span>${escHtml(l)}</span></div>`).join('')}</div>` : ''}
+      ${chips.length ? `<dl class="crt-chips crt-chips--${chips.length}">${chips.map(([l, val, sub]) => `<div class="crt-chip"><dt>${escHtml(l)}</dt><dd><b class="crt-num">${escHtml(val)}</b><span>${escHtml(sub)}</span></dd></div>`).join('')}</dl>` : ''}
     </header>
     ${paras.length ? `<section class="crt-about" id="crt-about" aria-labelledby="crt-about-h">${sh('About this court', { id: 'crt-about-h' })}<div class="crt-about__text">${paras.map(t => `<p>${escHtml(t)}</p>`).join('')}</div></section>` : ''}`;
 }
@@ -132,7 +134,7 @@ function numbers(p) {
     [String(n.games), 'Games played here', [pw.runs && plural(pw.runs, 'Papawis run'), lg.games && plural(lg.games, 'league game')].filter(Boolean).join(' · ')],
     [String(n.players), 'Different players', lg.games && pw.runs ? 'across runs and league games' : pw.runs ? 'members who ran here' : 'who played league games here'],
     [String(n.showUps), 'Times players showed up', [pw.runs && `${p.checkins} run check-ins`, lg.games && `${lg.appearances} league appearances`].filter(Boolean).join(' · ')],
-    [`${n.cameBackPct}%`, 'Came back for more', `${plural(n.cameBack, 'player')} played here 2+ times`],
+    [`${n.cameBackPct}%`, 'Came back to run again', `${plural(n.cameBack, 'player')} ran here 2+ times`],
   ];
   return `<section class="crt-sec" id="crt-numbers" aria-labelledby="crt-numbers-h">${sh('By the numbers', { id: 'crt-numbers-h', sub: n.since ? `Papawis runs and league games, since ${n.since}` : '' })}
     <div class="card">
@@ -262,7 +264,7 @@ function railBar(total, per, label) {
 function league(games, extras) {
   if (!games.length) return '';
   return `<section class="crt-sec" id="crt-league" aria-labelledby="crt-league-h">${sh('League games here', { id: 'crt-league-h', sub: 'WKND Basketball League', link: '<a class="section-header__link" href="/games">All games</a>' })}
-    <div class="crt-rail" data-crt-rail>
+    <div class="crt-rail${games.length > 3 ? ' crt-rail--more' : ''}" data-crt-rail>
       <div class="crt-rail__track">${games.map(g => gameCard(g, { commentsEnabled: extras.commentsEnabled, social: extras.socialByGame?.[g.id] || { commentsCount: 0, reactCount: 0, reacted: false }, topScorer: extras.topScorerByGame?.[g.id], odds: extras.oddsByGame?.[g.id] || null })).join('')}</div>
       ${railBar(games.length, Math.min(3, games.length), 'games')}
     </div></section>`;
@@ -369,7 +371,8 @@ const SCRIPT = `<script>
       var max = track.scrollWidth - track.clientWidth;
       stops = cards.map(left).filter(function (x) { return x < max - 4; });
       stops.push(max);
-      dotsBox.innerHTML = ''; dots = stops.map(function () { var i = document.createElement('i'); dotsBox.appendChild(i); return i; });
+      var k0 = at();
+      dotsBox.innerHTML = ''; dots = stops.map(function (s, k) { var i = document.createElement('i'); if (k === k0) i.className = 'on'; dotsBox.appendChild(i); return i; });
       sync();
     }
     function at() { var x = track.scrollLeft, k = 0; stops.forEach(function (s, i) { if (Math.abs(s - x) < Math.abs(stops[k] - x)) k = i; }); return k; }

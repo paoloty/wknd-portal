@@ -38,7 +38,7 @@
 .crt-gal__track::-webkit-scrollbar { display: none; }
 /* One height for every photo, each card the shape of its photo (aspect-ratio set inline):
    the first --gal-n cards fill the row, so height = row width minus gaps, over their ratios. */
-.crt-gal__card { position: relative; flex: 0 0 auto; height: calc((100cqw - (var(--gal-n) - 1) * var(--c-gap)) / var(--gal-r)); max-height: 420px; margin: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); scroll-snap-align: start; }
+.crt-gal__card { position: relative; flex: 0 0 auto; height: calc((100cqw * var(--gal-fill, 1) - (var(--gal-n) - 1) * var(--c-gap)) / var(--gal-r)); max-height: 420px; margin: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); scroll-snap-align: start; }
 .crt-gal__card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .crt-gal__card figcaption { position: absolute; inset: auto 0 0 0; padding: 40px var(--c-pad) var(--c-pad); background: linear-gradient(180deg, rgba(10,14,22,0), rgba(10,14,22,.85)); display: flex; flex-direction: column; gap: 8px; }
 .crt-gal__card figcaption b { font-size: 15px; color: #fff; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -67,13 +67,17 @@
 .crt-rateline a { color: var(--amber); font-weight: 600; }
 .crt-stars { display: inline-flex; gap: 2px; color: var(--amber); }
 .crt-stars .off { color: #3a4356; }
-.crt-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 4px; }
+/* Stat strip: one card, a cell per number (label, number, context), hairline dividers */
+.crt-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 4px 0 0; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
 .crt-chips--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .crt-chips--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .crt-chips--1 { grid-template-columns: minmax(0, 1fr); }
-.crt-chip { height: 64px; padding: 0 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
-.crt-chip b { font-size: 24px; line-height: 1; color: var(--text); }
-.crt-chip span { font-size: 12px; color: var(--text-muted); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crt-chip { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.crt-chip + .crt-chip { border-left: 1px solid var(--border); }
+.crt-chip dt { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); line-height: 1; }
+.crt-chip dd { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.crt-chip b { font-size: 30px; line-height: 1; color: var(--text); }
+.crt-chip span { font-size: 12px; color: var(--text-muted); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crt-about__text { display: flex; flex-direction: column; gap: 14px; }
 .crt-about__text p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--c-soft); }
 
@@ -240,6 +244,8 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 .crt-rail__track { display: flex; gap: var(--c-gap); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 0; margin: -2px 0; }
 .crt-rail__track::-webkit-scrollbar { display: none; }
 .crt-rail__track > * { flex: 0 0 calc((100% - var(--c-gap) * 2) / 3); min-width: 0; scroll-snap-align: start; }
+/* More than fit: the next card peeks in at the edge */
+.crt-rail--more .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap) * 3) / 3.25); }
 
 /* Getting there */
 .crt-there { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; }
@@ -335,8 +341,8 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 
 @media (max-width: 900px) {
   .crt-top { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap)) / 2); }
-  .crt-gal__card { height: calc((100cqw - var(--c-gap)) / (var(--gal-r0) + 1.7778)); }
+  .crt-rail__track > *, .crt-rail--more .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap) * 2) / 2.25); }
+  .crt-gal__card { height: calc((100cqw * 0.9 - var(--c-gap)) / (var(--gal-r0) + 1.7778)); }
   .crt-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-report { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -346,9 +352,13 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 }
 @media (max-width: 760px) {
   .crt { --c-pad: 16px; --c-sec: 32px; padding-bottom: 0; }
-  .crt-gal__card { height: calc(100cqw / var(--gal-r0)); max-height: none; max-width: 100%; }
+  .crt-gal__card { height: calc(100cqw * 0.86 / var(--gal-r0)); max-height: none; max-width: 100%; }
   .crt-gal__btns { display: none; }
   .crt-chips, .crt-chips--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .crt-chip:nth-child(odd) { border-left: 0; }
+  .crt-chip:nth-child(n+3) { border-top: 1px solid var(--border); }
+  .crt-chip b { font-size: 26px; }
+  .crt-chip { padding: 14px 16px; }
   .crt-snav__cta { display: none; }
   .crt-rw { grid-template-columns: 84px minmax(0, 1fr); }
   .crt-rw > .crt-btn, .crt-rw > .crt-rw__link { grid-column: 1 / -1; }
@@ -368,7 +378,7 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
   .crt-there__map { min-height: 160px; height: 160px; border-right: 0; border-bottom: 1px solid var(--border); }
   .crt-fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-formfoot .crt-btn { width: 100%; }
-  .crt-rail__track > * { flex-basis: 86%; }
+  .crt-rail__track > *, .crt-rail--more .crt-rail__track > * { flex-basis: 86%; }
   .crt-map { min-height: 220px; height: 220px; border-radius: var(--radius) var(--radius) 0 0; }
   .crt-report { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-report div:not(:nth-child(3n+1)) { border-left: 0; }
