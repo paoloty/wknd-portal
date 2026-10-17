@@ -342,13 +342,13 @@ function dock(p) {
 
 // The site's sticky "on this page" bar (.gd-snav + views/section-nav.js, as on game, team and
 // player pages): pins under the header, glides to a section on click, lights the one in view,
-// shows the court name once pinned. The run button rides at its right end on desktop.
-function jumpbar(p, x, sections) {
+// shows the court's avatar and name once pinned. The run button rides at its right end on desktop.
+function jumpbar(court, p, x, sections) {
   const r = p.nextRun;
   const max = Number(r?.max_slots) || 0;
   const full = r && max && r.confirmed >= max;
   return `<nav class="gd-snav crt-snav" data-gd-snav aria-label="On this page">
-    <span class="gd-snav__mini">${escHtml(p.name)}</span>
+    <span class="gd-snav__mini">${court.image_url ? `<img class="crt-snav__av" src="/api/papawis-court/${encodeURIComponent(court.id)}/photo?w=96" alt="" width="26" height="26">` : `<span class="crt-snav__av crt-snav__av--blank" aria-hidden="true">${escHtml((p.name || '?').charAt(0).toUpperCase())}</span>`}${escHtml(p.name)}</span>
     ${sections.map(([id, l], i) => `<a href="#${id}" data-spy="${id}"${i ? '' : ' class="is-on"'}>${escHtml(l)}</a>`).join('')}
     ${r ? `<a class="crt-btn crt-btn--amber crt-btn--sm crt-snav__cta" href="/papawis#pw-game-${encodeURIComponent(r.id)}">${full ? 'Join the waitlist' : 'Sign up'}</a>` : ''}
   </nav>`;
@@ -501,7 +501,7 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
     <div class="crt-top__left">${head(p, court, x, isAdmin)}</div>
     ${runPanel(p, court, x)}
   </div>
-  ${jumpbar(p, x, sections)}
+  ${jumpbar(court, p, x, sections)}
   ${crowd(p, x, isLoggedIn)}
   ${numbers(p)}
   ${leaders(p)}

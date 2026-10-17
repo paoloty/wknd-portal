@@ -113,6 +113,10 @@
 /* Sticky section bar: the site's .gd-snav (styles.css) with the run button at its right end */
 .crt-snav { margin: 28px 0 0; }
 .crt-snav__cta { flex-shrink: 0; margin-left: auto; }
+/* The court's avatar beside its name in the pinned bar (photo, else its initial) */
+.crt-snav .gd-snav__mini { gap: 8px; }
+.crt-snav__av { width: 26px; height: 26px; flex-shrink: 0; border-radius: 7px; object-fit: cover; background: #000; border: 1px solid rgba(255,255,255,.12); }
+.crt-snav__av--blank { display: inline-flex; align-items: center; justify-content: center; background: rgba(245,147,50,.16); color: var(--amber); font-size: 14px; line-height: 1; }
 .crt-snav .crt-snav__cta::after { display: none; }
 .crt-snav a.crt-snav__cta { color: #0a0e16; height: 36px; padding: 0 14px; }
 .crt-dock { display: none; }
