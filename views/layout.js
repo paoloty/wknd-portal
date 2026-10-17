@@ -731,7 +731,9 @@ window.wkndCopied = function (el, text) {
 // Counts clicks on calls to action (data-cta="<key>"), see POST /api/cta/:key in server.js.
 document.addEventListener('click', function (e) {
   var a = e.target.closest && e.target.closest('[data-cta]');
-  if (a && navigator.sendBeacon) navigator.sendBeacon('/api/cta/' + encodeURIComponent(a.getAttribute('data-cta')));
+  if (!a || !navigator.sendBeacon) return;
+  var page = a.closest('[data-cta-ref]');
+  navigator.sendBeacon('/api/cta/' + encodeURIComponent(a.getAttribute('data-cta')) + (page ? '?ref=' + encodeURIComponent(page.getAttribute('data-cta-ref')) : ''));
 });
 </script>
 </body>

@@ -40,6 +40,7 @@ const NAV_GROUPS = [
     key: 'overview', label: 'Overview',
     items: [
       { href: '/admin', label: 'Home', icon: 'dashboard', exact: true },
+      { href: '/admin/analytics', label: 'Analytics', icon: 'standings' },
     ],
   },
   {

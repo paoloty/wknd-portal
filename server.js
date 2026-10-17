@@ -156,7 +156,8 @@ import {
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
-  bumpPageView, prunePageViews, bumpCtaClick, getCtaClickTotals, getGuestPageViews, markPlayerCta, playerCtaDone, setRegistrationLastSeen, clickNotification, getOwnNotificationLink,
+  bumpPageView, prunePageViews, bumpCtaClick, getCtaClickTotals, getGuestPageViews,
+  bumpEntityView, getEntityViews, pruneEntityViews, getTopGuestPaths, getGuestViewsTotal, bumpCtaRefClick, getCtaRefClicks, markPlayerCta, playerCtaDone, setRegistrationLastSeen, clickNotification, getOwnNotificationLink,
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   createLeaguePoll, getAllLeaguePolls, getLeaguePollById, setLeaguePollStatus, getLeaguePollVotes, getMyLeaguePollVote, castLeaguePollVote,
@@ -240,6 +241,7 @@ import { marketplacePage, marketplaceListingPage } from './views/marketplace.js'
 import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody, adminMarketplaceEditBody } from './views/admin/marketplace.js';
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { adminPapawisCourtBody } from './views/admin/papawis-court.js';
+import { adminAnalyticsBody } from './views/admin/analytics.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
 import {
@@ -2288,6 +2290,31 @@ const CTA_KEYS = {
   'courts-tile':      'Courts list · Open a court',
 };
 
+// Where a page view came from, by the Referer header: search, social, our own site, or none.
+function trafficSource(req) {
+  const ref = String(req.get('referer') || '');
+  if (!ref) return 'direct';
+  let host = '';
+  try { host = new URL(ref).hostname.toLowerCase(); } catch { return 'other'; }
+  if (host === SITE_HOST || host === `www.${SITE_HOST}` || host === String(req.hostname || '').toLowerCase()) return 'site';
+  if (/(^|\.)google\./.test(host)) return 'google';
+  if (/(^|\.)(facebook\.com|fb\.com|fb\.me)$/.test(host)) return 'facebook';
+  if (/(^|\.)instagram\.com$/.test(host)) return 'instagram';
+  if (/(^|\.)(messenger\.com|m\.me)$/.test(host)) return 'messenger';
+  return 'other';
+}
+// One view of a player's or court's own page (see entity_views in lib/portal-db.js). Same
+// skips as trackPageView: bots, admins who aren't players, and impersonation.
+function trackEntityView(req, kind, ref) {
+  try {
+    if (req.method !== 'GET' || req.query.partial) return;
+    if (req.session?.impersonating) return;
+    if (req.session?.isAdmin && !req.session?.playerRegId) return;
+    if (TRACK_BOT_RE.test(req.get('user-agent') || '')) return;
+    bumpEntityView(manilaTodayStr(), kind, ref, trafficSource(req), !!req.session?.playerPlayerId);
+  } catch (e) { console.error('[entity views]', e.message); }
+}
+
 function renderPage(req, opts) {
   trackPageView(req);
   const origin = getRequestOrigin(req);
@@ -2880,7 +2907,12 @@ app.post('/api/cta/:key', (req, res) => {
   try {
     const skip = !CTA_KEYS[key] || req.session?.impersonating || (req.session?.isAdmin && !req.session?.playerRegId)
       || TRACK_BOT_RE.test(req.get('user-agent') || '');
-    if (!skip) bumpCtaClick(manilaTodayStr(), key);
+    if (!skip) {
+      bumpCtaClick(manilaTodayStr(), key);
+      // Which player's or court's page the click happened on (data-cta-ref on the page).
+      const ref = String(req.query.ref || '');
+      if (/^(player|court):[\w-]{1,64}$/.test(ref)) bumpCtaRefClick(manilaTodayStr(), key, ref);
+    }
     // Opened the community chat from anywhere: /me stops showing its invite tile.
     if (key.endsWith('-gc') && req.session?.playerPlayerId && !req.session?.impersonating) markPlayerCta(req.session.playerPlayerId, 'gc');
   } catch (e) { console.error('[cta]', e.message); }
@@ -6240,16 +6272,12 @@ function buildAdminHome(req) {
 
   const open = visible.filter(i => !i.done).length;
   const nextGame = getScheduledGames()[0];
-  const lead = nextGame ? `Next game day is ${homeWhen(gameYmd(nextGame))}.` : '';
+  const lead = nextGame ? `Next game day is ${homeWhen(gameYmd(nextGame.date))}.` : '';
   return {
     eyebrow: new Date(`${today}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
     sub: `${lead} ${open ? `${homePlural(open, 'thing')} to do, sorted by what moves engagement most.` : 'Nothing waiting on you.'}`.trim(),
     kpis: kpis.slice(0, 4), items: visible, snoozedCount: items.length - visible.length, quiet, feed, now,
-    clicks: (() => {
-      const since = addDaysYmd(today, -29);
-      const totals = getCtaClickTotals(since);
-      return { guestPlayerViews: getGuestPageViews('/players/:ref', since), guestCourtViews: getGuestPageViews('/courts/:slug', since), rows: Object.entries(CTA_KEYS).map(([key, label]) => ({ key, label, n: totals[key] || 0 })) };
-    })(),
+    clicks: buildAnalytics(30, { summary: true }),
   };
 }
 
@@ -6264,6 +6292,69 @@ function adminNavBadges() {
     };
   } catch { return {}; }
 }
+
+// ── Admin: Analytics (views/admin/analytics.js) ───────────────────────────────────────
+// Readable names for the route patterns page_views stores.
+const ANALYTICS_PATHS = {
+  '/': 'Homepage', '/players/:ref': 'Player pages', '/courts/:slug': 'Court pages', '/courts': 'Courts list',
+  '/games/:ref': 'Game pages', '/games': 'Games', '/standings': 'Standings', '/playoffs': 'Playoffs', '/leaders': 'Leaders',
+  '/players': 'Players list', '/teams/:ref': 'Team pages', '/teams': 'Teams', '/papawis': 'Papawis', '/register': 'Register',
+  '/mvp': 'MVP race', '/dpoy': 'Best Defender race', '/picks': 'Who wins? picks', '/awards': 'Awards', '/roast': 'The Roast',
+  '/login': 'Log in', '/picks/rules': 'Pickmaster rules', '/picks/players/:id': 'Pickmaster player pages', '/highlights': 'Highlights', '/badges': 'Badges',
+};
+// days: 7 | 30 | 90. summary: just the four numbers the admin home shows.
+function buildAnalytics(days, { summary = false } = {}) {
+  const since = addDaysYmd(manilaTodayStr(), -(days - 1));
+  const totals = getCtaClickTotals(since);
+  const joinClicks = Object.entries(totals).filter(([k]) => k.endsWith('-join')).reduce((t, [, n]) => t + n, 0);
+  const base = {
+    days, joinClicks,
+    guestViews: getGuestViewsTotal(since),
+    playerGuestViews: getGuestPageViews('/players/:ref', since),
+    courtGuestViews: getGuestPageViews('/courts/:slug', since),
+  };
+  if (summary) return base;
+  const refClicks = getCtaRefClicks(since);
+  const clicksOn = (ref, keys) => refClicks.filter(c => c.ref === ref && keys.includes(c.key)).reduce((t, c) => t + c.n, 0);
+  const sources = { google: 0, facebook: 0, instagram: 0, messenger: 0, direct: 0, site: 0, other: 0 };
+  const rollup = kind => {
+    const out = {};
+    for (const r of getEntityViews(kind, since)) {
+      const o = out[r.ref] ??= { id: r.ref, guest: 0, member: 0, google: 0, social: 0 };
+      if (r.member) { o.member += r.n; continue; }
+      o.guest += r.n;
+      if (r.source === 'google') o.google += r.n;
+      if (['facebook', 'instagram', 'messenger'].includes(r.source)) o.social += r.n;
+      sources[r.source] = (sources[r.source] || 0) + r.n;
+    }
+    return Object.values(out);
+  };
+  const playerById = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const players = rollup('player').filter(r => playerById[r.id]).map(r => {
+    const p = playerById[r.id];
+    return { ...r, name: displayPlayerName(p.name), slug: playerSlug(p), team: titleCase(p.team_name || ''), join: clicksOn(`player:${r.id}`, ['player-join', 'player-papawis']) };
+  });
+  const courtById = Object.fromEntries(getAllPapawisCourts().map(c => [c.id, c]));
+  const courts = rollup('court').filter(r => courtById[r.id]).map(r => {
+    const c = courtById[r.id];
+    return { ...r, name: courtDisplayName(c), city: courtCity(c), slug: c.slug, signup: clicksOn(`court:${r.id}`, ['court-signup', 'court-signup-bar', 'court-signup-dock']), directions: clicksOn(`court:${r.id}`, ['court-directions']), join: clicksOn(`court:${r.id}`, ['court-join']) };
+  });
+  // Unlisted patterns read as "<Section> pages" (/picks/players/:id → "Picks · player pages").
+  const pathLabel = p => ANALYTICS_PATHS[p] || (() => {
+    const parts = p.split('/').filter(Boolean).filter(x => !x.startsWith(':')).map(x => x.replace(/-/g, ' '));
+    const name = parts.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(' · ') || p;
+    return p.includes(':') ? `${name} pages` : name;
+  })();
+  const topPaths = getTopGuestPaths(since, 12).map(r => ({ ...r, label: pathLabel(r.path) }));
+  const clicks = Object.entries(CTA_KEYS).map(([key, label]) => ({ key, label, n: totals[key] || 0 }));
+  return { ...base, players, courts, sources, topPaths, clicks };
+}
+
+app.get('/admin/analytics', requireAuth, (req, res) => {
+  const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+  const tab = ['players', 'courts', 'clicks'].includes(req.query.tab) ? req.query.tab : 'overview';
+  res.send(renderAdminPage(req, { title: 'Analytics', currentPath: '/admin/analytics', body: adminAnalyticsBody(buildAnalytics(days), { tab, query: req.query }) }));
+});
 
 app.get('/admin', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, { title: 'Home', currentPath: '/admin', body: adminHomeBody(buildAdminHome(req)) }));
@@ -15896,6 +15987,7 @@ app.get('/players/:ref', async (req, res) => {
   };
 
   const isOwnProfile = !!req.session?.playerPlayerId && resolved.id === req.session.playerPlayerId;
+  if (!isOwnProfile) trackEntityView(req, 'player', resolved.id);
   let balanceAmount = 0, papawisBalance = 0, balanceTransactions = [], papawisGames = [];
   let coachNote = null;
   let latestPoll = null;
@@ -17991,6 +18083,7 @@ app.get('/courts/:slug', (req, res) => {
   const { p, games } = courtPageData(court);
   // A hidden or not-yet-played court: admins can still preview it, everyone else gets a 404.
   if (!p.live && !req.session?.isAdmin) return notFound();
+  trackEntityView(req, 'court', court.id);
   // A star tapped in the rating email while logged out: log in first, then back here with
   // the stars picked.
   if (req.query.rate && !req.session?.playerPlayerId && courtFlags().ratings) {
@@ -20923,6 +21016,7 @@ function prunePageViewsJob() {
   try {
     const cutoff = new Date(Date.parse(manilaTodayStr() + 'T00:00:00Z') - 180 * 86400000).toISOString().slice(0, 10);
     prunePageViews(cutoff);
+    pruneEntityViews(cutoff);
   } catch (e) { console.error('[page views prune]', e.message); }
 }
 prunePageViewsJob();

@@ -505,7 +505,7 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
     x.flags.requests && ['crt-rent', 'Rent the court'],
     ['crt-there', 'Getting there'],
   ].filter(Boolean);
-  return `<div class="page-content crt">
+  return `<div class="page-content crt" data-cta-ref="court:${escHtml(court.id)}">
   ${gallery(p)}
   <div class="crt-top">
     <div class="crt-top__left">${head(p, court, x, isAdmin)}</div>
