@@ -927,7 +927,7 @@ function buildBrandOgSvg({ kicker = '', title = 'WKND', sub = '', panel = null }
 // Search-result descriptions for pages that don't write their own (renderPage adds them).
 // A manual override at /admin/seo still wins.
 const PAGE_DESCRIPTIONS = {
-  '/': 'Weekend basketball league and community in Makati, Mandaluyong and Pasig: game results, standings, player stats, recaps and Papawis pickup runs.',
+  '/': 'Weekend pickup basketball runs and an adult league in Makati, Mandaluyong and Pasig. No team needed, beginners welcome. Your own player card with stats.',
   '/games': 'Every WKND Basketball game: final scores, box scores, recaps and Player of the Game spotlights.',
   '/standings': 'WKND Basketball League standings: team records, head-to-head results and the playoff picture.',
   '/playoffs': 'The WKND Basketball playoff bracket: every series, every result and the road to the title.',
@@ -941,9 +941,9 @@ const PAGE_DESCRIPTIONS = {
   '/picks': 'Call the winner of every WKND Basketball game and climb the Pickmaster standings.',
   '/posts': 'Previews, recaps and announcements from WKND Basketball.',
   '/marketplace': 'Jerseys, gear and group buys for the WKND Basketball community.',
-  '/register': 'Join WKND Basketball, a weekend basketball league in Makati, Mandaluyong and Pasig: league games, stats, recaps and a community that shows up. Sign up for the next season.',
+  '/register': 'Register to join WKND Basketball in Makati, Mandaluyong and Pasig. Once approved: pickup runs, league seasons, your own player card. Beginners welcome.',
   '/front-office': 'The people who run WKND Basketball.',
-  '/join': 'Join the WKND basketball community in Makati, Mandaluyong and Pasig. No team needed, beginners welcome: get your own player card, play Papawis runs and league seasons.',
+  '/join': 'How to join WKND basketball in Makati, Mandaluyong and Pasig: register, get approved, play pickup runs and league seasons. No team needed, beginners welcome.',
   '/courts': 'Basketball courts in Makati, Mandaluyong and Pasig where WKND plays: Papawis pickup runs, league games, photos and stats for each court.',
 };
 
@@ -8340,7 +8340,7 @@ app.get('/', (req, res) => {
   }
 
   res.send(renderPage(req, {
-    title: 'WKND Basketball League | Makati, Mandaluyong & Pasig',
+    title: 'WKND Basketball | Pickup Runs & League in Makati, Mandaluyong, Pasig',
     currentPath: req.path,
     body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, papawisHero: homeHeroPapawis(), regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
       headlineCards: gameCardExtras(headlineGamesOf(games), games, { viewerId: req.session?.playerPlayerId || null, playerMap }),
