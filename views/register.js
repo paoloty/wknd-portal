@@ -146,7 +146,7 @@ export function registerPage({ error = null, success = false, prefill = {}, hype
     ${field('waiver_signature', 'Signature', `<input class="au-input au-sign" id="waiver_signature" name="waiver_signature" type="text" value="${v('waiver_signature')}" placeholder="Juan Miguel dela Cruz" autocomplete="name">`, 'type your full legal name')}`;
 
   const STEPS = [
-    { n: 1, label: 'Who are you', title: 'Who are you?', sub: 'Weekend basketball in Makati, Mandaluyong and Pasig. Three quick steps: an admin approves you, then we email your password link. Questions first? <a href="https://m.me/wkndbasketball" target="_blank" rel="noopener" data-cta="register-messenger">Message us on Messenger</a>.', body: step1, next: "Yes, that's me →" },
+    { n: 1, label: 'Who are you', title: 'Who are you?', sub: 'Weekend basketball in Makati, Mandaluyong and Pasig. Three quick steps: an admin approves you, then we email your password link. New here? <a href="/join" data-cta="register-join">See how it works</a>, or <a href="https://m.me/wkndbasketball" target="_blank" rel="noopener" data-cta="register-messenger">message us on Messenger</a>.', body: step1, next: "Yes, that's me →" },
     { n: 2, label: 'Your game', title: 'Your game', sub: 'Helps the team heads build even teams at the draft.', body: step2, next: 'Almost there →' },
     { n: 3, label: 'Sign off', title: 'Sign off', sub: "Check it's all you, then sign the waiver.", body: step3, next: 'Send my application' },
   ];

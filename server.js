@@ -2269,6 +2269,7 @@ const CTA_KEYS = {
   'player-messenger': 'Player page · Message us',
   'player-fb':        'Player page · Follow on Facebook',
   'register-messenger': 'Register · Message us',
+  'register-join':    'Register · See how it works',
   'papawis-messenger':  'Papawis · Message us',
   'footer-messenger': 'Footer · Messenger',
   'footer-fb':        'Footer · Facebook',
