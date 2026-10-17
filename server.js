@@ -17865,7 +17865,10 @@ const courtUrl = court => `${SITE_ORIGIN}/courts/${encodeURIComponent(court.slug
 function buildCourtOgTags(court, p) {
   const url = courtUrl(court);
   const img = p.photos[0] ? `${SITE_ORIGIN}${p.photos[0].src}` : `${SITE_ORIGIN}/og/papawis.png?v=${ogDayStamp()}`;
-  const geo = courtPin(court);
+  // Coordinates go to Google only when an admin set the exact pin: the address lookup often
+  // lands on the city centre, which would tell search engines the court is somewhere else.
+  const pin = courtPin(court);
+  const geo = pin?.exact ? pin : null;
   const place = {
     '@type': 'SportsActivityLocation',
     name: p.name,

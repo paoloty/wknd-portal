@@ -297,13 +297,14 @@ function there(p, court, x) {
   const info = p.info || {};
   const tags = courtInfoTags(info);
   const notes = [['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
-  const pin = x.pin;
+  // Only an exact pin (set by an admin) gets drawn: the address lookup can land on the city
+  // centre, so without one the card links out to Google Maps' own search for the address.
+  const pin = x.pin?.exact ? x.pin : null;
   const href = pin ? `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}` : mapsHref(court);
   // A real map (Leaflet, OSM tiles recoloured dark, amber pin), loaded when the section comes near.
-  // No pin on file: the old static map image, linking out.
   const map = pin
     ? `<div class="crt-there__map crt-map" data-crt-map data-lat="${pin.lat}" data-lng="${pin.lng}" data-name="${escHtml(p.name)}" data-href="${escHtml(href)}" role="region" aria-label="Map of ${escHtml(p.name)}"><a class="crt-map__fallback" href="${escHtml(href)}" target="_blank" rel="noopener">Open the map ↗</a></div>`
-    : `<a class="crt-there__map" href="${escHtml(href)}" target="_blank" rel="noopener" aria-label="Open ${escHtml(p.name)} in Google Maps"><img src="/api/papawis-map/photo?loc=${encodeURIComponent(court.address || court.name)}" alt="Map showing ${escHtml(p.name)}${p.city ? `, ${escHtml(p.city)}` : ''}" loading="lazy" onerror="this.remove()"></a>`;
+    : `<a class="crt-there__map crt-there__map--link" href="${escHtml(href)}" target="_blank" rel="noopener"><span>${ICON.pin || ''}Open ${escHtml(p.name)} in Google Maps ↗</span></a>`;
   return `<section class="crt-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h', link: `<a class="section-header__link" href="${escHtml(href)}" target="_blank" rel="noopener">Open in Google Maps ↗</a>` })}
     <div class="card crt-there">
       ${map}

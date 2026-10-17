@@ -407,3 +407,8 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 }
 @media (prefers-reduced-motion: reduce) { .crt-gal__dots i { transition: none; } }
 .crt-snav a.crt-snav__cta:hover { color: #0a0e16; }
+
+/* Getting there without an exact pin: a link out to Google Maps instead of a guessed pin */
+.crt-there__map--link { display: flex; align-items: center; justify-content: center; min-height: 140px; padding: 16px; background: var(--surface-2); color: var(--amber); font-weight: 600; text-align: center; }
+.crt-there__map--link span { display: inline-flex; align-items: center; gap: 8px; }
+.crt-there__map--link:hover { color: #fbb36b; }
