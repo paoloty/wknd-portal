@@ -2269,8 +2269,23 @@ const CTA_KEYS = {
   'activate-gc':      'Members · Community chat (welcome screen)',
   'me-gc':            'Members · Community chat (My Profile)',
   'papawis-gc':       'Members · Community chat (Papawis)',
-  'court-join':       'Court page · Join the next season',
+  'court-join':       'Court page · Join WKND',
   'court-messenger':  'Court page · Message us',
+  'court-signup':     'Court page · Sign up for the run (panel)',
+  'court-signup-bar': 'Court page · Sign up for the run (sticky bar)',
+  'court-signup-dock': 'Court page · Sign up for the run (phone dock)',
+  'court-share':      'Court page · Share the run',
+  'court-papawis':    'Court page · See Papawis runs',
+  'court-login':      'Court page · Log in (to see who / to vote)',
+  'court-directions': 'Court page · Directions / Google Maps',
+  'court-vote':       'Court page · Vote for the next run',
+  'court-rate':       'Court page · Post a rating',
+  'court-rent':       'Court page · Send a rent request',
+  'court-run':        'Court page · Open a past run',
+  'court-leader':     'Court page · Open a court leader',
+  'court-partner':    'Court page · Become a partner',
+  'court-claim':      'Court page · Message us to claim',
+  'courts-tile':      'Courts list · Open a court',
 };
 
 function renderPage(req, opts) {
@@ -6233,7 +6248,7 @@ function buildAdminHome(req) {
     clicks: (() => {
       const since = addDaysYmd(today, -29);
       const totals = getCtaClickTotals(since);
-      return { guestPlayerViews: getGuestPageViews('/players/:ref', since), rows: Object.entries(CTA_KEYS).map(([key, label]) => ({ key, label, n: totals[key] || 0 })) };
+      return { guestPlayerViews: getGuestPageViews('/players/:ref', since), guestCourtViews: getGuestPageViews('/courts/:slug', since), rows: Object.entries(CTA_KEYS).map(([key, label]) => ({ key, label, n: totals[key] || 0 })) };
     })(),
   };
 }

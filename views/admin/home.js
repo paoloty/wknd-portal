@@ -110,14 +110,27 @@ function feedSection(feed, now) {
 // 30 days, logged by POST /api/cta/:key. Guest views of player pages give the join card a rate.
 function clicksSection(clicks) {
   if (!clicks) return '';
-  const join = clicks.rows.find(r => r.key === 'player-join')?.n || 0;
-  const rate = clicks.guestPlayerViews ? `${((join / clicks.guestPlayerViews) * 100).toFixed(1)}%` : '—';
-  const rows = [...clicks.rows].sort((a, b) => b.n - a.n).map(r =>
-    `<div class="ahome-clicks__row"><span>${escHtml(r.label)}</span><b>${r.n}</b></div>`).join('');
+  const rate = (key, views) => {
+    const n = clicks.rows.find(r => r.key === key)?.n || 0;
+    return views ? `${((n / views) * 100).toFixed(1)}%` : '—';
+  };
+  const lead = (label, value) => `<div class="ahome-clicks__row ahome-clicks__row--lead"><span>${escHtml(label)}</span><b>${value}</b></div>`;
+  // Grouped by the page before the " · " in each label, busiest group first, busiest row first.
+  const groups = {};
+  for (const r of clicks.rows) {
+    const [page, ...rest] = r.label.split(' · ');
+    (groups[page] ??= []).push({ ...r, short: rest.join(' · ') || page });
+  }
+  const ordered = Object.entries(groups).map(([page, rows]) => ({ page, rows: rows.sort((x, y) => y.n - x.n), total: rows.reduce((t, r) => t + r.n, 0) }))
+    .sort((x, y) => y.total - x.total);
+  const groupHtml = ordered.map(g => `<div class="ahome-clicks__group"><div class="ahome-clicks__head"><span>${escHtml(g.page)}</span><b>${g.total}</b></div>
+      ${g.rows.map(r => `<div class="ahome-clicks__row"><span>${escHtml(r.short)}</span><b>${r.n}</b></div>`).join('')}</div>`).join('');
   return section({ title: 'Site clicks', note: '· last 30 days', bodyHtml: `<div class="ahome-clicks">
-    <div class="ahome-clicks__row ahome-clicks__row--lead"><span>Guest views of player pages</span><b>${clicks.guestPlayerViews}</b></div>
-    <div class="ahome-clicks__row ahome-clicks__row--lead"><span>Join card click rate</span><b>${rate}</b></div>
-    ${rows}
+    ${lead('Guest views of player pages', clicks.guestPlayerViews)}
+    ${lead('Player page join rate', rate('player-join', clicks.guestPlayerViews))}
+    ${lead('Guest views of court pages', clicks.guestCourtViews ?? 0)}
+    ${lead('Court page sign-up rate', rate('court-signup', clicks.guestCourtViews))}
+    ${groupHtml}
   </div>` });
 }
 

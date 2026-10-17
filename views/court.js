@@ -78,13 +78,13 @@ function head(p, court, x, isAdmin) {
 
 function runPanel(p, court, x) {
   const r = p.nextRun;
-  const partnerLine = x.flags.partner ? `<div class="card crt-partnerline"><span>Run this court?</span><a href="/courts/${encodeURIComponent(court.slug)}/partner">Become a partner ${ICON.chev}</a></div>` : '';
+  const partnerLine = x.flags.partner ? `<div class="card crt-partnerline"><span>Run this court?</span><a href="/courts/${encodeURIComponent(court.slug)}/partner" data-cta="court-partner">Become a partner ${ICON.chev}</a></div>` : '';
   if (!r) {
     return `<aside class="crt-panel" aria-label="Next run"><div class="card crt-book">
       <span class="crt-kicker">Next Papawis run</span>
       <b class="crt-book__none">No run posted here yet</b>
       <p class="crt-muted">Runs go up on the Papawis page. ${x.flags.votes && x.slots?.length ? 'Vote for one below.' : 'Follow it to catch the next one.'}</p>
-      <a class="crt-btn crt-btn--amber crt-btn--block" href="/papawis">See Papawis runs</a>
+      <a class="crt-btn crt-btn--amber crt-btn--block" href="/papawis" data-cta="court-papawis">See Papawis runs</a>
     </div>${partnerLine}</aside>`;
   }
   const max = Number(r.max_slots) || 0;
@@ -106,8 +106,8 @@ function runPanel(p, court, x) {
         ${x.nextFaces?.length ? avatarStack(x.nextFaces, { size: 30, max: 7, total: conf, className: 'crt-urg__stack', label: `${conf} players are in` }) : ''}
         ${record ? `<p>${escHtml(record)}</p>` : ''}</div>
       ${x.nextPrice ? `<div class="crt-price"><b class="crt-num">₱${escHtml(String(x.nextPrice))}</b><span>per player${r.has_referee ? ' · ref included' : ''} · estimate</span></div>` : ''}
-      <div class="crt-book__btns"><a class="crt-btn crt-btn--amber crt-btn--block" href="${href}">${full ? 'Join the waitlist' : 'Sign up'}</a>
-        ${x.shareUrl ? `<button type="button" class="crt-btn crt-btn--ghost crt-btn--block" data-share="${escHtml(x.shareUrl)}">${shareIcon(15)}<span>Share this run</span></button>` : ''}</div>
+      <div class="crt-book__btns"><a class="crt-btn crt-btn--amber crt-btn--block" href="${href}" data-cta="court-signup">${full ? 'Join the waitlist' : 'Sign up'}</a>
+        ${x.shareUrl ? `<button type="button" class="crt-btn crt-btn--ghost crt-btn--block" data-share="${escHtml(x.shareUrl)}" data-cta="court-share">${shareIcon(15)}<span>Share this run</span></button>` : ''}</div>
     </div>${partnerLine}</aside>`;
 }
 
@@ -118,10 +118,10 @@ function crowd(p, x, isLoggedIn) {
   const rowKnown = k && (k.teammates || k.ranWith)
     ? `<div class="crt-rw">${avatarStack(k.faces, { size: 32, max: 5, moreBubble: false })}
         <div class="crt-rw__text"><b>${[k.teammates && plural(k.teammates, 'of your teammates', 'of your teammates'), k.ranWith && plural(k.ranWith, 'player you’ve run with', 'players you’ve run with')].filter(Boolean).join(' and ')} ${k.teammates + k.ranWith === 1 ? 'has' : 'have'} played here</b><span>${escHtml(`${p.players} players have run here, and ${p.cameBack} came back for more.`)}</span></div>
-        <a class="crt-rw__link" href="/papawis">See Papawis runs ${ICON.chev}</a></div>`
+        <a class="crt-rw__link" href="/papawis" data-cta="court-papawis">See Papawis runs ${ICON.chev}</a></div>`
     : `<div class="crt-rw">${avatarStack(p.regulars.map(r => ({ id: r.id, name: r.name })), { size: 32, max: 4, moreBubble: false })}
         <div class="crt-rw__text"><b>${escHtml(`${p.players} players have run here${p.cameBack ? `, and ${p.cameBack} came back for more` : ''}`)}</b><span>${isLoggedIn ? 'None of your teammates or the players you’ve run with have played here yet.' : 'Log in to see which of your teammates and the players you’ve run with have played here.'}</span></div>
-        ${isLoggedIn ? `<a class="crt-rw__link" href="/papawis">See Papawis runs ${ICON.chev}</a>` : `<a class="crt-rw__link" href="/login?next=${encodeURIComponent(`/courts/${p.slug}`)}">Log in to see who ${ICON.chev}</a>`}</div>`;
+        ${isLoggedIn ? `<a class="crt-rw__link" href="/papawis" data-cta="court-papawis">See Papawis runs ${ICON.chev}</a>` : `<a class="crt-rw__link" href="/login?next=${encodeURIComponent(`/courts/${p.slug}`)}" data-cta="court-login">Log in to see who ${ICON.chev}</a>`}</div>`;
   const first = p.firstHere
     ? `<div class="crt-rw"><b class="crt-rw__big crt-num">${p.firstHere}</b>
         <div class="crt-rw__text"><b>Good first court</b><span>${escHtml(`${plural(p.firstHere, 'player')} played ${p.firstHere === 1 ? 'their' : 'their'} first-ever Papawis here.${p.refereed && p.refereed === p.playedRuns ? ' Every run had a referee.' : ''}`)}</span></div>
@@ -157,7 +157,7 @@ function numbers(p) {
 function leaders(p) {
   const L = p.leaders;
   if (L.mostRuns.length < 3) return '';
-  const col = (title, sub, rows) => `<div class="crt-lb__col"><h3>${escHtml(title)}${sub ? ` <small>${escHtml(sub)}</small>` : ''}</h3>${rows.map((r, i) => `<a class="crt-lb__row" href="/players/${encodeURIComponent(r.slug)}"><span class="crt-lb__rank">${i + 1}</span>${avatar(r.id, r.name)}<b>${escHtml(r.name)}</b><em>${escHtml(r.value)}</em></a>`).join('')}</div>`;
+  const col = (title, sub, rows) => `<div class="crt-lb__col"><h3>${escHtml(title)}${sub ? ` <small>${escHtml(sub)}</small>` : ''}</h3>${rows.map((r, i) => `<a class="crt-lb__row" href="/players/${encodeURIComponent(r.slug)}" data-cta="court-leader"><span class="crt-lb__rank">${i + 1}</span>${avatar(r.id, r.name)}<b>${escHtml(r.name)}</b><em>${escHtml(r.value)}</em></a>`).join('')}</div>`;
   return `<section class="crt-sec" id="crt-leaders" aria-labelledby="crt-leaders-h">${sh('Court leaders', { id: 'crt-leaders-h', sub: `Papawis runs at ${p.name}` })}
     <div class="card"><div class="crt-lb${L.quickest.length >= 3 ? '' : ' crt-lb--one'}">${col('Most runs here', '', L.mostRuns)}${L.quickest.length >= 3 ? col('Quickest to sign up', 'avg. sign-up spot, 2+ runs', L.quickest) : ''}</div>
     <p class="crt-foot">Attendance only, no scoring. Ties go to whoever signed up earlier on average.</p></div></section>`;
@@ -172,8 +172,8 @@ function votes(p, x, isLoggedIn) {
     const title = s.run_id ? 'Run posted' : reached ? `Going ahead: ${s.votes} of ${s.threshold} in` : `${s.votes} of ${s.threshold} in`;
     const sub = s.run_id ? 'Sign-ups are open on the Papawis page.' : reached ? 'We’re setting up the run. Everyone who voted gets told first.' : `${plural(s.threshold - s.votes, 'more player')} needed.`;
     const action = s.run_id ? `<a class="crt-btn crt-btn--ghost crt-btn--sm crt-btn--block" href="/papawis#pw-game-${encodeURIComponent(s.run_id)}">Sign up</a>`
-      : isLoggedIn ? `<button type="button" class="crt-btn crt-btn--sm crt-btn--block ${mine ? 'crt-btn--on' : 'crt-btn--ghost'}" aria-pressed="${mine ? 'true' : 'false'}" data-vote="${escHtml(s.id)}">${mine ? `${ICON.tick} You’re in` : 'I’m in'}</button>`
-      : `<a class="crt-btn crt-btn--ghost crt-btn--sm crt-btn--block" href="/login?next=${encodeURIComponent(`/courts/${p.slug}#crt-vote`)}">Log in to vote</a>`;
+      : isLoggedIn ? `<button type="button" class="crt-btn crt-btn--sm crt-btn--block ${mine ? 'crt-btn--on' : 'crt-btn--ghost'}" aria-pressed="${mine ? 'true' : 'false'}" data-vote="${escHtml(s.id)}" data-cta="court-vote">${mine ? `${ICON.tick} You’re in` : 'I’m in'}</button>`
+      : `<a class="crt-btn crt-btn--ghost crt-btn--sm crt-btn--block" href="/login?next=${encodeURIComponent(`/courts/${p.slug}#crt-vote`)}" data-cta="court-login">Log in to vote</a>`;
     return `<div class="crt-rw" data-slot="${escHtml(s.id)}" data-threshold="${s.threshold}">
       <div class="crt-rw__date"><b>${escHtml(ymdLabel(s.date, { month: 'short', day: 'numeric' }).toUpperCase())}</b><span>${escHtml(`${ymdLabel(s.date, { weekday: 'short' })} · ${fmtRange(s.start_time, s.end_time)}`)}</span></div>
       <div class="crt-rw__text"><b data-vote-title>${escHtml(title)}</b><div class="crt-prog" role="meter" aria-valuemin="0" aria-valuemax="${s.threshold}" aria-valuenow="${s.votes}" aria-label="${escHtml(`${s.votes} of ${s.threshold} votes`)}"><i style="width:${pct}%"></i></div><span data-vote-sub>${escHtml(sub)}</span></div>
@@ -234,14 +234,14 @@ function rateForm(x) {
     <div class="crt-aspin">${RATING_ASPECTS.map(([k, l]) => `<div class="crt-aspin__row" role="radiogroup" aria-label="${escHtml(l)}"><span>${escHtml(l)}${k === 'airflow' ? ' <small>5 = cool</small>' : ''}</span><div>${[1, 2, 3, 4, 5].map(i => `<label><input type="radio" name="asp_${k}" value="${i}"${Number(aspects[k]) === i ? ' checked' : ''}><span>${i}</span></label>`).join('')}</div></div>`).join('')}</div>
     <div class="crt-tagin" role="group" aria-label="Quick tags">${RATING_TAGS_GOOD.map(tagBtn).join('')}<span class="crt-tagsep">Could be better</span>${RATING_TAGS_BAD.map(tagBtn).join('')}</div>
     <label class="crt-field crt-field--full"><span>Anything else? <em>Optional</em></span><textarea name="body" maxlength="600" rows="3" placeholder="What should someone know before their first run here?">${escHtml(m?.body || '')}</textarea></label>
-    <div class="crt-formfoot"><span data-form-msg>Posts with your name. The court can reply.</span><button type="submit" class="crt-btn crt-btn--amber">${m ? 'Update rating' : 'Post rating'}</button></div>
+    <div class="crt-formfoot"><span data-form-msg>Posts with your name. The court can reply.</span><button type="submit" class="crt-btn crt-btn--amber" data-cta="court-rate">${m ? 'Update rating' : 'Post rating'}</button></div>
   </form>`;
 }
 
 function runs(p) {
   if (!p.pastRuns.length) return '';
   return `<section class="crt-sec" id="crt-runs" aria-labelledby="crt-runs-h">${sh('Runs here', { id: 'crt-runs-h', sub: `${p.pastRuns.length} played${p.cancelled ? ` · ${p.cancelled} cancelled` : ''}`, link: '<a class="section-header__link" href="/papawis">All Papawis runs</a>' })}
-    <div class="card crt-rows">${p.pastRuns.slice(0, 8).map(r => `<a class="crt-rw" href="/papawis#pw-game-${encodeURIComponent(r.id)}">
+    <div class="card crt-rows">${p.pastRuns.slice(0, 8).map(r => `<a class="crt-rw" href="/papawis#pw-game-${encodeURIComponent(r.id)}" data-cta="court-run">
       <div class="crt-rw__date"><b>${escHtml(ymdLabel(r.ymd, { month: 'short', day: 'numeric' }).toUpperCase())}</b><span>${escHtml(`${ymdLabel(r.ymd, { weekday: 'short' })}${r.time ? ` · ${r.time}` : ''}`)}</span></div>
       <div class="crt-mets">
         <div class="crt-met"><b>${r.players}</b><span>played</span></div>
@@ -289,7 +289,7 @@ function rent(p, court, x) {
         <label class="crt-field"><span>Mobile <i>*</i></span><input type="tel" name="contact" autocomplete="tel" inputmode="tel" maxlength="80" placeholder="0917 123 4567" required></label>
         <label class="crt-field crt-field--full"><span>Anything the court should know? <em>Optional</em></span><textarea name="note" rows="3" maxlength="500" placeholder="Company league, need a scoreboard"></textarea></label>
       </div>
-      <div class="crt-formfoot"><span data-form-msg><i>*</i> Required. The court replies to you directly.</span><button type="submit" class="crt-btn crt-btn--amber">Send request</button></div>
+      <div class="crt-formfoot"><span data-form-msg><i>*</i> Required. The court replies to you directly.</span><button type="submit" class="crt-btn crt-btn--amber" data-cta="court-rent">Send request</button></div>
     </form></div></section>`;
 }
 
@@ -303,8 +303,8 @@ function there(p, court, x) {
   const href = pin ? `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}` : mapsHref(court);
   // A real map (Leaflet, OSM tiles recoloured dark, amber pin), loaded when the section comes near.
   const map = pin
-    ? `<div class="crt-there__map crt-map" data-crt-map data-lat="${pin.lat}" data-lng="${pin.lng}" data-name="${escHtml(p.name)}" data-href="${escHtml(href)}" role="region" aria-label="Map of ${escHtml(p.name)}"><a class="crt-map__fallback" href="${escHtml(href)}" target="_blank" rel="noopener">Open the map ↗</a></div>`
-    : `<a class="crt-there__map crt-there__map--link" href="${escHtml(href)}" target="_blank" rel="noopener" aria-label="Open ${escHtml(p.name)} in Google Maps">
+    ? `<div class="crt-there__map crt-map" data-crt-map data-lat="${pin.lat}" data-lng="${pin.lng}" data-name="${escHtml(p.name)}" data-href="${escHtml(href)}" role="region" aria-label="Map of ${escHtml(p.name)}"><a class="crt-map__fallback" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions">Open the map ↗</a></div>`
+    : `<a class="crt-there__map crt-there__map--link" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions" aria-label="Open ${escHtml(p.name)} in Google Maps">
         <span class="crt-mapx__grid" aria-hidden="true"></span>
         <span class="crt-mapx__body">
           <span class="crt-mapx__pin" aria-hidden="true">${ICON.pin || ''}</span>
@@ -313,7 +313,7 @@ function there(p, court, x) {
           <span class="crt-mapx__btn">Open in Google Maps ↗</span>
         </span>
       </a>`;
-  return `<section class="crt-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h', link: `<a class="section-header__link" href="${escHtml(href)}" target="_blank" rel="noopener">Open in Google Maps ↗</a>` })}
+  return `<section class="crt-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h', link: `<a class="section-header__link" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions">Open in Google Maps ↗</a>` })}
     <div class="card crt-there">
       ${map}
       <div class="crt-there__info">
@@ -346,7 +346,7 @@ function dock(p) {
   if (!r) return '';
   const max = Number(r.max_slots) || 0;
   const full = max && r.confirmed >= max;
-  return `<div class="crt-dock"><div><b>${escHtml(`${ymdLabel(r.ymd, { weekday: 'short', month: 'short', day: 'numeric' })}${r.time ? ` · ${r.time}` : ''}`)}</b><span>${escHtml(max ? (full ? 'Full · waitlist open' : `${plural(max - r.confirmed, 'slot')} left`) : 'Papawis run')}</span></div><a class="crt-btn crt-btn--amber crt-btn--sm" href="/papawis#pw-game-${encodeURIComponent(r.id)}">${full ? 'Join the waitlist' : 'Sign up'}</a></div>`;
+  return `<div class="crt-dock"><div><b>${escHtml(`${ymdLabel(r.ymd, { weekday: 'short', month: 'short', day: 'numeric' })}${r.time ? ` · ${r.time}` : ''}`)}</b><span>${escHtml(max ? (full ? 'Full · waitlist open' : `${plural(max - r.confirmed, 'slot')} left`) : 'Papawis run')}</span></div><a class="crt-btn crt-btn--amber crt-btn--sm" href="/papawis#pw-game-${encodeURIComponent(r.id)}" data-cta="court-signup-dock">${full ? 'Join the waitlist' : 'Sign up'}</a></div>`;
 }
 
 // The site's sticky "on this page" bar (.gd-snav + views/section-nav.js, as on game, team and
@@ -359,7 +359,7 @@ function jumpbar(court, p, x, sections) {
   return `<nav class="gd-snav crt-snav" data-gd-snav aria-label="On this page">
     <span class="gd-snav__mini">${court.image_url ? `<img class="crt-snav__av" src="/api/papawis-court/${encodeURIComponent(court.id)}/photo?w=96" alt="" width="26" height="26">` : `<span class="crt-snav__av crt-snav__av--blank" aria-hidden="true">${escHtml((p.name || '?').charAt(0).toUpperCase())}</span>`}${escHtml(p.name)}</span>
     ${sections.map(([id, l], i) => `<a href="#${id}" data-spy="${id}"${i ? '' : ' class="is-on"'}>${escHtml(l)}</a>`).join('')}
-    ${r ? `<a class="crt-btn crt-btn--amber crt-btn--sm crt-snav__cta" href="/papawis#pw-game-${encodeURIComponent(r.id)}">${full ? 'Join the waitlist' : 'Sign up'}</a>` : ''}
+    ${r ? `<a class="crt-btn crt-btn--amber crt-btn--sm crt-snav__cta" href="/papawis#pw-game-${encodeURIComponent(r.id)}" data-cta="court-signup-bar">${full ? 'Join the waitlist' : 'Sign up'}</a>` : ''}
   </nav>`;
 }
 
@@ -538,7 +538,7 @@ export function courtsIndexPage({ courts }) {
     <h1 class="crt-h1">Courts</h1>
     <p class="crt-muted">Where WKND plays: pickup runs and league games in Makati, Mandaluyong and Pasig.</p>
   </header>
-  <div class="crt-index">${courts.map(({ court, p }) => `<a class="card crt-tile" href="/courts/${encodeURIComponent(court.slug)}">
+  <div class="crt-index">${courts.map(({ court, p }) => `<a class="card crt-tile" href="/courts/${encodeURIComponent(court.slug)}" data-cta="courts-tile">
       <span class="crt-tile__img">${p.photos[0] ? `<img src="${escHtml(p.photos[0].src)}" alt="${escHtml(p.photos[0].alt)}" loading="lazy">` : ''}</span>
       <span class="crt-tile__body">
         <span class="crt-kicker">${escHtml(p.city || 'Metro Manila')}</span>
@@ -573,7 +573,7 @@ export function courtPartnerPage({ court, p, ratings, flags }) {
       <span class="crt-kicker">For the ${escHtml(p.name)} team</span>
       <h1 class="crt-h1">${escHtml(`${plural(n.players, 'player')} have played at your court${since}`)}</h1>
       <p>WKND Basketball runs Papawis pickup games and league seasons around Makati, Mandaluyong and Pasig. Here’s what our games at your court look like, and what partner courts get. It costs nothing.</p>
-      <div class="crt-pt-btns"><a class="crt-btn crt-btn--amber" href="${MESSENGER_URL}" target="_blank" rel="noopener">Message us to claim this page</a><a class="crt-btn crt-btn--ghost" href="/courts/${encodeURIComponent(court.slug)}">See your court page</a></div>
+      <div class="crt-pt-btns"><a class="crt-btn crt-btn--amber" href="${MESSENGER_URL}" target="_blank" rel="noopener" data-cta="court-claim">Message us to claim this page</a><a class="crt-btn crt-btn--ghost" href="/courts/${encodeURIComponent(court.slug)}">See your court page</a></div>
     </section>
     <aside class="card crt-badge" aria-label="Badge">
       ${badgeOk ? `<div class="crt-badge__row"><span class="crt-badge__ball"><b class="crt-num">${ratings.avg.toFixed(1)}</b></span><span class="crt-badge__txt"><span>WKND PLAYERS’ PICK</span><b>${escHtml(p.name)}</b><small>${escHtml(`Rated by ${plural(ratings.n, 'player')} · ${new Date().getFullYear()}`)}</small></span></div>

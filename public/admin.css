@@ -3038,3 +3038,6 @@ select.aui-input { padding-left: 9px; }
 .acrt-suggest__body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .acrt-suggest__body .acrt-actions { margin-top: 0; }
 .acrt-suggest__list { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.ahome-clicks__group { margin-top: 10px; }
+.ahome-clicks__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--amber, #f59332); line-height: 1; }
+.ahome-clicks__head b { font-variant-numeric: tabular-nums; }
