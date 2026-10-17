@@ -139,7 +139,7 @@ import {
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
   getPapawisCourtBySlug, ensurePapawisCourtSlug, updatePapawisCourtPage, getPapawisRunsAtCourt, getPapawisSignupsForRuns,
-  getPapawisFirstRuns, getPapawisCoverVersions, getGameIdsAtCourt, getScoringForGames, getPapawisJoinStats,
+  getPapawisFirstRuns, getPapawisCoverVersions, getGameIdsAtCourt, getScoringForGames, getPapawisJoinStats, getLatestPapawisCoverRunId,
   getPapawisLocationGeocode, setPapawisLocationGeocode, getPapawisCover, setPapawisCover, deletePapawisCover,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
@@ -943,7 +943,7 @@ const PAGE_DESCRIPTIONS = {
   '/marketplace': 'Jerseys, gear and group buys for the WKND Basketball community.',
   '/register': 'Join WKND Basketball, a weekend basketball league in Makati, Mandaluyong and Pasig: league games, stats, recaps and a community that shows up. Sign up for the next season.',
   '/front-office': 'The people who run WKND Basketball.',
-  '/join': 'Join a weekend basketball league in Makati, Mandaluyong and Pasig. No team needed, beginners welcome: register, get drafted, play on weekends.',
+  '/join': 'Join the WKND basketball community in Makati, Mandaluyong and Pasig. No team needed, beginners welcome: get your own player card, play Papawis runs and league seasons.',
   '/courts': 'Basketball courts in Makati, Mandaluyong and Pasig where WKND plays: Papawis pickup runs, league games, photos and stats for each court.',
 };
 
@@ -2293,8 +2293,10 @@ const CTA_KEYS = {
   'court-partner':    'Court page · Become a partner',
   'court-claim':      'Court page · Message us to claim',
   'courts-tile':      'Courts list · Open a court',
-  'join-register':    'Join page · Register (top)',
-  'join-register-end': 'Join page · Register (bottom)',
+  'join-register':    'Join page · Claim your spot (top)',
+  'join-register-sticky': 'Join page · Claim your spot (phone bar)',
+  'join-register-end': 'Join page · Claim your spot (bottom)',
+  'join-level':       'Join page · Pick a level',
   'join-messenger':   'Join page · Message us',
   'join-court':       'Join page · Open a court',
 };
@@ -2566,7 +2568,6 @@ function pollsSettingsPanel() {
 
 function seasonNudgesPanel() {
   return settingsPanel([
-    { type: 'text', key: 'season_fee_text', value: getSetting('season_fee_text', ''), width: '220px', placeholder: 'e.g. ₱2,500 per season', label: 'Season fee on the Join page', sub: `Shown in the FAQ on ${codeTag('/join')}. Blank: “Message us for this season’s fee.”` },
     { type: 'toggle', key: 'season_auto_nudges', value: on('season_auto_nudges'), label: 'Sign-up reminders',
       sub: 'When sign-ups open, every active member who hasn’t signed up gets a bell and an email. Three days later, last season’s players who still haven’t signed up get one more. Respects the league-emails unsubscribe. Live site only.' },
   ], { title: 'Automatic reminders' });
@@ -7727,7 +7728,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     // Auto-nudges (lib/broadcast.js): one switch per feature page.
     'picks_auto_remind', 'mvp_podium_auto_remind', 'posts_notify_on_publish', 'polls_notify_on_open', 'season_auto_nudges',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
-    'reg_open', 'season_fee_text',
+    'reg_open',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
   ]);
   const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
@@ -16274,7 +16275,8 @@ app.get('/register', (req, res) => {
   res.send(renderAuth(req, {
     title: 'Join WKND Basketball',
     currentPath: '/register',
-    body: registerPage({ hypeAvatars, ref: req.query.ref, playerCount: getActivePlayerCount() }),
+    // /join's level cards link here with ?experience=… so the pick carries over.
+    body: registerPage({ hypeAvatars, ref: req.query.ref, playerCount: getActivePlayerCount(), prefill: ['beginner', 'intermediate', 'advanced'].includes(req.query.experience) ? { experience: req.query.experience } : {} }),
   }));
 });
 
@@ -18079,20 +18081,25 @@ app.get('/join', (req, res) => {
   const games = getAllGames().filter(g => !g.under_review && (g.status === 'final' || g.status === 'complete') && Number(g.team_a_score) + Number(g.team_b_score) > 0);
   const pw = getPapawisJoinStats();
   const priceRange = pw.min_price && pw.max_price ? (pw.min_price === pw.max_price ? `₱${pw.min_price}` : `₱${pw.min_price} to ₱${pw.max_price}`) : '';
-  const faq = joinFaq({ feeText: getSetting('season_fee_text', '').trim(), priceRange });
-  const cover = byDate(games).find(g => g.has_cover);
+  const faq = joinFaq({ priceRange });
+  const courts = liveCourts().map(({ court, p }) => ({ slug: court.slug, name: p.name, city: p.city }));
+  const covers = byDate(games).filter(g => g.has_cover).slice(0, 4)
+    .map(g => ({ src: `/api/photo/${encodeURIComponent(g.id)}?w=960`, alt: `${g.team_a_name} vs ${g.team_b_name}` }));
+  const runCover = getLatestPapawisCoverRunId();
+  const faces = getAllPlayers().filter(p => p.status !== 'inactive' && p.picture_url)
+    .map(p => ({ id: p.id, name: p.name, color: teamColor(p.team_name) }))
+    .sort(() => Math.random() - 0.5).slice(0, 6);
   res.send(renderPage(req, {
-    title: 'Join a Weekend Basketball League in Makati, Mandaluyong & Pasig | WKND',
+    title: 'Join a Basketball Community in Makati, Mandaluyong & Pasig | WKND',
     currentPath: '/join',
     metaTags: [
       jsonLdTag({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) }),
       `<link rel="stylesheet" href="/join.css?v=${JOIN_CSS_VER}">`,
     ].join('\n  '),
     body: joinPage({
-      numbers: { players: getAllPlayerCareerTotals().length, games: games.length, teams: getAllTeams().length, runs: pw.runs },
-      courts: liveCourts().map(({ court, p }) => ({ slug: court.slug, name: p.name, city: p.city })),
-      faq, heroImg: cover ? `/api/photo/${encodeURIComponent(cover.id)}?w=960` : '',
-      regOpen: getSetting('reg_open', '0') === '1',
+      numbers: { players: getAllPlayerCareerTotals().length, games: games.length, teams: getAllTeams().length, courts: courts.length },
+      courts, faq, faces, covers, priceRange,
+      runImg: runCover ? `/api/papawis-cover/${encodeURIComponent(runCover)}` : '',
     }),
   }));
 });
