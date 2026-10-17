@@ -139,7 +139,7 @@ import {
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
   getPapawisCourtBySlug, ensurePapawisCourtSlug, updatePapawisCourtPage, getPapawisRunsAtCourt, getPapawisSignupsForRuns,
-  getPapawisFirstRuns, getPapawisCoverVersions, getGameIdsAtCourt, getScoringForGames,
+  getPapawisFirstRuns, getPapawisCoverVersions, getGameIdsAtCourt, getScoringForGames, getPapawisJoinStats,
   getPapawisLocationGeocode, setPapawisLocationGeocode, getPapawisCover, setPapawisCover, deletePapawisCover,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
@@ -218,6 +218,7 @@ import {
   markCourtSlotReached, getCourtSlotVoterIds, getCourtSlotVotesBy, toggleCourtSlotVote, addCourtRequest, getCourtRequests, setCourtRequestStatus,
 } from './lib/portal-db.js';
 import { COURT_SEEDS } from './lib/court-seeds.js';
+import { joinPage, joinFaq } from './views/join.js';
 import { adminPicksBody } from './views/admin/picks.js';
 import { adminPlayersBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
@@ -283,6 +284,8 @@ const PLAYERS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__di
 const PAPAWIS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/papawis.css')).mtimeMs); } catch { return Date.now(); } })();
 // /courts and /courts/:slug (public/courts.css), versioned the same way.
 const COURTS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/courts.css')).mtimeMs); } catch { return Date.now(); } })();
+// /join (public/join.css), versioned the same way.
+const JOIN_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/join.css')).mtimeMs); } catch { return Date.now(); } })();
 
 // Minified once at process start (same lifecycle as CSS_VER — both only change on a
 // restart, which is also the only time the underlying file can change anyway) rather than
@@ -290,7 +293,7 @@ const COURTS_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dir
 // to serving the original file as-is instead of a broken empty response.
 const MINIFIED_CSS = (() => {
   const cache = {};
-  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css', 'courts.css']) {
+  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css', 'courts.css', 'join.css']) {
     try {
       const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
       const out = new CleanCSS({}).minify(raw);
@@ -940,6 +943,7 @@ const PAGE_DESCRIPTIONS = {
   '/marketplace': 'Jerseys, gear and group buys for the WKND Basketball community.',
   '/register': 'Join WKND Basketball, a weekend basketball league in Makati, Mandaluyong and Pasig: league games, stats, recaps and a community that shows up. Sign up for the next season.',
   '/front-office': 'The people who run WKND Basketball.',
+  '/join': 'Join a weekend basketball league in Makati, Mandaluyong and Pasig. No team needed, beginners welcome: register, get drafted, play on weekends.',
   '/courts': 'Basketball courts in Makati, Mandaluyong and Pasig where WKND plays: Papawis pickup runs, league games, photos and stats for each court.',
 };
 
@@ -2288,6 +2292,10 @@ const CTA_KEYS = {
   'court-partner':    'Court page · Become a partner',
   'court-claim':      'Court page · Message us to claim',
   'courts-tile':      'Courts list · Open a court',
+  'join-register':    'Join page · Register (top)',
+  'join-register-end': 'Join page · Register (bottom)',
+  'join-messenger':   'Join page · Message us',
+  'join-court':       'Join page · Open a court',
 };
 
 // Where a page view came from, by the Referer header: search, social, our own site, or none.
@@ -2557,6 +2565,7 @@ function pollsSettingsPanel() {
 
 function seasonNudgesPanel() {
   return settingsPanel([
+    { type: 'text', key: 'season_fee_text', value: getSetting('season_fee_text', ''), width: '220px', placeholder: 'e.g. ₱2,500 per season', label: 'Season fee on the Join page', sub: `Shown in the FAQ on ${codeTag('/join')}. Blank: “Message us for this season’s fee.”` },
     { type: 'toggle', key: 'season_auto_nudges', value: on('season_auto_nudges'), label: 'Sign-up reminders',
       sub: 'When sign-ups open, every active member who hasn’t signed up gets a bell and an email. Three days later, last season’s players who still haven’t signed up get one more. Respects the league-emails unsubscribe. Live site only.' },
   ], { title: 'Automatic reminders' });
@@ -2924,7 +2933,7 @@ app.post('/api/cta/:key', (req, res) => {
 // express.static unchanged. Safe to cache for a full year: the URL is always requested
 // with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
 // invalidating this one.
-app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css', '/courts.css'], (req, res) => {
+app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css', '/courts.css', '/join.css'], (req, res) => {
   const file = req.path.slice(1);
   const minified = MINIFIED_CSS[file];
   if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
@@ -7717,7 +7726,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     // Auto-nudges (lib/broadcast.js): one switch per feature page.
     'picks_auto_remind', 'mvp_podium_auto_remind', 'posts_notify_on_publish', 'polls_notify_on_open', 'season_auto_nudges',
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
-    'reg_open',
+    'reg_open', 'season_fee_text',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
   ]);
   const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
@@ -8375,6 +8384,7 @@ app.get('/sitemap.xml', (req, res) => {
   if (flags.papawis) urls.push({ loc: '/papawis', priority: '0.5', changefreq: 'weekly' });
   // Court pages: only courts with a live page (something played there, not hidden).
   const courtsLive = liveCourts();
+  urls.push({ loc: '/join', priority: '0.8', changefreq: 'monthly' });
   if (courtsLive.length) urls.push({ loc: '/courts', priority: '0.6', changefreq: 'weekly' });
   for (const { court, p } of courtsLive) urls.push({ loc: `/courts/${encodeURIComponent(court.slug)}`, priority: '0.6', changefreq: p.nextRun ? 'daily' : 'weekly' });
   if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
@@ -18062,6 +18072,29 @@ function liveCourtSlugByName() {
   }
   return liveCourtsCache.map;
 }
+
+// /join: the league explained for people searching for one (views/join.js).
+app.get('/join', (req, res) => {
+  const games = getAllGames().filter(g => !g.under_review && (g.status === 'final' || g.status === 'complete') && Number(g.team_a_score) + Number(g.team_b_score) > 0);
+  const pw = getPapawisJoinStats();
+  const priceRange = pw.min_price && pw.max_price ? (pw.min_price === pw.max_price ? `₱${pw.min_price}` : `₱${pw.min_price} to ₱${pw.max_price}`) : '';
+  const faq = joinFaq({ feeText: getSetting('season_fee_text', '').trim(), priceRange });
+  const cover = byDate(games).find(g => g.has_cover);
+  res.send(renderPage(req, {
+    title: 'Join a Weekend Basketball League in Makati, Mandaluyong & Pasig | WKND',
+    currentPath: '/join',
+    metaTags: [
+      jsonLdTag({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) }),
+      `<link rel="stylesheet" href="/join.css?v=${JOIN_CSS_VER}">`,
+    ].join('\n  '),
+    body: joinPage({
+      numbers: { players: getAllPlayerCareerTotals().length, games: games.length, teams: getAllTeams().length, runs: pw.runs },
+      courts: liveCourts().map(({ court, p }) => ({ slug: court.slug, name: p.name, city: p.city })),
+      faq, heroImg: cover ? `/api/photo/${encodeURIComponent(cover.id)}?w=960` : '',
+      regOpen: getSetting('reg_open', '0') === '1',
+    }),
+  }));
+});
 
 app.get('/courts', (req, res) => {
   const courts = liveCourts();

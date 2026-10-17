@@ -425,7 +425,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       features.marketplace ? ['/marketplace', 'Marketplace'] : null,
     ]],
     ['League', [
-      ['/rules', 'League rules'], ['/rules/fines', 'League fines'],
+      ['/join', 'How to join'], ['/rules', 'League rules'], ['/rules/fines', 'League fines'],
       features.picks ? ['/picks/rules', 'Pickmaster rules'] : null,
       isGuest ? ['/register', 'Join the community', 'site-footer__join-link'] : null,
     ]],
