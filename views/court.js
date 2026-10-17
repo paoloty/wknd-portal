@@ -461,7 +461,11 @@ const SCRIPT = `<script>
       var body = { stars: Number(fd.get('stars')), aspects: aspects, body: fd.get('body') || '', tags: [].slice.call(f.querySelectorAll('[data-tag][aria-pressed="true"]')).map(function (t) { return t.getAttribute('data-tag'); }) };
       var msg = f.querySelector('[data-form-msg]'), btn = f.querySelector('[type=submit]');
       btn.disabled = true;
-      post('/courts/' + location.pathname.split('/')[2] + '/rate', body).then(function (d) { msg.textContent = d.message; btn.textContent = 'Update rating'; })
+      post('/courts/' + location.pathname.split('/')[2] + '/rate', body).then(function (d) {
+        msg.textContent = d.message; btn.textContent = 'Update rating';
+        // Drop the email link's ?rate=N so a reload shows the saved stars, not the link's.
+        if (/[?&]rate=/.test(location.search)) history.replaceState(null, '', location.pathname + '#crt-rate');
+      })
         .catch(function (err) { msg.textContent = err.message; }).then(function () { btn.disabled = false; });
     });
   });

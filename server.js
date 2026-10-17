@@ -18036,9 +18036,10 @@ function courtViewerExtras(req, court, p, allPlayers) {
     out.helpfulByMe = new Set(getCourtRatingHelpfulBy(court.id, viewerId));
     out.canRate = !!viewerId && p.raterIds.includes(viewerId);
     out.lastRunYmd = viewerId ? p.lastPlayed[viewerId] || '' : '';
-    // From the rating email: ?rate=N picks that many stars in the form.
-    out.preRate = Math.min(5, Math.max(0, Math.round(Number(req.query.rate) || 0)));
     out.myRating = out.canRate ? getMyCourtRating(court.id, viewerId) : null;
+    // From the rating email: ?rate=N picks that many stars in the form, only before they have
+    // rated; a saved rating always wins over the link.
+    out.preRate = out.myRating ? 0 : Math.min(5, Math.max(0, Math.round(Number(req.query.rate) || 0)));
   }
   if (flags.votes) {
     const today = manilaTodayStr();
