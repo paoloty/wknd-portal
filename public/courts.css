@@ -408,7 +408,25 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 @media (prefers-reduced-motion: reduce) { .crt-gal__dots i { transition: none; } }
 .crt-snav a.crt-snav__cta:hover { color: #0a0e16; }
 
-/* Getting there without an exact pin: a link out to Google Maps instead of a guessed pin */
-.crt-there__map--link { display: flex; align-items: center; justify-content: center; min-height: 140px; padding: 16px; background: var(--surface-2); color: var(--amber); font-weight: 600; text-align: center; }
-.crt-there__map--link span { display: inline-flex; align-items: center; gap: 8px; }
-.crt-there__map--link:hover { color: #fbb36b; }
+/* Getting there without an exact pin: a drawn "map" (street grid, amber glow, pulsing pin)
+   that links out to Google Maps' own address search. CSS only, no guessed location. */
+.crt-there__map--link { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 240px; padding: 24px 16px; text-align: center; color: var(--text);
+  background:
+    radial-gradient(60% 70% at 50% 46%, rgba(245,147,50,.16) 0%, rgba(245,147,50,0) 70%),
+    linear-gradient(0deg, transparent 47%, rgba(255,255,255,.07) 47%, rgba(255,255,255,.07) 53%, transparent 53%) 0 62% / 100% 100% no-repeat,
+    linear-gradient(90deg, transparent 63%, rgba(255,255,255,.06) 63%, rgba(255,255,255,.06) 66%, transparent 66%),
+    linear-gradient(29deg, transparent 49.4%, rgba(255,255,255,.05) 49.4%, rgba(255,255,255,.05) 50.6%, transparent 50.6%),
+    var(--surface-2); }
+.crt-mapx__grid { position: absolute; inset: 0; pointer-events: none; opacity: .55;
+  background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size: 28px 28px; -webkit-mask-image: radial-gradient(75% 75% at 50% 50%, #000 40%, transparent 100%); mask-image: radial-gradient(75% 75% at 50% 50%, #000 40%, transparent 100%); }
+.crt-mapx__body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 320px; }
+.crt-mapx__pin { position: relative; width: 46px; height: 46px; margin-bottom: 6px; border-radius: 50%; background: var(--amber); color: #0a0e16; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(245,147,50,.35); }
+.crt-mapx__pin svg, .crt-mapx__pin .crt-ico { width: 22px; height: 22px; color: #0a0e16; stroke: #0a0e16; }
+.crt-mapx__pin::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid rgba(245,147,50,.55); animation: crt-mapx-pulse 2.2s ease-out infinite; }
+@keyframes crt-mapx-pulse { 0% { transform: scale(.85); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+.crt-mapx__name { font-size: 16px; font-weight: 800; line-height: 1.2; color: var(--text); }
+.crt-mapx__addr { font-size: 13px; line-height: 1.4; color: var(--text-muted); }
+.crt-mapx__btn { margin-top: 8px; display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(245,147,50,.45); background: rgba(10,14,22,.6); color: var(--amber); font-size: 13px; font-weight: 700; line-height: 1; transition: background .15s, color .15s; }
+.crt-there__map--link:hover .crt-mapx__btn { background: var(--amber); color: #0a0e16; }
+@media (prefers-reduced-motion: reduce) { .crt-mapx__pin::after { animation: none; opacity: .5; } }

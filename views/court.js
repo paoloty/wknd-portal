@@ -304,7 +304,15 @@ function there(p, court, x) {
   // A real map (Leaflet, OSM tiles recoloured dark, amber pin), loaded when the section comes near.
   const map = pin
     ? `<div class="crt-there__map crt-map" data-crt-map data-lat="${pin.lat}" data-lng="${pin.lng}" data-name="${escHtml(p.name)}" data-href="${escHtml(href)}" role="region" aria-label="Map of ${escHtml(p.name)}"><a class="crt-map__fallback" href="${escHtml(href)}" target="_blank" rel="noopener">Open the map ↗</a></div>`
-    : `<a class="crt-there__map crt-there__map--link" href="${escHtml(href)}" target="_blank" rel="noopener"><span>${ICON.pin || ''}Open ${escHtml(p.name)} in Google Maps ↗</span></a>`;
+    : `<a class="crt-there__map crt-there__map--link" href="${escHtml(href)}" target="_blank" rel="noopener" aria-label="Open ${escHtml(p.name)} in Google Maps">
+        <span class="crt-mapx__grid" aria-hidden="true"></span>
+        <span class="crt-mapx__body">
+          <span class="crt-mapx__pin" aria-hidden="true">${ICON.pin || ''}</span>
+          <b class="crt-mapx__name">${escHtml(p.name)}</b>
+          <span class="crt-mapx__addr">${escHtml([p.street, p.city].filter(Boolean).join(', ') || court.address || 'Metro Manila')}</span>
+          <span class="crt-mapx__btn">Open in Google Maps ↗</span>
+        </span>
+      </a>`;
   return `<section class="crt-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h', link: `<a class="section-header__link" href="${escHtml(href)}" target="_blank" rel="noopener">Open in Google Maps ↗</a>` })}
     <div class="card crt-there">
       ${map}
