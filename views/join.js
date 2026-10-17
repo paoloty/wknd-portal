@@ -31,7 +31,6 @@ const ARROW = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" strok
 const CHAT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.2-4.3A8 8 0 1 1 21 12z"/></svg>';
 const PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
 const STAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.3.9-4.5 4.4 1 6.1-5.5-2.9L6.5 20l1-6.1L3 9.5l6.3-.9z"/></svg>';
-const CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 
 // The empty player card a new member gets (hero on desktop, its own section on phones).
 function sampleCard() {
@@ -143,7 +142,7 @@ export function joinPage({ numbers = {}, courts = [], faq = [], faces = [], cove
 
   <section class="jn-sec" aria-labelledby="jn-faq">
     <h2 id="jn-faq" class="jn-h2">Questions</h2>
-    <div class="jn-faq">${faq.map(([q, a]) => `<details class="jn-q"><summary>${escHtml(q)}${CHEVRON}</summary><p>${escHtml(a)}</p></details>`).join('')}</div>
+    <div class="jn-faq">${faq.map(([q, a]) => `<div class="card jn-q"><b>${escHtml(q)}</b><p>${escHtml(a)}</p></div>`).join('')}</div>
   </section>
 
   <section class="jn-end">

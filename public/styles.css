@@ -1671,13 +1671,13 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
 /* Guests, every page but the homepage (server.js regMiniBanner). Flat; amber only on the
    pill and the Join button. Phones: the short line + Join. */
 .reg-mini { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-.reg-mini__pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 24px; padding: 0 10px; border-radius: 99px; background: var(--amber-dim); color: var(--amber); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; line-height: 1; white-space: nowrap; flex-shrink: 0; }
+.reg-mini__pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 24px; padding: 0 calc(10px - .1em) 0 10px; border-radius: 99px; background: var(--amber-dim); color: var(--amber); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-box: trim-both cap alphabetic; text-transform: uppercase; line-height: 1; white-space: nowrap; flex-shrink: 0; }
 .reg-mini__text { flex: 1; min-width: 0; font-size: 14px; color: #c3c9d4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reg-mini__text b { color: #fff; font-weight: 700; }
 .reg-mini__short { display: none; }
-.reg-mini__how { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: var(--text-muted); line-height: 1; white-space: nowrap; flex-shrink: 0; text-decoration: none; }
+.reg-mini__how { text-box: trim-both cap alphabetic; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: var(--text-muted); line-height: 1; white-space: nowrap; flex-shrink: 0; text-decoration: none; }
 .reg-mini__how:hover { color: var(--text); }
-.reg-mini__cta { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 9px; background: var(--amber); color: #0a0e16; font-size: 13px; font-weight: 800; line-height: 1; white-space: nowrap; flex-shrink: 0; text-decoration: none; }
+.reg-mini__cta { text-box: trim-both cap alphabetic; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 9px; background: var(--amber); color: #0a0e16; font-size: 13px; font-weight: 800; line-height: 1; white-space: nowrap; flex-shrink: 0; text-decoration: none; }
 .reg-mini__cta:hover { background: #fbb36b; color: #0a0e16; }
 
 /* ── Balance Reminder Bar ─────────────────────────────────────────────────── */

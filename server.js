@@ -139,7 +139,7 @@ import {
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
   getPapawisCourtBySlug, ensurePapawisCourtSlug, updatePapawisCourtPage, getPapawisRunsAtCourt, getPapawisSignupsForRuns,
-  getPapawisFirstRuns, getPapawisCoverVersions, getGameIdsAtCourt, getScoringForGames, getPapawisJoinStats, getLatestPapawisCoverRunId,
+  getPapawisFirstRuns, getPapawisCoverVersions, getGameIdsAtCourt, getScoringForGames, getPapawisJoinStats, getPapawisCoverRunIds,
   getPapawisLocationGeocode, setPapawisLocationGeocode, getPapawisCover, setPapawisCover, deletePapawisCover,
   getAllPlayerCareerTotals, getCoachAnalysis, saveCoachAnalysis, getAllCoachAnalyses,
   createPost, updatePost, deletePost, getPostById, getPostBySlug, isPostSlugTaken,
@@ -18087,9 +18087,11 @@ app.get('/join', (req, res) => {
   const priceRange = pw.min_price && pw.max_price ? (pw.min_price === pw.max_price ? `₱${pw.min_price}` : `₱${pw.min_price} to ₱${pw.max_price}`) : '';
   const faq = joinFaq({ priceRange });
   const courts = liveCourts().map(({ court, p }) => ({ slug: court.slug, name: p.name, city: p.city }));
-  const covers = byDate(games).filter(g => g.has_cover).slice(0, 4)
+  // Photos change on every visit: a random set of game covers and a random Papawis run cover.
+  const shuffle = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
+  const covers = shuffle(games.filter(g => g.has_cover)).slice(0, 4)
     .map(g => ({ src: `/api/photo/${encodeURIComponent(g.id)}?w=960`, alt: `${g.team_a_name} vs ${g.team_b_name}` }));
-  const runCover = getLatestPapawisCoverRunId();
+  const runCover = shuffle(getPapawisCoverRunIds())[0];
   const faces = getAllPlayers().filter(p => p.status !== 'inactive' && p.picture_url)
     .map(p => ({ id: p.id, name: p.name, color: teamColor(p.team_name) }))
     .sort(() => Math.random() - 0.5).slice(0, 6);
