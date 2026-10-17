@@ -438,7 +438,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
       <div class="site-footer__inner">
         <div class="site-footer__brand">
           ${wkndLogo('site-footer__logo')}
-          <p class="site-footer__tagline">Ball is life. Every weekend in Makati, Mandaluyong and Pasig.</p>
+          <p class="site-footer__tagline">Ball is life. Pickup basketball and a weekend league in Makati, Mandaluyong and Pasig. Beginners welcome.</p>
           <div class="site-footer__social">
             ${footerTile('https://m.me/wkndbasketball', 'Message us on Messenger', '<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.14.26.35.27.57l.05 1.78c.02.57.6.94 1.12.71l1.98-.87c.17-.08.36-.09.54-.04.91.25 1.87.38 2.9.38 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm6 7.46l-2.94 4.66a1.5 1.5 0 0 1-2.17.4l-2.34-1.75a.6.6 0 0 0-.72 0l-3.16 2.4c-.42.32-.97-.18-.69-.63l2.94-4.66a1.5 1.5 0 0 1 2.17-.4l2.34 1.75a.6.6 0 0 0 .72 0l3.16-2.4c.42-.32.97.18.69.63z"/></svg>', 'footer-messenger')}
             ${footerTile('https://www.facebook.com/wkndbasketball', 'Facebook', '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>', 'footer-fb')}
