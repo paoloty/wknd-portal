@@ -1749,30 +1749,19 @@ function prfMySeason(o) {
 // Guests' card (views/player.js playerPage): people who found a player by searching their name.
 // Registration open → join; closed → the next Papawis run; neither → follow on Facebook.
 export const MESSENGER_URL = 'https://m.me/wkndbasketball';
-const FACEBOOK_URL = 'https://www.facebook.com/wkndbasketball';
 function prfJoinCard(o) {
   const cta = o.joinCta;
   if (!cta) return '';
   const first = escHtml(displayPlayerName(o.player.name).split(' ')[0] || 'them');
   const ext = 'target="_blank" rel="noopener"';
-  let head, text, primary;
-  if (cta.regOpen) {
-    head = `Want a profile like ${first}’s?`;
-    text = 'Stats, game logs and highlights for every game you play. Weekend basketball in Makati, Mandaluyong and Pasig.';
-    primary = '<a class="prf-btn prf-btn--amber" href="/register" data-cta="player-join">Join the next season &rarr;</a>';
-  } else if (cta.papawis) {
-    head = `Play with ${first} at the next Papawis run`;
-    text = 'Open pickup runs in Makati, Mandaluyong and Pasig. Limited slots, first come, first served.';
-    primary = '<a class="prf-btn prf-btn--amber" href="/papawis" data-cta="player-papawis">See Papawis runs &rarr;</a>';
-  } else {
-    head = `Want a profile like ${first}’s?`;
-    text = 'Registration for the next season opens soon. Follow us on Facebook to hear first.';
-    primary = `<a class="prf-btn prf-btn--amber" href="${FACEBOOK_URL}" ${ext} data-cta="player-fb">Follow on Facebook &rarr;</a>`;
-  }
+  // Membership is always open, so this always sells joining the community (never a season).
+  const head = `Want a card like ${first}’s?`;
+  const text = 'Stats, game logs and highlights for every game you play. Join the WKND community in Makati, Mandaluyong and Pasig. Beginners welcome.';
+  const primary = '<a class="prf-btn prf-btn--amber" href="/register" data-cta="player-join">Join the community &rarr;</a>';
   const links = [
-    `<a class="prf-join__link" href="${MESSENGER_URL}" ${ext} data-cta="player-messenger">Questions? Message us</a>`,
-    cta.regOpen || cta.papawis ? `<a class="prf-join__link" href="${FACEBOOK_URL}" ${ext} data-cta="player-fb">Follow on Facebook</a>` : '',
-  ].filter(Boolean).join('<span aria-hidden="true">·</span>');
+    '<a class="prf-join__link prf-join__link--how" href="/join" data-cta="player-how">New here? See how it works</a>',
+    `<a class="prf-join__link" href="${MESSENGER_URL}" ${ext} data-cta="player-messenger">Message us</a>`,
+  ].join('<span aria-hidden="true">·</span>');
   return `<section class="prf-sec prf-join" id="join" aria-label="Join WKND Basketball" data-cta-ref="player:${escHtml(o.player.id)}">
   <div class="card prf-join__card">
     <span class="prf-join__icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5v19M5.3 5.3c2.6 2.4 2.6 11 0 13.4M18.7 5.3c-2.6 2.4-2.6 11 0 13.4"/></svg></span>

@@ -687,7 +687,7 @@ function registrationBanner({ pill, headline, message, cta, note, stats = {} }) 
     </div>
     <div class="join-band__actions">
       <a href="/register" class="join-band__cta">${escHtml(cta || 'Join the community')}</a>
-      <span class="join-band__fine">${escHtml(note || 'Takes a few minutes.')}</span>
+      <span class="join-band__fine">${escHtml(note || 'Takes a few minutes.')}<a href="/join" class="join-band__how" data-cta="home-how">New here? See how it works <span aria-hidden="true">&rarr;</span></a></span>
     </div>
   </div>
   ${tiles.length ? `<div class="join-band__stats" style="--tiles:${tiles.length}">

@@ -309,6 +309,8 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 .crt-cta > div:first-child { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .crt-cta b { font-size: 18px; font-weight: 800; line-height: 1.25; }
 .crt-cta__btns { display: flex; gap: 12px; flex-wrap: wrap; }
+.crt-cta__side { display: flex; flex-direction: column; gap: 10px; }
+.crt-cta__how { font-size: 13px; font-weight: 700; color: var(--amber); line-height: 1.2; text-decoration: none; }
 
 /* Partner page */
 .crt-top--partner { margin-top: 16px; align-items: stretch; }

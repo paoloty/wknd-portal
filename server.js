@@ -2155,15 +2155,14 @@ function jerseyRequestBanner() {
 </div>`;
 }
 
+// Guests' compact strip on every page but the homepage: one membership line, a quiet link to
+// /join and the Join button. Phones get a shorter line and drop the pill and the link.
 function regMiniBanner() {
-  const { pill, message, cta } = pickRegistrationBannerMessage();
   return `<div class="reg-mini">
-  <span class="reg-mini__pill">
-    <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-    <span class="pill-label">${escHtml(pill)}</span>
-  </span>
-  <span class="reg-mini__text">${escHtml(message)}</span>
-  <a href="/register" class="reg-mini__cta">${escHtml(cta)} <span aria-hidden="true">→</span></a>
+  <span class="reg-mini__pill"><svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>New here?</span>
+  <span class="reg-mini__text"><span class="reg-mini__long">Join the WKND community: get your own player card and play Papawis runs. Beginners welcome.</span><span class="reg-mini__short">New here? <b>Get your own player card.</b></span></span>
+  <a href="/join" class="reg-mini__how" data-cta="mini-how">How it works</a>
+  <a href="/register" class="reg-mini__cta" data-cta="mini-join">Join <span aria-hidden="true">→</span></a>
 </div>`;
 }
 
@@ -2264,7 +2263,12 @@ function trackPageView(req) {
 // Calls to action whose clicks are counted (data-cta="<key>" links, beaconed by views/layout.js).
 // Labels are what the admin home's "Site clicks" list shows.
 const CTA_KEYS = {
-  'player-join':      'Player page · Join the next season',
+  'player-join':      'Player page · Join the community',
+  'player-how':       'Player page · See how it works',
+  'home-how':         'Homepage · See how it works',
+  'court-how':        'Court page · See how it works',
+  'mini-join':        'Top strip · Join',
+  'mini-how':         'Top strip · How it works',
   'player-papawis':   'Player page · See Papawis runs',
   'player-messenger': 'Player page · Message us',
   'player-fb':        'Player page · Follow on Facebook',
@@ -2276,7 +2280,7 @@ const CTA_KEYS = {
   'activate-gc':      'Members · Community chat (welcome screen)',
   'me-gc':            'Members · Community chat (My Profile)',
   'papawis-gc':       'Members · Community chat (Papawis)',
-  'court-join':       'Court page · Join WKND',
+  'court-join':       'Court page · Join the community',
   'court-messenger':  'Court page · Message us',
   'court-signup':     'Court page · Sign up for the run (panel)',
   'court-signup-bar': 'Court page · Sign up for the run (sticky bar)',
