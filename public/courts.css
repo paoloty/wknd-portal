@@ -267,7 +267,15 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 .crt-map.leaflet-container { background: #0e1220; font: inherit; }
 /* Dark, navy-leaning map from the light OSM tiles: only the tile layer is filtered, so the pin
    and controls keep their real colours. */
-.crt .crt-map .leaflet-tile-pane { filter: invert(1) hue-rotate(200deg) saturate(.35) brightness(.82) contrast(.92); }
+.crt .crt-map .leaflet-tile-pane { filter: invert(1) grayscale(1) sepia(.6) hue-rotate(185deg) saturate(2.4) brightness(.82) contrast(1.25); }
+/* Above the tiles, below the pin: a soft amber glow on the court and a vignette into the card */
+.crt .crt-map::after { content: ''; position: absolute; inset: 0; z-index: 450; pointer-events: none;
+  background: radial-gradient(34% 44% at 50% 52%, rgba(245,147,50,.15) 0%, rgba(245,147,50,0) 70%), radial-gradient(125% 125% at 50% 50%, rgba(10,14,22,0) 55%, rgba(10,14,22,.8) 100%); }
+.crt .crt-pin::before { content: ''; position: absolute; left: 50%; bottom: -4px; width: 46px; height: 18px; margin-left: -23px; border-radius: 50%; border: 2px solid rgba(245,147,50,.7); animation: crt-pin-pulse 2.2s ease-out infinite; }
+@keyframes crt-pin-pulse { 0% { transform: scale(.4); opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
+.crt .crt-map .crt-pin-label { background: rgba(10,14,22,.92); color: #fff; border: 1px solid rgba(245,147,50,.55); border-radius: 999px; padding: 6px 11px; font: inherit; font-size: 12px; font-weight: 700; line-height: 1; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+.crt .crt-map .crt-pin-label::before { display: none; }
+@media (prefers-reduced-motion: reduce) { .crt .crt-pin::before { animation: none; opacity: .6; transform: scale(1); } }
 .crt-pin span { position: relative; display: block; width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--amber); box-shadow: 0 2px 8px rgba(0,0,0,.5); }
 .crt-pin span::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: #0a0e16; }
 .crt .crt-map .leaflet-control-zoom { border: 1px solid var(--c-line) !important; border-radius: 10px; overflow: hidden; }

@@ -419,14 +419,15 @@ const SCRIPT = `<script>
         mapEl.innerHTML = '';
         var map = L.map(mapEl, { center: [lat, lng], zoom: 16, scrollWheelZoom: false });
         map.attributionControl.setPrefix(false);
-        // OpenStreetMap's own tiles (keyless, credited); courts.css recolours the tile layer navy.
+        // OpenStreetMap's own tiles (keyless, credited); courts.css turns them navy (grey, then a blue tint).
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19,
           attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a>' }).addTo(map);
         var icon = L.divIcon({ className: 'crt-pin', html: '<span></span>', iconSize: [28, 36], iconAnchor: [14, 34], popupAnchor: [0, -30] });
         var pop = document.createElement('div'), b = document.createElement('b'), a = document.createElement('a');
         b.textContent = mapEl.dataset.name; a.textContent = 'Directions in Google Maps'; a.href = mapEl.dataset.href; a.target = '_blank'; a.rel = 'noopener';
         pop.appendChild(b); pop.appendChild(document.createElement('br')); pop.appendChild(a);
-        L.marker([lat, lng], { icon: icon, title: mapEl.dataset.name }).addTo(map).bindPopup(pop);
+        L.marker([lat, lng], { icon: icon, title: mapEl.dataset.name }).addTo(map).bindPopup(pop)
+          .bindTooltip(mapEl.dataset.name, { permanent: true, direction: 'top', offset: [0, -40], className: 'crt-pin-label' });
       };
       document.body.appendChild(js);
     };
