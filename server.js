@@ -472,9 +472,20 @@ function buildGameOgTags(req, game, court = null) {
   // No recap yet: name the teams, score and date so every game's description is unique.
   const when       = game.date ? new Date(`${gameYmd(game.date)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const typeLabel  = gameTypeLabel(game);
-  const desc       = writeupDescription(game.game_writeup) || (isCompleted
+  const baseDesc   = writeupDescription(game.game_writeup) || (isCompleted
     ? `${scoreLabel}${typeLabel ? ` (${typeLabel})` : ''}${when ? ` on ${when}` : ''}. Box score, player stats and game recap from WKND Basketball League.`
     : `${game.team_a_name} vs ${game.team_b_name}${when ? ` on ${when}` : ''}. Matchup preview, box score and player stats from WKND Basketball League.`);
+  // The court, when the game has one and it fits (only the search snippet; the recap is untouched).
+  const courtName  = court ? courtDisplayName(court) : '';
+  const courtTown  = court ? courtCity(court) : '';
+  const playedAt   = courtName ? ` ${isCompleted ? 'Played' : 'Plays'} at ${courtName}${courtTown ? `, ${courtTown}` : ''}.` : '';
+  // Too long with the court: shorten the snippet text (never the recap itself) to make room.
+  const fitDesc    = (base, tail) => {
+    if ((base + tail).length <= 160) return base.replace(/\s*$/, '') + tail;
+    const room = 160 - tail.length - 1;
+    return base.replace(/…$/, '').slice(0, room).replace(/[\s,;:–-]+\S*$/, '') + '…' + tail;
+  };
+  const desc       = playedAt ? fitDesc(baseDesc, playedAt) : baseDesc;
   const img        = isCompleted ? `${origin}/api/cover/${encodeURIComponent(game.id)}.png` : null;
 
   const publishedIso = game.date ? (() => { try { return new Date(game.date).toISOString(); } catch { return null; } })() : null;
@@ -520,8 +531,10 @@ function buildGameOgTags(req, game, court = null) {
   );
 
   // The game's court when one is on file; otherwise the region the league plays in.
+  // A court with a public page gets its URL, so every game played there points at that page.
   const location = court
-    ? { '@type': 'Place', name: court.name, address: court.address ? { '@type': 'PostalAddress', streetAddress: court.address, addressCountry: 'PH' } : { '@type': 'PostalAddress', addressRegion: 'Metro Manila', addressCountry: 'PH' } }
+    ? { '@type': 'SportsActivityLocation', name: courtName, ...(court.slug && !court.page_hidden ? { url: courtUrl(court) } : {}),
+        address: { '@type': 'PostalAddress', ...(court.address ? { streetAddress: court.address } : {}), ...(courtTown ? { addressLocality: courtTown } : {}), addressRegion: 'Metro Manila', addressCountry: 'PH' } }
     : { '@type': 'Place', name: 'Metro Manila', address: { '@type': 'PostalAddress', addressRegion: 'Metro Manila', addressCountry: 'PH' } };
   tags.push(jsonLdTag({
     '@context': 'https://schema.org',

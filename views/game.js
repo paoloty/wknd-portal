@@ -1,5 +1,14 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl, shareIcon } from './utils.js';
+import { courtDisplayName } from '../lib/court-page.js';
+
+// The game's court, linked to its court page when that page is public (so every game played
+// there points at it).
+function courtLinkHtml(court) {
+  if (!court?.name) return '';
+  const name = escHtml(courtDisplayName(court));
+  return court.slug && !court.page_hidden ? `<a class="gd-court-link" href="/courts/${encodeURIComponent(court.slug)}">${name}</a>` : name;
+}
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
 import { sectionNavScript } from './section-nav.js';
@@ -1589,7 +1598,7 @@ function finalHero(d) {
   const s = ctx.series;
   const meta = [
     longDay(d.ymd),
-    d.court?.name || '',
+    d.court?.name ? { html: courtLinkHtml(d.court) } : '',
     flow && winner && flow.trailedBy >= 8 ? `Came back from ${flow.trailedBy} down` : flow && winner && !flow.forGood && flow.trailedBy === 0 ? 'Led wire to wire' : '',
     s.n <= 1 ? 'First meeting' : s.a === s.b ? `All-time series tied ${s.a}–${s.b}` : `${tc(s.a > s.b ? game.team_a_name : game.team_b_name)} lead the all-time series ${Math.max(s.a, s.b)}–${Math.min(s.a, s.b)}`,
   ].filter(Boolean);
@@ -1611,8 +1620,8 @@ function finalHero(d) {
         <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${oddsPct(heroOdds, 'b')}${recLine(ctx.recB)}</span></div>
       </div>
       ${d.commentsEnabled
-        ? `<div class="gd-hero__bot gd-hero__bot--talk"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span><div class="gd-talkrow">${commentBar(d)}${heroActions({ game, commentsEnabled: true, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div></div>`
-        : `<div class="gd-hero__bot"><span class="gd-meta">${meta.map(escHtml).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: false, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div>`}
+        ? `<div class="gd-hero__bot gd-hero__bot--talk"><span class="gd-meta">${meta.map(m => (m.html ? m.html : escHtml(m))).join('<i>·</i>')}</span><div class="gd-talkrow">${commentBar(d)}${heroActions({ game, commentsEnabled: true, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div></div>`
+        : `<div class="gd-hero__bot"><span class="gd-meta">${meta.map(m => (m.html ? m.html : escHtml(m))).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: false, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div>`}
     </div>
   </section>`;
 }
@@ -1634,7 +1643,7 @@ function upcomingHero(d) {
     <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>
     ${oddsEdge(game.team_a_name, game.team_b_name, heroOdds)}
     <div class="gd-hero__in">
-      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}${d.court?.name ? ` · ${escHtml(d.court.name)}` : ''}</span><a href="#picks" class="gd-chip${state === 'open' ? ' gd-chip--live' : ''}">${chip}</a></div>
+      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}${d.court?.name ? ` · ${courtLinkHtml(d.court)}` : ''}</span><a href="#picks" class="gd-chip${state === 'open' ? ' gd-chip--live' : ''}">${chip}</a></div>
       <div class="gd-board">
         <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}${oddsPct(heroOdds, 'a')}</span></div>
         <div class="gd-when">

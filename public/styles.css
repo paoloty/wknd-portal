@@ -8436,6 +8436,8 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-h2h i { font-style: normal; color: var(--text-subtle); }
 .gd-meta { font-size: 13px; font-weight: 600; color: #c7d0da; }
 .gd-meta i { font-style: normal; color: var(--text-subtle); margin: 0 8px; }
+.gd-court-link { color: inherit; text-decoration: underline; text-decoration-color: rgba(255,255,255,.25); text-underline-offset: 3px; }
+.gd-court-link:hover { color: var(--amber); text-decoration-color: currentColor; }
 .gd-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .gd-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 15px; border-radius: 10px; font: 700 13px 'Archivo', sans-serif; color: var(--text); background: rgba(22,28,41,.85); border: 1px solid rgba(255,255,255,.1); cursor: pointer; }
 .gd-btn:hover { border-color: rgba(255,255,255,.22); color: #fff; }
