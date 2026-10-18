@@ -209,7 +209,7 @@ import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt } from './lib/portal-db.js';
-import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
+import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
 import { askToRateCourt } from './lib/court-rate-ask.js';
 import {
@@ -2289,6 +2289,7 @@ const CTA_KEYS = {
   'court-papawis':    'Court page · See Papawis runs',
   'court-login':      'Court page · Log in (to see who / to vote)',
   'court-directions': 'Court page · Directions / Google Maps',
+  'court-venue-link': 'Court page · Venue website / booking / socials',
   'court-vote':       'Court page · Vote for the next run',
   'court-rate':       'Court page · Post a rating',
   'court-rent':       'Court page · Send a rent request',
@@ -18002,6 +18003,9 @@ function buildCourtOgTags(court, p) {
     address: { '@type': 'PostalAddress', ...(p.street ? { streetAddress: p.street } : {}), ...(p.city ? { addressLocality: p.city } : {}), addressRegion: 'Metro Manila', addressCountry: 'PH' },
     ...(geo?.lat ? { geo: { '@type': 'GeoCoordinates', latitude: geo.lat, longitude: geo.lng } } : {}),
     ...(court.address ? { hasMap: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.address)}` } : {}),
+    // The venue's own site and socials: tells search engines this page is about that place.
+    ...(() => { const same = courtLinks(p.info).filter(l => l.key !== 'booking').map(l => l.url); return same.length ? { sameAs: same } : {}; })(),
+    ...(p.info?.rate ? { priceRange: p.info.rate } : {}),
   };
   const events = p.upcoming.slice(0, 3).filter(r => r.start_time).map(r => ({
     '@context': 'https://schema.org',
@@ -19186,6 +19190,10 @@ app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, re
   info.features = [].concat(b.features || []).map(String).filter(k => featureKeys.has(k));
   for (const f of COURT_TEXT_FIELDS) { const v = clean(b[`info_${f.key}`], 400).trim(); if (v) info[f.key] = v; }
   if (b.info_contact_public) info.contact_public = true;
+  const links = {};
+  for (const f of COURT_LINK_FIELDS) { const v = clean(b[`link_${f.key}`], 300).trim(); if (/^https?:\/\/\S+$/i.test(v)) links[f.key] = v; }
+  if (Object.keys(links).length) info.links = links;
+  const rate = clean(b.info_rate, 100).trim(); if (rate) info.rate = rate;
   const { p } = courtPageData(court);
   const show = new Set([].concat(b['gallery_show[]'] || b.gallery_show || []).map(String));
   updatePapawisCourtPage(court.id, {

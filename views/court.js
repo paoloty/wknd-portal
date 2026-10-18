@@ -7,7 +7,7 @@ import { escHtml } from './layout.js';
 import { avatarStack, shareIcon, playerPhotoUrl, initials, displayPlayerName } from './utils.js';
 import { gameCard, gameCardScript } from './games.js';
 import { sectionNavScript } from './section-nav.js';
-import { courtInfoTags, parseJson, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, RATING_MIN_FOR_SCORE } from '../lib/court-page.js';
+import { courtInfoTags, courtLinks, parseJson, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, RATING_MIN_FOR_SCORE } from '../lib/court-page.js';
 
 const MESSENGER_URL = 'https://m.me/wkndbasketball';
 const ymdLabel = (ymd, opts) => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', opts);
@@ -293,10 +293,21 @@ function rent(p, court, x) {
     </form></div></section>`;
 }
 
+// "Official links" icons: line icons for website/booking, the same Facebook/Instagram marks as
+// the site footer, and a TikTok note.
+const VENUE_ICON = {
+  website: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  booking: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
+  facebook: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
+  instagram: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>',
+  tiktok: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 2h-3.4v13.4a2.9 2.9 0 1 1-2.9-2.9c.3 0 .6 0 .9.1V9.1a6.3 6.3 0 1 0 5.4 6.3V8.6a8 8 0 0 0 4.4 1.3V6.5a4.4 4.4 0 0 1-4.4-4.5z"/></svg>',
+};
+
 function there(p, court, x) {
   const info = p.info || {};
   const tags = courtInfoTags(info);
-  const notes = [['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
+  const notes = [['Court rental', info.rate], ['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
+  const links = courtLinks(info);
   // Only an exact pin (set by an admin) gets drawn: the address lookup can land on the city
   // centre, so without one the card links out to Google Maps' own search for the address.
   const pin = x.pin?.exact ? x.pin : null;
@@ -319,6 +330,7 @@ function there(p, court, x) {
       <div class="crt-there__info">
         ${court.address ? `<div class="crt-note"><b>Address</b><p>${escHtml(court.address)}</p></div>` : ''}
         ${notes.map(([k, v]) => `<div class="crt-note"><b>${escHtml(k)}</b><p>${escHtml(v)}</p></div>`).join('')}
+        ${links.length ? `<div class="crt-note"><b>Official links</b><div class="crt-vlinks">${links.map(l => `<a class="crt-vlink" href="${escHtml(l.url)}" target="_blank" rel="noopener" data-cta="court-venue-link">${VENUE_ICON[l.key] || ''}${escHtml(l.key === 'website' ? 'Website' : l.key === 'booking' ? 'Book a court' : l.label)}</a>`).join('')}</div></div>` : ''}
         ${tags.length ? `<ul class="crt-ticks" aria-label="Court features">${tags.map(t => `<li>${ICON.tick}${escHtml(t)}</li>`).join('')}</ul>` : ''}
       </div>
     </div></section>`;
