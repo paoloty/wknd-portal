@@ -10160,7 +10160,8 @@ function standingsLockLine(game) {
     const standings = getSeasonStandings(season);
     const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, season));
     const T = titleCase;
-    const seedLine = seeds.length >= 4 ? ` Playoff seeding: ${seeds.slice(0, 4).map((s, i) => `${i + 1}. ${T(s.name)}`).join(', ')}; semifinals 1 vs 4 and 2 vs 3, the higher seed twice to beat.` : '';
+    // Pairs named outright: left as "1 vs 4", the fact-checker paired them wrong.
+    const seedLine = seeds.length >= 4 ? ` Playoff seeding: ${seeds.slice(0, 4).map((s, i) => `${i + 1}. ${T(s.name)}`).join(', ')}. Semifinals: ${T(seeds[0].name)} vs ${T(seeds[3].name)} and ${T(seeds[1].name)} vs ${T(seeds[2].name)}, the higher seed twice to beat.` : '';
     return `FINAL REGULAR-SEASON STANDINGS: every team has played all ${SEASON_GAMES_PER_TEAM} games, so the order above is final — nobody can still climb, catch up or drop.${before}${seedLine}`;
   }
   return `STANDINGS LOCKED: no remaining result can change the order above — nobody can still climb, catch up or drop.${before}`;
@@ -12681,7 +12682,7 @@ app.post('/admin/games/matchup-story/regenerate', requireAuth, express.json(), a
     res.json({ ok: true });
   } catch (err) {
     console.error(`Matchup story (${game.id}) regenerate failed:`, err.message);
-    res.status(502).json({ error: 'The AI provider failed — try again in a bit.' });
+    writerError(res, err);
   }
 });
 
@@ -13745,7 +13746,7 @@ function buildHomeStandings(season, games) {
   if (!rows.some(r => r.wins + r.losses > 0)) return null;
 
   const played = games
-    .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && g.status === 'complete' && !g.under_review)
+    .filter(g => String(g.season) === String(season) && g.game_type === 'regular' && (g.status === 'complete' || g.status === 'final') && !g.under_review && Number(g.team_a_score) + Number(g.team_b_score) > 0)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const results = {};
   for (const g of played) {
@@ -14185,11 +14186,40 @@ Not problems: opinions, tone, slang, voice and wording; "league record" / "recor
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
     required: ['accurate', 'problems'],
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 600 });
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 600, openaiModel: FACT_CHECK_MODEL });
   if (data?.accurate) return [];
-  const problems = (data?.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
+  const raw = (data?.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
+  const problems = realFactProblems(raw);
+  // Every complaint was an omission → the copy is accurate.
+  if (raw.length && !problems.length) return [];
   return problems.length ? problems.map(p => `fact check: ${p}`) : ['fact check: unspecified inaccuracy'];
 }
+
+// A Regenerate button's error: what the drafts got wrong when they failed the checks (so the
+// admin knows it wasn't the AI provider), else the provider message.
+function writerError(res, err) {
+  if (err?.code === 'checks') {
+    const list = (err.problems || []).slice(0, 2).map(p => String(p).replace(/^it /, '').replace(/^fact check: /, '').slice(0, 140));
+    return res.status(422).json({ error: `No draft passed the checks after 3 tries${list.length ? `: ${list.join('; ')}` : ''}. Try again, or it rewrites itself after the next result.` });
+  }
+  return res.status(502).json({ error: 'The AI provider failed — try again in a bit.' });
+}
+
+// The fact checkers (small models) keep flagging things the copy simply LEFT OUT ("Maroon is
+// 3-3, but the facts say 1.5 games back, which is not mentioned"), even when told omissions
+// are fine — and that rejected every draft of the homepage standings block (2026-10-20).
+// Short copy can't say everything; only a statement the facts contradict is a problem.
+const OMISSION_COMPLAINT = /\b(not mentioned|isn'?t mentioned|is not mentioned|no mention|does(?: not|n'?t) (?:mention|clarify|specify|include|state|say|note|explain|address|reference)|without (?:specifying|mentioning|clarifying|noting|stating|including)|fails? to (?:mention|include|specify|note|clarify)|omit(?:s|ted|ting)?|leaves? out|left out|missing from the copy|not (?:stated|included|specified|clarified) in the copy|could (?:also )?(?:mention|include))\b/i;
+// Complaints that admit the statement is right, or only object to wording, tone or opinion
+// ("Correct, but the phrasing is subjective", "accurate, but it lacks context").
+const NOT_AN_ERROR = /\b(correct,? but|is (?:accurate|correct)(?:,| but)|accurate,? but|subjective|lacks? context|without context|could be (?:seen as )?misleading|is misleading|may be misleading|implies|phrasing|tone|opinion|not a factual statement|vague)\b/i;
+function realFactProblems(list) {
+  return list.filter(p => !OMISSION_COMPLAINT.test(p) && !NOT_AN_ERROR.test(p));
+}
+// The model the fact checks run on (OpenAI): a stronger one than the writers — gpt-4o-mini
+// judging gpt-4o-mini flagged correct lines ("WWWLL… not lost 2 straight"). Short calls, so
+// the cost stays at a fraction of a cent. Override with FACT_CHECK_MODEL.
+const FACT_CHECK_MODEL = process.env.FACT_CHECK_MODEL || 'gpt-4.1-mini';
 
 // Returns the problems found ([] = every claim is supported by the facts).
 async function factCheckHomeSummary(f, headline, body, notes = '') {
@@ -14209,9 +14239,11 @@ Not problems: opinions, tone, slang and wording; leaving a fact out (short copy 
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
     required: ['accurate', 'problems'],
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500 });
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500, openaiModel: FACT_CHECK_MODEL });
   if (data.accurate) return [];
-  const problems = (data.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
+  const raw = (data.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
+  const problems = realFactProblems(raw);
+  if (raw.length && !problems.length) return [];
   return problems.length ? problems : ['unspecified inaccuracy'];
 }
 
@@ -14266,7 +14298,7 @@ app.post('/admin/home-summary/regenerate', requireAuth, express.json(), async (r
     res.json({ ok: true });
   } catch (err) {
     console.error(`Home summary (${block}) regenerate failed:`, err.message);
-    res.status(502).json({ error: 'The AI provider failed — try again in a bit.' });
+    writerError(res, err);
   }
 });
 
@@ -15775,8 +15807,8 @@ For each section, list every statement in its copy that its facts do not directl
     properties: Object.fromEntries(ids.map(id => [id, { type: 'array', items: { type: 'string' } }])),
     required: ids,
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500 });
-  return Object.fromEntries(ids.map(id => [id, (Array.isArray(data?.[id]) ? data[id] : ['no verdict']).map(p => String(p).slice(0, 200)).filter(Boolean)]));
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500, openaiModel: FACT_CHECK_MODEL });
+  return Object.fromEntries(ids.map(id => [id, realFactProblems((Array.isArray(data?.[id]) ? data[id] : ['no verdict']).map(p => String(p).slice(0, 200)).filter(Boolean))]));
 }
 
 async function generatePageWriteups(page, facts, key) {
@@ -16558,7 +16590,8 @@ app.post('/admin/teams-summary/regenerate', requireAuth, express.json(), async (
     await generateHomeSummary(block, f, { where: f.where, settingKey, strict: true });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Failed' });
+    console.error(`Teams summary (${block}) regenerate failed:`, err.message);
+    writerError(res, err);
   }
 });
 
@@ -16903,7 +16936,7 @@ app.post('/admin/section-summary/regenerate', requireAuth, express.json(), async
     res.json({ ok: true });
   } catch (err) {
     console.error(`Section summary (${f.block}) regenerate failed:`, err.message);
-    res.status(502).json({ error: err.message || 'The AI provider failed — try again in a bit.' });
+    writerError(res, err);
   }
 });
 
@@ -20431,9 +20464,11 @@ ${factsText}
 
 List every statement in the text that the facts do not directly support: wrong or invented numbers, counts of how many runs, games, players or members there have been, how often runs happen ("every Saturday", "weekly", "3 runs a month"), a "typical" or "usual" time or day that no fact states, court features or amenities not in the facts (food, drinks, a mall), descriptions of quality the facts do not state ("clean", "new", "spacious"), "always" claims, and claims of fame or rank ("legendary", "best", "hotspot", "always packed"). Friendly tone and an invitation to play are fine. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = { type: 'object', properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } }, required: ['accurate', 'problems'] };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 300 });
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 300, openaiModel: FACT_CHECK_MODEL });
   if (data.accurate) return [];
-  const problems = (data.problems || []).map(x => String(x).slice(0, 200)).filter(Boolean);
+  const raw = (data.problems || []).map(x => String(x).slice(0, 200)).filter(Boolean);
+  const problems = realFactProblems(raw);
+  if (raw.length && !problems.length) return [];
   return problems.length ? problems : ['unspecified inaccuracy'];
 }
 // Extra facts helper: an admin pastes notes (e.g. Google reviews they read, the court's own
