@@ -8954,9 +8954,16 @@ html.ssc2-lock { overflow: hidden; }
 .ssc2-tp__im { display: block; aspect-ratio: 9 / 16; border-radius: 8px; overflow: hidden; border: 2px solid transparent; outline: 1px solid rgba(255,255,255,.1);
   background-color: #1a1a1a; background-image: conic-gradient(#262626 25%, transparent 0 50%, #262626 0 75%, transparent 0); background-size: 10px 10px; }
 .ssc2-tp__im img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ssc2-tp__im { position: relative; }
+.ssc2-tp__lock { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(10,14,22,.85); color: var(--amber); }
+.ssc2__lock { display: flex; align-items: flex-start; gap: 8px; margin: 0 20px 10px; padding: 9px 12px; border-radius: 10px; background: rgba(245,147,50,.1); border: 1px solid rgba(245,147,50,.3); font-size: 12px; line-height: 1.45; color: var(--text); }
+.ssc2__lock[hidden] { display: none; }
+.ssc2__lock svg { flex: none; margin-top: 2px; color: var(--amber); }
+.ssc2__lock a { color: var(--amber); font-weight: 700; }
 .ssc2-tp.is-on { color: #fff; }
 .ssc2-tp.is-on .ssc2-tp__im { border-color: var(--amber); outline-color: var(--amber); }
 .ssc2__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ssc2__vars[hidden] { display: none; }
 .ssc2-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 13px; border-radius: 999px; background: var(--surface-2); border: 1px solid rgba(255,255,255,.1); color: var(--text-muted); font: 700 12.5px 'Archivo', sans-serif; cursor: pointer; }
 .ssc2-chip.is-on { background: var(--amber); border-color: var(--amber); color: #0a0e16; }
 .ssc2-sw { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--sw); border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); cursor: pointer; }

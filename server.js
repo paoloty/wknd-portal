@@ -253,6 +253,7 @@ import {
   verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
+import { SHARE_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
 import { adminMvpPodiumBody } from './views/admin/mvp-podium.js';
 import { adminAwardsOverviewBody, adminRacesBody } from './views/admin/awards-hub.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
@@ -8613,6 +8614,7 @@ app.get('/games/:ref', (req, res) => {
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
       flow, plays, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
+      shareLocked: shareCardsLocked(req),
       duelHist: dc ? Object.fromEntries([dc.a, dc.b].map(s => [s.player_id, meetingPoints(game, sorted, s.player_id)])) : {},
       // A finished game is an archive: a missing writeup is written on the first page view
       // (any season — at most 2 in flight, so a crawler only queues them), then kept as written
@@ -8625,6 +8627,50 @@ app.get('/games/:ref', (req, res) => {
 // Story-style share card for one player's own line in one game — gated to the
 // logged-in player who actually played in it, same pattern as /me/writeup (keyed
 // off the session, no ownership param to spoof).
+// Premium share templates (lib/share-card-templates.js) are locked while the player owes —
+// same signal as the balance reminder bar (player_financials.current_balance > 0) — except
+// for admins (Paolo, 2026-10-19). A locked card still renders; the lock is stamped into it.
+function shareCardsLocked(req) {
+  if (req.session?.isAdmin) return false;
+  const pid = req.session?.playerPlayerId;
+  return !!pid && (getPlayerFinancials(pid)?.current_balance ?? 0) > 0;
+}
+
+// Everything the premium templates draw, from this game and this player's EARLIER games this
+// season ("Vs your usual" compares to the average going in; "season high" means so far).
+async function premiumShareData(game, stat, playerId, accentKey, key) {
+  const isTeamA = stat.team_id === game.team_a_id;
+  const myScore = Number(isTeamA ? game.team_a_score : game.team_b_score) || 0;
+  const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score) || 0;
+  const oppName = String((isTeamA ? game.team_b_name : game.team_a_name) || '').toUpperCase();
+  const date = String(game.date || '').slice(0, 10);
+  const earlier = getPlayerGameLog(playerId).filter(g => String(g.season) === String(game.season) && g.status === 'played'
+    && g.id !== game.id && (String(g.date).slice(0, 10) < date || (String(g.date).slice(0, 10) === date && String(g.id) < String(game.id))));
+  const avg = earlier.length
+    ? Object.fromEntries(['pts', 'reb', 'ast', 'stl', 'blk'].map(k => [k, earlier.reduce((a, g) => a + (Number(g[k]) || 0), 0) / earlier.length]))
+    : null;
+  const pts = Number(stat.pts) || 0;
+  const [last = '', first = ''] = String(stat.name || '').split(',').map(x => x.trim());
+  const surname = last ? last[0] + last.slice(1).toLowerCase() : '';
+  const day = d => new Date(`${date}T00:00:00`).toLocaleDateString('en-US', d);
+  return {
+    gameId: game.id,
+    displayName: formatName(stat.name || ''),
+    cardName: [first.split(' ')[0], surname].filter(Boolean).join(' '),
+    shortName: `${first ? first[0] + '. ' : ''}${last} #${stat.number ?? ''}`,
+    initials: ((first[0] || '') + (last[0] || '')).toUpperCase(),
+    number: stat.number ?? '',
+    teamName: String(stat.team_name || '').toUpperCase(), teamColor: stat.team_color || '#8a93a4',
+    oppName, myScore, oppScore, won: myScore > oppScore,
+    mySideScore: myScore, otherSideScore: oppScore, otherTeamName: oppName,
+    dateShort: day({ month: 'short', day: 'numeric' }), dateLong: day({ month: 'short', day: 'numeric', year: 'numeric' }),
+    stat,
+    season: { label: String(game.season ?? ''), games: earlier.length, avg, high: earlier.length > 0 && pts > 0 && pts >= Math.max(...earlier.map(g => Number(g.pts) || 0)) },
+    accent: resolveAccent(accentKey),
+    photo: key === 'bug' && stat.picture_url ? await fetchCoverImageBuffer(stat.picture_url) : null,
+  };
+}
+
 app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   const playerId = req.session?.playerPlayerId;
   if (!playerId) return res.status(401).end();
@@ -8651,7 +8697,11 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   const accent  = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.query.accent) ? req.query.accent : 'amber';
   try {
     let png;
-    if (req.query.align === 'premium') {
+    if (SHARE_PREMIUM_KEYS.includes(req.query.align)) {
+      const data = await premiumShareData(game, stat, playerId, accent, req.query.align);
+      png = await renderPremiumShareCard(req.query.align, data, (text, o) => measureTextWidth(escXml(text), o));
+      if (shareCardsLocked(req)) png = await lockOverlay(png);
+    } else if (req.query.align === 'premium') {
       // Own branch ahead of the `layout` dispatch below — Premium isn't part
       // of the "Default" family's layout/align matrix at all (it's never in
       // the `align` whitelist above), so it needs its own check rather than
@@ -8745,9 +8795,10 @@ app.post('/api/games/:id/stat-card-action', express.json(), (req, res) => {
   if (Date.now() - lastLogged < SHARE_CARD_ACTION_COOLDOWN_MS) return res.json({ ok: true });
   shareCardActionCooldowns.set(cooldownKey, Date.now());
 
-  // Same whitelists as the PNG route — logged even when invalid/missing
-  // isn't worth failing the request over, just falls back like it does there.
-  const template = ['left', 'center', 'right', 'bottom', 'stacked'].includes(req.body?.template) ? req.body.template : '';
+  // Every template the editor offers (views/game.js SSC_TEMPLATES) — this list once held only
+  // the five align values, so Premium/Hero/Card/Scoreboard all logged as ''. Logged even when
+  // invalid/missing isn't worth failing the request over.
+  const template = ['left', 'center', 'right', 'bottom', 'stacked', 'premium', 'premium-r', 'hero', 'card', 'scoreboard', ...SHARE_PREMIUM_KEYS].includes(req.body?.template) ? req.body.template : '';
   const focus    = ['all', 'offense', 'defense'].includes(req.body?.focus) ? req.body.focus : '';
   const accent   = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.body?.accent) ? req.body.accent : '';
 

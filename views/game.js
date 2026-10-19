@@ -36,24 +36,37 @@ function youtubeEmbedUrl(url) {
 // "Preview on" backdrops — game photo, your photo, team glow, your own upload — are drawn
 // faintly over the transparency checkerboard so it's clear they're only a preview. An
 // uploaded photo never leaves the device (object URL). Badge toggle hidden for now.
-const SSC_TEMPLATES = [
-  { key: 'left', label: 'Marquee L' },
-  { key: 'center', label: 'Marquee' },
-  { key: 'right', label: 'Marquee R' },
+// One tile per family; a family with variants (Marquee, Premium) shows them as chips under
+// the tiles once picked. Variant keys are the PNG route's align values and what the share
+// log records, so usage stays per variant. hidden: left out of the picker (Paolo,
+// 2026-10-19: hide, not remove, while the share log shows which templates get used); the
+// PNG route still renders them.
+const SSC_FAMILIES_ALL = [
+  { key: 'marquee', label: 'Marquee', def: 'center', variants: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']] },
   { key: 'bottom', label: 'Lower third' },
-  { key: 'stacked', label: 'Box score' },
-  { key: 'premium', label: 'Premium' },
-  { key: 'premium-r', label: 'Premium R' },
+  { key: 'stacked', label: 'Box score', hidden: true },
+  { key: 'premium', label: 'Premium', def: 'premium', variants: [['premium', 'Left'], ['premium-r', 'Right']] },
   { key: 'hero', label: 'Hero' },
-  { key: 'card', label: 'Card' },
-  { key: 'scoreboard', label: 'Scoreboard' },
-];
+  { key: 'card', label: 'Card', hidden: true },
+  { key: 'scoreboard', label: 'Scoreboard', hidden: true },
+  // Premium (lib/share-card-templates.js): saves with a lock stamped in while the player owes.
+  { key: 'usual', label: 'Vs your usual', premium: true },
+  { key: 'poster', label: 'Poster', premium: true },
+  { key: 'cover', label: 'Cover', premium: true },
+  { key: 'jersey', label: 'Jersey', premium: true },
+  { key: 'bug', label: 'Corner bug', premium: true },
+  { key: 'receipt', label: 'Receipt', premium: true },
+].map(f => ({ def: f.key, variants: [[f.key, f.label]], ...f }));
+const SSC_FAMILIES = SSC_FAMILIES_ALL.filter(f => !f.hidden);
+// variant key → [family key, family label, variant label or '' for single-variant families]
+const SSC_VARIANT_OF = Object.fromEntries(SSC_FAMILIES_ALL.flatMap(f =>
+  f.variants.map(([k, l]) => [k, [f.key, f.label, f.variants.length > 1 ? l : '']])));
 const SSC_ACCENTS = [
   ['amber', '#f59332'], ['red', '#ef4444'], ['blue', '#3b82f6'], ['green', '#22c55e'],
   ['purple', '#a78bfa'], ['pink', '#f472b6'], ['cyan', '#22d3ee'],
 ];
 
-function shareStatsModal(game, stat) {
+function shareStatsModal(game, stat, locked = false) {
   const ast = Number(stat.ast) || 0, stl = Number(stat.stl) || 0, blk = Number(stat.blk) || 0, fg3m = Number(stat.fg3m) || 0;
   // Opening "Focus" follows this player's own box score — a rough offense-vs-defense signal
   // (ast+3PM vs stl+blk), so a defensive night doesn't open on a PTS/REB/AST row.
@@ -74,7 +87,7 @@ function shareStatsModal(game, stat) {
   const icon = d => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 
   return `<div class="ssc2" id="ssc2" hidden role="dialog" aria-modal="true" aria-labelledby="ssc2-title"
-    data-game="${escHtml(game.id)}" data-focus="${focus}" data-default-bg="${game.has_cover ? 'game' : 'team'}">
+    data-game="${escHtml(game.id)}" data-locked="${locked ? 1 : 0}" data-focus="${focus}" data-default-bg="${game.has_cover ? 'game' : 'team'}">
   <div class="ssc2__back" data-ssc2-close></div>
   <div class="ssc2__box">
     <div class="ssc2__pv">
@@ -105,8 +118,9 @@ function shareStatsModal(game, stat) {
           </div>
         </section>
         <section class="ssc2__grp is-on" data-ssc2-panel="tpl">
-          <div class="ssc2__gh"><span class="gd-kick">Template</span><span>${SSC_TEMPLATES.length} styles</span></div>
-          <div class="ssc2__tpls">${SSC_TEMPLATES.map(t => `<button type="button" class="ssc2-tp" data-tpl="${t.key}" data-label="${escHtml(t.label)}"><span class="ssc2-tp__im"><img alt="" data-thumb="${t.key}"></span>${escHtml(t.label)}</button>`).join('')}</div>
+          <div class="ssc2__gh"><span class="gd-kick">Template</span><span>${SSC_FAMILIES.length} styles</span></div>
+          <div class="ssc2__tpls">${SSC_FAMILIES.map(f => `<button type="button" class="ssc2-tp" data-tpl="${f.def}" data-fam="${f.key}"${f.premium ? ' data-premium' : ''}><span class="ssc2-tp__im"><img alt="" data-thumb="${f.def}">${f.premium && locked ? `<span class="ssc2-tp__lock" title="Locked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>` : ''}</span>${escHtml(f.label)}</button>`).join('')}</div>
+          ${SSC_FAMILIES.filter(f => f.variants.length > 1).map(f => `<div class="ssc2__row ssc2__vars" data-vars="${f.key}" role="group" aria-label="${escHtml(f.label)} alignment" hidden>${f.variants.map(([k, l]) => `<button type="button" class="ssc2-chip" data-variant="${k}"><span class="pill-label">${escHtml(l)}</span></button>`).join('')}</div>`).join('')}
         </section>
         <section class="ssc2__grp" data-ssc2-panel="style">
           <div class="ssc2__gh"><span class="gd-kick">Style</span><span></span></div>
@@ -118,6 +132,7 @@ function shareStatsModal(game, stat) {
           </div>
         </section>
       </div>
+      ${locked ? `<div class="ssc2__lock" id="ssc2-lock" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Premium cards save with a lock while you have a balance. <a href="/settle-balance">Settle your balance</a> to unlock them.</span></div>` : ''}
       <div class="ssc2__msg" id="ssc2-msg" hidden></div>
       <div class="ssc2__acts">
         <button type="button" class="ssc2-act" id="ssc2-save" aria-label="Save">${icon('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')}<span>Save</span></button>
@@ -132,14 +147,19 @@ function shareStatsModal(game, stat) {
   var root = document.getElementById('ssc2');
   if (!root) return;
   var GAME = root.dataset.game;
+  // lk: the lock state in the URL, so a locked card and a clean one never share a cached copy
+  // (browser keeps cards 1 min, thumbs 10); the server ignores it and checks the lock itself.
+  var LK = root.dataset.locked === '1' ? 1 : 0;
   var img = document.getElementById('ssc2-img'), spin = document.getElementById('ssc2-spin');
   var bgl = document.getElementById('ssc2-bgl'), tag = document.getElementById('ssc2-tag'), msg = document.getElementById('ssc2-msg');
   var st = { tpl: 'center', bg: root.dataset.defaultBg, focus: root.dataset.focus, accent: 'amber', gauges: true, hidezeros: false };
   var cache = {}, pending = {}, uploadUrl = null, lastFocus = null;
+  var VAR = ${JSON.stringify(SSC_VARIANT_OF)}, lastVar = {};
+  function fam(k) { return (VAR[k] || [k])[0]; }
 
   function url(tpl, thumb) {
     return '/api/games/' + encodeURIComponent(GAME) + '/my-stat-card.png?layout=gauges&align=' + tpl +
-      '&focus=' + st.focus + '&accent=' + st.accent + '&gauges=' + (st.gauges ? 1 : 0) + '&hidezeros=' + (st.hidezeros ? 1 : 0) + '&badge=0' + (thumb ? '&thumb=1' : '');
+      '&focus=' + st.focus + '&accent=' + st.accent + '&gauges=' + (st.gauges ? 1 : 0) + '&hidezeros=' + (st.hidezeros ? 1 : 0) + '&badge=0&lk=' + LK + (thumb ? '&thumb=1' : '');
   }
   function key() { return url(st.tpl, false); }
   function say(text, retry) { msg.textContent = text; msg.hidden = !text; msg.classList.toggle('is-retry', !!retry); }
@@ -161,12 +181,18 @@ function shareStatsModal(game, stat) {
     if (!e) { spin.hidden = false; img.hidden = true; load(key()); return; }
     img.src = e.url; img.hidden = false; spin.hidden = true;
   }
+  // A family tile previews the variant it would open on: the current one, else the last picked.
+  function tileVar(b) { return b.dataset.fam === fam(st.tpl) ? st.tpl : lastVar[b.dataset.fam] || b.dataset.tpl; }
   function thumbs() {
-    root.querySelectorAll('[data-thumb]').forEach(function (i) { i.src = url(i.dataset.thumb, true); });
+    root.querySelectorAll('[data-fam]').forEach(function (b) { var i = b.querySelector('[data-thumb]'); if (i) i.src = url(tileVar(b), true); });
   }
-  function labelOf(sel, attr) { var el = root.querySelector(sel); return el ? el.dataset[attr] || el.textContent.trim() : ''; }
   function paint() {
-    root.querySelectorAll('[data-tpl]').forEach(function (b) { b.classList.toggle('is-on', b.dataset.tpl === st.tpl); });
+    var f = fam(st.tpl), v = VAR[st.tpl] || [f, st.tpl, ''];
+    root.querySelectorAll('[data-fam]').forEach(function (b) { b.classList.toggle('is-on', b.dataset.fam === f); });
+    root.querySelectorAll('[data-vars]').forEach(function (r) { r.hidden = r.dataset.vars !== f; });
+    root.querySelectorAll('[data-variant]').forEach(function (b) { b.classList.toggle('is-on', b.dataset.variant === st.tpl); });
+    var lockNote = document.getElementById('ssc2-lock'), onTile = root.querySelector('[data-fam="' + f + '"]');
+    if (lockNote) lockNote.hidden = !(onTile && onTile.hasAttribute('data-premium'));
     root.querySelectorAll('.ssc2-bg').forEach(function (b) { b.classList.toggle('is-on', b.dataset.bg === st.bg); });
     root.querySelectorAll('[data-focus]').forEach(function (b) { if (b.classList.contains('ssc2-chip')) b.classList.toggle('is-on', b.dataset.focus === st.focus); });
     root.querySelectorAll('[data-accent]').forEach(function (b) { b.classList.toggle('is-on', b.dataset.accent === st.accent); });
@@ -174,7 +200,7 @@ function shareStatsModal(game, stat) {
     var bgBtn = root.querySelector('.ssc2-bg[data-bg="' + st.bg + '"]');
     bgl.setAttribute('style', st.bg === 'upload' && uploadUrl ? "background-image:url('" + uploadUrl + "')" : (bgBtn && bgBtn.dataset.css) || '');
     bgl.classList.toggle('is-solid', !!(bgBtn && bgBtn.dataset.solid));
-    var tl = labelOf('[data-tpl="' + st.tpl + '"]', 'label');
+    var tl = v[1] + (v[2] ? ' · ' + v[2] : '');
     var bl = bgBtn ? bgBtn.textContent.trim() : '';
     tag.textContent = st.bg === 'none' ? tl + ' · transparent' : tl + ' · preview on ' + bl.toLowerCase();
   }
@@ -202,7 +228,8 @@ function shareStatsModal(game, stat) {
   root.addEventListener('click', function (e) {
     var t = e.target.closest('button');
     if (!t || !root.contains(t)) return;
-    if (t.dataset.tpl) { st.tpl = t.dataset.tpl; say(''); paint(); render(); return; }
+    if (t.dataset.fam) { st.tpl = tileVar(t); say(''); paint(); render(); return; }
+    if (t.dataset.variant) { st.tpl = lastVar[fam(st.tpl)] = t.dataset.variant; say(''); paint(); thumbs(); render(); return; }
     if (t.classList.contains('ssc2-bg')) { st.bg = t.dataset.bg; paint(); return; }
     if (t.classList.contains('ssc2-chip')) { st.focus = t.dataset.focus; say(''); paint(); thumbs(); render(); return; }
     if (t.dataset.accent) { st.accent = t.dataset.accent; say(''); paint(); thumbs(); render(); return; }
@@ -1545,8 +1572,8 @@ function yourGameStrip(game, mg) {
     <div class="gd-yg__r">
       <div class="gd-yg__fan">
         <button type="button"${bgCover} data-ssc-open data-template="center" data-bg="${game.has_cover ? 'game' : 'team'}" aria-label="Open the Marquee card"><img src="${card('align=center&focus=all&gauges=1')}" alt="" loading="lazy"></button>
-        <button type="button"${bgPlayer} data-ssc-open data-template="card" data-bg="me" aria-label="Open the Card template on your photo"><img src="${card('align=card')}" alt="" loading="lazy"></button>
-        <button type="button"${bgTeam} data-ssc-open data-template="stacked" data-bg="team" aria-label="Open the Box score card"><img src="${card('align=stacked')}" alt="" loading="lazy"></button>
+        <button type="button"${bgPlayer} data-ssc-open data-template="premium" data-bg="me" aria-label="Open the Premium card on your photo"><img src="${card('align=premium')}" alt="" loading="lazy"></button>
+        <button type="button"${bgTeam} data-ssc-open data-template="bottom" data-bg="team" aria-label="Open the Lower third card"><img src="${card('align=bottom&focus=all&gauges=1')}" alt="" loading="lazy"></button>
       </div>
       <div class="gd-yg__cta">
         <button type="button" class="gd-yg__btn" data-ssc-open>${ICON_SHARE}Share my stats</button>
@@ -2426,7 +2453,7 @@ ${scripts}`;
   </div>
 </div>
 ${floater}
-${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat)}` : ''}
+${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat, !!d.shareLocked)}` : ''}
 ${d.isAdmin ? sectionRegenScript() : ''}
 ${d.upNext?.length || v.showCalled ? pickCardScript() : ''}
 ${scripts}`;
