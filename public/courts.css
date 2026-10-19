@@ -60,6 +60,20 @@
 
 /* Top: title + About (left), next run (right) */
 .crt-top { display: grid; grid-template-columns: minmax(0, 1fr) var(--c-panel); gap: 32px; align-items: start; margin-top: 28px; }
+/* Main column + sidebar (next run, Getting there). Desktop: the sidebar sticks while scrolling
+   (top set by SIDE_SCRIPT). Under 900px both wrappers dissolve and the order below applies. */
+.crt-lay { display: grid; grid-template-columns: minmax(0, 1fr) var(--c-panel); gap: 32px; align-items: start; margin-top: 28px; }
+.crt-main { min-width: 0; display: flex; flex-direction: column; }
+.crt-main > .crt-top__left + .crt-snav { margin-top: 28px; }
+.crt-side { position: sticky; top: calc(var(--gd-top, 72px) + 16px); min-width: 0; display: flex; flex-direction: column; gap: var(--c-gap); }
+.crt-side .crt-there-sec { margin-top: 0; }
+@media (min-width: 901px) { .crt-side .crt-there-sec .crt-sh { display: none; } }
+.crt-side .crt-there { grid-template-columns: minmax(0, 1fr); }
+.crt-side .crt-there__map { border-right: 0; border-bottom: 1px solid var(--border); }
+.crt-side .crt-there__map.crt-map { height: 220px; min-height: 220px; }
+.crt-there__mapwrap { position: relative; }
+.crt-there__open { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 800; white-space: nowrap; text-decoration: none; }
+.crt-there__open:hover { background: var(--amber); color: #0a0e16; }
 .crt-top__left { min-width: 0; display: flex; flex-direction: column; gap: 28px; }
 .crt-head { display: flex; flex-direction: column; gap: 12px; }
 .crt-head__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -365,6 +379,13 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 
 @media (max-width: 900px) {
   .crt-top { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .crt-lay { display: flex; flex-direction: column; gap: 0; }
+  .crt-main, .crt-side { display: contents; }
+  .crt-main > * { order: 3; }
+  .crt-main > .crt-top__left { order: 1; }
+  .crt-side > .crt-panel { order: 2; margin-top: 24px; }
+  .crt-side > .crt-there-sec { order: 4; }
+  .crt-main > #crt-faq { order: 5; }
   .crt-rail__track > *, .crt-rail--more .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap) * 2) / 2.25); }
   .crt-gal__card { height: calc((100cqw - 2 * var(--c-gap)) / (var(--gal-r0) + 1.8667)); }
   .crt-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); }

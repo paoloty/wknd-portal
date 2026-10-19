@@ -314,7 +314,7 @@ function there(p, court, x) {
   const href = pin ? `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}` : mapsHref(court);
   // A real map (Leaflet, OSM tiles recoloured dark, amber pin), loaded when the section comes near.
   const map = pin
-    ? `<div class="crt-there__map crt-map" data-crt-map data-lat="${pin.lat}" data-lng="${pin.lng}" data-name="${escHtml(p.name)}" data-href="${escHtml(href)}" role="region" aria-label="Map of ${escHtml(p.name)}"><a class="crt-map__fallback" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions">Open the map ↗</a></div>`
+    ? `<div class="crt-there__mapwrap"><div class="crt-there__map crt-map" data-crt-map data-lat="${pin.lat}" data-lng="${pin.lng}" data-name="${escHtml(p.name)}" data-href="${escHtml(href)}" role="region" aria-label="Map of ${escHtml(p.name)}"><a class="crt-map__fallback" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions">Open the map ↗</a></div><a class="crt-mapx__btn crt-there__open" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions">Open in Google Maps ↗</a></div>`
     : `<a class="crt-there__map crt-there__map--link" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions" aria-label="Open ${escHtml(p.name)} in Google Maps">
         <span class="crt-mapx__grid" aria-hidden="true"></span>
         <span class="crt-mapx__body">
@@ -324,7 +324,7 @@ function there(p, court, x) {
           <span class="crt-mapx__btn">Open in Google Maps ↗</span>
         </span>
       </a>`;
-  return `<section class="crt-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h', link: `<a class="section-header__link" href="${escHtml(href)}" target="_blank" rel="noopener" data-cta="court-directions">Open in Google Maps ↗</a>` })}
+  return `<section class="crt-sec crt-there-sec" id="crt-there" aria-labelledby="crt-there-h">${sh('Getting there', { id: 'crt-there-h' })}
     <div class="card crt-there">
       ${map}
       <div class="crt-there__info">
@@ -374,6 +374,23 @@ function jumpbar(court, p, x, sections) {
     ${r ? `<a class="crt-btn crt-btn--amber crt-btn--sm crt-snav__cta" href="/papawis#pw-game-${encodeURIComponent(r.id)}" data-cta="court-signup-bar">${full ? 'Join the waitlist' : 'Sign up'}</a>` : ''}
   </nav>`;
 }
+
+// Desktop sidebar: sticks under the header, and a sidebar taller than the window sticks by its
+// bottom instead, so its last card is never cut off.
+const SIDE_SCRIPT = `<script>
+(function () {
+  var s = document.querySelector('[data-crt-side]');
+  if (!s) return;
+  function fit() {
+    var top = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gd-top')) || 72) + 16;
+    var h = s.offsetHeight, v = window.innerHeight;
+    s.style.top = (h + top + 16 <= v ? top : v - h - 16) + 'px';
+  }
+  fit();
+  window.addEventListener('resize', fit);
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(s);
+})();
+</script>`;
 
 const SCRIPT = `<script>
 (function () {
@@ -519,21 +536,26 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
   ].filter(Boolean);
   return `<div class="page-content crt" data-cta-ref="court:${escHtml(court.id)}">
   ${gallery(p)}
-  <div class="crt-top">
-    <div class="crt-top__left">${head(p, court, x, isAdmin)}</div>
-    ${runPanel(p, court, x)}
+  <div class="crt-lay">
+    <div class="crt-main">
+      <div class="crt-top__left">${head(p, court, x, isAdmin)}</div>
+      ${jumpbar(court, p, x, sections)}
+      ${crowd(p, x, isLoggedIn)}
+      ${numbers(p)}
+      ${leaders(p)}
+      ${votes(p, x, isLoggedIn)}
+      ${ratingsSection(p, court, x)}
+      ${runs(p)}
+      ${league(games, extras)}
+      ${rent(p, court, x)}
+      ${faq(p, x)}
+    </div>
+    <aside class="crt-side" data-crt-side aria-label="Next run and getting there">
+      ${runPanel(p, court, x)}
+      ${there(p, court, x)}
+    </aside>
   </div>
-  ${jumpbar(court, p, x, sections)}
-  ${crowd(p, x, isLoggedIn)}
-  ${numbers(p)}
-  ${leaders(p)}
-  ${votes(p, x, isLoggedIn)}
-  ${ratingsSection(p, court, x)}
-  ${runs(p)}
-  ${league(games, extras)}
-  ${rent(p, court, x)}
-  ${there(p, court, x)}
-  ${faq(p, x)}
+  ${SIDE_SCRIPT}
   ${isLoggedIn ? '' : `<section class="card crt-cta" aria-label="Play here"><div><span class="crt-kicker">Play here</span><b>Weekend basketball in Makati, Mandaluyong and Pasig</b><span class="crt-muted">League seasons with stats and recaps, plus Papawis pickup runs.</span></div><div class="crt-cta__side"><div class="crt-cta__btns"><a class="crt-btn crt-btn--amber" href="/register" data-cta="court-join">Join the community</a><a class="crt-btn crt-btn--ghost" href="${MESSENGER_URL}" target="_blank" rel="noopener" data-cta="court-messenger">Message us</a></div><a class="crt-cta__how" href="/join" data-cta="court-how">New here? See how it works</a></div></section>`}
   ${dock(p)}
 </div>
