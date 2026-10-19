@@ -184,7 +184,7 @@ import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, g
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
-import { runWriter, numberProblems, claimProblems, bannedProblems, storyProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
+import { runWriter, numberProblems, claimProblems, bannedProblems, storyProblems, shorthandProblems, zeroStatProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary, oddsPoints } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
@@ -5753,9 +5753,9 @@ Rules:
         t => (t.split(/\s+/).length > 85 ? [`the take is ${t.split(/\s+/).length} words (at most 70)`] : []),
         t => numberProblems(t, facts),
         t => claimProblems(t, facts),
-        t => bannedProblems(t),
+        { style: true, fn: t => bannedProblems(t) },
         t => comparisonProblems(t, cmp).map(p => `a comparison runs the wrong way: ${p}`),
-        t => voiceProblems(t, voice),
+        { style: true, fn: t => voiceProblems(t, voice) },
       ],
     });
     if (out.problems.length) return res.status(503).json({ error: 'No take passed the checks' });
@@ -7826,13 +7826,13 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     // with the text so the admin can see it before saving.
     const out = await runWriter({
       prompt, label: `Award article (${award_type})`, tries: 2,
-      generate: async p => (await generateText(p, { maxTokens: 300, temperature: aiTemperature() })).text.trim(),
+      generate: async p => (await generateText(p, { maxTokens: 600, temperature: aiTemperature() })).text.trim(),
       checks: [
         t => numberProblems(t, facts, { pairs: false }),
         t => claimProblems(t, facts),
-        t => bannedProblems(t),
+        { style: true, fn: t => bannedProblems(t) },
         t => (/^\s*(ladies and gentlemen|congratulations)/i.test(t) ? ['it opens with a ceremonial greeting'] : []),
-        t => voiceProblems(t, voice),
+        { style: true, fn: t => voiceProblems(t, voice) },
         // The AI second opinion, only once every free check passes (one extra call per click).
         { costly: true, fn: t => factCheckCopy(facts, t, 'award article') },
       ],
@@ -9290,12 +9290,12 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
         t => numberProblems(t, facts, { pairs: false }),
         t => claimProblems(t, facts),
         t => storyProblems(t, facts),
-        t => bannedProblems(t),
+        { style: true, fn: t => bannedProblems(t) },
         ...(story ? [
           t => comparisonProblems(t, story).map(p => `a comparison runs the wrong way: ${p}`),
           t => playerNumberProblems(t, story.scorers),
         ] : []),
-        t => voiceProblems(t, voice),
+        { style: true, fn: t => voiceProblems(t, voice) },
         // The AI second opinion, only once every free check passes (one extra call per click).
         { costly: true, fn: t => factCheckCopy(facts, t, 'matchup preview post') },
       ],
@@ -10410,7 +10410,7 @@ function potgStoryHooks(game, stats, p) {
   const prev = getPlayerGameLog(p.player_id).filter(g => g.status === 'played' && String(g.season) === String(game.season) && g.date < game.date);
   if (prev.length >= 2) {
     const avg = prev.reduce((t, g) => t + (g.pts || 0), 0) / prev.length;
-    if (p.pts - avg >= 6) hooks.push(`BREAKOUT: ${p.pts} points vs a ${avg.toFixed(1)} average coming in.`);
+    if (p.pts - avg >= 6) hooks.push(`BREAKOUT: ${p.pts} points vs a ${avg.toFixed(1)} points-per-game average coming in.`);
   }
 
   const teamPts = stats.filter(s => s.team_id === p.team_id).reduce((t, s) => t + (s.pts || 0), 0);
@@ -10465,7 +10465,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       if (!totals || totals.games_played < 3) return null;
       const ppg = totals.games_played > 0 ? totals.pts / totals.games_played : 0;
       const isTopScorer = (teamTopScorers[d.team_id] || []).includes(d.id);
-      if (ppg < 8 && !isTopScorer) return null;
+      // A 1.4 PPG absence isn't a story (it was listed once and written up as a loss).
+      if (ppg < 8 && !(isTopScorer && ppg >= 5)) return null;
       return { name: displayPlayerName(d.name), team: d.team_name, ppg: ppg.toFixed(1), gp: totals.games_played };
     })
     .filter(Boolean);
@@ -10499,7 +10500,9 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   // The story hooks and highlights already cover runs, leads and the go-ahead basket across
   // the whole game, so the raw play-by-play is only the finish: 40 events in a close game
   // (≤6), 15 otherwise (the full log pushed recaps past Groq's free-tier 8k tokens/minute).
-  const pbpRecent = pbpFiltered.slice(Math.abs(Number(game.team_a_score) - Number(game.team_b_score)) <= 6 ? -40 : -15);
+  // A rout's last 15 events are garbage time (15 lines of "[Q4 00:21] … Clock Stopped"): none.
+  const finalMargin = Math.abs(Number(game.team_a_score) - Number(game.team_b_score));
+  const pbpRecent = finalMargin <= 6 ? pbpFiltered.slice(-40) : finalMargin <= 15 ? pbpFiltered.slice(-15) : [];
   const pbpText = pbpRecent.map(e => {
     const q = e.quarter ? (e.quarter > 4 ? `OT${e.quarter - 4}` : `Q${e.quarter}`) : '?';
     const clk = e.clockRemaining ?? '';
@@ -10556,10 +10559,11 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     .filter(g => g.game_writeup && g.id !== game.id)
     .slice(0, 10)
     .map(g => parseWriteup(g.game_writeup));
-  const recentTitles   = recentWriteups.map(w => w.title).filter(Boolean);
+  // A few, short: ten old openings in the old voice taught the new draft the old voice.
+  const recentTitles   = recentWriteups.map(w => w.title).filter(Boolean).slice(0, 6);
   const recentOpenings = recentWriteups
-    .map(w => (w.body.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 160))
-    .filter(Boolean);
+    .map(w => (w.body.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 100))
+    .filter(Boolean).slice(0, 5);
 
   const voice      = pickVoice('recap', { date: game.date });
   // Highlights carry the records, career highs and blowouts now; the story hooks keep the
@@ -10571,7 +10575,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
 
   // ── Brief: every fact the recap may state (the checks read exactly this) ──
   const facts = [
-    highlights.length ? highlightsBlock(highlights, musts) : '',
+    highlights.length ? highlightsBlock(highlights, musts, { maxRest: 6 }) : '',
     `STORY HOOKS (computed from the play-by-play and stats — all verified):`,
     storyHooks.length ? storyHooks.map(h => `- ${h}`).join('\n') : '- (no standout hooks — find the angle in the top performers or the standings)',
     ``,
@@ -10594,7 +10598,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     ``,
     prevMatch
       // Winner first, in words: "MAROON 80 – 95 BLUE" was read as a Maroon win.
-      ? `PREVIOUS MATCHUP: ${(() => { const aw = Number(prevMatch.team_a_score) > Number(prevMatch.team_b_score); const [w, l, ws, ls] = aw ? [prevMatch.team_a_name, prevMatch.team_b_name, prevMatch.team_a_score, prevMatch.team_b_score] : [prevMatch.team_b_name, prevMatch.team_a_name, prevMatch.team_b_score, prevMatch.team_a_score]; return `${w} beat ${l} ${ws}-${ls}`; })()} on ${prevMatch.date}` +
+      ? `PREVIOUS MATCHUP: ${(() => { const aw = Number(prevMatch.team_a_score) > Number(prevMatch.team_b_score); const [w, l, ws, ls] = aw ? [prevMatch.team_a_name, prevMatch.team_b_name, prevMatch.team_a_score, prevMatch.team_b_score] : [prevMatch.team_b_name, prevMatch.team_a_name, prevMatch.team_b_score, prevMatch.team_a_score]; return `${w} beat ${l} ${ws}-${ls}`; })()} on ${shortDay(gameYmd(prevMatch.date))}` +
         (String(prevMatch.season) !== String(game.season)
           ? ` (PREVIOUS SEASON — Season ${prevMatch.season}${prevMatch.game_type !== 'regular' ? ` ${prevMatch.game_type}` : ''}; does not affect this season's records)`
           : '')
@@ -10604,7 +10608,6 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     qLines.length ? qLines.join('\n') : '(quarter scores unavailable)',
     ``,
     potgLine ? `${potgShared ? 'CO-PLAYERS OF THE GAME (a shared award)' : 'PLAYER OF THE GAME'}: ${potgLine}` : '',
-    potgLine ? `(${potgShared ? 'Both players' : 'This player'} must be featured prominently in the recap — reference their specific stats in paragraphs 2 and/or 3.)` : '',
     ``,
     `TOP PERFORMERS:`,
     topPerformers || '(no stats)',
@@ -10613,8 +10616,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       ? `NOTABLE ABSENCES (DNP this game):\n${notableDnps.map(d => `${d.name} (${d.team}): ${d.ppg} PPG avg over ${d.gp} games this season`).join('\n')}`
       : '',
     ``,
-    `PLAY-BY-PLAY (last ${pbpRecent.length} of ${pbpFiltered.length} events, chronological):`,
-    pbpText || '(no play-by-play data)',
+    pbpRecent.length ? `PLAY-BY-PLAY (last ${pbpRecent.length} of ${pbpFiltered.length} events, chronological):` : '',
+    pbpRecent.length ? pbpText : '',
     adminNotes ? `` : '',
     adminNotes
       ? `ADMIN NOTES (from the league admin who was at the game — treat as factual context you may use, and follow any focus or tone requests. All other rules still apply. If a note conflicts with the box score numbers, the box score wins.):\n${adminNotes}`
@@ -10622,24 +10625,26 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   ].filter(s => s !== null && s !== '').join('\n');
 
   const topMust = musts[0];
+  // Order: brief, facts, how to build it, rules, then the voice last (the model obeys the
+  // tail; the guide used to sit at both ends, doubling a 5k-token prompt, and the copy in the
+  // facts block of "paragraphs 2 and/or 3" instructions came back as prose).
   const prompt = [
     `You write game recaps for WKND Basketball, a recreational league with a tight community of players who read every recap.`,
+    `Voice: ${voice.name} — the guide is at the end; the whole recap, headline included, is written in it.`,
     `Tone: energetic and fun to read, with strong verbs and a real point of view — but every claim and every number must come from the FACTS. Excitement comes from specifics, not adjectives. Do not invent quotes, events, or statistics.`,
     `Write plain text only. No markdown.`,
     ``,
-    `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
-    voiceFlavor(voice, game.id, 300),
-    ``,
     `FACTS (the only things you may state):`,
     facts,
-    ``,
-    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words.`,
     ``,
     `HOW TO BUILD IT:`,
     musts.length
       ? `- OPEN the recap with the biggest MAJOR HIGHLIGHT, then cover every other MAJOR HIGHLIGHT somewhere in the recap, each with its number and the word that makes it special (record, career high, streak…). Weave in story hooks where they fit. Do not list them.`
       : `- Pick the single most compelling hook and OPEN the recap with it. Weave in one or two others if they fit. Do not list them.`,
+    potgLine ? `- ${potgShared ? 'Both Players of the Game get their own numbers in the body; say once that the award is shared' : 'The Player of the Game gets a real paragraph with their own numbers'}.` : '',
     `- Cover the result, the standout performers, and what it means for the standings (use the STANDINGS lines as given — never work out ranks or games back yourself).`,
+    `- It is a story, not a list: use at most three of the OTHER HIGHLIGHTS, and never recite every career high or previous best. 220-320 words in all.`,
+    `- Team names in title case (Blue, Maroon), never all caps; player names as "Vin Salenga".`,
     `- Records: only call something a league or team record if a LEAGUE RECORD or TEAM RECORD highlight says so, and say "since Season 3" or "on record" — never "ever" or "in league history".`,
     `- Runs and leads: only cite a run, lead or comeback that is in the hooks or highlights, with the exact numbers and quarter given there.`,
     `- Highs: only call something a career high or season high if a highlight says so. A TIED one is a matched best — never write that it was new.`,
@@ -10663,26 +10668,32 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       ? `- OPENING SENTENCES FROM RECENT RECAPS (your opening must not resemble any of these in structure or wording):\n${recentOpenings.map(t => `  "${t}"`).join('\n')}`
       : '',
     ``,
-    // Repeated last: buried at the top of a long prompt, the voice was getting ignored.
-    `FINAL REMINDER — write the whole recap in the ${voice.name} voice: ${voice.guide}`,
-    voice.sample ? `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : '',
+    // The voice last, once: the model obeys the tail of a long prompt.
+    `VOICE — ${voice.name}: ${voice.guide}`,
+    voiceFlavor(voice, game.id, 300),
+    voice.sample ? `A taste of the voice (style only; its words and events are not facts about this game): "${voice.sample}"` : '',
+    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words.`,
   ].filter(s => s !== null && s !== '').join('\n');
 
   try {
     // Write → check → rewrite (lib/writer.js): the major highlights all in, every number from
     // the facts, no claim the facts don't back, no banned filler. Pairs ("N points") are off:
-    // recaps write "17 and 8" shorthand. The admin is told whatever is still wrong.
+    // recaps write "17 and 8" shorthand. Voice and banned words are { style }: they ask for a
+    // rewrite but never outrank the facts. The admin is told whatever is still wrong.
     const out = await runWriter({
       prompt, label: `Recap (${game.id})`, tries: 3,
       generate: async p => (await generateText(p, { temperature: aiTemperature(), maxTokens: 1200 })).text,
       checks: [
+        // One-line headline, then a blank line ("Black Wins\n 95-90 Behind…" split the headline).
+        t => { const [, second] = t.split('\n'); return second && second.trim() ? ['the headline must be one line, followed by a blank line, then the paragraphs'] : []; },
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts, { pairs: false }),
         t => claimProblems(t, facts),
-        t => storyProblems(t, facts),
-        t => bannedProblems(t),
-        t => voiceProblems(t, voice),
-        // The AI second opinion, only once every free check passes (one extra call).
+        t => storyProblems(t, facts, { dated: true }),
+        { style: true, fn: t => bannedProblems(t) },
+        { style: true, fn: t => shorthandProblems(t) },
+        { style: true, fn: t => voiceProblems(t, voice) },
+        // The AI second opinion, once no fatal free check fails (one extra call).
         { costly: true, fn: t => factCheckCopy(facts, t) },
       ],
     });
@@ -10716,8 +10727,9 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
 
   // ── Analysis (as of this game: regenerating an old game must not see later ones) ──
   const before = getPlayerGameLog(potgId).filter(g => g.status === 'played' && g.id !== game.id && (g.date < game.date || (g.date === game.date && g.id < game.id)));
-  const gameLogs = before.slice(0, 6);
   const seasonBefore = before.filter(g => String(g.season) === String(game.season));
+  // This season's games only: an old July game ("he had 0 points in July?") isn't context.
+  const gameLogs = seasonBefore.slice(0, 6);
   const seasonGp = seasonBefore.length + 1;
   const seasonAvg = k => (seasonBefore.reduce((t, g) => t + (Number(g[k]) || 0), 0) + (Number(potgStat[k]) || 0)) / seasonGp;
   // League scoring rank is today's; only stated when this is the player's latest game.
@@ -10740,8 +10752,8 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   const recentOpenings = getAllGames()
     .filter(g => g.id !== game.id)
     .flatMap(g => [g.potg_writeup, g.co_potg_writeup].filter(Boolean))
-    .slice(0, 10)
-    .map(t => { const w = parseWriteup(t); return (`${w.title} ${w.body}`.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140); })
+    .slice(0, 5)
+    .map(t => { const w = parseWriteup(t); return (`${w.title} ${w.body}`.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 100); })
     .filter(Boolean);
 
   const seasonLine = `Season averages through this game (${seasonGp}GP): ${seasonAvg('pts').toFixed(1)}pts / ${seasonAvg('reb').toFixed(1)}reb / ${seasonAvg('ast').toFixed(1)}ast`;
@@ -10749,7 +10761,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   const prevLines = gameLogs.map(g => {
     const isTeamA = g.player_team_id === g.team_a_id;
     const opp = isTeamA ? g.team_b_name : g.team_a_name;
-    return `${g.date} vs ${opp}: ${g.pts}pts/${g.reb}reb/${g.ast}ast`;
+    return `${shortDay(gameYmd(g.date))} vs ${opp}: ${g.pts} points, ${g.reb} rebounds, ${g.ast} assists`;
   });
 
   // ── Brief: the facts (all the checks read these), then the rules ──
@@ -10757,52 +10769,62 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     `GAME: ${game.team_a_name} ${scoreA}-${scoreB} ${game.team_b_name}  |  ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : game.game_type === 'finals' ? 'FINALS' : 'Regular Season'}`,
     `PLAYER: ${displayPlayerName(potgStat.name)} (${potgStat.team_name}) — the team ${playerTeamWon ? 'WON' : 'LOST'}.`,
     `This game: ${potgStat.pts}pts / ${potgStat.reb}reb / ${potgStat.ast}ast / ${potgStat.stl}stl / ${potgStat.blk}blk${fgPct ? ' / ' + fgPct : ''}${shootingLine(potgStat)}`,
-    sharedStat ? `SHARED AWARD: ${displayPlayerName(potgStat.name)} shares Player of the Game with teammate ${displayPlayerName(sharedStat.name)} (${sharedStat.pts}pts / ${sharedStat.reb}reb / ${sharedStat.ast}ast), who gets their own spotlight. Say once that the honour is shared; keep the focus on ${displayPlayerName(potgStat.name)}.` : '',
+    // A fact only — the instruction lives with the rules, so there's nothing here to echo
+    // ("kaya the spotlight stays mostly on Vin, no?").
+    sharedStat ? `SHARED AWARD: ${displayPlayerName(potgStat.name)} and teammate ${displayPlayerName(sharedStat.name)} (${sharedStat.pts}pts / ${sharedStat.reb}reb / ${sharedStat.ast}ast) are co-Players of the Game.` : '',
     leagueRank ? `League rank in scoring: ${leagueRank}${leagueRank === 1 ? 'st' : leagueRank === 2 ? 'nd' : leagueRank === 3 ? 'rd' : 'th'} in the league` : '',
     seasonLine,
-    prevLines.length ? `Recent games before this one:\n${prevLines.join('\n')}` : 'Recent games before this one: none on record.',
+    prevLines.length ? `This season's games before this one:\n${prevLines.join('\n')}` : 'This season\'s games before this one: none.',
     highlights.length ? highlightsBlock(highlights, musts) : '',
     storyHooks.length ? `STORY HOOKS (verified):\n${storyHooks.map(h => `- ${h}`).join('\n')}` : '',
   ].filter(Boolean).join('\n');
 
+  // Brief, facts, rules, then the voice last and once (the model obeys the tail).
   const prompt = [
     `You are writing a short player-of-the-game spotlight for WKND Basketball, a recreational league whose players read every word.`,
     `Write exactly 2–3 sentences. Plain text only. No markdown.`,
+    `Voice: ${voice.name} — the guide is at the end; the whole spotlight is written in it.`,
     `Tone: energetic and specific — the excitement comes from the details, never from adjectives. Every claim and every number must come from the FACTS.`,
-    ``,
-    `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
-    voiceFlavor(voice, `${game.id}|${potgId}`, 70),
     ``,
     `FACTS (the only things you may state):`,
     facts,
     ``,
-    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words. A short aside of 3 words or fewer doesn't count as one of the 2-3 sentences.`,
+    `RULES:`,
     musts.length
-      ? `Open with the biggest MAJOR HIGHLIGHT and cover every one of them, each with its number and the word that makes it special (record, career high…). A league record is "since Season 3" or "on record", never "ever".`
-      : `Open with the most compelling hook.`,
-    `Do not open with the player's name, and do not open with a stat-line formula like "A 22-point, 9-rebound..." — vary the first sentence.`,
-    `Only call something a record, career high or season high if a highlight says so. A TIED one matched a previous best — never write that it was new. Never do math of your own (no totals or differences).`,
-    recentOpenings.length ? `OPENING SENTENCES FROM RECENT SPOTLIGHTS (yours must not resemble these):\n${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '',
-    `Do NOT mention PER, advanced metrics, or formula names. Do NOT reference the crowd or atmosphere. No "led the way". Banned (rejected in code): ${BANNED_HINT}.`,
+      ? `- Open with the biggest MAJOR HIGHLIGHT and cover every one of them, each with its number and the word that makes it special (record, career high…). A league record is "since Season 3" or "on record", never "ever".`
+      : `- Open with the most compelling hook.`,
+    sharedStat ? `- Say once, in passing, that the award is shared with ${displayPlayerName(sharedStat.name)}; every other sentence is about ${displayPlayerName(potgStat.name)}'s own game. Write about the game only, never about this write-up.` : '',
+    `- Do not open with the player's name, and do not open with a stat-line formula like "A 22-point, 9-rebound..." — vary the first sentence.`,
+    `- Two or three telling numbers, not the whole stat line; never mention a stat that is 0 ("0 steals") or a miss count that says nothing.`,
+    `- Only call something a record, career high or season high if a highlight says so. A TIED one matched a previous best — never write that it was new. Never do math of your own (no totals or differences). Only this game and the lines above: no other game, no "today" or "tonight".`,
+    recentOpenings.length ? `- Recent spotlights opened like this — yours must not resemble them:\n${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '',
+    `- Do NOT mention PER, advanced metrics, or formula names. Do NOT reference the crowd or atmosphere. No "led the way". Banned (rejected in code): ${BANNED_HINT}.`,
     ``,
-    `FINAL REMINDER — write it in the ${voice.name} voice: ${voice.guide}`,
-    voice.sample ? `Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : '',
+    `VOICE — ${voice.name}: ${voice.guide}`,
+    voiceFlavor(voice, `${game.id}|${potgId}`, 70),
+    voice.sample ? `A taste of the voice (style only; its words and events are not facts about this game): "${voice.sample}"` : '',
+    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits, the stat as a word (7 rebounds, never "7reb"); everything around them is in the voice. The voice is in the sentence shape, not in added words. A short aside of 4 words or fewer doesn't count as one of the 2-3 sentences.`,
   ].filter(Boolean).join('\n');
 
   try {
     // Write → check → rewrite (lib/writer.js). Checked after the trim to 3 sentences, i.e. on
-    // what's actually kept; the admin sees whatever is still wrong after 3 tries.
+    // what's actually kept; the admin sees whatever is still wrong after 3 tries. Voice and
+    // banned words are { style }: a rewrite, but never ahead of the facts.
     const out = await runWriter({
       prompt, label: `POTG (${game.id})`, tries: 3,
-      generate: async p => keepSentences((await generateText(p, { temperature: aiTemperature(), maxTokens: 300 })).text, 3),
+      // 700, not 300: a reasoning model (Groq gpt-oss) spends part of the budget thinking, and every
+      // 300-token spotlight on it came back truncated.
+      generate: async p => keepSentences((await generateText(p, { temperature: aiTemperature(), maxTokens: 700 })).text, 3),
       checks: [
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts),
         t => claimProblems(t, facts),
-        t => storyProblems(t, facts),
-        t => bannedProblems(t),
-        t => voiceProblems(t, voice),
-        // The AI second opinion, only once every free check passes (one extra call per click).
+        t => storyProblems(t, facts, { dated: true }),
+        { style: true, fn: t => bannedProblems(t) },
+        { style: true, fn: t => shorthandProblems(t) },
+        { style: true, fn: t => zeroStatProblems(t) },
+        { style: true, fn: t => voiceProblems(t, voice) },
+        // The AI second opinion, once no fatal free check fails (one extra call per click).
         { costly: true, fn: t => factCheckCopy(facts, t, 'player of the game spotlight') },
       ],
     });
@@ -12748,7 +12770,9 @@ function standingsSectionData(season, allGames = getAllGames()) {
   const seasonRegular = allGames.filter(g => String(g.season) === season && g.game_type === 'regular' && !g.under_review);
   return {
     season, isCurrent: season === String(getPortalCurrentSeason()), rows,
-    games: seasonRegular.filter(g => g.status === 'complete'),
+    // 'final' too: a score entered without a box score (Oct 18 White-Black) is a played game, as every
+    // other list treats it; the standings sections' table was a game behind the lock line.
+    games: seasonRegular.filter(g => (g.status === 'complete' || g.status === 'final') && Number(g.team_a_score) + Number(g.team_b_score) > 0),
     scheduled: seasonRegular.filter(g => g.status === 'scheduled' || g.scheduled === 1),
     teamStats: getTeamSeasonStats(season),
   };
@@ -13923,7 +13947,8 @@ function homeSummaryFacts(block, ctx) {
       key: `v${HOME_SUMMARY_VERSION}|h|${day}|${dayGames.map(g => `${g.id}:${g.team_a_score}-${g.team_b_score}`).join(',')}|h${sig(dayHl.map(h => h.text))}`,
       kicker: `The story · After ${dayLabel} games`,
       section: 'Game headlines',
-      facts: `Results on ${day}:\n${lines.join('\n')}${records ? `\nTeam records now: ${records}` : ''}${dayHl.length ? `\n\n${highlightsBlock(dayHl, musts)}` : ''}`,
+      // Two sentences can't hold the day's ten career highs: the musts plus three others.
+      facts: `Results on ${day}:\n${lines.join('\n')}${records ? `\nTeam records now: ${records}` : ''}${dayHl.length ? `\n\n${highlightsBlock(dayHl, musts, { maxRest: 3 })}` : ''}`,
       musts,
       focus: `Sum up what happened on this game day, leading with ${musts.length ? 'the biggest MAJOR HIGHLIGHT' : 'the most important result'}. Each game is a separate event — never connect one game\x27s result to another team\x27s streak or record.`,
     };
@@ -14016,7 +14041,7 @@ async function writeHeadlineCopy(f, opts = {}) {
     `- Write finished copy only: no questions to yourself, no corrections, no notes or alternatives.`,
     `- Banned (rejected in code): ${BANNED_HINT}.`,
     `- Write numbers as digits, copied from the facts.`,
-    opts.strict ? `- Never claim one stat causes or explains another (no "because", "explains", "drives", "thanks to", "fuels"). State the numbers side by side and let the reader connect them.\n- Write every number as digits, never as a word.` : '',
+    opts.strict ? `- Never claim one stat causes or explains another (no "because", "explains", "drives", "thanks to", "fuels" — and no "kasi" or "kaya" between two stats either). State the numbers side by side and let the reader connect them.\n- Write every number as digits, never as a word.` : '',
     ...(opts.rules || []),
     // Season race also gets one short note per team card (f.notesFor = the team names).
     f.notesFor ? `- notes: exactly one note per team (${f.notesFor.join(', ')}), each one sentence of at most 12 words, plain text, about that team only — the most telling fact about its season so far. Don't start with the team's name.` : '',
@@ -14025,21 +14050,20 @@ async function writeHeadlineCopy(f, opts = {}) {
   // piece's flavour line; "how to say it" keeps the numbers English while the voice shapes
   // the rest.
   const flavor = voiceFlavor(voice, f.key || f.section || '', bd.words || 45);
+  // Brief, facts, focus, rules, then the voice last and once (the model obeys the tail).
   const prompt = `${intro}
-
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${flavor ? `\n${flavor}` : ''}
+Voice: ${voice.name} — the guide is at the end; headline and body are both written in it.
 
 FACTS (the only things you may state):
 ${f.facts}
 
 ${f.focus || ''}
 
-HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words. A short aside of 3 words or fewer doesn't count as a sentence.
-
 Rules:
 ${rules}
 
-FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`;
+VOICE — ${voice.name}: ${voice.guide}${flavor ? `\n${flavor}` : ''}${voice.sample ? `\nA taste of the voice (style only; its words and events are not facts): "${voice.sample}"` : ''}
+HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words. A short aside of 4 words or fewer doesn't count as a sentence.`;
   // A voice that needs heat (conyo) gets 0.85 where these blocks are usually capped at 0.6;
   // the number and claim checks catch what extra heat invents.
   const tempCap = voiceTraits(voice).hot ? Math.max(opts.temperature ?? 0.6, 0.85) : (opts.temperature ?? 0.6);
@@ -14067,7 +14091,7 @@ FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Exampl
   const label = opts.label || `Summary (${f.section})`;
   const out = await runWriter({
     prompt, label, tries: opts.tries || 3,
-    generate: async p => shape((await generateJson(p, schema, { temperature: Math.min(aiTemperature(), tempCap), maxTokens: opts.maxTokens || (f.notesFor ? 500 : 300) })).data),
+    generate: async p => shape((await generateJson(p, schema, { temperature: Math.min(aiTemperature(), tempCap), maxTokens: opts.maxTokens || (f.notesFor ? 800 : 600) })).data),
     text: d => `${d.headline.replace(/\*\*/g, '')}. ${d.body}${d.notes && Object.keys(d.notes).length ? `\n${noteText(d)}` : ''}`,
     checks: [
       (t, d) => (!d.headline ? ['the headline is empty'] : []),
@@ -14078,22 +14102,27 @@ FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Exampl
       t => numberProblems(t, f.facts, { pairs: false, spelled: !opts.strict }),
       t => claimProblems(t, f.facts),
       t => storyProblems(t, f.facts),
-      t => bannedProblems(t),
-      t => (opts.banned && t.match(opts.banned) ? [`it uses the word "${t.match(opts.banned)[0]}"`] : []),
+      { style: true, fn: t => bannedProblems(t) },
+      { style: true, fn: t => (opts.banned && t.match(opts.banned) ? [`it uses the word "${t.match(opts.banned)[0]}"`] : []) },
       (t, d) => (opts.strict ? [strictSummaryIssue(d.headline, d.body, f.facts)].filter(Boolean) : []),
-      t => voiceProblems(t, voice),
+      { style: true, fn: t => voiceProblems(t, voice) },
       ...(opts.checks || []),
       // Second opinion at temperature 0, only once every free check passes.
       ...(opts.factCheck === false ? [] : [{ costly: true, fn: async (t, d) => factCheckHomeSummary(f, d.headline, d.body, noteText(d)) }]),
     ],
   });
-  if (out.problems.length) {
+  // Only fatal leftovers (facts, format, highlights) reject the piece: a true 45-word section
+  // whose last slip is a voice-density note is kept, not thrown away (a game page with no
+  // section at all is worse than a slightly flat one).
+  const styleOnly = out.problems.length && !out.fatal;
+  if (out.problems.length && !styleOnly) {
     // code 'checks': every draft failed the checks (callers back off longer than for an outage).
     const err = new Error(`${label}: no draft passed the checks (${out.problems.join('; ')})`);
     err.code = 'checks';
     err.problems = out.problems;
     throw err;
   }
+  if (styleOnly) console.warn(`${label}: kept with style notes (${out.problems.join('; ')})`);
   const copy = out.draft;
   if (opts.save) opts.save(copy);
   return copy;
@@ -14150,13 +14179,13 @@ Go through the copy sentence by sentence and list every statement the facts do n
 - a career high described as "matching" a previous best when the facts give a NEW one (or the other way round), or a career/season high, record or first place the facts don't state;
 - a stat given to the wrong player or team, wrong numbers or scores, or numbers calculated rather than copied;
 - a play the play-by-play doesn't show, or details copied from a style example rather than the facts.
-Opinions, tone, slang and voice are fine. If everything is supported, return accurate=true and an empty problems list.`;
+Not problems: opinions, tone, slang, voice and wording; "league record" / "record" for what the facts call the most since Season 3 (box scores start there), as long as the copy doesn't say "ever" or "all-time"; a season average "through this game" next to a lower average "coming in" (both are true). Only list a statement whose content the facts contradict or don't contain. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = {
     type: 'object',
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
     required: ['accurate', 'problems'],
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 400 });
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 600 });
   if (data?.accurate) return [];
   const problems = (data?.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
   return problems.length ? problems.map(p => `fact check: ${p}`) : ['fact check: unspecified inaccuracy'];
@@ -14173,13 +14202,14 @@ Body: ${body}${notes ? `\nPer-team notes:\n${notes}` : ''}
 FACTS
 ${f.facts}
 
-List every statement in the copy that the facts do not directly support: wrong numbers, wrong rankings, a player "leading" something they are not #1 in, streaks and links between games that the facts don't state, anything called a "record" / "first" / "best-ever", or a season total presented as if it came from one game. Opinions and tone are fine. If everything is supported, return accurate=true and an empty problems list.`;
+List every statement in the copy that the facts do not directly support: wrong numbers, wrong rankings, a player "leading" something they are not #1 in, streaks and links between games that the facts don't state, a "record" / "first" / "best-ever" / "career high" no highlight gives, or a season total presented as if it came from one game.
+Not problems: opinions, tone, slang and wording; leaving a fact out (short copy can't say everything); "league record" / "team record" / "record" for what a highlight calls the most since Season 3 (box scores start there), as long as the copy doesn't say "ever" or "all-time". Only list a statement whose content the facts contradict or don't contain. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = {
     type: 'object',
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
     required: ['accurate', 'problems'],
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 300 });
+  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500 });
   if (data.accurate) return [];
   const problems = (data.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
   return problems.length ? problems : ['unspecified inaccuracy'];
@@ -15162,8 +15192,8 @@ async function mvpLockWriteups(ten, season, { generate = false, race = 'mvp' } =
           (t, d) => (!d.question.endsWith('?') ? ['the question must end with "?"'] : []),
           t => (lockNumbersOk(t, allFacts) ? [] : ['a number is not in the facts, is spelled out, or is paired with the wrong stat — copy every number and "N points"-style pair exactly as the facts give it']),
           t => claimProblems(t, allFacts),
-          t => bannedProblems(t),
-          t => voiceProblems(t, voice),
+          { style: true, fn: t => bannedProblems(t) },
+          { style: true, fn: t => voiceProblems(t, voice) },
         ],
       });
       if (!out.problems.length) {
@@ -15635,9 +15665,9 @@ async function renderRacePage(req, res, raceKey) {
         checks: [
           t => numberProblems(t, facts),
           t => claimProblems(t, facts),
-          t => bannedProblems(t),
+          { style: true, fn: t => bannedProblems(t) },
           t => (/^\s*(with an?\b)/i.test(t) ? ['it opens with "With a"'] : []),
-          t => voiceProblems(t, voice),
+          { style: true, fn: t => voiceProblems(t, voice) },
         ],
       });
       if (out.problems.length) {
@@ -20375,8 +20405,8 @@ FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Exampl
           t => numberProblems(t, factsText, { pairs: false }).filter(p => p.startsWith('it spells')),
           t => { const w = t.split(/\s+/).length; return w < 120 || w > 260 ? [`it was ${w} words, aim for 150 to 220`] : []; },
           t => claimProblems(t, factsText),
-          t => bannedProblems(t),
-          t => voiceProblems(t, voice),
+          { style: true, fn: t => bannedProblems(t) },
+          { style: true, fn: t => voiceProblems(t, voice) },
           { costly: true, fn: async t => (await factCheckCourtWriteup(factsText, t)).map(p => `a fact check found a claim the facts don't support: ${p}`) },
         ],
       });
