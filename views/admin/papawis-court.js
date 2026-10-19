@@ -53,7 +53,19 @@ const dayLabel = ymd => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', 
 const TAG_LABEL = Object.fromEntries([...RATING_TAGS_GOOD, ...RATING_TAGS_BAD]);
 const ASPECT_LABEL = Object.fromEntries(RATING_ASPECTS);
 
-export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags = {}, ratings = [], slots = [], requests = [], runs = [] }) {
+// Ask everyone who played here (league games + Papawis runs) to rate the court, once each.
+function rateAskPanel(court, c, flags) {
+  if (!c || !c.played) return '';
+  const line = `${c.played} played here · ${c.rated} rated · ${c.asked} already asked`;
+  const action = !flags.ratings
+    ? `<span class="aui-muted">Turn on court ratings above to ask them.</span>`
+    : c.toAsk
+      ? button(`Ask ${c.toAsk} player${c.toAsk === 1 ? '' : 's'} to rate`, { kind: 'primary', size: 'sm', attrs: `data-post-json="/admin/papawis/courts/${escHtml(court.id)}/rate-ask" data-confirm data-confirm-title="Ask ${c.toAsk} player${c.toAsk === 1 ? '' : 's'} to rate this court?" data-confirm-body="Each gets a notification and, if they get WKND emails, a short email with tap-to-rate stars. Nobody is asked twice, and anyone who already rated is skipped." data-confirm-send="Ask them" data-done="Asked."` })
+      : `<span class="aui-muted">Everyone has rated or been asked.</span>`;
+  return `<div class="aui-panel acrt-ask"><div class="acrt-ask__text"><b>Ask the players</b><span class="aui-muted">${escHtml(line)}</span></div>${action}</div>`;
+}
+
+export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags = {}, ratings = [], slots = [], requests = [], runs = [], rateAsk = null }) {
   const id = attr(court.id);
   const pageUrl = `/courts/${encodeURIComponent(court.slug)}`;
   const status = court.page_hidden
@@ -224,7 +236,7 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
     </form>
     ${section({ title: 'Court page features', note: '· switches for every court page', bodyHtml: features })}
     ${section({ title: 'Open times', note: '· players vote for a run in these', id: 'court-slots', asideHtml: flags.votes ? '' : badge('Off', 'gray'), bodyHtml: slotsBlock })}
-    ${section({ title: 'Ratings', note: `· ${ratings.length} rating${ratings.length === 1 ? '' : 's'}`, asideHtml: flags.ratings ? '' : badge('Off', 'gray'), bodyHtml: `<div class="aui-panel">${ratingRows}</div>` })}
+    ${section({ title: 'Ratings', note: `· ${ratings.length} rating${ratings.length === 1 ? '' : 's'}`, asideHtml: flags.ratings ? '' : badge('Off', 'gray'), bodyHtml: `${rateAskPanel(court, rateAsk, flags)}<div class="aui-panel">${ratingRows}</div>` })}
     ${section({ title: 'Rent requests', note: `· ${requests.filter(x => x.status !== 'done').length} new`, asideHtml: flags.requests ? '' : badge('Off', 'gray'), bodyHtml: `<div class="aui-panel">${reqRows}</div>` })}
     ${saveBar({ label: 'Save court page', form: 'court-page-form' })}
     ${SUGGEST_SCRIPT}

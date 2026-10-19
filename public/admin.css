@@ -2862,6 +2862,9 @@ body:has(.aui-savebar:not([hidden])) .aui-toasts { bottom: 88px; }
 .acrt-link:hover { text-decoration: underline; }
 .acrt-check { margin-top: 12px; width: max-content; max-width: 100%; }
 .acrt-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.acrt-ask { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.acrt-ask__text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.acrt-ask__text b { font-size: 14px; line-height: 1.3; }
 .acrt-hint { font-size: 12px; }
 .acrt-foot { margin: 12px 0 0; font-size: 12px; }
 .acrt-draft { margin-bottom: 12px; border-color: rgba(245,147,50,.38); }

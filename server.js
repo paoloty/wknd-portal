@@ -213,9 +213,9 @@ import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt } from './lib/portal-db.js';
 import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
-import { askToRateCourt } from './lib/court-rate-ask.js';
+import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
 import {
-  getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, saveCourtRating, getCourtRating,
+  getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, wasAskedToRateCourt, saveCourtRating, getCourtRating,
   moderateCourtRating, toggleCourtRatingHelpful, getCourtOpenSlots, getCourtOpenSlot, addCourtOpenSlot, deleteCourtOpenSlot, setCourtSlotRun,
   markCourtSlotReached, getCourtSlotVoterIds, getCourtSlotVotesBy, toggleCourtSlotVote, addCourtRequest, getCourtRequests, setCourtRequestStatus,
 } from './lib/portal-db.js';
@@ -18205,6 +18205,13 @@ function buildCourtOgTags(court, p) {
     // The venue's own site and socials: tells search engines this page is about that place.
     ...(() => { const same = courtLinks(p.info).filter(l => l.key !== 'booking').map(l => l.url); return same.length ? { sameAs: same } : {}; })(),
     ...(p.info?.rate ? { priceRange: p.info.rate } : {}),
+    // Star rating for search results: players' ratings of this court (a venue WKND doesn't
+    // own, so allowed), only once the page itself shows the score (5+ ratings) and matching it.
+    ...(() => {
+      if (!courtFlags().ratings) return {};
+      const r = summarizeRatings(getCourtRatings(court.id));
+      return r.showScore ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: r.avg, ratingCount: r.n, bestRating: 5, worstRating: 1 } } : {};
+    })(),
   };
   const events = p.upcoming.slice(0, 3).filter(r => r.start_time).map(r => ({
     '@context': 'https://schema.org',
@@ -19447,6 +19454,15 @@ app.post('/admin/papawis/courts/reorder', requireAuth, express.json(), (req, res
   res.json({ ok: true });
 });
 // ── Admin: one court's public page (views/admin/papawis-court.js) ─────────────────────────
+// Everyone who played at a court (Papawis runs + league games), split by where they stand on
+// rating it: already rated, already asked (once per court), or still to ask.
+function courtRateAskCounts(court, p) {
+  const ids = [...new Set(p.raterIds)];
+  let rated = 0, asked = 0;
+  for (const id of ids) { if (getMyCourtRating(court.id, id)) rated++; else if (wasAskedToRateCourt(court.id, id)) asked++; }
+  return { played: ids.length, rated, asked, toAsk: ids.length - rated - asked };
+}
+
 app.get('/admin/papawis/courts/:id', requireAuth, (req, res) => {
   const court = getPapawisCourtById(req.params.id);
   if (!court) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/papawis/courts', body: '<p class="aui-muted" style="padding:40px">Court not found.</p>' }));
@@ -19456,11 +19472,27 @@ app.get('/admin/papawis/courts/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: p.name, currentPath: '/admin/papawis/courts',
     body: adminPapawisCourtBody({
-      court, p, info: normalizeCourtInfo(parseCourtJson(court.info_json, {})), aiOn: aiAvailable(), flags: courtFlags(),
+      court, p, info: normalizeCourtInfo(parseCourtJson(court.info_json, {})), aiOn: aiAvailable(), flags: courtFlags(), rateAsk: courtRateAskCounts(court, p),
       ratings: getCourtRatings(court.id), slots: getCourtOpenSlots(court.id).filter(x => x.date >= today), requests: getCourtRequests(court.id),
       runs: getPapawisGames().filter(g => String(g.date).slice(0, 10) >= today && g.status !== 'cancelled' && g.status !== 'completed'),
     }),
   }));
+});
+
+// "Ask everyone who played here to rate": the same ask a new game sends (bell + email, once
+// per player per court, never to someone who rated, email opt-outs respected), for everyone
+// who played here before ratings were on. Papawis players get the Papawis wording.
+app.post('/admin/papawis/courts/:id/rate-ask', requireAuth, express.json(), async (req, res) => {
+  const court = getPapawisCourtById(req.params.id);
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  if (!courtRatingsOn()) return res.status(400).json({ error: 'Turn on court ratings first (Court page features).' });
+  if (!court.slug || court.page_hidden) return res.status(400).json({ error: 'The court page is hidden, so there is nothing to rate yet.' });
+  const { p } = courtPageData(court);
+  const runners = new Set(p.memberIds);
+  const a = await askToRateCourt({ court, playerIds: [...runners], kind: 'papawis', ref: 'admin-ask' });
+  const b = await askToRateCourt({ court, playerIds: p.raterIds.filter(id => !runners.has(id)), kind: 'league', ref: 'admin-ask' });
+  const asked = a.asked + b.asked, emailed = a.emailed + b.emailed;
+  res.json({ ok: true, message: asked ? `Asked ${asked} player${asked === 1 ? '' : 's'} (${emailed} by email, all by notification).` : 'Everyone who played here has already rated or been asked.' });
 });
 
 app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, res) => {
