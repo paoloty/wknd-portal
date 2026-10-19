@@ -2084,7 +2084,7 @@ function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool
 // copy (banned words, claims, the voice) and a failing row never enters the rotation.
 function bannerVoiceBlock(seed) {
   const voice = pickVoice('home', { date: manilaTodayStr() });
-  const flavor = voiceFlavor(voice, seed);
+  const flavor = voiceFlavor(voice, seed, 25);
   return `VOICE — ${voice.name}: ${voice.guide}${flavor ? `\n${flavor}` : ''}
 Banner copy is short, so one Tagalog hinge per part is plenty. Keep it friendly hype: no romantic framing, no sexual or suggestive innuendo. Banned: ${BANNED_HINT}.`;
 }
@@ -5709,7 +5709,7 @@ app.get('/api/compare', async (req, res) => {
 
     let prompt = `You write "the conyo take" on a head-to-head comparison of two players in WKND Basketball, a recreational league whose players read every word.
 
-VOICE — ${voice.name}: ${voice.guide}${voice.sample ? `\nExample line in this voice: "${voice.sample}"` : ''}${voiceFlavor(voice, currentPair) ? `\n${voiceFlavor(voice, currentPair)}` : ''}
+VOICE — ${voice.name}: ${voice.guide}${voice.sample ? `\nExample line in this voice: "${voice.sample}"` : ''}${voiceFlavor(voice, currentPair, 70) ? `\n${voiceFlavor(voice, currentPair, 70)}` : ''}
 
 HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice.
 
@@ -7815,7 +7815,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     `Every claim and every number must come from the FACTS, copied exactly — never work out a total, gap or percentage of your own. Only say someone led the league where a "1st in the league" line says so; never call anything a record. Plain text only. No markdown.`,
     `Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.`,
     `VOICE — ${voice.name}: ${voice.guide}`,
-    voiceFlavor(voice, currentKey),
+    voiceFlavor(voice, currentKey, 70),
     `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words.`,
     otherOpenings.length ? `OPENING SENTENCES OF OTHER ARTICLES ON THIS AWARDS PAGE (yours must not resemble these):\n${otherOpenings.map(t => `  "${t}"`).join('\n')}` : '',
     `FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`,
@@ -9247,7 +9247,7 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
 
   // The same voice as every other writer (lib/ai-voices.js), with this matchup's flavour line.
   const voice = pickVoice('home', { date: manilaTodayStr() });
-  const flavor = voiceFlavor(voice, [teamA.id, teamB.id].sort().join('|'));
+  const flavor = voiceFlavor(voice, [teamA.id, teamB.id].sort().join('|'), 300);
   const prompt = [
     `You are a local recreational basketball league writer previewing an upcoming playoff/finals matchup — a community observer, not a broadcaster.`,
     `Write a matchup preview post for WKND Basketball that builds anticipation without hype-speak.`,
@@ -10128,6 +10128,51 @@ const HL_KW = {
 };
 const hlQ = q => (q > 4 ? `overtime${q > 5 ? ` ${q - 4}` : ''}` : `Q${q}`);
 
+// Whether the regular-season order was already settled as of this game's day, said in words
+// so a writer never invents a race ("Maroon's hope of climbing to first is still alive" was
+// written after the standings were locked). Settled = no lower team can reach the one above
+// it even by winning every game it has left (SEASON_GAMES_PER_TEAM each; ties count as open,
+// so a tiebreak-decided spot only shows as final once every game is played). Returns '' while
+// the race is open.
+function standingsLockLine(game) {
+  if (game.game_type !== 'regular') return '';
+  const season = String(game.season);
+  const regular = getAllGames().filter(g => String(g.season) === season && g.game_type === 'regular' && !g.under_review
+    && Number(g.team_a_score) !== Number(g.team_b_score) && Number(g.team_a_score) + Number(g.team_b_score) > 0);
+  const thisDay = gameYmd(game.date);
+  const days = [...new Set(regular.map(g => gameYmd(g.date)))].filter(d => d <= thisDay).sort();
+  const teamIds = [...new Set(regular.flatMap(g => [g.team_a_id, g.team_b_id]))];
+  const recordAt = day => teamIds.map(id => {
+    let w = 0, l = 0;
+    for (const g of regular) {
+      if (gameYmd(g.date) > day || (g.team_a_id !== id && g.team_b_id !== id)) continue;
+      if ((Number(g.team_a_score) > Number(g.team_b_score) ? g.team_a_id : g.team_b_id) === id) w++; else l++;
+    }
+    return { id, w, left: Math.max(0, SEASON_GAMES_PER_TEAM - w - l) };
+  }).sort((x, y) => y.w - x.w);
+  const settled = rec => rec.every((r, i) => i === 0 || rec[i - 1].w > r.w + r.left);
+  const done = rec => rec.every(r => r.left === 0);
+  const now = recordAt(thisDay);
+  if (!now.length || !(settled(now) || done(now))) return '';
+  const lockDay = days.find(d => settled(recordAt(d)));
+  const before = lockDay && lockDay < thisDay ? ` The order was already settled after the ${shortDay(lockDay)} games, so this game could not change it.` : '';
+  if (done(now)) {
+    const standings = getSeasonStandings(season);
+    const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, season));
+    const T = titleCase;
+    const seedLine = seeds.length >= 4 ? ` Playoff seeding: ${seeds.slice(0, 4).map((s, i) => `${i + 1}. ${T(s.name)}`).join(', ')}; semifinals 1 vs 4 and 2 vs 3, the higher seed twice to beat.` : '';
+    return `FINAL REGULAR-SEASON STANDINGS: every team has played all ${SEASON_GAMES_PER_TEAM} games, so the order above is final — nobody can still climb, catch up or drop.${before}${seedLine}`;
+  }
+  return `STANDINGS LOCKED: no remaining result can change the order above — nobody can still climb, catch up or drop.${before}`;
+}
+
+// The same, for a season as of its latest played regular-season game ('' while open).
+function seasonLockLine(season) {
+  const last = getAllGames().filter(g => String(g.season) === String(season) && g.game_type === 'regular' && !g.under_review
+    && Number(g.team_a_score) + Number(g.team_b_score) > 0).sort((x, y) => String(y.date).localeCompare(String(x.date)))[0];
+  return last ? standingsLockLine(last) : '';
+}
+
 // Who held a league best: "set by X" for one game, "shared by X and Y (twice)" when it was
 // reached more than once — a tie must never be credited to one player alone.
 // Each holder carries the season(s) it happened in, so a writer never guesses one ("White's
@@ -10502,6 +10547,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     const tiedTop = after.filter(r => back(r) === 0).length > 1;
     standingsLine = `STANDINGS AFTER THIS GAME DAY (rank, record, games back):\n${after.map((r, i) =>
       `${i + 1}. ${nameOf(r.team_id)} ${r.wins}-${r.losses} (${back(r) ? `${back(r)} back` : tiedTop ? 'tied for first' : 'first place'})`).join('\n')}`;
+    const lockLine = standingsLockLine(game);
+    if (lockLine) standingsLine += `\n${lockLine}`;
   }
 
   // Gather recent recap headlines to prevent repetition
@@ -10581,7 +10628,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     `Write plain text only. No markdown.`,
     ``,
     `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
-    voiceFlavor(voice, game.id),
+    voiceFlavor(voice, game.id, 300),
     ``,
     `FACTS (the only things you may state):`,
     facts,
@@ -10607,7 +10654,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     `- Output format: a one-line headline, then 3 paragraphs (4 for close or playoff games). No fixed paragraph order — let the story decide.`,
     `- Do NOT narrate the game quarter by quarter ("In the first quarter… in the second…"). Use quarter scores only to support the story you are telling.`,
     `- Vary sentence length. The first sentence should make someone want to read the second.`,
-    `- HEADLINE RULES: Name the winning team${topMust ? ` and carry the biggest MAJOR HIGHLIGHT (${topMust.text.split(':')[0].toLowerCase()})` : ' and something specific and factual from THIS game — a stat line, the margin, a blown lead, an OT finish, a streak broken'}. Max 12 words. Do NOT use a generic description of the game type. Do NOT start with "In a," "A," or the date.`,
+    `- HEADLINE RULES: Name the winning team${topMust ? ` and carry the biggest MAJOR HIGHLIGHT (${topMust.text.split(':')[0].toLowerCase()})` : ' and something specific and factual from THIS game — a stat line, the margin, a blown lead, an OT finish, a streak broken'}. Max 12 words. Do NOT use a generic description of the game type. No "today", "tonight" or "yesterday" anywhere (the recap is read days later). Do NOT start with "In a," "A," or the date.`,
     `- Banned words/phrases: ${CLICHE_BAN}. Also rejected in code: ${BANNED_HINT}.`,
     recentTitles.length
       ? `- HEADLINES ALREADY USED IN RECENT RECAPS (do NOT repeat these patterns or use similar phrasing):\n${recentTitles.map(t => `  "${t}"`).join('\n')}`
@@ -10724,7 +10771,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     `Tone: energetic and specific — the excitement comes from the details, never from adjectives. Every claim and every number must come from the FACTS.`,
     ``,
     `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
-    voiceFlavor(voice, `${game.id}|${potgId}`),
+    voiceFlavor(voice, `${game.id}|${potgId}`, 70),
     ``,
     `FACTS (the only things you may state):`,
     facts,
@@ -13885,12 +13932,16 @@ function homeSummaryFacts(block, ctx) {
     const teams = ctx.standings?.teams;
     if (!teams?.length) return null;
     const lines = teams.map(t => `- ${t.rank}. ${title(t.name)} ${t.wins}-${t.losses}, ${t.gb > 0 ? `${t.gb} games back` : 'first place'}, point differential ${t.diff > 0 ? '+' : ''}${t.diff}, last results ${t.form.join('') || 'none'}${t.flag ? `, ${t.flag.toLowerCase()}` : ''}`);
+    // Settled standings are said as such, so the block doesn't sell a race that's over.
+    const lock = seasonLockLine(ctx.season);
     return {
-      key: `v${HOME_SUMMARY_VERSION}|s|${ctx.season}|${teams.map(t => `${t.name}:${t.wins}-${t.losses}:${t.diff}`).join(',')}`,
+      key: `v${HOME_SUMMARY_VERSION}|s|${ctx.season}|${teams.map(t => `${t.name}:${t.wins}-${t.losses}:${t.diff}`).join(',')}${lock ? '|locked' : ''}`,
       kicker: `The race · ${after}`,
       section: 'Season race (standings)',
-      facts: `Season ${ctx.season} standings:\n${lines.join('\n')}`,
-      focus: 'Describe the state of the standings race: who leads and by how much, and the most interesting story further down.',
+      facts: `Season ${ctx.season} standings:\n${lines.join('\n')}${lock ? `\n${lock}` : ''}`,
+      focus: lock
+        ? 'The regular-season order is settled: say who finished where and what it sets up for the playoffs. There is no race left; never talk about anyone still climbing or catching up.'
+        : 'Describe the state of the standings race: who leads and by how much, and the most interesting story further down.',
       notesFor: teams.map(t => title(t.name)),
     };
   }
@@ -13973,7 +14024,7 @@ async function writeHeadlineCopy(f, opts = {}) {
   // The voice sits at the top and again as the last word (the model obeys the tail), with this
   // piece's flavour line; "how to say it" keeps the numbers English while the voice shapes
   // the rest.
-  const flavor = voiceFlavor(voice, f.key || f.section || '');
+  const flavor = voiceFlavor(voice, f.key || f.section || '', bd.words || 45);
   const prompt = `${intro}
 
 THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${flavor ? `\n${flavor}` : ''}
@@ -14684,8 +14735,8 @@ ${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '';
     ].join('\n');
     return { facts: `${name} stats:\n${rankLines}`, prompt: `You are covering the Best Defender race for WKND Basketball, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence Best Defender case' : 'Write exactly 2 short sentences (under 45 words in total) on the Best Defender case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real Best Defender candidate — steals, blocks, rebounding, staying out of foul trouble, and winning.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, pid) ? `
-${voiceFlavor(voice, pid)}` : ''}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, pid, 60) ? `
+${voiceFlavor(voice, pid, 60)}` : ''}
 
 Rules:
 - Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
@@ -14720,8 +14771,8 @@ ${reminder}` };
   ].join('\n');
   return { facts: `${name} stats:\n${rankLines}`, prompt: `You are covering the MVP race for WKND Basketball, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence MVP case' : 'Write exactly 2 short sentences (under 45 words in total) on the MVP case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, pid) ? `
-${voiceFlavor(voice, pid)}` : ''}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, pid, 60) ? `
+${voiceFlavor(voice, pid, 60)}` : ''}
 
 Rules:
 - Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
@@ -14918,7 +14969,7 @@ Return JSON with two fields:
 - "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his MVP case.'}
 - "question": one short question, at most 14 words, ending with "?", ${forecast ? 'on how he wins Sunday or makes his case in it' : 'on whether he has done enough'}.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, c.player.id) ? `\n${voiceFlavor(voice, c.player.id)}` : ''}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, c.player.id, 50) ? `\n${voiceFlavor(voice, c.player.id, 50)}` : ''}
 Numbers, names and stat words stay in English digits exactly as the facts give them; everything around them is in the voice.
 
 ${angle ? `THE ANGLE (decided for you; the job and the question are about this and nothing else):
@@ -14993,7 +15044,7 @@ Return JSON with two fields:
 - "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do on defense in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his Best Defender case.'}
 - "question": one short question, at most 14 words, ending with "?", ${forecast ? 'on how he wins Sunday on defense' : 'on whether he has done enough'}.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, c.player.id) ? `\n${voiceFlavor(voice, c.player.id)}` : ''}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, c.player.id, 50) ? `\n${voiceFlavor(voice, c.player.id, 50)}` : ''}
 Numbers, names and stat words stay in English digits exactly as the facts give them; everything around them is in the voice.
 
 ${angle ? `THE ANGLE (decided for you; the job and the question are about this and nothing else):
@@ -15704,7 +15755,7 @@ async function generatePageWriteups(page, facts, key) {
   const ids = Object.keys(facts);
   const base = `You write the short paragraph that sits under each section heading on the WKND Basketball ${isRoast ? '"The Roast" page — the playful flip side of the league leaders board' : 'League Leaders page'}. It's a recreational league whose players read every word.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, key) ? `\n${voiceFlavor(voice, key)}` : ''}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, key, 40) ? `\n${voiceFlavor(voice, key, 40)}` : ''}
 
 Write one paragraph per section. Each: 1–2 sentences (a short aside of 3 words or fewer doesn't count), at most 40 words, plain text (no markdown, asterisks or emoji). Tell ONE story from that section's facts — a close race, a tie, a big gap, a player on several boards. Mention at most two or three players; never walk through every board.${isRoast ? ' Make it funny: a wry line or light joke in the voice, not a dry recap of the numbers.' : ''}
 
@@ -16577,20 +16628,24 @@ function standingsSectionFacts(sd) {
   if (m.table.length >= 4) {
     const [s1, s2, s3, s4] = m.table;
     const gap = ((s2.wins - s3.wins) + (s3.losses - s2.losses)) / 2;
+    // Settled (every game played, or no result left can change the order): said as final.
+    const lock = sd.isCurrent ? seasonLockLine(sd.season) : '';
+    const live = sd.isCurrent && !lock;
     const lines = [
       'Format: the top 4 teams make the semifinals, 1st vs 4th and 2nd vs 3rd. The higher seed in each semifinal is "twice to beat": it advances with 1 win, while the lower seed has to win 2 games. The Finals are best of 3.',
-      sd.isCurrent ? `Seeding if the regular season ended today (after week ${m.week}):` : `Final regular-season seeding, Season ${sd.season}:`,
+      live ? `Seeding if the regular season ended today (after week ${m.week}):` : `${lock ? 'Settled' : 'Final'} regular-season seeding, Season ${sd.season}:`,
       `- Semifinal A: 1st ${T(s1.name)} (${rec(s1)}) vs 4th ${T(s4.name)} (${rec(s4)})`,
       `- Semifinal B: 2nd ${T(s2.name)} (${rec(s2)}) vs 3rd ${T(s3.name)} (${rec(s3)})`,
       ...m.table.slice(4).map((t, i) => `- ${i + 5}th ${T(t.name)} (${rec(t)}) is outside the top 4`),
       gap > 0 ? `${T(s2.name)} (2nd) is ${gap} game${gap === 1 ? '' : 's'} ahead of ${T(s3.name)} (3rd) for the last twice-to-beat spot.` : `${T(s2.name)} and ${T(s3.name)} have the same record; the tiebreak gives ${T(s2.name)} the last twice-to-beat spot.`,
       ...m.notes.map(n => `Tiebreak: ${teamsTc(n)}.`),
       sd.isCurrent ? (m.sched.length ? `${plural(m.sched.length, 'regular-season game')} left on the schedule.` : 'No regular-season games left on the schedule.') : '',
+      lock,
     ].filter(Boolean);
     out.playoffs = {
-      kicker: `Playoff picture · ${asOf}`, section: 'Playoff picture (the semifinal matchups if the season ended now)', where,
+      kicker: `Playoff picture · ${asOf}`, section: live ? 'Playoff picture (the semifinal matchups if the season ended now)' : 'Playoff picture (the settled semifinal matchups)', where,
       facts: lines.join('\n'),
-      focus: sd.isCurrent
+      focus: live
         ? 'Describe the playoff picture: who holds the twice-to-beat spots, how tight the race for them is, and the semifinal matchups as they stand. Don\'t recap the whole table.'
         : 'Describe how the regular season set up the playoffs: who earned twice to beat and the semifinal matchups it produced.',
     };
@@ -20285,7 +20340,7 @@ app.post('/admin/papawis/courts/:id/writeup/generate', requireAuth, express.json
   const factsText = p.facts.join('\n');
   const allowed = new Set(factsText.match(/\d+(?:[.,]\d+)?/g) || []);
   const voice = pickVoice('home', { date: manilaTodayStr() });
-  const flavor = voiceFlavor(voice, court.id);
+  const flavor = voiceFlavor(voice, court.id, 200);
   // Write → check → rewrite (lib/writer.js), 3 tries, the same voice as every other writer:
   // numbers from the facts, the shared claim/banned/voice checks, length, then the AI fact
   // check once the free ones pass.
