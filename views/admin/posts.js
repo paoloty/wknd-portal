@@ -225,7 +225,10 @@ export function adminPostEditorBody({ post, teams = [] } = {}) {
       document.getElementById('ap-title').value = j.title;
       quill.clipboard.dangerouslyPasteHTML(j.body_html);
       aiGenerated = true;
-      status.textContent = 'Generated'; status.className = 'agm-gen-status agm-gen-status--ok';
+      // The writer's checks (lib/writer.js): anything still wrong after the rewrite is listed.
+      var probs = j.problems || [];
+      status.textContent = probs.length ? 'Generated, but check it: ' + probs.map(function (p) { return p.replace(/^it /, ''); }).join(' · ') : 'Generated';
+      status.className = 'agm-gen-status agm-gen-status--' + (probs.length ? 'err' : 'ok');
     } catch(e) {
       status.textContent = e.message; status.className = 'agm-gen-status agm-gen-status--err';
     } finally {

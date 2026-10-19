@@ -538,7 +538,9 @@ document.querySelectorAll('[data-gen-article]').forEach(function(btn) {
       var d = await r.json();
       if (!r.ok || !d.text) throw new Error(d.error || 'No response');
       if (ta) ta.value = d.text;
-      if (msg) { msg.style.color = 'var(--text-muted)'; msg.textContent = 'Generated — save to publish'; }
+      // The writer's checks (lib/writer.js): anything still wrong after the rewrite is listed.
+      var probs = d.problems || [];
+      if (msg) { msg.style.color = probs.length ? '#f59332' : 'var(--text-muted)'; msg.textContent = probs.length ? 'Generated, but check it: ' + probs.map(function (p) { return p.replace(/^it /, ''); }).join(' · ') : 'Generated — save to publish'; }
     } catch(e) {
       if (ta) ta.value = '';
       if (msg) { msg.style.color = '#f87171'; msg.textContent = e.message || 'Error'; }

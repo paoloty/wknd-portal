@@ -200,7 +200,12 @@
         var ta = document.querySelector(target === 'copotg' ? '[data-copotg-text]' : '[data-potg-text]');
         if (ta) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); }
       }
-      if (status) status.textContent = 'Written. Read it over, then Save content.';
+      // The writer rewrites until every check passes (lib/writer.js); after 3 tries it says
+      // what's still wrong, so the admin can fix it by hand or write again.
+      var missed = d.missed || [];
+      if (status) status.textContent = missed.length
+        ? 'Written, but check it: ' + missed.map(function (m) { return m.replace(/^it /, '').replace(/MAJOR HIGHLIGHT: [A-Z' -]+(\([^)]*\))?:\s*/, 'highlight: '); }).join(' · ') + '. Fix it by hand or write again.'
+        : 'Written. Read it over, then Save content.';
     }).catch(function (err) {
       ui().toast(err.message, { tone: 'error' });
     }).then(function () { btn.disabled = false; btn.textContent = label; });
