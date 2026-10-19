@@ -43,6 +43,7 @@ const SSC_TEMPLATES = [
   { key: 'bottom', label: 'Lower third' },
   { key: 'stacked', label: 'Box score' },
   { key: 'premium', label: 'Premium' },
+  { key: 'premium-r', label: 'Premium R' },
   { key: 'hero', label: 'Hero' },
   { key: 'card', label: 'Card' },
   { key: 'scoreboard', label: 'Scoreboard' },

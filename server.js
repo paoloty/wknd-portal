@@ -4378,9 +4378,15 @@ async function measureTextWidth(text, { fontFamily, fontSize, fontWeight = 800, 
 // highest stat gets a dedicated "hero" treatment (bigger, accent-colored,
 // glowing) — everywhere else, accent only touches the watermark stroke, the
 // line, and the context pill, never the (deliberately plain white) numbers.
+// opts.side 'right' ("Premium R") mirrors the whole cluster onto the right edge:
+// every x goes through mx(), text anchors at its end, and the rotated name and
+// WKND keep reading bottom-to-top, so their pivots move by a cap height.
 async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) {
   const W = 1080, H = 1920;
   const accent = resolveAccent(opts.accent);
+  const right = opts.side === 'right';
+  const mx = x => (right ? W - x : x);
+  const anchor = right ? ' text-anchor="end"' : '';
   const font = COVER_SVG_FONT;
   // Premium-only typographic departure from the rest of the family (which all use
   // COVER_SVG_FONT throughout): the big stat numbers in the site's own numerals font
@@ -4478,7 +4484,7 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   // metrics.
   const pillPadX = 8, pillH = 44;
   const pillW = Math.round(contextText.length * 11.2 + pillPadX * 2);
-  const pillX = colX - pillPadX;
+  const pillX = right ? W - colX + pillPadX - pillW : colX - pillPadX;
   const pillY = contextY - pillH + 12;
   const pillCx = pillX + pillW / 2;
   const pillCy = pillY + pillH / 2;
@@ -4499,15 +4505,15 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const heroNumY = heroLabelY - labelFsz - 20;
 
   const heroDisplay = STATS.length ? (STATS[0].isPct ? (STATS[0].value === null ? '—' : STATS[0].value) : STATS[0].value) : '';
-  const heroRow = STATS.length ? `<text x="${colX}" y="${heroNumY}" font-family="${valueFont}" font-size="${heroNumberFsz}" font-weight="900" fill="${accent.bg}" stroke="#000" stroke-width="4" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#glow)">${heroDisplay}</text>
-    <text x="${colX}" y="${heroLabelY}" font-family="${labelFont}" font-size="${labelFsz}" font-weight="700" letter-spacing="3" fill="#c3cbd8" filter="url(#txt)">${escXml(STATS[0].label)}</text>` : '';
+  const heroRow = STATS.length ? `<text x="${mx(colX)}"${anchor} y="${heroNumY}" font-family="${valueFont}" font-size="${heroNumberFsz}" font-weight="900" fill="${accent.bg}" stroke="#000" stroke-width="4" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#glow)">${heroDisplay}</text>
+    <text x="${mx(colX)}"${anchor} y="${heroLabelY}" font-family="${labelFont}" font-size="${labelFsz}" font-weight="700" letter-spacing="3" fill="#c3cbd8" filter="url(#txt)">${escXml(STATS[0].label)}</text>` : '';
 
   const rows = regularStats.map((s, i) => {
     const numY = regularNumYs[i];
     const labelY = numY + labelFsz + 20;
     const display = s.isPct ? (s.value === null ? '—' : s.value) : s.value;
-    return `<text x="${colX}" y="${numY}" font-family="${valueFont}" font-size="${numberFsz}" font-weight="900" fill="#ffffff" fill-opacity="${s.isPct && s.value === null ? '0.5' : '1'}" stroke="#000" stroke-width="4" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${display}</text>
-    <text x="${colX}" y="${labelY}" font-family="${labelFont}" font-size="${labelFsz}" font-weight="700" letter-spacing="3" fill="#c3cbd8" filter="url(#txt)">${escXml(s.label)}</text>`;
+    return `<text x="${mx(colX)}"${anchor} y="${numY}" font-family="${valueFont}" font-size="${numberFsz}" font-weight="900" fill="#ffffff" fill-opacity="${s.isPct && s.value === null ? '0.5' : '1'}" stroke="#000" stroke-width="4" stroke-opacity="0.35" paint-order="stroke fill" filter="url(#txt)">${display}</text>
+    <text x="${mx(colX)}"${anchor} y="${labelY}" font-family="${labelFont}" font-size="${labelFsz}" font-weight="700" letter-spacing="3" fill="#c3cbd8" filter="url(#txt)">${escXml(s.label)}</text>`;
   }).join('\n');
 
   // Accent line covers the remaining space above the name up to the stats —
@@ -4526,7 +4532,9 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const nameWidth = await measureTextWidth(displayName, { fontFamily: font, fontSize: nameFsz, fontWeight: 800, letterSpacing: 7 });
   const nameTop = nameY - nameWidth;
   const lineGap = 20;
-  const lineX = nameX - (nameFsz * 0.72) / 2, lineTop = statBlockTop, lineBottom = nameTop - lineGap;
+  const nameCap = nameFsz * 0.72;
+  const namePivotX = right ? W - nameX + nameCap : nameX;
+  const lineX = mx(nameX - nameCap / 2), lineTop = statBlockTop, lineBottom = nameTop - lineGap;
 
   // WKND watermark: rotated, big, and pinned flush to the canvas's own
   // bottom-left corner (not the stat block's) — "0 left" means the OUTER
@@ -4541,7 +4549,7 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const wkndFsz = 380;
   const wkndSpan = nameY - statBlockTop;
   const wkndCapHeight = wkndFsz * 0.72;
-  const wkndX = wkndCapHeight + 4;
+  const wkndX = right ? W - 4 : wkndCapHeight + 4;
   const wkndY = H - 4;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
@@ -4553,26 +4561,26 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
       <feDropShadow dx="0" dy="0" stdDeviation="14" flood-color="${accent.bg}" flood-opacity="0.65"/>
       <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
     </filter>
-    <linearGradient id="scrim" x1="0" y1="0" x2="1" y2="0">
+    <linearGradient id="scrim" x1="${right ? 1 : 0}" y1="0" x2="${right ? 0 : 1}" y2="0">
       <stop offset="0%" stop-color="#020817" stop-opacity="0.92"/>
       <stop offset="40%" stop-color="#020817" stop-opacity="0.72"/>
       <stop offset="75%" stop-color="#020817" stop-opacity="0.25"/>
       <stop offset="100%" stop-color="#020817" stop-opacity="0"/>
     </linearGradient>
-    <radialGradient id="glowbg" cx="15%" cy="78%" r="55%">
+    <radialGradient id="glowbg" cx="${right ? 85 : 15}%" cy="78%" r="55%">
       <stop offset="0%" stop-color="${accent.bg}" stop-opacity="0.35"/>
       <stop offset="100%" stop-color="${accent.bg}" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
-  <rect x="0" y="0" width="480" height="${H}" fill="url(#scrim)"/>
-  <rect x="0" y="0" width="480" height="${H}" fill="url(#glowbg)"/>
+  <rect x="${right ? W - 480 : 0}" y="0" width="480" height="${H}" fill="url(#scrim)"/>
+  <rect x="${right ? W - 480 : 0}" y="0" width="480" height="${H}" fill="url(#glowbg)"/>
 
   <text x="${wkndX}" y="${wkndY}" transform="rotate(-90 ${wkndX} ${wkndY})" font-family="${wkndFont}" font-size="${wkndFsz}" font-weight="700" textLength="${wkndSpan}" lengthAdjust="spacing" fill="none" stroke="${accent.bg}" stroke-width="3" stroke-opacity="0.26">WKND</text>
 
   <line x1="${lineX}" y1="${lineTop}" x2="${lineX}" y2="${lineBottom}" stroke="${accent.bg}" stroke-width="2" opacity="0.55"/>
 
-  <text x="${nameX}" y="${nameY}" transform="rotate(-90 ${nameX} ${nameY})" font-family="${font}" font-size="${nameFsz}" font-weight="800" letter-spacing="7" fill="#ffffff" filter="url(#txt)">${displayName}</text>
+  <text x="${namePivotX}" y="${nameY}" transform="rotate(-90 ${namePivotX} ${nameY})" font-family="${font}" font-size="${nameFsz}" font-weight="800" letter-spacing="7" fill="#ffffff" filter="url(#txt)">${displayName}</text>
 
   ${heroRow}
 
@@ -4581,7 +4589,7 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   <rect x="${pillX}" y="${pillY}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="${accent.bg}"/>
   <text x="${pillCx}" y="${pillCy}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="19" font-weight="700" fill="${accent.text}">${contextText}</text>
 
-  <text x="${colX}" y="${handleY}" font-family="${font}" font-size="18" font-weight="700" letter-spacing="1.5" fill="#c3cbd8">${escXml(handleText)}</text>
+  <text x="${mx(colX)}"${anchor} y="${handleY}" font-family="${font}" font-size="18" font-weight="700" letter-spacing="1.5" fill="#c3cbd8">${escXml(handleText)}</text>
 </svg>`;
 
   return sharp(Buffer.from(svg), { density: 216 }).resize(W, H).png({ compressionLevel: 9 }).toBuffer();
@@ -8649,6 +8657,8 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
       // the `align` whitelist above), so it needs its own check rather than
       // falling out of that fallback logic.
       png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros });
+    } else if (req.query.align === 'premium-r') {
+      png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros, side: 'right' });
     } else if (req.query.align === 'hero') {
       // Same reasoning as Premium's own branch above — Hero isn't part of
       // the align whitelist (it has no left/center/right variants), so it
