@@ -179,14 +179,13 @@
   function writeWithAi(btn) {
     var target = btn.getAttribute('data-ai-target');
     var status = document.querySelector('[data-ai-status="' + target + '"]');
-    var potg = document.querySelector('input[name="potg_player_id"]:checked');
-    var coPick = document.querySelector('[data-copotg-pick]');
-    var potgId = potg ? potg.value : null, coId = coPick ? coPick.value : '';
+    var potgIn = document.querySelector('[data-potg-id]'), coIn = document.querySelector('[data-copotg-id]');
+    var potgId = potgIn && potgIn.value ? potgIn.value : null, coId = coIn ? coIn.value : '';
     // Each Player of the Game gets their own spotlight; the other one is passed as shared_with.
     var body = target === 'copotg'
       ? { player_id: coId, shared_with: potgId }
       : { player_id: potgId, shared_with: coId, co_player_id: coId };
-    if (target === 'copotg' && !coId) { ui().toast('Pick the co-player of the game first.', { tone: 'error' }); return; }
+    if (target === 'copotg' && !coId) { ui().toast('Tick a second player first.', { tone: 'error' }); return; }
     if (target === 'recap') { var ctx = document.querySelector('[data-recap-context]'); body.context = ctx ? ctx.value : ''; }
     var label = btn.textContent;
     btn.disabled = true; btn.textContent = 'Writing…';
@@ -282,7 +281,7 @@
       return;
     }
     if (t.matches('[data-cover-file]')) { uploadCover(t); return; }
-    if (t.matches('[data-copotg-pick]')) { syncCoPotg(); return; }
+    if (t.matches('[data-potg-pick]')) { syncPotg(t); return; }
     var win = t.closest('[data-pick-window]');
     if (win && t.name === 'closed') {
       post(win.getAttribute('data-pick-window'), { closed: t.value })
@@ -291,18 +290,53 @@
     }
   });
 
-  // The co-POTG write-up shows only once a co-player is picked.
-  function syncCoPotg() {
-    var pick = document.querySelector('[data-copotg-pick]');
+  // Player of the game: tick one, or two to share the award. The tick order is kept in
+  // data-potg-order: the first is the POTG, the second the co-POTG. Each has a write-up box;
+  // when the POTG is unticked the co-POTG moves up, write-up and all.
+  function syncPotg(changed) {
+    var wrap = document.querySelector('[data-potg-wrap]');
+    if (!wrap) return;
+    var picks = [].slice.call(wrap.querySelectorAll('[data-potg-pick]'));
+    var before = (wrap.getAttribute('data-potg-order') || '').split(',').filter(Boolean);
+    var checked = picks.filter(function (p) { return p.checked; }).map(function (p) { return p.value; });
+    var order = before.filter(function (id) { return checked.indexOf(id) !== -1; });
+    checked.forEach(function (id) { if (order.indexOf(id) === -1) order.push(id); });
+    order = order.slice(0, 2);
+    var potgTa = document.querySelector('[data-potg-text]'), coTa = document.querySelector('[data-copotg-text]');
+    if (changed && !changed.checked && before[0] === changed.value && before[1] && potgTa && coTa) {
+      var t = potgTa.value; potgTa.value = coTa.value; coTa.value = t;
+    }
+    wrap.setAttribute('data-potg-order', order.join(','));
+    var nameOf = function (id) { var p = picks.filter(function (x) { return x.value === id; })[0]; return p ? p.getAttribute('data-name') : ''; };
+    picks.forEach(function (p) {
+      p.disabled = !p.checked && order.length >= 2;
+      var tag = p.parentNode.querySelector('[data-potg-tag]');
+      if (tag) tag.textContent = order.length > 1 && order[1] === p.value ? 'CO-POTG' : 'POTG';
+    });
+    var potgIn = document.querySelector('[data-potg-id]'), coIn = document.querySelector('[data-copotg-id]');
+    if (potgIn) potgIn.value = order[0] || '';
+    if (coIn) coIn.value = order[1] || '';
+    var l1 = document.querySelector('[data-potg-label]'), l2 = document.querySelector('[data-copotg-label]');
+    if (l1) l1.textContent = order[0] ? 'Write-up · ' + nameOf(order[0]) : 'Write-up';
+    if (l2) l2.textContent = 'Write-up · ' + nameOf(order[1]);
     var box = document.querySelector('[data-copotg-fields]');
-    if (pick && box) box.hidden = !pick.value;
+    if (box) box.hidden = order.length < 2;
+    var hint = document.querySelector('[data-potg-hint]');
+    if (hint) hint.textContent = !order.length ? 'None ticked: the top player by the box score is picked automatically.'
+      : order.length > 1 ? 'Two picked: they share the award, both get full POTG credit.' : 'Tick a second player to share the award.';
   }
 
   function init() {
     if (!root()) return;
-    syncCoPotg();
     var form = document.getElementById('game-content');
-    if (form) form.addEventListener('reset', function () { setTimeout(syncCoPotg, 0); });
+    // Discard: the boxes and write-ups reset themselves; put the tick order back too.
+    if (form) form.addEventListener('reset', function () {
+      setTimeout(function () {
+        var wrap = document.querySelector('[data-potg-wrap]');
+        if (wrap) wrap.setAttribute('data-potg-order', wrap.getAttribute('data-potg-initial') || '');
+        syncPotg();
+      }, 0);
+    });
     var side = store('agd-team-' + gameId());
     if (side === 'b' && document.querySelector('[data-team-panel="b"]')) showTeam('b');
     initRecap();

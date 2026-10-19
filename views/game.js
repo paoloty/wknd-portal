@@ -1859,7 +1859,7 @@ const perfBg = s => `<img class="pl-card__bg" src="${playerPhotoUrl(s.player_id,
 // code-picked hook), game score, the head-to-head line, then their points in every earlier
 // meeting with tonight as the last bar — against their average there and their best.
 // hist: { series, dates } from server.js meetingPoints. POTG gets the amber glow.
-function duelPerformer(s, opp, potgId, say, stats, hist, co = false) {
+function duelPerformer(s, opp, potgId, say, stats, hist, co = false, writeup = '') {
   const n = perfName(s.name);
   const past = hist?.series || [];
   const tonight = n0(s.pts);
@@ -1880,7 +1880,7 @@ function duelPerformer(s, opp, potgId, say, stats, hist, co = false) {
     line: stats, series: past, dates: hist?.dates || [], avg, tonight,
     barsKey: `Points vs ${tc(opp)} · tonight last`,
     noBars: past.length ? `Only ${past.length} earlier meeting${past.length === 1 ? '' : 's'} with ${tc(opp)}` : `First meeting with ${tc(opp)}`,
-    foot, end: say(s),
+    foot, end: say(s), writeup,
   };
 }
 
@@ -1891,6 +1891,7 @@ function castCard(s, say, watchOf = () => null) {
     ${perfHead(s, ' pl-av--md', `<span class="gd-pc__pts"><b class="font-condensed">${n0(s.pts)}</b><small>PTS</small></span>`)}
     ${s.coPotg ? '<span class="gd-hook gd-hook--potg gd-pc__hook">Co-Player of the Game</span>' : s.badge ? `<span class="gd-hook gd-pc__hook">${escHtml(s.badge)}</span>` : ''}
     <span class="gd-pc__ln">${escHtml(castLine(s))}</span>
+    ${s.writeup ? `<p class="gd-pc__writeup">${escHtml(s.writeup)}</p>` : ''}
     ${watchLine(watchOf(s.player_id))}
     ${say(s, true)}
   </article>`;
@@ -1989,8 +1990,11 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
   const elsewhere = watched.filter(w => !shown.has(w.id));
   const lines = duelLines(dc.a, dc.b);
   const co = [...dc.castA, ...dc.castB].some(s => s.coPotg);
-  const pa = duelPerformer(dc.a, oppOf(dc.a), potgId, say, lines[0], hist[dc.a.player_id], co);
-  const pb = duelPerformer(dc.b, oppOf(dc.b), potgId, say, lines[1], hist[dc.b.player_id], co);
+  // Each Player of the Game's write-up goes on their card, duel or cast.
+  const clean = t => String(t || '').replace(/\*\*/g, '').trim();
+  const writeups = { ...(potgId ? { [potgId]: clean(game.potg_writeup) } : {}), ...(co ? { [game.co_potg_player_id]: clean(game.co_potg_writeup) } : {}) };
+  const pa = duelPerformer(dc.a, oppOf(dc.a), potgId, say, lines[0], hist[dc.a.player_id], co, writeups[dc.a.player_id]);
+  const pb = duelPerformer(dc.b, oppOf(dc.b), potgId, say, lines[1], hist[dc.b.player_id], co, writeups[dc.b.player_id]);
   const max = duelScale(pa, pb);
   const bothInDuel = watched.length === 2 && watched.every(w => w.id === dc.a.player_id || w.id === dc.b.player_id);
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
@@ -1999,7 +2003,7 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
     <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}; amber marks who won each stat. Then the rest of each team’s standouts, ranked by game score${co ? ', the co-Player of the Game first' : ''}.</p>
     <div class="gd-duel">${duelCard(pa, max)}${duelCard(pb, max)}</div>${barsScript()}
     <p class="gd-verdict">${verdict}</p>
-    ${castRow([...dc.castA, ...dc.castB], elsewhere, say, watchOf)}
+    ${castRow([...dc.castA, ...dc.castB].map(s => ({ ...s, writeup: writeups[s.player_id] || '' })), elsewhere, say, watchOf)}
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
   </section>`;
 }

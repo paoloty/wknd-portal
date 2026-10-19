@@ -156,32 +156,32 @@ function contentTab({ game, st, stats, colors, colorOfTeam }) {
   if (st === 'upcoming') return emptyState({ title: 'Content comes after the game', sub: 'Import the game file first. Then write the recap and pick the player of the game here.' });
   if (st === 'score') return section({ title: 'Cover', note: '· the recap and player of the game need the box score', bodyHtml: `<div class="aui-panel">${coverBlock(game)}</div>` });
 
-  // Player of the game: the winners' top five by PER (plus a hand-picked one from outside it).
+  // Player of the game: the winners' top five by PER (plus hand-picked ones from outside it).
+  // Tick one, or two to share the award: the first ticked is the POTG, the second the co-POTG
+  // (public/admin-game.js keeps the order in the hidden inputs and each one's write-up box).
   const a = n(game.team_a_score), b = n(game.team_b_score);
   const winner = String(a >= b ? game.team_a_name : game.team_b_name).toUpperCase();
   const top = stats.filter(s => String(s.team_name || '').toUpperCase() === winner).sort((x, y) => perOf(y) - perOf(x)).slice(0, 5);
-  if (game.manual_potg_player_id && !top.some(p => p.player_id === game.manual_potg_player_id)) {
-    const m = stats.find(s => s.player_id === game.manual_potg_player_id);
+  for (const id of [game.manual_potg_player_id, game.co_potg_player_id]) {
+    const m = id && !top.some(p => p.player_id === id) && stats.find(s => s.player_id === id);
     if (m) top.push(m);
   }
   const chosen = game.manual_potg_player_id || top[0]?.player_id || '';
-  const potgList = top.length ? `<div class="aui-choices agd-potg">${top.map(p => {
+  const co = chosen && game.co_potg_player_id !== chosen && top.some(p => p.player_id === game.co_potg_player_id) ? String(game.co_potg_player_id) : '';
+  const order = [chosen, co].filter(Boolean);
+  const nameOf = id => displayPlayerName(top.find(p => p.player_id === id)?.name || '');
+  const potgList = top.length ? `<div class="aui-choices agd-potg" data-potg-wrap data-potg-order="${attr(order.join(','))}" data-potg-initial="${attr(order.join(','))}">${top.map(p => {
     const name = displayPlayerName(p.name || '');
-    return `<label class="aui-choice"><input type="radio" name="potg_player_id" value="${attr(p.player_id)}"${p.player_id === chosen ? ' checked' : ''}><span class="aui-choice__body">${avatar(name, colorOfTeam(p.team_name), { size: 28, playerId: p.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span><span class="aui-cell__sub">${n(p.pts)} pts · ${n(p.reb)} reb · ${n(p.ast)} ast</span></span><span class="agd-per-tag">PER ${perOf(p).toFixed(1)}</span></span></label>`;
-  }).join('')}</div>` : '<p class="aui-muted">No stats to choose from.</p>';
-
-  // Co-player of the game: optional, any winner (best PER first), with its own write-up.
-  const co = String(game.co_potg_player_id || '');
-  const winners = stats.filter(s => String(s.team_name || '').toUpperCase() === winner).sort((x, y) => perOf(y) - perOf(x));
-  const coBlock = winners.length > 1 ? `<div class="agd-copotg">
-        ${field({ label: 'Co-player of the game (optional)', name: 'co_potg_player_id', type: 'select', value: co, attrs: 'data-copotg-pick',
-          options: [['', 'None'], ...winners.map(p => [p.player_id, `${displayPlayerName(p.name || '')} · ${n(p.pts)} pts · ${n(p.reb)} reb · ${n(p.ast)} ast`])],
-          help: 'Shares the award. Both get full POTG credit on their profiles.', wide: true })}
-        <div class="agd-copotg__fields" data-copotg-fields${co ? '' : ' hidden'}>
-          <label class="aui-field is-wide" for="f-copotg"><span class="aui-field__label">Co-player write-up</span>
-            <textarea class="aui-input" rows="4" id="f-copotg" name="co_potg_writeup" placeholder="Why they shared the award…" data-copotg-text>${escHtml(game.co_potg_writeup || '')}</textarea></label>
-          <div class="aui-row">${button('✦ Write with AI', { kind: 'secondary', attrs: `data-ai="/admin/games/${attr(game.id)}/generate-potg" data-ai-target="copotg"` })}<span class="aui-muted" data-ai-status="copotg"></span></div>
-        </div>
+    const i = order.indexOf(p.player_id);
+    return `<label class="aui-choice"><input type="checkbox" value="${attr(p.player_id)}" data-potg-pick data-name="${attr(name)}"${i !== -1 ? ' checked' : ''}${order.length > 1 && i === -1 ? ' disabled' : ''}><span class="aui-choice__body"><span class="agd-tick" aria-hidden="true"></span>${avatar(name, colorOfTeam(p.team_name), { size: 28, playerId: p.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span><span class="aui-cell__sub">${n(p.pts)} pts · ${n(p.reb)} reb · ${n(p.ast)} ast</span></span><span class="agd-potg-tag" data-potg-tag>${order.length > 1 && i === 1 ? 'CO-POTG' : 'POTG'}</span><span class="agd-per-tag">PER ${perOf(p).toFixed(1)}</span></span></label>`;
+  }).join('')}</div>
+    <input type="hidden" name="potg_player_id" value="${attr(chosen)}" data-potg-id>
+    <input type="hidden" name="co_potg_player_id" value="${attr(co)}" data-copotg-id>
+    <p class="aui-muted agd-potg-hint" data-potg-hint>${order.length > 1 ? 'Two picked: they share the award, both get full POTG credit.' : 'Tick a second player to share the award.'}</p>` : '<p class="aui-muted">No stats to choose from.</p>';
+  const coBlock = top.length > 1 ? `<div class="agd-copotg" data-copotg-fields${co ? '' : ' hidden'}>
+        <label class="aui-field is-wide" for="f-copotg"><span class="aui-field__label" data-copotg-label>Write-up · ${escHtml(nameOf(co))}</span>
+          <textarea class="aui-input" rows="4" id="f-copotg" name="co_potg_writeup" placeholder="Why they shared the award…" data-copotg-text>${escHtml(game.co_potg_writeup || '')}</textarea></label>
+        <div class="aui-row">${button('✦ Write with AI', { kind: 'secondary', attrs: `data-ai="/admin/games/${attr(game.id)}/generate-potg" data-ai-target="copotg"` })}<span class="aui-muted" data-ai-status="copotg"></span></div>
       </div>` : '';
 
   const raw = game.game_writeup || '';
@@ -206,7 +206,7 @@ function contentTab({ game, st, stats, colors, colorOfTeam }) {
       title: 'Player of the game',
       bodyHtml: `<div class="aui-panel agd-potgwrap">
         ${potgList}
-        <label class="aui-field is-wide" for="f-potg"><span class="aui-field__label">Write-up</span>
+        <label class="aui-field is-wide" for="f-potg"><span class="aui-field__label" data-potg-label>Write-up${chosen ? ` · ${escHtml(nameOf(chosen))}` : ''}</span>
           <textarea class="aui-input" rows="4" id="f-potg" name="potg_writeup" placeholder="Why they were the player of the game…" data-potg-text>${escHtml(game.potg_writeup || '')}</textarea></label>
         <div class="aui-row">${button('✦ Write with AI', { kind: 'secondary', attrs: `data-ai="/admin/games/${attr(game.id)}/generate-potg" data-ai-target="potg"` })}<span class="aui-muted" data-ai-status="potg"></span></div>
         ${coBlock}
