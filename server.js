@@ -7700,6 +7700,8 @@ app.get('/admin/site', requireAuth, (req, res) => {
     { type: 'select', key: 'playoff_mode', value: po.mode, reload: true,
       options: [['auto', 'Auto'], ['playoffs', 'Playoffs'], ['finals', 'Finals'], ['champion', 'Champion'], ['off', 'Off']], label: 'Playoff mode',
       sub: `The playoff look: the header logo (outline "Playoffs" ribbon, then the trophy ball for the Finals), an amber header line, and the homepage scoreboard hero (champion hero for ${CHAMPION_DAYS} days after the Finals). Auto follows the schedule.<span class="block mt-1">Season ${escHtml(po.season)} auto: <b class="text-slate-300">${escHtml(po.auto.note)}</b> · now <b style="color:${po.phase ? '#f59332' : '#94a3b8'}">${po.phase ? phaseName[po.phase] : 'off'}</b></span>` },
+    { type: 'text', key: 'playoff_tip_time', value: getSetting('playoff_tip_time', ''), reload: true, placeholder: 'HH:MM', label: 'Tip-off time',
+      sub: `Shown next to the date in the homepage countdown (games don't store a time). 24-hour, Manila time. Empty = the picks cut-off (${escHtml(getSetting('picks_close_time', PICKS_CLOSE_DEFAULT))}).` },
   ], { title: 'Playoffs' }) + settingsPanel([
     { type: 'toggle', key: 'comments_enabled', value: flag('comments_enabled'), label: 'Comments & reactions', sub: 'Players comment and react across the site (game pages, posts, live updates). Admins can delete inline either way.' },
     { type: 'toggle', key: 'peer_ratings_enabled', value: flag('peer_ratings_enabled'), label: 'Player ratings', sub: `Roast-style player-to-player ratings on ${codeTag('/players/:id')}. Anonymous ratings stay masked except to the super admin.` },
@@ -7774,6 +7776,11 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     else if (key === 'picks_close_time' && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) setSetting(key, String(value));
     else if (key === 'mvp_reveal_mode' && MVP_REVEAL_MODES.includes(String(value))) setSetting(key, String(value));
     else if (key === 'playoff_mode' && PLAYOFF_MODES.includes(String(value))) { setSetting(key, String(value)); headerInfoCache.at = 0; }
+    else if (key === 'playoff_tip_time') {
+      const v = String(value || '').trim();
+      if (v && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) return res.status(400).json({ error: 'Use HH:MM, 24-hour (e.g. 07:00)' });
+      setSetting(key, v);
+    }
     else if (key === 'mvp_bonus_close') {
       const v = String(value || '').trim();
       if (v && !/^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d$/.test(v)) return res.status(400).json({ error: 'Use YYYY-MM-DD HH:MM' });
@@ -12093,6 +12100,8 @@ function playoffsSectionData(season) {
   };
 }
 
+const PLAYOFF_HERO_PHOTOS = 4;
+
 // Homepage playoff hero (views/playoff-hero.js) for playoff mode's 'playoffs' / 'finals'
 // phases: the undecided series whose next game comes first (the Finals in the 'finals'
 // phase), the other live semi as the "Also" strip, and a cover photo from an earlier
@@ -12129,21 +12138,28 @@ function buildPlayoffHero(season, phase) {
     : (n === 0 ? `${b(H)} needs one win to reach the Finals. ${b(L)} has to beat them twice. Lose and go home.`
       : `Game ${n + 1} decides it: the winner goes to the Finals.`);
 
-  // The photo: a played meeting of these two teams with a cover, else a recent cover of either.
+  // The photos (up to PLAYOFF_HERO_PHOTOS, crossfading): played meetings of these two teams
+  // with a cover, in random order, topped up with recent covers of either team.
   const ids = new Set([main.high.id, main.low.id]);
   const covered = getAllGames().filter(g => g.has_cover && !g.under_review && played(g));
-  const meetings = covered.filter(g => pairKey(g.team_a_id, g.team_b_id) === pairKey(main.high.id, main.low.id));
-  const pool = meetings.length ? meetings
-    : covered.filter(g => ids.has(g.team_a_id) || ids.has(g.team_b_id)).sort((a, b) => ymd(b.date).localeCompare(ymd(a.date))).slice(0, 6);
-  const pg = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  const shuffle = list => list.map(g => [Math.random(), g]).sort((a, b) => a[0] - b[0]).map(([, g]) => g);
+  const meetings = shuffle(covered.filter(g => pairKey(g.team_a_id, g.team_b_id) === pairKey(main.high.id, main.low.id)));
+  const recent = covered.filter(g => !meetings.includes(g) && (ids.has(g.team_a_id) || ids.has(g.team_b_id)))
+    .sort((a, b) => ymd(b.date).localeCompare(ymd(a.date))).slice(0, 6);
+  const picked = [...meetings, ...shuffle(recent)].slice(0, PLAYOFF_HERO_PHOTOS);
   const day = d => new Date(`${ymd(d)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const photo = pg ? {
+  const photos = picked.map(pg => ({
     id: pg.id, href: `/games/${encodeURIComponent(gameSlug(pg))}`,
     caption: `${pg.team_a_name} vs ${pg.team_b_name} · ${day(pg.date)}${String(pg.season) !== String(season) ? `, S${pg.season}` : ''}`,
-  } : null;
+  }));
+
+  // Games carry no tip-off time: the Playoffs panel's tip-off time, else the picks cut-off.
+  const tip = /^\d{2}:\d{2}$/.test(getSetting('playoff_tip_time', '')) ? getSetting('playoff_tip_time', '') : getSetting('picks_close_time', PICKS_CLOSE_DEFAULT);
+  const [th, tm] = tip.split(':').map(Number);
+  const tipLabel = `${th % 12 || 12}${tm ? `:${String(tm).padStart(2, '0')}` : ''} ${th < 12 ? 'AM' : 'PM'}`;
 
   return {
-    season, label: main.label, gameNo: n + 1, format: main.format, line, photo,
+    season, label: main.label, gameNo: n + 1, format: main.format, line, photos, tipLabel,
     high: side(main, 'high'), low: side(main, 'low'),
     next: main.next ? { id: main.next.id, date: ymd(main.next.date) || null, href: `/games/${encodeURIComponent(gameSlug(main.next))}` } : null,
     also: other ? {

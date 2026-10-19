@@ -10243,7 +10243,6 @@ html.ppop-lock { overflow: hidden; }
   box-shadow: inset 0 1px 0 rgba(245,147,50,0.35);
 }
 .pso__bg { position: absolute; inset: 0; }
-.pso__bg img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; display: block; }
 .pso__shade {
   position: absolute; inset: 0;
   background:
@@ -10370,4 +10369,63 @@ html.ppop-lock { overflow: hidden; }
   .pso-also { flex-wrap: wrap; gap: 4px 12px; padding: 10px 16px; }
   .pso-also__kicker { flex-basis: 100%; }
   .pso-also__teams { font-size: 18px; }
+}
+
+/* ── Playoff mode: motion ─────────────────────────────────────────────────────
+   Header: a glint crosses the PLAYOFFS ribbon every 5s, and the ball bounces in on the
+   first page of a visit (html.wknd-intro, views/layout.js playoffFx). Background: sparks
+   rising behind the page (gold in champion week); the fixed layer sits at z-index -1, under
+   every card, so they only show in the gaps. Hero: 2–4 photos crossfade every 6s with a
+   slow zoom, each caption chip fading with its photo (same --i). Reduced motion: all off,
+   the first photo stays. */
+.wknd-logo__ribbon { position: relative; overflow: hidden; }
+.wknd-logo__ribbon::after {
+  content: ''; position: absolute; top: -2px; bottom: -2px; left: -40%; width: 35%;
+  background: linear-gradient(90deg, rgba(245,147,50,0), rgba(255,210,161,0.75), rgba(245,147,50,0));
+  animation: wkndGlint 5s ease-in-out 1.6s infinite;
+}
+@keyframes wkndGlint { 0% { left: -40%; } 22%, 100% { left: 120%; } }
+.wknd-intro .wknd-logo--ribbon .wknd-logo__ball { animation: wkndDrop 1.1s cubic-bezier(.3,.6,.4,1) 0.15s both; }
+@keyframes wkndDrop {
+  0% { transform: translateY(-1.8em); opacity: 0; }
+  12% { opacity: 1; }
+  45% { transform: translateY(0); }
+  62% { transform: translateY(-0.45em); }
+  78% { transform: translateY(0); }
+  88% { transform: translateY(-0.12em); }
+  100% { transform: translateY(0); }
+}
+
+.po-sparks { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.po-sparks span {
+  position: absolute; bottom: -10px; border-radius: 50%; background: var(--amber); opacity: 0;
+  animation: poSpark 9s linear infinite;
+}
+.is-playoffs--champion .po-sparks span { background: var(--gold); }
+@keyframes poSpark {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 0.55; }
+  80% { opacity: 0.25; }
+  100% { transform: translateY(-105vh); opacity: 0; }
+}
+
+.pso__slide { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; display: block; opacity: 0; }
+.pso__slide:first-child { opacity: 1; }
+.pso__credits .pso__credit:not(:first-child) { opacity: 0; visibility: hidden; }
+.pso--n2 .pso__slide { animation: psoSlide2 12s linear infinite; animation-delay: calc(var(--i) * 6s - 1.2s); }
+.pso--n3 .pso__slide { animation: psoSlide3 18s linear infinite; animation-delay: calc(var(--i) * 6s - 1.2s); }
+.pso--n4 .pso__slide { animation: psoSlide4 24s linear infinite; animation-delay: calc(var(--i) * 6s - 1.2s); }
+.pso--n2 .pso__credit { animation: psoCap2 12s linear infinite; animation-delay: calc(var(--i) * 6s - 1.2s); }
+.pso--n3 .pso__credit { animation: psoCap3 18s linear infinite; animation-delay: calc(var(--i) * 6s - 1.2s); }
+.pso--n4 .pso__credit { animation: psoCap4 24s linear infinite; animation-delay: calc(var(--i) * 6s - 1.2s); }
+@keyframes psoSlide2 { 0% { opacity: 0; transform: scale(1); } 10%, 50% { opacity: 1; } 60%, 100% { opacity: 0; transform: scale(1.08); } }
+@keyframes psoSlide3 { 0% { opacity: 0; transform: scale(1); } 6.67%, 33.33% { opacity: 1; } 40%, 100% { opacity: 0; transform: scale(1.08); } }
+@keyframes psoSlide4 { 0% { opacity: 0; transform: scale(1); } 5%, 25% { opacity: 1; } 30%, 100% { opacity: 0; transform: scale(1.08); } }
+@keyframes psoCap2 { 0% { opacity: 0; visibility: hidden; } 10%, 50% { opacity: 1; visibility: visible; } 60%, 100% { opacity: 0; visibility: hidden; } }
+@keyframes psoCap3 { 0% { opacity: 0; visibility: hidden; } 6.67%, 33.33% { opacity: 1; visibility: visible; } 40%, 100% { opacity: 0; visibility: hidden; } }
+@keyframes psoCap4 { 0% { opacity: 0; visibility: hidden; } 5%, 25% { opacity: 1; visibility: visible; } 30%, 100% { opacity: 0; visibility: hidden; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .po-sparks, .wknd-logo__ribbon::after { display: none; }
+  .wknd-intro .wknd-logo--ribbon .wknd-logo__ball, .pso__slide, .pso__credit { animation: none !important; }
 }

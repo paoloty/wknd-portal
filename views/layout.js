@@ -20,6 +20,13 @@ export function wkndTrophyBall(className = 'wknd-logo__trophy') {
 // Top-strip season label suffix per playoff phase ("Season 4 Playoffs").
 const PHASE_LABEL = { playoffs: 'Playoffs', finals: 'Finals', champion: 'Champions' };
 
+// Playoff mode's moving parts (styles.css "Playoff mode"): sparks rising behind the page
+// (gold in champion week), and the logo ball's bounce-in on the first page of a visit only
+// (html.wknd-intro, set once per tab session). Reduced motion turns both off in CSS.
+const SPARKS = [[4, 0, 4], [11, 3.1, 3], [19, 6.2, 4], [27, 1.4, 3], [36, 4.6, 4], [44, 8.3, 3], [52, 2.2, 4], [61, 5.4, 3], [69, 0.8, 4], [77, 7.1, 3], [85, 3.8, 4], [93, 6.7, 3]];
+const playoffFx = `<div class="po-sparks" aria-hidden="true">${SPARKS.map(([x, d, s]) => `<span style="left:${x}%;animation-delay:${d}s;width:${s}px;height:${s}px"></span>`).join('')}</div>
+  <script>try{if(!sessionStorage.getItem('wkndIntro')){sessionStorage.setItem('wkndIntro','1');document.documentElement.classList.add('wknd-intro');}}catch(e){}</script>`;
+
 // phase (lib/playoff-mode.js): 'playoffs' adds the outline "PLAYOFFS" ribbon under the
 // wordmark; 'finals' and 'champion' swap the ball for the trophy ball. Only the main header
 // passes a phase; every other logo stays the everyday mark.
@@ -682,6 +689,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   ${gaSnippet}
 </head>
 <body${!bare && !minimalHeader && hdr.playoffPhase ? ` class="is-playoffs is-playoffs--${hdr.playoffPhase}"` : ''}>
+  ${!bare && !minimalHeader && hdr.playoffPhase ? playoffFx : ''}
   ${bare ? body : minimalHeader ? `<div class="minimal-page">
     <header class="site-header site-header--minimal">
       <nav class="site-nav site-header--minimal__nav">

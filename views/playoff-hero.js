@@ -8,21 +8,23 @@ import { teamColor } from './utils.js';
 // the two teams behind it. One markup for every width: styles.css (.pso) places the same
 // cells as one wide row on desktop and as two team rows on phones.
 //
-// d (server.js buildPlayoffHero): { season, label, gameNo, format, high, low, next, photo,
-// also, picksHref, line } — high/low: { team: { id, name }, seed, wins, need };
-// next: { id, href, date } | null; photo: { id, href, caption } | null;
+// d (server.js buildPlayoffHero): { season, label, gameNo, format, high, low, next, photos,
+// tipLabel, also, picksHref, line } — high/low: { team: { id, name }, seed, wins, need };
+// next: { id, href, date } | null; photos: [{ id, href, caption }] (0–4, crossfading with a
+// slow zoom, each with its own caption chip); tipLabel: '6 AM';
 // also: { label, high, low, date, href } | null (the other live series).
 
 const ORD = ['1st', '2nd', '3rd', '4th'];
 const dayLabel = ymd => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 // Games have a date but no tip-off time, so the countdown is in days.
-function countdown(next, today) {
+function countdown(next, today, tip) {
   if (!next?.date) return { big: 'TBA', small: 'Date to be announced' };
   const days = Math.round((Date.parse(`${next.date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000);
-  if (days > 1) return { big: String(days), small: `days · ${dayLabel(next.date)}` };
-  if (days === 1) return { big: 'Tomorrow', small: dayLabel(next.date) };
-  if (days === 0) return { big: 'Game day', small: dayLabel(next.date) };
+  const when = `${dayLabel(next.date)}${tip ? ` · ${tip}` : ''}`;
+  if (days > 1) return { big: String(days), small: `days · ${when}` };
+  if (days === 1) return { big: 'Tomorrow', small: when };
+  if (days === 0) return { big: 'Game day', small: when };
   return { big: 'Final soon', small: `Played ${dayLabel(next.date)}, result coming` };
 }
 
@@ -41,17 +43,22 @@ function sideCells(side, key) {
 
 export function playoffScoreboard(d, today) {
   if (!d) return '';
-  const cd = countdown(d.next, today);
-  const photo = d.photo
-    ? `<div class="pso__bg" aria-hidden="true"><img src="/api/photo/${encodeURIComponent(d.photo.id)}" srcset="/api/photo/${encodeURIComponent(d.photo.id)}?w=640 640w, /api/photo/${encodeURIComponent(d.photo.id)}?w=960 960w, /api/photo/${encodeURIComponent(d.photo.id)} 1200w" sizes="(max-width: 760px) 100vw, 1200px" alt="" fetchpriority="high"></div>`
-    : '';
+  const cd = countdown(d.next, today, d.tipLabel);
+  const photos = d.photos || [];
+  const n = photos.length;
+  // Each slide and its caption share --i, so they fade in and out together (styles.css .pso--n2–4).
+  const photo = n ? `<div class="pso__bg" aria-hidden="true">${photos.map((p, i) => {
+    const src = `/api/photo/${encodeURIComponent(p.id)}`;
+    return `<img class="pso__slide" style="--i:${i}" src="${src}" srcset="${src}?w=640 640w, ${src}?w=960 960w, ${src} 1200w" sizes="(max-width: 760px) 100vw, 1200px" alt="" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}>`;
+  }).join('')}</div>` : '';
+  const credits = n ? `<div class="pso__credits">${photos.map((p, i) => `<a href="${escHtml(p.href)}" class="pso__credit" style="--i:${i}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${escHtml(p.caption)}</span></a>`).join('')}</div>` : '';
   const also = d.also ? `<a href="${escHtml(d.also.href)}" class="pso-also card">
     <span class="pso-also__kicker">${escHtml(d.also.date ? `Also ${dayLabel(d.also.date).split(',')[0]}` : 'Also in the playoffs')} · ${escHtml(d.also.label)}</span>
     <span class="pso-also__teams font-condensed">${[d.also.high, d.also.low].map(s => `<span class="pso-also__team"><b class="${s.seed <= 2 ? 'is-top' : ''}">${s.seed || ''}</b><span class="team-dot" style="background:${teamColor(s.team.name)}"></span>${escHtml(s.team.name)}</span>`).join('<span class="pso-also__vs">vs</span>')}</span>
     <span class="pso-also__go" aria-hidden="true">&rarr;</span>
   </a>` : '';
 
-  return `<section class="pso${d.photo ? ' has-photo' : ''}" aria-labelledby="pso-h">
+  return `<section class="pso${n ? ' has-photo' : ''}${n > 1 ? ` pso--n${n}` : ''}" aria-labelledby="pso-h">
   ${photo}
   <div class="pso__shade" aria-hidden="true"></div>
   <div class="pso__body">
@@ -72,7 +79,7 @@ export function playoffScoreboard(d, today) {
       </div>
     </div>
   </div>
-  ${d.photo ? `<a href="${escHtml(d.photo.href)}" class="pso__credit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${escHtml(d.photo.caption)}</span></a>` : ''}
+  ${credits}
 </section>
 ${also}`;
 }
