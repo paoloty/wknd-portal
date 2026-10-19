@@ -184,7 +184,7 @@ import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, g
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
-import { runWriter, numberProblems, claimProblems, bannedProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
+import { runWriter, numberProblems, claimProblems, bannedProblems, storyProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary, oddsPoints } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
@@ -2022,7 +2022,9 @@ const BANNER_POOL_BATCH_SIZE = 15;
 // (shape given by `fields`) and appends them to a growing, deduped pool stored in
 // site_settings, so traffic never costs more than ~1 API call per pool per day. Returns a
 // pick() function that each banner calls to grab a random row at render time.
-function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool }) {
+// checkRow(row) → problem lines: a fresh row that fails (the shared banned/claim/voice checks)
+// is dropped instead of entering the rotation.
+function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool, checkRow = null }) {
   function getPool() {
     try {
       const stored = JSON.parse(getSetting(settingKey, '') || '[]');
@@ -2044,7 +2046,12 @@ function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool
           const parts = line.split('/').map(s => s.trim().replace(/^["']|["']$/g, ''));
           return Object.fromEntries(fields.map((f, i) => [f, parts[i]]));
         })
-        .filter(p => fields.every(f => p[f]));
+        .filter(p => fields.every(f => p[f]))
+        .filter(p => {
+          const problems = checkRow ? checkRow(p) : [];
+          if (problems.length) console.warn(`${settingKey}: dropped a row (${problems.join(' | ')}): ${fields.map(f => p[f]).join(' / ')}`);
+          return !problems.length;
+        });
       if (fresh.length) {
         const dedupeKey = p => fields.map(f => p[f]).join('|').toLowerCase();
         const seen = new Set(existing.map(dedupeKey));
@@ -2072,28 +2079,46 @@ function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool
   };
 }
 
+// The banners write in the site's one voice (lib/ai-voices.js, the 'home' feature), like every
+// other writer — they used to have their own camp/swardspeak voice. Rows are checked like any
+// copy (banned words, claims, the voice) and a failing row never enters the rotation.
+function bannerVoiceBlock(seed) {
+  const voice = pickVoice('home', { date: manilaTodayStr() });
+  const flavor = voiceFlavor(voice, seed);
+  return `VOICE — ${voice.name}: ${voice.guide}${flavor ? `\n${flavor}` : ''}
+Banner copy is short, so one Tagalog hinge per part is plenty. Keep it friendly hype: no romantic framing, no sexual or suggestive innuendo. Banned: ${BANNED_HINT}.`;
+}
+function bannerRowCheck(row) {
+  const t = Object.values(row).join('. ');
+  const voice = pickVoice('home', { date: manilaTodayStr() });
+  return [...claimProblems(t, ''), ...bannedProblems(t), ...voiceProblems(t, voice)];
+}
+
 const SIGNUP_BANNER_FALLBACK_POOL = [
-  { headline: 'Your Roster Spot Is Waiting.', message: "We already saved you a spot on the roster. It's in the storage room. Come claim it bestie.", cta: 'Claim My Spot' },
-  { headline: 'No Bench Warmers This Season.', message: "You're already one of us — now make it official for this season, no gatekeeping.", cta: 'Confirm My Season' },
-  { headline: 'Main Character Season Only.', message: "Confirm before your bestie takes your usual spot on the court — we all know they're already thinking about it.", cta: 'Lock In My Spot 🔒' },
-  { headline: "You're Either On the Roster or Watching.", message: "Stop watching others play and start being the player everyone talks about in the group chat at 2am.", cta: 'This Is My Sign' },
-  { headline: 'The Best Decision This Season.', message: "The friendships, the runs, the drama, the wins — this season will give you stories you'll tell for years.", cta: 'Manifest It' },
+  { headline: 'Your Roster Spot Is Waiting.', message: "We saved you a spot naman. Confirm na for this season, tapos see you on the court.", cta: 'Claim My Spot' },
+  { headline: 'Season Na, Are You In?', message: "The group chat is asking about you pala. Lock in your roster spot this season.", cta: 'Count Me In' },
+  { headline: "Don't Make Sayang Your Spot.", message: "Confirm na for this season, kasi the runs won't be the same without you.", cta: 'Confirm My Season' },
+  { headline: 'Okay, Real Talk.', message: "You're already one of us, pero it's not official until you confirm this season.", cta: 'Lock It In' },
+  { headline: 'The Best Decision This Season.', message: "The runs, the wins, the kwento after. Sayang if you miss it, tapos you'll hear the stories for years.", cta: "I'm Back" },
 ];
 
 const pickSignupBannerMessage = createBannerMessagePool({
-  settingKey: 'signup_banner_msgs',
+  // v2 (2026-10-20): the shared voice — a fresh pool, the old camp-voice rows drop out.
+  settingKey: 'signup_banner_msgs_v2',
   fields: ['headline', 'message', 'cta'],
   fallbackPool: SIGNUP_BANNER_FALLBACK_POOL,
+  checkRow: bannerRowCheck,
   buildPrompt: (existing) => {
     const avoidSample = existing.slice(-20).map(p => `- "${p.headline}" / "${p.message}"`).join('\n');
     return `Write ${BANNER_POOL_BATCH_SIZE} rows for a promo banner shown to EXISTING MEMBERS of a recreational weekend basketball league in the Philippines, prompting them to confirm their spot for the upcoming SEASON. These are already-registered members, not newcomers — the ask is "lock in your roster spot this season," not "join the league" or "register." Never use the words "register" or "sign up for the league" — this is season-specific, and season signup is exclusive to members who've already registered.
 
-Voice: mix English with Taglish (natural Filipino-English code-switching, not forced). Channel cheeky, campy Filipino gay humor (bekimon/swardspeak-flavored — words like "bes," "chika," "keri," "werpa," "the audacity," "promise," "charot" are welcome where natural) — playful teasing, gossip/chismis energy, dramatic camp sass, backhanded-but-loving compliments. Do NOT use romantic framing (no "love story," "date," couple-talk) and do NOT use sexual or sensual innuendo — keep it about friendly shade and hype, not romance or anything suggestive. Still genuinely enticing, not just jokes for jokes' sake.
+${bannerVoiceBlock('signup_banner')}
+Still genuinely enticing, not just jokes for jokes' sake.
 
 Each row has three parts: a short punchy headline (4-8 words, title case), a longer supporting sentence (max 20 words), and a catchy 2-5 word call-to-action button label. A fitting emoji is welcome on any part.
-- "The Audacity To Ghost Us?" / "Alam namin gustong-gusto mo bumalik, wag ka nang mag-pa-cute pa. Chika, confirm ka na." / Keri Ko 'To 💅
-- "Sis, We See You Scrolling." / "Oo na, alam namin sinusundan mo kami sa group chat. Tara na, confirm ka na rin." / Caught In 4K
-- "No Bench Warmers This Season." / "You're already one of us — now make it official, walang gatekeeping dito." / Confirm My Season
+- "Season Na, Are You In?" / "Your roster spot is waiting naman, tapos the group chat keeps asking if you're back." / Count Me In
+- "Don't Make Sayang Your Spot." / "Confirm na for this season, kasi the runs won't be the same without you." / Confirm My Season
+- "Okay, Real Talk." / "You're already one of us pala, so make it official and lock in this season." / Lock It In
 
 Do NOT mention any specific date, deadline, or time limit. Every row must be distinct — no near-duplicates.${avoidSample ? `\n\nROWS ALREADY IN ROTATION (do NOT repeat these or close variations):\n${avoidSample}` : ''}
 
@@ -2102,27 +2127,30 @@ Output exactly one "headline / sentence / button label" row per line, no numberi
 });
 
 const REGISTRATION_BANNER_FALLBACK_POOL = [
-  { pill: 'Main Character Era 🔥', headline: 'Your Villain Arc Starts Here.', message: "All genders. All skill levels. All unresolved competitive trauma. We have a jersey for that.", cta: 'Let Me Cook 🔥', note: "Mabilis lang 'to, promise. Mas matagal pa mag-warm up." },
-  { pill: 'No Gatekeeping ✨', headline: "We Don't Discriminate.", message: "Except against ball hogs. And even then — only a little. Lovingly. Register now.", cta: 'Sign Me Up Sis', note: 'Two minutes lang, bes. Kaya mo yan.' },
-  { pill: 'Court Is In Session 💁', headline: 'We Have a Spot With Your Name On It.', message: "It's literally sitting in the storage room. Come register and get it bestie.", cta: "That's My Jersey", note: 'Quicker than your pre-game stretch. Charot.' },
-  { pill: 'Bestie Alert 👀', headline: "Don't Let Your Bestie Play Without You.", message: "Imagine watching your best friend get a trophy while you sat at home. Haunting. Register now.", cta: 'Not On My Watch', note: 'Takes a few minutes. The FOMO lasts longer.' },
-  { pill: 'Manifesting Your Bag 💰', headline: 'The Best Decision You Will Make.', message: "The friendships, the runs, the drama, the wins — join us and get stories you'll tell for years.", cta: 'Manifest It', note: 'A few clicks lang, then welcome to the chaos.' },
+  { pill: 'New Here? 👀', headline: "Hala, Your Barkada's Already In.", message: "All skill levels, all genders, tapos ang saya pa ng runs. Register na, it's quick lang.", cta: "Sige, I'm In", note: 'Two minutes lang, promise.' },
+  { pill: 'Open Runs ✨', headline: 'Papawis Is Calling You.', message: "Weekend runs, stats, and a crew that's so welcoming naman, tapos everyone stays for kwento after.", cta: 'Let Me Play', note: 'Quicker than your warm-up.' },
+  { pill: 'No Pressure 💁', headline: 'Every Level Is Welcome Here.', message: "Beginner ka man or veteran, there's a spot for you pala. Register and see for yourself.", cta: 'Tara, Join', note: "A few clicks lang, then you're in." },
+  { pill: 'Bestie Alert 👀', headline: "Don't Let Your Barkada Play Without You.", message: "Imagine watching the runs from home tapos everyone's posting highlights. Sayang. Register now.", cta: 'Not On My Watch', note: 'Takes a few minutes lang.' },
+  { pill: 'Real Talk 🔥', headline: 'The Best Decision You Will Make.', message: "The runs, the stats, the kwento after, pero the best part? Everyone's so welcoming naman.", cta: 'Count Me In', note: 'Quick lang, then welcome in.' },
 ];
 
 const pickRegistrationBannerMessage = createBannerMessagePool({
-  settingKey: 'registration_banner_msgs',
+  // v2 (2026-10-20): the shared voice — a fresh pool, the old camp-voice rows drop out.
+  settingKey: 'registration_banner_msgs_v2',
   fields: ['pill', 'headline', 'message', 'cta', 'note'],
   fallbackPool: REGISTRATION_BANNER_FALLBACK_POOL,
+  checkRow: bannerRowCheck,
   buildPrompt: (existing) => {
     const avoidSample = existing.slice(-20).map(p => `- "${p.headline}"`).join('\n');
     return `Write ${BANNER_POOL_BATCH_SIZE} rows for a promo banner recruiting BRAND NEW, PROSPECTIVE members to a weekend basketball community in the Philippines — people who have never joined before. Registering makes you a member of the community (open runs called Papawis, stats, the group, the fun); it does NOT put you on a league team or roster, so never promise a league spot, a team, or playing in the league. This is the opposite of a returning-member message: the whole point is getting a stranger to register and become a member for the first time. Freely use words like "register," "join," and "sign up."
 
-Voice: mix English with Taglish (natural Filipino-English code-switching, not forced). Channel cheeky, campy Filipino gay humor (bekimon/swardspeak-flavored — words like "bes," "chika," "keri," "werpa," "the audacity," "promise," "charot," "anak" are welcome where natural) — playful teasing, gossip/chismis energy, dramatic camp sass, backhanded-but-loving compliments. Do NOT use romantic framing (no "love story," "date," couple-talk) and do NOT use sexual or sensual innuendo — keep it about friendly shade and hype, not romance or anything suggestive. Still genuinely enticing, not just jokes for jokes' sake.
+${bannerVoiceBlock('registration_banner')}
+Still genuinely enticing, not just jokes for jokes' sake.
 
 Each row has FIVE parts: a punchy 2-4 word eyebrow badge (with emoji), a short punchy headline (4-8 words, title case), a longer supporting sentence (max 20 words) that sells the vibe (inclusive, all skill levels, social, funny), a catchy 2-4 word call-to-action button label, and a tiny reassuring note shown next to the button (max 10 words) about how quick and easy registering is. The note must not mention price, fees, approval, deadlines, or the league.
-- "Bagong Dating? 👀" / "Wag Ka Nang Mahiya." / "Lahat type meron dito — laki man ng tiwala mo sa sarili o sa laban, may lugar ka. Register na, keri na 'yan." / Sige Na Nga / Mabilis lang 'to, promise. Mas matagal pa mag-warm up.
-- "The Chismis Is True 👀" / "Everyone's Talking About This Crew." / "Sabi nila ang saya raw dito, kaya siguradong may FOMO ka na. Sumali ka na, sis." / Tara Na, Bes! / Two minutes lang, bes. Kaya mo yan.
-- "No Gatekeeping ✨" / "We Don't Discriminate." / "Except against ball hogs. And even then — only a little. Lovingly. Register now, promise." / Sign Me Up Sis / Quicker than your pre-game stretch. Charot.
+- "New Here? 👀" / "Hala, Your Barkada's Already In." / "All skill levels, all genders, tapos ang saya pa ng runs. Register na, it's quick lang." / Sige, I'm In / Two minutes lang, promise.
+- "Open Runs ✨" / "Papawis Is Calling You." / "Weekend runs, stats, and a crew that's so welcoming naman, tapos everyone stays for kwento after." / Let Me Play / Quicker than your warm-up.
+- "No Pressure 💁" / "Every Level Is Welcome Here." / "Beginner ka man or veteran, there's a spot for you pala. Register and see for yourself." / Tara, Join / A few clicks lang, then you're in.
 
 Do NOT mention any specific date, deadline, or time limit. Every row must be distinct — no near-duplicates.${avoidSample ? `\n\nHEADLINES ALREADY IN ROTATION (do NOT repeat these or close variations):\n${avoidSample}` : ''}
 
@@ -7805,6 +7833,8 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
         t => bannedProblems(t),
         t => (/^\s*(ladies and gentlemen|congratulations)/i.test(t) ? ['it opens with a ceremonial greeting'] : []),
         t => voiceProblems(t, voice),
+        // The AI second opinion, only once every free check passes (one extra call per click).
+        { costly: true, fn: t => factCheckCopy(facts, t, 'award article') },
       ],
     });
     res.json({ text: out.draft, problems: out.problems });
@@ -9215,9 +9245,15 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
   ].filter(Boolean).join('\n');
   const musts = story?.musts || [];
 
+  // The same voice as every other writer (lib/ai-voices.js), with this matchup's flavour line.
+  const voice = pickVoice('home', { date: manilaTodayStr() });
+  const flavor = voiceFlavor(voice, [teamA.id, teamB.id].sort().join('|'));
   const prompt = [
     `You are a local recreational basketball league writer previewing an upcoming playoff/finals matchup — a community observer, not a broadcaster.`,
-    `Write a matchup preview post for WKND Basketball. Tone: grounded, conversational, builds anticipation without hype-speak.`,
+    `Write a matchup preview post for WKND Basketball that builds anticipation without hype-speak.`,
+    `VOICE — ${voice.name}: ${voice.guide}`,
+    flavor,
+    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice.`,
     `Use ONLY the FACTS below and copy every number exactly. Do NOT invent, estimate, round or calculate any statistic, record, gap or head-to-head result not explicitly given. All-time head-to-head and this season's records are different things — never mix them.`,
     `Before writing "more", "fewer", "edge" or "advantage" about a team, check that team's number really is the bigger (or smaller) one. A player's points per game belongs to that player, never to the team.`,
     musts.length ? `MAJOR HIGHLIGHTS in the facts must all appear, each with its team or player named, its number and the word that makes it special.` : '',
@@ -9229,6 +9265,8 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
     facts,
     steer ? `` : '',
     steer ? `ANGLE/STEER FROM EDITOR: ${steer}` : '',
+    ``,
+    `FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`,
   ].filter(s => s !== '').join('\n');
 
   const schema = {
@@ -9251,11 +9289,15 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts, { pairs: false }),
         t => claimProblems(t, facts),
+        t => storyProblems(t, facts),
         t => bannedProblems(t),
         ...(story ? [
           t => comparisonProblems(t, story).map(p => `a comparison runs the wrong way: ${p}`),
           t => playerNumberProblems(t, story.scorers),
         ] : []),
+        t => voiceProblems(t, voice),
+        // The AI second opinion, only once every free check passes (one extra call per click).
+        { costly: true, fn: t => factCheckCopy(facts, t, 'matchup preview post') },
       ],
     });
     const body_html = (out.draft.paragraphs || []).map(p => `<p>${escHtml(p)}</p>`).join('');
@@ -10088,9 +10130,12 @@ const hlQ = q => (q > 4 ? `overtime${q > 5 ? ` ${q - 4}` : ''}` : `Q${q}`);
 
 // Who held a league best: "set by X" for one game, "shared by X and Y (twice)" when it was
 // reached more than once — a tie must never be credited to one player alone.
+// Each holder carries the season(s) it happened in, so a writer never guesses one ("White's
+// 102 in Season 3" was written about a Season 4 game).
 function recordHolders(best) {
-  const hs = best.holders || [{ name: best.name, times: 1 }];
-  const who = h => `${displayPlayerName(h.name)}${h.times > 1 ? ` (${h.times === 2 ? 'twice' : `${h.times} times`})` : ''}`;
+  const hs = best.holders || [{ name: best.name, times: 1, seasons: [best.season].filter(Boolean) }];
+  const seasons = h => (h.seasons?.length ? `Season ${h.seasons.join(' and ')}` : '');
+  const who = h => `${displayPlayerName(h.name)} (${[h.times > 1 ? (h.times === 2 ? 'twice' : `${h.times} times`) : '', seasons(h)].filter(Boolean).join(', ')})`.replace(' ()', '');
   if (hs.length === 1 && hs[0].times === 1) return `set by ${who(hs[0])}`;
   if (hs.length === 1) return `reached by ${who(hs[0])}`;
   return `shared by ${hs.slice(0, -1).map(who).join(', ')} and ${who(hs[hs.length - 1])}`;
@@ -10152,7 +10197,7 @@ function gameHighlights(game, stats) {
   // Team scoring record (either side: a losing team can set it too).
   const teamBest = getTeamBestScoreBefore(game);
   for (const [pts, team] of [[sA, game.team_a_name], [sB, game.team_b_name]].sort((x, y) => y[0] - x[0])) {
-    if (teamBest && pts > Number(teamBest.v)) { add('major', 90, team, `TEAM RECORD: ${T(team)} scored ${pts}, the most by a team in a WKND game since Season 3 (previous ${teamBest.v} by ${T(teamBest.team)}).`, [teamAlts(team), numberAlts(pts), HL_KW.record]); break; }
+    if (teamBest && pts > Number(teamBest.v)) { add('major', 90, team, `TEAM RECORD: ${T(team)} scored ${pts}, the most by a team in a WKND game since Season 3 (previous ${teamBest.v} by ${T(teamBest.team)}${teamBest.season ? `, Season ${teamBest.season}` : ''}).`, [teamAlts(team), numberAlts(pts), HL_KW.record]); break; }
   }
 
   // Game drama: comeback, game-winner, overtime, rout.
@@ -10587,6 +10632,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts, { pairs: false }),
         t => claimProblems(t, facts),
+        t => storyProblems(t, facts),
         t => bannedProblems(t),
         t => voiceProblems(t, voice),
         // The AI second opinion, only once every free check passes (one extra call).
@@ -10706,8 +10752,11 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts),
         t => claimProblems(t, facts),
+        t => storyProblems(t, facts),
         t => bannedProblems(t),
         t => voiceProblems(t, voice),
+        // The AI second opinion, only once every free check passes (one extra call per click).
+        { costly: true, fn: t => factCheckCopy(facts, t, 'player of the game spotlight') },
       ],
     });
     res.json({ writeup: out.draft, missed: out.problems });
@@ -13977,6 +14026,7 @@ FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Exampl
       t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
       t => numberProblems(t, f.facts, { pairs: false, spelled: !opts.strict }),
       t => claimProblems(t, f.facts),
+      t => storyProblems(t, f.facts),
       t => bannedProblems(t),
       t => (opts.banned && t.match(opts.banned) ? [`it uses the word "${t.match(opts.banned)[0]}"`] : []),
       (t, d) => (opts.strict ? [strictSummaryIssue(d.headline, d.body, f.facts)].filter(Boolean) : []),
@@ -14039,7 +14089,17 @@ ${text}
 FACTS
 ${facts}
 
-List every statement in the copy that the facts do not directly support: wrong numbers or scores, a stat given to the wrong player or team, a run, lead or comeback bigger than the facts say, a career high / season high / record / streak / first place the facts don't state, a play the play-by-play doesn't show, or numbers that were calculated rather than taken from the facts. Opinions, tone and voice are fine. If everything is supported, return accurate=true and an empty problems list.`;
+Go through the copy sentence by sentence and list every statement the facts do not directly support. Look hard for these, each seen in a real draft:
+- who won and who lost mixed up, or a team said to "drop"/"fall" after a win;
+- a streak described as still going when the facts say it ENDED, or a streak the facts don't give;
+- a margin or total called a "run" (runs are only the "N unanswered points" the facts give), or a run, lead or comeback bigger than the facts say;
+- a team said to have led, blown a lead or come back when the facts don't say so;
+- a previous record holder, season or date that differs from the facts (e.g. "in Season 3" when the facts say Season 4);
+- "a Season 3 record" when the facts say "the most since Season 3";
+- a career high described as "matching" a previous best when the facts give a NEW one (or the other way round), or a career/season high, record or first place the facts don't state;
+- a stat given to the wrong player or team, wrong numbers or scores, or numbers calculated rather than copied;
+- a play the play-by-play doesn't show, or details copied from a style example rather than the facts.
+Opinions, tone, slang and voice are fine. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = {
     type: 'object',
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
@@ -14858,8 +14918,8 @@ Return JSON with two fields:
 - "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his MVP case.'}
 - "question": one short question, at most 14 words, ending with "?", ${forecast ? 'on how he wins Sunday or makes his case in it' : 'on whether he has done enough'}.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
-Use the voice lightly: a word or two of flavour at most. Clear, correct English always wins; never bend grammar for the voice.
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, c.player.id) ? `\n${voiceFlavor(voice, c.player.id)}` : ''}
+Numbers, names and stat words stay in English digits exactly as the facts give them; everything around them is in the voice.
 
 ${angle ? `THE ANGLE (decided for you; the job and the question are about this and nothing else):
 ${angle}
@@ -14933,8 +14993,8 @@ Return JSON with two fields:
 - "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do on defense in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his Best Defender case.'}
 - "question": one short question, at most 14 words, ending with "?", ${forecast ? 'on how he wins Sunday on defense' : 'on whether he has done enough'}.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
-Use the voice lightly: a word or two of flavour at most. Clear, correct English always wins; never bend grammar for the voice.
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, c.player.id) ? `\n${voiceFlavor(voice, c.player.id)}` : ''}
+Numbers, names and stat words stay in English digits exactly as the facts give them; everything around them is in the voice.
 
 ${angle ? `THE ANGLE (decided for you; the job and the question are about this and nothing else):
 ${angle}
@@ -14998,7 +15058,8 @@ function lockFallback(c) {
     : { job: `His last game: ${line}.`, question: 'Has he done enough?' };
 }
 
-const lockKey = (c, facts) => createHash('sha1').update(`v3|${c.mode}|${facts}`).digest('hex').slice(0, 16);
+// v4 (2026-10-20): full voice + the shared checks — every card rewrites once on /mvp.
+const lockKey = (c, facts) => createHash('sha1').update(`v4|${c.mode}|${facts}`).digest('hex').slice(0, 16);
 
 // Cached writeup or the plain fallback, never an AI call (the homepage card).
 function cachedLockWriteup(c, season) {
@@ -15031,16 +15092,34 @@ async function mvpLockWriteups(ten, season, { generate = false, race = 'mvp' } =
     if (!generate || !aiAvailable() || Date.now() < mvpAiCooldownUntil) return { ...c, ...lockFallback(c), ai: false };
     const schema = { type: 'object', properties: { job: { type: 'string' }, question: { type: 'string' } }, required: ['job', 'question'] };
     try {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const { data } = await generateJson(lockPrompt(c, facts, voice, openings), schema, { temperature: Math.min(aiTemperature(), 0.7), maxTokens: 260 });
-        const job = lockDashes(data?.job || '').trim(), question = lockDashes(data?.question || '').trim();
-        const { first: fn, last: ln } = (n => { const i = n.indexOf(','); return { first: n.slice(i + 1).trim().split(' ')[0].toLowerCase(), last: n.slice(0, i).trim().toLowerCase() }; })(String(c.player.name));
-        const named = new RegExp(`^(${[fn, ln].filter(Boolean).map(x => x.replace(/[^a-z]/g, '')).join('|')})\\b`, 'i').test(job);
-        if (job && !named && question.endsWith('?') && lockNumbersOk(`${job} ${question}`, `${facts}\n${lockAngle(c) || ''}`)) {
-          setMvpLockWriteup(c.player.id, season, key, job, question);
-          return { ...c, job, question, ai: true };
-        }
+      // Write → check → rewrite (lib/writer.js), 2 tries: the cards' own strict number check
+      // (lockNumbersOk: pairs, shooting lines, digits only) plus the shared claim, banned-word
+      // and voice checks. The voice gets its heat (0.85 for conyo); a card that still fails
+      // shows the plain fallback.
+      const allFacts = `${facts}\n${lockAngle(c) || ''}`;
+      const { first: fn, last: ln } = (n => { const i = n.indexOf(','); return { first: n.slice(i + 1).trim().split(' ')[0].toLowerCase(), last: n.slice(0, i).trim().toLowerCase() }; })(String(c.player.name));
+      const startsWithName = new RegExp(`^(${[fn, ln].filter(Boolean).map(x => x.replace(/[^a-z]/g, '')).join('|')})\\b`, 'i');
+      const out = await runWriter({
+        prompt: lockPrompt(c, facts, voice, openings), label: `${race.toUpperCase()} lock card (${c.player.id})`, tries: 2,
+        generate: async p => {
+          const { data } = await generateJson(p, schema, { temperature: Math.min(aiTemperature(), voiceTraits(voice).hot ? 0.85 : 0.7), maxTokens: 260 });
+          return { job: lockDashes(data?.job || '').trim(), question: lockDashes(data?.question || '').trim() };
+        },
+        text: d => `${d.job} ${d.question}`,
+        checks: [
+          (t, d) => (!d.job ? ['the job is empty'] : startsWithName.test(d.job) ? ["the job starts with the player's name"] : []),
+          (t, d) => (!d.question.endsWith('?') ? ['the question must end with "?"'] : []),
+          t => (lockNumbersOk(t, allFacts) ? [] : ['a number is not in the facts, is spelled out, or is paired with the wrong stat — copy every number and "N points"-style pair exactly as the facts give it']),
+          t => claimProblems(t, allFacts),
+          t => bannedProblems(t),
+          t => voiceProblems(t, voice),
+        ],
+      });
+      if (!out.problems.length) {
+        setMvpLockWriteup(c.player.id, season, key, out.draft.job, out.draft.question);
+        return { ...c, job: out.draft.job, question: out.draft.question, ai: true };
       }
+      console.warn(`${race.toUpperCase()} lock card for ${c.player.id} not kept: ${out.problems.join(' | ')}`);
     } catch (err) {
       console.error(`${race.toUpperCase()} lock writeup failed for ${c.player.id}:`, err.message);
       mvpAiCooldownUntil = Date.now() + MVP_AI_COOLDOWN_MS;
@@ -16595,7 +16674,14 @@ function playoffsSectionFacts(pd) {
     const fin = m.fHigh && m.fLow ? series('Finals', m.fHigh, m.seedOf(m.fHigh), m.fLow, m.seedOf(m.fLow), m.fin, 'first to 2 wins') : '- Finals: waiting on the semifinals.';
     facts = `${format}\nSeason ${pd.season} playoffs:\n${series('Semifinal 1', m.s1, 1, m.s4, 4, m.st1, 'the 4th seed needs 2 wins')}\n${series('Semifinal 2', m.s2, 2, m.s3, 3, m.st2, 'the 3rd seed needs 2 wins')}\n${fin}${m.champ ? `\n${T(m.champ.name)} are the Season ${pd.season} champions.` : ''}${pd.awards.finalsMvp ? `\nFinals MVP: ${pd.awards.finalsMvp.name}.` : ''}${pd.awards.mvp ? `\nSeason MVP: ${pd.awards.mvp.name}.` : ''}`;
   }
+  // The playoff games' highlights (lib/highlights.js, cached per game): series results for the
+  // bracket (clinch, title, upset, forced decider), records and big nights for the games list.
+  const poHl = m.projected ? [] : (pd.games || []).filter(g => Number(g.team_a_score) + Number(g.team_b_score) > 0).flatMap(g => cachedGameHighlights(g));
+  const seriesHl = poHl.filter(h => /^(CHAMPIONS|SERIES WON|UPSET|SERIES TIED):/.test(h.text));
+  const seriesMusts = mustMentions(seriesHl, 2);
+  if (seriesHl.length) facts += `\n\n${highlightsBlock(seriesHl, seriesMusts)}`;
   out.bracket = {
+    musts: seriesMusts,
     kicker: `${m.projected ? 'Projected bracket' : 'The bracket'} · Season ${pd.season}`, section: m.projected ? 'Projected bracket' : 'Bracket', where, facts,
     focus: m.projected
       ? 'Preview the bracket as it stands: who has twice to beat and the matchups it sets up. Don\'t predict winners.'
@@ -16606,10 +16692,13 @@ function playoffsSectionFacts(pd) {
 
   if (m.tableRows.length) {
     const lines = m.tableRows.map(r => `- ${r.round.replace(/ · G(\d)/, ', Game $1')}, ${summaryDay(r.date)}: ${T(r.w)} beat ${T(r.l)} ${r.ws}-${r.ls}, by ${plural(r.ws - r.ls, 'point')}${r.ot ? ', in overtime' : ''}${r.potg ? `. ${r.potgShared ? 'Co-players' : 'Player'} of the game: ${r.potg}${r.potgLine ? ` (${r.potgLine})` : ''}` : ''}${r.recap ? `. Recap headline: "${r.recap}"` : ''}`);
+    const gameHl = poHl.filter(h => !seriesHl.includes(h) && /^(LEAGUE RECORD|TIED LEAGUE RECORD|TEAM RECORD|TRIPLE-DOUBLE|BIG NIGHT|HOT HAND|GAME-WINNER|COMEBACK|OVERTIME):/.test(h.text));
+    const gameMusts = mustMentions(gameHl, 2);
     out.games = {
       kicker: `Every playoff game · Season ${pd.season}`, section: 'Every playoff game (results and players of the game)', where,
-      facts: `Season ${pd.season} playoff games, in order:\n${lines.join('\n')}`,
-      focus: 'Pick the standout game or performance of these playoffs: the closest game, the biggest margin, or the best player-of-the-game line. Don\'t recap every game.',
+      facts: `Season ${pd.season} playoff games, in order:\n${lines.join('\n')}${gameHl.length ? `\n\n${highlightsBlock(gameHl, gameMusts)}` : ''}`,
+      musts: gameMusts,
+      focus: `${gameMusts.length ? 'Lead with the biggest MAJOR HIGHLIGHT of these playoffs.' : 'Pick the standout game or performance of these playoffs: the closest game, the biggest margin, or the best player-of-the-game line.'} Don't recap every game.`,
     };
   }
   return sectionFactsMap('playoffs', pd.season, out);
@@ -16665,6 +16754,8 @@ function gameSectionFacts(game, { stats, dc, won }) {
   const where = 'game page';
   const kick = label => `${label} · ${T(game.team_a_name)} ${sa}–${sb} ${T(game.team_b_name)}`;
   const out = {};
+  // This game's highlights (lib/highlights.js), cached per game.
+  const hl = cachedGameHighlights(game);
   if (dc) {
     const line = s => {
       const fgm = n(s.fg2m) + n(s.fg3m) + n(s.fg4m), fga = fgm + n(s.fg2m_miss) + n(s.fg3m_miss) + n(s.fg4m_miss);
@@ -16674,20 +16765,30 @@ function gameSectionFacts(game, { stats, dc, won }) {
       return `${displayPlayerName(s.name || '')} (${T(s.team_name)}): ${parts.join(', ')}${s.badge ? `. Note: ${s.badge.replace(/^(\d+) & (\d+)$/, '$1 points and $2 rebounds')}` : ''}`;
     };
     const cast = [...dc.castA, ...dc.castB];
+    // The players' major highlights (records, triple-doubles, big nights): up to 2 must be
+    // said here, right above the box score.
+    const playerIds = new Set(stats.map(s => s.player_id));
+    const pHl = hl.filter(h => playerIds.has(h.subject));
+    const pMusts = mustMentions(pHl, 2);
     out.perf = {
       kicker: kick('Top performers'), section: 'Top performers (the best player on each side, head to head, then other standouts)', where, highsOk: true,
-      facts: `${result}\nThe best player on each team (by game score):\n- ${line(dc.a)}\n- ${line(dc.b)}${cast.length ? `\nOther standouts:\n${cast.map(s => `- ${line(s)}`).join('\n')}` : ''}\nCareer and season highs count league games only. A note like "Career-high 25" means 25 points is the most that player has scored in a league game.`,
-      focus: 'Tell the duel between the two best players and how it lined up with the result, then at most one other standout. Pick the telling numbers; don\'t list every stat.',
+      facts: `${result}\nThe best player on each team (by game score):\n- ${line(dc.a)}\n- ${line(dc.b)}${cast.length ? `\nOther standouts:\n${cast.map(s => `- ${line(s)}`).join('\n')}` : ''}\nCareer and season highs count league games only. A note like "Career-high 25" means 25 points is the most that player has scored in a league game.${pHl.length ? `\n\n${highlightsBlock(pHl, pMusts)}` : ''}`,
+      musts: pMusts,
+      focus: `${pMusts.length ? 'Lead with the biggest MAJOR HIGHLIGHT, then tell' : 'Tell'} the duel between the two best players and how it lined up with the result, then at most one other standout. Pick the telling numbers; don\'t list every stat.`,
     };
   }
   const A = teamTotals(stats, game.team_a_name, game.team_a_to_team), B = teamTotals(stats, game.team_b_name, game.team_b_to_team);
   const pc = (m, a) => (a ? `${(m / a * 100).toFixed(1)}%` : '—');
   const team = (name, x) => `- ${T(name)}: ${x.fgm} of ${x.fga} from the field (${pc(x.fgm, x.fga)}), ${x.fg3m} of ${x.fg3a} from three (${pc(x.fg3m, x.fg3a)})${x.fg4a ? `, ${x.fg4m} of ${x.fg4a} four-pointers` : ''}, ${x.ftm} of ${x.fta} free throws (${pc(x.ftm, x.fta)}), ${x.reb} rebounds, ${x.ast} assists, ${x.stl} steals, ${x.blk} blocks, ${x.to} turnovers`;
   const edges = (won || []).map(w => `- ${w.label}: ${w.team} by ${w.n}${['3pt', 'ft', '2pt', '4pt'].includes(w.key) ? ' points' : ''} (${w.detail})`);
+  // Team-level highlights (a team scoring record, overtime, a comeback, a rout): 1 must here.
+  const tHl = hl.filter(h => /^(TEAM RECORD|OVERTIME|COMEBACK|ROUT):/.test(h.text));
+  const tMusts = mustMentions(tHl, 1);
   out.stats = {
     kicker: kick('Team stats'), section: 'Team stats (the two teams side by side)', where,
-    facts: `${result}\nTeam totals:\n${team(game.team_a_name, A)}\n${team(game.team_b_name, B)}${edges.length ? `\nWhere the teams differed most:\n${edges.join('\n')}` : ''}`,
-    focus: 'Name the one or two team stats that separated the two sides, with the numbers side by side. One short sentence of body is enough; this sits in a narrow column.',
+    facts: `${result}\nTeam totals:\n${team(game.team_a_name, A)}\n${team(game.team_b_name, B)}${edges.length ? `\nWhere the teams differed most:\n${edges.join('\n')}` : ''}${tHl.length ? `\n\n${highlightsBlock(tHl, tMusts)}` : ''}`,
+    musts: tMusts,
+    focus: `${tMusts.length ? 'Lead with the MAJOR HIGHLIGHT, then name' : 'Name'} the one or two team stats that separated the two sides, with the numbers side by side. One short sentence of body is enough; this sits in a narrow column.`,
   };
   return sectionFactsMap('game', game.id, out);
 }
@@ -20184,12 +20285,15 @@ app.post('/admin/papawis/courts/:id/writeup/generate', requireAuth, express.json
   const factsText = p.facts.join('\n');
   const allowed = new Set(factsText.match(/\d+(?:[.,]\d+)?/g) || []);
   const voice = pickVoice('home', { date: manilaTodayStr() });
-  let issue = '';
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  const flavor = voiceFlavor(voice, court.id);
+  // Write → check → rewrite (lib/writer.js), 3 tries, the same voice as every other writer:
+  // numbers from the facts, the shared claim/banned/voice checks, length, then the AI fact
+  // check once the free ones pass.
+  {
     const prompt = `You write the "About this court" paragraph on a basketball court's page for WKND Basketball, a weekend basketball league and pickup community ("Papawis" = our pickup runs) in Makati, Mandaluyong and Pasig, Philippines.
 
-Voice: ${voice.name}. ${voice.guide}
-Keep the voice light: this text also has to read well to someone who found the page on Google.
+Voice: ${voice.name}. ${voice.guide}${flavor ? `\n${flavor}` : ''}
+It also has to read well to someone who found the page on Google: the court name, city and directions stay plain and clear; the voice lives in the sentences around them.
 
 FACTS (the only facts you may use):
 ${factsText}
@@ -20202,25 +20306,33 @@ Write 3 paragraphs, 150 to 220 words in total, plain text, no headings, no bulle
 - Use digits for numbers. Never invent a number, a feature of the court, a price or a date that is not in the facts.
 - Do not say how often runs happen ("every Saturday", "weekly", "monthly") unless a fact says exactly that.
 - No claims of fame or rank ("legendary", "the best", "the hotspot", "always packed") unless a fact supports them.
-- Separate the paragraphs with one blank line.${issue ? `\n\nYour last draft was rejected: ${issue}. Fix that.` : ''}`;
+- Separate the paragraphs with one blank line.
+- Banned (rejected in code): ${BANNED_HINT}.
+
+FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`;
+    let out;
     try {
-      const { text } = await generateText(prompt, { maxTokens: 700, temperature: Math.min(aiTemperature(), 0.8) });
-      const out = String(text || '').replace(/^["“]|["”]$/g, '').replace(/\*\*/g, '').trim();
-      const nums = out.match(/\d+(?:[.,]\d+)?/g) || [];
-      const bad = nums.filter(n => !allowed.has(n));
-      const words = out.split(/\s+/).length;
-      if (bad.length) { issue = `it used numbers not in the facts (${bad.join(', ')})`; continue; }
-      if (words < 120 || words > 260) { issue = `it was ${words} words, aim for 150 to 220`; continue; }
-      const problems = await factCheckCourtWriteup(factsText, out);
-      if (problems.length) { issue = `a fact check found claims the facts don't support: ${problems.join('; ')}`; continue; }
-      updatePapawisCourtPage(court.id, { writeup_draft: out, writeup_at: Date.now() });
-      return res.json({ ok: true, message: 'Draft ready. Read it, then use it or edit it.' });
+      out = await runWriter({
+        prompt, label: `Court writeup (${court.id})`, tries: 3,
+        generate: async p => String((await generateText(p, { maxTokens: 700, temperature: Math.min(aiTemperature(), voiceTraits(voice).hot ? 0.85 : 0.8) })).text || '').replace(/^["“]|["”]$/g, '').replace(/\*\*/g, '').trim(),
+        checks: [
+          t => { const bad = (t.match(/\d+(?:[.,]\d+)?/g) || []).filter(n => !allowed.has(n)); return bad.length ? [`it used numbers not in the facts (${bad.join(', ')})`] : []; },
+          t => numberProblems(t, factsText, { pairs: false }).filter(p => p.startsWith('it spells')),
+          t => { const w = t.split(/\s+/).length; return w < 120 || w > 260 ? [`it was ${w} words, aim for 150 to 220`] : []; },
+          t => claimProblems(t, factsText),
+          t => bannedProblems(t),
+          t => voiceProblems(t, voice),
+          { costly: true, fn: async t => (await factCheckCourtWriteup(factsText, t)).map(p => `a fact check found a claim the facts don't support: ${p}`) },
+        ],
+      });
     } catch (e) {
       console.error('[court writeup]', e.message);
       return res.status(502).json({ error: 'The AI provider failed. Try again in a minute.' });
     }
+    if (out.problems.length) return res.status(422).json({ error: `Couldn't get a clean draft (${out.problems.join('; ')}). Try again, or write it by hand.` });
+    updatePapawisCourtPage(court.id, { writeup_draft: out.draft, writeup_at: Date.now() });
+    return res.json({ ok: true, message: 'Draft ready. Read it, then use it or edit it.' });
   }
-  res.status(422).json({ error: `Couldn't get a clean draft (${issue}). Try again, or write it by hand.` });
 });
 // Second pass at temperature 0: every claim in the draft must be backed by the facts.
 async function factCheckCourtWriteup(factsText, text) {
