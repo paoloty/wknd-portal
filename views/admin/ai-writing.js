@@ -24,7 +24,7 @@ function voiceCard(v) {
     <button type="button" class="admin-btn admin-btn--sm admin-btn--danger aiw-remove" title="Delete voice">Delete</button>
   </div>
   <label class="admin-field-label">Instructions for the AI</label>
-  <textarea class="admin-input agm-textarea aiw-guide" rows="4" maxlength="1200" placeholder="Describe how this voice writes — tone, vocabulary, what to avoid.">${escHtml(v.guide)}</textarea>
+  <textarea class="admin-input agm-textarea aiw-guide" rows="4" maxlength="2000" placeholder="Describe how this voice writes — tone, vocabulary, what to avoid.">${escHtml(v.guide)}</textarea>
   <label class="admin-field-label">Sample line <span style="font-weight:400;color:var(--text-muted)">(optional — the AI copies its style, not its words)</span></label>
   <input type="text" class="admin-input aiw-sample" value="${escHtml(v.sample || '')}" maxlength="400" placeholder="One sentence written in this voice">
 </div>`;

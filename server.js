@@ -179,12 +179,12 @@ import {
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './lib/ai.js';
-import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS } from './lib/ai-voices.js';
+import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS, voiceFlavor, voiceProblems, voiceTraits, DEFAULT_VOICES } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
-import { runWriter, numberProblems, claimProblems, bannedProblems, BANNED_HINT } from './lib/writer.js';
+import { runWriter, numberProblems, claimProblems, bannedProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary, oddsPoints } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
@@ -5619,7 +5619,8 @@ app.get('/api/player/:id/photo-source', async (req, res) => {
 // regenerate), in the conyo voice from /admin/ai-writing. ?season=N | career; default is the
 // latest completed regular season. Numbers are guarded against the facts like the homepage
 // summaries: up to 3 drafts, then 503.
-const COMPARE_VOICE_VERSION = 'conyo1';
+// conyo2 (2026-10-20): the rewritten conyo guide + voice check — cached takes rewrite on view.
+const COMPARE_VOICE_VERSION = 'conyo2';
 app.get('/api/compare', async (req, res) => {
   const { a, b, force } = req.query;
   if (!a || !b) return res.status(400).json({ error: 'Missing player IDs' });
@@ -5667,10 +5668,7 @@ app.get('/api/compare', async (req, res) => {
     const facts = `${line(pA, tA)}\n${line(pB, tB)}`;
 
     // The conyo voice as configured at /admin/ai-writing (falls back if an admin removed it).
-    const voice = getVoiceConfig().voices.find(v => v.id === 'conyo') || {
-      name: 'Conyo hoops writer',
-      guide: 'Write as a conyo rich kid from a Makati/BGC private school who loves this league: mostly English with Tagalog dropped in the conyo way ("make + verb", "naman", "kasi", "talaga", "diba", "grabe", "super", "literally").',
-    };
+    const voice = getVoiceConfig().voices.find(v => v.id === 'conyo') || DEFAULT_VOICES.find(v => v.id === 'conyo');
 
     // Recent openers, so takes don't all start the same way.
     const currentPair = [a, b].sort().join('|');
@@ -5683,7 +5681,9 @@ app.get('/api/compare', async (req, res) => {
 
     let prompt = `You write "the conyo take" on a head-to-head comparison of two players in WKND Basketball, a recreational league whose players read every word.
 
-VOICE — ${voice.name}: ${voice.guide}${voice.sample ? `\nExample line in this voice: "${voice.sample}"` : ''}
+VOICE — ${voice.name}: ${voice.guide}${voice.sample ? `\nExample line in this voice: "${voice.sample}"` : ''}${voiceFlavor(voice, currentPair) ? `\n${voiceFlavor(voice, currentPair)}` : ''}
+
+HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice.
 
 FACTS (${label}, regular season — the only stats you may use):
 ${facts}
@@ -5727,6 +5727,7 @@ Rules:
         t => claimProblems(t, facts),
         t => bannedProblems(t),
         t => comparisonProblems(t, cmp).map(p => `a comparison runs the wrong way: ${p}`),
+        t => voiceProblems(t, voice),
       ],
     });
     if (out.problems.length) return res.status(503).json({ error: 'No take passed the checks' });
@@ -7786,6 +7787,8 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     `Every claim and every number must come from the FACTS, copied exactly — never work out a total, gap or percentage of your own. Only say someone led the league where a "1st in the league" line says so; never call anything a record. Plain text only. No markdown.`,
     `Celebrate the case — skip any stat that undercuts it (a low 3P%, a tiny assist number, a weak FT%); never call a number weak, meager, or "room for improvement." Do NOT mention the crowd, fans, or spectators.`,
     `VOICE — ${voice.name}: ${voice.guide}`,
+    voiceFlavor(voice, currentKey),
+    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words.`,
     otherOpenings.length ? `OPENING SENTENCES OF OTHER ARTICLES ON THIS AWARDS PAGE (yours must not resemble these):\n${otherOpenings.map(t => `  "${t}"`).join('\n')}` : '',
     `FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`,
   ].filter(Boolean).join('\n\n');
@@ -7801,6 +7804,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
         t => claimProblems(t, facts),
         t => bannedProblems(t),
         t => (/^\s*(ladies and gentlemen|congratulations)/i.test(t) ? ['it opens with a ceremonial greeting'] : []),
+        t => voiceProblems(t, voice),
       ],
     });
     res.json({ text: out.draft, problems: out.problems });
@@ -10082,6 +10086,16 @@ const HL_KW = {
 };
 const hlQ = q => (q > 4 ? `overtime${q > 5 ? ` ${q - 4}` : ''}` : `Q${q}`);
 
+// Who held a league best: "set by X" for one game, "shared by X and Y (twice)" when it was
+// reached more than once — a tie must never be credited to one player alone.
+function recordHolders(best) {
+  const hs = best.holders || [{ name: best.name, times: 1 }];
+  const who = h => `${displayPlayerName(h.name)}${h.times > 1 ? ` (${h.times === 2 ? 'twice' : `${h.times} times`})` : ''}`;
+  if (hs.length === 1 && hs[0].times === 1) return `set by ${who(hs[0])}`;
+  if (hs.length === 1) return `reached by ${who(hs[0])}`;
+  return `shared by ${hs.slice(0, -1).map(who).join(', ')} and ${who(hs[hs.length - 1])}`;
+}
+
 // The seeds that decide a twice-to-beat semifinal (same as the ticker): the higher seed's id.
 function playoffHighSeed(game) {
   if (game.game_type !== 'playoff') return null;
@@ -10114,7 +10128,7 @@ function gameHighlights(game, stats) {
       if (v(k) < HL_RECORD_MIN[k]) continue;
       const best = getLeagueBestBefore(k, game);
       if (!best) continue;
-      if (v(k) > Number(best.v)) add('major', 100, id, `LEAGUE RECORD: ${name} had ${v(k)} ${word}, the most by anyone in a WKND game since Season 3 (previous record ${best.v} by ${displayPlayerName(best.name)}).`, [who, numberAlts(v(k)), HL_KW.record]);
+      if (v(k) > Number(best.v)) add('major', 100, id, `LEAGUE RECORD: ${name} had ${v(k)} ${word}, the most by anyone in a WKND game since Season 3 (previous record ${best.v}, ${recordHolders(best)}).`, [who, numberAlts(v(k)), HL_KW.record]);
       else if (v(k) === Number(best.v)) add('major', 94, id, `TIED LEAGUE RECORD (a tie, not a new record): ${name}'s ${v(k)} ${word} matches the most by anyone in a WKND game since Season 3.`, [who, numberAlts(v(k)), HL_KW.tied]);
     }
     const tens = ['pts', 'reb', 'ast', 'stl', 'blk'].filter(k => v(k) >= 10);
@@ -10514,9 +10528,12 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     `Write plain text only. No markdown.`,
     ``,
     `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
+    voiceFlavor(voice, game.id),
     ``,
     `FACTS (the only things you may state):`,
     facts,
+    ``,
+    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words.`,
     ``,
     `HOW TO BUILD IT:`,
     musts.length
@@ -10563,6 +10580,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
         t => numberProblems(t, facts, { pairs: false }),
         t => claimProblems(t, facts),
         t => bannedProblems(t),
+        t => voiceProblems(t, voice),
         // The AI second opinion, only once every free check passes (one extra call).
         { costly: true, fn: t => factCheckCopy(facts, t) },
       ],
@@ -10652,10 +10670,12 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     `Tone: energetic and specific — the excitement comes from the details, never from adjectives. Every claim and every number must come from the FACTS.`,
     ``,
     `THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}`,
+    voiceFlavor(voice, `${game.id}|${potgId}`),
     ``,
     `FACTS (the only things you may state):`,
     facts,
     ``,
+    `HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words. A short aside of 3 words or fewer doesn't count as one of the 2-3 sentences.`,
     musts.length
       ? `Open with the biggest MAJOR HIGHLIGHT and cover every one of them, each with its number and the word that makes it special (record, career high…). A league record is "since Season 3" or "on record", never "ever".`
       : `Open with the most compelling hook.`,
@@ -10673,13 +10693,13 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     // what's actually kept; the admin sees whatever is still wrong after 3 tries.
     const out = await runWriter({
       prompt, label: `POTG (${game.id})`, tries: 3,
-      generate: async p => (await generateText(p, { temperature: aiTemperature(), maxTokens: 300 })).text
-        .split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean).slice(0, 3).join(' '),
+      generate: async p => keepSentences((await generateText(p, { temperature: aiTemperature(), maxTokens: 300 })).text, 3),
       checks: [
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts),
         t => claimProblems(t, facts),
         t => bannedProblems(t),
+        t => voiceProblems(t, voice),
       ],
     });
     res.json({ writeup: out.draft, missed: out.problems });
@@ -13893,17 +13913,28 @@ async function writeHeadlineCopy(f, opts = {}) {
     // Season race also gets one short note per team card (f.notesFor = the team names).
     f.notesFor ? `- notes: exactly one note per team (${f.notesFor.join(', ')}), each one sentence of at most 12 words, plain text, about that team only — the most telling fact about its season so far. Don't start with the team's name.` : '',
   ].filter(Boolean).join('\n');
+  // The voice sits at the top and again as the last word (the model obeys the tail), with this
+  // piece's flavour line; "how to say it" keeps the numbers English while the voice shapes
+  // the rest.
+  const flavor = voiceFlavor(voice, f.key || f.section || '');
   const prompt = `${intro}
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${flavor ? `\n${flavor}` : ''}
 
 FACTS (the only things you may state):
 ${f.facts}
 
 ${f.focus || ''}
 
+HOW TO SAY IT: numbers, names and stat words come from the facts in English digits; everything around them is in the voice. The voice is in the sentence shape, not in added words. A short aside of 3 words or fewer doesn't count as a sentence.
+
 Rules:
-${rules}`;
+${rules}
+
+FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`;
+  // A voice that needs heat (conyo) gets 0.85 where these blocks are usually capped at 0.6;
+  // the number and claim checks catch what extra heat invents.
+  const tempCap = voiceTraits(voice).hot ? Math.max(opts.temperature ?? 0.6, 0.85) : (opts.temperature ?? 0.6);
   const schema = {
     type: 'object',
     properties: {
@@ -13928,7 +13959,7 @@ ${rules}`;
   const label = opts.label || `Summary (${f.section})`;
   const out = await runWriter({
     prompt, label, tries: opts.tries || 3,
-    generate: async p => shape((await generateJson(p, schema, { temperature: Math.min(aiTemperature(), opts.temperature ?? 0.6), maxTokens: opts.maxTokens || (f.notesFor ? 500 : 300) })).data),
+    generate: async p => shape((await generateJson(p, schema, { temperature: Math.min(aiTemperature(), tempCap), maxTokens: opts.maxTokens || (f.notesFor ? 500 : 300) })).data),
     text: d => `${d.headline.replace(/\*\*/g, '')}. ${d.body}${d.notes && Object.keys(d.notes).length ? `\n${noteText(d)}` : ''}`,
     checks: [
       (t, d) => (!d.headline ? ['the headline is empty'] : []),
@@ -13941,6 +13972,7 @@ ${rules}`;
       t => bannedProblems(t),
       t => (opts.banned && t.match(opts.banned) ? [`it uses the word "${t.match(opts.banned)[0]}"`] : []),
       (t, d) => (opts.strict ? [strictSummaryIssue(d.headline, d.body, f.facts)].filter(Boolean) : []),
+      t => voiceProblems(t, voice),
       ...(opts.checks || []),
       // Second opinion at temperature 0, only once every free check passes.
       ...(opts.factCheck === false ? [] : [{ costly: true, fn: async (t, d) => factCheckHomeSummary(f, d.headline, d.body, noteText(d)) }]),
@@ -13972,17 +14004,18 @@ async function generateHomeSummary(block, f, opts = {}) {
 // digits-only number guard, and "That gap explains why…". Returns a reason, or ''.
 const SPELLED_NUMBERS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 function strictSummaryIssue(headline, body, facts) {
-  const sentences = String(body).replace(/\*\*/g, '').split(/(?<=[.!?])\s+(?=[A-Z0-9])/).filter(x => x.trim());
-  if (sentences.length > 2) return `the body has ${sentences.length} sentences (at most 2)`;
+  // A short aside ("Grabe lang.") rides with the sentence before it (lib/writer.js).
+  const sentences = countSentences(String(body).replace(/\*\*/g, ''));
+  if (sentences > 2) return `the body has ${sentences} sentences (at most 2)`;
   const text = `${headline} ${body}`.replace(/\*\*/g, '');
   const factNums = new Set(String(facts).match(/\d+(?:\.\d+)?/g) || []);
-  // "zero"/"one" are skipped: "one of", "one game" read as words, not stats.
+  // zero to three are skipped: "one of", "the two teams", "from three" read as words.
   for (const w of text.toLowerCase().match(/[a-z]+/g) || []) {
     const n = SPELLED_NUMBERS.indexOf(w);
-    // "three" is skipped too: "from three" is a shot, not a number.
-    if (n > 1 && n !== 3 && !factNums.has(String(n))) return `it spells out a number ("${w}") that isn't in the facts`;
+    if (n > 3 && !factNums.has(String(n))) return `it spells out a number ("${w}") that isn't in the facts`;
   }
-  if (/\b(explains?|because|thanks to|drives?|driven by|fuels?|fueled by|powered by|leads? to)\b/i.test(text)) return 'it claims one stat causes or explains another';
+  // Taglish "because" too (the conyo voice): kasi, dahil, kaya ("that's why").
+  if (/\b(explains?|because|thanks to|drives?|driven by|fuels?|fueled by|powered by|leads? to|kasi|dahil|kaya)\b/i.test(text)) return 'it claims one stat causes or explains another (in any language: no "because", "kasi", "kaya")';
   return '';
 }
 
@@ -14583,7 +14616,8 @@ ${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '';
     ].join('\n');
     return { facts: `${name} stats:\n${rankLines}`, prompt: `You are covering the Best Defender race for WKND Basketball, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence Best Defender case' : 'Write exactly 2 short sentences (under 45 words in total) on the Best Defender case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real Best Defender candidate — steals, blocks, rebounding, staying out of foul trouble, and winning.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, pid) ? `
+${voiceFlavor(voice, pid)}` : ''}
 
 Rules:
 - Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
@@ -14618,7 +14652,8 @@ ${reminder}` };
   ].join('\n');
   return { facts: `${name} stats:\n${rankLines}`, prompt: `You are covering the MVP race for WKND Basketball, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence MVP case' : 'Write exactly 2 short sentences (under 45 words in total) on the MVP case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, pid) ? `
+${voiceFlavor(voice, pid)}` : ''}
 
 Rules:
 - Do NOT mention any other player by name or by comparison (no "unlike X", "while others", "leads over").
@@ -15464,6 +15499,7 @@ async function renderRacePage(req, res, raceKey) {
           t => claimProblems(t, facts),
           t => bannedProblems(t),
           t => (/^\s*(with an?\b)/i.test(t) ? ['it opens with "With a"'] : []),
+          t => voiceProblems(t, voice),
         ],
       });
       if (out.problems.length) {
@@ -15581,9 +15617,9 @@ async function generatePageWriteups(page, facts, key) {
   const ids = Object.keys(facts);
   const base = `You write the short paragraph that sits under each section heading on the WKND Basketball ${isRoast ? '"The Roast" page — the playful flip side of the league leaders board' : 'League Leaders page'}. It's a recreational league whose players read every word.
 
-THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
+THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}${voiceFlavor(voice, key) ? `\n${voiceFlavor(voice, key)}` : ''}
 
-Write one paragraph per section. Each: 1–2 sentences, at most 40 words, plain text (no markdown, asterisks or emoji). Tell ONE story from that section's facts — a close race, a tie, a big gap, a player on several boards. Mention at most two or three players; never walk through every board.${isRoast ? ' Make it funny: a wry line or light joke in the voice, not a dry recap of the numbers.' : ''}
+Write one paragraph per section. Each: 1–2 sentences (a short aside of 3 words or fewer doesn't count), at most 40 words, plain text (no markdown, asterisks or emoji). Tell ONE story from that section's facts — a close race, a tie, a big gap, a player on several boards. Mention at most two or three players; never walk through every board.${isRoast ? ' Make it funny: a wry line or light joke in the voice, not a dry recap of the numbers.' : ''}
 
 SECTIONS
 ${ids.map(id => `[${id}]\n${facts[id]}`).join('\n\n')}
@@ -15615,13 +15651,14 @@ FINAL REMINDER — one story per section, at most 40 words, in the ${voice.name}
       // number (digits and spelled) from this section's facts, no claim they don't back, the
       // shared banned list plus this page's own, and the length.
       const words = text.split(/\s+/).length;
-      const sentences = (text.match(/[.!?](\s|$)/g) || []).length;
+      const sentences = countSentences(text);
       const banned = text.match(WRITEUP_BANNED);
       const problems = [
         ...numberProblems(text, facts[id], { pairs: false }),
         ...claimProblems(text, facts[id]),
         ...bannedProblems(text),
         ...(banned ? [`it uses the word "${banned[0]}"`] : []),
+        ...voiceProblems(text, voice),
         ...(words > WRITEUP_MAX_WORDS || sentences > 2 ? [`it is too long (${words} words, ${sentences} sentences; the limit is 2 sentences and 40 words, so tell ONE story)`] : []),
       ];
       if (problems.length) {
