@@ -281,7 +281,7 @@ export function playoffsModel({ standings = [], games = [], h2h = {} }) {
       id: g.id, round, date: g.date, finals: g.game_type === 'finals',
       w: aw ? g.team_a_name : g.team_b_name, l: aw ? g.team_b_name : g.team_a_name,
       ws: Math.max(g.team_a_score, g.team_b_score), ls: Math.min(g.team_a_score, g.team_b_score),
-      ot: !!Number(g.overtime), recap: g.recapTitle, potg: g.potgName, potgLine: g.potgLine || '',
+      ot: !!Number(g.overtime), recap: g.recapTitle, potg: g.potgName, potgShared: !!g.potgShared, potgLine: g.potgLine || '',
     };
   });
 

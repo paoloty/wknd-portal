@@ -407,12 +407,12 @@ export function highlightsSidebar(highlights, { limit = 4, seeAllLink = true } =
 </div>`;
   }
 
-  const rows = highlights.slice(0, limit).map(({ game, stat, player, team }) => {
+  const rows = highlights.slice(0, limit).map(({ game, stat, player, team, writeup: text }) => {
     const displayName = displayPlayerName(player?.name || '').toUpperCase();
     const teamName = String(team?.name || '').toUpperCase();
     const color = teamColor(teamName);
     const isLight = teamName === 'WHITE';
-    const writeup = String(game.potg_writeup || '').replace(/\*\*/g, '').trim();
+    const writeup = String(text ?? game.potg_writeup ?? '').replace(/\*\*/g, '').trim();
 
     return `<a href="/games/${escHtml(game.id)}#potg-anchor" class="highlight-card">
   <div class="hc-top">

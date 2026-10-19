@@ -63,7 +63,7 @@ function boxRow(p, shots, potgId, color) {
   };
   const countCell = ([k]) => `<td class="is-num"><span class="agd-v">${orig[k]}</span><span class="agd-e" hidden><input class="aui-input agd-in" type="number" min="0" step="1" inputmode="numeric" data-field="${k}" value="${orig[k]}" aria-label="${attr(`${name} ${k}`)}"></span></td>`;
   return `<tr class="agd-row" data-stat-row data-player="${attr(p.player_id)}" data-orig="${attr(JSON.stringify(orig))}">
-    <td class="agd-who"><span class="aui-who">${avatar(name, color, { size: 26, playerId: p.player_id })}<a class="agd-name" href="/admin/players/${attr(p.player_id)}">${escHtml(name)}</a>${p.player_id === potgId ? badge('POTG', 'amber') : ''}</span></td>
+    <td class="agd-who"><span class="aui-who">${avatar(name, color, { size: 26, playerId: p.player_id })}<a class="agd-name" href="/admin/players/${attr(p.player_id)}">${escHtml(name)}</a>${potgId.includes(p.player_id) ? badge(p.player_id === potgId[0] ? 'POTG' : 'CO-POTG', 'amber') : ''}</span></td>
     ${shots.map(shotCell).join('')}
     ${COUNTS.map(countCell).join('')}
     <td class="is-num agd-per">${perOf(p).toFixed(1)}</td>
@@ -170,6 +170,20 @@ function contentTab({ game, st, stats, colors, colorOfTeam }) {
     return `<label class="aui-choice"><input type="radio" name="potg_player_id" value="${attr(p.player_id)}"${p.player_id === chosen ? ' checked' : ''}><span class="aui-choice__body">${avatar(name, colorOfTeam(p.team_name), { size: 28, playerId: p.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span><span class="aui-cell__sub">${n(p.pts)} pts · ${n(p.reb)} reb · ${n(p.ast)} ast</span></span><span class="agd-per-tag">PER ${perOf(p).toFixed(1)}</span></span></label>`;
   }).join('')}</div>` : '<p class="aui-muted">No stats to choose from.</p>';
 
+  // Co-player of the game: optional, any winner (best PER first), with its own write-up.
+  const co = String(game.co_potg_player_id || '');
+  const winners = stats.filter(s => String(s.team_name || '').toUpperCase() === winner).sort((x, y) => perOf(y) - perOf(x));
+  const coBlock = winners.length > 1 ? `<div class="agd-copotg">
+        ${field({ label: 'Co-player of the game (optional)', name: 'co_potg_player_id', type: 'select', value: co, attrs: 'data-copotg-pick',
+          options: [['', 'None'], ...winners.map(p => [p.player_id, `${displayPlayerName(p.name || '')} · ${n(p.pts)} pts · ${n(p.reb)} reb · ${n(p.ast)} ast`])],
+          help: 'Shares the award. Both get full POTG credit on their profiles.', wide: true })}
+        <div class="agd-copotg__fields" data-copotg-fields${co ? '' : ' hidden'}>
+          <label class="aui-field is-wide" for="f-copotg"><span class="aui-field__label">Co-player write-up</span>
+            <textarea class="aui-input" rows="4" id="f-copotg" name="co_potg_writeup" placeholder="Why they shared the award…" data-copotg-text>${escHtml(game.co_potg_writeup || '')}</textarea></label>
+          <div class="aui-row">${button('✦ Write with AI', { kind: 'secondary', attrs: `data-ai="/admin/games/${attr(game.id)}/generate-potg" data-ai-target="copotg"` })}<span class="aui-muted" data-ai-status="copotg"></span></div>
+        </div>
+      </div>` : '';
+
   const raw = game.game_writeup || '';
   const recapHtml = raw.trim().startsWith('<') ? raw : raw ? `<p>${escHtml(raw).replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>')}</p>` : '';
   const words = String(raw).replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
@@ -195,6 +209,7 @@ function contentTab({ game, st, stats, colors, colorOfTeam }) {
         <label class="aui-field is-wide" for="f-potg"><span class="aui-field__label">Write-up</span>
           <textarea class="aui-input" rows="4" id="f-potg" name="potg_writeup" placeholder="Why they were the player of the game…" data-potg-text>${escHtml(game.potg_writeup || '')}</textarea></label>
         <div class="aui-row">${button('✦ Write with AI', { kind: 'secondary', attrs: `data-ai="/admin/games/${attr(game.id)}/generate-potg" data-ai-target="potg"` })}<span class="aui-muted" data-ai-status="potg"></span></div>
+        ${coBlock}
       </div>`,
     })}
     ${section({
@@ -299,7 +314,8 @@ export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers 
   const a = n(game.team_a_score), b = n(game.team_b_score);
   const winner = String(a >= b ? game.team_a_name : game.team_b_name).toUpperCase();
   const autoPotg = stats.filter(s => String(s.team_name || '').toUpperCase() === winner).sort((x, y) => perOf(y) - perOf(x))[0]?.player_id || '';
-  const potgId = st === 'live' || st === 'draft' ? (game.manual_potg_player_id || autoPotg) : '';
+  // [POTG, co-POTG?] for the box score's badges.
+  const potgId = st === 'live' || st === 'draft' ? [game.manual_potg_player_id || autoPotg, game.co_potg_player_id].filter(Boolean) : [];
 
   const missing = contentChecks(game).filter(([, ok]) => !ok).length;
   const tabs = [

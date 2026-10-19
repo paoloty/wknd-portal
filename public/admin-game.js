@@ -180,7 +180,13 @@
     var target = btn.getAttribute('data-ai-target');
     var status = document.querySelector('[data-ai-status="' + target + '"]');
     var potg = document.querySelector('input[name="potg_player_id"]:checked');
-    var body = { player_id: potg ? potg.value : null };
+    var coPick = document.querySelector('[data-copotg-pick]');
+    var potgId = potg ? potg.value : null, coId = coPick ? coPick.value : '';
+    // Each Player of the Game gets their own spotlight; the other one is passed as shared_with.
+    var body = target === 'copotg'
+      ? { player_id: coId, shared_with: potgId }
+      : { player_id: potgId, shared_with: coId, co_player_id: coId };
+    if (target === 'copotg' && !coId) { ui().toast('Pick the co-player of the game first.', { tone: 'error' }); return; }
     if (target === 'recap') { var ctx = document.querySelector('[data-recap-context]'); body.context = ctx ? ctx.value : ''; }
     var label = btn.textContent;
     btn.disabled = true; btn.textContent = 'Writing…';
@@ -192,7 +198,7 @@
         quill.clipboard.dangerouslyPasteHTML('<p>' + esc(text).replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>') + '</p>', 'silent');
         syncRecap(true);
       } else {
-        var ta = document.querySelector('[data-potg-text]');
+        var ta = document.querySelector(target === 'copotg' ? '[data-copotg-text]' : '[data-potg-text]');
         if (ta) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); }
       }
       if (status) status.textContent = 'Written. Read it over, then Save content.';
@@ -276,6 +282,7 @@
       return;
     }
     if (t.matches('[data-cover-file]')) { uploadCover(t); return; }
+    if (t.matches('[data-copotg-pick]')) { syncCoPotg(); return; }
     var win = t.closest('[data-pick-window]');
     if (win && t.name === 'closed') {
       post(win.getAttribute('data-pick-window'), { closed: t.value })
@@ -284,8 +291,18 @@
     }
   });
 
+  // The co-POTG write-up shows only once a co-player is picked.
+  function syncCoPotg() {
+    var pick = document.querySelector('[data-copotg-pick]');
+    var box = document.querySelector('[data-copotg-fields]');
+    if (pick && box) box.hidden = !pick.value;
+  }
+
   function init() {
     if (!root()) return;
+    syncCoPotg();
+    var form = document.getElementById('game-content');
+    if (form) form.addEventListener('reset', function () { setTimeout(syncCoPotg, 0); });
     var side = store('agd-team-' + gameId());
     if (side === 'b' && document.querySelector('[data-team-panel="b"]')) showTeam('b');
     initRecap();

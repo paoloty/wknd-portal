@@ -733,7 +733,7 @@ function potgWriteups(potgGames, player) {
     return `<a href="/games/${encodeURIComponent(g.id)}#potg-anchor" class="highlight-card">
   <div class="hc-top">
     <div class="hc-info">
-      <span class="hc-name">${escHtml(formatDate(g.date))}</span>
+      <span class="hc-name">${escHtml(formatDate(g.date))}${g.co ? ' · CO-POTG' : ''}</span>
       <div class="hc-stat-line">${g.pts} PTS · ${g.reb} REB · ${g.ast} AST</div>
     </div>
     <span class="team-chip" style="background:${oppColor};color:${isLight ? '#10141d' : '#fff'}">vs ${escHtml(oppName)}</span>

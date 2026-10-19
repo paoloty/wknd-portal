@@ -1908,7 +1908,7 @@ function getHeaderInfo(features) {
       const h = buildHighlights(done, Object.fromEntries(players.map(p => [p.id, p])), Object.fromEntries(teams.map(t => [t.id, t])), 1)[0];
       if (h?.player) {
         const day = new Date(`${h.game.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        awardSlides.push(slide({ ...h.player, team: h.team?.name }, { chip: 'POTG', value: String(h.stat.pts ?? 0), valueKey: 'PTS', caption: `Player of the game · ${day}`, meta: `${h.stat.reb ?? 0} REB · ${h.stat.ast ?? 0} AST`, href: `/games/${encodeURIComponent(gameSlug(h.game))}` }));
+        awardSlides.push(slide({ ...h.player, team: h.team?.name }, { chip: 'POTG', value: String(h.stat.pts ?? 0), valueKey: 'PTS', caption: `${h.co ? 'Co-Player' : 'Player'} of the game · ${day}`, meta: `${h.stat.reb ?? 0} REB · ${h.stat.ast ?? 0} AST`, href: `/games/${encodeURIComponent(gameSlug(h.game))}` }));
       }
       const awardSeason = features.awards !== false ? getAwardSeasons()[0] : null;
       if (awardSeason != null) {
@@ -2717,6 +2717,29 @@ function derivePotgPlayerId(game, gameStats) {
   return best?.s.player_id || null;
 }
 
+// The winning team's id, or null for a tie.
+function winnerTeamIdOf(game) {
+  const a = Number(game.team_a_score || 0), b = Number(game.team_b_score || 0);
+  return a === b ? null : (a > b ? game.team_a_id : game.team_b_id);
+}
+
+// The game's Players of the Game: the POTG (manual pick, else derived), then the co-POTG
+// when an admin picked one (winning team only, with a box score line). Every POTG reader goes
+// through this — never manual_potg_player_id / co_potg_player_id directly.
+function potgIdsFor(game, stats) {
+  const main = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
+  if (!main) return [];
+  const co = String(game.co_potg_player_id || '');
+  const win = winnerTeamIdOf(game);
+  const ok = co && co !== main && stats.some(s => s.player_id === co && (!win || s.team_id === win));
+  return ok ? [main, co] : [main];
+}
+
+// A player's POTG writeup for a game: the main one, or the co-POTG's own.
+function potgWriteupFor(game, playerId) {
+  return playerId && playerId === game.co_potg_player_id ? (game.co_potg_writeup || '') : (game.potg_writeup || '');
+}
+
 function extractQuarterScores(game) {
   let log;
   try { log = JSON.parse(game.game_log_json || '[]'); } catch { log = []; }
@@ -2872,14 +2895,17 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
   // completedGames must already be in date DESC order (caller calls byDate first).
   const results = [];
   for (const g of completedGames) {
-    if (results.length >= count) break;
-    if (!g.potg_writeup) continue;
+    if (!g.potg_writeup && !g.co_potg_writeup) continue;
     const stats = getGameStats(g.id);
-    const potgPlayerId = g.manual_potg_player_id || derivePotgPlayerId(g, stats);
-    if (!potgPlayerId) continue;
-    const potgStat = stats.find(s => s.player_id === potgPlayerId);
-    if (!potgStat) continue;
-    results.push({ game: g, stat: potgStat, player: playerMap[potgPlayerId] || null, team: teamMap[potgStat.team_id] || null });
+    // A co-POTG is their own highlight, with their own writeup.
+    for (const [k, pid] of potgIdsFor(g, stats).entries()) {
+      if (results.length >= count) break;
+      const writeup = potgWriteupFor(g, pid);
+      const potgStat = stats.find(s => s.player_id === pid);
+      if (!writeup || !potgStat) continue;
+      results.push({ game: g, stat: potgStat, player: playerMap[pid] || null, team: teamMap[potgStat.team_id] || null, writeup, co: k > 0 });
+    }
+    if (results.length >= count) break;
   }
   return results;
 }
@@ -4985,8 +5011,13 @@ async function composeStravagantBadgeOverlay(basePng, stat, accent) {
   return sharp(basePng).composite([{ input: overlay, top: 0, left: 0 }]).png({ compressionLevel: 9 }).toBuffer();
 }
 
+// potgStat: the POTG's stat row, or [POTG, co-POTG] for a game with a co-POTG.
 async function generateGameCoverPng(game, potgStat, bgDataUrl) {
   const W = 1200, H = 630;
+  if (Array.isArray(potgStat)) {
+    if (potgStat.length < 2) potgStat = potgStat[0] || null;
+    else return generateGameCoverPng(game, null, bgDataUrl).then(png => addCoPotgToCover(png, game, potgStat));
+  }
 
   // Background
   let base;
@@ -5136,14 +5167,61 @@ async function generateGameCoverPng(game, potgStat, bgDataUrl) {
   return sharp(base).composite(layers).png({ compressionLevel: 9 }).toBuffer();
 }
 
+// The cover's bottom-left block for a game with a co-POTG: both avatars overlapping, then
+// "CO-PLAYERS OF THE GAME", both last names and each one's line. Same type and colours as
+// the single POTG block above, drawn onto a cover rendered without one.
+async function addCoPotgToCover(basePng, game, potgStats) {
+  const W = 1200, H = 630, R = 48, cy = 520;
+  const teams = getAllTeams();
+  const cxs = [76, 160];
+  const lastOf = s => String(s.name || '').split(',')[0].trim().toUpperCase() || 'PLAYER';
+  const colorOf = s => escXml(s.team_color || teams.find(t => t.id === s.team_id)?.color || '#f97316');
+  const line = s => `${lastOf(s)}  ${Number(s.pts || 0)} PTS - ${Number(s.reb || 0)} REB - ${Number(s.ast || 0)} AST`;
+  const names = escXml(potgStats.map(lastOf).join(' & '));
+  const nameSize = names.length <= 22 ? 36 : names.length <= 30 ? 30 : 24;
+  const avatars = await Promise.all(potgStats.map(async s => {
+    if (!s.picture_url) return null;
+    try {
+      const src = await fetchCoverImageBuffer(s.picture_url);
+      if (!src) return null;
+      const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${R * 2}" height="${R * 2}"><circle cx="${R}" cy="${R}" r="${R}" fill="#fff"/></svg>`);
+      return await sharp(src).rotate().resize(R * 2, R * 2, { fit: 'cover', position: 'centre' })
+        .composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+    } catch { return null; }
+  }));
+  const ring = (s, i) => `
+  <circle cx="${cxs[i]}" cy="${cy}" r="${R + 4}" fill="#020817"/>
+  <circle cx="${cxs[i]}" cy="${cy}" r="${R}" fill="#020817" fill-opacity="0.7"/>
+  ${!avatars[i] ? `<text x="${cxs[i]}" y="${cy + 10}" text-anchor="middle" fill="#475569" font-size="28" font-weight="800" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${escXml(svgInitials(s.name || '?'))}</text>` : ''}`;
+  const outline = (s, i) => `<circle cx="${cxs[i]}" cy="${cy}" r="${R + 2}" fill="none" stroke="${colorOf(s)}" stroke-width="2" stroke-opacity="0.9"/>`;
+  const x = 236, nameY = 452 + nameSize + 8;
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <defs><filter id="txt" x="-5%" y="-5%" width="110%" height="110%"><feDropShadow dx="0" dy="1" stdDeviation="4" flood-color="#000000" flood-opacity="0.9"/></filter></defs>
+  ${ring(potgStats[1], 1)}${ring(potgStats[0], 0)}
+  <text x="${x}" y="452" fill="#f97316" font-size="13" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)">CO-PLAYERS OF THE GAME</text>
+  <text x="${x}" y="${nameY}" fill="#ffffff" font-size="${nameSize}" font-weight="800" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${names}</text>
+  <text x="${x}" y="${nameY + 30}" fill="#e2e8f0" font-size="17" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${escXml(line(potgStats[0]))}</text>
+  <text x="${x}" y="${nameY + 54}" fill="#e2e8f0" font-size="17" font-weight="700" font-family="${COVER_SVG_FONT}" filter="url(#txt)">${escXml(line(potgStats[1]))}</text>
+</svg>`);
+  const outlines = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${outline(potgStats[1], 1)}${outline(potgStats[0], 0)}</svg>`);
+  const toPng = buf => sharp(buf, { density: 144 }).resize(W, H).png().toBuffer();
+  // Back avatar (co-POTG) first, then the POTG's ring + photo on top of it.
+  const layers = [{ input: await toPng(svg), top: 0, left: 0 }];
+  if (avatars[1]) layers.push({ input: avatars[1], left: cxs[1] - R, top: cy - R });
+  const front = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${ring(potgStats[0], 0)}</svg>`);
+  layers.push({ input: await toPng(front), top: 0, left: 0 });
+  if (avatars[0]) layers.push({ input: avatars[0], left: cxs[0] - R, top: cy - R });
+  layers.push({ input: await toPng(outlines), top: 0, left: 0 });
+  return sharp(basePng).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+}
+
 async function serveCover(req, res) {
   const gameId = req.params.gameId;
   const game = getGameById(gameId);
   if (!game) return res.status(404).end();
   try {
     const stats       = getGameDetailStats(gameId);
-    const potgId      = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
-    const potgStat    = potgId ? stats.find(s => s.player_id === potgId) : null;
+    const potgStat    = potgIdsFor(game, stats).map(id => stats.find(s => s.player_id === id)).filter(Boolean);
     const coverRow    = game.has_cover ? getGameCover(gameId) : null;
     const png = await generateGameCoverPng(game, potgStat, coverRow?.social_cover_data_url || null);
     res.set('Content-Type', 'image/png');
@@ -8554,13 +8632,14 @@ app.get('/games/:ref', (req, res) => {
   // ── After the final: recap, flow, performers, box score, picks verdict, the frozen preview. ──
   const stats = getGameDetailStats(game.id);
   const dnpPlayers = getGameDnpPlayers(game.id);
-  const potgPlayerId = game.manual_potg_player_id || derivePotgPlayerId(game, stats);
+  const potgIds = potgIdsFor(game, stats);
+  const potgPlayerId = potgIds[0] || null;
   const quarterScores = extractQuarterScores(game);
   const flow = gameFlow(game);
   const plays = keyPlays(flow, game, quarterScores);
   const won = stats.length ? howItWasWon(game, teamTotals(stats, game.team_a_name, game.team_a_to_team), teamTotals(stats, game.team_b_name, game.team_b_to_team)) : [];
   const history = stats.length ? playerHistory(stats.map(s => s.player_id), game) : {};
-  const dc = stats.length ? duelAndCast(stats, game, history) : null;
+  const dc = stats.length ? duelAndCast(stats, game, history, potgIds) : null;
   // The viewer's own line, for the "Your game" strip + Share My Stats buttons.
   const mine = currentPlayerId ? stats.find(s => s.player_id === currentPlayerId) : null;
   const myGame = mine ? {
@@ -8622,7 +8701,7 @@ app.get('/games/:ref', (req, res) => {
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game, court),
     body: gamePage({
-      ...common, state: 'final', stats, dnpPlayers, potgPlayerId, quarterScores,
+      ...common, state: 'final', stats, dnpPlayers, potgPlayerId, coPotg: potgIds.length > 1, quarterScores,
       flow, plays, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
       shareLocked: shareCardsLocked(req),
       duelHist: dc ? Object.fromEntries([dc.a, dc.b].map(s => [s.player_id, meetingPoints(game, sorted, s.player_id)])) : {},
@@ -9761,10 +9840,23 @@ app.post('/admin/games/:id/save', requireAuth, jsonSmall, (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
+  const potgPick = b.potg_player_id !== undefined ? String(b.potg_player_id) : game.manual_potg_player_id;
+  // Co-POTG: winning team only, never the POTG themself. 'None' clears it and its writeup.
+  const coPick = b.co_potg_player_id !== undefined ? String(b.co_potg_player_id || '') : game.co_potg_player_id;
+  if (coPick) {
+    const stats = getGameStats(game.id);
+    const win = winnerTeamIdOf(game);
+    const line = stats.find(s => s.player_id === coPick);
+    const main = potgPick || derivePotgPlayerId(game, stats);
+    if (!line || (win && line.team_id !== win)) return res.status(400).json({ error: 'The co-player of the game must be on the winning team.' });
+    if (coPick === main) return res.status(400).json({ error: 'Pick a different player for co-player of the game.' });
+  }
   updateGameAll(game.id, {
     game_writeup:         b.game_writeup     !== undefined ? String(b.game_writeup)     : game.game_writeup,
     potg_writeup:         b.potg_writeup     !== undefined ? String(b.potg_writeup)     : game.potg_writeup,
-    manual_potg_player_id: b.potg_player_id  !== undefined ? String(b.potg_player_id)   : game.manual_potg_player_id,
+    manual_potg_player_id: potgPick,
+    co_potg_player_id:    coPick,
+    co_potg_writeup:      !coPick ? '' : b.co_potg_writeup !== undefined ? String(b.co_potg_writeup) : game.co_potg_writeup,
     youtube_url:          b.youtube_url      !== undefined ? String(b.youtube_url)       : game.youtube_url,
     under_review:         b.status           !== undefined ? (b.status === 'draft' ? 1 : 0) : game.under_review,
     date:                 b.date             !== undefined ? String(b.date)              : game.date,
@@ -9993,15 +10085,16 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     return `${displayPlayerName(p.name)} (${p.team_name}): ${p.pts}pts/${p.reb}reb/${p.ast}ast/${p.stl}stl/${p.blk}blk${pct}`;
   }).join('\n');
 
-  const potgStat = potgId ? stats.find(s => s.player_id === potgId) : null;
-  const potgLine = potgStat
-    ? (() => {
-        const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0) + (potgStat.fg4m|0);
-        const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0) + (potgStat.fg4m_miss|0);
-        const pct = fga > 0 ? ` (${Math.round(fgm/fga*100)}% FG)` : '';
-        return `${displayPlayerName(potgStat.name)} (${potgStat.team_name}): ${potgStat.pts}pts/${potgStat.reb}reb/${potgStat.ast}ast${pct}`;
-      })()
-    : null;
+  // The co-POTG as the form has it (unsaved), else as saved; checked like potgIdsFor.
+  const coId = req.body?.co_player_id !== undefined ? String(req.body.co_player_id || '') : String(game.co_potg_player_id || '');
+  const potgIds = potgIdsFor({ ...game, manual_potg_player_id: potgId || '', co_potg_player_id: coId }, stats);
+  const potgLine = potgIds.map(id => stats.find(s => s.player_id === id)).filter(Boolean).map(potgStat => {
+    const fgm = (potgStat.fg2m|0) + (potgStat.fg3m|0) + (potgStat.fg4m|0);
+    const fga = fgm + (potgStat.fg2m_miss|0) + (potgStat.fg3m_miss|0) + (potgStat.fg4m_miss|0);
+    const pct = fga > 0 ? ` (${Math.round(fgm/fga*100)}% FG)` : '';
+    return `${displayPlayerName(potgStat.name)} (${potgStat.team_name}): ${potgStat.pts}pts/${potgStat.reb}reb/${potgStat.ast}ast${pct}`;
+  }).join(' AND ') || null;
+  const potgShared = potgIds.length > 1;
 
   const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "fired on all cylinders," "gave it their all," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "nothing short of spectacular," "competitive matchup," "hard-fought," "gritty," "intense battle," "back-and-forth affair," "close contest," "dominant performance," "statement win," "impressive outing," "strong showing," "secured," "key contributor," "managed to," "ultimately," "momentum shifted," "throughout the game," "on both ends of the floor," "contributed," "led the way"';
 
@@ -10075,8 +10168,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     `QUARTER-BY-QUARTER (running score):`,
     qLines.length ? qLines.join('\n') : '(quarter scores unavailable)',
     ``,
-    potgLine ? `PLAYER OF THE GAME: ${potgLine}` : '',
-    potgLine ? `(This player must be featured prominently in the recap — reference their specific stats in paragraphs 2 and/or 3.)` : '',
+    potgLine ? `${potgShared ? 'CO-PLAYERS OF THE GAME (a shared award)' : 'PLAYER OF THE GAME'}: ${potgLine}` : '',
+    potgLine ? `(${potgShared ? 'Both players' : 'This player'} must be featured prominently in the recap — reference their specific stats in paragraphs 2 and/or 3.)` : '',
     ``,
     `TOP PERFORMERS:`,
     topPerformers || '(no stats)',
@@ -10123,6 +10216,9 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   const playerTeamWon = potgStat.team_id === game.team_a_id
     ? scoreA > scoreB
     : scoreB > scoreA;
+  // A shared award: shared_with is the other Player of the Game (the POTG when writing the
+  // co-POTG's spotlight, and the other way round). Each gets their own spotlight.
+  const sharedStat = req.body?.shared_with && req.body.shared_with !== potgId ? stats.find(s => s.player_id === req.body.shared_with) : null;
 
   const seasonStats = getPlayerSeasonStats(potgId, game.season);
   const leagueRank  = getPlayerLeagueRank(potgId, game.season);
@@ -10137,9 +10233,10 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   const voice      = pickVoice('potg', { date: game.date });
   const storyHooks = potgStoryHooks(game, stats, potgStat);
   const recentOpenings = getAllGames()
-    .filter(g => g.potg_writeup && g.id !== game.id)
+    .filter(g => g.id !== game.id)
+    .flatMap(g => [g.potg_writeup, g.co_potg_writeup].filter(Boolean))
     .slice(0, 10)
-    .map(g => { const w = parseWriteup(g.potg_writeup); return (`${w.title} ${w.body}`.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140); })
+    .map(t => { const w = parseWriteup(t); return (`${w.title} ${w.body}`.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 140); })
     .filter(Boolean);
 
   const seasonLine = seasonStats
@@ -10177,6 +10274,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     `PLAYER: ${displayPlayerName(potgStat.name)} (${potgStat.team_name})`,
     `This game: ${potgStat.pts}pts / ${potgStat.reb}reb / ${potgStat.ast}ast / ${potgStat.stl}stl / ${potgStat.blk}blk${fgPct ? ' / ' + fgPct : ''}`,
     `Player's team ${playerTeamWon ? 'WON' : 'LOST'} this game.`,
+    sharedStat ? `SHARED AWARD: ${displayPlayerName(potgStat.name)} shares Player of the Game with teammate ${displayPlayerName(sharedStat.name)} (${sharedStat.pts}pts / ${sharedStat.reb}reb / ${sharedStat.ast}ast), who gets their own spotlight. Say once that the honour is shared; keep the focus on ${displayPlayerName(potgStat.name)}.` : '',
     leagueRank ? `League rank in scoring: ${leagueRank}${leagueRank === 1 ? 'st' : leagueRank === 2 ? 'nd' : leagueRank === 3 ? 'rd' : 'th'} in the league` : '',
     seasonLine,
     ``,
@@ -10565,12 +10663,16 @@ function buildMatchup(game, ctx) {
     ctx.loadGame(g.id);
     const stats = ctx.statsById[g.id] || [];
     const aIsA = g.team_a_name === A;
-    const potgId = stats.length ? (g.manual_potg_player_id || derivePotgPlayerId(g, stats)) : null;
-    const potgStat = potgId ? stats.find(s => s.player_id === potgId) : null;
+    const [potgId, coId] = potgIdsFor(g, stats);
+    const line = id => {
+      const s = id && stats.find(x => x.player_id === id);
+      return s ? { name: displayPlayerName(ctx.playerMap[id]?.name || ''), pts: +s.pts || 0, reb: +s.reb || 0, ast: +s.ast || 0 } : null;
+    };
+    const potg = line(potgId);
     return {
       id: g.id, ymd: gameYmd(g.date), season: g.season, tag: gameTagLabel(g), hasCover: !!g.has_cover,
       scoreA: Number(aIsA ? g.team_a_score : g.team_b_score), scoreB: Number(aIsA ? g.team_b_score : g.team_a_score),
-      potg: potgStat ? { name: displayPlayerName(ctx.playerMap[potgId]?.name || ''), pts: +potgStat.pts || 0, reb: +potgStat.reb || 0, ast: +potgStat.ast || 0 } : null,
+      potg: potg ? { ...potg, co: line(coId) } : null,
     };
   });
 
@@ -10591,18 +10693,16 @@ function buildPotgMarquee(played, playerMap, count = 8) {
   const out = [];
   const potgByGame = new Map();
   const potgOf = g => {
-    if (!potgByGame.has(g.id)) {
-      const st = getGameStats(g.id);
-      potgByGame.set(g.id, st.length ? (g.manual_potg_player_id || derivePotgPlayerId(g, st)) : null);
-    }
+    if (!potgByGame.has(g.id)) potgByGame.set(g.id, potgIdsFor(g, getGameStats(g.id)));
     return potgByGame.get(g.id);
   };
-  for (const [i, g] of played.entries()) {
+  // A co-POTG gets their own card, right after the POTG.
+  function* entries() {
+    for (const [i, g] of played.entries()) for (const [k, pid] of potgOf(g).entries()) yield { g, i, pid, co: k > 0 };
+  }
+  for (const { g, i, pid, co } of entries()) {
     if (out.length >= count) break;
-    const stats = getGameStats(g.id);
-    if (!stats.length) continue;
-    const pid = g.manual_potg_player_id || derivePotgPlayerId(g, stats);
-    const s = pid && stats.find(x => x.player_id === pid);
+    const s = getGameStats(g.id).find(x => x.player_id === pid);
     if (!s) continue;
     const player = playerMap[pid];
     const team = s.team_id === g.team_a_id ? g.team_a_name : g.team_b_name;
@@ -10614,16 +10714,16 @@ function buildPotgMarquee(played, playerMap, count = 8) {
     const [w, l, ws, ls] = aWin ? [g.team_a_name, g.team_b_name, g.team_a_score, g.team_b_score] : [g.team_b_name, g.team_a_name, g.team_b_score, g.team_a_score];
     const tag = gameTagLabel(g);
     let tally = 0;
-    for (const og of played.slice(i)) if (String(og.season) === String(g.season) && potgOf(og) === pid) tally++;
+    for (const og of played.slice(i)) if (String(og.season) === String(g.season) && potgOf(og).includes(pid)) tally++;
     out.push({
       gameId: g.id, playerId: pid, name: displayPlayerName(player?.name || ''), rawName: player?.name || '', number: player?.number, team, hasPhoto: !!player?.picture_url,
       meta: `${shortDay(gameYmd(g.date))} · S${g.season}${tag ? ` ${tag}` : ''}`,
-      day: shortDay(gameYmd(g.date)), season: g.season, tag,
+      day: shortDay(gameYmd(g.date)), season: g.season, tag, co,
       stats: [{ n: +s.pts || 0, u: 'PTS' }, ...extras.map(x => ({ n: x.n, u: x.u }))],
       line: { pts: +s.pts || 0, reb: +s.reb || 0, ast: +s.ast || 0 },
       ws, ls, winner: w, loser: l, tally,
       result: `${titleCase(w)} ${ws}–${ls} ${titleCase(l)}`,
-      writeup: String(g.potg_writeup || '').replace(/\*\*/g, '').trim(),
+      writeup: String(potgWriteupFor(g, pid)).replace(/\*\*/g, '').trim(),
     });
   }
   return out;
@@ -12147,12 +12247,14 @@ function playoffsSectionData(season) {
   const games = seasonGames.filter(g => g.game_type === 'playoff' || g.game_type === 'finals').map(g => {
     const done = (g.status === 'complete' || g.status === 'final') && (Number(g.team_a_score) + Number(g.team_b_score)) > 0;
     const stats = done ? getGameStats(g.id) : [];
-    const potgId = done ? (g.manual_potg_player_id || derivePotgPlayerId(g, stats)) : null;
-    const p = potgId ? getPlayerById(potgId) : null;
-    const s = stats.find(x => x.player_id === potgId);
+    // A co-POTG shows as "A & B", each with their own line.
+    const ids = done ? potgIdsFor(g, stats) : [];
+    const names = ids.map(id => getPlayerById(id)).filter(Boolean).map(p => displayPlayerName(p.name));
+    const lines = ids.map(id => stats.find(x => x.player_id === id)).filter(Boolean)
+      .map(s => `${Number(s.pts) || 0} points, ${Number(s.reb) || 0} rebounds, ${Number(s.ast) || 0} assists`);
     return {
-      ...g, recapTitle: parseWriteup(g.game_writeup || '').title, potgName: p ? displayPlayerName(p.name) : '',
-      potgLine: s ? `${Number(s.pts) || 0} points, ${Number(s.reb) || 0} rebounds, ${Number(s.ast) || 0} assists` : '',
+      ...g, recapTitle: parseWriteup(g.game_writeup || '').title, potgName: names.join(' & '), potgShared: names.length > 1,
+      potgLine: lines.length > 1 ? names.map((n, i) => `${n} ${lines[i] || ''}`.trim()).join('; ') : lines[0] || '',
     };
   });
   const person = type => {
@@ -15962,7 +16064,7 @@ function playoffsSectionFacts(pd) {
   };
 
   if (m.tableRows.length) {
-    const lines = m.tableRows.map(r => `- ${r.round.replace(/ · G(\d)/, ', Game $1')}, ${summaryDay(r.date)}: ${T(r.w)} beat ${T(r.l)} ${r.ws}-${r.ls}, by ${plural(r.ws - r.ls, 'point')}${r.ot ? ', in overtime' : ''}${r.potg ? `. Player of the game: ${r.potg}${r.potgLine ? ` (${r.potgLine})` : ''}` : ''}${r.recap ? `. Recap headline: "${r.recap}"` : ''}`);
+    const lines = m.tableRows.map(r => `- ${r.round.replace(/ · G(\d)/, ', Game $1')}, ${summaryDay(r.date)}: ${T(r.w)} beat ${T(r.l)} ${r.ws}-${r.ls}, by ${plural(r.ws - r.ls, 'point')}${r.ot ? ', in overtime' : ''}${r.potg ? `. ${r.potgShared ? 'Co-players' : 'Player'} of the game: ${r.potg}${r.potgLine ? ` (${r.potgLine})` : ''}` : ''}${r.recap ? `. Recap headline: "${r.recap}"` : ''}`);
     out.games = {
       kicker: `Every playoff game · Season ${pd.season}`, section: 'Every playoff game (results and players of the game)', where,
       facts: `Season ${pd.season} playoff games, in order:\n${lines.join('\n')}`,
@@ -16009,7 +16111,7 @@ function gameSectionData(game) {
   if (!stats.length) return { stats, dc: null, won: [] };
   const history = playerHistory(stats.map(s => s.player_id), game);
   const A = teamTotals(stats, game.team_a_name, game.team_a_to_team), B = teamTotals(stats, game.team_b_name, game.team_b_to_team);
-  return { stats, dc: duelAndCast(stats, game, history), won: howItWasWon(game, A, B) };
+  return { stats, dc: duelAndCast(stats, game, history, potgIdsFor(game, stats)), won: howItWasWon(game, A, B) };
 }
 
 function gameSectionFacts(game, { stats, dc, won }) {
@@ -16164,11 +16266,10 @@ app.get('/players/:ref', async (req, res) => {
   const statsByType = getPlayerStatsByType(resolved.id);
   const gameLogs    = getPlayerGameLog(resolved.id);
   const potgCandidates = getPlayerPotgCandidates(resolved.id);
-  const potgGames = potgCandidates.filter(g => {
-    if (g.manual_potg_player_id === resolved.id) return true;
-    if (g.manual_potg_player_id) return false;
-    return derivePotgPlayerId(g, getGameStats(g.id)) === resolved.id;
-  });
+  // A co-POTG counts in full, shown with their own writeup (potg_writeup below).
+  const potgGames = potgCandidates
+    .filter(g => potgWriteupFor(g, resolved.id) && potgIdsFor(g, getGameStats(g.id)).includes(resolved.id))
+    .map(g => ({ ...g, potg_writeup: potgWriteupFor(g, resolved.id), co: g.co_potg_player_id === resolved.id }));
   const careerHighs = getPlayerCareerHighs(resolved.id);
   const awards      = getPlayerAwards(resolved.id);
   const displayName = displayPlayerName(player.name);

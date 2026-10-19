@@ -8614,6 +8614,8 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 
 /* Supporting cast */
 .gd-hook { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); border: 1px solid rgba(245,147,50,.45); padding: 3px 8px; border-radius: 999px; }
+/* The co-Player of the Game in the cast: solid amber, like the duel's POTG tag (.dl-tag). */
+.gd-hook--potg { color: #0a0e16; background: var(--amber); border-color: var(--amber); }
 
 /* Box score + team stats */
 .gd-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }

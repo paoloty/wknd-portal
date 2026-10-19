@@ -162,7 +162,7 @@ function potgCard(p, { writeup = false } = {}) {
         <span class="pl-card__who">
           ${first ? `<span class="pl-card__first">${escHtml(first)}</span>` : ''}
           <span class="pl-card__last">${escHtml(last)}</span>
-          <span class="pl-card__meta"><span class="pl-team"><i style="background:${teamColor(p.team)}"></i>${escHtml(p.team)}</span><span>${escHtml(p.day)}${p.tag ? ` · ${escHtml(p.tag)}` : ''}</span>${p.tally ? `<span class="pl-rookie" title="Player of the Game number ${p.tally} this season">${ordinal(p.tally)} POTG</span>` : ''}</span>
+          <span class="pl-card__meta"><span class="pl-team"><i style="background:${teamColor(p.team)}"></i>${escHtml(p.team)}</span><span>${escHtml(p.day)}${p.tag ? ` · ${escHtml(p.tag)}` : ''}</span>${p.co ? `<span class="pl-rookie" title="Co-Player of the Game · number ${p.tally} this season">CO-POTG</span>` : p.tally ? `<span class="pl-rookie" title="Player of the Game number ${p.tally} this season">${ordinal(p.tally)} POTG</span>` : ''}</span>
         </span>
       </span>
       ${writeup && p.writeup ? `<p class="pl-card__body">${escHtml(p.writeup)}</p>` : ''}
@@ -235,7 +235,10 @@ function edgeRow(r) {
 
 function meetingTile(m, x) {
   const aWin = x.scoreA > x.scoreB;
-  const potg = x.potg
+  // With a co-POTG, both names and points only, so the line stays one line.
+  const potg = x.potg?.co
+    ? `CO-POTG · ${escHtml(x.potg.name)} ${x.potg.pts} · ${escHtml(x.potg.co.name)} ${x.potg.co.pts} pts`
+    : x.potg
     ? `POTG · ${escHtml(x.potg.name)} ${x.potg.pts} pts${x.potg.reb >= 5 ? `, ${x.potg.reb} reb` : x.potg.ast >= 5 ? `, ${x.potg.ast} ast` : ''}`
     : 'No box score for this game';
   return `<a href="/games/${encodeURIComponent(x.id)}" class="gm-mt${x.hasCover ? ' has-photo' : ''}" style="--team:${teamColor(aWin ? m.a : m.b)}">

@@ -2224,6 +2224,10 @@ a.agd-name:hover { color: var(--amber); }
 .agd-ai { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.05); }
 .agd-potgwrap, .agd-media { display: flex; flex-direction: column; gap: 14px; }
 .agd-potg .aui-choice__body .aui-cell__stack { flex: 1; }
+/* Co-player of the game: set off from the POTG like the recap's AI row (.agd-ai). */
+.agd-copotg, .agd-copotg__fields { display: flex; flex-direction: column; gap: 14px; }
+.agd-copotg { padding-top: 14px; border-top: 1px solid rgba(255,255,255,.05); }
+.agd-copotg__fields[hidden] { display: none; }
 .agd-per-tag { height: 22px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--text-muted); font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; }
 .agd-cover { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .agd-cover .aui-cell__stack { flex: 1; min-width: 160px; }

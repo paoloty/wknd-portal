@@ -1859,7 +1859,7 @@ const perfBg = s => `<img class="pl-card__bg" src="${playerPhotoUrl(s.player_id,
 // code-picked hook), game score, the head-to-head line, then their points in every earlier
 // meeting with tonight as the last bar — against their average there and their best.
 // hist: { series, dates } from server.js meetingPoints. POTG gets the amber glow.
-function duelPerformer(s, opp, potgId, say, stats, hist) {
+function duelPerformer(s, opp, potgId, say, stats, hist, co = false) {
   const n = perfName(s.name);
   const past = hist?.series || [];
   const tonight = n0(s.pts);
@@ -1875,7 +1875,7 @@ function duelPerformer(s, opp, potgId, say, stats, hist) {
   }
   return {
     id: s.player_id, first: n.first, last: n.last, team: s.team_name, number: s.number,
-    tag: s.player_id === potgId ? 'PLAYER OF THE GAME' : s.badge || '', potg: s.player_id === potgId,
+    tag: s.player_id === potgId ? (co ? 'CO-PLAYER OF THE GAME' : 'PLAYER OF THE GAME') : s.badge || '', potg: s.player_id === potgId,
     big: s.gs.toFixed(1), bigKey: 'GAME SCORE', lead: s.player_id === potgId,
     line: stats, series: past, dates: hist?.dates || [], avg, tonight,
     barsKey: `Points vs ${tc(opp)} · tonight last`,
@@ -1889,7 +1889,7 @@ function castCard(s, say, watchOf = () => null) {
   return `<article class="pl-card pl-card--photo gd-pc gd-pc--sm" style="--team:${teamColor(s.team_name)}">
     ${perfBg(s)}
     ${perfHead(s, ' pl-av--md', `<span class="gd-pc__pts"><b class="font-condensed">${n0(s.pts)}</b><small>PTS</small></span>`)}
-    ${s.badge ? `<span class="gd-hook gd-pc__hook">${escHtml(s.badge)}</span>` : ''}
+    ${s.coPotg ? '<span class="gd-hook gd-hook--potg gd-pc__hook">Co-Player of the Game</span>' : s.badge ? `<span class="gd-hook gd-pc__hook">${escHtml(s.badge)}</span>` : ''}
     <span class="gd-pc__ln">${escHtml(castLine(s))}</span>
     ${watchLine(watchOf(s.player_id))}
     ${say(s, true)}
@@ -1942,8 +1942,8 @@ function watchCard(w) {
 // Supporting cast (both teams, highest game score first) then the watch-list players not shown above:
 // one row of small player cards, three and a half a view with arrows on desktop, a swipe row on phones.
 function castRow(cast, watch, say, watchOf) {
-  // Both teams together, best game score first.
-  const sorted = [...cast].sort((x, y) => (y.gs || 0) - (x.gs || 0));
+  // Both teams together, the co-POTG first, then best game score first.
+  const sorted = [...cast].sort((x, y) => (y.coPotg ? 1 : 0) - (x.coPotg ? 1 : 0) || (y.gs || 0) - (x.gs || 0));
   const cards = [...sorted.map(c => castCard(c, say, watchOf)), ...watch.map(watchCard)];
   if (!cards.length) return '<p class="gd-cast__none">Nobody else reached a game score of 10.</p>';
   const arrow = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
@@ -1988,14 +1988,15 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
   // the end of the row.
   const elsewhere = watched.filter(w => !shown.has(w.id));
   const lines = duelLines(dc.a, dc.b);
-  const pa = duelPerformer(dc.a, oppOf(dc.a), potgId, say, lines[0], hist[dc.a.player_id]);
-  const pb = duelPerformer(dc.b, oppOf(dc.b), potgId, say, lines[1], hist[dc.b.player_id]);
+  const co = [...dc.castA, ...dc.castB].some(s => s.coPotg);
+  const pa = duelPerformer(dc.a, oppOf(dc.a), potgId, say, lines[0], hist[dc.a.player_id], co);
+  const pb = duelPerformer(dc.b, oppOf(dc.b), potgId, say, lines[1], hist[dc.b.player_id], co);
   const max = duelScale(pa, pb);
   const bothInDuel = watched.length === 2 && watched.every(w => w.id === dc.a.player_id || w.id === dc.b.player_id);
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
     ${sh('perf', 'Top performers', { link: '<a href="#box" class="section-header__link">Full box score →</a>' })}
     ${panel}
-    <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}; amber marks who won each stat. Then the rest of each team’s standouts, ranked by game score.</p>
+    <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}; amber marks who won each stat. Then the rest of each team’s standouts, ranked by game score${co ? ', the co-Player of the Game first' : ''}.</p>
     <div class="gd-duel">${duelCard(pa, max)}${duelCard(pb, max)}</div>${barsScript()}
     <p class="gd-verdict">${verdict}</p>
     ${castRow([...dc.castA, ...dc.castB], elsewhere, say, watchOf)}
