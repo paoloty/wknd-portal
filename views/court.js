@@ -370,7 +370,7 @@ function jumpbar(court, p, x, sections) {
   const full = r && max && r.confirmed >= max;
   return `<nav class="gd-snav crt-snav" data-gd-snav aria-label="On this page">
     <span class="gd-snav__mini">${court.image_url ? `<img class="crt-snav__av" src="/api/papawis-court/${encodeURIComponent(court.id)}/photo?w=96" alt="" width="26" height="26">` : `<span class="crt-snav__av crt-snav__av--blank" aria-hidden="true">${escHtml((p.name || '?').charAt(0).toUpperCase())}</span>`}${escHtml(p.name)}</span>
-    ${sections.map(([id, l], i) => `<a href="#${id}" data-spy="${id}"${i ? '' : ' class="is-on"'}>${escHtml(l)}</a>`).join('')}
+    ${sections.map(([id, l], i) => `<a href="#${id}" data-spy="${id}"${i || id === 'crt-there' ? (id === 'crt-there' ? ' class="crt-snav__there"' : '') : ' class="is-on"'}>${escHtml(l)}</a>`).join('')}
     ${r ? `<a class="crt-btn crt-btn--amber crt-btn--sm crt-snav__cta" href="/papawis#pw-game-${encodeURIComponent(r.id)}" data-cta="court-signup-bar">${full ? 'Join the waitlist' : 'Sign up'}</a>` : ''}
   </nav>`;
 }
@@ -549,6 +549,7 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
       ${league(games, extras)}
       ${rent(p, court, x)}
       ${faq(p, x)}
+    ${isLoggedIn ? '' : `<section class="card crt-cta" aria-label="Play here"><div><span class="crt-kicker">Play here</span><b>Weekend basketball in Makati, Mandaluyong and Pasig</b><span class="crt-muted">League seasons with stats and recaps, plus Papawis pickup runs.</span></div><div class="crt-cta__side"><div class="crt-cta__btns"><a class="crt-btn crt-btn--amber" href="/register" data-cta="court-join">Join the community</a><a class="crt-btn crt-btn--ghost" href="${MESSENGER_URL}" target="_blank" rel="noopener" data-cta="court-messenger">Message us</a></div><a class="crt-cta__how" href="/join" data-cta="court-how">New here? See how it works</a></div></section>`}
     </div>
     <aside class="crt-side" data-crt-side aria-label="Next run and getting there">
       ${runPanel(p, court, x)}
@@ -556,7 +557,6 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
     </aside>
   </div>
   ${SIDE_SCRIPT}
-  ${isLoggedIn ? '' : `<section class="card crt-cta" aria-label="Play here"><div><span class="crt-kicker">Play here</span><b>Weekend basketball in Makati, Mandaluyong and Pasig</b><span class="crt-muted">League seasons with stats and recaps, plus Papawis pickup runs.</span></div><div class="crt-cta__side"><div class="crt-cta__btns"><a class="crt-btn crt-btn--amber" href="/register" data-cta="court-join">Join the community</a><a class="crt-btn crt-btn--ghost" href="${MESSENGER_URL}" target="_blank" rel="noopener" data-cta="court-messenger">Message us</a></div><a class="crt-cta__how" href="/join" data-cta="court-how">New here? See how it works</a></div></section>`}
   ${dock(p)}
 </div>
 ${games.length ? gameCardScript() : ''}

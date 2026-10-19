@@ -41,12 +41,13 @@ export function sectionNavScript() {
     // a tie keeps the link that's already lit (i.e. the one just clicked).
     var on = null, best = -Infinity, limit = atEnd ? window.innerHeight : line;
     links.forEach(function (a) {
+      if (!a.offsetParent) return; // hidden at this width (e.g. a court page's sidebar card on desktop)
       var s = document.getElementById(a.dataset.spy); if (!s) return;
       var top = s.getBoundingClientRect().top;
       if (top > limit) return;
       if (top > best + 1 || (Math.abs(top - best) <= 1 && a === last)) { best = Math.max(best, top); on = a; }
     });
-    setOn(on || links[0]);
+    setOn(on || links.filter(function (a) { return a.offsetParent; })[0] || links[0]);
   }
   window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(spy); } }, { passive: true });
 

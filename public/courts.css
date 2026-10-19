@@ -12,7 +12,8 @@
 .crt-ico { color: var(--amber); flex-shrink: 0; }
 .crt-sec { margin-top: var(--c-sec); scroll-margin-top: calc(var(--gd-top, 85px) + 82px); }
 .crt-sh { margin-bottom: var(--c-head); }
-.crt-sh h2 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.crt-sh h2 { display: flex; align-items: baseline; column-gap: 8px; row-gap: 6px; flex-wrap: wrap; }
+.crt-sh .section-header__sub { margin-left: 0; }
 .crt-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--amber); line-height: 1; }
 .crt-empty { margin: 0; font-size: 13px; color: var(--text-muted); }
 .crt-foot { margin: 0; padding: 14px var(--c-pad); border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
@@ -64,10 +65,9 @@
    (top set by SIDE_SCRIPT). Under 900px both wrappers dissolve and the order below applies. */
 .crt-lay { display: grid; grid-template-columns: minmax(0, 1fr) var(--c-panel); gap: 32px; align-items: start; margin-top: 28px; }
 .crt-main { min-width: 0; display: flex; flex-direction: column; }
-.crt-main > .crt-top__left + .crt-snav { margin-top: 28px; }
 .crt-side { position: sticky; top: calc(var(--gd-top, 72px) + 16px); min-width: 0; display: flex; flex-direction: column; gap: var(--c-gap); }
-.crt-side .crt-there-sec { margin-top: 0; }
-@media (min-width: 901px) { .crt-side .crt-there-sec .crt-sh { display: none; } }
+/* Desktop: the sidebar card needs no heading, top margin or jump-bar link (always in view). */
+@media (min-width: 901px) { .crt-side .crt-there-sec { margin-top: 0; } .crt-side .crt-there-sec .crt-sh, .crt-snav .crt-snav__there { display: none; } }
 .crt-side .crt-there { grid-template-columns: minmax(0, 1fr); }
 .crt-side .crt-there__map { border-right: 0; border-bottom: 1px solid var(--border); }
 .crt-side .crt-there__map.crt-map { height: 220px; min-height: 220px; }
@@ -125,7 +125,7 @@
 
 /* Jump bar (desktop) and the phone dock */
 /* Sticky section bar: the site's .gd-snav (styles.css) with the run button at its right end */
-.crt-snav { margin: 28px 0 0; }
+.crt .crt-snav { margin: var(--c-sec) 0 0; }
 .crt-snav__cta { flex-shrink: 0; margin-left: auto; }
 /* The court's avatar beside its name in the pinned bar (photo, else its initial) */
 .crt-snav .gd-snav__mini { gap: 8px; }
@@ -379,13 +379,15 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 
 @media (max-width: 900px) {
   .crt-top { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .crt-lay { display: flex; flex-direction: column; gap: 0; }
+  .crt-lay { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
   .crt-main, .crt-side { display: contents; }
+  .crt-lay .crt-main > *, .crt-lay .crt-side > * { min-width: 0; max-width: 100%; }
   .crt-main > * { order: 3; }
   .crt-main > .crt-top__left { order: 1; }
-  .crt-side > .crt-panel { order: 2; margin-top: 24px; }
+  .crt-side > .crt-panel { order: 2; margin-top: var(--c-sec); }
   .crt-side > .crt-there-sec { order: 4; }
   .crt-main > #crt-faq { order: 5; }
+  .crt-main > .crt-cta { order: 6; }
   .crt-rail__track > *, .crt-rail--more .crt-rail__track > * { flex-basis: calc((100% - var(--c-gap) * 2) / 2.25); }
   .crt-gal__card { height: calc((100cqw - 2 * var(--c-gap)) / (var(--gal-r0) + 1.8667)); }
   .crt-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -408,14 +410,16 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
   .crt-chip:nth-child(odd) { border-left: 0; }
   .crt-chip:nth-child(n+3) { border-top: 1px solid var(--border); }
   .crt-chip b { font-size: 26px; }
-  .crt-chip { padding: 14px 16px; }
+  .crt-chip { padding: var(--c-pad); }
+  .crt-chip span { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
   .crt-snav__cta { display: none; }
-  .crt-rw { grid-template-columns: 84px minmax(0, 1fr); }
+  .crt-rw { grid-template-columns: minmax(0, 1fr); gap: var(--c-gap); }
+  .crt-rw__date { flex-direction: row; align-items: baseline; gap: 8px; }
   .crt-rw > .crt-btn, .crt-rw > .crt-rw__link { grid-column: 1 / -1; }
   .crt-rw > .crt-rw__link { justify-self: start; }
   .crt-rw .av-stack { --av: 24px !important; }
   .crt-rw__big { font-size: 32px; }
-  .crt-mets { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
+  .crt-mets { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--c-gap); }
   .crt-bn { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crt-bn > div:nth-child(3) { border-left: 0; }
   .crt-bn > div:nth-child(n+3) { border-top: 1px solid var(--border); }
