@@ -54,7 +54,7 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. G
 | 29 | Season | Team builder | /admin/season/teams | done | [x] |
 | 30 | Season | Team builder review | /admin/season/teams/review | n/a | [ ] |
 | 31 | Season | Team builder sandbox | /admin/season/teams/sandbox | done | [x] |
-| 32 | Community | Polls | /admin/polls | n/a | [ ] |
+| 32 | Community | Polls | /admin/polls (+ /admin/polls/:id, 2026-10-19) | n/a | [x] |
 | 33 | Community | Fines and conduct | /admin/fines | n/a | [ ] |
 | 34 | Community | Fine categories | /admin/fines/categories | n/a | [ ] |
 | 35 | Marketplace | Listings | /admin/marketplace | n/a | [ ] |

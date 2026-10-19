@@ -33,6 +33,7 @@ function pollCard(poll) {
           <span class="plp-option-text">${mine ? `<span class="plp-check-pop">${ICON_CHECK}</span>` : ''}<span class="plp-option-label">${escHtml(opt)}</span></span>
           <span class="plp-option-pct">${counts[i]} &middot; ${pct}%</span>
         </span>
+        ${poll.option_details?.[i] ? `<span class="plp-option-detail">${escHtml(poll.option_details[i])}</span>` : ''}
       </button>`;
   }).join('');
 
@@ -94,6 +95,7 @@ export function pollsPage({ polls = [] } = {}) {
 .plp-option-text { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); transition: color .3s ease; }
 .plp-option--mine .plp-option-text { color: var(--amber); }
 .plp-option-text svg { flex-shrink: 0; color: var(--amber); }
+.plp-option-detail { position: relative; display: block; padding: 0 14px 10px; margin-top: -4px; font-size: 12px; line-height: 1.4; color: var(--text-muted); }
 .plp-option-pct { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .plp-vote-msg { font-size: 11.5px; color: var(--text-muted); min-height: 14px; }
 .plp-hint { font-size: 11.5px; color: var(--text-muted); margin: 0; font-style: italic; }
@@ -169,6 +171,141 @@ export function pollsPage({ polls = [] } = {}) {
       });
     });
   });
+})();
+</script>`;
+}
+
+// "Fri 8 PM" in Manila time (a date too when it's more than six days out); minutes only when
+// they aren't :00.
+export function pollClosesLabel(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const day = d.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'short' });
+  const time = d.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).replace(':00', '');
+  const date = ms - Date.now() > 6 * 86400000 ? ` ${d.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}` : '';
+  return `${day}${date} ${time}`;
+}
+
+// The sitewide poll popup (2026-10-19): one poll, switched on per poll at /admin/polls/:id,
+// shown to a logged-in member who can vote in it and hasn't yet (picked in server.js
+// pollPopupFor). Art is optional and shown whole: beside the poll when it's portrait or square,
+// above it when it's landscape, and as a banner across the top on a phone. "Ask me later" (when
+// the poll allows it) hides it in this browser until the next Manila day; voting is the other
+// way out, and after that the server never renders it for them again. Styles: "Poll popup"
+// block in public/styles.css (ppop-).
+export function pollPopup({ poll, total = 0 }) {
+  const id = escHtml(poll.id);
+  const later = !!poll.popup_later;
+  const hasArt = poll.has_art && poll.art_ver;
+  const wide = hasArt && poll.art_w > poll.art_h * 1.15;
+  const art = hasArt
+    ? `<div class="ppop-art"><img src="/api/poll-art/${encodeURIComponent(poll.id)}?v=${poll.art_ver}" alt="" width="${poll.art_w}" height="${poll.art_h}" decoding="async"></div>`
+    : '';
+  const closes = poll.closes_at ? `Voting closes <b>${escHtml(pollClosesLabel(poll.closes_at))}</b> · ` : '';
+  const rows = poll.options.map((opt, i) => `
+      <button type="button" class="ppop-opt" data-ppop-opt="${i}">
+        <span class="ppop-opt-fill"></span>
+        <span class="ppop-opt-head"><span class="ppop-opt-label">${escHtml(opt)}</span><span class="ppop-opt-pct"></span></span>
+        ${poll.option_details?.[i] ? `<span class="ppop-opt-detail">${escHtml(poll.option_details[i])}</span>` : ''}
+      </button>`).join('');
+
+  return `
+<div class="ppop" id="ppop" data-poll="${id}" data-later="${later ? '1' : '0'}" hidden>
+  <div class="ppop-scrim"${later ? ' data-ppop-later' : ''}></div>
+  <div class="ppop-card${hasArt ? (wide ? ' ppop-card--art-top' : ' ppop-card--art-side') : ''}" role="dialog" aria-modal="true" aria-labelledby="ppop-q" tabindex="-1">
+    ${art}
+    <div class="ppop-main">
+      <div class="ppop-top">
+        <span class="ppop-kicker">Players are voting</span>
+        ${later ? '<button type="button" class="ppop-close" data-ppop-later aria-label="Close, ask me later">&times;</button>' : ''}
+      </div>
+      <h2 class="ppop-q" id="ppop-q">${escHtml(poll.question)}</h2>
+      ${poll.description ? `<p class="ppop-desc">${escHtml(poll.description)}</p>` : ''}
+      <p class="ppop-sub">${closes}<span data-ppop-n>${total}</span> voted so far</p>
+      <div class="ppop-opts">${rows}</div>
+      <div class="ppop-foot">
+        <span class="ppop-msg" data-ppop-msg>Tap one to vote. You can change it later on /polls.</span>
+        ${later ? '<button type="button" class="ppop-btn" data-ppop-later>Ask me later</button>' : ''}
+        <button type="button" class="ppop-btn ppop-btn--done" data-ppop-done hidden>Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var root = document.getElementById('ppop'); if (!root) return;
+  var pollId = root.getAttribute('data-poll'), canLater = root.getAttribute('data-later') === '1';
+  var KEY = 'wknd_poll_later_' + pollId;
+  if (canLater) { try { if (Number(localStorage.getItem(KEY) || 0) > Date.now()) return; } catch (e) {} }
+  var opts = root.querySelectorAll('[data-ppop-opt]'), msg = root.querySelector('[data-ppop-msg]');
+  var done = root.querySelector('[data-ppop-done]'), card = root.querySelector('.ppop-card'), lastFocus = null, voted = false;
+
+  function open() {
+    lastFocus = document.activeElement;
+    root.hidden = false;
+    document.documentElement.classList.add('ppop-lock');
+    requestAnimationFrame(function () { root.classList.add('is-in'); });
+    // Focus the dialog itself, not the first option: a ring on an option reads as a pick.
+    card.focus({ preventScroll: true });
+  }
+  function close() {
+    root.classList.remove('is-in');
+    document.documentElement.classList.remove('ppop-lock');
+    setTimeout(function () { root.hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); }, 180);
+  }
+  // Until the start of the next day in Manila (UTC+8, no DST).
+  function later() {
+    var H8 = 8 * 3600000, DAY = 86400000;
+    try { localStorage.setItem(KEY, String(Math.floor((Date.now() + H8) / DAY + 1) * DAY - H8)); } catch (e) {}
+    close();
+  }
+  root.querySelectorAll('[data-ppop-later]').forEach(function (b) { b.addEventListener('click', function () { if (voted) close(); else later(); }); });
+  done.addEventListener('click', close);
+  document.addEventListener('keydown', function (e) {
+    if (root.hidden) return;
+    if (e.key === 'Escape' && (canLater || voted)) { if (voted) close(); else later(); return; }
+    if (e.key !== 'Tab') return;
+    // Keep keyboard focus inside the popup.
+    var f = [].slice.call(root.querySelectorAll('button:not([hidden]):not([disabled])'));
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+
+  opts.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var i = Number(btn.getAttribute('data-ppop-opt'));
+      opts.forEach(function (b) { b.disabled = true; });
+      msg.classList.remove('is-error'); msg.textContent = 'Saving…';
+      fetch('/polls/' + encodeURIComponent(pollId) + '/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ option_index: i }) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'Couldn’t save your vote. Try again.');
+          voted = true;
+          var counts = res.j.counts, total = res.j.total;
+          root.classList.add('is-voted');
+          opts.forEach(function (b, k) {
+            var pct = total ? Math.round(counts[k] / total * 100) : 0;
+            b.classList.toggle('is-mine', k === i);
+            b.querySelector('.ppop-opt-fill').style.width = pct + '%';
+            b.querySelector('.ppop-opt-pct').textContent = counts[k] + ' · ' + pct + '%';
+            b.disabled = false;
+          });
+          root.querySelector('[data-ppop-n]').textContent = total;
+          msg.textContent = '✓ Locked in: ' + btn.querySelector('.ppop-opt-label').textContent;
+          msg.classList.add('is-done');
+          root.querySelectorAll('.ppop-btn[data-ppop-later]').forEach(function (b) { b.hidden = true; });
+          done.hidden = false;
+        })
+        .catch(function (e) {
+          opts.forEach(function (b) { b.disabled = false; });
+          msg.classList.add('is-error'); msg.textContent = e.message;
+        });
+    });
+  });
+
+  setTimeout(open, 900);
 })();
 </script>`;
 }

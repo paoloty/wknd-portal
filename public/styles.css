@@ -10134,3 +10134,64 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
   .pdb--dock .pdb__link { min-height: 50px; padding-left: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .pdb--dock, .pdb--dock.is-on { transition: none; } }
+
+/* ── Poll popup (views/polls.js pollPopup): a poll switched to "Show as popup", over any page
+   for a member who hasn't voted. Art optional: beside the poll (portrait/square), above it
+   (landscape), a banner across the top on a phone, where the card becomes a bottom sheet. ── */
+html.ppop-lock { overflow: hidden; }
+.ppop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.ppop[hidden] { display: none; }
+.ppop-scrim { position: absolute; inset: 0; background: rgba(5,7,12,.74); opacity: 0; transition: opacity .18s ease; }
+.ppop-card { position: relative; width: 100%; max-width: 520px; max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); display: flex; flex-direction: column; background: var(--surface); border: 1px solid rgba(255,255,255,.12); border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.55); opacity: 0; transform: translateY(12px) scale(.98); transition: opacity .18s ease, transform .22s cubic-bezier(.22,.9,.35,1); }
+.ppop.is-in .ppop-scrim { opacity: 1; }
+.ppop.is-in .ppop-card { opacity: 1; transform: none; }
+.ppop-card--art-side { max-width: 860px; flex-direction: row; }
+.ppop-card--art-top { max-width: 640px; }
+.ppop-art { flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--surface-2); }
+.ppop-art img { display: block; width: 100%; height: auto; }
+.ppop-card--art-side .ppop-art { width: 40%; max-width: 340px; }
+.ppop-card--art-side .ppop-art img { max-height: calc(100vh - 48px); object-fit: contain; }
+.ppop-card--art-top .ppop-art img { max-height: 260px; object-fit: contain; }
+.ppop-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 22px 22px 18px; }
+.ppop-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; }
+.ppop-kicker { display: inline-flex; align-items: center; line-height: 1; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); }
+.ppop-close { flex-shrink: 0; width: 30px; height: 30px; border-radius: 99px; border: 1px solid rgba(255,255,255,.12); background: transparent; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-size: 18px; cursor: pointer; font-family: inherit; }
+.ppop-close:hover { color: var(--text); }
+.ppop-q { margin: 0; font-size: 21px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; color: var(--text); text-wrap: balance; }
+.ppop-desc { margin: -6px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.ppop-sub { margin: -6px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
+.ppop-sub b { color: var(--text); font-weight: 600; }
+.ppop-opts { display: flex; flex-direction: column; gap: 7px; }
+/* color set on the button itself: <button> ignores inherited text colour (see .plp-option). */
+.ppop-opt { position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); overflow: hidden; cursor: pointer; font-family: inherit; text-align: left; transition: border-color .12s; }
+.ppop-opt:not(:disabled):hover { border-color: var(--text-muted); }
+.ppop-opt:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.ppop-opt:disabled { cursor: default; }
+.ppop-opt-fill { position: absolute; inset: 0; width: 0; background: rgba(148,163,184,.12); transition: width .45s cubic-bezier(.22,.9,.35,1); }
+.ppop-opt.is-mine { border-color: rgba(245,147,50,.35); }
+.ppop-opt.is-mine .ppop-opt-fill { background: rgba(245,147,50,.18); }
+.ppop-opt-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ppop-opt-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 700; }
+.ppop-opt.is-mine .ppop-opt-label { color: var(--amber); }
+.ppop-opt-pct { flex-shrink: 0; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ppop-opt-detail { position: relative; font-size: 12px; line-height: 1.4; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ppop-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ppop-msg { min-width: 0; font-size: 11.5px; color: var(--text-subtle); }
+.ppop-msg.is-done { font-size: 13px; font-weight: 700; color: var(--amber); }
+.ppop-msg.is-error { color: #f87171; }
+.ppop-btn { flex-shrink: 0; height: 34px; padding: 0 14px; border-radius: 99px; border: 1px solid rgba(255,255,255,.12); background: transparent; color: var(--text-muted); font-family: inherit; font-size: 12.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer; }
+.ppop-btn:hover { color: var(--text); }
+.ppop-btn[hidden] { display: none; }
+.ppop-btn--done { background: var(--amber); border-color: var(--amber); color: #0a0e16; }
+.ppop-btn--done:hover { color: #0a0e16; }
+@media (max-width: 640px) {
+  .ppop { align-items: flex-end; padding: 0; }
+  .ppop-card, .ppop-card--art-side, .ppop-card--art-top { max-width: none; max-height: 92vh; max-height: 92dvh; flex-direction: column; border-radius: var(--radius-lg) var(--radius-lg) 0 0; border-bottom: 0; transform: translateY(40px); }
+  .ppop-card--art-side .ppop-art, .ppop-art { width: 100%; max-width: none; height: 170px; }
+  .ppop-art img, .ppop-card--art-side .ppop-art img, .ppop-card--art-top .ppop-art img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
+  .ppop-main { padding: 16px 16px calc(14px + env(safe-area-inset-bottom)); gap: 12px; }
+  .ppop-q { font-size: 18px; }
+  .ppop-opt-detail { -webkit-line-clamp: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .ppop-scrim, .ppop-card, .ppop-opt-fill { transition: none; } }
+.ppop-card:focus { outline: none; }

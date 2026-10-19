@@ -1,192 +1,172 @@
+// /admin/polls and /admin/polls/:id (admin redesign, rebuilt from scratch 2026-10-19 on
+// views/admin/ui.js). The list is the shared data grid with New poll in a drawer; each poll's
+// page has the results, the popup (switches + art), and the poll's own fields. Browser side
+// (option rows, art upload): public/admin-polls.js.
 import { escHtml } from '../layout.js';
+import { pageHeader, dataGrid, section, badge, button, drawer, field, fieldGrid, toggleRow, saveBar, breadcrumb, statStrip, progress, emptyState } from './ui.js';
+import { pollClosesLabel } from '../polls.js';
 
-const TIER_LABEL = { admins: 'Admins', heads: 'Team Heads', players: 'All Players' };
-const BAR_COLORS = ['#f59332', '#38bdf8', '#a78bfa', '#34d399', '#f87171', '#fbbf24'];
+const attr = s => escHtml(String(s ?? ''));
+const TIER_LABEL = { admins: 'Admins', heads: 'Team heads', players: 'All players' };
+const TIER_OPTIONS = [['players', 'All players'], ['heads', 'Team heads'], ['admins', 'Admins']];
+const fmtDate = ts => (ts ? new Date(ts).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : '');
 
-function fmtDate(ts) {
-  return ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-}
-
-function tally(poll) {
+function tally(poll, votes) {
   const counts = poll.options.map(() => 0);
-  for (const v of poll.votes) if (counts[v.option_index] !== undefined) counts[v.option_index]++;
-  const total = counts.reduce((a, b) => a + b, 0);
-  return { counts, total };
+  for (const v of votes) if (counts[v.option_index] !== undefined) counts[v.option_index]++;
+  return { counts, total: counts.reduce((a, b) => a + b, 0) };
 }
 
-function pollCard(poll, { canManage = true } = {}) {
-  const { counts, total } = tally(poll);
-  const isOpen = poll.status === 'open';
-  // Who voted for which option, not just who voted at all — grouped per-option instead of
-  // one flat "everybody who voted" line, since which option someone picked is the actual
-  // information admin needs (e.g. to see if a specific head/tier is split on something).
-  const votersByOption = poll.options.map(() => []);
-  for (const v of poll.votes) {
-    if (votersByOption[v.option_index]) votersByOption[v.option_index].push(v.voter_name || 'Someone');
-  }
-  const rows = poll.options.map((opt, i) => {
-    const pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
-    const color = BAR_COLORS[i % BAR_COLORS.length];
-    const names = votersByOption[i];
-    return `
-    <div class="py-1.5">
-      <div class="flex items-center justify-between text-xs mb-1">
-        <span class="text-slate-300 font-medium">${escHtml(opt)}</span>
-        <span class="text-slate-500" style="font-variant-numeric:tabular-nums">${counts[i]} &middot; ${pct}%</span>
-      </div>
-      <div class="h-1.5 rounded-full bg-admin-border/60 overflow-hidden"><div style="width:${pct}%;background:${color};height:100%;border-radius:99px"></div></div>
-      ${names.length ? `<div class="text-[10px] text-slate-600 mt-1 leading-relaxed">${names.map(n => escHtml(n)).join(', ')}</div>` : ''}
-    </div>`;
-  }).join('');
-
-  return `
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-4" data-poll-id="${escHtml(poll.id)}">
-  <div class="px-4 py-3 border-b border-admin-border flex items-start justify-between gap-3 flex-wrap">
-    <div class="min-w-0">
-      <div class="text-sm font-semibold text-slate-200">${escHtml(poll.question)}</div>
-      ${poll.description ? `<div class="text-xs text-slate-500 mt-1 leading-relaxed">${escHtml(poll.description)}</div>` : ''}
-      <div class="text-[10px] text-slate-500 mt-1.5 flex items-center gap-1.5 flex-wrap">
-        <span class="agm-badge ${isOpen ? 'agm-badge--amber' : 'agm-badge--gray'}">${isOpen ? 'Open' : 'Closed'}</span>
-        <span>Sees it: <b class="text-slate-400 font-semibold">${TIER_LABEL[poll.visibility]}</b></span>
-        <span>&middot;</span>
-        <span>Votes: <b class="text-slate-400 font-semibold">${TIER_LABEL[poll.voter_eligibility]}</b></span>
-        <span>&middot;</span>
-        <span>${fmtDate(poll.created_at)}</span>
-      </div>
-    </div>
-    ${canManage ? `<button class="admin-btn admin-btn--sm ${isOpen ? 'admin-btn--danger' : 'admin-btn--success'}" onclick="setPollStatus('${escHtml(poll.id)}', '${isOpen ? 'closed' : 'open'}')">${isOpen ? 'Close' : 'Reopen'}</button>` : ''}
-  </div>
-  <div class="p-4">
-    ${rows}
-    <div class="text-[10px] text-slate-600 mt-2">n=${total}</div>
-  </div>
-</div>`;
+function statusBadges(p) {
+  const out = [p.status === 'open' ? badge('Open', 'green') : badge('Closed', 'gray')];
+  if (p.status === 'open' && p.popup) out.push(badge('Popup', 'amber'));
+  return `<span class="aui-cell__badges">${out.join('')}</span>`;
 }
 
-export function adminPollsBody({ polls = [] } = {}) {
-  const cards = polls.length === 0
-    ? `<div class="p-12 text-center text-sm text-slate-500 bg-admin-surface border border-admin-border rounded-lg">No polls yet.</div>`
-    : polls.map(p => pollCard(p)).join('');
+function whoText(p) {
+  return p.visibility === p.voter_eligibility ? TIER_LABEL[p.visibility] : `${TIER_LABEL[p.visibility]} see · ${TIER_LABEL[p.voter_eligibility]} vote`;
+}
 
-  return `
-<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-  <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">League Polls</h2>
-    <p class="text-sm text-slate-500 mt-0.5">Visibility controls who sees results; voter eligibility controls who can vote — the two can differ.</p>
-  </div>
-  <button class="agm-new-btn" onclick="openPollModal()">New Poll</button>
-</div>
-
-<div style="max-width:640px">${cards}</div>
-
-<div class="agm-modal-backdrop" id="poll-modal-backdrop" hidden>
-  <div class="agm-modal">
-    <div class="agm-modal-header">
-      <h3 class="agm-modal-title">New Poll</h3>
-      <button class="agm-modal-close" id="poll-modal-close">&times;</button>
-    </div>
-    <div class="agm-modal-body" style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label class="admin-field-label">Question</label>
-        <input id="poll-question" type="text" class="admin-input" placeholder="e.g. Should we shuffle teams next season?">
-      </div>
-      <div>
-        <label class="admin-field-label">Description <span class="text-slate-500 font-normal">(optional)</span></label>
-        <textarea id="poll-description" class="admin-input" rows="2" placeholder="A sentence or two of context, shown under the question…"></textarea>
-      </div>
-      <div>
-        <label class="admin-field-label">Options</label>
-        <div id="poll-options-list" class="flex flex-col gap-2"></div>
-        <button type="button" class="admin-btn admin-btn--sm mt-2" id="poll-add-option-btn">+ Add option</button>
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="admin-field-label">Visible to</label>
-          <select id="poll-visibility" class="admin-input">
-            <option value="players">All Players</option>
-            <option value="heads">Team Heads</option>
-            <option value="admins">Admins</option>
-          </select>
-        </div>
-        <div>
-          <label class="admin-field-label">Votable by</label>
-          <select id="poll-voter-eligibility" class="admin-input">
-            <option value="players">All Players</option>
-            <option value="heads">Team Heads</option>
-            <option value="admins">Admins</option>
-          </select>
-        </div>
-      </div>
-      <div id="poll-modal-msg" class="text-xs text-error" style="display:none"></div>
-      <button class="agm-new-btn" id="poll-submit-btn">Create Poll</button>
-    </div>
-  </div>
-</div>
-
-<script>
-(function() {
-  var optionsList = document.getElementById('poll-options-list');
-
-  function addOptionRow(value) {
-    var row = document.createElement('div');
-    row.className = 'flex items-center gap-2';
-    row.innerHTML = '<input type="text" class="admin-input poll-option-input" placeholder="Option" value="' + (value ? value.replace(/"/g, '&quot;') : '') + '">'
-      + '<button type="button" class="admin-btn admin-btn--sm admin-btn--danger poll-remove-option-btn">&times;</button>';
-    row.querySelector('.poll-remove-option-btn').addEventListener('click', function() {
-      if (optionsList.children.length > 2) row.remove();
-    });
-    optionsList.appendChild(row);
-  }
-
-  document.getElementById('poll-add-option-btn').addEventListener('click', function() { addOptionRow(''); });
-
-  window.openPollModal = function() {
-    document.getElementById('poll-question').value = '';
-    document.getElementById('poll-description').value = '';
-    optionsList.innerHTML = '';
-    addOptionRow(''); addOptionRow('');
-    document.getElementById('poll-visibility').value = 'players';
-    document.getElementById('poll-voter-eligibility').value = 'players';
-    document.getElementById('poll-modal-msg').style.display = 'none';
-    document.getElementById('poll-modal-backdrop').hidden = false;
-  };
-  document.getElementById('poll-modal-close').addEventListener('click', function() { document.getElementById('poll-modal-backdrop').hidden = true; });
-
-  document.getElementById('poll-submit-btn').addEventListener('click', async function() {
-    var msg = document.getElementById('poll-modal-msg');
-    msg.style.display = 'none';
-    var question = document.getElementById('poll-question').value.trim();
-    var options = Array.prototype.slice.call(document.querySelectorAll('.poll-option-input'))
-      .map(function(el) { return el.value.trim(); }).filter(Boolean);
-    if (!question) { msg.textContent = 'Question is required.'; msg.style.display = 'block'; return; }
-    if (options.length < 2) { msg.textContent = 'At least 2 options are required.'; msg.style.display = 'block'; return; }
-    var btn = this; btn.disabled = true;
-    try {
-      var r = await fetch('/admin/polls', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: question, options: options,
-          description: document.getElementById('poll-description').value.trim(),
-          visibility: document.getElementById('poll-visibility').value,
-          voter_eligibility: document.getElementById('poll-voter-eligibility').value,
-        }),
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      location.reload();
-    } catch (e) { msg.textContent = e.message; msg.style.display = 'block'; btn.disabled = false; }
+export function adminPollsBody({ polls = [], query = {}, notifyOnOpen = true }) {
+  const grid = dataGrid({
+    id: 'polls', baseUrl: '/admin/polls', query, minimal: true,
+    rows: polls, rowKey: p => p.id, noun: ['poll', 'polls'],
+    views: [
+      { key: 'open', label: 'Open', test: p => p.status === 'open' },
+      { key: 'closed', label: 'Closed', test: p => p.status !== 'open' },
+      { key: 'all', label: 'All', test: () => true },
+    ],
+    search: polls.length > 8 ? { placeholder: 'Search questions', text: p => `${p.question} ${p.options.join(' ')}` } : null,
+    defaultSort: '-created', perPage: 25,
+    columns: [
+      { key: 'question', label: 'Poll', primary: true, sort: p => p.question.toLowerCase(), cell: p => `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(p.question)}</span><span class="aui-cell__sub">${escHtml(`${p.options.length} options · ${whoText(p)}`)}</span></span>` },
+      { key: 'votes', label: 'Votes', num: true, sort: p => p.votes.length, cell: p => `<span class="aui-num">${p.votes.length}</span>` },
+      { key: 'closes', label: 'Closes', nowrap: true, sort: p => p.closes_at || 0, cell: p => (p.status === 'open' && p.closes_at ? escHtml(pollClosesLabel(p.closes_at)) : '<span class="aui-muted">—</span>') },
+      { key: 'created', label: 'Created', nowrap: true, phone: false, sort: p => p.created_at, cell: p => `<span class="aui-muted">${escHtml(fmtDate(p.created_at))}</span>` },
+      { key: 'status', label: 'Status', bare: true, cell: statusBadges },
+    ],
+    rowHref: p => `/admin/polls/${encodeURIComponent(p.id)}`,
+    rowMenu: p => [
+      { label: 'Open poll', href: `/admin/polls/${encodeURIComponent(p.id)}` },
+      p.status === 'open'
+        ? { label: 'Close poll', post: `/admin/polls/${p.id}/status`, body: { status: 'closed' }, done: 'Poll closed.', confirm: { title: 'Close this poll?', body: 'Nobody can vote after this. You can reopen it.', send: 'Close poll' } }
+        : { label: 'Reopen poll', post: `/admin/polls/${p.id}/status`, body: { status: 'open' }, done: 'Poll reopened.' },
+      { label: 'View on site', href: '/polls', external: true },
+    ],
+    actionsHtml: button('+ New poll', { kind: 'primary', attrs: 'data-drawer-open="new-poll"' }),
+    empty: { title: 'No polls here', sub: 'Start one with “+ New poll”.' },
   });
 
-  window.setPollStatus = async function(id, status) {
-    try {
-      var r = await fetch('/admin/polls/' + id + '/status', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: status }),
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      location.reload();
-    } catch (e) { alert(e.message); }
-  };
-})();
-</script>`;
+  const newPoll = drawer({
+    id: 'new-poll', eyebrow: 'Polls', title: 'New poll',
+    bodyHtml: `<form id="new-poll-form" data-json-action="/admin/polls" data-then="/admin/polls/{id}" data-done="Poll created. Add details, art or the popup here.">${fieldGrid(`
+        ${field({ label: 'Question', name: 'question', wide: true, required: true, placeholder: 'e.g. What’s the costume party theme?' })}
+        ${field({ label: 'Description', name: 'description', type: 'textarea', rows: 2, wide: true, help: 'Optional. Shown under the question.' })}
+        ${field({ label: 'Options', name: 'options', type: 'textarea', rows: 5, wide: true, required: true, placeholder: 'One per line', help: 'One per line. You can add a second line to each on the next page.' })}
+        ${field({ label: 'Who can see it', name: 'visibility', type: 'select', value: 'players', options: TIER_OPTIONS })}
+        ${field({ label: 'Who can vote', name: 'voter_eligibility', type: 'select', value: 'players', options: TIER_OPTIONS })}`)}
+    </form>`,
+    footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Create poll', { kind: 'primary', type: 'submit', attrs: 'form="new-poll-form"' })}`,
+  });
+
+  const switches = `<div class="aui-panel">
+    ${toggleRow({ label: 'Tell players about new polls', help: 'A bell notification to every active member when a poll for all players opens. Live site only.', name: 'polls_notify_on_open', on: notifyOnOpen, post: '/admin/site/settings', setting: true })}
+  </div>`;
+
+  return `<div class="aui-page">
+    ${pageHeader({ title: 'Polls', sub: 'Quick votes for members on /polls. Switch one to a popup and members see it on every page until they vote.' })}
+    ${grid}
+    ${section({ title: 'Switches', bodyHtml: switches })}
+    ${newPoll}
+  </div>`;
+}
+
+function resultsPanel(poll, votes) {
+  const { counts, total } = tally(poll, votes);
+  if (!total) return emptyState({ title: 'No votes yet', sub: poll.status === 'open' ? 'Votes show up here as they come in.' : '' });
+  const names = poll.options.map(() => []);
+  for (const v of votes) names[v.option_index]?.push(v.voter_name || 'Someone');
+  const leader = Math.max(...counts);
+  return `<div class="aui-panel apl-results">${poll.options.map((opt, i) => {
+    const pct = Math.round((counts[i] / total) * 100);
+    return `<div class="apl-result">
+      <div class="apl-result__head"><span class="aui-cell__title">${escHtml(opt)}${counts[i] === leader ? ` ${badge('Leading', 'amber')}` : ''}</span><span class="aui-num">${counts[i]} <span class="aui-muted">· ${pct}%</span></span></div>
+      ${progress(pct)}
+      ${names[i].length ? `<div class="aui-cell__sub">${names[i].map(escHtml).join(', ')}</div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function popupPanel(poll) {
+  const id = encodeURIComponent(poll.id);
+  const art = `<div class="apl-art" data-poll-art data-upload="/admin/polls/${attr(id)}/art" data-img="/api/poll-art/${attr(id)}">
+      <div class="apl-art__frame"${poll.has_art ? '' : ' hidden'} data-art-frame><img alt="Popup art" data-art-img src="${poll.has_art ? `/api/poll-art/${attr(id)}?v=${attr(poll.art_ver)}` : ''}"></div>
+      <div class="aui-row">
+        <label class="aui-btn aui-btn--secondary aui-btn--sm" for="apl-art-input">${poll.has_art ? 'Replace art' : 'Upload art'}</label>
+        <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-art-remove${poll.has_art ? '' : ' hidden'}>Remove</button>
+        <span class="aui-muted" data-art-msg></span>
+      </div>
+      <input type="file" id="apl-art-input" accept="image/*" hidden data-art-input>
+    </div>`;
+  return `<div class="aui-panel">
+    ${toggleRow({ label: 'Show as popup', help: poll.status === 'open' ? 'Logged-in members who can vote and haven’t yet see it on every page. Only one popup shows at a time: the newest.' : 'Only open polls pop up. Reopen this one to use it.', name: 'popup', on: !!poll.popup, post: `/admin/polls/${id}/flag`, reload: true })}
+    ${toggleRow({ label: 'Allow “Ask me later”', help: 'Lets members close it until the next day. Off: voting is the only way to close it.', name: 'popup_later', on: !!poll.popup_later, post: `/admin/polls/${id}/flag` })}
+    <div class="apl-art-row">
+      <div><div class="aui-toggle-row__label">Art</div><div class="aui-toggle-row__help">Optional. Shown whole beside the poll (or above it, if it’s wide), never cropped. On phones the middle shows as a banner.</div></div>
+      ${art}
+    </div>
+  </div>`;
+}
+
+function pollForm(poll, hasVotes, closesLocal) {
+  const optRow = (label, detail, i) => `<div class="apl-opt" data-opt-row>
+      <input class="aui-input" name="option_label[]" value="${attr(label)}" placeholder="Option" aria-label="Option ${i + 1}">
+      <input class="aui-input" name="option_detail[]" value="${attr(detail)}" placeholder="Second line (optional)" aria-label="Option ${i + 1} second line">
+      ${button('×', { kind: 'ghost', size: 'sm', attrs: `data-opt-remove aria-label="Remove option"${hasVotes && i < poll.options.length ? ' hidden' : ''}` })}
+    </div>`;
+  return `<form id="poll-form" class="aui-panel" data-json-action="/admin/polls/${attr(encodeURIComponent(poll.id))}/save" data-done="Poll saved." data-dirty-watch>
+    ${fieldGrid(`
+      ${field({ label: 'Question', name: 'question', value: poll.question, wide: true, required: true })}
+      ${field({ label: 'Description', name: 'description', type: 'textarea', rows: 2, value: poll.description || '', wide: true, help: 'Optional. Shown under the question.' })}
+      <div class="aui-field is-wide"><span class="aui-field__label">Options</span>
+        <div class="apl-opts" data-opt-list>${poll.options.map((o, i) => optRow(o, poll.option_details[i] || '', i)).join('')}</div>
+        <span class="aui-field__help">${hasVotes ? 'People have voted, so options can be renamed and added but not removed.' : 'The second line is the funny details, shown in smaller text under the option.'}</span>
+        <div>${button('+ Add option', { kind: 'secondary', size: 'sm', attrs: 'data-opt-add' })}</div>
+      </div>
+      ${field({ label: 'Who can see it', name: 'visibility', type: 'select', value: poll.visibility, options: TIER_OPTIONS })}
+      ${field({ label: 'Who can vote', name: 'voter_eligibility', type: 'select', value: poll.voter_eligibility, options: TIER_OPTIONS })}
+      ${field({ label: 'Voting closes', name: 'closes_at', type: 'datetime-local', value: closesLocal, help: 'Optional, Manila time. The poll closes itself then, and the popup stops.' })}`)}
+    <template data-opt-template>${optRow('', '', 999)}</template>
+  </form>`;
+}
+
+export function adminPollDetailBody({ poll, votes = [], closesLocal = '' }) {
+  const id = encodeURIComponent(poll.id);
+  const { total } = tally(poll, votes);
+  const isOpen = poll.status === 'open';
+  const statusBtn = isOpen
+    ? button('Close poll', { kind: 'secondary', attrs: `data-post-json="/admin/polls/${attr(id)}/status" data-body="${attr(JSON.stringify({ status: 'closed' }))}" data-done="Poll closed." data-confirm data-confirm-title="Close this poll?" data-confirm-body="Nobody can vote after this, and the popup stops. You can reopen it." data-confirm-send="Close poll"` })
+    : button('Reopen poll', { kind: 'secondary', attrs: `data-post-json="/admin/polls/${attr(id)}/status" data-body="${attr(JSON.stringify({ status: 'open' }))}" data-done="Poll reopened."` });
+
+  const stats = statStrip([
+    { label: 'Votes', value: String(total) },
+    { label: 'Status', value: isOpen ? (poll.closes_at ? `Open till ${pollClosesLabel(poll.closes_at)}` : 'Open') : 'Closed' },
+    { label: 'Popup', value: isOpen && poll.popup ? 'On' : 'Off' },
+    { label: 'Who votes', value: TIER_LABEL[poll.voter_eligibility] },
+  ]);
+
+  const del = `<div class="aui-panel apl-danger"><span class="aui-cell__stack"><span class="aui-cell__title">Delete poll</span><span class="aui-cell__sub">Removes the poll and every vote in it. This can’t be undone.</span></span>
+    ${button('Delete poll…', { kind: 'danger', attrs: `data-post-json="/admin/polls/${attr(id)}" data-method="DELETE" data-then="/admin/polls" data-done="Poll deleted." data-confirm data-confirm-title="Delete this poll?" data-confirm-body="${attr(`${total} vote${total === 1 ? '' : 's'} go too. This can’t be undone.`)}" data-confirm-send="Delete poll"` })}</div>`;
+
+  return `<div class="aui-page">
+    ${breadcrumb([{ label: 'Polls', href: '/admin/polls' }, { label: poll.question }])}
+    ${pageHeader({ title: poll.question, sub: `${whoText(poll)} · created ${fmtDate(poll.created_at)}${poll.created_by ? ` by ${poll.created_by}` : ''}`, actionsHtml: `${button('View on site', { kind: 'ghost', href: '/polls', attrs: 'target="_blank" rel="noopener"' })}${statusBtn}` })}
+    ${stats}
+    ${section({ title: 'Results', note: `· ${total} vote${total === 1 ? '' : 's'}`, bodyHtml: resultsPanel(poll, votes) })}
+    ${section({ title: 'Popup', note: '· over every page until they vote', bodyHtml: popupPanel(poll) })}
+    ${section({ title: 'Poll', note: '· question, options and who votes', bodyHtml: pollForm(poll, total > 0, closesLocal) })}
+    ${section({ title: 'Danger zone', bodyHtml: del })}
+    ${saveBar({ label: 'Save poll', form: 'poll-form' })}
+  </div>
+  <script src="/admin-polls.js" defer></script>`;
 }

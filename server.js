@@ -161,6 +161,7 @@ import {
   getTransactionById,
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   createLeaguePoll, getAllLeaguePolls, getLeaguePollById, setLeaguePollStatus, getLeaguePollVotes, getMyLeaguePollVote, castLeaguePollVote,
+  updateLeaguePoll, setLeaguePollFlag, getLeaguePollArt, setLeaguePollArt, deleteLeaguePoll,
   getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
   getReportableFineCategories, getOtherFineCategory,
   createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer, hasOpenPlayerReport,
@@ -262,8 +263,8 @@ import { finesPage } from './views/fines.js';
 import { teamHeadPage } from './views/team-head.js';
 import { myTeamPage } from './views/my-team.js';
 import { jerseyRequestPage } from './views/jersey-request.js';
-import { pollsPage } from './views/polls.js';
-import { adminPollsBody } from './views/admin/polls.js';
+import { pollsPage, pollPopup } from './views/polls.js';
+import { adminPollsBody, adminPollDetailBody } from './views/admin/polls.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -273,7 +274,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -2476,7 +2477,7 @@ function renderPage(req, opts) {
 
   const impersonatingHtml = req.session?.impersonating ? impersonationBanner(req.session.impersonatingPlayerName || 'this player') : '';
 
-  const body = impersonatingHtml + balanceBarHtml + probationBarHtml + bannerHtml + (opts.body || '');
+  const body = impersonatingHtml + balanceBarHtml + probationBarHtml + bannerHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -2576,12 +2577,6 @@ function marketplaceSettingsPanel() {
   return settingsPanel([
     { type: 'toggle', key: 'marketplace_enabled', value: getSetting('marketplace_enabled', '0') === '1', label: 'Marketplace on the site', sub: `Group-buy listings on ${codeTag('/marketplace')}. Managing listings here works either way.` },
   ], { title: 'Public page' });
-}
-
-function pollsSettingsPanel() {
-  return settingsPanel([
-    { type: 'toggle', key: 'polls_notify_on_open', value: on('polls_notify_on_open'), label: 'Tell players about new polls', sub: `A bell notification to every active member when a poll for players opens on ${codeTag('/polls')}. Live site only.` },
-  ], { title: 'Notifications' });
 }
 
 function seasonNudgesPanel() {
@@ -3079,6 +3074,19 @@ function pollTierQualifies(tier, identity) {
   if (tier === 'players') return true;
   if (tier === 'heads') return identity.isHead;
   return false; // tier === 'admins', and identity isn't one
+}
+// The one poll that pops up over the site for this viewer (views/polls.js pollPopup): open,
+// switched to "Show as popup", one they can see and vote in, and not voted in yet. Newest
+// wins when more than one is switched on. Never while an admin is viewing as a player, and
+// not on /polls itself, where the same poll is already on the page.
+function pollPopupFor(req, currentPath) {
+  if (req.session?.impersonating || currentPath === '/polls') return '';
+  const identity = currentPollVoterIdentity(req);
+  if (!identity) return '';
+  const poll = getAllLeaguePolls().find(p => p.status === 'open' && p.popup
+    && pollTierQualifies(p.visibility, identity) && pollTierQualifies(p.voter_eligibility, identity)
+    && !getMyLeaguePollVote(p.id, identity.id));
+  return poll ? pollPopup({ poll, total: getLeaguePollVotes(poll.id).length }) : '';
 }
 // /polls is open to any logged-in player or admin — a wider gate than requireHead, since
 // the whole point of the 'players' visibility tier is "everyone with an account," not just
@@ -19068,27 +19076,70 @@ app.post('/polls/:id/vote', requirePollAccess, express.json(), (req, res) => {
 });
 
 // ── Admin: League Polls ───────────────────────────────────────────────────────────
+// Rebuilt on the admin kit 2026-10-19 (views/admin/polls.js, public/admin-polls.js): a list,
+// and a page per poll with the results, the popup switches and art, and the poll's own fields.
 // Also reachable by the shared super-admin login (no player identity at all), which is why
 // admin-tier voting has to happen here rather than only on /polls.
+const POLL_TIERS = ['admins', 'heads', 'players'];
+// <input type="datetime-local"> value, read as Manila time (UTC+8, no DST) ⇄ ms.
+const manilaLocalToMs = v => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(v || '')) ? new Date(`${v}:00+08:00`).getTime() : null);
+const msToManilaLocal = ms => (ms ? new Date(ms + 8 * 3600000).toISOString().slice(0, 16) : '');
+
 app.get('/admin/polls', requireAuth, (req, res) => {
   const polls = getAllLeaguePolls().map(p => ({ ...p, votes: getLeaguePollVotes(p.id) }));
   res.send(renderAdminPage(req, {
-    title: 'League Polls',
-    settings: pollsSettingsPanel(),
+    title: 'Polls',
     currentPath: '/admin/polls',
-    body: adminPollsBody({ polls }),
+    body: adminPollsBody({ polls, query: req.query, notifyOnOpen: on('polls_notify_on_open') }),
   }));
 });
+app.get('/admin/polls/:id', requireAuth, (req, res) => {
+  const poll = getLeaguePollById(req.params.id);
+  if (!poll) return res.redirect('/admin/polls?toast=' + encodeURIComponent('That poll is gone.'));
+  res.send(renderAdminPage(req, {
+    title: poll.question,
+    currentPath: '/admin/polls',
+    body: adminPollDetailBody({ poll, votes: getLeaguePollVotes(poll.id), closesLocal: msToManilaLocal(poll.closes_at) }),
+  }));
+});
+// New poll (the drawer on the list): question, options one per line, who sees / who votes.
+// The rest (option details, closing time, popup, art) is set on the poll's own page.
 app.post('/admin/polls', requireAuth, express.json(), (req, res) => {
   const { question, description, options, visibility, voter_eligibility } = req.body || {};
-  const cleanOptions = Array.isArray(options) ? options.map(o => String(o || '').trim()).filter(Boolean) : [];
-  if (!String(question || '').trim()) return res.status(400).json({ error: 'Question is required.' });
-  if (cleanOptions.length < 2) return res.status(400).json({ error: 'At least 2 options are required.' });
-  if (!['admins', 'heads', 'players'].includes(visibility)) return res.status(400).json({ error: 'Invalid visibility.' });
-  if (!['admins', 'heads', 'players'].includes(voter_eligibility)) return res.status(400).json({ error: 'Invalid voter eligibility.' });
+  const raw = Array.isArray(options) ? options : String(options || '').split(/\r?\n/);
+  const cleanOptions = raw.map(o => String(o || '').trim()).filter(Boolean);
+  if (!String(question || '').trim()) return res.status(400).json({ error: 'Add the question.' });
+  if (cleanOptions.length < 2) return res.status(400).json({ error: 'Add at least 2 options, one per line.' });
+  if (!POLL_TIERS.includes(visibility)) return res.status(400).json({ error: 'Pick who can see it.' });
+  if (!POLL_TIERS.includes(voter_eligibility)) return res.status(400).json({ error: 'Pick who can vote.' });
   const actor = currentAdminActor(req);
   const id = createLeaguePoll({ question, description, options: cleanOptions, visibility, voterEligibility: voter_eligibility, createdBy: actor.name });
   res.json({ ok: true, id });
+});
+// The poll's own fields. Votes are stored by option position, so once anyone has voted,
+// options can be renamed and added but not removed (the editor hides Remove then too).
+app.post('/admin/polls/:id/save', requireAuth, express.json(), (req, res) => {
+  const poll = getLeaguePollById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'That poll is gone.' });
+  const b = req.body || {};
+  const labels = [].concat(b.option_label ?? []).map(s => String(s || '').trim());
+  const details = [].concat(b.option_detail ?? []).map(s => String(s || '').trim());
+  const rows = labels.map((label, i) => ({ label, detail: details[i] || '' }));
+  const hasVotes = getLeaguePollVotes(poll.id).length > 0;
+  if (hasVotes && rows.length < poll.options.length) return res.status(400).json({ error: 'People have voted, so options can’t be removed. Rename them instead.' });
+  if (hasVotes && rows.slice(0, poll.options.length).some(r => !r.label)) return res.status(400).json({ error: 'Every option needs a name.' });
+  const kept = hasVotes ? rows.filter((r, i) => i < poll.options.length || r.label) : rows.filter(r => r.label);
+  if (!String(b.question || '').trim()) return res.status(400).json({ error: 'Add the question.' });
+  if (kept.length < 2) return res.status(400).json({ error: 'A poll needs at least 2 options.' });
+  if (!POLL_TIERS.includes(b.visibility) || !POLL_TIERS.includes(b.voter_eligibility)) return res.status(400).json({ error: 'Pick who can see it and who can vote.' });
+  const closesAt = b.closes_at ? manilaLocalToMs(b.closes_at) : null;
+  if (b.closes_at && !closesAt) return res.status(400).json({ error: 'That closing time doesn’t look right.' });
+  if (closesAt && closesAt <= Date.now() && poll.status === 'open') return res.status(400).json({ error: 'The closing time is in the past. Pick a later one, or close the poll now.' });
+  updateLeaguePoll(poll.id, {
+    question: b.question, description: b.description, options: kept.map(r => r.label), optionDetails: kept.map(r => r.detail),
+    visibility: b.visibility, voterEligibility: b.voter_eligibility, closesAt,
+  });
+  res.json({ ok: true });
 });
 app.post('/admin/polls/:id/status', requireAuth, express.json(), (req, res) => {
   const poll = getLeaguePollById(req.params.id);
@@ -19096,7 +19147,50 @@ app.post('/admin/polls/:id/status', requireAuth, express.json(), (req, res) => {
   const status = req.body?.status;
   if (!['open', 'closed'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
   setLeaguePollStatus(poll.id, status);
+  // Reopening a poll whose closing time already passed drops that time, or it would close
+  // itself again on the next read.
+  if (status === 'open' && poll.closes_at && poll.closes_at <= Date.now()) {
+    updateLeaguePoll(poll.id, { question: poll.question, description: poll.description, options: poll.options, optionDetails: poll.option_details, visibility: poll.visibility, voterEligibility: poll.voter_eligibility, closesAt: null });
+  }
+  res.json({ ok: true, message: status === 'open' ? 'Poll reopened.' : 'Poll closed.' });
+});
+// The popup switches (toggleRow posts { key, on }).
+app.post('/admin/polls/:id/flag', requireAuth, express.json(), (req, res) => {
+  const poll = getLeaguePollById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'Not found.' });
+  const key = req.body?.key;
+  if (!['popup', 'popup_later'].includes(key)) return res.status(400).json({ error: 'Unknown switch.' });
+  setLeaguePollFlag(poll.id, key, !!req.body.on);
+  const msg = key === 'popup' ? (req.body.on ? 'Popup on.' : 'Popup off.') : (req.body.on ? '“Ask me later” allowed.' : 'Voting is now the only way out.');
+  res.json({ ok: true, message: msg });
+});
+// Popup art: kept whole (resized to fit, never cropped) since poster art often has text in it.
+app.post('/admin/polls/:id/art', requireAuth, express.json({ limit: '20mb' }), async (req, res) => {
+  const poll = getLeaguePollById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'Not found.' });
+  const buf = parseDataUrl(String(req.body.dataUrl || ''));
+  if (!buf) return res.status(400).json({ error: 'That file isn’t an image.' });
+  try {
+    const { data, info } = await sharp(buf).rotate().resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#161c29' }).jpeg({ quality: 82, progressive: true }).toBuffer({ resolveWithObject: true });
+    setLeaguePollArt(poll.id, 'data:image/jpeg;base64,' + data.toString('base64'), info.width, info.height);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[poll art]', e.message);
+    res.status(500).json({ error: 'Couldn’t read that image. Try a JPG or PNG.' });
+  }
+});
+app.delete('/admin/polls/:id/art', requireAuth, (req, res) => {
+  setLeaguePollArt(req.params.id, '');
   res.json({ ok: true });
+});
+app.delete('/admin/polls/:id', requireAuth, (req, res) => {
+  if (!getLeaguePollById(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  deleteLeaguePoll(req.params.id);
+  res.json({ ok: true, message: 'Poll deleted.' });
+});
+app.get('/api/poll-art/:id', async (req, res) => {
+  await sendPlayerPhotoUrl(res, getLeaguePollArt(req.params.id));
 });
 app.post('/admin/polls/:id/vote', requireAuth, express.json(), (req, res) => {
   const poll = getLeaguePollById(req.params.id);
