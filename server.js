@@ -7959,14 +7959,17 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   const season  = req.query.season || seasons[0] || '';
   const summary = season ? getSeasonSummary(season) : {};
   const quota   = season ? getSeasonQuota(season) : 0;
-  const balMap  = season ? Object.fromEntries(getSeasonBalances(season).map(r => [r.player_id, r])) : {};
-  // "Players Settled" and every other player-driven number on this page (who owes, top
-  // outstanding, etc.) stay scoped to everyone actually confirmed for the season being
-  // viewed — not every player who's ever existed, which is what was inflating them (see
-  // /admin/ledger's own scoping) — a confirmed player without a team yet still owes money
-  // and still needs to be tracked here.
+  // Balances are never season-scoped, same rule as /admin/ledger: a payment logged without
+  // a season (or under another one) still pays down a season-tagged charge, so a
+  // season-only sum showed fully paid players as owing.
+  const balMap  = Object.fromEntries(getAllBalances().map(r => [r.player_id, r]));
+  // "Players Settled" counts everyone actually confirmed for the season being viewed — not
+  // every player who's ever existed, which is what was inflating it (see /admin/ledger's
+  // own scoping) — a confirmed player without a team yet still owes money and still needs
+  // to be tracked here.
   const seasonPlayerIds = season ? getConfirmedSeasonPlayerIds(season) : null;
-  const players = seasonPlayerIds ? getAllPlayers().filter(p => seasonPlayerIds.has(p.id)) : getAllPlayers();
+  const allPlayers = getAllPlayers();
+  const players = seasonPlayerIds ? allPlayers.filter(p => seasonPlayerIds.has(p.id)) : allPlayers;
   // The quota-progress *target* (quota × count) is different: it's asking "how much should
   // we collect this season," which only makes sense per team roster slot, so it counts only
   // confirmed players who've actually been assigned a team — not the full confirmed list above.
@@ -7977,12 +7980,12 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   const quotaPaid = season ? getSeasonFeePaid(season) : 0;
   const pending = getPendingTransactions();
   const categoryTotals = season ? getCategoryTotals(season) : [];
-  const teamTotals     = season ? getTeamTotals(season) : [];
+  const teamTotals     = season ? getTeamTotals() : [];
   const recentTx       = getRecentTransactions();
   res.send(renderAdminPage(req, {
     title: 'Finance',
     currentPath: '/admin/finance',
-    body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, quotaPaid, balMap, players, pending, categoryTotals, teamTotals, recentTx }),
+    body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, quotaPaid, balMap, players, allPlayers, pending, categoryTotals, teamTotals, recentTx }),
   }));
 });
 

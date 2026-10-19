@@ -29,12 +29,14 @@ function progressBar(value, max) {
   </div>`;
 }
 
-export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, quota = 0, quotaPlayerCount = 0, quotaPaid = 0, balMap = {}, players = [], pending = [], categoryTotals = [], teamTotals = [], recentTx = [] } = {}) {
+export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, quota = 0, quotaPlayerCount = 0, quotaPaid = 0, balMap = {}, players = [], allPlayers = [], pending = [], categoryTotals = [], teamTotals = [], recentTx = [] } = {}) {
   const seasonPills = seasons.map(s =>
     `<a href="/admin/finance?season=${encodeURIComponent(s)}" class="agm-pill${s === season ? ' is-active' : ''}"><span class="pill-label">${escHtml(s)}</span></a>`
   ).join('');
 
-  const totalOutstanding = Number(summary.total_outstanding ?? 0);
+  // balMap is all-time (same as /admin/ledger's "Owed to the league"); collected stays per season.
+  const owedBalances     = Object.values(balMap).map(b => Number(b.balance) || 0).filter(b => b > 0);
+  const totalOutstanding = owedBalances.reduce((t, n) => t + n, 0);
   const totalPaid        = Number(summary.total_paid ?? 0);
   const totalCharged     = Number(summary.total_charged ?? 0);
   const pendingCount     = Number(summary.pending_count ?? 0);
@@ -49,7 +51,7 @@ export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, 
   const collectionRate = totalCharged > 0 ? Math.round((totalPaid / totalCharged) * 100) : 0;
 
   const topOwing = season
-    ? players
+    ? allPlayers
         .map(p => ({ player: p, bal: Number(balMap[p.id]?.balance ?? 0) }))
         .filter(x => x.bal > 0)
         .sort((a, b) => b.bal - a.bal)
@@ -58,7 +60,7 @@ export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, 
 
   const kpiHtml = season ? `
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-  ${kpiTile('Total Outstanding', fmt(totalOutstanding), `${players.filter(p => Number(balMap[p.id]?.balance ?? 0) > 0).length} players owe`, '#ef4444')}
+  ${kpiTile('Total Outstanding', fmt(totalOutstanding), `${owedBalances.length} players owe · all time`, '#ef4444')}
   ${kpiTile('Total Collected', fmt(totalPaid), `${collectionRate}% collection rate`, '#22c55e')}
   ${kpiTile('Players Settled', `${settledCount} / ${totalPlayers}`, season, '#f59332')}
   ${kpiTile('Pending Transactions', String(pendingCount), 'awaiting confirmation', pendingCount > 0 ? '#f59332' : '#64748b')}
