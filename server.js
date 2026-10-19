@@ -3777,6 +3777,9 @@ const GAUGES_FOCUS_DEFS = {
 // consistently against both light and dark backgrounds.
 const GAUGES_TRACK_COLOR = '#ffffff';
 function gaugesPct(made, att) { return att > 0 ? Math.round((made / att) * 100) : null; }
+// What "Hide zeros" drops: a 0 count stat, and a shooting % that's 0 or had no attempts
+// (null). 0% used to stay (0 of 2 is a real value), which is what players saw as not hiding.
+const isZeroShareStat = s => (s.isPct ? !s.value : Number(s.value) === 0);
 
 // Ranks the 4 possible shooting-% categories (now that 4-point shots exist)
 // by attempt volume and returns whichever 3 are most meaningful — a
@@ -3947,34 +3950,41 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
   // the reclaimed space empty.
   const numberFsz = isCenter ? (showGauges ? 88 : 132) : (showGauges ? 68 : 102);
   const gaugeR    = isCenter ? 78 : 60;
-  let centers;
-  if (isCenter) {
-    const colPitch = 300;
-    centers = [posX - colPitch, posX, posX + colPitch];
-  } else {
-    const colSpan = 460;
-    const blockLeft = align === 'left' ? SAFE_X0 : SAFE_X1 - colSpan;
-    centers = [0, 1, 2].map(i => blockLeft + colSpan / 6 + i * (colSpan / 3));
-  }
+  // Column centres for k items (3 normally; fewer once Hide zeros drops some): centred
+  // around posX, or packed against the left/right edge, same slot width either way.
+  const centersFor = k => {
+    if (isCenter) return Array.from({ length: k }, (_, i) => posX + (i - (k - 1) / 2) * 300);
+    const slot = 460 / 3;
+    const blockLeft = align === 'left' ? SAFE_X0 : SAFE_X1 - k * slot;
+    return Array.from({ length: k }, (_, i) => blockLeft + slot / 2 + i * slot);
+  };
 
   const focusDef = GAUGES_FOCUS_DEFS[focus] || GAUGES_FOCUS_DEFS.all;
+  let numberItems = focusDef.keys.map((key, i) => ({ value: shareStatValue(stat, key), label: focusDef.labels[i], isPct: false }));
+  let gaugeDefs = showGauges ? pickBestShootingStats(stat) : [];
+  if (opts.hideZeros) {
+    const nz = numberItems.filter(x => !isZeroShareStat(x));
+    if (nz.length) numberItems = nz;
+    gaugeDefs = gaugeDefs.filter(g => !isZeroShareStat({ isPct: true, value: g.pct }));
+  }
+  const centers = centersFor(numberItems.length);
   const numBaseY = chipBottomY + GAP.chipToNumbers + numberFsz * 0.78;
   const numLabelY = numBaseY + GAP.numLabelGap;
 
-  const numbers = focusDef.keys.map((key, i) =>
-    numberCol(centers[i], shareStatValue(stat, key), focusDef.labels[i], numberFsz, numBaseY, numLabelY)
+  const numbers = numberItems.map((x, i) =>
+    numberCol(centers[i], x.value, x.label, numberFsz, numBaseY, numLabelY)
   ).join('\n');
 
   let gauges = '', gaugeLabelY = numLabelY, handleY;
-  if (showGauges) {
+  if (gaugeDefs.length) {
     const gaugeCy = numLabelY + GAP.numbersToGauges + gaugeR;
     gaugeLabelY = gaugeCy + gaugeR + GAP.gaugeLabelGap;
     handleY = gaugeLabelY + GAP.gaugesToHandle;
 
-    const gaugeDefs = pickBestShootingStats(stat);
+    const gaugeCenters = centersFor(gaugeDefs.length);
     const gaugeNumFsz = isCenter ? 46 : 36, gaugeLabelFsz = isCenter ? 17 : 14;
     gauges = gaugeDefs.map((g, i) =>
-      gaugeCol(centers[i], gaugeCy, gaugeR, g.pct, g.label, gaugeLabelY, gaugeNumFsz, gaugeLabelFsz)
+      gaugeCol(gaugeCenters[i], gaugeCy, gaugeR, g.pct, g.label, gaugeLabelY, gaugeNumFsz, gaugeLabelFsz)
     ).join('\n');
   } else {
     handleY = numLabelY + GAP.numbersToHandleSolo;
@@ -4109,7 +4119,7 @@ async function generateGameStatNewsPng(game, stat, focus = 'all', opts = {}) {
   // looks like filler in a plain inline text line. Falls back to the
   // unfiltered list rather than ever rendering a blank deck.
   if (opts.hideZeros) {
-    const filtered = deckStats.filter(d => d.isPct ? d.value !== null : d.value !== 0);
+    const filtered = deckStats.filter(d => !isZeroShareStat(d));
     if (filtered.length) deckStats = filtered;
   }
 
@@ -4214,7 +4224,7 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
   // row entirely rather than showing "0 ASSISTS" or a dashed bar — falls back
   // to the unfiltered list rather than ever rendering an empty sheet.
   if (opts.hideZeros) {
-    const filtered = rows.filter(r => r.isPct ? r.value !== null : r.value !== 0);
+    const filtered = rows.filter(r => !isZeroShareStat(r));
     if (filtered.length) rows = filtered;
   }
 
@@ -4432,7 +4442,7 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   pickBestShootingStats(stat).forEach(g => STATS.push({ label: `${g.shortLabel}%`, value: g.pct, isPct: true }));
   STATS = dedupeStatsByLabel(STATS);
   if (opts.hideZeros) {
-    const filtered = STATS.filter(s => s.isPct ? s.value !== null : s.value !== 0);
+    const filtered = STATS.filter(s => !isZeroShareStat(s));
     if (filtered.length) STATS = filtered;
   }
 
@@ -8698,7 +8708,7 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   try {
     let png;
     if (SHARE_PREMIUM_KEYS.includes(req.query.align)) {
-      const data = await premiumShareData(game, stat, playerId, accent, req.query.align);
+      const data = { ...await premiumShareData(game, stat, playerId, accent, req.query.align), hideZeros };
       png = await renderPremiumShareCard(req.query.align, data, (text, o) => measureTextWidth(escXml(text), o));
       if (shareCardsLocked(req)) png = await lockOverlay(png);
     } else if (req.query.align === 'premium') {
@@ -8728,7 +8738,7 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
     } else if (layout === 'gauges' && align === 'stacked') {
       png = await generateGameStatStackedPng(game, stat, focus, { accent, gauges, hideZeros });
     } else if (layout === 'gauges') {
-      png = await generateGameStatGaugesPng(game, stat, align, focus, { accent, gauges });
+      png = await generateGameStatGaugesPng(game, stat, align, focus, { accent, gauges, hideZeros });
     } else if (layout === 'grid') {
       png = await generateGameStatGridPng(game, stat, align, { accent });
     } else if (layout === 'sticker') {
