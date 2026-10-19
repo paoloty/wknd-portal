@@ -10195,3 +10195,179 @@ html.ppop-lock { overflow: hidden; }
 }
 @media (prefers-reduced-motion: reduce) { .ppop-scrim, .ppop-card, .ppop-opt-fill { transition: none; } }
 .ppop-card:focus { outline: none; }
+
+/* ── Playoff mode (lib/playoff-mode.js) ──────────────────────────────────────
+   body.is-playoffs--playoffs | --finals | --champion. Header: H3 outline "Playoffs"
+   ribbon under the wordmark (playoffs), trophy ball (finals, champion), an amber line
+   under the bar, and a faint glow at the top of the page (gold in champion week). */
+.wknd-logo--ribbon { flex-direction: column; align-items: stretch; gap: 0.08em; }
+.wknd-logo__mark { display: inline-flex; align-items: baseline; }
+.wknd-logo__ribbon {
+  display: flex; align-items: center; justify-content: center;
+  height: 1.45em; margin: 0 0.15em 0 0.05em;
+  font-size: clamp(10px, 0.28em, 12px);
+  border: 1.5px solid var(--amber);
+  transform: skewX(-12deg);
+}
+.wknd-logo__ribbon span {
+  transform: skewX(12deg);
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-style: normal; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase; line-height: 1;
+  color: var(--amber); -webkit-text-stroke: 0;
+}
+/* Trophy ball: 1.3x cap height, centred on the capitals (em fallback first). */
+.wknd-logo--trophy { display: inline-block; }
+.wknd-logo__trophy {
+  display: inline-block;
+  height: 0.92em; width: 0.54em; vertical-align: -0.11em;
+  height: 1.3cap; width: calc(1.3cap * 100 / 170); vertical-align: -0.15cap;
+  margin-left: 0.08em;
+}
+.is-playoffs .site-header--bar { box-shadow: inset 0 -2px 0 var(--amber); }
+.is-playoffs .page-body {
+  background-image: radial-gradient(ellipse 900px 420px at 50% 120px, rgba(245,147,50,0.09), rgba(245,147,50,0) 70%);
+  background-repeat: no-repeat;
+}
+.is-playoffs--champion .page-body {
+  background-image: radial-gradient(ellipse 900px 420px at 50% 120px, rgba(232,182,76,0.10), rgba(232,182,76,0) 70%);
+}
+
+/* Homepage block above the hero grid: scoreboard (+ the other semi) or the champion hero. */
+.home-playoffs { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+
+/* Scoreboard hero (views/playoff-hero.js). Desktop: one row, names outside, series wins in
+   the middle. Phones (760px and below): the same cells as two team rows, wins on the right. */
+.pso {
+  position: relative; overflow: hidden; display: flex; min-height: 440px;
+  background: #070a10; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 rgba(245,147,50,0.35);
+}
+.pso__bg { position: absolute; inset: 0; }
+.pso__bg img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; display: block; }
+.pso__shade {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, rgba(7,10,16,0.55) 0%, rgba(7,10,16,0) 30%, rgba(7,10,16,0) 62%, rgba(7,10,16,0.9) 100%),
+    linear-gradient(90deg, rgba(7,10,16,0.88) 0%, rgba(7,10,16,0.65) 50%, rgba(7,10,16,0.88) 100%);
+}
+.pso__body {
+  position: relative; flex: 1; min-width: 0;
+  display: flex; flex-direction: column; justify-content: center; gap: 22px;
+  padding: 32px 36px 40px;
+}
+.pso__kicker { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.pso__rule { height: 1px; width: 120px; background: rgba(245,147,50,0.5); flex: none; }
+.pso__kicker h2 {
+  margin: 0; font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800;
+  font-size: 16px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--amber); text-align: center;
+}
+.pso__format, .pso__slabel, .pso__th {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #c3c9d4;
+}
+.pso__format { text-align: center; margin-top: -14px; }
+.pso__board {
+  display: grid; align-items: center; column-gap: 18px; row-gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto minmax(0, 1fr);
+  grid-template-areas: ". . sl sl sl . ." "an as aw dash bw bs bn";
+}
+.pso__slabel { grid-area: sl; text-align: center; }
+.pso__rowbg { display: none; }
+.pso__seed, .pso__team, .pso__wins, .pso__dash { position: relative; }
+.pso__seed {
+  width: 56px; height: 56px; box-sizing: border-box; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--text-subtle); background: rgba(7,10,16,0.6);
+  font-size: 30px; font-weight: 800; color: #c3c9d4;
+}
+.pso__seed.is-top { border-color: var(--amber); color: var(--amber); }
+.pso__seed--a { grid-area: as; }
+.pso__seed--b { grid-area: bs; }
+.pso__team { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--text); text-decoration: none; }
+.pso__team--a { grid-area: an; align-items: flex-end; text-align: right; }
+.pso__team--b { grid-area: bn; align-items: flex-start; }
+.pso__name {
+  font-weight: 800; font-size: clamp(54px, 7vw, 92px); line-height: 0.85;
+  text-shadow: 0 2px 18px rgba(0,0,0,0.6);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pso__team:hover .pso__name { color: #fff; }
+.pso__sub { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #c3c9d4; white-space: nowrap; }
+.pso__wins {
+  width: 86px; height: 96px; box-sizing: border-box; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(16,20,29,0.88); border: 1px solid rgba(255,255,255,0.1);
+  font-size: 76px; font-weight: 800; line-height: 1;
+}
+.pso__wins--a { grid-area: aw; }
+.pso__wins--b { grid-area: bw; }
+.pso__dash { grid-area: dash; font-size: 34px; font-weight: 800; color: var(--text-muted); }
+.pso__line { margin: 0 auto; max-width: 640px; text-align: center; font-size: 14.5px; line-height: 1.5; color: #c3c9d4; }
+.pso__line b { color: var(--text); }
+.pso__foot { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 16px 32px; }
+.pso__when { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.pso__cd { font-weight: 800; font-size: 40px; line-height: 1; color: var(--amber); text-transform: uppercase; letter-spacing: 0.02em; }
+.pso__cdsub { font-size: 12.5px; color: #c3c9d4; }
+.pso__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.pso__btn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box;
+  padding: 0 20px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 700;
+  background: rgba(22,28,41,0.9); color: var(--text); text-decoration: none; white-space: nowrap;
+}
+.pso__btn:hover { background: #1d2536; }
+.pso__btn.is-primary { background: var(--amber); color: #0a0e16; }
+.pso__btn.is-primary:hover { background: #ffa54d; }
+.pso__btn:focus-visible, .pso__team:focus-visible, .pso__credit:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.pso__credit {
+  position: absolute; right: 16px; bottom: 14px;
+  display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 32px);
+  padding: 5px 10px; border-radius: 999px; background: rgba(7,10,16,0.7);
+  font-size: 11.5px; font-weight: 600; color: #c3c9d4; text-decoration: none;
+}
+.pso__credit span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pso__credit:hover { color: var(--text); }
+
+.pso-also { display: flex; align-items: center; gap: 16px; min-height: 52px; padding: 10px 22px; color: var(--text); text-decoration: none; }
+.pso-also__kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
+.pso-also__teams { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 19px; }
+.pso-also__team { display: inline-flex; align-items: center; gap: 7px; }
+.pso-also__team b { color: var(--text-muted); }
+.pso-also__team b.is-top { color: var(--amber); }
+.pso-also__vs { color: var(--text-subtle); font-size: 15px; }
+.pso-also__go { margin-left: auto; color: var(--amber); font-weight: 700; }
+
+@media (max-width: 760px) {
+  .pso { min-height: 0; }
+  .pso__shade {
+    background: linear-gradient(180deg, rgba(7,10,16,0.82) 0%, rgba(7,10,16,0.6) 38%, rgba(7,10,16,0.6) 52%, rgba(7,10,16,0.92) 78%, rgba(7,10,16,0.97) 100%);
+  }
+  .pso__body { padding: 44px 16px 24px; gap: 20px; }
+  .pso__rule { width: 28px; }
+  .pso__kicker h2 { font-size: 13px; }
+  .pso__kpre { display: none; }
+  .pso__board {
+    column-gap: 12px; row-gap: 16px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: ". . sl" "as an aw" "bs bn bw";
+  }
+  .pso__slabel { margin-bottom: -8px; }
+  .pso__rowbg {
+    display: block; grid-column: 1 / -1; align-self: stretch; margin: -8px -10px;
+    background: rgba(7,10,16,0.72); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius);
+  }
+  .pso__rowbg--a { grid-row: 2; }
+  .pso__rowbg--b { grid-row: 3; }
+  .pso__seed { width: 40px; height: 40px; border-radius: 10px; font-size: 22px; }
+  .pso__team--a, .pso__team--b { align-items: flex-start; text-align: left; }
+  .pso__name { font-size: 40px; line-height: 0.9; }
+  .pso__sub { font-size: 11.5px; gap: 6px; }
+  .pso__wins { width: 54px; height: 60px; border-radius: 10px; font-size: 44px; }
+  .pso__dash { display: none; }
+  .pso__line { font-size: 13.5px; }
+  .pso__foot { flex-direction: column; align-items: stretch; gap: 16px; }
+  .pso__actions { flex-direction: column; }
+  .pso__btn { min-height: 46px; }
+  .pso__credit { top: 12px; bottom: auto; right: 12px; font-size: 10.5px; padding: 4px 9px; }
+  .pso-also { flex-wrap: wrap; gap: 4px 12px; padding: 10px 16px; }
+  .pso-also__kicker { flex-basis: 100%; }
+  .pso-also__teams { font-size: 18px; }
+}

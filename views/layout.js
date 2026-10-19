@@ -11,7 +11,25 @@ export function wkndBall(className = 'wknd-logo__ball') {
   return `<svg class="${className}" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg>`;
 }
 
-export function wkndLogo(className = 'site-header__logo', href = '/') {
+// The ball on a trophy stand: the logo's full stop during the Finals and champion weeks.
+// Sized in cap units (styles.css .wknd-logo__trophy) so it lines up with the capitals.
+export function wkndTrophyBall(className = 'wknd-logo__trophy') {
+  return `<svg class="${className}" viewBox="0 0 100 170" aria-hidden="true" focusable="false"><circle cx="50" cy="44" r="42" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="5" stroke-linecap="round"><path d="M50 3V85M8 44H92M20 14Q40 44 20 74M80 14Q60 44 80 74"/></g><path d="M30 92H70L62 118H38Z" fill="#f59332"/><rect x="44" y="118" width="12" height="22" fill="#f59332"/><path d="M32 140H68V152H32Z" fill="#c2701f"/><path d="M24 152H76V170H24Z" fill="#f59332"/></svg>`;
+}
+
+// Top-strip season label suffix per playoff phase ("Season 4 Playoffs").
+const PHASE_LABEL = { playoffs: 'Playoffs', finals: 'Finals', champion: 'Champions' };
+
+// phase (lib/playoff-mode.js): 'playoffs' adds the outline "PLAYOFFS" ribbon under the
+// wordmark; 'finals' and 'champion' swap the ball for the trophy ball. Only the main header
+// passes a phase; every other logo stays the everyday mark.
+export function wkndLogo(className = 'site-header__logo', href = '/', phase = null) {
+  if (phase === 'playoffs') {
+    return `<a href="${href}" class="wknd-logo wknd-logo--ribbon ${className}" aria-label="WKND Basketball home, playoffs"><span class="wknd-logo__mark">WKND${wkndBall()}</span><span class="wknd-logo__ribbon" aria-hidden="true"><span>Playoffs</span></span></a>`;
+  }
+  if (phase === 'finals' || phase === 'champion') {
+    return `<a href="${href}" class="wknd-logo wknd-logo--trophy ${className}" aria-label="WKND Basketball home, ${phase === 'finals' ? 'Finals' : 'champions'}">WKND${wkndTrophyBall()}</a>`;
+  }
   return `<a href="${href}" class="wknd-logo ${className}" aria-label="WKND Basketball home">WKND${wkndBall()}</a>`;
 }
 
@@ -382,7 +400,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     <div class="container">
       <div class="topstrip__inner">
         <div class="topstrip__left">
-          ${hdr.season ? `<span class="topstrip__season"><span class="topstrip__dot" aria-hidden="true"></span>Season ${escHtml(String(hdr.season))}</span>` : ''}
+          ${hdr.season ? `<span class="topstrip__season"><span class="topstrip__dot" aria-hidden="true"></span>Season ${escHtml(String(hdr.season))}${PHASE_LABEL[hdr.playoffPhase] ? ` ${PHASE_LABEL[hdr.playoffPhase]}` : ''}</span>` : ''}
           ${topTicker(hdr)}
         </div>
         <div class="topstrip__right">
@@ -663,7 +681,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   <link rel="stylesheet" href="/styles.css${cssVer ? `?v=${cssVer}` : ''}">
   ${gaSnippet}
 </head>
-<body>
+<body${!bare && !minimalHeader && hdr.playoffPhase ? ` class="is-playoffs is-playoffs--${hdr.playoffPhase}"` : ''}>
   ${bare ? body : minimalHeader ? `<div class="minimal-page">
     <header class="site-header site-header--minimal">
       <nav class="site-nav site-header--minimal__nav">
@@ -688,7 +706,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
     <header class="site-header site-header--bar${megaMode ? ' site-header--mega' : ''}">
       <div class="container">
         <div class="site-header__inner">
-          ${wkndLogo()}
+          ${wkndLogo('site-header__logo', '/', hdr.playoffPhase)}
           <nav class="site-nav hbar" aria-label="Main">${barNav}</nav>
           ${barAccount ? `<div class="hbar__account">${barAccount}</div>` : ''}
           <div class="site-header__actions">

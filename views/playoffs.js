@@ -151,6 +151,22 @@ function gamesTable(rows, panel = '') {
 </section>`;
 }
 
+// The champion hero, or '' while the Finals are undecided. /playoffs leads with it, and the
+// homepage shows it during playoff mode's champion week. Same inputs as playoffsPage.
+export function championHero({ season, standings = [], games = [], h2h = {}, awards = {} }) {
+  const { seedOf, s1, s2, s3, s4, semi1, semi2, w1, fHigh, fLow, fin, champ } = playoffsModel({ standings, games, h2h });
+  if (!champ) return '';
+  // Hero line: final result, then how the champion's semi went.
+  const opp = champ === fHigh ? fLow : fHigh;
+  const cw = champ === fHigh ? fin.hw : fin.lw, ow = champ === fHigh ? fin.lw : fin.hw;
+  const champSemi = champ === w1 ? semi1 : semi2;
+  const semiOpp = champ === w1 ? (champ === s1 ? s4 : s1) : (champ === s2 ? s3 : s2);
+  const semiN = champSemi.filter(isPlayed).length;
+  const line = `Beat <b>${escHtml(opp?.name || '')} ${cw}–${ow}</b> in the best-of-3 final${semiOpp && semiN ? `, after getting past ${escHtml(semiOpp.name)} in the semis ${semiN === 1 ? 'in one game' : `in ${semiN} games`}` : ''}.`;
+  const clincher = fin.played[fin.played.length - 1];
+  return heroSection({ season, team: champ, seed: seedOf(champ), line, clincherId: clincher?.id, finalsMvp: awards.finalsMvp, mvp: awards.mvp });
+}
+
 // season, seasons, isCurrent; standings (getSeasonStandings rows); h2h map; games: the
 // season's playoff + finals games (not under review), each with recapTitle and potgName;
 // awards: { finalsMvp, mvp } as { id, name, number, initials } or null; regular: { played, expected }.
@@ -158,19 +174,7 @@ function gamesTable(rows, panel = '') {
 export function playoffsPage({ standings = [], games = [], season, seasons = [], isCurrent = true, h2h = {}, awards = {}, regular = { played: 0, expected: 0 }, sections = {}, isAdmin = false }) {
   const { seeds, seedOf, finalsGames, projected, s1, s2, s3, s4, semi1, semi2, w1, w2, fHigh, fLow, fin, champ, tableRows } = playoffsModel({ standings, games, h2h });
   const panel = key => sectionPanel(sections[key] || null, `playoffs_${key}:${season}`, isAdmin);
-
-  // Hero line: final result, then how the champion's semi went.
-  let hero = '';
-  if (champ) {
-    const opp = champ === fHigh ? fLow : fHigh;
-    const cw = champ === fHigh ? fin.hw : fin.lw, ow = champ === fHigh ? fin.lw : fin.hw;
-    const champSemi = champ === w1 ? semi1 : semi2;
-    const semiOpp = champ === w1 ? (champ === s1 ? s4 : s1) : (champ === s2 ? s3 : s2);
-    const semiN = champSemi.filter(isPlayed).length;
-    const line = `Beat <b>${escHtml(opp?.name || '')} ${cw}–${ow}</b> in the best-of-3 final${semiOpp && semiN ? `, after getting past ${escHtml(semiOpp.name)} in the semis ${semiN === 1 ? 'in one game' : `in ${semiN} games`}` : ''}.`;
-    const clincher = fin.played[fin.played.length - 1];
-    hero = heroSection({ season, team: champ, seed: seedOf(champ), line, clincherId: clincher?.id, finalsMvp: awards.finalsMvp, mvp: awards.mvp });
-  }
+  const hero = championHero({ season, standings, games, h2h, awards });
 
   // Before the playoffs: who would have twice to beat today.
   const pct = regular.expected ? Math.min(100, Math.round(regular.played / regular.expected * 100)) : 0;

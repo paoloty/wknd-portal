@@ -39,7 +39,8 @@ import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, 
 import { renderLeaderCardPng, renderLeaderWidePng, renderMvpCardPng, renderMvpWidePng } from './lib/leader-card-image.js';
 import { roastPage, buildRoastModel, ROAST_CATS, DISASTER_CATS } from './views/roast.js';
 import { standingsPage, standingsModel, TEAM_STAT_CATS, teamStatVal, teamStatFmt, findTriangle, winnerOf } from './views/standings.js';
-import { playoffsPage, playoffsModel, computeSeeds, pairKey } from './views/playoffs.js';
+import { playoffsPage, playoffsModel, computeSeeds, pairKey, championHero } from './views/playoffs.js';
+import { playoffScoreboard } from './views/playoff-hero.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
 import { playerPage } from './views/player.js';
@@ -231,6 +232,7 @@ import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage, mvpLockPage, podiumBarHtml, podiumStrip, mvpSnapshot, mvpSharePage } from './views/mvp.js';
 import { isMvpLocked, mvpLockState, mvpFinalists, MVP_REVEAL_MODES, SEASON_GAMES_PER_TEAM } from './lib/mvp-lock.js';
+import { playoffModeState, PLAYOFF_MODES, CHAMPION_DAYS } from './lib/playoff-mode.js';
 import { bonusCutoff, ballotClose, isPast, fmtMoment, tallyBallots, podiumPoints } from './lib/mvp-ballot.js';
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
@@ -1926,7 +1928,7 @@ function getHeaderInfo(features) {
   }
   let tickerItems = [];
   try { tickerItems = buildTopTicker(features); } catch (err) { console.error('[ticker]', err.message); }
-  const value = { season, nextPapawis, playoffsStarted: !!(season && isPlayoffStarted(season)), week, mvpLead, statLeaders, awardSlides, tickerItems };
+  const value = { season, nextPapawis, playoffsStarted: !!(season && isPlayoffStarted(season)), playoffPhase: playoffModeState(season).phase, week, mvpLead, statLeaders, awardSlides, tickerItems };
   headerInfoCache = { at: now, megaMenu: features.megaMenu, value };
   return value;
 }
@@ -7692,7 +7694,13 @@ app.get('/admin/visibility', requireAuth, (req, res) => res.redirect(301, '/admi
 app.get('/admin/site', requireAuth, (req, res) => {
   const flag = (key, def = '0') => (def === '1' ? getSetting(key, def) !== '0' : getSetting(key, def) === '1');
   const lock = mvpLockState(getPortalCurrentSeason());
+  const po = playoffModeState(getPortalCurrentSeason());
+  const phaseName = { playoffs: 'Playoffs', finals: 'Finals', champion: 'Champion' };
   const panels = settingsPanel([
+    { type: 'select', key: 'playoff_mode', value: po.mode, reload: true,
+      options: [['auto', 'Auto'], ['playoffs', 'Playoffs'], ['finals', 'Finals'], ['champion', 'Champion'], ['off', 'Off']], label: 'Playoff mode',
+      sub: `The playoff look: the header logo (outline "Playoffs" ribbon, then the trophy ball for the Finals), an amber header line, and the homepage scoreboard hero (champion hero for ${CHAMPION_DAYS} days after the Finals). Auto follows the schedule.<span class="block mt-1">Season ${escHtml(po.season)} auto: <b class="text-slate-300">${escHtml(po.auto.note)}</b> · now <b style="color:${po.phase ? '#f59332' : '#94a3b8'}">${po.phase ? phaseName[po.phase] : 'off'}</b></span>` },
+  ], { title: 'Playoffs' }) + settingsPanel([
     { type: 'toggle', key: 'comments_enabled', value: flag('comments_enabled'), label: 'Comments & reactions', sub: 'Players comment and react across the site (game pages, posts, live updates). Admins can delete inline either way.' },
     { type: 'toggle', key: 'peer_ratings_enabled', value: flag('peer_ratings_enabled'), label: 'Player ratings', sub: `Roast-style player-to-player ratings on ${codeTag('/players/:id')}. Anonymous ratings stay masked except to the super admin.` },
     { type: 'toggle', key: 'reg_open', value: flag('reg_open'), label: 'Join banner', sub: 'The "Join the community" registration band for logged-out visitors: on the homepage and as a small banner on other pages.' },
@@ -7765,6 +7773,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     else if ((key === 'home_nextup_card_1' || key === 'home_nextup_card_2') && nextUpKeys.has(String(value))) setSetting(key, String(value));
     else if (key === 'picks_close_time' && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) setSetting(key, String(value));
     else if (key === 'mvp_reveal_mode' && MVP_REVEAL_MODES.includes(String(value))) setSetting(key, String(value));
+    else if (key === 'playoff_mode' && PLAYOFF_MODES.includes(String(value))) { setSetting(key, String(value)); headerInfoCache.at = 0; }
     else if (key === 'mvp_bonus_close') {
       const v = String(value || '').trim();
       if (v && !/^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d$/.test(v)) return res.status(400).json({ error: 'Use YYYY-MM-DD HH:MM' });
@@ -8369,7 +8378,8 @@ app.get('/', (req, res) => {
     currentPath: req.path,
     body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, papawisHero: homeHeroPapawis(), regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
       headlineCards: gameCardExtras(headlineGamesOf(games), games, { viewerId: req.session?.playerPlayerId || null, playerMap }),
-      picksWidgetHtml: picksWidget(picksW, { summary: summaries.picks || null, isAdmin: !!req.session?.isAdmin }) })
+      picksWidgetHtml: picksWidget(picksW, { summary: summaries.picks || null, isAdmin: !!req.session?.isAdmin }),
+      playoffBlock: homePlayoffBlock(getPortalCurrentSeason()) })
   }));
 });
 
@@ -12081,6 +12091,84 @@ function playoffsSectionData(season) {
     awards: { finalsMvp: person('finals_mvp'), mvp: person('mvp') },
     regular: { played: regularDone, expected: Math.max(regularDone + regularLeft, standings.length * (standings.length - 1)) },
   };
+}
+
+// Homepage playoff hero (views/playoff-hero.js) for playoff mode's 'playoffs' / 'finals'
+// phases: the undecided series whose next game comes first (the Finals in the 'finals'
+// phase), the other live semi as the "Also" strip, and a cover photo from an earlier
+// meeting of the two teams (any season), else a recent cover of either team. null when
+// no series is live (e.g. the mode is forced on before the bracket exists).
+function buildPlayoffHero(season, phase) {
+  const pd = playoffsSectionData(season);
+  const m = playoffsModel({ standings: pd.standings, games: pd.games, h2h: pd.h2h });
+  const played = g => (g.status === 'complete' || g.status === 'final') && (Number(g.team_a_score) + Number(g.team_b_score)) > 0;
+  const ymd = d => String(d || '').slice(0, 10);
+  const series = (label, high, low, games, need, st, format) => (high && low && !st.winner
+    ? { label, high, low, need, st, format, next: games.find(g => !played(g)) || null }
+    : null);
+  const semis = [
+    series('Semifinal 1', m.s1, m.s4, m.semi1, { high: 1, low: 2 }, m.st1, 'Twice to beat'),
+    series('Semifinal 2', m.s2, m.s3, m.semi2, { high: 1, low: 2 }, m.st2, 'Twice to beat'),
+  ].filter(Boolean);
+  const finals = series('Finals', m.fHigh, m.fLow, m.finalsGames, { high: 2, low: 2 }, m.fin, 'Best of 3');
+  const live = (phase === 'finals' || !semis.length ? [finals] : semis).filter(Boolean)
+    .sort((a, b) => (ymd(a.next?.date) || '9999').localeCompare(ymd(b.next?.date) || '9999'));
+  if (!live.length) return null;
+
+  const side = (s, key) => ({ team: { id: s[key].id, name: s[key].name }, seed: m.seedOf(s[key]), wins: key === 'high' ? s.st.hw : s.st.lw, need: s.need[key] });
+  const main = live[0], other = live[1] || null;
+  const H = main.high.name, L = main.low.name;
+  const hl = main.need.high - main.st.hw, ll = main.need.low - main.st.lw;
+  const n = main.st.played.length;
+  const b = s => `<b>${escHtml(s)}</b>`;
+  const line = main.label === 'Finals'
+    ? (hl === 1 && ll === 1 ? `Game ${n + 1} decides the title.`
+      : hl === 1 ? `${b(H)} is one win from the title.`
+      : ll === 1 ? `${b(L)} is one win from the title.`
+      : 'First to two wins takes the title.')
+    : (n === 0 ? `${b(H)} needs one win to reach the Finals. ${b(L)} has to beat them twice. Lose and go home.`
+      : `Game ${n + 1} decides it: the winner goes to the Finals.`);
+
+  // The photo: a played meeting of these two teams with a cover, else a recent cover of either.
+  const ids = new Set([main.high.id, main.low.id]);
+  const covered = getAllGames().filter(g => g.has_cover && !g.under_review && played(g));
+  const meetings = covered.filter(g => pairKey(g.team_a_id, g.team_b_id) === pairKey(main.high.id, main.low.id));
+  const pool = meetings.length ? meetings
+    : covered.filter(g => ids.has(g.team_a_id) || ids.has(g.team_b_id)).sort((a, b) => ymd(b.date).localeCompare(ymd(a.date))).slice(0, 6);
+  const pg = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  const day = d => new Date(`${ymd(d)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const photo = pg ? {
+    id: pg.id, href: `/games/${encodeURIComponent(gameSlug(pg))}`,
+    caption: `${pg.team_a_name} vs ${pg.team_b_name} · ${day(pg.date)}${String(pg.season) !== String(season) ? `, S${pg.season}` : ''}`,
+  } : null;
+
+  return {
+    season, label: main.label, gameNo: n + 1, format: main.format, line, photo,
+    high: side(main, 'high'), low: side(main, 'low'),
+    next: main.next ? { id: main.next.id, date: ymd(main.next.date) || null, href: `/games/${encodeURIComponent(gameSlug(main.next))}` } : null,
+    also: other ? {
+      label: other.label, high: side(other, 'high'), low: side(other, 'low'), date: ymd(other.next?.date) || null,
+      href: other.next ? `/games/${encodeURIComponent(gameSlug(other.next))}` : '/playoffs',
+    } : null,
+    picksHref: picksEnabled() ? '/picks' : null,
+  };
+}
+
+// The homepage's playoff-mode block above the hero grid: the scoreboard while a series is
+// live, the champion hero in champion week, '' otherwise.
+function homePlayoffBlock(season) {
+  const phase = season ? playoffModeState(season).phase : null;
+  if (!phase) return '';
+  try {
+    if (phase === 'champion') {
+      const pd = playoffsSectionData(season);
+      return championHero({ season, standings: pd.standings, games: pd.games, h2h: pd.h2h, awards: pd.awards });
+    }
+    return playoffScoreboard(buildPlayoffHero(season, phase), manilaTodayStr());
+  } catch (err) {
+    console.error('[playoff hero]', err.message);
+    return '';
+  }
 }
 
 // Applies to every request from here on, ahead of any route's own express.json() — a

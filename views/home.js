@@ -1200,7 +1200,7 @@ function latestPosts(posts) {
 // Page order: hero → registration banner → game headlines → season race → league leaders
 // → posts → coming up → (guests) what you get + closing CTA. Game headlines are the four
 // recaps *before* the hero's four, so the two never show the same games.
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, papawisHero = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', headlineCards = {} }) {
+export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, papawisHero = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', headlineCards = {}, playoffBlock = '' }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1220,7 +1220,7 @@ export function homePage({ teams, players, games, highlights = [], mvpRace = nul
 })();
 </script>` : '';
 
-  return `<div class="home-grid">
+  return `${playoffBlock ? `<div class="home-playoffs">${playoffBlock}</div>` : ''}<div class="home-grid">
   <h1 class="sr-only">WKND Basketball: pickup basketball runs and a weekend league in Makati, Mandaluyong and Pasig. Beginners welcome.</h1>
   ${heroCarousel(completedGames.slice(0, 4), awardsGallery, papawisHero)}
   ${mvpRace ? mvpRaceSidebar(mvpRace) : highlightsSidebar(highlights)}
