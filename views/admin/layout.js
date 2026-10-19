@@ -236,6 +236,13 @@ const GROUP_ICON = {
 //   top bar  = where you are (group / page), View site; on a phone also the menu button
 //   content  = the page body
 // The Tailwind CDN still loads for pages not rebuilt yet; drop it once none use it.
+// The page scripts (public/admin-*.js) are cached for a week, so each one is requested with
+// ?v=<CSS_VER> (it changes whenever any of them changes, server.js): a page view tag without
+// one gets it here, or after a deploy the browser keeps running the old script.
+function versionScripts(body, v) {
+  return v ? String(body).replace(/(<script src="\/admin-[\w-]+\.js)(")/g, `$1${v}$2`) : body;
+}
+
 export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, season = '', me = null }) {
   const v = cssVer ? `?v=${cssVer}` : '';
 
@@ -351,7 +358,7 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
         <a class="aui-btn aui-btn--ghost aui-btn--sm" href="/" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a>
       </div>
     </header>
-    <main class="ashell__content" id="admin-main">${body}</main>
+    <main class="ashell__content" id="admin-main">${versionScripts(body, v)}</main>
   </div>
 
   <script>
