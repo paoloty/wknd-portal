@@ -17,7 +17,7 @@ export function leaderSharePage({ share, card }) {
   <div class="lsp-card">${cardHtml(card)}</div>
   <div class="lsp-nav">
     <a href="${isRoast ? '/roast' : '/leaders'}" class="lsp-nav__back">&larr; ${isRoast ? 'The Roast' : 'League leaders'}</a>
-    <span class="lsp-nav__brand">WKND Basketball League</span>
+    <span class="lsp-nav__brand">WKND Basketball</span>
   </div>
 </div>`;
 }

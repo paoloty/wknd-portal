@@ -477,8 +477,8 @@ function buildGameOgTags(req, game, court = null) {
   const when       = game.date ? new Date(`${gameYmd(game.date)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const typeLabel  = gameTypeLabel(game);
   const baseDesc   = writeupDescription(game.game_writeup) || (isCompleted
-    ? `${scoreLabel}${typeLabel ? ` (${typeLabel})` : ''}${when ? ` on ${when}` : ''}. Box score, player stats and game recap from WKND Basketball League.`
-    : `${game.team_a_name} vs ${game.team_b_name}${when ? ` on ${when}` : ''}. Matchup preview, box score and player stats from WKND Basketball League.`);
+    ? `${scoreLabel}${typeLabel ? ` (${typeLabel})` : ''}${when ? ` on ${when}` : ''}. Box score, player stats and game recap from WKND Basketball.`
+    : `${game.team_a_name} vs ${game.team_b_name}${when ? ` on ${when}` : ''}. Matchup preview, box score and player stats from WKND Basketball.`);
   // The court, when the game has one and it fits (only the search snippet; the recap is untouched).
   const courtName  = court ? courtDisplayName(court) : '';
   const courtTown  = court ? courtCity(court) : '';
@@ -498,7 +498,7 @@ function buildGameOgTags(req, game, court = null) {
     `<meta name="description" content="${escAttr(desc)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="article">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
     `<meta property="og:title" content="${escAttr(title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
@@ -551,7 +551,7 @@ function buildGameOgTags(req, game, court = null) {
     homeTeam: { '@type': 'SportsTeam', name: titleCase(game.team_a_name) },
     awayTeam: { '@type': 'SportsTeam', name: titleCase(game.team_b_name) },
     location,
-    organizer: { '@type': 'SportsOrganization', name: 'WKND Basketball League', url: SITE_ORIGIN },
+    organizer: { '@type': 'SportsOrganization', name: 'WKND Basketball', url: SITE_ORIGIN },
     ...(isCompleted ? { description: desc } : {}),
   }));
 
@@ -569,7 +569,7 @@ function buildMarketplaceOgTags(req, listing) {
   const origin = getRequestOrigin(req);
   const title  = listing.title;
   const url    = `${SITE_ORIGIN}/marketplace/${encodeURIComponent(listing.id)}`;
-  const desc   = firstParagraph(listing.description) || 'Check out this item on the WKND Basketball League Marketplace.';
+  const desc   = firstParagraph(listing.description) || 'Check out this item on the WKND Basketball Marketplace.';
   let photos = [];
   try { photos = JSON.parse(listing.photos || '[]'); } catch { photos = []; }
   const img = photos[0] ? `${origin}/api/marketplace/${encodeURIComponent(listing.id)}/photo/0` : null;
@@ -578,7 +578,7 @@ function buildMarketplaceOgTags(req, listing) {
     `<meta name="description" content="${escAttr(desc)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
     `<meta property="og:title" content="${escAttr(title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
@@ -612,7 +612,7 @@ function buildMarketplaceOgTags(req, listing) {
 function buildPostOgTags(req, post) {
   const origin = getRequestOrigin(req);
   const url    = `${SITE_ORIGIN}/posts/${encodeURIComponent(post.slug)}`;
-  const desc   = firstParagraph(post.body_html) || 'League news from WKND Basketball League.';
+  const desc   = firstParagraph(post.body_html) || 'League news from WKND Basketball.';
   const img    = `${origin}/og/posts.png?v=${ogDayStamp()}`;
   const publishedIso = post.publish_at ? new Date(post.publish_at).toISOString() : null;
 
@@ -620,7 +620,7 @@ function buildPostOgTags(req, post) {
     `<meta name="description" content="${escAttr(desc)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="article">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:title" content="${escAttr(post.title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
     `<meta property="og:url" content="${escAttr(url)}">`,
@@ -664,7 +664,7 @@ function buildPlayerOgTags(req, player, totals) {
     const apg = (totals.ast / gp).toFixed(1);
     desc += ` · ${ppg} PPG, ${rpg} RPG, ${apg} APG`;
   }
-  desc += ' · WKND Basketball League';
+  desc += ' · WKND Basketball';
   // Few details: add a closing line so the description isn't too short for search snippets.
   if (desc.length < 90) desc += '. Career stats, season averages and game-by-game numbers.';
 
@@ -676,7 +676,7 @@ function buildPlayerOgTags(req, player, totals) {
     `<meta name="description" content="${escAttr(desc)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="profile">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
     `<meta property="og:title" content="${escAttr(name + ' — WKND Basketball')}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
@@ -719,13 +719,13 @@ function buildTeamOgTags(req, team) {
   const teamName = String(team.name || '').toUpperCase();
   const url      = `${SITE_ORIGIN}/teams/${encodeURIComponent(teamSlug(team))}`;
   const title    = `${teamName} — WKND Basketball`;
-  const desc     = `${teamName} team — roster, season averages, results, standings and player stats on WKND Basketball League.`;
+  const desc     = `${teamName} team — roster, season averages, results, standings and player stats on WKND Basketball.`;
 
   const tags = [
     `<meta name="description" content="${escAttr(desc)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
     `<meta property="og:title" content="${escAttr(title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
@@ -745,7 +745,7 @@ function buildMvpOgTags(req, candidates, season, { locked = false, race = 'mvp' 
   const origin  = getRequestOrigin(req);
   const url     = `${SITE_ORIGIN}/mvp`;
   const img     = `${origin}/og-mvp.png`;
-  const title   = locked ? `Season ${season} MVP Race — Call the podium — WKND Basketball League` : `MVP Race — WKND Basketball League`;
+  const title   = locked ? `Season ${season} MVP Race — Call the podium | WKND Basketball` : `MVP Race | WKND Basketball`;
   const leader  = candidates[0];
   let desc;
   if (locked) {
@@ -766,7 +766,7 @@ function buildMvpOgTags(req, candidates, season, { locked = false, race = 'mvp' 
     `<meta name="description" content="${escAttr(desc)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
     `<meta property="og:title" content="${escAttr(title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
@@ -789,7 +789,7 @@ function buildDpoyOgTags(req, candidates, season, { locked = false } = {}) {
   const origin = getRequestOrigin(req);
   const url    = `${SITE_ORIGIN}/dpoy`;
   const img    = `${origin}/og/awards.png?v=${ogDayStamp()}`;
-  const title  = locked ? `Season ${season} Best Defender Race — WKND Basketball League` : 'Best Defender Race — WKND Basketball League';
+  const title  = locked ? `Season ${season} Best Defender Race | WKND Basketball` : 'Best Defender Race | WKND Basketball';
   const leader = candidates[0];
   const per = (s, k) => (s.gp > 0 ? (s[k] / s.gp).toFixed(1) : '0.0');
   const desc = locked
@@ -802,7 +802,7 @@ function buildDpoyOgTags(req, candidates, season, { locked = false } = {}) {
     `<meta name="description" content="${escAttr(desc)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
     `<meta property="og:title" content="${escAttr(title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
@@ -946,7 +946,7 @@ function buildBrandOgSvg({ kicker = '', title = 'WKND', sub = '', panel = null }
 const PAGE_DESCRIPTIONS = {
   '/': 'Weekend pickup basketball runs and an adult league in Makati, Mandaluyong and Pasig. No team needed, beginners welcome. Your own player card with stats.',
   '/games': 'Every WKND Basketball game: final scores, box scores, recaps and Player of the Game spotlights.',
-  '/standings': 'WKND Basketball League standings: team records, head-to-head results and the playoff picture.',
+  '/standings': 'WKND Basketball standings: team records, head-to-head results and the playoff picture.',
   '/playoffs': 'The WKND Basketball playoff bracket: every series, every result and the road to the title.',
   '/leaders': 'WKND Basketball league leaders: the top scorers, rebounders, playmakers and defenders per game.',
   '/players': 'Every WKND Basketball player: profiles, per-game averages, career stats and full game logs from every season of the league.',
@@ -2386,7 +2386,7 @@ function renderPage(req, opts) {
   if (opts.title && !existing.includes('og:title')) {
     defaults.push(
       `<meta property="og:type" content="website">`,
-      `<meta property="og:site_name" content="WKND Basketball League">`,
+      `<meta property="og:site_name" content="WKND Basketball">`,
       `<meta property="og:title" content="${escAttr(opts.title)}">`,
       `<meta name="twitter:title" content="${escAttr(opts.title)}">`,
     );
@@ -5679,7 +5679,7 @@ app.get('/api/compare', async (req, res) => {
       .map(r => r.writeup.split(/(?<=[.!?])\s/)[0])
       .filter(Boolean);
 
-    let prompt = `You write "the conyo take" on a head-to-head comparison of two players in the WKND Basketball League, a recreational league whose players read every word.
+    let prompt = `You write "the conyo take" on a head-to-head comparison of two players in WKND Basketball, a recreational league whose players read every word.
 
 VOICE — ${voice.name}: ${voice.guide}${voice.sample ? `\nExample line in this voice: "${voice.sample}"` : ''}
 
@@ -7703,7 +7703,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     if (!entry) return res.status(400).json({ error: 'Player not found in team award entries' });
     const statLine = buildContextLine(entry, award_type);
     const posNote  = entry.notes ? ` Selected as ${entry.notes}.` : '';
-    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in the WKND Basketball League.${posNote} Season stats: ${statLine}. Focus solely on what this player did to earn the honor — be vivid and specific, not generic. Do not mention teammates, other award recipients, or any other player. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+    prompt = `Write a 2-3 sentence spotlight on ${entry.player_name} (${entry.team_name}) being named to the Season ${season} ${LABELS[award_type]} in WKND Basketball.${posNote} Season stats: ${statLine}. Focus solely on what this player did to earn the honor — be vivid and specific, not generic. Do not mention teammates, other award recipients, or any other player. Each article should feel distinct from others on the same award page. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
   } else {
     let context = '';
     if (entries.length === 1) {
@@ -7712,7 +7712,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     } else if (entries.length > 1) {
       context = `Winners: ${entries.map(e => `${e.player_name} (${e.team_name})`).join(', ')}.`;
     }
-    prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in the WKND Basketball League. ${context} Exciting, specific, and confident. No generic filler. Focus solely on the winner — do not mention other players, runners-up, or comparisons. Each article should feel distinct — vary the opening angle and tone from other award articles. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
+    prompt = `Write a 2-3 sentence award announcement for the Season ${season} ${LABELS[award_type]} award in WKND Basketball. ${context} Exciting, specific, and confident. No generic filler. Focus solely on the winner — do not mention other players, runners-up, or comparisons. Each article should feel distinct — vary the opening angle and tone from other award articles. Do not open with "Ladies and gentlemen", "Congratulations", or any ceremonial greeting — jump straight into the content.`;
   }
 
   // Same voice set as recaps/POTG. Awards come once a season, so instead of rotating by
@@ -8622,7 +8622,7 @@ app.get('/games/:ref', (req, res) => {
     const meetingGames = (p.m?.lastMeetings || []).map(x => sorted.find(g => g.id === x.id)).filter(Boolean);
     picks.meetingCards = { games: meetingGames, ...gameCardExtras(meetingGames, sorted, { viewerId: currentPlayerId, playerMap }) };
     return res.send(renderPage(req, {
-      title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} — WKND Basketball League`,
+      title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} | WKND Basketball`,
       currentPath: req.path,
       metaTags: buildGameOgTags(req, game, court),
       body: gamePage({ ...common, state: 'upcoming', picks }),
@@ -9034,7 +9034,7 @@ app.delete('/games/:id/comments/:commentId', (req, res) => {
 app.get('/posts', (req, res) => {
   const posts = getPublicPosts();
   res.send(renderPage(req, {
-    title: 'Posts — WKND Basketball League',
+    title: 'Posts | WKND Basketball',
     currentPath: req.path,
     body: postsListPage({ posts })
   }));
@@ -9048,7 +9048,7 @@ app.get('/posts/:slug', (req, res) => {
     layout({ title: 'Not Found', currentPath: req.path, body: '<p style="padding:40px;color:var(--text-muted)">Post not found.</p>' })
   );
   res.send(renderPage(req, {
-    title: `${post.title} — WKND Basketball League`,
+    title: `${post.title} | WKND Basketball`,
     currentPath: req.path,
     metaTags: buildPostOgTags(req, post),
     body: postDetailPage({ post })
@@ -9129,7 +9129,7 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
 
   const prompt = [
     `You are a local recreational basketball league writer previewing an upcoming playoff/finals matchup — a community observer, not a broadcaster.`,
-    `Write a matchup preview post for the WKND Basketball League. Tone: grounded, conversational, builds anticipation without hype-speak.`,
+    `Write a matchup preview post for WKND Basketball. Tone: grounded, conversational, builds anticipation without hype-speak.`,
     `Use ONLY the numbers provided below. Do NOT invent, estimate, or round any statistic, record, or head-to-head result not explicitly given.`,
     `Do NOT reference the crowd, audience, or spectators. The league has limited attendance.`,
     `Output as JSON: a short headline (max 10 words, must name both teams) and 3-4 body paragraphs (plain text, no markdown).`,
@@ -10112,7 +10112,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   const storyHooks = recapStoryHooks(game, stats);
 
   const prompt = [
-    `You write game recaps for the WKND Basketball League, a recreational league with a tight community of players who read every recap.`,
+    `You write game recaps for WKND Basketball, a recreational league with a tight community of players who read every recap.`,
     `Tone: energetic and fun to read, with strong verbs and a real point of view — but every claim must come from the data below. Excitement comes from specifics, not adjectives.`,
     `Use ONLY the provided data. Do not invent quotes, events, or statistics.`,
     `Write plain text only. No markdown.`,
@@ -10252,7 +10252,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   const CLICHE_BAN = '"electrifying," "dazzling," "put on a show," "lights out," "on fire," "clutch performance," "stepped up," "did not disappoint," "showed up big," "came to play," "heart-pounding," "jaw-dropping," "key contributor," "effort," "outing," "stat line," "filled the stat sheet," "led the way"';
 
   const prompt = [
-    `You are writing a short player-of-the-game spotlight for the WKND Basketball League, a recreational league whose players read every word.`,
+    `You are writing a short player-of-the-game spotlight for WKND Basketball, a recreational league whose players read every word.`,
     `Write exactly 2–3 sentences. Plain text only. No markdown.`,
     `Tone: energetic and specific — the excitement comes from the details, never from adjectives. Every claim must come from the data below.`,
     ``,
@@ -10800,7 +10800,7 @@ ${statLines.join('\n')}${scorerLines.length ? `\nTop scorers in this matchup: ${
 
 async function generateMatchupStory(gameId, f) {
   const voice = pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
-  let prompt = `You write the storyline for an upcoming game on the WKND Basketball League games page — a recreational league whose players read every word.
+  let prompt = `You write the storyline for an upcoming game on the WKND Basketball games page — a recreational league whose players read every word.
 
 THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
 
@@ -11468,7 +11468,7 @@ app.get('/games', (req, res) => {
   })).headlines || null;
 
   res.send(renderPage(req, {
-    title: 'Games — WKND Basketball League',
+    title: 'Games | WKND Basketball',
     currentPath: req.path,
     body: gamesPage({
       games: listGames, season, seasons, currentSeason, seasonPlayedCount: seasonPlayed.length,
@@ -12158,7 +12158,7 @@ app.get('/highlights', (req, res) => {
   const items = all.filter(p => (!season || String(p.season) === season) && (!team || p.team === team));
 
   res.send(renderPage(req, {
-    title: 'Highlights — WKND Basketball League',
+    title: 'Highlights | WKND Basketball',
     currentPath: req.path,
     body: highlightsPage({ items, seasons, teams, season, team })
   }));
@@ -12193,7 +12193,7 @@ app.get('/standings', (req, res) => {
   }
 
   res.send(renderPage(req, {
-    title: `${isCurrent ? '' : `Season ${season} `}Standings — WKND Basketball League`,
+    title: `${isCurrent ? '' : `Season ${season} `}Standings | WKND Basketball`,
     currentPath: req.path,
     body: standingsPage({
       season, seasons, isCurrent, rows, games, scheduled, teamStats: sd.teamStats, summary, isAdmin,
@@ -12212,7 +12212,7 @@ app.get('/playoffs', (req, res) => {
   const isAdmin = !!req.session?.isAdmin;
 
   res.send(renderPage(req, {
-    title: `${isCurrent ? '' : `Season ${season} `}Playoffs — WKND Basketball League`,
+    title: `${isCurrent ? '' : `Season ${season} `}Playoffs | WKND Basketball`,
     currentPath: req.path,
     body: playoffsPage({
       standings: pd.standings, games: pd.games, season, seasons, isCurrent, h2h: pd.h2h, awards: pd.awards, regular: pd.regular,
@@ -12635,7 +12635,7 @@ app.get('/leaders/share/:id', (req, res) => {
   const metaTags = [
     `<meta name="description" content="${escAttr(desc)}">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:title" content="${escAttr(title)}">`,
     `<meta property="og:description" content="${escAttr(desc)}">`,
     `<meta property="og:url" content="${escAttr(pageUrl)}">`,
@@ -12731,7 +12731,7 @@ for (const raceKey of ['mvp', 'dpoy']) {
     const metaTags = [
       `<meta name="description" content="${escAttr(desc)}">`,
       `<meta property="og:type" content="website">`,
-      `<meta property="og:site_name" content="WKND Basketball League">`,
+      `<meta property="og:site_name" content="WKND Basketball">`,
       `<meta property="og:title" content="${escAttr(title)}">`,
       `<meta property="og:description" content="${escAttr(desc)}">`,
       `<meta property="og:url" content="${escAttr(pageUrl)}">`,
@@ -13452,7 +13452,7 @@ function homeSummaryFacts(block, ctx) {
 // highsOk (game page sections): career/season highs may be named where the facts give them.
 async function generateHomeSummary(block, f, opts = {}) {
   const voice = pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
-  let prompt = `You write the short headline and summary that sits above the "${f.section}" section on the WKND Basketball League ${opts.where || 'homepage'} — a recreational league whose players read every word.
+  let prompt = `You write the short headline and summary that sits above the "${f.section}" section on the WKND Basketball ${opts.where || 'homepage'} — a recreational league whose players read every word.
 
 THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
 
@@ -14111,7 +14111,7 @@ ${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '';
       `Fouls per game: ${per('pf')}, Team record: ${wl}, GP: ${gp}, Defense Score: ${c.mvpScore.toFixed(1)}`,
       `Best Defender Race position: #${rank} of ${field}${movement}`,
     ].join('\n');
-    return `You are covering the Best Defender race for the WKND Basketball League, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence Best Defender case' : 'Write exactly 2 short sentences (under 45 words in total) on the Best Defender case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real Best Defender candidate — steals, blocks, rebounding, staying out of foul trouble, and winning.
+    return `You are covering the Best Defender race for WKND Basketball, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence Best Defender case' : 'Write exactly 2 short sentences (under 45 words in total) on the Best Defender case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real Best Defender candidate — steals, blocks, rebounding, staying out of foul trouble, and winning.
 
 THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
 
@@ -14146,7 +14146,7 @@ ${reminder}`;
     `FG%: ${fg}, Record: ${wl}, GP: ${gp}, MVP Score: ${c.mvpScore.toFixed(1)}`,
     `MVP Race position: #${rank} of ${field}${movement}`,
   ].join('\n');
-  return `You are covering the MVP race for the WKND Basketball League, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence MVP case' : 'Write exactly 2 short sentences (under 45 words in total) on the MVP case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
+  return `You are covering the MVP race for WKND Basketball, a recreational league whose players read every word. ${rank <= 3 ? 'Write a 2-3 sentence MVP case' : 'Write exactly 2 short sentences (under 45 words in total) on the MVP case'} for ${name} (${String(c.stats.team_name).toUpperCase()}). Be specific with numbers — the energy comes from the details, not adjectives. Focus solely on what makes THIS player a real MVP candidate — production, efficiency, winning.
 
 THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
 
@@ -14339,7 +14339,7 @@ function lockAngle(c) {
 function lockPrompt(c, facts, voice, openings) {
   const forecast = c.mode === 'forecast';
   const angle = lockAngle(c);
-  return `You write one card on the WKND Basketball League's MVP page, a recreational league whose players read every word. The MVP race is LOCKED: its order, scores and gaps are secret until the award.
+  return `You write one card on WKND Basketball's MVP page, a recreational league whose players read every word. The MVP race is LOCKED: its order, scores and gaps are secret until the award.
 
 Return JSON with two fields:
 - "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his MVP case.'}
@@ -14414,7 +14414,7 @@ function dpoyLockAngle(c) {
 function dpoyLockPrompt(c, facts, voice, openings) {
   const forecast = c.mode === 'forecast';
   const angle = dpoyLockAngle(c);
-  return `You write one card on the WKND Basketball League's Best Defender page, a recreational league whose players read every word. The Best Defender race is LOCKED: its order, scores and gaps are secret until the award.
+  return `You write one card on WKND Basketball's Best Defender page, a recreational league whose players read every word. The Best Defender race is LOCKED: its order, scores and gaps are secret until the award.
 
 Return JSON with two fields:
 - "job": ${forecast ? `"Sunday's job", 1–2 sentences, at most 40 words: what his earlier game against ${c.opp} says he needs to do on defense in Sunday's rematch.` : '"The final case", 1–2 sentences, at most 40 words: what his regular season and his last game say about his Best Defender case.'}
@@ -14889,7 +14889,7 @@ async function renderRacePage(req, res, raceKey) {
     const photoMeta = getMvpPhotoMeta(season);
     const current = String(season) === String(getPortalCurrentSeason());
     return res.send(renderPage(req, {
-      title: raceKey === 'mvp' ? `Season ${season} MVP Race — Call the podium — WKND Basketball League` : `Season ${season} Best Defender Race — WKND Basketball League`,
+      title: raceKey === 'mvp' ? `Season ${season} MVP Race — Call the podium | WKND Basketball` : `Season ${season} Best Defender Race | WKND Basketball`,
       currentPath: req.path,
       metaTags: buildMvpOgTags(req, ten, season, { locked: true, race: raceKey }),
       body: mvpLockPage({
@@ -14910,7 +14910,7 @@ async function renderRacePage(req, res, raceKey) {
       .map(c => ({ player: c.player, stats: c.stats }));
     const photoMeta = getMvpPhotoMeta(season);
     return res.send(renderPage(req, {
-      title: `Season ${season} ${raceKey === 'mvp' ? 'MVP' : 'Best Defender'} Finalists — WKND Basketball League`,
+      title: `Season ${season} ${raceKey === 'mvp' ? 'MVP' : 'Best Defender'} Finalists | WKND Basketball`,
       currentPath: req.path,
       metaTags: buildMvpOgTags(req, finalists, season, { locked: true, race: raceKey }),
       body: mvpPage({
@@ -14994,8 +14994,8 @@ async function renderRacePage(req, res, raceKey) {
   const week = getSeasonLatestWeek(season)?.week ?? null;
   res.send(renderPage(req, {
     title: playoffsStarted
-      ? `Season ${season} ${race.name} — Final — WKND Basketball League`
-      : `${race.name} — WKND Basketball League`,
+      ? `Season ${season} ${race.name} — Final | WKND Basketball`
+      : `${race.name} | WKND Basketball`,
     currentPath: req.path,
     metaTags: buildMvpOgTags(req, withWriteups, season, { race: raceKey }),
     body: mvpPage({
@@ -15089,7 +15089,7 @@ async function generatePageWriteups(page, facts, key) {
   const isRoast = page === 'roast';
   const voice = isRoast ? roastVoice() : pickVoice('home', { date: new Date().toISOString().slice(0, 10) });
   const ids = Object.keys(facts);
-  const base = `You write the short paragraph that sits under each section heading on the WKND Basketball League ${isRoast ? '"The Roast" page — the playful flip side of the league leaders board' : 'League Leaders page'}. It's a recreational league whose players read every word.
+  const base = `You write the short paragraph that sits under each section heading on the WKND Basketball ${isRoast ? '"The Roast" page — the playful flip side of the league leaders board' : 'League Leaders page'}. It's a recreational league whose players read every word.
 
 THIS WEEK'S VOICE — ${voice.name}: ${voice.guide}
 
@@ -15250,7 +15250,7 @@ app.get('/leaders', (req, res) => {
   });
   if (req.query.partial === '1') return res.type('html').send(html);
   res.send(renderPage(req, {
-    title: 'League Leaders — WKND Basketball League',
+    title: 'League Leaders | WKND Basketball',
     currentPath: req.path,
     body: `<div class="page-content">${html}</div>${leadersScript({
       isAdmin,
@@ -15287,17 +15287,17 @@ app.get('/roast', (req, res) => {
     `<meta name="description" content="${escAttr(roastDesc)}">`,
     `<link rel="canonical" href="${escAttr(roastUrl)}">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
-    `<meta property="og:title" content="The Roast — WKND Basketball League">`,
+    `<meta property="og:title" content="The Roast | WKND Basketball">`,
     `<meta property="og:description" content="${escAttr(roastDesc)}">`,
     `<meta property="og:url" content="${escAttr(roastUrl)}">`,
     `<meta name="twitter:card" content="summary">`,
-    `<meta name="twitter:title" content="The Roast — WKND Basketball League">`,
+    `<meta name="twitter:title" content="The Roast | WKND Basketball">`,
     `<meta name="twitter:description" content="${escAttr(roastDesc)}">`,
   ].join('\n  ');
   res.send(renderPage(req, {
-    title: 'The Roast — WKND Basketball League',
+    title: 'The Roast | WKND Basketball',
     currentPath: req.path,
     metaTags: roastMetaTags,
     body: `<div class="page-content">${html}</div>${leadersScript({
@@ -15557,7 +15557,7 @@ app.get('/teams', (req, res) => {
     champions: teamsSummary('teams_summary_champions', 'teams_champions', teamsChampionsSummaryFacts(d.champions)),
   };
   res.send(renderPage(req, {
-    title: `${d.isCurrent ? '' : `Season ${season} `}Teams — WKND Basketball League`,
+    title: `${d.isCurrent ? '' : `Season ${season} `}Teams | WKND Basketball`,
     currentPath: req.path,
     metaTags: `<link rel="stylesheet" href="/teams.css?v=${TEAMS_CSS_VER}">`,
     body: teamsBody({ ...d, seasons, summaries, isAdmin }),
@@ -16231,7 +16231,7 @@ app.get('/players', (req, res) => {
   }
 
   res.send(renderPage(req, {
-    title: 'Players — WKND Basketball League',
+    title: 'Players | WKND Basketball',
     currentPath: req.path,
     metaTags: `<link rel="stylesheet" href="/players.css?v=${PLAYERS_CSS_VER}">`,
     body: playersPage({ view, season, week: season ? (getSeasonLatestWeek(season)?.week ?? null) : null, roster, alumni, community, stats, isAdmin }),
@@ -16550,7 +16550,7 @@ app.get('/terms', (req, res) => {
 
 app.get('/rules', (req, res) => {
   res.send(renderPage(req, {
-    title: 'League Rules — WKND Basketball League',
+    title: 'League Rules | WKND Basketball',
     currentPath: '/rules',
     body: rulesPage(CONTACT_EMAIL),
   }));
@@ -16563,7 +16563,7 @@ app.get('/rules', (req, res) => {
 app.get('/rules/fines', (req, res) => {
   const categories = getActiveFineCategories().filter(c => c.amount > 0);
   res.send(renderPage(req, {
-    title: 'League Fines — WKND Basketball League',
+    title: 'League Fines | WKND Basketball',
     currentPath: '/rules/fines',
     body: fineSchedulePage({ categories }),
   }));
@@ -18326,14 +18326,14 @@ function buildCourtOgTags(court, p) {
     location: place,
     image: img,
     url: `${SITE_ORIGIN}/papawis#pw-game-${encodeURIComponent(r.id)}`,
-    organizer: { '@type': 'SportsOrganization', name: 'WKND Basketball League', url: SITE_ORIGIN },
+    organizer: { '@type': 'SportsOrganization', name: 'WKND Basketball', url: SITE_ORIGIN },
     ...(Number(r.price_per_player) || Number(r.min_per_player) ? { offers: { '@type': 'Offer', price: Number(r.price_per_player) || Number(r.min_per_player), priceCurrency: 'PHP', availability: 'https://schema.org/InStock', url: `${SITE_ORIGIN}/papawis` } } : {}),
   }));
   return [
     `<meta name="description" content="${escAttr(p.description)}">`,
     `<link rel="canonical" href="${escAttr(url)}">`,
     `<meta property="og:type" content="place">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
     `<meta property="og:title" content="${escAttr(p.title)}">`,
     `<meta property="og:description" content="${escAttr(p.description)}">`,
@@ -18661,9 +18661,9 @@ app.get('/papawis', (req, res) => {
     `<meta name="description" content="${escAttr(papawisDesc)}">`,
     `<link rel="canonical" href="${escAttr(papawisUrl)}">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="WKND Basketball League">`,
+    `<meta property="og:site_name" content="WKND Basketball">`,
     `<meta property="og:locale" content="en_US">`,
-    `<meta property="og:title" content="Papawis — WKND Basketball League">`,
+    `<meta property="og:title" content="Papawis | WKND Basketball">`,
     `<meta property="og:description" content="${escAttr(papawisDesc)}">`,
     `<meta property="og:url" content="${escAttr(papawisUrl)}">`,
     `<meta property="og:image" content="${escAttr(papawisImg)}">`,
@@ -18671,9 +18671,9 @@ app.get('/papawis', (req, res) => {
     `<meta property="og:image:type" content="image/png">`,
     `<meta property="og:image:width" content="1200">`,
     `<meta property="og:image:height" content="630">`,
-    `<meta property="og:image:alt" content="Papawis — WKND Basketball League">`,
+    `<meta property="og:image:alt" content="Papawis | WKND Basketball">`,
     `<meta name="twitter:card" content="summary_large_image">`,
-    `<meta name="twitter:title" content="Papawis — WKND Basketball League">`,
+    `<meta name="twitter:title" content="Papawis | WKND Basketball">`,
     `<meta name="twitter:description" content="${escAttr(papawisDesc)}">`,
     `<meta name="twitter:image" content="${escAttr(papawisImg)}">`,
   ].join('\n  ');
@@ -20997,7 +20997,7 @@ app.get('/marketplace', (req, res) => {
   const commentCountsById = getMarketplaceCommentCounts(listingIds);
   const reactionCountsById = getMarketplaceListingReactionCounts(listingIds);
   res.send(renderPage(req, {
-    title: 'Marketplace — WKND Basketball League',
+    title: 'Marketplace | WKND Basketball',
     currentPath: req.path,
     body: marketplacePage({ listings: effectiveListings, countsById, committedById, committedOptsById, committedPlayersById, commentCountsById, reactionCountsById, isLoggedIn: !!req.session?.playerRegId, sort }),
   }));

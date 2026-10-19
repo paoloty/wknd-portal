@@ -40,7 +40,7 @@ export function wkndLogo(className = 'site-header__logo', href = '/', phase = nu
   return `<a href="${href}" class="wknd-logo ${className}" aria-label="WKND Basketball home">WKND${wkndBall()}</a>`;
 }
 
-export function layout({ title = 'WKND Basketball League', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, bare = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null, headerInfo = null, siteBar = '' }) {
+export function layout({ title = 'WKND Basketball', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, bare = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null, headerInfo = null, siteBar = '' }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -492,7 +492,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
               <a href="#" data-cookie-settings hidden>Cookie Settings</a>
             </nav>
           </div>
-          <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
+          <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball</span>
         </div>
       </div>
     </div>
@@ -662,7 +662,9 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   ${origin ? `<script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'SportsOrganization',
-    name: 'WKND Basketball League',
+    // One name everywhere (site name in Google = WebSite name, homepage title, og:site_name).
+    name: 'WKND Basketball',
+    alternateName: 'WKND Basketball League',
     url: origin,
     sport: 'Basketball',
     areaServed: ['Makati', 'Mandaluyong', 'Pasig'].map(name => ({ '@type': 'City', name, containedInPlace: { '@type': 'AdministrativeArea', name: 'Metro Manila' } })),
@@ -676,8 +678,9 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
   <script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'WKND Basketball League',
-    url: origin,
+    name: 'WKND Basketball',
+    alternateName: ['WKND', 'WKND Basketball League'],
+    url: `${origin}/`,
   })}</script>` : ''}
   <!-- Self-hosted fonts (public/fonts/): same origin, so no extra DNS/TLS round trips to
        Google. Preload the two faces nearly every page paints — Archivo body text and the
@@ -706,7 +709,7 @@ export function layout({ title = 'WKND Basketball League', currentPath = '/', bo
         <a href="/terms">Terms of Service</a>
         <a href="#" data-cookie-settings hidden>Cookie Settings</a>
       </nav>
-      <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball League</span>
+      <span class="site-footer__copy">&copy; ${new Date().getFullYear()} WKND Basketball</span>
     </footer>
   </div>` : `<div class="page-body">
     ${siteBar}

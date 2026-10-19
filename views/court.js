@@ -266,7 +266,7 @@ function railBar(total, per, label) {
 // League games: the standard /games card, in a row that scrolls (three across on desktop).
 function league(games, extras) {
   if (!games.length) return '';
-  return `<section class="crt-sec" id="crt-league" aria-labelledby="crt-league-h">${sh('League games here', { id: 'crt-league-h', sub: 'WKND Basketball League', link: '<a class="section-header__link" href="/games">All games</a>' })}
+  return `<section class="crt-sec" id="crt-league" aria-labelledby="crt-league-h">${sh('League games here', { id: 'crt-league-h', sub: 'WKND Basketball', link: '<a class="section-header__link" href="/games">All games</a>' })}
     <div class="crt-rail${games.length > 3 ? ' crt-rail--more' : ''}" data-crt-rail>
       <div class="crt-rail__track">${games.map(g => gameCard(g, { commentsEnabled: extras.commentsEnabled, social: extras.socialByGame?.[g.id] || { commentsCount: 0, reactCount: 0, reacted: false }, topScorer: extras.topScorerByGame?.[g.id], odds: extras.oddsByGame?.[g.id] || null })).join('')}</div>
       ${railBar(games.length, Math.min(3, games.length), 'games')}

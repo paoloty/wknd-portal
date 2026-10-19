@@ -102,7 +102,7 @@ export function adminReachComposeBody({ segments, seg, teams, team, pickOptions,
             <div class="reach-mail__text" data-prev-body>Your message</div>
             <span class="reach-mail__cta"><span data-prev-cta>${escHtml(firstCta)}</span> →</span>
           </div>
-          <div class="reach-mail__foot">WKND Basketball League · Unsubscribe</div>
+          <div class="reach-mail__foot">WKND Basketball · Unsubscribe</div>
         </div>
       </section>
     </aside>
