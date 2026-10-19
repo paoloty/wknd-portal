@@ -10398,8 +10398,13 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   const recordLineA = recA ? `${game.team_a_name}: ${recA.wins}-${recA.losses}` : null;
   const recordLineB = recB ? `${game.team_b_name}: ${recB.wins}-${recB.losses}` : null;
 
-  const streakLine = (team, s) =>
-    s.streak >= 2 ? `${team} is on a ${s.streak}-game ${s.type === 'W' ? 'winning' : 'losing'} streak.` : null;
+  // Streaks AFTER this game (getTeamStreak is as of before it): "keeping their 2-game winning
+  // streak alive" was written about a team whose streak this very game ended.
+  const streakLine = (team, s, won) => {
+    if (s.type === (won ? 'W' : 'L')) return s.streak + 1 >= 2 ? `${team} is now on a ${s.streak + 1}-game ${won ? 'winning' : 'losing'} streak after this game.` : null;
+    if (s.streak >= 2) return `${team}'s ${s.streak}-game ${s.type === 'W' ? 'winning' : 'losing'} streak ENDED with this ${won ? 'win' : 'loss'}.`;
+    return null;
+  };
 
   // The story hooks and highlights already cover runs, leads and the go-ahead basket across
   // the whole game, so the raw play-by-play is only the finish: 40 events in a close game
@@ -10479,6 +10484,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     storyHooks.length ? storyHooks.map(h => `- ${h}`).join('\n') : '- (no standout hooks — find the angle in the top performers or the standings)',
     ``,
     `GAME: ${game.team_a_name} ${scoreA} – ${scoreB} ${game.team_b_name}`,
+    // Said in words: a bare "A 73 – 103 B" line was misread once (who won, who "drops").
+    scoreA !== scoreB ? `RESULT: ${scoreA > scoreB ? game.team_a_name : game.team_b_name} WON, ${Math.max(scoreA, scoreB)}-${Math.min(scoreA, scoreB)}. ${scoreA > scoreB ? game.team_b_name : game.team_a_name} LOST.` : 'RESULT: a tie.',
     `Date: ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : game.game_type === 'finals' ? 'FINALS' : 'Regular Season'}${isOT ? '  |  OVERTIME' : ''}`,
     `Final margin: ${Math.abs(scoreA - scoreB)} pts${Math.abs(scoreA - scoreB) <= 6 ? ' (CLOSE GAME — emphasize late-game events)' : ''}`,
     ``,
@@ -10490,11 +10497,12 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       `${game.team_a_name}: ${recA.wins + (scoreA > scoreB ? 1 : 0)}-${recA.losses + (scoreA < scoreB ? 1 : 0)}`,
       `${game.team_b_name}: ${recB.wins + (scoreB > scoreA ? 1 : 0)}-${recB.losses + (scoreB < scoreA ? 1 : 0)}`,
     ] : []),
-    [streakLine(game.team_a_name, streakA), streakLine(game.team_b_name, streakB)].filter(Boolean).join('\n') || '(no notable streaks)',
+    [streakLine(game.team_a_name, streakA, scoreA > scoreB), streakLine(game.team_b_name, streakB, scoreB > scoreA)].filter(Boolean).join('\n') || '(no notable streaks)',
     standingsLine,
     ``,
     prevMatch
-      ? `PREVIOUS MATCHUP: ${prevMatch.team_a_name} ${prevMatch.team_a_score} – ${prevMatch.team_b_score} ${prevMatch.team_b_name} on ${prevMatch.date}` +
+      // Winner first, in words: "MAROON 80 – 95 BLUE" was read as a Maroon win.
+      ? `PREVIOUS MATCHUP: ${(() => { const aw = Number(prevMatch.team_a_score) > Number(prevMatch.team_b_score); const [w, l, ws, ls] = aw ? [prevMatch.team_a_name, prevMatch.team_b_name, prevMatch.team_a_score, prevMatch.team_b_score] : [prevMatch.team_b_name, prevMatch.team_a_name, prevMatch.team_b_score, prevMatch.team_a_score]; return `${w} beat ${l} ${ws}-${ls}`; })()} on ${prevMatch.date}` +
         (String(prevMatch.season) !== String(game.season)
           ? ` (PREVIOUS SEASON — Season ${prevMatch.season}${prevMatch.game_type !== 'regular' ? ` ${prevMatch.game_type}` : ''}; does not affect this season's records)`
           : '')
