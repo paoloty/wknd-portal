@@ -19,7 +19,9 @@ node scripts/ai-eval/setup.js --scratch <dir> --clean      # removes junctions s
 `RESEND_API_KEY`, `SMTP_*`, `FACEBOOK_APP_SECRET`, `DB_EXPORT_KEY`, `ROSTER_API_KEY` removed, the
 eval port (default 4100) and the two trace files. Options: `--port`, `--provider-order
 openai|gemini|groq,...`, `--openai-model`, `--openai-models a,b`, `--gemini-model`,
-`--gemini-models a,b` (pins the whole fallback chain).
+`--gemini-models a,b` (pins the whole fallback chain). Writers now pass a tier (`lib/ai.js`
+`tierOrder`), which ignores `--provider-order`: pin them with `--writer-order anthropic` (short,
+medium and long) and `--check-order groq,openai` (fact checks); `--anthropic-models` pins Claude.
 
 `run.js` starts the copy's server, logs in with the copy's `PORTAL_ADMIN_USER/PASS`, posts to
 `/admin/games/:id/generate-recap`, `/generate-potg` (with `shared_with` for a co-POTG),

@@ -73,11 +73,18 @@ db.close();
 const port = String(args.port || 4100);
 const lines = fs.readFileSync(path.join(REPO, '.env'), 'utf8').split(/\r?\n/)
   .filter(l => !STRIP_ENV.some(k => l.startsWith(`${k}=`)))
+  .filter(l => !((args['writer-order'] || args['check-order']) && /^(AI_ORDER_\w+|ANTHROPIC_CREDIT_UNTIL|ANTHROPIC_MODELS)=/.test(l)))
   .filter(l => !/^(PORT|AI_WRITER_LOG|AI_CALL_LOG|AI_PROVIDER_ORDER|AI_PRIMARY_PROVIDER|OPENAI_MODEL|OPENAI_MODELS|GEMINI_MODEL|GEMINI_MODELS|GROQ_MODEL|GROQ_MODELS|AI_RETRY_WAIT_MAX_MS|NODE_ENV)=/.test(l) || (!args['provider-order'] && /^(AI_PROVIDER_ORDER|AI_PRIMARY_PROVIDER)=/.test(l)) || (!args['openai-model'] && !args['openai-models'] && /^OPENAI_MODEL=/.test(l)) || (!args['gemini-model'] && !args['gemini-models'] && /^GEMINI_MODEL=/.test(l)));
 lines.push(`PORT=${port}`);
 lines.push(`AI_WRITER_LOG=${path.join(scratch, 'writer.log.jsonl')}`);
 lines.push(`AI_CALL_LOG=${path.join(scratch, 'calls.log.jsonl')}`);
 if (args['provider-order']) lines.push(`AI_PROVIDER_ORDER=${args['provider-order']}`);
+// Tiered calls (lib/ai.js tierOrder) ignore AI_PROVIDER_ORDER. --writer-order pins the short,
+// medium and long tiers; --check-order the fact checks. Either drops the credit date so the
+// pin holds.
+if (args['writer-order']) for (const t of ['SHORT', 'MEDIUM', 'LONG']) lines.push(`AI_ORDER_${t}=${args['writer-order']}`);
+if (args['check-order']) lines.push(`AI_ORDER_CHECK=${args['check-order']}`);
+if (args['anthropic-models']) lines.push(`ANTHROPIC_MODELS=${args['anthropic-models']}`);
 if (args['openai-model']) lines.push(`OPENAI_MODEL=${args['openai-model']}`);
 if (args['openai-models']) lines.push(`OPENAI_MODELS=${args['openai-models']}`);
 if (args['gemini-model']) lines.push(`GEMINI_MODEL=${args['gemini-model']}`);

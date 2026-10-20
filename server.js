@@ -2036,7 +2036,7 @@ function createBannerMessagePool({ settingKey, fields, buildPrompt, fallbackPool
     const existing = getPool();
     const prompt = buildPrompt(existing);
     try {
-      const { text } = await generateText(prompt, { maxTokens: 1200, temperature: 1.05 });
+      const { text } = await generateText(prompt, { tier: 'short', maxTokens: 1200, temperature: 1.05 });
       const minSlashes = fields.length - 1;
       const fresh = text
         .split('\n')
@@ -5744,7 +5744,7 @@ Rules:
     const out = await runWriter({
       prompt, label: 'compare take', tries: 3,
       generate: async p => {
-        const r = await generateText(p, { maxTokens: 320, temperature: ++attempt === 1 ? 0.9 : 0.75 });
+        const r = await generateText(p, { tier: 'short', maxTokens: 320, temperature: ++attempt === 1 ? 0.9 : 0.75 });
         model = r.model;
         return String(r.text || '').replace(/\s+/g, ' ').trim();
       },
@@ -7826,7 +7826,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     // with the text so the admin can see it before saving.
     const out = await runWriter({
       prompt, label: `Award article (${award_type})`, tries: 2,
-      generate: async p => (await generateText(p, { maxTokens: 600, temperature: aiTemperature() })).text.trim(),
+      generate: async p => (await generateText(p, { tier: 'long', maxTokens: 600, temperature: aiTemperature() })).text.trim(),
       checks: [
         t => numberProblems(t, facts, { pairs: false }),
         t => claimProblems(t, facts),
@@ -9282,7 +9282,7 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
     // Write → check → rewrite (lib/writer.js), 2 tries; the editor sees whatever is still wrong.
     const out = await runWriter({
       prompt, label: 'Posts preview', tries: 2,
-      generate: async p => (await generateJson(p, schema, { temperature: 0.72, maxTokens: 900 })).data,
+      generate: async p => (await generateJson(p, schema, { tier: 'long', temperature: 0.72, maxTokens: 900 })).data,
       text: d => `${String(d?.title || '')}. ${(d?.paragraphs || []).join('\n')}`,
       checks: [
         (t, d) => (!d?.title || !(d.paragraphs || []).length ? ['the title or the body is empty'] : []),
@@ -9428,7 +9428,7 @@ app.post('/admin/posts/:id/verify-stats', requireAuth, express.json(), async (re
   const extractPrompt = `Extract every concrete numeric claim (records like "10-2", head-to-head results, scoring averages, streaks) from this basketball post text. Every claim MUST include which team it's about, resolved from context even if the sentence uses a pronoun or implied subject. If there are none, return an empty array.\n\nTEXT:\n${plainText}`;
 
   try {
-    const { data } = await generateJson(extractPrompt, extractSchema, { temperature: 0, maxTokens: 500 });
+    const { data } = await generateJson(extractPrompt, extractSchema, { tier: 'check', temperature: 0, maxTokens: 500 });
     const teams = getAllTeams();
     const season = getCurrentSeason()?.season ?? 1;
     const standings = getSeasonStandings(season);
@@ -10683,7 +10683,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     // rewrite but never outrank the facts. The admin is told whatever is still wrong.
     const out = await runWriter({
       prompt, label: `Recap (${game.id})`, tries: 3,
-      generate: async p => (await generateText(p, { temperature: aiTemperature(), maxTokens: 1200 })).text,
+      generate: async p => (await generateText(p, { tier: 'long', temperature: aiTemperature(), maxTokens: 1200 })).text,
       checks: [
         // One-line headline, then a blank line ("Black Wins\n 95-90 Behind…" split the headline).
         t => { const [, second] = t.split('\n'); return second && second.trim() ? ['the headline must be one line, followed by a blank line, then the paragraphs'] : []; },
@@ -10815,7 +10815,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
       prompt, label: `POTG (${game.id})`, tries: 3,
       // 700, not 300: a reasoning model (Groq gpt-oss) spends part of the budget thinking, and every
       // 300-token spotlight on it came back truncated.
-      generate: async p => keepSentences((await generateText(p, { temperature: aiTemperature(), maxTokens: 700 })).text, 3),
+      generate: async p => keepSentences((await generateText(p, { tier: 'medium', temperature: aiTemperature(), maxTokens: 700 })).text, 3),
       checks: [
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts),
@@ -14092,7 +14092,7 @@ HOW TO SAY IT: numbers, names and stat words come from the facts in English digi
   const label = opts.label || `Summary (${f.section})`;
   const out = await runWriter({
     prompt, label, tries: opts.tries || 3,
-    generate: async p => shape((await generateJson(p, schema, { temperature: Math.min(aiTemperature(), tempCap), maxTokens: opts.maxTokens || (f.notesFor ? 800 : 600) })).data),
+    generate: async p => shape((await generateJson(p, schema, { tier: opts.tier || (bd.words > 90 ? 'medium' : 'short'), temperature: Math.min(aiTemperature(), tempCap), maxTokens: opts.maxTokens || (f.notesFor ? 800 : 600) })).data),
     text: d => `${d.headline.replace(/\*\*/g, '')}. ${d.body}${d.notes && Object.keys(d.notes).length ? `\n${noteText(d)}` : ''}`,
     checks: [
       (t, d) => (!d.headline ? ['the headline is empty'] : []),
@@ -14186,7 +14186,7 @@ Not problems: opinions, tone, slang, voice and wording; "league record" / "recor
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
     required: ['accurate', 'problems'],
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 600, openaiModel: FACT_CHECK_MODEL });
+  const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 600, openaiModel: FACT_CHECK_MODEL });
   if (data?.accurate) return [];
   const raw = (data?.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
   const problems = realFactProblems(raw);
@@ -14239,7 +14239,7 @@ Not problems: opinions, tone, slang and wording; leaving a fact out (short copy 
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
     required: ['accurate', 'problems'],
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500, openaiModel: FACT_CHECK_MODEL });
+  const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 500, openaiModel: FACT_CHECK_MODEL });
   if (data.accurate) return [];
   const raw = (data.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
   const problems = realFactProblems(raw);
@@ -15215,7 +15215,7 @@ async function mvpLockWriteups(ten, season, { generate = false, race = 'mvp' } =
       const out = await runWriter({
         prompt: lockPrompt(c, facts, voice, openings), label: `${race.toUpperCase()} lock card (${c.player.id})`, tries: 2,
         generate: async p => {
-          const { data } = await generateJson(p, schema, { temperature: Math.min(aiTemperature(), voiceTraits(voice).hot ? 0.85 : 0.7), maxTokens: 260 });
+          const { data } = await generateJson(p, schema, { tier: 'medium', temperature: Math.min(aiTemperature(), voiceTraits(voice).hot ? 0.85 : 0.7), maxTokens: 260 });
           return { job: lockDashes(data?.job || '').trim(), question: lockDashes(data?.question || '').trim() };
         },
         text: d => `${d.job} ${d.question}`,
@@ -15693,7 +15693,7 @@ async function renderRacePage(req, res, raceKey) {
       // that still fails is never shown or stored.
       const out = await runWriter({
         prompt, label: `${race.short} writeup (${c.player.id})`, tries: 2,
-        generate: async p => (await generateText(p, { maxTokens: rank <= 3 ? 300 : 160, temperature: aiTemperature() })).text.trim(),
+        generate: async p => (await generateText(p, { tier: rank <= 3 ? 'medium' : 'short', maxTokens: rank <= 3 ? 300 : 160, temperature: aiTemperature() })).text.trim(),
         checks: [
           t => numberProblems(t, facts),
           t => claimProblems(t, facts),
@@ -15807,7 +15807,7 @@ For each section, list every statement in its copy that its facts do not directl
     properties: Object.fromEntries(ids.map(id => [id, { type: 'array', items: { type: 'string' } }])),
     required: ids,
   };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500, openaiModel: FACT_CHECK_MODEL });
+  const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 500, openaiModel: FACT_CHECK_MODEL });
   return Object.fromEntries(ids.map(id => [id, realFactProblems((Array.isArray(data?.[id]) ? data[id] : ['no verdict']).map(p => String(p).slice(0, 200)).filter(Boolean))]));
 }
 
@@ -15842,7 +15842,7 @@ FINAL REMINDER — one story per section, at most 40 words, in the ${voice.name}
     if (!todo.length) break;
     const schema = { type: 'object', properties: Object.fromEntries(todo.map(id => [id, { type: 'string' }])), required: todo };
     const prompt = base + (todo.length < ids.length ? `\n\nOnly write these sections this time: ${todo.join(', ')}.` : '') + notes;
-    const { data } = await generateJson(prompt, schema, { temperature: Math.min(aiTemperature(), 0.7), maxTokens: 900 });
+    const { data } = await generateJson(prompt, schema, { tier: 'short', temperature: Math.min(aiTemperature(), 0.7), maxTokens: 900 });
     const drafts = {};
     for (const id of todo) {
       const text = String(data?.[id] || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim().slice(0, 400);
@@ -20432,7 +20432,7 @@ FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Exampl
     try {
       out = await runWriter({
         prompt, label: `Court writeup (${court.id})`, tries: 3,
-        generate: async p => String((await generateText(p, { maxTokens: 700, temperature: Math.min(aiTemperature(), voiceTraits(voice).hot ? 0.85 : 0.8) })).text || '').replace(/^["“]|["”]$/g, '').replace(/\*\*/g, '').trim(),
+        generate: async p => String((await generateText(p, { tier: 'medium', maxTokens: 700, temperature: Math.min(aiTemperature(), voiceTraits(voice).hot ? 0.85 : 0.8) })).text || '').replace(/^["“]|["”]$/g, '').replace(/\*\*/g, '').trim(),
         checks: [
           t => { const bad = (t.match(/\d+(?:[.,]\d+)?/g) || []).filter(n => !allowed.has(n)); return bad.length ? [`it used numbers not in the facts (${bad.join(', ')})`] : []; },
           t => numberProblems(t, factsText, { pairs: false }).filter(p => p.startsWith('it spells')),
@@ -20464,7 +20464,7 @@ ${factsText}
 
 List every statement in the text that the facts do not directly support: wrong or invented numbers, counts of how many runs, games, players or members there have been, how often runs happen ("every Saturday", "weekly", "3 runs a month"), a "typical" or "usual" time or day that no fact states, court features or amenities not in the facts (food, drinks, a mall), descriptions of quality the facts do not state ("clean", "new", "spacious"), "always" claims, and claims of fame or rank ("legendary", "best", "hotspot", "always packed"). Friendly tone and an invitation to play are fine. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = { type: 'object', properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } }, required: ['accurate', 'problems'] };
-  const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 300, openaiModel: FACT_CHECK_MODEL });
+  const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 300, openaiModel: FACT_CHECK_MODEL });
   if (data.accurate) return [];
   const raw = (data.problems || []).map(x => String(x).slice(0, 200)).filter(Boolean);
   const problems = realFactProblems(raw);
@@ -20490,7 +20490,7 @@ NOTES
 ${text}`;
   const schema = { type: 'object', properties: { facts: { type: 'array', items: { type: 'string' } } }, required: ['facts'] };
   try {
-    const { data } = await generateJson(prompt, schema, { temperature: 0, maxTokens: 500 });
+    const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 500 });
     const have = new Set(courtExtraFacts(court).map(f => f.toLowerCase()));
     const facts = [...new Set((data.facts || []).map(f => String(f).replace(/\s+/g, ' ').trim().slice(0, 160)).filter(f => f && !have.has(f.toLowerCase())))].slice(0, 12);
     res.json({ ok: true, facts });

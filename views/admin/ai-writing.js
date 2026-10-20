@@ -27,6 +27,8 @@ function voiceCard(v) {
   <textarea class="admin-input agm-textarea aiw-guide" rows="4" maxlength="2000" placeholder="Describe how this voice writes — tone, vocabulary, what to avoid.">${escHtml(v.guide)}</textarea>
   <label class="admin-field-label">Sample line <span style="font-weight:400;color:var(--text-muted)">(optional — the AI copies its style, not its words)</span></label>
   <input type="text" class="admin-input aiw-sample" value="${escHtml(v.sample || '')}" maxlength="400" placeholder="One sentence written in this voice">
+  <label class="admin-field-label">Example lines <span style="font-weight:400;color:var(--text-muted)">(one per line — each piece gets 2-3 of them to copy the sound from; use [team], [first name], [number] instead of real facts)</span></label>
+  <textarea class="admin-input agm-textarea aiw-examples" rows="5" placeholder="The fourth quarter was so dikit, like, every possession felt like the whole season na.">${escHtml((v.examples || []).join('\n'))}</textarea>
 </div>`;
 }
 
@@ -70,7 +72,7 @@ export function adminAiWritingBody({ config, features, creativityLevels, current
     <button type="button" id="aiw-add" class="admin-btn admin-btn--sm">+ Add voice</button>
     <button type="button" id="aiw-reset" class="admin-btn admin-btn--sm admin-btn--muted">Reset everything to defaults</button>
   </div>
-  <template id="aiw-voice-template">${voiceCard({ id: '', enabled: true, name: '', guide: '', sample: '' })}</template>`;
+  <template id="aiw-voice-template">${voiceCard({ id: '', enabled: true, name: '', guide: '', sample: '', examples: [] })}</template>`;
 
   return `
 <div class="agm-edit-bar">
@@ -131,6 +133,7 @@ export function adminAiWritingBody({ config, features, creativityLevels, current
         enabled: el.querySelector('.aiw-enabled').checked,
         guide: el.querySelector('.aiw-guide').value,
         sample: el.querySelector('.aiw-sample').value,
+        examples: el.querySelector('.aiw-examples').value,
       };
     });
     var overrides = {};
