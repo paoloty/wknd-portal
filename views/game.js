@@ -1697,21 +1697,34 @@ function sectionNav(items, mini) {
 }
 
 // ── Final: recap, video, how it was won, game flow ───────────────────────────────────────
+// potg: the Players of the Game (potgFooterData), as a footer built the same way as the
+// storyline below it: kicker, one line of facts, then the write-up opens in place.
 // story: the pre-game storyline stored when picks closed (server.js), as a "Before tip-off"
 // footer: what we expected, under what happened. Headline first; the paragraph opens in place.
-function recapCard(game, story = null) {
+function recapCard(game, story = null, potg = []) {
   const html = renderWriteup(game.game_writeup);
-  if (!html && !story) return '';
-  const before = story ? `<div class="gd-before${html ? '' : ' gd-before--solo'}">
+  if (!html && !story && !potg.length) return '';
+  const trophy = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3"/></svg>';
+  const co = potg.length > 1;
+  const named = potg.filter(p => p.writeup);
+  const why = co ? 'Why they shared it' : `Why ${potg[0]?.first} got it`;
+  const award = potg.length ? `<div class="gd-before${html ? '' : ' gd-before--solo'}" id="potg-anchor">
+      <span class="gd-kick gd-before__k">${trophy}${co ? 'Co-Players of the Game' : `Player of the Game${potg[0].badge ? ` · ${escHtml(potg[0].badge)}` : ''}`}</span>
+      <p class="gd-before__h">${potg.map(p => `${escHtml(p.name)}<span class="gd-potg__ln"> · ${escHtml(p.line)}</span>`).join('<br>')}</p>
+      ${named.length ? `<div class="gd-before__b gd-potg__b" id="gd-potg-b" hidden>${named.map(p => `<p>${co ? `<b>${escHtml(p.name)}.</b> ` : ''}${escHtml(p.writeup)}</p>`).join('')}</div>
+      <button type="button" class="gd-more" data-gd-before data-open="${escHtml(why)} ↓" data-close="Show less ↑" aria-expanded="false" aria-controls="gd-potg-b">${escHtml(why)} ↓</button>` : ''}
+    </div>` : '';
+  const before = story ? `<div class="gd-before${html || award ? '' : ' gd-before--solo'}">
       <span class="gd-kick gd-before__k"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Before tip-off · The storyline</span>
       <p class="gd-before__h">“${storyHtml(story.headline)}”</p>
       ${story.body ? `<p class="gd-before__b" id="gd-before-b" hidden>${escHtml(story.body)}</p>
-      <button type="button" class="gd-more" data-gd-before aria-expanded="false" aria-controls="gd-before-b">Read the pre-game storyline ↓</button>` : ''}
+      <button type="button" class="gd-more" data-gd-before data-open="Read the pre-game storyline ↓" data-close="Hide the storyline ↑" aria-expanded="false" aria-controls="gd-before-b">Read the pre-game storyline ↓</button>` : ''}
     </div>` : '';
   return `<article id="recap" class="card gd-recap">
     ${html ? `<span class="gd-kick">Recap</span>
     <div class="gd-recap__body" data-gd-clamp>${html}</div>
     <button type="button" class="gd-more" data-gd-clamp-btn hidden aria-expanded="false">Read the full recap →</button>` : ''}
+    ${award}
     ${before}
   </article>`;
 }
@@ -1859,7 +1872,7 @@ const perfBg = s => `<img class="pl-card__bg" src="${playerPhotoUrl(s.player_id,
 // code-picked hook), game score, the head-to-head line, then their points in every earlier
 // meeting with tonight as the last bar — against their average there and their best.
 // hist: { series, dates } from server.js meetingPoints. POTG gets the amber glow.
-function duelPerformer(s, opp, potgId, say, stats, hist, co = false, writeup = '') {
+function duelPerformer(s, opp, potgId, say, stats, hist, co = false) {
   const n = perfName(s.name);
   const past = hist?.series || [];
   const tonight = n0(s.pts);
@@ -1880,7 +1893,7 @@ function duelPerformer(s, opp, potgId, say, stats, hist, co = false, writeup = '
     line: stats, series: past, dates: hist?.dates || [], avg, tonight,
     barsKey: `Points vs ${tc(opp)} · tonight last`,
     noBars: past.length ? `Only ${past.length} earlier meeting${past.length === 1 ? '' : 's'} with ${tc(opp)}` : `First meeting with ${tc(opp)}`,
-    foot, end: say(s), writeup,
+    foot, end: say(s), tagHref: s.player_id === potgId ? '#potg-anchor' : '',
   };
 }
 
@@ -1891,7 +1904,6 @@ function castCard(s, say, watchOf = () => null) {
     ${perfHead(s, ' pl-av--md', `<span class="gd-pc__pts"><b class="font-condensed">${n0(s.pts)}</b><small>PTS</small></span>`)}
     ${s.coPotg ? '<span class="gd-hook gd-hook--potg gd-pc__hook">Co-Player of the Game</span>' : s.badge ? `<span class="gd-hook gd-pc__hook">${escHtml(s.badge)}</span>` : ''}
     <span class="gd-pc__ln">${escHtml(castLine(s))}</span>
-    ${s.writeup ? `<p class="gd-pc__writeup">${escHtml(s.writeup)}</p>` : ''}
     ${watchLine(watchOf(s.player_id))}
     ${say(s, true)}
   </article>`;
@@ -1990,11 +2002,8 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
   const elsewhere = watched.filter(w => !shown.has(w.id));
   const lines = duelLines(dc.a, dc.b);
   const co = [...dc.castA, ...dc.castB].some(s => s.coPotg);
-  // Each Player of the Game's write-up goes on their card, duel or cast.
-  const clean = t => String(t || '').replace(/\*\*/g, '').trim();
-  const writeups = { ...(potgId ? { [potgId]: clean(game.potg_writeup) } : {}), ...(co ? { [game.co_potg_player_id]: clean(game.co_potg_writeup) } : {}) };
-  const pa = duelPerformer(dc.a, oppOf(dc.a), potgId, say, lines[0], hist[dc.a.player_id], co, writeups[dc.a.player_id]);
-  const pb = duelPerformer(dc.b, oppOf(dc.b), potgId, say, lines[1], hist[dc.b.player_id], co, writeups[dc.b.player_id]);
+  const pa = duelPerformer(dc.a, oppOf(dc.a), potgId, say, lines[0], hist[dc.a.player_id], co);
+  const pb = duelPerformer(dc.b, oppOf(dc.b), potgId, say, lines[1], hist[dc.b.player_id], co);
   const max = duelScale(pa, pb);
   const bothInDuel = watched.length === 2 && watched.every(w => w.id === dc.a.player_id || w.id === dc.b.player_id);
   return `<section id="perf" class="gd-sec" aria-labelledby="perf-h">
@@ -2003,7 +2012,7 @@ function performersSection(game, dc, verdict, potgId, say = () => '', panel = ''
     <p class="gd-sd">The best player on each side, head to head${bothInDuel ? ', both on the pre-game watch list' : ''}; amber marks who won each stat. Then the rest of each team’s standouts, ranked by game score${co ? ', the co-Player of the Game first' : ''}.</p>
     <div class="gd-duel">${duelCard(pa, max)}${duelCard(pb, max)}</div>${barsScript()}
     <p class="gd-verdict">${verdict}</p>
-    ${castRow([...dc.castA, ...dc.castB].map(s => ({ ...s, writeup: writeups[s.player_id] || '' })), elsewhere, say, watchOf)}
+    ${castRow([...dc.castA, ...dc.castB], elsewhere, say, watchOf)}
     <p class="gd-sd gd-sd--foot">Up to 3 more per side with a game score of 10+. Each badge is picked by code: a career or season high, a double-double, 5+ threes, or double their season average.</p>
   </section>`;
 }
@@ -2354,18 +2363,36 @@ function pageScript() {
     });
   }
 
-  // Recap footer: the pre-game storyline paragraph opens in place.
+  // Recap footers: the POTG write-up and the pre-game storyline open in place.
   document.querySelectorAll('[data-gd-before]').forEach(function (b) {
     b.addEventListener('click', function () {
       var body = document.getElementById(b.getAttribute('aria-controls'));
       if (!body) return;
       body.hidden = !body.hidden;
       b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
-      b.textContent = body.hidden ? 'Read the pre-game storyline ↓' : 'Hide the storyline ↑';
+      b.textContent = body.hidden ? b.dataset.open : b.dataset.close;
     });
   });
 })();
 </script>`;
+}
+
+// The recap footer's Players of the Game, read off the duel and cast (each carries its badge):
+// the POTG, then the co-POTG. Each gets "Firstname LASTNAME", a stat line and its write-up.
+function potgFooterData(game, dc, potgId, coPotg) {
+  if (!dc || !potgId) return [];
+  const all = [dc.a, dc.b, ...dc.castA, ...dc.castB];
+  const clean = t => String(t || '').replace(/\*\*/g, '').trim();
+  const ids = [[potgId, game.potg_writeup], ...(coPotg ? [[game.co_potg_player_id, game.co_potg_writeup]] : [])];
+  return ids.map(([id, text]) => {
+    const s = all.find(x => x.player_id === id);
+    if (!s) return null;
+    const rest = castLine(s);
+    return {
+      first: perfName(s.name).first || displayPlayerName(s.name || ''), name: displayPlayerName(s.name || ''), badge: s.badge || '',
+      line: `${n0(s.pts)} PTS${rest ? ` · ${rest}` : ''}`, writeup: clean(text),
+    };
+  }).filter(Boolean);
 }
 
 export function gamePage(d) {
@@ -2418,7 +2445,7 @@ ${scripts}`;
   const A = teamTotals(d.stats, game.team_a_name, game.team_a_to_team);
   const B = teamTotals(d.stats, game.team_b_name, game.team_b_to_team);
   const myStat = d.myGame?.stat || null;
-  const recap = recapCard(game, d.storyline);
+  const recap = recapCard(game, d.storyline, potgFooterData(game, d.dc, d.potgPlayerId, d.coPotg));
   const hasBox = d.stats.length > 0;
   const series = seriesSection(game, d.series);
   const items = [

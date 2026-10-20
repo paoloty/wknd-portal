@@ -8732,6 +8732,14 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-before__h em { font-style: normal; color: inherit; }
 .gd-before__b { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text-muted); }
 .gd-before .gd-more { margin-top: 0; align-self: flex-start; }
+/* Player of the Game footer (same shape as Before tip-off): stat line muted, write-up paragraphs. */
+.gd-potg__ln { font-weight: 600; color: var(--text-muted); }
+.gd-potg__b { display: flex; flex-direction: column; gap: 10px; }
+.gd-potg__b[hidden] { display: none; }
+.gd-potg__b p { margin: 0; }
+.gd-potg__b b { color: var(--text); }
+a.dl-tag { text-decoration: none; }
+a.dl-tag:hover { filter: brightness(1.08); }
 
 /* The series: result dots (oldest first, this game ringed) and the all-time lead. */
 .gd-ser { display: inline-flex; align-items: center; gap: 12px; }
@@ -9301,9 +9309,6 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .dl-card.is-potg { border-color: rgba(245,147,50,.55); box-shadow: 0 0 0 1px rgba(245,147,50,.22), 0 0 22px -4px rgba(245,147,50,.35); }
 /* The Player of the Game write-up: 4 lines here, 3 on a cast card; the full text is on
    /highlights and the profile. */
-.dl-writeup, .gd-pc__writeup { margin: 0; font-weight: 400; color: #c9ced8; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
-.dl-writeup { padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.55; -webkit-line-clamp: 4; }
-.gd-pc__writeup { position: relative; z-index: 1; font-size: 12.5px; line-height: 1.5; -webkit-line-clamp: 3; }
 .dl-card--empty { justify-content: center; align-items: center; min-height: 160px; font-size: 12.5px; color: var(--text-muted); }
 .dl-card a.pl-av { color: inherit; }
 .dl-card a.pl-card__who { flex: 1; color: inherit; }

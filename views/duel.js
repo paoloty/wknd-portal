@@ -101,10 +101,11 @@ const big = p => `<span class="dl-big"><b class="font-condensed${p.lead ? ' is-l
 const style = p => `--team:${teamColor(p.team)};--bar:${barColor(p.team)}`;
 
 // The full card. Not a link itself: the name and avatar are, and it can hold a button.
-// p.writeup: the Player of the Game write-up, under the bars (game page Top performers).
+// p.tagHref: makes the tag a link (game page: the POTG tag points at the recap's write-up).
 export function duelCard(p, max) {
   if (!p) return '<div class="pl-card dl-card dl-card--empty">No box scores yet</div>';
-  const tag = p.tag ? `<span class="dl-tag${p.potg ? '' : ' dl-tag--ghost'}">${escHtml(p.tag)}</span>` : '';
+  const tagCls = `dl-tag${p.potg ? '' : ' dl-tag--ghost'}`;
+  const tag = !p.tag ? '' : p.tagHref ? `<a class="${tagCls}" href="${escHtml(p.tagHref)}">${escHtml(p.tag)} ↑</a>` : `<span class="${tagCls}">${escHtml(p.tag)}</span>`;
   const line = p.line?.length
     ? `<span class="pl-card__foot dl-line"><span class="pl-card__stats">${p.line.map(x => `<span class="pl-stat${x.win ? ' is-win' : x.tie ? ' is-tie' : ''}"${x.win ? ' title="Won this one"' : ''}><b class="font-condensed">${escHtml(String(x.v))}</b><small>${escHtml(x.k)}</small></span>`).join('')}</span></span>`
     : '';
@@ -119,7 +120,6 @@ export function duelCard(p, max) {
     </span>
     ${line}
     ${chart ? `<span class="dl-hist">${p.barsKey ? `<span class="dl-k">${escHtml(p.barsKey)}</span>` : ''}${chart}</span>` : ''}
-    ${p.writeup ? `<p class="dl-writeup">${escHtml(p.writeup)}</p>` : ''}
     ${p.foot || p.end ? `<span class="dl-end">${p.foot ? `<span class="dl-foot">${p.foot}</span>` : ''}${p.end || ''}</span>` : ''}
   </article>`;
 }
