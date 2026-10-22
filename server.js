@@ -256,7 +256,7 @@ import {
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
 import { SHARE_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
-import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, outputPath, OUTPUT_FILES, startMediaWorker, UPLOAD_DIR } from './lib/media-jobs.js';
+import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
 import { potgVideoContext, savePotgPhoto, queuePotgVideos, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
 import { adminPotgVideoBody, adminMediaBody, mediaJobRow } from './views/admin/potg-video.js';
 import { adminMvpPodiumBody } from './views/admin/mvp-podium.js';
@@ -10915,13 +10915,13 @@ app.post('/admin/games/:id/potg-video', requireAuth, express.json({ limit: '200k
 });
 
 app.get('/admin/media', requireAuth, (req, res) => {
-  res.send(renderAdminPage(req, { title: 'Processing', currentPath: '/admin/media', body: adminMediaBody({ jobs: listMediaJobs(), outputs: OUTPUT_FILES, fmtWhen: fmtJobWhen }) }));
+  res.send(renderAdminPage(req, { title: 'Processing', currentPath: '/admin/media', body: adminMediaBody({ jobs: listMediaJobs(), outputs: OUTPUT_FILES, fmtWhen: fmtJobWhen, expiresAt: mediaExpiresAt }) }));
 });
 
 app.get('/admin/media.json', requireAuth, (req, res) => {
   const jobs = listMediaJobs();
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ html: jobs.map(j => mediaJobRow(j, OUTPUT_FILES, fmtJobWhen)).join('') || '<p class="aui-muted">Nothing processing.</p>' });
+  res.json({ html: jobs.map(j => mediaJobRow(j, OUTPUT_FILES, fmtJobWhen, j.status === 'done' ? mediaExpiresAt(j) : null)).join('') || '<p class="aui-muted">Nothing processing.</p>' });
 });
 
 app.get('/admin/media/:id/:file', requireAuth, (req, res) => {

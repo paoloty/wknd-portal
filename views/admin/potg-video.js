@@ -74,9 +74,9 @@ export function adminPotgVideoBody({ game, ctx, cats, photoCount, ver }) {
 }
 
 // ── Processing list (/admin/media) ───────────────────────────────────────────────────────
-const STATUS = { queued: ['Queued', 'gray'], processing: ['Processing', 'amber'], done: ['Ready', 'green'], failed: ['Failed', 'red'] };
+const STATUS = { queued: ['Queued', 'gray'], processing: ['Processing', 'amber'], done: ['Ready', 'green'], failed: ['Failed', 'red'], expired: ['Expired', 'gray'] };
 
-export function mediaJobRow(j, outputs, fmtWhen) {
+export function mediaJobRow(j, outputs, fmtWhen, expiresAt = null) {
   const [label, tone] = STATUS[j.status] || [j.status, 'gray'];
   const pct = Math.round((j.progress || 0) * 100);
   const files = j.status === 'done'
@@ -85,6 +85,9 @@ export function mediaJobRow(j, outputs, fmtWhen) {
   const bar = j.status === 'processing'
     ? `<div class="mj-bar"><span style="width:${pct}%"></span></div><div class="aui-muted mj-stage">${escHtml(j.stage || 'Working')} · ${pct}%</div>`
     : j.status === 'queued' ? '<div class="aui-muted mj-stage">Waiting for the renderer…</div>' : '';
+  const left = j.status === 'done' && expiresAt ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 86400000)) : null;
+  const note = left != null ? `<div class="aui-muted mj-stage">${left <= 1 ? 'Deletes from the server within a day. Download it now.' : `Deletes from the server in ${left} days.`}</div>`
+    : j.status === 'expired' ? '<div class="aui-muted mj-stage">Files deleted after 30 days. Make again to re-render.</div>' : '';
   const err = j.status === 'failed' ? `<pre class="mj-err">${escHtml(j.error || 'Unknown error')}</pre>` : '';
   const actions = [
     j.status === 'failed' ? `<button type="button" class="aui-btn aui-btn--secondary aui-btn--sm" data-mj-retry="${attr(j.id)}">Retry</button>` : '',
@@ -94,16 +97,16 @@ export function mediaJobRow(j, outputs, fmtWhen) {
   return `<div class="aui-panel mj-row" data-mj="${attr(j.id)}" data-mj-status="${attr(j.status)}">
     <div class="mj-top"><div><div class="mj-title">${escHtml(j.title || j.kind)}</div><div class="aui-muted mj-when">${escHtml(fmtWhen(j.created_at))}</div></div>
       <span class="aui-badge aui-badge--${tone}">${escHtml(label)}</span></div>
-    ${bar}${err}${files}
+    ${bar}${err}${files}${note}
     <div class="mj-actions">${actions}</div>
   </div>`;
 }
 
-export function adminMediaBody({ jobs, outputs, fmtWhen, ver }) {
-  const rows = jobs.length ? jobs.map(j => mediaJobRow(j, outputs, fmtWhen)).join('') : emptyState({ title: 'Nothing processing', sub: 'Videos you make (e.g. a game’s POTG video) show up here while they render.' });
+export function adminMediaBody({ jobs, outputs, fmtWhen, expiresAt, ver }) {
+  const rows = jobs.length ? jobs.map(j => mediaJobRow(j, outputs, fmtWhen, expiresAt?.(j))).join('') : emptyState({ title: 'Nothing processing', sub: 'Videos you make (e.g. a game’s POTG video) show up here while they render.' });
   return `<div class="aui-page" data-mj-page>
     <header class="aui-head"><div class="aui-head__text"><div class="aui-head__eyebrow">Content</div><h1 class="aui-head__title">Processing</h1>
-      <p class="aui-head__sub">Videos render in the background, one at a time. This page updates itself; you can leave and come back.</p></div></header>
+      <p class="aui-head__sub">Videos render in the background, one at a time. This page updates itself; you can leave and come back. Finished videos stay for 30 days, then their files are deleted automatically.</p></div></header>
     <div class="mj-list" data-mj-list>${rows}</div>
   </div>
   <script src="/admin-media.js${ver ? `?v=${ver}` : ''}" defer></script>`;
