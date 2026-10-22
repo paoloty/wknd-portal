@@ -1712,13 +1712,13 @@ function recapCard(game, story = null, potg = []) {
       <span class="gd-kick gd-before__k">${trophy}${co ? 'Co-Players of the Game' : `Player of the Game${potg[0].badge ? ` · ${escHtml(potg[0].badge)}` : ''}`}</span>
       <p class="gd-before__h">${potg.map(p => `${escHtml(p.name)}<span class="gd-potg__ln"> · ${escHtml(p.line)}</span>`).join('<br>')}</p>
       ${named.length ? `<div class="gd-before__b gd-potg__b" id="gd-potg-b" hidden>${named.map(p => `<p>${co ? `<b>${escHtml(p.name)}.</b> ` : ''}${escHtml(p.writeup)}</p>`).join('')}</div>
-      <button type="button" class="gd-more" data-gd-before data-open="${escHtml(why)} ↓" data-close="Show less ↑" aria-expanded="false" aria-controls="gd-potg-b">${escHtml(why)} ↓</button>` : ''}
+      <button type="button" class="gd-more" data-gd-before data-more="${escHtml(why)} ↓" data-less="Show less ↑" aria-expanded="false" aria-controls="gd-potg-b">${escHtml(why)} ↓</button>` : ''}
     </div>` : '';
   const before = story ? `<div class="gd-before${html || award ? '' : ' gd-before--solo'}">
       <span class="gd-kick gd-before__k"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Before tip-off · The storyline</span>
       <p class="gd-before__h">“${storyHtml(story.headline)}”</p>
       ${story.body ? `<p class="gd-before__b" id="gd-before-b" hidden>${escHtml(story.body)}</p>
-      <button type="button" class="gd-more" data-gd-before data-open="Read the pre-game storyline ↓" data-close="Hide the storyline ↑" aria-expanded="false" aria-controls="gd-before-b">Read the pre-game storyline ↓</button>` : ''}
+      <button type="button" class="gd-more" data-gd-before data-more="Read the pre-game storyline ↓" data-less="Hide the storyline ↑" aria-expanded="false" aria-controls="gd-before-b">Read the pre-game storyline ↓</button>` : ''}
     </div>` : '';
   return `<article id="recap" class="card gd-recap">
     ${html ? `<span class="gd-kick">Recap</span>
@@ -2286,7 +2286,7 @@ function pageScript() {
   });
 
   // Picks-close countdown.
-  var cd = document.querySelector('[data-close]');
+  var cd = document.querySelector('.gd-cd[data-close]');
   if (cd) {
     var end = new Date(cd.dataset.close).getTime();
     var tick = function () {
@@ -2370,7 +2370,7 @@ function pageScript() {
       if (!body) return;
       body.hidden = !body.hidden;
       b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
-      b.textContent = body.hidden ? b.dataset.open : b.dataset.close;
+      b.textContent = body.hidden ? b.dataset.more : b.dataset.less;
     });
   });
 })();
