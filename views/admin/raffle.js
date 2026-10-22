@@ -11,6 +11,16 @@ const table = (head, rows) => `<div class="aui-table-wrap"><table class="aui-tab
 const ROUND_TONE = { open: 'amber', drawn: 'green', rolled: 'blue', skipped: 'gray' };
 const V_TONE = { active: 'green', reserved: 'amber', used: 'gray', expired: 'gray' };
 
+// The one-time launch announcement (bell for every active member + one email).
+function announceSection(x) {
+  const a = x.announce || {};
+  if (a.sent) return section({ title: 'Launch announcement', bodyHtml: `<p class="aui-muted">Sent ${ago(a.sent.created_at) === 'now' ? 'just now' : `${escHtml(ago(a.sent.created_at))} ago`}: ${a.sent.bell_count} bells, ${a.sent.email_count} emails.</p>` });
+  if (!x.on || x.raffle.status !== 'active') return section({ title: 'Launch announcement', bodyHtml: '<p class="aui-muted">Once the raffle is on, send everyone one bell and one email explaining how it works. It only goes out when you press the button.</p>' });
+  const emailable = (a.reach || []).filter(r => r.emailable).length;
+  return section({ title: 'Launch announcement', bodyHtml: `<p class="aui-muted" style="margin-bottom:10px">One bell for ${(a.reach || []).length} active members and one email to ${emailable} of them: how to earn tickets, when the first draw is, and a link to /raffle. League-update unsubscribes and the usual email limits apply. Sends once.</p>
+    ${button('Send announcement', { kind: 'primary', attrs: `data-post-json="/admin/raffle/announce" data-confirm data-confirm-title="Announce Rate &amp; Win?" data-confirm-body="${(a.reach || []).length} bells and up to ${emailable} emails. This only goes out once." data-done="Announced."` })}` });
+}
+
 // x: { on, settingsHtml (the on/off switch panel, with its save script), raffle, schedule, round, entries: [{ name, n, reason }], rounds: [...], vouchers: [...] }
 export function adminRaffleBody(x) {
   const r = x.raffle, round = x.round;
@@ -48,6 +58,7 @@ export function adminRaffleBody(x) {
     { label: 'Players who can win', value: String(eligible.length), of: ` / min ${r.min_players}` },
     { label: 'Tickets', value: String(eligible.reduce((t, e) => t + e.n, 0)) },
   ])}
+  ${announceSection(x)}
   ${section({ title: `Round ${round?.number || '—'}: who's in`, asideHtml: controls, bodyHtml: entries })}
   ${section({ title: 'Schedule', bodyHtml: schedule })}
   ${section({ title: 'Draw log', bodyHtml: log })}
