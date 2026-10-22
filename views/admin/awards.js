@@ -281,7 +281,7 @@ function groupCard({ label, types, col, graphicType, season, byType, suggestions
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export function adminAwardsBody({ season, seasons = [], awards = [], suggestions = {}, players = [], articles = {}, seasonStats = [], homeGallery = {} }) {
+export function adminAwardsBody({ season, seasons = [], awards = [], suggestions = {}, players = [], articles = {}, seasonStats = [], homeGallery = {}, awardMinGp = 0 }) {
   const byType   = {};
   for (const row of awards) (byType[row.award_type] ??= []).push(row);
   const statsMap = Object.fromEntries(seasonStats.map(s => [s.id, s]));
@@ -368,6 +368,7 @@ export function adminAwardsBody({ season, seasons = [], awards = [], suggestions
   </div>
 </div>
 ${seasonTabs}
+${awardMinGp > 1 ? `<p style="font-size:12px;color:var(--text-muted);margin:0 0 16px">Season-award suggestions only include players with ${awardMinGp}+ games (two thirds of their team's games). Finals awards aren't affected, and you can still assign anyone by hand.</p>` : ''}
 ${cards}
 
 <script>

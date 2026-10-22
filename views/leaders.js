@@ -1,5 +1,6 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, playerAvatar, playerPhotoUrl, shareIcon } from './utils.js';
+import { qualifiesPerGame, CAREER_MIN_GP } from '../lib/qualification.js';
 
 // ── Shared PER formula — matches box score (game.js calcPer) ─────────────────
 // pts + 0.4×FGM - 0.7×FGA - 0.4×missedFT + 0.7×REB + STL + 0.7×AST + 0.7×BLK - TO
@@ -280,9 +281,11 @@ function deltaLabel(leadStr, str) {
 
 // ── Board model (top N of one category) ──────────────────────────────────────
 // valid: which values count (default: positive). asc: lowest first (roast boards).
+// Per-game boards only rank players who meet the attendance rule (lib/qualification.js).
 export function boardModel(cat, players, { mode, season, fmt, asc = false, valid, take = 5, size = 'sm', title } = {}) {
   const ok = valid || (v => v > 0);
-  const ranked = players
+  const pool = mode === 'pg' || mode === 'po-pg' ? players.filter(qualifiesPerGame) : players;
+  const ranked = pool
     .map(p => ({ p, v: cat.fn(p) }))
     .filter(x => x.v !== null && x.v !== undefined && Number.isFinite(x.v) && ok(x.v))
     .sort((a, b) => (asc ? a.v - b.v : b.v - a.v) || b.p.games_played - a.p.games_played || (b.p.team_wins || 0) - (a.p.team_wins || 0));
@@ -507,7 +510,8 @@ export function buildLeadersModel({ stats, season, currentSeason, players = [], 
   const fmt = isTot ? fmtTotals : fmtPerGame;
   const mode = stats === 'po' ? 'po-pg' : stats;
   const board = (id, size, title) => boardModel(cat(list, id), players, { mode, season: shareSeason, fmt, size, title });
-  const unit = isTot ? 'season totals' : stats === 'po' ? 'playoffs · per game' : 'per game';
+  const minGp = Math.max(1, ...players.map(p => p.min_gp || 1));
+  const unit = isTot ? 'season totals' : `${stats === 'po' ? 'playoffs · per game' : 'per game'}${minGp > 1 ? ` · min ${minGp} GP` : ''}`;
 
   const races = ['pts', 'reb', 'ast', 'per'].map(id => board(id, 'lg', { pts: 'Scoring', reb: 'Rebounds', ast: 'Assists', per: 'Efficiency' }[id]));
   sections.push({ id: 'races', nav: 'Races', title: 'Headline races', sub: `${unit} · gap to #1`, items: races, fallback: leadersLine(races) });
@@ -529,7 +533,7 @@ export function buildLeadersModel({ stats, season, currentSeason, players = [], 
       const span = seasons.length > 1 ? `Seasons ${Math.min(...seasons)}–${Math.max(...seasons)}` : 'all seasons';
       const career = ['pts', 'per', 'reb', 'ast'].map(id => boardModel(cat(PER_GAME, id), careerPlayers,
         { mode: 'pg', season: 'alltime', fmt: fmtPerGame, take: 3, title: { pts: 'Scoring', per: 'Efficiency', reb: 'Rebounds', ast: 'Assists' }[id] }));
-      sections.push({ id: 'career', nav: 'Career', title: 'Career leaders', sub: `per game, ${span}`,
+      sections.push({ id: 'career', nav: 'Career', title: 'Career leaders', sub: `per game, ${span} · min ${CAREER_MIN_GP} GP`,
         link: { href: `/leaders?stats=pg&season=alltime`, label: 'All-time boards' },
         items: career, fallback: `Per-game averages across every season played, ${span}.` });
     }
