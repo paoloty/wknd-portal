@@ -147,7 +147,7 @@ export function rafflePage(x) {
     for (var i = cards.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)), t = cards[i]; cards[i] = cards[j]; cards[j] = t; }
     var win = cards.length - 5, w = d.entrants.filter(function (e) { return e.id === d.winnerId; })[0];
     if (w) cards[win] = w;
-    track.innerHTML = cards.map(function (c, i) { return '<div class="rf-card' + (i === win ? ' is-win' : '') + '"><span class="rf-av"><span>' + esc(c.initials) + '</span><img src="/api/player/' + encodeURIComponent(c.id) + '/photo?w=96" alt="" onerror="this.remove()"></span><b>' + esc(c.name) + '</b><small>' + c.n + ' tickets</small></div>'; }).join('');
+    track.innerHTML = cards.map(function (c, i) { return '<div class="rf-card' + (i === win ? ' is-win' : '') + '"><span class="rf-av"><span>' + esc(c.initials) + '</span><img src="/api/player/' + encodeURIComponent(c.id) + '/photo?w=96" alt="" onerror="this.remove()"></span><b>' + esc(c.name) + '</b><small>' + c.n + (c.n === 1 ? ' ticket' : ' tickets') + '</small></div>'; }).join('');
     stage.hidden = false; result.hidden = true; stage.classList.remove('is-done');
     stage.querySelector('[data-rf-stage-label]').textContent = 'Drawing… Round ' + d.number;
     stage.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });

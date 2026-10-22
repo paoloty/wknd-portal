@@ -21508,12 +21508,14 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
   };
   const confirmed = getPapawisSignups(req.params.id).filter(s => s.status === 'confirmed');
   const today = manilaTodayStr();
+  let freeRuns = 0;
   for (const s of confirmed) {
     // A Rate & Win free run on this spot: no charge at all (vouchers never touch the
     // ledger), the slot counts as paid and the voucher as used.
     if (!s.guest_name && useVoucherForSignup(s.id)) {
       markPapawisSignupPaid(s.id, '');
       logPapawisActivity({ gameId: game.id, eventType: 'voucher_used', playerId: s.player_id, playerName: s.player_name, notes: 'Rate & Win free run' });
+      freeRuns++;
       continue;
     }
     const txId = randomBytes(6).toString('hex');
@@ -21540,7 +21542,7 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
     }
   }
   completePapawisGame(req.params.id, price, breakdown);
-  res.json({ ok: true, charged: confirmed.length });
+  res.json({ ok: true, charged: confirmed.length - freeRuns, freeRuns });
   if (getSetting('papawis_reminders_enabled', '0') === '1') {
     sendPapawisCompletionEmails(req.params.id, price).then(({ sent, errors }) => {
       if (errors.length) console.error(`[papawis] completion emails: ${sent} sent, ${errors.length} failed`, errors);
