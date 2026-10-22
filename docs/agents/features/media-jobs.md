@@ -13,7 +13,7 @@ Background video renders. The admin builds a video on a page, saving **queues** 
 
 ## Worker / renderer
 - `lib/media-jobs.js`: `media_jobs` table, `startMediaWorker()` (called just before `server.listen`), polls every 5 s, runs `nice -n 15 node scripts/render-potg.js <jobId>`, one at a time. A job left `processing` by a restart is re-queued on boot.
-- `scripts/render-potg.js`: headless Chrome loads `assets/media/potg/template.html`, `build(DATA)`, then `setT(t)` per frame (frame-exact, 24 fps, 1080×1350, ~33 s) piped to ffmpeg. Sound: a real ball bounce (`assets/media/potg/sfx/bounce*.wav`) at each time in the template's `window.SFX`, plus a quiet court-ambience bed under the photos. Output: `data/media/jobs/<id>/out/potg.mp4` (video with sound, the only deliverable).
+- `scripts/render-potg.js`: headless Chrome loads `assets/media/potg/template.html`, `build(DATA)`, then `setT(t)` per frame (frame-exact, 24 fps, 1080×1350, ~33 s) piped to ffmpeg. Sound: a real ball bounce (`assets/media/potg/sfx/bounce*.wav`) at each time in the template's `window.SFX` (intro, the white hit, every photo cut, outro). No crowd/ambience audio. Output: `data/media/jobs/<id>/out/potg.mp4` (video with sound, the only deliverable).
 - Can be re-run by hand: `node scripts/render-potg.js <jobId>`.
 
 ## Server requirements (one-time setup on the Hetzner box)

@@ -7,7 +7,7 @@
 //    photos, then captures every frame at 24 fps (preview 544x680, final 1080x1350) by calling setT(t) (frame-exact,
 //    never real-time) and pipes the frames into ffmpeg.
 // 2. Builds the sound from the template's own hit list (window.SFX): a real ball bounce at each
-//    hit, plus a low court-ambience bed under the photos (window.AMBIENCE).
+//    hit (intro, transitions, outro) and nothing else; deep, roomy gym bounces like the 3D intro.
 // 3. Writes data/media/jobs/<id>/out/potg.mp4 (video with sound) and cleans up the rest.
 //
 // Needs Chrome/Chromium (CHROME_PATH, or a usual install path) and ffmpeg (FFMPEG_PATH or PATH).
@@ -73,7 +73,7 @@ async function main() {
     executablePath: findChrome(), headless: true,
     args: ['--no-sandbox', '--allow-file-access-from-files', '--disable-gpu', '--font-render-hinting=none', '--disable-dev-shm-usage'],
   });
-  let tl, sfx, amb;
+  let tl, sfx;
   const video = path.join(tmp, 'video.mp4');
   try {
     const page = await browser.newPage();
@@ -81,7 +81,7 @@ async function main() {
     await page.goto(pathToFileURL(TEMPLATE).href, { waitUntil: 'load' });
     await page.evaluate(d => window.build(d), data);
     await page.waitForFunction('window.READY === true', { timeout: 60000 });
-    ({ tl, sfx, amb } = await page.evaluate(() => ({ tl: window.TIMELINE, sfx: window.SFX, amb: window.AMBIENCE })));
+    ({ tl, sfx } = await page.evaluate(() => ({ tl: window.TIMELINE, sfx: window.SFX })));
     const N = Math.round(tl.DUR * FPS);
     stage(preview ? 'Rendering preview' : 'Rendering hi-res', 0.02);
     await run(['-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-', '-c:v', 'libx264', '-preset', preview ? 'veryfast' : 'medium', '-crf', preview ? '24' : '16',
@@ -101,24 +101,24 @@ async function main() {
   // ── sound ──
   stage('Mixing sound', 0.9);
   const dur = tl.DUR.toFixed(3);
-  const bounces = [1, 2, 3, 4].map(i => path.join(SFX_DIR, `bounce${i}.wav`));
-  const sfxWav = path.join(tmp, 'sfx.wav'), ambWav = path.join(tmp, 'ambience.wav');
+  // Pre-mastered stereo hits (deep gym bounces with a hall tail, same recipe as the 3D court intro);
+  // each file starts its hit LEAD seconds in.
+  const LEAD = 0.06;
+  const bank = { big: ['big1', 'big2'], b: ['bounce1', 'bounce2', 'bounce3', 'bounce4'], soft: ['soft'] };
+  const used = { big: 0, b: 0, soft: 0 };
+  const fileFor = k => { const list = bank[k] || bank.b; const name = list[used[k in bank ? k : 'b']++ % list.length]; return path.join(SFX_DIR, `${name}.wav`); };
+  const sfxWav = path.join(tmp, 'sfx.wav');
   const inputs = [], parts = [];
   sfx.forEach((h, i) => {
-    inputs.push('-i', bounces[i % bounces.length]);
-    const ms = Math.max(0, Math.round(h.t * 1000));
+    inputs.push('-i', fileFor(h.k));
+    const ms = Math.max(0, Math.round((h.t - LEAD) * 1000));
     parts.push(`[${i}:a]volume=${(+h.g).toFixed(3)},adelay=${ms}|${ms}[s${i}]`);
   });
   const mixIn = sfx.map((_, i) => `[s${i}]`).join('');
   await run([...inputs, '-filter_complex', `${parts.join(';')};${mixIn}amix=inputs=${sfx.length}:normalize=0,apad,atrim=0:${dur},aformat=sample_rates=48000:channel_layouts=stereo[a]`,
     '-map', '[a]', '-c:a', 'pcm_s16le', sfxWav]);
-  const aFrom = amb.from, aLen = (amb.to - amb.from);
-  await run(['-stream_loop', '-1', '-i', path.join(SFX_DIR, 'ambience.wav'), '-filter_complex',
-    `[0:a]atrim=0:${aLen.toFixed(3)},afade=t=in:d=0.8,afade=t=out:st=${(aLen - 1.2).toFixed(3)}:d=1.2,adelay=${Math.round(aFrom * 1000)}|${Math.round(aFrom * 1000)},apad,atrim=0:${dur},aformat=sample_rates=48000:channel_layouts=stereo[a]`,
-    '-map', '[a]', '-c:a', 'pcm_s16le', ambWav]);
-
   stage('Packaging', 0.96);
-  await run(['-i', video, '-i', sfxWav, '-i', ambWav, '-filter_complex', '[1:a][2:a]amix=inputs=2:normalize=0,alimiter=limit=0.89[a]',
+  await run(['-i', video, '-i', sfxWav, '-filter_complex', '[1:a]alimiter=limit=0.89[a]',
     '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', preview ? '128k' : '256k', '-shortest', '-movflags', '+faststart', path.join(out, 'potg.mp4')]);
   fs.rmSync(tmp, { recursive: true, force: true });
   updateMediaJob(id, { status: 'done', progress: 1, stage: '', finished_at: Date.now() });

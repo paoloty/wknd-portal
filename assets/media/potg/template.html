@@ -7,7 +7,8 @@
   1.95 PLAYER / OF THE / GAME slams → 3.5 name + numbers count up → FL=5.3 white hit →
   6 photos x 3 s (photo 1 is also the intro background) → OUT=23.3 outro (ball knocks the
   stat block off, big logo stamps back in) → 6 s hold on logo + wkndbasketball.com.
-  window.SFX lists the sound hits (ball bounces) at the same times the animation uses them.
+  window.SFX lists the sound hits (real ball bounces: intro, the white hit, each photo cut, outro)
+  at the same times the animation uses them. Nothing else plays (no crowd/ambience).
 -->
 <html><head><meta charset=utf-8><style>
 @font-face{font-family:BS;src:url(big-shoulders-display-latin-900-normal.woff2);font-weight:900}
@@ -124,14 +125,17 @@ function build(data){
     R={wm:$('wm').getBoundingClientRect(),logo:$('logo').getBoundingClientRect(),slot:$('slot').getBoundingClientRect()};
     // sound hits, in seconds (renderer mixes a ball bounce at each)
     const nums=D.stats.map((s,i)=>O+2.05+i*0.23);
+    // k: which sound (assets/media/potg/sfx): big = deep hit with sub + hall, b = ball bounce, soft = light bounce
     window.SFX=[
-      {t:0.524,g:0.9},{t:0.833,g:0.5},{t:1.0,g:0.27},                      // ball into the period
-      {t:O+0.25,g:0.8},{t:O+0.42,g:0.8},{t:O+0.6,g:1.0},                   // title slams
-      ...nums.map((t,i)=>({t,g:0.7-i*0.05})),                             // numbers land
-      {t:OUT+0.45,g:0.8},                                                 // ball hits the stat block
-      {t:OUT+0.45+0.5*0.524,g:0.7},{t:OUT+0.45+0.5*0.833,g:0.4},{t:OUT+0.95,g:0.22}, // bounces into the logo
+      {t:0.524,g:0.9,k:'big'},{t:0.833,g:0.55,k:'b'},{t:1.0,g:0.35,k:'soft'},   // ball into the period
+      {t:O+0.25,g:0.75,k:'big'},{t:O+0.42,g:0.75,k:'big'},{t:O+0.6,g:1.0,k:'big'}, // title slams
+      ...nums.map((t,i)=>({t,g:0.6-i*0.05,k:'b'})),                           // numbers land
+      {t:FL,g:0.8,k:'big'},                                                     // white hit into the photos
+      ...Array.from({length:NPH-1},(_,i)=>({t:FL+(i+1)*PH,g:0.5,k:'soft'})),    // each photo cut
+      {t:OUT+0.45,g:0.85,k:'big'},                                              // ball hits the stat block
+      {t:OUT+0.45+0.5*0.524,g:0.6,k:'b'},{t:OUT+0.45+0.5*0.833,g:0.4,k:'b'},{t:OUT+0.95,g:0.3,k:'soft'}, // bounces into the logo
     ];
-    window.AMBIENCE={from:FL-0.3,to:OUT+1.0};
+
     window.READY=true;
   });
 }
