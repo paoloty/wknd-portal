@@ -65,12 +65,10 @@ async function main() {
   const stage = (s, progress) => updateMediaJob(id, progress == null ? { stage: s } : { stage: s, progress });
 
   stage('Matching photo colours', 0.01);
-  // New jobs keep the photos ungraded; match the 6 to each other and grade them here. (Jobs from
-  // before this change were graded on upload and are used as they are.)
+  // Match the 6 photos to each other, then grade. Jobs from before render-time matching were
+  // already graded on upload, so (e.g. on a Re-render) they're matched but not graded twice.
   const photoFiles = cfg.photos.map(p => path.join(dir, p.file));
-  const usePhotos = cfg.photosRaw
-    ? await matchPhotos(photoFiles, cfg.photos.map((_, i) => path.join(tmp, `matched-${i + 1}.jpg`)))
-    : photoFiles;
+  const usePhotos = await matchPhotos(photoFiles, cfg.photos.map((_, i) => path.join(tmp, `matched-${i + 1}.jpg`)), { grade: !!cfg.photosRaw });
   const data = {
     ...cfg.data,
     avatar: cfg.avatar && fs.existsSync(cfg.avatar) ? pathToFileURL(cfg.avatar).href : '',

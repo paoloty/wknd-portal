@@ -119,6 +119,7 @@ export function mediaJobRow(j, outputs, fmtWhen, expiresAt = null) {
     : j.status === 'expired' ? `<div class="aui-muted mj-stage">Files deleted after ${days} days. Make again to re-render.</div>` : '';
   const actions = [
     j.status === 'failed' ? `<button type="button" class="aui-btn aui-btn--secondary aui-btn--sm" data-mj-retry="${id}">Retry</button>` : '',
+    j.status === 'done' ? `<button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-mj-rerender="${id}" title="Render again with the latest look and sound, same photos and settings">Re-render</button>` : '',
     j.status !== 'processing' ? `<button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-mj-delete="${id}">Delete</button>` : '',
     j.game_id && j.status !== 'done' ? `<a class="aui-btn aui-btn--ghost aui-btn--sm" href="/admin/games/${attr(encodeURIComponent(j.game_id))}/potg-video">Make again</a>` : '',
   ].join('');

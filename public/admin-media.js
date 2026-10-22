@@ -1,7 +1,7 @@
 // Processing list (/admin/media), browser side: while anything is queued or rendering, re-fetch
 // the list every 3 s (the server sends the rows' HTML, views/admin/potg-video.js mediaJobRow) and
 // swap in only the rows that changed, so a preview you're watching keeps playing.
-// Buttons: Approve & render hi-res, Retry, Delete.
+// Buttons: Approve & render hi-res, Re-render, Retry, Delete.
 (function () {
   'use strict';
   var list = document.querySelector('[data-mj-list]');
@@ -31,11 +31,13 @@
   function tick() { (active() ? refresh() : Promise.resolve()).then(function () { setTimeout(tick, 3000); }); }
   setTimeout(tick, 1500);
   list.addEventListener('click', function (e) {
-    var f = e.target.closest('[data-mj-final]'), r = e.target.closest('[data-mj-retry]'), d = e.target.closest('[data-mj-delete]');
-    var btn = f || r || d; if (!btn) return;
-    var id = btn.getAttribute(f ? 'data-mj-final' : r ? 'data-mj-retry' : 'data-mj-delete');
-    var path = f ? '/final' : r ? '/retry' : '/delete';
-    (d ? ui().confirm({ title: 'Delete this video?', body: 'Its files are removed from the server.', sendLabel: 'Delete' }) : Promise.resolve(true)).then(function (ok) {
+    var f = e.target.closest('[data-mj-final]'), r = e.target.closest('[data-mj-retry]'), d = e.target.closest('[data-mj-delete]'), rr = e.target.closest('[data-mj-rerender]');
+    var btn = f || r || d || rr; if (!btn) return;
+    var id = btn.getAttribute(f ? 'data-mj-final' : r ? 'data-mj-retry' : d ? 'data-mj-delete' : 'data-mj-rerender');
+    var path = f ? '/final' : r ? '/retry' : d ? '/delete' : '/rerender';
+    (d ? ui().confirm({ title: 'Delete this video?', body: 'Its files are removed from the server.', sendLabel: 'Delete' })
+      : rr ? ui().confirm({ title: 'Re-render this video?', body: 'It renders again with the latest look and sound, using the same photos and settings. The current file is replaced when it’s done.', sendLabel: 'Re-render' })
+      : Promise.resolve(true)).then(function (ok) {
       if (!ok) return;
       btn.disabled = true;
       fetch('/admin/media/' + encodeURIComponent(id) + path, { method: 'POST' })

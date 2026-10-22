@@ -13,7 +13,8 @@ Background video renders. The admin builds a video on a page, saving **queues** 
 
 ## Worker / renderer
 - `lib/media-jobs.js`: `media_jobs` table, `startMediaWorker()` (called just before `server.listen`), polls every 5 s, runs `nice -n 15 node scripts/render-potg.js <jobId>`, one at a time. A job left `processing` by a restart is re-queued on boot.
-- **Colour matching at render:** `lib/photo-match.js` matches the job's 6 photos to each other (levels, colour cast to the set's median, exposure to a common brightness) and then applies the WKND grade, into the job's tmp folder. Jobs created before this (`config.photosRaw` unset) were graded on upload and are used as-is.
+- **Colour matching at render:** `lib/photo-match.js` matches the job's 6 photos to each other (levels, colour cast to the set's median, exposure to a common brightness) and then applies the WKND grade, into the job's tmp folder. Jobs created before this (`config.photosRaw` unset) were graded on upload, so they're matched but not graded again.
+- **Re-render** (`POST /admin/media/:id/rerender`, `rerenderMediaJob`): any finished or failed video renders again with the current template/sound/matching, same photos, settings and size; not possible once expired.
 - `scripts/render-potg.js`: headless Chrome loads `assets/media/potg/template.html`, `build(DATA)`, then `setT(t)` per frame (frame-exact, 24 fps, 1080×1350, ~33 s) piped to ffmpeg. Sound: a real ball bounce (`assets/media/potg/sfx/bounce*.wav`) at each time in the template's `window.SFX` (intro, the white hit, every photo cut, outro). No crowd/ambience audio. Output: `data/media/jobs/<id>/out/potg.mp4` (video with sound, the only deliverable).
 - Can be re-run by hand: `node scripts/render-potg.js <jobId>`.
 
