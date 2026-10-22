@@ -256,6 +256,9 @@ import {
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
 import { SHARE_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
+import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, outputPath, OUTPUT_FILES, startMediaWorker, UPLOAD_DIR } from './lib/media-jobs.js';
+import { potgVideoContext, savePotgPhoto, queuePotgVideos, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
+import { adminPotgVideoBody, adminMediaBody, mediaJobRow } from './views/admin/potg-video.js';
 import { adminMvpPodiumBody } from './views/admin/mvp-podium.js';
 import { adminAwardsOverviewBody, adminRacesBody } from './views/admin/awards-hub.js';
 import { postsListPage, postDetailPage } from './views/posts.js';
@@ -279,7 +282,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -10868,6 +10871,78 @@ app.post('/admin/games/:id/cover', requireAuth, jsonLarge, async (req, res) => {
     console.error('Cover upload error:', err);
     res.status(500).json({ error: 'Image processing failed' });
   }
+});
+
+// ── POTG video + the Processing list (lib/potg-video.js, lib/media-jobs.js) ──────────────
+// The editor queues one background render per POTG (two for a co-POTG game); nothing renders
+// in the request. /admin/media lists the jobs and serves the finished files.
+const fmtJobWhen = ms => new Date(ms).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+app.get('/admin/games/:id/potg-video', requireAuth, (req, res) => {
+  const ctx = potgVideoContext(req.params.id);
+  if (!ctx) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/games', body: '<p style="color:var(--text-muted);padding:40px">Game not found.</p>' }));
+  res.send(renderAdminPage(req, {
+    title: `POTG video · ${ctx.game.team_a_name} vs ${ctx.game.team_b_name}`, currentPath: '/admin/games',
+    body: adminPotgVideoBody({ game: ctx.game, ctx, cats: POTG_STAT_CATS, photoCount: POTG_PHOTO_COUNT }),
+  }));
+});
+
+app.post('/admin/media/potg-photo', requireAuth, express.json({ limit: '25mb' }), async (req, res) => {
+  try {
+    const r = await savePotgPhoto(req.body?.dataUrl);
+    res.json({ ...r, url: `/admin/media/upload/${r.id}.jpg` });
+  } catch (err) {
+    console.error('POTG photo upload error:', err);
+    res.status(400).json({ error: err.message === 'Not an image' ? 'That file isn’t an image.' : 'Image processing failed' });
+  }
+});
+
+app.get('/admin/media/upload/:file', requireAuth, (req, res) => {
+  const p = uploadPath(String(req.params.file).replace(/\.jpg$/, ''));
+  if (!p || !existsSync(p)) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.sendFile(p);
+});
+
+app.post('/admin/games/:id/potg-video', requireAuth, express.json({ limit: '200kb' }), (req, res) => {
+  try {
+    const who = req.session?.playerName || (req.session?.isElevatedPlayer ? 'Admin' : 'Super admin');
+    const jobs = queuePotgVideos(req.params.id, req.body || {}, who);
+    res.json({ ok: true, jobs, redirect: '/admin/media' });
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Couldn’t queue the video.' });
+  }
+});
+
+app.get('/admin/media', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, { title: 'Processing', currentPath: '/admin/media', body: adminMediaBody({ jobs: listMediaJobs(), outputs: OUTPUT_FILES, fmtWhen: fmtJobWhen }) }));
+});
+
+app.get('/admin/media.json', requireAuth, (req, res) => {
+  const jobs = listMediaJobs();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ html: jobs.map(j => mediaJobRow(j, OUTPUT_FILES, fmtJobWhen)).join('') || '<p class="aui-muted">Nothing processing.</p>' });
+});
+
+app.get('/admin/media/:id/:file', requireAuth, (req, res) => {
+  const job = getMediaJob(req.params.id);
+  const p = job && outputPath(job.id, req.params.file);
+  if (!p) return res.status(404).end();
+  const base = String(job.title || 'video').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'video';
+  res.download(p, `${base}-${req.params.file}`);
+});
+
+app.post('/admin/media/:id/retry', requireAuth, (req, res) => {
+  const job = getMediaJob(req.params.id);
+  if (!job || job.status !== 'failed') return res.status(400).json({ error: 'Only a failed video can be retried.' });
+  retryMediaJob(job.id); res.json({ ok: true });
+});
+
+app.post('/admin/media/:id/delete', requireAuth, (req, res) => {
+  const job = getMediaJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Not found' });
+  if (job.status === 'processing') return res.status(400).json({ error: 'Wait for it to finish first.' });
+  deleteMediaJob(job.id); res.json({ ok: true });
 });
 
 app.delete('/admin/games/:id/cover', requireAuth, (req, res) => {
@@ -22369,6 +22444,7 @@ server.on('upgrade', (req, socket, head) => {
   socket.destroy();
 });
 
+startMediaWorker();
 server.listen(PORT, () => {
   console.log(`WKND Portal → http://localhost:${PORT}`);
   console.log(`DB: portal.db (self-hosted)`);

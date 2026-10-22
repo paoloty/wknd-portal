@@ -1,0 +1,220 @@
+<!doctype html>
+<!--
+  POTG video template (1080x1350, 24 fps). Rendered frame by frame by scripts/render-potg.js:
+  the renderer injects window.DATA, waits for window.READY, then calls setT(t) for every frame.
+  Nothing here plays in real time, so every render lands on exactly the same frames.
+  Timeline (seconds): 0 big logo (ball bounces into the period) → 1.75 logo flies to the corner →
+  1.95 PLAYER / OF THE / GAME slams → 3.5 name + numbers count up → FL=5.3 white hit →
+  6 photos x 3 s (photo 1 is also the intro background) → OUT=23.3 outro (ball knocks the
+  stat block off, big logo stamps back in) → 6 s hold on logo + wkndbasketball.com.
+  window.SFX lists the sound hits (ball bounces) at the same times the animation uses them.
+-->
+<html><head><meta charset=utf-8><style>
+@font-face{font-family:BS;src:url(big-shoulders-display-latin-900-normal.woff2);font-weight:900}
+@font-face{font-family:BS;src:url(big-shoulders-display-latin-800-normal.woff2);font-weight:800}
+@font-face{font-family:AI;src:url(archivo-italic.woff2);font-style:italic;font-weight:900}
+@font-face{font-family:AR;src:url(archivo.woff2);font-weight:100 900}
+*{margin:0;box-sizing:border-box}html,body{width:1080px;height:1350px;overflow:hidden;background:#070708;color:#fff;font-family:AR,Arial,sans-serif}
+.L{position:absolute;inset:0}
+#photos{overflow:hidden}
+#photos img{position:absolute;left:0;top:0;transform-origin:0 0;opacity:0;will-change:transform}
+#team{mix-blend-mode:screen}
+#vg{background:linear-gradient(180deg,rgba(0,0,0,.3),transparent 22%,transparent 45%,rgba(7,7,8,.82) 72%,rgba(7,7,8,.95))}
+#dim{background:#070708;opacity:0}
+.led{background-image:radial-gradient(circle,rgba(255,178,26,.2) 1.8px,transparent 2.4px);background-size:15px 15px;-webkit-mask:radial-gradient(ellipse 62% 55% at 50% 40%,transparent 45%,#000 100%)}
+#big{position:absolute;left:0;right:0;top:330px;text-align:center}
+#big div{font:900 230px/.84 BS;letter-spacing:-.01em;text-transform:uppercase;opacity:0}
+#big .g{color:#ffb21a;text-shadow:0 0 40px rgba(255,178,26,.5)}
+#big.co div{font-size:200px}
+.logo{position:absolute;left:60px;top:54px;display:inline-flex;align-items:baseline;font:italic 900 52px/1 AI;letter-spacing:-.045em;opacity:0}.logo svg{width:.38em;height:.38em;margin-left:.08em}
+.blk{position:absolute;left:60px;right:60px;bottom:64px}
+.hd{display:flex;align-items:center;gap:24px}
+.av{width:120px;height:120px;border-radius:50%;background:#222 center 20%/cover;flex:none;display:flex;align-items:center;justify-content:center;font:900 54px BS;transform:scale(0)}
+.k{font:800 26px BS;letter-spacing:.32em;color:#ffb21a;opacity:0}
+.nm{font:900 82px/.92 BS;margin-top:4px;white-space:nowrap;transform-origin:0 50%}
+.nm span{display:inline-block;clip-path:inset(0 100% 0 0)}
+.tm{font:500 24px AR,Arial,sans-serif;color:#bdb8ae;margin-top:6px;opacity:0;white-space:nowrap}
+.tm b{color:#fff;font-weight:700}
+.row{display:flex;align-items:flex-end;gap:30px;margin-top:14px;transform-origin:0 100%}
+.digs{display:flex;align-items:flex-end}
+.dig{display:inline-block;text-align:center;font:900 196px/.82 BS;color:#ffb21a;text-shadow:0 0 28px rgba(255,178,26,.45);-webkit-mask:radial-gradient(circle,#000 62%,rgba(0,0,0,.55) 64%) 0 0/8px 8px;opacity:0}
+.sl{display:inline-block;font:900 120px/1 BS;color:#8a8a8a;margin:0 18px 6px;opacity:0}
+.lab{padding-bottom:16px;opacity:0}.u{font:900 54px/.9 BS;white-space:nowrap}
+.chip{display:inline-block;margin-top:14px;padding:9px 16px;border-radius:8px;border:2.5px solid #ffb21a;color:#ffb21a;font:800 24px BS;letter-spacing:.2em;background:rgba(255,178,26,.1);white-space:nowrap}
+#lk{position:absolute;left:0;right:0;top:500px;text-align:center}
+#wm{display:inline-flex;align-items:baseline;font:italic 900 210px/1 AI;letter-spacing:-.045em;-webkit-text-stroke:.02em #fff;transform-origin:0 0}
+#wm span{display:inline-block;opacity:0}#slot{display:inline-block;width:80px;height:80px;margin-left:.08em}
+#sub{display:inline-block;margin-top:22px;font:italic 900 44px/1 AI;letter-spacing:.42em;padding-left:.42em;color:#f59332;opacity:0}
+#dom{position:absolute;left:0;right:0;top:860px;text-align:center;font:800 30px BS;letter-spacing:.34em;color:#cfc9bd;opacity:0}
+#ball{position:absolute;width:80px;height:80px;left:0;top:-200px;z-index:5}
+#flash{background:#fff;opacity:0}
+#grain{mix-blend-mode:overlay;opacity:.18}
+</style></head><body>
+<div class=L id=photos></div>
+<div class=L id=team></div><div class=L id=vg></div><div class=L id=dim></div><div class="L led" id=led></div>
+<div id=big><div id=b1>Player</div><div id=b2>of the</div><div id=b3 class=g>Game</div></div>
+<div class=logo id=logo>WKND<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg></div>
+<div class=blk id=blk><div class=hd><div class=av id=av></div><div style="min-width:0"><div class=k id=kk>PLAYER OF THE GAME</div><div class=nm id=nm><span id=n1></span> <span id=n2></span></div><div class=tm id=tm></div></div></div>
+<div class=row id=row><div class=digs id=digs></div><div class=lab id=lab><div class=u id=units></div><div id=chipw></div></div></div></div>
+<div id=lk><div id=wm><span>W</span><span>K</span><span>N</span><span>D</span><span id=slot></span></div><br><div id=sub>BASKETBALL</div></div>
+<div id=dom>WKNDBASKETBALL.COM</div>
+<svg id=ball viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg>
+<div class=L id=grain></div><div class=L id=flash></div>
+<script>
+const FW=1080, FH=1350, FPS=24;
+const C=x=>Math.max(0,Math.min(1,x)), E=x=>1-Math.pow(1-C(x),3), W=(t,a,d)=>E((t-a)/d), EI=x=>C(x)*C(x)*C(x);
+const IO=x=>{x=C(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
+const back=x=>{x=C(x);const c1=1.7,c3=c1+1;return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2)};
+const $=i=>document.getElementById(i);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---- timeline ----
+const FS=1.75, FD=0.6;            // big logo flies to the corner
+const O=1.95;                     // PLAYER OF THE GAME sequence offset
+const FL=O+3.35;                  // white hit, photos take over
+const PH=3.0, NPH=6;              // 6 photos x 3 s
+const OUT=FL+PH*NPH;              // outro starts
+const HOLD=6.0;
+const DUR=OUT+3.4+HOLD;
+window.TIMELINE={FS,FD,O,FL,PH,NPH,OUT,DUR};
+
+// Photo framing, shared with the editor (public/admin-potg-video.js frameOf): the photo covers the
+// frame, scaled by zoom (1 = just covers), with its focal point (fx, fy as 0..1 of the image) put
+// at the target point (centre, 40% down: above the stat block), clamped so no edge shows.
+// KB is the push-in: each photo starts KB_START of its framed size... never below "covers".
+const TX=FW/2, TY=FH*0.40, KB=1.10;
+function frameOf(iw,ih,fx,fy,zoom,extra){
+  const s=Math.max(FW/iw,FH/ih)*Math.max(1,zoom)*extra, w=iw*s, h=ih*s;
+  let x=TX-fx*w, y=TY-fy*h;
+  x=Math.min(0,Math.max(FW-w,x)); y=Math.min(0,Math.max(FH-h,y));
+  return {x,y,s};
+}
+
+// ---- build from DATA ----
+let D=null, IMGS=[], R=null, GR=[];
+function digitsHtml(stats){
+  return stats.map((s,i)=>`${i?`<span class=sl id=s${i-1} style="transform:skewX(-12deg)">/</span>`:''}<span class=dig id=d${i}>${esc(s.v)}</span>`).join('');
+}
+function build(data){
+  D=data;
+  const co=!!D.co;
+  $('kk').textContent=co?'CO-PLAYER OF THE GAME':'PLAYER OF THE GAME';
+  if(co){$('big').classList.add('co');$('b1').textContent='Co-Player';}
+  $('n1').textContent=D.first; $('n2').textContent=D.last; $('n2').style.color=D.lastColor||'#ffb21a';
+  $('tm').innerHTML=D.teamLine;
+  const av=$('av'); av.style.boxShadow=`0 0 0 5px ${D.ring||'#888'}`;
+  if(D.avatar) av.style.backgroundImage=`url("${D.avatar}")`; else {av.textContent=D.initials||'';av.style.background=`linear-gradient(180deg,${D.ring||'#555'},#0d0f14)`;}
+  $('digs').innerHTML=digitsHtml(D.stats);
+  $('units').textContent=D.stats.map(s=>s.l).join(' / ');
+  $('chipw').innerHTML=D.chip?`<div class=chip>${esc(D.chip)}</div>`:'';
+  $('team').style.background=`linear-gradient(115deg,transparent 30%,${D.ringA||'rgba(139,149,167,.55)'} 30%,${D.ringA||'rgba(139,149,167,.55)'} 46%,transparent 46%)`;
+  // shrink the name / numbers row if they would run past the frame
+  const maxW=FW-60-60-144;
+  const nm=$('nm'); const nw=nm.scrollWidth; if(nw>maxW) nm.style.transform=`scale(${maxW/nw})`;
+  const row=$('row'); const rw=row.scrollWidth; if(rw>FW-120) row.style.transform=`scale(${(FW-120)/rw})`;
+  // digits keep their final width while they count, so the slashes don't jump
+  D.stats.forEach((s,i)=>{const el=$('d'+i); el.style.minWidth=el.getBoundingClientRect().width+'px';});
+  GR=[...Array(6)].map(()=>{const c=document.createElement('canvas');c.width=c.height=270;const x=c.getContext('2d'),d=x.createImageData(270,270);for(let i=0;i<d.data.length;i+=4){const v=Math.random()*255|0;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255}x.putImageData(d,0,0);return c.toDataURL()});
+  const box=$('photos');
+  IMGS=D.photos.map(p=>{const im=new Image();im.src=p.url;box.appendChild(im);return im;});
+  const imgsLoaded=Promise.all(IMGS.map(im=>im.decode().catch(()=>{})));
+  const avLoaded=D.avatar?new Promise(r=>{const i=new Image();i.onload=i.onerror=r;i.src=D.avatar;}):Promise.resolve();
+  return Promise.all([imgsLoaded,avLoaded,document.fonts.ready]).then(()=>{
+    $('wm').style.transform='none';
+    R={wm:$('wm').getBoundingClientRect(),logo:$('logo').getBoundingClientRect(),slot:$('slot').getBoundingClientRect()};
+    // sound hits, in seconds (renderer mixes a ball bounce at each)
+    const nums=D.stats.map((s,i)=>O+2.05+i*0.23);
+    window.SFX=[
+      {t:0.524,g:0.9},{t:0.833,g:0.5},{t:1.0,g:0.27},                      // ball into the period
+      {t:O+0.25,g:0.8},{t:O+0.42,g:0.8},{t:O+0.6,g:1.0},                   // title slams
+      ...nums.map((t,i)=>({t,g:0.7-i*0.05})),                             // numbers land
+      {t:OUT+0.45,g:0.8},                                                 // ball hits the stat block
+      {t:OUT+0.45+0.5*0.524,g:0.7},{t:OUT+0.45+0.5*0.833,g:0.4},{t:OUT+0.95,g:0.22}, // bounces into the logo
+    ];
+    window.AMBIENCE={from:FL-0.3,to:OUT+1.0};
+    window.READY=true;
+  });
+}
+
+function bounce(u,x0,x1,yTop,yFloor){u=C(u);const x=x0+(x1-x0)*u;const hs=[1,.35,.1];let tot=0,seg=hs.map(h=>{const d=Math.sqrt(h);tot+=d;return d});let acc=0,y=yFloor;for(let i=0;i<3;i++){const a=acc/tot,b=(acc+seg[i])/tot;if(u<=b){const v=(u-a)/(b-a);y=i==0?yTop+(yFloor-yTop)*v*v:yFloor-hs[i]*(yFloor-yTop)*4*v*(1-v);break}acc+=seg[i]}return [x,y]}
+function slam(el,t,st,dur=0.22){const u=C((t-st)/dur);el.style.opacity=u>0?1:0;el.style.transform=`scale(${u>0?1+1.6*(1-E(u)):3})`;el.style.filter=`blur(${(1-u)*8}px)`;}
+
+function setPhotos(t){
+  // which photo: 0 from the start through FL+PH, then one every PH
+  let idx=t<FL+PH?0:Math.min(NPH-1,Math.floor((t-FL)/PH));
+  const st=idx===0?0:FL+idx*PH, en=idx===0?FL+PH:(idx===NPH-1?DUR:st+PH);
+  IMGS.forEach((im,i)=>{
+    if(i!==idx){im.style.opacity=0;return;}
+    const p=D.photos[i], u=C((t-st)/(en-st));
+    const extra=1+(KB-1)*(idx===0?E(u):u);         // push in toward the framing
+    const f=frameOf(im.naturalWidth,im.naturalHeight,p.fx,p.fy,p.zoom,extra);
+    im.style.width=im.naturalWidth+'px';im.style.height=im.naturalHeight+'px';
+    im.style.transform=`translate(${f.x}px,${f.y}px) scale(${f.s})`;im.style.opacity=1;
+    // intro: dark, grey, blurred until the name lands
+    if(idx===0){const col=W(t,O+1.55,0.5);im.style.filter=`grayscale(${1-col}) brightness(${0.35+0.65*col}) blur(${(1-col)*8}px)`;}
+    else im.style.filter='none';
+  });
+  // quick soft flash on each cut
+  let fl=t>=FL?0.85*C(1-(t-FL)/0.25):0;
+  for(let i=1;i<NPH;i++){const c=FL+i*PH; if(t>=c) fl=Math.max(fl,0.22*C(1-(t-c)/0.12));}
+  return fl;
+}
+
+window.setT=t=>{
+  const outro=t>=OUT;
+  let flash=setPhotos(t);
+  const ball=$('ball'), s=R.slot;
+  // ---- big logo, then it flies to the corner ----
+  const L=[...document.querySelectorAll('#wm span')].slice(0,4);
+  let wx=R.wm.left, wy=R.wm.top, sc=1;
+  if(!outro){
+    L.forEach((el,i)=>{const u=C((t-1.05-i*0.09)/0.26);el.style.opacity=u>0?1:0;el.style.transform=`translateY(${(1-E(u))*-50}px) scale(${u>0?back(u):0.2})`;el.style.filter=`blur(${(1-u)*6}px)`;});
+    const su=W(t,1.4,0.35)*(1-W(t,FS,0.2)); $('sub').style.opacity=su; $('sub').style.letterSpacing=(0.9-0.48*W(t,1.4,0.35))+'em';
+    const m=IO((t-FS)/FD), ws=R.logo.height/R.wm.height; sc=1+(ws-1)*m;
+    wx=R.wm.left+(R.logo.left-R.wm.left)*m; wy=R.wm.top+(R.logo.top-R.wm.top)*m;
+    $('wm').style.transform=`translate(${wx-R.wm.left}px,${wy-R.wm.top}px) scale(${sc})`;
+    if(t<1.0){const [x,y]=bounce(t/1.0,540-40,s.left,-140,s.top);ball.style.left=x+'px';ball.style.top=y+'px';ball.style.width=ball.style.height='80px';ball.style.transform=`rotate(${t*560}deg)`;}
+    else{const bs=80*sc;ball.style.width=ball.style.height=bs+'px';ball.style.left=(R.slot.left-R.wm.left)*sc+wx+'px';ball.style.top=(R.slot.top-R.wm.top)*sc+wy+'px';ball.style.transform=`rotate(${560+(1-Math.exp(-(t-1)*6))*40}deg)`;}
+    const done=t>=FS+FD; $('lk').style.opacity=done?0:1; ball.style.opacity=done?0:1; $('logo').style.opacity=done?1:0;
+  }
+  // ---- PLAYER OF THE GAME ----
+  const q=t-O;
+  slam($('b1'),q,0.25);slam($('b2'),q,0.42);slam($('b3'),q,0.6,0.26);
+  const bo=W(q,1.35,0.35); $('big').style.opacity=q<0?0:1-bo; $('big').style.transform=`translateY(${bo*360}px) scale(${1-0.7*bo})`;
+  const sw=C((q-1.45)/0.45); $('team').style.transform=`translateX(${-1100+2200*E(sw)}px)`; $('team').style.opacity=sw>0&&sw<1?1:0;
+  $('kk').style.opacity=W(q,1.5,0.25);
+  const a=C((q-1.55)/0.3); $('av').style.transform=`scale(${a>0?back(a):0})`;
+  $('n1').style.clipPath=`inset(0 ${100-100*W(q,1.6,0.3)}% 0 0)`; $('n2').style.clipPath=`inset(0 ${100-100*W(q,1.72,0.3)}% 0 0)`;
+  $('tm').style.opacity=W(q,1.9,0.3);
+  D.stats.forEach((st,i)=>{
+    const s0=2.05+i*0.23, el=$('d'+i), u=C((q-s0)/0.2);
+    el.style.opacity=u>0?1:0; el.style.transform=`translateY(${(1-E(u))*-40}px) scale(${u>0?back(u):0.4})`;
+    const v=Number(st.v); el.textContent=isFinite(v)?Math.round(v*E((q-s0)/0.65)):st.v;
+    if(i>0){const sl=$('s'+(i-1)),us=C((q-s0+0.08)/0.2);sl.style.opacity=us>0?.8:0;sl.style.transform=`skewX(-12deg) translateY(${(1-E(us))*-40}px) scale(${us>0?back(us):0.4})`;}
+  });
+  const lb=W(q,2.05+D.stats.length*0.23+0.05,0.3); $('lab').style.opacity=lb; $('lab').style.transform=`translateX(${(1-lb)*30}px)`;
+  // ---- outro: ball rolls in, knocks the stat block off, big logo stamps back in, lights out ----
+  if(outro){
+    const o=t-OUT, hitT=0.45, landT=0.95;
+    $('logo').style.opacity=1-W(o,0.0,0.25);
+    $('lk').style.opacity=1; $('wm').style.transform='none';
+    L.forEach((el,i)=>{const u=C((o-0.95-i*0.09)/0.26);el.style.opacity=u>0?1:0;el.style.transform=`translateY(${(1-E(u))*-50}px) scale(${u>0?back(u):0.2})`;el.style.filter=`blur(${(1-u)*6}px)`;});
+    const su=W(o,1.35,0.4); $('sub').style.opacity=su; $('sub').style.letterSpacing=(0.9-0.48*su)+'em';
+    let bx,by,rot;
+    if(o<hitT){const u=E(o/hitT);bx=1120-(1120-560)*u;by=1150;rot=-o*900;}
+    else{const [x,y]=bounce((o-hitT)/(landT-hitT),560,s.left,s.top-300,s.top);bx=o<landT?x:s.left;by=o<landT?y:s.top;rot=-hitT*900-(Math.min(o,landT)-hitT)*500;}
+    ball.style.width=ball.style.height='80px';ball.style.left=bx+'px';ball.style.top=by+'px';ball.style.transform=`rotate(${rot}deg)`;ball.style.opacity=1;
+    const k=C((o-hitT)/0.6); $('blk').style.transform=`translate(${-300*EI(k)}px,${-40*k+700*EI(k)*k}px) rotate(${-18*E(k)}deg)`; $('blk').style.opacity=1-C((o-hitT-0.25)/0.35);
+    const lo=W(o,1.7,0.5); $('dim').style.opacity=0.55+0.33*lo;
+    IMGS.forEach(im=>{if(im.style.opacity=='1')im.style.filter=`blur(${10*W(o,0,0.6)}px) saturate(.7)`;});
+    $('dom').style.opacity=W(o,2.1,0.6); $('led').style.webkitMaskImage='none';
+  } else {
+    $('blk').style.transform='none'; $('blk').style.opacity=1;
+    $('dim').style.opacity=t<O+1.6?0.35*(1-W(t,O+1.55,0.5)):0; $('dom').style.opacity=0;
+    $('led').style.webkitMaskImage='';
+  }
+  $('flash').style.opacity=flash;
+  $('grain').style.backgroundImage=`url(${GR[Math.floor(t*FPS)%6]})`;
+};
+window.build=build;
+</script></body></html>

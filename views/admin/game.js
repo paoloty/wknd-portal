@@ -210,6 +210,7 @@ function contentTab({ game, st, stats, colors, colorOfTeam }) {
           <textarea class="aui-input" rows="4" id="f-potg" name="potg_writeup" placeholder="Why they were the player of the game…" data-potg-text>${escHtml(game.potg_writeup || '')}</textarea></label>
         <div class="aui-row">${button('✦ Write with AI', { kind: 'secondary', attrs: `data-ai="/admin/games/${attr(game.id)}/generate-potg" data-ai-target="potg"` })}<span class="aui-muted" data-ai-status="potg"></span></div>
         ${coBlock}
+        <div class="aui-row agd-potgvideo">${button('🎬 Make POTG video', { kind: 'secondary', href: `/admin/games/${encodeURIComponent(game.id)}/potg-video` })}<span class="aui-muted">Save your POTG pick first. ${co ? 'Makes two videos (POTG + co-POTG).' : 'Renders in the background under Processing.'}</span></div>
       </div>`,
     })}
     ${section({
