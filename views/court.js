@@ -209,8 +209,8 @@ function ratingsSection(p, court, x) {
     const mine = x.viewerId === r.player_id;
     const on = x.helpfulByMe?.has(r.id);
     return `<article class="crt-rev">
-      ${avatar(r.player_id, r.player_name || '')}
-      <div class="crt-rev__top"><div class="crt-rev__who"><b>${escHtml(displayPlayerName(r.player_name || ''))}</b><small><span class="crt-ver">${ICON.tick} Played here</span> · ${escHtml(new Date(r.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</small></div>${stars(r.stars, `${r.stars} out of 5`)}</div>
+      ${r.is_anonymous ? '<span class="crt-av" aria-hidden="true"><span>W</span></span>' : avatar(r.player_id, r.player_name || '')}
+      <div class="crt-rev__top"><div class="crt-rev__who"><b>${r.is_anonymous ? 'A WKND player' : escHtml(displayPlayerName(r.player_name || ''))}</b><small><span class="crt-ver">${ICON.tick} Played here</span> · ${escHtml(new Date(r.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</small></div>${stars(r.stars, `${r.stars} out of 5`)}</div>
       <p>${escHtml(r.body)}</p>
       ${mine ? '' : `<div class="crt-rev__act"><button type="button" aria-pressed="${on ? 'true' : 'false'}" data-helpful="${escHtml(r.id)}"${x.viewerId ? '' : ' disabled title="Log in to vote"'}>▲ Helpful · <span>${r.helpful}</span></button></div>`}
       ${r.owner_reply ? `<div class="crt-owner"><b>${escHtml(p.name)}${court.partner ? ' <span class="crt-pill crt-pill--amber">Partner court</span>' : ''}</b><p>${escHtml(r.owner_reply)}</p></div>` : ''}
@@ -218,7 +218,7 @@ function ratingsSection(p, court, x) {
   }).join('');
   return `<section class="crt-sec" id="crt-say" aria-labelledby="crt-say-h">${sh('Players say', { id: 'crt-say-h', link: x.canRate ? '<a class="section-header__link" href="#crt-rate">Rate this court</a>' : '' })}
     <div class="card">${scoreBlock}${reviews}${x.canRate ? rateForm(x) : ''}
-      <p class="crt-notice">${ICON.shield}<span>Only players who played a run or a league game here can rate, and every rating shows their name. Written reviews are checked before they appear, and the court can reply.</span></p>
+      <p class="crt-notice">${ICON.shield}<span>Only players who played a run or a league game here can rate. Reviews show the player's name unless they post anonymously. Written reviews are checked before they appear, and the court can reply.</span></p>
     </div></section>`;
 }
 
@@ -234,7 +234,8 @@ function rateForm(x) {
     <div class="crt-aspin">${RATING_ASPECTS.map(([k, l]) => `<div class="crt-aspin__row" role="radiogroup" aria-label="${escHtml(l)}"><span>${escHtml(l)}${k === 'airflow' ? ' <small>5 = cool</small>' : ''}</span><div>${[1, 2, 3, 4, 5].map(i => `<label><input type="radio" name="asp_${k}" value="${i}"${Number(aspects[k]) === i ? ' checked' : ''}><span>${i}</span></label>`).join('')}</div></div>`).join('')}</div>
     <div class="crt-tagin" role="group" aria-label="Quick tags">${RATING_TAGS_GOOD.map(tagBtn).join('')}<span class="crt-tagsep">Could be better</span>${RATING_TAGS_BAD.map(tagBtn).join('')}</div>
     <label class="crt-field crt-field--full"><span>Anything else? <em>Optional</em></span><textarea name="body" maxlength="600" rows="3" placeholder="What should someone know before their first run here?">${escHtml(m?.body || '')}</textarea></label>
-    <div class="crt-formfoot"><span data-form-msg>Posts with your name. The court can reply.</span><button type="submit" class="crt-btn crt-btn--amber" data-cta="court-rate">${m ? 'Update rating' : 'Post rating'}</button></div>
+    <label class="crt-anon"><input type="checkbox" name="anon"${m?.is_anonymous ? ' checked' : ''}> <span>Post anonymously (shows as "A WKND player"; admins still see who wrote it)</span></label>
+    <div class="crt-formfoot"><span data-form-msg>Posts with your name unless you tick anonymous. The court can reply.</span><button type="submit" class="crt-btn crt-btn--amber" data-cta="court-rate">${m ? 'Update rating' : 'Post rating'}</button></div>
   </form>`;
 }
 
@@ -497,7 +498,7 @@ const SCRIPT = `<script>
       e.preventDefault();
       var fd = new FormData(f), aspects = {};
       ${JSON.stringify(RATING_ASPECTS.map(([k]) => k))}.forEach(function (k) { if (fd.get('asp_' + k)) aspects[k] = Number(fd.get('asp_' + k)); });
-      var body = { stars: Number(fd.get('stars')), aspects: aspects, body: fd.get('body') || '', tags: [].slice.call(f.querySelectorAll('[data-tag][aria-pressed="true"]')).map(function (t) { return t.getAttribute('data-tag'); }) };
+      var body = { stars: Number(fd.get('stars')), aspects: aspects, body: fd.get('body') || '', anon: fd.get('anon') === 'on', tags: [].slice.call(f.querySelectorAll('[data-tag][aria-pressed="true"]')).map(function (t) { return t.getAttribute('data-tag'); }) };
       var msg = f.querySelector('[data-form-msg]'), btn = f.querySelector('[type=submit]');
       btn.disabled = true;
       post('/courts/' + location.pathname.split('/')[2] + '/rate', body).then(function (d) {

@@ -1300,6 +1300,22 @@ function rateThisPlayerCard(rateeId, viewerExistingRating, cooldownActive, coold
 <\/script>`;
 }
 
+// "Rate your game" conduct ratings (lib/game-ratings.js). Only good tags ever show: to the
+// player on their own profile, and publicly once PUBLIC_MIN_RATERS different players rated them.
+function conductCard(gr, isOwnProfile) {
+  const s = gr.summary;
+  const pills = list => `<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 18px 18px">${list.map(t => `<span class="chip-tag" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:var(--amber-dim);color:var(--amber);font-size:13px;font-weight:700">${escHtml(t.label)} <span style="color:var(--text)">×${t.n}</span></span>`).join('')}</div>`;
+  if (isOwnProfile) {
+    const body = s.total
+      ? `<p style="padding:14px 18px 6px;color:var(--text-muted);font-size:13px">${s.raters} player${s.raters === 1 ? '' : 's'} rated you across ${s.games} game${s.games === 1 ? '' : 's'}. ${s.good.length ? 'What stood out:' : 'No tags yet.'}</p>${s.good.length ? pills(s.good) : ''}`
+      : '<p style="padding:16px 18px;color:var(--text-muted);font-size:13px">No ratings yet. After your next game you\'ll get a link to rate the players you ran with, and they\'ll rate you.</p>';
+    return `<div class="card" id="community-ratings"><div class="card-label">WHAT PLAYERS SAY</div>${body}
+  <p style="padding:0 18px 16px;color:var(--text-muted);font-size:12px">Only you see this. Ratings are anonymous.</p></div>`;
+  }
+  if (!s.showPublic || !s.good.length) return '';
+  return `<div class="card" id="community-ratings"><div class="card-label">WHAT PLAYERS SAY</div>${pills(s.good.slice(0, 3))}</div>`;
+}
+
 function communityRatingsCard(summary, isOwnProfile = false) {
   if (!summary.count) {
     const emptyMsg = isOwnProfile
@@ -1570,7 +1586,7 @@ function prfTile({ label, chip = null, value, small = '', segs = null, sub = '',
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
 function prfHero(o) {
-  const { player, editing, canEditPhoto, isAdmin, champSeasons, latestGame, canRate, peerRatingsEnabled, canReport } = o;
+  const { player, editing, canEditPhoto, isAdmin, champSeasons, latestGame, canRate, peerRatingsEnabled, canReport, gameRatings } = o;
   const teamName = String(player.team_name || '').toUpperCase();
   const color = teamColor(teamName);
   const positions = parsePositions(player.positions);
@@ -1590,7 +1606,7 @@ function prfHero(o) {
   const actions = editing
     ? `${shareHref ? `<a class="prf-btn prf-btn--amber" href="${shareHref}">${PRF_ICON.share}Share my stats</a>` : ''}
        <a class="prf-btn" href="?view=public">${PRF_ICON.eye}See public profile</a>`
-    : `${canRate && peerRatingsEnabled ? `<a class="prf-btn prf-btn--amber" href="#pr-rate-card">${PRF_ICON.star}Rate player</a>` : ''}
+    : `${gameRatings ? (gameRatings.rateHref ? `<a class="prf-btn prf-btn--amber" href="${escHtml(gameRatings.rateHref)}">${PRF_ICON.star}Rate player</a>` : '') : canRate && peerRatingsEnabled ? `<a class="prf-btn prf-btn--amber" href="#pr-rate-card">${PRF_ICON.star}Rate player</a>` : ''}
        <button type="button" class="prf-btn" data-prf-share>${PRF_ICON.share}<span>Share</span></button>`;
   return `<section class="prf-hero" aria-label="Player">
   <div class="player-hero__avatar-wrap prf-hero__avatar-wrap">
@@ -1826,7 +1842,9 @@ function prfBadges(o, own) {
 
 function prfCommunity(o, own, pollInToday) {
   const cards = [];
-  if (o.peerRatingsEnabled) {
+  if (o.gameRatings) {
+    cards.push(conductCard(o.gameRatings, own));
+  } else if (o.peerRatingsEnabled) {
     cards.push(communityRatingsCard(o.peerRatingSummary, own));
     if (!own && o.canRate) cards.push(rateThisPlayerCard(o.player.id, o.viewerExistingRating, o.viewerCooldownActive, o.viewerCooldownUntil));
     cards.push(ratingFeedCard(o.peerRatingsFeed));
@@ -1897,7 +1915,7 @@ export function playerPage(o) {
   const latestGame = d.gameLogs.find(g => g.status === 'played') || null;
   const hero = prfHero({
     player: d.player, editing: own, canEditPhoto: own || (!!d.isAdmin && !o.viewPublic), isAdmin: !!d.isAdmin,
-    champSeasons: d.champSeasons, latestGame, canRate: d.canRate, peerRatingsEnabled: d.peerRatingsEnabled,
+    champSeasons: d.champSeasons, latestGame, canRate: d.canRate, peerRatingsEnabled: d.peerRatingsEnabled, gameRatings: own ? null : d.gameRatings,
     canReport: !own && d.canReport, reportCategories: d.reportCategories, reportOtherCategoryId: d.reportOtherCategoryId,
   });
   const banner = o.isOwnProfile && o.viewPublic
