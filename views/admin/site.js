@@ -1,11 +1,13 @@
 import { escHtml } from '../layout.js';
+import { settingsScript } from './settings.js';
 
 // ── /admin/site — Site & homepage (was /admin/visibility) ─────────────────────────────────
 // The settings that belong to the whole site (comments, ratings, the join banner, the header
 // and the homepage cards), plus a read-only "What's public right now" list: one line per
 // feature with a link to the page where its switch now lives (each feature's switches moved
 // onto its own admin page in the 2026-10 reorganisation). panels: settingsPanel() HTML.
-// status: [{ label, on, href }].
+// status: [{ label, on, href }]. The panels are built in server.js, not through withSettings,
+// so the script that saves them is added here (without it the switches never save).
 export function adminSiteBody({ panels = '', status = [] }) {
   return `
 <div class="mb-5">
@@ -21,5 +23,6 @@ export function adminSiteBody({ panels = '', status = [] }) {
         <span class="flex items-center gap-2 text-xs"><span class="font-bold ${s.on ? 'text-emerald-400' : 'text-slate-500'}">${s.on ? 'On' : 'Off'}</span><span class="text-slate-500">${escHtml(s.where)} →</span></span>
       </a>`).join('')}</div>
   </section>
-</div>`;
+</div>
+${settingsScript()}`;
 }
