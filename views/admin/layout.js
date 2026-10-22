@@ -117,6 +117,7 @@ const NAV_GROUPS = [
       { href: '/admin/polls',            label: 'Polls',           icon: 'standings', exact: true },
       { href: '/admin/fines',            label: 'Fines & conduct', icon: 'shield',    exact: true },
       { href: '/admin/fines/categories', label: 'Fine categories', icon: 'ledger' },
+      { href: '/admin/ratings',          label: 'Player ratings',  icon: 'awards' },
     ],
   },
   {
@@ -217,7 +218,6 @@ const SUPER_ADMIN_NAV = [
       { href: '/admin/logs', label: 'Action Logs', icon: 'ledger' },
       { href: '/admin/share-log', label: 'Share Card Log', icon: 'share' },
       { href: '/admin/birthdays', label: 'Birthdays', icon: 'users' },
-      { href: '/admin/ratings', label: 'Community Ratings', icon: 'awards' },
       ...(process.env.NODE_ENV !== 'production' ? [{ href: '/admin/db', label: 'Sync DB', icon: 'finance' }] : []),
     ],
   },

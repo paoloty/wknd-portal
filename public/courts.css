@@ -255,6 +255,8 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 .crt-field input, .crt-field select, .crt-field textarea { width: 100%; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--c-line); background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px; }
 .crt-field textarea { height: auto; padding: 10px 12px; resize: vertical; }
 .crt-field--full { grid-column: 1 / -1; }
+.crt-anon { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.crt-anon input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--amber); }
 .crt-formfoot { display: flex; align-items: center; justify-content: space-between; gap: var(--c-gap); flex-wrap: wrap; font-size: 12.5px; color: var(--text-muted); line-height: 1.45; }
 .crt-formfoot i { font-style: normal; color: var(--amber); }
 

@@ -190,7 +190,7 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
     const asp = Object.entries(parseJson(x.aspects_json, {})).map(([k, v]) => `${ASPECT_LABEL[k] || k} ${v}`);
     const st = x.hidden ? badge('Hidden', 'gray') : x.body_status === 'pending' ? badge('Review waiting', 'amber') : x.body_status === 'approved' ? badge('Review live', 'green') : x.body_status === 'rejected' ? badge('Review rejected', 'red') : badge('Stars only', 'gray');
     return `<div class="acrt-row acrt-row--rating">
-      <div class="acrt-row__main"><b>${escHtml(displayPlayerName(x.player_name || ''))} · ${x.stars}★</b>
+      <div class="acrt-row__main"><b>${escHtml(displayPlayerName(x.player_name || ''))} · ${x.stars}★</b>${x.is_anonymous ? ` ${badge('Posted anonymously', 'gray')}` : ''}
         <span class="aui-muted">${escHtml([ago(x.updated_at), asp.join(', '), tags.join(', ')].filter(Boolean).join(' · '))}</span>
         ${x.body ? `<p class="acrt-row__text">${escHtml(x.body)}</p>` : ''}
         <form class="acrt-row__form" id="reply-${attr(x.id)}" data-json-action="/admin/papawis/court-ratings/${attr(x.id)}" data-done="Reply saved.">

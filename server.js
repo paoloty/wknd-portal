@@ -216,6 +216,14 @@ import { setGameType, setGamesCourt } from './lib/portal-db.js';
 import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
 import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
+import { gameRatingsOn, resolveRateGame, askToRateGame, verifyRateToken, verifyRatingUnsubscribe, RATE_KINDS } from './lib/game-rate-ask.js';
+import { RATE_ANSWER_KEYS, cleanRating, summarizeConduct, raterFlags, RATE_WINDOW_DAYS } from './lib/game-ratings.js';
+import { rateGamePage } from './views/rate-game.js';
+import {
+  upsertGameRating, getMyGameRatings, getGameRatingsForRatee, getAllGameRatings, getGameRating, setGameRatingIgnored, deleteGameRating,
+  getGameRateRounds, getLatestSharedGameAsk, recordGameCourtCheck, getGameCourtCheck, setRatingEmailOptout, setPlayerRateLinksOff,
+  countPendingCourtReviews,
+} from './lib/portal-db.js';
 import {
   getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, wasAskedToRateCourt, saveCourtRating, getCourtRating,
   moderateCourtRating, toggleCourtRatingHelpful, getCourtOpenSlots, getCourtOpenSlot, addCourtOpenSlot, deleteCourtOpenSlot, setCourtSlotRun,
@@ -267,6 +275,7 @@ import { adminSeoListBody, adminSeoEditorBody } from './views/admin/seo.js';
 import { adminFinesListBody, adminFineCaseBody, adminFineCategoriesBody } from './views/admin/fines.js';
 import { adminTeamHeadsBody } from './views/admin/team-heads.js';
 import { adminRatingsBody } from './views/admin/ratings.js';
+import { adminGameRatingsBody } from './views/admin/game-ratings.js';
 import { finesPage } from './views/fines.js';
 import { teamHeadPage } from './views/team-head.js';
 import { myTeamPage } from './views/my-team.js';
@@ -6351,6 +6360,15 @@ function buildAdminHome(req) {
       action: { type: 'link', label: 'Open games', href: '/admin/games' },
     });
   }
+  if (can('papawis')) {
+    const n = countPendingCourtReviews();
+    if (n) items.push({
+      key: `court-reviews:${n}`, cat: 'appr', tag: 'REV', rank: 57,
+      title: `${homePlural(n, 'court review')} waiting`, due: 'not on the court page yet',
+      text: 'Written reviews show on a court page once you approve them. Stars already count.',
+      action: { type: 'link', label: 'Open courts', href: '/admin/papawis/courts' },
+    });
+  }
   if (can('community')) {
     const cases = getFineCasesByStatus('open');
     if (cases.length) items.push({
@@ -7899,7 +7917,10 @@ app.get('/admin/site', requireAuth, (req, res) => {
       sub: `Shown next to the date in the homepage countdown (games don't store a time). 24-hour, Manila time. Empty = the picks cut-off (${escHtml(getSetting('picks_close_time', PICKS_CLOSE_DEFAULT))}).` },
   ], { title: 'Playoffs' }) + settingsPanel([
     { type: 'toggle', key: 'comments_enabled', value: flag('comments_enabled'), label: 'Comments & reactions', sub: 'Players comment and react across the site (game pages, posts, live updates). Admins can delete inline either way.' },
-    { type: 'toggle', key: 'peer_ratings_enabled', value: flag('peer_ratings_enabled'), label: 'Player ratings', sub: `Roast-style player-to-player ratings on ${codeTag('/players/:id')}. Anonymous ratings stay masked except to the super admin.` },
+    { type: 'toggle', key: 'peer_ratings_enabled', value: flag('peer_ratings_enabled'), label: 'Player ratings (old, roast-style)', sub: `Roast-style player-to-player ratings on ${codeTag('/players/:id')}. Replaced by "Rate your game" when that is on; old ratings stay in ${codeTag('/admin/ratings')}.` },
+    { type: 'toggle', key: 'game_ratings_enabled', value: flag('game_ratings_enabled'), label: 'Rate your game', sub: `After each Papawis run and league game, players rate the court and the players they played with (${codeTag('/rate/…')}): "Would you play with them again?" plus tags. Bell for everyone who played. See ${codeTag('/admin/ratings')}.` },
+    { type: 'toggle', key: 'game_rate_email_enabled', value: flag('game_rate_email_enabled', '1'), label: 'Rate your game email', sub: 'One email per game with one-tap links (inside the Papawis tab email for players who owe). Players can unsubscribe from just this email.' },
+    { type: 'text', key: 'game_rate_court_reask_days', value: getSetting('game_rate_court_reask_days', '30'), placeholder: '30', label: 'Ask about a court again after (days)', sub: 'A player who rated a court is not asked about it again until this many days later.' },
     { type: 'toggle', key: 'reg_open', value: flag('reg_open'), label: 'Join banner', sub: 'The "Join the community" registration band for logged-out visitors: on the homepage and as a small banner on other pages.' },
   ], { title: 'Site-wide' }) + settingsPanel([
     { type: 'toggle', key: 'mega_menu_enabled', value: flag('mega_menu_enabled'), label: 'Mega menu', sub: 'Desktop header: Stats and Awards open as full-width panels instead of small dropdowns. Phones always use the side drawer.' },
@@ -7922,7 +7943,8 @@ app.get('/admin/site', requireAuth, (req, res) => {
         { label: 'MVP podium ballot', on: mvpPodiumEnabled(), where: 'MVP podium', href: '/admin/awards/podium' },
         { label: 'Player reports', on: flag('player_reports_enabled'), where: 'Fines & conduct', href: '/admin/fines' },
         { label: 'Comments & reactions', on: flag('comments_enabled'), where: 'this page', href: '/admin/site' },
-        { label: 'Player ratings', on: flag('peer_ratings_enabled'), where: 'this page', href: '/admin/site' },
+        { label: 'Player ratings (old)', on: flag('peer_ratings_enabled'), where: 'this page', href: '/admin/site' },
+        { label: 'Rate your game', on: flag('game_ratings_enabled'), where: 'this page', href: '/admin/site' },
         { label: 'Join banner', on: flag('reg_open'), where: 'this page', href: '/admin/site' },
       ],
     }),
@@ -7954,6 +7976,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   }
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
+    'game_ratings_enabled', 'game_rate_email_enabled',
     'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled', 'mvp_podium_enabled',
     'papawis_court_ratings_enabled', 'papawis_court_votes_enabled', 'papawis_court_requests_enabled', 'papawis_court_partner_enabled',
     // Auto-nudges (lib/broadcast.js): one switch per feature page.
@@ -7969,6 +7992,11 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     if (staticAllowed.has(key) || articleKeyRe.test(key) || homeGalleryKeyRe.test(key)) setSetting(key, String(value));
     else if ((key === 'home_nextup_card_1' || key === 'home_nextup_card_2') && nextUpKeys.has(String(value))) setSetting(key, String(value));
     else if (key === 'picks_close_time' && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) setSetting(key, String(value));
+    else if (key === 'game_rate_court_reask_days') {
+      const n = Math.round(Number(value));
+      if (!(n >= 1 && n <= 365)) return res.status(400).json({ error: 'Use a number of days from 1 to 365' });
+      setSetting(key, String(n));
+    }
     else if (key === 'mvp_reveal_mode' && MVP_REVEAL_MODES.includes(String(value))) setSetting(key, String(value));
     else if (key === 'playoff_mode' && PLAYOFF_MODES.includes(String(value))) { setSetting(key, String(value)); headerInfoCache.at = 0; }
     else if (key === 'playoff_tip_time') {
@@ -9935,6 +9963,13 @@ app.delete('/admin/games/:id', requireAuth, (req, res) => {
 // court, lib/court-rate-ask.js). Runs on the final score, the box score import and publish;
 // waits until the game is published, has a score, a court and players.
 function askLeagueCourtRatings(gameId) {
+  // With game ratings on, the "Rate your game" ask (court + players) replaces the court-only
+  // one. It dedupes per game and player, so the several triggers (final, box import,
+  // publish) send it once; it waits until the game resolves (published, scored).
+  if (gameRatingsOn()) {
+    askToRateGame({ kind: 'league', ref: gameId }).catch(e => console.error('[game rate ask: league]', e.message));
+    return;
+  }
   try {
     const g = getGameById(gameId);
     if (!g || g.under_review || !g.court_id || !(Number(g.team_a_score) + Number(g.team_b_score) > 0)) return;
@@ -17268,6 +17303,12 @@ app.get('/players/:ref', async (req, res) => {
       papawisProbation: isOwnProfile && !!player.papawis_probation && !(minDeposit != null && papawisBalance <= -minDeposit),
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
+      gameRatings: gameRatingsOn() ? (() => {
+        // "Rate player": the latest game you both played whose rating window may still be open.
+        const shared = viewerPlayerId && viewerPlayerId !== resolved.id ? getLatestSharedGameAsk(viewerPlayerId, resolved.id, Date.now() - (RATE_WINDOW_DAYS + 1) * 86400000) : null;
+        const open = shared ? resolveRateGame(shared.kind, shared.ref) : null;
+        return { summary: summarizeConduct(getGameRatingsForRatee(resolved.id)), rateHref: open?.open ? `/rate/${open.kind}/${encodeURIComponent(open.ref)}?p=${encodeURIComponent(resolved.id)}` : '' };
+      })() : null,
       viewerExistingRating, viewerCooldownActive: viewerCooldownUntil > Date.now(), viewerCooldownUntil,
       canReport, reportCategories: canReport ? getReportableFineCategories() : [],
       reportOtherCategoryId: canReport ? (getOtherFineCategory()?.id || '') : '',
@@ -19398,7 +19439,7 @@ app.post('/courts/:slug/rate', express.json(), (req, res) => {
   const okTags = new Set([...RATING_TAGS_GOOD, ...RATING_TAGS_BAD].map(([k]) => k));
   const tags = [...new Set([].concat(b.tags || []).map(String).filter(t => okTags.has(t)))];
   const body = String(b.body || '').replace(/\s+/g, ' ').trim().slice(0, 600);
-  const { bodyStatus } = saveCourtRating({ courtId: court.id, playerId: viewerId, stars, aspects, tags, body });
+  const { bodyStatus } = saveCourtRating({ courtId: court.id, playerId: viewerId, stars, aspects, tags, body, isAnonymous: !!b.anon });
   res.json({ ok: true, message: bodyStatus === 'pending' ? 'Thanks! Your stars count now. Your review shows once it’s checked.' : 'Thanks for rating this court.' });
 });
 app.post('/courts/:slug/ratings/:id/helpful', express.json(), (req, res) => {
@@ -19409,6 +19450,119 @@ app.post('/courts/:slug/ratings/:id/helpful', express.json(), (req, res) => {
   if (!rating || rating.hidden) return res.status(404).json({ error: 'Not found.' });
   if (rating.player_id === viewerId) return res.status(400).json({ error: 'That’s your own review.' });
   res.json({ ok: true, ...toggleCourtRatingHelpful(rating.id, viewerId) });
+});
+
+// ── Rate your game (views/rate-game.js, lib/game-rate-ask.js) ────────────────────────────
+// Who's rating: the logged-in player, else the player a signed email link vouched for —
+// that grant lives in the session and covers only that one game (no general login).
+const rateGrantKey = (kind, ref) => `${kind}:${ref}`;
+function rateViewer(req, game) {
+  const loggedIn = req.session?.playerPlayerId || null;
+  if (loggedIn) return { viewerId: loggedIn, viaLink: false };
+  const granted = req.session?.rateGrants?.[rateGrantKey(game.kind, game.ref)] || null;
+  return { viewerId: granted, viaLink: !!granted };
+}
+function rateGameOr404(req, res) {
+  if (!gameRatingsOn() || !RATE_KINDS.includes(req.params.kind)) { res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' })); return null; }
+  const game = resolveRateGame(req.params.kind, req.params.ref);
+  if (!game) { res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">That game isn’t open for ratings.</p></div>' })); return null; }
+  return game;
+}
+app.get('/rate/not-me', (req, res) => {
+  if (req.session) delete req.session.rateGrants;
+  const next = String(req.query.next || '/');
+  res.redirect(`/login?next=${encodeURIComponent(next.startsWith('/') && !next.startsWith('//') ? next : '/')}`);
+});
+app.get('/rate/:kind/:ref', (req, res) => {
+  const game = rateGameOr404(req, res); if (!game) return;
+  // A signed email link: remember it for this game (unless someone else is logged in here).
+  const linkPlayer = String(req.query.u || '');
+  const linkOk = linkPlayer && verifyRateToken(game.kind, game.ref, linkPlayer, req.query.t) && game.playerIds.includes(linkPlayer)
+    && !getPlayerById(linkPlayer)?.rate_links_off && !req.session?.playerPlayerId;
+  if (linkOk && game.open) req.session.rateGrants = { ...(req.session.rateGrants || {}), [rateGrantKey(game.kind, game.ref)]: linkPlayer };
+  // A late tap on an old email: say it's closed rather than asking them to log in.
+  if (linkOk && !game.open) {
+    return res.send(renderPage(req, { title: 'Rate your game', currentPath: '/', metaTags: '<meta name="robots" content="noindex, nofollow">', body: rateGamePage({ game, players: [], court: null, mine: {}, viaLink: false, viewerName: '', closed: true }) }));
+  }
+  const { viewerId, viaLink } = rateViewer(req, game);
+  if (!viewerId) return res.redirect(`/login?next=${encodeURIComponent(`/rate/${game.kind}/${encodeURIComponent(game.ref)}${req.query.stars ? `?stars=${encodeURIComponent(req.query.stars)}` : ''}`)}`);
+  const page = body => res.send(renderPage(req, { title: 'Rate your game', currentPath: game.kind === 'league' ? '/games' : '/papawis', metaTags: '<meta name="robots" content="noindex, nofollow">', body }));
+  if (!game.playerIds.includes(viewerId)) {
+    return res.status(403).send(renderPage(req, { title: 'Rate your game', currentPath: '/', body: '<div class="container"><div class="page-content"><div class="card card--lg" style="padding:24px">Only players who played this game can rate it.</div></div></div>' }));
+  }
+  const teamName = Object.fromEntries(getAllTeams().map(t => [t.id, t.name]));
+  const players = game.playerIds.filter(id => id !== viewerId).map(id => getPlayerById(id)).filter(Boolean)
+    .map(p => ({ id: p.id, name: p.name, team_name: teamName[p.team_id] || '' }));
+  let court = null;
+  if (game.court) {
+    const check = getGameCourtCheck(game.kind, game.ref, viewerId);
+    court = { name: game.courtName, slug: game.court.slug, myRating: getMyCourtRating(game.court.id, viewerId), check, done: !!check };
+  }
+  const stars = Math.round(Number(req.query.stars) || 0);
+  const preId = String(req.query.p || ''), preAnswer = String(req.query.a || '');
+  page(rateGamePage({
+    game, players, court, mine: getMyGameRatings(game.kind, game.ref, viewerId),
+    preStars: stars >= 1 && stars <= 5 ? stars : 0,
+    prePlayer: preId && game.playerIds.includes(preId) ? { id: preId, answer: RATE_ANSWER_KEYS.includes(preAnswer) ? preAnswer : '' } : null,
+    viaLink, viewerName: getPlayerById(viewerId)?.name || '', closed: !game.open,
+  }));
+});
+app.post('/rate/:kind/:ref', express.json(), (req, res) => {
+  if (!gameRatingsOn() || !RATE_KINDS.includes(req.params.kind)) return res.status(404).json({ error: 'Not found.' });
+  const game = resolveRateGame(req.params.kind, req.params.ref);
+  if (!game) return res.status(404).json({ error: 'That game isn’t open for ratings.' });
+  const { viewerId, viaLink } = rateViewer(req, game);
+  if (!viewerId) return res.status(401).json({ error: 'Log in to rate this game.' });
+  if (!game.playerIds.includes(viewerId)) return res.status(403).json({ error: 'Only players who played this game can rate it.' });
+  if (!game.open) return res.status(400).json({ error: 'Ratings for this game have closed.' });
+  const b = req.body || {};
+  // Check every player answer before writing anything.
+  const answers = [];
+  for (const x of Array.isArray(b.players) ? b.players : []) {
+    const id = String(x?.id || '');
+    if (!game.playerIds.includes(id) || id === viewerId) continue;
+    const clean = cleanRating(x);
+    if (clean.error) return res.status(400).json({ error: `${displayPlayerName(getPlayerById(id)?.name || '')}: ${clean.error}` });
+    answers.push({ id, ...clean });
+  }
+  let courtSaved = false, pending = false;
+  if (b.court && game.court) {
+    const stars = Math.round(Number(b.court.stars));
+    if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ error: 'Pick 1 to 5 stars for the court.' });
+    const prev = getMyCourtRating(game.court.id, viewerId);
+    const text = b.court.body === undefined ? (prev?.body || '') : String(b.court.body || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+    const { bodyStatus } = saveCourtRating({
+      courtId: game.court.id, playerId: viewerId, stars,
+      aspects: parseCourtJson(prev?.aspects_json, {}), tags: parseCourtJson(prev?.tags_json, []),
+      body: text, isAnonymous: b.court.anon === undefined ? undefined : !!b.court.anon,
+    });
+    recordGameCourtCheck({ kind: game.kind, ref: game.ref, playerId: viewerId, courtId: game.court.id, stars });
+    courtSaved = true; pending = bodyStatus === 'pending';
+  }
+  for (const a of answers) upsertGameRating({ kind: game.kind, ref: game.ref, raterId: viewerId, rateeId: a.id, answer: a.answer, tags: a.tags, note: a.note, via: viaLink ? 'email' : 'site' });
+  const left = game.playerIds.length - 1 - Object.keys(getMyGameRatings(game.kind, game.ref, viewerId)).length;
+  const parts = [courtSaved ? 'Court rated' : '', answers.length ? `${answers.length} player${answers.length === 1 ? '' : 's'} rated` : ''].filter(Boolean).join(', ');
+  res.json({ ok: true, left, message: `Saved. ${parts || 'Thanks'}.${pending ? ' Your review shows once it’s checked.' : ''}${left > 0 ? ` ${left} more to go if you like.` : ' Thanks for rating!'}` });
+});
+app.get('/emails/rating-unsubscribe', (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyRatingUnsubscribe(regId, token)) {
+    return res.status(400).send(leagueUnsubPage(req, { title: 'Link expired', bodyHtml: '<h1 class="papawis-unsub__title">This unsubscribe link isn\'t valid</h1><p class="papawis-unsub__text">Message a league admin and we\'ll take you off the list.</p>' }));
+  }
+  res.send(leagueUnsubPage(req, {
+    title: 'Unsubscribe',
+    bodyHtml: `<h1 class="papawis-unsub__title">Stop "Rate your game" emails?</h1>
+      <p class="papawis-unsub__text">You won't get the rating email after games. Your Papawis tab and reminder emails keep coming, and the bell on the site still lets you rate.</p>
+      <form method="post" action="/emails/rating-unsubscribe?r=${encodeURIComponent(regId)}&amp;t=${encodeURIComponent(token)}">
+        <button type="submit" class="pw-btn pw-btn--primary">Unsubscribe</button>
+      </form>`,
+  }));
+});
+app.post('/emails/rating-unsubscribe', express.urlencoded({ extended: false }), (req, res) => {
+  const regId = String(req.query.r || ''), token = String(req.query.t || '');
+  if (!verifyRatingUnsubscribe(regId, token)) return res.status(400).send('Invalid link');
+  setRatingEmailOptout(regId, true);
+  res.send(leagueUnsubPage(req, { title: 'Unsubscribed', bodyHtml: '<h1 class="papawis-unsub__title">You\'re unsubscribed</h1><p class="papawis-unsub__text">No more rating emails. You can still rate from the bell on the site.</p>' }));
 });
 
 // Vote for a run in an open time. At the threshold the admins get an email (once); when an
@@ -21201,6 +21355,9 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
     sendPapawisCompletionEmails(req.params.id, price).then(({ sent, errors }) => {
       if (errors.length) console.error(`[papawis] completion emails: ${sent} sent, ${errors.length} failed`, errors);
     }).catch(e => console.error('[papawis] completion email send failed:', e.message));
+  } else if (gameRatingsOn()) {
+    // No tab emails, but the "Rate your game" ask still goes (it has its own switches).
+    askToRateGame({ kind: 'papawis', ref: req.params.id }).catch(e => console.error('[game rate ask: papawis]', e.message));
   }
 });
 
@@ -22147,15 +22304,66 @@ app.post('/admin/team-heads/:id/revoke', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/admin/ratings', requireSuperAdmin, (req, res) => {
-  const seasons = getPeerRatingSeasons();
-  const season  = req.query.season || seasons[0] || getPortalCurrentSeason() || '';
-  const ratings = season ? getAllPeerRatings(season) : [];
+// With "Rate your game" on: the conduct ratings (views/admin/game-ratings.js), open to every
+// admin, rater names for the super admin only. Off: the old roast-style list (super admin).
+app.get('/admin/ratings', requireAuth, (req, res) => {
+  const isSuper = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  const legacy = () => {
+    const seasons = getPeerRatingSeasons();
+    const season  = req.query.season || seasons[0] || getPortalCurrentSeason() || '';
+    return adminRatingsBody({ season, seasons, ratings: season ? getAllPeerRatings(season) : [] });
+  };
+  if (!gameRatingsOn()) {
+    if (!isSuper) return requireSuperAdmin(req, res, () => {});
+    return res.send(renderAdminPage(req, { title: 'Community Ratings', currentPath: '/admin/ratings', body: legacy() }));
+  }
+  const tab = ['players', 'all', 'games', 'raters', 'legacy'].includes(req.query.tab) && (req.query.tab !== 'legacy' || isSuper) ? req.query.tab : 'watch';
+  const all = getAllGameRatings();
+  const live = all.filter(r => !r.ignored);
+  const byRatee = {};
+  for (const r of live) (byRatee[r.ratee_player_id] ??= []).push(r);
+  const teamColor = Object.fromEntries(getAllTeams().map(t => [t.id, t.color]));
+  const finesBy = id => {
+    const cases = getFineCasesForPlayer(id);
+    return { approved: cases.filter(c => c.status === 'approved').length, open: cases.filter(c => c.status === 'open' || c.status === 'pending_admin').length };
+  };
+  const players = Object.entries(byRatee).map(([id, rows]) => {
+    const p = getPlayerById(id);
+    return { id, name: p?.name || rows[0].ratee_name, color: teamColor[p?.team_id] || '', linksOff: !!p?.rate_links_off, s: summarizeConduct(rows) };
+  }).sort((a, b) => b.s.no - a.s.no || b.s.total - a.s.total);
+  const watch = players.filter(p => p.s.watch).map(p => ({ ...p, fines: finesBy(p.id) }));
+  const gameLabels = {};
+  const label = (kind, ref) => (gameLabels[`${kind}:${ref}`] ??= resolveRateGame(kind, ref)?.title || ref);
+  const rounds = getGameRateRounds();
+  rounds.forEach(r => label(r.kind, r.ref));
+  const playerFilter = String(req.query.player || ''), raterFilter = isSuper ? String(req.query.rater || '') : '';
+  const ratings = all.filter(r => (!playerFilter || r.ratee_player_id === playerFilter) && (!raterFilter || r.rater_player_id === raterFilter));
+  if (tab === 'all') ratings.slice(0, 500).forEach(r => label(r.kind, r.ref));
   res.send(renderAdminPage(req, {
-    title: 'Community Ratings',
-    currentPath: '/admin/ratings',
-    body: adminRatingsBody({ season, seasons, ratings }),
+    title: 'Player ratings', currentPath: '/admin/ratings',
+    body: adminGameRatingsBody({
+      tab, isSuper, watch, players, ratings, rounds, gameLabels, playerFilter,
+      flags: isSuper ? raterFlags(live) : [], counts: { ratings: all.length },
+      legacyHtml: tab === 'legacy' ? legacy() : '',
+    }),
   }));
+});
+app.post('/admin/ratings/:id/ignore', requireAuth, express.json(), (req, res) => {
+  if (!getGameRating(req.params.id)) return res.status(404).json({ error: 'Rating not found.' });
+  setGameRatingIgnored(req.params.id, !!req.body?.ignored);
+  res.json({ ok: true, message: req.body?.ignored ? 'Ignored: it no longer counts.' : 'Counting it again.' });
+});
+app.post('/admin/ratings/:id/delete', requireSuperAdmin, express.json(), (req, res) => {
+  if (!getGameRating(req.params.id)) return res.status(404).json({ error: 'Rating not found.' });
+  deleteGameRating(req.params.id);
+  res.json({ ok: true, message: 'Rating deleted.' });
+});
+// One-tap email links off for a player (e.g. their email is being misused): they log in to rate.
+app.post('/admin/ratings/players/:id/links', requireAuth, express.json(), (req, res) => {
+  const p = getPlayerById(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Player not found.' });
+  setPlayerRateLinksOff(p.id, !!req.body?.off);
+  res.json({ ok: true, message: req.body?.off ? `One-tap links off for ${displayPlayerName(p.name)}.` : `One-tap links on for ${displayPlayerName(p.name)}.` });
 });
 
 app.get('/admin/fines', requireAuth, (req, res) => {
