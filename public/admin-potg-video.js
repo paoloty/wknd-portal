@@ -2,9 +2,11 @@
 //   • 6 photo slots per player: pick (several at once fills the next empty slots), the photo is
 //     shrunk here, uploaded (/admin/media/potg-photo: graded + auto-framed on the server) and
 //     shown framed exactly like the video's last frame of that photo.
-//   • drag to move, slider (or wheel over the photo) to zoom, ←/→ to reorder, Auto to reset.
+//   • drag (mouse or finger) to move, mouse wheel or pinch to zoom, ←/→ to reorder, Auto to reset.
 //   • the framing maths is frameOf() in assets/media/potg/template.html: keep them in sync.
-//   • Render: posts everything, the server queues one job per player, then off to Processing.
+//   • Render preview: posts the players that have photos (an empty one is skipped), the server
+//     queues a low-res preview per player, then off to Processing (approve there for hi-res).
+//   • Opened from a preview's Edit (?from=), it starts prefilled from that preview.
 (function () {
   'use strict';
   var page = document.querySelector('[data-pv-page]');
@@ -36,16 +38,18 @@
     var f = frameOf(ph.w, ph.h, ph.fx, ph.fy, ph.zoom, KB);
     img.style.width = (f.w * k) + 'px'; img.style.height = (f.h * k) + 'px';
     img.style.left = (f.x * k) + 'px'; img.style.top = (f.y * k) + 'px';
-    slot.querySelector('[data-pv-zoom]').value = ph.zoom;
   }
   function drawAll() { players.forEach(function (P) { P.photos.forEach(function (_, i) { draw(P, i); }); }); status(); }
 
+  // A player with no photos at all is skipped (co-POTG: re-do just one); a started one must have all 6.
+  function used(P) { return P.photos.some(Boolean); }
   function status() {
-    var missing = players.reduce(function (n, P) { return n + P.photos.filter(function (p) { return !p; }).length; }, 0);
-    var noStats = players.some(function (P) { return !P.el.querySelectorAll('[data-pv-stat]:checked').length; });
+    var started = players.filter(used);
+    var missing = started.length ? started.reduce(function (n, P) { return n + P.photos.filter(function (p) { return !p; }).length; }, 0) : COUNT;
+    var noStats = started.some(function (P) { return !P.el.querySelectorAll('[data-pv-stat]:checked').length; });
     var btn = page.querySelector('[data-pv-save]');
     btn.disabled = missing > 0 || noStats || busy > 0;
-    page.querySelector('[data-pv-status]').textContent = busy > 0 ? 'Uploading…' : missing > 0 ? (missing + ' photo' + (missing === 1 ? '' : 's') + ' to go.') : noStats ? 'Pick at least one number for each player.' : 'Ready to render.';
+    page.querySelector('[data-pv-status]').textContent = busy > 0 ? 'Uploading…' : missing > 0 ? (missing + ' photo' + (missing === 1 ? '' : 's') + ' to go.') : noStats ? 'Pick at least one number for each player.' : (started.length < players.length ? 'Ready: renders a preview for ' + started.length + ' of ' + players.length + ' players.' : 'Ready to render a preview.');
   }
 
   // ── upload ──
@@ -95,31 +99,44 @@
           var t = P.photos[i]; P.photos[i] = P.photos[j]; P.photos[j] = t; draw(P, i); draw(P, j);
         });
       });
-      slot.querySelector('[data-pv-zoom]').addEventListener('input', function (e) { var p = P.photos[i]; if (p) { p.zoom = +e.target.value; draw(P, i); } });
-      // drag to move
-      var fr = slot.querySelector('[data-pv-frame]'), drag = null;
-      fr.addEventListener('pointerdown', function (e) {
-        var p = P.photos[i]; if (!p || e.target.closest('label')) return;
+      // Gestures: one finger / mouse drag moves, two fingers pinch-zoom (and move with their
+      // midpoint), mouse wheel zooms. All on pointer events, so mouse, touch and pen behave alike.
+      var fr = slot.querySelector('[data-pv-frame]'), pts = {}, g = null;
+      function settle(p) { var f = frameOf(p.w, p.h, p.fx, p.fy, p.zoom, KB); p.fx = (TX - f.x) / f.w; p.fy = (TY - f.y) / f.h; }
+      function begin() {
+        var p = P.photos[i]; if (!p) return;
+        settle(p); // start from where the photo really is (after clamping), so it never sticks
+        var ids = Object.keys(pts), a = pts[ids[0]], b = pts[ids[1]];
+        var mx = b ? (a.x + b.x) / 2 : a.x, my = b ? (a.y + b.y) / 2 : a.y;
         var f = frameOf(p.w, p.h, p.fx, p.fy, p.zoom, KB);
-        // start from where the photo really is (after clamping), so it never "sticks"
-        p.fx = (TX - f.x) / f.w; p.fy = (TY - f.y) / f.h;
-        drag = { x: e.clientX, y: e.clientY, fx: p.fx, fy: p.fy, w: f.w, h: f.h, k: fr.clientWidth / FW };
-        fr.setPointerCapture(e.pointerId); fr.classList.add('is-drag'); e.preventDefault();
+        g = { mx: mx, my: my, fx: p.fx, fy: p.fy, w: f.w, h: f.h, zoom: p.zoom, dist: b ? Math.hypot(a.x - b.x, a.y - b.y) : 0, k: fr.clientWidth / FW };
+      }
+      fr.addEventListener('pointerdown', function (e) {
+        if (!P.photos[i] || e.target.closest('label')) return;
+        pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+        fr.setPointerCapture(e.pointerId); fr.classList.add('is-drag'); begin(); e.preventDefault();
       });
       fr.addEventListener('pointermove', function (e) {
-        var p = P.photos[i]; if (!drag || !p) return;
-        p.fx = drag.fx - (e.clientX - drag.x) / drag.k / drag.w;
-        p.fy = drag.fy - (e.clientY - drag.y) / drag.k / drag.h;
+        var p = P.photos[i]; if (!g || !p || !pts[e.pointerId]) return;
+        pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+        var ids = Object.keys(pts), a = pts[ids[0]], b = pts[ids[1]];
+        var mx = b ? (a.x + b.x) / 2 : a.x, my = b ? (a.y + b.y) / 2 : a.y;
+        if (b && g.dist) p.zoom = Math.min(3, Math.max(1, g.zoom * Math.hypot(a.x - b.x, a.y - b.y) / g.dist));
+        var sc = p.zoom / g.zoom; // keep the move in step with the size the photo is now
+        p.fx = g.fx - (mx - g.mx) / g.k / (g.w * sc);
+        p.fy = g.fy - (my - g.my) / g.k / (g.h * sc);
         draw(P, i);
       });
-      function end() {
-        var p = P.photos[i]; if (!drag) return; drag = null; fr.classList.remove('is-drag');
-        if (p) { var f = frameOf(p.w, p.h, p.fx, p.fy, p.zoom, KB); p.fx = (TX - f.x) / f.w; p.fy = (TY - f.y) / f.h; }
+      function end(e) {
+        delete pts[e.pointerId];
+        var p = P.photos[i];
+        if (p) settle(p);
+        if (Object.keys(pts).length) begin(); else { g = null; fr.classList.remove('is-drag'); }
       }
       fr.addEventListener('pointerup', end); fr.addEventListener('pointercancel', end);
       fr.addEventListener('wheel', function (e) {
         var p = P.photos[i]; if (!p) return; e.preventDefault();
-        p.zoom = Math.min(2.5, Math.max(1, p.zoom - e.deltaY * 0.001)); draw(P, i);
+        p.zoom = Math.min(3, Math.max(1, p.zoom * Math.exp(-e.deltaY * 0.0015))); draw(P, i); settle(p);
       }, { passive: false });
     });
     // stat picks: max 3
@@ -135,7 +152,7 @@
   // ── render ──
   page.querySelector('[data-pv-save]').addEventListener('click', function (e) {
     var btn = e.currentTarget; btn.disabled = true;
-    var body = { players: players.map(function (P) {
+    var body = { players: players.filter(used).map(function (P) {
       return {
         playerId: P.id,
         number: P.el.querySelector('[data-pv-number]').value,
@@ -150,6 +167,21 @@
       .catch(function (err) { ui().toast(err.message, { tone: 'error' }); btn.disabled = false; });
   });
 
+  // Edit from the Processing page: start from that preview's photos, framing, stats and chip.
+  var pre = document.querySelector('[data-pv-prefill]');
+  if (pre) {
+    try {
+      var d = JSON.parse(pre.textContent), P = players.filter(function (x) { return x.id === d.playerId; })[0];
+      if (P) {
+        (d.photos || []).slice(0, COUNT).forEach(function (ph, i) { P.photos[i] = { id: ph.id, w: ph.w, h: ph.h, fx: ph.fx, fy: ph.fy, ax: ph.fx, ay: ph.fy, zoom: ph.zoom || 1, url: ph.url }; });
+        if (d.number != null) P.el.querySelector('[data-pv-number]').value = d.number;
+        P.el.querySelector('[data-pv-chip]').value = d.chip || '';
+        if (d.statKeys && d.statKeys.length) [].slice.call(P.el.querySelectorAll('[data-pv-stat]')).forEach(function (cb) {
+          cb.checked = d.statKeys.indexOf(cb.value) !== -1; cb.closest('.pv-stat').classList.toggle('is-on', cb.checked);
+        });
+      }
+    } catch (e) { /* fall back to an empty editor */ }
+  }
   window.addEventListener('resize', drawAll);
   drawAll();
 })();

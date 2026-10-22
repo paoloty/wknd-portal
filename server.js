@@ -256,8 +256,8 @@ import {
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
 import { SHARE_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
-import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
-import { potgVideoContext, savePotgPhoto, queuePotgVideos, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
+import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, requestFinal, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
+import { potgVideoContext, savePotgPhoto, queuePotgVideos, potgPrefill, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
 import { adminPotgVideoBody, adminMediaBody, mediaJobRow } from './views/admin/potg-video.js';
 import { adminMvpPodiumBody } from './views/admin/mvp-podium.js';
 import { adminAwardsOverviewBody, adminRacesBody } from './views/admin/awards-hub.js';
@@ -10878,12 +10878,15 @@ app.post('/admin/games/:id/cover', requireAuth, jsonLarge, async (req, res) => {
 // in the request. /admin/media lists the jobs and serves the finished files.
 const fmtJobWhen = ms => new Date(ms).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-app.get('/admin/games/:id/potg-video', requireAuth, (req, res) => {
+app.get('/admin/games/:id/potg-video', requireAuth, async (req, res) => {
   const ctx = potgVideoContext(req.params.id);
+  // ?from=<jobId>: Edit on a preview, prefilled with that job's photos and settings
+  const fromJob = req.query.from ? getMediaJob(String(req.query.from)) : null;
+  const prefill = fromJob && fromJob.game_id === req.params.id ? await potgPrefill(fromJob).catch(() => null) : null;
   if (!ctx) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/games', body: '<p style="color:var(--text-muted);padding:40px">Game not found.</p>' }));
   res.send(renderAdminPage(req, {
     title: `POTG video · ${ctx.game.team_a_name} vs ${ctx.game.team_b_name}`, currentPath: '/admin/games',
-    body: adminPotgVideoBody({ game: ctx.game, ctx, cats: POTG_STAT_CATS, photoCount: POTG_PHOTO_COUNT }),
+    body: adminPotgVideoBody({ game: ctx.game, ctx, cats: POTG_STAT_CATS, photoCount: POTG_PHOTO_COUNT, prefill }),
   }));
 });
 
@@ -10924,9 +10927,24 @@ app.get('/admin/media.json', requireAuth, (req, res) => {
   res.json({ html: jobs.map(j => mediaJobRow(j, OUTPUT_FILES, fmtJobWhen, j.status === 'done' ? mediaExpiresAt(j) : null)).join('') || '<p class="aui-muted">Nothing processing.</p>' });
 });
 
+// Plays a finished video on the Processing page (inline, seekable); previews are view-only.
+app.get('/admin/media/:id/view', requireAuth, (req, res) => {
+  const job = getMediaJob(req.params.id);
+  const p = job && job.status === 'done' && outputPath(job.id, 'potg.mp4');
+  if (!p) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, no-cache');
+  res.sendFile(p);
+});
+
+app.post('/admin/media/:id/final', requireAuth, (req, res) => {
+  if (!requestFinal(req.params.id)) return res.status(400).json({ error: 'Only a finished preview can be approved.' });
+  res.json({ ok: true });
+});
+
+// Downloads: hi-res finals only.
 app.get('/admin/media/:id/:file', requireAuth, (req, res) => {
   const job = getMediaJob(req.params.id);
-  const p = job && outputPath(job.id, req.params.file);
+  const p = job && job.quality === 'final' && job.status === 'done' && outputPath(job.id, req.params.file);
   if (!p) return res.status(404).end();
   const base = String(job.title || 'video').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'video';
   res.download(p, `${base}-${req.params.file}`);

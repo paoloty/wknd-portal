@@ -4,11 +4,11 @@
 // and can be run by hand the same way to re-render a job.
 //
 // 1. Opens assets/media/potg/template.html in headless Chrome, passes it the job's data and
-//    photos, then captures every frame at 1080x1350 / 24 fps by calling setT(t) (frame-exact,
+//    photos, then captures every frame at 24 fps (preview 544x680, final 1080x1350) by calling setT(t) (frame-exact,
 //    never real-time) and pipes the frames into ffmpeg.
 // 2. Builds the sound from the template's own hit list (window.SFX): a real ball bounce at each
 //    hit, plus a low court-ambience bed under the photos (window.AMBIENCE).
-// 3. Writes data/media/jobs/<id>/out/: potg.mp4, potg-no-audio.mp4, sfx.wav, ambience.wav.
+// 3. Writes data/media/jobs/<id>/out/potg.mp4 (video with sound) and cleans up the rest.
 //
 // Needs Chrome/Chromium (CHROME_PATH, or a usual install path) and ffmpeg (FFMPEG_PATH or PATH).
 import fs from 'fs';
@@ -55,6 +55,9 @@ async function main() {
   const job = getMediaJob(id);
   if (!job) throw new Error(`No media job ${id}`);
   const cfg = job.config;
+  // preview: 544x680 (even sizes for H.264), lighter encode; final: 1080x1350
+  const preview = job.quality === 'preview';
+  const scale = preview ? 544 / 1080 : 1;
   const dir = jobDir(id), out = path.join(dir, 'out'), tmp = path.join(dir, 'tmp');
   fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(tmp, { recursive: true });
   const stage = (s, progress) => updateMediaJob(id, progress == null ? { stage: s } : { stage: s, progress });
@@ -74,20 +77,20 @@ async function main() {
   const video = path.join(tmp, 'video.mp4');
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: 1080, height: 1350, deviceScaleFactor: 1 });
+    await page.setViewport({ width: 1080, height: 1350, deviceScaleFactor: scale });
     await page.goto(pathToFileURL(TEMPLATE).href, { waitUntil: 'load' });
     await page.evaluate(d => window.build(d), data);
     await page.waitForFunction('window.READY === true', { timeout: 60000 });
     ({ tl, sfx, amb } = await page.evaluate(() => ({ tl: window.TIMELINE, sfx: window.SFX, amb: window.AMBIENCE })));
     const N = Math.round(tl.DUR * FPS);
-    stage('Rendering frames', 0.02);
-    await run(['-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-', '-c:v', 'libx264', '-preset', 'medium', '-crf', '16',
+    stage(preview ? 'Rendering preview' : 'Rendering hi-res', 0.02);
+    await run(['-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-', '-c:v', 'libx264', '-preset', preview ? 'veryfast' : 'medium', '-crf', preview ? '24' : '16',
       '-pix_fmt', 'yuv420p', '-movflags', '+faststart', video], async stdin => {
       for (let k = 0; k < N; k++) {
         await page.evaluate(t => window.setT(t), k / FPS);
-        const buf = await page.screenshot({ type: 'jpeg', quality: 92 });
+        const buf = await page.screenshot({ type: 'jpeg', quality: preview ? 85 : 92 });
         if (!stdin.write(buf)) await new Promise(r => stdin.once('drain', r));
-        if (k % 24 === 0) stage(`Rendering frames ${k}/${N}`, 0.02 + 0.85 * k / N);
+        if (k % 24 === 0) stage(`${preview ? 'Rendering preview' : 'Rendering hi-res'} ${k}/${N}`, 0.02 + 0.85 * k / N);
       }
       stdin.end();
     });
@@ -99,7 +102,7 @@ async function main() {
   stage('Mixing sound', 0.9);
   const dur = tl.DUR.toFixed(3);
   const bounces = [1, 2, 3, 4].map(i => path.join(SFX_DIR, `bounce${i}.wav`));
-  const sfxWav = path.join(out, 'sfx.wav'), ambWav = path.join(out, 'ambience.wav');
+  const sfxWav = path.join(tmp, 'sfx.wav'), ambWav = path.join(tmp, 'ambience.wav');
   const inputs = [], parts = [];
   sfx.forEach((h, i) => {
     inputs.push('-i', bounces[i % bounces.length]);
@@ -116,8 +119,7 @@ async function main() {
 
   stage('Packaging', 0.96);
   await run(['-i', video, '-i', sfxWav, '-i', ambWav, '-filter_complex', '[1:a][2:a]amix=inputs=2:normalize=0,alimiter=limit=0.89[a]',
-    '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', path.join(out, 'potg.mp4')]);
-  fs.copyFileSync(video, path.join(out, 'potg-no-audio.mp4'));
+    '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', preview ? '128k' : '256k', '-shortest', '-movflags', '+faststart', path.join(out, 'potg.mp4')]);
   fs.rmSync(tmp, { recursive: true, force: true });
   updateMediaJob(id, { status: 'done', progress: 1, stage: '', finished_at: Date.now() });
 }

@@ -3137,3 +3137,5 @@ select.aui-input { padding-left: 9px; }
 .mj-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mj-actions { display: flex; gap: 6px; margin-top: 8px; }
 .pv-empty[hidden], .pv-busy[hidden], .pv-tools[hidden], .pv-frame img[hidden] { display: none; }
+.mj-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.mj-video { display: block; width: 100%; max-width: 300px; aspect-ratio: 4 / 5; margin-top: 10px; border-radius: 10px; background: #000; border: 1px solid var(--aui-line); }

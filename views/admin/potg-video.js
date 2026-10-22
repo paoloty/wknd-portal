@@ -1,7 +1,7 @@
 // Admin: "Make POTG video" for one game (/admin/games/:id/potg-video). One panel per POTG
 // (two for a co-POTG game): the stat line is filled from the box score, the admin picks which
-// 2-3 numbers to feature and the chip, adds exactly 6 photos and frames each one (drag to move,
-// slider to zoom). Saving queues one background render per player and goes to the Processing
+// 2-3 numbers to feature and the chip, adds exactly 6 photos and frames each one (drag or touch to
+// move, mouse wheel or pinch to zoom). Saving queues one background render per player and goes to the Processing
 // list (/admin/media). Browser side: public/admin-potg-video.js. Video look:
 // assets/media/potg/template.html.
 import { escHtml } from '../layout.js';
@@ -27,7 +27,6 @@ function playerPanel(p, { cats, photoCount }) {
         <div class="pv-busy" hidden data-pv-busy>Uploading…</div>
       </div>
       <div class="pv-tools" hidden data-pv-tools>
-        <input type="range" min="1" max="2.5" step="0.01" value="1" aria-label="Zoom" data-pv-zoom>
         <div class="pv-tools__row">
           <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-move="-1" title="Move earlier">←</button>
           <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-auto title="Back to the auto framing">Auto</button>
@@ -49,25 +48,28 @@ function playerPanel(p, { cats, photoCount }) {
       </div>
       <div class="aui-field__label pv-label">Big numbers <span class="aui-muted">· pick up to 3</span></div>
       <div class="pv-stats">${statBoxes}</div>
-      <div class="aui-field__label pv-label">Photos <span class="aui-muted">· exactly ${photoCount}, in order. Drag to move, slider to zoom. Keep him clear of the stats area.</span></div>
+      <div class="aui-field__label pv-label">Photos <span class="aui-muted">· exactly ${photoCount}, in order. Drag to move, scroll or pinch to zoom. Keep him clear of the stats area.</span></div>
       <div class="pv-slots">${slots}</div>
     </div>`,
   });
 }
 
-export function adminPotgVideoBody({ game, ctx, cats, photoCount, ver }) {
+export function adminPotgVideoBody({ game, ctx, cats, photoCount, prefill = null, ver }) {
   const title = `${game.team_a_name} vs ${game.team_b_name}`;
   const head = `${breadcrumb([{ label: 'Games', href: '/admin/games' }, { label: title, href: `/admin/games/${encodeURIComponent(game.id)}?tab=content` }, { label: 'POTG video' }])}
     <header class="aui-head"><div class="aui-head__text"><div class="aui-head__eyebrow">Player of the game video</div>
       <h1 class="aui-head__title">${escHtml(title)}</h1>
-      <p class="aui-head__sub">${ctx.co ? 'Co-POTG game: this makes two videos, one per player.' : 'One video, about 33 seconds, 1080×1350.'} It renders in the background; you'll find it under Processing.</p></div></header>`;
+      <p class="aui-head__sub">${prefill ? 'Editing a preview: change what you need and render a new preview.' : ctx.co ? 'Co-POTG game: this makes two videos, one per player (leave a player empty to skip him).' : 'One video, about 33 seconds.'} You get a quick preview first under Processing; approve it there for the hi-res download.</p></div></header>`;
   if (!ctx.players.length) return `<div class="aui-page">${head}${emptyState({ title: 'No player of the game yet', sub: 'Pick the POTG on the game’s Content tab first.' })}</div>`;
+  const shown = prefill ? ctx.players.filter(p => p.playerId === prefill.playerId) : ctx.players;
+  const json = prefill ? `<script type="application/json" data-pv-prefill>${JSON.stringify(prefill).replace(/</g, '\\u003c')}</script>` : '';
   return `<div class="aui-page pv-page" data-pv-page data-game="${attr(game.id)}" data-count="${photoCount}">
     ${head}
-    ${ctx.players.map(p => playerPanel(p, { cats, photoCount })).join('')}
+    ${shown.map(p => playerPanel(p, { cats, photoCount })).join('')}
+    ${json}
     <div class="pv-savebar">
-      <span class="aui-muted" data-pv-status>Add ${photoCount} photos${ctx.co ? ' for each player' : ''} to render.</span>
-      ${button(ctx.co ? 'Render both videos' : 'Render video', { kind: 'primary', attrs: 'disabled data-pv-save' })}
+      <span class="aui-muted" data-pv-status>Add ${photoCount} photos${shown.length > 1 ? ' for each player' : ''} to render.</span>
+      ${button('Render preview', { kind: 'primary', attrs: 'disabled data-pv-save' })}
     </div>
   </div>
   <script src="/admin-potg-video.js${ver ? `?v=${ver}` : ''}" defer></script>`;
@@ -77,27 +79,36 @@ export function adminPotgVideoBody({ game, ctx, cats, photoCount, ver }) {
 const STATUS = { queued: ['Queued', 'gray'], processing: ['Processing', 'amber'], done: ['Ready', 'green'], failed: ['Failed', 'red'], expired: ['Expired', 'gray'] };
 
 export function mediaJobRow(j, outputs, fmtWhen, expiresAt = null) {
+  const preview = j.quality === 'preview';
   const [label, tone] = STATUS[j.status] || [j.status, 'gray'];
+  const kind = `<span class="aui-badge aui-badge--${preview ? 'gray' : 'amber'}">${preview ? 'Preview' : 'Final · hi-res'}</span>`;
   const pct = Math.round((j.progress || 0) * 100);
-  const files = j.status === 'done'
-    ? `<div class="mj-files">${outputs.map(f => `<a class="aui-btn aui-btn--secondary aui-btn--sm" href="/admin/media/${attr(j.id)}/${attr(f.name)}" download>${escHtml(f.label)}</a>`).join('')}</div>`
+  const id = attr(j.id);
+  const player = j.status === 'done'
+    ? `<video class="mj-video" src="/admin/media/${id}/view" controls playsinline preload="metadata"${preview ? ' controlslist="nodownload"' : ''}></video>`
     : '';
+  const files = j.status === 'done' && !preview
+    ? `<div class="mj-files">${outputs.map(f => `<a class="aui-btn aui-btn--primary aui-btn--sm" href="/admin/media/${id}/${attr(f.name)}" download>${escHtml(f.label)}</a>`).join('')}</div>`
+    : j.status === 'done' && preview
+      ? `<div class="mj-files"><button type="button" class="aui-btn aui-btn--primary aui-btn--sm" data-mj-final="${id}">Approve &amp; render hi-res</button><a class="aui-btn aui-btn--secondary aui-btn--sm" href="/admin/games/${attr(encodeURIComponent(j.game_id || ''))}/potg-video?from=${id}">Edit</a></div>`
+      : '';
   const bar = j.status === 'processing'
     ? `<div class="mj-bar"><span style="width:${pct}%"></span></div><div class="aui-muted mj-stage">${escHtml(j.stage || 'Working')} · ${pct}%</div>`
-    : j.status === 'queued' ? '<div class="aui-muted mj-stage">Waiting for the renderer…</div>' : '';
-  const left = j.status === 'done' && expiresAt ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 86400000)) : null;
-  const note = left != null ? `<div class="aui-muted mj-stage">${left <= 1 ? 'Deletes from the server within a day. Download it now.' : `Deletes from the server in ${left} days.`}</div>`
-    : j.status === 'expired' ? '<div class="aui-muted mj-stage">Files deleted after 30 days. Make again to re-render.</div>' : '';
+    : j.status === 'queued' ? `<div class="aui-muted mj-stage">Waiting for the renderer…${preview ? '' : ' (hi-res takes about 2½ minutes)'}</div>` : '';
   const err = j.status === 'failed' ? `<pre class="mj-err">${escHtml(j.error || 'Unknown error')}</pre>` : '';
+  const days = preview ? 7 : 30;
+  const left = j.status === 'done' && expiresAt ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 86400000)) : null;
+  const note = left != null ? `<div class="aui-muted mj-stage">${left <= 1 ? `Deletes from the server within a day.${preview ? '' : ' Download it now.'}` : `Deletes from the server in ${left} days.`}</div>`
+    : j.status === 'expired' ? `<div class="aui-muted mj-stage">Files deleted after ${days} days. Make again to re-render.</div>` : '';
   const actions = [
-    j.status === 'failed' ? `<button type="button" class="aui-btn aui-btn--secondary aui-btn--sm" data-mj-retry="${attr(j.id)}">Retry</button>` : '',
-    j.status !== 'processing' ? `<button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-mj-delete="${attr(j.id)}">Delete</button>` : '',
-    j.game_id ? `<a class="aui-btn aui-btn--ghost aui-btn--sm" href="/admin/games/${attr(encodeURIComponent(j.game_id))}/potg-video">Make again</a>` : '',
+    j.status === 'failed' ? `<button type="button" class="aui-btn aui-btn--secondary aui-btn--sm" data-mj-retry="${id}">Retry</button>` : '',
+    j.status !== 'processing' ? `<button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-mj-delete="${id}">Delete</button>` : '',
+    j.game_id && j.status !== 'done' ? `<a class="aui-btn aui-btn--ghost aui-btn--sm" href="/admin/games/${attr(encodeURIComponent(j.game_id))}/potg-video">Make again</a>` : '',
   ].join('');
-  return `<div class="aui-panel mj-row" data-mj="${attr(j.id)}" data-mj-status="${attr(j.status)}">
+  return `<div class="aui-panel mj-row" data-mj="${id}" data-mj-status="${attr(j.status)}">
     <div class="mj-top"><div><div class="mj-title">${escHtml(j.title || j.kind)}</div><div class="aui-muted mj-when">${escHtml(fmtWhen(j.created_at))}</div></div>
-      <span class="aui-badge aui-badge--${tone}">${escHtml(label)}</span></div>
-    ${bar}${err}${files}${note}
+      <span class="mj-badges">${kind}<span class="aui-badge aui-badge--${tone}">${escHtml(label)}</span></span></div>
+    ${bar}${err}${player}${files}${note}
     <div class="mj-actions">${actions}</div>
   </div>`;
 }
@@ -106,7 +117,7 @@ export function adminMediaBody({ jobs, outputs, fmtWhen, expiresAt, ver }) {
   const rows = jobs.length ? jobs.map(j => mediaJobRow(j, outputs, fmtWhen, expiresAt?.(j))).join('') : emptyState({ title: 'Nothing processing', sub: 'Videos you make (e.g. a game’s POTG video) show up here while they render.' });
   return `<div class="aui-page" data-mj-page>
     <header class="aui-head"><div class="aui-head__text"><div class="aui-head__eyebrow">Content</div><h1 class="aui-head__title">Processing</h1>
-      <p class="aui-head__sub">Videos render in the background, one at a time. This page updates itself; you can leave and come back. Finished videos stay for 30 days, then their files are deleted automatically.</p></div></header>
+      <p class="aui-head__sub">Videos render in the background, one at a time. This page updates itself; you can leave and come back. Each video renders as a quick preview first; approve it to render the hi-res download. Previews are kept 7 days, hi-res videos 30.</p></div></header>
     <div class="mj-list" data-mj-list>${rows}</div>
   </div>
   <script src="/admin-media.js${ver ? `?v=${ver}` : ''}" defer></script>`;
