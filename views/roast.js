@@ -130,7 +130,7 @@ export function buildRoastModel({ season, players = [], gameRecords = [], curren
   };
   const dubious = DUBIOUS.map(board);
   const more = MORE.map(board).map(b => b && { ...b, size: 'sm' });
-  const gpRule = season === 'alltime' ? `${CAREER_MIN_GP}+ games` : 'half their team’s games';
+  const gpRule = season === 'alltime' ? `${CAREER_MIN_GP}+ games` : 'two thirds of their team’s games';
   const name = b => b ? plainName(b.lead.p.name) : '';
   return {
     season,
@@ -165,7 +165,7 @@ export function roastPage(v) {
   <div class="ld-body">
     ${body}
     <div class="ld-also">
-      <span>Boards need ${model.season === 'alltime' ? `${CAREER_MIN_GP}+ games` : 'half their team’s games'}; shooting boards also need 10+ field-goal or 5+ free-throw attempts. All in good fun.</span>
+      <span>Boards need ${model.season === 'alltime' ? `${CAREER_MIN_GP}+ games` : 'two thirds of their team’s games'}; shooting boards also need 10+ field-goal or 5+ free-throw attempts. All in good fun.</span>
       <a href="/leaders" class="ld-also__roast">Back to the leaders <span>&rarr;</span></a>
     </div>
   </div>

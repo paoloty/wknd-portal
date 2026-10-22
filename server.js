@@ -2836,7 +2836,7 @@ function extractQuarterScores(game) {
   return scores;
 }
 
-// min_gp: games needed to appear on the per-game boards (lib/qualification.js) — half of the
+// min_gp: games needed to appear on the per-game boards (lib/qualification.js) — two thirds of the
 // games the player's season team has played, so it grows through the season. A team with no
 // count (shouldn't happen once it has a game) falls back to the most any team has played.
 function buildLeaderPlayers(season) {
@@ -16127,7 +16127,7 @@ app.get('/leaders', (req, res) => {
   const maxGp = players.reduce((m, p) => Math.max(m, p.games_played || 0), 0);
   const meta = stats === 'rec'
     ? 'The best single-game lines, regular season and playoffs.'
-    : n ? `${n} players${!isAll && maxGp ? ` · up to ${maxGp} game${maxGp === 1 ? '' : 's'} each` : ''}${stats === 'pg' ? ` · per-game boards need ${isAll ? `${CAREER_MIN_GP}+ games` : "half their team's games"}` : ''} · shooting boards need minimum attempts` : '';
+    : n ? `${n} players${!isAll && maxGp ? ` · up to ${maxGp} game${maxGp === 1 ? '' : 's'} each` : ''}${stats === 'pg' ? ` · per-game boards need ${isAll ? `${CAREER_MIN_GP}+ games` : "two thirds of their team's games"}` : ''} · shooting boards need minimum attempts` : '';
   const html = leadersPage({
     model, seasons, currentSeason: current,
     kicker: stats === 'rec' ? `Single-game records · ${isAll ? 'All seasons' : `Season ${season}`}` : stats === 'po' ? `Playoffs · ${isAll ? 'All-time' : `Season ${season}`}` : leadersKicker(season, current),
