@@ -206,7 +206,7 @@ import { adminHomeBody } from './views/admin/home.js';
 import { sendBroadcast, startCampaign, finishCampaign, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe, underEmailCaps } from './lib/broadcast.js';
 import { getRecentBroadcasts, getBroadcastStats } from './lib/portal-db.js';
 import { adminReachComposeBody, adminReachSentBody } from './views/admin/reach.js';
-import { leagueNudgeEmail } from './lib/mailer.js';
+import { leagueNudgeEmail, raffleWinnerEmail } from './lib/mailer.js';
 import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
 import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
@@ -220,10 +220,17 @@ import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
 import { gameRatingsOn, resolveRateGame, askToRateGame, verifyRateToken, verifyRatingUnsubscribe, RATE_KINDS } from './lib/game-rate-ask.js';
 import { RATE_ANSWER_KEYS, cleanRating, summarizeConduct, raterFlags, RATE_WINDOW_DAYS } from './lib/game-ratings.js';
 import { rateGamePage } from './views/rate-game.js';
+import { rafflePage } from './views/raffle.js';
+import {
+  raffleOn, ensureRateAndWin, awardTicket, currentRound, getOpenRound, getRound, getRounds, roundTally, ticketsFor, ticketHistory, hasTicket,
+  exclusionReason, EXCLUSION_LABEL, winnerName, getWinnerForRound, getLatestDrawnRound, getPrizes, updateRaffle, skipRound,
+  getActiveVoucher, getVouchersForPlayer, getVoucherForSignup, getAllVouchers, reserveVoucher, releaseVoucherForSignup, useVoucherForSignup,
+  setWinnerNameHidden, runRaffleJobs, nextDrawAfter, drawInstant,
+} from './lib/raffle.js';
 import {
   upsertGameRating, getMyGameRatings, getGameRatingsForRatee, getAllGameRatings, getGameRating, setGameRatingIgnored, deleteGameRating,
   getGameRateRounds, getLatestSharedGameAsk, recordGameCourtCheck, getGameCourtCheck, setRatingEmailOptout, setPlayerRateLinksOff,
-  countPendingCourtReviews,
+  countPendingCourtReviews, getRecentGameAsksForPlayer, getRecentlyAskedPlayerIds,
 } from './lib/portal-db.js';
 import {
   getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, wasAskedToRateCourt, saveCourtRating, getCourtRating,
@@ -238,7 +245,7 @@ import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
 import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl, expandAdminSections } from './views/admin/layout.js';
-import { settingsPanel, withSettings } from './views/admin/settings.js';
+import { settingsPanel, withSettings, settingsScript } from './views/admin/settings.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage, mvpLockPage, podiumBarHtml, podiumStrip, mvpSnapshot, mvpSharePage } from './views/mvp.js';
@@ -277,6 +284,7 @@ import { adminFinesListBody, adminFineCaseBody, adminFineCategoriesBody } from '
 import { adminTeamHeadsBody } from './views/admin/team-heads.js';
 import { adminRatingsBody } from './views/admin/ratings.js';
 import { adminGameRatingsBody } from './views/admin/game-ratings.js';
+import { adminRaffleBody } from './views/admin/raffle.js';
 import { finesPage } from './views/fines.js';
 import { teamHeadPage } from './views/team-head.js';
 import { myTeamPage } from './views/my-team.js';
@@ -2257,6 +2265,25 @@ function balanceReminderBar(amount) {
 // login rather than being silenced forever. This is deliberately a *separate* bar/dismiss
 // key from the balance one (not folded into it) since a player can be on probation with
 // zero outstanding balance, and dismissing one shouldn't dismiss the other.
+// Homepage strip for Rate & Win: "draw tonight" on draw day, the winner for 3 days after.
+function raffleHomeBar() {
+  if (!raffleOn()) return '';
+  const raffle = ensureRateAndWin();
+  if (raffle.status !== 'active') return '';
+  const now = Date.now();
+  const last = getLatestDrawnRound(raffle.id);
+  const open = getOpenRound(raffle.id);
+  const bar = (text, cta) => `<div class="balance-bar rf-bar"><div class="balance-bar__inner"><span class="balance-bar__text">${text}</span><a href="/raffle" class="balance-bar__cta">${cta}</a></div></div>`;
+  if (last?.status === 'drawn' && now - last.drawn_at < 3 * 86400000) {
+    const w = getWinnerForRound(last.id);
+    return bar(`🎉 <strong>${escHtml(winnerName(w?.player_name, w?.hide_name))}</strong> won a free run in ${escHtml(raffle.name)} Round ${last.number}. ${last.players} players were in.`, 'Next draw →');
+  }
+  if (open && open.draws_at > now && new Date(open.draws_at + 8 * 3600000).toISOString().slice(0, 10) === manilaTodayStr()) {
+    return bar(`🎟️ <strong>${escHtml(raffle.name)} draw tonight</strong> at ${new Date(open.draws_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })}: a free Papawis run.`, 'Watch live →');
+  }
+  return '';
+}
+
 function probationReminderBar() {
   return `<div class="balance-bar" id="probation-bar" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3)">
   <div class="balance-bar__inner">
@@ -2523,7 +2550,8 @@ function renderPage(req, opts) {
 
   const impersonatingHtml = req.session?.impersonating ? impersonationBanner(req.session.impersonatingPlayerName || 'this player') : '';
 
-  const body = impersonatingHtml + balanceBarHtml + probationBarHtml + bannerHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
+  const raffleBarHtml = !focused && opts.currentPath === '/' ? raffleHomeBar() : '';
+  const body = impersonatingHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -2532,6 +2560,15 @@ function renderPage(req, opts) {
   if (isPlayer && req.session?.playerPlayerId) {
     notifications = getNotificationsForPlayer(req.session.playerPlayerId, 20);
     unreadNotificationCount = getUnreadNotificationCount(req.session.playerPlayerId);
+  }
+
+  // Rate & Win: the ticket count next to the bell, for a player with tickets or a recent game.
+  let raffleNav = null;
+  if (isPlayer && req.session?.playerPlayerId && raffleOn()) {
+    const pid = req.session.playerPlayerId;
+    const round = getOpenRound(ensureRateAndWin().id);
+    const n = round ? ticketsFor(round.id, pid) : 0;
+    if (n || getRecentGameAsksForPlayer(pid, Date.now() - 14 * 86400000).length) raffleNav = { tickets: n };
   }
 
   // Account card at the top of the mobile drawer (views/layout.js mobileNav) — same
@@ -2554,7 +2591,7 @@ function renderPage(req, opts) {
   // The MVP podium bar (above the top strip) for a player who still has to call the podium.
   const siteBar = focused ? '' : podiumBarFor(req, opts.currentPath);
 
-  return layout({ ticker: focused ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features, headerInfo, origin, notifications, unreadNotificationCount, navPlayer, siteBar, ...opts, title, body, metaTags });
+  return layout({ ticker: focused ? '' : buildTicker(), gaSnippet: buildGaSnippet(req), cssVer: CSS_VER, isAdmin: !!req.session?.isAdmin, isPlayer, isHead, joinLabel, features, headerInfo, origin, notifications, unreadNotificationCount, navPlayer, siteBar, raffleNav, ...opts, title, body, metaTags });
 }
 
 // Applies a manual per-slug SEO override (views/admin/seo.js) on top of a page's
@@ -2637,6 +2674,12 @@ function postsSettingsPanel() {
     { type: 'toggle', key: 'posts_enabled', value: getSetting('posts_enabled', '0') === '1', label: 'Posts on the site', sub: `League news and matchup previews on ${codeTag('/posts')}. Writing posts here works either way.` },
     { type: 'toggle', key: 'posts_notify_on_publish', value: on('posts_notify_on_publish'), label: 'Tell players when a post goes up', sub: 'A bell notification to every active member when a post is published (or a scheduled one goes live). Live site only.' },
   ], { title: 'Public page' });
+}
+
+function raffleSettingsPanel() {
+  return settingsPanel([
+    { type: 'toggle', key: 'raffle_enabled', value: raffleOn(), reload: true, label: 'Rate & Win raffle', sub: `The ${codeTag('/raffle')} page, tickets for rating games (needs "Rate your game" on), the ticket count by the bell and the automatic draw every other Sunday.` },
+  ], { title: 'Public features' }) + settingsScript();
 }
 
 function finesSettingsPanel() {
@@ -7988,7 +8031,7 @@ function siteSettingSection(key) {
   if (/^season_/.test(key)) return 'season';
   if (/^picks_|^home_picks_widget_enabled$/.test(key)) return 'games-stats';
   if (/^(awards_enabled|award_|mvp_)/.test(key)) return 'awards';
-  if (key === 'player_reports_enabled') return 'community';
+  if (key === 'player_reports_enabled' || key === 'raffle_enabled') return 'community';
   if (/^gcash_/.test(key)) return 'finance';
   return 'site'; // comments, ratings, header, homepage cards, join banner
 }
@@ -8001,7 +8044,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
   }
   const staticAllowed = new Set([
     'mvp_race_enabled', 'awards_enabled', 'papawis_enabled', 'papawis_reminders_enabled', 'papawis_slot_alerts_enabled', 'posts_enabled', 'comments_enabled', 'peer_ratings_enabled', 'player_reports_enabled', 'marketplace_enabled', 'mega_menu_enabled', 'home_show_roster_moves',
-    'game_ratings_enabled', 'game_rate_email_enabled',
+    'game_ratings_enabled', 'game_rate_email_enabled', 'raffle_enabled',
     'picks_enabled', 'picks_odds_enabled', 'home_picks_widget_enabled', 'mvp_podium_enabled',
     'papawis_court_ratings_enabled', 'papawis_court_votes_enabled', 'papawis_court_requests_enabled', 'papawis_court_partner_enabled',
     // Auto-nudges (lib/broadcast.js): one switch per feature page.
@@ -19580,8 +19623,89 @@ app.post('/rate/:kind/:ref', express.json(), (req, res) => {
   for (const a of answers) upsertGameRating({ kind: game.kind, ref: game.ref, raterId: viewerId, rateeId: a.id, answer: a.answer, tags: a.tags, note: a.note, via: viaLink ? 'email' : 'site' });
   const left = game.playerIds.length - 1 - Object.keys(getMyGameRatings(game.kind, game.ref, viewerId)).length;
   const parts = [courtSaved ? 'Court rated' : '', answers.length ? `${answers.length} player${answers.length === 1 ? '' : 's'} rated` : ''].filter(Boolean).join(', ');
-  res.json({ ok: true, left, message: `Saved. ${parts || 'Thanks'}.${pending ? ' Your review shows once it’s checked.' : ''}${left > 0 ? ` ${left} more to go if you like.` : ' Thanks for rating!'}` });
+  // Rate & Win: finishing the page (every player answered, Skip counts, and the court if
+  // there is one) earns this game's ticket, once. The answers given never matter.
+  const finished = left <= 0 && (!game.court || !!getGameCourtCheck(game.kind, game.ref, viewerId));
+  const ticket = finished ? awardTicket({ playerId: viewerId, source: 'game_rated', ref: `${game.kind}:${game.ref}` }) : null;
+  const ticketMsg = ticket?.added ? ` +${ticket.amount} raffle ticket! You have ${ticket.total} for this draw.` : '';
+  const leftMsg = left > 0 ? ` ${left} more to go${raffleOn() ? ' for your raffle ticket' : ' if you like'}.` : ' Thanks for rating!';
+  res.json({ ok: true, left, ticket: ticket?.added ? { amount: ticket.amount, total: ticket.total } : null, message: `Saved. ${parts || 'Thanks'}.${pending ? ' Your review shows once it’s checked.' : ''}${leftMsg}${ticketMsg}` });
 });
+// ── Rate & Win (views/raffle.js, lib/raffle.js) ──────────────────────────────────────────
+const raffleInitials = n => displayPlayerName(n || '').split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+// A finished round for the reel and the replay: the entrants it was drawn from (names
+// shortened, never ids of excluded players) and, once drawn, the revealed seed.
+function raffleRoundPayload(round) {
+  if (!round) return null;
+  const w = round.status === 'drawn' ? getWinnerForRound(round.id) : null;
+  const entrants = parseCourtJson(round.entrants_json, []).map(e => {
+    const p = getPlayerById(e.player_id);
+    return { id: e.player_id, name: winnerName(p?.name, w && w.player_id === e.player_id && w.hide_name), initials: raffleInitials(p?.name), n: e.n };
+  });
+  return { id: round.id, number: round.number, status: round.status, drawnAt: round.drawn_at, tickets: round.tickets, players: round.players, note: round.note,
+    winnerId: w?.player_id || '', winnerName: w ? winnerName(w.player_name, w.hide_name) : '', prize: getPrizes(round.raffle_id)[0]?.label || 'a free run',
+    seed: round.status === 'open' ? '' : round.seed, seedHash: round.seed_hash, entrants };
+}
+function raffleModel(req) {
+  const raffle = ensureRateAndWin();
+  const paused = raffle.status !== 'active';
+  const round = paused ? getOpenRound(raffle.id) : currentRound(raffle);
+  const viewerId = req.session?.playerPlayerId || null;
+  const tally = round ? roundTally(round.id) : [];
+  const entrants = tally.filter(e => !exclusionReason(raffle, e.player_id))
+    .map(e => { const p = getPlayerById(e.player_id); return { id: e.player_id, name: winnerName(p?.name), initials: raffleInitials(p?.name), n: e.n, me: e.player_id === viewerId }; })
+    .sort((a, b) => b.n - a.n);
+  const rules = parseCourtJson(raffle.rules_json, {});
+  const rounds = getRounds(raffle.id, 13).filter(r => r.status !== 'open');
+  let me = null;
+  if (viewerId && round) {
+    const reason = exclusionReason(raffle, viewerId);
+    const label = h => {
+      if (h.source === 'game_rated') { const [k, ...rest] = h.ref.split(':'); return resolveRateGame(k, rest.join(':'))?.title || ''; }
+      if (h.source === 'first_court_review') { const c = getPapawisCourtById(h.ref); return c ? courtDisplayName(c) : ''; }
+      if (h.source === 'carried') return `From Round ${getRound(h.ref)?.number || ''}`;
+      return '';
+    };
+    me = {
+      tickets: ticketsFor(round.id, viewerId),
+      exclusion: reason && reason !== 'admin' ? EXCLUSION_LABEL[reason] : reason === 'admin' ? EXCLUSION_LABEL.admin : '',
+      games: gameRatingsOn() ? raffleGamesToRate(viewerId) : [],
+      history: ticketHistory(round.id, viewerId).map(h => ({ ...h, label: label(h) })),
+      vouchers: getVouchersForPlayer(viewerId),
+      wins: rounds.filter(r => r.winner_player_id === viewerId).map(r => ({ roundId: r.id, number: r.number, hide: !!getWinnerForRound(r.id)?.hide_name })),
+    };
+  }
+  return {
+    name: raffle.name, paused, minPlayers: raffle.min_players, prizeLabel: getPrizes(raffle.id)[0]?.label || 'A free Papawis run',
+    reviewBonus: rules.first_court_review || 2, reviewMin: rules.review_min_chars || 50,
+    round: round ? { id: round.id, number: round.number, drawsAt: round.draws_at, players: entrants.length, tickets: entrants.reduce((t, e) => t + e.n, 0), seedHash: round.seed_hash } : null,
+    me, entrants, past: rounds.slice(0, 6).map(raffleRoundPayload), last: raffleRoundPayload(getLatestDrawnRound(raffle.id)),
+  };
+}
+app.get('/raffle', (req, res) => {
+  if (!raffleOn()) return res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Page not found.</p></div>' }));
+  res.send(renderPage(req, { title: 'Rate & Win: rate your games, win a free run | WKND Basketball', currentPath: '/raffle', body: rafflePage(raffleModel(req)) }));
+});
+app.get('/raffle/state.json', (req, res) => {
+  if (!raffleOn()) return res.status(404).json({ error: 'Not found.' });
+  const raffle = ensureRateAndWin();
+  const open = getOpenRound(raffle.id);
+  res.set('Cache-Control', 'no-store').json({ now: Date.now(), open: open ? { id: open.id, drawsAt: open.draws_at } : null, last: raffleRoundPayload(getLatestDrawnRound(raffle.id)) });
+});
+app.get('/raffle/rounds/:id.json', (req, res) => {
+  const round = raffleOn() ? getRound(req.params.id) : null;
+  if (!round || round.status !== 'drawn') return res.status(404).json({ error: 'Not found.' });
+  res.json(raffleRoundPayload(round));
+});
+// The winner chooses whether their name shows ("A lucky player" when hidden).
+app.post('/raffle/rounds/:id/name', express.json(), (req, res) => {
+  const viewerId = req.session?.playerPlayerId;
+  const w = viewerId ? getWinnerForRound(req.params.id) : null;
+  if (!w || w.player_id !== viewerId) return res.status(403).json({ error: 'Only the winner can change this.' });
+  setWinnerNameHidden(req.params.id, viewerId, !!req.body?.hide);
+  res.json({ ok: true });
+});
+
 app.get('/emails/rating-unsubscribe', (req, res) => {
   const regId = String(req.query.r || ''), token = String(req.query.t || '');
   if (!verifyRatingUnsubscribe(regId, token)) {
@@ -19740,7 +19864,12 @@ app.get('/papawis', (req, res) => {
     title: 'Papawis: Pickup Basketball in Makati, Mandaluyong & Pasig',
     currentPath: '/papawis',
     metaTags: `${papawisMetaTags}\n  <link rel="stylesheet" href="/papawis.css?v=${PAPAWIS_CSS_VER}">`,
-    body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, summary, isAdmin, alertsOn }),
+    body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, summary, isAdmin, alertsOn,
+      // Rate & Win free run: whether they have one to use, and which spots already carry one.
+      voucher: viewerPlayerId ? (() => {
+        const vs = getVouchersForPlayer(viewerPlayerId);
+        return { free: vs.find(v => v.status === 'active') || null, applied: new Set(vs.filter(v => v.status === 'reserved').map(v => v.signup_id)) };
+      })() : null }),
   }));
 });
 
@@ -19846,6 +19975,26 @@ app.post('/papawis/:id/join', (req, res) => {
   res.json({ ok: true, status: result.status });
 });
 
+// Rate & Win free run (lib/raffle.js): put it on (use: true) or take it off a confirmed spot
+// in an upcoming run. Close-out then skips that spot's charge and marks the voucher used.
+app.post('/papawis/:id/voucher', express.json(), (req, res) => {
+  const playerId = req.session?.playerPlayerId;
+  if (!playerId) return res.status(401).json({ error: 'Please log in.' });
+  const game = getPapawisGame(req.params.id);
+  if (!game || game.status === 'completed' || game.status === 'cancelled') return res.status(400).json({ error: 'That run is closed.' });
+  const signup = getPapawisActiveSignupForPlayer(game.id, playerId);
+  if (!signup || signup.status !== 'confirmed' || signup.guest_name) return res.status(400).json({ error: 'Claim a spot first, then use your free run on it.' });
+  if (req.body?.use) {
+    if (getVoucherForSignup(signup.id)) return res.json({ ok: true });
+    const v = getActiveVoucher(playerId);
+    if (!v) return res.status(400).json({ error: 'You have no free run to use.' });
+    reserveVoucher(v.id, { signupId: signup.id, gameId: game.id });
+    return res.json({ ok: true, message: 'Free run applied: this run is on us.' });
+  }
+  releaseVoucherForSignup(signup.id);
+  res.json({ ok: true, message: 'Free run taken off. You can use it on another run.' });
+});
+
 // Shared by both cancel paths (player self-cancel and admin remove) — cancelPapawisSignup
 // already tells the caller who (if anyone) got auto-promoted off the waitlist; this just
 // turns that into the player-facing notification. A guest promotion has no player_id of
@@ -19883,6 +20032,7 @@ app.post('/papawis/:id/cancel', (req, res) => {
   const wasFull = signup.status === 'confirmed' && getPapawisConfirmedCount(game.id) >= game.max_slots;
   const result = cancelPapawisSignup(signup.id);
   if (result.error) return res.status(400).json({ error: 'Could not cancel.' });
+  releaseVoucherForSignup(signup.id); // a free run put on this spot goes back to them
   notifyPapawisPromotion(game, result.promoted);
   queuePapawisSlotAlert(game.id, { wasFull });
   res.json({ ok: true });
@@ -20833,6 +20983,12 @@ app.post('/admin/papawis/court-ratings/:id', requireAuth, express.json(), (req, 
   if (b.action === 'show') opts.hidden = false;
   if (typeof b.reply === 'string') opts.ownerReply = b.reply.slice(0, 500);
   if (!moderateCourtRating(req.params.id, opts)) return res.status(404).json({ error: 'Not found.' });
+  // Rate & Win: a player's first written review of a court earns a bonus once it's approved.
+  if (b.action === 'approve') {
+    const r = getCourtRating(req.params.id);
+    const rules = parseCourtJson(ensureRateAndWin().rules_json, {});
+    if (r && String(r.body || '').length >= (rules.review_min_chars || 50)) awardTicket({ playerId: r.player_id, source: 'first_court_review', ref: r.court_id });
+  }
   res.json({ ok: true });
 });
 app.post('/admin/papawis/court-requests/:id', requireAuth, express.json(), (req, res) => {
@@ -21187,6 +21343,7 @@ app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
   const gameBefore = getPapawisGame(req.params.id);
   const wasFull = before?.status === 'confirmed' && !!gameBefore && getPapawisConfirmedCount(gameBefore.id) >= gameBefore.max_slots;
   const result = adminRemovePapawisSignup(req.params.signupId);
+  if (!result?.error) releaseVoucherForSignup(req.params.signupId);
   if (result.error) return res.status(400).json({ error: 'Could not remove.' });
   if (result.promoted) {
     const game = getPapawisGame(req.params.id);
@@ -21364,6 +21521,13 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
   const confirmed = getPapawisSignups(req.params.id).filter(s => s.status === 'confirmed');
   const today = manilaTodayStr();
   for (const s of confirmed) {
+    // A Rate & Win free run on this spot: no charge at all (vouchers never touch the
+    // ledger), the slot counts as paid and the voucher as used.
+    if (!s.guest_name && useVoucherForSignup(s.id)) {
+      markPapawisSignupPaid(s.id, '');
+      logPapawisActivity({ gameId: game.id, eventType: 'voucher_used', playerId: s.player_id, playerName: s.player_name, notes: 'Rate & Win free run' });
+      continue;
+    }
     const txId = randomBytes(6).toString('hex');
     const chargeNotes = s.guest_name
       ? `Papawis — ${game.title || 'Pickup game'} (${game.date}) — guest: ${s.guest_name}`
@@ -22342,6 +22506,44 @@ app.post('/admin/team-heads/:id/revoke', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Rate & Win admin (views/admin/raffle.js).
+app.get('/admin/raffle', requireAuth, (req, res) => {
+  const raffle = ensureRateAndWin();
+  const round = raffle.status === 'active' && raffleOn() ? currentRound(raffle) : getOpenRound(raffle.id);
+  const entries = round ? roundTally(round.id).map(t => {
+    const reason = exclusionReason(raffle, t.player_id);
+    return { name: getPlayerById(t.player_id)?.name || t.player_id, n: t.n, reason: reason ? EXCLUSION_LABEL[reason] : '' };
+  }).sort((a, b) => b.n - a.n) : [];
+  const rounds = getRounds(raffle.id, 30).map(o => ({ ...o, winner: o.winner_player_id ? getPlayerById(o.winner_player_id)?.name || '' : '' }));
+  res.send(renderAdminPage(req, {
+    title: 'Rate & Win raffle', currentPath: '/admin/raffle',
+    body: adminRaffleBody({ on: raffleOn(), settingsHtml: raffleSettingsPanel(), raffle, schedule: parseCourtJson(raffle.schedule_json, {}), round, entries, rounds, vouchers: getAllVouchers() }),
+  }));
+});
+app.post('/admin/raffle/status', requireAuth, express.json(), (req, res) => {
+  const status = req.body?.status === 'paused' ? 'paused' : 'active';
+  updateRaffle(ensureRateAndWin().id, { status });
+  res.json({ ok: true, message: status === 'paused' ? 'Draws paused.' : 'Draws running again.' });
+});
+app.post('/admin/raffle/skip', requireAuth, express.json(), (req, res) => {
+  const raffle = ensureRateAndWin();
+  const open = getOpenRound(raffle.id);
+  if (!open) return res.status(400).json({ error: 'No open round.' });
+  const next = skipRound(open.id, `Skipped by ${req.session?.playerName || 'an admin'}.`);
+  res.json({ ok: true, message: `Round ${open.number} skipped. Its tickets moved to Round ${next?.number}.` });
+});
+app.post('/admin/raffle/schedule', requireAuth, express.json(), (req, res) => {
+  const b = req.body || {};
+  const firstDraw = String(b.first_draw || '');
+  const time = String(b.time || '');
+  const minPlayers = Math.round(Number(b.min_players));
+  if (firstDraw && !/^\d{4}-\d{2}-\d{2}$/.test(firstDraw)) return res.status(400).json({ error: 'Pick a date for the first draw.' });
+  if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return res.status(400).json({ error: 'Use a time like 20:00.' });
+  if (b.min_players != null && b.min_players !== '' && !(minPlayers >= 2 && minPlayers <= 200)) return res.status(400).json({ error: 'Minimum players: 2 to 200.' });
+  updateRaffle(ensureRateAndWin().id, { firstDraw, time, minPlayers: minPlayers || undefined });
+  res.json({ ok: true, message: 'Schedule saved.' });
+});
+
 // With "Rate your game" on: the conduct ratings (views/admin/game-ratings.js), open to every
 // admin, rater names for the super admin only. Off: the old roast-style list (super admin).
 app.get('/admin/ratings', requireAuth, (req, res) => {
@@ -22600,6 +22802,24 @@ function runPapawisBroadcastJobs() {
   }).catch(e => console.error('[papawis] broadcast run failed:', e.message));
 }
 setInterval(runPapawisBroadcastJobs, 60 * 1000);
+
+// Rate & Win (lib/raffle.js): reminders, the draw when its time passes, the next round.
+// Every minute; a draw that was due while the server was down happens on the first tick.
+// A player's open games to rate (asked, window still open), each with done = ticket earned.
+function raffleGamesToRate(playerId) {
+  const raffle = ensureRateAndWin();
+  return getRecentGameAsksForPlayer(playerId, Date.now() - (RATE_WINDOW_DAYS + 3) * 86400000)
+    .map(a => ({ a, g: resolveRateGame(a.kind, a.ref) })).filter(x => x.g?.open)
+    .map(({ a, g }) => ({ kind: a.kind, ref: a.ref, title: g.title, line: g.line, windowEndsAt: g.windowEndsAt, done: hasTicket(raffle.id, 'game_rated', `${a.kind}:${a.ref}`, playerId) }));
+}
+function runRaffleTick() {
+  runRaffleJobs({
+    gamesLeft: pid => raffleGamesToRate(pid).filter(x => !x.done).length,
+    playersToRemind: () => getRecentlyAskedPlayerIds(Date.now() - (RATE_WINDOW_DAYS + 1) * 86400000),
+    sendWinnerEmail: ({ to, name, raffle, round, prize }) => sendMail({ to, ...raffleWinnerEmail({ name, raffleName: raffle.name, prizeLabel: prize?.label || 'a free Papawis run', roundNumber: round.number, url: `${SITE_ORIGIN}/raffle` }) }),
+  }).catch(e => console.error('[raffle] job failed:', e.message));
+}
+setInterval(runRaffleTick, 60 * 1000);
 
 // page_views keeps 180 days (lib/portal-db.js): prune at startup, then daily.
 function prunePageViewsJob() {
