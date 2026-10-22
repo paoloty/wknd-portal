@@ -622,7 +622,7 @@ function gameLog(allRows, player, potgGameIds) {
   }
 
   function seasonAvgRow(games, season) {
-    const played = games.filter(g => !g.isDnp);
+    const played = games.filter(g => g.status !== 'dnp');
     if (!played.length) return '';
     const sum  = k => played.reduce((t, g) => t + Number(g[k] || 0), 0);
     const gp   = played.length;

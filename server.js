@@ -75,7 +75,7 @@ import {
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover, getCommunityStats, getRecentlyApprovedMembers,
   getPlayerSeasonLines, getSeasonPointsByGame, getPlayerSeasonTotalsLite, getPapawisPlayedCounts,
-  getTeamSeasonStats, getTeamPointsForAgainst, getTeamRecords, getTeamRecordsAsOf, getLeaders, getPlayoffLeaders,
+  getTeamSeasonStats, getTeamPointsForAgainst, getTeamRecords, getTeamRecordsAsOf, getTeamGameCounts, getLeaders, getPlayoffLeaders,
   getLeadersAllTime, getLeaderSeasons,
   getGameById, getGameDetailStats, getGameStats,
   getPlayerWithTeam, getPlayerById, getTeamById, getPlayersByTeam, getPlayerLastTeamIdBeforeSeason,
@@ -182,6 +182,7 @@ import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './li
 import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS, voiceFlavor, voiceProblems, voiceTraits, DEFAULT_VOICES } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
+import { leaderMinGames, awardMinGames, qualifiesPerGame, CAREER_MIN_GP } from './lib/qualification.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
 import { runWriter, numberProblems, claimProblems, bannedProblems, storyProblems, shorthandProblems, zeroStatProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
@@ -2826,18 +2827,28 @@ function extractQuarterScores(game) {
   return scores;
 }
 
+// min_gp: games needed to appear on the per-game boards (lib/qualification.js) — half of the
+// games the player's season team has played, so it grows through the season. A team with no
+// count (shouldn't happen once it has a game) falls back to the most any team has played.
 function buildLeaderPlayers(season) {
   if (season === 'alltime') return buildLeaderPlayersAllTime();
   const players = getLeaders(season);
   const records = getTeamRecords(season);
   const recordMap = Object.fromEntries(records.map(r => [r.team_id, r]));
-  return players.map(p => ({ ...p, team_wins: recordMap[p.team_id]?.wins ?? 0, team_losses: recordMap[p.team_id]?.losses ?? 0 }));
+  const teamGames = getTeamGameCounts(season);
+  const maxTeamGames = Math.max(0, ...Object.values(teamGames));
+  return players.map(p => ({
+    ...p,
+    team_wins: recordMap[p.team_id]?.wins ?? 0, team_losses: recordMap[p.team_id]?.losses ?? 0,
+    min_gp: leaderMinGames(teamGames[p.team_id] ?? maxTeamGames),
+  }));
 }
 
 // Team win/loss records vary by season, so an all-time tiebreak using them wouldn't mean
 // anything consistent — leader ranking already falls back to games_played before this anyway.
+// Career per-game boards need a full season's worth of games.
 function buildLeaderPlayersAllTime() {
-  return getLeadersAllTime().map(p => ({ ...p, team_wins: 0, team_losses: 0 }));
+  return getLeadersAllTime().map(p => ({ ...p, team_wins: 0, team_losses: 0, min_gp: CAREER_MIN_GP }));
 }
 
 // Homepage fallback for the League Leaders carousel during the gap between a new season's
@@ -7087,13 +7098,24 @@ function playerPositions(p) {
   try { return JSON.parse(p.positions || '[]'); } catch { return []; }
 }
 
-function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } = {}) {
+// teamGames ({ [team_id]: games }, getTeamGameCounts): when given, only players who played
+// the award share of their team's games (lib/qualification.js, 4 of 6) are suggested for the
+// regular-season awards. Admins can still assign anyone by hand. Finals awards are unaffected.
+function computeAwardSuggestions(allStats, { mvpCandidates = null, finals = null, teamGames = null } = {}) {
+  if (!allStats.length) return {};
+  const maxTeamGames = teamGames ? Math.max(0, ...Object.values(teamGames)) : 0;
+  const eligible = (p, gp) => !teamGames || gp >= awardMinGames(teamGames[p.team_id] ?? maxTeamGames);
+  const stats = allStats.filter(p => eligible(p, p.games_played));
   if (!stats.length) return {};
+  const candidates = (mvpCandidates || []).filter(c => c.gp >= 1 && eligible(c, c.gp));
   const f   = (v, gp) => gp > 0 ? v / gp : 0;
   const ppg = p => f(p.pts, p.games_played);
   const apg = p => f(p.ast, p.games_played);
   const rpg = p => f(p.reb, p.games_played);
-  const dpg = p => f((p.stl ?? 0) * 1.5 + (p.blk ?? 0) * 2, p.games_played);
+  // Defense ranks by the /dpoy race's own score where the player has a race line, so the
+  // DPOY and All-Defensive suggestions agree with the public race.
+  const dpoyScores = new Map(candidates.map(c => [c.id, computeDpoyScore(c)]));
+  const dpg = p => dpoyScores.get(p.id) ?? f((p.stl ?? 0) * 1.5 + (p.blk ?? 0) * 2, p.games_played);
 
   // Shooting efficiency multiplier — mirrors computeMvpScore so suggestions stay consistent.
   const tsMult = p => {
@@ -7194,10 +7216,9 @@ function computeAwardSuggestions(stats, { mvpCandidates = null, finals = null } 
     dpoy:            addLine(top(dpg), defenders[0]
       ? `${fmt1(f(defenders[0].stl, defenders[0].games_played))} SPG · ${fmt1(f(defenders[0].blk, defenders[0].games_played))} BPG` : ''),
     mvp: (() => {
-      if (mvpCandidates && mvpCandidates.length) {
-        const top = [...mvpCandidates]
+      if (candidates.length) {
+        const top = candidates
           .map(s => ({ ...s, mvpScore: computeMvpScore(s) }))
-          .filter(s => s.gp >= 1)
           .sort((a, b) => b.mvpScore - a.mvpScore)[0];
         if (top) {
           const gp = top.gp;
@@ -7327,9 +7348,11 @@ app.get('/admin/awards/season', requireAuth, (req, res) => {
   const awards      = getSeasonAwards(season);
   const players     = getActivePlayers();
   const seasonStats = getSeasonPlayerStats(season);
+  const teamGames = getTeamGameCounts(season);
   const suggestions = computeAwardSuggestions(seasonStats, {
     mvpCandidates: getMvpCandidates(season),
     finals: getFinalsSuggestionContext(season),
+    teamGames,
   });
   suggestions.pickmaster = pickmasterSuggestion(season, seasonStats);
   const articles = Object.fromEntries(AWARD_SECTION_KEYS.map(k => [k, getSetting(`award_article_${k}_${season}`, '')]));
@@ -7347,7 +7370,8 @@ app.get('/admin/awards/season', requireAuth, (req, res) => {
     title: 'Season Awards',
     currentPath: '/admin/awards/season',
     settings: awardsSettingsPanel(),
-    body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles, seasonStats, homeGallery }),
+    body: adminAwardsBody({ season, seasons, awards, suggestions, players, articles, seasonStats, homeGallery,
+      awardMinGp: awardMinGames(Math.max(0, ...Object.values(teamGames))) }),
   }));
 });
 
@@ -7362,6 +7386,7 @@ app.post('/admin/awards', requireAuth, express.json(), (req, res) => {
     const sugg  = award_type === 'pickmaster' ? pickmasterSuggestion(season, stats) : computeAwardSuggestions(stats, {
       mvpCandidates: getMvpCandidates(season),
       finals: getFinalsSuggestionContext(season),
+      teamGames: getTeamGameCounts(season),
     })[award_type];
     const list  = Array.isArray(sugg) ? sugg : (sugg ? [sugg] : []);
     if (list.some(e => e.provisional)) return res.status(400).json({ error: 'Finals series not decided yet' });
@@ -13209,6 +13234,7 @@ app.post('/api/leaders/share', (req, res) => {
     leaderPlayer     = allPlayers.find(p => p.id === player_id);
     top10 = cat
       ? allPlayers
+          .filter(p => !perGame || qualifiesPerGame(p))
           .map(p => ({ p, v: cat.fn(p) }))
           .filter(x => x.v > 0)
           .sort((a, b) => b.v - a.v || b.p.games_played - a.p.games_played || (b.p.team_wins || 0) - (a.p.team_wins || 0))
@@ -16064,7 +16090,7 @@ app.get('/leaders', (req, res) => {
   const maxGp = players.reduce((m, p) => Math.max(m, p.games_played || 0), 0);
   const meta = stats === 'rec'
     ? 'The best single-game lines, regular season and playoffs.'
-    : n ? `${n} players${!isAll && maxGp ? ` · up to ${maxGp} game${maxGp === 1 ? '' : 's'} each` : ''} · shooting boards need minimum attempts` : '';
+    : n ? `${n} players${!isAll && maxGp ? ` · up to ${maxGp} game${maxGp === 1 ? '' : 's'} each` : ''}${stats === 'pg' ? ` · per-game boards need ${isAll ? `${CAREER_MIN_GP}+ games` : "half their team's games"}` : ''} · shooting boards need minimum attempts` : '';
   const html = leadersPage({
     model, seasons, currentSeason: current,
     kicker: stats === 'rec' ? `Single-game records · ${isAll ? 'All seasons' : `Season ${season}`}` : stats === 'po' ? `Playoffs · ${isAll ? 'All-time' : `Season ${season}`}` : leadersKicker(season, current),

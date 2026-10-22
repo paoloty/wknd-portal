@@ -1,4 +1,5 @@
 import { escHtml } from './layout.js';
+import { qualifiesPerGame } from '../lib/qualification.js';
 import { teamColor, displayPlayerName, formatDate, boldTitle, excerpt, truncate, playerAvatar, avatarStack, playerLink, manilaTodayStr, commentSnippet, playerPhotoUrl } from './utils.js';
 import { moveBadge, lockBars } from './mvp.js';
 export { scoreTicker } from './ticker.js';
@@ -477,7 +478,7 @@ const HOME_LEADER_CATS = [
   ['BPG', 'Blocks'], ['3PM', 'Threes made'], ['PER', 'Efficiency'], ['FG%', 'Field goal %'],
 ];
 export function leaderBoards(players) {
-  const active = players.filter(p => p.games_played > 0);
+  const active = players.filter(qualifiesPerGame); // attendance rule, lib/qualification.js
   if (!active.length) return [];
   const defs = Object.fromEntries(leaderCategoryDefs().map(c => [c.label, c]));
   return HOME_LEADER_CATS.map(([label, title]) => {
@@ -500,7 +501,7 @@ export function leaderBoards(players) {
 }
 
 export function leagueLeaders(players, { showTeamChip = true, skip = 0, limit = null, carousel = true, prominent = false } = {}) {
-  const active = players.filter(p => p.games_played > 0);
+  const active = players.filter(qualifiesPerGame); // attendance rule, lib/qualification.js
   if (!active.length) return '';
   const categories = leaderCategoryDefs();
 

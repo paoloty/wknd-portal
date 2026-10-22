@@ -20,6 +20,8 @@
 5. `isLoggedIn` gates UI (not data) — computed as `!!(session.isAdmin || session.playerRegId)`.
 
 ## Edge cases / gotchas
+- **Attendance rule** (`lib/qualification.js`): per-game boards (season, playoff, career; also the homepage boards and share cards) only rank players with `games_played >= min_gp`. `buildLeaderPlayers` sets `min_gp` to half the player's season team's games (rounded up, 3 of 6); all-time rows get 6; playoff rows have none (1 game). Totals boards and single-game records have no minimum. Season-award suggestions use two thirds (4 of 6).
+- **DNP rows**: a stat row with an empty line for a player also in `game_dnp` is not a game played (`playedSql()` in `lib/portal-db.js`); `importGameResults` applies the same rule.
 - Do not confuse this with the **awards** "Statistical Leaders" section on `/awards` — that one reads confirmed `awards` rows; this page computes leaders live from stats every request. See [[awards]].
 
 ## Related docs
