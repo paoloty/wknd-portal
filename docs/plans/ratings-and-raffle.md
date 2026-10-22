@@ -41,17 +41,18 @@ Phase 1 is built first; Phases 2–3 are recorded here so later work starts from
   tags, fines and reports alongside); legacy roast ratings archive; "Reviews waiting" count on the admin home.
 - **Settings**: game ratings on/off, post-game rating email on/off, court re-ask interval.
 
-## Phase 2 — Rate & Win raffle (next)
+## Phase 2 — Rate & Win raffle (built)
 
-- 1 ticket per game for responding to the Rate your game page (court and players; Skip counts), +2 one-time bonus
-  for a first court review that an admin approves (50+ characters). Within the 3-day window.
+- 1 ticket per game for finishing the Rate your game page (every player answered, Skip counts, plus the court),
+  +2 one-time bonus for a first court review that an admin approves (50+ characters). Within the 3-day window.
 - Draw every other Sunday 8:00 PM Manila, automatic (server job; idempotent: draw if `scheduled_at < now` and no
   draw row; catches up after downtime). Minimum 10 distinct players, else tickets roll over once (prize does not
   stack). Tickets reset after each draw. Weighted random; commit–reveal fairness (seed hash stored at round open,
   seed revealed at draw).
 - Excluded: admins, probation / unpaid players (silently); one win per player per 3 months.
-- Prize: free-run voucher. Winner ticks "Use my free run" at Papawis signup; close-out skips the charge for that
-  slot. Expiry: end of next season (per-prize setting).
+- Prize: free-run voucher. The winner taps "Use my free run here" on a run they're confirmed in; close-out skips
+  that slot's charge and marks it paid; cancelling releases it. Expiry: end of next season (per-prize setting).
+- Code: lib/raffle.js (model, draw, vouchers, job), views/raffle.js, views/admin/raffle.js. Switch: raffle_enabled.
 - UI: `/raffle` (countdown, your tickets and odds, games to rate, entrants, history, past winners, rules, fairness
   code), nav ticket pill, "+1 ticket" on finishing a Rate your game page, ticket line in post-game emails,
   homepage banner, horizontal reel draw animation at 8 PM (10 s polling, no websocket). 7:45 PM bell optional.
