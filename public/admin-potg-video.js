@@ -3,7 +3,9 @@
 //     shrunk here, uploaded (/admin/media/potg-photo: graded + auto-framed on the server) and
 //     shown framed exactly like the video's last frame of that photo.
 //   • drag (mouse or finger) to move, mouse wheel or pinch to zoom, ←/→ to reorder, Auto to reset.
-//   • the framing maths is frameOf() in assets/media/potg/template.html: keep them in sync.
+//   • Straighten: a -30..30° slider with a grid; on touch, two-finger twist also rotates, but only
+//     while Straighten is open. Rotating auto-zooms so no corner ever shows.
+//   • the framing maths is public/potg-frame.js, shared with the video template.
 //   • Render preview: posts the players that have photos (an empty one is skipped), the server
 //     queues a low-res preview per player, then off to Processing (approve there for hi-res).
 //   • Opened from a preview's Edit (?from=), it starts prefilled from that preview.
@@ -13,15 +15,11 @@
   if (!page) return;
   var GAME = page.getAttribute('data-game');
   var COUNT = +page.getAttribute('data-count') || 6;
-  var FW = 1080, FH = 1350, TX = FW / 2, TY = FH * 0.40, KB = 1.10;
+  var PF = window.potgFrame, FW = PF.FW, KB = PF.KB, MAX_ROT = PF.MAX_ROT;
   var ui = function () { return window.adminUi || { toast: function (t) { alert(t); } }; };
 
-  function frameOf(iw, ih, fx, fy, zoom, extra) {
-    var s = Math.max(FW / iw, FH / ih) * Math.max(1, zoom) * extra, w = iw * s, h = ih * s;
-    var x = TX - fx * w, y = TY - fy * h;
-    x = Math.min(0, Math.max(FW - w, x)); y = Math.min(0, Math.max(FH - h, y));
-    return { x: x, y: y, s: s, w: w, h: h };
-  }
+  // Framing maths: public/potg-frame.js (shared with the video template, so preview = render).
+  function frameOf(p, extra) { return PF.place(p.w, p.h, p.fx, p.fy, p.zoom, extra == null ? KB : extra, p.rot || 0); }
 
   var players = [].slice.call(page.querySelectorAll('[data-pv-player]')).map(function (el) {
     return { el: el, id: el.getAttribute('data-pv-player'), photos: new Array(COUNT).fill(null), slots: [].slice.call(el.querySelectorAll('[data-pv-slot]')) };
@@ -35,9 +33,13 @@
     empty.hidden = true; tools.hidden = false; img.hidden = false; slot.classList.add('is-filled');
     if (img.getAttribute('src') !== ph.url) img.src = ph.url;
     var k = slot.querySelector('[data-pv-frame]').clientWidth / FW;
-    var f = frameOf(ph.w, ph.h, ph.fx, ph.fy, ph.zoom, KB);
-    img.style.width = (f.w * k) + 'px'; img.style.height = (f.h * k) + 'px';
-    img.style.left = (f.x * k) + 'px'; img.style.top = (f.y * k) + 'px';
+    var f = frameOf(ph);
+    img.style.width = ph.w + 'px'; img.style.height = ph.h + 'px'; img.style.left = '0'; img.style.top = '0';
+    img.style.transformOrigin = '0 0'; img.style.transform = 'scale(' + k + ') ' + f.transform;
+    var rr = slot.querySelector('[data-pv-rot-range]'), rv = slot.querySelector('[data-pv-rot-val]');
+    if (rr && document.activeElement !== rr) rr.value = (ph.rot || 0);
+    if (rv) rv.textContent = (ph.rot || 0).toFixed(1) + '°';
+    slot.querySelector('[data-pv-straighten]').classList.toggle('is-set', Math.abs(ph.rot || 0) >= 0.05);
   }
   function drawAll() { players.forEach(function (P) { P.photos.forEach(function (_, i) { draw(P, i); }); }); status(); }
 
@@ -76,7 +78,7 @@
       return fetch('/admin/media/potg-photo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataUrl: dataUrl }) })
         .then(function (r) { return r.json().then(function (d) { if (!r.ok || d.error) throw new Error(d.error || 'Upload failed'); return d; }); });
     }).then(function (d) {
-      P.photos[i] = { id: d.id, w: d.w, h: d.h, fx: d.fx, fy: d.fy, ax: d.fx, ay: d.fy, zoom: 1, url: d.url };
+      P.photos[i] = { id: d.id, w: d.w, h: d.h, fx: d.fx, fy: d.fy, ax: d.fx, ay: d.fy, zoom: 1, rot: 0, url: d.url };
     }).catch(function (e) { ui().toast(e.message || 'Upload failed', { tone: 'error' }); })
       .then(function () { busy--; b.hidden = true; draw(P, i); status(); });
   }
@@ -94,7 +96,20 @@
       slot.querySelector('[data-pv-file]').addEventListener('change', function (e) { addFiles(P, i, e.target.files); e.target.value = ''; });
       slot.querySelector('[data-pv-replace]').addEventListener('change', function (e) { if (e.target.files[0]) upload(P, i, e.target.files[0]); e.target.value = ''; });
       slot.querySelector('[data-pv-remove]').addEventListener('click', function () { P.photos[i] = null; draw(P, i); status(); });
-      slot.querySelector('[data-pv-auto]').addEventListener('click', function () { var p = P.photos[i]; if (p) { p.fx = p.ax; p.fy = p.ay; p.zoom = 1; draw(P, i); } });
+      slot.querySelector('[data-pv-auto]').addEventListener('click', function () { var p = P.photos[i]; if (p) { p.fx = p.ax; p.fy = p.ay; p.zoom = 1; p.rot = 0; draw(P, i); } });
+      // Straighten mode: angle slider (-30..30°), grid overlay, and two-finger twist on touch.
+      var rotBox = slot.querySelector('[data-pv-rot]'), sBtn = slot.querySelector('[data-pv-straighten]');
+      function setStraighten(on) {
+        rotBox.hidden = !on; slot.classList.toggle('is-straighten', on); sBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+      function setRot(p, deg) { deg = Math.max(-MAX_ROT, Math.min(MAX_ROT, deg)); p.rot = Math.abs(deg) < 0.5 ? 0 : Math.round(deg * 10) / 10; }
+      sBtn.addEventListener('click', function () { setStraighten(rotBox.hidden); });
+      slot.querySelector('[data-pv-rot-done]').addEventListener('click', function () { setStraighten(false); });
+      slot.querySelector('[data-pv-rot-reset]').addEventListener('click', function () { var p = P.photos[i]; if (p) { p.rot = 0; settle(p); draw(P, i); } });
+      slot.querySelector('[data-pv-rot-range]').addEventListener('input', function (e) {
+        var p = P.photos[i]; if (!p) return; setRot(p, +e.target.value); draw(P, i);
+      });
+      slot.querySelector('[data-pv-rot-range]').addEventListener('change', function () { var p = P.photos[i]; if (p) { settle(p); draw(P, i); } });
       [].slice.call(slot.querySelectorAll('[data-pv-move]')).forEach(function (btn) {
         btn.addEventListener('click', function () {
           var j = i + (+btn.getAttribute('data-pv-move')); if (j < 0 || j >= COUNT) return;
@@ -104,14 +119,14 @@
       // Gestures: one finger / mouse drag moves, two fingers pinch-zoom (and move with their
       // midpoint), mouse wheel zooms. All on pointer events, so mouse, touch and pen behave alike.
       var fr = slot.querySelector('[data-pv-frame]'), pts = {}, g = null;
-      function settle(p) { var f = frameOf(p.w, p.h, p.fx, p.fy, p.zoom, KB); p.fx = (TX - f.x) / f.w; p.fy = (TY - f.y) / f.h; }
+      function settle(p) { var f = frameOf(p); p.fx = f.fx; p.fy = f.fy; }
       function begin() {
         var p = P.photos[i]; if (!p) return;
         settle(p); // start from where the photo really is (after clamping), so it never sticks
         var ids = Object.keys(pts), a = pts[ids[0]], b = pts[ids[1]];
         var mx = b ? (a.x + b.x) / 2 : a.x, my = b ? (a.y + b.y) / 2 : a.y;
-        var f = frameOf(p.w, p.h, p.fx, p.fy, p.zoom, KB);
-        g = { mx: mx, my: my, fx: p.fx, fy: p.fy, w: f.w, h: f.h, zoom: p.zoom, dist: b ? Math.hypot(a.x - b.x, a.y - b.y) : 0, k: fr.clientWidth / FW };
+        g = { mx: mx, my: my, fx: p.fx, fy: p.fy, zoom: p.zoom, rot: p.rot || 0, dist: b ? Math.hypot(a.x - b.x, a.y - b.y) : 0,
+              ang: b ? Math.atan2(b.y - a.y, b.x - a.x) : 0, k: fr.clientWidth / FW };
       }
       fr.addEventListener('pointerdown', function (e) {
         if (!P.photos[i] || e.target.closest('label')) return;
@@ -124,9 +139,10 @@
         var ids = Object.keys(pts), a = pts[ids[0]], b = pts[ids[1]];
         var mx = b ? (a.x + b.x) / 2 : a.x, my = b ? (a.y + b.y) / 2 : a.y;
         if (b && g.dist) p.zoom = Math.min(3, Math.max(1, g.zoom * Math.hypot(a.x - b.x, a.y - b.y) / g.dist));
-        var sc = p.zoom / g.zoom; // keep the move in step with the size the photo is now
-        p.fx = g.fx - (mx - g.mx) / g.k / (g.w * sc);
-        p.fy = g.fy - (my - g.my) / g.k / (g.h * sc);
+        // twist rotates, but only in straighten mode (so pinching never tilts the photo by accident)
+        if (b && !rotBox.hidden) setRot(p, g.rot + (Math.atan2(b.y - a.y, b.x - a.x) - g.ang) * 180 / Math.PI);
+        var d = PF.dragDelta(frameOf(p), (mx - g.mx) / g.k, (my - g.my) / g.k);
+        p.fx = g.fx + d.dfx; p.fy = g.fy + d.dfy;
         draw(P, i);
       });
       function end(e) {
@@ -161,7 +177,7 @@
         chip: P.el.querySelector('[data-pv-chip]').value,
         title: (P.el.querySelector('[data-pv-title]') || {}).value || '',
         stats: [].slice.call(P.el.querySelectorAll('[data-pv-stat]:checked')).map(function (c) { return c.value; }),
-        photos: P.photos.map(function (p) { return { id: p.id, fx: +p.fx.toFixed(4), fy: +p.fy.toFixed(4), zoom: +(+p.zoom).toFixed(3) }; }),
+        photos: P.photos.map(function (p) { return { id: p.id, fx: +p.fx.toFixed(4), fy: +p.fy.toFixed(4), zoom: +(+p.zoom).toFixed(3), rot: +(+(p.rot || 0)).toFixed(1) }; }),
       };
     }) };
     fetch('/admin/games/' + encodeURIComponent(GAME) + '/potg-video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -176,7 +192,7 @@
     try {
       var d = JSON.parse(pre.textContent), P = players.filter(function (x) { return x.id === d.playerId; })[0];
       if (P) {
-        (d.photos || []).slice(0, COUNT).forEach(function (ph, i) { P.photos[i] = { id: ph.id, w: ph.w, h: ph.h, fx: ph.fx, fy: ph.fy, ax: ph.fx, ay: ph.fy, zoom: ph.zoom || 1, url: ph.url }; });
+        (d.photos || []).slice(0, COUNT).forEach(function (ph, i) { P.photos[i] = { id: ph.id, w: ph.w, h: ph.h, fx: ph.fx, fy: ph.fy, ax: ph.fx, ay: ph.fy, zoom: ph.zoom || 1, rot: ph.rot || 0, url: ph.url }; });
         if (d.number != null) P.el.querySelector('[data-pv-number]').value = d.number;
         P.el.querySelector('[data-pv-chip]').value = d.chip || '';
         var tt = P.el.querySelector('[data-pv-title]'); if (tt && d.title) tt.value = d.title;

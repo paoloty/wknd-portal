@@ -61,6 +61,7 @@
 <div id=dom>WKNDBASKETBALL.COM</div>
 <svg id=ball viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg>
 <div class=L id=grain></div><div class=L id=flash></div>
+<script src="../../../public/potg-frame.js"></script>
 <script>
 const FW=1080, FH=1350, FPS=24;
 const C=x=>Math.max(0,Math.min(1,x)), E=x=>1-Math.pow(1-C(x),3), W=(t,a,d)=>E((t-a)/d), EI=x=>C(x)*C(x)*C(x);
@@ -79,17 +80,9 @@ const HOLD=6.0;
 const DUR=OUT+3.4+HOLD;
 window.TIMELINE={FS,FD,O,FL,PH,NPH,OUT,DUR};
 
-// Photo framing, shared with the editor (public/admin-potg-video.js frameOf): the photo covers the
-// frame, scaled by zoom (1 = just covers), with its focal point (fx, fy as 0..1 of the image) put
-// at the target point (centre, 40% down: above the stat block), clamped so no edge shows.
-// KB is the push-in: each photo starts KB_START of its framed size... never below "covers".
-const TX=FW/2, TY=FH*0.40, KB=1.10;
-function frameOf(iw,ih,fx,fy,zoom,extra){
-  const s=Math.max(FW/iw,FH/ih)*Math.max(1,zoom)*extra, w=iw*s, h=ih*s;
-  let x=TX-fx*w, y=TY-fy*h;
-  x=Math.min(0,Math.max(FW-w,x)); y=Math.min(0,Math.max(FH-h,y));
-  return {x,y,s};
-}
+// Photo framing (focal point, zoom, straighten angle, auto-fill on rotate) lives in
+// public/potg-frame.js, shared with the editor so the preview there matches the render exactly.
+const KB=window.potgFrame.KB;
 
 // ---- build from DATA ----
 let D=null, IMGS=[], R=null, GR=[];
@@ -149,11 +142,17 @@ function setPhotos(t){
   const st=idx===0?0:FL+idx*PH, en=idx===0?FL+PH:(idx===NPH-1?DUR:st+PH);
   IMGS.forEach((im,i)=>{
     if(i!==idx){im.style.opacity=0;return;}
-    const p=D.photos[i], u=C((t-st)/(en-st));
-    const extra=1+(KB-1)*(idx===0?E(u):u);         // push in toward the framing
-    const f=frameOf(im.naturalWidth,im.naturalHeight,p.fx,p.fy,p.zoom,extra);
+    const p=D.photos[i];
+    // Push-in toward the framing, at the same pace on every photo: 1.00 → KB over its 3 s on screen.
+    // Photo 1 is also the (dark, blurred) intro background, so it creeps 1.00 → 1.03 behind the
+    // intro, then does 1.03 → KB once it's revealed at FL, so the zoom is visible on it too.
+    let k;
+    if(idx===0) k = t<FL ? 0.3*(t/FL) : 0.3+0.7*C((t-FL)/PH);
+    else k = C((t-st)/PH);
+    const extra=1+(KB-1)*k;
+    const f=window.potgFrame.place(im.naturalWidth,im.naturalHeight,p.fx,p.fy,p.zoom,extra,p.rot||0);
     im.style.width=im.naturalWidth+'px';im.style.height=im.naturalHeight+'px';
-    im.style.transform=`translate(${f.x}px,${f.y}px) scale(${f.s})`;im.style.opacity=1;
+    im.style.transform=f.transform;im.style.opacity=1;
     // intro: dark, grey, blurred until the name lands
     if(idx===0){const col=W(t,O+1.55,0.5);im.style.filter=`grayscale(${1-col}) brightness(${0.35+0.65*col}) blur(${(1-col)*8}px)`;}
     else im.style.filter='none';

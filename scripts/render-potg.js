@@ -66,7 +66,7 @@ async function main() {
   const data = {
     ...cfg.data,
     avatar: cfg.avatar && fs.existsSync(cfg.avatar) ? pathToFileURL(cfg.avatar).href : '',
-    photos: cfg.photos.map(p => ({ url: pathToFileURL(path.join(dir, p.file)).href, fx: +p.fx, fy: +p.fy, zoom: +p.zoom })),
+    photos: cfg.photos.map(p => ({ url: pathToFileURL(path.join(dir, p.file)).href, fx: +p.fx, fy: +p.fy, zoom: +p.zoom, rot: +p.rot || 0 })),
   };
 
   const browser = await puppeteer.launch({

@@ -3145,3 +3145,15 @@ select.aui-input { padding-left: 9px; }
 .pv-seg label:has(input:checked) { border-color: var(--aui-amber-line); background: var(--aui-amber-bg); color: var(--amber); }
 .pv-seg input { accent-color: var(--amber); }
 .aui-section[hidden] { display: none; }
+/* Straighten mode (POTG editor) */
+.pv-grid { position: absolute; inset: 0; pointer-events: none; display: none;
+  background-image: linear-gradient(rgba(255,255,255,.35) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.35) 1px, transparent 1px);
+  background-size: 100% 12.5%, 16.666% 100%; }
+.pv-slot.is-straighten .pv-grid { display: block; }
+.pv-slot.is-straighten .pv-guide { display: none; }
+.pv-rot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.pv-rot[hidden] { display: none; }
+.pv-rot input[type=range] { flex: 1; min-width: 0; accent-color: var(--amber); }
+.pv-rot__val { font: 600 13px 'Saira Condensed', sans-serif; min-width: 44px; text-align: right; color: var(--amber); }
+[data-pv-straighten].is-set, [data-pv-straighten][aria-pressed="true"] { color: var(--amber) !important; }
+.pv-tools__row .aui-btn { padding-left: 6px; padding-right: 6px; }

@@ -22,6 +22,7 @@ function playerPanel(p, { cats, photoCount, co }) {
     <div class="pv-slot" data-pv-slot="${i}">
       <div class="pv-frame" data-pv-frame>
         <img alt="" draggable="false" hidden data-pv-img>
+        <div class="pv-grid" aria-hidden="true"></div>
         <div class="pv-guide pv-guide--logo"></div><div class="pv-guide pv-guide--stats"><span>stats</span></div>
         <label class="pv-empty" data-pv-empty><input type="file" accept="image/*" multiple hidden data-pv-file><span class="pv-empty__n">${i + 1}</span><span>${attr(SLOT_HINTS[i] || 'Photo')}</span><span class="aui-muted">Tap to add</span></label>
         <div class="pv-busy" hidden data-pv-busy>Uploading…</div>
@@ -30,9 +31,16 @@ function playerPanel(p, { cats, photoCount, co }) {
         <div class="pv-tools__row">
           <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-move="-1" title="Move earlier">←</button>
           <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-auto title="Back to the auto framing">Auto</button>
+          <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-straighten aria-pressed="false" title="Straighten: rotate up to 30°">Straighten</button>
           <label class="aui-btn aui-btn--ghost aui-btn--sm" title="Replace">Replace<input type="file" accept="image/*" hidden data-pv-replace></label>
           <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-remove title="Remove">✕</button>
           <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-move="1" title="Move later">→</button>
+        </div>
+        <div class="pv-rot" hidden data-pv-rot>
+          <input type="range" min="-30" max="30" step="0.1" value="0" aria-label="Straighten angle" data-pv-rot-range>
+          <span class="pv-rot__val" data-pv-rot-val>0.0°</span>
+          <button type="button" class="aui-btn aui-btn--ghost aui-btn--sm" data-pv-rot-reset>Reset</button>
+          <button type="button" class="aui-btn aui-btn--secondary aui-btn--sm" data-pv-rot-done>Done</button>
         </div>
       </div>
     </div>`).join('');
@@ -80,6 +88,7 @@ export function adminPotgVideoBody({ game, ctx, cats, photoCount, prefill = null
       ${button('Render preview', { kind: 'primary', attrs: 'disabled data-pv-save' })}
     </div>
   </div>
+  <script src="/potg-frame.js${ver ? `?v=${ver}` : ''}" defer></script>
   <script src="/admin-potg-video.js${ver ? `?v=${ver}` : ''}" defer></script>`;
 }
 
