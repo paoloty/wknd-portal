@@ -296,6 +296,10 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
       ? `<button class="pwx-btn pwx-btn--outline" type="button" data-pwx-act="cancel" data-game="${gid}">${lbl('Cancel my spot')}</button>`
       : `<button class="pwx-btn" type="button" disabled>${ICON.lock}${lbl('Cancel my spot')}</button>`;
     note = noteHtml(`You're in · slot ${mySlot}`, cancellable ? ` · free to cancel until ${fmtDay(cutoffDate)}` : ' · cancellation closed', true);
+    // Rate & Win free run: put it on this spot, or take it off again.
+    const v = ctx.voucher;
+    if (v?.applied.has(mySignup.id)) note += `<span class="pwx-note-line pwx-voucher">${ICON.check}<b>Free run applied</b> · this run is on us · <button type="button" class="pwx-linkbtn" data-pwx-act="voucher" data-use="0" data-game="${gid}">Undo</button></span>`;
+    else if (v?.free) note += `<span class="pwx-note-line pwx-voucher"><button type="button" class="pwx-linkbtn" data-pwx-act="voucher" data-use="1" data-game="${gid}">Use my free run here</button> · you won it in Rate &amp; Win</span>`;
   } else if (mySignup?.status === 'pending') {
     btn = `<a class="pwx-btn" href="/settle-balance?category=${encodeURIComponent('Papawis Deposit')}">${lbl('Submit deposit &rarr;')}</a>
       <button class="pwx-btn pwx-btn--outline" type="button" data-pwx-act="cancel" data-game="${gid}">${lbl('Leave the list')}</button>`;
@@ -413,8 +417,8 @@ function pastCard(g, signups, { isLoggedIn, hidden }) {
 const PAST_SHOWN = 8;
 
 // ── page ────────────────────────────────────────────────────────────────────
-export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, viewer = null, isLoggedIn = false, hasBalance = false, summary = null, isAdmin = false, alertsOn = null } = {}) {
-  const ctx = { isLoggedIn, viewerPlayerId, hasBalance, alertsOn };
+export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, viewer = null, isLoggedIn = false, hasBalance = false, summary = null, isAdmin = false, alertsOn = null, voucher = null } = {}) {
+  const ctx = { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, voucher };
   const key = g => `${g.date}T${g.start_time || '00:00'}`;
   const upcoming = games.filter(g => g.status === 'open' && daysUntil(g.date) >= 0).sort((a, b) => key(a) < key(b) ? -1 : 1);
   const past = games.filter(g => !upcoming.includes(g)).sort((a, b) => key(a) < key(b) ? 1 : -1);
@@ -578,6 +582,11 @@ function papawisScript(viewer) {
       btn.disabled = true;
       post('/papawis/' + encodeURIComponent(gid) + '/cancel')
         .then(function () { popOut(gid); setTimeout(function () { location.reload(); }, reduce ? 0 : 400); })
+        .catch(function (err) { btn.disabled = false; showErr(gid, err.message); });
+    } else if (act === 'voucher') {
+      btn.disabled = true;
+      post('/papawis/' + encodeURIComponent(gid) + '/voucher', { use: btn.dataset.use === '1' })
+        .then(function () { location.reload(); })
         .catch(function (err) { btn.disabled = false; showErr(gid, err.message); });
     } else if (act === 'see-all') {
       var tpl = document.querySelector('template[data-roster-tpl="' + gid + '"]');

@@ -40,7 +40,7 @@ export function wkndLogo(className = 'site-header__logo', href = '/', phase = nu
   return `<a href="${href}" class="wknd-logo ${className}" aria-label="WKND Basketball home">WKND${wkndBall()}</a>`;
 }
 
-export function layout({ title = 'WKND Basketball', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, bare = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null, headerInfo = null, siteBar = '' }) {
+export function layout({ title = 'WKND Basketball', currentPath = '/', body, ticker = '', gaSnippet = '', metaTags = '', cssVer = '', isAdmin = false, isPlayer = false, isOwnProfile = false, isHead = false, features = {}, minimalHeader = false, bare = false, joinLabel = '', origin = '', notifications = [], unreadNotificationCount = 0, navPlayer = null, headerInfo = null, siteBar = '', raffleNav = null }) {
   // Viewing your own profile (reached via /me, which redirects to /players/:slug) should
   // light up "My Profile", not the Stats dropdown, even though the URL shape overlaps
   // with "browsing another player via Stats > Players". The route resolves this directly
@@ -125,7 +125,9 @@ export function layout({ title = 'WKND Basketball', currentPath = '/', body, tic
   // Uses class-based JS targeting throughout, not ids — this markup can render twice on
   // minimalHeader pages (desktop nav + mobile overlay nav), same reason the hamburger
   // buttons above use .site-nav__hamburger instead of an id.
-  const notificationBell = isPlayer ? `<div class="site-nav__notif">
+  // Rate & Win ticket count (lib/raffle.js), next to the bell wherever the bell shows.
+  const raffleLink = raffleNav ? `<a href="/raffle" class="site-nav__raffle${currentPath === '/raffle' ? ' is-on' : ''}" aria-label="${raffleNav.tickets} raffle ticket${raffleNav.tickets === 1 ? '' : 's'} this round"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M13 6v2M13 11v2M13 16v2"/></svg><span>${raffleNav.tickets}</span></a>` : '';
+  const notificationBell = isPlayer ? `${raffleLink}<div class="site-nav__notif">
     <button class="site-nav__notif-trigger" type="button" aria-label="Notifications" aria-expanded="false">
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6.5a5 5 0 0 0-10 0c0 4.5-1.5 5.5-1.5 5.5h13S14 11 14 6.5z"/><path d="M7.5 15a1.5 1.5 0 0 0 3 0"/></svg>
       ${unreadNotificationCount > 0 ? `<span class="site-nav__notif-badge">${unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>` : ''}

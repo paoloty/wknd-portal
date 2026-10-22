@@ -118,6 +118,7 @@ const NAV_GROUPS = [
       { href: '/admin/fines',            label: 'Fines & conduct', icon: 'shield',    exact: true },
       { href: '/admin/fines/categories', label: 'Fine categories', icon: 'ledger' },
       { href: '/admin/ratings',          label: 'Player ratings',  icon: 'awards' },
+      { href: '/admin/raffle',           label: 'Rate & Win',      icon: 'games' },
     ],
   },
   {
