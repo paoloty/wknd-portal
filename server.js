@@ -22519,8 +22519,43 @@ app.get('/admin/raffle', requireAuth, (req, res) => {
   const rounds = getRounds(raffle.id, 30).map(o => ({ ...o, winner: o.winner_player_id ? getPlayerById(o.winner_player_id)?.name || '' : '' }));
   res.send(renderAdminPage(req, {
     title: 'Rate & Win raffle', currentPath: '/admin/raffle',
-    body: adminRaffleBody({ on: raffleOn(), settingsHtml: raffleSettingsPanel(), raffle, schedule: parseCourtJson(raffle.schedule_json, {}), round, entries, rounds, vouchers: getAllVouchers() }),
+    body: adminRaffleBody({ on: raffleOn(), settingsHtml: raffleSettingsPanel(), raffle, schedule: parseCourtJson(raffle.schedule_json, {}), round, entries, rounds, vouchers: getAllVouchers(),
+      announce: { sent: getBroadcastByDedupe(raffleLaunchKey(raffle)), reach: raffleOn() ? selectBroadcastRecipients(undefined, { optOutColumn: 'league_email_optout' }).recipients : [] } }),
   }));
+});
+// The one-time launch announcement: a bell for every active member and one email (league
+// update emails, so that unsubscribe applies, and the usual group-email caps). Only once the
+// raffle is on, and only once ever (dedupe key).
+const raffleLaunchKey = raffle => `raffle_launch:${raffle.id}`;
+function raffleLaunchMessage(raffle) {
+  const round = currentRound(raffle);
+  const when = new Date(round.draws_at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+  const rules = parseCourtJson(raffle.rules_json, {});
+  return {
+    title: 'New: Rate & Win', body: `Rate your games, win a free Papawis run. First draw ${when}.`, subject: 'New on WKND: rate your games, win a free run',
+    heading: 'Rate your games, win a free run, {name}',
+    lines: [
+      'After every Papawis run and league game you get a quick link to rate the court and the players you played with. Finish it and you get one raffle ticket for that game.',
+      `Every other Sunday at 8 PM, one player wins a free Papawis run. The first draw is ${when}. The more games you rate, the better your odds. A first review of a court that we approve is +${rules.first_court_review || 2} more tickets.`,
+      'Your ratings stay anonymous to other players, and the answers you give never change your tickets. Skip counts too.',
+    ],
+  };
+}
+app.post('/admin/raffle/announce', requireAuth, express.json(), async (req, res) => {
+  const raffle = ensureRateAndWin();
+  if (!raffleOn() || raffle.status !== 'active') return res.status(400).json({ error: 'Turn the raffle on (and running) first.' });
+  if (getBroadcastByDedupe(raffleLaunchKey(raffle))) return res.status(400).json({ error: 'The announcement already went out.' });
+  const m = raffleLaunchMessage(raffle);
+  const { recipients } = selectBroadcastRecipients(undefined, { optOutColumn: 'league_email_optout' });
+  const result = await sendBroadcast({
+    kind: 'raffle_launch', dedupeKey: raffleLaunchKey(raffle), segment: 'active_players', createdBy: req.session?.playerName || 'admin',
+    title: m.title, body: m.body, link: '/raffle', recipients,
+    email: async r => ({
+      ...leagueNudgeEmail({ name: r.player.name, subject: m.subject, heading: m.heading, lines: m.lines, cta: 'See Rate & Win', url: `${SITE_ORIGIN}/raffle`, unsubscribeUrl: leagueUnsubscribeUrl(r.reg.id), label: 'Rate & Win' }),
+      headers: unsubscribeHeaders(leagueUnsubscribeUrl(r.reg.id)),
+    }),
+  });
+  res.json({ ok: true, message: `Announced: ${result.bell} bell${result.bell === 1 ? '' : 's'}, ${result.email} email${result.email === 1 ? '' : 's'}${result.capped ? ` (${result.capped} over the email limit got the bell only)` : ''}.` });
 });
 app.post('/admin/raffle/status', requireAuth, express.json(), (req, res) => {
   const status = req.body?.status === 'paused' ? 'paused' : 'active';

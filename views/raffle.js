@@ -94,7 +94,7 @@ function rules(x) {
     [`Every other Sunday at 8 PM`, `The draw runs on its own. It needs ${x.minPlayers}+ players, or tickets roll over once. Tickets reset after each draw.`],
     ['Who can win', 'Active players in good standing. Admins can’t win, and a winner sits out for 3 months.'],
   ];
-  return `${sh('How it works')}
+  return `<span id="rf-how"></span>${sh('How it works')}
   <div class="card rf-rules">${items.map(([t, d], i) => `<div class="rf-rule"><span class="rf-rule__n">${i + 1}</span><span><b>${escHtml(t)}</b><span class="rf-muted">${escHtml(d)}</span></span></div>`).join('')}</div>
   <div class="rf-fair">${LOCK}<span><b>Fair draw, no one picks the winner.</b> This round's secret number was locked when it opened. Its fingerprint is below; the number is shown after the draw so anyone can check it.</span><code>${escHtml(x.round?.seedHash || '')}</code></div>`;
 }
