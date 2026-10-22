@@ -4,7 +4,7 @@ Background video renders. The admin builds a video on a page, saving **queues** 
 
 ## Player of the Game video
 - **Entry:** game page → Content tab → "🎬 Make POTG video" (`views/admin/game.js`, under the POTG pick) → `/admin/games/:id/potg-video`.
-- **Who:** the game's `manual_potg_player_id` and `co_potg_player_id`. A co-POTG game makes **two** videos (kicker reads "CO-PLAYER OF THE GAME").
+- **Who:** the game's `manual_potg_player_id` and `co_potg_player_id`. On a co-POTG game the editor asks "Make videos for: Both / X only / Y only", and each player has a "Title on the video" choice (Co-Player of the Game, or plain Player of the Game; making just one defaults to plain).
 - **Editor** (`views/admin/potg-video.js`, browser: `public/admin-potg-video.js`): jersey # for this game (DB numbers can be wrong, e.g. Paul wore #1), chip text, up to 3 big numbers, and **exactly 6 photos**, each framed by drag/touch (move) and mouse wheel or pinch (zoom). Everything else comes from the DB (`lib/potg-video.js potgVideoContext`): name, team colours, result line `W 83–76 vs White · Oct 18`, avatar (players.picture_url data URL).
 - **Photo upload:** `POST /admin/media/potg-photo` (browser pre-shrinks to 2400px). `savePotgPhoto` fixes rotation, applies the WKND grade, guesses a focal point (skin-tone centroid, top 75% of the photo), stores `data/media/uploads/<id>.jpg`.
 - **Framing maths:** `frameOf()` exists twice and must match: `assets/media/potg/template.html` and `public/admin-potg-video.js`. Photo covers 1080×1350 × zoom, focal point placed at (50%, 40%) and clamped; the preview shows the photo's final (pushed-in, ×1.10) frame.

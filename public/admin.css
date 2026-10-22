@@ -3139,3 +3139,9 @@ select.aui-input { padding-left: 9px; }
 .pv-empty[hidden], .pv-busy[hidden], .pv-tools[hidden], .pv-frame img[hidden] { display: none; }
 .mj-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .mj-video { display: block; width: 100%; max-width: 300px; aspect-ratio: 4 / 5; margin-top: 10px; border-radius: 10px; background: #000; border: 1px solid var(--aui-line); }
+.pv-which { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+.pv-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.pv-seg label { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--aui-line); background: var(--surface-2); cursor: pointer; font-size: 14px; }
+.pv-seg label:has(input:checked) { border-color: var(--aui-amber-line); background: var(--aui-amber-bg); color: var(--amber); }
+.pv-seg input { accent-color: var(--amber); }
+.aui-section[hidden] { display: none; }

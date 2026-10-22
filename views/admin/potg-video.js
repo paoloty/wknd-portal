@@ -11,7 +11,7 @@ const attr = s => escHtml(String(s ?? ''));
 
 const SLOT_HINTS = ['Hero shot', 'Signature play', 'Wide, in the game', 'Tight: face / intensity', 'Another action angle', 'Emotion to close'];
 
-function playerPanel(p, { cats, photoCount }) {
+function playerPanel(p, { cats, photoCount, co }) {
   const statBoxes = cats.map(c => {
     const v = p.line[c.key];
     const on = p.suggestedStats.includes(c.key);
@@ -39,10 +39,13 @@ function playerPanel(p, { cats, photoCount }) {
   return section({
     title: `${p.role === 'CO-POTG' ? 'Co-player of the game' : 'Player of the game'} · ${p.first} ${p.last}`,
     note: `· ${p.teamTitle} · ${p.result} vs ${p.oppTitle}`,
+    id: `pv-${p.playerId}`,
     bodyHtml: `<div class="aui-panel pv-player" data-pv-player="${attr(p.playerId)}">
       <div class="pv-meta">
         <label class="aui-field"><span class="aui-field__label">Jersey # in this game</span>
           <input class="aui-input pv-num" inputmode="numeric" maxlength="3" value="${attr(p.number)}" data-pv-number></label>
+        ${co ? `<label class="aui-field"><span class="aui-field__label">Title on the video</span>
+          <select class="aui-input" data-pv-title><option value="co" selected>Co-Player of the Game</option><option value="potg">Player of the Game</option></select></label>` : ''}
         <label class="aui-field pv-chipfield"><span class="aui-field__label">Chip <span class="aui-muted">(optional)</span></span>
           <input class="aui-input" maxlength="32" value="${attr(p.suggestedChip)}" placeholder="e.g. DOUBLE-DOUBLE" data-pv-chip></label>
       </div>
@@ -59,13 +62,18 @@ export function adminPotgVideoBody({ game, ctx, cats, photoCount, prefill = null
   const head = `${breadcrumb([{ label: 'Games', href: '/admin/games' }, { label: title, href: `/admin/games/${encodeURIComponent(game.id)}?tab=content` }, { label: 'POTG video' }])}
     <header class="aui-head"><div class="aui-head__text"><div class="aui-head__eyebrow">Player of the game video</div>
       <h1 class="aui-head__title">${escHtml(title)}</h1>
-      <p class="aui-head__sub">${prefill ? 'Editing a preview: change what you need and render a new preview.' : ctx.co ? 'Co-POTG game: this makes two videos, one per player (leave a player empty to skip him).' : 'One video, about 33 seconds.'} You get a quick preview first under Processing; approve it there for the hi-res download.</p></div></header>`;
+      <p class="aui-head__sub">${prefill ? 'Editing a preview: change what you need and render a new preview.' : ctx.co ? 'Co-POTG game: make a video for both players or just one.' : 'One video, about 33 seconds.'} You get a quick preview first under Processing; approve it there for the hi-res download.</p></div></header>`;
   if (!ctx.players.length) return `<div class="aui-page">${head}${emptyState({ title: 'No player of the game yet', sub: 'Pick the POTG on the game’s Content tab first.' })}</div>`;
   const shown = prefill ? ctx.players.filter(p => p.playerId === prefill.playerId) : ctx.players;
   const json = prefill ? `<script type="application/json" data-pv-prefill>${JSON.stringify(prefill).replace(/</g, '\\u003c')}</script>` : '';
   return `<div class="aui-page pv-page" data-pv-page data-game="${attr(game.id)}" data-count="${photoCount}">
     ${head}
-    ${shown.map(p => playerPanel(p, { cats, photoCount })).join('')}
+    ${!prefill && ctx.co ? `<div class="aui-panel pv-which"><span class="aui-field__label">Make videos for</span>
+      <div class="pv-seg" role="radiogroup">
+        <label><input type="radio" name="pv-which" value="all" checked data-pv-which> Both</label>
+        ${ctx.players.map(p => `<label><input type="radio" name="pv-which" value="${attr(p.playerId)}" data-pv-which> ${escHtml(p.first)} ${escHtml(p.last)} only</label>`).join('')}
+      </div></div>` : ''}
+    ${shown.map(p => playerPanel(p, { cats, photoCount, co: ctx.co })).join('')}
     ${json}
     <div class="pv-savebar">
       <span class="aui-muted" data-pv-status>Add ${photoCount} photos${shown.length > 1 ? ' for each player' : ''} to render.</span>

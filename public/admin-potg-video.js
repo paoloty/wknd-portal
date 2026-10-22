@@ -42,14 +42,16 @@
   function drawAll() { players.forEach(function (P) { P.photos.forEach(function (_, i) { draw(P, i); }); }); status(); }
 
   // A player with no photos at all is skipped (co-POTG: re-do just one); a started one must have all 6.
-  function used(P) { return P.photos.some(Boolean); }
+  // Co-POTG: "Make videos for" Both / one player. A hidden player is left out entirely.
+  function picked(P) { var r = page.querySelector('[data-pv-which]:checked'); return !r || r.value === 'all' || r.value === P.id; }
+  function used(P) { return picked(P) && P.photos.some(Boolean); }
   function status() {
-    var started = players.filter(used);
+    var shownP = players.filter(picked), started = shownP.filter(used);
     var missing = started.length ? started.reduce(function (n, P) { return n + P.photos.filter(function (p) { return !p; }).length; }, 0) : COUNT;
     var noStats = started.some(function (P) { return !P.el.querySelectorAll('[data-pv-stat]:checked').length; });
     var btn = page.querySelector('[data-pv-save]');
     btn.disabled = missing > 0 || noStats || busy > 0;
-    page.querySelector('[data-pv-status]').textContent = busy > 0 ? 'Uploading…' : missing > 0 ? (missing + ' photo' + (missing === 1 ? '' : 's') + ' to go.') : noStats ? 'Pick at least one number for each player.' : (started.length < players.length ? 'Ready: renders a preview for ' + started.length + ' of ' + players.length + ' players.' : 'Ready to render a preview.');
+    page.querySelector('[data-pv-status]').textContent = busy > 0 ? 'Uploading…' : missing > 0 ? (missing + ' photo' + (missing === 1 ? '' : 's') + ' to go.') : noStats ? 'Pick at least one number for each player.' : (started.length < shownP.length ? 'Ready: renders a preview for ' + started.length + ' of ' + shownP.length + ' players.' : 'Ready to render a preview.');
   }
 
   // ── upload ──
@@ -157,6 +159,7 @@
         playerId: P.id,
         number: P.el.querySelector('[data-pv-number]').value,
         chip: P.el.querySelector('[data-pv-chip]').value,
+        title: (P.el.querySelector('[data-pv-title]') || {}).value || '',
         stats: [].slice.call(P.el.querySelectorAll('[data-pv-stat]:checked')).map(function (c) { return c.value; }),
         photos: P.photos.map(function (p) { return { id: p.id, fx: +p.fx.toFixed(4), fy: +p.fy.toFixed(4), zoom: +(+p.zoom).toFixed(3) }; }),
       };
@@ -176,12 +179,22 @@
         (d.photos || []).slice(0, COUNT).forEach(function (ph, i) { P.photos[i] = { id: ph.id, w: ph.w, h: ph.h, fx: ph.fx, fy: ph.fy, ax: ph.fx, ay: ph.fy, zoom: ph.zoom || 1, url: ph.url }; });
         if (d.number != null) P.el.querySelector('[data-pv-number]').value = d.number;
         P.el.querySelector('[data-pv-chip]').value = d.chip || '';
+        var tt = P.el.querySelector('[data-pv-title]'); if (tt && d.title) tt.value = d.title;
         if (d.statKeys && d.statKeys.length) [].slice.call(P.el.querySelectorAll('[data-pv-stat]')).forEach(function (cb) {
           cb.checked = d.statKeys.indexOf(cb.value) !== -1; cb.closest('.pv-stat').classList.toggle('is-on', cb.checked);
         });
       }
     } catch (e) { /* fall back to an empty editor */ }
   }
+  [].slice.call(page.querySelectorAll('[data-pv-which]')).forEach(function (r) {
+    r.addEventListener('change', function () {
+      players.forEach(function (P) { var sec = P.el.closest('.aui-section') || P.el; sec.hidden = !picked(P); });
+      var one = page.querySelector('[data-pv-which]:checked').value !== 'all';
+      // making just one: default his title to plain "Player of the Game" (still changeable)
+      players.forEach(function (P) { var t = P.el.querySelector('[data-pv-title]'); if (t && picked(P)) t.value = one ? 'potg' : 'co'; });
+      drawAll();
+    });
+  });
   window.addEventListener('resize', drawAll);
   drawAll();
 })();
