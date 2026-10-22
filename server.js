@@ -182,7 +182,7 @@ import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './li
 import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS, voiceFlavor, voiceProblems, voiceTraits, DEFAULT_VOICES } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
-import { leaderMinGames, awardMinGames, qualifiesPerGame, CAREER_MIN_GP } from './lib/qualification.js';
+import { leaderMinGames, awardMinGames, qualifiesPerGame, meetsLeaderRule, CAREER_MIN_GP } from './lib/qualification.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
 import { runWriter, numberProblems, claimProblems, bannedProblems, storyProblems, shorthandProblems, zeroStatProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
@@ -7794,10 +7794,10 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     }
   }
 
-  // ── Analysis: where the winner ranks in the league (regular season, 3+ games), worked out
+  // ── Analysis: where the winner ranks in the league (regular season, leader attendance rule), worked out
   // here so "led the league" is a fact the copy can cite and the checks can verify. The next
   // best is given as a number, never as a name (articles don't mention other players).
-  const leaders = getLeaders(season).filter(p => (p.games_played || 0) >= 3);
+  const leaders = buildLeaderPlayers(season).filter(qualifiesPerGame);
   const RANK_STATS = [['pts', 'points per game'], ['reb', 'rebounds per game'], ['ast', 'assists per game'], ['stl', 'steals per game'], ['blk', 'blocks per game']];
   const ord = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]}`;
   function rankLines(pid) {
@@ -9265,8 +9265,8 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
   const standB = standings.find(s => s.id === teamB.id);
   const h2h = getHeadToHeadRecord(teamA.id, teamB.id);
 
-  const topPlayers = teamId => getLeaders(season)
-    .filter(p => p.team_id === teamId && p.games_played > 0)
+  const topPlayers = teamId => buildLeaderPlayers(season)
+    .filter(p => p.team_id === teamId && qualifiesPerGame(p))
     .map(p => ({ ...p, ppg: p.pts / p.games_played }))
     .sort((a, b) => b.ppg - a.ppg)
     .slice(0, 3)
@@ -10514,8 +10514,10 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   try { log = JSON.parse(game.game_log_json || '[]'); } catch { log = []; }
   const pbpFiltered = filterPbpForRecap(log); // chronological order Q1→Q4
 
-  // Derive notable DNPs: gp >= 3 AND (ppg >= 8 OR top-2 scorer on team)
-  const allLeaders = getLeaders(game.season);
+  // Derive notable DNPs: meets the leader attendance rule AND (ppg >= 8 OR top-2 scorer on team)
+  const allLeaders = buildLeaderPlayers(game.season).filter(qualifiesPerGame)
+    .sort((a, b) => b.pts / b.games_played - a.pts / a.games_played);
+  const recapTeamGames = getTeamGameCounts(game.season);
   const teamTopScorers = {};
   for (const p of allLeaders) {
     if (!teamTopScorers[p.team_id]) teamTopScorers[p.team_id] = [];
@@ -10526,7 +10528,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   const notableDnps = dnpPlayers
     .map(d => {
       const totals = getPlayerSeasonStats(d.id, game.season);
-      if (!totals || totals.games_played < 3) return null;
+      if (!totals || !meetsLeaderRule(totals.games_played, recapTeamGames[d.team_id])) return null;
       const ppg = totals.games_played > 0 ? totals.pts / totals.games_played : 0;
       const isTopScorer = (teamTopScorers[d.team_id] || []).includes(d.id);
       // A 1.4 PPG absence isn't a story (it was listed once and written up as a loss).
@@ -16319,6 +16321,7 @@ function buildTeamsIndex(season) {
   const order = [...seeded, ...standings.filter(s => !seeded.includes(s))];
   const boxById = Object.fromEntries(getTeamSeasonStats(season).map(s => [s.team_id, s]));
   const seasonPlayers = getSeasonPlayerStats(season);
+  const teamGameCounts = getTeamGameCounts(season);
   const heads = getAllTeamHeads();
   const champions = teamsChampions(teams);
   const reigning = champions.find(c => Number(c.season) <= Number(season)) || null;
@@ -16331,7 +16334,7 @@ function buildTeamsIndex(season) {
     const gp = (row.wins || 0) + (row.losses || 0);
     const games = allGames.filter(g => String(g.season) === String(season) && g.game_type === 'regular' && isPlayedGame(g) && teamSide(g, t.id));
     const next = upcoming.find(g => teamSide(g, t.id));
-    const stars = seasonPlayers.filter(p => p.team_id === t.id && p.games_played > 0)
+    const stars = seasonPlayers.filter(p => p.team_id === t.id && meetsLeaderRule(p.games_played, teamGameCounts[t.id]))
       .map(p => ({ p, ppg: (p.pts || 0) / p.games_played }))
       .sort((a, b) => b.ppg - a.ppg).slice(0, 3)
       .map(({ p, ppg }) => ({ id: p.id, name: displayPlayerName(p.name), short: String(p.name).split(',')[0].trim().toUpperCase(), team: t.name, ppg: fmt1(ppg) }));
@@ -16521,8 +16524,10 @@ function buildTeamPage(team, viewerId) {
     };
   }
 
-  // Team leaders: PPG, RPG, APG, 3PM — top 3 inside the team; the leader's league rank.
-  const seasonPlayers = getSeasonPlayerStats(statsSeason).filter(p => p.games_played > 0);
+  // Team leaders: PPG, RPG, APG, 3PM — top 3 inside the team; the leader's league rank. Same
+  // attendance rule as /leaders (lib/qualification.js).
+  const statsTeamGames = getTeamGameCounts(statsSeason);
+  const seasonPlayers = getSeasonPlayerStats(statsSeason).filter(p => meetsLeaderRule(p.games_played, statsTeamGames[p.team_id]));
   const per = (p, k) => (p[k] || 0) / p.games_played;
   const leagueRank = (k, value) => {
     const vals = seasonPlayers.map(p => +per(p, k).toFixed(1));
@@ -17120,10 +17125,14 @@ app.get('/players', (req, res) => {
 
   // getAllPlayers' totals are the latest completed regular season — the same `season`.
   const spark = season ? getSeasonPointsByGame(season) : {};
+  // qualified: meets the /leaders attendance rule (lib/qualification.js), so the page's per-game
+  // leaders, top card and amber column bests rank the same players /leaders does.
+  const teamGamesOf = s => s === 'career' || !s ? {} : getTeamGameCounts(s);
+  const rosterTeamGames = teamGamesOf(season);
   const roster = all.filter(p => visible(p) && teamIds.has(p.team_id)).map(p => ({
     id: p.id, ...names(p), team: String(p.team_name || '').toUpperCase(), number: p.number, positions: positionsOf(p),
     status: p.status, photo: !!p.picture_url, gp: p.games_played || 0, pts: p.pts, reb: p.reb, ast: p.ast,
-    spark: spark[p.id] || [], rookie: isRookie(p.id),
+    spark: spark[p.id] || [], rookie: isRookie(p.id), qualified: meetsLeaderRule(p.games_played, rosterTeamGames[p.team_id]),
   }));
   const unrostered = all.filter(p => visible(p) && !teamIds.has(p.team_id));
   const alumni = unrostered.filter(p => linesOf[p.id]?.length).map(p => {
@@ -17139,12 +17148,15 @@ app.get('/players', (req, res) => {
   if (view === 'stats') {
     const qs = String(req.query.season || '');
     const statSeason = qs === 'career' ? 'career' : (seasons.includes(Number(qs)) ? Number(qs) : season);
+    const statTeamGames = teamGamesOf(statSeason);
+    const teamGamesByName = Object.fromEntries(getAllTeams().map(t => [String(t.name).toUpperCase(), statTeamGames[t.id]]));
     const rows = getPlayerSeasonLines(statSeason === 'career' ? null : statSeason)
       .filter(r => byId.has(r.id) && visible(byId.get(r.id)))
       .map(r => {
         const p = byId.get(r.id);
         return { ...r, ...names(p), gp: r.games_played, team: String(r.team_name || p.team_name || '').toUpperCase(), number: p.number,
-          positions: positionsOf(p), status: p.status, photo: !!p.picture_url, rookie: statSeason === season && isRookie(p.id) };
+          positions: positionsOf(p), status: p.status, photo: !!p.picture_url, rookie: statSeason === season && isRookie(p.id),
+          qualified: statSeason === 'career' ? r.games_played >= CAREER_MIN_GP : meetsLeaderRule(r.games_played, teamGamesByName[String(r.team_name || '').toUpperCase()]) };
       });
     stats = { rows, season: statSeason ?? 'career', seasons, mode: req.query.mode === 'totals' ? 'totals' : 'pg' };
   }

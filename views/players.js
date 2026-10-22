@@ -99,11 +99,12 @@ function filterPills(teams, positions) {
 
 // ── Rosters view ──────────────────────────────────────────────────────────────
 function rostersView({ season, roster, alumni, community }) {
-  const sorted = [...roster].sort((a, b) => (per(b.pts, b.gp) ?? -1) - (per(a.pts, a.gp) ?? -1) || b.gp - a.gp || a.last.localeCompare(b.last));
+  // Players who meet the attendance rule (p.qualified, set in server.js) rank ahead on PPG.
+  const sorted = [...roster].sort((a, b) => (b.qualified - a.qualified) || (per(b.pts, b.gp) ?? -1) - (per(a.pts, a.gp) ?? -1) || b.gp - a.gp || a.last.localeCompare(b.last));
   const teams = [...new Set(roster.map(p => p.team).filter(Boolean))].sort(teamSort);
   const positions = sortPositions([...new Set(roster.flatMap(p => p.positions))]);
   const hasRookies = roster.some(p => p.rookie);
-  const topId = sorted.find(p => p.gp)?.id;
+  const topId = sorted.find(p => p.qualified)?.id;
   const shownCommunity = community.filter(c => c.papawis > 0);
   const hiddenCommunity = community.filter(c => !(c.papawis > 0));
 
@@ -170,11 +171,14 @@ function statsView({ stats, isAdmin }) {
   const { rows, season, seasons, mode } = stats;
   const cols = mode === 'totals' ? COLS_TOT : COLS_PG;
   const sortKey = mode === 'totals' ? 'pts' : 'ppg';
+  // Per game, players who meet the attendance rule (r.qualified) sort first and are the only
+  // ones who can be a column leader; totals have no minimum, like /leaders.
+  const ranks = x => mode === 'totals' || x.r.qualified;
   const vals = rows.map(r => ({ r, v: statValues(r) }))
-    .sort((a, b) => (b.v[sortKey] ?? -1) - (a.v[sortKey] ?? -1) || b.v.gp - a.v.gp);
+    .sort((a, b) => (ranks(b) - ranks(a)) || (b.v[sortKey] ?? -1) - (a.v[sortKey] ?? -1) || b.v.gp - a.v.gp);
   // Column leader (amber) — counting stats only; GP and turnovers don't get one.
   const best = {};
-  for (const c of cols) if (c.k !== 'gp' && !c.low) best[c.k] = Math.max(...vals.map(x => x.v[c.k] ?? -1));
+  for (const c of cols) if (c.k !== 'gp' && !c.low) best[c.k] = Math.max(...vals.filter(ranks).map(x => x.v[c.k] ?? -1));
   const teams = [...new Set(rows.map(r => r.team).filter(Boolean))].sort(teamSort);
   const positions = sortPositions([...new Set(rows.flatMap(r => r.positions))]);
   const seasonLabel = season === 'career' ? 'Career' : `Season ${season}`;
@@ -298,9 +302,9 @@ function adminEditModal() {
 const nameOf = p => `${p.first} ${p.last}`;
 const joinNames = list => list.length < 2 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
 
-// The player(s) with the best per-game value; ties share it.
+// The player(s) with the best per-game value among those who meet the attendance rule; ties share it.
 function perGameLeaders(roster, key) {
-  const played = roster.filter(p => p.gp > 0);
+  const played = roster.filter(p => p.qualified);
   if (!played.length) return null;
   const val = p => Math.round(per(p[key], p.gp) * 10) / 10;
   const top = Math.max(...played.map(val));

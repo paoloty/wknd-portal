@@ -1,4 +1,5 @@
 import { escHtml } from './layout.js';
+import { qualifiesPerGame, CAREER_MIN_GP } from '../lib/qualification.js';
 import { boardModel, recordModel, controlsBar, pageHead, sectionsHtml, plainName } from './leaders.js';
 
 
@@ -10,7 +11,7 @@ export const ROAST_CATS = [
     label: 'PPG',
     title: 'The Ghost',
     sub: 'Fewest points per game',
-    fn: p => p.games_played >= 3 ? p.pts / p.games_played : null,
+    fn: p => qualifiesPerGame(p) ? p.pts / p.games_played : null,
     fmt: v => v.toFixed(1),
     asc: true,
   },
@@ -21,21 +22,21 @@ export const ROAST_CATS = [
     sub: 'Lowest efficiency rating',
     fn: p => {
       const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0);
-      if (p.games_played < 3 || fga < 10) return null;
+      if (!qualifiesPerGame(p) || fga < 10) return null;
       const per = (p.pts||0) + 0.4*((p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)) - 0.7*fga - 0.4*(p.ft_miss||0)
         + 0.7*(p.reb||0) + (p.stl||0) + 0.7*(p.ast||0) + 0.7*(p.blk||0) - (p.turnover||0);
       return per / p.games_played;
     },
     fmt: v => v.toFixed(1),
     asc: true,
-    min: '3+ GP · 10+ FGA',
+    min: '10+ FGA',
   },
   {
     id: 'lane',
     label: 'RPG',
     title: 'Stay in Your Lane',
     sub: 'Fewest rebounds per game',
-    fn: p => p.games_played >= 3 ? p.reb / p.games_played : null,
+    fn: p => qualifiesPerGame(p) ? p.reb / p.games_played : null,
     fmt: v => v.toFixed(1),
     asc: true,
   },
@@ -44,7 +45,7 @@ export const ROAST_CATS = [
     label: 'TOV',
     title: 'Most Generous',
     sub: 'Most turnovers per game',
-    fn: p => p.games_played >= 3 ? (p.turnover||0) / p.games_played : null,
+    fn: p => qualifiesPerGame(p) ? (p.turnover||0) / p.games_played : null,
     fmt: v => v.toFixed(1),
     asc: false,
   },
@@ -53,7 +54,7 @@ export const ROAST_CATS = [
     label: 'PF',
     title: 'Foul Magnet',
     sub: 'Most personal fouls per game',
-    fn: p => p.games_played >= 3 ? (p.pf||0) / p.games_played : null,
+    fn: p => qualifiesPerGame(p) ? (p.pf||0) / p.games_played : null,
     fmt: v => v.toFixed(1),
     asc: false,
   },
@@ -64,11 +65,11 @@ export const ROAST_CATS = [
     sub: 'Worst field goal percentage',
     fn: p => {
       const fga = (p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)+(p.fg2m_miss||0)+(p.fg3m_miss||0)+(p.fg4m_miss||0);
-      return fga >= 10 && p.games_played >= 3 ? ((p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)) / fga : null;
+      return fga >= 10 && qualifiesPerGame(p) ? ((p.fg2m||0)+(p.fg3m||0)+(p.fg4m||0)) / fga : null;
     },
     fmt: v => Math.round(v * 100) + '%',
     asc: true,
-    min: '3+ GP · 10+ FGA',
+    min: '10+ FGA',
   },
   {
     id: 'ftphobia',
@@ -77,11 +78,11 @@ export const ROAST_CATS = [
     sub: 'Worst free throw percentage',
     fn: p => {
       const fta = (p.ftm||0) + (p.ft_miss||0);
-      return fta >= 5 && p.games_played >= 3 ? (p.ftm||0) / fta : null;
+      return fta >= 5 && qualifiesPerGame(p) ? (p.ftm||0) / fta : null;
     },
     fmt: v => Math.round(v * 100) + '%',
     asc: true,
-    min: '3+ GP · 5+ FTA',
+    min: '5+ FTA',
   },
   {
     id: 'bricks',
@@ -89,7 +90,7 @@ export const ROAST_CATS = [
     title: 'The Brick Factory',
     sub: 'Most missed shots per game',
     fn: p => {
-      if (p.games_played < 3) return null;
+      if (!qualifiesPerGame(p)) return null;
       return ((p.fg2m_miss||0) + (p.fg3m_miss||0) + (p.fg4m_miss||0) + (p.ft_miss||0)) / p.games_played;
     },
     fmt: v => v.toFixed(1),
@@ -119,8 +120,8 @@ const DUBIOUS = ['ghost', 'passenger', 'generous', 'bricks'];
 const MORE = ['icecold', 'ftphobia', 'lane', 'foul'];
 const fmt1 = v => v.toFixed(1);
 
-// season: number | 'alltime'. players = that scope's per-player season rows (3+ GP rule is
-// inside each category's fn); gameRecords = every game line, for the disasters.
+// season: number | 'alltime'. players = that scope's per-player season rows (attendance rule,
+// qualifiesPerGame, is inside each category's fn); gameRecords = every game line, for the disasters.
 export function buildRoastModel({ season, players = [], gameRecords = [], currentSeason }) {
   const shareSeason = season === 'alltime' ? 'alltime' : String(season);
   const board = id => {
@@ -129,14 +130,15 @@ export function buildRoastModel({ season, players = [], gameRecords = [], curren
   };
   const dubious = DUBIOUS.map(board);
   const more = MORE.map(board).map(b => b && { ...b, size: 'sm' });
+  const gpRule = season === 'alltime' ? `${CAREER_MIN_GP}+ games` : 'half their team’s games';
   const name = b => b ? plainName(b.lead.p.name) : '';
   return {
     season,
     sections: [
       { id: 'dubious', nav: 'Dubious', title: 'Dubious awards', sub: 'per game · gap to the “winner”', items: dubious,
-        fallback: dubious.filter(Boolean).length ? `This season’s least flattering per-game marks, minimum 3 games. ${name(dubious[0]) ? `${name(dubious[0])} is The Ghost.` : ''}`.trim() : '' },
+        fallback: dubious.filter(Boolean).length ? `This season’s least flattering per-game marks, minimum ${gpRule}. ${name(dubious[0]) ? `${name(dubious[0])} is The Ghost.` : ''}`.trim() : '' },
       { id: 'more', nav: 'More', title: 'More awards', sub: 'per game', items: more,
-        fallback: 'Shooting boards need 3+ games plus 10+ field-goal or 5+ free-throw attempts.' },
+        fallback: `Shooting boards need ${gpRule} plus 10+ field-goal or 5+ free-throw attempts.` },
       { id: 'disasters', nav: 'Disasters', title: 'Single-game disasters', sub: 'all seasons', cols: 4,
         items: DISASTER_CATS.map(c => recordModel(c, gameRecords, { scope: 'alltime', currentSeason, mode: 'disaster' })),
         fallback: 'The roughest single-game lines across all seasons.' },
@@ -155,7 +157,7 @@ export function roastPage(v) {
   });
   const body = model.sections.some(s => s.items.some(Boolean))
     ? sectionsHtml(model.sections, v.writeups, v.showDownload)
-    : '<div class="ld-empty">Nobody has played 3 games yet — the roast needs a bigger sample.</div>';
+    : '<div class="ld-empty">Nobody has played enough games yet — the roast needs a bigger sample.</div>';
   return `<div class="ld-page" data-ld-page data-as-of="${escHtml(v.asOfLabel || '')}">
   ${pageHead({ kicker: v.kicker, title: 'The Roast', meta: v.meta })}
   ${v.summaryHtml || ''}
@@ -163,7 +165,7 @@ export function roastPage(v) {
   <div class="ld-body">
     ${body}
     <div class="ld-also">
-      <span>Boards need 3+ games; shooting boards also need 10+ field-goal or 5+ free-throw attempts. All in good fun.</span>
+      <span>Boards need ${model.season === 'alltime' ? `${CAREER_MIN_GP}+ games` : 'half their team’s games'}; shooting boards also need 10+ field-goal or 5+ free-throw attempts. All in good fun.</span>
       <a href="/leaders" class="ld-also__roast">Back to the leaders <span>&rarr;</span></a>
     </div>
   </div>
