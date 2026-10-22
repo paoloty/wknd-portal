@@ -3,6 +3,7 @@
 //   node scripts/render-potg.js <jobId>
 // and can be run by hand the same way to re-render a job.
 //
+// 0. Colour-matches the 6 photos to each other and grades them (lib/photo-match.js).
 // 1. Opens assets/media/potg/template.html in headless Chrome, passes it the job's data and
 //    photos, then captures every frame at 24 fps (preview 544x680, final 1080x1350) by calling setT(t) (frame-exact,
 //    never real-time) and pipes the frames into ffmpeg.
@@ -17,6 +18,7 @@ import { spawn } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
 import puppeteer from 'puppeteer-core';
 import { getMediaJob, updateMediaJob, jobDir } from '../lib/media-jobs.js';
+import { matchPhotos } from '../lib/photo-match.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -62,11 +64,17 @@ async function main() {
   fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(tmp, { recursive: true });
   const stage = (s, progress) => updateMediaJob(id, progress == null ? { stage: s } : { stage: s, progress });
 
-  stage('Loading', 0.01);
+  stage('Matching photo colours', 0.01);
+  // New jobs keep the photos ungraded; match the 6 to each other and grade them here. (Jobs from
+  // before this change were graded on upload and are used as they are.)
+  const photoFiles = cfg.photos.map(p => path.join(dir, p.file));
+  const usePhotos = cfg.photosRaw
+    ? await matchPhotos(photoFiles, cfg.photos.map((_, i) => path.join(tmp, `matched-${i + 1}.jpg`)))
+    : photoFiles;
   const data = {
     ...cfg.data,
     avatar: cfg.avatar && fs.existsSync(cfg.avatar) ? pathToFileURL(cfg.avatar).href : '',
-    photos: cfg.photos.map(p => ({ url: pathToFileURL(path.join(dir, p.file)).href, fx: +p.fx, fy: +p.fy, zoom: +p.zoom, rot: +p.rot || 0 })),
+    photos: cfg.photos.map((p, i) => ({ url: pathToFileURL(usePhotos[i]).href, fx: +p.fx, fy: +p.fy, zoom: +p.zoom, rot: +p.rot || 0 })),
   };
 
   const browser = await puppeteer.launch({
