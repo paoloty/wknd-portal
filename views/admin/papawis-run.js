@@ -333,7 +333,10 @@ export function adminPapawisRunBody({
   const time = formatTimeRange(game.start_time, game.end_time) || game.time_label || '';
   const sub = [fmtDate(game.date), time, game.location || 'No court set', isCompleted ? `${peso(game.price_per_player)} per player` : ''].filter(Boolean).join(' · ');
 
-  const canAnnounce = isOpen && !isLocked && !game.announced_at && !(game.announce_send_at && game.announce_send_at > Date.now()) && !isConfirmedFull;
+  // Confirmed players whose reminder went out before teams were set (same rule as the row's
+  // "Email their team"). Works while locked too: emailing doesn't change the roster.
+  const teamCatchUp = isOpen ? confirmed.filter(s => !s.guest_name && s.team && s.reminder_sent_at && !s.team_notified_at).length : 0;
+  const canAnnounce =isOpen && !isLocked && !game.announced_at && !(game.announce_send_at && game.announce_send_at > Date.now()) && !isConfirmedFull;
   const actions = [
     button('View on site ↗', { kind: 'ghost', href: `/papawis#pw-game-${game.id}`, attrs: 'target="_blank" rel="noopener"' }),
     isOpen ? postBtn(isLocked ? 'Unlock roster' : 'Lock roster', `/admin/papawis/${game.id}/${isLocked ? 'unlock' : 'lock'}`, { kind: 'secondary', size: '', done: isLocked ? 'Roster unlocked.' : 'Roster locked.',
@@ -344,6 +347,9 @@ export function adminPapawisRunBody({
     isOpen && isLocked ? banner('warn', 'The roster is locked: sign-ups and team changes are frozen.') : '',
     scheduled ? banner('info', `Sign-ups open ${fmtDay(addDays(game.date, -game.open_days_before))}, 8:00 AM. Until then the run shows as Scheduled.`) : '',
     canAnnounce && !scheduled && tab !== 'messages' ? banner('warn', 'Not announced yet: regulars haven’t heard about this run.', `<a class="aui-link" href="/admin/papawis/${attr(game.id)}?tab=messages">Open messages</a>`) : '',
+    teamCatchUp && (tab === 'roster' || tab === 'teams') ? banner('info', `${plural(teamCatchUp, 'player')} got their reminder before teams were set.`,
+      postBtn(`Email their teams (${teamCatchUp})`, `/admin/papawis/${game.id}/notify-teams`, { kind: 'primary', done: 'Team emails sent.',
+        confirm: { title: `Email ${plural(teamCatchUp, 'player')} their team?`, body: 'Each gets their side (Light or Dark) and teammates, plus a bell. One-time: anyone already emailed their team is skipped.', send: 'Send emails' } })) : '',
     isOpen && pending.length && tab !== 'roster' ? banner('warn', `${plural(pending.length, 'player')} waiting on a deposit.`, `<a class="aui-link" href="/admin/papawis/${attr(game.id)}">Open roster</a>`) : '',
   ].join('');
 

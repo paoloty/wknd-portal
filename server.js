@@ -265,7 +265,7 @@ import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { adminPapawisCourtBody } from './views/admin/papawis-court.js';
 import { adminAnalyticsBody } from './views/admin/analytics.js';
 import { buildBalancedTeams } from './lib/papawis-teams.js';
-import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
+import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisTeamAssignedEmails, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
 import {
   announcePapawisGame, queuePapawisSlotAlert, runPapawisBroadcasts, papawisBroadcastState, papawisAnnouncementPreview,
   verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
@@ -21285,6 +21285,20 @@ app.post('/admin/papawis/:id/signups/:signupId/notify-team', requireAuth, async 
   if (result.error === 'not_eligible') return res.status(400).json({ error: 'This signup is not eligible for a team-assigned email (no team, not confirmed, or already sent).' });
   if (result.error === 'no_email') return res.status(400).json({ error: 'No email on file for this player.' });
   res.json({ ok: true });
+});
+
+// The bulk version: everyone on the run who's due that catch-up email.
+app.post('/admin/papawis/:id/notify-teams', requireAuth, async (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.status !== 'open') return res.status(400).json({ error: 'This run is over.' });
+  try {
+    const { sent, errors } = await sendPapawisTeamAssignedEmails(game.id);
+    if (errors.length) console.error(`[papawis] team emails: ${sent} sent, ${errors.length} failed`, errors);
+    res.json({ ok: true, sent, errors, message: `Team emails sent to ${sent} ${sent === 1 ? 'player' : 'players'}${errors.length ? ` (${errors.length} failed)` : ''}.` });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to send.' });
+  }
 });
 
 app.post('/admin/papawis/:id/teams/reorder', requireAuth, express.json(), (req, res) => {
