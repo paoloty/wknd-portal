@@ -35,6 +35,31 @@
 .prf-chip--amber { background: rgba(245,147,50,0.15); color: var(--amber); }
 .prf-chip--banned { background: rgba(239,68,68,.14); color: #f87171; font-weight: 800; letter-spacing: .1em; }
 
+/* Banned profile (views/player.js, players.banned_at): the one page allowed to go red.
+   Amber accents inside turn red, a red wash sits behind the page, the photo goes grey with
+   a BANNED stamp, a big notice sits above the hero and a bar sticks to the bottom. */
+.prf--banned { --amber: #ef4444; --amber-dim: rgba(239,68,68,.14); position: relative; }
+.prf--banned::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(239,68,68,.22), rgba(239,68,68,0) 70%),
+              repeating-linear-gradient(-45deg, rgba(239,68,68,.035) 0 14px, rgba(239,68,68,0) 14px 28px); }
+.prf--banned .card { border-color: rgba(239,68,68,.22); }
+.prf--banned .prf-hero__name { color: #fca5a5; }
+.prf--banned .prf-hero__avatar-wrap { position: relative; }
+.prf--banned .prf-hero__avatar { filter: grayscale(1) contrast(1.05); border-color: #ef4444 !important; }
+.prf--banned .prf-hero__avatar-wrap::after { content: 'BANNED'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-14deg);
+  padding: 3px 8px; border: 2px solid #ef4444; border-radius: 4px; background: rgba(10,14,22,.85); color: #ef4444;
+  font-size: 15px; font-weight: 900; line-height: 1; letter-spacing: .12em; pointer-events: none; }
+.prf-ban { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 4px 0 16px; padding: 18px 20px; border-radius: var(--radius);
+  background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.5); }
+.prf-ban__mark { flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(239,68,68,.18); font-size: 22px; line-height: 1; }
+.prf-ban__text { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #fecaca; }
+.prf-ban__text b { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: .01em; }
+.prf-ban__btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border-radius: 10px; background: #ef4444; color: #fff; font-size: 14px; font-weight: 700; line-height: 1; white-space: nowrap; }
+.prf-banbar { position: sticky; bottom: 12px; z-index: 40; display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 32px; padding: 12px 16px; border-radius: 12px;
+  background: #b91c1c; box-shadow: 0 10px 30px rgba(0,0,0,.45); color: #fff; font-size: 13px; line-height: 1; text-align: center; }
+.prf-banbar b { font-size: 16px; font-weight: 900; letter-spacing: .14em; }
+@media (max-width: 600px) { .prf-banbar span { display: none; } }
+
 .prf-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s, border-color .15s; }
 .prf-btn:hover { border-color: rgba(255,255,255,0.14); }
 .prf-btn--amber { background: var(--amber); border-color: var(--amber); color: #0a0e16; }

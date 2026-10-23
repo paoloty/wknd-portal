@@ -169,11 +169,12 @@ function papawisTab(p, { history, today }) {
   // Ban (players.banned_at): same POST as the ledger drawer's.
   const banUrl = `/admin/players/${attr(encodeURIComponent(p.id))}/ban`;
   const ban = p.banned_at
-    ? `<div class="aui-panel aui-stack"><span class="aui-cell__stack"><span class="aui-cell__title">Banned</span><span class="aui-cell__sub">${escHtml(p.ban_reason || 'No reason noted')}</span></span>
+    ? `<div class="aui-panel aui-stack"><span class="aui-cell__stack"><span class="aui-cell__title">Banned</span><span class="aui-cell__sub">${escHtml(p.ban_reason || 'No reason noted')}${p.ban_kind === 'other' ? '' : ' · lifts on its own once settled'}</span></span>
       <div class="aui-row">${button('Lift ban', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${banUrl}" data-body="${attr(JSON.stringify({ on: false }))}" data-done="Ban lifted." data-confirm data-confirm-title="Lift ${attr(name)}’s ban?" data-confirm-body="BANNED comes off their profile and they can sign up again." data-confirm-send="Lift ban"` })}</div></div>`
     : `<form class="aui-panel aui-stack" data-json-action="${banUrl}" data-done="${attr(name)} banned." data-confirm data-confirm-title="Ban ${attr(name)}?" data-confirm-body="BANNED shows on their profile and player card, and they can’t join Papawis runs or sign up for a season until you lift it." data-confirm-send="Ban">
       <input type="hidden" name="on" value="1">
       ${field({ label: 'Reason (admins only)', name: 'reason', value: 'Unpaid balance' })}
+      <label class="aui-check"><input type="checkbox" name="auto_lift" value="1" checked><span>Lift it on its own once they settle</span></label>
       <div class="aui-row">${button('Ban…', { kind: 'danger', size: 'sm', type: 'submit' })}</div>
     </form>`;
   return `<div class="aui-cols">

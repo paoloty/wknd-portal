@@ -1968,11 +1968,29 @@ export function playerPage(o) {
 })();
 </script>` : '';
 
-  return `<div class="prf${own ? ' prf--own' : ''}">
+  // Banned (players.banned_at): the whole page turns red (profile.css .prf--banned), with a
+  // big notice above the hero and a bar stuck to the bottom of the screen. Public wording
+  // never gives the reason; the player's own view says how to get it lifted.
+  const isBanned = !!d.player?.banned_at;
+  const owes = Number(o.balanceAmount) > 0 ? `₱${Number(o.balanceAmount).toLocaleString()}` : '';
+  const banLift = d.player?.ban_kind === 'other'
+    ? 'Message us to sort it out.'
+    : `${owes ? `You owe ${owes}. ` : ''}Settle your balance and the ban lifts on its own once we confirm the payment.`;
+  const banNotice = !isBanned ? '' : `<div class="prf-ban" role="alert">
+    <span class="prf-ban__mark" aria-hidden="true">⛔</span>
+    <span class="prf-ban__text"><b>${own ? 'Your account is banned' : 'This account is banned'}</b>
+      <span>${own ? escHtml(banLift) : `${escHtml(displayPlayerName(d.player.name))} is banned from WKND Basketball games and runs until further notice.`}</span></span>
+    ${own && d.player.ban_kind !== 'other' ? '<a class="prf-ban__btn" href="/settle-balance">Settle balance &rarr;</a>' : ''}
+  </div>`;
+  const banBar = !isBanned ? '' : `<div class="prf-banbar" aria-hidden="true"><b>BANNED</b><span>${own ? 'Settle your balance to lift it' : 'This account is banned from WKND Basketball'}</span></div>`;
+
+  return `<div class="prf${own ? ' prf--own' : ''}${isBanned ? ' prf--banned' : ''}">
 ${banner}
+${banNotice}
 ${hero}
 ${nav}
 ${sections.filter(Boolean).join('\n')}
+${banBar}
 </div>
 ${foldScript}
 ${nav ? sectionNavScript() : ''}`;

@@ -204,7 +204,7 @@ import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminHomeBody } from './views/admin/home.js';
 import { sendBroadcast, startCampaign, finishCampaign, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe, underEmailCaps } from './lib/broadcast.js';
-import { sendBalanceReminder, balanceStanding, OVERDUE_DAYS } from './lib/balance-reminders.js';
+import { sendBalanceReminder, balanceStanding, runBanSweep, OVERDUE_DAYS } from './lib/balance-reminders.js';
 import { getRecentBroadcasts, getBroadcastStats } from './lib/portal-db.js';
 import { adminReachComposeBody, adminReachSentBody } from './views/admin/reach.js';
 import { leagueNudgeEmail, raffleWinnerEmail } from './lib/mailer.js';
@@ -3240,6 +3240,9 @@ app.use('/admin', (req, res, next) => {
     const body      = req.body && typeof req.body === 'object' ? { ...req.body } : {};
     delete body.password; delete body.confirm;
     insertAdminLog({ actor, actorType, method: req.method, path: req.path, details: body });
+    // A ledger or Papawis change can settle a balance (lift a ban) or create one.
+    // (originalUrl: by 'finish' Express has put the /admin mount back on req.url.)
+    if (res.statusCode < 400 && /^\/admin\/(ledger|papawis)\b/.test(req.originalUrl)) setImmediate(() => runBanJobs());
   });
   next();
 });
@@ -8474,12 +8477,13 @@ app.post('/admin/players/:id/papawis-probation', requireAuth, express.json(), (r
 });
 
 // Ban / lift (players.banned_at): from the ledger drawer and the admin player page.
-// on: true/'1' bans with an admin-only reason; anything else lifts it.
+// on: true/'1' bans with an admin-only reason; anything else lifts it. auto_lift '1' = a
+// balance ban that lifts itself once settled; without it only an admin lifts it.
 app.post('/admin/players/:id/ban', requireAuth, express.json(), (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).json({ error: 'Not found' });
   const on = req.body?.on === true || req.body?.on === '1' || req.body?.on === 1;
-  setPlayerBanned(player.id, on, req.body?.reason || '');
+  setPlayerBanned(player.id, on, req.body?.reason || '', { kind: req.body?.auto_lift === '1' || req.body?.auto_lift === true ? 'balance' : 'other' });
   res.json({ ok: true });
 });
 
@@ -22891,6 +22895,19 @@ function runBirthdayJobs() {
 }
 setTimeout(runBirthdayJobs, 60 * 1000);
 setInterval(runBirthdayJobs, BIRTHDAY_AUTOMATION_CHECK_MS);
+
+// Automatic balance bans and lifts (lib/balance-reminders.js runBanSweep): at start, hourly
+// (a warning deadline passing), and after any admin ledger or Papawis change (a confirmed
+// payment lifts the ban straight away; see the /admin hook near the admin-action logger).
+// No email: bells only.
+function runBanJobs() {
+  try {
+    const { banned, lifted } = runBanSweep();
+    if (banned.length || lifted.length) console.log(`[bans] banned ${banned.length}, lifted ${lifted.length}`);
+  } catch (e) { console.error('[bans] sweep failed:', e.message); }
+}
+runBanJobs();
+setInterval(runBanJobs, 60 * 60 * 1000);
 
 // Papawis announcements (scheduled for a delayed sign-up open) and slot-opened alerts.
 // Every minute, production only (see runPapawisBroadcasts in lib/papawis-broadcast.js).

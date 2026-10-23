@@ -286,13 +286,14 @@ function playerDrawer({ player, fin, transactions, seasonPaid, feePaid, standing
   const banUrl = `/admin/players/${attr(encodeURIComponent(player.id))}/ban`;
   const ban = player.banned_at
     ? `<div class="alg-remind">
-        <span class="aui-cell__stack"><span class="aui-cell__title">${badge('Banned', 'red')} since ${escHtml(fmtStamp(player.banned_at))}</span><span class="aui-cell__sub">${escHtml(player.ban_reason || 'No reason noted')}</span></span>
+        <span class="aui-cell__stack"><span class="aui-cell__title">${badge('Banned', 'red')} since ${escHtml(fmtStamp(player.banned_at))}</span><span class="aui-cell__sub">${escHtml(player.ban_reason || 'No reason noted')}${player.ban_kind === 'other' ? '' : ' · lifts on its own once settled'}</span></span>
         ${button('Lift ban', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${banUrl}" data-body="${attr(JSON.stringify({ on: false }))}" data-done="Ban lifted." data-confirm data-confirm-title="Lift ${attr(name)}’s ban?" data-confirm-body="BANNED comes off their profile and they can sign up again." data-confirm-send="Lift ban"` })}
       </div>`
     : (standing?.owes || standing?.deadlinePassed) ? `<form class="alg-remind" data-json-action="${banUrl}" data-done="${attr(name)} banned." data-confirm data-confirm-title="Ban ${attr(name)}?" data-confirm-body="BANNED shows on their profile and player card, and they can’t join Papawis runs or sign up for a season until you lift it." data-confirm-send="Ban">
         <input type="hidden" name="on" value="1">
-        <span class="aui-cell__stack"><span class="aui-cell__title">Ban</span><span class="aui-cell__sub${standing?.deadlinePassed ? ' aui-tone--red' : ''}">${escHtml(standing?.deadlinePassed ? `Warning deadline passed ${fmtDay(standing.deadline)}, no payment since` : standing?.warnedAt ? `Warned, deadline ${fmtDay(standing.deadline)}` : 'Not warned yet')}</span></span>
+        <span class="aui-cell__stack"><span class="aui-cell__title">Ban <span class="aui-muted">· lifts on its own once settled</span></span><span class="aui-cell__sub${standing?.deadlinePassed ? ' aui-tone--red' : ''}">${escHtml(standing?.deadlinePassed ? `Warning deadline passed ${fmtDay(standing.deadline)}, no payment since` : standing?.warnedAt ? `Warned, deadline ${fmtDay(standing.deadline)}` : 'Not warned yet')}</span></span>
         <input class="aui-input" name="reason" value="Unpaid balance" aria-label="Reason (admin only)" style="width:150px">
+        <input type="hidden" name="auto_lift" value="1">
         ${button('Ban…', { kind: 'danger', size: 'sm', type: 'submit' })}
       </form>` : '';
   const more = transactions.length > recent.length ? `<p class="aui-muted alg-none">${plural(transactions.length - recent.length, 'older entry', 'older entries')} in the full history.</p>` : '';
