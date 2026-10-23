@@ -33,6 +33,9 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Pull to refresh on every screen with the tab bar (app.js "Pull to refresh"): pull down from the top past the mark and let go; the screen re-fetches (`refreshScreen`) and the feed reloads its first page.
 - Papawis cards are view-only ("Soon") until Papawis is built into the app.
 
+## One look (app.css "One card look, app-wide")
+- Every card, list group and tile shares the feed cards' surface (`--card-bg` + `--card-hi`, 20px corners). `.glow` is the amber-glow card (announcements, your Picks record, your profile, the preview's matchup). Results show as W/L chips (`.res`). The Pickmaster's top 3 use the medal colours. The game screen uses the feed card's hero (`gameHero`: photo + score, or a dark band under the video) and its player-of-the-game strip (`potgBox`). New screens use these, not new card styles.
+
 ## Home's rail and the game preview
 - Home shows the next game day's games in a sideways rail above Latest (`/app/rail` → JSON `{ html }`, loaded after the screen by app.js `initBlocks`; the copy on the phone shows first). While picks are open they're pick cards (pick right there; same buttons and `POST /games/:id/pick` as the Picks tab; the card's bars grow in after a pick and the tab badges refresh); once picks close, preview cards (last meeting, last 5, players to watch, your pick). After the games the rail is gone and results are feed cards. Open picks aren't repeated in the action strip.
 - Every card has Preview › → `/app/games/:id`, which before the result is the preview (`appGamePreview`): the pick card while picks are open, the storyline, records, each team's last 5, last meeting (→ that game), all-time series, players to watch. Built from the site's `gamePreview()` (same matchup and storyline) through `appPreview`. After the final the same URL is the recap.

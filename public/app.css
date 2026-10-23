@@ -680,3 +680,32 @@ a.sx:active { transform: scale(.99); }
 .nx__pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .nx__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .nx p { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── One card look, app-wide (Paolo, 2026-10-23: "we need to be consistent") ──
+   Every card, list group and tile shares the feed cards' surface: a faint top-lit gradient,
+   an inner highlight, 20px corners. .glow is the amber-glow card (announcements, your
+   record, your profile). Lists stay lists (iPhone-style), in the same surface. */
+:root { --card-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface) 97%, #fff), var(--surface)); --card-hi: inset 0 1px 0 rgba(255,255,255,.04); --gold: #e8b64c; --silver: #c7d0da; --bronze: #c9854f; }
+.card, .fc, .rc, .group, .tiles div, .empty { background: var(--card-bg); box-shadow: var(--shadow), var(--card-hi); }
+.card, .fc, .rc { border-radius: 20px; }
+.group, .empty { border-radius: 18px; }
+.empty { border-style: solid; border-color: var(--border); }
+.glow { background: radial-gradient(120% 90% at 100% 0%, rgba(245,147,50,.18), rgba(245,147,50,0) 55%), var(--surface); border-color: rgba(245,147,50,.3); }
+/* Results as chips: W green, L red, tinted (lists on My Team, Me, the Picks tab). */
+.res { width: auto; min-width: 66px; padding: 4px 8px; border-radius: 8px; text-align: center; font-size: 14px; }
+.res--w { background: rgba(52,211,153,.14); }
+.res--l { background: rgba(248,113,113,.13); }
+.cell .res { margin-left: auto; }
+/* Pickmaster: 1st/2nd/3rd in medal colours (the one other accent allowed, CLAUDE.md). */
+.board__rk--1, .board__rk--2, .board__rk--3 { width: 26px; height: 26px; margin-right: 4px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #111; }
+.board__rk--1 { background: var(--gold); } .board__rk--2 { background: var(--silver); } .board__rk--3 { background: var(--bronze); }
+
+/* Game screen: the same hero as the feed card. With a video, the player sits on top and the
+   score is a dark band under it. */
+.gx--screen { margin-top: 6px; }
+.gx__video .media { margin: 0; width: 100%; }
+.gx__hero--band { aspect-ratio: auto; min-height: 132px; }
+.gx__hero--band::after { background: linear-gradient(180deg, rgba(5,8,14,0), rgba(5,8,14,.5)); }
+.gx__meta { margin: 0; font-size: 13px; color: var(--muted); }
+.gx--screen .gx__mine { margin-top: 10px; }
+.art .gx__potg { margin: 0 0 12px; }

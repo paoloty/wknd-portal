@@ -27,10 +27,6 @@ function media({ img = '', srcset = '', yt = '', label = '' } = {}, { inCard = f
   return `<div class="media player" data-yt="${esc(yt)}">${pic}<i class="media__play">${icons.play}</i>${tag}</div>`;
 }
 
-const scoreRows = (a, b) => `<div class="score">
-  ${[a, b].map(t => `<div class="score__t${t.won ? ' is-w' : ''}"><span class="dot" style="--c:${esc(t.color)}"></span><span class="score__n">${esc(t.name)}</span><b class="num">${esc(t.score)}</b></div>`).join('')}
-</div>`;
-
 const potgLabel = p => (p.co ? 'Co-player of the game' : 'Player of the game');
 const potgStrip = (p, label = potgLabel(p)) => `<div class="potg">${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}
   <div class="potg__t">${label ? `<small>${label}</small>` : ''}<b>${esc(p.name)}</b><em>${esc(p.line)}</em></div></div>`;
@@ -44,22 +40,31 @@ const paras = text => String(text || '').split(/\n{2,}/).map(t => t.trim()).filt
 // The game photo (cover, else the video's thumbnail) as the hero, the score set on it. No
 // picture: the same hero on a dark gradient. A picture that fails is removed (app.js), which
 // leaves that gradient.
-function gameCard(g) {
+// The score on the game's picture (feed card and game screen). band: no picture behind it
+// (the game screen with a video, where the player sits above it).
+function gameHero(g, { band = false } = {}) {
   const m = g.media || {};
-  const src = m.img || (m.yt ? ytThumb(m.yt) : '');
-  const sized = m.img && m.srcset ? ` srcset="${esc(m.srcset)}" sizes="(min-width: 560px) 528px, calc(100vw - 32px)"` : '';
+  const src = band ? '' : m.img || (m.yt ? ytThumb(m.yt) : '');
+  const sized = m.img && m.srcset && !band ? ` srcset="${esc(m.srcset)}" sizes="(min-width: 560px) 528px, calc(100vw - 32px)"` : '';
   const row = t => `<div class="gx__row${t.won ? ' is-w' : ''}"><span class="dot" style="--c:${esc(t.color)}"></span><span class="gx__t">${esc(t.name)}</span><b>${esc(t.score)}</b></div>`;
-  return `<a class="sx gx" href="${esc(g.href)}">
-    <div class="gx__hero">
+  const chip = !band && m.yt ? '▶ Video' : g.when;
+  return `<div class="gx__hero${band ? ' gx__hero--band' : ''}">
       ${src ? `<img class="gx__img" src="${esc(src)}"${sized} alt="" decoding="async">` : ''}
-      <div class="gx__top"><span class="sx__chip sx__chip--glass">${esc(g.kicker)}</span>${m.yt ? '<span class="sx__chip sx__chip--glass">▶ Video</span>' : g.when ? `<span class="sx__chip sx__chip--glass">${esc(g.when)}</span>` : ''}</div>
+      <div class="gx__top"><span class="sx__chip sx__chip--glass">${esc(g.kicker)}</span>${chip ? `<span class="sx__chip sx__chip--glass">${esc(chip)}</span>` : ''}</div>
       <div class="gx__score">${row(g.a)}${row(g.b)}</div>
-    </div>
+    </div>`;
+}
+// Player of the game: the amber strip with a ★ on their ring.
+const potgBox = (p, label = potgLabel(p)) => `<div class="gx__potg">${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}<i class="gx__star" aria-hidden="true">★</i>
+  <div class="potg__t">${label ? `<small>${label}</small>` : ''}<b>${esc(p.name)}</b><em>${esc(p.line)}</em></div></div>`;
+
+function gameCard(g) {
+  return `<a class="sx gx" href="${esc(g.href)}">
+    ${gameHero(g)}
     <div class="sx__body">
       ${g.title ? `<h3>${esc(g.title)}</h3>` : ''}
       ${g.excerpt ? `<p class="gx__ex">${esc(g.excerpt)}</p>` : ''}
-      ${g.potg.map(p => `<div class="gx__potg">${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}<i class="gx__star" aria-hidden="true">★</i>
-        <div class="potg__t"><small>${p.co ? 'Co-player of the game' : 'Player of the game'}</small><b>${esc(p.name)}</b><em>${esc(p.line)}</em></div></div>`).join('')}
+      ${g.potg.map(p => potgBox(p)).join('')}
       ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
       <div class="gx__foot">${g.fire ? `<span>🔥 ${g.fire}</span>` : ''}${g.comments != null ? `<span>💬 ${g.comments}</span>` : ''}<span class="gx__go">Box score ›</span></div>
     </div>
@@ -150,7 +155,7 @@ export function appGamePage(g) {
     </section>` : (g.final ? '<div class="empty" style="margin-top:12px">The recap isn\'t written yet. It shows up here once it is.</div>' : '');
   const potg = g.potg.length ? `<section class="fc art">${g.potg.map(p => `
       <div class="kick">${potgLabel(p)}</div>
-      ${potgStrip(p, '')}
+      ${potgBox(p, '')}
       ${p.writeup ? paras(p.writeup) : ''}`).join('<div class="art__gap"></div>')}</section>` : '';
   const comments = g.comments ? `<section class="fc art">
       <div class="kick">Comments · ${g.comments.length}</div>
@@ -158,12 +163,13 @@ export function appGamePage(g) {
         <div><b>${esc(c.name)}<small>${esc(c.when)}</small></b><p>${esc(c.body)}</p></div></div>`).join('') : '<p class="mut">No comments yet.</p>'}
       <p class="cm__soon">Commenting in the app ${soonTag}</p>
     </section>` : '';
+  const video = !!g.media?.yt;
   return `${navbar(g.back, g.title)}
-  <section class="fc game-hero">
-    ${media(g.media)}
-    ${scoreRows(g.a, g.b)}
-    <p class="mut game-hero__meta">${esc(g.meta)}</p>
-    ${g.mine ? `<div class="mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
+  <section class="sx gx gx--screen">
+    ${video ? `<div class="gx__video">${media(g.media)}</div>` : ''}
+    ${gameHero(g, { band: video })}
+    <div class="sx__body">${g.meta ? `<p class="gx__meta">${esc(g.meta)}</p>` : ''}
+      ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}</div>
   </section>
   ${recap}
   ${potg}
@@ -239,7 +245,7 @@ export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b
   const w = (p.watch || []).filter(Boolean);
   // While there's a pick card it is the top of the screen (it has the matchup, day and time).
   return `${navbar(back, title)}
-  ${pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc game-hero">
+  ${pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
     <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>
     ${matchup({ a, b })}
     <p class="mut game-hero__meta" style="text-align:center;margin-top:10px !important">${esc(meta)}</p>

@@ -39,7 +39,7 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 // games: [{ date, opp, won, my, oppScore, line, href }]
 export function appMePage({ me, season, games, positions, todos = [] }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
-  <div class="card prof">
+  <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
     <div style="flex:1;min-width:0"><h2>${esc(me.name.toUpperCase())}</h2>
       <div class="prof__sub"><span class="dot" style="--c:${esc(me.ring)}"></span>${esc([me.teamName || 'No team', me.number !== '' ? `#${me.number}` : '', positions].filter(Boolean).join(' · '))}</div></div>

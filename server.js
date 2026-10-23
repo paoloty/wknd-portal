@@ -6647,7 +6647,8 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   sendTab(res, me, { title: `${a.name} ${a.score} · ${b.name} ${b.score} · WKND`, tab: back.tab, body: appGamePage({
     back, title: isPlayedGame(g) ? `${a.name} ${a.score} · ${b.name} ${b.score}` : `${a.name} vs ${b.name}`,
     a, b, media: gameMedia(g), final: isPlayedGame(g),
-    meta: [manilaDayLabel(gameYmd(g.date)), g.playoff_round || gameTypeLabel(g), court].filter(Boolean).join(' · '),
+    // The hero's chips carry the kind of game and the day; the court goes under it.
+    kicker: gameKicker(g), when: manilaDayLabel(gameYmd(g.date)), meta: court ? `📍 ${court}` : '',
     recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, comments, meId: me.playerId,
   }) });
 });
