@@ -850,6 +850,9 @@ function gameTabsStyles() {
     .game-comment__text { margin: 4px 0 6px; font-size: 13.5px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
     .game-comment__react { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
     .game-comment__react.is-active { border-color: var(--amber); color: var(--amber); }
+    .game-comment--reply { margin-left: 46px; }
+    .game-comment--reply .game-comment__avatar { width: 28px; height: 28px; }
+    .game-comment__replyto { display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-muted); }
     .game-comment__mention { color: var(--amber); font-weight: 600; text-decoration: none; }
     .game-comment__mention:hover { text-decoration: underline; }
     .game-comments-mention-dropdown { position: absolute; width: 220px; max-width: calc(100% - 20px); bottom: calc(100% + 6px); max-height: 190px; overflow-y: auto; background: var(--surface2, var(--surface)); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 20; }
@@ -1151,8 +1154,9 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
   }
   function buildCommentLi(c) {
     var li = document.createElement('li');
-    li.className = 'game-comment';
+    li.className = 'game-comment' + (c.parent_id ? ' game-comment--reply' : '');
     li.setAttribute('data-id', c.id);
+    if (c.parent_id) li.setAttribute('data-parent', c.parent_id);
     var playerHref = '/players/' + encodeURIComponent(c.player_id);
     li.innerHTML =
       '<a href="' + playerHref + '" class="game-comment__avatar" style="border-color:' + escLive(c.color) + '">' +
@@ -1165,6 +1169,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
           '<span class="game-comment__time">' + fmtLiveTime(c.created_at) + '</span>' +
           (isAdmin ? '<button type="button" class="game-comment__delete" data-delete-id="' + c.id + '" title="Delete comment" aria-label="Delete comment">✕</button>' : '') +
         '</div>' +
+        (c.parent_id && c.replyTo ? '<span class="game-comment__replyto">↪ Replying to ' + escLive(c.replyTo) + '</span>' : '') +
         '<p class="game-comment__text">' + linkifyMentionsLive(escLive(c.body)) + '</p>' +
         '<button type="button" class="game-comment__react" data-react-id="' + c.id + '">🔥 <span class="game-comment__react-count">0</span></button>' +
       '</div>';
@@ -1204,7 +1209,13 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
           list.id = 'game-comments-list';
           container.appendChild(list);
         }
-        list.appendChild(buildCommentLi(msg.comment));
+        // A reply goes after its comment's last reply; anything else at the end.
+        var li = buildCommentLi(msg.comment), after = null;
+        if (msg.comment.parent_id) {
+          var parentLi = list.querySelector('.game-comment[data-id="' + msg.comment.parent_id + '"]');
+          if (parentLi) { after = parentLi; var kids = list.querySelectorAll('.game-comment[data-parent="' + msg.comment.parent_id + '"]'); if (kids.length) after = kids[kids.length - 1]; }
+        }
+        if (after) after.insertAdjacentElement('afterend', li); else list.appendChild(li);
         bumpCommentsCount(1);
         document.dispatchEvent(new CustomEvent('gd:comment', { detail: msg.comment }));
         return;
@@ -1385,9 +1396,11 @@ function linkifyMentions(escapedBody, mentionablePlayers) {
   });
 }
 
-function commentRow(c, { reacted, isAdmin, collapsed = false, mentionablePlayers = [] } = {}) {
+// A reply (written in the app, one level deep) sits under its comment, indented, with who
+// it answers. replyTo: that comment's author.
+function commentRow(c, { reacted, isAdmin, collapsed = false, mentionablePlayers = [], replyTo = '' } = {}) {
   const color = teamColor(c.team_name || '');
-  return `<li class="game-comment" data-id="${escHtml(c.id)}"${collapsed ? ' hidden' : ''}>
+  return `<li class="game-comment${c.parent_id ? ' game-comment--reply' : ''}" data-id="${escHtml(c.id)}"${c.parent_id ? ` data-parent="${escHtml(c.parent_id)}"` : ''}${collapsed ? ' hidden' : ''}>
     ${playerAvatar(c.player_id, c.player_name, color, { className: 'game-comment__avatar', link: true })}
     <div class="game-comment__body">
       <div class="game-comment__head">
@@ -1395,6 +1408,7 @@ function commentRow(c, { reacted, isAdmin, collapsed = false, mentionablePlayers
         <span class="game-comment__time">${fmtCommentTime(c.created_at)}</span>
         ${isAdmin ? `<button type="button" class="game-comment__delete" data-delete-id="${escHtml(c.id)}" title="Delete comment" aria-label="Delete comment">✕</button>` : ''}
       </div>
+      ${c.parent_id && replyTo ? `<span class="game-comment__replyto">↪ Replying to ${escHtml(replyTo)}</span>` : ''}
       <p class="game-comment__text">${linkifyMentions(escHtml(c.body), mentionablePlayers)}</p>
       <button type="button" class="game-comment__react${reacted ? ' is-active' : ''}" data-react-id="${escHtml(c.id)}">
         🔥 <span class="game-comment__react-count">${c.reaction_count || 0}</span>
@@ -1412,15 +1426,23 @@ const COMMENTS_VISIBLE_COUNT = 5;
 // fetch — comment volume per game is small enough that rendering everything up front and
 // just toggling `hidden` client-side is simpler than building cursor-based pagination for
 // a scale problem this app doesn't have.
-function commentsTabBody({ gameId, comments = [], reactedIds = new Set(), isPlayer = false, isAdmin = false, mentionablePlayers = [] }) {
+function commentsTabBody({ gameId, comments: flat = [], reactedIds = new Set(), isPlayer = false, isAdmin = false, mentionablePlayers = [] }) {
+  // Each comment followed by its replies (oldest first within both).
+  const byId = new Map(flat.map(c => [c.id, c]));
+  const comments = [];
+  for (const c of flat) {
+    if (c.parent_id && byId.has(c.parent_id)) continue;
+    comments.push(c, ...flat.filter(r => r.parent_id === c.id));
+  }
+  const replyTo = c => (c.parent_id && byId.has(c.parent_id) ? displayPlayerName(byId.get(c.parent_id).player_name || '') : '');
   const older  = comments.slice(0, -COMMENTS_VISIBLE_COUNT);
   const recent = comments.slice(-COMMENTS_VISIBLE_COUNT);
-  const row = c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, mentionablePlayers });
+  const row = c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, mentionablePlayers, replyTo: replyTo(c) });
 
   const list = comments.length
     ? `<ul class="game-comments-list" id="game-comments-list">
         ${older.length ? `<li class="game-comments-more"><button type="button" id="gc-see-more">See ${older.length} more comment${older.length === 1 ? '' : 's'}</button></li>` : ''}
-        ${older.map(c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, collapsed: true, mentionablePlayers })).join('')}
+        ${older.map(c => commentRow(c, { reacted: reactedIds.has(c.id), isAdmin, collapsed: true, mentionablePlayers, replyTo: replyTo(c) })).join('')}
         ${recent.map(row).join('')}
       </ul>`
     : `<p class="game-comments-empty" id="game-comments-empty">No comments yet — be the first to say something.</p>`;

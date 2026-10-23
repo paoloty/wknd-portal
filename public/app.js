@@ -236,6 +236,7 @@
     initPush();
     initSettle();
     initBlocks();
+    initThreads();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
@@ -740,6 +741,204 @@
     });
   }
 
+  // ════ Comments (views/app/comments.js) ════
+  // Feed cards: 🔥 toggles at once; 💬, the latest comment and "View all" open the thread in
+  // a sheet over the feed. A game screen has the same panel under its box score. Replies are
+  // one level deep, folded behind "View N replies". Every answer from /app/thread/:key carries
+  // the fresh list and the card's bar, so both stay in step. Handlers sit on the document:
+  // cards arrive later in lazy pages and the sheet lives outside the screen.
+  var thSend = function (url, body) {
+    return fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body || {}) })
+      .then(function (r) {
+        if (r.status === 401) { location.href = '/app/login'; throw ''; }
+        return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok || !j.ok) throw j.error || 'That didn\'t go through. Try again.'; return j; });
+      }, function () { throw 'No connection. Try again.'; });
+  };
+  var thUrl = function (key, rest) { return '/app/thread/' + encodeURIComponent(key) + (rest || ''); };
+  function setBars(key, html) {
+    if (typeof html !== 'string') return;
+    $$('[data-cx]').forEach(function (b) { if (b.getAttribute('data-cx') === key) b.outerHTML = html; });
+  }
+  function setThread(th, j) {
+    $('[data-th-list]', th).innerHTML = j.html;
+    th.setAttribute('data-th-count', j.count);
+    var sec = th.closest('.th-sec'), label = sec && $('[data-th-count-label]', sec);
+    if (label) label.textContent = j.count ? ' · ' + j.count : '';
+    setBars(th.getAttribute('data-th'), j.bar);
+  }
+  function thReplyTo(th, topId, name) {
+    var form = $('[data-th-form]', th); if (!form) return;
+    var to = $('[data-th-to]', form), input = $('[data-th-input]', form);
+    form.setAttribute('data-parent', topId || '');
+    to.hidden = !topId;
+    if (topId) {
+      $('[data-th-to-name]', to).textContent = name;
+      if (input.value.indexOf('@' + name) < 0) input.value = '@' + name + ' ' + input.value.replace(/^\s+/, '');
+      thInput(input);
+      input.focus();
+      try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+    }
+  }
+  var thPeople = function (th) { if (!th._people) { try { th._people = JSON.parse(($('[data-th-people]', th) || {}).textContent || '[]'); } catch (e) { th._people = []; } } return th._people; };
+  // Typing: the send button wakes up, the box grows to five lines, and "@Fir…" offers names.
+  function thInput(input) {
+    var form = input.form, th = input.closest('[data-th]');
+    var has = !!input.value.trim();
+    $('[data-th-send]', form).disabled = !has;
+    if (has) form.setAttribute('data-dirty', '1'); else form.removeAttribute('data-dirty');
+    input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    var box = $('[data-th-at]', form);
+    var m = /(?:^|\s)@([^@\n]{0,24})$/.exec(input.value.slice(0, input.selectionEnd || input.value.length));
+    var q = m ? m[1].toLowerCase() : null;
+    var hits = q === null || q.split(' ').length > 3 ? [] : thPeople(th).filter(function (p) {
+      var n = p.name.toLowerCase(); return !q || n.indexOf(q) === 0 || n.indexOf(' ' + q) >= 0;
+    }).slice(0, 5);
+    box.hidden = !hits.length;
+    box.innerHTML = '';
+    hits.forEach(function (p) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = p.name; b.setAttribute('data-th-pick', p.name);
+      box.appendChild(b);
+    });
+  }
+  function thSubmit(form) {
+    var th = form.closest('[data-th]'), input = $('[data-th-input]', form), msg = $('[data-th-msg]', form), btn = $('[data-th-send]', form);
+    var body = input.value.trim();
+    if (!body || form.getAttribute('data-busy')) return;
+    form.setAttribute('data-busy', '1'); btn.disabled = true; msg.hidden = true;
+    var parent = form.getAttribute('data-parent') || '';
+    thSend(thUrl(th.getAttribute('data-th')), { body: body, parentId: parent || undefined }).then(function (j) {
+      form.removeAttribute('data-busy');
+      input.value = ''; thInput(input); thReplyTo(th, '');
+      setThread(th, j);
+      var list = $('[data-th-list]', th);
+      var rows = parent ? $$('[data-ct-kids="' + parent + '"] .ct', list) : $$('.th__list > .ct', th);
+      var last = rows[rows.length - 1];
+      if (last) { last.classList.add('is-new'); last.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    }, function (e) {
+      form.removeAttribute('data-busy'); btn.disabled = false;
+      if (e) { msg.textContent = e; msg.hidden = false; }
+    });
+  }
+
+  // The sheet over the feed. It follows the part of the screen the keyboard leaves free.
+  var sheet = null;
+  function fitSheet() {
+    if (!sheet || !window.visualViewport) return;
+    sheet.style.top = visualViewport.offsetTop + 'px';
+    sheet.style.height = visualViewport.height + 'px';
+  }
+  if (window.visualViewport) { visualViewport.addEventListener('resize', fitSheet); visualViewport.addEventListener('scroll', fitSheet); }
+  function closeSheet(now) {
+    var el = sheet; if (!el) return;
+    sheet = null;
+    document.documentElement.classList.remove('has-sheet');
+    if (now || reducedMotion.matches) { el.remove(); return; }
+    el.classList.remove('is-open');
+    setTimeout(function () { el.remove(); }, 260);
+  }
+  function openSheet(key, focus) {
+    closeSheet(true);
+    var el = document.createElement('div');
+    el.className = 'sheet'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Comments');
+    el.innerHTML = '<div class="sheet__scrim" data-sheet-x></div><div class="sheet__box"><div class="sheet__head"><span class="sheet__grab" aria-hidden="true"></span><b>Comments</b><button type="button" class="sheet__x" data-sheet-x aria-label="Close">✕</button></div><div class="sheet__body"><div class="sheet__load"><span class="ptr__spin"></span></div></div></div>';
+    document.body.appendChild(el);
+    document.documentElement.classList.add('has-sheet');
+    sheet = el; fitSheet();
+    requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('is-open'); }); });
+    fetch(thUrl(key), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } return r.json().then(function (j) { if (!r.ok) throw j.error || 'Couldn\'t load the comments.'; return j; }); },
+        function () { throw 'No connection. Comments need the internet.'; })
+      .then(function (j) {
+        if (sheet !== el) return;
+        $('.sheet__body', el).innerHTML = j.panel;
+        setBars(key, j.bar);
+        var list = $('[data-th-list]', el); list.scrollTop = list.scrollHeight;
+        var input = $('[data-th-input]', el);
+        if (focus && input) input.focus();
+      }).catch(function (e) {
+        if (sheet !== el || !e) return;
+        var p = document.createElement('p'); p.className = 'ct__empty'; p.textContent = e;
+        $('.sheet__body', el).innerHTML = ''; $('.sheet__body', el).appendChild(p);
+      });
+    // Drag the top down to close.
+    var head = $('.sheet__head', el), box = $('.sheet__box', el), y0 = null, dy = 0;
+    head.addEventListener('touchstart', function (e) { y0 = e.touches[0].clientY; dy = 0; box.style.transition = 'none'; }, { passive: true });
+    head.addEventListener('touchmove', function (e) { if (y0 === null) return; dy = Math.max(0, e.touches[0].clientY - y0); box.style.transform = 'translateY(' + dy + 'px)'; }, { passive: true });
+    var end = function () { if (y0 === null) return; y0 = null; box.style.transition = ''; box.style.transform = ''; if (dy > 90) closeSheet(); };
+    head.addEventListener('touchend', end); head.addEventListener('touchcancel', end);
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && sheet) closeSheet();
+    var input = e.target.closest && e.target.closest('[data-th-input]');
+    if (input && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); thSubmit(input.form); }
+  });
+  document.addEventListener('input', function (e) { var input = e.target.closest && e.target.closest('[data-th-input]'); if (input) thInput(input); });
+  document.addEventListener('submit', function (e) { var form = e.target.closest && e.target.closest('[data-th-form]'); if (form) { e.preventDefault(); thSubmit(form); } });
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target : null; if (!t) return;
+    var b;
+    if ((b = t.closest('[data-sheet-x]'))) return closeSheet();
+    if ((b = t.closest('[data-cx-open]'))) return openSheet(b.closest('[data-cx]').getAttribute('data-cx'), !!b.classList.contains('cx__b'));
+    if ((b = t.closest('[data-cx-fire]'))) {
+      var bar = b.closest('[data-cx]'), key = bar.getAttribute('data-cx');
+      if (bar.getAttribute('data-busy')) return;
+      bar.setAttribute('data-busy', '1');
+      var on = !b.classList.contains('is-on'), n = $('span:last-child', b), was = n.textContent;
+      var cnt = (Number(was) || 0) + (on ? 1 : -1);
+      b.classList.toggle('is-on', on); b.classList.add('is-pop'); n.textContent = cnt > 0 ? cnt : 'Fire';
+      thSend(thUrl(key, '/fire')).then(function (j) { setBars(key, j.bar); }, function (err) {
+        bar.removeAttribute('data-busy'); b.classList.toggle('is-on', !on); n.textContent = was; if (err) toast(err, 'err');
+      });
+      return;
+    }
+    var th = t.closest('[data-th]'); if (!th) return;
+    var key2 = th.getAttribute('data-th');
+    if ((b = t.closest('[data-th-pick]'))) {
+      var input = $('[data-th-input]', th), end = input.selectionEnd || input.value.length;
+      var before = input.value.slice(0, end).replace(/@([^@\n]{0,24})$/, '@' + b.getAttribute('data-th-pick') + ' ');
+      input.value = before + input.value.slice(end);
+      thInput(input); input.focus();
+      try { input.setSelectionRange(before.length, before.length); } catch (x) {}
+      return;
+    }
+    if ((b = t.closest('[data-th-to-x]'))) return thReplyTo(th, '');
+    if ((b = t.closest('[data-ct-toggle]'))) {
+      var id = b.getAttribute('data-ct-toggle'), kids = $('[data-ct-kids="' + id + '"]', th), n2 = Number(kids.getAttribute('data-n'));
+      kids.hidden = !kids.hidden;
+      b.setAttribute('aria-expanded', String(!kids.hidden));
+      $('span', b).textContent = kids.hidden ? 'View ' + n2 + ' repl' + (n2 === 1 ? 'y' : 'ies') : 'Hide replies';
+      return;
+    }
+    if ((b = t.closest('[data-ct-reply]'))) return thReplyTo(th, b.getAttribute('data-ct-reply'), b.getAttribute('data-ct-name'));
+    if ((b = t.closest('[data-ct-del]'))) {
+      if (!window.confirm('Delete this comment?' + ($('[data-ct-kids="' + b.getAttribute('data-ct-del') + '"]', th) ? ' Its replies go too.' : ''))) return;
+      thSend(thUrl(key2, '/comments/' + encodeURIComponent(b.getAttribute('data-ct-del')) + '/delete')).then(function (j) { setThread(th, j); toast('Comment deleted'); }, function (err) { if (err) toast(err, 'err'); });
+      return;
+    }
+    if ((b = t.closest('[data-ct-fire]'))) {
+      if (b.getAttribute('data-busy')) return;
+      b.setAttribute('data-busy', '1');
+      var on2 = !b.classList.contains('is-on'), c = $('span', b), was2 = c.textContent, next = (Number(was2) || 0) + (on2 ? 1 : -1);
+      b.classList.toggle('is-on', on2); b.classList.add('is-pop'); b.setAttribute('aria-pressed', String(on2)); c.textContent = next > 0 ? next : '';
+      thSend(thUrl(key2, '/comments/' + encodeURIComponent(b.getAttribute('data-ct-fire')) + '/fire')).then(function (j) {
+        b.removeAttribute('data-busy'); b.classList.toggle('is-on', j.reacted); c.textContent = j.count || '';
+      }, function (err) { b.removeAttribute('data-busy'); b.classList.toggle('is-on', !on2); c.textContent = was2; if (err) toast(err, 'err'); });
+    }
+  });
+  // ?thread=<key> (a notification about comments): the thread's panel on this screen, else
+  // the sheet. Handled once; the address loses it.
+  function initThreads() {
+    var m = /[?&]thread=([^&]+)/.exec(location.search);
+    if (!m) return;
+    var key = decodeURIComponent(m[1]);
+    var clean = location.pathname + location.search.replace(/([?&])thread=[^&]+&?/, '$1').replace(/[?&]$/, '');
+    try { history.replaceState(history.state, '', clean); } catch (e) {}
+    if (typeof currentUrl !== 'undefined') currentUrl = clean;
+    var inline = $$('main.app [data-th]').filter(function (x) { return x.getAttribute('data-th') === key; })[0];
+    if (inline) { var sec = inline.closest('.th-sec') || inline; setTimeout(function () { sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60); }
+    else openSheet(key);
+  }
+
   // ════ Lazy lists (views/app/layout.js lazyList) ════
   // The first page loads as soon as the screen is up; the next one when the bottom of the
   // list comes within ~600px. Each answer is { html, next }.
@@ -1000,6 +1199,7 @@
   }
 
   function go(url, push, still) {
+    closeSheet(true);
     var id = ++navId;
     var dir = still ? undefined : direction(currentUrl, url);
     var k = takeKept(url);
@@ -1073,7 +1273,7 @@
     };
     document.addEventListener('touchstart', function (e) {
       startY = null;
-      if (busy || e.touches.length > 1 || window.scrollY > 0 || !$('nav.tabbar') || (e.target.closest && e.target.closest('.player'))) return;
+      if (busy || sheet || e.touches.length > 1 || window.scrollY > 0 || !$('nav.tabbar') || (e.target.closest && e.target.closest('.player'))) return;
       startY = e.touches[0].clientY; pull = 0;
     }, { passive: true });
     document.addEventListener('touchmove', function (e) {

@@ -105,9 +105,10 @@ export function appNotificationsPage() {
 
 // items: [{ title, body, when, unread }] — one page of rows for the lazy list.
 export function appNotificationRows(items) {
-  return items.map(n => `
-    <div class="cell">
-      <span class="dot" style="--c:${n.unread ? 'var(--amber)' : 'transparent'}"></span>
-      <span class="cell__t">${esc(n.title)}${n.body ? `<small>${esc(n.body)}</small>` : ''}<small>${esc(n.when)}</small></span>
-    </div>`).join('');
+  // href: the app screen it's about (server.js appLinkFor); tapping opens it.
+  return items.map(n => {
+    const inner = `<span class="dot" style="--c:${n.unread ? 'var(--amber)' : 'transparent'}"></span>
+      <span class="cell__t">${esc(n.title)}${n.body ? `<small>${esc(n.body)}</small>` : ''}<small>${esc(n.when)}</small></span>`;
+    return n.href && n.href !== '/app/notifications' ? `<a class="cell" href="${esc(n.href)}">${inner}${chev}</a>` : `<div class="cell">${inner}</div>`;
+  }).join('');
 }

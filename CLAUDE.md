@@ -64,3 +64,4 @@ Public-facing MPA (multi-page app) for the WKND Basketball League. Node.js + Exp
 - Player name display: parse "LASTNAME, Firstname" → "Firstname LASTNAME" for public-facing output
 - Stat averages: always divide by `games_played`, guard against division by zero
 - `game_type` values: `'regular'` | `'playoff'`
+- Notifications: anything that notifies a player goes through `createNotification`, so it lands in the bell (site and app) and the push hook sends it to phones. Never push-only (Paolo, 2026-10-24).

@@ -150,7 +150,7 @@ import {
   toggleCommentReaction, getReactedCommentIdsForPlayer,
   toggleGameReaction, getGameReactionState, getGameReactors, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
-  getLatestCommentsForGames, getGameCommenterIds, getTeamPlayerIdsWithAccounts, findUnreadNotification, refreshNotification,
+  getLatestCommentsForGames, getGameCommenterIds, getThreadPlayerIds, getTeamPlayerIdsWithAccounts, findUnreadNotification, refreshNotification,
   setGamePick, setGamePickMargin, getGamePickCounts, getPlayerGamePicks,
   getAllGamePicks, getGamePicksWithPlayers, getAllGamePickSettings, setGamePickClosed, setGamePickHideOdds, claimGamePickSettle,
   getGamePreview, saveGamePreview, getGamePreviewIds,
@@ -6013,6 +6013,7 @@ import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId } from './views/app/feed.js';
+import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
@@ -6037,7 +6038,7 @@ const APP_VER = (() => {
   let commit = 'dev';
   try { commit = readFileSync(path.join(__dirname, '.git/HEAD'), 'utf8').trim(); if (commit.startsWith('ref:')) commit = readFileSync(path.join(__dirname, '.git', commit.slice(5).trim()), 'utf8').trim(); } catch {}
   let newest = 0;
-  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js']) {
     try { newest = Math.max(newest, statSync(path.join(__dirname, f)).mtimeMs); } catch {}
   }
   return `${commit.slice(0, 7)}.${Math.floor(newest / 1000).toString(36)}`;
@@ -6474,7 +6475,7 @@ app.get('/app', requireApp, (req, res) => {
   sendTab(res, me, { title: 'WKND', tab: 'home', body: appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread }),
     setupHtml: setupCard(setup), installHtml: installCard,
-    actions: actions.slice(0, 3), pinned: pin ? appAnnItem(pin, true) : null, rail,
+    actions: actions.slice(0, 3), pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
   }) });
 });
 
@@ -6564,7 +6565,7 @@ const gameKicker = g => `Final · ${g.playoff_round || gameTypeLabel(g) || 'Regu
 
 function appFeedItem(it, me, extra) {
   const day = feedDay(it.at);
-  if (it.kind === 'ann') return appAnnItem(it.src);
+  if (it.kind === 'ann') return { ...appAnnItem(it.src), social: extra.social?.[`ann:${it.id}`] || null };
   if (it.kind === 'post') {
     const p = it.src;
     const text = String(p.body_html || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
@@ -6587,7 +6588,7 @@ function appFeedItem(it, me, extra) {
   return { kind: 'game', day, when: day === 'Today' || day === 'Yesterday' ? manilaDayLabel(gameYmd(g.date)) : (gameTipLabel(g) || ''),
     href: `/app/games/${encodeURIComponent(g.id)}`, kicker: gameKicker(g), media: gameMedia(g), a, b,
     title, excerpt: body, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '',
-    fire: extra.fire[g.id] || 0, comments: extra.commentsOn ? (extra.comments[g.id] || 0) : null };
+    social: extra.social?.[g.id] || null };
 }
 
 // /app/feed/items?before=<at>:<id>&day=<last day header shown>
@@ -6598,7 +6599,7 @@ app.get('/app/feed/items', requireAppData, (req, res) => {
   const from = m ? all.findIndex(it => it.at < Number(m[1]) || (it.at === Number(m[1]) && String(it.id).localeCompare(m[2]) < 0)) : 0;
   const page = from < 0 ? [] : all.slice(from, from + APP_FEED_PAGE);
   const gameIds = page.filter(it => it.kind === 'game').map(it => it.id);
-  const extra = { commentsOn: getSetting('comments_enabled', '0') === '1', comments: getGameCommentCounts(gameIds), fire: getGameReactionCounts(gameIds), runFaces: {} };
+  const extra = { social: appSocialFor(page.filter(it => it.kind === 'game' || it.kind === 'ann').map(it => (it.kind === 'ann' ? `ann:${it.id}` : it.id)), me.playerId), runFaces: {} };
   // Who's in on the page's Papawis runs: initials in their team colour, first to sign up first.
   const runIds = page.filter(it => it.kind === 'papawis').map(it => it.id);
   if (runIds.length) {
@@ -6625,6 +6626,98 @@ const sendAnnImage = (req, res) => {
 };
 app.get('/app/announcements/:id/image', requireAppData, sendAnnImage);
 
+// ── Comments in the app (views/app/comments.js) ──
+// A thread is a game's (key = the game id, shared with the site's game page) or an app
+// announcement's (key = ann:<id>). Rules as on the site: players only, comments_enabled on;
+// banned players read but can't post; you delete your own (admins anyone's).
+const appCommentsOn = () => getSetting('comments_enabled', '0') === '1';
+function appThreadTarget(key) {
+  const k = String(key || '');
+  if (k.startsWith('ann:')) { const ann = getAppAnnouncement(k.slice(4)); return ann ? { kind: 'ann', key: k, ann } : null; }
+  const game = getGameById(k);
+  return game && !game.under_review ? { kind: 'game', key: game.id, game } : null;
+}
+// "now", "5m", "3h", "2d", then the date.
+function agoShort(ms) {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d`;
+  return manilaFormat(ms, { month: 'short', day: 'numeric' });
+}
+function appThreadData(target, req, open = []) {
+  const playerId = req.session.playerPlayerId;
+  const isAdmin = isAdminWithSection(req, 'games-stats');
+  const rows = getGameComments(target.key);
+  const fired = getReactedCommentIdsForPlayer(rows.map(c => c.id), playerId);
+  const shape = c => ({ ...appPersonOf({ ...c, name: c.player_name }), id: c.id, body: c.body, when: agoShort(c.created_at),
+    fire: Number(c.reaction_count) || 0, fired: fired.has(c.id), canDelete: c.player_id === playerId || isAdmin });
+  const tops = rows.filter(c => !c.parent_id || !rows.some(x => x.id === c.parent_id)).map(c => ({ ...shape(c), replies: [] }));
+  const byId = new Map(tops.map(t => [t.id, t]));
+  for (const c of rows) if (c.parent_id && byId.has(c.parent_id)) byId.get(c.parent_id).replies.push(shape(c));
+  const people = getPlayersWithAccounts().map(p => ({ id: p.id, name: displayPlayerName(p.name) }));
+  const banned = getBannedPlayerIds().has(playerId);
+  return { key: target.key, count: rows.length, threads: tops, open, names: people.map(p => p.name), people: people.filter(p => p.id !== playerId),
+    canPost: !banned && !req.session.impersonating,
+    why: banned ? 'Commenting is off while your account is banned. Settle your balance and message us.' : 'Viewing as a player: commenting is off.' };
+}
+// The feed cards' bar for these thread keys: { key: { key, fire, fired, count, last } }, or
+// null when comments are off.
+function appSocialFor(keys, playerId) {
+  if (!appCommentsOn() || !keys.length) return null;
+  const counts = getGameCommentCounts(keys), fire = getGameReactionCounts(keys), fired = getReactedGameIdsForPlayer(keys, playerId);
+  const last = getLatestCommentsForGames(keys);
+  return Object.fromEntries(keys.map(k => [k, { key: k, fire: fire[k] || 0, fired: fired.has(k), count: counts[k] || 0,
+    last: last[k] ? { name: displayPlayerName(last[k].player_name), body: last[k].body.length > 120 ? last[k].body.slice(0, 120) + '…' : last[k].body } : null }]));
+}
+// Every answer carries the fresh list and the feed card's bar, so both update together.
+function appThreadAnswer(res, target, req, open = []) {
+  const d = appThreadData(target, req, open);
+  res.json({ ok: true, count: d.count, html: appThreadList(d), panel: appThreadPanel(d), bar: appSocialBar(appSocialFor([target.key], req.session.playerPlayerId)?.[target.key]) });
+}
+function requireThread(req, res, next) {
+  if (!appCommentsOn()) return res.status(404).json({ error: 'Comments are off right now.' });
+  const t = appThreadTarget(req.params.key);
+  if (!t) return res.status(404).json({ error: 'This post isn\'t available any more.' });
+  req.thread = t;
+  next();
+}
+const noViewAs = (req, res) => (req.session.impersonating ? res.status(403).json({ error: 'Not while viewing as a player.' }) : null);
+app.get('/app/thread/:key', requireAppData, requireThread, (req, res) => appThreadAnswer(res, req.thread, req));
+app.post('/app/thread/:key', requireAppData, requireThread, express.json(), (req, res) => {
+  if (noViewAs(req, res)) return;
+  const r = postComment(req.thread, req.session.playerPlayerId, req.body?.body, req.body?.parentId);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  logApp(req, 'comment');
+  const top = getCommentById(r.id)?.parent_id;
+  appThreadAnswer(res, req.thread, req, top ? [top] : []);
+});
+app.post('/app/thread/:key/fire', requireAppData, requireThread, (req, res) => {
+  if (noViewAs(req, res)) return;
+  const r = toggleGameReaction(req.thread.key, req.session.playerPlayerId);
+  if (req.thread.kind === 'game') broadcastToGame(req.thread.game.id, { type: 'game:react', count: r.count, who: reactorsWho(getGameReactors(req.thread.game.id)) });
+  res.json({ ok: true, ...r, bar: appSocialBar(appSocialFor([req.thread.key], req.session.playerPlayerId)?.[req.thread.key]) });
+});
+app.post('/app/thread/:key/comments/:id/fire', requireAppData, requireThread, (req, res) => {
+  if (noViewAs(req, res)) return;
+  const c = getCommentById(req.params.id);
+  if (!c || c.game_id !== req.thread.key) return res.status(404).json({ error: 'That comment was deleted.' });
+  const r = toggleCommentReaction(c.id, req.session.playerPlayerId);
+  if (req.thread.kind === 'game') broadcastToGame(req.thread.game.id, { type: 'comment:react', id: c.id, count: r.count });
+  if (r.reacted) notifyCommentReaction(req.thread, c, req.session.playerPlayerId);
+  res.json({ ok: true, ...r });
+});
+app.post('/app/thread/:key/comments/:id/delete', requireAppData, requireThread, (req, res) => {
+  if (noViewAs(req, res)) return;
+  const c = getCommentById(req.params.id);
+  if (!c || c.game_id !== req.thread.key) return res.status(404).json({ error: 'That comment was already deleted.' });
+  if (c.player_id !== req.session.playerPlayerId && !isAdminWithSection(req, 'games-stats')) return res.status(403).json({ error: 'You can only delete your own comments.' });
+  const ids = deleteGameComment(c.id);
+  if (req.thread.kind === 'game') for (const id of ids) broadcastToGame(req.thread.game.id, { type: 'comment:delete', id });
+  appThreadAnswer(res, req.thread, req, c.parent_id ? [c.parent_id] : []);
+});
+
 // Where a game or post screen's back button goes: the screen it was opened from.
 const APP_BACK = { home: ['/app', 'Home'], team: ['/app/team', 'My Team'], me: ['/app/me', 'Me'], picks: ['/app/picks', 'Picks'] };
 const appBack = req => { const [href, label] = APP_BACK[req.query.from] || APP_BACK.home; return { href, label, tab: APP_BACK[req.query.from] ? req.query.from : 'home' }; };
@@ -6645,9 +6738,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     rows: stats.filter(s => s.team_id === tid).map(s => ({ playerId: s.player_id, number: String(s.number ?? ''), name: displayPlayerName(s.name || ''),
       pts: Number(s.pts) || 0, reb: Number(s.reb) || 0, ast: Number(s.ast) || 0, stl: Number(s.stl) || 0, blk: Number(s.blk) || 0 })),
   })).filter(t => t.rows.length);
-  const commentsOn = getSetting('comments_enabled', '0') === '1';
-  const comments = commentsOn ? getGameComments(g.id).map(c => ({ ...appPersonOf({ ...c, name: c.player_name }), body: c.body,
-    when: manilaFormat(c.created_at, { month: 'short', day: 'numeric' }) })) : null;
+  const thread = appCommentsOn() ? appThreadData({ kind: 'game', key: g.id, game: g }, req) : null;
   const mine = stats.find(s => s.player_id === me.playerId);
   const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
   sendTab(res, me, { title: `${a.name} ${a.score} · ${b.name} ${b.score} · WKND`, tab: back.tab, body: appGamePage({
@@ -6655,7 +6746,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     a, b, media: gameMedia(g), final: isPlayedGame(g),
     // The hero's chips carry the kind of game and the day; the court goes under it.
     kicker: gameKicker(g), when: manilaDayLabel(gameYmd(g.date)), meta: court ? `📍 ${court}` : '',
-    recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, comments, meId: me.playerId,
+    recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId,
   }) });
 });
 // Before the result: the preview, with the pick card while picks are open (or the pick made).
@@ -7157,7 +7248,7 @@ app.get('/app/notifications/items', requireAppData, (req, res) => {
   if (!before) { opened = Date.now(); markNotificationsRead(pid); }
   const when = ts => manilaFormat(ts, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const html = appNotificationRows(rows.map(n => ({
-    title: n.title, body: n.body, when: when(n.created_at),
+    title: n.title, body: n.body, when: when(n.created_at), href: appLinkFor(n.link),
     unread: before ? (!!n.read_at && n.read_at >= opened) : !n.read_at,
   })));
   const last = rows[rows.length - 1];
@@ -7175,7 +7266,8 @@ function appLinkFor(link = '') {
   if (/^\/papawis/.test(path) || /^\/courts\//.test(path)) return '/app/papawis';
   if (/^\/picks/.test(path) || /^\/mvp/.test(path)) return '/app/picks';
   const gm = /^\/games\/([^/?#]+)/.exec(path);
-  if (gm) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}`; }
+  // A comment notification (#talk) opens the game at its comments.
+  if (gm) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}${/#talk$/.test(link) ? `?thread=${encodeURIComponent(r.id)}` : ''}`; }
   if (/^\/me\b/.test(path)) return '/app/me';
   if (/^\/settle-balance/.test(path)) return '/app/settle';
   return '/app/notifications';
@@ -7214,25 +7306,21 @@ app.post('/app/push/test', requireAppData, async (req, res) => {
   res.json({ ok: true, sent });
 });
 
-// Announcements reach every app player with notifications on (push only; the post itself is in
-// the feed). Called from the admin's POST /admin/app/announcements.
-function pushAnnouncement({ title, body }) {
+// Announcements land in the bell of every player with the app (and so reach their phones
+// through the push hook above, under Announcements). Tapping one opens Home with the
+// announcement's comments. Called from the admin's POST /admin/app/announcements.
+function notifyAnnouncement({ id, title, body }) {
   const list = appBetaList();
-  const regs = new Map(getAllRegistrations().map(r => [r.id, r]));
-  const players = new Set();
-  for (const s of getAllPushSubscriptions()) {
-    const reg = regs.get(s.reg_id);
-    if (reg && reg.status === 'approved' && reg.player_id && appAllowedReg(reg, list)) players.add(s.player_id);
-  }
+  const players = new Set(getAllRegistrations().filter(r => r.status === 'approved' && r.player_id && appAllowedReg(r, list)).map(r => r.player_id));
   for (const pid of players) {
-    pushToPlayer(pid, { title: title || 'WKND League', body: String(body || '').slice(0, 160), url: '/app', tag: 'announcement' }, { kind: 'announcements' })
-      .catch(e => console.error('[push announce]', e.message));
+    createNotification({ playerId: pid, type: 'app_announcement', title: title || 'WKND League', body: String(body || '').slice(0, 160), link: `/app?thread=${encodeURIComponent(`ann:${id}`)}` });
   }
   return players.size;
 }
 
-// Picks closing: two hours before picks close on a game day, one push to each player with
-// notifications on who still has games to pick there (once per day per player).
+// Picks closing: two hours before picks close on a game day, a bell notification (pushed to
+// phones under Picks) for each player with the app who still has games to pick there, once
+// per day per player.
 function runAppPickClosingPushes() {
   if (!picksEnabled()) return;
   const all = getAllGames();
@@ -7250,7 +7338,8 @@ function runAppPickClosingPushes() {
     (days.get(ymd) || days.set(ymd, { ms, games: [] }).get(ymd)).games.push(g);
   }
   if (!days.size) return;
-  const playerIds = [...new Set(getAllPushSubscriptions().map(s => s.player_id).filter(Boolean))];
+  const list = appBetaList();
+  const playerIds = [...new Set(getAllRegistrations().filter(r => r.status === 'approved' && r.player_id && appAllowedReg(r, list)).map(r => r.player_id))];
   for (const [ymd, d] of days) {
     const ids = d.games.map(g => g.id);
     for (const pid of playerIds) {
@@ -7258,11 +7347,12 @@ function runAppPickClosingPushes() {
       const left = d.games.filter(g => !mine[g.id]);
       if (!left.length || !claimPushLog(`picks-close:${ymd}:${pid}`)) continue;
       const first = left[0];
-      pushToPlayer(pid, {
+      createNotification({
+        playerId: pid, type: 'app_pick_closing',
         title: `Picks close at ${manilaFormat(d.ms, { hour: 'numeric', minute: '2-digit' })}`,
-        body: `Who wins? ${first.team_a_name} vs ${first.team_b_name}${left.length > 1 ? ` + ${left.length - 1} more` : ''}`,
-        url: '/app/picks', tag: `picks-${ymd}`,
-      }, { kind: 'picks' }).catch(e => console.error('[push picks]', e.message));
+        body: `Who wins? ${titleCase(first.team_a_name)} vs ${titleCase(first.team_b_name)}${left.length > 1 ? ` + ${left.length - 1} more` : ''}`,
+        link: '/picks',
+      });
     }
   }
 }
@@ -7315,9 +7405,10 @@ app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' })
   if (youtube && !ytId(youtube)) return res.status(400).json({ error: 'That doesn\'t look like a YouTube link.' });
   if (image && !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'That photo couldn\'t be read. Try another.' });
   const by = req.session.isElevatedPlayer ? (req.session.playerName || 'admin') : 'WKND';
-  addAppAnnouncement({ id: crypto.randomUUID(), title, body, image, youtubeUrl: youtube, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
-  const pushed = pushAnnouncement({ title, body });
-  res.json({ ok: true, pushed });
+  const id = crypto.randomUUID();
+  addAppAnnouncement({ id, title, body, image, youtubeUrl: youtube, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
+  const notified = notifyAnnouncement({ id, title, body });
+  res.json({ ok: true, notified });
 });
 app.post('/admin/app/announcements/:id/pin', requireAuth, express.json(), (req, res) => {
   if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
@@ -10531,78 +10622,126 @@ function extractMentionedPlayerIds(body, players) {
   return [...found];
 }
 
+// Posting a comment, shared by the site's game page and the app (games and app announcements).
+// target: appThreadTarget() / { kind: 'game', key, game }. parentId: the comment being replied
+// to; a reply to a reply goes under the same top-level comment (one level of replies).
+// Returns { id } or { error, status }. Banned players can't comment.
+const commentLinkOf = t => (t.kind === 'ann' ? `/app?thread=${encodeURIComponent(t.key)}` : `/games/${gameSlug(t.game)}#talk`);
+const commentExcerpt = (body, n = 140) => (body.length > n ? body.slice(0, n) + '…' : body);
+function postComment(target, playerId, rawBody, parentId) {
+  if (getBannedPlayerIds().has(playerId)) return { status: 403, error: 'Commenting is off while your account is banned. Settle your balance and message us.' };
+  const body = String(rawBody || '').trim().slice(0, 500);
+  if (!body) return { status: 400, error: 'Comment can\'t be empty.' };
+  let parent = null;
+  if (parentId) {
+    parent = getCommentById(String(parentId));
+    if (!parent || parent.game_id !== target.key) return { status: 404, error: 'That comment was deleted.' };
+    if (parent.parent_id) parent = getCommentById(parent.parent_id) || parent;
+  }
+  const id = addGameComment({ gameId: target.key, playerId, body, parentId: parent?.id || null });
+  const saved = getCommentWithMeta(id);
+  if (target.kind === 'game') {
+    broadcastToGame(target.game.id, {
+      type: 'comment:new',
+      comment: {
+        id: saved.id,
+        parent_id: saved.parent_id || null,
+        replyTo: parent ? displayPlayerName(parent.player_name || getPlayerById(parent.player_id)?.name || '') : '',
+        player_id: saved.player_id,
+        body: saved.body,
+        created_at: saved.created_at,
+        displayName: displayPlayerName(saved.player_name),
+        initials: initials(saved.player_name),
+        photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo?w=96`,
+        color: teamColor(saved.team_name || ''),
+      },
+    });
+  }
+  notifyComment(target, saved, parent);
+  return { id };
+}
+
+// Who hears about a comment, each person once, never the commenter: an @mentioned player
+// ("X mentioned you"); on a reply, the comment's author and everyone else in that reply
+// thread ("X replied to your comment" / "X replied in a thread"); then everyone involved
+// ("New comment on …"): for a game, its players (after the final) or both teams and its
+// pickers (before), plus anyone already in the thread; for an announcement, its commenters.
+// A thread you haven't read yet updates one notification instead of stacking more.
+function notifyComment(target, saved, parent) {
+  const playerId = saved.player_id, body = saved.body;
+  const link = commentLinkOf(target);
+  const name = displayPlayerName(saved.player_name);
+  const told = new Set([playerId]);
+  const accounted = getPlayersWithAccounts().map(p => ({ id: p.id, name: displayPlayerName(p.name) }));
+  for (const pid of extractMentionedPlayerIds(body, accounted)) {
+    if (told.has(pid)) continue;
+    told.add(pid);
+    createNotification({ playerId: pid, type: 'comment_mention', title: `${name} mentioned you`, body: commentExcerpt(body), link });
+  }
+  if (parent) {
+    const author = parent.player_id;
+    for (const pid of [author, ...getThreadPlayerIds(parent.id)]) {
+      if (told.has(pid)) continue;
+      told.add(pid);
+      const title = pid === author ? `${name} replied to your comment` : `${name} replied in a thread you're in`;
+      const unread = findUnreadNotification(pid, 'comment_reply', link);
+      if (unread) refreshNotification(unread.id, { title: pid === author ? `New replies to your comment` : 'New replies in a thread you\'re in', body: `${name}: ${commentExcerpt(body, 100)}` });
+      else createNotification({ playerId: pid, type: 'comment_reply', title, body: commentExcerpt(body), link });
+    }
+  }
+  let involved, about, first;
+  if (target.kind === 'game') {
+    const game = target.game;
+    const isFinal = (game.status === 'final' || game.status === 'complete') && Number(game.team_a_score) + Number(game.team_b_score) > 0;
+    involved = [
+      ...(isFinal
+        ? getGameDetailStats(game.id).map(s => s.player_id)
+        : [...getTeamPlayerIdsWithAccounts(game.team_a_id, game.team_b_id), ...getGamePicksWithPlayers(game.id).map(p => p.player_id)]),
+      ...getGameCommenterIds(game.id),
+    ];
+    about = `${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`;
+    first = `${isFinal ? 'New comment' : 'Pre-game chatter'} on ${about}`;
+  } else {
+    involved = getGameCommenterIds(target.key);
+    about = target.ann.title ? `“${commentExcerpt(target.ann.title, 40)}”` : 'an announcement';
+    first = `New comment on ${about}`;
+  }
+  const preview = `${name}: ${commentExcerpt(body, 100)}`;
+  for (const pid of new Set(involved)) {
+    if (told.has(pid)) continue;
+    told.add(pid);
+    const unread = findUnreadNotification(pid, 'comment_new', link);
+    if (unread) {
+      const n = (Number(String(unread.title).match(/^(\d+) new comments/)?.[1]) || 1) + 1;
+      refreshNotification(unread.id, { title: `${n} new comments on ${about}`, body: preview });
+      continue;
+    }
+    createNotification({ playerId: pid, type: 'comment_new', title: first, body: preview, link });
+  }
+}
+
+// A 🔥 on someone's comment tells its author (one notification per thread until they read it).
+function notifyCommentReaction(target, comment, playerId) {
+  if (comment.player_id === playerId) return;
+  const link = commentLinkOf(target);
+  const name = displayPlayerName(getPlayerById(playerId)?.name || '');
+  const unread = findUnreadNotification(comment.player_id, 'comment_reaction', link);
+  if (unread) {
+    if (!unread.title.startsWith(name)) refreshNotification(unread.id, { title: `${name} and others 🔥 your comment`, body: commentExcerpt(comment.body) });
+    return;
+  }
+  createNotification({ playerId: comment.player_id, type: 'comment_reaction', title: `${name} 🔥 your comment`, body: commentExcerpt(comment.body), link });
+}
+
 app.post('/games/:id/comments', express.json(), (req, res) => {
   if (getSetting('comments_enabled', '0') !== '1') return res.status(404).json({ error: 'Not found.' });
   const playerId = req.session?.playerPlayerId;
   if (!req.session?.playerRegId || !playerId) return res.status(401).json({ error: 'Log in to comment.' });
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
-  const body = String(req.body?.body || '').trim().slice(0, 500);
-  if (!body) return res.status(400).json({ error: 'Comment can\'t be empty.' });
-  const id = addGameComment({ gameId: game.id, playerId, body });
-  const saved = getCommentWithMeta(id);
-  broadcastToGame(game.id, {
-    type: 'comment:new',
-    comment: {
-      id: saved.id,
-      player_id: saved.player_id,
-      body: saved.body,
-      created_at: saved.created_at,
-      displayName: displayPlayerName(saved.player_name),
-      initials: initials(saved.player_name),
-      photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo?w=96`,
-      color: teamColor(saved.team_name || ''),
-    },
-  });
-
-  // Notifications: an @mentioned player gets a specific callout; everyone else involved gets
-  // a general "new comment" one — players in the box score after the final, both teams'
-  // players and everyone who picked the game before it, plus anyone already in the thread.
-  // Never both for the same person, never for the commenter's own comment, and a thread you
-  // haven't read yet updates one "N new comments" notification instead of stacking more.
-  const gameLink = `/games/${gameSlug(game)}#talk`;
-  const commenterName = displayPlayerName(saved.player_name);
-  const accountedPlayers = getPlayersWithAccounts().map(p => ({ id: p.id, name: displayPlayerName(p.name) }));
-  const mentionedIds = new Set(extractMentionedPlayerIds(body, accountedPlayers));
-
-  mentionedIds.forEach(mentionedId => {
-    if (mentionedId === playerId) return;
-    createNotification({
-      playerId: mentionedId,
-      type: 'comment_mention',
-      title: `${commenterName} mentioned you`,
-      body: body.length > 140 ? body.slice(0, 140) + '…' : body,
-      link: gameLink,
-    });
-  });
-
-  const isFinal = (game.status === 'final' || game.status === 'complete') && Number(game.team_a_score) + Number(game.team_b_score) > 0;
-  const involved = new Set([
-    ...(isFinal
-      ? getGameDetailStats(game.id).map(s => s.player_id)
-      : [...getTeamPlayerIdsWithAccounts(game.team_a_id, game.team_b_id), ...getGamePicksWithPlayers(game.id).map(p => p.player_id)]),
-    ...getGameCommenterIds(game.id),
-  ]);
-  const matchup = `${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`;
-  const preview = `${commenterName}: ${body.length > 100 ? body.slice(0, 100) + '…' : body}`;
-  involved.forEach(pid => {
-    if (pid === playerId || mentionedIds.has(pid)) return;
-    const unread = findUnreadNotification(pid, 'comment_new', gameLink);
-    if (unread) {
-      const n = (Number(String(unread.title).match(/^(\d+) new comments/)?.[1]) || 1) + 1;
-      refreshNotification(unread.id, { title: `${n} new comments on ${matchup}`, body: preview });
-      return;
-    }
-    createNotification({
-      playerId: pid,
-      type: 'comment_new',
-      title: `${isFinal ? 'New comment' : 'Pre-game chatter'} on ${matchup}`,
-      body: preview,
-      link: gameLink,
-    });
-  });
-
-  res.json({ ok: true, id });
+  const r = postComment({ kind: 'game', key: game.id, game }, playerId, req.body?.body, req.body?.parent_id);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ ok: true, id: r.id });
 });
 
 app.post('/games/:id/comments/:commentId/react', express.json(), (req, res) => {
@@ -10613,6 +10752,7 @@ app.post('/games/:id/comments/:commentId/react', express.json(), (req, res) => {
   if (!comment || comment.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
   const result = toggleCommentReaction(comment.id, playerId);
   broadcastToGame(comment.game_id, { type: 'comment:react', id: comment.id, count: result.count });
+  if (result.reacted) { const game = getGameById(comment.game_id); if (game) notifyCommentReaction({ kind: 'game', key: game.id, game }, comment, playerId); }
   res.json({ ok: true, ...result });
 });
 
@@ -10635,8 +10775,7 @@ app.delete('/games/:id/comments/:commentId', (req, res) => {
   if (!isAdminWithSection(req, 'games-stats')) return res.status(403).json({ error: 'Admins only.' });
   const comment = getCommentById(req.params.commentId);
   if (!comment || comment.game_id !== req.params.id) return res.status(404).json({ error: 'Not found.' });
-  deleteGameComment(comment.id);
-  broadcastToGame(comment.game_id, { type: 'comment:delete', id: comment.id });
+  for (const id of deleteGameComment(comment.id)) broadcastToGame(comment.game_id, { type: 'comment:delete', id });
   res.json({ ok: true });
 });
 

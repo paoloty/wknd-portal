@@ -4,6 +4,7 @@
 // last item so a day header isn't repeated across pages.
 import { esc, appAvatar, icons, backChev, soonTag, lazyList } from './layout.js';
 import { pickOption, pickCard } from './picks.js';
+import { appSocialBar, appThreadPanel } from './comments.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -58,17 +59,18 @@ function gameHero(g, { band = false } = {}) {
 const potgBox = (p, label = potgLabel(p)) => `<div class="gx__potg">${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}<i class="gx__star" aria-hidden="true">★</i>
   <div class="potg__t">${label ? `<small>${label}</small>` : ''}<b>${esc(p.name)}</b><em>${esc(p.line)}</em></div></div>`;
 
+// social: the 🔥 / 💬 bar (views/app/comments.js), outside the link so its buttons work.
 function gameCard(g) {
-  return `<a class="sx gx" href="${esc(g.href)}">
+  return `<article class="sx gx${g.social ? ' has-cx' : ''}"><a class="gx__link" href="${esc(g.href)}">
     ${gameHero(g)}
     <div class="sx__body">
       ${g.title ? `<h3>${esc(g.title)}</h3>` : ''}
       ${g.excerpt ? `<p class="gx__ex">${esc(g.excerpt)}</p>` : ''}
       ${g.potg.map(p => potgBox(p)).join('')}
       ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
-      <div class="gx__foot">${g.fire ? `<span>🔥 ${g.fire}</span>` : ''}${g.comments != null ? `<span>💬 ${g.comments}</span>` : ''}<span class="gx__go">Box score ›</span></div>
+      <div class="gx__foot"><span class="gx__go">Box score ›</span></div>
     </div>
-  </a>`;
+  </a>${appSocialBar(g.social)}</article>`;
 }
 
 function annCard(a) {
@@ -77,7 +79,7 @@ function annCard(a) {
     ${a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : ''}
     ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
     ${a.body ? `<div class="ax__body">${paras(a.body)}</div>` : ''}
-  </div></article>`;
+  </div>${appSocialBar(a.social)}</article>`;
 }
 
 function postCard(p) {
@@ -151,7 +153,7 @@ function boxTable(team, meId) {
 }
 
 // g: { title, a, b, media, meta, final, recap: { title, paras[] }, potg: [...+writeup], mine,
-//      teams: [boxTeam, boxTeam], comments: [{ name, initials, ring, playerId, photoUrl, body, when }] | null,
+//      teams: [boxTeam, boxTeam], thread: appThreadData() | null (comments off),
 //      fire, back: { href, label }, meId }
 export function appGamePage(g) {
   const recap = g.recap && (g.recap.title || g.recap.paras.length) ? `<section class="fc art">
@@ -163,11 +165,10 @@ export function appGamePage(g) {
       <div class="kick">${potgLabel(p)}</div>
       ${potgBox(p, '')}
       ${p.writeup ? paras(p.writeup) : ''}`).join('<div class="art__gap"></div>')}</section>` : '';
-  const comments = g.comments ? `<section class="fc art">
-      <div class="kick">Comments · ${g.comments.length}</div>
-      ${g.comments.length ? g.comments.map(c => `<div class="cm">${appAvatar({ playerId: c.playerId, initials: c.initials, ring: c.ring, photoUrl: c.photoUrl })}
-        <div><b>${esc(c.name)}<small>${esc(c.when)}</small></b><p>${esc(c.body)}</p></div></div>`).join('') : '<p class="mut">No comments yet.</p>'}
-      <p class="cm__soon">Commenting in the app ${soonTag}</p>
+  // thread: appThreadData (server.js), the same panel the feed's sheet shows.
+  const comments = g.thread ? `<section class="fc art th-sec" id="comments">
+      <div class="kick">Comments<span data-th-count-label>${g.thread.count ? ` · ${g.thread.count}` : ''}</span></div>
+      ${appThreadPanel(g.thread)}
     </section>` : '';
   const video = !!g.media?.yt;
   return `${navbar(g.back, g.title)}
