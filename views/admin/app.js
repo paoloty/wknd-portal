@@ -11,7 +11,7 @@ const PLATFORM = { ios: 'iPhone', android: 'Android', desktop: 'Computer' };
 const platformLabel = list => String(list || '').split(',').filter(Boolean).map(p => PLATFORM[p] || p).join(' + ');
 
 const EVENT = {
-  signin: (d) => `signed in${d === 'email_code' ? ' with an email code' : d === 'password' ? ' with their password' : ''}`,
+  signin: (d) => `signed in${d === 'email_code' ? ' with an email code' : d === 'password' ? ' with their password' : d === 'passkey' ? ' with Face ID / fingerprint' : ''}`,
   code_sent: () => 'asked for a sign-in code',
   installed: (d, p) => `added the app to their home screen${p ? ` (${PLATFORM[p] || p})` : ''}`,
   setup_details: () => 'saved their details',
@@ -19,8 +19,10 @@ const EVENT = {
   setup_done: () => 'finished setup',
   signout: () => 'logged out',
   photo_failed: (d) => `couldn't upload a photo${d ? ` (${d})` : ''}`,
+  passkey_added: (d) => `turned on Face ID / fingerprint sign-in${d ? ` (${d})` : ''}`,
+  passkey_removed: () => 'removed a Face ID / fingerprint sign-in',
 };
-const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray', photo_failed: 'red' };
+const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray', photo_failed: 'red', passkey_added: 'green', passkey_removed: 'gray' };
 
 // rows: [{ regId, playerId, name, team, color, email, hasAccess, s (summary row | null),
 //          setup: { photo, details } }]
@@ -61,7 +63,7 @@ export function adminAppBody({ rows, events, query = {}, isOpen, settingsHtml = 
         return t ? `<span title="${escHtml(fmtTime(t))}">${escHtml(ago(t, now))} ago</span>` : '<span class="aui-muted">—</span>';
       } },
       { key: 'days', label: 'Days used', num: true, phone: false, sort: r => r.s?.open_days || 0, cell: r => String(r.s?.open_days || 0) },
-      { key: 'method', label: 'Signs in with', phone: false, sort: r => r.s?.last_method || '', cell: r => (r.s?.last_method ? escHtml(r.s.last_method === 'email_code' ? 'Email code' : 'Password') : '<span class="aui-muted">—</span>') },
+      { key: 'method', label: 'Signs in with', phone: false, sort: r => r.s?.last_method || '', cell: r => (r.s?.last_method ? escHtml(({ email_code: 'Email code', passkey: 'Face ID' })[r.s.last_method] || 'Password') : '<span class="aui-muted">—</span>') },
     ],
     empty: { title: 'No players here', sub: 'Approved player accounts show up here.' },
   });

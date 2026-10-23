@@ -2,7 +2,7 @@
 
 Phone-first, players-only app served by this same server: same accounts, sessions and `portal.db`. Installable to the home screen (web app manifest + service worker). Milestones 1–2: shell, sign-in, player setup, Home, read-only My Team / Me.
 
-**Players stay in the app.** Only links to `/app` screens are tappable (`isAppHref` in `views/app/layout.js`); the one way out is More → "Open full site". Things not built into the app yet (settling a balance, season sign-up, jersey details, picks) show as information with a "Soon" pill (`soonTag`), and game rows, rosters and notifications aren't links.
+**Players stay in the app.** Only links to `/app` screens are tappable (`isAppHref` in `views/app/layout.js`); the one way out is More → "Open full site". Things not built into the app yet (settling a balance, season sign-up, jersey details) show as information with a "Soon" pill (`soonTag`), and game rows, rosters and notifications aren't links.
 
 ## Files
 - `server.js`: section "Players app (/app)", right after the site's `/logout` route. All `/app*` routes, gating, sign-in codes, data shaping.
@@ -15,6 +15,16 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Hidden until `site_settings.app_open = '1'`. Before that: player-admins (`registrations.is_admin`), "view as" sessions, and anyone listed in `site_settings.app_beta` (emails or registration ids, comma or space separated). Everyone else signed in gets the "almost here" screen.
 - Players only: no `player_id` → "This app is for WKND players"; the super-admin login gets the same; pending sign-ups get "waiting for approval".
 - Pages send `noindex` and `Cache-Control: private, no-store`.
+
+## Who wins? (`/app/picks`)
+- `views/app/picks.js`: one card per game from the site's `openPicks()` (same object the site's pick cards use), plus the player's record and Pickmaster rank from `seasonPicks()`. Opened from Home's pick To Dos (a screen below Home, so it slides in).
+- Picks are saved through the site's own `POST /games/:id/pick` (public/app.js `initPicks`), so open/closed, deadlines and who may pick live in one place. The tapped side lights up at once, a toast confirms ("change until Sun 6:00 AM"), then the screen refreshes quietly (`refreshScreen`) for the bars, faces and stakes; a failure restores the old pick and shows the server's reason. Same reveal rule as the site: the pickers' split shows once you've picked or picks close. The Finals tiebreaker margin guess isn't in the app yet ("Soon").
+
+## Face ID / fingerprint sign-in (passkeys)
+- `@simplewebauthn/server` + `@simplewebauthn/browser` (pinned; the browser bundle is served from `/app/vendor/webauthn.js` and loaded only on screens that use it). Table `passkeys` (lib/portal-db.js). `userVerification: 'required'`, discoverable credentials. The relying party is `SITE_HOST` (wkndbasketball.com) in production, the request's host elsewhere (`passkeyRp`).
+- After a password or code sign-in with no passkey saved, `appAfterSignIn` sends the player to `/app/faceid?next=…` ("Use Face ID next time?"), which moves straight on where the phone can't do it or the player chose "Not now" on that phone (localStorage `wknd-faceid-skip`).
+- The sign-in screen shows "Sign in with Face ID" (fingerprint on Android, passkey elsewhere) and offers the phone's own passkey suggestion on the email field. `/app/passkeys/login/*` is rate-limited per visitor and signs in through `appAfterSignIn(…, 'passkey', json)`.
+- More → Face ID & passkeys (`/app/passkeys`) lists and removes them. A password reset deletes all of a player's passkeys. Events: `passkey_added`, `passkey_removed`, `signin` with detail `passkey`.
 
 ## Install wall
 - On a phone the app only runs installed (`app_require_install`, default on, switch on `/admin/app`). In a phone browser, or Messenger / Facebook / Instagram's in-app browser (which can't install), `views/app/layout.js` `installWallHtml()` replaces the app with install steps for that case: iPhone Safari (Share → Add to Home Screen), Android (Chrome's install prompt behind a button, manual steps as fallback), in-app (open in Safari/Chrome, Copy link). A computer's browser is never walled. Detection runs in a head script before the first paint (`html.needs-install` + `iw-ios` / `iw-android` / `iw-inapp`); it covers sign-in too, since the installed iPhone app has its own sign-in. Behind the wall, app.js doesn't fetch tabs ahead or ping usage.
@@ -58,4 +68,4 @@ Dates and times use `manilaFormat` (views/utils.js): shift to UTC+8 and format a
 - iPhone never updates the home-screen icon or name after install: keep the icon plain.
 
 ## Not built yet
-Push notifications, passkeys (Face ID), app versions of Papawis / Who wins? / Share my stats, the feed.
+Push notifications, app versions of Papawis / Share my stats / balance / sign-up / jersey, the Finals margin guess in the app, the feed.

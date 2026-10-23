@@ -40,7 +40,7 @@ if (EMAIL) {
 if (EMAIL && PASSWORD) {
   cookie = '';
   r = await go('/app/login', { method: 'POST', form: { email: EMAIL, password: PASSWORD } });
-  check('right password: signed in', goesTo(r, /\/app(\/setup)?$/), `${r.status} ${r.location}`);
+  check('right password: signed in', goesTo(r, /\/app(\/setup|\/faceid\?next=[^ ]*)?$/), `${r.status} ${r.location}`);
   r = await go('/app');
   check('signed in: Home loads', r.status === 200 && r.text.includes('class="tabbar"'), r.status);
   r = await go('/app/notifications/items');

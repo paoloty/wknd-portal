@@ -35,6 +35,7 @@ export const icons = {
   mail: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'),
   share: svg('<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.6"'),
+  faceid: svg('<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1M15 9v1M12 9v4h-1M9 15.5c1.8 1.4 4.2 1.4 6 0"/>'),
 };
 // The app keeps players inside it: only links to /app screens are tappable. Rows about
 // something not built into the app yet (balance, sign-ups, picks) show as information with

@@ -15,15 +15,17 @@ export function appLoginPage({ error = '', info = '', email = '', phase = null }
   <form method="post" action="/app/login" data-busy>
     <div class="group form-group" style="margin-top:14px">
       <div class="cell"><label class="cell__lbl" for="email">Email</label>
-        <input id="email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@email.com" value="${esc(email)}" required></div>
+        <input id="email" name="email" type="email" inputmode="email" autocomplete="username webauthn" autocapitalize="none" spellcheck="false" placeholder="you@email.com" value="${esc(email)}" required></div>
       <div class="cell"><label class="cell__lbl" for="password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Required" required></div>
     </div>
     <div class="auth-row"><span>You'll stay signed in</span><a href="/app/login/code${email ? `?email=${encodeURIComponent(email)}` : ''}">Forgot?</a></div>
     <div class="pad stack">
       <button class="btn" type="submit">Sign in</button>
+      <button class="btn btn--outline" type="button" data-passkey-login hidden>${icons.faceid}<span>Sign in with <span data-bio>Face ID</span></span></button>
       <a class="btn btn--plain" href="/app/login/code${email ? `?email=${encodeURIComponent(email)}` : ''}">Email me a sign-in code instead</a>
     </div>
+    <p class="msg msg--err" data-passkey-msg hidden></p>
   </form>
   <p class="auth-foot">Not in the league yet? <a class="link" href="/join">Join on the full site</a></p>`;
 }

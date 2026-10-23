@@ -8,7 +8,7 @@
   var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   var ver = ($('meta[name="app-ver"]') || {}).content || '';
   var dirty = function () { return !!$('form[data-dirty="1"]'); };
-  var deferredInstall = null, cdTimer = null, loadedAt = Date.now();
+  var deferredInstall = null, cdTimer = null, pickTimer = null, loadedAt = Date.now(), navOn = false;
   // The install wall is up (views/app/layout.js): the app underneath is hidden, so don't
   // fetch tabs ahead or count this as an app open.
   var walled = document.documentElement.classList.contains('needs-install');
@@ -129,6 +129,8 @@
     }
 
     initLazyLists();
+    initPicks();
+    initPasskeys();
 
     // Install hint (Home): iPhone gets the Share steps, Android the real prompt
     var card = $('[data-install-card]');
@@ -139,6 +141,141 @@
       if (ib) ib.addEventListener('click', function () { if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; card.hidden = true; } });
     }
   }
+  // A short confirmation above the tab bar.
+  function toast(text) {
+    $$('.app-toast').forEach(function (t) { t.remove(); });
+    var t = document.createElement('div'); t.className = 'app-toast'; t.setAttribute('role', 'status');
+    t.innerHTML = '<i>✓</i><span></span>'; $('span', t).textContent = text;
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 2600);
+  }
+
+  // ════ Who wins? (views/app/picks.js) ════
+  // One tap picks: the button lights up at once, the pick saves through the site's own
+  // POST /games/:id/pick (same rules as the site), then the screen refreshes from the server
+  // for the bars, faces and stakes. Tapping your own pick does nothing; a failure puts the
+  // old pick back and says why. "Closes in …" counts down like the site's cards.
+  var closeText = function (ms) {
+    if (ms <= 0) return 'Picks are closing';
+    var s = Math.floor(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return 'Closes in ' + (d >= 1 ? d + ' day' + (d === 1 ? '' : 's') : h >= 1 ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + ':' + String(x).padStart(2, '0'));
+  };
+  function initPicks() {
+    clearInterval(pickTimer);
+    var clocks = $$('[data-close-at]');
+    if (clocks.length) {
+      var tick = function () { clocks.forEach(function (c) { c.textContent = closeText(Number(c.getAttribute('data-close-at')) - Date.now()); }); };
+      tick(); pickTimer = setInterval(tick, 1000);
+    }
+    $$('[data-pick-game]').forEach(function (card) {
+      card.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('.pick__opt');
+        if (!btn || btn.disabled || btn.classList.contains('is-mine') || card.getAttribute('data-saving')) return;
+        var side = btn.getAttribute('data-side'), opts = $$('.pick__opt', card), prev = $('.pick__opt.is-mine', card);
+        var msg = $('[data-pick-msg]', card); msg.hidden = true;
+        card.setAttribute('data-saving', '1');
+        opts.forEach(function (b) { b.classList.toggle('is-mine', b === btn); b.classList.add('is-saving'); });
+        var undo = function (text) {
+          card.removeAttribute('data-saving');
+          opts.forEach(function (b) { b.classList.toggle('is-mine', b === prev); b.classList.remove('is-saving'); });
+          msg.textContent = text; msg.hidden = false;
+        };
+        fetch('/games/' + encodeURIComponent(card.getAttribute('data-pick-game')) + '/pick', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ side: side }),
+        }).then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (x) {} return { ok: r.ok && !!j && !!j.ok, status: r.status, j: j }; }); })
+          .then(function (res) {
+            if (res.status === 401) { location.href = '/app/login'; return; }
+            if (!res.ok) return undo((res.j && res.j.error) || 'Couldn\'t save your pick. Try again.');
+            var label = card.getAttribute('data-close-label');
+            toast('Picked ' + card.getAttribute('data-pick-' + side) + (label ? ' · change until ' + label : ''));
+            refreshScreen();
+          }, function () { undo('No connection. Your pick wasn\'t saved.'); });
+      });
+    });
+  }
+
+  // ════ Face ID / fingerprint sign-in (passkeys; views/app/passkeys.js) ════
+  // The passkey library (served from /app/vendor) loads only on the screens that use it.
+  // Wording follows the phone: Face ID on iPhone, fingerprint on Android, passkey elsewhere.
+  // Cancelling the phone's prompt isn't an error.
+  var bioName = /iPhone|iPad|iPod/.test(navigator.userAgent) ? 'Face ID' : /Android/.test(navigator.userAgent) ? 'fingerprint' : 'passkey';
+  var webauthn = null;
+  var loadWebAuthn = function () {
+    if (window.SimpleWebAuthnBrowser) return Promise.resolve(window.SimpleWebAuthnBrowser);
+    return webauthn || (webauthn = new Promise(function (ok, fail) {
+      var sc = document.createElement('script'); sc.src = '/app/vendor/webauthn.js?v=14.0.0';
+      sc.onload = function () { ok(window.SimpleWebAuthnBrowser); }; sc.onerror = function () { webauthn = null; fail(new Error('load')); };
+      document.head.appendChild(sc);
+    }));
+  };
+  var postJSON = function (url, body) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.text().then(function (t) { var j = {}; try { j = JSON.parse(t); } catch (x) {} return { ok: r.ok, status: r.status, j: j }; }); });
+  };
+  var cancelled = function (e) { return e && (e.name === 'NotAllowedError' || e.name === 'AbortError'); };
+  function passkeyMsg(text) { var m = $('[data-passkey-msg]'); if (m) { m.textContent = text || ''; m.hidden = !text; } }
+
+  function passkeyLogin(auto) {
+    return loadWebAuthn().then(function (W) {
+      return postJSON('/app/passkeys/login/options').then(function (o) {
+        if (!o.ok) throw { msg: o.j.error };
+        return W.startAuthentication({ optionsJSON: o.j, useBrowserAutofill: !!auto });
+      }).then(function (resp) { return postJSON('/app/passkeys/login/verify', resp); })
+        .then(function (v) { if (!v.ok) throw { msg: v.j.error }; location.href = v.j.redirect || '/app'; });
+    }).catch(function (e) {
+      if (auto || cancelled(e)) return;
+      passkeyMsg((e && e.msg) || (bioName === 'passkey' ? 'Passkey' : bioName.charAt(0).toUpperCase() + bioName.slice(1)) + ' sign-in didn\'t work. Use your password or an email code.');
+    });
+  }
+  function passkeyAdd(done) {
+    passkeyMsg('');
+    return loadWebAuthn().then(function (W) {
+      return postJSON('/app/passkeys/register/options').then(function (o) {
+        if (!o.ok) throw { msg: o.j.error };
+        return W.startRegistration({ optionsJSON: o.j });
+      }).then(function (resp) { return postJSON('/app/passkeys/register/verify', resp); })
+        .then(function (v) { if (!v.ok) throw { msg: v.j.error }; done(); });
+    }).catch(function (e) {
+      if (cancelled(e)) return;
+      if (e && e.name === 'InvalidStateError') return done(); // this phone already has one
+      passkeyMsg((e && e.msg) || 'That didn\'t work. Try again.');
+    });
+  }
+  function initPasskeys() {
+    $$('[data-bio]').forEach(function (el) { el.textContent = bioName === 'passkey' ? 'a passkey' : bioName; });
+    var supported = !!window.PublicKeyCredential;
+    // Sign-in screen: the button, plus the phone's own "passkey for …" suggestion on the
+    // email field where it supports that.
+    var lb = $('[data-passkey-login]');
+    if (lb && supported) {
+      lb.hidden = false;
+      lb.onclick = function () { passkeyLogin(false); };
+      loadWebAuthn().then(function (W) { return W.browserSupportsWebAuthnAutofill(); }).then(function (yes) { if (yes) passkeyLogin(true); }, function () {});
+    }
+    // The one-time offer after signing in.
+    var offer = $('[data-faceid-offer]');
+    if (offer) {
+      var next = offer.getAttribute('data-next') || '/app';
+      var skipped = false; try { skipped = !!localStorage.getItem('wknd-faceid-skip'); } catch (e) {}
+      var go = function () { location.replace(next); };
+      if (!supported || skipped) go();
+      else loadWebAuthn().then(function (W) { return W.platformAuthenticatorIsAvailable(); }).then(function (yes) { if (yes) offer.hidden = false; else go(); }, go);
+      var skip = $('[data-faceid-skip]');
+      if (skip) skip.onclick = function () { try { localStorage.setItem('wknd-faceid-skip', '1'); } catch (e) {} };
+    }
+    $$('[data-passkey-add]').forEach(function (b) {
+      if (!supported) { b.hidden = true; return; }
+      b.onclick = function () {
+        b.classList.add('is-busy');
+        passkeyAdd(function () {
+          if (offer) return location.replace(offer.getAttribute('data-next') || '/app');
+          toast((bioName === 'passkey' ? 'Passkey' : bioName.charAt(0).toUpperCase() + bioName.slice(1)) + ' is on for this phone');
+          refreshScreen();
+        }).then(function () { b.classList.remove('is-busy'); });
+      };
+    });
+  }
+
   // ════ Lazy lists (views/app/layout.js lazyList) ════
   // The first page loads as soon as the screen is up; the next one when the bottom of the
   // list comes within ~600px. Each answer is { html, next }.
@@ -230,8 +367,8 @@
     return a && a.href && !a.target && !a.hasAttribute('download') && a.origin === location.origin && inApp(a.pathname) && !a.hasAttribute('data-reload');
   };
 
-  function fetchPage(url) {
-    if (inflight[url]) return inflight[url];
+  function fetchPage(url, fresh) {
+    if (inflight[url] && !fresh) return inflight[url];
     var p = fetch(url, { credentials: 'same-origin', headers: { 'X-App-Nav': '1' } }).then(function (r) {
       var finalUrl = urlOf(r.url);
       if (!r.ok || !inApp(new URL(r.url).pathname) || !/text\/html/.test(r.headers.get('content-type') || '')) throw { reload: r.url };
@@ -244,6 +381,12 @@
     inflight[url] = p;
     p.then(function () { delete inflight[url]; }, function () { delete inflight[url]; });
     return p;
+  }
+  // Re-fetch the current screen and swap it in quietly (after a save that changes it).
+  function refreshScreen() {
+    if (!navOn) return location.reload();
+    var id = navId;
+    fetchPage(currentUrl, true).then(function (p) { if (id === navId) render(p, false, true); }, function () {});
   }
   var prefetch = function (url) { if (!pages[url] && !inflight[url] && navigator.onLine) fetchPage(url).catch(function () {}); };
 
@@ -347,6 +490,7 @@
   }
 
   if (window.fetch && window.DOMParser && history.pushState && !walled) {
+    navOn = true;
     try { history.scrollRestoration = 'manual'; } catch (e) {}
     document.addEventListener('click', function (e) {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

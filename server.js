@@ -6013,7 +6013,11 @@ import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
 import { appHomePage } from './views/app/home.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
+import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appPapawisPage, appMorePage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
+import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
+import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
 import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
 import { adminAppBody } from './views/admin/app.js';
 import { appSignInCodeEmail } from './lib/mailer.js';
@@ -6184,17 +6188,21 @@ app.get('/app/offline', (req, res) => sendApp(res, { title: 'Offline · WKND', b
 
 // ── Sign in ──
 // After signing in: straight into setup while anything's missing, else Home.
-function appAfterSignIn(req, res, reg, how) {
+// Signing in without Face ID and none saved yet: the one-time "Use Face ID next time?" screen
+// first (/app/faceid; it moves straight on where the phone can't, or the player said not now).
+// json: answer { ok, redirect } instead of redirecting (the passkey sign-in is a fetch).
+function appAfterSignIn(req, res, reg, how, json = false) {
   signInRegistration(req, reg, err => {
-    if (err) return res.redirect('/app/login');
+    if (err) return json ? res.status(500).json({ error: 'Something went wrong. Try again.' }) : res.redirect('/app/login');
     markAppSession(req);
     logApp(req, 'signin', how, reg);
     insertAdminLog({
       actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
       method: 'POST', path: '/app/login', details: { event: 'login', via: how, email: reg.email },
     });
-    const dest = appAccess(req) === 'ok' && appSetupState(appMe(req)).next ? '/app/setup' : '/app';
-    req.session.save(() => res.redirect(dest));
+    let dest = appAccess(req) === 'ok' && appSetupState(appMe(req)).next ? '/app/setup' : '/app';
+    if (how !== 'passkey' && appAccess(req) === 'ok' && !getPasskeysForReg(reg.id).length) dest = `/app/faceid?next=${encodeURIComponent(dest)}`;
+    req.session.save(() => (json ? res.json({ ok: true, redirect: dest }) : res.redirect(dest)));
   });
 }
 function appSignInBlock(reg) {
@@ -6301,6 +6309,104 @@ app.post('/app/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/app/login'));
 });
 
+// ── Face ID / fingerprint sign-in (passkeys, @simplewebauthn) ──
+// A passkey is tied to the site's domain: wkndbasketball.com in production (SITE_HOST),
+// whatever host serves a test copy (e.g. localhost). Only phone-unlock-protected passkeys:
+// userVerification 'required', so a passkey always means Face ID / fingerprint / PIN.
+const WEBAUTHN_JS = (() => { try { return readFileSync(path.join(__dirname, 'node_modules/@simplewebauthn/browser/dist/bundle/index.umd.min.js'), 'utf8'); } catch { return ''; } })();
+app.get('/app/vendor/webauthn.js', (req, res) => {
+  res.type('application/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(WEBAUTHN_JS);
+});
+function passkeyRp(req) {
+  const hostPort = String(req.headers['x-forwarded-host'] || req.headers.host || '').toLowerCase();
+  const host = hostPort.split(':')[0];
+  const prod = host === SITE_HOST || host.endsWith('.' + SITE_HOST);
+  return { rpID: prod ? SITE_HOST : host, origin: prod ? [`https://${hostPort}`] : [`https://${hostPort}`, `http://${hostPort}`] };
+}
+const passkeyDevice = req => {
+  const ua = req.get('user-agent') || '';
+  return /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android phone' : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : 'Computer';
+};
+
+// Add one (signed in): options, then the phone's answer.
+app.post('/app/passkeys/register/options', requireAppData, async (req, res) => {
+  const reg = getRegistration(req.session.playerRegId);
+  if (!reg) return res.status(401).json({ error: 'Sign in again.' });
+  const { rpID } = passkeyRp(req);
+  const options = await generateRegistrationOptions({
+    rpName: 'WKND Basketball', rpID, userName: reg.email, userDisplayName: displayPlayerName(reg.full_name || '') || reg.email,
+    userID: new TextEncoder().encode(reg.id), attestationType: 'none',
+    excludeCredentials: getPasskeysForReg(reg.id).map(k => ({ id: k.id, transports: k.transports ? k.transports.split(',') : undefined })),
+    authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+  });
+  req.session.passkeyRegChallenge = options.challenge;
+  res.json(options);
+});
+app.post('/app/passkeys/register/verify', requireAppData, express.json(), async (req, res) => {
+  const challenge = req.session.passkeyRegChallenge;
+  delete req.session.passkeyRegChallenge;
+  if (!challenge) return res.status(400).json({ error: 'That took too long. Try again.' });
+  const { rpID, origin } = passkeyRp(req);
+  let v;
+  try { v = await verifyRegistrationResponse({ response: req.body, expectedChallenge: challenge, expectedOrigin: origin, expectedRPID: rpID, requireUserVerification: true }); }
+  catch (e) { console.error('[passkey register]', e.message); return res.status(400).json({ error: 'Face ID couldn\'t be set up. Try again.' }); }
+  if (!v.verified) return res.status(400).json({ error: 'Face ID couldn\'t be set up. Try again.' });
+  const c = v.registrationInfo.credential;
+  if (getPasskey(c.id)) return res.json({ ok: true }); // this phone already has one
+  const device = passkeyDevice(req);
+  addPasskey({ id: c.id, regId: req.session.playerRegId, publicKey: Buffer.from(c.publicKey).toString('base64url'), counter: c.counter, transports: c.transports || [], device });
+  logApp(req, 'passkey_added', device);
+  res.json({ ok: true });
+});
+
+// Sign in with one (signed out). Discoverable passkeys: the phone offers the player's own.
+app.post('/app/passkeys/login/options', async (req, res) => {
+  if (!rateHit(`passkey:ip:${clientIp(req)}`, 30, 15 * MIN)) return res.status(429).json({ error: 'Too many tries. Wait 15 minutes.' });
+  const options = await generateAuthenticationOptions({ rpID: passkeyRp(req).rpID, userVerification: 'required' });
+  req.session.passkeyAuthChallenge = options.challenge;
+  res.json(options);
+});
+app.post('/app/passkeys/login/verify', express.json(), async (req, res) => {
+  if (!rateHit(`passkey:ip:${clientIp(req)}`, 30, 15 * MIN)) return res.status(429).json({ error: 'Too many tries. Wait 15 minutes.' });
+  const challenge = req.session.passkeyAuthChallenge;
+  delete req.session.passkeyAuthChallenge;
+  if (!challenge) return res.status(400).json({ error: 'That took too long. Try again.' });
+  const key = getPasskey(req.body?.id);
+  if (!key) return res.status(400).json({ error: 'That Face ID isn\'t set up for WKND any more. Sign in with your password or an email code.' });
+  const { rpID, origin } = passkeyRp(req);
+  let v;
+  try {
+    v = await verifyAuthenticationResponse({
+      response: req.body, expectedChallenge: challenge, expectedOrigin: origin, expectedRPID: rpID, requireUserVerification: true,
+      credential: { id: key.id, publicKey: Buffer.from(key.public_key, 'base64url'), counter: key.counter, transports: key.transports ? key.transports.split(',') : undefined },
+    });
+  } catch (e) { console.error('[passkey login]', e.message); return res.status(400).json({ error: 'Face ID sign-in didn\'t work. Try again, or use your password.' }); }
+  if (!v.verified) return res.status(400).json({ error: 'Face ID sign-in didn\'t work. Try again, or use your password.' });
+  touchPasskey(key.id, v.authenticationInfo.newCounter);
+  const reg = getRegistration(key.reg_id);
+  const block = reg ? appSignInBlock(reg) : 'no-player';
+  if (block) return res.status(403).json({ error: block === 'pending' ? 'Your sign-up is still waiting for approval.' : 'This app is for WKND players.' });
+  appAfterSignIn(req, res, reg, 'passkey', true);
+});
+
+// The one-time offer after a password / code sign-in, and More → Face ID & passkeys.
+const safeAppNext = n => (typeof n === 'string' && /^\/app(\/[\w\-/]*)?$/.test(n) ? n : '/app');
+app.get('/app/faceid', requireApp, (req, res) => {
+  sendApp(res, { title: 'Face ID · WKND', bare: true, body: appFaceIdOfferPage({ next: safeAppNext(req.query.next) }) });
+});
+app.get('/app/passkeys', requireApp, (req, res) => {
+  const keys = getPasskeysForReg(req.session.playerRegId).map(k => ({
+    id: k.id, device: k.device || 'Device',
+    added: manilaFormat(k.created_at, { month: 'short', day: 'numeric', year: 'numeric' }),
+    used: k.last_used_at ? manilaFormat(k.last_used_at, { month: 'short', day: 'numeric' }) : '',
+  }));
+  sendApp(res, { title: 'Face ID · WKND', tab: 'more', body: appPasskeysPage({ keys, removed: req.query.removed === '1' }) });
+});
+app.post('/app/passkeys/:id/remove', requireApp, (req, res) => {
+  if (deletePasskey(req.params.id, req.session.playerRegId)) logApp(req, 'passkey_removed');
+  res.redirect('/app/passkeys?removed=1');
+});
+
 // app.js reports each phone's first open of the day, and whether it came from the home
 // screen (= installed). Android also reports its own "installed" event.
 app.post('/app/ping', express.json(), (req, res) => {
@@ -6348,7 +6454,7 @@ app.get('/app', requireApp, (req, res) => {
       const clock = { todayYmd: manilaTodayStr(), nowHm: manilaHmNow(), closeTime: picksCloseTime() };
       for (const g of upcoming) {
         if (mine[g.id] || picksClosedFor(toPickGame(g, gameYmd), settings[g.id], clock)) continue;
-        todos.push({ icon: 'target', title: `Pick ${g.team_a_name} vs ${g.team_b_name}`, sub: `Who wins? · ${manilaDayLabel(gameYmd(g.date))}`, pill: 'Pick', solid: true, href: '/picks' });
+        todos.push({ icon: 'target', title: `Pick ${g.team_a_name} vs ${g.team_b_name}`, sub: `Who wins? · ${manilaDayLabel(gameYmd(g.date))}`, pill: 'Pick', solid: true, href: '/app/picks' });
       }
     }
   } catch (e) { console.error('[app home picks]', e.message); }
@@ -6469,6 +6575,41 @@ app.get('/app/me', requireApp, (req, res) => {
   }) });
 });
 
+// ── Who wins? ── The site's openPicks() cards for this player, shaped for the app's screen.
+// Picks are saved by the site's own POST /games/:id/pick (public/app.js), so every rule —
+// open/closed, deadlines, who may pick — stays in one place.
+app.get('/app/picks', requireApp, (req, res) => {
+  const me = appMe(req);
+  if (!picksEnabled()) return sendApp(res, { title: 'Who wins? · WKND', tab: 'home', body: appPicksPage({ off: true }) });
+  const all = getAllGames();
+  const pctx = buildPicksContext(all);
+  const open = openPicks(all, pctx, me.playerId);
+  const teams = getAllTeams();
+  const colorOf = name => { const t = teams.find(x => x.name === name); return t ? (t.color || teamColor(t.name)) : teamColor(name); };
+  const gameOf = Object.fromEntries(all.map(g => [g.id, g]));
+  const sp = seasonPicks(pctx, String(getPortalCurrentSeason()));
+  const r = sp.records[me.playerId];
+  const row = sp.board.rows.find(x => x.playerId === me.playerId);
+  const record = r ? { wl: `${r.correct}–${r.wrong}`, net: fmtPts(r.net), rank: row?.rank || null, tied: !!row && sp.board.rows.filter(y => y.rank === row.rank).length > 1 } : null;
+  const games = open.map(o => {
+    const g = gameOf[o.id] || {};
+    const closeMs = o.closeAt ? Date.parse(o.closeAt) : 0;
+    return {
+      id: o.id, title: g.playoff_round || gameTypeLabel(g) || 'Regular season',
+      dayLabel: [manilaDayLabel(o.ymd), o.tip].filter(Boolean).join(' · '),
+      closed: !!o.closed, closeAt: closeMs,
+      closeLabel: closeMs ? manilaFormat(closeMs, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '',
+      a: { name: o.a, color: colorOf(o.a), rec: o.recA ? `${o.recA.w}–${o.recA.l}` : '' },
+      b: { name: o.b, color: colorOf(o.b), rec: o.recB ? `${o.recB.w}–${o.recB.l}` : '' },
+      odds: o.odds ? { pctA: o.odds.pctA, pctB: o.odds.pctB } : null,
+      myPick: o.myPick, counts: o.counts || { a: 0, b: 0 },
+      faces: (o.faces || []).map(f => ({ ini: f.ini, color: f.color || '', me: !!f.me })),
+      stakes: o.stakes, marginGuess: !!o.marginGuess,
+    };
+  });
+  sendApp(res, { title: 'Who wins? · WKND', tab: 'home', body: appPicksPage({ record, games }) });
+});
+
 app.get('/app/papawis', requireApp, (req, res) => {
   sendApp(res, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage({ me: appMe(req) }) });
 });
@@ -6478,6 +6619,7 @@ app.get('/app/more', requireApp, (req, res) => {
   const st = appSeasonState(me);
   const rows = [
     { icon: 'bell', title: 'Notifications', href: '/app/notifications', count: me.unread, amber: true },
+    { icon: 'faceid', title: 'Face ID & passkeys', href: '/app/passkeys', value: getPasskeysForReg(me.reg.id).length ? 'On' : 'Off' },
     // Information only for now: settling, sign-ups and jersey details happen on the site.
     { icon: 'wallet', title: 'My balance', value: st.balance > 0 ? `${st.peso(st.balance)} due` : 'Settled', soon: st.balance > 0 },
   ];
@@ -6646,8 +6788,10 @@ app.post('/set-password', express.urlencoded({ extended: false }), async (req, r
   // Signed straight in — but only approved accounts, the same rule POST /login applies.
   const canSignIn = reg.status === 'approved';
   if (isReset) {
-    // Whoever else was signed in to this account (the reason for many resets) is signed out.
+    // Whoever else was signed in to this account (the reason for many resets) is signed out,
+    // and its Face ID passkeys are removed (a lost phone is a common reason to reset).
     stmtDeleteOtherSessions.run(reg.id, req.sessionID || '');
+    deletePasskeysForReg(reg.id);
     const done = signedIn => res.send(renderAuth(req, { title: 'Password Saved — WKND Basketball', body: setPasswordDonePage({ signedIn }) }));
     if (!canSignIn) return done(false);
     return signInRegistration(req, reg, err => req.session.save(() => done(!err)));
