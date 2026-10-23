@@ -278,7 +278,11 @@
   // swap waits for it — otherwise the fresh screen would be covered by the stale one.
   var pendingSwap = null;
   function render(page, push, keepScroll, dir) {
-    if (pendingSwap && !dir) { pendingSwap.then(function () { render(page, push, keepScroll, dir); }); return; }
+    if (pendingSwap && !dir) {
+      var want = navId; // dropped if the player has moved on by then
+      pendingSwap.then(function () { if (want === navId) render(page, push, keepScroll, dir); });
+      return;
+    }
     var doc = new DOMParser().parseFromString(page.html, 'text/html');
     var newVer = (doc.querySelector('meta[name="app-ver"]') || {}).content || '';
     if (newVer && ver && newVer !== ver) { location.href = page.url; return; } // new deploy: load it properly
@@ -344,7 +348,6 @@
 
   if (window.fetch && window.DOMParser && history.pushState && !walled) {
     try { history.scrollRestoration = 'manual'; } catch (e) {}
-    pages[urlOf(location.href)] = { html: '<!DOCTYPE html>' + document.documentElement.outerHTML, url: urlOf(location.href), at: Date.now() };
     document.addEventListener('click', function (e) {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       var a = e.target.closest && e.target.closest('a');
@@ -361,7 +364,9 @@
     document.addEventListener('mousedown', warm);
     window.addEventListener('popstate', function () { go(urlOf(location.href), false); });
     // Fetch the other tabs once the first screen is up.
-    var warmTabs = function () { $$('.tabbar a.tab').forEach(function (a) { prefetch(urlOf(a.href)); }); };
+    // The screen it opened on too, from the server: a copy of the live page (countdown ticked,
+    // lists loaded) would never match a refresh and force a re-render on every return.
+    var warmTabs = function () { prefetch(urlOf(location.href)); $$('.tabbar a.tab').forEach(function (a) { prefetch(urlOf(a.href)); }); };
     if ('requestIdleCallback' in window) requestIdleCallback(warmTabs, { timeout: 2000 }); else setTimeout(warmTabs, 800);
   }
 

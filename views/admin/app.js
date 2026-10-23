@@ -3,9 +3,10 @@
 // they last opened it. Alongside, the activity log (lib/portal-db.js app_events).
 import { escHtml } from '../layout.js';
 import { pageHeader, dataGrid, section, avatar, badge, kpi, emptyState, ago } from './ui.js';
+import { manilaFormat } from '../utils.js';
 
-const fmtTime = ts => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
-const fmtDay = ts => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
+const fmtTime = ts => manilaFormat(ts, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const fmtDay = ts => manilaFormat(ts, { month: 'short', day: 'numeric' });
 const PLATFORM = { ios: 'iPhone', android: 'Android', desktop: 'Computer' };
 const platformLabel = list => String(list || '').split(',').filter(Boolean).map(p => PLATFORM[p] || p).join(' + ');
 
@@ -14,6 +15,7 @@ const EVENT = {
   code_sent: () => 'asked for a sign-in code',
   installed: (d, p) => `added the app to their home screen${p ? ` (${PLATFORM[p] || p})` : ''}`,
   setup_details: () => 'saved their details',
+  setup_season_seen: () => 'checked their season',
   setup_done: () => 'finished setup',
   signout: () => 'logged out',
   photo_failed: (d) => `couldn't upload a photo${d ? ` (${d})` : ''}`,

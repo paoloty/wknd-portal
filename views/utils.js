@@ -72,6 +72,13 @@ export function signupDisplayName(s) {
 // Hetzner deploy, silently drifting a day near the UTC/Manila day boundary). Date.now()
 // and the UTC getters below have no timezone-database dependency at all, so this is
 // correct regardless of the server's own system timezone or Node's ICU build.
+// An instant formatted in Manila time, for the same reason as manilaTodayStr below: Intl's
+// 'Asia/Manila' time zone isn't reliable on the Hetzner build. Shifts to UTC+8 and formats as
+// UTC, which every Node build has. opts: toLocaleString options (any timeZone is ignored).
+export function manilaFormat(ms, opts = {}, locale = 'en-US') {
+  return new Date(Number(ms) + 8 * 60 * 60 * 1000).toLocaleString(locale, { ...opts, timeZone: 'UTC' });
+}
+
 export function manilaTodayStr() {
   const d = new Date(Date.now() + 8 * 60 * 60 * 1000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;

@@ -52,7 +52,7 @@ import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamDetailPage } from './views/team-detail.js';
-import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs, gameTipLabel } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaFormat, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs, gameTipLabel } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -5909,18 +5909,46 @@ function authCardFromReg(reg) {
     intro: String(reg?.motto || player?.writeup || '').trim(),
   };
 }
-// Same session a successful POST /login sets up — used to sign people straight in after
-// they activate or reset (only for approved accounts, as /login itself requires).
-function signInRegistration(req, reg) {
+// Every sign-in (POST /login, /app/login, email codes, activate/reset) starts a brand-new
+// session: a fresh id (no session fixation) and nothing carried over from whoever used this
+// browser before — e.g. an admin session's isAdmin, or a dismissed balance bar. done() runs
+// once the new session holds the sign-in; callers set anything else (cookie length, …)
+// inside it.
+function signInRegistration(req, reg, done) {
   setRegistrationLastLogin(reg.id);
-  req.session.playerRegId    = reg.id;
-  req.session.playerPlayerId = reg.player_id;
-  if (reg.is_admin) {
-    req.session.isAdmin          = true;
-    req.session.isElevatedPlayer = true;
-    req.session.playerName       = (reg.full_name || '').split(',').reverse().map(s => s.trim()).join(' ');
-  }
+  req.session.regenerate(err => {
+    if (err) { console.error('[session regenerate]', err.message); return done(err); }
+    req.session.playerRegId    = reg.id;
+    req.session.playerPlayerId = reg.player_id;
+    if (reg.is_admin) {
+      req.session.isAdmin          = true;
+      req.session.isElevatedPlayer = true;
+      req.session.playerName       = (reg.full_name || '').split(',').reverse().map(s => s.trim()).join(' ');
+    }
+    done();
+  });
 }
+
+// Sign-in rate limits: sliding windows kept in memory (a restart clears them, like the
+// email codes). Behind Cloudflare the visitor's address is in CF-Connecting-IP.
+const rateBuckets = new Map(); // key -> timestamps within the window
+function rateHit(key, limit, windowMs) {
+  const now = Date.now();
+  const hits = (rateBuckets.get(key) || []).filter(t => now - t < windowMs);
+  const ok = hits.length < limit;
+  if (ok) hits.push(now);
+  rateBuckets.set(key, hits);
+  return ok;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, hits] of rateBuckets) if (!hits.length || now - hits[hits.length - 1] > 2 * 60 * 60 * 1000) rateBuckets.delete(k);
+}, 10 * 60 * 1000).unref();
+const clientIp = req => String(req.get('cf-connecting-ip') || req.ip || '');
+const MIN = 60 * 1000;
+// Password sign-ins (site and app share these): 30 tries / 15 min per address, 10 per email.
+// Single & on purpose: both counters tick on every try.
+const signInAllowed = (req, email) => rateHit(`signin:ip:${clientIp(req)}`, 30, 15 * MIN) & rateHit(`signin:email:${String(email).trim().toLowerCase()}`, 10, 15 * MIN);
 // A password reset signs out every other session on that account (the stored sessions are
 // JSON in the same database — better-sqlite3-session-store's `sessions` table).
 const stmtDeleteOtherSessions = portalDb.prepare("DELETE FROM sessions WHERE json_extract(sess, '$.playerRegId') = ? AND sid != ?");
@@ -5935,33 +5963,27 @@ app.get('/login', (req, res) => {
 app.post('/login', (req, res) => {
   const { username = '', password = '', remember = '', next, ref } = req.body;
   const dest = safeNextPath(next);
+  const showError = (error, status = 200) => res.status(status).send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ error, ref, next, email: username }) }));
+  if (!signInAllowed(req, username)) return showError('Too many sign-in attempts. Wait 15 minutes and try again, or reset your password.', 429);
 
   // Admin check
   if (checkCredentials(username, password)) {
-    req.session.isAdmin = true;
-    if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-    insertAdminLog({ actor: username, actorType: 'super', method: 'POST', path: '/login', details: { event: 'login' } });
-    return res.redirect(dest || '/admin');
+    return req.session.regenerate(err => {
+      if (err) return showError('Something went wrong. Try again.', 500);
+      req.session.isAdmin = true;
+      if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+      insertAdminLog({ actor: username, actorType: 'super', method: 'POST', path: '/login', details: { event: 'login' } });
+      req.session.save(() => res.redirect(dest || '/admin'));
+    });
   }
 
-  // Player check (username field used as email)
+  // Player check (username field used as email). The password is checked before saying
+  // anything about the account, so the form never reveals who's registered.
   const reg = getRegistrationByEmail(username.trim());
-  if (reg) {
-    if (reg.status !== 'approved') {
-      return res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ error: 'Your registration is not yet approved.', ref, next, email: username }) }));
-    }
-    if (!reg.password_hash) {
-      return res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ error: 'No password set yet — check your email for the setup link.', ref, next, email: username }) }));
-    }
-    if (checkPlayerPassword(password, reg.password_hash)) {
-      setRegistrationLastLogin(reg.id);
-      req.session.playerRegId    = reg.id;
-      req.session.playerPlayerId = reg.player_id;
-      if (reg.is_admin) {
-        req.session.isAdmin          = true;
-        req.session.isElevatedPlayer = true;
-        req.session.playerName       = (reg.full_name || '').split(',').reverse().map(s => s.trim()).join(' ');
-      }
+  if (reg?.password_hash && checkPlayerPassword(password, reg.password_hash)) {
+    if (reg.status !== 'approved') return showError('Your registration is not yet approved.');
+    return signInRegistration(req, reg, err => {
+      if (err) return showError('Something went wrong. Try again.', 500);
       if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
       insertAdminLog({
         actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
@@ -5970,11 +5992,11 @@ app.post('/login', (req, res) => {
       // Elevated player-admins (reg.is_admin) aren't true super admins — see
       // isSuperAdmin checks elsewhere (isAdmin && !isElevatedPlayer) — so they land on
       // their own profile like any other player, not the admin dashboard.
-      return res.redirect(dest || '/me');
-    }
+      req.session.save(() => res.redirect(dest || '/me'));
+    });
   }
 
-  res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ error: 'Invalid email or password.', ref, next, email: username }) }));
+  showError('Invalid email or password. Never set one, or forgot it? Tap “Forgot?” next to the password.');
 });
 
 app.get('/logout', (req, res) => {
@@ -6043,7 +6065,18 @@ function markAppSession(req) {
   const today = manilaTodayStr();
   if (req.session.appDay !== today) { req.session.appDay = today; req.session.cookie.maxAge = APP_SESSION_MS; }
 }
+// App sessions last 180 days, so each request re-checks the account behind it: one that's
+// no longer approved, or no longer linked to the same player, is signed out. ("View as"
+// sessions are an admin looking and skip this.) Bans don't block viewing, same as the site:
+// app actions that write (picks, Papawis) must check them themselves.
+function appSessionValid(req) {
+  const s = req.session;
+  if (!s?.playerRegId || s.impersonating) return true;
+  const reg = getRegistration(s.playerRegId);
+  return !!reg && reg.status === 'approved' && !!reg.player_id && reg.player_id === s.playerPlayerId;
+}
 function requireApp(req, res, next) {
+  if (!appSessionValid(req)) return req.session.destroy(() => res.redirect('/app/login'));
   const a = appAccess(req);
   if (a === 'anon') return res.redirect('/app/login');
   if (a === 'admin' || a === 'no-player') return sendApp(res, { title: 'WKND', bare: true, body: appNotPlayerPage({ reason: a, phase: appPhase() }) });
@@ -6099,17 +6132,20 @@ function appSeasonState(me) {
 }
 
 const appDetailsDone = reg => parsePositions(reg.positions).length > 0 && !!reg.height && !!reg.dominant_hand && !!reg.emergency_name && !!reg.emergency_phone;
+// The season step is done once the player has seen it (setup_season_seen): a balance or an
+// open sign-up stays on Home's To Do, it doesn't hold setup open — they can't settle it in
+// the app yet.
 function appSetupState(me) {
   const detailsDone = appDetailsDone(me.reg);
-  const seasonDone = appSeasonState(me).rows.every(r => r.done);
+  const seasonDone = hasAppEvent(me.reg.id, 'setup_season_seen') || appSeasonState(me).rows.every(r => r.done);
   const status = { photo: me.hasPhoto, details: detailsDone, season: seasonDone };
-  const labels = { photo: 'add your photo', details: 'check your details', season: 'sort out your season' };
+  const labels = { photo: 'add your photo', details: 'check your details', season: 'see your season' };
   const next = SETUP_STEPS.find(k => !status[k]);
   return { status, done: SETUP_STEPS.filter(k => status[k]).length, total: SETUP_STEPS.length, next, nextLabel: next ? labels[next] : '', href: `/app/setup/${next || 'photo'}` };
 }
 
-const manilaDayLabel = ymd => new Date(`${ymd}T12:00:00+08:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
-const shortDate = raw => { const y = gameYmd(raw); return y ? new Date(`${y}T12:00:00+08:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' }) : ''; };
+const manilaDayLabel = ymd => manilaFormat(Date.parse(`${ymd}T12:00:00+08:00`), { weekday: 'short', month: 'short', day: 'numeric' });
+const shortDate = raw => { const y = gameYmd(raw); return y ? manilaFormat(Date.parse(`${y}T12:00:00+08:00`), { month: 'short', day: 'numeric' }) : ''; };
 const teamColorById = (teams, id) => { const t = teams.find(x => x.id === id); return t ? (t.color || teamColor(t.name)) : 'var(--subtle)'; };
 
 // The player's next scheduled game (any distance ahead) and their team's latest result.
@@ -6149,15 +6185,17 @@ app.get('/app/offline', (req, res) => sendApp(res, { title: 'Offline · WKND', b
 // ── Sign in ──
 // After signing in: straight into setup while anything's missing, else Home.
 function appAfterSignIn(req, res, reg, how) {
-  signInRegistration(req, reg);
-  markAppSession(req);
-  logApp(req, 'signin', how, reg);
-  insertAdminLog({
-    actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
-    method: 'POST', path: '/app/login', details: { event: 'login', via: how, email: reg.email },
+  signInRegistration(req, reg, err => {
+    if (err) return res.redirect('/app/login');
+    markAppSession(req);
+    logApp(req, 'signin', how, reg);
+    insertAdminLog({
+      actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
+      method: 'POST', path: '/app/login', details: { event: 'login', via: how, email: reg.email },
+    });
+    const dest = appAccess(req) === 'ok' && appSetupState(appMe(req)).next ? '/app/setup' : '/app';
+    req.session.save(() => res.redirect(dest));
   });
-  const dest = appAccess(req) === 'ok' && appSetupState(appMe(req)).next ? '/app/setup' : '/app';
-  req.session.save(() => res.redirect(dest));
 }
 function appSignInBlock(reg) {
   if (reg.status !== 'approved') return 'pending';
@@ -6166,25 +6204,31 @@ function appSignInBlock(reg) {
 }
 
 app.get('/app/login', (req, res) => {
-  if (appAccess(req) === 'ok') return res.redirect('/app');
+  // Signed in already: /app shows them Home, or the "almost here" / players-only screen.
+  if (appAccess(req) !== 'anon') return res.redirect('/app');
   sendApp(res, { title: 'Sign in · WKND', bare: true, body: appLoginPage({ email: String(req.query.email || ''), phase: appPhase() }) });
 });
 
 app.post('/app/login', (req, res) => {
   const email = String(req.body.email || '').trim();
   const password = String(req.body.password || '');
-  const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Sign in · WKND', bare: true, body: appLoginPage({ error, email, phase: appPhase() }) }));
+  const fail = (error, status = 400) => res.status(status).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Sign in · WKND', bare: true, body: appLoginPage({ error, email, phase: appPhase() }) }));
+  if (!signInAllowed(req, email)) return fail('Too many tries. Wait 15 minutes, or use "Email me a sign-in code" below.', 429);
   const reg = email ? getRegistrationByEmail(email) : null;
-  if (reg && !reg.password_hash && reg.status === 'approved') return fail('You haven\'t set a password yet. Use "Email me a sign-in code" below.');
-  if (!reg || !checkPlayerPassword(password, reg.password_hash || '')) return fail('Wrong email or password.');
+  // One answer for every failure, so the form never reveals who has an account.
+  if (!reg?.password_hash || !checkPlayerPassword(password, reg.password_hash)) return fail('Wrong email or password. No password yet, or forgot it? Use "Email me a sign-in code" below.');
   const block = appSignInBlock(reg);
   if (block) return sendApp(res, { title: 'WKND', bare: true, body: appNotPlayerPage({ reason: block, phase: appPhase() }) });
   appAfterSignIn(req, res, reg, 'password');
 });
 
 // 6-digit email codes, kept in memory like the forgot-password cooldowns (a restart just
-// means asking for a new one). Stored hashed; 10 minutes, 5 tries, one email a minute.
-const appCodes = new Map(); // email (lowercase) -> { hash, regId, exp, tries, sentAt }
+// means asking for a new one). 10 minutes; at most one email a minute and 4 an hour per
+// address (30 an hour per visitor). Asking again while a code is still valid re-sends the
+// same code, so requests from someone else can't keep replacing a player's code. Wrong
+// guesses are counted per visitor (5 each, 15 in all), so a stranger can't burn a player's
+// tries.
+const appCodes = new Map(); // email (lowercase) -> { code, hash, regId, exp, sentAt, triesByIp: Map, tries }
 const APP_CODE_TTL_MS = 10 * 60 * 1000;
 const hashAppCode = (email, code) => createHash('sha256').update(`${SESSION_SECRET}:${email}:${code}`).digest('hex');
 const maskEmail = e => { const [u, d] = String(e).split('@'); return d ? `${u.slice(0, 2)}${'•'.repeat(Math.max(1, Math.min(u.length - 2, 4)))}@${d}` : e; };
@@ -6200,12 +6244,22 @@ app.post('/app/login/code', (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Get a code · WKND', bare: true, body: appCodeRequestPage({ email, error: 'Enter the email you signed up with.' }) }));
   }
-  const prev = appCodes.get(key);
   const reg = getRegistrationByEmail(email);
-  // Same answer whether or not the email has an account; only eligible players get a code.
-  if (reg && !appSignInBlock(reg) && !(prev && Date.now() - prev.sentAt < 60 * 1000)) {
-    const code = String(randomInt(0, 1000000)).padStart(6, '0');
-    appCodes.set(key, { hash: hashAppCode(key, code), regId: reg.id, exp: Date.now() + APP_CODE_TTL_MS, tries: 0, sentAt: Date.now() });
+  const now = Date.now();
+  let entry = appCodes.get(key);
+  if (entry && entry.exp < now) { appCodes.delete(key); entry = null; }
+  // Same answer whether or not the email has an account; only eligible players get a code,
+  // and only within the limits above.
+  const allowed = reg && !appSignInBlock(reg) && !(entry && now - entry.sentAt < MIN)
+    && rateHit(`code:ip:${clientIp(req)}`, 30, 60 * MIN) && rateHit(`code:email:${key}`, 4, 60 * MIN);
+  if (allowed) {
+    if (entry) entry.sentAt = now; // still valid: send the same code again
+    else {
+      const fresh = String(randomInt(0, 1000000)).padStart(6, '0');
+      entry = { code: fresh, hash: hashAppCode(key, fresh), regId: reg.id, exp: now + APP_CODE_TTL_MS, sentAt: now, triesByIp: new Map(), tries: 0 };
+      appCodes.set(key, entry);
+    }
+    const code = entry.code;
     const name = (reg.full_name || '').split(',')[1]?.trim() || 'there';
     sendMail({ to: reg.email, ref: reg.id, ...appSignInCodeEmail({ name, code }) }).catch(e => console.error('[mailer]', e.message));
     insertAdminLog({ actor: reg.full_name || reg.email, actorType: 'player', method: 'POST', path: '/app/login/code', details: { event: 'app_code_sent', email: reg.email } });
@@ -6225,9 +6279,14 @@ app.post('/app/login/code/verify', (req, res) => {
   const key = email.toLowerCase();
   const code = String(req.body.code || '').replace(/\D/g, '');
   const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Enter code · WKND', bare: true, body: appCodeVerifyPage({ email, masked: maskEmail(email), error }) }));
+  if (!rateHit(`verify:ip:${clientIp(req)}`, 20, 15 * MIN)) return fail('Too many tries. Wait 15 minutes and try again.');
   const entry = appCodes.get(key);
   if (!entry || entry.exp < Date.now()) { appCodes.delete(key); return fail('That code has expired. Send a new one below.'); }
-  if (++entry.tries > 5) { appCodes.delete(key); return fail('Too many tries. Send a new code below.'); }
+  const ip = clientIp(req);
+  const mine = (entry.triesByIp.get(ip) || 0) + 1;
+  entry.triesByIp.set(ip, mine);
+  if (mine > 5) return fail('Too many tries. Wait 10 minutes, then send a new code.');
+  if (++entry.tries > 15) { appCodes.delete(key); return fail('Too many tries. Send a new code below.'); }
   const ok = code.length === 6 && timingSafeEqual(Buffer.from(hashAppCode(key, code)), Buffer.from(entry.hash));
   if (!ok) return fail('That code isn\'t right. Check the email and try again.');
   appCodes.delete(key);
@@ -6334,9 +6393,13 @@ app.post('/app/setup/details', requireApp, (req, res) => {
     social_handle: clip(b.social_handle, 40).replace(/^@?/, '@').replace(/^@$/, ''),
     emergency_name: clip(b.emergency_name, 60), emergency_phone: clip(b.emergency_phone, 30),
   };
-  if (!fields.emergency_name || !fields.emergency_phone) {
+  // Everything appDetailsDone checks is required here too, so saving always completes the step.
+  const missing = [!positions.length && 'your positions', !fields.height && 'your height', !fields.dominant_hand && 'which hand you shoot with',
+    !(fields.emergency_name && fields.emergency_phone) && 'an emergency contact name and phone'].filter(Boolean);
+  if (missing.length) {
+    const list = missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}` : missing[0];
     return res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Your details · WKND', bare: true, body: appSetupDetailsPage({
-      reg: { ...me.reg, ...fields }, positions, number: me.number, teamName: me.teamName, error: 'Add an emergency contact name and phone.',
+      reg: { ...me.reg, ...fields }, positions, number: me.number, teamName: me.teamName, error: `Add ${list}.`,
     }) }));
   }
   updateRegistrationProfile(me.reg.id, fields);
@@ -6351,6 +6414,7 @@ app.post('/app/setup/details', requireApp, (req, res) => {
 });
 
 app.get('/app/setup/season', requireApp, (req, res) => {
+  if (!hasAppEvent(req.session.playerRegId, 'setup_season_seen')) logApp(req, 'setup_season_seen');
   sendApp(res, { title: 'Your season · WKND', bare: true, body: appSetupSeasonPage({ rows: appSeasonState(appMe(req)).rows }) });
 });
 
@@ -6429,6 +6493,7 @@ app.get('/app/notifications', requireApp, (req, res) => {
 // Pages for lazy lists (views/app/layout.js lazyList): JSON { html, next }. Signed-out or
 // no access answers 401 so the list shows "couldn't load" instead of a sign-in page.
 function requireAppData(req, res, next) {
+  if (!appSessionValid(req)) return req.session.destroy(() => res.status(401).json({ error: 'Sign in again.' }));
   if (appAccess(req) !== 'ok') return res.status(401).json({ error: 'Sign in again.' });
   res.set('Cache-Control', 'private, no-store');
   next();
@@ -6444,7 +6509,7 @@ app.get('/app/notifications/items', requireAppData, (req, res) => {
   let opened = Number(req.query.opened) || 0;
   const rows = getNotificationsPage(pid, { before, limit: APP_PAGE_SIZE });
   if (!before) { opened = Date.now(); markNotificationsRead(pid); }
-  const when = ts => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+  const when = ts => manilaFormat(ts, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const html = appNotificationRows(rows.map(n => ({
     title: n.title, body: n.body, when: when(n.created_at),
     unread: before ? (!!n.read_at && n.read_at >= opened) : !n.read_at,
@@ -6583,13 +6648,16 @@ app.post('/set-password', express.urlencoded({ extended: false }), async (req, r
   if (isReset) {
     // Whoever else was signed in to this account (the reason for many resets) is signed out.
     stmtDeleteOtherSessions.run(reg.id, req.sessionID || '');
-    if (canSignIn) signInRegistration(req, reg);
-    return res.send(renderAuth(req, { title: 'Password Saved — WKND Basketball', body: setPasswordDonePage({ signedIn: canSignIn }) }));
+    const done = signedIn => res.send(renderAuth(req, { title: 'Password Saved — WKND Basketball', body: setPasswordDonePage({ signedIn }) }));
+    if (!canSignIn) return done(false);
+    return signInRegistration(req, reg, err => req.session.save(() => done(!err)));
   }
   if (!canSignIn) return res.send(renderAuth(req, { title: 'Password Set — WKND Basketball', body: setPasswordDonePage() }));
-  signInRegistration(req, reg);
-  req.session.livenessPrompt = randomActivationPrompt();
-  req.session.save(() => res.redirect('/activate'));
+  signInRegistration(req, reg, err => {
+    if (err) return res.redirect('/login');
+    req.session.livenessPrompt = randomActivationPrompt();
+    req.session.save(() => res.redirect('/activate'));
+  });
 });
 
 app.get('/forgot-password', (req, res) => {
