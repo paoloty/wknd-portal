@@ -149,7 +149,10 @@ function installWallHtml() {
 // tab: which tab is lit ('' = none, e.g. sign-in and setup, which also drop the tab bar).
 // badges: { picks, me } counts on those tabs: picks = open games not picked yet (amber, needs
 // attention), me = money/season to-dos (red). One signal per fact (CLAUDE.md "Notices").
-export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {} }) {
+// who: an opaque tag for the signed-in player (server.js sendTab). With app-time (when the
+// server built the page) it tells public/app.js a screen came from the phone's copy, and
+// whether that copy belongs to someone else.
+export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '' }) {
   const badge = key => {
     const n = Number(badges[key]) || 0;
     return n ? `<span class="tab__badge tab__badge--${key === 'me' ? 'err' : 'warn'}" aria-label="${n} waiting">${n > 9 ? '9+' : n}</span>` : '';
@@ -164,6 +167,8 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <title>${esc(title)}</title>
   <meta name="robots" content="noindex, nofollow">
   <meta name="app-ver" content="${esc(ver)}">
+  <meta name="app-time" content="${Date.now()}">
+  <meta name="app-who" content="${esc(who)}">
   <meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0e16" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">

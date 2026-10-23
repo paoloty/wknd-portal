@@ -73,6 +73,7 @@
   function mountPlayer(box) {
     if (box.getAttribute('data-mounted')) return;
     box.setAttribute('data-mounted', '1');
+    box._cover = box.innerHTML;
     var id = box.getAttribute('data-yt');
     var poster = document.createElement('div'); poster.className = 'player__poster';
     while (box.firstChild) poster.appendChild(box.firstChild);
@@ -405,7 +406,20 @@
     lazyObservers.forEach(function (o) { o.disconnect(); }); lazyObservers = [];
     $$('[data-lazy-src]').forEach(function (box) {
       var items = $('.lazy__items', box), skel = $('.lazy__skel', box), end = $('.lazy__end', box);
-      var next = box.getAttribute('data-lazy-src'), busy = false;
+      // A screen put back from memory (see "Kept screens") carries on where it was: its rows
+      // are there, data-lazy-next says what's left.
+      var resumed = box.hasAttribute('data-lazy-next');
+      var next = resumed ? box.getAttribute('data-lazy-next') : box.getAttribute('data-lazy-src'), busy = false;
+      // The first page: the copy on the phone (public/app-sw.js keeps one) shows at once, then
+      // the network's answer replaces it, or is skipped when it's the same.
+      var first = !resumed, shownCopy = null;
+      if (first && window.caches) {
+        caches.match(next, { cacheName: 'wknd-data' }).then(function (r) { return r && r.json(); }).then(function (j) {
+          if (!j || !j.html || !first || !box.isConnected) return;
+          shownCopy = j.html;
+          items.innerHTML = j.html; items.hidden = false; skel.hidden = true; initVideos();
+        }).catch(function () {});
+      }
       var nearBottom = function () { return end.getBoundingClientRect().top < window.innerHeight + 600; };
       var load = function () {
         if (busy || !next) return;
@@ -413,8 +427,10 @@
         fetch(next, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
           .then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw 0; } if (!r.ok) throw r.status; return r.json(); })
           .then(function (j) {
-            busy = false; next = j.next || null;
-            if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); }
+            busy = false; next = j.next || null; box.setAttribute('data-lazy-next', next || '');
+            var wasFirst = first; first = false;
+            if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); } }
+            else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); }
             skel.hidden = true;
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
             end.textContent = '';
@@ -422,6 +438,7 @@
           })
           .catch(function (e) {
             busy = false; if (e === 0) return;
+            if (first && shownCopy !== null) { first = false; return; } // offline: the copy stays
             skel.hidden = true;
             end.className = 'lazy__end is-error';
             end.innerHTML = 'Couldn\'t load. <button type="button">Try again</button>';
@@ -437,7 +454,7 @@
         if (entries.some(function (en) { return en.isIntersecting; })) load();
       }, { rootMargin: '0px 0px 600px 0px' }) : null;
       if (io) { io.observe(end); lazyObservers.push(io); }
-      load();
+      if (!resumed) load(); else if (next && !io) showMore();
     });
   }
 
@@ -556,18 +573,42 @@
   // dir: 'push' | 'pop' | 'tab' animates the swap; none (a background refresh) swaps quietly.
   // An animated swap happens a frame later (after the old screen is captured), so a quiet
   // swap waits for it — otherwise the fresh screen would be covered by the stale one.
+  // ════ Kept screens ════
+  // A screen with a lazy list (the feed, notifications) is kept as it was when the player
+  // left it: its loaded rows, pictures and scroll position. Going back to it (back swipe or
+  // its tab) puts that same screen back instead of rebuilding it from the server and loading
+  // the list again. Kept 10 minutes; pull to refresh fetches it fresh.
+  var kept = {};
+  var KEEP_MS = 10 * 60 * 1000;
+  function keepScreen(url, main, y) {
+    if (!main || !main.querySelector('[data-lazy-next]')) return;
+    // A video player can't move with the screen (its frame reloads): back to its cover.
+    $$('.player[data-mounted]', main).forEach(function (b) {
+      if (b._cover != null) b.innerHTML = b._cover;
+      b.removeAttribute('data-mounted'); b.className = 'media player';
+    });
+    kept[url] = { el: main, y: y, title: document.title, at: Date.now() };
+  }
+  function takeKept(url) {
+    var k = kept[url]; delete kept[url];
+    return k && Date.now() - k.at < KEEP_MS ? k : null;
+  }
+
   var pendingSwap = null;
+  // page: { html, url } from the server, or { el, y, url } for a kept screen (with html, when
+  // there is one, for its tab bar).
   function render(page, push, keepScroll, dir) {
     if (pendingSwap && !dir) {
       var want = navId; // dropped if the player has moved on by then
       pendingSwap.then(function () { if (want === navId) render(page, push, keepScroll, dir); });
       return;
     }
-    var doc = new DOMParser().parseFromString(page.html, 'text/html');
+    var doc = new DOMParser().parseFromString(page.html || '', 'text/html');
     var newVer = (doc.querySelector('meta[name="app-ver"]') || {}).content || '';
     if (newVer && ver && newVer !== ver) { location.href = page.url; return; } // new deploy: load it properly
-    var newMain = doc.querySelector('main.app');
+    var newMain = page.el || doc.querySelector('main.app');
     if (!$('main.app') || !newMain) { location.href = page.url; return; }
+    var fromUrl = currentUrl;
     var y = window.scrollY;
     if (push) {
       try { history.replaceState(Object.assign({}, history.state, { y: y }), ''); } catch (e) {}
@@ -576,19 +617,26 @@
     currentUrl = page.url;
     // The tab bar holds still only between two screens that both have it; otherwise it
     // moves with the screen it belongs to (setup has none), like an iPhone app.
-    var oldNav = $('nav.tabbar'), keepBar = !!oldNav && !!doc.querySelector('nav.tabbar');
+    var oldNav = $('nav.tabbar'), keepBar = !!oldNav && (!!doc.querySelector('nav.tabbar') || !!page.el);
     if (oldNav && !keepBar) oldNav.style.viewTransitionName = 'none';
     var swap = function () {
-      document.title = doc.title;
-      $('main.app').replaceWith(document.importNode(newMain, true));
+      var old = $('main.app');
+      if (old !== newMain) keepScreen(fromUrl, old, y); // before the title changes: it keeps that too
+      document.title = page.title || doc.title || document.title;
+      old.replaceWith(page.el ? newMain : document.importNode(newMain, true));
       var nav = $('nav.tabbar'), newNav = doc.querySelector('nav.tabbar');
+      if (page.el && !newNav) { // no fresh tab bar to hand: light the right tab on this one
+        $$('.tab').forEach(function (t) { var on = urlOf(t.href) === page.url; t.classList.toggle('is-on', on); if (on) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); });
+        newNav = null; nav = null;
+      }
       if (nav) nav.remove();
       if (newNav) {
         var added = document.body.insertBefore(document.importNode(newNav, true), $('main.app').nextSibling);
         if (!keepBar) { added.style.viewTransitionName = 'none'; setTimeout(function () { added.style.viewTransitionName = ''; }, 400); }
       }
       $$('.update-bar').forEach(function (b) { b.remove(); });
-      if (!keepScroll) window.scrollTo(0, push ? 0 : ((history.state && history.state.y) || 0));
+      if (page.el) window.scrollTo(0, page.y || 0);
+      else if (!keepScroll) window.scrollTo(0, push ? 0 : ((history.state && history.state.y) || 0));
       else window.scrollTo(0, y);
       loadedAt = Date.now();
       initPage();
@@ -612,6 +660,19 @@
   function go(url, push) {
     var id = ++navId;
     var dir = direction(currentUrl, url);
+    var k = takeKept(url);
+    if (k) {
+      var html = pages[url] ? pages[url].html : '';
+      render({ el: k.el, y: k.y, title: k.title, url: url, html: html }, push, false, dir);
+      // The tab bar's badges can have changed meanwhile: take them from a fresh copy, leave
+      // the screen as it was.
+      if (navigator.onLine) fetchPage(url).then(function (fresh) {
+        if (id !== navId) return;
+        var nb = new DOMParser().parseFromString(fresh.html, 'text/html').querySelector('nav.tabbar'), cur = $('nav.tabbar');
+        if (nb && cur && nb.innerHTML !== cur.innerHTML) cur.innerHTML = nb.innerHTML;
+      }).catch(function () {});
+      return;
+    }
     var cached = pages[url];
     if (cached && Date.now() - cached.at < 10 * 60 * 1000) {
       render(cached, push, false, dir);
@@ -690,6 +751,32 @@
   })();
 
   initPage();
+
+  // ════ Launch from the phone's copy ════
+  // The service worker answers a launch with the copy of the screen on the phone (instant),
+  // fetching a fresh one behind it. A page built more than 15 s ago is that copy: swap in the
+  // fresh screen quietly as soon as it's here. And a copy that belongs to a different player
+  // than the one signed in (shouldn't happen: sign-in pages wipe them) is wiped and reloaded.
+  var builtAt = Number(($('meta[name="app-time"]') || {}).content || 0);
+  var who = ($('meta[name="app-who"]') || {}).content || '';
+  var wipeCopies = function () {
+    try { localStorage.removeItem('wknd-who'); } catch (e) {}
+    return window.caches ? Promise.all(['wknd-pages', 'wknd-data'].map(function (k) { return caches.delete(k); })) : Promise.resolve();
+  };
+  if (who) {
+    var lastWho = null; try { lastWho = localStorage.getItem('wknd-who'); } catch (e) {}
+    if (lastWho && lastWho !== who) wipeCopies().then(function () { if (Date.now() - builtAt > 15000) location.reload(); });
+    try { localStorage.setItem('wknd-who', who); } catch (e) {}
+  }
+  if (navOn && builtAt && Date.now() - builtAt > 15000 && navigator.onLine) refreshScreen();
+  // Log out: wipe the copies first, so the next person on this phone sees none of them.
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f || f.getAttribute('action') !== '/app/logout' || f._wiped) return;
+    e.preventDefault(); f._wiped = true;
+    var done = function () { f.submit(); };
+    wipeCopies().then(done, done);
+  });
 
   // ════ Once per visit ════
   // Usage for /admin/app: the first open of the day on this phone, and whether it came

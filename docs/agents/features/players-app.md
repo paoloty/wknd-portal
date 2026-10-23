@@ -76,6 +76,7 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Motion: `render()` animates each swap with the View Transitions API (CSS fallback `.enter-*` on older phones). `direction()` picks it: between tabs a cross-fade; into a screen below a tab (notifications, setup) a slide in from the right; back a slide the other way; setup steps by their order. The tab bar holds still only between two screens that both have it. Reduce Motion turns it off.
 - Long lists load lazily: `lazyList({ src })` (views/app/layout.js) renders placeholder rows; `initLazyLists()` in app.js fetches `src` → JSON `{ html, next }`, appends the rows, and loads `next` when the bottom comes within ~600px ("Try again" on failure, "Show more" without IntersectionObserver). Pages are keyset-paged (20 rows, `before=<created_at>:<id>`). Use it for the feed too. Screens themselves must be safe to fetch ahead: side effects belong in the list's data request (e.g. `/app/notifications/items` marks notifications read on its first page, and carries `opened` so rows it just marked keep their dot on later pages).
 - Fetches give up after 10 s, a tap only shares a request started in the last 4 s, and coming back to the app cancels everything in flight: on iPhone a request caught by the app going to the background can hang for good, which left taps under a stuck progress bar. A tap whose fetch fails loads the page normally.
+- Kept screens (app.js "Kept screens"): a screen with a lazy list (Home's feed, notifications) is kept as it was when the player left it (the same DOM: loaded rows, pictures, scroll position) and put back on return (back swipe or its tab) instead of rebuilt and reloaded; only the tab bar's badges are refreshed. Kept 10 minutes; pull to refresh reloads. Lazy lists record where they are (`data-lazy-next`) so a kept one carries on; video players go back to their cover when kept.
 - A quiet background refresh waits for an animated swap still in progress (`pendingSwap`), so the stale screen can't land on top of the fresh one.
 - Per-screen setup lives in `initPage()`, which runs again after every swap: anything new that hooks into a screen goes there.
 - The Picks badge, Home's action strip and Me's picks line use only the close check (`appOpenPicks` → `picksClosedFor`), not `buildPicksContext`/`openPicks` (all picks + odds, ~100 ms); every tab screen computes them.
@@ -88,7 +89,13 @@ Dates and times use `manilaFormat` (views/utils.js): shift to UTC+8 and format a
 
 ## Updates and offline
 - `APP_VER` = commit + newest app file mtime. Busts `app.css`/`app.js`, names the SW cache, and `/app/version` returns it. `app.js` checks it when the app comes back to the foreground and reloads (or shows a refresh bar when a form has unsaved input), also after 30 minutes away.
-- The service worker caches only the shell (CSS, JS, fonts, icons, `/app/offline`). Pages always load from the network; offline navigation shows `/app/offline`.
+- The service worker (`public/app-sw.js`) keeps as much on the phone as is useful, so the app opens at once and works offline:
+  - `wknd-app-<ver>`: the shell (CSS, JS, fonts, icons, `/app/offline`), cache first.
+  - `wknd-pages`: the screens (tabs, settings, notifications, games, posts; not sign-in, setup or Face ID). A launch is answered with the copy at once while a fresh one is fetched; app.js sees the page is old (`app-time` meta > 15 s) and swaps in the fresh screen quietly. In-app navigation is network first, the copy after 4 s or offline.
+  - `wknd-data`: feed and notification pages (JSON), network first, the copy offline. The feed's first page shows the copy at once, then the network's answer replaces it if different.
+  - `wknd-img`: game covers, announcement photos, player photos: `?v=` ones cache first, others from the copy while refreshed; newest 300 kept. Not YouTube thumbnails (another site's pictures are stored padded to megabytes each).
+  - Screens and data belong to the signed-in player: wiped when a request lands on the sign-in page (signed out, session ended), on log out (app.js wipes before submitting), and if a page's `app-who` (a hash of the registration, `appWho`) differs from the last one on this phone. Pictures stay (they're the league's, not the player's).
+- Offline, the red bar shows; tabs and screens visited before open from the copies, others show `/app/offline`.
 - iPhone never updates the home-screen icon or name after install: keep the icon plain.
 
 ## Not built yet

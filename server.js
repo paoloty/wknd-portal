@@ -6448,7 +6448,8 @@ const appAccountTodos = me => appSeasonState(me).rows.filter(r => !r.done && r.h
 // notifications on Home's bell.
 const appBadges = me => ({ picks: appOpenPicks(me).length, me: appAccountTodos(me).length });
 // Every screen with the tab bar goes through this, so the badges are always current.
-const sendTab = (res, me, opts) => sendApp(res, { ...opts, badges: appBadges(me) });
+const appWho = me => createHash('sha256').update(`wknd-app:${me.reg.id}`).digest('hex').slice(0, 12);
+const sendTab = (res, me, opts) => sendApp(res, { ...opts, badges: appBadges(me), who: appWho(me) });
 const closeLabel = ms => manilaFormat(ms, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
 // ── Home: the feed ──
