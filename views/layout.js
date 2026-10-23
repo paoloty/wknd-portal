@@ -5,8 +5,8 @@ function fmtNotifTime(ms) {
 // "WKND" wordmark — Archivo 900 italic (thickened further with a same-color text stroke,
 // since 900 is Archivo's heaviest weight), tight tracking, and a small basketball as the
 // full stop. Shared by the main header and the register/season-signup sidebars so every
-// page shows the same mark. The ball on its own is also the favicon (public/favicon.svg)
-// and the admin console's brand mark.
+// page shows the same mark. The ball on its own is also the admin console's brand mark
+// (the favicons are the full WKND Basketball logo: public/favicon-*.png).
 export function wkndBall(className = 'wknd-logo__ball') {
   return `<svg class="${className}" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg>`;
 }
@@ -657,9 +657,9 @@ export function layout({ title = 'WKND Basketball', currentPath = '/', body, tic
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escHtml(title)}</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="alternate icon" href="/favicon-32.png" type="image/png">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" href="/favicon-32.png?v=2" type="image/png" sizes="32x32">
+  <link rel="icon" href="/favicon-16.png?v=2" type="image/png" sizes="16x16">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
   ${metaTags}
   ${origin ? `<script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',

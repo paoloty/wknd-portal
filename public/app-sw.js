@@ -4,7 +4,7 @@
 // Only the shell is kept on the phone: CSS, script, fonts and icons.
 const VER = '__VER__';
 const CACHE = 'wknd-app-' + VER;
-const SHELL = ['/app/offline', '/app.css?v=' + VER, '/app.js?v=' + VER, '/fonts/fonts.css', '/app-icon-192.png', '/favicon.svg'];
+const SHELL = ['/app/offline', '/app.css?v=' + VER, '/app.js?v=' + VER, '/fonts/fonts.css', '/app-icon-192.png', '/favicon-32.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -17,7 +17,7 @@ self.addEventListener('activate', (e) => {
 });
 
 const isShellAsset = (url) => url.origin === location.origin
-  && (/^\/(app\.css|app\.js|app-icon-\d+\.png|favicon\.svg)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
+  && (/^\/(app\.css|app\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;

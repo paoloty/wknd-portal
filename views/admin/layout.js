@@ -296,9 +296,9 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escHtml(title)} — WKND Admin</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="alternate icon" href="/favicon-32.png" type="image/png">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" href="/favicon-32.png?v=2" type="image/png" sizes="32x32">
+  <link rel="icon" href="/favicon-16.png?v=2" type="image/png" sizes="16x16">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
   <!-- The site's own self-hosted fonts (Archivo + Saira Condensed). -->
   <link rel="preload" href="/fonts/archivo-k3kPo8UDI-1M0wlSV9XAw6lQkqWY8Q82sLydOxI.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/fonts/fonts.css${v}">

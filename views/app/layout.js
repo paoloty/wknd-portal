@@ -76,8 +76,9 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="format-detection" content="telephone=no">
   <link rel="manifest" href="/app/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="/app-icon-180.png">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/app-icon-180.png?v=2">
+  <link rel="icon" href="/favicon-32.png?v=2" type="image/png" sizes="32x32">
+  <link rel="icon" href="/favicon-16.png?v=2" type="image/png" sizes="16x16">
   <script>try{var t=localStorage.getItem('wknd-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
   <link rel="preload" href="/fonts/fonts.css" as="style">
   <link rel="stylesheet" href="/fonts/fonts.css">
