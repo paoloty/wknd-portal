@@ -2,7 +2,7 @@
 // each with who's in, the details and one action; then the player's own past runs. Data
 // and rules: server.js appPapawisRuns (mirrors views/papawis.js). The buttons post to the
 // site's own /papawis/:id/join | cancel | voucher (public/app.js initPapawis).
-import { esc, appAvatar, backChev } from './layout.js';
+import { esc, appAvatar, backChev, icons } from './layout.js';
 
 const lt = title => `<header class="lt"><h1>${esc(title)}</h1></header>`;
 
@@ -37,7 +37,7 @@ function runCard(r) {
       <div class="gx__top"><span class="sx__chip sx__chip--glass">${r.today ? 'Today' : esc(r.day)}${r.time ? ` · ${esc(r.time)}` : ''}</span><span class="sx__chip sx__chip--glass${!r.scheduled && !r.full ? ' pwr__open' : ''}">${esc(pill)}</span></div>
       <div class="pwr__head">
         <h3>${esc(r.title)}</h3>
-        <p>📍 ${esc(r.place)}</p>
+        <p>${icons.pin}${esc(r.place)}</p>
         <p class="pwr__cd" data-countdown-to="${r.scheduled ? r.opensAt : r.tipAt}" data-countdown-label="${r.scheduled ? 'Sign-ups open in' : r.today ? 'Tip-off in' : 'Tip-off in'}"></p>
       </div>
     </div>
@@ -86,7 +86,7 @@ export function appPapawisPlayersPage({ missing = false, run = null, confirmed =
   <div class="card glow pwp__head">
     <b>${esc(run.title)}</b>
     <p>${esc([run.today ? 'Today' : run.day, run.time].filter(Boolean).join(' · '))}</p>
-    <p>📍 ${esc(run.place)}</p>
+    <p>${icons.pin}${esc(run.place)}</p>
     <div class="px__bar"><i style="width:${run.max ? Math.min(100, Math.round((run.filled / run.max) * 100)) : 0}%"></i></div>
     <p class="pwp__count"><b>${run.filled} of ${run.max} in</b>${run.full ? ' · full' : ` · ${run.open} open`}</p>
   </div>

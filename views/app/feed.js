@@ -75,7 +75,7 @@ function gameCard(g) {
 
 function annCard(a) {
   return `<article class="sx ax${a.pinned ? ' is-pinned' : ''}"><div class="sx__body">
-    <div class="ax__head"><span class="ax__ico" aria-hidden="true">📣</span><div><b>${esc(a.by || 'WKND League')}</b><small>Announcement · ${esc(a.when)}</small></div>${a.pinned ? '<span class="sx__chip sx__chip--amber">📌 Pinned</span>' : ''}</div>
+    <div class="ax__head"><span class="ax__ico" aria-hidden="true">${icons.megaphone}</span><div><b>${esc(a.by || 'WKND League')}</b><small>Announcement · ${esc(a.when)}</small></div>${a.pinned ? `<span class="sx__chip sx__chip--amber">${icons.pinned}Pinned</span>` : ''}</div>
     ${a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : ''}
     ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
     ${a.body ? `<div class="ax__body">${paras(a.body)}</div>` : ''}
@@ -102,7 +102,7 @@ function papawisCard(it) {
     <div class="sx__body">
       <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc([r.today ? 'Today' : r.day, r.time].filter(Boolean).join(' · '))}</span></div>
       <h3>${esc(r.title)}</h3>
-      <p class="px__where">📍 ${esc(r.place)}</p>
+      <p class="px__where">${icons.pin}${esc(r.place)}</p>
       <div class="px__bar"><i style="width:${pct}%"></i></div>
       ${faces.length ? `<span class="pwr__stack px__stack"><span class="pwr__faces">${faces.map(f => `<span class="pwr__face${f.me ? ' is-me' : ''}">${appAvatar({ playerId: f.playerId, initials: f.ini, ring: f.color, photoUrl: f.photoUrl })}</span>`).join('')}${r.faces.length > faces.length ? `<span class="pwr__more">+${r.faces.length - faces.length}</span>` : ''}</span></span>` : ''}
       <div class="px__foot"><span>${r.filled} of ${r.max} in${r.waiting ? ` · ${r.waiting} waiting` : ''}</span><b>${r.full ? 'Full' : `${r.open} spot${r.open === 1 ? '' : 's'} left`}</b></div>
@@ -142,7 +142,6 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', acti
   ${strip}
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
   ${rail ? '<div class="rail-block" data-block-src="/app/rail"><div class="rail-h"><b class="skel skel--line skel--short" style="width:120px"></b></div><div class="rail"><div class="rc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span></div><div class="rc skel-card"></div></div></div>' : ''}
-  <div class="sec">Latest</div>
   ${lazyList({ src: '/app/feed/items', cards: true, empty: 'Nothing here yet. Results, news and announcements show up here.' })}`;
 }
 
@@ -260,7 +259,7 @@ export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b
   ${pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
     <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>
     ${matchup({ a, b })}
-    <p class="mut game-hero__meta" style="text-align:center;margin-top:10px !important">${esc(meta)}</p>
+    <p class="mut game-hero__meta">${esc(meta)}</p>
   </section>`}
   ${p.story ? `<section class="fc art"><div class="kick">Storyline</div><h2>${esc(p.story.headline)}</h2>${p.story.body ? `<p>${esc(p.story.body)}</p>` : ''}</section>` : ''}
   <section class="fc art">

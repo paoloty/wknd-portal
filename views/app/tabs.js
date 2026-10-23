@@ -31,7 +31,7 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
     <div class="cell">
       ${appAvatar({ playerId: p.id, initials: p.initials, ring: team.color, photoUrl: p.photoUrl })}
       <span class="cell__t">${esc(p.name)}${p.isMe ? ' <span class="muted" style="font-weight:400">· You</span>' : ''}<small>${esc([p.positions, p.isHead ? 'Team head' : ''].filter(Boolean).join(' · ') || ' ')}</small></span>
-      <span class="num" style="font-size:18px;color:var(--muted)">${p.number !== '' ? `#${esc(p.number)}` : ''}</span>
+      <span class="num roster__no">${p.number !== '' ? `#${esc(p.number)}` : ''}</span>
     </div>`).join('')}</div>`;
 }
 
@@ -41,7 +41,7 @@ export function appMePage({ me, season, games, positions, todos = [] }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
-    <div style="flex:1;min-width:0"><h2>${esc(me.name.toUpperCase())}</h2>
+    <div style="flex:1;min-width:0"><h2>${esc(me.name)}</h2>
       <div class="prof__sub"><span class="dot" style="--c:${esc(me.ring)}"></span>${esc([me.teamName || 'No team', me.number !== '' ? `#${me.number}` : '', positions].filter(Boolean).join(' · '))}</div></div>
     <a class="prof__edit" href="/app/setup/details">Edit</a>
   </div>
@@ -91,7 +91,7 @@ export function appSettingsPage({ me, rows, push = [] }) {
     <a class="cell" href="/?from=app"><span class="ico">${icons.globe}</span><span class="cell__t">Open full site</span>${icons.ext}</a>
   </div>
   <form method="post" action="/app/logout" style="margin-top:16px">
-    <div class="group"><button class="cell" type="submit" style="justify-content:center"><span style="color:var(--danger);font-weight:600">Log out</span></button></div>
+    <div class="group"><button class="cell cell--danger" type="submit">Log out</button></div>
   </form>
   <p class="foot-note" style="text-align:center;margin-top:14px">Signed in as ${esc(me.email)}</p>`;
 }

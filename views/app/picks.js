@@ -66,14 +66,17 @@ export function pickCard(g) {
 // board: Pickmaster top 10 (+ the player's own row below when they're further down):
 //   [{ rank, tied, name, wl, net, me, gap }] · past: [{ date, matchup, pick, color, correct }]
 export function appPicksPage({ record, games = [], off = false, board = [], past = [] }) {
+  // Medal colours only for the first three places: a rank gets one while no more than three
+  // players are at or above it (ten tied at 1st get none).
+  const medal = r => r.rank <= 3 && board.filter(x => !x.gap && x.rank <= r.rank).length <= 3;
   const rec = record
     ? `<div class="card glow pick-rec"><div><div class="kick">Your record</div><b class="num">${esc(record.wl)}</b><small>${esc(record.net)} net</small></div>
         <div style="text-align:right"><div class="kick muted-kick">Pickmaster</div><b class="num pick-rec__rank">${record.rank ? `${record.tied ? 'T' : '#'}${record.rank}` : '—'}</b></div></div>`
     : `<div class="card glow pick-rec"><div><div class="kick">Your record</div><small>Make your first pick to get on the board.</small></div></div>`;
   const boardHtml = board.length ? `<div class="sec">Pickmaster</div><div class="group">${board.map(r => `
-    ${r.gap ? '<div class="cell board__gap">···</div>' : ''}<div class="cell board${r.me ? ' is-me' : ''}"><span class="board__rk num${r.rank <= 3 ? ` board__rk--${r.rank}` : ''}">${r.tied ? 'T' : ''}${r.rank}</span><span class="cell__t">${esc(r.name)}${r.me ? ' <span class="muted" style="font-weight:400">· You</span>' : ''}<small>${esc(r.wl)}</small></span><span class="num board__net">${esc(r.net)}</span></div>`).join('')}</div>` : '';
+    ${r.gap ? '<div class="cell board__gap">···</div>' : ''}<div class="cell board${r.me ? ' is-me' : ''}"><span class="board__rk num${medal(r) ? ` board__rk--${r.rank}` : ''}">${r.tied ? 'T' : ''}${r.rank}</span><span class="cell__t">${esc(r.name)}${r.me ? ' <span class="muted" style="font-weight:400">· You</span>' : ''}<small>${esc(r.wl)}</small></span><span class="num board__net">${esc(r.net)}</span></div>`).join('')}</div>` : '';
   const pastHtml = past.length ? `<div class="sec">Your past picks</div><div class="group">${past.map(x => `
-    <div class="cell"><span class="date">${esc(x.date)}</span><span class="cell__t">${esc(x.matchup)}<small><span class="dot" style="--c:${esc(x.color)};width:7px;height:7px;display:inline-block;margin-right:5px"></span>Picked ${esc(x.pick)}</small></span><span class="res ${x.correct ? 'res--w' : 'res--l'}" style="width:auto">${x.correct ? 'Right' : 'Wrong'}</span></div>`).join('')}</div>` : '';
+    <div class="cell"><span class="date">${esc(x.date)}</span><span class="cell__t">${esc(x.matchup)}<small><span class="dot" style="--c:${esc(x.color)};width:7px;height:7px;display:inline-block;margin-right:5px"></span>Picked ${esc(x.pick)}</small></span><span class="res ${x.correct ? 'res--w' : 'res--l'}">${x.correct ? 'Right' : 'Wrong'}</span></div>`).join('')}</div>` : '';
   return `
   <header class="lt"><h1>Who wins?</h1></header>
   ${off ? '<div class="empty" style="margin-top:8px">Picks are off right now.</div>' : `

@@ -36,9 +36,9 @@ export function setupCard(s) {
   if (!s || s.done >= s.total) return '';
   const pct = Math.round((s.done / s.total) * 100);
   return `<a class="card setup-card" href="${esc(s.href)}" style="margin-bottom:12px">
-    <div class="row"><b>Finish setting up</b><span class="muted" style="font-size:13px">${s.done} of ${s.total}</span></div>
+    <div class="row"><b>Finish setting up</b><span class="muted setup-card__n">${s.done} of ${s.total}</span></div>
     <div class="progress"><div style="width:${pct}%"></div></div>
-    <div class="muted" style="font-size:13px;margin-top:8px">Next: ${esc(s.nextLabel)} ›</div>
+    <div class="muted setup-card__next">Next: ${esc(s.nextLabel)} ›</div>
   </a>`;
 }
 
@@ -47,7 +47,7 @@ export function setupCard(s) {
 export const installCard = `<div class="card install" data-install-card hidden style="margin-bottom:12px">
   <span class="app-icon">${ballSvg}</span>
   <div><b>Add WKND to your home screen</b>
-    <p data-install-ios>Tap <svg class="share-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/></svg> Share, then <b style="font-size:13px">Add to Home Screen</b>.</p>
+    <p data-install-ios>Tap <svg class="share-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/></svg> Share, then <b>Add to Home Screen</b>.</p>
     <p data-install-android hidden><button class="link" type="button" data-install-btn>Install the app</button> for alerts and one-tap access.</p>
   </div>
 </div>`;
