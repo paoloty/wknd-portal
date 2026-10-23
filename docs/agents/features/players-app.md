@@ -59,6 +59,11 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Keys: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (+ `VAPID_SUBJECT`) from the environment, else a pair is made once and kept in site_settings. Changing keys means everyone turns notifications on again.
 - `/admin/app` shows how many accounts have notifications on; `push_on` / `push_off` in the activity log.
 
+## Share my stats (`/app/games/:id/share`, `views/app/share.js`)
+- The player's own stat card for a game they played in, in the site's templates (`SSC_FAMILIES` / `SSC_ACCENTS` exported from views/game.js; the PNG is the site's `/api/games/:id/my-stat-card.png`, 1080×1920, see-through). Opened from the game screen ("Share my stats" under Your line) and from the "Your stat card is ready" notification (`appLinkFor` maps the site's `?share=1` link here).
+- Template rail with live thumbnails (`?thumb=1`), variant chips (Marquee left/center/right, Premium left/right), colour swatches, stats to show (all-around / offense / defense; opens on what the line says), and a preview backdrop (game photo, your photo, team glow, none; preview only).
+- Share → the phone's share sheet with the PNG as a file (Instagram story, Messenger, Save Image). Save image → a download where the phone allows it (Android, desktop), the share sheet on iPhone. Both log through the site's `/api/games/:id/stat-card-action`; opening logs `share_open` for /admin/app. Premium templates save with a lock while the player owes (`shareCardsLocked`), with a link to Settle.
+
 ## Feed card buttons (Paolo, 2026-10-24)
 - Every feed card ends the same way: one full-width button (`.sx__act`), then the 🔥 / 💬 bar. A button does what its label says. Game: "Box score & recap" (ghost, opens the game). News: "Read" (ghost). Papawis: the Papawis tab's own action (`papawisAction`: Claim a slot / Join the waitlist / Cancel my spot / Pay deposit…, same rules and confirms, `initPapawis`), so a player joins straight from the feed; the card refreshes after. The rest of each card still opens its screen. The feed's Papawis card is built from `appPapawisRuns`, with the same overlapping faces as the tab.
 
@@ -144,4 +149,4 @@ Dates and times use `manilaFormat` (views/utils.js): shift to UTC+8 and format a
 - iPhone never updates the home-screen icon or name after install: keep the icon plain.
 
 ## Not built yet
-App versions of Share my stats / season sign-up / jersey, the Finals margin guess in the app, awards and picks results as feed cards.
+App versions of season sign-up / jersey, the Finals margin guess in the app, awards and picks results as feed cards.

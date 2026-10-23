@@ -180,7 +180,8 @@ export function appGamePage(g) {
     ${video ? `<div class="gx__video">${media(g.media)}</div>` : ''}
     ${gameHero(g, { band: video })}
     <div class="sx__body">${g.meta ? `<p class="gx__meta">${esc(g.meta)}</p>` : ''}
-      ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}</div>
+      ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
+      ${g.shareHref ? `<a class="btn btn--ghost gx__share" href="${esc(g.shareHref)}">${icons.share}<span>Share my stats</span></a>` : ''}</div>
   </section>
   ${recap}
   ${potg}

@@ -885,3 +885,27 @@ a.sx:active { transform: scale(.99); }
 .sx__act .btn--ghost { height: 36px; padding: 0; justify-content: flex-start; background: transparent; color: var(--amber-text); font-size: 14px; }
 .sx__act .btn--ghost::after { content: '›'; margin-left: -2px; font-size: 17px; line-height: 1; }
 .sx__act + .cx .cx__btns { padding-top: 10px; }
+
+/* Share my stats (views/app/share.js): the card on a 9:16 preview, then the choices. */
+.sh__stage { position: relative; margin: 6px auto 0; width: min(62vw, 280px); aspect-ratio: 9 / 16; border-radius: var(--r-card); overflow: hidden; background: #0d1119 center / cover no-repeat; box-shadow: var(--shadow); border: 1px solid var(--border); }
+.sh__card { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.sh__spin { position: absolute; left: 50%; top: 50%; margin: -9px 0 0 -9px; border-top-color: var(--amber); animation: spin .8s linear infinite; }
+.sh__line { margin: 10px 32px 0; text-align: center; font-size: 12px; color: var(--muted); }
+.sh__line b { color: var(--text); font-weight: 600; }
+.sh__tpls { gap: 8px; }
+.sh__tpl { flex: none; width: 76px; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.sh__thumb { position: relative; width: 76px; aspect-ratio: 9 / 16; border-radius: var(--r-in); overflow: hidden; background: #0d1119; box-shadow: inset 0 0 0 1px var(--border); }
+.sh__thumb img { width: 100%; height: 100%; object-fit: contain; }
+.sh__tpl.is-on .sh__thumb { box-shadow: inset 0 0 0 2px var(--amber); }
+.sh__tpl.is-on { color: var(--text); font-weight: 600; }
+.sh__tl { max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh__lock { position: absolute; right: 4px; top: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(10,14,22,.7); color: #fff; display: flex; align-items: center; justify-content: center; }
+.sh__vars { margin-top: 10px; }
+.sh__chip.is-on span { background: var(--amber); color: #111; }
+.sh__sws { display: flex; gap: 10px; flex-wrap: wrap; }
+.sh__sw { width: 30px; height: 30px; border-radius: 50%; background: var(--sw); box-shadow: 0 0 0 2px var(--bg); }
+.sh__sw.is-on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
+.sh .msg { margin-top: 14px; }
+.sh__acts { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.gx__share { margin-top: 10px; height: 44px; }
+.sh .chips { padding: 4px 16px; }

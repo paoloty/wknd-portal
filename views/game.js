@@ -57,11 +57,12 @@ const SSC_FAMILIES_ALL = [
   { key: 'bug', label: 'Corner bug', premium: true },
   { key: 'receipt', label: 'Receipt', premium: true },
 ].map(f => ({ def: f.key, variants: [[f.key, f.label]], ...f }));
-const SSC_FAMILIES = SSC_FAMILIES_ALL.filter(f => !f.hidden);
+// Also the players app's share screen (views/app/share.js).
+export const SSC_FAMILIES = SSC_FAMILIES_ALL.filter(f => !f.hidden);
 // variant key → [family key, family label, variant label or '' for single-variant families]
 const SSC_VARIANT_OF = Object.fromEntries(SSC_FAMILIES_ALL.flatMap(f =>
   f.variants.map(([k, l]) => [k, [f.key, f.label, f.variants.length > 1 ? l : '']])));
-const SSC_ACCENTS = [
+export const SSC_ACCENTS = [
   ['amber', '#f59332'], ['red', '#ef4444'], ['blue', '#3b82f6'], ['green', '#22c55e'],
   ['purple', '#a78bfa'], ['pink', '#f472b6'], ['cyan', '#22d3ee'],
 ];

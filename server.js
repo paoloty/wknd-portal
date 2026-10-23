@@ -6014,6 +6014,7 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId } from './views/app/feed.js';
 import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
+import { appSharePage } from './views/app/share.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
@@ -6038,7 +6039,7 @@ const APP_VER = (() => {
   let commit = 'dev';
   try { commit = readFileSync(path.join(__dirname, '.git/HEAD'), 'utf8').trim(); if (commit.startsWith('ref:')) commit = readFileSync(path.join(__dirname, '.git', commit.slice(5).trim()), 'utf8').trim(); } catch {}
   let newest = 0;
-  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js']) {
     try { newest = Math.max(newest, statSync(path.join(__dirname, f)).mtimeMs); } catch {}
   }
   return `${commit.slice(0, 7)}.${Math.floor(newest / 1000).toString(36)}`;
@@ -6737,6 +6738,34 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     // The hero's chips carry the kind of game and the day; the court goes under it.
     kicker: gameKicker(g), when: manilaDayLabel(gameYmd(g.date)), meta: court ? `📍 ${court}` : '',
     recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId,
+    shareHref: mine ? `/app/games/${encodeURIComponent(g.id)}/share?from=${back.tab}` : '',
+  }) });
+});
+// Share my stats (views/app/share.js): the player's own stat card for a game they played in.
+// The card is the site's /api/games/:id/my-stat-card.png; this screen is the app's editor.
+app.get('/app/games/:id/share', requireApp, (req, res) => {
+  const me = appMe(req);
+  const g = getGameById(req.params.id);
+  const back = { href: g ? `/app/games/${encodeURIComponent(g.id)}` : '/app/me', label: g ? 'Game' : 'Me', tab: APP_BACK[req.query.from] ? req.query.from : 'home' };
+  const stat = g && !g.under_review ? getGameDetailStats(g.id).find(s => s.player_id === me.playerId) : null;
+  if (!stat) return sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({ back, missing: true }) });
+  // The opening "stats to show" follows the line (as the site's editor): a defensive night
+  // doesn't open on points.
+  const n = k => Number(stat[k]) || 0;
+  const offense = n('ast') + n('fg3m'), defense = n('stl') + n('blk');
+  const focus = defense >= 4 && defense > offense ? 'defense' : offense >= 6 ? 'offense' : 'all';
+  const isA = stat.team_id === g.team_a_id;
+  const team = teamColor(stat.team_name || '');
+  const bgs = [
+    g.has_cover ? { key: 'game', label: 'Game photo', css: `background-image:url('/api/photo/${encodeURIComponent(g.id)}?w=640')` } : null,
+    { key: 'me', label: 'Your photo', css: `background-image:url('${playerPhotoUrl(me.playerId)}');background-position:center 20%` },
+    { key: 'team', label: 'Team glow', css: `background:radial-gradient(90% 70% at 50% 85%, ${team}88 0%, transparent 70%), linear-gradient(160deg, #1b2232, #0a0e16)` },
+    { key: 'none', label: 'None', css: '' },
+  ].filter(Boolean);
+  logApp(req, 'share_open', g.id);
+  sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({
+    back, focus, locked: shareCardsLocked(req), bgs,
+    game: { id: g.id, opp: titleCase(isA ? g.team_b_name : g.team_a_name), day: manilaDayLabel(gameYmd(g.date)), line: statLine(stat) },
   }) });
 });
 // Before the result: the preview, with the pick card while picks are open (or the pick made).
@@ -7257,6 +7286,8 @@ function appLinkFor(link = '') {
   if (/^\/picks/.test(path) || /^\/mvp/.test(path)) return '/app/picks';
   const gm = /^\/games\/([^/?#]+)/.exec(path);
   // A comment notification (#talk) opens the game at its comments.
+  // "Your stat card is ready" (?share=1) opens the app's share screen.
+  if (gm && /[?&]share=1/.test(link)) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}/share`; }
   if (gm) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}${/#talk$/.test(link) ? `?thread=${encodeURIComponent(r.id)}` : ''}`; }
   if (/^\/me\b/.test(path)) return '/app/me';
   if (/^\/settle-balance/.test(path)) return '/app/settle';

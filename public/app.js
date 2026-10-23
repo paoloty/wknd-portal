@@ -237,6 +237,7 @@
     initSettle();
     initBlocks();
     initThreads();
+    initShare();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
@@ -739,6 +740,70 @@
         }).then(function () { b.classList.remove('is-busy'); });
       };
     });
+  }
+
+  // ════ Share my stats (views/app/share.js) ════
+  // The card is the site's PNG (/api/games/:id/my-stat-card.png). Each template's thumbnail
+  // loads small (?thumb=1); the big card is fetched as a blob, kept per setting, and handed
+  // to the phone's share sheet as a file (iPhone: Instagram, Messenger, Save Image). Save
+  // downloads it where the phone can (Android, desktop) and uses the share sheet on iPhone,
+  // whose installed app can't download. Save / Share are logged as on the site.
+  var isIos = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function initShare() {
+    var root = $('[data-sh]'); if (!root || root._bound) return;
+    root._bound = true;
+    var game = root.getAttribute('data-game'), lk = root.getAttribute('data-locked') === '1' ? 1 : 0;
+    var st = { tpl: $('.sh__tpl.is-on', root).getAttribute('data-tpl'), accent: 'amber', focus: root.getAttribute('data-focus') };
+    var img = $('[data-sh-img]', root), spin = $('[data-sh-spin]', root), msg = $('[data-sh-msg]', root);
+    var shareBtn = $('[data-sh-share]', root), saveBtn = $('[data-sh-save]', root), lockMsg = $('[data-sh-lockmsg]', root);
+    var cache = {}, current = null;
+    var url = function (tpl, thumb) {
+      return '/api/games/' + encodeURIComponent(game) + '/my-stat-card.png?layout=gauges&align=' + tpl + '&focus=' + st.focus + '&accent=' + st.accent +
+        '&gauges=1&hidezeros=0&badge=0&lk=' + lk + (thumb ? '&thumb=1' : '');
+    };
+    var thumbs = function () { $$('[data-thumb]', root).forEach(function (t) { t.src = url(t.getAttribute('data-thumb'), true); }); };
+    var say = function (text) { msg.textContent = text || ''; msg.hidden = !text; };
+    function render() {
+      var k = url(st.tpl, false);
+      if (lockMsg) lockMsg.hidden = !$('.sh__tpl.is-on[data-premium]', root);
+      say('');
+      var show = function (c) { if (k !== url(st.tpl, false)) return; current = c; img.src = c.url; img.hidden = false; spin.hidden = true; shareBtn.disabled = saveBtn.disabled = false; };
+      if (cache[k]) return show(cache[k]);
+      spin.hidden = false; shareBtn.disabled = saveBtn.disabled = true;
+      fetch(k, { credentials: 'same-origin' }).then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } if (!r.ok) throw 'Couldn\'t make the card. Try again.'; return r.blob(); })
+        .then(function (b) { cache[k] = { blob: b, url: URL.createObjectURL(b) }; show(cache[k]); },
+          function (e) { if (k !== url(st.tpl, false)) return; spin.hidden = true; say(typeof e === 'string' ? e || '' : 'No connection. The card needs the internet.'); });
+    }
+    var log = function (action) {
+      fetch('/api/games/' + encodeURIComponent(game) + '/stat-card-action', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, template: st.tpl, focus: st.focus, accent: st.accent }) }).catch(function () {});
+    };
+    var fileOf = function () { return new File([current.blob], 'wknd-stats-' + game + '.png', { type: 'image/png' }); };
+    var canShareFile = function () { try { return !!(navigator.canShare && navigator.canShare({ files: [fileOf()] })); } catch (e) { return false; } };
+    var sheet = function (action) {
+      navigator.share({ files: [fileOf()] }).then(function () { log(action); }, function (e) { if (e && e.name !== 'AbortError') say('Sharing didn\'t work. Try Save image instead.'); });
+    };
+    var download = function () {
+      var a = document.createElement('a'); a.href = current.url; a.download = 'wknd-stats-' + game + '.png';
+      document.body.appendChild(a); a.click(); a.remove(); log('save'); toast('Saved to your phone');
+    };
+    shareBtn.addEventListener('click', function () { if (!current) return; if (canShareFile()) sheet('share'); else download(); });
+    saveBtn.addEventListener('click', function () { if (!current) return; if (isIos && canShareFile()) sheet('save'); else download(); });
+    root.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('button'); if (!b || b === shareBtn || b === saveBtn) return;
+      var on = function (sel) { $$(sel, root).forEach(function (x) { x.classList.toggle('is-on', x === b); }); };
+      if (b.hasAttribute('data-tpl')) {
+        on('.sh__tpl'); var fam = b.getAttribute('data-fam');
+        $$('[data-vars]', root).forEach(function (v) { v.hidden = v.getAttribute('data-vars') !== fam; });
+        var vars = $('[data-vars="' + fam + '"] .is-on', root);
+        st.tpl = vars ? vars.getAttribute('data-variant') : b.getAttribute('data-tpl'); render();
+      } else if (b.hasAttribute('data-variant')) {
+        $$('[data-variant]', b.parentNode).forEach(function (x) { x.classList.toggle('is-on', x === b); }); st.tpl = b.getAttribute('data-variant'); render();
+      } else if (b.hasAttribute('data-accent')) { on('.sh__sw'); st.accent = b.getAttribute('data-accent'); thumbs(); render(); }
+      else if (b.hasAttribute('data-focus')) { on('[data-focus]'); st.focus = b.getAttribute('data-focus'); thumbs(); render(); }
+      else if (b.hasAttribute('data-bg')) { on('[data-bg]'); $('[data-sh-stage]', root).setAttribute('style', b.getAttribute('data-css') || ''); }
+    });
+    thumbs(); render();
   }
 
   // ════ Comments (views/app/comments.js) ════

@@ -22,11 +22,12 @@ const EVENT = {
   img_failed: (d) => `couldn't load a picture${d ? ` (${d})` : ''}`,
   push_on: () => 'turned on notifications',
   comment: () => 'commented',
+  share_open: () => 'opened Share my stats',
   push_off: () => 'turned off notifications',
   passkey_added: (d) => `turned on Face ID / fingerprint sign-in${d ? ` (${d})` : ''}`,
   passkey_removed: () => 'removed a Face ID / fingerprint sign-in',
 };
-const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray', photo_failed: 'red', img_failed: 'amber', push_on: 'green', push_off: 'gray', comment: 'blue', passkey_added: 'green', passkey_removed: 'gray' };
+const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray', photo_failed: 'red', img_failed: 'amber', push_on: 'green', push_off: 'gray', comment: 'blue', share_open: 'blue', passkey_added: 'green', passkey_removed: 'gray' };
 
 // rows: [{ regId, playerId, name, team, color, email, hasAccess, s (summary row | null),
 //          setup: { photo, details } }]
