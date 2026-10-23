@@ -296,6 +296,8 @@ html.iw-is-ios .iw-only-ios, html.iw-is-android .iw-only-android { display: inli
 .iw-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 8px; background: var(--surface-2); color: #2f80ed; font-weight: 600; white-space: nowrap; }
 .iw-hint { color: var(--win) !important; font-weight: 600; }
 .iw-note { padding: 12px 14px; border-radius: 14px; background: rgba(245,147,50,.12); color: var(--text); font-size: 14px; line-height: 1.45; }
+.iw-note--plain { background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
+.iw-note--plain b { color: var(--text); }
 .iw-arrow { position: fixed; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%); width: 44px; height: 44px; border-radius: 50%; background: var(--amber); color: #111; display: none; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(245,147,50,.45); }
 html.iw-ios .iw-arrow { display: flex; }
 .iw-arrow .iw-glyph { width: 22px; height: 22px; vertical-align: 0; }

@@ -19,6 +19,11 @@ Phone-first, players-only app served by this same server: same accounts, session
 ## Install wall
 - On a phone the app only runs installed (`app_require_install`, default on, switch on `/admin/app`). In a phone browser, or Messenger / Facebook / Instagram's in-app browser (which can't install), `views/app/layout.js` `installWallHtml()` replaces the app with install steps for that case: iPhone Safari (Share → Add to Home Screen), Android (Chrome's install prompt behind a button, manual steps as fallback), in-app (open in Safari/Chrome, Copy link). A computer's browser is never walled. Detection runs in a head script before the first paint (`html.needs-install` + `iw-ios` / `iw-android` / `iw-inapp`); it covers sign-in too, since the installed iPhone app has its own sign-in. Behind the wall, app.js doesn't fetch tabs ahead or ping usage.
 
+## Home-screen icons from site pages
+- iPhone's "Add to Home Screen" saves whatever page is open. For a signed-in player who can use the app, every site page (server.js `renderPage`, `APP_HOME_TAGS`) carries the app's manifest + home-screen tags and a head script: launched from the home screen, a site page goes straight to `/app`. Fans and guests get none of it, so their site bookmarks stay the site. More → "Open full site" links to `/?from=app`, which lets that window browse the site for the visit (sessionStorage `wknd-site`).
+- On a phone's browser those players also get a "Use the WKND app" bar (`appUseBar`), hidden inside the installed app and closable for the visit.
+- Icons added before this can't be changed remotely; the install wall tells players to remove and re-add one that opens the website.
+
 ## Sign-in
 - `POST /app/login`: the site's own checks (`getRegistrationByEmail`, `checkPlayerPassword`, `signInRegistration`), logged to the admin log with `via`.
 - Email code: `POST /app/login/code` → 6 digits, kept hashed in memory (`appCodes`), 10 min, 5 tries, one email a minute, same response whether or not the email exists. `POST /app/login/code/verify` signs in. Works for approved accounts with no password yet. Codes are typed in the app (not links), because on iPhone an email link opens Safari, not the installed app.

@@ -2238,6 +2238,30 @@ function regMiniBanner() {
 // Dismissal lives in the server session (not localStorage) so it clears itself on
 // logout — session.destroy() wipes it — and reappears on the next fresh login even at
 // the same balance, rather than staying silenced forever once closed once.
+// Players app on the site (see the /app section): for a signed-in player who can use the
+// app, site pages carry the app's home-screen tags, so whatever page they "Add to Home
+// Screen" from, the icon opens /app — fans and guests keep plain site bookmarks. Launched
+// from the home screen, a site page goes straight to /app; ?from=app (More → "Open full
+// site") lets that window browse the site for the rest of the visit.
+const APP_HOME_TAGS = `<link rel="manifest" href="/app/manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="WKND">
+  <script>(function(){try{var sa=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;if(!sa)return;if(/[?&]from=app(&|$)/.test(location.search))sessionStorage.setItem('wknd-site','1');if(sessionStorage.getItem('wknd-site'))return;location.replace('/app');}catch(e){}})();</script>`;
+// On a phone's browser: a slim bar pointing to the app (it opens the install steps there).
+// Not shown inside the installed app (More → Open full site); closed for the visit with ✕.
+function appUseBar() {
+  return `<div class="balance-bar rf-bar" id="app-bar" hidden>
+  <div class="balance-bar__inner">
+    <span class="balance-bar__text"><span>📱 Use the <strong>WKND app</strong> for your games, team and stats.</span></span>
+    <a href="/app" class="balance-bar__cta">Open the app</a>
+    <button class="balance-bar__close" id="app-bar-close" type="button" aria-label="Dismiss">✕</button>
+  </div>
+</div>
+<script>(function(){var b=document.getElementById('app-bar');try{if(sessionStorage.getItem('wknd-app-bar')||matchMedia('(display-mode: standalone)').matches||navigator.standalone===true)return;}catch(e){}b.hidden=false;
+document.getElementById('app-bar-close').addEventListener('click',function(){b.remove();try{sessionStorage.setItem('wknd-app-bar','1');}catch(e){}});})();</script>`;
+}
+
 function balanceReminderBar(amount) {
   return `<div class="balance-bar" id="balance-bar" data-amount="${amount}">
   <div class="balance-bar__inner">
@@ -2551,8 +2575,13 @@ function renderPage(req, opts) {
 
   const impersonatingHtml = req.session?.impersonating ? impersonationBanner(req.session.impersonatingPlayerName || 'this player') : '';
 
+  // Players app: home-screen tags + the "Use the app" bar on phones (see APP_HOME_TAGS).
+  const appPlayer = isPlayer && !!req.session?.playerPlayerId && !req.session?.impersonating && appAccess(req) === 'ok';
+  if (appPlayer) metaTags = APP_HOME_TAGS + '\n  ' + metaTags;
+  const appBarHtml = appPlayer && !focused && /iPhone|iPad|iPod|Android/i.test(req.get('user-agent') || '') ? appUseBar() : '';
+
   const raffleBarHtml = !focused && opts.currentPath === '/' ? raffleHomeBar() : '';
-  const body = impersonatingHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
+  const body = impersonatingHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only

@@ -130,6 +130,7 @@ function installWallHtml() {
   </div>
 
   <div class="iw-note"><b>Already added it?</b> Close this and open the <b>WKND</b> icon on your home screen. The app doesn't work from the browser or Messenger.</div>
+  <div class="iw-note iw-note--plain"><b>Icon opens the website instead?</b> It was added from another page. Press and hold it, tap <b>Remove App</b> (or <b>Remove</b>), then add it again from this screen.</div>
   <div class="iw-arrow iw-only-ios-browser" aria-hidden="true">${shareGlyph}</div>
 </section>`;
 }

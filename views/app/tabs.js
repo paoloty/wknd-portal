@@ -75,7 +75,7 @@ export function appMorePage({ me, rows }) {
       ${[['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<label><input type="radio" name="theme" value="${v}"><span>${l}</span></label>`).join('')}
     </div></div>
     <a class="cell" href="/app/setup/details"><span class="ico">${icons.user}</span><span class="cell__t">Edit profile</span>${chev}</a>
-    <a class="cell" href="/"><span class="ico">${icons.globe}</span><span class="cell__t">Open full site</span>${icons.ext}</a>
+    <a class="cell" href="/?from=app"><span class="ico">${icons.globe}</span><span class="cell__t">Open full site</span>${icons.ext}</a>
   </div>
   <form method="post" action="/app/logout" style="margin-top:16px">
     <div class="group"><button class="cell" type="submit" style="justify-content:center"><span style="color:var(--danger);font-weight:600">Log out</span></button></div>
