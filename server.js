@@ -5962,8 +5962,8 @@ import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
 import { appHomePage } from './views/app/home.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
-import { appTeamPage, appMePage, appPapawisPage, appMorePage, appNotificationsPage } from './views/app/tabs.js';
-import { updateRegistrationProfile, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
+import { appTeamPage, appMePage, appPapawisPage, appMorePage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
 import { adminAppBody } from './views/admin/app.js';
 import { appSignInCodeEmail } from './lib/mailer.js';
 
@@ -6390,13 +6390,35 @@ app.get('/app/more', requireApp, (req, res) => {
 });
 
 app.get('/app/notifications', requireApp, (req, res) => {
+  sendApp(res, { title: 'Notifications · WKND', tab: 'more', body: appNotificationsPage() });
+});
+
+// Pages for lazy lists (views/app/layout.js lazyList): JSON { html, next }. Signed-out or
+// no access answers 401 so the list shows "couldn't load" instead of a sign-in page.
+function requireAppData(req, res, next) {
+  if (appAccess(req) !== 'ok') return res.status(401).json({ error: 'Sign in again.' });
+  res.set('Cache-Control', 'private, no-store');
+  next();
+}
+const APP_PAGE_SIZE = 20;
+
+// Opening the list marks everything read (as the site's bell does). opened = when that
+// happened, carried in the next-page URLs, so rows it just marked still show their dot.
+app.get('/app/notifications/items', requireAppData, (req, res) => {
   const pid = req.session.playerPlayerId;
-  const items = getNotificationsForPlayer(pid, 30).map(n => ({
-    title: n.title, body: n.body, href: n.link || '', unread: !n.read_at,
-    when: new Date(n.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' }),
-  }));
-  if (items.some(i => i.unread)) markNotificationsRead(pid);
-  sendApp(res, { title: 'Notifications · WKND', tab: 'more', body: appNotificationsPage({ items }) });
+  const m = /^(\d+):(.+)$/.exec(String(req.query.before || ''));
+  const before = m ? { at: Number(m[1]), id: m[2] } : null;
+  let opened = Number(req.query.opened) || 0;
+  const rows = getNotificationsPage(pid, { before, limit: APP_PAGE_SIZE });
+  if (!before) { opened = Date.now(); markNotificationsRead(pid); }
+  const when = ts => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+  const html = appNotificationRows(rows.map(n => ({
+    title: n.title, body: n.body, when: when(n.created_at),
+    unread: before ? (!!n.read_at && n.read_at >= opened) : !n.read_at,
+  })));
+  const last = rows[rows.length - 1];
+  const next = rows.length === APP_PAGE_SIZE ? `/app/notifications/items?before=${last.created_at}:${encodeURIComponent(last.id)}&opened=${opened}` : null;
+  res.json({ html, next });
 });
 
 // ── Admin: who's using the app ──

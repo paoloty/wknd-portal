@@ -1,7 +1,7 @@
 // The other four tabs and the notifications list. My Team and Me are read-only views of
 // data the site already has. Nothing here links out to the site except "Open full site"
 // in More (layout.js isAppHref): site-only things show as information.
-import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag } from './layout.js';
+import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag, lazyList } from './layout.js';
 
 const lt = (title, me) => `<header class="lt"><h1>${esc(title)}</h1>${me ? `<a href="/app/me" aria-label="Me">${appAvatar({ ...me, badge: me.unread })}</a>` : ''}</header>`;
 
@@ -83,13 +83,18 @@ export function appMorePage({ me, rows }) {
   <p class="foot-note" style="text-align:center;margin-top:14px">Signed in as ${esc(me.email)}</p>`;
 }
 
-// items: [{ title, body, when, unread }]
-export function appNotificationsPage({ items }) {
+// The screen is just the shell; the rows load through /app/notifications/items.
+export function appNotificationsPage() {
   return `
   <div class="navbar"><a class="navbar__back" href="/app/more">${backChev}More</a><span class="navbar__title">Notifications</span><span></span></div>
-  ${items.length ? `<div class="group" style="margin-top:8px">${items.map(n => `
+  <div style="margin-top:8px">${lazyList({ src: '/app/notifications/items', empty: 'Nothing yet.' })}</div>`;
+}
+
+// items: [{ title, body, when, unread }] — one page of rows for the lazy list.
+export function appNotificationRows(items) {
+  return items.map(n => `
     <div class="cell">
       <span class="dot" style="--c:${n.unread ? 'var(--amber)' : 'transparent'}"></span>
       <span class="cell__t">${esc(n.title)}${n.body ? `<small>${esc(n.body)}</small>` : ''}<small>${esc(n.when)}</small></span>
-    </div>`).join('')}</div>` : '<div class="empty" style="margin-top:8px">Nothing yet.</div>'}`;
+    </div>`).join('');
 }

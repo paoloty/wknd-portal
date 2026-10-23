@@ -100,6 +100,8 @@
       });
     }
 
+    initLazyLists();
+
     // Install hint (Home): iPhone gets the Share steps, Android the real prompt
     var card = $('[data-install-card]');
     if (card && !standalone) {
@@ -109,6 +111,49 @@
       if (ib) ib.addEventListener('click', function () { if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; card.hidden = true; } });
     }
   }
+  // ════ Lazy lists (views/app/layout.js lazyList) ════
+  // The first page loads as soon as the screen is up; the next one when the bottom of the
+  // list comes within ~600px. Each answer is { html, next }.
+  var lazyObservers = [];
+  function initLazyLists() {
+    lazyObservers.forEach(function (o) { o.disconnect(); }); lazyObservers = [];
+    $$('[data-lazy-src]').forEach(function (box) {
+      var items = $('.lazy__items', box), skel = $('.lazy__skel', box), end = $('.lazy__end', box);
+      var next = box.getAttribute('data-lazy-src'), busy = false;
+      var nearBottom = function () { return end.getBoundingClientRect().top < window.innerHeight + 600; };
+      var load = function () {
+        if (busy || !next) return;
+        busy = true;
+        fetch(next, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+          .then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw 0; } if (!r.ok) throw r.status; return r.json(); })
+          .then(function (j) {
+            busy = false; next = j.next || null;
+            if (j.html) { items.insertAdjacentHTML('beforeend', j.html); items.hidden = false; }
+            skel.hidden = true;
+            if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
+            end.textContent = '';
+            if (next && (!io || nearBottom())) { if (io) load(); else showMore(); }
+          })
+          .catch(function (e) {
+            busy = false; if (e === 0) return;
+            skel.hidden = true;
+            end.innerHTML = 'Couldn\'t load. <button type="button">Try again</button>';
+            $('button', end).addEventListener('click', function () { end.textContent = ''; load(); });
+          });
+      };
+      // No IntersectionObserver (very old phones): a "Show more" button instead.
+      var showMore = function () {
+        end.innerHTML = '<button type="button">Show more</button>';
+        $('button', end).addEventListener('click', function () { end.textContent = ''; load(); });
+      };
+      var io = 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
+        if (entries.some(function (en) { return en.isIntersecting; })) load();
+      }, { rootMargin: '0px 0px 600px 0px' }) : null;
+      if (io) { io.observe(end); lazyObservers.push(io); }
+      load();
+    });
+  }
+
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredInstall = e; initInstallOnly(); });
   function initInstallOnly() {
     var card = $('[data-install-card]');
@@ -119,9 +164,10 @@
   // In-app links are fetched and swapped in. Screens are kept in memory for this visit
   // only (a reload or log out clears them): shown at once when tapped again, then
   // refreshed from the server in the background. The tabs are fetched ahead once the
-  // first screen has loaded, and any other link starts loading on touch.
+  // first screen has loaded, and any other link starts loading on touch. Screens must be
+  // safe to fetch ahead: anything with a side effect (like marking notifications read)
+  // belongs in a lazy list's data request, which only runs once the screen is shown.
   var pages = {}, inflight = {}, navId = 0;
-  var NO_PREFETCH = /^\/app\/notifications/; // opening it marks notifications read
   var urlOf = function (u) { var x = new URL(u, location.href); return x.pathname + x.search; };
   var inApp = function (path) { return /^\/app(\/|$|\?)/.test(path) && !/^\/app\/(login|logout|sw\.js|manifest|version|offline|ping)/.test(path); };
   var eligible = function (a) {
@@ -143,7 +189,7 @@
     p.then(function () { delete inflight[url]; }, function () { delete inflight[url]; });
     return p;
   }
-  var prefetch = function (url) { if (!pages[url] && !inflight[url] && !NO_PREFETCH.test(url) && navigator.onLine) fetchPage(url).catch(function () {}); };
+  var prefetch = function (url) { if (!pages[url] && !inflight[url] && navigator.onLine) fetchPage(url).catch(function () {}); };
 
   var bar = null, barTimer = null;
   function progress(on) {
@@ -172,7 +218,11 @@
   var currentUrl = urlOf(location.href);
 
   // dir: 'push' | 'pop' | 'tab' animates the swap; none (a background refresh) swaps quietly.
+  // An animated swap happens a frame later (after the old screen is captured), so a quiet
+  // swap waits for it — otherwise the fresh screen would be covered by the stale one.
+  var pendingSwap = null;
   function render(page, push, keepScroll, dir) {
+    if (pendingSwap && !dir) { pendingSwap.then(function () { render(page, push, keepScroll, dir); }); return; }
     var doc = new DOMParser().parseFromString(page.html, 'text/html');
     var newVer = (doc.querySelector('meta[name="app-ver"]') || {}).content || '';
     if (newVer && ver && newVer !== ver) { location.href = page.url; return; } // new deploy: load it properly
@@ -208,6 +258,8 @@
     if (document.startViewTransition) {
       root.setAttribute('data-nav', dir);
       var t = document.startViewTransition(swap);
+      var done = function () { if (pendingSwap === p) pendingSwap = null; };
+      var p = pendingSwap = t.updateCallbackDone.then(done, done);
       t.finished.then(function () { root.removeAttribute('data-nav'); }, function () { root.removeAttribute('data-nav'); });
     } else {
       // Older phones: animate the new screen in with CSS.

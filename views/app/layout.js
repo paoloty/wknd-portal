@@ -41,6 +41,19 @@ export const icons = {
 // a "Soon" pill, and "Open full site" in More is the one way out.
 export const isAppHref = h => /^\/app(\/|$|\?)/.test(String(h || ''));
 export const soonTag = '<span class="tag-muted">Soon</span>';
+// A list that loads itself: the screen arrives with placeholder rows and public/app.js
+// fetches src, which answers JSON { html, next } — rows to append and the URL of the next
+// page (null at the end). More pages load as the player scrolls near the bottom. Use it for
+// anything long (notifications now, the feed later) so the screen opens at once.
+export function lazyList({ src, empty = 'Nothing yet.', rows = 6 }) {
+  const skel = Array.from({ length: rows }, () => '<div class="cell skel-row"><span class="skel skel--dot"></span><span class="cell__t"><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></span></div>').join('');
+  return `<div class="lazy" data-lazy-src="${esc(src)}" data-lazy-empty="${esc(empty)}">
+    <div class="group lazy__items" hidden></div>
+    <div class="group lazy__skel" aria-hidden="true">${skel}</div>
+    <div class="lazy__end" aria-live="polite"></div>
+  </div>`;
+}
+
 export const chev = '<svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5l-5 5"/></svg>';
 export const backChev = '<svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2 2 10l8 8"/></svg>';
 
