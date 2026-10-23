@@ -152,34 +152,77 @@
     else if (bar) { bar.remove(); bar = null; }
   }
 
-  function render(page, push, keepScroll) {
+  // Which way a move goes, like an iPhone app: between tabs a quick cross-fade; into a
+  // screen below a tab (notifications, setup) a slide in from the right; back out a slide
+  // the other way. Setup steps slide forward and back in their own order.
+  var ROOTS = ['/app', '/app/team', '/app/me', '/app/papawis', '/app/more'];
+  var STEPS = ['/app/setup/photo', '/app/setup/details', '/app/setup/season', '/app/setup/done'];
+  var place = function (url) {
+    var path = url.split('?')[0].replace(/\/$/, '') || '/app';
+    if (ROOTS.indexOf(path) >= 0) return { depth: 0, step: 0 };
+    return { depth: 1, step: Math.max(0, STEPS.indexOf(path)) };
+  };
+  var direction = function (from, to) {
+    var a = place(from), b = place(to);
+    if (a.depth !== b.depth) return b.depth > a.depth ? 'push' : 'pop';
+    if (a.step !== b.step) return b.step > a.step ? 'push' : 'pop';
+    return 'tab';
+  };
+  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var currentUrl = urlOf(location.href);
+
+  // dir: 'push' | 'pop' | 'tab' animates the swap; none (a background refresh) swaps quietly.
+  function render(page, push, keepScroll, dir) {
     var doc = new DOMParser().parseFromString(page.html, 'text/html');
     var newVer = (doc.querySelector('meta[name="app-ver"]') || {}).content || '';
     if (newVer && ver && newVer !== ver) { location.href = page.url; return; } // new deploy: load it properly
+    var newMain = doc.querySelector('main.app');
+    if (!$('main.app') || !newMain) { location.href = page.url; return; }
     var y = window.scrollY;
     if (push) {
       try { history.replaceState(Object.assign({}, history.state, { y: y }), ''); } catch (e) {}
       history.pushState({ app: 1 }, '', page.url);
     }
-    document.title = doc.title;
-    var main = $('main.app'), newMain = doc.querySelector('main.app');
-    if (!main || !newMain) { location.href = page.url; return; }
-    main.replaceWith(document.importNode(newMain, true));
-    var nav = $('nav.tabbar'), newNav = doc.querySelector('nav.tabbar');
-    if (nav) nav.remove();
-    if (newNav) document.body.insertBefore(document.importNode(newNav, true), $('main.app').nextSibling);
-    $$('.update-bar').forEach(function (b) { b.remove(); });
-    if (!keepScroll) window.scrollTo(0, push ? 0 : ((history.state && history.state.y) || 0));
-    else window.scrollTo(0, y);
-    loadedAt = Date.now();
-    initPage();
+    currentUrl = page.url;
+    // The tab bar holds still only between two screens that both have it; otherwise it
+    // moves with the screen it belongs to (setup has none), like an iPhone app.
+    var oldNav = $('nav.tabbar'), keepBar = !!oldNav && !!doc.querySelector('nav.tabbar');
+    if (oldNav && !keepBar) oldNav.style.viewTransitionName = 'none';
+    var swap = function () {
+      document.title = doc.title;
+      $('main.app').replaceWith(document.importNode(newMain, true));
+      var nav = $('nav.tabbar'), newNav = doc.querySelector('nav.tabbar');
+      if (nav) nav.remove();
+      if (newNav) {
+        var added = document.body.insertBefore(document.importNode(newNav, true), $('main.app').nextSibling);
+        if (!keepBar) { added.style.viewTransitionName = 'none'; setTimeout(function () { added.style.viewTransitionName = ''; }, 400); }
+      }
+      $$('.update-bar').forEach(function (b) { b.remove(); });
+      if (!keepScroll) window.scrollTo(0, push ? 0 : ((history.state && history.state.y) || 0));
+      else window.scrollTo(0, y);
+      loadedAt = Date.now();
+      initPage();
+    };
+    if (!dir || reducedMotion.matches) return swap();
+    var root = document.documentElement;
+    if (document.startViewTransition) {
+      root.setAttribute('data-nav', dir);
+      var t = document.startViewTransition(swap);
+      t.finished.then(function () { root.removeAttribute('data-nav'); }, function () { root.removeAttribute('data-nav'); });
+    } else {
+      // Older phones: animate the new screen in with CSS.
+      swap();
+      var m = $('main.app'); m.classList.add('enter-' + dir);
+      m.addEventListener('animationend', function () { m.classList.remove('enter-' + dir); }, { once: true });
+    }
   }
 
   function go(url, push) {
     var id = ++navId;
+    var dir = direction(currentUrl, url);
     var cached = pages[url];
     if (cached && Date.now() - cached.at < 10 * 60 * 1000) {
-      render(cached, push);
+      render(cached, push, false, dir);
       // Refresh in the background; swap again only if it changed and nothing's being typed.
       if (navigator.onLine) fetchPage(url).then(function (fresh) {
         if (id === navId && fresh.html !== cached.html && !dirty()) render(fresh, false, true);
@@ -187,7 +230,7 @@
       return;
     }
     progress(true);
-    fetchPage(url).then(function (page) { if (id === navId) { progress(false); render(page, push); } })
+    fetchPage(url).then(function (page) { if (id === navId) { progress(false); render(page, push, false, dir); } })
       .catch(function (e) { progress(false); if (id === navId) location.href = (e && e.reload) || url; });
   }
 

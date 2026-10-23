@@ -226,6 +226,33 @@ button.cell { width: 100%; text-align: left; }
 .tab:active svg { transform: scale(0.9); }
 
 /* In-app navigation (public/app.js): a thin amber bar while a screen is on its way. */
+/* Screen-to-screen motion (public/app.js render): push slides the new screen in from the
+   right while the old one drifts left and dims; pop is the reverse; tabs cross-fade. The tab
+   bar has its own transition name so it stays put. Phones without view transitions get
+   the .enter-* animations on the new screen instead. Reduce Motion turns all of it off. */
+.tabbar { view-transition-name: tabbar; }
+::view-transition-group(tabbar), ::view-transition-old(tabbar), ::view-transition-new(tabbar) { animation: none; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); animation-fill-mode: both; }
+html[data-nav="push"]::view-transition-old(root) { animation-name: nav-out-left; }
+html[data-nav="push"]::view-transition-new(root) { animation-name: nav-in-right; box-shadow: -12px 0 30px rgba(0,0,0,.25); }
+html[data-nav="pop"]::view-transition-old(root)  { animation-name: nav-out-right; z-index: 2; box-shadow: -12px 0 30px rgba(0,0,0,.25); }
+html[data-nav="pop"]::view-transition-new(root)  { animation-name: nav-in-left; }
+html[data-nav="tab"]::view-transition-old(root)  { animation: nav-fade-out .16s ease both; }
+html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s ease both; }
+@keyframes nav-in-right  { from { transform: translateX(100%); } }
+@keyframes nav-out-left  { to { transform: translateX(-28%); opacity: .55; } }
+@keyframes nav-out-right { to { transform: translateX(100%); } }
+@keyframes nav-in-left   { from { transform: translateX(-28%); opacity: .55; } }
+@keyframes nav-fade-out  { to { opacity: 0; } }
+@keyframes nav-fade-in   { from { opacity: 0; } }
+.app.enter-push { animation: nav-in-right .3s cubic-bezier(.2, .8, .2, 1) both; }
+.app.enter-pop  { animation: nav-in-left .3s cubic-bezier(.2, .8, .2, 1) both; }
+.app.enter-tab  { animation: nav-fade-in .16s ease both; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  .app.enter-push, .app.enter-pop, .app.enter-tab { animation: none; }
+}
+
 .nav-progress { position: fixed; z-index: 40; top: 0; left: 0; height: 3px; width: 100%; background: var(--amber); transform-origin: left; animation: navp 1.4s ease-out forwards; box-shadow: 0 0 8px rgba(245,147,50,.6); }
 @keyframes navp { 0% { transform: scaleX(0.05); } 60% { transform: scaleX(0.7); } 100% { transform: scaleX(0.92); } }
 
