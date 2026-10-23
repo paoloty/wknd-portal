@@ -6504,6 +6504,7 @@ const feedWhen = ms => manilaFormat(ms, { hour: 'numeric', minute: '2-digit' });
 
 function appAnnItem(a, pinned = false) {
   return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(a.created_at), pinned, when: pinned ? feedDay(a.created_at) : feedWhen(a.created_at),
+    by: a.created_by && a.created_by !== 'WKND' ? a.created_by : 'WKND League',
     title: a.title, body: a.body, yt: ytId(a.youtube_url),
     media: a.has_image ? sizedSrc(`/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}`) : {} };
 }
@@ -6561,13 +6562,16 @@ function appFeedItem(it, me, extra) {
   if (it.kind === 'post') {
     const p = it.src;
     const text = String(p.body_html || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-    return { kind: 'post', day, when: feedWhen(it.at), title: p.title, excerpt: text.slice(0, 220), href: `/app/posts/${encodeURIComponent(p.slug)}` };
+    // The article's first picture (a linked one; pasted data: images are too big for a card).
+    const img = (/<img[^>]+src=["']((?:https?:\/\/|\/)[^"']+)["']/i.exec(p.body_html || '') || [])[1] || '';
+    return { kind: 'post', day, when: feedWhen(it.at), title: p.title, excerpt: text.slice(0, 220), img, href: `/app/posts/${encodeURIComponent(p.slug)}` };
   }
   if (it.kind === 'papawis') {
     const r = it.src;
     return { kind: 'papawis', day, when: feedWhen(it.at), title: r.title || 'Papawis run', runDay: manilaDayLabel(String(r.date)),
       time: r.time_label || formatTimeRange(r.start_time, r.end_time) || '', place: r.location || '',
-      confirmed: Number(r.confirmed_count) || 0, max: Number(r.max_slots) || 0, waitlist: Number(r.waitlist_count) || 0 };
+      confirmed: Number(r.confirmed_count) || 0, max: Number(r.max_slots) || 0, waitlist: Number(r.waitlist_count) || 0,
+      faces: (extra.runFaces[r.id] || []).slice(0, 5) };
   }
   const g = it.src;
   const stats = getGameDetailStats(g.id);
@@ -6588,7 +6592,17 @@ app.get('/app/feed/items', requireAppData, (req, res) => {
   const from = m ? all.findIndex(it => it.at < Number(m[1]) || (it.at === Number(m[1]) && String(it.id).localeCompare(m[2]) < 0)) : 0;
   const page = from < 0 ? [] : all.slice(from, from + APP_FEED_PAGE);
   const gameIds = page.filter(it => it.kind === 'game').map(it => it.id);
-  const extra = { commentsOn: getSetting('comments_enabled', '0') === '1', comments: getGameCommentCounts(gameIds), fire: getGameReactionCounts(gameIds) };
+  const extra = { commentsOn: getSetting('comments_enabled', '0') === '1', comments: getGameCommentCounts(gameIds), fire: getGameReactionCounts(gameIds), runFaces: {} };
+  // Who's in on the page's Papawis runs: initials in their team colour, first to sign up first.
+  const runIds = page.filter(it => it.kind === 'papawis').map(it => it.id);
+  if (runIds.length) {
+    const teams = getAllTeams(), byPlayer = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+    for (const su of getPapawisSignupsForRuns(runIds).filter(x => x.status === 'confirmed').sort((x, y) => (x.signed_up_at || 0) - (y.signed_up_at || 0))) {
+      const name = su.player_id ? displayPlayerName(su.player_name || '') : String(su.guest_name || 'Guest');
+      const pl = byPlayer[su.player_id];
+      (extra.runFaces[su.game_id] ||= []).push({ ini: name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(), color: pl?.team_id ? teamColorById(teams, pl.team_id) : 'var(--subtle)' });
+    }
+  }
   const items = page.map(it => appFeedItem(it, me, extra));
   const html = appFeedRows(items, String(req.query.day || ''));
   const last = page[page.length - 1];

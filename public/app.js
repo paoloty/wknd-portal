@@ -38,12 +38,13 @@
       imgReported[src] = 1;
       fetch('/app/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', keepalive: true, body: JSON.stringify({ imgFailed: src }) }).catch(function () {});
     }
-    var box = img.closest('.media');
+    // A game's hero keeps its dark gradient and score; a news picture's box goes.
+    var box = img.closest('.media, .nx__pic');
     if (box && !box.querySelector('.media__play')) box.remove(); else img.remove();
   }
-  document.addEventListener('error', function (e) { var t = e.target; if (t && t.tagName === 'IMG' && t.closest && t.closest('.media')) imgFailed(t); }, true);
+  document.addEventListener('error', function (e) { var t = e.target; if (t && t.tagName === 'IMG' && t.closest && t.closest('.media, .gx__hero, .nx__pic')) imgFailed(t); }, true);
   // Any that failed before this script ran (a game screen opened directly).
-  $$('.media img').forEach(function (img) { if (img.complete && !img.naturalWidth) imgFailed(img); });
+  $$('.media img, .gx__hero img, .nx__pic img').forEach(function (img) { if (img.complete && !img.naturalWidth) imgFailed(img); });
 
   // ════ Blocks ════
   // A part of a screen that loads after it (Home's rail, /app/rail → JSON { html }): the copy

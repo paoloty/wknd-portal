@@ -38,47 +38,63 @@ const potgStrip = (p, label = potgLabel(p)) => `<div class="potg">${appAvatar({ 
 const paras = text => String(text || '').split(/\n{2,}/).map(t => t.trim()).filter(Boolean)
   .map(t => `<p>${esc(t).replace(/\n/g, '<br>')}</p>`).join('');
 
+// ── Feed cards (styled: Paolo, 2026-10-23). Amber stays the only accent; team colours only
+// in dots and rings. ──
+
+// The game photo (cover, else the video's thumbnail) as the hero, the score set on it. No
+// picture: the same hero on a dark gradient. A picture that fails is removed (app.js), which
+// leaves that gradient.
 function gameCard(g) {
-  return `<a class="fc fc--link" href="${esc(g.href)}">
-    <div class="fc__top"><span class="kick">${esc(g.kicker)}</span><span class="fc__t">${esc(g.when)}</span></div>
-    ${media(g.media, { inCard: true })}
-    ${scoreRows(g.a, g.b)}
-    ${g.title ? `<h3>${esc(g.title)}</h3>` : ''}
-    ${g.excerpt ? `<p class="clamp">${esc(g.excerpt)}</p><span class="more">Read the recap</span>` : ''}
-    ${g.potg.map(p => potgStrip(p)).join('')}
-    ${g.mine ? `<div class="mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
-    <div class="fc__foot">${g.fire ? `<span>🔥 ${g.fire}</span>` : ''}${g.comments != null ? `<span>💬 ${g.comments} comment${g.comments === 1 ? '' : 's'}</span>` : ''}<span class="fc__go">Box score ›</span></div>
+  const m = g.media || {};
+  const src = m.img || (m.yt ? ytThumb(m.yt) : '');
+  const sized = m.img && m.srcset ? ` srcset="${esc(m.srcset)}" sizes="(min-width: 560px) 528px, calc(100vw - 32px)"` : '';
+  const row = t => `<div class="gx__row${t.won ? ' is-w' : ''}"><span class="dot" style="--c:${esc(t.color)}"></span><span class="gx__t">${esc(t.name)}</span><b>${esc(t.score)}</b></div>`;
+  return `<a class="sx gx" href="${esc(g.href)}">
+    <div class="gx__hero">
+      ${src ? `<img class="gx__img" src="${esc(src)}"${sized} alt="" decoding="async">` : ''}
+      <div class="gx__top"><span class="sx__chip sx__chip--glass">${esc(g.kicker)}</span>${m.yt ? '<span class="sx__chip sx__chip--glass">▶ Video</span>' : g.when ? `<span class="sx__chip sx__chip--glass">${esc(g.when)}</span>` : ''}</div>
+      <div class="gx__score">${row(g.a)}${row(g.b)}</div>
+    </div>
+    <div class="sx__body">
+      ${g.title ? `<h3>${esc(g.title)}</h3>` : ''}
+      ${g.excerpt ? `<p class="gx__ex">${esc(g.excerpt)}</p>` : ''}
+      ${g.potg.map(p => `<div class="gx__potg">${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}<i class="gx__star" aria-hidden="true">★</i>
+        <div class="potg__t"><small>${p.co ? 'Co-player of the game' : 'Player of the game'}</small><b>${esc(p.name)}</b><em>${esc(p.line)}</em></div></div>`).join('')}
+      ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
+      <div class="gx__foot">${g.fire ? `<span>🔥 ${g.fire}</span>` : ''}${g.comments != null ? `<span>💬 ${g.comments}</span>` : ''}<span class="gx__go">Box score ›</span></div>
+    </div>
   </a>`;
 }
 
 function annCard(a) {
-  return `<article class="fc${a.pinned ? ' fc--pin' : ''}">
-    <div class="fc__top"><span class="kick">${a.pinned ? '📌 ' : ''}Announcement</span><span class="fc__t">${esc(a.when)}</span></div>
-    ${media({ ...a.media, yt: a.yt })}
+  return `<article class="sx ax${a.pinned ? ' is-pinned' : ''}"><div class="sx__body">
+    <div class="ax__head"><span class="ax__ico" aria-hidden="true">📣</span><div><b>${esc(a.by || 'WKND League')}</b><small>Announcement · ${esc(a.when)}</small></div>${a.pinned ? '<span class="sx__chip sx__chip--amber">📌 Pinned</span>' : ''}</div>
+    ${a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : ''}
     ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
-    ${a.body ? `<div class="fc__body">${paras(a.body)}</div>` : ''}
-  </article>`;
+    ${a.body ? `<div class="ax__body">${paras(a.body)}</div>` : ''}
+  </div></article>`;
 }
 
 function postCard(p) {
-  return `<a class="fc fc--link" href="${esc(p.href)}">
-    <div class="fc__top"><span class="kick">News</span><span class="fc__t">${esc(p.when)}</span></div>
-    <h3>${esc(p.title)}</h3>
-    ${p.excerpt ? `<p class="clamp mut">${esc(p.excerpt)}</p>` : ''}<span class="more">Read</span>
+  return `<a class="sx nx" href="${esc(p.href)}">
+    ${p.img ? `<div class="nx__pic"><img src="${esc(p.img)}" alt="" decoding="async"></div>` : ''}
+    <div class="sx__body"><div class="nx__top"><span class="sx__chip sx__chip--amber">News</span><span class="sx__when">${esc(p.when)}</span></div>
+      <h3>${esc(p.title)}</h3>${p.excerpt ? `<p>${esc(p.excerpt)}</p>` : ''}<span class="sx__go">Read ›</span></div>
   </a>`;
 }
 
 // View only for now: joining happens on the Papawis tab once it's built into the app.
+// faces: [{ ini, color }] of who's in (up to 5).
 function papawisCard(r) {
   const pct = r.max ? Math.min(100, Math.round((r.confirmed / r.max) * 100)) : 0;
   const left = Math.max(0, r.max - r.confirmed);
-  return `<article class="fc">
-    <div class="fc__top"><span class="kick">Papawis</span><span class="fc__t">${esc(r.when)}</span></div>
+  return `<article class="sx px"><div class="sx__body">
+    <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc([r.runDay, r.time].filter(Boolean).join(' · '))}</span></div>
     <h3>${esc(r.title)}</h3>
-    <p class="mut">${esc([r.runDay, r.time, r.place].filter(Boolean).join(' · '))}</p>
-    <div class="prog"><div style="width:${pct}%"></div></div>
-    <div class="fc__row"><span class="mut">${r.confirmed} of ${r.max} in${left ? ` · ${left} spot${left === 1 ? '' : 's'} left` : ' · full'}${r.waitlist ? ` · ${r.waitlist} waiting` : ''}</span>${soonTag}</div>
-  </article>`;
+    ${r.place ? `<p class="px__where">📍 ${esc(r.place)}</p>` : ''}
+    <div class="px__bar"><i style="width:${pct}%"></i></div>
+    <div class="px__foot">${r.faces?.length ? `<span class="px__faces">${r.faces.map(f => `<i style="--c:${esc(f.color)}">${esc(f.ini)}</i>`).join('')}</span>` : ''}<span>${r.confirmed} of ${r.max} in${r.waitlist ? ` · ${r.waitlist} waiting` : ''}</span><b>${left ? `${left} spot${left === 1 ? '' : 's'} left` : 'Full'}</b></div>
+  </div></article>`;
 }
 
 const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard };
@@ -87,7 +103,7 @@ const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCar
 export function appFeedRows(items, prevDay = '') {
   let day = prevDay;
   return items.map(it => {
-    const head = it.day && it.day !== day ? `<div class="feed-day">${esc(it.day)}</div>` : '';
+    const head = it.day && it.day !== day ? `<div class="feed-day"><span>${esc(it.day)}</span></div>` : '';
     if (it.day) day = it.day;
     return head + (CARD[it.kind] ? CARD[it.kind](it) : '');
   }).join('');
