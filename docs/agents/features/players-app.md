@@ -22,6 +22,11 @@ Phone-first, players-only app served by this same server: same accounts, session
 ## Setup
 `/app/setup/photo` → `details` → `season` → `done`. Photo posts to the site's `/me/photo`. Details save to `registrations` (`updateRegistrationProfile`) and are pushed to the player record with `mergeRegistrationIntoPlayer` (the admin "sync"), so the public profile updates immediately. Jersey numbers stay with the team head (`/my-team/number`). `appSetupState` drives the "Finish setting up" card on Home.
 
+## Usage tracking (`/admin/app`)
+- `app_events` table (lib/portal-db.js `logAppEvent`): `signin` (detail `password` | `email_code`), `code_sent`, `open` (first open of the Manila day, detail `home_screen` | `browser`), `installed` (first home-screen open per platform, or Android's `appinstalled`), `setup_details`, `setup_done`, `signout`. Platform from the user agent: `ios` | `android` | `desktop`. "View as" sessions are never logged (`logApp`).
+- `public/app.js` posts `/app/ping` once per phone per day (localStorage `wknd-ping`); iPhone has no install event, so a home-screen open is how "installed" is known there.
+- `/admin/app` (Members): one row per approved player account with sign-in, install, setup and last-opened status, the activity log, and the access settings (`app_open` toggle, `app_beta` tester emails; both saved through `/admin/site/settings`, section `members`).
+
 ## Updates and offline
 - `APP_VER` = commit + newest app file mtime. Busts `app.css`/`app.js`, names the SW cache, and `/app/version` returns it. `app.js` checks it when the app comes back to the foreground and reloads (or shows a refresh bar when a form has unsaved input), also after 30 minutes away.
 - The service worker caches only the shell (CSS, JS, fonts, icons, `/app/offline`). Pages always load from the network; offline navigation shows `/app/offline`.

@@ -5963,7 +5963,8 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { appHomePage } from './views/app/home.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appTeamPage, appMePage, appPapawisPage, appMorePage, appNotificationsPage } from './views/app/tabs.js';
-import { updateRegistrationProfile } from './lib/portal-db.js';
+import { updateRegistrationProfile, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
+import { adminAppBody } from './views/admin/app.js';
 import { appSignInCodeEmail } from './lib/mailer.js';
 
 // Deployed version: commit + newest app file. Busts app.css/app.js, names the service
@@ -5985,14 +5986,27 @@ const appPhase = () => { try { return playoffModeState(getPortalCurrentSeason())
 const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, ...opts }));
 
 // 'anon' | 'admin' (super-admin login, no player) | 'no-player' | 'not-yet' | 'ok'
+const appBetaList = () => String(getSetting('app_beta', '')).toLowerCase().split(/[\s,]+/).filter(Boolean);
+// Can this registration use the app while it's hidden? (open to all, a player-admin, or listed)
+function appAllowedReg(reg, list = appBetaList()) {
+  return getSetting('app_open', '0') === '1' || !!reg?.is_admin
+    || list.includes(String(reg?.id || '').toLowerCase()) || (!!reg?.email && list.includes(reg.email.toLowerCase()));
+}
 function appAccess(req) {
   const s = req.session || {};
   if (!s.playerRegId) return s.isAdmin ? 'admin' : 'anon';
   if (!s.playerPlayerId) return 'no-player';
-  if (getSetting('app_open', '0') === '1' || s.isAdmin || s.impersonating) return 'ok';
-  const reg = getRegistration(s.playerRegId);
-  const list = String(getSetting('app_beta', '')).toLowerCase().split(/[\s,]+/).filter(Boolean);
-  return list.includes(String(s.playerRegId).toLowerCase()) || (reg?.email && list.includes(reg.email.toLowerCase())) ? 'ok' : 'not-yet';
+  if (s.isAdmin || s.impersonating) return 'ok';
+  return appAllowedReg(getRegistration(s.playerRegId)) ? 'ok' : 'not-yet';
+}
+const appPlatform = req => { const ua = req.get('user-agent') || ''; return /iPhone|iPad|iPod/i.test(ua) ? 'ios' : /Android/i.test(ua) ? 'android' : 'desktop'; };
+// Activity for /admin/app. "View as" sessions are an admin looking, not the player.
+function logApp(req, type, detail = '', reg = null) {
+  if (req.session?.impersonating) return;
+  const regId = reg?.id || req.session?.playerRegId;
+  if (!regId) return;
+  try { logAppEvent({ regId, playerId: reg?.player_id || req.session?.playerPlayerId || '', type, detail, platform: appPlatform(req) }); }
+  catch (e) { console.error('[app events]', e.message); }
 }
 function markAppSession(req) {
   const today = manilaTodayStr();
@@ -6053,9 +6067,9 @@ function appSeasonState(me) {
   return { rows, balance, season, signupOpen, signup, peso };
 }
 
+const appDetailsDone = reg => parsePositions(reg.positions).length > 0 && !!reg.height && !!reg.dominant_hand && !!reg.emergency_name && !!reg.emergency_phone;
 function appSetupState(me) {
-  const reg = me.reg;
-  const detailsDone = parsePositions(reg.positions).length > 0 && !!reg.height && !!reg.dominant_hand && !!reg.emergency_name && !!reg.emergency_phone;
+  const detailsDone = appDetailsDone(me.reg);
   const seasonDone = appSeasonState(me).rows.every(r => r.done);
   const status = { photo: me.hasPhoto, details: detailsDone, season: seasonDone };
   const labels = { photo: 'add your photo', details: 'check your details', season: 'sort out your season' };
@@ -6106,6 +6120,7 @@ app.get('/app/offline', (req, res) => sendApp(res, { title: 'Offline · WKND', b
 function appAfterSignIn(req, res, reg, how) {
   signInRegistration(req, reg);
   markAppSession(req);
+  logApp(req, 'signin', how, reg);
   insertAdminLog({
     actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
     method: 'POST', path: '/app/login', details: { event: 'login', via: how, email: reg.email },
@@ -6163,6 +6178,7 @@ app.post('/app/login/code', (req, res) => {
     const name = (reg.full_name || '').split(',')[1]?.trim() || 'there';
     sendMail({ to: reg.email, ref: reg.id, ...appSignInCodeEmail({ name, code }) }).catch(e => console.error('[mailer]', e.message));
     insertAdminLog({ actor: reg.full_name || reg.email, actorType: 'player', method: 'POST', path: '/app/login/code', details: { event: 'app_code_sent', email: reg.email } });
+    logApp(req, 'code_sent', '', reg);
   }
   res.redirect(`/app/login/code/verify?email=${encodeURIComponent(email)}`);
 });
@@ -6191,7 +6207,20 @@ app.post('/app/login/code/verify', (req, res) => {
 });
 
 app.post('/app/logout', (req, res) => {
+  if (req.session?.playerRegId) logApp(req, 'signout');
   req.session.destroy(() => res.redirect('/app/login'));
+});
+
+// app.js reports each phone's first open of the day, and whether it came from the home
+// screen (= installed). Android also reports its own "installed" event.
+app.post('/app/ping', express.json(), (req, res) => {
+  if (appAccess(req) !== 'ok' || req.session?.impersonating) return res.status(204).end();
+  const regId = req.session.playerRegId, platform = appPlatform(req);
+  const standalone = req.body?.standalone === true;
+  const dayStart = Date.parse(`${manilaTodayStr()}T00:00:00+08:00`);
+  if (!hasAppEvent(regId, 'open', dayStart)) logApp(req, 'open', standalone ? 'home_screen' : 'browser');
+  if ((standalone || req.body?.installed === true) && !hasAppEvent(regId, 'installed', 0, platform)) logApp(req, 'installed', standalone ? 'home_screen' : 'install_prompt');
+  res.status(204).end();
 });
 
 // ── Home ──
@@ -6231,6 +6260,7 @@ app.get('/app', requireApp, (req, res) => {
       line: s ? `${s.pts || 0} pts · ${s.reb || 0} reb · ${s.ast || 0} ast` : '' };
   }
   const setup = appSetupState(me);
+  if (setup.done === setup.total && !hasAppEvent(me.reg.id, 'setup_done')) logApp(req, 'setup_done');
   sendApp(res, { title: 'WKND', tab: 'home', body: appHomePage({ phase: appPhase(), me, upNext, todos, latest, setup }) });
 });
 
@@ -6275,6 +6305,7 @@ app.post('/app/setup/details', requireApp, (req, res) => {
   mergeRegistrationIntoPlayer(me.playerId, { positions: JSON.stringify(positions), height: fields.height, dominant_hand: fields.dominant_hand });
   updatePlayerWriteup(me.playerId, fields.motto);
   insertAdminLog({ actor: me.reg.full_name || me.reg.email, actorType: 'player', method: 'POST', path: '/app/setup/details', details: { event: 'profile_edit', fields: Object.keys(fields) } });
+  logApp(req, 'setup_details');
   res.redirect('/app/setup/season');
 });
 
@@ -6285,6 +6316,7 @@ app.get('/app/setup/season', requireApp, (req, res) => {
 app.get('/app/setup/done', requireApp, (req, res) => {
   const me = appMe(req);
   const s = appSetupState(me);
+  if (s.done === s.total && !hasAppEvent(me.reg.id, 'setup_done')) logApp(req, 'setup_done');
   sendApp(res, { title: 'All set · WKND', bare: true, body: appSetupDonePage({ first: me.first, remaining: s.total - s.done }) });
 });
 
@@ -6359,6 +6391,36 @@ app.get('/app/notifications', requireApp, (req, res) => {
   }));
   if (items.some(i => i.unread)) markNotificationsRead(pid);
   sendApp(res, { title: 'Notifications · WKND', tab: 'more', body: appNotificationsPage({ items }) });
+});
+
+// ── Admin: who's using the app ──
+app.get('/admin/app', requireAuth, (req, res) => {
+  const teams = getAllTeams();
+  const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const summary = Object.fromEntries(getAppActivitySummary().map(r => [r.reg_id, r]));
+  const list = appBetaList();
+  const rows = getAllRegistrations()
+    .filter(r => r.status === 'approved' && r.player_id && players[r.player_id])
+    .map(r => {
+      const p = players[r.player_id];
+      const team = teams.find(t => t.id === p.team_id);
+      return {
+        regId: r.id, playerId: p.id, email: r.email || '',
+        name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || displayPlayerName(r.full_name || ''),
+        team: team?.name || '', color: team ? (team.color || teamColor(team.name)) : '',
+        hasAccess: appAllowedReg(r, list), s: summary[r.id] || null,
+        setup: { photo: !!p.picture_url, details: appDetailsDone(r) },
+      };
+    });
+  const events = getRecentAppEvents(200).map(e => ({ ...e, name: displayPlayerName(e.full_name || '') || e.email || 'Someone' }));
+  const isOpen = getSetting('app_open', '0') === '1';
+  res.send(renderAdminPage(req, {
+    title: 'Players app', currentPath: '/admin/app',
+    body: adminAppBody({ rows, events, query: req.query, isOpen, settingsHtml: settingsPanel([
+      { type: 'toggle', key: 'app_open', value: isOpen, reload: true, label: 'Open to every player', sub: `Off: only player-admins and the testers below can use ${codeTag('/app')}. Everyone else sees "almost here".` },
+      { type: 'text', key: 'app_beta', value: getSetting('app_beta', ''), width: '320px', placeholder: 'emails, separated by commas', label: 'Testers', sub: 'Players who can use the app while it\'s hidden. Their sign-in emails, separated by commas.' },
+    ], { title: 'App access' }) }) + settingsScript(),
+  }));
 });
 
 app.post('/balance-bar/dismiss', express.json(), (req, res) => {
@@ -8446,6 +8508,7 @@ function siteSettingSection(key) {
   if (/^(awards_enabled|award_|mvp_)/.test(key)) return 'awards';
   if (key === 'player_reports_enabled' || key === 'raffle_enabled') return 'community';
   if (/^gcash_/.test(key)) return 'finance';
+  if (/^app_(open|beta)$/.test(key)) return 'members';
   return 'site'; // comments, ratings, header, homepage cards, join banner
 }
 
@@ -8465,6 +8528,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
+    'app_open', 'app_beta',
   ]);
   const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
   const homeGalleryKeyRe = new RegExp(`^award_home_(${AWARD_SECTION_KEYS.join('|')})_\\d+$`);

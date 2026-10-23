@@ -141,6 +141,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/admin/users',       label: 'Users',      icon: 'users' },
       { href: '/admin/team-heads', label: 'Team heads', icon: 'shield' },
+      { href: '/admin/app',        label: 'Players app', icon: 'activity' },
     ],
   },
   {

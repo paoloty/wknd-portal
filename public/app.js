@@ -101,6 +101,18 @@
   var ib = $('[data-install-btn]');
   if (ib) ib.addEventListener('click', function () { if (deferred) { deferred.prompt(); deferred = null; card.hidden = true; } });
 
+  // ── Usage for /admin/app: the first open of the day on this phone, and whether it came
+  // from the home screen (that's how "installed" is known on iPhone). ──
+  var ping = function (body) {
+    if (!navigator.onLine || !document.querySelector('.tabbar')) return; // signed-in screens only
+    fetch('/app/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin', keepalive: true }).catch(function () {});
+  };
+  try {
+    var day = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) + (standalone ? '|hs' : '|web');
+    if (localStorage.getItem('wknd-ping') !== day) { ping({ standalone: standalone }); localStorage.setItem('wknd-ping', day); }
+  } catch (e) { ping({ standalone: standalone }); }
+  window.addEventListener('appinstalled', function () { ping({ installed: true }); });
+
   // ── Offline shell ──
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/app/sw.js', { scope: '/app' }).catch(function () {});
