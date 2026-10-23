@@ -29,6 +29,18 @@
       });
     }
 
+    // Videos (views/app/feed.js media): the picture is a play button; tapped, it becomes the
+    // YouTube player right there, so the video plays inside the app.
+    $$('[data-yt]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var f = document.createElement('iframe');
+        f.className = 'media media--video';
+        f.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(btn.getAttribute('data-yt')) + '?autoplay=1&playsinline=1&rel=0';
+        f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true; f.title = 'Video';
+        btn.replaceWith(f);
+      });
+    });
+
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
     var cd = $('[data-countdown]');
@@ -403,11 +415,13 @@
   // Which way a move goes, like an iPhone app: between tabs a quick cross-fade; into a
   // screen below a tab (notifications, setup) a slide in from the right; back out a slide
   // the other way. Setup steps slide forward and back in their own order.
-  var ROOTS = ['/app', '/app/team', '/app/me', '/app/papawis', '/app/more'];
+  var ROOTS = ['/app', '/app/picks', '/app/papawis', '/app/team', '/app/me']; // views/app/layout.js TABS
+  var DEEP = ['/app/passkeys']; // two levels down (Me → Settings → Face ID)
   var STEPS = ['/app/setup/photo', '/app/setup/details', '/app/setup/season', '/app/setup/done'];
   var place = function (url) {
     var path = url.split('?')[0].replace(/\/$/, '') || '/app';
     if (ROOTS.indexOf(path) >= 0) return { depth: 0, step: 0 };
+    if (DEEP.indexOf(path) >= 0) return { depth: 2, step: 0 };
     return { depth: 1, step: Math.max(0, STEPS.indexOf(path)) };
   };
   var direction = function (from, to) {

@@ -24,7 +24,7 @@ export function appFaceIdOfferPage({ next }) {
 // keys: [{ id, device, added, used }]
 export function appPasskeysPage({ keys, removed = false }) {
   return `
-  <div class="navbar"><a class="navbar__back" href="/app/more">${backChev}More</a><span class="navbar__title">Face ID &amp; passkeys</span><span></span></div>
+  <div class="navbar"><a class="navbar__back" href="/app/settings">${backChev}Settings</a><span class="navbar__title">Face ID &amp; passkeys</span><span></span></div>
   <p class="foot-note" style="margin:10px 20px 0;font-size:14px">Sign in with your face or fingerprint instead of a password. Each phone keeps its own.</p>
   ${removed ? '<div class="msg msg--ok">Removed. That phone signs in with a password or a code now.</div>' : ''}
   <p class="msg msg--err" data-passkey-msg hidden></p>

@@ -390,3 +390,113 @@ html.iw-ios .iw-arrow { display: flex; }
   .btn, a.cell, button.cell { transition: background-color .15s, filter .15s; }
   .tab svg { transition: transform .12s; }
 }
+
+/* ── Tab badges, Home's bell, Me's gear (Fable review, 2026-10-23) ──
+   One signal per fact: Picks = open games not picked (amber, needs attention), Me = money
+   and season to-dos (red), the bell = unread notifications (red). */
+.tab__ico { position: relative; display: flex; }
+.tab__badge { position: absolute; top: -4px; left: 15px; min-width: 17px; height: 17px; padding: 0 4.5px; border-radius: 9px; font-size: 10.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--bg); }
+.tab__badge--warn { background: var(--warn-bg); color: var(--on-warn); }
+.tab__badge--err { background: var(--err-bg); color: var(--on-err); }
+.bell, .lt__icon { position: relative; flex: none; width: 40px; height: 40px; margin-right: -6px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text); }
+.bell svg, .lt__icon svg { width: 25px; height: 25px; }
+.bell:active, .lt__icon:active { background: var(--surface-2); }
+.bell .badge-dot { top: 2px; right: 1px; background: var(--err-bg); color: var(--on-err); }
+.prof__edit { flex: none; align-self: flex-start; padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--amber-text); font-size: 13.5px; font-weight: 700; }
+
+/* Home's action strip: only things with a deadline (picks closing, money due). Amber =
+   needs attention (CLAUDE.md "Notices"). */
+.actions { margin: 0 16px 4px; border-radius: var(--radius); overflow: hidden; background: rgba(245,147,50,0.12); }
+.actions__row { display: flex; align-items: center; gap: 11px; padding: 11px 14px; color: var(--text); }
+.actions__row + .actions__row { border-top: 1px solid rgba(245,147,50,0.18); }
+.actions__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
+.actions__t { flex: 1; min-width: 0; font-weight: 700; font-size: 14.5px; }
+.actions__t small { display: block; font-weight: 500; font-size: 12.5px; color: var(--amber-text); margin-top: 1px; }
+.actions__go { color: var(--amber-text); font-size: 20px; line-height: 1; }
+
+/* ── Feed (views/app/feed.js) ── */
+.feed { display: block; }
+.feed--pinned { margin-top: 12px; }
+.feed-day { font-family: var(--font-num); font-weight: 700; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding: 18px 32px 8px; }
+.fc { display: block; margin: 0 16px 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); color: var(--text); overflow: hidden; }
+.fc--link:active { transform: scale(.99); }
+.fc--pin { border-color: rgba(245,147,50,.4); }
+.fc__top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fc__top .kick { flex: 1; min-width: 0; }
+.fc__t { flex: none; font-size: 12.5px; color: var(--subtle); }
+.fc h3 { margin: 0 0 6px; font-size: 17px; line-height: 1.28; font-weight: 700; }
+.fc p { margin: 0; font-size: 14.5px; line-height: 1.45; }
+.fc .mut, .mut { color: var(--muted); }
+.fc__body p + p { margin-top: 10px; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.more { display: inline-block; margin-top: 4px; color: var(--amber-text); font-weight: 600; font-size: 14px; }
+.fc__foot { display: flex; gap: 16px; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--hair); font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.fc__go { margin-left: auto; color: var(--amber-text); }
+.fc__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.prog { height: 6px; border-radius: 3px; background: var(--surface-2); margin: 10px 0 8px; overflow: hidden; }
+.prog div { height: 100%; background: var(--amber); border-radius: 3px; }
+
+/* Photo or video on top of a card / screen. A video's picture is a button (app.js swaps it
+   for the YouTube player). */
+.media { position: relative; display: block; width: calc(100% + 32px); margin: -14px -16px 12px; aspect-ratio: 16 / 9; background: var(--surface-2); overflow: hidden; border: 0; padding: 0; }
+.media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media__play { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: flex; align-items: center; justify-content: center; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.media__play svg { width: 24px; height: 24px; margin-left: 3px; }
+.media em { position: absolute; left: 12px; bottom: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.55); color: #fff; font-style: normal; font-family: var(--font-num); font-weight: 800; font-size: 12px; letter-spacing: .12em; }
+iframe.media--video { border: 0; }
+
+.score { margin: 2px 0 10px; }
+.score__t { display: flex; align-items: center; gap: 9px; padding: 2px 0; color: var(--muted); }
+.score__n { flex: 1; font-weight: 600; font-size: 16px; }
+.score__t b { font-family: var(--font-num); font-weight: 800; font-size: 26px; line-height: 1.05; }
+.score__t.is-w { color: var(--text); }
+.score__t.is-w .score__n::after { content: ' ◂'; font-size: 11px; color: var(--amber-text); }
+
+.potg { display: flex; gap: 11px; align-items: center; margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: 13px; }
+.potg small { display: block; font-family: var(--font-num); font-weight: 700; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--amber-text); }
+.potg b { display: block; font-size: 14.5px; }
+.potg__t { min-width: 0; }
+.potg__t em { display: block; font-style: normal; font-size: 12.5px; color: var(--muted); }
+.mine { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 9px 12px; border-radius: 12px; background: rgba(245,147,50,.12); font-size: 13.5px; }
+.mine b { font-size: 15px; letter-spacing: .02em; color: var(--amber-text); }
+
+.skel-card { min-height: 180px; }
+.skel-card .skel { margin-bottom: 10px; }
+.skel--block { height: 120px; width: 100%; border-radius: 10px; }
+
+/* Game and news screens */
+.game-hero { margin-top: 6px; }
+.game-hero__meta { margin-top: 2px !important; font-size: 13px !important; }
+.art .kick { margin-bottom: 8px; }
+.art h2 { margin: 0 0 10px; font-size: 20px; line-height: 1.25; }
+.art p { margin: 0 0 12px; font-size: 15.5px; line-height: 1.55; }
+.art p:last-child { margin-bottom: 0; }
+.art .potg { margin: 0 0 12px; }
+.art__gap { height: 18px; }
+.box + .box { margin-top: 18px; }
+.box__head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 14.5px; }
+.box__w { font-family: var(--font-num); font-weight: 800; font-size: 12px; color: var(--win); }
+.bx { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.bx th, .bx td { padding: 7px 3px; text-align: right; border-bottom: 1px solid var(--hair); }
+.bx th { color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.bx th:first-child, .bx td:first-child { text-align: left; }
+.bx td:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bx td:nth-child(2) { font-weight: 700; }
+.bx small { color: var(--muted); }
+.bx tr.is-me td { background: rgba(245,147,50,.1); }
+.bx__no { display: inline-block; min-width: 22px; color: var(--subtle); font-size: 12px; }
+.cm { display: flex; gap: 10px; margin-bottom: 14px; }
+.cm b { font-size: 13.5px; }
+.cm b small { font-weight: 400; color: var(--subtle); margin-left: 6px; }
+.cm p { margin: 2px 0 0 !important; font-size: 14.5px !important; }
+.cm__soon { display: flex; align-items: center; gap: 8px; font-size: 13px !important; color: var(--muted); }
+.post h1 { margin: 6px 0 12px; font-size: 24px; line-height: 1.2; }
+.post__body { font-size: 15.5px; line-height: 1.55; overflow-wrap: break-word; }
+.post__body img, .post__body iframe, .post__body video { max-width: 100%; height: auto; border-radius: 10px; }
+.post__body a { color: var(--amber-text); }
+
+/* Pickmaster board on the Picks tab */
+.board__rk { flex: none; width: 30px; color: var(--muted); font-size: 16px; }
+.board__net { flex: none; font-size: 17px; color: var(--text); }
+.board.is-me { background: rgba(245,147,50,.1); }
+.board__gap { justify-content: center; min-height: 26px; padding: 0; color: var(--subtle); }

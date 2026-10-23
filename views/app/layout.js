@@ -35,6 +35,9 @@ export const icons = {
   mail: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'),
   share: svg('<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.6"'),
+  picks: svg('<path d="M9 11.5l2.2 2.2L15.5 9.4"/><rect x="4" y="3.5" width="16" height="17" rx="3"/>'),
+  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>',
   faceid: svg('<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1M15 9v1M12 9v4h-1M9 15.5c1.8 1.4 4.2 1.4 6 0"/>'),
 };
 // The app keeps players inside it: only links to /app screens are tappable. Rows about
@@ -46,11 +49,15 @@ export const soonTag = '<span class="tag-muted">Soon</span>';
 // fetches src, which answers JSON { html, next } — rows to append and the URL of the next
 // page (null at the end). More pages load as the player scrolls near the bottom. Use it for
 // anything long (notifications now, the feed later) so the screen opens at once.
-export function lazyList({ src, empty = 'Nothing yet.', rows = 6 }) {
-  const skel = Array.from({ length: rows }, () => '<div class="cell skel-row"><span class="skel skel--dot"></span><span class="cell__t"><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></span></div>').join('');
+// cards: the rows are cards (the feed) rather than cells in one grouped list.
+export function lazyList({ src, empty = 'Nothing yet.', rows = 6, cards = false }) {
+  const skel = cards
+    ? Array.from({ length: 2 }, () => '<div class="fc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></div>').join('')
+    : Array.from({ length: rows }, () => '<div class="cell skel-row"><span class="skel skel--dot"></span><span class="cell__t"><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></span></div>').join('');
+  const box = cards ? 'feed' : 'group';
   return `<div class="lazy" data-lazy-src="${esc(src)}" data-lazy-empty="${esc(empty)}">
-    <div class="group lazy__items" hidden></div>
-    <div class="group lazy__skel" aria-hidden="true">${skel}</div>
+    <div class="${box} lazy__items" hidden></div>
+    <div class="${box} lazy__skel" aria-hidden="true">${skel}</div>
     <div class="lazy__end" aria-live="polite"></div>
   </div>`;
 }
@@ -58,12 +65,15 @@ export function lazyList({ src, empty = 'Nothing yet.', rows = 6 }) {
 export const chev = '<svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5l-5 5"/></svg>';
 export const backChev = '<svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2 2 10l8 8"/></svg>';
 
+// Order per Fable's review (2026-10-23): the feed, the weekly picks, Papawis, then the
+// player's team and themselves. Settings live under Me (gear), notifications behind the bell
+// on Home. Keep public/app.js ROOTS in step.
 const TABS = [
   { key: 'home', href: '/app', label: 'Home', icon: icons.home },
+  { key: 'picks', href: '/app/picks', label: 'Picks', icon: icons.picks },
+  { key: 'papawis', href: '/app/papawis', label: 'Papawis', icon: icons.ball },
   { key: 'team', href: '/app/team', label: 'My Team', icon: icons.team },
   { key: 'me', href: '/app/me', label: 'Me', icon: icons.me },
-  { key: 'papawis', href: '/app/papawis', label: 'Papawis', icon: icons.ball },
-  { key: 'more', href: '/app/more', label: 'More', icon: icons.more },
 ];
 
 // The player's avatar: photo inside a ring in their team colour, initials underneath as
@@ -137,9 +147,15 @@ function installWallHtml() {
 }
 
 // tab: which tab is lit ('' = none, e.g. sign-in and setup, which also drop the tab bar).
-export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false }) {
+// badges: { picks, me } counts on those tabs: picks = open games not picked yet (amber, needs
+// attention), me = money/season to-dos (red). One signal per fact (CLAUDE.md "Notices").
+export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {} }) {
+  const badge = key => {
+    const n = Number(badges[key]) || 0;
+    return n ? `<span class="tab__badge tab__badge--${key === 'me' ? 'err' : 'warn'}" aria-label="${n} waiting">${n > 9 ? '9+' : n}</span>` : '';
+  };
   const tabbar = bare ? '' : `<nav class="tabbar" aria-label="App">${TABS.map(t =>
-    `<a class="tab${t.key === tab ? ' is-on' : ''}" href="${t.href}"${t.key === tab ? ' aria-current="page"' : ''}>${t.icon}<span>${t.label}</span></a>`).join('')}</nav>`;
+    `<a class="tab${t.key === tab ? ' is-on' : ''}" href="${t.href}"${t.key === tab ? ' aria-current="page"' : ''}><span class="tab__ico">${t.icon}${badge(t.key)}</span><span>${t.label}</span></a>`).join('')}</nav>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -2,7 +2,7 @@
 // from the same openPicks() objects as the site's pick cards (views/pick-card.js) and saved
 // through the same POST /games/:id/pick, so the rules live in one place. Same reveal rule as
 // the site: the pickers' split shows once you've picked (or picks are closed).
-import { esc, backChev } from './layout.js';
+import { esc } from './layout.js';
 
 const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
 
@@ -62,16 +62,24 @@ function card(g) {
   </section>`;
 }
 
-// record: { wl, net, rank, tied } | null · games: see card()
-export function appPicksPage({ record, games, off = false }) {
+// The Picks tab. record: { wl, net, rank, tied } | null · games: see card()
+// board: Pickmaster top 10 (+ the player's own row below when they're further down):
+//   [{ rank, tied, name, wl, net, me, gap }] · past: [{ date, matchup, pick, color, correct }]
+export function appPicksPage({ record, games = [], off = false, board = [], past = [] }) {
   const rec = record
     ? `<div class="card pick-rec"><div><div class="kick">Your record</div><b class="num">${esc(record.wl)}</b><small>${esc(record.net)} net</small></div>
         <div style="text-align:right"><div class="kick muted-kick">Pickmaster</div><b class="num pick-rec__rank">${record.rank ? `${record.tied ? 'T' : '#'}${record.rank}` : '—'}</b></div></div>`
     : `<div class="card pick-rec"><div><div class="kick">Your record</div><small>Make your first pick to get on the board.</small></div></div>`;
+  const boardHtml = board.length ? `<div class="sec">Pickmaster</div><div class="group">${board.map(r => `
+    ${r.gap ? '<div class="cell board__gap">···</div>' : ''}<div class="cell board${r.me ? ' is-me' : ''}"><span class="board__rk num">${r.tied ? 'T' : ''}${r.rank}</span><span class="cell__t">${esc(r.name)}${r.me ? ' <span class="muted" style="font-weight:400">· You</span>' : ''}<small>${esc(r.wl)}</small></span><span class="num board__net">${esc(r.net)}</span></div>`).join('')}</div>` : '';
+  const pastHtml = past.length ? `<div class="sec">Your past picks</div><div class="group">${past.map(x => `
+    <div class="cell"><span class="date">${esc(x.date)}</span><span class="cell__t">${esc(x.matchup)}<small><span class="dot" style="--c:${esc(x.color)};width:7px;height:7px;display:inline-block;margin-right:5px"></span>Picked ${esc(x.pick)}</small></span><span class="res ${x.correct ? 'res--w' : 'res--l'}" style="width:auto">${x.correct ? 'Right' : 'Wrong'}</span></div>`).join('')}</div>` : '';
   return `
-  <div class="navbar"><a class="navbar__back" href="/app">${backChev}Home</a><span class="navbar__title">Who wins?</span><span></span></div>
+  <header class="lt"><h1>Who wins?</h1></header>
   ${off ? '<div class="empty" style="margin-top:8px">Picks are off right now.</div>' : `
-  <div style="margin-top:4px">${rec}</div>
+  ${rec}
   ${games.length ? `<div class="sec">Open games</div><div class="stack" style="--gap:12px">${games.map(card).join('')}</div>`
-    : '<div class="empty" style="margin-top:12px">No games to pick right now. They show up here once the next game day is on the schedule.</div>'}`}`;
+    : '<div class="empty" style="margin-top:12px">No games to pick right now. They show up here once the next game day is on the schedule.</div>'}
+  ${boardHtml}
+  ${pastHtml}`}`;
 }

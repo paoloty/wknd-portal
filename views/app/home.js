@@ -1,11 +1,11 @@
-// App Home: "my game day". Pinned Up next card, the player's To Do list, their latest
-// result with their own line, plus the Finish setup and Add to Home Screen cards while
-// those apply. Data comes from server.js appHomeData().
-import { esc, appLogo, appAvatar, icons, ballSvg, isAppHref, soonTag } from './layout.js';
+// Pieces of the player's game day, shared by the tabs: the Up next countdown (My Team), the
+// To do list (Me), and Home's header, Finish setup and Add to Home Screen cards. Home itself
+// is the feed (views/app/feed.js appHomeFeedPage).
+import { esc, appLogo, icons, ballSvg, isAppHref, soonTag } from './layout.js';
 
 // tipAt: epoch ms of tip-off (Manila), or 0 when the time isn't set — the countdown then
 // counts to the start of game day. app.js ticks it every minute.
-function upNextCard(u) {
+export function upNextCard(u) {
   if (!u) {
     return `<div class="hero hero--quiet"><div class="kick">Up next</div>
       <div class="vs" style="font-size:28px">No game scheduled</div>
@@ -20,8 +20,8 @@ function upNextCard(u) {
   </div>`;
 }
 
-function todoRows(todos) {
-  if (!todos.length) return `<div class="empty">You're all caught up.</div>`;
+export function todoRows(todos) {
+  if (!todos.length) return '';
   // Things done on the site stay listed (so they're not forgotten) but aren't tappable.
   return `<div class="group group--icons">${todos.map(t => {
     const inApp = isAppHref(t.href);
@@ -32,17 +32,7 @@ function todoRows(todos) {
   }).join('')}</div>`;
 }
 
-function latestRow(l) {
-  if (!l) return '';
-  return `<div class="sec">Your latest game</div>
-  <div class="group"><div class="cell">
-    <span class="date">${esc(l.date)}</span>
-    <span class="cell__t">vs ${esc(l.opp)}${l.line ? `<small>You: ${esc(l.line)}</small>` : '<small>Didn\'t play</small>'}</span>
-    <span class="res ${l.won ? 'res--w' : 'res--l'}">${l.won ? 'W' : 'L'} ${l.my}–${l.oppScore}</span>
-  </div></div>`;
-}
-
-function setupCard(s) {
+export function setupCard(s) {
   if (!s || s.done >= s.total) return '';
   const pct = Math.round((s.done / s.total) * 100);
   return `<a class="card setup-card" href="${esc(s.href)}" style="margin-bottom:12px">
@@ -54,7 +44,7 @@ function setupCard(s) {
 
 // Shown only in the browser (app.js hides it once running from the home screen) — the
 // iPhone steps, since Safari has no install button; Android gets its own prompt.
-const installCard = `<div class="card install" data-install-card hidden style="margin-top:12px">
+export const installCard = `<div class="card install" data-install-card hidden style="margin-bottom:12px">
   <span class="app-icon">${ballSvg}</span>
   <div><b>Add WKND to your home screen</b>
     <p data-install-ios>Tap <svg class="share-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/></svg> Share, then <b style="font-size:13px">Add to Home Screen</b>.</p>
@@ -62,13 +52,7 @@ const installCard = `<div class="card install" data-install-card hidden style="m
   </div>
 </div>`;
 
-export function appHomePage({ phase, me, upNext, todos, latest, setup }) {
-  return `
-  <header class="lt lt--logo">${appLogo(phase)}<a href="/app/me" aria-label="Me">${appAvatar({ ...me, badge: me.unread })}</a></header>
-  ${setupCard(setup)}
-  ${upNextCard(upNext)}
-  <div class="sec">To do</div>
-  ${todoRows(todos)}
-  ${latestRow(latest)}
-  ${installCard}`;
+// Home's large title: the logo, and the bell for notifications (red count while unread).
+export function homeHeader({ phase, unread = 0 }) {
+  return `<header class="lt lt--logo">${appLogo(phase)}<a class="bell" href="/app/notifications" aria-label="Notifications${unread ? `, ${unread} unread` : ''}">${icons.bell}${unread ? `<span class="badge-dot">${unread > 9 ? '9+' : unread}</span>` : ''}</a></header>`;
 }

@@ -6011,14 +6011,17 @@ app.get('/logout', (req, res) => {
 import { randomInt } from 'crypto';
 import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
-import { appHomePage } from './views/app/home.js';
+import { homeHeader, setupCard, installCard } from './views/app/home.js';
+import { appFeedRows, appHomeFeedPage, appGamePage, appPostPage, ytId } from './views/app/feed.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
-import { appTeamPage, appMePage, appPapawisPage, appMorePage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { appTeamPage, appMePage, appPapawisPage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
 import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
+import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, deleteAppAnnouncement } from './lib/portal-db.js';
+import { adminAnnouncementsBody } from './views/admin/app-announcements.js';
 import { adminAppBody } from './views/admin/app.js';
 import { appSignInCodeEmail } from './lib/mailer.js';
 
@@ -6028,7 +6031,7 @@ const APP_VER = (() => {
   let commit = 'dev';
   try { commit = readFileSync(path.join(__dirname, '.git/HEAD'), 'utf8').trim(); if (commit.startsWith('ref:')) commit = readFileSync(path.join(__dirname, '.git', commit.slice(5).trim()), 'utf8').trim(); } catch {}
   let newest = 0;
-  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js']) {
     try { newest = Math.max(newest, statSync(path.join(__dirname, f)).mtimeMs); } catch {}
   }
   return `${commit.slice(0, 7)}.${Math.floor(newest / 1000).toString(36)}`;
@@ -6400,7 +6403,7 @@ app.get('/app/passkeys', requireApp, (req, res) => {
     added: manilaFormat(k.created_at, { month: 'short', day: 'numeric', year: 'numeric' }),
     used: k.last_used_at ? manilaFormat(k.last_used_at, { month: 'short', day: 'numeric' }) : '',
   }));
-  sendApp(res, { title: 'Face ID · WKND', tab: 'more', body: appPasskeysPage({ keys, removed: req.query.removed === '1' }) });
+  sendTab(res, appMe(req), { title: 'Face ID · WKND', tab: 'me', body: appPasskeysPage({ keys, removed: req.query.removed === '1' }) });
 });
 app.post('/app/passkeys/:id/remove', requireApp, (req, res) => {
   if (deletePasskey(req.params.id, req.session.playerRegId)) logApp(req, 'passkey_removed');
@@ -6421,53 +6424,223 @@ app.post('/app/ping', express.json(), (req, res) => {
   res.status(204).end();
 });
 
-// ── Home ──
+// ── Badges, To do and Home's action strip ──
+// Open games this player hasn't picked yet (picks still open), soonest first. Only the
+// close check — the full picks context (every pick ever, odds for every game) is ~100 ms.
+function appOpenPicks(me, all = getAllGames()) {
+  if (!picksEnabled()) return [];
+  try {
+    const upcoming = getUpcomingGames(all);
+    const mine = getPlayerGamePicks(upcoming.map(g => g.id), me.playerId);
+    const settings = upcoming.length ? getAllGamePickSettings() : {};
+    const clock = { todayYmd: manilaTodayStr(), nowHm: manilaHmNow(), closeTime: picksCloseTime() };
+    return upcoming
+      .filter(g => !mine[g.id] && !picksClosedFor(toPickGame(g, gameYmd), settings[g.id], clock))
+      .map(g => ({ game: g, closeMs: (() => { const at = pickCloseAt({ ymd: gameYmd(g.date) }, settings[g.id]); return at ? Date.parse(at) : 0; })() }));
+  } catch (e) { console.error('[app open picks]', e.message); return []; }
+}
+// Money and season to-dos (balance, sign-up, jersey): Me's To do and its red badge.
+const appAccountTodos = me => appSeasonState(me).rows.filter(r => !r.done && r.href)
+  .map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, solid: r.icon === 'wallet' }));
+// Tab badges (layout.js appPage): one signal per fact — picks on Picks, money on Me,
+// notifications on Home's bell.
+const appBadges = me => ({ picks: appOpenPicks(me).length, me: appAccountTodos(me).length });
+// Every screen with the tab bar goes through this, so the badges are always current.
+const sendTab = (res, me, opts) => sendApp(res, { ...opts, badges: appBadges(me) });
+const closeLabel = ms => manilaFormat(ms, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+
+// ── Home: the feed ──
 app.get('/app', requireApp, (req, res) => {
   const me = appMe(req);
-  const teams = getAllTeams();
-  const { next, last, played, all } = appGames(me);
-  let upNext = null;
-  if (next) {
-    const r = teamResult(next, me.team.id);
-    const ymd = gameYmd(next.date);
-    const tip = /^\d{2}:\d{2}$/.test(String(next.tip_time || '')) ? next.tip_time : '00:00';
-    const seasonGames = played.filter(g => String(g.season) === String(next.season));
-    upNext = {
-      kicker: `Your next game · ${next.playoff_round || gameTypeLabel(next) || 'Regular season'}`,
-      mine: me.team.name, opp: r.oppName, oppColor: teamColorById(teams, r.oppId),
-      dateLabel: [manilaDayLabel(ymd), gameTipLabel(next)].filter(Boolean).join(' · '),
-      court: next.court_id ? (getPapawisCourtById(next.court_id)?.name || '') : '',
-      countTo: Date.parse(`${ymd}T${tip}:00+08:00`),
-      foot: `${me.team.name} ${recordIn(seasonGames, me.team.id)} this season`,
-      href: previewHref(next),
-    };
-  }
-  const st = appSeasonState(me);
-  const todos = st.rows.filter(r => !r.done && r.href).map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, solid: r.icon === 'wallet' }));
-  // Open games this player hasn't picked. Only the close check — the full picks context
-  // (every pick ever, odds for every game) is ~100 ms and Home doesn't need it.
-  try {
-    if (picksEnabled() && all) {
-      const upcoming = getUpcomingGames(all);
-      const mine = getPlayerGamePicks(upcoming.map(g => g.id), me.playerId);
-      const settings = upcoming.length ? getAllGamePickSettings() : {};
-      const clock = { todayYmd: manilaTodayStr(), nowHm: manilaHmNow(), closeTime: picksCloseTime() };
-      for (const g of upcoming) {
-        if (mine[g.id] || picksClosedFor(toPickGame(g, gameYmd), settings[g.id], clock)) continue;
-        todos.push({ icon: 'target', title: `Pick ${g.team_a_name} vs ${g.team_b_name}`, sub: `Who wins? · ${manilaDayLabel(gameYmd(g.date))}`, pill: 'Pick', solid: true, href: '/app/picks' });
-      }
-    }
-  } catch (e) { console.error('[app home picks]', e.message); }
-  let latest = null;
-  if (last) {
-    const r = teamResult(last, me.team.id);
-    const s = getGamePlayerStat(last.id, me.playerId);
-    latest = { date: shortDate(last.date), opp: r.oppName, won: r.won, my: r.my, oppScore: r.opp, href: previewHref(last),
-      line: s ? `${s.pts || 0} pts · ${s.reb || 0} reb · ${s.ast || 0} ast` : '' };
-  }
   const setup = appSetupState(me);
   if (setup.done === setup.total && !hasAppEvent(me.reg.id, 'setup_done')) logApp(req, 'setup_done');
-  sendApp(res, { title: 'WKND', tab: 'home', body: appHomePage({ phase: appPhase(), me, upNext, todos, latest, setup }) });
+  // The action strip: only things with a deadline, gone once done (Fable review, 2026-10-23).
+  const actions = [];
+  const open = appOpenPicks(me);
+  if (open.length) {
+    const first = open.reduce((m, x) => (x.closeMs && (!m || x.closeMs < m) ? x.closeMs : m), 0);
+    actions.push({ text: open.length === 1 ? `Pick ${open[0].game.team_a_name} vs ${open[0].game.team_b_name}` : `Pick ${open.length} games`, sub: first ? `Picks close ${closeLabel(first)}` : 'Who wins?', href: '/app/picks' });
+  }
+  const st = appSeasonState(me);
+  if (st.balance > 0) actions.push({ text: `${st.peso(st.balance)} due`, sub: 'Settle your balance', soon: true });
+  if (st.signupOpen && !st.signup) actions.push({ text: `Season ${st.season} sign-up is open`, sub: 'Sign up to play', soon: true });
+  const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
+  sendTab(res, me, { title: 'WKND', tab: 'home', body: appHomeFeedPage({
+    header: homeHeader({ phase: appPhase(), unread: me.unread }),
+    setupHtml: setupCard(setup), installHtml: installCard,
+    actions: actions.slice(0, 3), pinned: pin ? appAnnItem(pin, true) : null,
+  }) });
+});
+
+// Feed items, newest first: announcements, game results, news posts and open Papawis runs.
+// Each { kind, id, at } — at (ms) orders it; the page shapes only the 20 it shows. Built
+// per request: the sources are small (a few hundred games, tens of posts and runs).
+const APP_FEED_PAGE = 20;
+// A game's place in the feed: game day at tip-off (noon when there's no time), so a day's
+// games line up in playing order.
+const gameAtMs = g => { const y = gameYmd(g.date); const t = /^\d{2}:\d{2}$/.test(String(g.tip_time || '')) ? g.tip_time : '12:00'; return y ? Date.parse(`${y}T${t}:00+08:00`) : 0; };
+function appFeedIndex() {
+  const now = Date.now();
+  const items = [];
+  for (const a of getAppAnnouncements()) if (!(a.pinned_until > now)) items.push({ kind: 'ann', id: a.id, at: a.created_at, src: a });
+  for (const g of getAllGames()) if (isPlayedGame(g)) items.push({ kind: 'game', id: g.id, at: gameAtMs(g), src: g });
+  for (const p of getPublicPosts()) items.push({ kind: 'post', id: p.id, at: p.publish_at || p.created_at, src: p });
+  const today = manilaTodayStr();
+  for (const r of getPapawisGames()) {
+    if (r.status !== 'open' || String(r.date) < today || !isPapawisSignupOpenNow(r)) continue;
+    items.push({ kind: 'papawis', id: r.id, at: r.created_at, src: r });
+  }
+  return items.sort((x, y) => y.at - x.at || String(y.id).localeCompare(String(x.id)));
+}
+// Day headers in Manila time: Today, Yesterday, then "Sat, Oct 18".
+function feedDay(ms) {
+  const ymd = manilaFormat(ms, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'en-CA');
+  const today = manilaTodayStr();
+  if (ymd === today) return 'Today';
+  if (ymd === addDaysYmd(today, -1)) return 'Yesterday';
+  return manilaFormat(ms, { weekday: 'short', month: 'short', day: 'numeric', ...(ymd.slice(0, 4) !== today.slice(0, 4) ? { year: 'numeric' } : {}) });
+}
+const feedWhen = ms => manilaFormat(ms, { hour: 'numeric', minute: '2-digit' });
+
+function appAnnItem(a, pinned = false) {
+  return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(a.created_at), pinned, when: pinned ? feedDay(a.created_at) : feedWhen(a.created_at),
+    title: a.title, body: a.body, yt: ytId(a.youtube_url),
+    imageUrl: a.has_image ? `/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}` : '' };
+}
+// Admin-written text (the editor's HTML, legacy **Title** or plain) → plain paragraphs,
+// so the app escapes everything it shows.
+function textParas(text) {
+  const s = String(text || '').trim();
+  if (!s) return [];
+  const blocks = /<[a-z][\s\S]*>/i.test(s)
+    ? s.split(/<\/(?:p|div|h[1-6]|li)>|<br\s*\/?>\s*<br\s*\/?>/i).map(t => t.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&'))
+    : s.split(/\n{2,}/);
+  return blocks.map(t => t.replace(/\*\*/g, '').replace(/[ \t]+/g, ' ').trim()).filter(Boolean);
+}
+// A recap's body paragraphs: its first block starts with the headline (parseWriteup's title).
+function writeupParas(text, title) {
+  const p = textParas(text);
+  if (title && p[0]?.startsWith(title)) p[0] = p[0].slice(title.length).trim();
+  return p.filter(Boolean);
+}
+const statLine = s => {
+  const extra = [['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK']].filter(([k]) => Number(s[k]) > 0).slice(0, 3).map(([k, l]) => `${Number(s[k])} ${l}`);
+  return [`${Number(s.pts) || 0} PTS`, ...extra].join(' · ');
+};
+const appPersonOf = s => {
+  const name = displayPlayerName(s.name || '');
+  const team = getAllTeams().find(t => t.id === s.team_id);
+  return { playerId: s.player_id, name, initials: name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
+    ring: team ? (team.color || teamColor(team.name)) : (s.team_color || ''), photoUrl: playerPhotoUrl(s.player_id, 96) };
+};
+// The players of the game with their lines (and write-ups, for the game screen).
+function appPotg(g, stats) {
+  return potgIdsFor(g, stats).map((id, i) => {
+    const s = stats.find(x => x.player_id === id);
+    return s ? { ...appPersonOf(s), co: i > 0, line: statLine(s), writeup: textParas(potgWriteupFor(g, id)).join('\n\n') } : null;
+  }).filter(Boolean);
+}
+const appTeamsOf = g => {
+  const teams = getAllTeams();
+  const a = Number(g.team_a_score) || 0, b = Number(g.team_b_score) || 0;
+  return [
+    { name: g.team_a_name, color: teamColorById(teams, g.team_a_id), score: a, won: a > b },
+    { name: g.team_b_name, color: teamColorById(teams, g.team_b_id), score: b, won: b > a },
+  ];
+};
+const gameMedia = g => ({ img: g.has_cover ? `/api/photo/${encodeURIComponent(g.id)}?w=640` : '', yt: ytId(g.youtube_url) });
+const gameKicker = g => `Final · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`;
+
+function appFeedItem(it, me, extra) {
+  const day = feedDay(it.at);
+  if (it.kind === 'ann') return appAnnItem(it.src);
+  if (it.kind === 'post') {
+    const p = it.src;
+    const text = String(p.body_html || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+    return { kind: 'post', day, when: feedWhen(it.at), title: p.title, excerpt: text.slice(0, 220), href: `/app/posts/${encodeURIComponent(p.slug)}` };
+  }
+  if (it.kind === 'papawis') {
+    const r = it.src;
+    return { kind: 'papawis', day, when: feedWhen(it.at), title: r.title || 'Papawis run', runDay: manilaDayLabel(String(r.date)),
+      time: r.time_label || formatTimeRange(r.start_time, r.end_time) || '', place: r.location || '',
+      confirmed: Number(r.confirmed_count) || 0, max: Number(r.max_slots) || 0, waitlist: Number(r.waitlist_count) || 0 };
+  }
+  const g = it.src;
+  const stats = getGameDetailStats(g.id);
+  const mine = stats.find(s => s.player_id === me.playerId);
+  const { title, body } = parseWriteup(g.game_writeup || '');
+  const [a, b] = appTeamsOf(g);
+  return { kind: 'game', day, when: day === 'Today' || day === 'Yesterday' ? manilaDayLabel(gameYmd(g.date)) : (gameTipLabel(g) || ''),
+    href: `/app/games/${encodeURIComponent(g.id)}`, kicker: gameKicker(g), media: gameMedia(g), a, b,
+    title, excerpt: body, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '',
+    fire: extra.fire[g.id] || 0, comments: extra.commentsOn ? (extra.comments[g.id] || 0) : null };
+}
+
+// /app/feed/items?before=<at>:<id>&day=<last day header shown>
+app.get('/app/feed/items', requireAppData, (req, res) => {
+  const me = appMe(req);
+  const m = /^(\d+):(.+)$/.exec(String(req.query.before || ''));
+  const all = appFeedIndex();
+  const from = m ? all.findIndex(it => it.at < Number(m[1]) || (it.at === Number(m[1]) && String(it.id).localeCompare(m[2]) < 0)) : 0;
+  const page = from < 0 ? [] : all.slice(from, from + APP_FEED_PAGE);
+  const gameIds = page.filter(it => it.kind === 'game').map(it => it.id);
+  const extra = { commentsOn: getSetting('comments_enabled', '0') === '1', comments: getGameCommentCounts(gameIds), fire: getGameReactionCounts(gameIds) };
+  const items = page.map(it => appFeedItem(it, me, extra));
+  const html = appFeedRows(items, String(req.query.day || ''));
+  const last = page[page.length - 1];
+  const more = from >= 0 && from + APP_FEED_PAGE < all.length;
+  res.json({ html, next: more ? `/app/feed/items?before=${last.at}:${encodeURIComponent(last.id)}&day=${encodeURIComponent(items[items.length - 1].day || '')}` : null });
+});
+
+app.get('/app/announcements/:id/image', requireAppData, (req, res) => {
+  const row = getAppAnnouncementImage(req.params.id);
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(row?.image || '');
+  if (!m) return res.status(404).end();
+  res.set('Cache-Control', 'private, max-age=31536000, immutable').type(m[1]).send(Buffer.from(m[2], 'base64'));
+});
+
+// Where a game or post screen's back button goes: the screen it was opened from.
+const APP_BACK = { home: ['/app', 'Home'], team: ['/app/team', 'My Team'], me: ['/app/me', 'Me'], picks: ['/app/picks', 'Picks'] };
+const appBack = req => { const [href, label] = APP_BACK[req.query.from] || APP_BACK.home; return { href, label, tab: APP_BACK[req.query.from] ? req.query.from : 'home' }; };
+
+// A finished game: video, score, recap, players of the game, both box scores, comments.
+app.get('/app/games/:id', requireApp, (req, res) => {
+  const me = appMe(req);
+  const back = appBack(req);
+  const g = getGameById(req.params.id);
+  if (!g || g.under_review) return sendTab(res, me, { title: 'Game · WKND', tab: back.tab, body: `${appGameMissing(back)}` });
+  const stats = isPlayedGame(g) ? getGameDetailStats(g.id) : [];
+  const [a, b] = appTeamsOf(g);
+  const { title, body } = parseWriteup(g.game_writeup || '');
+  const paras = writeupParas(g.game_writeup, title);
+  const teams = [g.team_a_id, g.team_b_id].map((tid, i) => ({
+    ...(i ? b : a),
+    rows: stats.filter(s => s.team_id === tid).map(s => ({ playerId: s.player_id, number: String(s.number ?? ''), name: displayPlayerName(s.name || ''),
+      pts: Number(s.pts) || 0, reb: Number(s.reb) || 0, ast: Number(s.ast) || 0, stl: Number(s.stl) || 0, blk: Number(s.blk) || 0 })),
+  })).filter(t => t.rows.length);
+  const commentsOn = getSetting('comments_enabled', '0') === '1';
+  const comments = commentsOn ? getGameComments(g.id).map(c => ({ ...appPersonOf({ ...c, name: c.player_name }), body: c.body,
+    when: manilaFormat(c.created_at, { month: 'short', day: 'numeric' }) })) : null;
+  const mine = stats.find(s => s.player_id === me.playerId);
+  const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
+  sendTab(res, me, { title: `${a.name} ${a.score} · ${b.name} ${b.score} · WKND`, tab: back.tab, body: appGamePage({
+    back, title: isPlayedGame(g) ? `${a.name} ${a.score} · ${b.name} ${b.score}` : `${a.name} vs ${b.name}`,
+    a, b, media: gameMedia(g), final: isPlayedGame(g),
+    meta: [manilaDayLabel(gameYmd(g.date)), g.playoff_round || gameTypeLabel(g), court].filter(Boolean).join(' · '),
+    recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, comments, meId: me.playerId,
+  }) });
+});
+const appGameMissing = back => `<div class="navbar"><a class="navbar__back" href="${back.href}">‹ ${back.label}</a><span class="navbar__title">Game</span><span></span></div><div class="empty" style="margin-top:12px">This game isn't available.</div>`;
+
+// A news post, read in the app. The body is the admin-written article (as /posts/:slug shows it).
+app.get('/app/posts/:slug', requireApp, (req, res) => {
+  const me = appMe(req);
+  const back = appBack(req);
+  const p = getPostBySlug(req.params.slug);
+  const live = p && (p.status === 'published' || (p.status === 'scheduled' && p.publish_at && p.publish_at <= Date.now()));
+  if (!live) return sendTab(res, me, { title: 'News · WKND', tab: back.tab, body: appGameMissing(back).replace('>Game<', '>News<').replace("This game isn't available.", "This post isn't available.") });
+  sendTab(res, me, { title: `${p.title} · WKND`, tab: back.tab, body: appPostPage({ title: p.title, when: feedDay(p.publish_at || p.created_at), bodyHtml: p.body_html, back }) });
 });
 
 // ── Setup ──
@@ -6532,13 +6705,14 @@ app.get('/app/setup/done', requireApp, (req, res) => {
 });
 
 // ── Tabs ──
+// My Team: the team, Up next (the countdown), this season's schedule and results, roster.
 app.get('/app/team', requireApp, (req, res) => {
   const me = appMe(req);
-  if (!me.team) return sendApp(res, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({ me }) });
+  if (!me.team) return sendTab(res, me, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({ me }) });
   const teams = getAllTeams();
-  const { next, played } = appGames(me);
-  const season = getPortalCurrentSeason();
-  const seasonGames = played.filter(g => String(g.season) === String(season));
+  const { next, played, all } = appGames(me);
+  const season = String(getPortalCurrentSeason());
+  const seasonGames = played.filter(g => String(g.season) === season);
   const roster = getAllPlayers()
     .filter(p => p.team_id === me.team.id && p.status !== 'inactive')
     .map(p => ({
@@ -6548,13 +6722,43 @@ app.get('/app/team', requireApp, (req, res) => {
       isMe: p.id === me.playerId, isHead: getHeadTeamIds(p.id).includes(me.team.id),
     }))
     .sort((a, b) => (b.isHead - a.isHead) || a.name.localeCompare(b.name));
-  const nextGame = next ? (() => { const r = teamResult(next, me.team.id); return { opp: r.oppName, oppColor: teamColorById(teams, r.oppId), when: [manilaDayLabel(gameYmd(next.date)), gameTipLabel(next)].filter(Boolean).join(' · '), href: previewHref(next) }; })() : null;
-  sendApp(res, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({
-    me, team: { ...me.team, color: me.ring }, roster, nextGame,
-    record: seasonGames.length ? `${recordIn(seasonGames, me.team.id)} in Season ${season}` : '',
+  let upNext = null;
+  if (next) {
+    const r = teamResult(next, me.team.id);
+    const ymd = gameYmd(next.date);
+    const tip = /^\d{2}:\d{2}$/.test(String(next.tip_time || '')) ? next.tip_time : '00:00';
+    upNext = {
+      kicker: `Up next · ${next.playoff_round || gameTypeLabel(next) || 'Regular season'}`,
+      mine: me.team.name, opp: r.oppName, oppColor: teamColorById(teams, r.oppId),
+      dateLabel: [manilaDayLabel(ymd), gameTipLabel(next)].filter(Boolean).join(' · '),
+      court: next.court_id ? (getPapawisCourtById(next.court_id)?.name || '') : '',
+      countTo: Date.parse(`${ymd}T${tip}:00+08:00`),
+      foot: `${me.team.name} ${recordIn(seasonGames, me.team.id)} this season`,
+    };
+  }
+  // The season in date order: results link to the game screen, upcoming games show the day.
+  const schedule = all
+    .filter(g => String(g.season) === season && !g.under_review && teamSide(g, me.team.id) && (isPlayedGame(g) || g.status === 'scheduled' || g.scheduled))
+    .sort((x, y) => gameYmd(x.date).localeCompare(gameYmd(y.date)) || String(x.tip_time).localeCompare(String(y.tip_time)))
+    .map(g => {
+      const r = teamResult(g, me.team.id), done = isPlayedGame(g);
+      return { date: shortDate(g.date), opp: r.oppName, oppColor: teamColorById(teams, r.oppId), played: done, won: r.won, my: r.my, oppScore: r.opp,
+        when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), href: done ? `/app/games/${encodeURIComponent(g.id)}?from=team` : '' };
+    });
+  let standing = '';
+  try {
+    const rows = standingsSectionData(season, all).rows;
+    const i = rows.findIndex(r => r.team_id === me.team.id || String(r.team_name || r.name || '').toUpperCase() === String(me.team.name).toUpperCase());
+    if (i >= 0 && seasonGames.length) standing = `${ordinal(i + 1)} of ${rows.length}`;
+  } catch (e) { console.error('[app team standing]', e.message); }
+  sendTab(res, me, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({
+    me, season, upNext, schedule, roster,
+    team: { name: me.team.name, color: me.ring, record: seasonGames.length ? `${recordIn(seasonGames, me.team.id)} in Season ${season}` : '', standing },
   }) });
 });
+const ordinal = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]}`;
 
+// Me: profile, To do (money and season, plus a line to Picks), season averages, games.
 app.get('/app/me', requireApp, (req, res) => {
   const me = appMe(req);
   const season = String(getPortalCurrentSeason());
@@ -6566,21 +6770,26 @@ app.get('/app/me', requireApp, (req, res) => {
     const mine = g.team_a_id === tid ? 'a' : 'b';
     const my = Number(mine === 'a' ? g.team_a_score : g.team_b_score), opp = Number(mine === 'a' ? g.team_b_score : g.team_a_score);
     return { date: shortDate(g.date), opp: mine === 'a' ? g.team_b_name : g.team_a_name, won: my > opp, my, oppScore: opp,
-      line: `${g.pts || 0}·${g.reb || 0}·${g.ast || 0}`, href: previewHref(g) };
+      line: `${g.pts || 0}·${g.reb || 0}·${g.ast || 0}`, href: `/app/games/${encodeURIComponent(g.game_id || g.id)}?from=me` };
   });
-  sendApp(res, { title: 'Me · WKND', tab: 'me', body: appMePage({
-    me, positions: parsePositions(me.player.positions).join(' · '),
+  // Picks are counted on the Picks tab; here they're one line pointing there, not a list.
+  const todos = appAccountTodos(me);
+  const open = appOpenPicks(me);
+  if (open.length) todos.unshift({ icon: 'picks', title: open.length === 1 ? '1 game to pick' : `${open.length} games to pick`, sub: 'Who wins?', pill: 'Pick', href: '/app/picks', solid: true });
+  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({
+    me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games,
   }) });
 });
 
-// ── Who wins? ── The site's openPicks() cards for this player, shaped for the app's screen.
-// Picks are saved by the site's own POST /games/:id/pick (public/app.js), so every rule —
-// open/closed, deadlines, who may pick — stays in one place.
+// ── Picks (Who wins?) ── The site's openPicks() cards for this player, shaped for the app,
+// then the Pickmaster board and the player's settled picks. Picks are saved by the site's
+// own POST /games/:id/pick (public/app.js), so every rule — open/closed, deadlines, who may
+// pick — stays in one place.
 app.get('/app/picks', requireApp, (req, res) => {
   const me = appMe(req);
-  if (!picksEnabled()) return sendApp(res, { title: 'Who wins? · WKND', tab: 'home', body: appPicksPage({ off: true }) });
+  if (!picksEnabled()) return sendTab(res, me, { title: 'Who wins? · WKND', tab: 'picks', body: appPicksPage({ off: true }) });
   const all = getAllGames();
   const pctx = buildPicksContext(all);
   const open = openPicks(all, pctx, me.playerId);
@@ -6590,7 +6799,8 @@ app.get('/app/picks', requireApp, (req, res) => {
   const sp = seasonPicks(pctx, String(getPortalCurrentSeason()));
   const r = sp.records[me.playerId];
   const row = sp.board.rows.find(x => x.playerId === me.playerId);
-  const record = r ? { wl: `${r.correct}–${r.wrong}`, net: fmtPts(r.net), rank: row?.rank || null, tied: !!row && sp.board.rows.filter(y => y.rank === row.rank).length > 1 } : null;
+  const tiedAt = rank => sp.board.rows.filter(y => y.rank === rank).length > 1;
+  const record = r ? { wl: `${r.correct}–${r.wrong}`, net: fmtPts(r.net), rank: row?.rank || null, tied: !!row && tiedAt(row.rank) } : null;
   const games = open.map(o => {
     const g = gameOf[o.id] || {};
     const closeMs = o.closeAt ? Date.parse(o.closeAt) : 0;
@@ -6598,7 +6808,7 @@ app.get('/app/picks', requireApp, (req, res) => {
       id: o.id, title: g.playoff_round || gameTypeLabel(g) || 'Regular season',
       dayLabel: [manilaDayLabel(o.ymd), o.tip].filter(Boolean).join(' · '),
       closed: !!o.closed, closeAt: closeMs,
-      closeLabel: closeMs ? manilaFormat(closeMs, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '',
+      closeLabel: closeMs ? closeLabel(closeMs) : '',
       a: { name: o.a, color: colorOf(o.a), rec: o.recA ? `${o.recA.w}–${o.recA.l}` : '' },
       b: { name: o.b, color: colorOf(o.b), rec: o.recB ? `${o.recB.w}–${o.recB.l}` : '' },
       odds: o.odds ? { pctA: o.odds.pctA, pctB: o.odds.pctB } : null,
@@ -6607,29 +6817,38 @@ app.get('/app/picks', requireApp, (req, res) => {
       stakes: o.stakes, marginGuess: !!o.marginGuess,
     };
   });
-  sendApp(res, { title: 'Who wins? · WKND', tab: 'home', body: appPicksPage({ record, games }) });
+  // Pickmaster: the top 10, and the player's own row under a gap when they're further down.
+  const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const boardRow = (x, gap = false) => ({ rank: x.rank, tied: tiedAt(x.rank), name: displayPlayerName(players[x.playerId]?.name || ''), wl: `${x.correct}–${x.wrong}`, net: fmtPts(x.net), me: x.playerId === me.playerId, gap });
+  const board = sp.board.rows.slice(0, 10).map(x => boardRow(x));
+  if (row && !board.some(x => x.me)) board.push(boardRow(row, true));
+  const past = (r?.results || []).slice().reverse().slice(0, 10).map(x => {
+    const g = gameOf[x.gameId];
+    if (!g) return null;
+    const pick = x.side === 'a' ? g.team_a_name : g.team_b_name;
+    return { date: shortDate(g.date), matchup: `${g.team_a_name} vs ${g.team_b_name}`, pick, color: colorOf(pick), correct: !!x.correct };
+  }).filter(Boolean);
+  sendTab(res, me, { title: 'Who wins? · WKND', tab: 'picks', body: appPicksPage({ record, games, board, past }) });
 });
 
 app.get('/app/papawis', requireApp, (req, res) => {
-  sendApp(res, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage({ me: appMe(req) }) });
+  const me = appMe(req);
+  sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage() });
 });
 
-app.get('/app/more', requireApp, (req, res) => {
+// More became Settings under Me (Fable review, 2026-10-23). Old links still land.
+app.get('/app/more', requireApp, (req, res) => res.redirect('/app/settings'));
+app.get('/app/settings', requireApp, (req, res) => {
   const me = appMe(req);
-  const st = appSeasonState(me);
   const rows = [
-    { icon: 'bell', title: 'Notifications', href: '/app/notifications', count: me.unread, amber: true },
     { icon: 'faceid', title: 'Face ID & passkeys', href: '/app/passkeys', value: getPasskeysForReg(me.reg.id).length ? 'On' : 'Off' },
-    // Information only for now: settling, sign-ups and jersey details happen on the site.
-    { icon: 'wallet', title: 'My balance', value: st.balance > 0 ? `${st.peso(st.balance)} due` : 'Settled', soon: st.balance > 0 },
+    { icon: 'bell', title: 'Notifications', href: '/app/notifications', count: me.unread },
   ];
-  if (st.signupOpen) rows.push({ icon: 'form', title: `Season ${st.season} sign-up`, value: st.signup ? 'Done' : 'Not yet', soon: !st.signup });
-  if (st.signup?.jersey_requested_at) rows.push({ icon: 'shirt', title: 'Jersey details', value: st.signup.jersey_submitted_at ? 'Sent' : 'Not sent yet', soon: !st.signup.jersey_submitted_at });
-  sendApp(res, { title: 'More · WKND', tab: 'more', body: appMorePage({ me, rows }) });
+  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows }) });
 });
 
 app.get('/app/notifications', requireApp, (req, res) => {
-  sendApp(res, { title: 'Notifications · WKND', tab: 'more', body: appNotificationsPage() });
+  sendTab(res, appMe(req), { title: 'Notifications · WKND', tab: 'home', body: appNotificationsPage() });
 });
 
 // Pages for lazy lists (views/app/layout.js lazyList): JSON { html, next }. Signed-out or
@@ -6690,6 +6909,39 @@ app.get('/admin/app', requireAuth, (req, res) => {
       { type: 'text', key: 'app_beta', value: getSetting('app_beta', ''), width: '320px', placeholder: 'emails, separated by commas', label: 'Testers', sub: 'Players who can use the app while it\'s hidden. Their sign-in emails, separated by commas.' },
     ], { title: 'App access' }) }) + settingsScript(),
   }));
+});
+
+// ── Admin: announcements for the app's feed (views/admin/app-announcements.js) ──
+app.get('/admin/app/announcements', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, { title: 'App announcements', currentPath: '/admin/app', body: adminAnnouncementsBody({ list: getAppAnnouncements() }) }));
+});
+app.get('/admin/app/announcements/:id/image', requireAuth, (req, res) => {
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(getAppAnnouncementImage(req.params.id)?.image || '');
+  if (!m) return res.status(404).end();
+  res.set('Cache-Control', 'private, max-age=31536000, immutable').type(m[1]).send(Buffer.from(m[2], 'base64'));
+});
+const annPinUntil = days => { const d = Math.min(30, Math.max(0, Number(days) || 0)); return d ? Date.now() + d * 24 * 60 * 60 * 1000 : 0; };
+app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' }), (req, res) => {
+  const b = req.body || {};
+  const image = String(b.image || '');
+  if (b.image) req.body.image = '(photo)'; // keep the admin log small
+  const title = String(b.title || '').trim().slice(0, 120), body = String(b.body || '').trim().slice(0, 2000);
+  const youtube = String(b.youtube || '').trim();
+  if (!title && !body) return res.status(400).json({ error: 'Add a title or a message.' });
+  if (youtube && !ytId(youtube)) return res.status(400).json({ error: 'That doesn\'t look like a YouTube link.' });
+  if (image && !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'That photo couldn\'t be read. Try another.' });
+  const by = req.session.isElevatedPlayer ? (req.session.playerName || 'admin') : 'WKND';
+  addAppAnnouncement({ id: crypto.randomUUID(), title, body, image, youtubeUrl: youtube, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
+  res.json({ ok: true });
+});
+app.post('/admin/app/announcements/:id/pin', requireAuth, express.json(), (req, res) => {
+  if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  setAppAnnouncementPin(req.params.id, annPinUntil(req.body?.days));
+  res.json({ ok: true });
+});
+app.post('/admin/app/announcements/:id/delete', requireAuth, (req, res) => {
+  deleteAppAnnouncement(req.params.id);
+  res.json({ ok: true });
 });
 
 app.post('/balance-bar/dismiss', express.json(), (req, res) => {

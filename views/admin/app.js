@@ -2,7 +2,7 @@
 // signed in yet, installed to the home screen (and on what), how far through setup, when
 // they last opened it. Alongside, the activity log (lib/portal-db.js app_events).
 import { escHtml } from '../layout.js';
-import { pageHeader, dataGrid, section, avatar, badge, kpi, emptyState, ago } from './ui.js';
+import { pageHeader, dataGrid, section, avatar, badge, kpi, emptyState, ago, button } from './ui.js';
 import { manilaFormat } from '../utils.js';
 
 const fmtTime = ts => manilaFormat(ts, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -78,7 +78,7 @@ export function adminAppBody({ rows, events, query = {}, isOpen, settingsHtml = 
     </div>`).join('')}</div>` : emptyState({ title: 'Nothing yet', sub: 'Sign-ins, installs and setup show up here.' });
 
   return `<div class="aui-page">
-    ${pageHeader({ title: 'Players app', sub: `Who has signed in to the app at /app, added it to their home screen and set up their account. ${isOpen ? 'Open to every player.' : 'Hidden: only player-admins and the testers below can get in.'}` })}
+    ${pageHeader({ title: 'Players app', sub: `Who has signed in to the app at /app, added it to their home screen and set up their account. ${isOpen ? 'Open to every player.' : 'Hidden: only player-admins and the testers below can get in.'}`, actionsHtml: button('Announcements', { href: '/admin/app/announcements', kind: 'primary' }) })}
     ${settingsHtml}
     <div class="aui-kpis">
       ${kpi({ label: 'Signed in', value: String(signedIn), of: ` of ${total}`, href: '/admin/app?view=all' })}
