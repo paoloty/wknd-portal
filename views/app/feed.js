@@ -70,7 +70,7 @@ function gameCard(g) {
       ${g.potg.map(p => potgBox(p)).join('')}
       ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
     </div>
-  </a><div class="sx__act"><a class="btn btn--ghost" href="${esc(g.href)}">Box score &amp; recap</a></div>${appSocialBar(g.social)}</article>`;
+  </a><div class="sx__act">${g.shareHref ? `<a class="btn" href="${esc(g.shareHref)}">${icons.share}<span>Share my stats</span></a>` : `<a class="btn btn--ghost" href="${esc(g.href)}">Box score &amp; recap</a>`}</div>${appSocialBar(g.social)}</article>`;
 }
 
 function annCard(a) {
@@ -181,7 +181,7 @@ export function appGamePage(g) {
     ${gameHero(g, { band: video })}
     <div class="sx__body">${g.meta ? `<p class="gx__meta">${esc(g.meta)}</p>` : ''}
       ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
-      ${g.shareHref ? `<a class="btn btn--ghost gx__share" href="${esc(g.shareHref)}">${icons.share}<span>Share my stats</span></a>` : ''}</div>
+      ${g.shareHref ? `<a class="btn gx__share" href="${esc(g.shareHref)}">${icons.share}<span>Share my stats</span></a>` : ''}</div>
   </section>
   ${recap}
   ${potg}

@@ -743,36 +743,58 @@
   }
 
   // ════ Share my stats (views/app/share.js) ════
-  // The card is the site's PNG (/api/games/:id/my-stat-card.png). Each template's thumbnail
-  // loads small (?thumb=1); the big card is fetched as a blob, kept per setting, and handed
-  // to the phone's share sheet as a file (iPhone: Instagram, Messenger, Save Image). Save
-  // downloads it where the phone can (Android, desktop) and uses the share sheet on iPhone,
-  // whose installed app can't download. Save / Share are logged as on the site.
+  // A story-style editor. The card is the site's PNG (/api/games/:id/my-stat-card.png): each
+  // template's thumbnail loads small (?thumb=1), the big card as a blob, kept per setting.
+  // Tools (top right) swap the bottom fade's template strip for their choices; tapping the
+  // tool again or the card brings the strip back. Share: Save image (a download; on iPhone,
+  // whose installed app can't download, the share sheet's Save Image), Copy image (the
+  // clipboard, to paste into a story), Share to… (the share sheet). Logged as on the site.
+  // The last template and colour are remembered on the phone. Zeros are always hidden (no toggle,
+  // unlike the site's editor: a 0 says nothing on a story).
   var isIos = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   function initShare() {
     var root = $('[data-sh]'); if (!root || root._bound) return;
     root._bound = true;
     var game = root.getAttribute('data-game'), lk = root.getAttribute('data-locked') === '1' ? 1 : 0;
-    var st = { tpl: $('.sh__tpl.is-on', root).getAttribute('data-tpl'), accent: 'amber', focus: root.getAttribute('data-focus') };
-    var img = $('[data-sh-img]', root), spin = $('[data-sh-spin]', root), msg = $('[data-sh-msg]', root);
-    var shareBtn = $('[data-sh-share]', root), saveBtn = $('[data-sh-save]', root), lockMsg = $('[data-sh-lockmsg]', root);
+    var saved = {}; try { saved = JSON.parse(localStorage.getItem('wknd-share') || '{}'); } catch (e) {}
+    var st = { tpl: 'center', accent: 'amber', focus: root.getAttribute('data-focus') };
+    var img = $('[data-sh-img]', root), spin = $('[data-sh-spin]', root), msg = $('[data-sh-msg]', root), lockMsg = $('[data-sh-lockmsg]', root);
     var cache = {}, current = null;
     var url = function (tpl, thumb) {
       return '/api/games/' + encodeURIComponent(game) + '/my-stat-card.png?layout=gauges&align=' + tpl + '&focus=' + st.focus + '&accent=' + st.accent +
-        '&gauges=1&hidezeros=0&badge=0&lk=' + lk + (thumb ? '&thumb=1' : '');
+        '&gauges=1&hidezeros=1&badge=0&lk=' + lk + (thumb ? '&thumb=1' : '');
     };
     var thumbs = function () { $$('[data-thumb]', root).forEach(function (t) { t.src = url(t.getAttribute('data-thumb'), true); }); };
     var say = function (text) { msg.textContent = text || ''; msg.hidden = !text; };
+    var remember = function () { try { localStorage.setItem('wknd-share', JSON.stringify({ tpl: st.tpl, accent: st.accent })); } catch (e) {} };
+    // The template strip and its variant chips follow st.tpl.
+    function pickTpl(tpl) {
+      var tile = $$('[data-tpl]', root).filter(function (t) { return t.getAttribute('data-tpl') === tpl; })[0];
+      var chipEl = $$('[data-variant]', root).filter(function (c) { return c.getAttribute('data-variant') === tpl; })[0];
+      if (chipEl && !tile) tile = $('[data-fam="' + chipEl.parentNode.getAttribute('data-vars') + '"]', root);
+      if (!tile) return false;
+      $$('[data-tpl]', root).forEach(function (t) { t.classList.toggle('is-on', t === tile); });
+      var fam = tile.getAttribute('data-fam');
+      $$('[data-vars]', root).forEach(function (v) { v.hidden = v.getAttribute('data-vars') !== fam; });
+      if (chipEl) $$('[data-variant]', chipEl.parentNode).forEach(function (c) { c.classList.toggle('is-on', c === chipEl); });
+      st.tpl = tpl;
+      if (lockMsg) lockMsg.hidden = !tile.hasAttribute('data-premium');
+      return true;
+    }
     function render() {
       var k = url(st.tpl, false);
-      if (lockMsg) lockMsg.hidden = !$('.sh__tpl.is-on[data-premium]', root);
       say('');
-      var show = function (c) { if (k !== url(st.tpl, false)) return; current = c; img.src = c.url; img.hidden = false; spin.hidden = true; shareBtn.disabled = saveBtn.disabled = false; };
+      var show = function (c) { if (k !== url(st.tpl, false)) return; current = c; img.src = c.url; img.hidden = false; spin.hidden = true; };
       if (cache[k]) return show(cache[k]);
-      spin.hidden = false; shareBtn.disabled = saveBtn.disabled = true;
+      spin.hidden = false;
       fetch(k, { credentials: 'same-origin' }).then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } if (!r.ok) throw 'Couldn\'t make the card. Try again.'; return r.blob(); })
         .then(function (b) { cache[k] = { blob: b, url: URL.createObjectURL(b) }; show(cache[k]); },
-          function (e) { if (k !== url(st.tpl, false)) return; spin.hidden = true; say(typeof e === 'string' ? e || '' : 'No connection. The card needs the internet.'); });
+          function (e) { if (k !== url(st.tpl, false)) return; spin.hidden = true; say(typeof e === 'string' ? e : 'No connection. The card needs the internet.'); });
+    }
+    // Panels: the open tool's choices take the template strip's place.
+    function panel(name) {
+      $$('[data-panel]', root).forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
+      $$('[data-tool]', root).forEach(function (t) { var on = t.getAttribute('data-tool') === name; t.classList.toggle('is-on', on); t.setAttribute('aria-expanded', String(on)); });
     }
     var log = function (action) {
       fetch('/api/games/' + encodeURIComponent(game) + '/stat-card-action', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
@@ -781,28 +803,41 @@
     var fileOf = function () { return new File([current.blob], 'wknd-stats-' + game + '.png', { type: 'image/png' }); };
     var canShareFile = function () { try { return !!(navigator.canShare && navigator.canShare({ files: [fileOf()] })); } catch (e) { return false; } };
     var sheet = function (action) {
-      navigator.share({ files: [fileOf()] }).then(function () { log(action); }, function (e) { if (e && e.name !== 'AbortError') say('Sharing didn\'t work. Try Save image instead.'); });
+      navigator.share({ files: [fileOf()] }).then(function () { log(action); panel('tpl'); }, function (e) { if (e && e.name !== 'AbortError') say('Sharing didn\'t work. Try Save image.'); });
     };
     var download = function () {
       var a = document.createElement('a'); a.href = current.url; a.download = 'wknd-stats-' + game + '.png';
-      document.body.appendChild(a); a.click(); a.remove(); log('save'); toast('Saved to your phone');
+      document.body.appendChild(a); a.click(); a.remove(); log('save'); panel('tpl'); toast('Saved');
     };
-    shareBtn.addEventListener('click', function () { if (!current) return; if (canShareFile()) sheet('share'); else download(); });
-    saveBtn.addEventListener('click', function () { if (!current) return; if (isIos && canShareFile()) sheet('save'); else download(); });
+    var copy = function () {
+      if (!navigator.clipboard || !window.ClipboardItem) return say('This phone can\'t copy pictures. Use Save image.');
+      navigator.clipboard.write([new ClipboardItem({ 'image/png': current.blob })])
+        .then(function () { log('copy'); panel('tpl'); toast('Copied. Paste it into your story'); }, function () { say('Couldn\'t copy it. Use Save image.'); });
+    };
     root.addEventListener('click', function (e) {
-      var b = e.target.closest && e.target.closest('button'); if (!b || b === shareBtn || b === saveBtn) return;
+      var b = e.target.closest && e.target.closest('button');
+      if (!b) { if (e.target === img || e.target.closest('[data-sh-stage]')) panel('tpl'); return; }
       var on = function (sel) { $$(sel, root).forEach(function (x) { x.classList.toggle('is-on', x === b); }); };
-      if (b.hasAttribute('data-tpl')) {
-        on('.sh__tpl'); var fam = b.getAttribute('data-fam');
-        $$('[data-vars]', root).forEach(function (v) { v.hidden = v.getAttribute('data-vars') !== fam; });
-        var vars = $('[data-vars="' + fam + '"] .is-on', root);
-        st.tpl = vars ? vars.getAttribute('data-variant') : b.getAttribute('data-tpl'); render();
-      } else if (b.hasAttribute('data-variant')) {
-        $$('[data-variant]', b.parentNode).forEach(function (x) { x.classList.toggle('is-on', x === b); }); st.tpl = b.getAttribute('data-variant'); render();
-      } else if (b.hasAttribute('data-accent')) { on('.sh__sw'); st.accent = b.getAttribute('data-accent'); thumbs(); render(); }
+      if (b.hasAttribute('data-tool')) { var t = b.getAttribute('data-tool'); panel(b.classList.contains('is-on') ? 'tpl' : t); }
+      else if (b.hasAttribute('data-tpl')) {
+        var vars = $('[data-vars="' + b.getAttribute('data-fam') + '"] .is-on', root);
+        pickTpl(vars ? vars.getAttribute('data-variant') : b.getAttribute('data-tpl')); remember(); render();
+      } else if (b.hasAttribute('data-variant')) { pickTpl(b.getAttribute('data-variant')); remember(); render(); }
+      else if (b.hasAttribute('data-accent')) { on('[data-accent]'); st.accent = b.getAttribute('data-accent'); remember(); thumbs(); render(); }
       else if (b.hasAttribute('data-focus')) { on('[data-focus]'); st.focus = b.getAttribute('data-focus'); thumbs(); render(); }
       else if (b.hasAttribute('data-bg')) { on('[data-bg]'); $('[data-sh-stage]', root).setAttribute('style', b.getAttribute('data-css') || ''); }
+      else if (b.hasAttribute('data-sh-do')) {
+        if (!current) return say('The card is still loading.');
+        var act = b.getAttribute('data-sh-do');
+        if (act === 'copy') copy();
+        else if (act === 'send') { if (canShareFile()) sheet('share'); else download(); }
+        else if (isIos && canShareFile()) sheet('save'); else download();
+      }
     });
+    // The last template and colour used on this phone.
+    if (saved.accent && $('[data-accent="' + saved.accent + '"]', root)) { st.accent = saved.accent; $$('[data-accent]', root).forEach(function (x) { x.classList.toggle('is-on', x.getAttribute('data-accent') === st.accent); }); }
+    if (!(saved.tpl && pickTpl(saved.tpl))) pickTpl(st.tpl);
+    var onTile = $('.se__tpl.is-on', root); if (onTile) onTile.scrollIntoView({ inline: 'center', block: 'nearest' });
     thumbs(); render();
   }
 

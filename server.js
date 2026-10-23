@@ -6586,6 +6586,9 @@ function appFeedItem(it, me, extra) {
   return { kind: 'game', day, when: day === 'Today' || day === 'Yesterday' ? manilaDayLabel(gameYmd(g.date)) : (gameTipLabel(g) || ''),
     href: `/app/games/${encodeURIComponent(g.id)}`, kicker: gameKicker(g), media: gameMedia(g), a, b,
     title, excerpt: body, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '',
+    // You played it this past week: the card's one button is Share my stats (the box score
+    // is a tap on the card). Older games keep "Box score & recap".
+    shareHref: mine && gameYmd(g.date) >= addDaysYmd(manilaTodayStr(), -7) ? `/app/games/${encodeURIComponent(g.id)}/share?from=home` : '',
     social: extra.social?.[g.id] || null };
 }
 
@@ -6763,7 +6766,8 @@ app.get('/app/games/:id/share', requireApp, (req, res) => {
     { key: 'none', label: 'None', css: '' },
   ].filter(Boolean);
   logApp(req, 'share_open', g.id);
-  sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({
+  // Full screen, like a story editor: no tab bar (bare).
+  sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, bare: true, bodyClass: 'is-editor', body: appSharePage({
     back, focus, locked: shareCardsLocked(req), bgs,
     game: { id: g.id, opp: titleCase(isA ? g.team_b_name : g.team_a_name), day: manilaDayLabel(gameYmd(g.date)), line: statLine(stat) },
   }) });
