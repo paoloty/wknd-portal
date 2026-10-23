@@ -451,22 +451,26 @@ html.iw-ios .iw-arrow { display: flex; }
 
 /* Our video player (public/app.js playVideo): YouTube underneath, our controls on top. */
 .player { background: #000; }
-.player__frame, .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.player__stage { position: absolute; inset: 0; overflow: hidden; }
+/* YouTube's frame is 200px taller than the stage, centred: the video (16:9, as wide as the
+   stage) fills the stage exactly, while YouTube's title bar, share/playlist buttons and its
+   bottom strip ("more videos", logo) sit in the cut-off bands. */
+.player__crop { position: absolute; left: 0; right: 0; top: -100px; bottom: -100px; }
+.player__crop iframe, .player__frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.player > iframe.player__frame { position: absolute; inset: 0; } /* fallback: YouTube's own player */
 /* Before the first play: our cover over YouTube's, letting the tap through to YouTube. */
 .player__poster { position: absolute; inset: 0; pointer-events: none; transition: opacity .3s ease; }
 .player.is-started .player__poster { opacity: 0; }
 .player:not(.is-ready) .player__poster .media__play { opacity: .6; }
-/* After it: our layer takes the taps; paused, the picture dims under our ▶. */
-.player__tap { position: absolute; inset: 0 0 44px; display: none; background: transparent; border: 0; padding: 0; transition: background .2s ease; }
+/* After it: our layer takes every tap on the picture (play/pause); paused, it dims. */
+.player__tap { position: absolute; inset: 0; display: none; background: transparent; border: 0; padding: 0; transition: background .2s ease; }
 .player.is-started .player__tap { display: block; }
 .player__tap .media__play { opacity: 0; transition: opacity .2s ease; }
-.player.is-paused .player__tap { background: rgba(0,0,0,.6); }
+.player.is-paused .player__tap { background: rgba(0,0,0,.45); }
 .player.is-paused .player__tap .media__play { opacity: 1; }
-.player.is-paused::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: rgba(0,0,0,.6); }
-.player__bar { position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: 44px; display: none; align-items: center; gap: 10px; padding: 0 12px; background: linear-gradient(transparent, rgba(0,0,0,.7)); color: #fff; }
+/* The bar: seek, time, full screen. */
+.player__bar { position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: 44px; display: none; align-items: center; gap: 10px; padding: 0 6px 0 14px; background: linear-gradient(transparent, rgba(0,0,0,.65)); color: #fff; }
 .player.is-started .player__bar { display: flex; }
-.player__pp { flex: none; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #fff; }
-.player__pp svg { width: 22px; height: 22px; }
 .player__seek { flex: 1; min-width: 0; height: 22px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; }
 .player__seek::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--amber) var(--p, 0%), rgba(255,255,255,.35) var(--p, 0%)); }
 .player__seek::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
@@ -474,6 +478,15 @@ html.iw-ios .iw-arrow { display: flex; }
 .player__seek::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--amber); }
 .player__seek::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #fff; }
 .player__time { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.player__fs { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: #fff; }
+.player__fs svg { width: 20px; height: 20px; }
+/* Full screen (real, or the window on iPhone): black, the 16:9 stage as big as fits, centred. */
+.player.is-full { position: fixed; z-index: 200; inset: 0; width: auto; height: auto; margin: 0; aspect-ratio: auto; border-radius: 0; }
+.player.is-full .player__stage { inset: auto; left: 50%; top: 50%; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; transform: translate(-50%, -50%); }
+.player.is-full .player__bar { bottom: env(safe-area-inset-bottom, 0px); padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(6px, env(safe-area-inset-right, 0px)); }
+.player:fullscreen { width: 100%; height: 100%; }
+body.player-full { overflow: hidden; }
+body.player-full .tabbar, body.player-full .navbar { visibility: hidden; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .score { margin: 2px 0 10px; }

@@ -68,7 +68,28 @@
   }
   var mmss = function (t) { t = Math.max(0, Math.floor(t || 0)); var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s; };
   var PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>';
-  var PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>';
+  var FULL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+  var SHRINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>';
+  // Full screen: the real thing where the phone allows it on a page element (Android, iPad);
+  // iPhone only allows it for its own video player, so there the player fills the window
+  // instead (turn the phone for landscape).
+  function fullScreen(box) {
+    var doc = document, inReal = doc.fullscreenElement || doc.webkitFullscreenElement;
+    var btn = $('.player__fs', box);
+    var mark = function (on) { box.classList.toggle('is-full', on); document.body.classList.toggle('player-full', on); btn.innerHTML = on ? SHRINK : FULL; btn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen'); };
+    if (inReal) { (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc); return; }
+    if (box.classList.contains('is-full')) return mark(false);
+    var req = box.requestFullscreen || box.webkitRequestFullscreen;
+    if (req) {
+      var off = function () { if (!(doc.fullscreenElement || doc.webkitFullscreenElement)) { mark(false); doc.removeEventListener('fullscreenchange', off); doc.removeEventListener('webkitfullscreenchange', off); } };
+      doc.addEventListener('fullscreenchange', off); doc.addEventListener('webkitfullscreenchange', off);
+      var r = req.call(box);
+      if (r && r.catch) r.catch(function () { mark(true); }); // refused: fill the window instead
+      mark(true);
+      return;
+    }
+    mark(true);
+  }
   // box: views/app/feed.js media() — .media.player[data-yt] holding the cover picture + ▶.
   function mountPlayer(box) {
     if (box.getAttribute('data-mounted')) return;
@@ -77,13 +98,17 @@
     var id = box.getAttribute('data-yt');
     var poster = document.createElement('div'); poster.className = 'player__poster';
     while (box.firstChild) poster.appendChild(box.firstChild);
-    box.innerHTML = '<div class="player__frame"></div>';
-    box.appendChild(poster);
-    box.insertAdjacentHTML('beforeend', '<button type="button" class="player__tap" aria-label="Play or pause"><i class="media__play">' + PLAY + '</i></button>'
-      + '<div class="player__bar"><button type="button" class="player__pp" aria-label="Play">' + PLAY + '</button>'
+    // stage: the 16:9 picture (YouTube's frame, sized taller than the stage so its title bar
+    // and bottom strip fall outside it, our cover, our tap layer); bar: seek, time, full screen.
+    box.innerHTML = '<div class="player__stage"><div class="player__crop"><div class="player__frame"></div></div></div>';
+    var stage = $('.player__stage', box);
+    stage.appendChild(poster);
+    stage.insertAdjacentHTML('beforeend', '<button type="button" class="player__tap" aria-label="Play or pause"><i class="media__play">' + PLAY + '</i></button>');
+    box.insertAdjacentHTML('beforeend', '<div class="player__bar">'
       + '<input class="player__seek" type="range" min="0" max="0" step="1" value="0" aria-label="Seek">'
-      + '<span class="player__time">0:00</span></div>');
-    var pp = $('.player__pp', box), seek = $('.player__seek', box), time = $('.player__time', box), dragging = false, player = null, timer = null;
+      + '<span class="player__time">0:00</span>'
+      + '<button type="button" class="player__fs" aria-label="Full screen">' + FULL + '</button></div>');
+    var seek = $('.player__seek', box), time = $('.player__time', box), dragging = false, player = null, timer = null;
     var playing = function () { return player && player.getPlayerState && player.getPlayerState() === 1; };
     var toggle = function () { if (!player || !player.playVideo) return; if (playing()) player.pauseVideo(); else player.playVideo(); };
     var paint = function () {
@@ -95,7 +120,7 @@
       time.textContent = mmss(dragging ? seek.value : t) + (d ? ' / ' + mmss(d) : '');
     };
     $('.player__tap', box).addEventListener('click', toggle);
-    pp.addEventListener('click', toggle);
+    $('.player__fs', box).addEventListener('click', function () { fullScreen(box); });
     seek.addEventListener('input', function () { dragging = true; paint(); });
     seek.addEventListener('change', function () { dragging = false; if (player && player.seekTo) player.seekTo(Number(seek.value), true); });
     loadYt().then(function (YT) {
@@ -107,7 +132,6 @@
           onStateChange: function (e) {
             var on = e.data === 1 || e.data === 3; // playing / buffering
             if (on) box.classList.add('is-started');
-            pp.innerHTML = on ? PAUSE : PLAY; pp.setAttribute('aria-label', on ? 'Pause' : 'Play');
             box.classList.toggle('is-paused', !on && box.classList.contains('is-started')); paint();
           },
         },
@@ -657,9 +681,9 @@
     }
   }
 
-  function go(url, push) {
+  function go(url, push, still) {
     var id = ++navId;
-    var dir = direction(currentUrl, url);
+    var dir = still ? undefined : direction(currentUrl, url);
     var k = takeKept(url);
     if (k) {
       var html = pages[url] ? pages[url].html : '';
@@ -704,7 +728,9 @@
     var warm = function (e) { var a = e.target.closest && e.target.closest('a'); if (eligible(a)) prefetch(urlOf(a.href)); };
     document.addEventListener('touchstart', warm, { passive: true });
     document.addEventListener('mousedown', warm);
-    window.addEventListener('popstate', function () { go(urlOf(location.href), false); });
+    // Back (iPhone's edge swipe, Android's back): iPhone animates the swipe itself, so the
+    // screen goes in without our slide on top of it.
+    window.addEventListener('popstate', function () { go(urlOf(location.href), false, true); });
     // Fetch the other tabs once the first screen is up.
     // The screen it opened on too, from the server: a copy of the live page (countdown ticked,
     // lists loaded) would never match a refresh and force a re-render on every return.
