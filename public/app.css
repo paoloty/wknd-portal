@@ -55,7 +55,9 @@
 /* ── Base: no web habits (tap flash, text selection on controls, rubber-band body) ── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+/* No pinch or double-tap zoom: it's an app (a zoomed page also strands the fixed tab bar
+   mid-screen on iPhone). pan-x pan-y = scroll only; app.js also stops Safari's gesture events. */
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; touch-action: pan-x pan-y; }
 /* Full page loads (forms, sign-in) cross-fade instead of flashing blank, where supported. */
 @view-transition { navigation: auto; }
 body {
@@ -750,3 +752,22 @@ a.sx:active { transform: scale(.99); }
 .push-ask p { margin: 0 0 12px; font-size: 14px; color: var(--muted); line-height: 1.45; }
 .push-ask__btns { display: flex; gap: 8px; }
 .push-ask__btns .btn { height: 42px; font-size: 15px; }
+
+/* ── Type, like X/Twitter (Paolo, 2026-10-23): 15px text, 16px headlines, 13px small print,
+   tighter lines. Numbers and scores keep Saira Condensed. ── */
+.lt h1 { font-size: 28px; }
+.lt { padding: 12px 18px 10px; }
+.sx h3, .fc h3, .rc h3 { font-size: 16px; line-height: 1.3; letter-spacing: 0; }
+.gx__ex, .nx p, .fc p, .ax__body p, .px__where { font-size: 15px; line-height: 1.33; }
+.gx__ex, .nx p { -webkit-line-clamp: 3; }
+.art p { font-size: 15px; line-height: 1.4; }
+.art h2 { font-size: 18px; line-height: 1.25; }
+.post h1 { font-size: 21px; }
+.post__body { font-size: 15px; line-height: 1.45; }
+.pwr__head h3 { font-size: 19px; }
+.cell { font-size: 15px; }
+.cell__t small, .prof__sub, .foot-note, .gx__meta, .pwr__note, .px__foot, .rc__foot, .pv__line, .fc__foot, .gx__foot, .ax__head small, .sx__when { font-size: 13px; }
+.sec { font-size: 13px; padding: 16px 32px 6px; }
+.gx__potg b, .ax__head b { font-size: 15px; }
+.actions__t { font-size: 15px; }
+.app-toast { font-size: 14px; }

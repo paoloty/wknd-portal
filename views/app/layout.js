@@ -163,7 +163,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>${esc(title)}</title>
   <meta name="robots" content="noindex, nofollow">
   <meta name="app-ver" content="${esc(ver)}">

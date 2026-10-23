@@ -33,6 +33,9 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Pull to refresh on every screen with the tab bar (app.js "Pull to refresh"): pull down from the top past the mark and let go; the screen re-fetches (`refreshScreen`) and the feed reloads its first page.
 - Papawis cards are view-only ("Soon") until Papawis is built into the app.
 
+## No zoom, X-style type
+- Pinch and double-tap zoom are off (viewport `maximum-scale=1, user-scalable=no`, `touch-action: pan-x pan-y`, and app.js stops iPhone's `gesturestart`): a zoomed page left the fixed tab bar stranded mid-screen. Text follows an X/Twitter-like scale (app.css "Type, like X"): 15px text, 16px card headlines, 13px small print, 28px screen titles.
+
 ## One look (app.css "One card look, app-wide")
 - Every card, list group and tile shares the feed cards' surface (`--card-bg` + `--card-hi`, 20px corners). `.glow` is the amber-glow card (announcements, your Picks record, your profile, the preview's matchup). Results show as W/L chips (`.res`). The Pickmaster's top 3 use the medal colours. The game screen uses the feed card's hero (`gameHero`: photo + score, or a dark band under the video) and its player-of-the-game strip (`potgBox`). New screens use these, not new card styles.
 

@@ -1010,6 +1010,9 @@
     document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
   })();
 
+  // No pinch zoom (iPhone ignores user-scalable=no; its own gesture events can be stopped).
+  ['gesturestart', 'gesturechange'].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); }, { passive: false }); });
+
   initPage();
 
   // ════ Launch from the phone's copy ════
