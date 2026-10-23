@@ -141,11 +141,13 @@
       if (ib) ib.addEventListener('click', function () { if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; card.hidden = true; } });
     }
   }
-  // A short confirmation above the tab bar.
-  function toast(text) {
+  // A short notice above the tab bar, coloured by tone (CLAUDE.md "Notices"): ok = green
+  // (done), err = red (problem), warn = amber (needs attention), info = neutral.
+  function toast(text, tone) {
+    tone = tone || 'ok';
     $$('.app-toast').forEach(function (t) { t.remove(); });
-    var t = document.createElement('div'); t.className = 'app-toast'; t.setAttribute('role', 'status');
-    t.innerHTML = '<i>✓</i><span></span>'; $('span', t).textContent = text;
+    var t = document.createElement('div'); t.className = 'app-toast app-toast--' + tone; t.setAttribute('role', tone === 'err' ? 'alert' : 'status');
+    t.innerHTML = '<i>' + (tone === 'ok' ? '✓' : tone === 'info' ? 'i' : '!') + '</i><span></span>'; $('span', t).textContent = text;
     document.body.appendChild(t);
     setTimeout(function () { t.remove(); }, 2600);
   }
@@ -302,8 +304,9 @@
           .catch(function (e) {
             busy = false; if (e === 0) return;
             skel.hidden = true;
+            end.className = 'lazy__end is-error';
             end.innerHTML = 'Couldn\'t load. <button type="button">Try again</button>';
-            $('button', end).addEventListener('click', function () { end.textContent = ''; load(); });
+            $('button', end).addEventListener('click', function () { end.className = 'lazy__end'; end.textContent = ''; load(); });
           });
       };
       // No IntersectionObserver (very old phones): a "Show more" button instead.
@@ -533,12 +536,20 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/app/sw.js', { scope: '/app' }).catch(function () {});
   }
-  var offlineBar = null;
+  // Red while offline; on reconnect it turns green ("Back online") for a moment, then goes.
+  var offlineBar = null, onlineTimer = null;
   var net = function () {
-    if (navigator.onLine) { if (offlineBar) { offlineBar.remove(); offlineBar = null; } return; }
-    if (offlineBar) return;
-    offlineBar = document.createElement('div'); offlineBar.className = 'offline-bar'; offlineBar.textContent = 'You\'re offline · showing what was last loaded';
-    document.body.insertBefore(offlineBar, document.body.firstChild);
+    if (navigator.onLine) {
+      if (!offlineBar || onlineTimer) return;
+      var bar = offlineBar;
+      bar.className = 'offline-bar is-online'; bar.textContent = 'Back online';
+      onlineTimer = setTimeout(function () { bar.remove(); if (offlineBar === bar) offlineBar = null; onlineTimer = null; }, 2000);
+      return;
+    }
+    if (onlineTimer) { clearTimeout(onlineTimer); onlineTimer = null; }
+    if (!offlineBar) { offlineBar = document.createElement('div'); document.body.insertBefore(offlineBar, document.body.firstChild); }
+    offlineBar.className = 'offline-bar'; offlineBar.setAttribute('role', 'status');
+    offlineBar.textContent = 'You\'re offline · showing what was last loaded';
   };
   window.addEventListener('online', net); window.addEventListener('offline', net); net();
 

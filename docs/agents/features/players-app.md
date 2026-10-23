@@ -59,6 +59,9 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Per-screen setup lives in `initPage()`, which runs again after every swap: anything new that hooks into a screen goes there.
 - Home's open-pick To Dos use only the close check (`picksClosedFor`), not `buildPicksContext`/`openPicks` (all picks + odds, ~100 ms).
 
+## Notices
+Toasts and bars are coloured by tone (CLAUDE.md "Notices"; tokens `--ok-bg` / `--err-bg` / `--warn-bg` in app.css): `toast(text, tone)` in app.js, tone `ok` (default, green ✓) | `err` (red) | `warn` (amber) | `info` (neutral). The offline bar is red and turns green ("Back online") for 2 s on reconnect; the "New version ready" bar is amber; a lazy list that fails to load and a failed pick show a tinted red block. In-page messages use `.msg--ok/err/warn/info`.
+
 ## Time
 Dates and times use `manilaFormat` (views/utils.js): shift to UTC+8 and format as UTC. Intl's `Asia/Manila` isn't reliable on the Hetzner build.
 

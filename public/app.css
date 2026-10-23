@@ -15,6 +15,12 @@
   --tabbar-h: 58px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
+  /* Notice tones: every toast and banner takes its colour from what it says (CLAUDE.md
+     "Notices"). Solid fills for things that pop up or pin to the screen; in-page messages
+     use the tinted .msg--* versions. The same in light and dark. */
+  --ok-bg: #16a34a;   --on-ok: #ffffff;    /* done: saved, picked, back online */
+  --err-bg: #dc2626;  --on-err: #ffffff;   /* problem: offline, failed */
+  --warn-bg: #f59332; --on-warn: #111111;  /* needs attention: new version, almost closing */
 
   /* dark (default) */
   --bg: #0a0e16; --surface: #10141d; --surface-2: #161c29; --border: rgba(255,255,255,0.06); --hair: rgba(255,255,255,0.08);
@@ -152,6 +158,7 @@ button.cell { width: 100%; text-align: left; }
 .msg--err { background: rgba(239,68,68,0.12); color: var(--danger); }
 .msg--ok { background: rgba(52,211,153,0.12); color: var(--win); }
 .msg--info { background: rgba(245,147,50,0.12); color: var(--amber-text); }
+.msg--warn { background: rgba(245,147,50,0.16); color: var(--amber-text); }
 
 /* ── Sign in ── */
 .auth-hero { padding: 28px 20px 0; }
@@ -267,6 +274,8 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 @keyframes skel { to { transform: translateX(100%); } }
 .lazy__end { padding: 14px 16px; text-align: center; font-size: 13px; color: var(--muted); min-height: 1px; }
 .lazy__end button { color: var(--amber-text); font-weight: 600; }
+.lazy__end.is-error { margin: 10px 16px 0; padding: 11px 13px; border-radius: 12px; background: rgba(239,68,68,0.12); color: var(--danger); font-weight: 600; }
+.lazy__end.is-error button { color: var(--danger); text-decoration: underline; }
 .lazy__items + .lazy__skel { margin-top: 0; }
 @media (prefers-reduced-motion: reduce) { .skel::after { animation: none; } }
 
@@ -322,9 +331,13 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 .pick__stakes b { color: var(--text); }
 .pick__stakes .up { color: var(--win); } .pick__stakes .dn { color: var(--loss); }
 .pick__note { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 10px 2px 0; font-size: 12.5px; color: var(--muted); }
-.pick__msg { margin: 10px 2px 0; font-size: 13px; font-weight: 600; color: var(--danger); }
-.app-toast { position: fixed; z-index: 35; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 14px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 999px; background: var(--text); color: var(--bg); font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.3); white-space: nowrap; }
-.app-toast i { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--amber); color: #111; font-style: normal; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.pick__msg { margin: 10px 0 0; padding: 10px 12px; border-radius: 11px; background: rgba(239,68,68,0.12); font-size: 13px; font-weight: 600; color: var(--danger); }
+.app-toast { position: fixed; z-index: 35; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 14px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 999px; background: var(--ok-bg); color: var(--on-ok); font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.3); white-space: nowrap; }
+.app-toast i { flex: none; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,.25); color: inherit; font-style: normal; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.app-toast--err { background: var(--err-bg); color: var(--on-err); }
+.app-toast--warn { background: var(--warn-bg); color: var(--on-warn); }
+.app-toast--warn i { background: rgba(0,0,0,.15); }
+.app-toast--info { background: var(--text); color: var(--bg); }
 @media (prefers-reduced-motion: no-preference) { .app-toast { animation: toast-in .2s ease both; } }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
@@ -368,9 +381,10 @@ html.iw-ios .iw-arrow { display: flex; }
 .install p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
 .install b { font-size: 15px; }
 .share-glyph { display: inline-block; width: 15px; height: 15px; vertical-align: -2px; color: #2f80ed; }
-.update-bar { position: fixed; z-index: 30; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 9px 9px 9px 16px; border-radius: 999px; background: var(--text); color: var(--bg); font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.3); white-space: nowrap; }
-.update-bar button { padding: 6px 12px; border-radius: 999px; background: var(--amber); color: #111; font-weight: 700; }
-.offline-bar { position: sticky; top: 0; z-index: 25; padding: 7px 16px; text-align: center; font-size: 13px; font-weight: 600; background: var(--surface-2); color: var(--muted); }
+.update-bar { position: fixed; z-index: 30; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 9px 9px 9px 16px; border-radius: 999px; background: var(--warn-bg); color: var(--on-warn); font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.3); white-space: nowrap; }
+.update-bar button { padding: 6px 12px; border-radius: 999px; background: #111111; color: #ffffff; font-weight: 700; }
+.offline-bar { position: sticky; top: 0; z-index: 25; padding: 8px 16px; text-align: center; font-size: 13px; font-weight: 600; background: var(--err-bg); color: var(--on-err); }
+.offline-bar.is-online { background: var(--ok-bg); color: var(--on-ok); }
 
 @media (prefers-reduced-motion: no-preference) {
   .btn, a.cell, button.cell { transition: background-color .15s, filter .15s; }
