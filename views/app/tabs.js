@@ -63,17 +63,11 @@ export function appMePage({ me, season, games, positions, todos = [] }) {
   </div>`;
 }
 
-export function appPapawisPage() {
-  return `${lt('Papawis')}
-  <div class="card" style="text-align:center;padding:26px 18px">
-    <div class="kick">Coming to the app next</div>
-    <p class="muted" style="margin:8px 0 0;font-size:14.5px">Joining runs, the waitlist and your free runs move in here in the next build. Open runs already show on Home.</p>
-  </div>`;
-}
-
 // Under Me (gear). rows: [{ icon, title, value, href, count, soon }] — a row without an
 // /app href is information only.
-export function appSettingsPage({ me, rows }) {
+// push: [{ key, label, sub, on }] — the kinds of notification (lib/push.js PUSH_KINDS).
+// The on/off for this phone is the browser's, so public/app.js (initPush) fills that part in.
+export function appSettingsPage({ me, rows, push = [] }) {
   const row = r => {
     const inner = `<span class="ico">${icons[r.icon]}</span><span class="cell__t">${esc(r.title)}</span>${r.count ? `<span class="count">${r.count}</span>` : ''}${r.value ? `<span class="cell__v">${esc(r.value)}</span>` : ''}`;
     return isAppHref(r.href) ? `<a class="cell" href="${esc(r.href)}">${inner}${chev}</a>` : `<div class="cell">${inner}${r.soon ? soonTag : ''}</div>`;
@@ -81,6 +75,14 @@ export function appSettingsPage({ me, rows }) {
   return `
   <div class="navbar"><a class="navbar__back" href="/app/me">${backChev}Me</a><span class="navbar__title">Settings</span><span></span></div>
   <div class="group group--icons" style="margin-top:8px">${rows.map(row).join('')}</div>
+  <div class="sec">Notifications</div>
+  <div class="group" data-push>
+    <div class="cell"><span class="ico ico--amber">${icons.bell}</span><span class="cell__t">On this phone<small data-push-status>Checking…</small></span>
+      <button type="button" class="pill pill--solid" data-push-toggle hidden>Turn on</button></div>
+    ${push.map(k => `<label class="cell push-kind"><span class="cell__t">${esc(k.label)}<small>${esc(k.sub)}</small></span>
+      <input type="checkbox" class="switch" data-push-kind="${esc(k.key)}"${k.on ? ' checked' : ''}></label>`).join('')}
+  </div>
+  <p class="foot-note">Account messages (balance, Rate &amp; Win) always come through. <button type="button" class="link" data-push-test hidden>Send a test</button></p>
   <div class="sec">Appearance</div>
   <div class="group"><div class="cell"><div class="seg" style="flex:1" data-theme-switch>
     ${[['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<label><input type="radio" name="theme" value="${v}"><span>${l}</span></label>`).join('')}

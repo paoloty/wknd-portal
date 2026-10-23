@@ -130,3 +130,28 @@ self.addEventListener('fetch', (e) => {
   if (isData(url)) return e.respondWith(data(e, url));
   if (isImage(url) && !url.searchParams.has('r')) return e.respondWith(image(e, url));
 });
+
+// ── Push notifications (lib/push.js) ──
+// payload: { title, body, url, tag, badge }. The app icon's badge follows the unread count.
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: 'WKND', body: e.data ? e.data.text() : '' }; }
+  const shown = self.registration.showNotification(d.title || 'WKND', {
+    body: d.body || '', tag: d.tag || undefined, renotify: !!d.tag,
+    icon: '/app-icon-192.png', badge: '/favicon-32.png', data: { url: d.url || '/app' },
+  });
+  const badge = typeof d.badge === 'number' && self.navigator.setAppBadge
+    ? (d.badge ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {}) : Promise.resolve();
+  e.waitUntil(Promise.all([shown, badge]));
+});
+
+// Tapped: the open app goes to that screen (app.js listens), else the app opens on it.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || '/app', self.location.origin).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const win = list.find((c) => new URL(c.url).pathname.startsWith('/app'));
+    if (win) { win.postMessage({ type: 'open', url }); return win.focus(); }
+    return self.clients.openWindow(url);
+  }));
+});

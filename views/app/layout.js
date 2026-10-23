@@ -157,7 +157,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
     const n = Number(badges[key]) || 0;
     return n ? `<span class="tab__badge tab__badge--${key === 'me' ? 'err' : 'warn'}" aria-label="${n} waiting">${n > 9 ? '9+' : n}</span>` : '';
   };
-  const tabbar = bare ? '' : `<nav class="tabbar" aria-label="App">${TABS.map(t =>
+  const tabbar = bare ? '' : `<nav class="tabbar" aria-label="App" data-unread="${Number(badges.unread) || 0}">${TABS.map(t =>
     `<a class="tab${t.key === tab ? ' is-on' : ''}" href="${t.href}"${t.key === tab ? ' aria-current="page"' : ''}><span class="tab__ico">${t.icon}${badge(t.key)}</span><span>${t.label}</span></a>`).join('')}</nav>`;
   return `<!DOCTYPE html>
 <html lang="en">

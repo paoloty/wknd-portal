@@ -88,18 +88,19 @@ function postCard(p) {
   </a>`;
 }
 
-// View only for now: joining happens on the Papawis tab once it's built into the app.
+// Opens the Papawis tab, where the player joins.
 // faces: [{ ini, color }] of who's in (up to 5).
 function papawisCard(r) {
   const pct = r.max ? Math.min(100, Math.round((r.confirmed / r.max) * 100)) : 0;
   const left = Math.max(0, r.max - r.confirmed);
-  return `<article class="sx px"><div class="sx__body">
+  return `<a class="sx px" href="/app/papawis"><div class="sx__body">
     <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc([r.runDay, r.time].filter(Boolean).join(' · '))}</span></div>
     <h3>${esc(r.title)}</h3>
     ${r.place ? `<p class="px__where">📍 ${esc(r.place)}</p>` : ''}
     <div class="px__bar"><i style="width:${pct}%"></i></div>
     <div class="px__foot">${r.faces?.length ? `<span class="px__faces">${r.faces.map(f => `<i style="--c:${esc(f.color)}">${esc(f.ini)}</i>`).join('')}</span>` : ''}<span>${r.confirmed} of ${r.max} in${r.waitlist ? ` · ${r.waitlist} waiting` : ''}</span><b>${left ? `${left} spot${left === 1 ? '' : 's'} left` : 'Full'}</b></div>
-  </div></article>`;
+    <span class="sx__go">${left ? 'Join ›' : 'Join the waitlist ›'}</span>
+  </div></a>`;
 }
 
 const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard };
@@ -126,6 +127,11 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', acti
   return `${header}
   ${setupHtml}
   ${installHtml}
+  <div class="card glow push-ask" data-push-ask hidden>
+    <b>Turn on notifications?</b>
+    <p>Picks closing, new Papawis runs, your stat card after a game. You choose which in Settings.</p>
+    <div class="push-ask__btns"><button type="button" class="btn" data-push-ask-on>Turn on</button><button type="button" class="btn btn--ghost" data-push-ask-off>Not now</button></div>
+  </div>
   ${strip}
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
   ${rail ? '<div class="rail-block" data-block-src="/app/rail"><div class="rail-h"><b class="skel skel--line skel--short" style="width:120px"></b></div><div class="rail"><div class="rc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span></div><div class="rc skel-card"></div></div></div>' : ''}

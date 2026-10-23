@@ -41,6 +41,18 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Every card has Preview › → `/app/games/:id`, which before the result is the preview (`appGamePreview`): the pick card while picks are open, the storyline, records, each team's last 5, last meeting (→ that game), all-time series, players to watch. Built from the site's `gamePreview()` (same matchup and storyline) through `appPreview`. After the final the same URL is the recap.
 - Picks shaping for both: `appPickGame` (also used by the Picks tab).
 
+## Papawis (`/app/papawis`)
+- `views/app/papawis.js` + server.js `appPapawisRuns` / `appPapawisHistory`. The upcoming runs (`status = 'open'`, not past) as run cards: court photo hero with day/time and an "N open / Full" chip, countdown to tip-off (or to sign-ups opening), who's in (faces, yours in amber), per-head estimate, cancel-by date, waitlist, and one action. Then "Your runs": past runs with what each cost and whether it's paid.
+- The states mirror the site's `views/papawis.js` runBlock (scheduled, in with slot, pending deposit, waitlist position, banned, unpaid game, full → waitlist, open → claim). Join / leave / free run post to the site's own `/papawis/:id/join | cancel | voucher`, so every rule stays in one place; a claim inside the 3-day cancel window and any cancel ask first. Deposits and settling a balance are still on the site (shown with "Soon").
+- Home's Papawis feed cards open this tab ("Join ›").
+
+## Push notifications (`lib/push.js`, web-push)
+- Turned on per phone from Settings → Notifications ("On this phone") or Home's "Turn on notifications?" card (shown while the phone hasn't been asked; "Not now" hides it 2 weeks). iPhone: installed app only (iOS 16.4+), and the permission prompt must come from a tap. Table `push_subscriptions` (one row per phone); re-sent once a day so the server keeps it. Log out unsubscribes the phone; a password reset deletes the account's subscriptions.
+- What's pushed: every bell notification (`createNotification` → `onNotificationCreated` listener in server.js → `pushToPlayer`), opening the matching app screen (`appLinkFor`: /papawis → Papawis tab, /games/… → the game, /picks → Picks, else the inbox); announcements (push only, to app players); picks closing in 2 hours with games still to pick (once per day per player, `push_log`). The app icon shows the unread count (Badging API).
+- Kinds the player can switch off (`push_prefs`, `PUSH_KINDS`): Picks & MVP, Papawis, Games, Comments, Announcements. Account messages always come through.
+- Keys: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (+ `VAPID_SUBJECT`) from the environment, else a pair is made once and kept in site_settings. Changing keys means everyone turns notifications on again.
+- `/admin/app` shows how many accounts have notifications on; `push_on` / `push_off` in the activity log.
+
 ## Announcements (`/admin/app/announcements`)
 - Table `app_announcements` (lib/portal-db.js): title, body, one photo (JPEG data URL, shrunk to 1600px in the admin's browser, served resized at `/app/announcements/:id/image?w=640|960`) or one YouTube link, `pinned_until`, soft delete. Pinning (1/3/7 days, or "Pin 7 days" / "Unpin" on the list) keeps it on top of Home and out of the dated list until it expires. Linked from the `/admin/app` header.
 
@@ -108,4 +120,4 @@ Dates and times use `manilaFormat` (views/utils.js): shift to UTC+8 and format a
 - iPhone never updates the home-screen icon or name after install: keep the icon plain.
 
 ## Not built yet
-Push notifications, app versions of Papawis / Share my stats / balance / sign-up / jersey, the Finals margin guess in the app, writing comments and reactions in the app (F2), awards and picks results as feed cards.
+App versions of Share my stats / balance / sign-up / jersey / Papawis deposits, the Finals margin guess in the app, writing comments and reactions in the app (F2), awards and picks results as feed cards.

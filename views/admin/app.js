@@ -20,14 +20,16 @@ const EVENT = {
   signout: () => 'logged out',
   photo_failed: (d) => `couldn't upload a photo${d ? ` (${d})` : ''}`,
   img_failed: (d) => `couldn't load a picture${d ? ` (${d})` : ''}`,
+  push_on: () => 'turned on notifications',
+  push_off: () => 'turned off notifications',
   passkey_added: (d) => `turned on Face ID / fingerprint sign-in${d ? ` (${d})` : ''}`,
   passkey_removed: () => 'removed a Face ID / fingerprint sign-in',
 };
-const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray', photo_failed: 'red', img_failed: 'amber', passkey_added: 'green', passkey_removed: 'gray' };
+const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray', photo_failed: 'red', img_failed: 'amber', push_on: 'green', push_off: 'gray', passkey_added: 'green', passkey_removed: 'gray' };
 
 // rows: [{ regId, playerId, name, team, color, email, hasAccess, s (summary row | null),
 //          setup: { photo, details } }]
-export function adminAppBody({ rows, events, query = {}, isOpen, settingsHtml = '', now = Date.now() }) {
+export function adminAppBody({ rows, events, query = {}, isOpen, pushOn = 0, settingsHtml = '', now = Date.now() }) {
   const stage = r => (r.s?.installed_at ? 'installed' : r.s?.first_signin_at ? 'signed_in' : 'not_yet');
   const total = rows.length;
   const signedIn = rows.filter(r => r.s?.first_signin_at).length;
@@ -86,6 +88,7 @@ export function adminAppBody({ rows, events, query = {}, isOpen, settingsHtml = 
       ${kpi({ label: 'Installed', value: String(installed), of: ` of ${total}`, href: '/admin/app?view=installed' })}
       ${kpi({ label: 'Setup finished', value: String(setupDone), of: signedIn ? ` of ${signedIn} signed in` : '' })}
       ${kpi({ label: 'Opened in the last 7 days', value: String(active7) })}
+      ${kpi({ label: 'Notifications on', value: String(pushOn), of: signedIn ? ` of ${signedIn} signed in` : '' })}
     </div>
     <div class="aui-cols">
       <div class="aui-cols__main">${grid}</div>

@@ -6015,13 +6015,16 @@ import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId } from './views/app/feed.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
-import { appTeamPage, appMePage, appPapawisPage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { appPapawisPage } from './views/app/papawis.js';
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
 import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
 import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, deleteAppAnnouncement } from './lib/portal-db.js';
 import { adminAnnouncementsBody } from './views/admin/app-announcements.js';
+import { savePushSubscription, deletePushSubscription, deletePushSubscriptionsForReg, getPushSubscriptionsForReg, getAllPushSubscriptions, getPushPrefs, setPushPref, claimPushLog, onNotificationCreated } from './lib/portal-db.js';
+import { vapidKeys, pushToPlayer, pushKindOf, PUSH_KINDS } from './lib/push.js';
 import { adminAppBody } from './views/admin/app.js';
 import { appSignInCodeEmail } from './lib/mailer.js';
 
@@ -6449,7 +6452,7 @@ const appAccountTodos = me => appSeasonState(me).rows.filter(r => !r.done && r.h
 const appBadges = me => ({ picks: appOpenPicks(me).length, me: appAccountTodos(me).length });
 // Every screen with the tab bar goes through this, so the badges are always current.
 const appWho = me => createHash('sha256').update(`wknd-app:${me.reg.id}`).digest('hex').slice(0, 12);
-const sendTab = (res, me, opts) => sendApp(res, { ...opts, badges: appBadges(me), who: appWho(me) });
+const sendTab = (res, me, opts) => sendApp(res, { ...opts, badges: { ...appBadges(me), unread: me.unread }, who: appWho(me) });
 const closeLabel = ms => manilaFormat(ms, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
 // ── Home: the feed ──
@@ -6935,9 +6938,86 @@ app.get('/app/picks', requireApp, (req, res) => {
   sendTab(res, me, { title: 'Who wins? · WKND', tab: 'picks', body: appPicksPage({ record, games, board, past }) });
 });
 
+// ── Papawis (views/app/papawis.js) ──
+// The site's runs and rules, shaped for the app. Joining, leaving and the free run go
+// through the site's own POST /papawis/:id/join | cancel | voucher (public/app.js
+// initPapawis), so every rule (bans, unpaid games, probation deposits, the 3-day cancel
+// window, the waitlist) lives in one place. The states below mirror views/papawis.js runBlock.
+const pwDaysUntil = ymd => Math.round((Date.parse(`${ymd}T00:00:00Z`) - Date.parse(`${manilaTodayStr()}T00:00:00Z`)) / 86400000);
+const pwDay = ymd => manilaFormat(Date.parse(`${ymd}T12:00:00+08:00`), { weekday: 'short', month: 'short', day: 'numeric' });
+const pwPeso = n => `₱${Number(n).toLocaleString('en-US')}`;
+function appPapawisRuns(me) {
+  const teams = getAllTeams();
+  const banned = !!me.player.banned_at;
+  const unpaid = hasUnpaidCompletedPapawis(me.playerId);
+  const vouchers = getVouchersForPlayer(me.playerId);
+  const freeRun = vouchers.find(v => v.status === 'active') || null;
+  const applied = new Set(vouchers.filter(v => v.status === 'reserved').map(v => v.signup_id));
+  const runs = getPapawisGames()
+    .filter(g => g.status === 'open' && pwDaysUntil(g.date) >= 0)
+    .sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`));
+  return runs.map(g => {
+    const court = getPapawisCourtByName(g.location);
+    const dLeft = pwDaysUntil(g.date);
+    const scheduled = !isPapawisSignupOpenNow(g);
+    const signups = scheduled ? [] : getPapawisSignups(g.id);
+    const confirmed = signups.filter(s => s.status === 'confirmed');
+    const waitlist = signups.filter(s => s.status === 'waitlist' || s.status === 'pending');
+    const max = g.max_slots || 0, filled = confirmed.length, open = Math.max(0, max - filled);
+    const full = !scheduled && filled >= max;
+    const cancellable = dLeft >= PAPAWIS_CUTOFF_DAYS;
+    const mine = scheduled ? null : signups.find(s => !s.guest_name && s.player_id === me.playerId) || null;
+    const courtRate = g.court_rate_per_hour ? null : (court?.price_per_hour || null);
+    const price = estimatedPapawisPrice(g, Math.max(filled, max), courtRate);
+    const opensAt = papawisSignupOpensAtMs(g);
+    const startClock = g.start_time ? formatTimeRange(g.start_time, null) : '';
+    // What the player can do now, as views/papawis.js decides it (deposits and settling a
+    // balance happen on the site for now: shown as information).
+    let state;
+    if (scheduled) state = { kind: 'scheduled', note: `Sign-ups open ${pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10))} · 8:00 AM` };
+    else if (mine?.status === 'confirmed') state = { kind: 'in', slot: confirmed.indexOf(mine) + 1, cancellable, freeApplied: applied.has(mine.id), freeAvailable: !!freeRun && !applied.has(mine.id) };
+    else if (mine?.status === 'pending') state = { kind: 'pending' };
+    else if (mine?.status === 'waitlist') state = { kind: 'waitlist', pos: waitlist.indexOf(mine) + 1 };
+    else if (banned) state = { kind: 'banned' };
+    else if (unpaid) state = { kind: 'unpaid' };
+    else if (full) state = { kind: 'join-waitlist', waiting: waitlist.length };
+    else state = { kind: 'join', open, confirmFirst: !cancellable };
+    const face = s => {
+      const name = displayPlayerName(s.player_name || '');
+      return { ini: s.guest_name ? 'G' : name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
+        color: s.team_id ? teamColorById(teams, s.team_id) : 'var(--subtle)', me: s.player_id === me.playerId && !s.guest_name,
+        photoUrl: s.guest_name ? '' : playerPhotoUrl(s.player_id, 96), playerId: s.guest_name ? '' : s.player_id };
+    };
+    return {
+      id: g.id, title: g.title || `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })} run`,
+      day: pwDay(g.date), today: dLeft === 0, time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
+      place: g.location || 'Court to be announced', photo: court?.image_url ? `/api/papawis-court/${encodeURIComponent(court.id)}/photo` : '',
+      tipAt: Date.parse(`${g.date}T${g.start_time || '00:00'}:00+08:00`), opensAt, scheduled,
+      filled, max, open, full, waiting: waitlist.length, faces: confirmed.map(face),
+      price: price ? pwPeso(price) : '', priceNote: `Estimate with ${Math.max(filled, max)} players · split after the game`,
+      cancelBy: cancellable ? pwDay(addDaysYmd(g.date, -PAPAWIS_CUTOFF_DAYS)) : '', startClock, state,
+    };
+  });
+}
+// The player's own runs that are over: played (with what it cost), cancelled, price pending.
+function appPapawisHistory(me) {
+  return getPapawisHistoryForPlayer(me.playerId, 12)
+    .filter(h => !h.guest_name && (h.game_status !== 'open' || pwDaysUntil(h.date) < 0) && h.status !== 'cancelled')
+    .slice(0, 8)
+    .map(h => ({ day: pwDay(h.date), title: h.title || 'Papawis run', place: h.location || '',
+      result: h.game_status === 'cancelled' ? 'Run cancelled' : h.game_status === 'completed'
+        ? (h.status === 'confirmed' ? (h.price_per_player ? `${pwPeso(h.price_per_player)}${h.paid_at ? ' · paid' : ' · unpaid'}` : 'Played') : 'Waitlisted')
+        : 'Price being set',
+      unpaid: h.game_status === 'completed' && h.status === 'confirmed' && !!h.price_per_player && !h.paid_at }));
+}
+
 app.get('/app/papawis', requireApp, (req, res) => {
   const me = appMe(req);
-  sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage() });
+  const on = getSetting('papawis_enabled', '0') === '1';
+  sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage({
+    off: !on, runs: on ? appPapawisRuns(me) : [], history: on ? appPapawisHistory(me) : [],
+    cutoffDays: PAPAWIS_CUTOFF_DAYS,
+  }) });
 });
 
 // More became Settings under Me (Fable review, 2026-10-23). Old links still land.
@@ -6946,9 +7026,11 @@ app.get('/app/settings', requireApp, (req, res) => {
   const me = appMe(req);
   const rows = [
     { icon: 'faceid', title: 'Face ID & passkeys', href: '/app/passkeys', value: getPasskeysForReg(me.reg.id).length ? 'On' : 'Off' },
-    { icon: 'bell', title: 'Notifications', href: '/app/notifications', count: me.unread },
+    { icon: 'bell', title: 'Notification inbox', href: '/app/notifications', count: me.unread },
   ];
-  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows }) });
+  const prefs = getPushPrefs(me.reg.id);
+  const push = PUSH_KINDS.map(k => ({ ...k, on: prefs[k.key] !== false }));
+  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push }) });
 });
 
 app.get('/app/notifications', requireApp, (req, res) => {
@@ -6984,6 +7066,108 @@ app.get('/app/notifications/items', requireAppData, (req, res) => {
   res.json({ html, next });
 });
 
+// ── Push notifications (lib/push.js) ──
+// Phones subscribe from Settings (or Home's "Turn on notifications" card); every new bell
+// notification for that player is pushed too, opening the matching app screen when tapped.
+// Site links in notifications → the app's own screens (players stay in the app).
+function appLinkFor(link = '') {
+  const path = String(link || '').split('#')[0];
+  if (/^\/app(\/|$|\?)/.test(path)) return path;
+  if (/^\/papawis/.test(path) || /^\/courts\//.test(path)) return '/app/papawis';
+  if (/^\/picks/.test(path) || /^\/mvp/.test(path)) return '/app/picks';
+  const gm = /^\/games\/([^/?#]+)/.exec(path);
+  if (gm) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}`; }
+  if (/^\/me\b/.test(path)) return '/app/me';
+  return '/app/notifications';
+}
+onNotificationCreated(n => {
+  if (!n.playerId) return;
+  pushToPlayer(n.playerId, {
+    title: n.title, body: n.body || '', url: appLinkFor(n.link), tag: n.type || 'wknd',
+    badge: getUnreadNotificationCount(n.playerId),
+  }, { kind: pushKindOf(n.type) }).catch(e => console.error('[push notify]', e.message));
+});
+
+app.get('/app/push/key', requireAppData, (req, res) => res.json({ publicKey: vapidKeys().publicKey }));
+app.post('/app/push/subscribe', requireAppData, express.json(), (req, res) => {
+  if (req.session.impersonating) return res.status(403).json({ error: 'Not while viewing as a player.' });
+  const sub = req.body?.subscription || {};
+  const endpoint = String(sub.endpoint || ''), p256dh = String(sub.keys?.p256dh || ''), auth = String(sub.keys?.auth || '');
+  if (!/^https:\/\//.test(endpoint) || !p256dh || !auth) return res.status(400).json({ error: 'That subscription looks wrong. Try again.' });
+  savePushSubscription({ endpoint, regId: req.session.playerRegId, playerId: req.session.playerPlayerId, p256dh, auth, platform: appPlatform(req) });
+  logApp(req, 'push_on');
+  res.json({ ok: true });
+});
+app.post('/app/push/unsubscribe', requireAppData, express.json(), (req, res) => {
+  const endpoint = String(req.body?.endpoint || '');
+  if (getPushSubscriptionsForReg(req.session.playerRegId).some(s => s.endpoint === endpoint)) { deletePushSubscription(endpoint); logApp(req, 'push_off'); }
+  res.json({ ok: true });
+});
+app.post('/app/push/prefs', requireAppData, express.json(), (req, res) => {
+  const key = String(req.body?.key || '');
+  if (!PUSH_KINDS.some(k => k.key === key)) return res.status(400).json({ error: 'Unknown setting.' });
+  res.json({ ok: true, prefs: setPushPref(req.session.playerRegId, key, !!req.body?.on) });
+});
+app.post('/app/push/test', requireAppData, async (req, res) => {
+  const sent = await pushToPlayer(req.session.playerPlayerId, { title: 'Notifications are on', body: 'This is how WKND will reach you: picks closing, new runs, your stat card.', url: '/app', tag: 'test' });
+  if (!sent) return res.status(400).json({ error: 'No phone with notifications on. Turn them on first.' });
+  res.json({ ok: true, sent });
+});
+
+// Announcements reach every app player with notifications on (push only; the post itself is in
+// the feed). Called from the admin's POST /admin/app/announcements.
+function pushAnnouncement({ title, body }) {
+  const list = appBetaList();
+  const regs = new Map(getAllRegistrations().map(r => [r.id, r]));
+  const players = new Set();
+  for (const s of getAllPushSubscriptions()) {
+    const reg = regs.get(s.reg_id);
+    if (reg && reg.status === 'approved' && reg.player_id && appAllowedReg(reg, list)) players.add(s.player_id);
+  }
+  for (const pid of players) {
+    pushToPlayer(pid, { title: title || 'WKND League', body: String(body || '').slice(0, 160), url: '/app', tag: 'announcement' }, { kind: 'announcements' })
+      .catch(e => console.error('[push announce]', e.message));
+  }
+  return players.size;
+}
+
+// Picks closing: two hours before picks close on a game day, one push to each player with
+// notifications on who still has games to pick there (once per day per player).
+function runAppPickClosingPushes() {
+  if (!picksEnabled()) return;
+  const all = getAllGames();
+  const upcoming = getUpcomingGames(all);
+  if (!upcoming.length) return;
+  const settings = getAllGamePickSettings();
+  const clock = { todayYmd: manilaTodayStr(), nowHm: manilaHmNow(), closeTime: picksCloseTime() };
+  const now = Date.now();
+  const days = new Map();
+  for (const g of upcoming) {
+    const ymd = gameYmd(g.date), at = pickCloseAt({ ymd }, settings[g.id]);
+    if (!at || picksClosedFor(toPickGame(g, gameYmd), settings[g.id], clock)) continue;
+    const ms = Date.parse(at);
+    if (ms - now > 2 * 3600e3 || ms <= now) continue;
+    (days.get(ymd) || days.set(ymd, { ms, games: [] }).get(ymd)).games.push(g);
+  }
+  if (!days.size) return;
+  const playerIds = [...new Set(getAllPushSubscriptions().map(s => s.player_id).filter(Boolean))];
+  for (const [ymd, d] of days) {
+    const ids = d.games.map(g => g.id);
+    for (const pid of playerIds) {
+      const mine = getPlayerGamePicks(ids, pid);
+      const left = d.games.filter(g => !mine[g.id]);
+      if (!left.length || !claimPushLog(`picks-close:${ymd}:${pid}`)) continue;
+      const first = left[0];
+      pushToPlayer(pid, {
+        title: `Picks close at ${manilaFormat(d.ms, { hour: 'numeric', minute: '2-digit' })}`,
+        body: `Who wins? ${first.team_a_name} vs ${first.team_b_name}${left.length > 1 ? ` + ${left.length - 1} more` : ''}`,
+        url: '/app/picks', tag: `picks-${ymd}`,
+      }, { kind: 'picks' }).catch(e => console.error('[push picks]', e.message));
+    }
+  }
+}
+setInterval(() => { try { runAppPickClosingPushes(); } catch (e) { console.error('[push picks] failed:', e.message); } }, 5 * 60 * 1000).unref();
+
 // ── Admin: who's using the app ──
 app.get('/admin/app', requireAuth, (req, res) => {
   const teams = getAllTeams();
@@ -7007,7 +7191,7 @@ app.get('/admin/app', requireAuth, (req, res) => {
   const isOpen = getSetting('app_open', '0') === '1';
   res.send(renderAdminPage(req, {
     title: 'Players app', currentPath: '/admin/app',
-    body: adminAppBody({ rows, events, query: req.query, isOpen, settingsHtml: settingsPanel([
+    body: adminAppBody({ rows, events, query: req.query, isOpen, pushOn: new Set(getAllPushSubscriptions().map(x => x.reg_id)).size, settingsHtml: settingsPanel([
       { type: 'toggle', key: 'app_open', value: isOpen, reload: true, label: 'Open to every player', sub: `Off: only player-admins and the testers below can use ${codeTag('/app')}. Everyone else sees "almost here".` },
       { type: 'toggle', key: 'app_require_install', value: appInstallRequired(), label: 'Phones must install the app', sub: 'On a phone, the app only works from the home screen: in a browser (or Messenger) players get install steps instead. Computers can always use it in the browser.' },
       { type: 'text', key: 'app_beta', value: getSetting('app_beta', ''), width: '320px', placeholder: 'emails, separated by commas', label: 'Testers', sub: 'Players who can use the app while it\'s hidden. Their sign-in emails, separated by commas.' },
@@ -7032,7 +7216,8 @@ app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' })
   if (image && !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'That photo couldn\'t be read. Try another.' });
   const by = req.session.isElevatedPlayer ? (req.session.playerName || 'admin') : 'WKND';
   addAppAnnouncement({ id: crypto.randomUUID(), title, body, image, youtubeUrl: youtube, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
-  res.json({ ok: true });
+  const pushed = pushAnnouncement({ title, body });
+  res.json({ ok: true, pushed });
 });
 app.post('/admin/app/announcements/:id/pin', requireAuth, express.json(), (req, res) => {
   if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
@@ -7144,6 +7329,7 @@ app.post('/set-password', express.urlencoded({ extended: false }), async (req, r
     // and its Face ID passkeys are removed (a lost phone is a common reason to reset).
     stmtDeleteOtherSessions.run(reg.id, req.sessionID || '');
     deletePasskeysForReg(reg.id);
+    deletePushSubscriptionsForReg(reg.id); // a lost phone shouldn't keep getting their notifications
     const done = signedIn => res.send(renderAuth(req, { title: 'Password Saved — WKND Basketball', body: setPasswordDonePage({ signedIn }) }));
     if (!canSignIn) return done(false);
     return signInRegistration(req, reg, err => req.session.save(() => done(!err)));

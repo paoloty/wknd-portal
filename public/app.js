@@ -232,6 +232,8 @@
 
     // Videos (views/app/feed.js media): our player, loaded under the cover picture.
     initVideos();
+    initPapawis();
+    initPush();
     initBlocks();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
@@ -412,6 +414,165 @@
       });
     });
   }
+
+  // ════ Papawis (views/app/papawis.js) ════
+  // Join, leave and the free run go through the site's own endpoints, so its rules decide
+  // (bans, unpaid games, deposits, the cancel window, the waitlist). A claim inside the
+  // cancel window asks first. After a change the screen refreshes for the new list.
+  var pwTimer = null;
+  var pwLeft = function (ms) {
+    if (ms <= 0) return 'now';
+    var d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60;
+    return d ? d + 'd ' + h + 'h' : h ? h + 'h ' + m + 'm' : m + 'm';
+  };
+  function initPapawis() {
+    clearInterval(pwTimer);
+    var cds = $$('[data-countdown-to]');
+    if (cds.length) {
+      var tick = function () { cds.forEach(function (c) { c.textContent = c.getAttribute('data-countdown-label') + ' ' + pwLeft(Number(c.getAttribute('data-countdown-to')) - Date.now()); }); };
+      tick(); pwTimer = setInterval(tick, 30000);
+    }
+    $$('[data-pw-card]').forEach(function (card) {
+      if (card._bound) return;
+      card._bound = true;
+      card.addEventListener('click', function (e) {
+        var b = e.target.closest && e.target.closest('[data-pw-act]');
+        if (!b || b.disabled || card.getAttribute('data-saving')) return;
+        var act = b.getAttribute('data-pw-act'), run = b.getAttribute('data-pw-run');
+        var ask = b.getAttribute('data-pw-confirm');
+        if (ask && !window.confirm(ask)) return;
+        if (act === 'cancel' && !window.confirm(b.textContent.trim() + '?')) return;
+        var msg = $('[data-pw-msg]', card); msg.hidden = true;
+        card.setAttribute('data-saving', '1'); b.classList.add('is-busy');
+        var use = b.getAttribute('data-pw-use') === '1';
+        fetch('/papawis/' + encodeURIComponent(run) + '/' + act, {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: act === 'voucher' ? JSON.stringify({ use: use }) : '{}',
+        }).then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (x) {} return { ok: r.ok && !!j && !!j.ok, status: r.status, j: j }; }); })
+          .then(function (res) {
+            card.removeAttribute('data-saving'); b.classList.remove('is-busy');
+            if (res.status === 401) { location.href = '/app/login'; return; }
+            if (!res.ok) { msg.textContent = (res.j && res.j.error) || 'That didn\'t go through. Try again.'; msg.hidden = false; return; }
+            var st = res.j.status;
+            toast(act === 'voucher' ? (res.j.message || 'Done')
+              : act === 'cancel' ? 'You\'re off the list'
+              : st === 'waitlist' ? 'You\'re on the waitlist' : st === 'pending' ? 'You\'re listed · send your deposit to confirm' : 'You\'re in!');
+            refreshScreen();
+          }, function () {
+            card.removeAttribute('data-saving'); b.classList.remove('is-busy');
+            msg.textContent = 'No connection. Nothing was changed.'; msg.hidden = false;
+          });
+      });
+    });
+  }
+
+  // ════ Push notifications (lib/push.js) ════
+  // Turned on from Settings or Home's card. iPhone asks for permission only from a tap and only
+  // in the installed app; the subscription is this phone's, the kinds (picks, Papawis...) the
+  // account's. Once a day an existing subscription is re-sent, so the server never loses it.
+  var pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  var b64 = function (s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4);
+    var raw = atob(s), a = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i);
+    return a;
+  };
+  var postJson = function (url, body) {
+    return fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'failed'); return j; }); });
+  };
+  var getSub = function () { return navigator.serviceWorker.ready.then(function (r) { return r.pushManager.getSubscription(); }); };
+  function pushOn() {
+    // requestPermission first, straight from the tap (iPhone needs that).
+    return Notification.requestPermission().then(function (p) {
+      if (p !== 'granted') throw new Error(p === 'denied' ? 'blocked' : 'not now');
+      return fetch('/app/push/key', { credentials: 'same-origin' }).then(function (r) { return r.json(); });
+    }).then(function (k) {
+      return navigator.serviceWorker.ready.then(function (reg) {
+        return reg.pushManager.getSubscription().then(function (old) {
+          return old || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(k.publicKey) });
+        });
+      });
+    }).then(function (sub) { return postJson('/app/push/subscribe', { subscription: sub.toJSON() }); });
+  }
+  function pushOff() {
+    return getSub().then(function (sub) {
+      if (!sub) return;
+      var ep = sub.endpoint;
+      return sub.unsubscribe().then(function () { return postJson('/app/push/unsubscribe', { endpoint: ep }); });
+    });
+  }
+  var pushFail = function (e) {
+    toast(e && e.message === 'blocked' ? 'Notifications are blocked. Allow WKND in your phone\'s Settings → Notifications.' : 'Couldn\'t turn on notifications. Try again.', 'err');
+  };
+  function initPush() {
+    var box = $('[data-push]');
+    if (box && !box._bound) {
+      box._bound = true;
+      var status = $('[data-push-status]', box), btn = $('[data-push-toggle]', box), test = $('[data-push-test]');
+      var paint = function (sub) {
+        var blocked = Notification.permission === 'denied';
+        status.textContent = sub ? 'On' : blocked ? 'Blocked · allow WKND in your phone\'s Settings → Notifications' : 'Off';
+        btn.hidden = blocked && !sub; btn.textContent = sub ? 'Turn off' : 'Turn on';
+        btn.className = sub ? 'pill' : 'pill pill--solid';
+        if (test) test.hidden = !sub;
+      };
+      if (!pushSupported) {
+        status.textContent = standalone || !/iPhone|iPad/.test(navigator.userAgent) ? 'Not available on this phone' : 'Open WKND from your home screen to turn them on';
+      } else {
+        getSub().then(paint, function () { status.textContent = 'Off'; btn.hidden = false; });
+        btn.addEventListener('click', function () {
+          btn.classList.add('is-busy');
+          getSub().then(function (sub) { return sub ? pushOff().then(function () { toast('Notifications off', 'info'); }) : pushOn().then(function () { toast('Notifications on'); }); })
+            .catch(pushFail).then(function () { btn.classList.remove('is-busy'); return getSub().then(paint); });
+        });
+        if (test) test.addEventListener('click', function () {
+          postJson('/app/push/test').then(function () { toast('Test sent'); }, function (e) { toast(e.message, 'err'); });
+        });
+      }
+      $$('[data-push-kind]', box).forEach(function (sw) {
+        sw.addEventListener('change', function () {
+          postJson('/app/push/prefs', { key: sw.getAttribute('data-push-kind'), on: sw.checked })
+            .catch(function () { sw.checked = !sw.checked; toast('Couldn\'t save that. Try again.', 'err'); });
+        });
+      });
+    }
+    // Home's card: on a phone that can, until it's on or put off (asks again after 2 weeks).
+    var ask = $('[data-push-ask]');
+    if (ask && pushSupported && Notification.permission === 'default') {
+      var later = 0; try { later = Number(localStorage.getItem('wknd-push-ask') || 0); } catch (e) {}
+      if (Date.now() > later) {
+        ask.hidden = false;
+        if (!ask._bound) {
+          ask._bound = true;
+          $('[data-push-ask-on]', ask).addEventListener('click', function () {
+            pushOn().then(function () { ask.hidden = true; toast('Notifications on · choose which in Settings'); }, function (e) { pushFail(e); if (Notification.permission !== 'default') ask.hidden = true; });
+          });
+          $('[data-push-ask-off]', ask).addEventListener('click', function () {
+            ask.hidden = true; try { localStorage.setItem('wknd-push-ask', String(Date.now() + 14 * 864e5)); } catch (e) {}
+          });
+        }
+      }
+    }
+    // The app icon's badge: unread notifications (from the tab bar's data-unread).
+    var nav = $('nav.tabbar');
+    if (nav && 'setAppBadge' in navigator) {
+      var n = Number(nav.getAttribute('data-unread') || 0);
+      (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(function () {});
+    }
+  }
+  // Keep this phone's subscription on the server (once a day).
+  if (pushSupported && Notification.permission === 'granted' && document.querySelector('nav.tabbar')) {
+    var syncDay = new Date().toDateString(), synced = null;
+    try { synced = localStorage.getItem('wknd-push-sync'); } catch (e) {}
+    if (synced !== syncDay) getSub().then(function (sub) {
+      if (sub) postJson('/app/push/subscribe', { subscription: sub.toJSON() }).then(function () { try { localStorage.setItem('wknd-push-sync', syncDay); } catch (e) {} }, function () {});
+    }).catch(function () {});
+  }
+  // A tapped notification while the app is open: the service worker asks us to go there.
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) {
+    if (e.data && e.data.type === 'open' && e.data.url) { if (navOn) go(urlOf(e.data.url), true); else location.href = e.data.url; }
+  });
 
   // ════ Face ID / fingerprint sign-in (passkeys; views/app/passkeys.js) ════
   // The passkey library (served from /app/vendor) loads only on the screens that use it.
@@ -874,7 +1035,9 @@
     if (!f || f.getAttribute('action') !== '/app/logout' || f._wiped) return;
     e.preventDefault(); f._wiped = true;
     var done = function () { f.submit(); };
-    wipeCopies().then(done, done);
+    // And this phone stops getting the player's notifications.
+    var off = pushSupported ? pushOff().catch(function () {}) : Promise.resolve();
+    Promise.all([wipeCopies(), off]).then(done, done);
   });
 
   // ════ Once per visit ════
