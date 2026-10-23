@@ -6246,10 +6246,18 @@ app.get('/app', requireApp, (req, res) => {
   }
   const st = appSeasonState(me);
   const todos = st.rows.filter(r => !r.done && r.href).map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, solid: r.icon === 'wallet' }));
+  // Open games this player hasn't picked. Only the close check — the full picks context
+  // (every pick ever, odds for every game) is ~100 ms and Home doesn't need it.
   try {
     if (picksEnabled() && all) {
-      const picks = openPicks(all, buildPicksContext(all), me.playerId).filter(o => !o.closed && !o.myPick);
-      for (const o of picks) todos.push({ icon: 'target', title: `Pick ${o.a} vs ${o.b}`, sub: `Who wins? · ${manilaDayLabel(o.ymd)}`, pill: 'Pick', solid: true, href: '/picks' });
+      const upcoming = getUpcomingGames(all);
+      const mine = getPlayerGamePicks(upcoming.map(g => g.id), me.playerId);
+      const settings = upcoming.length ? getAllGamePickSettings() : {};
+      const clock = { todayYmd: manilaTodayStr(), nowHm: manilaHmNow(), closeTime: picksCloseTime() };
+      for (const g of upcoming) {
+        if (mine[g.id] || picksClosedFor(toPickGame(g, gameYmd), settings[g.id], clock)) continue;
+        todos.push({ icon: 'target', title: `Pick ${g.team_a_name} vs ${g.team_b_name}`, sub: `Who wins? · ${manilaDayLabel(gameYmd(g.date))}`, pill: 'Pick', solid: true, href: '/picks' });
+      }
     }
   } catch (e) { console.error('[app home picks]', e.message); }
   let latest = null;

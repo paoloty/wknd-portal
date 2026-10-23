@@ -48,7 +48,9 @@
 /* ── Base: no web habits (tap flash, text selection on controls, rubber-band body) ── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+/* Full page loads (forms, sign-in) cross-fade instead of flashing blank, where supported. */
+@view-transition { navigation: auto; }
 body {
   background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 15px; line-height: 1.4;
   -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
@@ -220,6 +222,11 @@ button.cell { width: 100%; text-align: left; }
 .tab { flex: 1; max-width: 96px; height: calc(var(--tabbar-h) - 10px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10.5px; font-weight: 600; color: var(--subtle); }
 .tab svg { width: 25px; height: 25px; }
 .tab.is-on { color: var(--amber); }
+.tab:active svg { transform: scale(0.9); }
+
+/* In-app navigation (public/app.js): a thin amber bar while a screen is on its way. */
+.nav-progress { position: fixed; z-index: 40; top: 0; left: 0; height: 3px; width: 100%; background: var(--amber); transform-origin: left; animation: navp 1.4s ease-out forwards; box-shadow: 0 0 8px rgba(245,147,50,.6); }
+@keyframes navp { 0% { transform: scaleX(0.05); } 60% { transform: scaleX(0.7); } 100% { transform: scaleX(0.92); } }
 
 /* ── Install hint, update bar, offline ── */
 .install { display: flex; gap: 12px; align-items: center; }
@@ -234,4 +241,5 @@ button.cell { width: 100%; text-align: left; }
 
 @media (prefers-reduced-motion: no-preference) {
   .btn, a.cell, button.cell { transition: background-color .15s, filter .15s; }
+  .tab svg { transition: transform .12s; }
 }

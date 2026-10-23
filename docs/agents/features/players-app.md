@@ -27,6 +27,11 @@ Phone-first, players-only app served by this same server: same accounts, session
 - `public/app.js` posts `/app/ping` once per phone per day (localStorage `wknd-ping`); iPhone has no install event, so a home-screen open is how "installed" is known there.
 - `/admin/app` (Members): one row per approved player account with sign-in, install, setup and last-opened status, the activity log, and the access settings (`app_open` toggle, `app_beta` tester emails; both saved through `/admin/site/settings`, section `members`).
 
+## Speed
+- In-app links don't reload the page: `public/app.js` ("Fast navigation") fetches the screen, swaps `main.app` and the tab bar, and pushes history. Screens are kept in memory for the visit: shown at once when tapped again, then refreshed in the background. The tabs are fetched ahead once the first screen is up; other links start loading on touch. `/app/notifications` is never fetched ahead (opening it marks notifications read). Forms, sign-in, log out and links out of `/app` are normal page loads. A screen from a newer deploy (different `app-ver`) loads as a full page.
+- Per-screen setup lives in `initPage()`, which runs again after every swap: anything new that hooks into a screen goes there.
+- Home's open-pick To Dos use only the close check (`picksClosedFor`), not `buildPicksContext`/`openPicks` (all picks + odds, ~100 ms).
+
 ## Updates and offline
 - `APP_VER` = commit + newest app file mtime. Busts `app.css`/`app.js`, names the SW cache, and `/app/version` returns it. `app.js` checks it when the app comes back to the foreground and reloads (or shows a refresh bar when a form has unsaved input), also after 30 minutes away.
 - The service worker caches only the shell (CSS, JS, fonts, icons, `/app/offline`). Pages always load from the network; offline navigation shows `/app/offline`.
