@@ -13,7 +13,7 @@ export function adminAnnouncementsBody({ list, now = Date.now() }) {
   const rows = list.length ? `<div class="aui-panel aui-panel--flush">${list.map(a => {
     const pinned = a.pinned_until > now;
     return `<div class="aui-action" style="cursor:default;align-items:flex-start;gap:12px">
-      ${a.has_image ? `<img src="/admin/app/announcements/${escHtml(a.id)}/image?v=${a.updated_at}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none">` : ''}
+      ${a.has_image ? `<img src="/admin/app/announcements/${escHtml(a.id)}/image?v=${a.updated_at}&w=160" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none">` : ''}
       <span class="aui-cell__stack" style="flex:1;min-width:0">
         <span class="aui-action__label"><b>${escHtml(a.title || '(no title)')}</b></span>
         <span class="aui-cell__sub" style="white-space:pre-line">${escHtml(String(a.body || '').slice(0, 240))}${String(a.body || '').length > 240 ? '…' : ''}</span>

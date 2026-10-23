@@ -12,9 +12,14 @@ const ytThumb = id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 // (initVideos) swaps for the YouTube player, so it plays inside the app; the photo beats
 // YouTube's auto-picked frame when both exist. inCard: inside a tappable card, so the
 // picture is just a picture (the card opens the screen where it plays).
-function media({ img = '', yt = '', label = '' }, { inCard = false } = {}) {
+function media({ img = '', srcset = '', yt = '', label = '' } = {}, { inCard = false } = {}) {
   if (!img && !yt) return '';
-  const pic = `<img src="${esc(img || ytThumb(yt))}" alt="" loading="lazy" decoding="async" onerror="this.remove()">`;
+  // Not loading="lazy": iPhone Safari never loads a lazy image added while its list is still
+  // hidden (the feed's pages). A picture that fails takes its grey box with it, except a
+  // video's, which keeps its play button.
+  // srcset: the photo in two widths; a card is the screen less 32px, up to 528px (.app max 560).
+  const sized = img && srcset ? ` srcset="${esc(srcset)}" sizes="(min-width: 560px) 528px, calc(100vw - 32px)"` : '';
+  const pic = `<img src="${esc(img || ytThumb(yt))}"${sized} alt="" decoding="async" onerror="${yt ? 'this.remove()' : 'this.parentNode.remove()'}">`;
   const tag = label ? `<em>${esc(label)}</em>` : '';
   if (!yt) return `<span class="media">${pic}</span>`;
   if (inCard) return `<span class="media">${pic}<i class="media__play">${icons.play}</i>${tag}</span>`;
@@ -48,7 +53,7 @@ function gameCard(g) {
 function annCard(a) {
   return `<article class="fc${a.pinned ? ' fc--pin' : ''}">
     <div class="fc__top"><span class="kick">${a.pinned ? '📌 ' : ''}Announcement</span><span class="fc__t">${esc(a.when)}</span></div>
-    ${media({ img: a.imageUrl, yt: a.yt })}
+    ${media({ ...a.media, yt: a.yt })}
     ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
     ${a.body ? `<div class="fc__body">${paras(a.body)}</div>` : ''}
   </article>`;

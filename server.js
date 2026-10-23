@@ -6505,7 +6505,7 @@ const feedWhen = ms => manilaFormat(ms, { hour: 'numeric', minute: '2-digit' });
 function appAnnItem(a, pinned = false) {
   return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(a.created_at), pinned, when: pinned ? feedDay(a.created_at) : feedWhen(a.created_at),
     title: a.title, body: a.body, yt: ytId(a.youtube_url),
-    imageUrl: a.has_image ? `/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}` : '' };
+    media: a.has_image ? sizedSrc(`/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}`) : {} };
 }
 // Admin-written text (the editor's HTML, legacy **Title** or plain) → plain paragraphs,
 // so the app escapes everything it shows.
@@ -6549,7 +6549,10 @@ const appTeamsOf = g => {
     { name: g.team_b_name, color: teamColorById(teams, g.team_b_id), score: b, won: b > a },
   ];
 };
-const gameMedia = g => ({ img: g.has_cover ? `/api/photo/${encodeURIComponent(g.id)}?w=640` : '', yt: ytId(g.youtube_url) });
+// Pictures come in two widths (the server resizes and caches them, WebP): the phone picks
+// by its screen, 640 on most, 960 on 3× iPhones.
+const sizedSrc = base => { const j = base.includes('?') ? '&' : '?'; return { img: `${base}${j}w=640`, srcset: `${base}${j}w=640 640w, ${base}${j}w=960 960w` }; };
+const gameMedia = g => ({ ...(g.has_cover ? sizedSrc(`/api/photo/${encodeURIComponent(g.id)}`) : {}), yt: ytId(g.youtube_url) });
 const gameKicker = g => `Final · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`;
 
 function appFeedItem(it, me, extra) {
@@ -6593,12 +6596,14 @@ app.get('/app/feed/items', requireAppData, (req, res) => {
   res.json({ html, next: more ? `/app/feed/items?before=${last.at}:${encodeURIComponent(last.id)}&day=${encodeURIComponent(items[items.length - 1].day || '')}` : null });
 });
 
-app.get('/app/announcements/:id/image', requireAppData, (req, res) => {
-  const row = getAppAnnouncementImage(req.params.id);
-  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(row?.image || '');
-  if (!m) return res.status(404).end();
-  res.set('Cache-Control', 'private, max-age=31536000, immutable').type(m[1]).send(Buffer.from(m[2], 'base64'));
-});
+// Announcement photos at the feed's widths (?w=640|960) or the admin list's thumbnail (160).
+const ANN_WIDTHS = new Set([160, 640, 960]);
+const sendAnnImage = (req, res) => {
+  const image = getAppAnnouncementImage(req.params.id)?.image || '';
+  if (!/^data:image\/(?:jpeg|png|webp);base64,/.test(image)) return res.status(404).end();
+  return sendPlayerPhoto(req, res, image, { widths: ANN_WIDTHS, maxAge: 86400 });
+};
+app.get('/app/announcements/:id/image', requireAppData, sendAnnImage);
 
 // Where a game or post screen's back button goes: the screen it was opened from.
 const APP_BACK = { home: ['/app', 'Home'], team: ['/app/team', 'My Team'], me: ['/app/me', 'Me'], picks: ['/app/picks', 'Picks'] };
@@ -6733,12 +6738,19 @@ app.get('/app/team', requireApp, (req, res) => {
       dateLabel: [manilaDayLabel(ymd), gameTipLabel(next)].filter(Boolean).join(' · '),
       court: next.court_id ? (getPapawisCourtById(next.court_id)?.name || '') : '',
       countTo: Date.parse(`${ymd}T${tip}:00+08:00`),
-      foot: `${me.team.name} ${recordIn(seasonGames, me.team.id)} this season`,
+      // The team card already has the record: here, how the last meeting went.
+      foot: (() => {
+        const last = played.find(g => teamResult(g, me.team.id).oppId === r.oppId);
+        if (!last) return `First meeting with ${r.oppName}`;
+        const lr = teamResult(last, me.team.id);
+        return `Last met ${shortDate(last.date)} · ${lr.won ? 'W' : 'L'} ${lr.my}–${lr.opp}`;
+      })(),
     };
   }
   // The season in date order: results link to the game screen, upcoming games show the day.
   const schedule = all
-    .filter(g => String(g.season) === season && !g.under_review && teamSide(g, me.team.id) && (isPlayedGame(g) || g.status === 'scheduled' || g.scheduled))
+    // The next game is the Up next card, so it isn't listed again under Coming up.
+    .filter(g => String(g.season) === season && !g.under_review && teamSide(g, me.team.id) && (isPlayedGame(g) || ((g.status === 'scheduled' || g.scheduled) && g.id !== next?.id)))
     .sort((x, y) => gameYmd(x.date).localeCompare(gameYmd(y.date)) || String(x.tip_time).localeCompare(String(y.tip_time)))
     .map(g => {
       const r = teamResult(g, me.team.id), done = isPlayedGame(g);
@@ -6915,11 +6927,7 @@ app.get('/admin/app', requireAuth, (req, res) => {
 app.get('/admin/app/announcements', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, { title: 'App announcements', currentPath: '/admin/app', body: adminAnnouncementsBody({ list: getAppAnnouncements() }) }));
 });
-app.get('/admin/app/announcements/:id/image', requireAuth, (req, res) => {
-  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(getAppAnnouncementImage(req.params.id)?.image || '');
-  if (!m) return res.status(404).end();
-  res.set('Cache-Control', 'private, max-age=31536000, immutable').type(m[1]).send(Buffer.from(m[2], 'base64'));
-});
+app.get('/admin/app/announcements/:id/image', requireAuth, sendAnnImage);
 const annPinUntil = days => { const d = Math.min(30, Math.max(0, Number(days) || 0)); return d ? Date.now() + d * 24 * 60 * 60 * 1000 : 0; };
 app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' }), (req, res) => {
   const b = req.body || {};

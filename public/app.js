@@ -14,6 +14,68 @@
   var walled = document.documentElement.classList.contains('needs-install');
 
   // ════ Per screen: everything that hooks into the current page's content ════
+  // ════ Video player ════
+  // YouTube without its own controls: only play/pause, a seek bar and the time. A layer over
+  // the video takes the taps (play/pause), so YouTube's title, logo and "more videos" links
+  // can't take a player out of the app. Uses the IFrame API, loaded on first play.
+  var ytReady = null;
+  function loadYt() {
+    if (ytReady) return ytReady;
+    ytReady = new Promise(function (ok, fail) {
+      if (window.YT && window.YT.Player) return ok(window.YT);
+      var prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function () { if (prev) prev(); ok(window.YT); };
+      var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; s.async = true;
+      s.onerror = function () { ytReady = null; fail(); };
+      document.head.appendChild(s);
+    });
+    return ytReady;
+  }
+  var mmss = function (t) { t = Math.max(0, Math.floor(t || 0)); var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s; };
+  var PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>';
+  var PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>';
+  function playVideo(btn) {
+    var id = btn.getAttribute('data-yt');
+    var box = document.createElement('div'); box.className = 'media player is-loading';
+    box.innerHTML = '<div class="player__frame"></div><button type="button" class="player__tap" aria-label="Play or pause"></button>'
+      + '<div class="player__bar"><button type="button" class="player__pp" aria-label="Play">' + PLAY + '</button>'
+      + '<input class="player__seek" type="range" min="0" max="0" step="1" value="0" aria-label="Seek">'
+      + '<span class="player__time">0:00</span></div>';
+    btn.replaceWith(box);
+    var pp = $('.player__pp', box), seek = $('.player__seek', box), time = $('.player__time', box), dragging = false, player = null, timer = null;
+    var playing = function () { return player && player.getPlayerState && player.getPlayerState() === 1; };
+    var toggle = function () { if (!player || !player.playVideo) return; if (playing()) player.pauseVideo(); else player.playVideo(); };
+    var paint = function () {
+      if (!player || !player.getDuration) return;
+      var d = player.getDuration() || 0, t = player.getCurrentTime() || 0;
+      seek.max = Math.floor(d);
+      if (!dragging) seek.value = Math.floor(t);
+      seek.style.setProperty('--p', d ? (seek.value / d * 100) + '%' : '0%');
+      time.textContent = mmss(dragging ? seek.value : t) + (d ? ' / ' + mmss(d) : '');
+    };
+    $('.player__tap', box).addEventListener('click', toggle);
+    pp.addEventListener('click', toggle);
+    seek.addEventListener('input', function () { dragging = true; paint(); });
+    seek.addEventListener('change', function () { dragging = false; if (player && player.seekTo) player.seekTo(Number(seek.value), true); });
+    loadYt().then(function (YT) {
+      player = new YT.Player($('.player__frame', box), {
+        videoId: id, host: 'https://www.youtube-nocookie.com',
+        playerVars: { controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, iv_load_policy: 3, modestbranding: 1, autoplay: 1 },
+        events: {
+          onReady: function (e) { box.classList.remove('is-loading'); e.target.playVideo(); paint(); timer = setInterval(function () { if (!box.isConnected) return clearInterval(timer); paint(); }, 250); },
+          onStateChange: function (e) {
+            var on = e.data === 1 || e.data === 3;
+            pp.innerHTML = on ? PAUSE : PLAY; pp.setAttribute('aria-label', on ? 'Pause' : 'Play');
+            box.classList.toggle('is-paused', !on); paint();
+          },
+        },
+      });
+    }, function () {
+      box.classList.remove('is-loading');
+      box.innerHTML = '<p class="player__err">Couldn\'t load the video. Check your connection and try again.</p>';
+    });
+  }
+
   function initPage() {
     // Appearance: Automatic (follow the phone) / Light / Dark, remembered on this phone
     var sw = $('[data-theme-switch]');
@@ -29,17 +91,9 @@
       });
     }
 
-    // Videos (views/app/feed.js media): the picture is a play button; tapped, it becomes the
-    // YouTube player right there, so the video plays inside the app.
-    $$('[data-yt]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var f = document.createElement('iframe');
-        f.className = 'media media--video';
-        f.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(btn.getAttribute('data-yt')) + '?autoplay=1&playsinline=1&rel=0';
-        f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true; f.title = 'Video';
-        btn.replaceWith(f);
-      });
-    });
+    // Videos (views/app/feed.js media): the picture is a play button; tapped, it becomes
+    // our own player (playVideo below).
+    $$('[data-yt]').forEach(function (btn) { btn.addEventListener('click', function () { playVideo(btn); }); });
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
@@ -307,7 +361,7 @@
           .then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw 0; } if (!r.ok) throw r.status; return r.json(); })
           .then(function (j) {
             busy = false; next = j.next || null;
-            if (j.html) { items.insertAdjacentHTML('beforeend', j.html); items.hidden = false; }
+            if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); }
             skel.hidden = true;
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
             end.textContent = '';
@@ -382,9 +436,16 @@
     return a && a.href && !a.target && !a.hasAttribute('download') && a.origin === location.origin && inApp(a.pathname) && !a.hasAttribute('data-reload');
   };
 
-  function fetchPage(url, fresh) {
-    if (inflight[url] && !fresh) return inflight[url];
-    var p = fetch(url, { credentials: 'same-origin', headers: { 'X-App-Nav': '1' } }).then(function (r) {
+  // A request can hang for good on iPhone when the app goes to the background mid-fetch, and
+  // a tap that waited on it would sit under a stuck progress bar. So every fetch gives up
+  // after 10 s, a tap only shares a request started in the last few seconds, and coming
+  // back to the app cancels whatever was in flight (a tap then loads its page normally).
+  function fetchPage(url, fresh, tap) {
+    var cur = inflight[url];
+    if (cur && !fresh && (!tap || Date.now() - cur.started < 4000)) return cur;
+    var ac = window.AbortController ? new AbortController() : null;
+    var timer = ac ? setTimeout(function () { ac.abort(); }, 10000) : 0;
+    var p = fetch(url, { credentials: 'same-origin', headers: { 'X-App-Nav': '1' }, signal: ac ? ac.signal : undefined }).then(function (r) {
       var finalUrl = urlOf(r.url);
       if (!r.ok || !inApp(new URL(r.url).pathname) || !/text\/html/.test(r.headers.get('content-type') || '')) throw { reload: r.url };
       return r.text().then(function (html) {
@@ -393,10 +454,16 @@
         return page;
       });
     });
+    p.started = Date.now();
+    p.abort = function () { if (ac) ac.abort(); };
     inflight[url] = p;
-    p.then(function () { delete inflight[url]; }, function () { delete inflight[url]; });
+    var clean = function () { clearTimeout(timer); if (inflight[url] === p) delete inflight[url]; };
+    p.then(clean, clean);
     return p;
   }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') Object.keys(inflight).forEach(function (u) { inflight[u].abort(); });
+  });
   // Re-fetch the current screen and swap it in quietly (after a save that changes it).
   function refreshScreen() {
     if (!navOn) return location.reload();
@@ -502,7 +569,7 @@
       return;
     }
     progress(true);
-    fetchPage(url).then(function (page) { if (id === navId) { progress(false); render(page, push, false, dir); } })
+    fetchPage(url, false, true).then(function (page) { if (id === navId) { progress(false); render(page, push, false, dir); } })
       .catch(function (e) { progress(false); if (id === navId) location.href = (e && e.reload) || url; });
   }
 
