@@ -5952,6 +5952,415 @@ app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
+// ── Players app (/app) ─────────────────────────────────────────────────────────
+// Phone-first, players-only app: same accounts, sessions and data as the site, its own
+// shell (views/app/*.js, public/app.css + app.js, /app/sw.js). Installable from the home
+// screen (manifest below). Hidden while it's tried out: only player-admins and the players
+// listed in the app_beta setting (emails or registration ids) get in, until app_open = '1'.
+import { randomInt } from 'crypto';
+import { appPage } from './views/app/layout.js';
+import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
+import { appHomePage } from './views/app/home.js';
+import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
+import { appTeamPage, appMePage, appPapawisPage, appMorePage, appNotificationsPage } from './views/app/tabs.js';
+import { updateRegistrationProfile } from './lib/portal-db.js';
+import { appSignInCodeEmail } from './lib/mailer.js';
+
+// Deployed version: commit + newest app file. Busts app.css/app.js, names the service
+// worker's cache, and is what a resumed app compares against (/app/version).
+const APP_VER = (() => {
+  let commit = 'dev';
+  try { commit = readFileSync(path.join(__dirname, '.git/HEAD'), 'utf8').trim(); if (commit.startsWith('ref:')) commit = readFileSync(path.join(__dirname, '.git', commit.slice(5).trim()), 'utf8').trim(); } catch {}
+  let newest = 0;
+  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js']) {
+    try { newest = Math.max(newest, statSync(path.join(__dirname, f)).mtimeMs); } catch {}
+  }
+  return `${commit.slice(0, 7)}.${Math.floor(newest / 1000).toString(36)}`;
+})();
+// An app sign-in stays put: 180 days, pushed out again (at most once a day) whenever the
+// app is opened. The site's own login keeps its 8 hours / 30 days.
+const APP_SESSION_MS = 180 * 24 * 60 * 60 * 1000;
+
+const appPhase = () => { try { return playoffModeState(getPortalCurrentSeason()).phase; } catch { return null; } };
+const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, ...opts }));
+
+// 'anon' | 'admin' (super-admin login, no player) | 'no-player' | 'not-yet' | 'ok'
+function appAccess(req) {
+  const s = req.session || {};
+  if (!s.playerRegId) return s.isAdmin ? 'admin' : 'anon';
+  if (!s.playerPlayerId) return 'no-player';
+  if (getSetting('app_open', '0') === '1' || s.isAdmin || s.impersonating) return 'ok';
+  const reg = getRegistration(s.playerRegId);
+  const list = String(getSetting('app_beta', '')).toLowerCase().split(/[\s,]+/).filter(Boolean);
+  return list.includes(String(s.playerRegId).toLowerCase()) || (reg?.email && list.includes(reg.email.toLowerCase())) ? 'ok' : 'not-yet';
+}
+function markAppSession(req) {
+  const today = manilaTodayStr();
+  if (req.session.appDay !== today) { req.session.appDay = today; req.session.cookie.maxAge = APP_SESSION_MS; }
+}
+function requireApp(req, res, next) {
+  const a = appAccess(req);
+  if (a === 'anon') return res.redirect('/app/login');
+  if (a === 'admin' || a === 'no-player') return sendApp(res, { title: 'WKND', bare: true, body: appNotPlayerPage({ reason: a, phase: appPhase() }) });
+  if (a === 'not-yet') return sendApp(res, { title: 'WKND', bare: true, body: appNotYetPage({ phase: appPhase() }) });
+  markAppSession(req);
+  res.set('Cache-Control', 'private, no-store');
+  next();
+}
+
+// The signed-in player as every app screen shows them.
+function appMe(req) {
+  const pid = req.session.playerPlayerId;
+  const p = getPlayerWithTeam(pid) || {};
+  const team = p.team_id ? getAllTeams().find(t => t.id === p.team_id) : null;
+  const reg = getRegistration(req.session.playerRegId) || {};
+  return {
+    playerId: pid, reg, player: p, team,
+    name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || displayPlayerName(reg.full_name || ''),
+    first: p.first_name || displayPlayerName(reg.full_name || '').split(' ')[0] || 'there',
+    initials: `${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}`.toUpperCase(),
+    ring: team ? (team.color || teamColor(team.name)) : '',
+    teamName: team?.name || '', number: String(p.number ?? ''),
+    photoUrl: playerPhotoUrl(pid, 192), hasPhoto: !!p.picture_url,
+    unread: getUnreadNotificationCount(pid), email: reg.email || '',
+  };
+}
+const parsePositions = raw => { try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+
+// Season rows for setup step 3 and Home's To Do: sign-up, jersey details, balance.
+function appSeasonState(me) {
+  const season = getSetting('signup_target_season', '');
+  const signupOpen = !!season && getSetting('season_signup_open', '0') === '1';
+  const signup = season ? getSeasonSignup(me.reg.id, season) : null;
+  const balance = Number(getPlayerFinancials(me.playerId)?.current_balance || 0);
+  const peso = n => `₱${Number(n).toLocaleString('en-PH')}`;
+  const rows = [
+    { icon: 'team', title: me.team ? `You're on ${me.team.name}` : 'Not on a team yet', sub: me.team ? '' : 'Teams show up once rosters are out', done: true },
+  ];
+  if (signupOpen || signup) {
+    rows.push(signup
+      ? { icon: 'form', title: `Signed up for Season ${season}`, done: true }
+      : { icon: 'form', title: `Season ${season} sign-up`, sub: 'Sign-ups are open', pill: 'Sign up', href: '/season-signup', done: false });
+  }
+  if (signup?.jersey_requested_at) {
+    rows.push(signup.jersey_submitted_at
+      ? { icon: 'shirt', title: 'Jersey details sent', done: true }
+      : { icon: 'shirt', title: 'Send your jersey details', sub: 'Size and name for your jersey', pill: 'Send', href: '/jersey-request', done: false });
+  }
+  rows.push(balance > 0
+    ? { icon: 'wallet', title: `Settle ${peso(balance)}`, sub: 'Balance due', pill: 'Settle', href: '/settle-balance', done: false }
+    : { icon: 'wallet', title: 'No balance due', done: true });
+  return { rows, balance, season, signupOpen, signup, peso };
+}
+
+function appSetupState(me) {
+  const reg = me.reg;
+  const detailsDone = parsePositions(reg.positions).length > 0 && !!reg.height && !!reg.dominant_hand && !!reg.emergency_name && !!reg.emergency_phone;
+  const seasonDone = appSeasonState(me).rows.every(r => r.done);
+  const status = { photo: me.hasPhoto, details: detailsDone, season: seasonDone };
+  const labels = { photo: 'add your photo', details: 'check your details', season: 'sort out your season' };
+  const next = SETUP_STEPS.find(k => !status[k]);
+  return { status, done: SETUP_STEPS.filter(k => status[k]).length, total: SETUP_STEPS.length, next, nextLabel: next ? labels[next] : '', href: `/app/setup/${next || 'photo'}` };
+}
+
+const manilaDayLabel = ymd => new Date(`${ymd}T12:00:00+08:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
+const shortDate = raw => { const y = gameYmd(raw); return y ? new Date(`${y}T12:00:00+08:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' }) : ''; };
+const teamColorById = (teams, id) => { const t = teams.find(x => x.id === id); return t ? (t.color || teamColor(t.name)) : 'var(--subtle)'; };
+
+// The player's next scheduled game (any distance ahead) and their team's latest result.
+function appGames(me) {
+  const teamId = me.team?.id;
+  if (!teamId) return { next: null, last: null, played: [] };
+  const today = manilaTodayStr();
+  const all = getAllGames();
+  const next = all
+    .filter(g => (g.status === 'scheduled' || g.scheduled) && !g.under_review && teamSide(g, teamId) && gameYmd(g.date) >= today)
+    .sort((x, y) => gameYmd(x.date).localeCompare(gameYmd(y.date)) || String(x.tip_time).localeCompare(String(y.tip_time)))[0] || null;
+  const played = all.filter(g => isPlayedGame(g) && teamSide(g, teamId)); // newest first
+  return { next, last: played[0] || null, played, all };
+}
+
+const recordIn = (games, teamId) => { const w = games.filter(g => teamResult(g, teamId).won).length; return `${w}–${games.length - w}`; };
+
+app.get('/app/manifest.webmanifest', (req, res) => {
+  res.type('application/manifest+json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify({
+    id: '/app', name: 'WKND Basketball', short_name: 'WKND', description: 'Your games, picks and Papawis.',
+    start_url: '/app', scope: '/app', display: 'standalone', orientation: 'portrait',
+    background_color: '#0a0e16', theme_color: '#0a0e16',
+    icons: [
+      { src: '/app-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/app-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/app-icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  }));
+});
+const APP_SW_SRC = (() => { try { return readFileSync(path.join(__dirname, 'public/app-sw.js'), 'utf8').replace(/__VER__/g, APP_VER); } catch { return ''; } })();
+app.get('/app/sw.js', (req, res) => {
+  res.type('application/javascript').set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/app' }).send(APP_SW_SRC);
+});
+app.get('/app/version', (req, res) => res.set('Cache-Control', 'no-store').json({ ver: APP_VER }));
+app.get('/app/offline', (req, res) => sendApp(res, { title: 'Offline · WKND', bare: true, body: appOfflinePage() }));
+
+// ── Sign in ──
+// After signing in: straight into setup while anything's missing, else Home.
+function appAfterSignIn(req, res, reg, how) {
+  signInRegistration(req, reg);
+  markAppSession(req);
+  insertAdminLog({
+    actor: reg.full_name || reg.email, actorType: reg.is_admin ? 'admin' : 'player',
+    method: 'POST', path: '/app/login', details: { event: 'login', via: how, email: reg.email },
+  });
+  const dest = appAccess(req) === 'ok' && appSetupState(appMe(req)).next ? '/app/setup' : '/app';
+  req.session.save(() => res.redirect(dest));
+}
+function appSignInBlock(reg) {
+  if (reg.status !== 'approved') return 'pending';
+  if (!reg.player_id) return 'no-player';
+  return null;
+}
+
+app.get('/app/login', (req, res) => {
+  if (appAccess(req) === 'ok') return res.redirect('/app');
+  sendApp(res, { title: 'Sign in · WKND', bare: true, body: appLoginPage({ email: String(req.query.email || ''), phase: appPhase() }) });
+});
+
+app.post('/app/login', (req, res) => {
+  const email = String(req.body.email || '').trim();
+  const password = String(req.body.password || '');
+  const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, title: 'Sign in · WKND', bare: true, body: appLoginPage({ error, email, phase: appPhase() }) }));
+  const reg = email ? getRegistrationByEmail(email) : null;
+  if (reg && !reg.password_hash && reg.status === 'approved') return fail('You haven\'t set a password yet. Use "Email me a sign-in code" below.');
+  if (!reg || !checkPlayerPassword(password, reg.password_hash || '')) return fail('Wrong email or password.');
+  const block = appSignInBlock(reg);
+  if (block) return sendApp(res, { title: 'WKND', bare: true, body: appNotPlayerPage({ reason: block, phase: appPhase() }) });
+  appAfterSignIn(req, res, reg, 'password');
+});
+
+// 6-digit email codes, kept in memory like the forgot-password cooldowns (a restart just
+// means asking for a new one). Stored hashed; 10 minutes, 5 tries, one email a minute.
+const appCodes = new Map(); // email (lowercase) -> { hash, regId, exp, tries, sentAt }
+const APP_CODE_TTL_MS = 10 * 60 * 1000;
+const hashAppCode = (email, code) => createHash('sha256').update(`${SESSION_SECRET}:${email}:${code}`).digest('hex');
+const maskEmail = e => { const [u, d] = String(e).split('@'); return d ? `${u.slice(0, 2)}${'•'.repeat(Math.max(1, Math.min(u.length - 2, 4)))}@${d}` : e; };
+setInterval(() => { const now = Date.now(); for (const [k, v] of appCodes) if (v.exp < now) appCodes.delete(k); }, 5 * 60 * 1000).unref();
+
+app.get('/app/login/code', (req, res) => {
+  sendApp(res, { title: 'Get a code · WKND', bare: true, body: appCodeRequestPage({ email: String(req.query.email || '') }) });
+});
+
+app.post('/app/login/code', (req, res) => {
+  const email = String(req.body.email || '').trim();
+  const key = email.toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).send(appPage({ ver: APP_VER, title: 'Get a code · WKND', bare: true, body: appCodeRequestPage({ email, error: 'Enter the email you signed up with.' }) }));
+  }
+  const prev = appCodes.get(key);
+  const reg = getRegistrationByEmail(email);
+  // Same answer whether or not the email has an account; only eligible players get a code.
+  if (reg && !appSignInBlock(reg) && !(prev && Date.now() - prev.sentAt < 60 * 1000)) {
+    const code = String(randomInt(0, 1000000)).padStart(6, '0');
+    appCodes.set(key, { hash: hashAppCode(key, code), regId: reg.id, exp: Date.now() + APP_CODE_TTL_MS, tries: 0, sentAt: Date.now() });
+    const name = (reg.full_name || '').split(',')[1]?.trim() || 'there';
+    sendMail({ to: reg.email, ref: reg.id, ...appSignInCodeEmail({ name, code }) }).catch(e => console.error('[mailer]', e.message));
+    insertAdminLog({ actor: reg.full_name || reg.email, actorType: 'player', method: 'POST', path: '/app/login/code', details: { event: 'app_code_sent', email: reg.email } });
+  }
+  res.redirect(`/app/login/code/verify?email=${encodeURIComponent(email)}`);
+});
+
+app.get('/app/login/code/verify', (req, res) => {
+  const email = String(req.query.email || '').trim();
+  if (!email) return res.redirect('/app/login/code');
+  sendApp(res, { title: 'Enter code · WKND', bare: true, body: appCodeVerifyPage({ email, masked: maskEmail(email) }) });
+});
+
+app.post('/app/login/code/verify', (req, res) => {
+  const email = String(req.body.email || '').trim();
+  const key = email.toLowerCase();
+  const code = String(req.body.code || '').replace(/\D/g, '');
+  const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, title: 'Enter code · WKND', bare: true, body: appCodeVerifyPage({ email, masked: maskEmail(email), error }) }));
+  const entry = appCodes.get(key);
+  if (!entry || entry.exp < Date.now()) { appCodes.delete(key); return fail('That code has expired. Send a new one below.'); }
+  if (++entry.tries > 5) { appCodes.delete(key); return fail('Too many tries. Send a new code below.'); }
+  const ok = code.length === 6 && timingSafeEqual(Buffer.from(hashAppCode(key, code)), Buffer.from(entry.hash));
+  if (!ok) return fail('That code isn\'t right. Check the email and try again.');
+  appCodes.delete(key);
+  const reg = getRegistration(entry.regId);
+  const block = reg ? appSignInBlock(reg) : 'no-player';
+  if (block) return sendApp(res, { title: 'WKND', bare: true, body: appNotPlayerPage({ reason: block, phase: appPhase() }) });
+  appAfterSignIn(req, res, reg, 'email_code');
+});
+
+app.post('/app/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/app/login'));
+});
+
+// ── Home ──
+app.get('/app', requireApp, (req, res) => {
+  const me = appMe(req);
+  const teams = getAllTeams();
+  const { next, last, played, all } = appGames(me);
+  let upNext = null;
+  if (next) {
+    const r = teamResult(next, me.team.id);
+    const ymd = gameYmd(next.date);
+    const tip = /^\d{2}:\d{2}$/.test(String(next.tip_time || '')) ? next.tip_time : '00:00';
+    const seasonGames = played.filter(g => String(g.season) === String(next.season));
+    upNext = {
+      kicker: `Your next game · ${next.playoff_round || gameTypeLabel(next) || 'Regular season'}`,
+      mine: me.team.name, opp: r.oppName, oppColor: teamColorById(teams, r.oppId),
+      dateLabel: [manilaDayLabel(ymd), gameTipLabel(next)].filter(Boolean).join(' · '),
+      court: next.court_id ? (getPapawisCourtById(next.court_id)?.name || '') : '',
+      countTo: Date.parse(`${ymd}T${tip}:00+08:00`),
+      foot: `${me.team.name} ${recordIn(seasonGames, me.team.id)} this season`,
+      href: previewHref(next),
+    };
+  }
+  const st = appSeasonState(me);
+  const todos = st.rows.filter(r => !r.done && r.href).map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, solid: r.icon === 'wallet' }));
+  try {
+    if (picksEnabled() && all) {
+      const picks = openPicks(all, buildPicksContext(all), me.playerId).filter(o => !o.closed && !o.myPick);
+      for (const o of picks) todos.push({ icon: 'target', title: `Pick ${o.a} vs ${o.b}`, sub: `Who wins? · ${manilaDayLabel(o.ymd)}`, pill: 'Pick', solid: true, href: '/picks' });
+    }
+  } catch (e) { console.error('[app home picks]', e.message); }
+  let latest = null;
+  if (last) {
+    const r = teamResult(last, me.team.id);
+    const s = getGamePlayerStat(last.id, me.playerId);
+    latest = { date: shortDate(last.date), opp: r.oppName, won: r.won, my: r.my, oppScore: r.opp, href: previewHref(last),
+      line: s ? `${s.pts || 0} pts · ${s.reb || 0} reb · ${s.ast || 0} ast` : '' };
+  }
+  const setup = appSetupState(me);
+  sendApp(res, { title: 'WKND', tab: 'home', body: appHomePage({ phase: appPhase(), me, upNext, todos, latest, setup }) });
+});
+
+// ── Setup ──
+app.get('/app/setup', requireApp, (req, res) => res.redirect(appSetupState(appMe(req)).href));
+
+app.get('/app/setup/photo', requireApp, (req, res) => {
+  const me = appMe(req);
+  sendApp(res, { title: 'Your photo · WKND', bare: true, body: appSetupPhotoPage({ me, hasPhoto: me.hasPhoto }) });
+});
+
+app.get('/app/setup/details', requireApp, (req, res) => {
+  const me = appMe(req);
+  const positions = parsePositions(me.reg.positions).length ? parsePositions(me.reg.positions) : parsePositions(me.player.positions);
+  sendApp(res, { title: 'Your details · WKND', bare: true, body: appSetupDetailsPage({
+    reg: { ...me.reg, height: me.reg.height || me.player.height || '', dominant_hand: me.reg.dominant_hand || String(me.player.dominant_hand || '').toLowerCase(), motto: me.reg.motto || me.player.writeup || '' },
+    positions, number: me.number, teamName: me.teamName,
+  }) });
+});
+
+app.post('/app/setup/details', requireApp, (req, res) => {
+  const me = appMe(req);
+  const b = req.body;
+  const clip = (v, n) => String(v ?? '').trim().slice(0, n);
+  const validPos = new Set(APP_POSITIONS.map(p => p[0]));
+  const positions = [].concat(b.positions || []).map(String).filter(p => validPos.has(p));
+  const hand = APP_HANDS.some(h => h[0] === b.dominant_hand) ? b.dominant_hand : '';
+  const fields = {
+    positions, height: clip(b.height, 12), dominant_hand: hand, motto: clip(b.motto, 300),
+    social_handle: clip(b.social_handle, 40).replace(/^@?/, '@').replace(/^@$/, ''),
+    emergency_name: clip(b.emergency_name, 60), emergency_phone: clip(b.emergency_phone, 30),
+  };
+  if (!fields.emergency_name || !fields.emergency_phone) {
+    return res.status(400).send(appPage({ ver: APP_VER, title: 'Your details · WKND', bare: true, body: appSetupDetailsPage({
+      reg: { ...me.reg, ...fields }, positions, number: me.number, teamName: me.teamName, error: 'Add an emergency contact name and phone.',
+    }) }));
+  }
+  updateRegistrationProfile(me.reg.id, fields);
+  // The public profile reads the player record: push just these fields through the admin
+  // "sync" merge (it skips blanks and keeps the player's other details) — never the whole
+  // registration, whose name and birthday an admin may have corrected on the player since.
+  mergeRegistrationIntoPlayer(me.playerId, { positions: JSON.stringify(positions), height: fields.height, dominant_hand: fields.dominant_hand });
+  updatePlayerWriteup(me.playerId, fields.motto);
+  insertAdminLog({ actor: me.reg.full_name || me.reg.email, actorType: 'player', method: 'POST', path: '/app/setup/details', details: { event: 'profile_edit', fields: Object.keys(fields) } });
+  res.redirect('/app/setup/season');
+});
+
+app.get('/app/setup/season', requireApp, (req, res) => {
+  sendApp(res, { title: 'Your season · WKND', bare: true, body: appSetupSeasonPage({ rows: appSeasonState(appMe(req)).rows }) });
+});
+
+app.get('/app/setup/done', requireApp, (req, res) => {
+  const me = appMe(req);
+  const s = appSetupState(me);
+  sendApp(res, { title: 'All set · WKND', bare: true, body: appSetupDonePage({ first: me.first, remaining: s.total - s.done }) });
+});
+
+// ── Tabs ──
+app.get('/app/team', requireApp, (req, res) => {
+  const me = appMe(req);
+  if (!me.team) return sendApp(res, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({ me }) });
+  const teams = getAllTeams();
+  const { next, played } = appGames(me);
+  const season = getPortalCurrentSeason();
+  const seasonGames = played.filter(g => String(g.season) === String(season));
+  const roster = getAllPlayers()
+    .filter(p => p.team_id === me.team.id && p.status !== 'inactive')
+    .map(p => ({
+      id: p.id, name: `${p.first_name} ${p.last_name}`.trim(), number: String(p.number ?? ''),
+      positions: parsePositions(p.positions).join(' · '), photoUrl: playerPhotoUrl(p.id, 96),
+      initials: `${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}`.toUpperCase(),
+      isMe: p.id === me.playerId, isHead: getHeadTeamIds(p.id).includes(me.team.id),
+    }))
+    .sort((a, b) => (b.isHead - a.isHead) || a.name.localeCompare(b.name));
+  const nextGame = next ? (() => { const r = teamResult(next, me.team.id); return { opp: r.oppName, oppColor: teamColorById(teams, r.oppId), when: [manilaDayLabel(gameYmd(next.date)), gameTipLabel(next)].filter(Boolean).join(' · '), href: previewHref(next) }; })() : null;
+  sendApp(res, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({
+    me, team: { ...me.team, color: me.ring }, roster, nextGame,
+    record: seasonGames.length ? `${recordIn(seasonGames, me.team.id)} in Season ${season}` : '',
+  }) });
+});
+
+app.get('/app/me', requireApp, (req, res) => {
+  const me = appMe(req);
+  const season = String(getPortalCurrentSeason());
+  const log = getPlayerGameLog(me.playerId).filter(g => g.status === 'played');
+  const inSeason = log.filter(g => String(g.season) === season);
+  const per = k => inSeason.length ? (inSeason.reduce((s, g) => s + (g[k] || 0), 0) / inSeason.length).toFixed(1) : '0.0';
+  const games = log.slice(0, 5).map(g => {
+    const tid = g.player_team_id;
+    const mine = g.team_a_id === tid ? 'a' : 'b';
+    const my = Number(mine === 'a' ? g.team_a_score : g.team_b_score), opp = Number(mine === 'a' ? g.team_b_score : g.team_a_score);
+    return { date: shortDate(g.date), opp: mine === 'a' ? g.team_b_name : g.team_a_name, won: my > opp, my, oppScore: opp,
+      line: `${g.pts || 0}·${g.reb || 0}·${g.ast || 0}`, href: previewHref(g) };
+  });
+  const slug = getSlugForEntity('player', me.playerId);
+  sendApp(res, { title: 'Me · WKND', tab: 'me', body: appMePage({
+    me, positions: parsePositions(me.player.positions).join(' · '),
+    season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
+    games, profileHref: `/players/${encodeURIComponent(slug || me.playerId)}`,
+  }) });
+});
+
+app.get('/app/papawis', requireApp, (req, res) => {
+  sendApp(res, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage({ me: appMe(req) }) });
+});
+
+app.get('/app/more', requireApp, (req, res) => {
+  const me = appMe(req);
+  const st = appSeasonState(me);
+  const rows = [
+    { icon: 'bell', title: 'Notifications', href: '/app/notifications', count: me.unread, amber: true },
+    { icon: 'wallet', title: 'My balance', value: st.balance > 0 ? `${st.peso(st.balance)} due` : 'Settled', href: '/settle-balance', ext: true },
+  ];
+  if (st.signupOpen) rows.push({ icon: 'form', title: `Season ${st.season} sign-up`, value: st.signup ? 'Done' : 'Open', href: '/season-signup', ext: true });
+  if (st.signup?.jersey_requested_at) rows.push({ icon: 'shirt', title: 'Jersey request', value: st.signup.jersey_submitted_at ? 'Sent' : 'To do', href: '/jersey-request', ext: true });
+  if (getHeadTeamIds(me.playerId).length) rows.push({ icon: 'scale', title: 'Fines & votes', href: '/fines', ext: true });
+  if (getSetting('marketplace_enabled', '0') === '1') rows.push({ icon: 'shirt', title: 'Marketplace', href: '/marketplace', ext: true });
+  sendApp(res, { title: 'More · WKND', tab: 'more', body: appMorePage({ me, rows }) });
+});
+
+app.get('/app/notifications', requireApp, (req, res) => {
+  const pid = req.session.playerPlayerId;
+  const items = getNotificationsForPlayer(pid, 30).map(n => ({
+    title: n.title, body: n.body, href: n.link || '', unread: !n.read_at,
+    when: new Date(n.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' }),
+  }));
+  if (items.some(i => i.unread)) markNotificationsRead(pid);
+  sendApp(res, { title: 'Notifications · WKND', tab: 'more', body: appNotificationsPage({ items }) });
+});
+
 app.post('/balance-bar/dismiss', express.json(), (req, res) => {
   if (!req.session?.playerRegId) return res.status(401).end();
   const amount = Number(req.body?.amount);

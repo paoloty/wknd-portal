@@ -26,6 +26,7 @@ Start at whichever one matches what you're touching — a page doc will point to
 - [ledger-balance](features/ledger-balance.md) — financial ledger, `/settle-balance`, known gap: no player-facing transaction history
 - [awards](features/awards.md) — season awards, graphics, articles
 - [media-jobs](features/media-jobs.md) — POTG video editor, background renders, `/admin/media` Processing list
+- [players-app](features/players-app.md) — the installable players-only app at `/app`: sign-in, setup, Home, hidden beta gate
 - [admin-core](features/admin-core.md) — auth, session, roles, layout, dashboard — read this first for anything admin-side
 
 ## Known gaps as of this writing
