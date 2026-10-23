@@ -1,5 +1,5 @@
 import { escHtml, pageHeader } from './layout.js';
-import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl, avatarStack, shareIcon } from './utils.js';
+import { teamColor, formatDate, boldTitle, excerpt, initials, commentSnippet, playerPhotoUrl, avatarStack, shareIcon, gameTipLabel } from './utils.js';
 import { summaryPanel } from './home.js';
 import { previewHref, oddsEdge } from './pick-box.js';
 import { pickCard, pickCardScript } from './pick-card.js';
@@ -413,7 +413,7 @@ function matchupCard(m, { story, isAdmin, isPlayer, pickState = null, pick: o = 
       <div class="gm-glare" style="background:${glare}"></div>
       ${showEdge ? oddsEdge(m.a, m.b, odds) : ''}
       <div class="gm-hero__in">
-        <div class="gm-hero__chips"><span class="hero-chip hero-chip--season">${chip}</span><span class="hero-chip">${escHtml(dayLabel(m.ymd))}</span></div>
+        <div class="gm-hero__chips"><span class="hero-chip hero-chip--season">${chip}</span><span class="hero-chip">${escHtml(dayLabel(m.ymd))}${gameTipLabel(m.game) ? ` · ${escHtml(gameTipLabel(m.game))}` : ''}</span></div>
         <div class="gm-hero__teams">
           <span class="gm-side"><span class="gm-side__name">${dot(m.a, 11)}<b>${escHtml(m.a)}</b></span><span class="gm-side__rec">S${escHtml(String(m.season))} ${m.recordA.w}–${m.recordA.l}${heroPct('a')}</span></span>
           <span class="gm-h2h">${m.firstMeeting
@@ -693,8 +693,9 @@ export function gamesPage({
 
   // Ordered by time: what's next on top, then the last game day's recap (storyline + POTG),
   // then the season — each block under its own header so they don't run together.
+  const firstTip = gameTipLabel({ tip_time: matchups.filter(m => m.ymd === matchups[0]?.ymd).map(m => m.game?.tip_time).filter(Boolean).sort()[0] });
   const matchupsHtml = matchups.length ? `<section class="gr-sec" aria-labelledby="gr-next-h">
-  <div class="section-header"><h2 id="gr-next-h">Up next <span class="section-header__sub">${escHtml(dayLabel(matchups[0].ymd))}</span></h2><a href="/picks" class="section-header__link">Picks &amp; race →</a></div>
+  <div class="section-header"><h2 id="gr-next-h">Up next <span class="section-header__sub">${escHtml(dayLabel(matchups[0].ymd))}${firstTip ? ` · first tip-off ${escHtml(firstTip)}` : ''}</span></h2><a href="/picks" class="section-header__link">Picks &amp; race →</a></div>
   <div class="gm-grid${matchups.length === 1 ? ' gm-grid--one' : ''}">
     ${matchups.map(m => matchupCard(m, { story: stories[m.game.id], isAdmin, isPlayer, pickState: picks?.states?.[m.game.id] || null, pick: picks?.opens?.[m.game.id] || null, variant: 'semi', state: picks?.states?.[m.game.id]?.closed ? 'closed' : 'open', href: previewHrefs[m.game.id] || '/picks' })).join('')}
   </div>

@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor } from './utils.js';
+import { teamColor, gameTipLabel } from './utils.js';
 
 // One slim strip of the latest games, newest first. Regular-season games are compact cells
 // (season + date on top, two team rows, winner in white). A playoff or finals series folds
@@ -33,7 +33,7 @@ function gameCell(g) {
     </span>`;
   const ot = otLabel(g);
   const meta = scheduled
-    ? `<span class="tk-meta tk-meta--next"><span>NEXT</span><span>${shortDay(g.date)}</span></span>`
+    ? `<span class="tk-meta tk-meta--next"><span>NEXT</span><span>${shortDay(g.date)}${gameTipLabel(g) ? ` · ${gameTipLabel(g)}` : ''}</span></span>`
     : `<span class="tk-meta"><span>S${g.season} · ${shortDay(g.date)}</span><span>${ot ? `FINAL/${ot}` : 'FINAL'}</span></span>`;
   const tag = scheduled ? 'div' : 'a';
   const href = scheduled ? '' : ` href="/games/${encodeURIComponent(g.id)}"`;
@@ -75,7 +75,7 @@ function seriesCard(games) {
     if (isScheduled(g)) {
       const no = r ? r.teamAWins + r.teamBWins + 1 : '';
       return `<div class="tk-chip tk-chip--next">
-      <span class="tk-chip__label"><span>${no ? `G${no}` : 'NEXT'}</span><span>NEXT</span></span>
+      <span class="tk-chip__label"><span>${no ? `G${no}` : 'NEXT'}</span><span>${gameTipLabel(g) || 'NEXT'}</span></span>
       <span class="tk-chip__date font-condensed">${shortDay(g.date)}</span>
     </div>`;
     }

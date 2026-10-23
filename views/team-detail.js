@@ -50,7 +50,7 @@ function hero(d) {
 function upNext(d) {
   if (d.openPick) {
     const when = d.openPick.ymd ? new Date(`${d.openPick.ymd}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
-    return `<span class="tms-kicker tdp-hero__kicker">Up next${when ? ` · ${escHtml(when)}` : ''} · Who wins?</span>
+    return `<span class="tms-kicker tdp-hero__kicker">Up next${when ? ` · ${escHtml(when)}` : ''}${d.openPick.tip ? ` · ${escHtml(d.openPick.tip)}` : ''} · Who wins?</span>
       ${pickCard(d.openPick, { variant: 'card', isPlayer: d.isPlayer, next: `/teams/${encodeURIComponent(d.slug)}` })}`;
   }
   const n = d.nextGame;

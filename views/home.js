@@ -1,6 +1,6 @@
 import { escHtml } from './layout.js';
 import { qualifiesPerGame } from '../lib/qualification.js';
-import { teamColor, displayPlayerName, formatDate, boldTitle, excerpt, truncate, playerAvatar, avatarStack, playerLink, manilaTodayStr, commentSnippet, playerPhotoUrl } from './utils.js';
+import { teamColor, displayPlayerName, formatDate, boldTitle, excerpt, truncate, playerAvatar, avatarStack, playerLink, manilaTodayStr, commentSnippet, playerPhotoUrl, gameTipLabel } from './utils.js';
 import { moveBadge, lockBars } from './mvp.js';
 export { scoreTicker } from './ticker.js';
 import { scoreTicker } from './ticker.js';
@@ -796,8 +796,10 @@ const NU_RENDER = {
         <span class="nu-match__vs">vs</span>
         <span class="nu-match__team nu-match__team--r">${g.recB ? `<em>${escHtml(g.recB)}</em> ` : ''}${escHtml(g.b)}<span class="team-dot" style="background:${teamColor(g.b)}"></span></span>
       </div>`).join('');
+      // The day's first tip-off, when any game has one set.
+      const firstTip = d.games.map(g => g.tip).filter(Boolean).sort()[0];
       return nuCard('league', `League · Season ${escHtml(String(d.season))}`, escHtml(nuDayLabel(d.date)),
-        `${escHtml(nuDaysAway(d.date))} · ${d.games.length} game${d.games.length === 1 ? '' : 's'}`,
+        `${escHtml(nuDaysAway(d.date))}${firstTip ? ` · ${escHtml(gameTipLabel({ tip_time: firstTip }))}` : ''} · ${d.games.length} game${d.games.length === 1 ? '' : 's'}`,
         rows, `<a href="/games" class="nu-card__link">All games <span>&rarr;</span></a>`);
     }
     const rows = d.games.map(g => {

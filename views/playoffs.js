@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, playerPhotoUrl } from './utils.js';
+import { teamColor, playerPhotoUrl, gameTipLabel } from './utils.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
 
 // ── /playoffs ─────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ function gameChips(games, state, max, decided) {
     else {
       const next = games.find(g => !isPlayed(g));
       chips.push(next
-        ? `<a href="/games/${encodeURIComponent(next.id)}" class="po-chip is-slot is-next">G${n + 1} · ${fmtDay(next.date)}</a>`
+        ? `<a href="/games/${encodeURIComponent(next.id)}" class="po-chip is-slot is-next">G${n + 1} · ${fmtDay(next.date)}${gameTipLabel(next) ? ` · ${gameTipLabel(next)}` : ''}</a>`
         : `<span class="po-chip is-slot">G${n + 1} · date TBA</span>`);
     }
   }

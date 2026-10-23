@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl, shareIcon } from './utils.js';
+import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl, shareIcon, gameTipLabel } from './utils.js';
 import { courtDisplayName } from '../lib/court-page.js';
 
 // The game's court, linked to its court page when that page is public (so every game played
@@ -1675,7 +1675,7 @@ function upcomingHero(d) {
       <div class="gd-board">
         <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}${oddsPct(heroOdds, 'a')}</span></div>
         <div class="gd-when">
-          ${dt ? `<span class="gd-when__k">${dt.toLocaleDateString('en-US', { weekday: 'long' })}</span><span class="gd-when__d">${dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}</span>` : '<span class="gd-when__d">TBD</span>'}
+          ${dt ? `<span class="gd-when__k">${dt.toLocaleDateString('en-US', { weekday: 'long' })}</span><span class="gd-when__d">${dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}</span>${gameTipLabel(game) ? `<span class="gd-when__t">Tip-off ${escHtml(gameTipLabel(game))}</span>` : ''}` : '<span class="gd-when__d">TBD</span>'}
           ${s.n ? `<span class="gd-h2h"><span>All-time</span><b class="${s.a >= s.b ? 'is-lead' : ''}">${s.a}</b><i>–</i><b class="${s.b >= s.a ? 'is-lead' : ''}">${s.b}</b></span>` : '<span class="gd-h2h"><span>First meeting</span></span>'}
         </div>
         <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${oddsPct(heroOdds, 'b')}${recLine(ctx.recB)}</span></div>

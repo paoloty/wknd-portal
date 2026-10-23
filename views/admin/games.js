@@ -131,6 +131,7 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
     id: 'new-game', eyebrow: 'Game Day', title: 'New game',
     bodyHtml: `<form id="new-game-form" data-json-action="/admin/games" data-then="/admin/games/{id}" data-done="Game created.">${fieldGrid(`
         ${field({ label: 'Date', name: 'date', type: 'date', value: nextSunday, required: true, help: 'Defaults to the coming Sunday.' })}
+        ${field({ label: 'Tip-off', name: 'tip_time', type: 'time', help: 'Optional. Shows next to the date wherever the game is listed.' })}
         ${field({ label: 'Season', name: 'season', type: 'number', value: String(currentSeason), required: true, attrs: 'min="1" step="1"' })}
         ${field({ label: 'Team A', name: 'team_a_id', type: 'select', options: teamOpts, required: true })}
         ${field({ label: 'Team B', name: 'team_b_id', type: 'select', options: teamOpts, required: true })}

@@ -8430,6 +8430,7 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-when { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 .gd-when__k { font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #c7d0da; }
 .gd-when__d { font-family: 'Saira Condensed', sans-serif; font-size: 54px; font-weight: 800; line-height: .9; color: #fff; letter-spacing: .02em; }
+.gd-when__t { font-size: 13px; font-weight: 700; line-height: 1; color: #fff; }
 .gd-h2h { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; padding: 6px 12px; border-radius: 10px; background: rgba(10,14,22,.6); border: 1px solid rgba(255,255,255,.08); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
 .gd-h2h b { font-family: 'Saira Condensed', sans-serif; font-size: 22px; line-height: 1; letter-spacing: 0; color: #7d8696; }
 .gd-h2h b.is-lead { color: #fff; }

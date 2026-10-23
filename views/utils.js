@@ -137,6 +137,12 @@ export function formatTimeRange(start, end) {
     : `${startFull}–${endFull}`;
 }
 
+// A league game's tip-off time ("6:30 AM"), or '' when none is set. games.tip_time is
+// 'HH:MM' Manila time.
+export function gameTipLabel(g) {
+  return /^\d{2}:\d{2}$/.test(String(g?.tip_time || '')) ? formatClockTime(g.tip_time) : '';
+}
+
 export function initials(name) {
   const parts = String(name || '').replace(/,/g, ' ').trim().split(/\s+/);
   return parts.map(p => p[0] || '').join('').slice(0, 2).toUpperCase();

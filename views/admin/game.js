@@ -286,6 +286,7 @@ function settingsTab({ game, st, statCorrections, nameById, courts }) {
   const id = attr(game.id);
   const gameForm = `<form id="game-settings" class="aui-panel" data-json-action="/admin/games/${id}/save" data-done="Game saved." data-dirty-watch>
     ${fieldGrid(`${field({ label: 'Date', name: 'date', type: 'date', value: game.date || '', required: true })}
+      ${field({ label: 'Tip-off', name: 'tip_time', type: 'time', value: game.tip_time || '', help: 'Shows next to the date wherever the game is listed. Leave empty if not set yet.' })}
       ${field({ label: 'Type', name: 'game_type', type: 'select', value: game.game_type || 'regular', options: Object.entries(TYPE_LABEL), help: game.game_type === 'playoff' ? 'Set a Finals game to Finals so Game 1 gets the margin-guess tiebreaker.' : '' })}
       ${st !== 'upcoming' ? field({ label: 'Overtime', name: 'overtime', type: 'select', value: String(n(game.overtime)), options: [['0', 'Regulation'], ['1', 'OT'], ['2', '2OT'], ['3', '3OT']] }) : ''}
       <div class="aui-field"><span class="aui-field__label">Season</span><span class="agd-ro">Season ${escHtml(String(game.season || '—'))}</span><span class="aui-field__help">Set when the game was created.</span></div>
@@ -297,7 +298,7 @@ function settingsTab({ game, st, statCorrections, nameById, courts }) {
     : '<p class="aui-muted">Publishing comes after the game file is imported.</p>';
   const del = `<div class="aui-panel agd-danger"><span class="aui-cell__stack"><span class="aui-cell__title">Delete game</span><span class="aui-cell__sub">Removes the game and every player’s stats from it. This can’t be undone.</span></span>
     ${button('Delete game…', { kind: 'danger', attrs: `data-post-json="/admin/games/${id}" data-method="DELETE" data-then="/admin/games" data-done="Game deleted." data-confirm data-confirm-title="Delete ${attr(`${game.team_a_name} vs ${game.team_b_name}`)}?" data-confirm-body="Every player’s stats from this game go too. This can’t be undone." data-confirm-send="Delete game"` })}</div>`;
-  return `${section({ title: 'Game', note: '· date, type, overtime and court', bodyHtml: gameForm })}
+  return `${section({ title: 'Game', note: '· date, tip-off, type, overtime and court', bodyHtml: gameForm })}
     ${section({ title: 'On the site', bodyHtml: publish })}
     ${st === 'live' || st === 'draft' ? section({ title: 'Stat corrections', note: '· every change to the box score', bodyHtml: `<div class="aui-panel">${correctionsList(statCorrections, nameById)}</div>` }) : ''}
     ${section({ title: 'Danger zone', bodyHtml: del })}

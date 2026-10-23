@@ -52,7 +52,7 @@ import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamDetailPage } from './views/team-detail.js';
-import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs, gameTipLabel } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -213,7 +213,7 @@ import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveM
 import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
-import { setGameType, setGamesCourt } from './lib/portal-db.js';
+import { setGameType, setGamesCourt, setGamesTipTime } from './lib/portal-db.js';
 import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
 import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
@@ -501,7 +501,7 @@ function buildGameOgTags(req, game, court = null) {
   const typeLabel  = gameTypeLabel(game);
   const baseDesc   = writeupDescription(game.game_writeup) || (isCompleted
     ? `${scoreLabel}${typeLabel ? ` (${typeLabel})` : ''}${when ? ` on ${when}` : ''}. Box score, player stats and game recap from WKND Basketball.`
-    : `${game.team_a_name} vs ${game.team_b_name}${when ? ` on ${when}` : ''}. Matchup preview, box score and player stats from WKND Basketball.`);
+    : `${game.team_a_name} vs ${game.team_b_name}${when ? ` on ${when}` : ''}${gameTipLabel(game) ? `, ${gameTipLabel(game)}` : ''}. Matchup preview, box score and player stats from WKND Basketball.`);
   // The court, when the game has one and it fits (only the search snippet; the recap is untouched).
   const courtName  = court ? courtDisplayName(court) : '';
   const courtTown  = court ? courtCity(court) : '';
@@ -569,7 +569,7 @@ function buildGameOgTags(req, game, court = null) {
     name: `${titleCase(game.team_a_name)} ${scoreA}–${scoreB} ${titleCase(game.team_b_name)}`,
     url,
     sport: 'Basketball',
-    ...(game.date ? { startDate: gameYmd(game.date) } : {}),
+    ...(game.date ? { startDate: /^\d{2}:\d{2}$/.test(game.tip_time || '') ? `${gameYmd(game.date)}T${game.tip_time}:00+08:00` : gameYmd(game.date) } : {}),
     eventStatus: 'https://schema.org/EventScheduled',
     homeTeam: { '@type': 'SportsTeam', name: titleCase(game.team_a_name) },
     awayTeam: { '@type': 'SportsTeam', name: titleCase(game.team_b_name) },
@@ -9591,6 +9591,7 @@ app.post('/admin/games', requireAuth, jsonSmall, (req, res) => {
   try {
     const id = createGame({ date, teamAId: team_a_id, teamBId: team_b_id, season, gameType: game_type || 'regular', seriesId: series_id || '' });
     if (req.body.court_id && getPapawisCourtById(String(req.body.court_id))) setGamesCourt([id], String(req.body.court_id));
+    if (req.body.tip_time) setGamesTipTime([id], String(req.body.tip_time));
     res.json({ ok: true, id });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -10123,6 +10124,7 @@ app.post('/admin/games/:id/save', requireAuth, jsonSmall, (req, res) => {
     const ids = b.court_whole_day && ymd ? getAllGames().filter(g => gameYmd(g.date) === ymd).map(g => g.id) : [game.id];
     setGamesCourt(ids, courtId);
   }
+  if (b.tip_time !== undefined) setGamesTipTime([game.id], String(b.tip_time || ''));
   settleGamePicks(game.id);
   res.json({ ok: true });
 });
@@ -11964,7 +11966,7 @@ function openPicks(games, pctx, viewerId) {
     const meetings = pctx.played.filter(x => (x.a === pg.a && x.b === pg.b) || (x.a === pg.b && x.b === pg.a));
     const winsOf = t => meetings.filter(x => (x.sa > x.sb ? x.a : x.b) === t).length;
     return {
-      id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, season: pg.season, href: previewHref(g),
+      id: g.id, a: g.team_a_name, b: g.team_b_name, ymd: pg.ymd, tip: gameTipLabel(g), season: pg.season, href: previewHref(g),
       mvpCases: String(pg.season) === String(cur) ? podiumTen.filter(p => [String(g.team_a_name).toUpperCase(), String(g.team_b_name).toUpperCase()].includes(p.team)).length : 0,
       counts: counts[g.id], myPick, closed, odds, closeHm: picksCloseTime(),
       closeAt: pickCloseAt(pg, pctx.settings[g.id]),
@@ -13071,8 +13073,10 @@ function buildPlayoffHero(season, phase) {
     caption: `${pg.team_a_name} vs ${pg.team_b_name} · ${day(pg.date)}${String(pg.season) !== String(season) ? `, S${pg.season}` : ''}`,
   }));
 
-  // Games carry no tip-off time: the Playoffs panel's tip-off time, else the picks cut-off.
-  const tip = /^\d{2}:\d{2}$/.test(getSetting('playoff_tip_time', '')) ? getSetting('playoff_tip_time', '') : getSetting('picks_close_time', PICKS_CLOSE_DEFAULT);
+  // The next game's own tip-off time; without one, the Playoffs panel's tip-off time, else
+  // the picks cut-off.
+  const tip = /^\d{2}:\d{2}$/.test(main.next?.tip_time || '') ? main.next.tip_time
+    : /^\d{2}:\d{2}$/.test(getSetting('playoff_tip_time', '')) ? getSetting('playoff_tip_time', '') : getSetting('picks_close_time', PICKS_CLOSE_DEFAULT);
   const [th, tm] = tip.split(':').map(Number);
   const tipLabel = `${th % 12 || 12}${tm ? `:${String(tm).padStart(2, '0')}` : ''} ${th < 12 ? 'AM' : 'PM'}`;
 
@@ -13796,7 +13800,7 @@ function homeNextUpLeague(season, games) {
     return {
       mode: 'upcoming', date: day, season,
       games: scheduled.filter(g => String(g.date).slice(0, 10) === day)
-        .map(g => ({ a: g.team_a_name, b: g.team_b_name, recA: records[g.team_a_name] || '', recB: records[g.team_b_name] || '', type: g.game_type })),
+        .map(g => ({ a: g.team_a_name, b: g.team_b_name, recA: records[g.team_a_name] || '', recB: records[g.team_b_name] || '', type: g.game_type, tip: g.tip_time || '' })),
     };
   }
   const played = games
@@ -16390,7 +16394,7 @@ function buildTeamsIndex(season) {
       form: games.slice(0, 5).reverse().map(g => ({ r: teamResult(g, t.id).won ? 'W' : 'L', title: resultTitle(g, t.id) })),
       chip: reigning && reigning.teamId === t.id ? `S${reigning.season} champions` : '',
       box: boxById[t.id] || null, stars,
-      next: next ? `vs ${teamResult(next, t.id).oppName} · ${dayLabel(gameYmd(next.date))}` : '',
+      next: next ? `vs ${teamResult(next, t.id).oppName} · ${dayLabel(gameYmd(next.date))}${gameTipLabel(next) ? ` · ${gameTipLabel(next)}` : ''}` : '',
       head: heads.filter(h => h.team_id === t.id).map(h => displayPlayerName(h.player_name)).join(', '),
       rosterCount: isCurrent
         ? active.filter(p => String(p.team_name || '').toUpperCase() === String(t.name).toUpperCase()).length
@@ -16561,7 +16565,7 @@ function buildTeamPage(team, viewerId) {
     const last = ms[ms.length - 1];
     const oppRow = index.teams.find(t => t.id === r.oppId);
     nextGame = {
-      opp: r.oppName, oppRecord: oppRow?.gp ? oppRow.record : '', dateLabel: dayLabel(gameYmd(upcomingGame.date)), href: previewHref(upcomingGame),
+      opp: r.oppName, oppRecord: oppRow?.gp ? oppRow.record : '', dateLabel: [dayLabel(gameYmd(upcomingGame.date)), gameTipLabel(upcomingGame)].filter(Boolean).join(' · '), href: previewHref(upcomingGame),
       series: ms.length ? `${team.name} ${w}–${ms.length - w}` : 'First meeting',
       last: last ? `${teamResult(last, team.id).won ? 'W' : 'L'} ${teamResult(last, team.id).my}–${teamResult(last, team.id).opp} · ${shortDayOf(last)}` : '',
     };
