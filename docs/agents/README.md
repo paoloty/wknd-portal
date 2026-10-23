@@ -27,6 +27,9 @@ Start at whichever one matches what you're touching — a page doc will point to
 - [awards](features/awards.md) — season awards, graphics, articles
 - [media-jobs](features/media-jobs.md) — POTG video editor, background renders, `/admin/media` Processing list
 - [players-app](features/players-app.md) — the installable players-only app at `/app`: sign-in, setup, Home, hidden beta gate
+
+## Handoff
+- [handoff-players-app](handoff-players-app.md) — where the players app stands, Paolo's working rules, what's next, local test setup. Read first in a new session.
 - [admin-core](features/admin-core.md) — auth, session, roles, layout, dashboard — read this first for anything admin-side
 
 ## Known gaps as of this writing
