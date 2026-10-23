@@ -1,7 +1,8 @@
 # Handoff: players app (`/app`), for the next session
 
 Last updated 2026-10-24. Read this first, then `docs/agents/features/players-app.md` (the full
-feature reference, kept current with every change) and `CLAUDE.md` (design rules).
+feature reference, kept current with every change), `docs/agents/app-standards.md` (the UI and
+speed rules every screen follows) and `CLAUDE.md` (design rules).
 
 ## How Paolo works (standing rules)
 - **Commit only on "commit push merge"** (or a close variant: "commit push", "commit and push").

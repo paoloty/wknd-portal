@@ -30,6 +30,7 @@ Start at whichever one matches what you're touching — a page doc will point to
 
 ## Handoff
 - [handoff-players-app](handoff-players-app.md) — where the players app stands, Paolo's working rules, what's next, local test setup. Read first in a new session.
+- [app-standards](app-standards.md) — UI and speed rules every players app screen follows.
 - [admin-core](features/admin-core.md) — auth, session, roles, layout, dashboard — read this first for anything admin-side
 
 ## Known gaps as of this writing
