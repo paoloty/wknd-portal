@@ -271,6 +271,37 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 .nav-progress { position: fixed; z-index: 40; top: 0; left: 0; height: 3px; width: 100%; background: var(--amber); transform-origin: left; animation: navp 1.4s ease-out forwards; box-shadow: 0 0 8px rgba(245,147,50,.6); }
 @keyframes navp { 0% { transform: scaleX(0.05); } 60% { transform: scaleX(0.7); } 100% { transform: scaleX(0.92); } }
 
+/* ── Install wall (views/app/layout.js installWallHtml): on a phone, outside the
+   installed app, this replaces the app. The head script sets html.needs-install plus one
+   of iw-ios / iw-android / iw-inapp (and iw-is-ios / iw-is-android for wording). ── */
+.install-wall { display: none; }
+html.needs-install main.app, html.needs-install nav.tabbar, html.needs-install .update-bar { display: none !important; }
+html.needs-install .install-wall { display: flex; flex-direction: column; gap: 14px; min-height: 100dvh; max-width: 560px; margin: 0 auto; padding: calc(28px + var(--safe-t)) 18px calc(96px + var(--safe-b)); }
+.iw-only-inapp, .iw-only-ios-browser, .iw-only-android-browser, .iw-only-ios, .iw-only-android { display: none; }
+html.iw-inapp .iw-only-inapp, html.iw-ios .iw-only-ios-browser, html.iw-android .iw-only-android-browser { display: block; }
+html.iw-is-ios .iw-only-ios, html.iw-is-android .iw-only-android { display: inline; }
+.iw-top { text-align: center; padding-top: 8px; }
+.iw-icon { display: inline-block; border-radius: 18px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.iw-icon img { width: 72px; height: 72px; display: block; }
+.install-wall h1 { margin: 16px 0 8px; font-family: var(--font-num); font-weight: 800; font-size: 40px; line-height: .95; }
+.install-wall h1 em { font-style: normal; color: var(--amber-text); }
+.iw-lede { margin: 0 auto; max-width: 320px; color: var(--muted); font-size: 15px; }
+.iw-card { padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); }
+.iw-card p { margin: 6px 0 10px; color: var(--muted); font-size: 14px; }
+.iw-card .btn { margin-top: 12px; }
+.iw-steps { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.iw-steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; line-height: 1.4; }
+.iw-n { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--amber); color: #111; font-family: var(--font-num); font-weight: 800; font-size: 15px; display: flex; align-items: center; justify-content: center; }
+.iw-glyph { display: inline-block; width: 18px; height: 18px; vertical-align: -4px; }
+.iw-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 8px; background: var(--surface-2); color: #2f80ed; font-weight: 600; white-space: nowrap; }
+.iw-hint { color: var(--win) !important; font-weight: 600; }
+.iw-note { padding: 12px 14px; border-radius: 14px; background: rgba(245,147,50,.12); color: var(--text); font-size: 14px; line-height: 1.45; }
+.iw-arrow { position: fixed; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%); width: 44px; height: 44px; border-radius: 50%; background: var(--amber); color: #111; display: none; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(245,147,50,.45); }
+html.iw-ios .iw-arrow { display: flex; }
+.iw-arrow .iw-glyph { width: 22px; height: 22px; vertical-align: 0; }
+@media (prefers-reduced-motion: no-preference) { html.iw-ios .iw-arrow { animation: iw-bob 1.4s ease-in-out infinite; } }
+@keyframes iw-bob { 50% { transform: translate(-50%, 8px); } }
+
 /* ── Install hint, update bar, offline ── */
 .install { display: flex; gap: 12px; align-items: center; }
 .install .app-icon { flex: none; width: 46px; height: 46px; border-radius: 11px; background: #0a0e16; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1px rgba(255,255,255,.1); }

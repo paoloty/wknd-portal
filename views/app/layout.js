@@ -74,8 +74,68 @@ export function appAvatar({ playerId, initials = '', ring = '', size = '', badge
   return `<span class="avatar-wrap"><span class="avatar${cls}" style="--ring:${esc(ring || 'var(--subtle)')}">${esc(initials)}${img}</span>${b}</span>`;
 }
 
+// "Install the app" wall (installWall: the app_require_install setting). On a phone the app
+// only runs from the home screen: in a phone browser — or the in-app browser of Messenger,
+// Facebook or Instagram, where installing isn't possible — this screen replaces it. Shown
+// before sign-in too: on iPhone the installed app has its own sign-in, separate from Safari.
+// A computer's browser is never walled, so admins can test there. The head script decides
+// before the first paint (html.needs-install + iw-ios / iw-android / iw-inapp).
+const INSTALL_DETECT = `<script>(function(){try{var d=document.documentElement,ua=navigator.userAgent;
+var sa=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+var ios=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1),android=/Android/.test(ua);
+if(sa||!(ios||android))return;
+d.classList.add('needs-install',/FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|MessengerForiOS|Line\\//.test(ua)?'iw-inapp':ios?'iw-ios':'iw-android',ios?'iw-is-ios':'iw-is-android');}catch(e){}})();</script>`;
+
+const shareGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/></svg>';
+const dotsGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+const moreGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+
+function installWallHtml() {
+  return `<section class="install-wall" aria-label="Install the WKND app">
+  <div class="iw-top">
+    <span class="iw-icon"><img src="/app-icon-180.png?v=2" alt="" width="72" height="72"></span>
+    <h1>Install the<br><em>WKND app</em></h1>
+    <p class="iw-lede">The players app works from your home screen, not the browser. It takes 10 seconds.</p>
+  </div>
+
+  <div class="iw-card iw-only-inapp">
+    <div class="kick">Open it in your browser first</div>
+    <p>You're inside Messenger, Facebook or Instagram, which can't install apps.</p>
+    <ol class="iw-steps">
+      <li><span class="iw-n">1</span><span class="iw-only-ios">Tap ${moreGlyph} at the top or bottom, then <b>Open in Safari</b> (or <b>Open in external browser</b>)</span><span class="iw-only-android">Tap ${dotsGlyph} at the top, then <b>Open in Chrome</b> (or <b>Open in browser</b>)</span></li>
+      <li><span class="iw-n">2</span><span>Follow the steps there to add it to your home screen</span></li>
+    </ol>
+    <button class="btn btn--ghost" type="button" data-iw-copy>Copy link</button>
+    <p class="iw-hint" data-iw-copied hidden>Copied. Paste it into <span class="iw-only-ios">Safari</span><span class="iw-only-android">Chrome</span>.</p>
+  </div>
+
+  <div class="iw-card iw-only-ios-browser">
+    <div class="kick">On iPhone</div>
+    <ol class="iw-steps">
+      <li><span class="iw-n">1</span><span>Tap <span class="iw-pill">${shareGlyph} Share</span> in Safari's toolbar. Don't see it? Tap ${moreGlyph} first.</span></li>
+      <li><span class="iw-n">2</span><span>Scroll down and tap <b>Add to Home Screen</b></span></li>
+      <li><span class="iw-n">3</span><span>Tap <b>Add</b>, then open <b>WKND</b> from your home screen</span></li>
+    </ol>
+  </div>
+
+  <div class="iw-card iw-only-android-browser">
+    <div class="kick">On Android</div>
+    <button class="btn" type="button" data-iw-install hidden>Install the app</button>
+    <p class="iw-hint" data-iw-installed hidden>Installed. Now open <b>WKND</b> from your home screen.</p>
+    <ol class="iw-steps" data-iw-manual>
+      <li><span class="iw-n">1</span><span>Tap ${dotsGlyph} at the top right of Chrome</span></li>
+      <li><span class="iw-n">2</span><span>Tap <b>Install app</b> or <b>Add to Home screen</b></span></li>
+      <li><span class="iw-n">3</span><span>Open <b>WKND</b> from your home screen</span></li>
+    </ol>
+  </div>
+
+  <div class="iw-note"><b>Already added it?</b> Close this and open the <b>WKND</b> icon on your home screen. The app doesn't work from the browser or Messenger.</div>
+  <div class="iw-arrow iw-only-ios-browser" aria-hidden="true">${shareGlyph}</div>
+</section>`;
+}
+
 // tab: which tab is lit ('' = none, e.g. sign-in and setup, which also drop the tab bar).
-export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '' }) {
+export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false }) {
   const tabbar = bare ? '' : `<nav class="tabbar" aria-label="App">${TABS.map(t =>
     `<a class="tab${t.key === tab ? ' is-on' : ''}" href="${t.href}"${t.key === tab ? ' aria-current="page"' : ''}>${t.icon}<span>${t.label}</span></a>`).join('')}</nav>`;
   return `<!DOCTYPE html>
@@ -98,11 +158,13 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <link rel="icon" href="/favicon-32.png?v=2" type="image/png" sizes="32x32">
   <link rel="icon" href="/favicon-16.png?v=2" type="image/png" sizes="16x16">
   <script>try{var t=localStorage.getItem('wknd-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+  ${installWall ? INSTALL_DETECT : ''}
   <link rel="preload" href="/fonts/fonts.css" as="style">
   <link rel="stylesheet" href="/fonts/fonts.css">
   <link rel="stylesheet" href="/app.css?v=${esc(ver)}">
 </head>
 <body class="${esc(bodyClass)}">
+  ${installWall ? installWallHtml() : ''}
   <main class="app${bare ? ' app--bare' : ''}">${body}</main>
   ${tabbar}
   <script src="/app.js?v=${esc(ver)}" defer></script>

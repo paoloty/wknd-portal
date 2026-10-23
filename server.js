@@ -5983,7 +5983,9 @@ const APP_VER = (() => {
 const APP_SESSION_MS = 180 * 24 * 60 * 60 * 1000;
 
 const appPhase = () => { try { return playoffModeState(getPortalCurrentSeason()).phase; } catch { return null; } };
-const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, ...opts }));
+// On a phone the app only runs installed (views/app/layout.js install wall) unless this is off.
+const appInstallRequired = () => getSetting('app_require_install', '1') === '1';
+const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, installWall: appInstallRequired(), ...opts }));
 
 // 'anon' | 'admin' (super-admin login, no player) | 'no-player' | 'not-yet' | 'ok'
 const appBetaList = () => String(getSetting('app_beta', '')).toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -6142,7 +6144,7 @@ app.get('/app/login', (req, res) => {
 app.post('/app/login', (req, res) => {
   const email = String(req.body.email || '').trim();
   const password = String(req.body.password || '');
-  const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, title: 'Sign in · WKND', bare: true, body: appLoginPage({ error, email, phase: appPhase() }) }));
+  const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Sign in · WKND', bare: true, body: appLoginPage({ error, email, phase: appPhase() }) }));
   const reg = email ? getRegistrationByEmail(email) : null;
   if (reg && !reg.password_hash && reg.status === 'approved') return fail('You haven\'t set a password yet. Use "Email me a sign-in code" below.');
   if (!reg || !checkPlayerPassword(password, reg.password_hash || '')) return fail('Wrong email or password.');
@@ -6167,7 +6169,7 @@ app.post('/app/login/code', (req, res) => {
   const email = String(req.body.email || '').trim();
   const key = email.toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).send(appPage({ ver: APP_VER, title: 'Get a code · WKND', bare: true, body: appCodeRequestPage({ email, error: 'Enter the email you signed up with.' }) }));
+    return res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Get a code · WKND', bare: true, body: appCodeRequestPage({ email, error: 'Enter the email you signed up with.' }) }));
   }
   const prev = appCodes.get(key);
   const reg = getRegistrationByEmail(email);
@@ -6193,7 +6195,7 @@ app.post('/app/login/code/verify', (req, res) => {
   const email = String(req.body.email || '').trim();
   const key = email.toLowerCase();
   const code = String(req.body.code || '').replace(/\D/g, '');
-  const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, title: 'Enter code · WKND', bare: true, body: appCodeVerifyPage({ email, masked: maskEmail(email), error }) }));
+  const fail = (error) => res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Enter code · WKND', bare: true, body: appCodeVerifyPage({ email, masked: maskEmail(email), error }) }));
   const entry = appCodes.get(key);
   if (!entry || entry.exp < Date.now()) { appCodes.delete(key); return fail('That code has expired. Send a new one below.'); }
   if (++entry.tries > 5) { appCodes.delete(key); return fail('Too many tries. Send a new code below.'); }
@@ -6302,7 +6304,7 @@ app.post('/app/setup/details', requireApp, (req, res) => {
     emergency_name: clip(b.emergency_name, 60), emergency_phone: clip(b.emergency_phone, 30),
   };
   if (!fields.emergency_name || !fields.emergency_phone) {
-    return res.status(400).send(appPage({ ver: APP_VER, title: 'Your details · WKND', bare: true, body: appSetupDetailsPage({
+    return res.status(400).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), title: 'Your details · WKND', bare: true, body: appSetupDetailsPage({
       reg: { ...me.reg, ...fields }, positions, number: me.number, teamName: me.teamName, error: 'Add an emergency contact name and phone.',
     }) }));
   }
@@ -6446,6 +6448,7 @@ app.get('/admin/app', requireAuth, (req, res) => {
     title: 'Players app', currentPath: '/admin/app',
     body: adminAppBody({ rows, events, query: req.query, isOpen, settingsHtml: settingsPanel([
       { type: 'toggle', key: 'app_open', value: isOpen, reload: true, label: 'Open to every player', sub: `Off: only player-admins and the testers below can use ${codeTag('/app')}. Everyone else sees "almost here".` },
+      { type: 'toggle', key: 'app_require_install', value: appInstallRequired(), label: 'Phones must install the app', sub: 'On a phone, the app only works from the home screen: in a browser (or Messenger) players get install steps instead. Computers can always use it in the browser.' },
       { type: 'text', key: 'app_beta', value: getSetting('app_beta', ''), width: '320px', placeholder: 'emails, separated by commas', label: 'Testers', sub: 'Players who can use the app while it\'s hidden. Their sign-in emails, separated by commas.' },
     ], { title: 'App access' }) }) + settingsScript(),
   }));
@@ -8536,7 +8539,7 @@ function siteSettingSection(key) {
   if (/^(awards_enabled|award_|mvp_)/.test(key)) return 'awards';
   if (key === 'player_reports_enabled' || key === 'raffle_enabled') return 'community';
   if (/^gcash_/.test(key)) return 'finance';
-  if (/^app_(open|beta)$/.test(key)) return 'members';
+  if (/^app_(open|beta|require_install)$/.test(key)) return 'members';
   return 'site'; // comments, ratings, header, homepage cards, join banner
 }
 
@@ -8556,7 +8559,7 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     ...AWARD_SECTION_KEYS.map(k => `award_show_${k}`),
     'reg_open',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
-    'app_open', 'app_beta',
+    'app_open', 'app_beta', 'app_require_install',
   ]);
   const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
   const homeGalleryKeyRe = new RegExp(`^award_home_(${AWARD_SECTION_KEYS.join('|')})_\\d+$`);

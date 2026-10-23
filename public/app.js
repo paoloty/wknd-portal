@@ -9,6 +9,9 @@
   var ver = ($('meta[name="app-ver"]') || {}).content || '';
   var dirty = function () { return !!$('form[data-dirty="1"]'); };
   var deferredInstall = null, cdTimer = null, loadedAt = Date.now();
+  // The install wall is up (views/app/layout.js): the app underneath is hidden, so don't
+  // fetch tabs ahead or count this as an app open.
+  var walled = document.documentElement.classList.contains('needs-install');
 
   // ════ Per screen: everything that hooks into the current page's content ════
   function initPage() {
@@ -154,7 +157,35 @@
     });
   }
 
-  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredInstall = e; initInstallOnly(); });
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredInstall = e; initInstallOnly(); initWall(); });
+
+  // ════ Install wall ════
+  // Android: Chrome's own install prompt behind one button (the manual steps stay as the
+  // fallback). In-app browsers: copy the link to paste into Safari / Chrome.
+  function initWall() {
+    if (!walled) return;
+    var btn = $('[data-iw-install]');
+    if (btn && deferredInstall) {
+      btn.hidden = false;
+      btn.onclick = function () {
+        var ev = deferredInstall; deferredInstall = null; btn.hidden = true;
+        ev.prompt();
+        if (ev.userChoice) ev.userChoice.then(function (c) { if (c.outcome !== 'accepted') { deferredInstall = ev; btn.hidden = false; } });
+      };
+    }
+    var copy = $('[data-iw-copy]');
+    if (copy && !copy.onclick) copy.onclick = function () {
+      var url = location.origin + '/app';
+      var done = function () { $('[data-iw-copied]').hidden = false; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { window.prompt('Copy this link:', url); });
+      else window.prompt('Copy this link:', url);
+    };
+  }
+  window.addEventListener('appinstalled', function () {
+    var ok = $('[data-iw-installed]'); if (ok) ok.hidden = false;
+    var manual = $('[data-iw-manual]'); if (manual) manual.hidden = true;
+  });
+  initWall();
   function initInstallOnly() {
     var card = $('[data-install-card]');
     if (card && !standalone && deferredInstall) { card.hidden = false; $('[data-install-ios]', card).hidden = true; $('[data-install-android]', card).hidden = false; }
@@ -286,7 +317,7 @@
       .catch(function (e) { progress(false); if (id === navId) location.href = (e && e.reload) || url; });
   }
 
-  if (window.fetch && window.DOMParser && history.pushState) {
+  if (window.fetch && window.DOMParser && history.pushState && !walled) {
     try { history.scrollRestoration = 'manual'; } catch (e) {}
     pages[urlOf(location.href)] = { html: '<!DOCTYPE html>' + document.documentElement.outerHTML, url: urlOf(location.href), at: Date.now() };
     document.addEventListener('click', function (e) {
@@ -315,7 +346,7 @@
   // Usage for /admin/app: the first open of the day on this phone, and whether it came
   // from the home screen (that's how "installed" is known on iPhone).
   var ping = function (body) {
-    if (!navigator.onLine || !document.querySelector('.tabbar')) return; // signed-in screens only
+    if (walled || !navigator.onLine || !document.querySelector('.tabbar')) return; // signed-in app screens only
     fetch('/app/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin', keepalive: true }).catch(function () {});
   };
   try {
