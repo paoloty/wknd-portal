@@ -23,6 +23,7 @@ const fmtDate = d => {
   return dt.toLocaleDateString('en-US', dt.getFullYear() === thisYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
 };
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const fmtStamp = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
 
 // Balance convention (player_financials / getAllBalances): positive = owes, negative = credit.
 export function balanceText(b) {
@@ -145,6 +146,7 @@ function chargeDrawer({ id, action, seasons, season, players = null, playerId = 
 export function adminLedgerBody({
   players = [], allPlayers = [], balMap = {}, lastActivityMap = {}, seasons = [], season = '', quota = 0,
   feePaidByPlayer = {}, pending = [], latestRefByPlayer = {}, collected = 0, colorById = {}, query = {}, open = null,
+  standingById = {}, remindedById = {}, overdueDays = 90, bannedIds = new Set(),
 } = {}) {
   const sp = seasonParam(season);
   const rows = players.map(p => {
@@ -153,6 +155,8 @@ export function adminLedgerBody({
       id: p.id, name: displayPlayerName(p.name), team: p.team_name || '', color: colorById[p.id] || p.team_color || '',
       bal: Number(b.balance) || 0, pending: Number(b.pending_count) || 0, ref: latestRefByPlayer[p.id] || '',
       fee: Number(feePaidByPlayer[p.id]) || 0, last: lastActivityMap[p.id] || '',
+      quiet: standingById[p.id]?.quietDays || 0, overdue: !!standingById[p.id]?.overdue, reminded: remindedById[p.id]?.at || 0,
+      deadlinePassed: !!standingById[p.id]?.deadlinePassed, banned: bannedIds.has(p.id),
     };
   });
 
@@ -171,12 +175,16 @@ export function adminLedgerBody({
   const openHref = r => `/admin/ledger?season=${encodeURIComponent(sp)}&player=${encodeURIComponent(r.id)}`;
   const columns = [
     { key: 'player', label: 'Player', primary: true, sort: r => r.name.toLowerCase(),
-      cell: r => `${avatar(r.name, r.color, { size: 32, playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}</span><span class="aui-cell__sub">${escHtml(r.team || 'No team')}</span></span>` },
-    { key: 'balance', label: 'Balance', num: true, sort: r => r.bal, cell: r => `<span class="${balanceTone(r.bal)}">${escHtml(balanceText(r.bal))}</span>` },
+      cell: r => `${avatar(r.name, r.color, { size: 32, playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}${r.banned ? ` ${badge('Banned', 'red')}` : r.deadlinePassed ? ` ${badge('Deadline passed', 'amber')}` : ''}</span><span class="aui-cell__sub">${escHtml(r.team || 'No team')}</span></span>` },
+    // Owing players who haven't paid or reached out in overdueDays get the "No word" line:
+    // their reminder carries the suspension warning (lib/balance-reminders.js).
+    { key: 'balance', label: 'Balance', num: true, sort: r => r.bal,
+      cell: r => `<span class="aui-cell__stack"><span class="${balanceTone(r.bal)}">${escHtml(balanceText(r.bal))}</span>${r.overdue ? `<span class="aui-cell__sub aui-tone--red">No word in ${r.quiet} days</span>` : ''}</span>` },
     season ? { key: 'fee', label: `Season ${season} fee`, phone: false, sort: r => r.fee, cell: r => feeCell(r.fee, quota) } : null,
     { key: 'pending', label: 'Pending', bare: true, sort: r => r.pending,
       cell: r => (r.pending ? `<span class="aui-cell__stack alg-pend">${badge(`${r.pending} to confirm`, 'amber')}${r.ref ? `<span class="aui-cell__sub">Ref ${escHtml(r.ref)}</span>` : ''}</span>` : '<span class="aui-muted alg-desk">—</span>') },
     { key: 'last', label: 'Last activity', phone: false, sort: r => r.last, cell: r => (r.last ? escHtml(fmtDate(r.last)) : '<span class="aui-muted">—</span>') },
+    { key: 'reminded', label: 'Reminded', phone: false, sort: r => r.reminded, cell: r => (r.reminded ? escHtml(fmtStamp(r.reminded)) : '<span class="aui-muted">—</span>') },
   ].filter(Boolean);
 
   const grid = dataGrid({
@@ -185,6 +193,10 @@ export function adminLedgerBody({
     views: [
       { key: 'all', label: 'All', test: () => true },
       { key: 'owes', label: 'Owes', test: r => r.bal > EPS },
+      { key: 'overdue', label: `No word ${overdueDays}+ days`, test: r => r.overdue },
+      // Warned, deadline gone, still no payment: an admin decides on the ban (drawer).
+      { key: 'deadline', label: 'Deadline passed', test: r => r.deadlinePassed && !r.banned },
+      { key: 'banned', label: 'Banned', test: r => r.banned },
       { key: 'pending', label: 'Pending', test: r => r.pending > 0 },
       { key: 'credit', label: 'In credit', test: r => r.bal < -EPS },
       { key: 'settled', label: 'Settled', test: r => Math.abs(r.bal) <= EPS },
@@ -194,7 +206,11 @@ export function adminLedgerBody({
     defaultSort: '-balance', perPage: 50,
     columns,
     rowHref: openHref,
-    bulk: [{ label: 'Charge or record payment', eachUrl: '#alg-charge' }],
+    bulk: [
+      { label: 'Charge or record payment', eachUrl: '#alg-charge' },
+      { label: 'Email balance reminder', eachUrl: '/admin/ledger/{id}/remind', done: 'Sent {n} reminder{s}.',
+        confirm: { title: 'Email {n} player{s} a balance reminder?', body: `Each gets their balance, a settle link and a bell. Anyone with no word in ${overdueDays}+ days also gets a warning that their account will be suspended in 7 days. Anyone who doesn’t owe is skipped.` } },
+    ],
     footer: list => {
       const o = list.filter(r => r.bal > EPS), c = list.filter(r => r.bal < -EPS);
       return `<tr><td colspan="${columns.length + 1}">${plural(list.length, 'player')} · ${peso(sum(o.map(r => r.bal)))} owed · ${peso(sum(c.map(r => r.bal)))} in credit</td></tr>`;
@@ -227,7 +243,7 @@ export function adminLedgerBody({
     ${stats}
     ${section({ title: 'To confirm', note: '· payments players sent in, oldest first', bodyHtml: confirmQueue(pending, colorById, { season }) })}
     ${section({ title: 'Balances', bodyHtml: grid })}
-    ${open ? playerDrawer(open, { season, quota, colorById }) : ''}
+    ${open ? playerDrawer(open, { season, quota, colorById, remindedAt: remindedById[open.player.id]?.at || 0 }) : ''}
     ${chargeDrawer({ id: 'alg-charge', action: '/admin/ledger/bulk-charge', seasons, season, players: pickerPlayers })}
   </div>
   <script src="/admin-ledger.js" defer></script>`);
@@ -235,7 +251,7 @@ export function adminLedgerBody({
 
 // The player drawer on /admin/ledger (?player=<id>); server-rendered open, so every action
 // inside it re-renders it with fresh numbers.
-function playerDrawer({ player, fin, transactions, seasonPaid, feePaid }, { season, quota, colorById }) {
+function playerDrawer({ player, fin, transactions, seasonPaid, feePaid, standing = null }, { season, quota, colorById, remindedAt = 0 }) {
   const name = displayPlayerName(player.name);
   const bal = Number(fin?.current_balance) || 0;
   const t = [
@@ -257,10 +273,32 @@ function playerDrawer({ player, fin, transactions, seasonPaid, feePaid }, { seas
         </div>`;
       }).join('')}</div>`
     : '<p class="aui-muted alg-none">No charges or payments yet.</p>';
+  // Balance reminder (POST /admin/ledger/:id/remind), only while they owe.
+  const remind = standing?.owes ? `<div class="alg-remind">
+      <span class="aui-cell__stack"><span class="aui-cell__title">Balance reminder</span><span class="aui-cell__sub${standing.overdue ? ' aui-tone--red' : ''}">${escHtml([
+        standing.overdue ? `No word in ${standing.quietDays} days: includes the suspension warning` : 'Email + bell with their balance and a settle link',
+        remindedAt ? `last sent ${fmtStamp(remindedAt)}` : '',
+      ].filter(Boolean).join(' · '))}</span></span>
+      ${button(remindedAt ? 'Send again' : 'Send reminder', { kind: 'secondary', size: 'sm', attrs: `data-post-json="/admin/ledger/${attr(encodeURIComponent(player.id))}/remind" data-done="Reminder sent." data-confirm data-confirm-title="Email ${attr(name)} a balance reminder?" data-confirm-body="${attr(standing.overdue ? `They owe ${peso(standing.balance)} and it’s been ${standing.quietDays} days, so it includes a warning that their account will be suspended in 7 days if they don’t settle or reach out.` : `They owe ${peso(standing.balance)}.`)}" data-confirm-send="Send"` })}
+    </div>` : '';
+  // Ban (POST /admin/players/:id/ban): BANNED on their profile, no Papawis or season sign-ups.
+  const fmtDay = ymd => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const banUrl = `/admin/players/${attr(encodeURIComponent(player.id))}/ban`;
+  const ban = player.banned_at
+    ? `<div class="alg-remind">
+        <span class="aui-cell__stack"><span class="aui-cell__title">${badge('Banned', 'red')} since ${escHtml(fmtStamp(player.banned_at))}</span><span class="aui-cell__sub">${escHtml(player.ban_reason || 'No reason noted')}</span></span>
+        ${button('Lift ban', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${banUrl}" data-body="${attr(JSON.stringify({ on: false }))}" data-done="Ban lifted." data-confirm data-confirm-title="Lift ${attr(name)}’s ban?" data-confirm-body="BANNED comes off their profile and they can sign up again." data-confirm-send="Lift ban"` })}
+      </div>`
+    : (standing?.owes || standing?.deadlinePassed) ? `<form class="alg-remind" data-json-action="${banUrl}" data-done="${attr(name)} banned." data-confirm data-confirm-title="Ban ${attr(name)}?" data-confirm-body="BANNED shows on their profile and player card, and they can’t join Papawis runs or sign up for a season until you lift it." data-confirm-send="Ban">
+        <input type="hidden" name="on" value="1">
+        <span class="aui-cell__stack"><span class="aui-cell__title">Ban</span><span class="aui-cell__sub${standing?.deadlinePassed ? ' aui-tone--red' : ''}">${escHtml(standing?.deadlinePassed ? `Warning deadline passed ${fmtDay(standing.deadline)}, no payment since` : standing?.warnedAt ? `Warned, deadline ${fmtDay(standing.deadline)}` : 'Not warned yet')}</span></span>
+        <input class="aui-input" name="reason" value="Unpaid balance" aria-label="Reason (admin only)" style="width:150px">
+        ${button('Ban…', { kind: 'danger', size: 'sm', type: 'submit' })}
+      </form>` : '';
   const more = transactions.length > recent.length ? `<p class="aui-muted alg-none">${plural(transactions.length - recent.length, 'older entry', 'older entries')} in the full history.</p>` : '';
   const html = drawer({
     id: 'alg-player', eyebrow: `${player.team_name || 'No team'} · Ledger`, title: name,
-    bodyHtml: `<div class="alg-player" data-alg-player="${attr(player.id)}">${tiles(t, 'alg-stats--3')}${list}${more}</div>`,
+    bodyHtml: `<div class="alg-player" data-alg-player="${attr(player.id)}">${tiles(t, 'alg-stats--3')}${remind}${ban}${list}${more}</div>`,
     footerHtml: `<a class="aui-link alg-history" href="/admin/ledger/${encodeURIComponent(player.id)}?season=${encodeURIComponent(seasonParam(season))}">Open full history</a>
       ${button('+ Add transaction', { kind: 'primary', attrs: `data-alg-add="${attr(player.id)}" data-alg-add-name="${attr(name)}"` })}`,
   });

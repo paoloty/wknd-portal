@@ -9288,6 +9288,8 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pl-card__meta > span:not(.pl-team):not(.pl-rookie) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pl-rookie { padding: 2px 5px; border-radius: 4px; background: var(--amber-dim); color: var(--amber); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
 .pl-rookie--off { background: rgba(255,255,255,.06); color: var(--text-muted); }
+/* Banned (players.banned_at): a red status pill; the profile hero's is .prf-chip--banned in profile.css. */
+.pl-rookie--banned { background: rgba(239,68,68,.14); color: #f87171; }
 .pl-card__foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
 .pl-card__stats { display: flex; gap: 16px; }
 .pl-stat { display: flex; flex-direction: column; gap: 3px; }

@@ -327,6 +327,14 @@ ${stylesBlock}`;
     }));
   }
 
+  if (state === 'banned') {
+    return wrap(statusPanel({
+      icon: '⛔',
+      title: 'Account banned',
+      body: 'Your account is banned, so you can’t sign up for a season right now. Settle your balance and message us to get it lifted.',
+    }));
+  }
+
   if (existing) {
     const statusLabel = STATUS_LABEL[existing.status] ?? existing.status;
     const statusColor = STATUS_COLOR[existing.status] ?? '#64748b';

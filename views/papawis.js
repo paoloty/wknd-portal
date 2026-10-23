@@ -175,7 +175,7 @@ function faceStack(confirmed, maxSlots, { kind }) {
 
 // ── one upcoming run (the full block) ───────────────────────────────────────
 function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
-  const { isLoggedIn, viewerPlayerId, hasBalance, alertsOn } = ctx;
+  const { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, banned } = ctx;
   const dLeft = daysUntil(g.date);
   const scheduled = !isPapawisSignupOpenNow(g);
   const pub = scheduled ? [] : signups;                       // held-back rosters stay private
@@ -311,6 +311,9 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   } else if (!isLoggedIn) {
     btn = `<a class="pwx-btn" href="${loginHref}">${lbl(full ? 'Join the waitlist &rarr;' : 'Claim a slot &rarr;')}</a>`;
     note = noteHtml(full ? `${waitlist.length} waiting` : `${open} slot${open === 1 ? '' : 's'} left`, ' · log in to claim');
+  } else if (banned) {
+    btn = `<a class="pwx-btn" href="/settle-balance">${lbl('Settle my balance &rarr;')}</a>`;
+    note = noteHtml('Your account is banned', ' · settle your balance and message us to get it lifted');
   } else if (hasBalance) {
     btn = `<a class="pwx-btn" href="/settle-balance">${lbl('Settle my balance &rarr;')}</a>`;
     note = noteHtml('You have an unpaid Papawis game', ' · settle it to join');
@@ -417,8 +420,8 @@ function pastCard(g, signups, { isLoggedIn, hidden }) {
 const PAST_SHOWN = 8;
 
 // ── page ────────────────────────────────────────────────────────────────────
-export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, viewer = null, isLoggedIn = false, hasBalance = false, summary = null, isAdmin = false, alertsOn = null, voucher = null } = {}) {
-  const ctx = { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, voucher };
+export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, viewer = null, isLoggedIn = false, hasBalance = false, summary = null, isAdmin = false, alertsOn = null, voucher = null, banned = false } = {}) {
+  const ctx = { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, voucher, banned };
   const key = g => `${g.date}T${g.start_time || '00:00'}`;
   const upcoming = games.filter(g => g.status === 'open' && daysUntil(g.date) >= 0).sort((a, b) => key(a) < key(b) ? -1 : 1);
   const past = games.filter(g => !upcoming.includes(g)).sort((a, b) => key(a) < key(b) ? 1 : -1);

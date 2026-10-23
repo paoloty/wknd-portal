@@ -50,6 +50,7 @@ function header(p, { name, color, rating, linkedReg, slug, canImpersonate }) {
           <span class="apl-head__name">${escHtml(name)}</span>
           ${badge(p.status === 'inactive' ? 'Inactive' : 'Active', p.status === 'inactive' ? 'gray' : 'green')}
           ${p.papawis_probation ? badge('Papawis probation', 'amber') : ''}
+          ${p.banned_at ? badge('Banned', 'red') : ''}
           ${ovr != null ? `<span class="apl-ovr">${escHtml(ovr)}</span><span class="apl-ovr__label">OVR</span>` : ''}
         </div>
         <span class="aui-person__sub">${escHtml(sub)}</span>
@@ -154,6 +155,7 @@ function runStatus(s, today) {
 }
 
 function papawisTab(p, { history, today }) {
+  const name = displayPlayerName(p.name);
   const runs = history.length ? `<div class="aui-panel aui-panel--flush">${history.map(s => {
     const [label, tone, what] = runStatus(s, today);
     const sub = [fmtDay(s.date), s.location, s.guest_name ? `Guest: ${s.guest_name}` : '', what].filter(Boolean).join(' · ');
@@ -164,9 +166,19 @@ function papawisTab(p, { history, today }) {
     ${field({ label: 'Reason (admins only)', name: 'note', type: 'textarea', rows: 3, value: p.papawis_probation_note || '', placeholder: 'e.g. New player, or late payment last time',
       help: p.papawis_probation ? 'Saves when you click away.' : 'Turn probation on to give a reason.', attrs: p.papawis_probation ? '' : 'disabled' })}
   </form>`;
+  // Ban (players.banned_at): same POST as the ledger drawer's.
+  const banUrl = `/admin/players/${attr(encodeURIComponent(p.id))}/ban`;
+  const ban = p.banned_at
+    ? `<div class="aui-panel aui-stack"><span class="aui-cell__stack"><span class="aui-cell__title">Banned</span><span class="aui-cell__sub">${escHtml(p.ban_reason || 'No reason noted')}</span></span>
+      <div class="aui-row">${button('Lift ban', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${banUrl}" data-body="${attr(JSON.stringify({ on: false }))}" data-done="Ban lifted." data-confirm data-confirm-title="Lift ${attr(name)}’s ban?" data-confirm-body="BANNED comes off their profile and they can sign up again." data-confirm-send="Lift ban"` })}</div></div>`
+    : `<form class="aui-panel aui-stack" data-json-action="${banUrl}" data-done="${attr(name)} banned." data-confirm data-confirm-title="Ban ${attr(name)}?" data-confirm-body="BANNED shows on their profile and player card, and they can’t join Papawis runs or sign up for a season until you lift it." data-confirm-send="Ban">
+      <input type="hidden" name="on" value="1">
+      ${field({ label: 'Reason (admins only)', name: 'reason', value: 'Unpaid balance' })}
+      <div class="aui-row">${button('Ban…', { kind: 'danger', size: 'sm', type: 'submit' })}</div>
+    </form>`;
   return `<div class="aui-cols">
     <div class="aui-cols__main">${section({ title: 'Recent runs', note: history.length ? `· ${history.length === 30 ? 'last 30' : history.length}` : '', bodyHtml: runs })}</div>
-    <aside class="aui-cols__side">${section({ title: 'Probation', bodyHtml: probation })}</aside>
+    <aside class="aui-cols__side">${section({ title: 'Probation', bodyHtml: probation })}${section({ title: 'Ban', bodyHtml: ban })}</aside>
   </div>`;
 }
 

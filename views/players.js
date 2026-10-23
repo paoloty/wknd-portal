@@ -60,7 +60,7 @@ function playerCard(p, isTop) {
       <span class="pl-card__who">
         <span class="pl-card__first">${escHtml(p.first)}</span>
         <span class="pl-card__last">${escHtml(p.last)}</span>
-        <span class="pl-card__meta">${teamTag(p.team)}<span class="pl-card__num-sm">${p.number !== '' && p.number != null ? `#${escHtml(String(p.number))} · ` : ''}</span><span>${escHtml(pos.slice(0, 2).join(' · ') || '—')}</span>${p.rookie ? '<span class="pl-rookie">ROOKIE</span>' : ''}${p.status === 'inactive' ? '<span class="pl-rookie pl-rookie--off">INACTIVE</span>' : ''}</span>
+        <span class="pl-card__meta">${teamTag(p.team)}<span class="pl-card__num-sm">${p.number !== '' && p.number != null ? `#${escHtml(String(p.number))} · ` : ''}</span><span>${escHtml(pos.slice(0, 2).join(' · ') || '—')}</span>${p.rookie ? '<span class="pl-rookie">ROOKIE</span>' : ''}${p.status === 'inactive' ? '<span class="pl-rookie pl-rookie--off">INACTIVE</span>' : ''}${p.banned ? '<span class="pl-rookie pl-rookie--banned">BANNED</span>' : ''}</span>
         <span class="pl-card__sub">${p.gp ? `${f1(rpg)} RPG · ${f1(apg)} APG` : 'No games yet'}</span>
       </span>
     </span>

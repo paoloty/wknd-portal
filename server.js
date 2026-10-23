@@ -69,7 +69,7 @@ import {
   addMarketplaceComment, deleteMarketplaceComment, toggleMarketplaceCommentReaction,
   getReactedMarketplaceCommentIdsForPlayer, getMarketplaceCommentCounts,
   toggleMarketplaceListingReaction, getMarketplaceListingReactionState, getMarketplaceListingReactionCounts,
-  getSeasonBalances, getSeasonSummary, getAllBalances, getAllSummary, getLedgerSeasons, getLastTransactionDates,
+  getSeasonBalances, getSeasonSummary, getAllBalances, getLastBalanceReminders, getBannedPlayerIds, setPlayerBanned, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getConfirmedSeasonPlayerIds,
   getSeasonQuota, setSeasonQuota, getSeasonFeePaid, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
@@ -204,6 +204,7 @@ import { adminFinanceDashBody } from './views/admin/finance-dash.js';
 import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminHomeBody } from './views/admin/home.js';
 import { sendBroadcast, startCampaign, finishCampaign, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe, underEmailCaps } from './lib/broadcast.js';
+import { sendBalanceReminder, balanceStanding, OVERDUE_DAYS } from './lib/balance-reminders.js';
 import { getRecentBroadcasts, getBroadcastStats } from './lib/portal-db.js';
 import { adminReachComposeBody, adminReachSentBody } from './views/admin/reach.js';
 import { leagueNudgeEmail, raffleWinnerEmail } from './lib/mailer.js';
@@ -8092,6 +8093,7 @@ app.get('/admin/ledger', requireAuth, (req, res) => {
   // Balances are never season-scoped: always the true all-time running balance. The season
   // pick only changes the fee progress column and "Collected".
   const balMap   = Object.fromEntries(getAllBalances().map(r => [r.player_id, r]));
+  const reminders = getLastBalanceReminders();
   // Rostered for the current season, plus anyone with real ledger history (a Papawis-only
   // player who never registered must stay reachable from this list).
   const currentSeasonPlayerIds = getConfirmedSeasonPlayerIds(getPortalCurrentSeason());
@@ -8123,6 +8125,7 @@ app.get('/admin/ledger', requireAuth, (req, res) => {
       player: openPlayer, fin: getPlayerFinancials(openPlayer.id), transactions,
       seasonPaid: season ? confirmedPay.filter(t => t.season === season).reduce((s, t) => s + t.amount, 0) : 0,
       feePaid: feePaidByPlayer[openPlayer.id] || 0,
+      standing: balanceStanding(balMap[openPlayer.id], reminders[openPlayer.id]),
     };
   }
   res.send(renderAdminPage(req, {
@@ -8130,6 +8133,8 @@ app.get('/admin/ledger', requireAuth, (req, res) => {
     currentPath: '/admin/ledger',
     body: adminLedgerBody({
       players, allPlayers, balMap, lastActivityMap: getLastTransactionDates(), seasons, season, quota, feePaidByPlayer,
+      standingById: Object.fromEntries(Object.values(balMap).map(b => [b.player_id, balanceStanding(b, reminders[b.player_id])])), remindedById: reminders, overdueDays: OVERDUE_DAYS,
+      bannedIds: getBannedPlayerIds(),
       pending: [...pendingNewest].reverse(), latestRefByPlayer, collected, colorById: adminTeamColorByPlayer(), query: req.query, open,
     }),
   }));
@@ -8245,6 +8250,21 @@ app.delete('/admin/ledger/transaction/:id', requireAuth, (req, res) => {
   const ok = deleteTransaction(req.params.id);
   if (!ok) return res.status(404).json({ error: 'Transaction not found.' });
   res.json({ ok: true });
+});
+
+// Manual balance reminder email + bell for one player (the ledger's bulk action calls this
+// once per selected row). Overdue players get the suspension warning: lib/balance-reminders.js.
+app.post('/admin/ledger/:id/remind', requireAuth, async (req, res) => {
+  try {
+    const result = await sendBalanceReminder(String(req.params.id));
+    if (result.error === 'no_balance') return res.status(400).json({ error: 'They don’t owe anything.' });
+    if (result.error === 'no_email') return res.status(400).json({ error: 'No valid email on file for this player.' });
+    if (result.error === 'bounced') return res.status(400).json({ error: 'Their email bounced before, so it wasn’t sent.' });
+    res.json({ ok: true, message: result.overdue ? 'Reminder sent, with the suspension warning.' : 'Reminder sent.' });
+  } catch (e) {
+    console.error('[ledger] balance reminder failed:', e.message);
+    res.status(500).json({ error: 'Failed to send.' });
+  }
 });
 
 app.post('/admin/ledger/bulk-charge', requireAuth, express.json(), (req, res) => {
@@ -8450,6 +8470,16 @@ app.post('/admin/players/:id/papawis-probation', requireAuth, express.json(), (r
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).json({ error: 'Not found' });
   setPlayerPapawisProbation(player.id, !!req.body?.on, req.body?.note || '');
+  res.json({ ok: true });
+});
+
+// Ban / lift (players.banned_at): from the ledger drawer and the admin player page.
+// on: true/'1' bans with an admin-only reason; anything else lifts it.
+app.post('/admin/players/:id/ban', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const on = req.body?.on === true || req.body?.on === '1' || req.body?.on === 1;
+  setPlayerBanned(player.id, on, req.body?.reason || '');
   res.json({ ok: true });
 });
 
@@ -17178,7 +17208,7 @@ app.get('/players', (req, res) => {
   const rosterTeamGames = teamGamesOf(season);
   const roster = all.filter(p => visible(p) && teamIds.has(p.team_id)).map(p => ({
     id: p.id, ...names(p), team: String(p.team_name || '').toUpperCase(), number: p.number, positions: positionsOf(p),
-    status: p.status, photo: !!p.picture_url, gp: p.games_played || 0, pts: p.pts, reb: p.reb, ast: p.ast,
+    status: p.status, banned: !!p.banned_at, photo: !!p.picture_url, gp: p.games_played || 0, pts: p.pts, reb: p.reb, ast: p.ast,
     spark: spark[p.id] || [], rookie: isRookie(p.id), qualified: meetsLeaderRule(p.games_played, rosterTeamGames[p.team_id]),
   }));
   const unrostered = all.filter(p => visible(p) && !teamIds.has(p.team_id));
@@ -17202,7 +17232,7 @@ app.get('/players', (req, res) => {
       .map(r => {
         const p = byId.get(r.id);
         return { ...r, ...names(p), gp: r.games_played, team: String(r.team_name || p.team_name || '').toUpperCase(), number: p.number,
-          positions: positionsOf(p), status: p.status, photo: !!p.picture_url, rookie: statSeason === season && isRookie(p.id),
+          positions: positionsOf(p), status: p.status, banned: !!p.banned_at, photo: !!p.picture_url, rookie: statSeason === season && isRookie(p.id),
           qualified: statSeason === 'career' ? r.games_played >= CAREER_MIN_GP : meetsLeaderRule(r.games_played, teamGamesByName[String(r.team_name || '').toUpperCase()]) };
       });
     stats = { rows, season: statSeason ?? 'career', seasons, mode: req.query.mode === 'totals' ? 'totals' : 'pg' };
@@ -17718,6 +17748,13 @@ app.get('/season-signup', (req, res) => {
       body: seasonSignupPage({ state: 'not-approved' }),
     }));
   }
+  if (reg.player_id && getPlayerById(reg.player_id)?.banned_at) {
+    return res.send(renderPage(req, {
+      title: 'Season Signup — WKND Basketball',
+      currentPath: '/season-signup',
+      body: seasonSignupPage({ state: 'banned' }),
+    }));
+  }
 
   const sigSeason        = getSetting('signup_target_season', '');
   const sigOpen          = getSetting('season_signup_open', '0') === '1';
@@ -17751,6 +17788,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
 
   const reg = getRegistration(regId);
   if (!reg || reg.status !== 'approved') return res.redirect('/season-signup');
+  if (reg.player_id && getPlayerById(reg.player_id)?.banned_at) return res.redirect('/season-signup');
 
   const sigSeason = getSetting('signup_target_season', '');
   const sigOpen   = getSetting('season_signup_open', '0') === '1';
@@ -19830,6 +19868,7 @@ app.get('/papawis', (req, res) => {
   if (viewerPlayerId) {
     hasBalance = hasUnpaidCompletedPapawis(viewerPlayerId);
   }
+  const viewerBanned = !!(viewerPlayerId && getPlayerById(viewerPlayerId)?.banned_at);
 
   const origin = getRequestOrigin(req);
   const papawisUrl  = `${SITE_ORIGIN}/papawis`;
@@ -19868,7 +19907,7 @@ app.get('/papawis', (req, res) => {
     title: 'Papawis: Pickup Basketball in Makati, Mandaluyong & Pasig',
     currentPath: '/papawis',
     metaTags: `${papawisMetaTags}\n  <link rel="stylesheet" href="/papawis.css?v=${PAPAWIS_CSS_VER}">`,
-    body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, summary, isAdmin, alertsOn,
+    body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, banned: viewerBanned, summary, isAdmin, alertsOn,
       // Rate & Win free run: whether they have one to use, and which spots already carry one.
       voucher: viewerPlayerId ? (() => {
         const vs = getVouchersForPlayer(viewerPlayerId);
@@ -19953,6 +19992,9 @@ app.post('/papawis/:id/join', (req, res) => {
   // a fresh login instead of letting the join through.
   if (!getPlayerById(playerId)) {
     return req.session.destroy(() => res.status(401).json({ error: 'Your session has expired. Please log in again.' }));
+  }
+  if (getPlayerById(playerId).banned_at) {
+    return res.status(403).json({ error: 'Your account is banned. Settle your balance and message us to get it lifted.' });
   }
   // Blocks on a specific unpaid slot from an already-closed-out game, not a netted ledger
   // balance — a season fee or other non-Papawis balance was already excluded before this,
@@ -21317,6 +21359,7 @@ app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
   if (!papawisLockCheck(req.params.id, res)) return;
   const { player_id, status, guest_names } = req.body;
   if (!player_id) return res.status(400).json({ error: 'Select a player.' });
+  if (getPlayerById(String(player_id))?.banned_at) return res.status(400).json({ error: 'That player is banned. Lift the ban from the ledger or their player page first.' });
   const st = status === 'waitlist' ? 'waitlist' : 'confirmed';
   const names = String(guest_names || '').split(/[,\n]/).map(s => s.trim()).filter(Boolean);
 
@@ -21347,7 +21390,7 @@ app.post('/admin/papawis/:id/autofill-regulars', requireAuth, (req, res) => {
   // One line for the toast: who was added, and why the rest were skipped.
   const conf = result.added.filter(a => a.status === 'confirmed').length;
   const reasons = { link_expired: 'never finished account setup', dormant: 'not logged in for 3+ months', no_valid_email: 'no valid email', bounced: 'no valid email',
-    inactive: 'inactive', not_approved: 'no approved account', already_listed: 'already listed', unpaid: 'unpaid balance', probation: 'on probation' };
+    inactive: 'inactive', not_approved: 'no approved account', already_listed: 'already listed', unpaid: 'unpaid balance', probation: 'on probation', banned: 'banned' };
   const tally = {};
   for (const s of result.skipped) { const r = reasons[s.reason] || s.reason; tally[r] = (tally[r] || 0) + 1; }
   const skippedText = Object.entries(tally).map(([r, n]) => `${n} ${r}`).join(', ');

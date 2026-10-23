@@ -2433,6 +2433,8 @@ a.agd-name:hover { color: var(--amber); }
 .alg-player { display: flex; flex-direction: column; gap: 16px; }
 .alg-player .alg-stats { background: var(--bg); }
 .alg-player .alg-stats .aui-stats__value { font-size: 21px; }
+.alg-remind { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.alg-remind .aui-cell__stack { min-width: 0; }
 .alg-txs { display: flex; flex-direction: column; }
 .alg-tx { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.05); }
 .alg-tx__what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }

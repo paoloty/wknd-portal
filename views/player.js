@@ -1623,6 +1623,7 @@ function prfHero(o) {
       ${positions.length ? `<span>${escHtml(positions.join(' · '))}</span>` : ''}
       ${teamName ? `<span class="prf-chip"><span class="team-dot" style="background:${color}"></span>${escHtml(teamName)}</span>` : ''}
       ${champ}
+      ${player.banned_at ? '<span class="prf-chip prf-chip--banned">BANNED</span>' : ''}
     </div>
     ${intro}
   </div>

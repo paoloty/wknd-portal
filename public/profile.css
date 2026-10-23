@@ -33,6 +33,7 @@
 .prf-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
 .prf-chip .team-dot { width: 8px; height: 8px; }
 .prf-chip--amber { background: rgba(245,147,50,0.15); color: var(--amber); }
+.prf-chip--banned { background: rgba(239,68,68,.14); color: #f87171; font-weight: 800; letter-spacing: .1em; }
 
 .prf-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s, border-color .15s; }
 .prf-btn:hover { border-color: rgba(255,255,255,0.14); }
