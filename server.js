@@ -6012,7 +6012,7 @@ import { randomInt } from 'crypto';
 import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
-import { appFeedRows, appHomeFeedPage, appGamePage, appPostPage, ytId } from './views/app/feed.js';
+import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId } from './views/app/feed.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appPapawisPage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
@@ -6458,12 +6458,9 @@ app.get('/app', requireApp, (req, res) => {
   const setup = appSetupState(me);
   if (setup.done === setup.total && !hasAppEvent(me.reg.id, 'setup_done')) logApp(req, 'setup_done');
   // The action strip: only things with a deadline, gone once done (Fable review, 2026-10-23).
+  // Open picks are on the rail (the next game day's cards), so they're not in the strip too.
   const actions = [];
-  const open = appOpenPicks(me);
-  if (open.length) {
-    const first = open.reduce((m, x) => (x.closeMs && (!m || x.closeMs < m) ? x.closeMs : m), 0);
-    actions.push({ text: open.length === 1 ? `Pick ${open[0].game.team_a_name} vs ${open[0].game.team_b_name}` : `Pick ${open.length} games`, sub: first ? `Picks close ${closeLabel(first)}` : 'Who wins?', href: '/app/picks' });
-  }
+  const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0;
   const st = appSeasonState(me);
   if (st.balance > 0) actions.push({ text: `${st.peso(st.balance)} due`, sub: 'Settle your balance', soon: true });
   if (st.signupOpen && !st.signup) actions.push({ text: `Season ${st.season} sign-up is open`, sub: 'Sign up to play', soon: true });
@@ -6471,7 +6468,7 @@ app.get('/app', requireApp, (req, res) => {
   sendTab(res, me, { title: 'WKND', tab: 'home', body: appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread }),
     setupHtml: setupCard(setup), installHtml: installCard,
-    actions: actions.slice(0, 3), pinned: pin ? appAnnItem(pin, true) : null,
+    actions: actions.slice(0, 3), pinned: pin ? appAnnItem(pin, true) : null, rail,
   }) });
 });
 
@@ -6618,6 +6615,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   const back = appBack(req);
   const g = getGameById(req.params.id);
   if (!g || g.under_review) return sendTab(res, me, { title: 'Game · WKND', tab: back.tab, body: `${appGameMissing(back)}` });
+  if (!isPlayedGame(g)) return appGamePreview(req, res, me, back, g);
   const stats = isPlayedGame(g) ? getGameDetailStats(g.id) : [];
   const [a, b] = appTeamsOf(g);
   const { title, body } = parseWriteup(g.game_writeup || '');
@@ -6639,6 +6637,27 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, comments, meId: me.playerId,
   }) });
 });
+// Before the result: the preview, with the pick card while picks are open (or the pick made).
+function appGamePreview(req, res, me, back, g) {
+  const all = getAllGames();
+  const sorted = byDate(all);
+  const pctx = buildPicksContext(sorted);
+  const colorOf = appColorOf(getAllTeams());
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const o = picksEnabled() ? openPicks(sorted, pctx, me.playerId).find(x => x.id === g.id) : null;
+  const preview = appPreview(g, sorted, pctx, playerMap, colorOf);
+  const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
+  sendTab(res, me, { title: `${g.team_a_name} vs ${g.team_b_name} · WKND`, tab: back.tab, body: appGamePreviewPage({
+    back, title: `${g.team_a_name} vs ${g.team_b_name}`,
+    kicker: g.playoff_round || gameTypeLabel(g) || 'Regular season',
+    meta: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g), court].filter(Boolean).join(' · '), court,
+    // Records as the pick cards show them, so the screen and the card agree.
+    a: { name: g.team_a_name, color: colorOf(g.team_a_name), rec: o?.recA ? `${o.recA.w}–${o.recA.l}` : preview.recA },
+    b: { name: g.team_b_name, color: colorOf(g.team_b_name), rec: o?.recB ? `${o.recB.w}–${o.recB.l}` : preview.recB },
+    pick: o ? appPickGame(o, g, colorOf) : null, preview,
+    lastHref: preview.last ? `/app/games/${encodeURIComponent(preview.last.id)}?from=${back.tab}` : '',
+  }) });
+}
 const appGameMissing = back => `<div class="navbar"><a class="navbar__back" href="${back.href}">‹ ${back.label}</a><span class="navbar__title">Game</span><span></span></div><div class="empty" style="margin-top:12px">This game isn't available.</div>`;
 
 // A news post, read in the app. The body is the admin-written article (as /posts/:slug shows it).
@@ -6798,6 +6817,76 @@ app.get('/app/me', requireApp, (req, res) => {
   }) });
 });
 
+// One openPicks() entry shaped for the app's pick cards (views/app/picks.js card, and the
+// Home rail's compact one in views/app/feed.js).
+function appPickGame(o, g = {}, colorOf) {
+  const closeMs = o.closeAt ? Date.parse(o.closeAt) : 0;
+  return {
+    id: o.id, title: g.playoff_round || gameTypeLabel(g) || 'Regular season', ymd: o.ymd,
+    dayLabel: [manilaDayLabel(o.ymd), o.tip].filter(Boolean).join(' · '), tip: o.tip || '',
+    closed: !!o.closed, closeAt: closeMs,
+    closeLabel: closeMs ? closeLabel(closeMs) : '',
+    a: { name: o.a, color: colorOf(o.a), rec: o.recA ? `${o.recA.w}–${o.recA.l}` : '' },
+    b: { name: o.b, color: colorOf(o.b), rec: o.recB ? `${o.recB.w}–${o.recB.l}` : '' },
+    odds: o.odds ? { pctA: o.odds.pctA, pctB: o.odds.pctB } : null,
+    myPick: o.myPick, counts: o.counts || { a: 0, b: 0 },
+    faces: (o.faces || []).map(f => ({ ini: f.ini, color: f.color || '', me: !!f.me })),
+    stakes: o.stakes, marginGuess: !!o.marginGuess,
+  };
+}
+const appColorOf = teams => name => { const t = teams.find(x => x.name === name); return t ? (t.color || teamColor(t.name)) : teamColor(name); };
+
+// A game's preview before tip-off, from the site's own gamePreview() (same matchup, same
+// storyline): records, each team's last 5 results, the last meeting, the season series, the
+// go-to scorer on each side in this matchup.
+function appPreview(game, sorted, pctx, playerMap, colorOf) {
+  const p = gamePreview(game, sorted, playerMap, pctx);
+  const m = p.m || {};
+  const ymd = gameYmd(game.date);
+  const lastFive = name => sorted
+    .filter(g => isPlayedGame(g) && gameYmd(g.date) < ymd && (g.team_a_name === name || g.team_b_name === name))
+    .slice(0, 5).reverse()
+    .map(g => ((g.team_a_name === name) === (Number(g.team_a_score) > Number(g.team_b_score)) ? 'W' : 'L')).join('');
+  const lm = (m.lastMeetings || [])[0];
+  const last = lm ? {
+    text: lm.scoreA === lm.scoreB ? `${lm.scoreA}–${lm.scoreB}` : `${lm.scoreA > lm.scoreB ? m.a : m.b} ${Math.max(lm.scoreA, lm.scoreB)}–${Math.min(lm.scoreA, lm.scoreB)}`,
+    date: manilaFormat(Date.parse(`${lm.ymd}T12:00:00+08:00`), { month: 'short', day: 'numeric' }), id: lm.id,
+  } : null;
+  const watch = (m.scorers || []).map((w, i) => (w ? {
+    playerId: w.id, name: w.name, initials: w.name.split(' ').map(x => x.charAt(0)).join('').slice(0, 2).toUpperCase(),
+    ring: colorOf(i ? m.b : m.a), photoUrl: playerPhotoUrl(w.id, 96),
+    line: `${w.ppg} ppg vs ${w.opp}`, team: w.team,
+  } : null));
+  const clean = t => String(t || '').replace(/\*\*/g, '');
+  return {
+    state: p.state, recA: m.recordA ? `${m.recordA.w}–${m.recordA.l}` : '', recB: m.recordB ? `${m.recordB.w}–${m.recordB.l}` : '',
+    formA: lastFive(m.a || game.team_a_name), formB: lastFive(m.b || game.team_b_name), last,
+    series: m.meetings ? `${m.a} ${m.winsA}–${m.winsB} ${m.b}` : '', firstMeeting: !!m.firstMeeting,
+    watch, story: p.story ? { headline: clean(p.story.headline), body: clean(p.story.body) } : null,
+  };
+}
+
+// Home's rail (views/app/feed.js appRail): the next game day's games. While picks are open
+// they're pick cards; once closed, preview cards with the player's pick; gone after the games.
+// Loaded after the screen (it needs the full picks context, ~100 ms) as JSON { html }.
+app.get('/app/rail', requireAppData, (req, res) => {
+  const me = appMe(req);
+  const all = getAllGames();
+  const sorted = byDate(all);
+  const pctx = buildPicksContext(sorted);
+  const opens = picksEnabled() ? openPicks(sorted, pctx, me.playerId) : [];
+  const day = opens.map(o => o.ymd).filter(Boolean).sort()[0];
+  if (!day) return res.json({ html: '' });
+  const colorOf = appColorOf(getAllTeams());
+  const gameOf = Object.fromEntries(all.map(g => [g.id, g]));
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const cards = opens.filter(o => o.ymd === day).map(o => {
+    const g = appPickGame(o, gameOf[o.id], colorOf);
+    return o.closed ? { ...g, preview: appPreview(gameOf[o.id], sorted, pctx, playerMap, colorOf) } : g;
+  });
+  res.json({ html: appRail({ dayLabel: manilaFormat(Date.parse(`${day}T12:00:00+08:00`), { weekday: 'long' }), cards }) });
+});
+
 // ── Picks (Who wins?) ── The site's openPicks() cards for this player, shaped for the app,
 // then the Pickmaster board and the player's settled picks. Picks are saved by the site's
 // own POST /games/:id/pick (public/app.js), so every rule — open/closed, deadlines, who may
@@ -6816,22 +6905,7 @@ app.get('/app/picks', requireApp, (req, res) => {
   const row = sp.board.rows.find(x => x.playerId === me.playerId);
   const tiedAt = rank => sp.board.rows.filter(y => y.rank === rank).length > 1;
   const record = r ? { wl: `${r.correct}–${r.wrong}`, net: fmtPts(r.net), rank: row?.rank || null, tied: !!row && tiedAt(row.rank) } : null;
-  const games = open.map(o => {
-    const g = gameOf[o.id] || {};
-    const closeMs = o.closeAt ? Date.parse(o.closeAt) : 0;
-    return {
-      id: o.id, title: g.playoff_round || gameTypeLabel(g) || 'Regular season',
-      dayLabel: [manilaDayLabel(o.ymd), o.tip].filter(Boolean).join(' · '),
-      closed: !!o.closed, closeAt: closeMs,
-      closeLabel: closeMs ? closeLabel(closeMs) : '',
-      a: { name: o.a, color: colorOf(o.a), rec: o.recA ? `${o.recA.w}–${o.recA.l}` : '' },
-      b: { name: o.b, color: colorOf(o.b), rec: o.recB ? `${o.recB.w}–${o.recB.l}` : '' },
-      odds: o.odds ? { pctA: o.odds.pctA, pctB: o.odds.pctB } : null,
-      myPick: o.myPick, counts: o.counts || { a: 0, b: 0 },
-      faces: (o.faces || []).map(f => ({ ini: f.ini, color: f.color || '', me: !!f.me })),
-      stakes: o.stakes, marginGuess: !!o.marginGuess,
-    };
-  });
+  const games = open.map(o => appPickGame(o, gameOf[o.id], colorOf));
   // Pickmaster: the top 10, and the player's own row under a gap when they're further down.
   const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const boardRow = (x, gap = false) => ({ rank: x.rank, tied: tiedAt(x.rank), name: displayPlayerName(players[x.playerId]?.name || ''), wl: `${x.correct}–${x.wrong}`, net: fmtPts(x.net), me: x.playerId === me.playerId, gap });

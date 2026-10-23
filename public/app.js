@@ -45,6 +45,54 @@
   // Any that failed before this script ran (a game screen opened directly).
   $$('.media img').forEach(function (img) { if (img.complete && !img.naturalWidth) imgFailed(img); });
 
+  // ════ Blocks ════
+  // A part of a screen that loads after it (Home's rail, /app/rail → JSON { html }): the copy
+  // on the phone shows at once (public/app-sw.js keeps one), then the network's. A kept or
+  // refreshed screen shows what it has and quietly takes the fresh one if it changed.
+  function loadBlock(block, fresh) {
+    var src = block.getAttribute('data-block-src');
+    var put = function (html) {
+      if (!block.isConnected || html === block._html) return;
+      block._html = html;
+      if (!html) { block.hidden = true; return; }
+      var rail = $('[data-rail]', block), left = rail ? rail.scrollLeft : 0; // stay on the card in view
+      block.hidden = false; block.innerHTML = html;
+      rail = $('[data-rail]', block);
+      if (rail && left) { rail.style.scrollSnapType = 'none'; rail.scrollLeft = left; rail.style.scrollSnapType = ''; }
+      initPicks(); initRails(block); initVideos();
+      if (rail && left) rail.dispatchEvent(new Event('scroll'));
+    };
+    if (!block._html && !fresh && window.caches) {
+      caches.match(src, { cacheName: 'wknd-data' }).then(function (r) { return r && r.json(); })
+        .then(function (j) { if (j && block._html === undefined) put(j.html || ''); }).catch(function () {});
+    }
+    fetch(src, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { if (!r.ok) throw r.status; return r.json(); })
+      .then(function (j) { put(j.html || ''); }, function () { if (block._html === undefined) block.hidden = true; });
+  }
+  // The tab bar's badges from a fresh copy of this screen (after a pick on Home's rail).
+  function refreshNav() {
+    if (!navOn) return;
+    fetchPage(currentUrl, true).then(function (page) {
+      var nb = new DOMParser().parseFromString(page.html, 'text/html').querySelector('nav.tabbar'), cur = $('nav.tabbar');
+      if (nb && cur && nb.innerHTML !== cur.innerHTML) cur.innerHTML = nb.innerHTML;
+    }).catch(function () {});
+  }
+  function initBlocks() { $$('[data-block-src]').forEach(function (b) { loadBlock(b); }); }
+  // The rail's dots follow the card in view.
+  function initRails(root) {
+    $$('[data-rail]', root).forEach(function (rail) {
+      var dots = rail.parentNode.querySelector('[data-rail-dots]');
+      if (!dots || rail._dots) return;
+      rail._dots = true;
+      rail.addEventListener('scroll', function () {
+        var w = rail.firstElementChild ? rail.firstElementChild.offsetWidth + 10 : 1;
+        var i = Math.min(dots.children.length - 1, Math.round(rail.scrollLeft / w));
+        Array.prototype.forEach.call(dots.children, function (d, k) { d.classList.toggle('on', k === i); });
+      }, { passive: true });
+    });
+  }
+
   // ════ Video player ════
   // YouTube without its own controls: only play/pause, a seek bar and the time.
   // iPhone only starts a video with sound from a tap on the YouTube frame itself, so the
@@ -183,6 +231,7 @@
 
     // Videos (views/app/feed.js media): our player, loaded under the cover picture.
     initVideos();
+    initBlocks();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
@@ -317,14 +366,24 @@
     var s = Math.floor(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
     return 'Closes in ' + (d >= 1 ? d + ' day' + (d === 1 ? '' : 's') : h >= 1 ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + ':' + String(x).padStart(2, '0'));
   };
+  // The card just picked: once the refreshed screen is in, its pickers' bars grow in from
+  // the left (the split shows for the first time), like the site's pick cards.
+  var justPicked = null;
   function initPicks() {
     clearInterval(pickTimer);
+    if (justPicked) {
+      var done = $('[data-pick-game="' + justPicked + '"]');
+      justPicked = null;
+      if (done) done.classList.add('is-revealed');
+    }
     var clocks = $$('[data-close-at]');
     if (clocks.length) {
       var tick = function () { clocks.forEach(function (c) { c.textContent = closeText(Number(c.getAttribute('data-close-at')) - Date.now()); }); };
       tick(); pickTimer = setInterval(tick, 1000);
     }
     $$('[data-pick-game]').forEach(function (card) {
+      if (card._bound) return; // a block loaded later calls initPicks again
+      card._bound = true;
       card.addEventListener('click', function (e) {
         var btn = e.target.closest && e.target.closest('.pick__opt');
         if (!btn || btn.disabled || btn.classList.contains('is-mine') || card.getAttribute('data-saving')) return;
@@ -345,7 +404,9 @@
             if (!res.ok) return undo((res.j && res.j.error) || 'Couldn\'t save your pick. Try again.');
             var label = card.getAttribute('data-close-label');
             toast('Picked ' + card.getAttribute('data-pick-' + side) + (label ? ' · change until ' + label : ''));
-            refreshScreen();
+            justPicked = card.getAttribute('data-pick-game');
+            var block = card.closest('[data-block-src]');
+            if (block) { loadBlock(block, true); refreshNav(); } else refreshScreen();
           }, function () { undo('No connection. Your pick wasn\'t saved.'); });
       });
     });

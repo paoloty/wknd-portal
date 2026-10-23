@@ -6,7 +6,8 @@
 //           at once while a fresh one is fetched behind it (the page then swaps it in:
 //           app.js "Launch from the phone's copy"); in-app navigation goes to the network
 //           first and falls back to the copy when offline or slow.
-//   data    the feed's and notifications' pages (JSON) — network first, the copy offline.
+//   data    the feed's and notifications' pages and Home's rail (JSON) — network first,
+//           the copy offline.
 //   img     feed and game pictures, player photos, announcement photos — versioned ones
 //           cache first, the rest answered from the copy while refreshed; trimmed to the
 //           newest 300. (Not YouTube's thumbnails: another site's pictures are stored
@@ -42,7 +43,7 @@ const isShellAsset = (url) => url.origin === location.origin
 // sign-in, setup, Face ID or anything that posts.
 const isScreen = (url) => url.origin === location.origin
   && /^\/app(\/(picks|papawis|team|me|settings|notifications|games\/[^/]+|posts\/[^/]+))?\/?$/.test(url.pathname);
-const isData = (url) => url.origin === location.origin && /^\/app\/(feed|notifications)\/items$/.test(url.pathname);
+const isData = (url) => url.origin === location.origin && (/^\/app\/(feed|notifications)\/items$/.test(url.pathname) || url.pathname === '/app/rail');
 const isImage = (url) => url.origin === location.origin
   && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/photo$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname));
 const keyOf = (url) => url.pathname + url.search;

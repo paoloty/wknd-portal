@@ -3,6 +3,7 @@
 // page at a time (/app/feed/items → JSON { html, next }), each page carrying the day of its
 // last item so a day header isn't repeated across pages.
 import { esc, appAvatar, icons, backChev, soonTag, lazyList } from './layout.js';
+import { pickOption, pickCard } from './picks.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -95,7 +96,8 @@ export function appFeedRows(items, prevDay = '') {
 // Home: setup card, then (only when something has a deadline) the action strip, the pinned
 // announcement, and the feed. Up next lives on My Team and To do on Me now.
 // actions: [{ text, sub, href, soon }] · pinned: an announcement item or null
-export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', actions = [], pinned = null }) {
+// rail: the next game day's games (loaded after the screen from /app/rail, public/app.js initBlocks).
+export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', actions = [], pinned = null, rail = false }) {
   const strip = actions.length ? `<div class="actions" role="list">${actions.map(a => {
     const inner = `<span class="actions__dot" aria-hidden="true"></span><span class="actions__t">${esc(a.text)}${a.sub ? `<small>${esc(a.sub)}</small>` : ''}</span>${a.href ? '<span class="actions__go">›</span>' : soonTag}`;
     return a.href ? `<a class="actions__row" role="listitem" href="${esc(a.href)}">${inner}</a>` : `<div class="actions__row" role="listitem">${inner}</div>`;
@@ -105,6 +107,7 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', acti
   ${installHtml}
   ${strip}
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
+  ${rail ? '<div class="rail-block" data-block-src="/app/rail"><div class="rail-h"><b class="skel skel--line skel--short" style="width:120px"></b></div><div class="rail"><div class="rc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span></div><div class="rc skel-card"></div></div></div>' : ''}
   <div class="sec">Latest</div>
   ${lazyList({ src: '/app/feed/items', cards: true, empty: 'Nothing here yet. Results, news and announcements show up here.' })}`;
 }
@@ -161,5 +164,78 @@ export function appPostPage({ title, when, bodyHtml, back }) {
     <h1>${esc(title)}</h1>
     <div class="post__body">${bodyHtml}</div>
   </article>
+  <div style="height:12px"></div>`;
+}
+
+// ── The next game day (Home's rail and the game preview screen) ──
+const ring = t => `<span class="rc__ring" style="--c:${esc(t.color)}">${esc(t.name.slice(0, 2))}</span>`;
+const matchup = g => `<div class="rc__mu">
+    <div class="rc__tm">${ring(g.a)}<b>${esc(g.a.name)}</b><small>${esc(g.a.rec || ' ')}</small></div>
+    <span class="rc__vs">VS</span>
+    <div class="rc__tm">${ring(g.b)}<b>${esc(g.b.name)}</b><small>${esc(g.b.rec || ' ')}</small></div>
+  </div>`;
+const formChips = f => `<span class="form">${String(f || '').split('').map(x => `<i class="${x === 'W' ? 'w' : 'l'}">${x}</i>`).join('')}</span>`;
+const pickedLine = g => {
+  const n = g.counts.a + g.counts.b;
+  return g.myPick ? `You${n > 1 ? ` + ${n - 1}` : ''} picked` : n ? `${n} picked · tap a team` : 'Be the first to pick';
+};
+
+// A pick card for the rail: same buttons and data as views/app/picks.js (public/app.js
+// initPicks saves them), plus Preview ›.
+function railPickCard(g) {
+  return `<section class="rc pick" data-pick-game="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}" data-close-label="${esc(g.closeLabel)}">
+    <div class="rc__top"><span class="kick">${esc([g.title, g.tip].filter(Boolean).join(' · '))}</span>${g.closeAt ? `<span class="rc__clock" data-close-at="${g.closeAt}"></span>` : ''}</div>
+    ${matchup(g)}
+    <div class="pick__opts">${pickOption(g, 'a')}${pickOption(g, 'b')}</div>
+    <div class="rc__foot"><span>${pickedLine(g)}</span><a href="/app/games/${encodeURIComponent(g.id)}?from=home">Preview ›</a></div>
+    <p class="pick__msg" data-pick-msg hidden></p>
+  </section>`;
+}
+
+// Picks closed: the preview, with the player's pick.
+function railPreviewCard(g) {
+  const p = g.preview || {};
+  const mine = g.myPick ? (g.myPick === 'a' ? g.a : g.b) : null;
+  const w = (p.watch || []).filter(Boolean);
+  return `<a class="rc rc--pv" href="/app/games/${encodeURIComponent(g.id)}?from=home">
+    <div class="rc__top"><span class="kick">Preview${g.tip ? ` · ${esc(g.tip)}` : ''}</span><span class="rc__tag">Picks closed</span></div>
+    ${matchup(g)}
+    ${p.last ? `<div class="pv__line"><span>Last met</span><b>${esc(p.last.text)} · ${esc(p.last.date)}</b></div>` : '<div class="pv__line"><span>First meeting</span><b>New matchup</b></div>'}
+    ${p.formA || p.formB ? `<div class="pv__line"><span>Last 5</span>${formChips(p.formA)}${formChips(p.formB)}</div>` : ''}
+    ${w.length ? `<div class="pv__watch">${w.map(x => `<span>${esc(x.name)} <small>${esc(x.line)}</small></span>`).join('')}</div>` : ''}
+    <div class="rc__foot"><span>${mine ? `Your pick: <b style="color:${esc(mine.color)}">●</b> ${esc(mine.name)}` : 'You didn\'t pick this one'}</span><span class="rc__go">Preview ›</span></div>
+  </a>`;
+}
+
+// cards: app picks shaping (server.js appPickGame), closed ones with .preview (appPreview).
+export function appRail({ dayLabel, cards }) {
+  if (!cards.length) return '';
+  const open = cards.some(c => !c.closed);
+  const one = cards.length === 1;
+  return `<div class="rail-h"><b>${open ? `Who wins? · ${esc(dayLabel)}` : `${esc(dayLabel)}'s games`}</b><a href="/app/picks">${open ? 'All picks' : 'Picks'} ›</a></div>
+  <div class="rail${one ? ' rail--one' : ''}" data-rail>${cards.map(c => (c.closed ? railPreviewCard(c) : railPickCard(c))).join('')}${one ? '' : '<a class="rc rc--end" href="/app/picks"><i>›</i>Pickmaster<br>&amp; all games</a>'}</div>
+  ${one ? '' : `<div class="dots" data-rail-dots>${cards.map((c, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>`}`;
+}
+
+// Before tip-off: the game's preview. pick: the pick card while picks are open (or the pick
+// made); preview: server.js appPreview.
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref }) {
+  const w = (p.watch || []).filter(Boolean);
+  // While there's a pick card it is the top of the screen (it has the matchup, day and time).
+  return `${navbar(back, title)}
+  ${pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc game-hero">
+    <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>
+    ${matchup({ a, b })}
+    <p class="mut game-hero__meta" style="text-align:center;margin-top:10px !important">${esc(meta)}</p>
+  </section>`}
+  ${p.story ? `<section class="fc art"><div class="kick">Storyline</div><h2>${esc(p.story.headline)}</h2>${p.story.body ? `<p>${esc(p.story.body)}</p>` : ''}</section>` : ''}
+  <section class="fc art">
+    <div class="kick">The matchup</div>
+    <div class="pv__line"><span>Records</span><b>${esc(a.name)} ${esc(a.rec || '–')} · ${esc(b.name)} ${esc(b.rec || '–')}</b></div>
+    ${p.formA || p.formB ? `<div class="pv__line"><span>Last 5</span><span class="pv__forms"><span>${esc(a.name)} ${formChips(p.formA)}</span><span>${esc(b.name)} ${formChips(p.formB)}</span></span></div>` : ''}
+    ${p.last ? `<a class="pv__line" href="${esc(lastHref)}"><span>Last met</span><b>${esc(p.last.text)} · ${esc(p.last.date)} ›</b></a>` : '<div class="pv__line"><span>Last met</span><b>First meeting</b></div>'}
+    ${p.series ? `<div class="pv__line"><span>All-time series</span><b>${esc(p.series)}</b></div>` : ''}
+  </section>
+  ${w.length ? `<section class="fc art"><div class="kick">Players to watch</div>${w.map(x => potgStrip(x, '')).join('')}</section>` : ''}
   <div style="height:12px"></div>`;
 }

@@ -15,7 +15,7 @@ function oddsRow(g) {
   </div>`;
 }
 
-function option(g, side) {
+export function pickOption(g, side) {
   const t = g[side], total = g.counts.a + g.counts.b;
   const share = pct(g.counts[side], total);
   const mine = g.myPick === side;
@@ -42,7 +42,7 @@ function stakes(g) {
   return `<div class="pick__stakes"><span>You're <b>${esc(st.now)}</b> on <b>${esc(st.net)}</b></span><span class="up">${g.myPick ? 'Right' : 'Call it'} → ${esc(st.right)}</span><span class="dn">${g.myPick ? 'Wrong' : 'Miss'} → ${esc(st.wrong)}</span></div>`;
 }
 
-function card(g) {
+export function pickCard(g) {
   return `<section class="card pick" id="g-${esc(g.id)}" data-pick-game="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}" data-close-label="${esc(g.closeLabel)}">
     <div class="pick__top"><span class="kick">${esc(g.title)}</span>
       ${g.closed ? '<span class="pick__close is-closed">Picks closed</span>' : g.closeAt ? `<span class="pick__close" data-close-at="${g.closeAt}"></span>` : ''}</div>
@@ -54,7 +54,7 @@ function card(g) {
     </div>
     ${oddsRow(g)}
     <div class="pick__q">${g.closed ? 'Picks are closed' : g.myPick ? 'Your pick is in. Tap the other side to change it.' : 'Who wins this one?'}</div>
-    <div class="pick__opts">${option(g, 'a')}${option(g, 'b')}</div>
+    <div class="pick__opts">${pickOption(g, 'a')}${pickOption(g, 'b')}</div>
     ${faces(g)}
     ${stakes(g)}
     ${g.marginGuess ? '<p class="pick__note">Finals tiebreaker (guess the winning margin) <span class="tag-muted">Soon</span></p>' : ''}
@@ -78,7 +78,7 @@ export function appPicksPage({ record, games = [], off = false, board = [], past
   <header class="lt"><h1>Who wins?</h1></header>
   ${off ? '<div class="empty" style="margin-top:8px">Picks are off right now.</div>' : `
   ${rec}
-  ${games.length ? `<div class="sec">Open games</div><div class="stack" style="--gap:12px">${games.map(card).join('')}</div>`
+  ${games.length ? `<div class="sec">Open games</div><div class="stack" style="--gap:12px">${games.map(pickCard).join('')}</div>`
     : '<div class="empty" style="margin-top:12px">No games to pick right now. They show up here once the next game day is on the schedule.</div>'}
   ${boardHtml}
   ${pastHtml}`}`;
