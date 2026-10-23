@@ -36,6 +36,11 @@ export const icons = {
   share: svg('<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.6"'),
 };
+// The app keeps players inside it: only links to /app screens are tappable. Rows about
+// something not built into the app yet (balance, sign-ups, picks) show as information with
+// a "Soon" pill, and "Open full site" in More is the one way out.
+export const isAppHref = h => /^\/app(\/|$|\?)/.test(String(h || ''));
+export const soonTag = '<span class="tag-muted">Soon</span>';
 export const chev = '<svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5l-5 5"/></svg>';
 export const backChev = '<svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2 2 10l8 8"/></svg>';
 

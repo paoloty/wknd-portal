@@ -1,6 +1,8 @@
 # Players app (`/app`)
 
-Phone-first, players-only app served by this same server: same accounts, sessions and `portal.db`. Installable to the home screen (web app manifest + service worker). Milestones 1–2: shell, sign-in, player setup, Home; the other tabs are read-only or hand off to full-site pages.
+Phone-first, players-only app served by this same server: same accounts, sessions and `portal.db`. Installable to the home screen (web app manifest + service worker). Milestones 1–2: shell, sign-in, player setup, Home, read-only My Team / Me.
+
+**Players stay in the app.** Only links to `/app` screens are tappable (`isAppHref` in `views/app/layout.js`); the one way out is More → "Open full site". Things not built into the app yet (settling a balance, season sign-up, jersey details, picks) show as information with a "Soon" pill (`soonTag`), and game rows, rosters and notifications aren't links.
 
 ## Files
 - `server.js`: section "Players app (/app)", right after the site's `/logout` route. All `/app*` routes, gating, sign-in codes, data shaping.

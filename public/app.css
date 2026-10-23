@@ -107,6 +107,7 @@ button.cell { width: 100%; text-align: left; }
 .ico--amber { background: rgba(245,147,50,0.15); color: var(--amber-text); }
 .pill { flex: none; font-size: 12.5px; font-weight: 700; padding: 5px 11px; border-radius: 999px; background: rgba(245,147,50,0.15); color: var(--amber-text); }
 .pill--solid { background: var(--amber); color: #111; }
+.tag-muted { flex: none; font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .count { flex: none; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--amber); color: #111; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
 .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--subtle)); }
 .num { font-family: var(--font-num); font-weight: 800; }

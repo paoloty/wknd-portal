@@ -1,7 +1,7 @@
 // The other four tabs and the notifications list. My Team and Me are read-only views of
-// data the site already has; Papawis and the More rows hand off to full-site pages until
-// their app versions are built.
-import { esc, appAvatar, chev, icons, backChev } from './layout.js';
+// data the site already has. Nothing here links out to the site except "Open full site"
+// in More (layout.js isAppHref): site-only things show as information.
+import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag } from './layout.js';
 
 const lt = (title, me) => `<header class="lt"><h1>${esc(title)}</h1>${me ? `<a href="/app/me" aria-label="Me">${appAvatar({ ...me, badge: me.unread })}</a>` : ''}</header>`;
 
@@ -16,19 +16,18 @@ export function appTeamPage({ me, team, roster, nextGame, record }) {
     <div style="flex:1"><h2>${esc(team.name)}</h2><div class="prof__sub">${esc(record || 'No games yet')}</div></div>
   </div>
   ${nextGame ? `<div class="sec">Next game</div>
-  <div class="group"><a class="cell" href="${esc(nextGame.href)}"><span class="dot" style="--c:${esc(nextGame.oppColor)}"></span><span class="cell__t">vs ${esc(nextGame.opp)}<small>${esc(nextGame.when)}</small></span>${chev}</a></div>` : ''}
+  <div class="group"><div class="cell"><span class="dot" style="--c:${esc(nextGame.oppColor)}"></span><span class="cell__t">vs ${esc(nextGame.opp)}<small>${esc(nextGame.when)}</small></span></div></div>` : ''}
   <div class="sec">Roster · ${roster.length}</div>
   <div class="group">${roster.map(p => `
-    <a class="cell" href="/players/${encodeURIComponent(p.id)}">
+    <div class="cell">
       ${appAvatar({ playerId: p.id, initials: p.initials, ring: team.color, photoUrl: p.photoUrl })}
       <span class="cell__t">${esc(p.name)}${p.isMe ? ' <span class="muted" style="font-weight:400">· You</span>' : ''}<small>${esc([p.positions, p.isHead ? 'Team head' : ''].filter(Boolean).join(' · ') || ' ')}</small></span>
       <span class="num" style="font-size:18px;color:var(--muted)">${p.number !== '' ? `#${esc(p.number)}` : ''}</span>
-    </a>`).join('')}</div>
-  <div class="pad" style="margin-top:16px"><a class="btn btn--ghost" href="/my-team">Full team page ${icons.ext}</a></div>`;
+    </div>`).join('')}</div>`;
 }
 
-// season: { label, gp, ppg, rpg, apg } · games: [{ date, opp, won, my, oppScore, line, href }]
-export function appMePage({ me, season, games, positions, profileHref }) {
+// season: { label, gp, ppg, rpg, apg } · games: [{ date, opp, won, my, oppScore, line }]
+export function appMePage({ me, season, games, positions }) {
   return `${lt('Me', null)}
   <div class="card prof">
     ${appAvatar({ ...me, size: 'lg' })}
@@ -42,14 +41,13 @@ export function appMePage({ me, season, games, positions, profileHref }) {
   </div>
   <div class="sec">Last games</div>
   ${games.length ? `<div class="group">${games.map(g => `
-    <a class="cell" href="${esc(g.href)}"><span class="date">${esc(g.date)}</span><span class="cell__t">vs ${esc(g.opp)}</span>
-      <span class="res ${g.won ? 'res--w' : 'res--l'}">${g.won ? 'W' : 'L'} ${g.my}–${g.oppScore}</span><span class="line">${esc(g.line)}</span></a>`).join('')}</div>
+    <div class="cell"><span class="date">${esc(g.date)}</span><span class="cell__t">vs ${esc(g.opp)}</span>
+      <span class="res ${g.won ? 'res--w' : 'res--l'}">${g.won ? 'W' : 'L'} ${g.my}–${g.oppScore}</span><span class="line">${esc(g.line)}</span></div>`).join('')}</div>
   <p class="foot-note">Points · rebounds · assists</p>` : '<div class="empty">No games played yet this season.</div>'}
   <div class="sec">Profile</div>
   <div class="group group--icons">
     <a class="cell" href="/app/setup/photo"><span class="ico">${icons.camera}</span><span class="cell__t">Change photo</span>${chev}</a>
     <a class="cell" href="/app/setup/details"><span class="ico">${icons.user}</span><span class="cell__t">Edit details</span>${chev}</a>
-    <a class="cell" href="${esc(profileHref)}"><span class="ico">${icons.globe}</span><span class="cell__t">Full profile on the site</span>${icons.ext}</a>
   </div>`;
 }
 
@@ -57,14 +55,17 @@ export function appPapawisPage({ me }) {
   return `${lt('Papawis', me)}
   <div class="card" style="text-align:center;padding:26px 18px">
     <div class="kick">Coming to the app next</div>
-    <p class="muted" style="margin:8px 0 16px;font-size:14.5px">Joining runs, the waitlist and your free runs move in here in the next build. Until then they're on the site.</p>
-    <a class="btn" href="/papawis">Open Papawis ${icons.ext.replace('color:var(--subtle)', 'color:#111')}</a>
+    <p class="muted" style="margin:8px 0 0;font-size:14.5px">Joining runs, the waitlist and your free runs move in here in the next build.</p>
   </div>`;
 }
 
-// rows: [{ icon, title, value, href, count, ext }]
+// rows: [{ icon, title, value, href, count, amber, soon }] — a row without an /app href is
+// information only; soon adds the "Soon" pill (it'll be tappable once built into the app).
 export function appMorePage({ me, rows }) {
-  const row = r => `<a class="cell" href="${esc(r.href)}"><span class="ico${r.amber ? ' ico--amber' : ''}">${icons[r.icon]}</span><span class="cell__t">${esc(r.title)}</span>${r.count ? `<span class="count">${r.count}</span>` : ''}${r.value ? `<span class="cell__v">${esc(r.value)}</span>` : ''}${r.ext ? icons.ext : chev}</a>`;
+  const row = r => {
+    const inner = `<span class="ico${r.amber ? ' ico--amber' : ''}">${icons[r.icon]}</span><span class="cell__t">${esc(r.title)}</span>${r.count ? `<span class="count">${r.count}</span>` : ''}${r.value ? `<span class="cell__v">${esc(r.value)}</span>` : ''}`;
+    return isAppHref(r.href) ? `<a class="cell" href="${esc(r.href)}">${inner}${chev}</a>` : `<div class="cell">${inner}${r.soon ? soonTag : ''}</div>`;
+  };
   return `${lt('More', me)}
   <div class="group group--icons">${rows.map(row).join('')}</div>
   <div class="sec">Settings</div>
@@ -82,13 +83,13 @@ export function appMorePage({ me, rows }) {
   <p class="foot-note" style="text-align:center;margin-top:14px">Signed in as ${esc(me.email)}</p>`;
 }
 
-// items: [{ title, body, when, href, unread }]
+// items: [{ title, body, when, unread }]
 export function appNotificationsPage({ items }) {
   return `
   <div class="navbar"><a class="navbar__back" href="/app/more">${backChev}More</a><span class="navbar__title">Notifications</span><span></span></div>
   ${items.length ? `<div class="group" style="margin-top:8px">${items.map(n => `
-    <a class="cell" href="${esc(n.href || '#')}">
+    <div class="cell">
       <span class="dot" style="--c:${n.unread ? 'var(--amber)' : 'transparent'}"></span>
       <span class="cell__t">${esc(n.title)}${n.body ? `<small>${esc(n.body)}</small>` : ''}<small>${esc(n.when)}</small></span>
-    </a>`).join('')}</div>` : '<div class="empty" style="margin-top:8px">Nothing yet.</div>'}`;
+    </div>`).join('')}</div>` : '<div class="empty" style="margin-top:8px">Nothing yet.</div>'}`;
 }

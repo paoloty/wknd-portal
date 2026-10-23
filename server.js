@@ -6365,11 +6365,10 @@ app.get('/app/me', requireApp, (req, res) => {
     return { date: shortDate(g.date), opp: mine === 'a' ? g.team_b_name : g.team_a_name, won: my > opp, my, oppScore: opp,
       line: `${g.pts || 0}·${g.reb || 0}·${g.ast || 0}`, href: previewHref(g) };
   });
-  const slug = getSlugForEntity('player', me.playerId);
   sendApp(res, { title: 'Me · WKND', tab: 'me', body: appMePage({
     me, positions: parsePositions(me.player.positions).join(' · '),
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
-    games, profileHref: `/players/${encodeURIComponent(slug || me.playerId)}`,
+    games,
   }) });
 });
 
@@ -6382,12 +6381,11 @@ app.get('/app/more', requireApp, (req, res) => {
   const st = appSeasonState(me);
   const rows = [
     { icon: 'bell', title: 'Notifications', href: '/app/notifications', count: me.unread, amber: true },
-    { icon: 'wallet', title: 'My balance', value: st.balance > 0 ? `${st.peso(st.balance)} due` : 'Settled', href: '/settle-balance', ext: true },
+    // Information only for now: settling, sign-ups and jersey details happen on the site.
+    { icon: 'wallet', title: 'My balance', value: st.balance > 0 ? `${st.peso(st.balance)} due` : 'Settled', soon: st.balance > 0 },
   ];
-  if (st.signupOpen) rows.push({ icon: 'form', title: `Season ${st.season} sign-up`, value: st.signup ? 'Done' : 'Open', href: '/season-signup', ext: true });
-  if (st.signup?.jersey_requested_at) rows.push({ icon: 'shirt', title: 'Jersey request', value: st.signup.jersey_submitted_at ? 'Sent' : 'To do', href: '/jersey-request', ext: true });
-  if (getHeadTeamIds(me.playerId).length) rows.push({ icon: 'scale', title: 'Fines & votes', href: '/fines', ext: true });
-  if (getSetting('marketplace_enabled', '0') === '1') rows.push({ icon: 'shirt', title: 'Marketplace', href: '/marketplace', ext: true });
+  if (st.signupOpen) rows.push({ icon: 'form', title: `Season ${st.season} sign-up`, value: st.signup ? 'Done' : 'Not yet', soon: !st.signup });
+  if (st.signup?.jersey_requested_at) rows.push({ icon: 'shirt', title: 'Jersey details', value: st.signup.jersey_submitted_at ? 'Sent' : 'Not sent yet', soon: !st.signup.jersey_submitted_at });
   sendApp(res, { title: 'More · WKND', tab: 'more', body: appMorePage({ me, rows }) });
 });
 

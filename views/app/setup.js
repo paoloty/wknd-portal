@@ -1,7 +1,7 @@
 // Player setup in the app: photo → details → season → done. Each step shows what's already
 // on file, so a player who registered on the site mostly just confirms. Skipped steps stay
 // on Home as the "Finish setting up" card (server.js appSetupState).
-import { esc, appAvatar, backChev, icons } from './layout.js';
+import { esc, appAvatar, backChev, icons, soonTag } from './layout.js';
 
 export const SETUP_STEPS = ['photo', 'details', 'season'];
 // Same choices and stored values as the register form (views/register.js).
@@ -67,13 +67,13 @@ export function appSetupDetailsPage({ reg, positions, error = '', number = '', t
 export function appSetupSeasonPage({ rows }) {
   return frame('season', `
   <div class="step-head"><div class="kick">Step 3 of 3</div><h1>Your season</h1>
-    <p>Where you stand for the season. Anything that needs doing opens on the full site for now.</p></div>
+    <p>Where you stand for the season. Anything still to do is coming to the app soon. Until then it's on the full site (More → Open full site).</p></div>
   <div class="group group--icons" style="margin-top:16px">${rows.map(r => `
-    <${r.href ? `a href="${esc(r.href)}"` : 'div'} class="cell">
+    <div class="cell">
       <span class="ico${r.done ? '' : ' ico--amber'}">${icons[r.icon] || icons.form}</span>
       <span class="cell__t">${esc(r.title)}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>
-      ${r.done ? `<span class="ico" style="background:none;color:var(--win)">${icons.check}</span>` : `<span class="pill">${esc(r.pill || 'Open')}</span>`}
-    </${r.href ? 'a' : 'div'}>`).join('')}</div>
+      ${r.done ? `<span class="ico" style="background:none;color:var(--win)">${icons.check}</span>` : soonTag}
+    </div>`).join('')}</div>
   <div class="step-actions"><a class="btn" href="/app/setup/done">Continue</a></div>`);
 }
 
