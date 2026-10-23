@@ -16,8 +16,9 @@ const EVENT = {
   setup_details: () => 'saved their details',
   setup_done: () => 'finished setup',
   signout: () => 'logged out',
+  photo_failed: (d) => `couldn't upload a photo${d ? ` (${d})` : ''}`,
 };
-const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray' };
+const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', setup_details: 'gray', code_sent: 'gray', signout: 'gray', photo_failed: 'red' };
 
 // rows: [{ regId, playerId, name, team, color, email, hasAccess, s (summary row | null),
 //          setup: { photo, details } }]

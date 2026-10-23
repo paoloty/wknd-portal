@@ -69,36 +69,61 @@
       draw();
     }
 
-    // Setup photo: shrink on the phone, send to the same /me/photo the site uses
+    // Setup photo: shrink on the phone, send to the same /me/photo the site uses. The
+    // reply is read as text first: a proxy in front of the app (size limit, Cloudflare)
+    // answers with an HTML page, which Safari would report as "The string did not match the
+    // expected pattern". On a failure it retries once with the profile size only, and the
+    // failure is logged for /admin/app (photo_failed: status and size).
     var pIn = $('[data-photo-input]');
     if (pIn) {
       var pMsg = $('[data-photo-msg]');
       var say = function (t, kind) { pMsg.hidden = !t; pMsg.className = 'msg msg--' + (kind || 'info'); pMsg.textContent = t || ''; };
-      var shrink = function (img, max) {
-        var s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-        var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+      var shrink = function (img, max, q) {
+        var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        var s = Math.min(1, max / Math.max(w, h, 1));
+        var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        return c.toDataURL('image/jpeg', 0.88);
+        return c.toDataURL('image/jpeg', q);
+      };
+      var post = function (payload) {
+        var body = JSON.stringify(payload);
+        return fetch('/me/photo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, credentials: 'same-origin' })
+          .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { ok: r.ok && !!j && !!j.ok, status: r.status, j: j, kb: Math.round(body.length / 1024) }; }); },
+                function () { return { ok: false, status: 0, j: null, kb: Math.round(body.length / 1024) }; });
+      };
+      var report = function (res, retry) {
+        fetch('/app/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ photoFailed: (res.status || 'network') + ' · ' + res.kb + ' KB' + (retry ? ' · retry' : '') }) }).catch(function () {});
       };
       pIn.addEventListener('change', function () {
         var file = pIn.files && pIn.files[0]; if (!file) return;
         say('Uploading…');
         var url = URL.createObjectURL(file), img = new Image();
         img.onload = function () {
-          var body = JSON.stringify({ dataUrl: shrink(img, 900), originalDataUrl: shrink(img, 2000) });
-          fetch('/me/photo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, credentials: 'same-origin' })
-            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-            .then(function (res) {
-              if (!res.ok) throw new Error(res.j && res.j.error || 'Upload failed');
-              var av = $('[data-photo-preview] .avatar');
-              if (av) { var old = $('img', av); if (old) old.remove(); var i2 = new Image(); i2.src = url; av.appendChild(i2); }
-              say('Saved. Looking good.', 'ok');
-              var next = $('[data-photo-next]'); if (next) next.textContent = 'Looks good';
-              pages = {}; // screens showing the old photo
-            })
-            .catch(function (e) { say(e.message || 'Upload failed. Try another photo.', 'err'); });
+          var small = shrink(img, 800, 0.86), original = shrink(img, 1600, 0.85);
+          // Keep the full upload well under the server's limit; the original is optional.
+          var payload = (small.length + original.length) < 6 * 1024 * 1024 ? { dataUrl: small, originalDataUrl: original } : { dataUrl: small };
+          post(payload).then(function (res) {
+            if (res.ok || !payload.originalDataUrl || (res.j && res.status >= 400 && res.status < 500)) return res;
+            report(res, false);
+            return post({ dataUrl: small }); // once more, profile size only
+          }).then(function (res) {
+            pIn.value = '';
+            if (!res.ok) {
+              report(res, true);
+              say(res.j && res.j.error ? res.j.error
+                : res.status === 0 ? 'No connection. Check your signal and try again.'
+                : 'Upload didn\'t go through (error ' + res.status + '). Try again, or pick another photo.', 'err');
+              return;
+            }
+            var av = $('[data-photo-preview] .avatar');
+            if (av) { var old = $('img', av); if (old) old.remove(); var i2 = new Image(); i2.src = url; av.appendChild(i2); }
+            say('Saved. Looking good.', 'ok');
+            var next = $('[data-photo-next]'); if (next) next.textContent = 'Looks good';
+            pages = {}; // screens showing the old photo
+          });
         };
-        img.onerror = function () { say('That file isn\'t a photo we can read. Try a JPG or PNG.', 'err'); };
+        img.onerror = function () { pIn.value = ''; say('That file isn\'t a photo we can read. Try a JPG or PNG.', 'err'); };
         img.src = url;
       });
     }
