@@ -59,6 +59,9 @@ Phone-first, players-only app served by this same server: same accounts, session
 - Keys: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (+ `VAPID_SUBJECT`) from the environment, else a pair is made once and kept in site_settings. Changing keys means everyone turns notifications on again.
 - `/admin/app` shows how many accounts have notifications on; `push_on` / `push_off` in the activity log.
 
+## Feed card buttons (Paolo, 2026-10-24)
+- Every feed card ends the same way: one full-width button (`.sx__act`), then the 🔥 / 💬 bar. A button does what its label says. Game: "Box score & recap" (ghost, opens the game). News: "Read" (ghost). Papawis: the Papawis tab's own action (`papawisAction`: Claim a slot / Join the waitlist / Cancel my spot / Pay deposit…, same rules and confirms, `initPapawis`), so a player joins straight from the feed; the card refreshes after. The rest of each card still opens its screen. The feed's Papawis card is built from `appPapawisRuns`, with the same overlapping faces as the tab.
+
 ## Comments (`views/app/comments.js`)
 - On games and announcements. Game threads are the site's own (`game_comments`, key = the game id), so the site's game page shows the same conversation, replies indented with "↪ Replying to …" (live over its WebSocket too). Announcement threads use key `ann:<id>` in the same tables (app only); a 🔥 on an announcement is `game_reactions` with that key.
 - One level of replies (`parent_id`, Instagram-style): a reply to a reply goes under the same top-level comment and starts with @their name; replies fold behind "View N replies". Deleting a comment takes its replies.

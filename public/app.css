@@ -668,9 +668,7 @@ a.sx:active { transform: scale(.99); }
 .px__bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #f59332, #ffb15e); }
 .px__foot { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .px__foot b { margin-left: auto; color: var(--amber-text); font-size: 13.5px; white-space: nowrap; }
-.px__faces { display: flex; }
-.px__faces i { width: 26px; height: 26px; margin-left: -7px; border-radius: 50%; background: var(--surface-2); box-shadow: 0 0 0 2px var(--surface), inset 0 0 0 2px var(--c); font: 800 9.5px/26px var(--font-num); text-align: center; font-style: normal; color: var(--text); }
-.px__faces i:first-child { margin-left: 0; }
+.px__stack { display: flex; margin-top: 12px; }
 
 /* News */
 .nx__pic, .px__pic { position: relative; aspect-ratio: 2 / 1; background: var(--surface-2); }
@@ -903,3 +901,9 @@ a.sx:active { transform: scale(.99); }
 .sheet .th__comp { flex: none; padding: 10px 12px calc(10px + var(--safe-b)); border-top: 1px solid var(--hair); }
 .sheet > .ct__empty { padding: 30px 16px; }
 @media (prefers-reduced-motion: reduce) { .sheet__box, .sheet__scrim { transition: none; } .is-pop, .ct.is-new { animation: none; } }
+
+/* Feed cards end the same way: the card's one button (sx__act), then the 🔥 / 💬 bar. */
+.sx__act { padding: 0 16px 14px; }
+.sx__act.pwr__action { margin-top: 0; }
+.sx__act .btn { height: 44px; font-size: 15px; }
+.sx__act + .cx .cx__btns { padding-top: 12px; }

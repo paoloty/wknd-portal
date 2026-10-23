@@ -990,7 +990,7 @@
         caches.match(next, { cacheName: 'wknd-data' }).then(function (r) { return r && r.json(); }).then(function (j) {
           if (!j || !j.html || !first || !box.isConnected) return;
           shownCopy = j.html;
-          items.innerHTML = j.html; items.hidden = false; skel.hidden = true; initVideos();
+          items.innerHTML = j.html; items.hidden = false; skel.hidden = true; initVideos(); initPapawis();
         }).catch(function () {});
       }
       var nearBottom = function () { return end.getBoundingClientRect().top < window.innerHeight + 600; };
@@ -1002,8 +1002,9 @@
           .then(function (j) {
             busy = false; next = j.next || null; box.setAttribute('data-lazy-next', next || '');
             var wasFirst = first; first = false;
-            if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); } }
-            else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); }
+            // Feed pages can carry Papawis cards with their join button (initPapawis binds new ones).
+            if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); initPapawis(); } }
+            else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); initPapawis(); }
             skel.hidden = true;
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
             end.textContent = '';

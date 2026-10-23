@@ -5,6 +5,7 @@
 import { esc, appAvatar, icons, backChev, soonTag, lazyList } from './layout.js';
 import { pickOption, pickCard } from './picks.js';
 import { appSocialBar, appThreadPanel } from './comments.js';
+import { papawisAction } from './papawis.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -68,9 +69,8 @@ function gameCard(g) {
       ${g.excerpt ? `<p class="gx__ex">${esc(g.excerpt)}</p>` : ''}
       ${g.potg.map(p => potgBox(p)).join('')}
       ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
-      <div class="gx__foot"><span class="gx__go">Box score ›</span></div>
     </div>
-  </a>${appSocialBar(g.social)}</article>`;
+  </a><div class="sx__act"><a class="btn btn--ghost" href="${esc(g.href)}">Box score &amp; recap</a></div>${appSocialBar(g.social)}</article>`;
 }
 
 function annCard(a) {
@@ -83,26 +83,31 @@ function annCard(a) {
 }
 
 function postCard(p) {
-  return `<a class="sx nx" href="${esc(p.href)}">
+  return `<article class="sx nx"><a class="gx__link" href="${esc(p.href)}">
     ${p.img ? `<div class="nx__pic"><img src="${esc(p.img)}" alt="" decoding="async"></div>` : ''}
     <div class="sx__body"><div class="nx__top"><span class="sx__chip sx__chip--amber">News</span><span class="sx__when">${esc(p.when)}</span></div>
-      <h3>${esc(p.title)}</h3>${p.excerpt ? `<p>${esc(p.excerpt)}</p>` : ''}<span class="sx__go">Read ›</span></div>
-  </a>`;
+      <h3>${esc(p.title)}</h3>${p.excerpt ? `<p>${esc(p.excerpt)}</p>` : ''}</div>
+  </a><div class="sx__act"><a class="btn btn--ghost" href="${esc(p.href)}">Read</a></div></article>`;
 }
 
-// Opens the Papawis tab, where the player joins.
-// faces: [{ ini, color }] of who's in (up to 5). photo: the run's cover (server.js papawisCoverUrl).
-function papawisCard(r) {
-  const pct = r.max ? Math.min(100, Math.round((r.confirmed / r.max) * 100)) : 0;
-  const left = Math.max(0, r.max - r.confirmed);
-  return `<a class="sx px" href="/app/papawis">${r.photo ? `<div class="px__pic"><img src="${esc(r.photo)}" alt="" decoding="async"></div>` : ''}<div class="sx__body">
-    <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc([r.runDay, r.time].filter(Boolean).join(' · '))}</span></div>
-    <h3>${esc(r.title)}</h3>
-    ${r.place ? `<p class="px__where">📍 ${esc(r.place)}</p>` : ''}
-    <div class="px__bar"><i style="width:${pct}%"></i></div>
-    <div class="px__foot">${r.faces?.length ? `<span class="px__faces">${r.faces.map(f => `<i style="--c:${esc(f.color)}">${esc(f.ini)}</i>`).join('')}</span>` : ''}<span>${r.confirmed} of ${r.max} in${r.waitlist ? ` · ${r.waitlist} waiting` : ''}</span><b>${left ? `${left} spot${left === 1 ? '' : 's'} left` : 'Full'}</b></div>
-    <span class="sx__go">${left ? 'Join ›' : 'Join the waitlist ›'}</span>
-  </div></a>`;
+// A Papawis run with its action right on the card (the Papawis tab's button, same rules;
+// public/app.js initPapawis). The rest of the card opens the Papawis tab.
+// it.run: server.js appPapawisRuns (faces, state, photo: papawisCoverUrl).
+function papawisCard(it) {
+  const r = it.run;
+  const pct = r.max ? Math.min(100, Math.round((r.filled / r.max) * 100)) : 0;
+  const faces = r.faces.slice(0, 8); // overlapping, as on the Papawis tab
+  return `<article class="sx px" data-pw-card="${esc(r.id)}"><a class="gx__link" href="/app/papawis">
+    ${r.photo ? `<div class="px__pic"><img src="${esc(r.photo)}" alt="" decoding="async"></div>` : ''}
+    <div class="sx__body">
+      <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc([r.today ? 'Today' : r.day, r.time].filter(Boolean).join(' · '))}</span></div>
+      <h3>${esc(r.title)}</h3>
+      <p class="px__where">📍 ${esc(r.place)}</p>
+      <div class="px__bar"><i style="width:${pct}%"></i></div>
+      ${faces.length ? `<span class="pwr__stack px__stack"><span class="pwr__faces">${faces.map(f => `<span class="pwr__face${f.me ? ' is-me' : ''}">${appAvatar({ playerId: f.playerId, initials: f.ini, ring: f.color, photoUrl: f.photoUrl })}</span>`).join('')}${r.faces.length > faces.length ? `<span class="pwr__more">+${r.faces.length - faces.length}</span>` : ''}</span></span>` : ''}
+      <div class="px__foot"><span>${r.filled} of ${r.max} in${r.waiting ? ` · ${r.waiting} waiting` : ''}</span><b>${r.full ? 'Full' : `${r.open} spot${r.open === 1 ? '' : 's'} left`}</b></div>
+    </div>
+  </a><div class="sx__act pwr__action">${papawisAction(r)}<p class="msg msg--err" data-pw-msg hidden></p></div></article>`;
 }
 
 const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard };

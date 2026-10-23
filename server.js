@@ -6574,11 +6574,8 @@ function appFeedItem(it, me, extra) {
     return { kind: 'post', day, when: feedWhen(it.at), title: p.title, excerpt: text.slice(0, 220), img, href: `/app/posts/${encodeURIComponent(p.slug)}` };
   }
   if (it.kind === 'papawis') {
-    const r = it.src;
-    return { kind: 'papawis', day, when: feedWhen(it.at), title: r.title || 'Papawis run', runDay: manilaDayLabel(String(r.date)),
-      time: r.time_label || formatTimeRange(r.start_time, r.end_time) || '', place: r.location || '',
-      confirmed: Number(r.confirmed_count) || 0, max: Number(r.max_slots) || 0, waitlist: Number(r.waitlist_count) || 0,
-      faces: (extra.runFaces[r.id] || []).slice(0, 5), photo: papawisCoverUrl(r) || '' };
+    const run = extra.runs?.find(r => r.id === it.id);
+    return run ? { kind: 'papawis', day, when: feedWhen(it.at), run } : { kind: 'none', day: '' };
   }
   const g = it.src;
   const stats = getGameDetailStats(g.id);
@@ -6599,17 +6596,10 @@ app.get('/app/feed/items', requireAppData, (req, res) => {
   const from = m ? all.findIndex(it => it.at < Number(m[1]) || (it.at === Number(m[1]) && String(it.id).localeCompare(m[2]) < 0)) : 0;
   const page = from < 0 ? [] : all.slice(from, from + APP_FEED_PAGE);
   const gameIds = page.filter(it => it.kind === 'game').map(it => it.id);
-  const extra = { social: appSocialFor(page.filter(it => it.kind === 'game' || it.kind === 'ann').map(it => (it.kind === 'ann' ? `ann:${it.id}` : it.id)), me.playerId), runFaces: {} };
-  // Who's in on the page's Papawis runs: initials in their team colour, first to sign up first.
-  const runIds = page.filter(it => it.kind === 'papawis').map(it => it.id);
-  if (runIds.length) {
-    const teams = getAllTeams(), byPlayer = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-    for (const su of getPapawisSignupsForRuns(runIds).filter(x => x.status === 'confirmed').sort((x, y) => (x.signed_up_at || 0) - (y.signed_up_at || 0))) {
-      const name = su.player_id ? displayPlayerName(su.player_name || '') : String(su.guest_name || 'Guest');
-      const pl = byPlayer[su.player_id];
-      (extra.runFaces[su.game_id] ||= []).push({ ini: name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(), color: pl?.team_id ? teamColorById(teams, pl.team_id) : 'var(--subtle)' });
-    }
-  }
+  const extra = { social: appSocialFor(page.filter(it => it.kind === 'game' || it.kind === 'ann').map(it => (it.kind === 'ann' ? `ann:${it.id}` : it.id)), me.playerId) };
+  // The page's Papawis runs as the Papawis tab shapes them (who's in, the player's own state
+  // and the one action), so the card can join right there.
+  if (page.some(it => it.kind === 'papawis')) extra.runs = appPapawisRuns(me);
   const items = page.map(it => appFeedItem(it, me, extra));
   const html = appFeedRows(items, String(req.query.day || ''));
   const last = page[page.length - 1];

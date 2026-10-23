@@ -6,8 +6,8 @@ import { esc, appAvatar, backChev } from './layout.js';
 
 const lt = title => `<header class="lt"><h1>${esc(title)}</h1></header>`;
 
-// The run's one action, and the line under it.
-function action(r) {
+// The run's one action, and the line under it (also on the feed's Papawis card).
+export function papawisAction(r) {
   const s = r.state, id = esc(r.id);
   const btn = (label, act, extra = '') => `<button type="button" class="btn${act === 'cancel' ? ' btn--ghost' : ''}" data-pw-act="${act}" data-pw-run="${id}"${extra}>${label}</button>`;
   const note = (lead, rest = '') => `<p class="pwr__note"><b>${lead}</b>${rest}</p>`;
@@ -54,7 +54,7 @@ function runCard(r) {
         <div class="pv__line"><span>Waitlist</span><b>${r.scheduled ? 'Opens with the list' : r.waiting ? `${r.waiting} waiting` : 'Empty'}</b></div>
       </div>
       ${r.price ? `<p class="pwr__fine">${esc(r.priceNote)}</p>` : ''}
-      <div class="pwr__action">${action(r)}</div>
+      <div class="pwr__action">${papawisAction(r)}</div>
       <p class="msg msg--err" data-pw-msg hidden></p>
     </div>
   </section>`;
