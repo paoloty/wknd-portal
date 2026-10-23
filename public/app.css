@@ -21,6 +21,7 @@
   --ok-bg: #16a34a;   --on-ok: #ffffff;    /* done: saved, picked, back online */
   --err-bg: #dc2626;  --on-err: #ffffff;   /* problem: offline, failed */
   --warn-bg: #f59332; --on-warn: #111111;  /* needs attention: new version, almost closing */
+  --toast-bg: rgba(30,36,50,.92);           /* done / info toasts: a raised surface */
 
   /* dark (default) */
   --bg: #0a0e16; --surface: #10141d; --surface-2: #161c29; --border: rgba(255,255,255,0.06); --hair: rgba(255,255,255,0.08);
@@ -34,7 +35,7 @@
   --bg: #f3f4f7; --surface: #ffffff; --surface-2: #eceef3; --border: rgba(10,14,22,0.08); --hair: rgba(10,14,22,0.09);
   --text: #111827; --muted: #5b6475; --subtle: #8a93a4; --amber-text: #c9670f;
   --shadow: 0 1px 2px rgba(10,14,22,.05), 0 2px 8px rgba(10,14,22,.05);
-  --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14);
+  --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14); --toast-bg: rgba(255,255,255,0.94);
   --win: #059669; --loss: #dc2626; --danger: #dc2626;
   --team-white: #8d97a8; --team-black: #4a5263;
   color-scheme: light;
@@ -44,7 +45,7 @@
     --bg: #f3f4f7; --surface: #ffffff; --surface-2: #eceef3; --border: rgba(10,14,22,0.08); --hair: rgba(10,14,22,0.09);
     --text: #111827; --muted: #5b6475; --subtle: #8a93a4; --amber-text: #c9670f;
     --shadow: 0 1px 2px rgba(10,14,22,.05), 0 2px 8px rgba(10,14,22,.05);
-    --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14);
+    --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14); --toast-bg: rgba(255,255,255,0.94);
     --win: #059669; --loss: #dc2626; --danger: #dc2626;
     --team-white: #8d97a8; --team-black: #4a5263;
     color-scheme: light;
@@ -346,12 +347,15 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 .pick__stakes .up { color: var(--win); } .pick__stakes .dn { color: var(--loss); }
 .pick__note { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 10px 2px 0; font-size: 12.5px; color: var(--muted); }
 .pick__msg { margin: 10px 0 0; padding: 10px 12px; border-radius: 11px; background: rgba(239,68,68,0.12); font-size: 13px; font-weight: 600; color: var(--danger); }
-.app-toast { position: fixed; z-index: 35; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 14px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 999px; background: var(--ok-bg); color: var(--on-ok); font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.3); white-space: nowrap; }
-.app-toast i { flex: none; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,.25); color: inherit; font-style: normal; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
-.app-toast--err { background: var(--err-bg); color: var(--on-err); }
-.app-toast--warn { background: var(--warn-bg); color: var(--on-warn); }
+/* Done (the default): a calm pill — the app's raised surface with a green ✓ — not a solid
+   green fill, which was harsh on the eyes (Paolo, 2026-10-23). Problems stay solid red. */
+.app-toast { position: fixed; z-index: 35; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 14px); transform: translateX(-50%); display: flex; align-items: center; gap: 9px; max-width: calc(100% - 32px); padding: 10px 16px 10px 11px; border-radius: 999px; background: var(--toast-bg); color: var(--text); border: 1px solid var(--hair); -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); font-size: 14px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.28); white-space: nowrap; }
+.app-toast i { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--ok-bg); color: var(--on-ok); font-style: normal; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.app-toast--err i, .app-toast--warn i { background: rgba(255,255,255,.22); color: inherit; }
+.app-toast--err { background: var(--err-bg); color: var(--on-err); border-color: transparent; }
+.app-toast--warn { background: var(--warn-bg); color: var(--on-warn); border-color: transparent; }
 .app-toast--warn i { background: rgba(0,0,0,.15); }
-.app-toast--info { background: var(--text); color: var(--bg); }
+.app-toast--info i { background: var(--surface-2); color: var(--text); }
 @media (prefers-reduced-motion: no-preference) { .app-toast { animation: toast-in .2s ease both; } }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
