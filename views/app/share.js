@@ -1,7 +1,8 @@
 // Share my stats (/app/games/:id/share): one full screen, like an Instagram story editor
 // (Paolo, 2026-10-24). The card fills the screen on a preview backdrop; the tools sit down
-// the top right (Colour, Stats, Backdrop, Share); the bottom is one seamless fade holding the
-// template strip, or the open tool's choices in its place. Share → Save image, Copy image,
+// the top right (Templates, Colour, Stats, Backdrop, Share), each opening its choices on one
+// seamless fade at the bottom. The card is full width, as on a story; closing the open tool
+// (tap it again, or tap the card) leaves the card on its own. Share → Save image, Copy image,
 // Share to… (the phone's share sheet).
 // The card is the site's /api/games/:id/my-stat-card.png in the site's templates
 // (views/game.js SSC_FAMILIES / SSC_ACCENTS), 1080×1920 and see-through. Premium templates
@@ -10,7 +11,7 @@ import { esc, icons } from './layout.js';
 import { SSC_FAMILIES, SSC_ACCENTS } from '../game.js';
 
 const LOCK = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
-const TOOLS = [['colour', 'Colour', 'palette'], ['stats', 'Stats to show', 'me'], ['bg', 'Backdrop', 'image'], ['share', 'Share', 'share']];
+const TOOLS = [['tpl', 'Templates', 'layers'], ['colour', 'Colour', 'palette'], ['stats', 'Stats to show', 'me'], ['bg', 'Backdrop', 'image'], ['share', 'Share', 'share']];
 
 // game: { id, opp, day, line } · focus: the opening "stats to show" · bgs: [{ key, label, css }]
 export function appSharePage({ back, missing = false, game, focus = 'all', locked = false, bgs = [] }) {

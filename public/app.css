@@ -891,7 +891,8 @@ a.sx:active { transform: scale(.99); }
    dark, like a camera screen. */
 .se { position: fixed; inset: 0; z-index: 15; overflow: hidden; background: #05080e; color: #fff; }
 .se__bg { position: absolute; inset: -12px; background-color: #0d1119; background-size: cover; background-position: center; filter: blur(3px) brightness(.6); }
-.se__card { position: absolute; left: 0; right: 0; top: calc(var(--safe-t) + 8px); bottom: 150px; width: 100%; height: calc(100% - 158px - var(--safe-t)); object-fit: contain; }
+/* Full width, as the card sits on a story; centred top to bottom. */
+.se__card { position: absolute; left: 0; top: 50%; width: 100%; height: auto; aspect-ratio: 9 / 16; transform: translateY(-50%); }
 .se__spin { position: absolute; left: 50%; top: 45%; margin: -9px 0 0 -9px; border-color: rgba(255,255,255,.2); border-top-color: var(--amber); animation: spin .8s linear infinite; }
 .se__top { position: absolute; left: 0; right: 0; top: 0; height: calc(var(--safe-t) + 120px); padding: calc(var(--safe-t) + 10px) 14px 0; background: linear-gradient(180deg, rgba(5,8,14,.6), rgba(5,8,14,0)); pointer-events: none; }
 .se__top > * { pointer-events: auto; }
@@ -901,7 +902,9 @@ a.sx:active { transform: scale(.99); }
 .se__tool { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(5,8,14,.35); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 .se__tool svg { width: 21px; height: 21px; }
 .se__tool.is-on { background: var(--amber); color: #111; }
-.se__bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 90px 0 calc(var(--safe-b) + 16px); background: linear-gradient(180deg, rgba(5,8,14,0) 0%, rgba(5,8,14,.72) 38%, rgba(5,8,14,.96) 100%); }
+.se__bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 90px 0 calc(var(--safe-b) + 16px); background: linear-gradient(180deg, rgba(5,8,14,0) 0%, rgba(5,8,14,.72) 38%, rgba(5,8,14,.96) 100%); transition: opacity .2s ease, transform .2s ease; }
+/* Nothing open: just the card (the fade and any message go too). */
+.se.is-clean .se__bottom { opacity: 0; transform: translateY(16px); pointer-events: none; }
 .se__tpls { display: flex; gap: 10px; overflow-x: auto; padding: 0 16px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .se__tpls::-webkit-scrollbar { display: none; }
 .se__tpl { flex: none; width: 58px; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11px; color: rgba(255,255,255,.7); }

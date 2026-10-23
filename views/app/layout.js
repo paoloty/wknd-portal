@@ -43,6 +43,7 @@ export const icons = {
   comment: svg('<path d="M20 12a7.5 7.5 0 0 1-11 6.6L4 20l1.4-4.6A7.5 7.5 0 1 1 20 12z"/>'),
   pin: svg('<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>'),
   megaphone: svg('<path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1zM16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/>'),
+  layers: svg('<rect x="4" y="3" width="7" height="11" rx="1.5"/><rect x="13" y="3" width="7" height="7" rx="1.5"/><rect x="13" y="12" width="7" height="9" rx="1.5"/><rect x="4" y="16" width="7" height="5" rx="1.5"/>'),
   palette: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="8.5" cy="10" r="1.2" fill="currentColor"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="10" r="1.2" fill="currentColor"/>'),
   image: svg('<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-9 8"/>'),
   close: svg('<path d="M18 6 6 18M6 6l12 12"/>'),

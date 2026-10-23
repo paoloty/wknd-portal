@@ -745,8 +745,9 @@
   // ════ Share my stats (views/app/share.js) ════
   // A story-style editor. The card is the site's PNG (/api/games/:id/my-stat-card.png): each
   // template's thumbnail loads small (?thumb=1), the big card as a blob, kept per setting.
-  // Tools (top right) swap the bottom fade's template strip for their choices; tapping the
-  // tool again or the card brings the strip back. Share: Save image (a download; on iPhone,
+  // Tools (top right) open their choices on the bottom fade, one at a time; tapping the open
+  // tool again or the card closes it, leaving the card on its own (full width, as on a story).
+  // It opens on Templates. Share: Save image (a download; on iPhone,
   // whose installed app can't download, the share sheet's Save Image), Copy image (the
   // clipboard, to paste into a story), Share to… (the share sheet). Logged as on the site.
   // The last template and colour are remembered on the phone. Zeros are always hidden (no toggle,
@@ -794,6 +795,7 @@
     // Panels: the open tool's choices take the template strip's place.
     function panel(name) {
       $$('[data-panel]', root).forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
+      root.classList.toggle('is-clean', !name);
       $$('[data-tool]', root).forEach(function (t) { var on = t.getAttribute('data-tool') === name; t.classList.toggle('is-on', on); t.setAttribute('aria-expanded', String(on)); });
     }
     var log = function (action) {
@@ -803,22 +805,22 @@
     var fileOf = function () { return new File([current.blob], 'wknd-stats-' + game + '.png', { type: 'image/png' }); };
     var canShareFile = function () { try { return !!(navigator.canShare && navigator.canShare({ files: [fileOf()] })); } catch (e) { return false; } };
     var sheet = function (action) {
-      navigator.share({ files: [fileOf()] }).then(function () { log(action); panel('tpl'); }, function (e) { if (e && e.name !== 'AbortError') say('Sharing didn\'t work. Try Save image.'); });
+      navigator.share({ files: [fileOf()] }).then(function () { log(action); panel(''); }, function (e) { if (e && e.name !== 'AbortError') say('Sharing didn\'t work. Try Save image.'); });
     };
     var download = function () {
       var a = document.createElement('a'); a.href = current.url; a.download = 'wknd-stats-' + game + '.png';
-      document.body.appendChild(a); a.click(); a.remove(); log('save'); panel('tpl'); toast('Saved');
+      document.body.appendChild(a); a.click(); a.remove(); log('save'); panel(''); toast('Saved');
     };
     var copy = function () {
       if (!navigator.clipboard || !window.ClipboardItem) return say('This phone can\'t copy pictures. Use Save image.');
       navigator.clipboard.write([new ClipboardItem({ 'image/png': current.blob })])
-        .then(function () { log('copy'); panel('tpl'); toast('Copied. Paste it into your story'); }, function () { say('Couldn\'t copy it. Use Save image.'); });
+        .then(function () { log('copy'); panel(''); toast('Copied. Paste it into your story'); }, function () { say('Couldn\'t copy it. Use Save image.'); });
     };
     root.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button');
-      if (!b) { if (e.target === img || e.target.closest('[data-sh-stage]')) panel('tpl'); return; }
+      if (!b) { if (e.target === img || e.target.closest('[data-sh-stage]')) panel(''); return; }
       var on = function (sel) { $$(sel, root).forEach(function (x) { x.classList.toggle('is-on', x === b); }); };
-      if (b.hasAttribute('data-tool')) { var t = b.getAttribute('data-tool'); panel(b.classList.contains('is-on') ? 'tpl' : t); }
+      if (b.hasAttribute('data-tool')) { var t = b.getAttribute('data-tool'); panel(b.classList.contains('is-on') ? '' : t); }
       else if (b.hasAttribute('data-tpl')) {
         var vars = $('[data-vars="' + b.getAttribute('data-fam') + '"] .is-on', root);
         pickTpl(vars ? vars.getAttribute('data-variant') : b.getAttribute('data-tpl')); remember(); render();
@@ -838,7 +840,7 @@
     if (saved.accent && $('[data-accent="' + saved.accent + '"]', root)) { st.accent = saved.accent; $$('[data-accent]', root).forEach(function (x) { x.classList.toggle('is-on', x.getAttribute('data-accent') === st.accent); }); }
     if (!(saved.tpl && pickTpl(saved.tpl))) pickTpl(st.tpl);
     var onTile = $('.se__tpl.is-on', root); if (onTile) onTile.scrollIntoView({ inline: 'center', block: 'nearest' });
-    thumbs(); render();
+    panel('tpl'); thumbs(); render();
   }
 
   // ════ Comments (views/app/comments.js) ════
