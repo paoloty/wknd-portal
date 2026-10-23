@@ -2,6 +2,8 @@
 
 Phone-first, players-only app served by this same server: same accounts, sessions and `portal.db`. Installable to the home screen (web app manifest + service worker). Milestones 1–2: shell, sign-in, player setup, Home, read-only My Team / Me.
 
+New and changed screens follow [app-standards](../app-standards.md).
+
 **Players stay in the app.** Only links to `/app` screens are tappable (`isAppHref` in `views/app/layout.js`); the one way out is Me → Settings → "Open full site".
 
 ## Tabs and where things live (Fable's review, 2026-10-23)
@@ -139,11 +141,13 @@ Toasts and bars are coloured by tone (CLAUDE.md "Notices"; tokens `--ok-bg` / `-
 Dates and times use `manilaFormat` (views/utils.js): shift to UTC+8 and format as UTC. Intl's `Asia/Manila` isn't reliable on the Hetzner build.
 
 ## Updates and offline
-- `APP_VER` = commit + newest app file mtime. Busts `app.css`/`app.js`, names the SW cache, and `/app/version` returns it. `app.js` checks it when the app comes back to the foreground and reloads (or shows a refresh bar when a form has unsaved input), also after 30 minutes away.
+- `APP_VER` = a hash of the contents of the app's own files (the list in server.js), so a deploy that doesn't touch them changes nothing on the phones. Busts `app.css`/`app.js`, names the SW cache, and `/app/version` returns it. `app.js` checks it when the app comes back to the foreground and reloads (or shows a refresh bar when a form has unsaved input), also after 30 minutes away.
 - The service worker (`public/app-sw.js`) keeps as much on the phone as is useful, so the app opens at once and works offline:
-  - `wknd-app-<ver>`: the shell (CSS, JS, fonts, icons, `/app/offline`), cache first.
-  - `wknd-pages`: the screens (tabs, settings, notifications, games, posts; not sign-in, setup or Face ID). A launch is answered with the copy at once while a fresh one is fetched; app.js sees the page is old (`app-time` meta > 15 s) and swaps in the fresh screen quietly. In-app navigation is network first, the copy after 4 s or offline.
-  - `wknd-data`: feed and notification pages (JSON), network first, the copy offline. The feed's first page shows the copy at once, then the network's answer replaces it if different.
+  - `wknd-app-<ver>`: the shell (CSS, JS, fonts.css, icons, `/app/offline`), cache first.
+  - `wknd-fonts`: the woff2 files, cache first, kept across versions.
+  - `wknd-pages`: the screens (tabs, settings, notifications, games, posts; not sign-in, setup, Face ID or Settle: money is always fetched, offline Settle is `/app/offline`), newest 40. A launch is answered with the copy at once while a fresh one is fetched; app.js sees the page is old (`app-time` meta > 15 s) and swaps in the fresh screen quietly. In-app navigation is network first, the copy after 4 s or offline.
+  - A background refresh (launch, tab revisit, after a save) swaps the screen only when its `main.app` or `ver` differ from what the shown screen was built from (`swapIfChanged` / `shown` in app.js; never compared with the live page, which initPage changes). Only the tab bar differs → just its badges change. Pull to refresh always re-renders (`refreshScreen(true)`), which reloads the lists. A refresh that lands on sign-in goes there.
+  - `wknd-data`: the first page of the feed and notifications lists and Home's rail (JSON), newest 30, network first, the copy offline. The feed's first page shows the copy at once, then the network's answer replaces it if different. Later pages (`before=`) aren't stored.
   - `wknd-img`: game covers, announcement photos, player photos: `?v=` ones cache first, others from the copy while refreshed; newest 300 kept. Not YouTube thumbnails (another site's pictures are stored padded to megabytes each).
   - Screens and data belong to the signed-in player: wiped when a request lands on the sign-in page (signed out, session ended), on log out (app.js wipes before submitting), and if a page's `app-who` (a hash of the registration, `appWho`) differs from the last one on this phone. Pictures stay (they're the league's, not the player's).
 - Offline, the red bar shows; tabs and screens visited before open from the copies, others show `/app/offline`.

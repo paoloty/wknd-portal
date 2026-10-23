@@ -6033,16 +6033,15 @@ import { vapidKeys, pushToPlayer, pushKindOf, PUSH_KINDS } from './lib/push.js';
 import { adminAppBody } from './views/admin/app.js';
 import { appSignInCodeEmail } from './lib/mailer.js';
 
-// Deployed version: commit + newest app file. Busts app.css/app.js, names the service
-// worker's cache, and is what a resumed app compares against (/app/version).
+// Deployed version: a hash of the app's own files, so it changes only when they do (not on
+// every deploy). Busts app.css/app.js, names the service worker's cache, and is what a
+// resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
-  let commit = 'dev';
-  try { commit = readFileSync(path.join(__dirname, '.git/HEAD'), 'utf8').trim(); if (commit.startsWith('ref:')) commit = readFileSync(path.join(__dirname, '.git', commit.slice(5).trim()), 'utf8').trim(); } catch {}
-  let newest = 0;
+  const h = createHash('sha1');
   for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js']) {
-    try { newest = Math.max(newest, statSync(path.join(__dirname, f)).mtimeMs); } catch {}
+    try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
-  return `${commit.slice(0, 7)}.${Math.floor(newest / 1000).toString(36)}`;
+  return h.digest('hex').slice(0, 10);
 })();
 // An app sign-in stays put: 180 days, pushed out again (at most once a day) whenever the
 // app is opened. The site's own login keeps its 8 hours / 30 days.

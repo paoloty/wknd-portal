@@ -1,13 +1,15 @@
 // Service worker for the players app, served at /app/sw.js (scope /app) with __VER__
 // replaced by the deployed version (server.js). Keeps as much on the phone as is useful, so
 // the app opens at once and still works offline:
-//   shell   CSS, script, fonts, icons — per version, cache first.
-//   pages   the app's screens (tabs, games, posts) — the copy on the phone answers a launch
+//   shell   CSS, script, icons — per version, cache first.
+//   fonts   the woff2 files — kept across versions (a changed font gets a new file name).
+//   pages   the app's screens (tabs, games, posts; never Settle: money is always fresh, and
+//           offline it's the offline page) — newest 40. The copy on the phone answers a launch
 //           at once while a fresh one is fetched behind it (the page then swaps it in:
 //           app.js "Launch from the phone's copy"); in-app navigation goes to the network
 //           first and falls back to the copy when offline or slow.
-//   data    the feed's and notifications' pages and Home's rail (JSON) — network first,
-//           the copy offline.
+//   data    the first page of the feed and notifications lists, and Home's rail (JSON) —
+//           network first, the copy offline; newest 30.
 //   img     feed and game pictures, player photos, announcement photos — versioned ones
 //           cache first, the rest answered from the copy while refreshed; trimmed to the
 //           newest 300. (Not YouTube's thumbnails: another site's pictures are stored
@@ -16,9 +18,9 @@
 // the sign-in page (signed out, or the session ended) and on log out (app.js).
 const VER = '__VER__';
 const SHELL_CACHE = 'wknd-app-' + VER;
-const PAGES = 'wknd-pages', DATA = 'wknd-data', IMG = 'wknd-img';
-const SHELL = ['/app/offline', '/app.css?v=' + VER, '/app.js?v=' + VER, '/fonts/fonts.css', '/app-icon-192.png', '/favicon-32.png'];
-const IMG_MAX = 300;
+const PAGES = 'wknd-pages', DATA = 'wknd-data', IMG = 'wknd-img', FONTS = 'wknd-fonts';
+const SHELL = ['/app/offline', '/app.css?v=' + VER, '/app.js?v=' + VER, '/fonts/fonts.css', '/app-icon-180.png?v=2', '/app-icon-192.png', '/favicon-32.png'];
+const PAGES_MAX = 40, DATA_MAX = 30, IMG_MAX = 300;
 const NET_WAIT = 4000; // in-app navigation: use the phone's copy if the network takes longer
 
 self.addEventListener('install', (e) => {
@@ -28,6 +30,9 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys()
     .then((keys) => Promise.all(keys.filter((k) => k.startsWith('wknd-app-') && k !== SHELL_CACHE).map((k) => caches.delete(k))))
+    // Settle copies kept before it stopped being stored.
+    .then(() => caches.open(PAGES)).then((c) => c.keys().then((keys) => Promise.all(keys
+      .filter((r) => new URL(r.url).pathname.startsWith('/app/settle')).map((r) => c.delete(r)))))
     .then(() => self.clients.claim()));
 });
 
@@ -40,9 +45,9 @@ const wipe = () => Promise.all([PAGES, DATA].map((k) => caches.delete(k)));
 const isShellAsset = (url) => url.origin === location.origin
   && (/^\/(app\.css|app\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
 // Screens worth keeping: the tabs, settings, notifications, games and news posts. Not
-// sign-in, setup, Face ID or anything that posts.
+// sign-in, setup, Face ID, Settle (money) or anything that posts.
 const isScreen = (url) => url.origin === location.origin
-  && /^\/app(\/(picks|papawis|papawis\/[^/]+\/players|settle|team|me|settings|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+))?\/?$/.test(url.pathname);
+  && /^\/app(\/(picks|papawis|papawis\/[^/]+\/players|team|me|settings|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+))?\/?$/.test(url.pathname);
 const isData = (url) => url.origin === location.origin && (/^\/app\/(feed|notifications)\/items$/.test(url.pathname) || url.pathname === '/app/rail');
 const isImage = (url) => url.origin === location.origin
   && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/photo$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname));
@@ -56,6 +61,7 @@ async function keepPage(key, res) {
   if (res.redirected) return; // e.g. /app → setup: not the screen this key stands for
   const c = await caches.open(PAGES);
   await c.put(key, res.clone());
+  trim(PAGES, PAGES_MAX);
 }
 
 async function launch(e, url) {
@@ -81,7 +87,9 @@ async function data(e, url) {
   const key = keyOf(url);
   try {
     const res = await fetch(e.request);
-    if (res.ok) { const c = await caches.open(DATA); await c.put(key, res.clone()); }
+    // Only a list's first page is read back (app.js lazy lists); later ones (before=) carry
+    // per-visit params and would pile up.
+    if (res.ok && !url.searchParams.has('before')) { const c = await caches.open(DATA); await c.put(key, res.clone()); trim(DATA, DATA_MAX); }
     return res;
   } catch (err) {
     const copy = await caches.match(key, { cacheName: DATA });
@@ -90,17 +98,17 @@ async function data(e, url) {
   }
 }
 
-async function trim() {
-  const c = await caches.open(IMG);
+async function trim(name, max) {
+  const c = await caches.open(name);
   const keys = await c.keys();
-  for (let i = 0; i < keys.length - IMG_MAX; i++) await c.delete(keys[i]); // oldest first
+  for (let i = 0; i < keys.length - max; i++) await c.delete(keys[i]); // oldest first
 }
 async function image(e, url) {
   const c = await caches.open(IMG);
   const copy = await c.match(e.request);
   const versioned = url.searchParams.has('v');
   const fresh = fetch(e.request).then(async (res) => {
-    if (res.ok) { await c.put(e.request, res.clone()); trim(); }
+    if (res.ok) { await c.put(e.request, res.clone()); trim(IMG, IMG_MAX); }
     return res;
   });
   if (copy) { if (!versioned) e.waitUntil(fresh.catch(() => {})); return copy; }
@@ -121,7 +129,7 @@ self.addEventListener('fetch', (e) => {
   }
   if (isShellAsset(url)) {
     e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-      if (res.ok) { const copy = res.clone(); caches.open(SHELL_CACHE).then((c) => c.put(req, copy)); }
+      if (res.ok) { const copy = res.clone(); caches.open(/\.woff2$/.test(url.pathname) ? FONTS : SHELL_CACHE).then((c) => c.put(req, copy)); }
       return res;
     })));
     return;

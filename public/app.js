@@ -254,8 +254,11 @@
     }
 
     // Forms: one submit at a time; remember unsaved input (see the update check)
+    // (the keyboard's Go submits again even with the button busy, so a second submit is stopped)
     $$('form[data-busy]').forEach(function (f) {
-      f.addEventListener('submit', function () {
+      f.addEventListener('submit', function (e) {
+        if (f._sending) { e.preventDefault(); return; }
+        f._sending = true;
         var b = $('button[type="submit"]', f); if (b) { b.classList.add('is-busy'); }
         f.setAttribute('data-dirty', '');
       });
@@ -534,21 +537,22 @@
     });
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      if (form._sending) return; // the keyboard's Go while it's sending: one receipt only
       var el = form.elements, amt = Number(el.amount.value);
       var say = function (t) { msg.textContent = t; msg.hidden = false; };
       if (!(amt > 0)) return say('Enter the amount you paid.');
       if (!shot) return say('Add the receipt screenshot from GCash (or your bank).');
-      var btn = $('[data-st-send]', form); btn.classList.add('is-busy'); msg.hidden = true;
+      var btn = $('[data-st-send]', form); btn.classList.add('is-busy'); msg.hidden = true; form._sending = true;
       fetch('/settle-balance', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: amt, category: el.category.value, payment_method: el.payment_method.value, reference_no: el.reference_no.value, screenshot: shot }) })
         .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (x) {} return { ok: r.ok && !!j && !!j.ok, status: r.status, j: j }; }); })
         .then(function (res) {
-          btn.classList.remove('is-busy');
+          btn.classList.remove('is-busy'); form._sending = false;
           if (res.status === 401) { location.href = '/app/login'; return; }
           if (!res.ok) return say((res.j && res.j.error) || (res.status === 413 ? 'That screenshot is too big. Try a smaller one.' : 'Couldn\'t send it. Try again.'));
           toast('Sent · an admin will confirm it');
           refreshScreen();
-        }, function () { btn.classList.remove('is-busy'); say('No connection. Nothing was sent.'); });
+        }, function () { btn.classList.remove('is-busy'); form._sending = false; say('No connection. Nothing was sent.'); });
     });
   }
 
@@ -1211,10 +1215,32 @@
     if (document.visibilityState === 'visible') Object.keys(inflight).forEach(function (u) { inflight[u].abort(); });
   });
   // Re-fetch the current screen and swap it in quietly (after a save that changes it).
-  function refreshScreen() {
+  // force: re-render even when nothing changed (pull to refresh reloads the lists that way).
+  // Signed out meanwhile: go to sign-in rather than leave the old screen up.
+  function refreshScreen(force) {
     if (!navOn) { location.reload(); return new Promise(function () {}); }
     var id = navId;
-    return fetchPage(currentUrl, true).then(function (p) { if (id === navId) render(p, false, true); }, function () {});
+    return fetchPage(currentUrl, true).then(function (p) { if (id === navId) swapIfChanged(p, force); }, function (e) {
+      if (e && e.reload && /^\/app\/login/.test(new URL(e.reload, location.href).pathname)) location.href = e.reload;
+    });
+  }
+  // What the screen on show was built from: its main and tab bar as the server sent them
+  // (never read back from the page: initPage changes it — countdowns, lists, toggles).
+  // null when unknown, e.g. a kept screen. Whole pages never match: each has its own app-time.
+  var partsOf = function (doc) {
+    var m = doc.querySelector('main.app'), n = doc.querySelector('nav.tabbar'), v = doc.querySelector('meta[name="app-ver"]');
+    return m ? { main: m.innerHTML, nav: n ? n.innerHTML : '', ver: v ? v.content : '' } : null;
+  };
+  var shown = partsOf(document);
+  // A fresh copy of the screen on show: swap it in only if it changed. Only the tab bar
+  // changed (badges): swap just that.
+  function swapIfChanged(page, force) {
+    var now = !force && shown && partsOf(new DOMParser().parseFromString(page.html || '', 'text/html'));
+    if (!now || now.main !== shown.main || now.ver !== shown.ver) return render(page, false, true);
+    var cur = $('nav.tabbar');
+    if (now.nav !== shown.nav && cur) cur.innerHTML = now.nav;
+    shown = now;
+    loadedAt = Date.now();
   }
   var prefetch = function (url) { if (!pages[url] && !inflight[url] && navigator.onLine) fetchPage(url).catch(function () {}); };
 
@@ -1284,6 +1310,7 @@
     if (newVer && ver && newVer !== ver) { location.href = page.url; return; } // new deploy: load it properly
     var newMain = page.el || doc.querySelector('main.app');
     if (!$('main.app') || !newMain) { location.href = page.url; return; }
+    shown = page.el ? null : partsOf(doc);
     var fromUrl = currentUrl;
     var y = window.scrollY;
     if (push) {
@@ -1355,7 +1382,7 @@
       render(cached, push, false, dir);
       // Refresh in the background; swap again only if it changed and nothing's being typed.
       if (navigator.onLine) fetchPage(url).then(function (fresh) {
-        if (id === navId && fresh.html !== cached.html && !dirty()) render(fresh, false, true);
+        if (id === navId && !dirty()) swapIfChanged(fresh);
       }).catch(function () {});
       return;
     }
@@ -1424,7 +1451,7 @@
       busy = true; pull = 0; show(MARK); el.classList.add('is-busy');
       var t0 = Date.now();
       var done = function () { setTimeout(function () { busy = false; el.classList.remove('is-busy'); show(0); }, Math.max(0, 450 - (Date.now() - t0))); };
-      refreshScreen().then(done, done);
+      refreshScreen(true).then(done, done);
     };
     document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
   })();
@@ -1433,6 +1460,11 @@
   ['gesturestart', 'gesturechange'].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); }, { passive: false }); });
 
   initPage();
+  // Back to a sign-in page from the phone's back-forward cache: its button was left busy.
+  window.addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    $$('form[data-busy]').forEach(function (f) { f._sending = false; var b = $('button[type="submit"]', f); if (b) b.classList.remove('is-busy'); });
+  });
 
   // ════ Launch from the phone's copy ════
   // The service worker answers a launch with the copy of the screen on the phone (instant),
