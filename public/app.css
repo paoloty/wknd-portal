@@ -673,8 +673,8 @@ a.sx:active { transform: scale(.99); }
 .px__faces i:first-child { margin-left: 0; }
 
 /* News */
-.nx__pic { position: relative; aspect-ratio: 2 / 1; background: var(--surface-2); }
-.nx__pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.nx__pic, .px__pic { position: relative; aspect-ratio: 2 / 1; background: var(--surface-2); }
+.nx__pic img, .px__pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .nx__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .nx p { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
@@ -902,5 +902,4 @@ a.sx:active { transform: scale(.99); }
 .sheet .th__list { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 6px 16px; }
 .sheet .th__comp { flex: none; padding: 10px 12px calc(10px + var(--safe-b)); border-top: 1px solid var(--hair); }
 .sheet > .ct__empty { padding: 30px 16px; }
-html.has-sheet, html.has-sheet body { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .sheet__box, .sheet__scrim { transition: none; } .is-pop, .ct.is-new { animation: none; } }

@@ -6578,7 +6578,7 @@ function appFeedItem(it, me, extra) {
     return { kind: 'papawis', day, when: feedWhen(it.at), title: r.title || 'Papawis run', runDay: manilaDayLabel(String(r.date)),
       time: r.time_label || formatTimeRange(r.start_time, r.end_time) || '', place: r.location || '',
       confirmed: Number(r.confirmed_count) || 0, max: Number(r.max_slots) || 0, waitlist: Number(r.waitlist_count) || 0,
-      faces: (extra.runFaces[r.id] || []).slice(0, 5) };
+      faces: (extra.runFaces[r.id] || []).slice(0, 5), photo: papawisCoverUrl(r) || '' };
   }
   const g = it.src;
   const stats = getGameDetailStats(g.id);
@@ -7085,7 +7085,7 @@ function appPapawisRuns(me) {
     return {
       id: g.id, title: g.title || `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })} run`,
       day: pwDay(g.date), today: dLeft === 0, time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
-      place: g.location || 'Court to be announced', photo: court?.image_url ? `/api/papawis-court/${encodeURIComponent(court.id)}/photo` : '',
+      place: g.location || 'Court to be announced', photo: papawisCoverUrl(g, court) || '',
       tipAt: Date.parse(`${g.date}T${g.start_time || '00:00'}:00+08:00`), opensAt, scheduled,
       filled, max, open, full, waiting: waitlist.length, faces: confirmed.map(face),
       price: price ? pwPeso(price) : '', priceNote: `Estimate with ${Math.max(filled, max)} players · split after the game`,
@@ -15395,6 +15395,15 @@ function homeNextUpPapawis() {
 // Homepage hero slide for the next Papawis run (leads the carousel while one is posted).
 // Same court photo / map, per-head estimate and AI headline the /papawis banner uses; the
 // slot count stays hidden while sign-ups haven't opened (held-back rosters stay private).
+// A run's picture, as the site picks it: the run's own cover (admin upload), else the court's
+// photo, else the map of the address. The homepage hero, the app's Papawis tab and feed card.
+function papawisCoverUrl(g, court = getPapawisCourtByName(g.location)) {
+  if (g.cover_ver) return `/api/papawis-cover/${encodeURIComponent(g.id)}?v=${g.cover_ver}`;
+  if (court?.image_url) return `/api/papawis-court/${encodeURIComponent(court.id)}/photo`;
+  const mapQuery = court?.address?.trim() || g.location || '';
+  if (mapQuery && getPapawisLocationGeocode(mapQuery)?.map_image) return `/api/papawis-map/photo?loc=${encodeURIComponent(mapQuery)}`;
+  return null;
+}
 function homeHeroPapawis() {
   if (getSetting('papawis_enabled', '0') !== '1') return null;
   const today = manilaTodayStr();
@@ -15404,11 +15413,7 @@ function homeHeroPapawis() {
     .sort((a, b) => `${a.date}T${a.start_time || '00:00'}`.localeCompare(`${b.date}T${b.start_time || '00:00'}`))[0];
   if (!next) return null;
   const court = getPapawisCourtByName(next.location);
-  const mapQuery = court?.address?.trim() || next.location || '';
-  let imgUrl = null;
-  if (next.cover_ver) imgUrl = `/api/papawis-cover/${encodeURIComponent(next.id)}?v=${next.cover_ver}`;
-  else if (court?.image_url) imgUrl = `/api/papawis-court/${encodeURIComponent(court.id)}/photo`;
-  else if (mapQuery && getPapawisLocationGeocode(mapQuery)?.map_image) imgUrl = `/api/papawis-map/photo?loc=${encodeURIComponent(mapQuery)}`;
+  const imgUrl = papawisCoverUrl(next, court);
   const confirmed = getPapawisConfirmedCount(next.id);
   const maxSlots = Number(next.max_slots) || 0;
   const courtRateFallback = next.court_rate_per_hour ? null : (court?.price_per_hour || null);

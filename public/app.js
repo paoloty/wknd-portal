@@ -828,19 +828,33 @@
     sheet.style.height = visualViewport.height + 'px';
   }
   if (window.visualViewport) { visualViewport.addEventListener('resize', fitSheet); visualViewport.addEventListener('scroll', fitSheet); }
+  // The page under the sheet holds still where it was: pinned in place while the sheet is up
+  // (iPhone otherwise scrolls the page under it, or jumps it to the top), put back on close.
+  var lockY = 0;
+  function lockPage() {
+    lockY = window.scrollY;
+    var b = document.body.style; b.position = 'fixed'; b.top = -lockY + 'px'; b.left = '0'; b.right = '0';
+  }
+  function unlockPage() {
+    var b = document.body.style; b.position = b.top = b.left = b.right = '';
+    window.scrollTo(0, lockY);
+  }
   function closeSheet(now) {
     var el = sheet; if (!el) return;
     sheet = null;
     document.documentElement.classList.remove('has-sheet');
+    if (document.activeElement && el.contains(document.activeElement)) document.activeElement.blur();
+    unlockPage();
     if (now || reducedMotion.matches) { el.remove(); return; }
     el.classList.remove('is-open');
     setTimeout(function () { el.remove(); }, 260);
   }
-  function openSheet(key, focus) {
+  function openSheet(key) {
     closeSheet(true);
     var el = document.createElement('div');
     el.className = 'sheet'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Comments');
     el.innerHTML = '<div class="sheet__scrim" data-sheet-x></div><div class="sheet__box"><div class="sheet__head"><span class="sheet__grab" aria-hidden="true"></span><b>Comments</b><button type="button" class="sheet__x" data-sheet-x aria-label="Close">✕</button></div><div class="sheet__body"><div class="sheet__load"><span class="ptr__spin"></span></div></div></div>';
+    lockPage();
     document.body.appendChild(el);
     document.documentElement.classList.add('has-sheet');
     sheet = el; fitSheet();
@@ -853,19 +867,37 @@
         $('.sheet__body', el).innerHTML = j.panel;
         setBars(key, j.bar);
         var list = $('[data-th-list]', el); list.scrollTop = list.scrollHeight;
-        var input = $('[data-th-input]', el);
-        if (focus && input) input.focus();
       }).catch(function (e) {
         if (sheet !== el || !e) return;
         var p = document.createElement('p'); p.className = 'ct__empty'; p.textContent = e;
         $('.sheet__body', el).innerHTML = ''; $('.sheet__body', el).appendChild(p);
       });
-    // Drag the top down to close.
-    var head = $('.sheet__head', el), box = $('.sheet__box', el), y0 = null, dy = 0;
-    head.addEventListener('touchstart', function (e) { y0 = e.touches[0].clientY; dy = 0; box.style.transition = 'none'; }, { passive: true });
-    head.addEventListener('touchmove', function (e) { if (y0 === null) return; dy = Math.max(0, e.touches[0].clientY - y0); box.style.transform = 'translateY(' + dy + 'px)'; }, { passive: true });
-    var end = function () { if (y0 === null) return; y0 = null; box.style.transition = ''; box.style.transform = ''; if (dy > 90) closeSheet(); };
-    head.addEventListener('touchend', end); head.addEventListener('touchcancel', end);
+    // Swipe down to close: from the top bar, or anywhere in the comments once they're scrolled
+    // to the top (a swipe up still scrolls them). Not from the box you type in.
+    var box = $('.sheet__box', el), y0 = null, dy = 0, list = null, dragging = false;
+    box.addEventListener('touchstart', function (e) {
+      if (e.touches.length > 1 || (e.target.closest && e.target.closest('.th__comp'))) { y0 = null; return; }
+      list = e.target.closest && e.target.closest('.th__list');
+      y0 = e.touches[0].clientY; dy = 0; dragging = false;
+    }, { passive: true });
+    box.addEventListener('touchmove', function (e) {
+      if (y0 === null) return;
+      var d = e.touches[0].clientY - y0;
+      if (!dragging) {
+        if (d <= 0 || (list && list.scrollTop > 0)) { if (d < 0 || (list && list.scrollTop > 0)) y0 = null; return; }
+        dragging = true; box.style.transition = 'none';
+      }
+      e.preventDefault(); // the sheet moves, not the list behind the finger
+      dy = Math.max(0, d); box.style.transform = 'translateY(' + dy + 'px)';
+    }, { passive: false });
+    var end = function () {
+      if (y0 === null && !dragging) return;
+      y0 = null;
+      if (!dragging) return;
+      dragging = false; box.style.transition = ''; box.style.transform = '';
+      if (dy > 90) closeSheet();
+    };
+    box.addEventListener('touchend', end); box.addEventListener('touchcancel', end);
   }
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && sheet) closeSheet();
@@ -878,7 +910,7 @@
     var t = e.target.closest ? e.target : null; if (!t) return;
     var b;
     if ((b = t.closest('[data-sheet-x]'))) return closeSheet();
-    if ((b = t.closest('[data-cx-open]'))) return openSheet(b.closest('[data-cx]').getAttribute('data-cx'), !!b.classList.contains('cx__b'));
+    if ((b = t.closest('[data-cx-open]'))) return openSheet(b.closest('[data-cx]').getAttribute('data-cx'));
     if ((b = t.closest('[data-cx-fire]'))) {
       var bar = b.closest('[data-cx]'), key = bar.getAttribute('data-cx');
       if (bar.getAttribute('data-busy')) return;

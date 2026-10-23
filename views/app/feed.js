@@ -91,11 +91,11 @@ function postCard(p) {
 }
 
 // Opens the Papawis tab, where the player joins.
-// faces: [{ ini, color }] of who's in (up to 5).
+// faces: [{ ini, color }] of who's in (up to 5). photo: the run's cover (server.js papawisCoverUrl).
 function papawisCard(r) {
   const pct = r.max ? Math.min(100, Math.round((r.confirmed / r.max) * 100)) : 0;
   const left = Math.max(0, r.max - r.confirmed);
-  return `<a class="sx px" href="/app/papawis"><div class="sx__body">
+  return `<a class="sx px" href="/app/papawis">${r.photo ? `<div class="px__pic"><img src="${esc(r.photo)}" alt="" decoding="async"></div>` : ''}<div class="sx__body">
     <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc([r.runDay, r.time].filter(Boolean).join(' · '))}</span></div>
     <h3>${esc(r.title)}</h3>
     ${r.place ? `<p class="px__where">📍 ${esc(r.place)}</p>` : ''}
