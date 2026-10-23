@@ -68,6 +68,8 @@
   }
   var mmss = function (t) { t = Math.max(0, Math.floor(t || 0)); var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s; };
   var PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>';
+  var SOUND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
+  var MUTED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
   var FULL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
   var SHRINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>';
   // Full screen: the real thing where the phone allows it on a page element (Android, iPad);
@@ -107,6 +109,7 @@
     box.insertAdjacentHTML('beforeend', '<div class="player__bar">'
       + '<input class="player__seek" type="range" min="0" max="0" step="1" value="0" aria-label="Seek">'
       + '<span class="player__time">0:00</span>'
+      + '<button type="button" class="player__mute" aria-label="Mute">' + SOUND + '</button>'
       + '<button type="button" class="player__fs" aria-label="Full screen">' + FULL + '</button></div>');
     var seek = $('.player__seek', box), time = $('.player__time', box), dragging = false, player = null, timer = null;
     var playing = function () { return player && player.getPlayerState && player.getPlayerState() === 1; };
@@ -121,6 +124,14 @@
     };
     $('.player__tap', box).addEventListener('click', toggle);
     $('.player__fs', box).addEventListener('click', function () { fullScreen(box); });
+    var muteBtn = $('.player__mute', box);
+    var showMute = function (m) { muteBtn.innerHTML = m ? MUTED : SOUND; muteBtn.setAttribute('aria-label', m ? 'Unmute' : 'Mute'); };
+    muteBtn.addEventListener('click', function () {
+      if (!player || !player.isMuted) return;
+      if (player.isMuted()) player.unMute(); else player.mute();
+      showMute(!player.isMuted());
+      setTimeout(function () { if (player.isMuted) showMute(player.isMuted()); }, 300); // the real state, once YouTube has it
+    });
     seek.addEventListener('input', function () { dragging = true; paint(); });
     seek.addEventListener('change', function () { dragging = false; if (player && player.seekTo) player.seekTo(Number(seek.value), true); });
     loadYt().then(function (YT) {

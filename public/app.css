@@ -478,8 +478,8 @@ html.iw-ios .iw-arrow { display: flex; }
 .player__seek::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--amber); }
 .player__seek::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #fff; }
 .player__time { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.player__fs { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: #fff; }
-.player__fs svg { width: 20px; height: 20px; }
+.player__fs, .player__mute { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: #fff; }
+.player__fs svg, .player__mute svg { width: 20px; height: 20px; }
 /* Full screen (real, or the window on iPhone): black, the 16:9 stage as big as fits, centred. */
 .player.is-full { position: fixed; z-index: 200; inset: 0; width: auto; height: auto; margin: 0; aspect-ratio: auto; border-radius: 0; }
 .player.is-full .player__stage { inset: auto; left: 50%; top: 50%; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; transform: translate(-50%, -50%); }
