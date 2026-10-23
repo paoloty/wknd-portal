@@ -13,7 +13,7 @@ export function upNextCard(u) {
   }
   return `<div class="hero">
     <div class="kick">${esc(u.kicker)}</div>
-    <div class="vs"><span>${esc(u.mine)}</span><em>vs</em><span style="display:inline-flex;align-items:center;gap:8px"><span class="dot" style="--c:${esc(u.oppColor)};width:12px;height:12px"></span>${esc(u.opp)}</span></div>
+    <div class="vs"><span>${esc(u.mine)}</span><em>vs</em><span class="vs__opp"><span class="dot" style="--c:${esc(u.oppColor)}"></span>${esc(u.opp)}</span></div>
     <div class="hero__meta">${esc([u.dateLabel, u.court].filter(Boolean).join(' · '))}</div>
     <div class="cd" data-countdown="${u.countTo}"><div><b data-cd-d>–</b><small>DAYS</small></div><div><b data-cd-h>–</b><small>HRS</small></div><div><b data-cd-m>–</b><small>MIN</small></div></div>
     <div class="hero__foot"><span>${esc(u.foot)}</span></div>

@@ -14,10 +14,45 @@
   var walled = document.documentElement.classList.contains('needs-install');
 
   // ════ Per screen: everything that hooks into the current page's content ════
+  // ════ Pictures that fail ════
+  // Feed and game pictures (.media img): a failed load is tried once more 1.5 s later (a load
+  // dropped by the app going to the background, or by a weak signal), then reported to
+  // /admin/app (img_failed, once per picture per visit) and removed: a photo takes its grey
+  // box with it, a video keeps its play button.
+  var imgReported = {};
+  var bust = function (u) { return u.replace(/([?&])r=\d+&?/, '$1').replace(/[?&]$/, '') + (u.indexOf('?') >= 0 ? '&' : '?') + 'r=' + Date.now() % 1e6; };
+  function imgFailed(img) {
+    if (!img.isConnected) return;
+    if (!img.getAttribute('data-retried')) {
+      img.setAttribute('data-retried', '1');
+      setTimeout(function () {
+        if (!img.isConnected) return;
+        var set = img.getAttribute('srcset');
+        if (set) img.setAttribute('srcset', set.split(', ').map(function (part) { var x = part.split(' '); return bust(x[0]) + ' ' + x[1]; }).join(', '));
+        img.src = bust(img.getAttribute('src'));
+      }, 1500);
+      return;
+    }
+    var src = (img.currentSrc || img.src || '').replace(location.origin, '').replace(/[?&]r=\d+/, '');
+    if (!imgReported[src] && navigator.onLine) {
+      imgReported[src] = 1;
+      fetch('/app/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', keepalive: true, body: JSON.stringify({ imgFailed: src }) }).catch(function () {});
+    }
+    var box = img.closest('.media');
+    if (box && !box.querySelector('.media__play')) box.remove(); else img.remove();
+  }
+  document.addEventListener('error', function (e) { var t = e.target; if (t && t.tagName === 'IMG' && t.closest && t.closest('.media')) imgFailed(t); }, true);
+  // Any that failed before this script ran (a game screen opened directly).
+  $$('.media img').forEach(function (img) { if (img.complete && !img.naturalWidth) imgFailed(img); });
+
   // ════ Video player ════
-  // YouTube without its own controls: only play/pause, a seek bar and the time. A layer over
-  // the video takes the taps (play/pause), so YouTube's title, logo and "more videos" links
-  // can't take a player out of the app. Uses the IFrame API, loaded on first play.
+  // YouTube without its own controls: only play/pause, a seek bar and the time.
+  // iPhone only starts a video with sound from a tap on the YouTube frame itself, so the
+  // player is loaded as soon as the screen shows, under our cover picture, which lets taps
+  // through (pointer-events: none): the first tap lands on YouTube and plays, one tap, with
+  // sound. Once it plays, our layer takes the taps (play/pause) and the bar appears, so
+  // YouTube's title, logo and "more videos" links can't take a player out of the app; paused,
+  // the picture dims under our ▶, hiding most of YouTube's pause screen.
   var ytReady = null;
   function loadYt() {
     if (ytReady) return ytReady;
@@ -34,14 +69,19 @@
   var mmss = function (t) { t = Math.max(0, Math.floor(t || 0)); var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s; };
   var PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>';
   var PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>';
-  function playVideo(btn) {
-    var id = btn.getAttribute('data-yt');
-    var box = document.createElement('div'); box.className = 'media player is-loading';
-    box.innerHTML = '<div class="player__frame"></div><button type="button" class="player__tap" aria-label="Play or pause"></button>'
+  // box: views/app/feed.js media() — .media.player[data-yt] holding the cover picture + ▶.
+  function mountPlayer(box) {
+    if (box.getAttribute('data-mounted')) return;
+    box.setAttribute('data-mounted', '1');
+    var id = box.getAttribute('data-yt');
+    var poster = document.createElement('div'); poster.className = 'player__poster';
+    while (box.firstChild) poster.appendChild(box.firstChild);
+    box.innerHTML = '<div class="player__frame"></div>';
+    box.appendChild(poster);
+    box.insertAdjacentHTML('beforeend', '<button type="button" class="player__tap" aria-label="Play or pause"><i class="media__play">' + PLAY + '</i></button>'
       + '<div class="player__bar"><button type="button" class="player__pp" aria-label="Play">' + PLAY + '</button>'
       + '<input class="player__seek" type="range" min="0" max="0" step="1" value="0" aria-label="Seek">'
-      + '<span class="player__time">0:00</span></div>';
-    btn.replaceWith(box);
+      + '<span class="player__time">0:00</span></div>');
     var pp = $('.player__pp', box), seek = $('.player__seek', box), time = $('.player__time', box), dragging = false, player = null, timer = null;
     var playing = function () { return player && player.getPlayerState && player.getPlayerState() === 1; };
     var toggle = function () { if (!player || !player.playVideo) return; if (playing()) player.pauseVideo(); else player.playVideo(); };
@@ -60,20 +100,34 @@
     loadYt().then(function (YT) {
       player = new YT.Player($('.player__frame', box), {
         videoId: id, host: 'https://www.youtube-nocookie.com',
-        playerVars: { controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, iv_load_policy: 3, modestbranding: 1, autoplay: 1 },
+        playerVars: { controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, iv_load_policy: 3, modestbranding: 1 },
         events: {
-          onReady: function (e) { box.classList.remove('is-loading'); e.target.playVideo(); paint(); timer = setInterval(function () { if (!box.isConnected) return clearInterval(timer); paint(); }, 250); },
+          onReady: function () { box.classList.add('is-ready'); paint(); timer = setInterval(function () { if (!box.isConnected) return clearInterval(timer); paint(); }, 250); },
           onStateChange: function (e) {
-            var on = e.data === 1 || e.data === 3;
+            var on = e.data === 1 || e.data === 3; // playing / buffering
+            if (on) box.classList.add('is-started');
             pp.innerHTML = on ? PAUSE : PLAY; pp.setAttribute('aria-label', on ? 'Pause' : 'Play');
-            box.classList.toggle('is-paused', !on); paint();
+            box.classList.toggle('is-paused', !on && box.classList.contains('is-started')); paint();
           },
         },
       });
     }, function () {
-      box.classList.remove('is-loading');
-      box.innerHTML = '<p class="player__err">Couldn\'t load the video. Check your connection and try again.</p>';
+      // No IFrame API (blocked or offline): YouTube's own player, so the video still plays.
+      box.innerHTML = '<iframe class="player__frame" src="https://www.youtube-nocookie.com/embed/' + encodeURIComponent(id) + '?playsinline=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Video"></iframe>';
     });
+  }
+  // Videos on screen now get their player; ones further down (feed announcements) once
+  // they scroll near, so a long feed doesn't load a YouTube player per video up front.
+  var playerObserver = null;
+  function initVideos() {
+    if (playerObserver) playerObserver.disconnect();
+    var boxes = $$('.player[data-yt]:not([data-mounted])');
+    if (!boxes.length) return;
+    if (!('IntersectionObserver' in window)) return boxes.forEach(mountPlayer);
+    playerObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { playerObserver.unobserve(en.target); mountPlayer(en.target); } });
+    }, { rootMargin: '400px 0px' });
+    boxes.forEach(function (b) { playerObserver.observe(b); });
   }
 
   function initPage() {
@@ -91,9 +145,8 @@
       });
     }
 
-    // Videos (views/app/feed.js media): the picture is a play button; tapped, it becomes
-    // our own player (playVideo below).
-    $$('[data-yt]').forEach(function (btn) { btn.addEventListener('click', function () { playVideo(btn); }); });
+    // Videos (views/app/feed.js media): our player, loaded under the cover picture.
+    initVideos();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
@@ -361,7 +414,7 @@
           .then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw 0; } if (!r.ok) throw r.status; return r.json(); })
           .then(function (j) {
             busy = false; next = j.next || null;
-            if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); }
+            if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); }
             skel.hidden = true;
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
             end.textContent = '';
@@ -466,9 +519,9 @@
   });
   // Re-fetch the current screen and swap it in quietly (after a save that changes it).
   function refreshScreen() {
-    if (!navOn) return location.reload();
+    if (!navOn) { location.reload(); return new Promise(function () {}); }
     var id = navId;
-    fetchPage(currentUrl, true).then(function (p) { if (id === navId) render(p, false, true); }, function () {});
+    return fetchPage(currentUrl, true).then(function (p) { if (id === navId) render(p, false, true); }, function () {});
   }
   var prefetch = function (url) { if (!pages[url] && !inflight[url] && navigator.onLine) fetchPage(url).catch(function () {}); };
 
@@ -597,6 +650,44 @@
     var warmTabs = function () { prefetch(urlOf(location.href)); $$('.tabbar a.tab').forEach(function (a) { prefetch(urlOf(a.href)); }); };
     if ('requestIdleCallback' in window) requestIdleCallback(warmTabs, { timeout: 2000 }); else setTimeout(warmTabs, 800);
   }
+
+  // ════ Pull to refresh ════
+  // On a screen with the tab bar, pulling down from the very top and letting go past the
+  // mark reloads the screen (refreshScreen; the feed fetches its first page again). The
+  // spinner follows the finger, turns amber once letting go would refresh, and spins until
+  // the fresh screen is in.
+  if (navOn) (function () {
+    var el = null, startY = null, pull = 0, busy = false, MARK = 64;
+    var show = function (px, dragging) {
+      if (!el) { el = document.createElement('div'); el.className = 'ptr'; el.setAttribute('aria-hidden', 'true'); el.innerHTML = '<span class="ptr__spin"></span>'; document.body.appendChild(el); }
+      el.style.transition = dragging ? 'none' : ''; // follow the finger; ease back on release
+      el.style.transform = 'translateY(' + px + 'px)';
+      el.style.opacity = Math.min(1, px / MARK);
+      el.firstChild.style.transform = busy ? '' : 'rotate(' + (px * 4) + 'deg)';
+      el.classList.toggle('is-ready', px >= MARK);
+    };
+    document.addEventListener('touchstart', function (e) {
+      startY = null;
+      if (busy || e.touches.length > 1 || window.scrollY > 0 || !$('nav.tabbar') || (e.target.closest && e.target.closest('.player'))) return;
+      startY = e.touches[0].clientY; pull = 0;
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (startY === null) return;
+      var dy = e.touches[0].clientY - startY;
+      if (dy <= 0 || window.scrollY > 0) { if (pull) { pull = 0; show(0); } return; }
+      pull = Math.min(110, dy * 0.5); show(pull, true);
+    }, { passive: true });
+    var end = function () {
+      if (startY === null) return;
+      startY = null;
+      if (pull < MARK) { pull = 0; if (el) show(0); return; }
+      busy = true; pull = 0; show(MARK); el.classList.add('is-busy');
+      var t0 = Date.now();
+      var done = function () { setTimeout(function () { busy = false; el.classList.remove('is-busy'); show(0); }, Math.max(0, 450 - (Date.now() - t0))); };
+      refreshScreen().then(done, done);
+    };
+    document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
+  })();
 
   initPage();
 

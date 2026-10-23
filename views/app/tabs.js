@@ -21,12 +21,9 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
     return g.href ? `<a class="cell" href="${esc(g.href)}">${inner}${chev}</a>` : `<div class="cell">${inner}</div>`;
   }).join('');
   const upcoming = schedule.filter(g => !g.played), results = schedule.filter(g => g.played).reverse();
-  return `${lt('My Team')}
-  <div class="card prof">
-    <span class="avatar avatar--lg" style="--ring:${esc(team.color)}">${esc(team.name.slice(0, 2))}</span>
-    <div style="flex:1"><h2>${esc(team.name)}</h2><div class="prof__sub">${esc([team.record, team.standing].filter(Boolean).join(' · ') || 'No games yet')}</div></div>
-  </div>
-  <div style="margin-top:12px">${upNextCard(upNext)}</div>
+  // No team card: Up next already names the team, so the record and standing sit under the title.
+  return `<header class="lt"><div><h1>My Team</h1><div class="lt__sub"><span class="dot" style="--c:${esc(team.color)}"></span>${esc([team.name, team.record, team.standing].filter(Boolean).join(' · '))}</div></div></header>
+  ${upNextCard(upNext)}
   ${upcoming.length ? `<div class="sec">Coming up</div><div class="group">${rows(upcoming)}</div>` : ''}
   ${results.length ? `<div class="sec">Season ${esc(season)} results</div><div class="group">${rows(results)}</div>` : ''}
   <div class="sec">Roster · ${roster.length}</div>

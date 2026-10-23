@@ -6416,6 +6416,8 @@ app.post('/app/ping', express.json(), (req, res) => {
   if (appAccess(req) !== 'ok' || req.session?.impersonating) return res.status(204).end();
   // A photo upload that failed (public/app.js): logged for /admin/app with status and size.
   if (typeof req.body?.photoFailed === 'string') { logApp(req, 'photo_failed', req.body.photoFailed.slice(0, 60)); return res.status(204).end(); }
+  // A feed or game picture that didn't load even on a retry (public/app.js): its path.
+  if (typeof req.body?.imgFailed === 'string') { logApp(req, 'img_failed', req.body.imgFailed.slice(0, 100)); return res.status(204).end(); }
   const regId = req.session.playerRegId, platform = appPlatform(req);
   const standalone = req.body?.standalone === true;
   const dayStart = Date.parse(`${manilaTodayStr()}T00:00:00+08:00`);

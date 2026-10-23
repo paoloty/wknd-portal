@@ -8,22 +8,22 @@ import { esc, appAvatar, icons, backChev, soonTag, lazyList } from './layout.js'
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
 const ytThumb = id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 
-// Picture on top of a card or screen. With a video it's a play button that public/app.js
-// (initVideos) swaps for the YouTube player, so it plays inside the app; the photo beats
+// Picture on top of a card or screen. With a video it's our player (public/app.js
+// mountPlayer: YouTube loads under this picture), so it plays inside the app; the photo beats
 // YouTube's auto-picked frame when both exist. inCard: inside a tappable card, so the
 // picture is just a picture (the card opens the screen where it plays).
 function media({ img = '', srcset = '', yt = '', label = '' } = {}, { inCard = false } = {}) {
   if (!img && !yt) return '';
   // Not loading="lazy": iPhone Safari never loads a lazy image added while its list is still
-  // hidden (the feed's pages). A picture that fails takes its grey box with it, except a
-  // video's, which keeps its play button.
+  // hidden (the feed's pages). A picture that fails is retried once, then logged and removed
+  // (public/app.js "Pictures that fail").
   // srcset: the photo in two widths; a card is the screen less 32px, up to 528px (.app max 560).
   const sized = img && srcset ? ` srcset="${esc(srcset)}" sizes="(min-width: 560px) 528px, calc(100vw - 32px)"` : '';
-  const pic = `<img src="${esc(img || ytThumb(yt))}"${sized} alt="" decoding="async" onerror="${yt ? 'this.remove()' : 'this.parentNode.remove()'}">`;
+  const pic = `<img src="${esc(img || ytThumb(yt))}"${sized} alt="" decoding="async">`;
   const tag = label ? `<em>${esc(label)}</em>` : '';
   if (!yt) return `<span class="media">${pic}</span>`;
   if (inCard) return `<span class="media">${pic}<i class="media__play">${icons.play}</i>${tag}</span>`;
-  return `<button type="button" class="media" data-yt="${esc(yt)}" aria-label="Play video">${pic}<i class="media__play">${icons.play}</i>${tag}</button>`;
+  return `<div class="media player" data-yt="${esc(yt)}">${pic}<i class="media__play">${icons.play}</i>${tag}</div>`;
 }
 
 const scoreRows = (a, b) => `<div class="score">
