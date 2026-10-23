@@ -771,3 +771,69 @@ a.sx:active { transform: scale(.99); }
 .gx__potg b, .ax__head b { font-size: 15px; }
 .actions__t { font-size: 15px; }
 .app-toast { font-size: 14px; }
+
+/* Papawis: who's in as an overlapping stack (→ the players screen) */
+.pwr__stack { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.pwr__stack .pwr__faces { display: flex; flex-wrap: nowrap; gap: 0; margin: 0; }
+.pwr__stack .pwr__face { margin-left: -10px; }
+.pwr__stack .pwr__face:first-child { margin-left: 0; }
+.pwr__stack .pwr__face .avatar { box-shadow: inset 0 0 0 2.5px var(--ring, var(--subtle)), 0 0 0 2.5px var(--surface); }
+.pwr__stack .pwr__face.is-me .avatar { box-shadow: inset 0 0 0 2.5px var(--amber), 0 0 0 2.5px var(--surface); }
+.pwr__stack .pwr__more { margin-left: -6px; box-shadow: 0 0 0 2.5px var(--surface); }
+.pwr__see { flex: none; font-size: 14px; font-weight: 700; color: var(--amber-text); }
+.pwp__head { margin-top: 6px; }
+.pwp__head b { display: block; font-size: 17px; margin-bottom: 4px; }
+.pwp__head p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.pwp__head .px__bar { margin: 12px 0 8px; }
+.pwp__count { color: var(--text) !important; }
+.pwp__slot { flex: none; width: 22px; text-align: right; font-size: 15px; color: var(--muted); }
+.pwp__me { background: rgba(245,147,50,.08); }
+.pwp__count b { display: inline; font-size: 15px; margin: 0; }
+.pwr__action .btn + .btn { margin-top: 8px; }
+
+/* ── Settle (views/app/settle.js) ── */
+.st__head .kick { margin-bottom: 4px; }
+.st__head b.num { display: block; font-size: 40px; line-height: 1; }
+.st__head p { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.st__ok { color: var(--win); }
+.st__runs { margin-top: 10px; }
+.st__pending { margin: 12px 16px 0; }
+.st__gcash { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.st__qr { width: 220px; height: 220px; border-radius: 14px; background: #fff; padding: 8px; }
+.st__hint { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.st__hint b { color: var(--text); }
+.st__btns { display: flex; gap: 8px; width: 100%; margin-top: 12px; }
+.st__btns .btn { height: 44px; font-size: 15px; }
+.st__num { width: 100%; margin-top: 12px; }
+.st__num b { margin-left: auto; font-size: 18px; letter-spacing: .04em; }
+.st__form { display: flex; flex-direction: column; gap: 12px; }
+.st__presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.st__presets .chip.is-on span { background: var(--amber); color: #111; }
+.st__field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.st__field i { font-style: normal; font-weight: 400; color: var(--subtle); }
+.st__field input, .st__field select { height: 46px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--field-border); background: var(--field); color: var(--text); font: 600 16px var(--font-ui); -webkit-appearance: none; appearance: none; }
+.st__file { display: flex; flex-direction: column; gap: 8px; }
+.st__pick { display: flex; align-items: center; justify-content: center; min-height: 54px; border-radius: 12px; border: 1.5px dashed var(--field-border); color: var(--amber-text); font-weight: 700; font-size: 15px; cursor: pointer; }
+.st__file img { max-height: 220px; width: auto; margin: 0 auto; border-radius: 10px; }
+
+/* Labels fit their buttons (checked down to 320px wide): a button's label stays on one line. */
+.btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 14px; }
+.btn svg { flex: none; }
+.push-ask__btns { flex-direction: column; gap: 2px; }
+.push-ask__btns .btn--plain { height: 38px; }
+.pick__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 359px) { .rc .pick__sub { display: none; } }
+.pill, .sx__chip, .tag-muted { white-space: nowrap; }
+.st__num > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st__num b { white-space: nowrap; font-size: 17px; }
+/* Navbar: the title gets the middle, the back link shrinks first (narrow phones). */
+.navbar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); column-gap: 8px; }
+.navbar__back { min-width: 0; overflow: hidden; white-space: nowrap; }
+.navbar__title { min-width: 0; max-width: 62vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax__head small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navbar__back { max-width: 100%; }
+/* The GCash name on its own line, the number and Copy number under it. */
+.st__num { flex-wrap: wrap; row-gap: 2px; }
+.st__num > span:first-child { flex-basis: 100%; text-align: left; }
+.st__num b { margin-left: 0; margin-right: auto; }
+.navbar__back svg { flex: none; }

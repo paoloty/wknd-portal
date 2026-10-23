@@ -35,6 +35,7 @@ Phone-first, players-only app served by this same server: same accounts, session
 
 ## No zoom, X-style type
 - Pinch and double-tap zoom are off (viewport `maximum-scale=1, user-scalable=no`, `touch-action: pan-x pan-y`, and app.js stops iPhone's `gesturestart`): a zoomed page left the fixed tab bar stranded mid-screen. Text follows an X/Twitter-like scale (app.css "Type, like X"): 15px text, 16px card headlines, 13px small print, 28px screen titles.
+- Button labels stay on one line (checked down to 320px wide); a label too long for its button is a bug: shorten it.
 
 ## One look (app.css "One card look, app-wide")
 - Every card, list group and tile shares the feed cards' surface (`--card-bg` + `--card-hi`, 20px corners). `.glow` is the amber-glow card (announcements, your Picks record, your profile, the preview's matchup). Results show as W/L chips (`.res`). The Pickmaster's top 3 use the medal colours. The game screen uses the feed card's hero (`gameHero`: photo + score, or a dark band under the video) and its player-of-the-game strip (`potgBox`). New screens use these, not new card styles.
@@ -46,15 +47,22 @@ Phone-first, players-only app served by this same server: same accounts, session
 
 ## Papawis (`/app/papawis`)
 - `views/app/papawis.js` + server.js `appPapawisRuns` / `appPapawisHistory`. The upcoming runs (`status = 'open'`, not past) as run cards: court photo hero with day/time and an "N open / Full" chip, countdown to tip-off (or to sign-ups opening), who's in (faces, yours in amber), per-head estimate, cancel-by date, waitlist, and one action. Then "Your runs": past runs with what each cost and whether it's paid.
-- The states mirror the site's `views/papawis.js` runBlock (scheduled, in with slot, pending deposit, waitlist position, banned, unpaid game, full → waitlist, open → claim). Join / leave / free run post to the site's own `/papawis/:id/join | cancel | voucher`, so every rule stays in one place; a claim inside the 3-day cancel window and any cancel ask first. Deposits and settling a balance are still on the site (shown with "Soon").
+- The states mirror the site's `views/papawis.js` runBlock (scheduled, in with slot, pending deposit, waitlist position, banned, unpaid game, full → waitlist, open → claim). Join / leave / free run post to the site's own `/papawis/:id/join | cancel | voucher`, so every rule stays in one place; a claim inside the 3-day cancel window and any cancel ask first.
+- Who's in shows as an overlapping stack (first 8, then +N) with See all › → `/app/papawis/:id/players`: the confirmed list by slot, then the waitlist ("Deposit pending" marked), your row lit; hidden until sign-ups open, as on the site; logs `viewed_roster` like the site's roster button.
 - Home's Papawis feed cards open this tab ("Join ›").
 
 ## Push notifications (`lib/push.js`, web-push)
 - Turned on per phone from Settings → Notifications ("On this phone") or Home's "Turn on notifications?" card (shown while the phone hasn't been asked; "Not now" hides it 2 weeks). iPhone: installed app only (iOS 16.4+), and the permission prompt must come from a tap. Table `push_subscriptions` (one row per phone); re-sent once a day so the server keeps it. Log out unsubscribes the phone; a password reset deletes the account's subscriptions.
 - What's pushed: every bell notification (`createNotification` → `onNotificationCreated` listener in server.js → `pushToPlayer`), opening the matching app screen (`appLinkFor`: /papawis → Papawis tab, /games/… → the game, /picks → Picks, else the inbox); announcements (push only, to app players); picks closing in 2 hours with games still to pick (once per day per player, `push_log`). The app icon shows the unread count (Badging API).
-- Kinds the player can switch off (`push_prefs`, `PUSH_KINDS`): Picks & MVP, Papawis, Games, Comments, Announcements. Account messages always come through.
+- Kinds the player can switch off (`push_prefs`, `PUSH_KINDS`): Picks & MVP, Papawis, Games, Comments, Announcements. Account messages always come through, and so does a run's bill (`papawis_completed`: "Sunday run is done, you're in for ₱280" → opens Settle).
+- Closing out a Papawis run (admin) notifies everyone who played (bell + email, lib/papawis-notify.js), so app players with notifications on get it on their phone; a player moved off the waitlist gets "You're confirmed" the same way.
 - Keys: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (+ `VAPID_SUBJECT`) from the environment, else a pair is made once and kept in site_settings. Changing keys means everyone turns notifications on again.
 - `/admin/app` shows how many accounts have notifications on; `push_on` / `push_off` in the activity log.
+
+## Settle (`/app/settle`)
+- `views/app/settle.js`. What's owed (each unpaid Papawis run) or a Papawis deposit (`?category=Papawis%20Deposit`, presets from the max run price); **Pay with GCash**: the QR with **Save QR** (share sheet → Save Image; GCash: Pay QR → Upload QR), **Open GCash** (`gcash://`, not official: if GCash doesn't open, a toast says how), the GCash name + number with **Copy**; then **Send the receipt**: amount (the balance, editable: part payments allowed as on the site), what for, paid with, reference no., the screenshot (shrunk to 1600px) → the site's own `POST /settle-balance` → pending until an admin confirms it in the ledger (shown on the screen as "waiting for an admin").
+- The QR carries the amount: `gcash_qr_payload` is QR Ph (EMVCo); `qrPhWithAmount()` sets tag 54 (amount) and 01 = 12 (dynamic) and recomputes the CRC; a payload that isn't valid QR Ph is shown as stored. Served at `/app/settle/qr.png?amount=`.
+- Opened from Home's amber strip ("₱280 due"), Me's To do, Papawis (unpaid game, ban, pending deposit), and the "run is done, you're in for ₱280" notification (`/settle-balance` → `/app/settle`).
 
 ## Announcements (`/admin/app/announcements`)
 - Table `app_announcements` (lib/portal-db.js): title, body, one photo (JPEG data URL, shrunk to 1600px in the admin's browser, served resized at `/app/announcements/:id/image?w=640|960`) or one YouTube link, `pinned_until`, soft delete. Pinning (1/3/7 days, or "Pin 7 days" / "Unpin" on the list) keeps it on top of Home and out of the dated list until it expires. Linked from the `/admin/app` header.
@@ -123,4 +131,4 @@ Dates and times use `manilaFormat` (views/utils.js): shift to UTC+8 and format a
 - iPhone never updates the home-screen icon or name after install: keep the icon plain.
 
 ## Not built yet
-App versions of Share my stats / balance / sign-up / jersey / Papawis deposits, the Finals margin guess in the app, writing comments and reactions in the app (F2), awards and picks results as feed cards.
+App versions of Share my stats / season sign-up / jersey, the Finals margin guess in the app, writing comments and reactions in the app (F2), awards and picks results as feed cards.

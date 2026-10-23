@@ -234,6 +234,7 @@
     initVideos();
     initPapawis();
     initPush();
+    initSettle();
     initBlocks();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
@@ -463,6 +464,89 @@
             msg.textContent = 'No connection. Nothing was changed.'; msg.hidden = false;
           });
       });
+    });
+  }
+
+  // ════ Settle a balance (views/app/settle.js) ════
+  // Copy the GCash number; save the QR (iPhone: the share sheet's "Save Image"); open GCash;
+  // then the receipt screenshot (shrunk to 1600px) posts to the site's /settle-balance.
+  function initSettle() {
+    var form = $('[data-st-form]');
+    var copy = $('[data-st-copy]');
+    if (copy && !copy._bound) {
+      copy._bound = true;
+      copy.addEventListener('click', function () {
+        var n = $('[data-st-number]').textContent.trim();
+        var ok = function () { toast('Number copied · paste it in GCash Send Money'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(n).then(ok, function () { window.prompt('Copy this number:', n); });
+        else window.prompt('Copy this number:', n);
+      });
+    }
+    var save = $('[data-st-save]');
+    if (save && !save._bound) {
+      save._bound = true;
+      save.addEventListener('click', function () {
+        var src = $('[data-st-qr]').getAttribute('src');
+        fetch(src, { credentials: 'same-origin' }).then(function (r) { return r.blob(); }).then(function (blob) {
+          var file = new File([blob], 'wknd-gcash-qr.png', { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: 'WKND GCash QR' });
+          var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'wknd-gcash-qr.png'; document.body.appendChild(a); a.click(); a.remove();
+          toast('QR saved');
+        }).catch(function (e) { if (!e || e.name !== 'AbortError') toast('Couldn\'t save it. Press and hold the QR instead.', 'err'); });
+      });
+    }
+    var gc = $('[data-st-gcash]');
+    if (gc && !gc._bound) {
+      gc._bound = true;
+      // gcash:// isn't official: if GCash doesn't open, say how instead of leaving them waiting.
+      gc.addEventListener('click', function () {
+        var left = false, mark = function () { left = true; };
+        document.addEventListener('visibilitychange', mark, { once: true });
+        setTimeout(function () { document.removeEventListener('visibilitychange', mark); if (!left) toast('Open GCash from your home screen, then Pay QR → Upload QR', 'info'); }, 1600);
+      });
+    }
+    if (!form || form._bound) return;
+    form._bound = true;
+    var file = $('[data-st-file]', form), pick = $('[data-st-pick]', form), prev = $('[data-st-preview]', form), msg = $('[data-st-msg]', form);
+    var shot = null;
+    $$('[data-st-preset]', form).forEach(function (b) {
+      b.addEventListener('click', function () {
+        form.elements.amount.value = b.getAttribute('data-st-preset');
+        $$('[data-st-preset]', form).forEach(function (x) { x.classList.toggle('is-on', x === b); });
+      });
+    });
+    pick.addEventListener('click', function () { file.click(); });
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      var img = new Image(), url = URL.createObjectURL(f);
+      img.onload = function () {
+        var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight, 1)), c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        shot = c.toDataURL('image/jpeg', 0.85); URL.revokeObjectURL(url);
+        prev.src = shot; prev.hidden = false; pick.textContent = '📎 Change screenshot'; msg.hidden = true;
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); msg.textContent = 'That file isn\'t a picture we can read. Try the screenshot again.'; msg.hidden = false; };
+      img.src = url;
+    });
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var el = form.elements, amt = Number(el.amount.value);
+      var say = function (t) { msg.textContent = t; msg.hidden = false; };
+      if (!(amt > 0)) return say('Enter the amount you paid.');
+      if (!shot) return say('Add the receipt screenshot from GCash (or your bank).');
+      var btn = $('[data-st-send]', form); btn.classList.add('is-busy'); msg.hidden = true;
+      fetch('/settle-balance', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amt, category: el.category.value, payment_method: el.payment_method.value, reference_no: el.reference_no.value, screenshot: shot }) })
+        .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (x) {} return { ok: r.ok && !!j && !!j.ok, status: r.status, j: j }; }); })
+        .then(function (res) {
+          btn.classList.remove('is-busy');
+          if (res.status === 401) { location.href = '/app/login'; return; }
+          if (!res.ok) return say((res.j && res.j.error) || (res.status === 413 ? 'That screenshot is too big. Try a smaller one.' : 'Couldn\'t send it. Try again.'));
+          toast('Sent · an admin will confirm it');
+          refreshScreen();
+        }, function () { btn.classList.remove('is-busy'); say('No connection. Nothing was sent.'); });
     });
   }
 

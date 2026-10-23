@@ -6016,7 +6016,10 @@ import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostP
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
-import { appPapawisPage } from './views/app/papawis.js';
+import { appPapawisPage, appPapawisPlayersPage } from './views/app/papawis.js';
+import { appSettlePage } from './views/app/settle.js';
+import { getUnpaidPapawisForPlayer } from './lib/portal-db.js';
+import { depositPresets } from './views/utils.js';
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
@@ -6133,10 +6136,10 @@ function appSeasonState(me) {
   if (signup?.jersey_requested_at) {
     rows.push(signup.jersey_submitted_at
       ? { icon: 'shirt', title: 'Jersey details sent', done: true }
-      : { icon: 'shirt', title: 'Send your jersey details', sub: 'Size and name for your jersey', pill: 'Send', href: '/jersey-request', done: false });
+      : { icon: 'shirt', title: 'Send your jersey details', sub: 'Size and name for your jersey', pill: 'Send details', href: '/jersey-request', done: false });
   }
   rows.push(balance > 0
-    ? { icon: 'wallet', title: `Settle ${peso(balance)}`, sub: 'Balance due', pill: 'Settle', href: '/settle-balance', done: false }
+    ? { icon: 'wallet', title: `Settle ${peso(balance)}`, sub: 'Balance due', pill: 'Pay', href: '/app/settle', done: false }
     : { icon: 'wallet', title: 'No balance due', done: true });
   return { rows, balance, season, signupOpen, signup, peso };
 }
@@ -6465,7 +6468,7 @@ app.get('/app', requireApp, (req, res) => {
   const actions = [];
   const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0;
   const st = appSeasonState(me);
-  if (st.balance > 0) actions.push({ text: `${st.peso(st.balance)} due`, sub: 'Settle your balance', soon: true });
+  if (st.balance > 0) actions.push({ text: `${st.peso(st.balance)} due`, sub: 'Settle it with GCash', href: '/app/settle?from=home' });
   if (st.signupOpen && !st.signup) actions.push({ text: `Season ${st.season} sign-up is open`, sub: 'Sign up to play', soon: true });
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
   sendTab(res, me, { title: 'WKND', tab: 'home', body: appHomeFeedPage({
@@ -7011,6 +7014,102 @@ function appPapawisHistory(me) {
       unpaid: h.game_status === 'completed' && h.status === 'confirmed' && !!h.price_per_player && !h.paid_at }));
 }
 
+// ── Settle a balance (views/app/settle.js) ──
+// The site's own Settle Balance in the app: what's owed (each unpaid Papawis run), the
+// GCash details (copy the number, save the QR, open GCash), then the receipt screenshot,
+// sent to the site's POST /settle-balance (pending until an admin confirms it, as now).
+//
+// The QR can carry the amount: the stored GCash QR (gcash_qr_payload) is a QR Ph (EMVCo)
+// code, which has a slot for it (tag 54). qrPhWithAmount() adds it and recomputes the
+// checksum, so GCash's "Upload QR" fills in both the account and the amount. A payload
+// that isn't valid QR Ph is shown as stored.
+function emvFields(s) {
+  const out = [];
+  for (let i = 0; i < s.length;) {
+    const id = s.slice(i, i + 2), len = Number(s.slice(i + 2, i + 4));
+    if (!/^\d{2}$/.test(id) || !/^\d{2}$/.test(s.slice(i + 2, i + 4))) return null;
+    const v = s.slice(i + 4, i + 4 + len);
+    if (v.length !== len) return null;
+    out.push([id, v]); i += 4 + len;
+  }
+  return out;
+}
+function crc16ccitt(str) {
+  let crc = 0xFFFF;
+  for (const byte of Buffer.from(str, 'utf8')) {
+    crc ^= byte << 8;
+    for (let k = 0; k < 8; k++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+function qrPhWithAmount(payload, amount) {
+  const s = String(payload || '').trim();
+  const f = emvFields(s);
+  if (!f || f[0]?.[0] !== '00' || f[f.length - 1]?.[0] !== '63' || crc16ccitt(s.slice(0, -4)) !== s.slice(-4).toUpperCase()) return null;
+  const fields = f.filter(([id]) => id !== '63' && id !== '54').map(([id, v]) => (id === '01' ? ['01', '12'] : [id, v]));
+  fields.push(['54', Number(amount).toFixed(2)]);
+  fields.sort((a, b) => a[0].localeCompare(b[0]));
+  const body = fields.map(([id, v]) => `${id}${String(v.length).padStart(2, '0')}${v}`).join('') + '6304';
+  return body + crc16ccitt(body);
+}
+
+app.get('/app/settle/qr.png', requireAppData, async (req, res) => {
+  const payload = getSetting('gcash_qr_payload', '');
+  if (!payload) return res.status(404).end();
+  const amount = Number(req.query.amount);
+  const withAmount = amount > 0 && amount <= 100000 ? qrPhWithAmount(payload, amount) : null;
+  try {
+    const png = await QRCode.toBuffer(withAmount || payload, { type: 'png', width: 600, margin: 2 });
+    res.set('Cache-Control', 'private, max-age=600').type('png').send(png);
+  } catch (e) { console.error('[settle qr]', e.message); res.status(500).end(); }
+});
+
+app.get('/app/settle', requireApp, (req, res) => {
+  const me = appMe(req);
+  const balance = Number(getPlayerFinancials(me.playerId)?.current_balance || 0);
+  const runs = getUnpaidPapawisForPlayer(me.playerId).map(r => ({ day: pwDay(r.game_date), amount: Number(r.price_per_player) || 0 }));
+  const pending = getPlayerTransactions(me.playerId).filter(t => t.type === 'payment' && t.status === 'pending')
+    .map(t => ({ amount: Number(t.amount) || 0, category: t.category || '', when: pwDay(t.date) }));
+  const asked = PAYMENT_CATEGORIES.includes(req.query.category) ? req.query.category : '';
+  const deposit = asked === 'Papawis Deposit' && balance <= 0;
+  const minDeposit = getMaxPapawisPrice();
+  const payload = getSetting('gcash_qr_payload', '');
+  sendTab(res, me, { title: 'Settle · WKND', tab: 'me', body: appSettlePage({
+    back: req.query.from === 'papawis' ? { href: '/app/papawis', label: 'Papawis' } : req.query.from === 'home' ? { href: '/app', label: 'Home' } : { href: '/app/me', label: 'Me' },
+    balance, runs, pending, deposit,
+    amount: deposit ? (minDeposit || '') : balance > 0 ? balance : '',
+    presets: deposit ? depositPresets(minDeposit) : [],
+    category: asked || (runs.length ? 'Papawis' : 'Other'), categories: PAYMENT_CATEGORIES,
+    gcash: { name: getSetting('gcash_name', ''), number: getSetting('gcash_number', ''), hasQr: !!payload, amountInQr: !!qrPhWithAmount(payload, 1) },
+  }) });
+});
+
+// Everyone on one run: the confirmed list by slot, then the waitlist (pending deposits
+// included, as on the site). Hidden until sign-ups open, as on the site.
+app.get('/app/papawis/:id/players', requireApp, (req, res) => {
+  const me = appMe(req);
+  const g = getSetting('papawis_enabled', '0') === '1' ? getPapawisGame(req.params.id) : null;
+  const run = g ? appPapawisRuns(me).find(r => r.id === g.id) : null;
+  if (!g || !run) return sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPlayersPage({ missing: true }) });
+  const teams = getAllTeams();
+  const signups = run.scheduled ? [] : getPapawisSignups(g.id);
+  const person = (s, i) => {
+    const name = displayPlayerName(s.player_name || '');
+    const guest = !!s.guest_name;
+    return { slot: i + 1, me: !guest && s.player_id === me.playerId, pending: s.status === 'pending',
+      name: guest ? s.guest_name : name, sub: guest ? `Guest of ${name.split(' ')[0]}` : (s.team_name || ''),
+      initials: (guest ? s.guest_name : name).split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
+      ring: !guest && s.team_id ? teamColorById(teams, s.team_id) : 'var(--subtle)',
+      playerId: guest ? '' : s.player_id, photoUrl: guest ? '' : playerPhotoUrl(s.player_id, 96) };
+  };
+  if (!run.scheduled) logPapawisActivity({ gameId: g.id, eventType: 'viewed_roster', playerId: me.playerId, playerName: me.player.name || '' });
+  sendTab(res, me, { title: `Who's in · ${run.title} · WKND`, tab: 'papawis', body: appPapawisPlayersPage({
+    run,
+    confirmed: signups.filter(s => s.status === 'confirmed').map(person),
+    waitlist: signups.filter(s => s.status === 'waitlist' || s.status === 'pending').map(person),
+  }) });
+});
+
 app.get('/app/papawis', requireApp, (req, res) => {
   const me = appMe(req);
   const on = getSetting('papawis_enabled', '0') === '1';
@@ -7078,6 +7177,7 @@ function appLinkFor(link = '') {
   const gm = /^\/games\/([^/?#]+)/.exec(path);
   if (gm) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}`; }
   if (/^\/me\b/.test(path)) return '/app/me';
+  if (/^\/settle-balance/.test(path)) return '/app/settle';
   return '/app/notifications';
 }
 onNotificationCreated(n => {

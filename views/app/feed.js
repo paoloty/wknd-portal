@@ -130,7 +130,7 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', acti
   <div class="card glow push-ask" data-push-ask hidden>
     <b>Turn on notifications?</b>
     <p>Picks closing, new Papawis runs, your stat card after a game. You choose which in Settings.</p>
-    <div class="push-ask__btns"><button type="button" class="btn" data-push-ask-on>Turn on</button><button type="button" class="btn btn--ghost" data-push-ask-off>Not now</button></div>
+    <div class="push-ask__btns"><button type="button" class="btn" data-push-ask-on>Turn on notifications</button><button type="button" class="btn btn--plain" data-push-ask-off>Not now</button></div>
   </div>
   ${strip}
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
