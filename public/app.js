@@ -574,7 +574,8 @@
         $$('[data-st-preset]', form).forEach(function (x) { x.classList.toggle('is-on', x === b); });
       });
     });
-    pick.addEventListener('click', function () { file.click(); });
+    // The picker opens from its <label> alone (as the setup photo does): a file.click() here
+    // too opened it twice, and on iPhone the second open dropped the picked screenshot.
     file.addEventListener('change', function () {
       var f = file.files && file.files[0];
       if (!f) return;
