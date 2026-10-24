@@ -382,6 +382,7 @@
     // Videos (views/app/feed.js media): our player, loaded under the cover picture.
     initVideos();
     initPapawis();
+    initAdminPapawis();
     initPush();
     initSettle();
     initRate();
@@ -702,6 +703,246 @@
             msg.textContent = 'No connection. Nothing was changed.'; msg.hidden = false;
           });
       });
+    });
+  }
+
+  // ════ Manage a Papawis run (admins; views/app/admin-papawis.js) ════
+  // Every change posts to the site's own /admin/papawis routes (the same ones the site's run
+  // page uses), so the site's rules decide. After a change the screen refreshes from the server.
+  //   • [data-adm-post] buttons: confirm first when they ask, then a toast and a refresh
+  //   • a player's actions and Add player open in a sheet (the comments sheet's machinery)
+  //   • drag the grip to reorder, move between Confirmed and the waitlist, or swap sides
+  //   • the cover: pick a photo, or drop one on it on a computer or iPad
+  var admBusy = false, admBound = false;
+  var closeSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  // Answers JSON from an admin route, or throws the reason. A signed-out or no-longer-admin
+  // session gets a page back instead of JSON: that's a failure too, never a silent success.
+  function admSend(url, body, method) {
+    if (method === 'GET') {
+      return fetch(url, { credentials: 'same-origin', redirect: 'manual' }).then(function (r) {
+        if (r.type === 'opaqueredirect' || r.ok) return {};
+        throw new Error('That didn\'t go through. Try again.');
+      });
+    }
+    return fetch(url, { method: method || 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body || {}) })
+      .then(function (r) {
+        var json = /json/.test(r.headers.get('content-type') || '');
+        return r.text().then(function (t) {
+          var j = null; try { j = json ? JSON.parse(t) : null; } catch (e) {}
+          if (!r.ok || !j || j.error) throw new Error((j && j.error) || (json ? 'That didn\'t go through. Try again.' : 'Your admin sign-in ended. Open the app again.'));
+          return j;
+        });
+      }, function () { throw new Error('No connection. Nothing was changed.'); });
+  }
+  // A sheet like the comments one (same var, so closeSheet, the keyboard fit and navigation
+  // all apply): title + body HTML.
+  function admSheet(title, html) {
+    closeSheet(true);
+    var el = document.createElement('div');
+    el.className = 'sheet adm-sheet'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', title);
+    el.innerHTML = '<div class="sheet__scrim" data-sheet-x></div><div class="sheet__box"><div class="sheet__head"><span class="sheet__grab" aria-hidden="true"></span><b></b><button type="button" class="sheet__x" data-sheet-x aria-label="Close">' + closeSvg + '</button></div><div class="sheet__body adm-sheet__body"></div></div>';
+    $('.sheet__head b', el).textContent = title;
+    $('.adm-sheet__body', el).innerHTML = html;
+    lockPage();
+    document.body.appendChild(el);
+    document.documentElement.classList.add('has-sheet');
+    sheet = el; fitSheet();
+    swipeToClose(el, '.adm-input', '.adm-pick');
+    requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('is-open'); }); });
+    return el;
+  }
+  var admEsc = function (s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  // A short toast: the first sentence of a long server message (Autofill explains every skip).
+  var admShort = function (m) { return String(m || '').split('. ')[0].replace(/\.$/, ''); };
+
+  // The cover: downscaled on the phone first (a 12 MP photo would take ages to send), then
+  // the site's cover route crops it to 16:9.
+  function admCover(file, box) {
+    if (!file || !/^image\//.test(file.type || '')) { toast('That isn\'t a photo.', 'err'); return; }
+    if (admBusy) return;
+    if (!navigator.onLine) { toast('You\'re offline. Nothing was sent.', 'err'); return; }
+    admBusy = true; box.classList.add('is-busy');
+    var label = $('[data-adm-cover-btn] span', box), was = label ? label.textContent : '';
+    if (label) label.textContent = 'Uploading…';
+    var done = function () { admBusy = false; box.classList.remove('is-busy', 'is-drop'); if (label) label.textContent = was; };
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var max = 2000, s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      admSend('/admin/papawis/' + encodeURIComponent(box.getAttribute('data-adm-cover')) + '/cover', { dataUrl: c.toDataURL('image/jpeg', 0.86) })
+        .then(function () { done(); toast('Cover saved'); refreshScreen(true); }, function (e) { done(); toast(e.message, 'err'); });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); done(); toast('Couldn\'t read that photo. Try another.', 'err'); };
+    img.src = url;
+  }
+
+  // Drag by the grip (mouse, finger or pen: pointer events, so it works the same everywhere).
+  // Lists: [data-adm-list="confirmed|waitlist"] (the roster) or [data-adm-team="light|dark|"].
+  function admDrag(grip, e) {
+    var row = grip.closest('.adm-row'), from = row.parentNode, root = row.closest('.adm');
+    if (!root || admBusy) return;
+    var run = root.getAttribute('data-adm-run'), max = Number(root.getAttribute('data-adm-max')) || 0;
+    var teams = from.hasAttribute('data-adm-team');
+    var kind = teams ? 'data-adm-team' : 'data-adm-list';
+    var lists = $$('[' + kind + '][data-adm-dnd]', root);
+    var rowsOf = function (l) { return $$('.adm-row', l); };
+    // The roster's Confirmed takes only max: a full list doesn't take a row from the waitlist.
+    var canEnter = function (l) { return teams || l === from || l.getAttribute(kind) !== 'confirmed' || rowsOf(l).length < max; };
+    e.preventDefault();
+    // Moves are heard on the document, not the grip: moving the row in the list releases any
+    // pointer capture on it, and the drag would stop after the first step.
+    var pid = e.pointerId;
+    var rect = row.getBoundingClientRect(), offY = e.clientY - rect.top, offX = e.clientX - rect.left;
+    var ghost = row.cloneNode(true); ghost.classList.add('adm-ghost'); ghost.style.width = rect.width + 'px'; ghost.style.left = rect.left + 'px'; ghost.style.top = rect.top + 'px';
+    document.body.appendChild(ghost);
+    row.classList.add('is-dragging');
+    root.classList.add('is-dragging');
+    var lastX = e.clientX, lastY = e.clientY, scroller = 0;
+    // The roster is one column: the row only moves up and down. Teams are two side by side:
+    // the row follows the finger across too, and the list under the finger takes it.
+    var place = function (x, y) {
+      ghost.style.top = (y - offY) + 'px';
+      if (teams) ghost.style.left = (x - offX) + 'px';
+      var el = document.elementFromPoint(teams ? x : rect.left + rect.width / 2, y), list = el && el.closest('[' + kind + '][data-adm-dnd]');
+      lists.forEach(function (l) { l.classList.toggle('is-over', l === list && canEnter(l)); l.classList.toggle('is-blocked', l === list && !canEnter(l)); });
+      if (!list || !canEnter(list)) return;
+      var empty = $('.adm-empty', list); if (empty) empty.hidden = true;
+      var after = null, best = -Infinity;
+      rowsOf(list).forEach(function (r) { if (r === row) return; var b = r.getBoundingClientRect(), off = y - b.top - b.height / 2; if (off < 0 && off > best) { best = off; after = r; } });
+      if (after) list.insertBefore(row, after); else list.appendChild(row);
+    };
+    // Near the top or bottom edge the screen scrolls along, so a long list can be crossed.
+    var edge = function () {
+      var h = window.innerHeight, zone = 70, v = lastY < zone ? -(zone - lastY) / 4 : lastY > h - zone - 70 ? (lastY - (h - zone - 70)) / 4 : 0;
+      if (v) { window.scrollBy(0, v); place(lastX, lastY); }
+      scroller = requestAnimationFrame(edge);
+    };
+    scroller = requestAnimationFrame(edge);
+    var move = function (ev) { if (ev.pointerId !== pid) return; ev.preventDefault(); lastX = ev.clientX; lastY = ev.clientY; place(lastX, lastY); };
+    var up = function (ev) {
+      if (ev.pointerId !== pid) return;
+      document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+      cancelAnimationFrame(scroller);
+      ghost.remove(); row.classList.remove('is-dragging'); root.classList.remove('is-dragging');
+      lists.forEach(function (l) { l.classList.remove('is-over', 'is-blocked'); });
+      var to = row.parentNode, key = to.getAttribute(kind), id = row.getAttribute('data-id');
+      var ids = function (l) { return rowsOf(l).map(function (r) { return r.getAttribute('data-id'); }); };
+      var base = '/admin/papawis/' + encodeURIComponent(run);
+      var save;
+      if (teams) {
+        if (!key) { toast('Drag them into Light or Dark: no side isn\'t saved', 'err'); refreshScreen(true); return; }
+        save = (to === from ? Promise.resolve() : admSend(base + '/teams/assign', { signup_id: id, team: key }))
+          .then(function () { return admSend(base + '/teams/reorder', { team: key, ids: ids(to) }); })
+          .then(function () { return to === from ? 'Order saved' : 'Moved to ' + (key === 'dark' ? 'Dark' : 'Light'); });
+      } else {
+        save = (to === from ? Promise.resolve() : admSend(base + '/signups/' + encodeURIComponent(id) + '/status', { status: key }))
+          .then(function () { return admSend(base + '/signups/reorder', { status: key, ids: ids(to) }); })
+          .then(function () { return to === from ? 'Order saved' : key === 'confirmed' ? 'Moved to confirmed' : 'Moved to the waitlist'; });
+      }
+      admBusy = true;
+      save.then(function (msg) { admBusy = false; toast(msg); refreshScreen(true); }, function (err) { admBusy = false; toast(err.message, 'err'); refreshScreen(true); });
+    };
+    document.addEventListener('pointermove', move, { passive: false }); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+  }
+
+  // Add player: search, pick one, optional guests, Confirmed or Waitlist.
+  function admAdd(tpl) {
+    var el = admSheet('Add a player', tpl.innerHTML);
+    var form = $('[data-adm-add-form]', el), q = $('[data-adm-q]', el), go = $('[data-adm-add-go]', el), msg = $('[data-adm-add-msg]', el);
+    var rows = $$('.adm-pick__row', el), picked = null;
+    var filter = function () {
+      var v = q.value.trim().toLowerCase(), shown = 0;
+      rows.forEach(function (r) { var on = !!v && r.getAttribute('data-q').indexOf(v) >= 0 && shown < 30; if (on) shown++; r.hidden = !on && r !== picked; });
+    };
+    q.addEventListener('input', filter);
+    rows.forEach(function (r) {
+      r.addEventListener('click', function () {
+        if (picked) { picked.classList.remove('is-on'); picked.setAttribute('aria-pressed', 'false'); }
+        picked = picked === r ? null : r;
+        if (picked) { r.classList.add('is-on'); r.setAttribute('aria-pressed', 'true'); }
+        go.disabled = !picked; msg.hidden = true; filter();
+      });
+      r.setAttribute('aria-pressed', 'false');
+    });
+    go.addEventListener('click', function () {
+      if (!picked || admBusy) return;
+      if (!navigator.onLine) { msg.textContent = 'You\'re offline. Nothing was sent.'; msg.hidden = false; return; }
+      admBusy = true; go.disabled = true; go.classList.add('is-busy');
+      var to = ($('input[name="adm-to"]:checked', el) || {}).value || 'confirmed';
+      admSend(form.getAttribute('data-url'), { player_id: picked.getAttribute('data-id'), guest_names: $('[data-adm-guests]', el).value, status: to })
+        .then(function (j) {
+          admBusy = false; closeSheet();
+          toast((j.added > 1 ? j.added + ' added' : 'Added') + (to === 'waitlist' ? ' to the waitlist' : ''));
+          refreshScreen(true);
+        }, function (e) { admBusy = false; go.disabled = false; go.classList.remove('is-busy'); msg.textContent = e.message; msg.hidden = false; });
+    });
+    setTimeout(function () { q.focus(); }, 300);
+  }
+
+  function initAdminPapawis() {
+    if (admBound) return;
+    admBound = true;
+    document.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target : null; if (!t) return;
+      var b;
+      if ((b = t.closest('[data-adm-post]'))) {
+        if (b.disabled || admBusy) return;
+        if (!navigator.onLine) { toast('You\'re offline. Nothing was sent.', 'err'); return; }
+        var ask = b.getAttribute('data-adm-ask');
+        if (ask && !window.confirm(ask)) return;
+        var body = null; try { body = JSON.parse(b.getAttribute('data-adm-body') || 'null'); } catch (x) {}
+        admBusy = true; b.disabled = true; b.classList.add('is-busy');
+        admSend(b.getAttribute('data-adm-post'), body, b.getAttribute('data-adm-method')).then(function (j) {
+          admBusy = false; b.disabled = false; b.classList.remove('is-busy');
+          if (sheet && sheet.contains(b)) closeSheet();
+          toast(admShort(j.message) || b.getAttribute('data-adm-done') || 'Done');
+          refreshScreen(true);
+        }, function (err) { admBusy = false; b.disabled = false; b.classList.remove('is-busy'); toast(err.message, 'err'); });
+        return;
+      }
+      if ((b = t.closest('[data-adm-acts]'))) {
+        var acts = []; try { acts = JSON.parse(b.getAttribute('data-adm-acts')); } catch (x) {}
+        admSheet(b.getAttribute('data-adm-title') || 'Player', '<div class="group adm-acts">' + acts.map(function (a) {
+          return '<button type="button" class="cell adm-act' + (a.danger ? ' adm-act--danger' : '') + '"' + (a.disabled ? ' disabled' : '') +
+            ' data-adm-post="' + admEsc(a.post || '') + '"' + (a.body ? ' data-adm-body="' + admEsc(JSON.stringify(a.body)) + '"' : '') +
+            (a.ask ? ' data-adm-ask="' + admEsc(a.ask) + '"' : '') + ' data-adm-done="' + admEsc(a.done || 'Done') + '">' +
+            '<span class="cell__t">' + admEsc(a.label) + (a.sub ? '<small>' + admEsc(a.sub) + '</small>' : '') + '</span></button>';
+        }).join('') + '</div>');
+        return;
+      }
+      if ((b = t.closest('[data-adm-add]'))) { var tpl = $('[data-adm-add-tpl]'); if (tpl) admAdd(tpl); return; }
+      if ((b = t.closest('[data-adm-cover-btn]'))) {
+        var box = b.closest('[data-adm-cover]'), input = $('[data-adm-cover-input]', box);
+        if (!box.hasAttribute('data-has-cover')) { input.click(); return; }
+        var el = admSheet('Cover', '<div class="group adm-acts"><button type="button" class="cell adm-act" data-adm-pick-photo><span class="cell__t">Choose a photo<small>Cropped to 16:9 for the run card and the homepage</small></span></button>' +
+          '<button type="button" class="cell adm-act adm-act--danger" data-adm-post="/admin/papawis/' + admEsc(encodeURIComponent(box.getAttribute('data-adm-cover'))) + '/cover" data-adm-method="DELETE" data-adm-ask="Remove this cover? The court photo shows again." data-adm-done="Cover removed"><span class="cell__t">Remove cover</span></button></div>');
+        $('[data-adm-pick-photo]', el).addEventListener('click', function () { input.click(); closeSheet(); });
+        return;
+      }
+      if ((b = t.closest('[data-adm-copy]'))) {
+        var text = b.getAttribute('data-adm-copy');
+        (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Copied. Paste it into Messenger'); }, function () { window.prompt('Copy this text:', text); });
+      }
+    });
+    document.addEventListener('change', function (e) {
+      var input = e.target.closest && e.target.closest('[data-adm-cover-input]');
+      if (input && input.files && input.files[0]) { admCover(input.files[0], input.closest('[data-adm-cover]')); input.value = ''; }
+    });
+    document.addEventListener('pointerdown', function (e) {
+      var grip = e.target.closest && e.target.closest('.adm-grip');
+      if (grip && (e.pointerType !== 'mouse' || e.button === 0)) admDrag(grip, e);
+    });
+    // Drop a photo on the cover (a computer, or an iPad with Files open beside the app).
+    var coverOf = function (e) { return e.target.closest && e.target.closest('[data-adm-cover]'); };
+    var hasFile = function (e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0; };
+    document.addEventListener('dragover', function (e) { var box = coverOf(e); if (box && hasFile(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; box.classList.add('is-drop'); } });
+    document.addEventListener('dragleave', function (e) { var box = coverOf(e); if (box && !box.contains(e.relatedTarget)) box.classList.remove('is-drop'); });
+    document.addEventListener('drop', function (e) {
+      var box = coverOf(e); if (!box || !hasFile(e)) return;
+      e.preventDefault(); box.classList.remove('is-drop');
+      admCover(e.dataTransfer.files[0], box);
     });
   }
 
@@ -1362,12 +1603,15 @@
         var p = document.createElement('p'); p.className = 'ct__empty'; p.textContent = e;
         $('.sheet__body', el).innerHTML = ''; $('.sheet__body', el).appendChild(p);
       });
-    // Swipe down to close: from the top bar, or anywhere in the comments once they're scrolled
-    // to the top (a swipe up still scrolls them). Not from the box you type in.
+    swipeToClose(el, '.th__comp', '.th__list');
+  }
+  // Swipe down to close a sheet: from the top bar, or anywhere in its list once that's
+  // scrolled to the top (a swipe up still scrolls it). Not from skip (the box you type in).
+  function swipeToClose(el, skip, listSel) {
     var box = $('.sheet__box', el), y0 = null, dy = 0, list = null, dragging = false;
     box.addEventListener('touchstart', function (e) {
-      if (e.touches.length > 1 || (e.target.closest && e.target.closest('.th__comp'))) { y0 = null; return; }
-      list = e.target.closest && e.target.closest('.th__list');
+      if (e.touches.length > 1 || (e.target.closest && e.target.closest(skip))) { y0 = null; return; }
+      list = e.target.closest && e.target.closest(listSel);
       y0 = e.touches[0].clientY; dy = 0; dragging = false;
     }, { passive: true });
     box.addEventListener('touchmove', function (e) {
@@ -1842,7 +2086,7 @@
     };
     document.addEventListener('touchstart', function (e) {
       startY = null;
-      if (busy || sheet || e.touches.length > 1 || window.scrollY > 0 || !$('nav.tabbar') || (e.target.closest && e.target.closest('.player'))) return;
+      if (busy || sheet || e.touches.length > 1 || window.scrollY > 0 || !$('nav.tabbar') || (e.target.closest && e.target.closest('.player, .adm-grip'))) return;
       startY = e.touches[0].clientY; pull = 0;
     }, { passive: true });
     document.addEventListener('touchmove', function (e) {

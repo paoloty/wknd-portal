@@ -256,7 +256,7 @@ import { bonusCutoff, ballotClose, isPast, fmtMoment, tallyBallots, podiumPoints
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
-import { estimatedPapawisPrice } from './views/admin/papawis.js';
+import { estimatedPapawisPrice, ACTIVITY_LABELS as PAPAWIS_ACTIVITY_LABELS } from './views/admin/papawis.js';
 import { adminPapawisActivityBody } from './views/admin/papawis-activity.js';
 import { adminPapawisRunsBody } from './views/admin/papawis-runs.js';
 import { adminPapawisRunBody } from './views/admin/papawis-run.js';
@@ -265,7 +265,7 @@ import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDeta
 import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { adminPapawisCourtBody } from './views/admin/papawis-court.js';
 import { adminAnalyticsBody } from './views/admin/analytics.js';
-import { buildBalancedTeams } from './lib/papawis-teams.js';
+import { buildBalancedTeams, parseHeightCm } from './lib/papawis-teams.js';
 import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisTeamAssignedEmails, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
 import {
   announcePapawisGame, queuePapawisSlotAlert, runPapawisBroadcasts, papawisBroadcastState, papawisAnnouncementPreview,
@@ -302,7 +302,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/table-scroll.js', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -6028,6 +6028,7 @@ import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDon
 import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
+import { appAdminPapawisPage, papawisMessengerText } from './views/app/admin-papawis.js';
 import { appSettlePage } from './views/app/settle.js';
 import { appRatePage } from './views/app/rate.js';
 import { appPollTakeover } from './views/app/poll.js';
@@ -6049,7 +6050,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6746,7 +6747,11 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   const teams = [g.team_a_id, g.team_b_id].map((tid, i) => ({
     ...(i ? b : a),
     rows: stats.filter(s => s.team_id === tid).map(s => ({ playerId: s.player_id, number: String(s.number ?? ''), name: displayPlayerName(s.name || ''),
-      pts: Number(s.pts) || 0, reb: Number(s.reb) || 0, ast: Number(s.ast) || 0, stl: Number(s.stl) || 0, blk: Number(s.blk) || 0 })),
+      pts: Number(s.pts) || 0, reb: Number(s.reb) || 0, ast: Number(s.ast) || 0, stl: Number(s.stl) || 0, blk: Number(s.blk) || 0, to: Number(s.turnover) || 0,
+      // Shooting as made / attempted, like the site's box score (views/game.js).
+      fgm: (+s.fg2m || 0) + (+s.fg3m || 0) + (+s.fg4m || 0), fga: (+s.fg2m || 0) + (+s.fg3m || 0) + (+s.fg4m || 0) + (+s.fg2m_miss || 0) + (+s.fg3m_miss || 0) + (+s.fg4m_miss || 0),
+      tpm: +s.fg3m || 0, tpa: (+s.fg3m || 0) + (+s.fg3m_miss || 0), qpm: +s.fg4m || 0, qpa: (+s.fg4m || 0) + (+s.fg4m_miss || 0),
+      ftm: +s.ftm || 0, fta: (+s.ftm || 0) + (+s.ft_miss || 0) })),
   })).filter(t => t.rows.length);
   const thread = appCommentsOn() ? appThreadData({ kind: 'game', key: g.id, game: g }, req) : null;
   const mine = stats.find(s => s.player_id === me.playerId);
@@ -7282,7 +7287,7 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
   const kind = pwKind(g), price = Number(g.price_per_player) || 0;
   const mineS = confirmed.find(s => s.player_id === me.playerId && !s.guest_name) || null;
   const status = pwMine(kind, mineS, price);
-  sendTab(res, me, { title: `${g.title || 'Papawis'} · WKND`, tab: 'papawis', body: appPapawisRunPage({ back, run: {
+  sendTab(res, me, { title: `${g.title || 'Papawis'} · WKND`, tab: 'papawis', body: appPapawisRunPage({ back, admin: appPapawisAdmin(req) ? appPapawisAdminHint(g) : null, run: {
     id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
     place: g.location || 'Papawis', photo: papawisCoverUrl(g, getPapawisCourtByName(g.location)) || '',
     kind, count: confirmed.length, max: g.max_slots || confirmed.length, price: kind === 'played' ? price : 0,
@@ -7296,11 +7301,124 @@ app.get('/app/papawis', requireApp, (req, res) => {
   const me = appMe(req);
   const on = getSetting('papawis_enabled', '0') === '1';
   sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage({
-    off: !on, runs: on ? appPapawisRuns(me) : [],
+    off: !on, runs: on ? appPapawisRuns(me).map(r => (appPapawisAdmin(req) ? { ...r, admin: appPapawisAdminHint(getPapawisGame(r.id)) } : r)) : [],
     totals: on ? getPapawisTotalsForPlayer(me.playerId) : null,
     summary: on ? storedTeamsSummary('papawis_summary', papawisSummaryFacts(getPapawisGames())) : null,
     cutoffDays: PAPAWIS_CUTOFF_DAYS,
   }) });
+});
+
+// ── Papawis admin in the app (views/app/admin-papawis.js) ──
+// Admins with the Papawis section (same check as the site's admin menu) manage runs from the
+// app: a Manage run strip on each run, and /app/admin/papawis/:id. Every change posts to the
+// site's own /admin/papawis routes, so there's no second copy of a rule here. Not while
+// viewing as a player.
+const appPapawisAdmin = req => !!req.session?.isAdmin && !req.session.impersonating && isAdminWithSection(req, 'papawis');
+const pwSignupName = s => (s.guest_name ? s.guest_name : displayPlayerName(s.player_name));
+// What needs the admin on a run: deposits to confirm, the announcement, late team emails,
+// and who still owes after the game.
+function papawisAdminTodo(g, signups = getPapawisSignups(g.id)) {
+  const open = g.status === 'open', locked = !!g.signups_locked_at;
+  const confirmed = signups.filter(s => s.status === 'confirmed');
+  const pending = open ? signups.filter(s => s.status === 'pending').length : 0;
+  const canAnnounce = open && !locked && !g.announced_at && !(g.announce_send_at && g.announce_send_at > Date.now()) && confirmed.length < g.max_slots;
+  const catchUp = open ? confirmed.filter(s => !s.guest_name && s.team && s.reminder_sent_at && !s.team_notified_at).length : 0;
+  const unpaid = g.status === 'completed' ? confirmed.filter(s => !s.paid_at).length : 0;
+  return { pending, canAnnounce, catchUp, unpaid };
+}
+function appPapawisAdminHint(g) {
+  if (!g) return null;
+  const t = papawisAdminTodo(g);
+  const notAnnounced = t.canAnnounce && isPapawisSignupOpenNow(g);
+  const note = [
+    t.pending ? `${t.pending} deposit${t.pending === 1 ? '' : 's'} to confirm` : '',
+    notAnnounced ? 'Not announced yet' : '',
+    t.catchUp ? `${t.catchUp} team email${t.catchUp === 1 ? '' : 's'} to send` : '',
+    t.unpaid ? `${t.unpaid} still owe` : '',
+  ].filter(Boolean).join(' · ');
+  return { id: g.id, note: note || 'Roster, teams, money and messages', count: t.pending + t.catchUp + (notAnnounced ? 1 : 0) };
+}
+
+app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
+  const me = appMe(req);
+  if (!appPapawisAdmin(req)) return res.redirect('/app/papawis');
+  const g = getPapawisGame(req.params.id);
+  const tab = ['roster', 'teams', 'money', 'messages', 'activity'].includes(req.query.tab) ? req.query.tab : 'roster';
+  const back = { href: g && !(g.status === 'open' && pwDaysUntil(g.date) >= 0) ? `/app/papawis/${encodeURIComponent(g.id)}` : '/app/papawis', label: 'Papawis' };
+  if (!g) return sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appAdminPapawisPage({ missing: true, back }) });
+  const teams = getAllTeams();
+  const signups = getPapawisSignups(g.id);
+  const open = g.status === 'open', completed = g.status === 'completed', locked = !!g.signups_locked_at;
+  const row = s => ({
+    id: s.id, status: s.status, name: pwSignupName(s), guest: !!s.guest_name, sponsor: displayPlayerName(s.player_name), playerId: s.player_id,
+    team: s.team === 'light' || s.team === 'dark' ? s.team : '', teamName: s.guest_name ? '' : (s.team_name || ''), paid: !!s.paid_at,
+    reminded: !!s.reminder_sent_at, teamNotified: !!s.team_notified_at, face: pwFace(s, teams, ''),
+  });
+  const confirmed = signups.filter(s => s.status === 'confirmed').map(row);
+  const waitlist = signups.filter(s => s.status === 'waitlist').map(row);
+  const pending = open ? signups.filter(s => s.status === 'pending').map(s => {
+    const tx = getUnconfirmedPapawisDeposit(s.player_id);
+    return { ...row(s), tx: tx ? { id: tx.id, amount: tx.amount, method: tx.payment_method || '' } : null };
+  }) : [];
+  const todo = papawisAdminTodo(g, signups);
+  const canManage = open && !locked;
+  const fmt = ts => manilaFormat(ts, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const d = {
+    confirmed, waitlist, pending, canManage, minDeposit: getMaxPapawisPrice(),
+    confirmedCount: confirmed.length, waitCount: waitlist.length, paidCount: confirmed.filter(s => s.paid).length,
+    count: confirmed.length + waitlist.length + pending.length,
+    canAnnounce: todo.canAnnounce, catchUp: todo.catchUp, teamsSent: papawisTeamsSent(signups.filter(s => s.status === 'confirmed')), fmt,
+    players: [], teams: { built: false, all: [] }, activity: [], broadcast: null, messenger: '',
+  };
+  // Only what the open tab shows (one request per screen, and a fast render).
+  if (tab === 'roster' && canManage) {
+    const listed = new Set(signups.filter(s => !s.guest_name).map(s => s.player_id));
+    d.players = getAllPlayers().filter(p => !listed.has(p.id) && !p.banned_at)
+      .map(p => {
+        const name = displayPlayerName(p.name);
+        return { id: p.id, name, ini: name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
+          team: teams.find(t => t.id === p.team_id)?.name || '', color: p.team_id ? teamColorById(teams, p.team_id) : 'var(--subtle)', photoUrl: playerPhotoUrl(p.id, 96) };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+  if (tab === 'teams' && open) {
+    const roster = getPapawisConfirmedForTeams(g.id);
+    d.teams = { built: roster.some(r => r.team), all: roster.map(r => {
+      let pos = []; try { pos = JSON.parse(r.positions || '[]'); } catch { /* none */ }
+      const h = parseHeightCm(r.height);
+      return { id: r.id, team: r.team || '', guest: !!r.guest_name, name: r.guest_name || displayPlayerName(r.player_name), meta: [pos.join('/'), h ? `${Math.round(h)} cm` : ''].filter(Boolean).join(' · ') };
+    }) };
+  }
+  if (tab === 'money' && completed) {
+    // The site's "possible match": a payment the player already sent, to link instead of
+    // recording a second one (see /admin/papawis/:id for why only on/after the run's date).
+    for (const s of d.confirmed) {
+      if (s.paid) continue;
+      const c = getUnlinkedPapawisPayments(s.playerId).filter(x => x.date >= g.date);
+      s.match = c.length;
+      if (c.length === 1) Object.assign(s, { matchId: c[0].id, matchAmount: c[0].amount, matchDate: manilaFormat(Date.parse(`${c[0].date}T12:00:00+08:00`), { month: 'short', day: 'numeric' }) });
+    }
+  }
+  if (tab === 'messages') {
+    if (open) d.broadcast = { state: papawisBroadcastState(), preview: !g.announced_at && !locked ? papawisAnnouncementPreview(g) : null, alerts: getPapawisSlotAlerts(g.id), regularsRule: `${REGULAR_MIN_GAMES} of the last ${REGULAR_WINDOW} games` };
+    const names = list => list.map(s => s.name);
+    d.messenger = papawisMessengerText({ date: g.date, start_time: g.start_time, end_time: g.end_time, location: g.location, max_slots: g.max_slots, completed,
+      confirmed: names(confirmed), waitlist: names(waitlist), paid: confirmed.map(s => s.paid) });
+  }
+  if (tab === 'activity') {
+    d.activity = getPapawisActivityForGame(g.id).slice(0, 100).map(e => ({ who: e.player_name ? displayPlayerName(e.player_name) : 'Someone',
+      what: `${(PAPAWIS_ACTIVITY_LABELS[e.event_type] || { label: e.event_type }).label}${e.notes ? ` (${e.notes})` : ''}`, when: fmt(e.created_at) }));
+  }
+  const opensAt = papawisSignupOpensAtMs(g);
+  const run = {
+    id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
+    place: g.location || 'Court to be announced', photo: papawisCoverUrl(g) || '', hasCover: !!g.cover_ver,
+    open, completed, cancelled: g.status === 'cancelled', locked, scheduled: open && !isPapawisSignupOpenNow(g),
+    opensLabel: `${pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10))}, 8:00 AM`,
+    max: g.max_slots || 0, price: Number(g.price_per_player) || 0, daysLeft: pwDaysUntil(g.date),
+    announcedAt: g.announced_at || null, announcedCount: g.announced_count || 0, announceAt: g.announce_send_at || null, openDelay: !!g.open_days_before,
+  };
+  sendTab(res, me, { title: `Manage ${run.title} · WKND`, tab: 'papawis', body: appAdminPapawisPage({ run, tab, d, back }) });
 });
 
 // More became Settings under Me (Fable review, 2026-10-23). Old links still land.

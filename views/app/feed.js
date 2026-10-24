@@ -145,13 +145,23 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todo
 
 const navbar = (back, title) => `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">${esc(title)}</span><span></span></div>`;
 
-// Box score for one team; the viewer's own row stands out.
+// Shooting as made-attempted ("5-9"); a dash when none were taken.
+const madeOf = (m, a) => (a ? `${m}-${a}` : '–');
+// Box score for one team; the viewer's own row stands out. It swipes sideways for the
+// shooting columns; the name column stays put (public/table-scroll.js, the standard).
+// 4PT only shows in a game where someone took one.
 function boxTable(team, meId) {
+  const cols = [
+    ['PTS', r => r.pts], ['REB', r => r.reb], ['AST', r => r.ast], ['STL', r => r.stl], ['BLK', r => r.blk], ['TO', r => r.to],
+    ['FG', r => madeOf(r.fgm, r.fga)], ['3PT', r => madeOf(r.tpm, r.tpa)],
+    team.rows.some(r => r.qpa) ? ['4PT', r => madeOf(r.qpm, r.qpa)] : null,
+    ['FT', r => madeOf(r.ftm, r.fta)],
+  ].filter(Boolean);
   return `<div class="box">
     <div class="box__head"><span class="dot" style="--c:${esc(team.color)}"></span><b>${esc(team.name)}</b>${team.won ? '<span class="box__w">W</span>' : ''}</div>
-    <table class="bx"><thead><tr><th></th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th></tr></thead><tbody>
-    ${team.rows.map(r => `<tr${r.playerId === meId ? ' class="is-me"' : ''}><td>${r.number !== '' ? `<span class="bx__no">${esc(r.number)}</span>` : ''}${esc(r.name)}${r.playerId === meId ? ' <small>· you</small>' : ''}</td><td>${r.pts}</td><td>${r.reb}</td><td>${r.ast}</td><td>${r.stl}</td><td>${r.blk}</td></tr>`).join('')}
-    </tbody></table></div>`;
+    <div class="bx-scroll"><table class="bx"><thead><tr><th></th>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead><tbody>
+    ${team.rows.map(r => `<tr${r.playerId === meId ? ' class="is-me"' : ''}><td>${r.number !== '' ? `<span class="bx__no">${esc(r.number)}</span>` : ''}${esc(r.name)}${r.playerId === meId ? ' <small>· you</small>' : ''}</td>${cols.map(c => `<td>${c[1](r)}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div></div>`;
 }
 
 // g: { title, a, b, media, meta, final, recap: { title, paras[] }, potg: [...+writeup], mine,

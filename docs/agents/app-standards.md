@@ -43,6 +43,7 @@ Each uncached request from the Philippines costs ~1.3–1.7 s (PH → Cloudflare
 20. **Type:** only the sizes in CLAUDE.md ("Players app type"). (target: sizes in rem from `html { font: -apple-system-body }` so iPhone's Larger Text works.)
 21. **Colour:** amber only through `--amber` (fills) and `--amber-text` (text). Text and icons meet 4.5:1 (3:1 for large text and non-text) **in light and dark**. Team colours only on `.dot`, avatar rings and pick bars. A new colour gets a token in all three `:root` blocks of `public/app.css`.
 22. **Surfaces:** reuse `.card`, `.group` + `.cell`, `.sx`, `.fc`, `.empty`, `.glow`. Corners are `--r-card`, `--r-in` or round. No new card styles.
+22a. **Data tables swipe, names pinned:** a stats table wider than the screen sits in a box with `overflow-x: auto`; `public/table-scroll.js` (site, admin and app) then pins its first column and shows a shadow on that column's edge once swiped. Nothing to add per table, and no hand-made sticky column or shadow. Opt out with `data-xs-off`. Borders: row lines or one-sided dividers only (a boxed-in grid is left unpinned).
 23. **No inline `style=`** for layout or type: add a class in the feature's block of `public/app.css`. Inline is fine only for data-driven custom properties (`--c`, `--ring`, `width:%`).
 24. **Icons:** only `icons.*` line icons, no emoji or text glyphs (✕ ★ ⏳ 📎 📍). Every icon-only button has an `aria-label`, including its count ("Fire, 3").
 25. **Copy:** "WKND Basketball" (never "League"), "Log out", and names that match the real screens (Me → Settings).

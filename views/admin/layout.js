@@ -389,6 +389,7 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
     });
   })();
   </script>
+  <script src="/table-scroll.js${v}" defer></script>
   <script src="/admin-ui.js${v}" defer></script>
 </body>
 </html>`;

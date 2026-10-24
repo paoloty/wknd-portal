@@ -767,6 +767,7 @@ document.addEventListener('click', function (e) {
   navigator.sendBeacon('/api/cta/' + encodeURIComponent(a.getAttribute('data-cta')) + (page ? '?ref=' + encodeURIComponent(page.getAttribute('data-cta-ref')) : ''));
 });
 </script>
+<script src="/table-scroll.js${cssVer ? `?v=${cssVer}` : ''}" defer></script>
 </body>
 </html>`;
 }

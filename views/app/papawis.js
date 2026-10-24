@@ -5,7 +5,8 @@
 // the player's own result. Data and rules: server.js appPapawisRuns / appPapawisPast
 // (mirror views/papawis.js). The buttons post to the site's own /papawis/:id/join | cancel |
 // voucher (public/app.js initPapawis).
-import { esc, appAvatar, backChev, icons, lazyList } from './layout.js';
+import { esc, appAvatar, backChev, chev, icons, lazyList } from './layout.js';
+import { papawisAdminStrip } from './admin-papawis.js';
 
 const lt = title => `<header class="lt"><h1>${esc(title)}</h1></header>`;
 // "**Blue** is …" → bold names (the stored write-up marks them that way).
@@ -102,13 +103,19 @@ function runCard(r) {
       <div class="pw-act">${papawisAction(r)}</div>
       <p class="msg msg--err" data-pw-msg role="alert" hidden></p>
     </div>
+    ${r.admin ? papawisAdminStrip(r.admin) : ''}
   </section>`;
 }
 
 // A later run whose sign-ups aren't open yet: one line, nothing to do until they open.
-const laterRow = r => `<div class="cell pw-later"><span class="pw-cal"><b>${esc(r.dayNum)}</b><span>${esc(r.mon)}</span></span>
-    <span class="cell__t">${esc(r.title)}<small>${esc([r.time, r.place].filter(Boolean).join(' · '))}</small></span>
-    <span class="cell__v">Opens ${esc(r.opensShort)}</span></div>`;
+// Admins (r.admin) get the row as a link to the run's Manage screen.
+const laterRow = r => {
+  const inner = `<span class="pw-cal"><b>${esc(r.dayNum)}</b><span>${esc(r.mon)}</span></span>
+    <span class="cell__t">${esc(r.title)}<small>${esc([r.time, r.place].filter(Boolean).join(' · '))}</small></span>`;
+  return r.admin
+    ? `<a class="cell pw-later" href="/app/admin/papawis/${esc(r.id)}">${inner}<span class="cell__v pw-v--manage">Manage</span>${chev}</a>`
+    : `<div class="cell pw-later">${inner}<span class="cell__v">Opens ${esc(r.opensShort)}</span></div>`;
+};
 
 // runs: server.js appPapawisRuns · totals: getPapawisTotalsForPlayer · summary: the stored
 // "Papawis this week" write-up ({ kicker, headline, body }) or null
@@ -148,7 +155,8 @@ export function appPapawisPastRows(items) {
 
 // One past run (/app/papawis/:id). run: { id, title, day, time, place, photo, kind, count,
 // max, price, faces, teamsOut, mine: null | { status: 'paid'|'unpaid'|'played'|'listed', team, amount } }
-export function appPapawisRunPage({ missing = false, run = null, back = { href: '/app/papawis', label: 'Papawis' } }) {
+// admin: the Manage run strip (views/app/admin-papawis.js papawisAdminStrip) for admins, else null
+export function appPapawisRunPage({ missing = false, run = null, back = { href: '/app/papawis', label: 'Papawis' }, admin = null }) {
   const nav = `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">${run ? esc(run.day) : 'Papawis'}</span><span></span></div>`;
   if (missing || !run) return `${nav}<div class="empty pw-gap">This run isn't on the list any more.</div>`;
   const label = { played: 'Played', cancelled: 'Cancelled', pending: 'Price pending' }[run.kind];
@@ -170,5 +178,6 @@ export function appPapawisRunPage({ missing = false, run = null, back = { href: 
       <div class="pw-who pw-who--gap"><span class="pw-who__t">${run.teamsOut ? 'Teams' : run.kind === 'cancelled' ? 'Who was listed' : 'Who played'}</span><span class="pw-who__n"><b>${run.count}</b></span></div>
       ${run.faces.length ? seats({ ...run, max: run.faces.length, scheduled: false }) : '<p class="pwr__note">Nobody was listed.</p>'}
     </div>
+    ${admin ? papawisAdminStrip(admin) : ''}
   </section>`;
 }

@@ -1184,7 +1184,7 @@ function myProfileSidebar({ balanceAmount = 0, papawisGames = [], balanceTransac
       msg.textContent = 'Saving…';
       fetch('/me/papawis-emails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: on }) })
         .then(function (r) { if (!r.ok) throw new Error(); msg.textContent = on ? 'You’ll get Papawis game alerts.' : 'Papawis game alerts turned off.'; })
-        .catch(function () { box.checked = !on; msg.textContent = 'Couldn\'t save. Try again.'; });
+        .catch(function () { box.checked = !on; msg.textContent = 'Couldn’t save. Try again.'; });
     });
   })();
   </script>`;

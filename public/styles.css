@@ -6,6 +6,7 @@
   --text:        #e7eaf0;
   --text-muted:  #8a93a4;
   --text-subtle: #5b6475;
+  --edge-shadow: rgba(0,0,0,0.7); /* the pinned column's shadow on swipeable tables */
   --amber:       #f59332;
   --amber-dim:   rgba(245,147,50,0.15);
   --amber-deep:  #7a4a1f;
@@ -10591,3 +10592,13 @@ html.ppop-lock { overflow: hidden; }
 .rf-stage__result code { word-break: break-all; }
 .rf-win { font-size: 28px; font-weight: 900; letter-spacing: -0.01em; }
 @media (max-width: 640px) { .rf-title { font-size: 26px; } .rf-cd__n { font-size: 32px; } }
+
+/* ── Swipeable tables (public/table-scroll.js; the same block is in public/app.css) ────────
+   The standard for every data grid: a table wider than its box swipes sideways, its first
+   column stays put, and once swiped a shadow shows on that column's edge. The script adds
+   .xs (the box, .is-scrolled once swiped), .xs__t (the table) and .xs__c (the first
+   column's cells) only while the table is wider than its box. Separate borders: cells in a collapsed table can't paint a shadow. */
+.xs__t { border-collapse: separate !important; border-spacing: 0 !important; }
+.xs__t .xs__c { position: sticky; left: 0; z-index: 2; background-color: var(--xs-cell, var(--xs-bg)); transition: box-shadow .2s ease; }
+.xs__t thead .xs__c { z-index: 3; }
+.xs.is-scrolled .xs__t .xs__c { box-shadow: 9px 0 12px -6px var(--edge-shadow); }

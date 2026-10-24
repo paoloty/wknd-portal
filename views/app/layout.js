@@ -208,6 +208,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   ${installWall ? installWallHtml() : ''}
   <main class="app${bare ? ' app--bare' : ''}">${body}</main>
   ${tabbar}
+  <script src="/table-scroll.js?v=${esc(ver)}" defer></script>
   <script src="/app.js?v=${esc(ver)}" defer></script>
 </body>
 </html>`;
