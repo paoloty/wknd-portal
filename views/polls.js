@@ -201,6 +201,12 @@ export function pollPopup({ poll, total = 0 }) {
   const art = hasArt
     ? `<div class="ppop-art"><img src="/api/poll-art/${encodeURIComponent(poll.id)}?v=${poll.art_ver}" alt="" width="${poll.art_w}" height="${poll.art_h}" decoding="async"></div>`
     : '';
+  // A closing time gets a live countdown (the app's poll takeover has the same one).
+  const countdown = poll.closes_at ? `
+      <div class="ppop-cd" data-ppop-cd="${Number(poll.closes_at)}" title="Voting closes ${escHtml(pollClosesLabel(poll.closes_at))}">
+        <div><b data-ppop-cd-d>–</b><small>Days</small></div><div><b data-ppop-cd-h>–</b><small>Hrs</small></div>
+        <div><b data-ppop-cd-m>–</b><small>Min</small></div><div class="ppop-cd-sec"><b data-ppop-cd-s>–</b><small>Sec</small></div>
+      </div>` : '';
   const closes = poll.closes_at ? `Voting closes <b>${escHtml(pollClosesLabel(poll.closes_at))}</b> · ` : '';
   const rows = poll.options.map((opt, i) => `
       <button type="button" class="ppop-opt" data-ppop-opt="${i}">
@@ -221,7 +227,7 @@ export function pollPopup({ poll, total = 0 }) {
       </div>
       <h2 class="ppop-q" id="ppop-q">${escHtml(poll.question)}</h2>
       ${poll.description ? `<p class="ppop-desc">${escHtml(poll.description)}</p>` : ''}
-      <p class="ppop-sub">${closes}<span data-ppop-n>${total}</span> voted so far</p>
+      <p class="ppop-sub">${closes}<span data-ppop-n>${total}</span> voted so far</p>${countdown}
       <div class="ppop-opts">${rows}</div>
       <div class="ppop-foot">
         <span class="ppop-msg" data-ppop-msg>Tap one to vote. You can change it later on /polls.</span>
@@ -304,6 +310,21 @@ export function pollPopup({ poll, total = 0 }) {
         });
     });
   });
+
+  var cd = root.querySelector('[data-ppop-cd]');
+  if (cd) {
+    var to = Number(cd.getAttribute('data-ppop-cd')), timer = null;
+    var two = function (n) { return n < 10 ? '0' + n : String(n); };
+    var tick = function () {
+      var s = Math.max(0, Math.floor((to - Date.now()) / 1000));
+      cd.querySelector('[data-ppop-cd-d]').textContent = Math.floor(s / 86400);
+      cd.querySelector('[data-ppop-cd-h]').textContent = two(Math.floor(s / 3600) % 24);
+      cd.querySelector('[data-ppop-cd-m]').textContent = two(Math.floor(s / 60) % 60);
+      cd.querySelector('[data-ppop-cd-s]').textContent = two(s % 60);
+      if (!s) clearInterval(timer);
+    };
+    tick(); timer = setInterval(tick, 1000);
+  }
 
   setTimeout(open, 900);
 })();

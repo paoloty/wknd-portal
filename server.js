@@ -3231,17 +3231,21 @@ function pollTierQualifies(tier, identity) {
   if (tier === 'heads') return identity.isHead;
   return false; // tier === 'admins', and identity isn't one
 }
-// The one poll that pops up over the site for this viewer (views/polls.js pollPopup): open,
-// switched to "Show as popup", one they can see and vote in, and not voted in yet. Newest
-// wins when more than one is switched on. Never while an admin is viewing as a player, and
-// not on /polls itself, where the same poll is already on the page.
-function pollPopupFor(req, currentPath) {
-  if (req.session?.impersonating || currentPath === '/polls') return '';
+// The one poll that pops up for this viewer, on the site (views/polls.js pollPopup) and in
+// the app (views/app/poll.js appPollTakeover): open, switched to "Show as popup", one they can
+// see and vote in, and not voted in yet. Newest wins when more than one is switched on. Never
+// while an admin is viewing as a player.
+function popupPollFor(req) {
+  if (req.session?.impersonating) return null;
   const identity = currentPollVoterIdentity(req);
-  if (!identity) return '';
-  const poll = getAllLeaguePolls().find(p => p.status === 'open' && p.popup
+  if (!identity) return null;
+  return getAllLeaguePolls().find(p => p.status === 'open' && p.popup
     && pollTierQualifies(p.visibility, identity) && pollTierQualifies(p.voter_eligibility, identity)
-    && !getMyLeaguePollVote(p.id, identity.id));
+    && !getMyLeaguePollVote(p.id, identity.id)) || null;
+}
+// Not on /polls itself, where the same poll is already on the page.
+function pollPopupFor(req, currentPath) {
+  const poll = currentPath === '/polls' ? null : popupPollFor(req);
   return poll ? pollPopup({ poll, total: getLeaguePollVotes(poll.id).length }) : '';
 }
 // /polls is open to any logged-in player or admin — a wider gate than requireHead, since
@@ -6026,6 +6030,7 @@ import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotif
 import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appSettlePage } from './views/app/settle.js';
 import { appRatePage } from './views/app/rate.js';
+import { appPollTakeover } from './views/app/poll.js';
 import { getUnpaidPapawisForPlayer } from './lib/portal-db.js';
 import { depositPresets } from './views/utils.js';
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
@@ -6044,7 +6049,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6481,7 +6486,9 @@ app.get('/app', requireApp, (req, res) => {
   const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form')
     .map(t => t.icon === 'wallet' ? { ...t, href: `${t.href}?from=home` } : t);
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
-  sendTab(res, me, { title: 'WKND', tab: 'home', body: appHomeFeedPage({
+  // The site's poll popup, full screen over Home (views/app/poll.js).
+  const poll = popupPollFor(req);
+  sendTab(res, me, { title: 'WKND', tab: 'home', body: (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread }),
     setupHtml: setupCard(setup), installHtml: installCard,
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,

@@ -599,6 +599,16 @@ html.iw-ios .iw-arrow { display: flex; }
 .player.is-full .player__stage { inset: auto; left: 50%; top: 50%; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; transform: translate(-50%, -50%); }
 .player.is-full .player__bar { bottom: env(safe-area-inset-bottom, 0px); padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(6px, env(safe-area-inset-right, 0px)); }
 .player:fullscreen { width: 100%; height: 100%; }
+/* Mini player (public/app.js mountPlayer): scrolled off while playing, it floats bottom right
+   above the tab bar, picture only (tap = play/pause), with an X that puts it back paused. */
+.player.is-float { position: fixed; z-index: 30; left: auto; top: auto; right: 12px; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); width: min(56vw, 240px); height: auto; aspect-ratio: 16 / 9; margin: 0; border-radius: var(--r-in); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.player.is-float .player__bar, .player.is-float .media em { display: none; }
+.player__close { display: none; position: absolute; z-index: 2; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; align-items: center; justify-content: center; background: rgba(0,0,0,.6); color: #fff; }
+.player__close::after { content: ''; position: absolute; inset: -8px; } /* 44pt hit area */
+.player__close svg { width: 16px; height: 16px; }
+.player.is-float .player__close { display: flex; }
+@media (prefers-reduced-motion: no-preference) { .player.is-float { animation: player-float .25s cubic-bezier(.22,1,.36,1); } }
+@keyframes player-float { from { opacity: 0; transform: translateY(12px) scale(.96); } }
 body.player-full { overflow: hidden; }
 body.player-full .tabbar, body.player-full .navbar { visibility: hidden; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1134,3 +1144,53 @@ button.pill::after { inset: -9px -4px; }
 .rt__bad summary i { font-style: normal; font-size: 12px; }
 .rt__send { margin: 16px 16px 0; }
 .rt__fine { margin-bottom: 20px; }
+
+/* ── Poll takeover (views/app/poll.js): the site's poll popup, full screen over Home. Home
+   shows through, blurred; the poll sits centred (margin: auto, so a tall poll scrolls from
+   its top instead of being cut off). Opened by public/app.js initPollTakeover. ── */
+html.tk-lock { overflow: hidden; }
+.tk { position: fixed; z-index: 34; inset: 0; display: flex; overflow-y: auto; overscroll-behavior: contain;
+  padding: calc(var(--safe-t) + 60px) 18px calc(var(--safe-b) + 28px);
+  background: color-mix(in srgb, var(--bg) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(120%); backdrop-filter: blur(18px) saturate(120%); }
+.tk__box { width: 100%; max-width: 480px; margin: auto; display: flex; flex-direction: column; }
+.tk__box:focus { outline: none; }
+.tk__x { position: absolute; top: calc(var(--safe-t) + 10px); right: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); }
+.tk__x::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--surface-2); }
+.tk__x svg { position: relative; width: 18px; height: 18px; }
+.tk__art { margin-bottom: 16px; border-radius: var(--r-in); overflow: hidden; background: var(--surface-2); }
+.tk__art img { width: 100%; height: auto; max-height: 180px; object-fit: contain; }
+.tk__kick { color: var(--amber-text); }
+.tk__q { margin: 10px 0 14px; font-family: var(--font-num); font-weight: 800; font-size: 26px; line-height: 1.05; text-transform: uppercase; letter-spacing: .01em; text-wrap: balance; }
+.tk__cd { margin-bottom: 16px; }
+.tk__cd-l { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+.tk__cd-l b, .tk__n b { color: var(--text); font-weight: 600; }
+.tk__n { margin: 0 0 16px; font-size: 12px; color: var(--muted); }
+.tk__cd-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tk__cd-row div { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 64px; border-radius: var(--r-in); background: color-mix(in srgb, var(--surface-2) 88%, transparent); border: 1px solid var(--hair); }
+.tk__cd-row b { font-family: var(--font-num); font-weight: 800; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.tk__cd-row small { font-family: var(--font-num); font-weight: 600; font-size: 11px; line-height: 1; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.tk__cd-sec b { color: var(--amber-text); }
+.tk__opts { display: flex; flex-direction: column; gap: 8px; }
+.tk__opt { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 2px; min-height: 56px; padding: 9px 13px; border-radius: var(--r-in); text-align: left; color: var(--text);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent); border: 1px solid transparent; justify-content: center; }
+.tk__opt:disabled { cursor: default; }
+.tk__opt:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.tk__fill { position: absolute; inset: 0 auto 0 0; width: 0; background: rgba(245,147,50,.14); }
+.tk__head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tk__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
+.tk__pct { flex: none; font-family: var(--font-num); font-weight: 700; font-size: 15px; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tk__detail { position: relative; font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tk__opt.is-mine { border-color: var(--amber); }
+.tk__opt.is-mine .tk__pct { color: var(--amber-text); }
+.tk__msg { margin: 12px 0 0; min-height: 17px; font-size: 12px; color: var(--muted); text-align: center; }
+.tk__msg.is-done { color: var(--text); font-weight: 600; }
+.tk__msg.is-error { color: var(--danger); }
+.tk__box > .btn { margin-top: 10px; }
+.tk__box > .btn--plain { color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .tk { opacity: 0; transition: opacity .22s ease; }
+  .tk.is-in { opacity: 1; }
+  .tk__box { transform: translateY(14px); transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+  .tk.is-in .tk__box { transform: none; }
+  .tk__fill { transition: width .45s cubic-bezier(.22,.9,.35,1); }
+}

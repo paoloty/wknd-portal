@@ -10183,6 +10183,11 @@ html.ppop-lock { overflow: hidden; }
 .ppop-desc { margin: -6px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
 .ppop-sub { margin: -6px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
 .ppop-sub b { color: var(--text); font-weight: 600; }
+.ppop-cd { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: -2px; }
+.ppop-cd div { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 58px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+.ppop-cd b { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 26px; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.ppop-cd small { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 600; font-size: 11px; line-height: 1; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
+.ppop-cd .ppop-cd-sec b { color: var(--amber); }
 .ppop-opts { display: flex; flex-direction: column; gap: 7px; }
 /* color set on the button itself: <button> ignores inherited text colour (see .plp-option). */
 .ppop-opt { position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); overflow: hidden; cursor: pointer; font-family: inherit; text-align: left; transition: border-color .12s; }

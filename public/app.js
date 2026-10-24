@@ -121,6 +121,7 @@
   var MUTED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
   var FULL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
   var SHRINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>';
+  var CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   // Full screen: the real thing where the phone allows it on a page element (Android, iPad);
   // iPhone only allows it for its own video player, so there the player fills the window
   // instead (turn the phone for landscape).
@@ -159,7 +160,8 @@
       + '<input class="player__seek" type="range" min="0" max="0" step="1" value="0" aria-label="Seek">'
       + '<span class="player__time">0:00</span>'
       + '<button type="button" class="player__mute" aria-label="Mute">' + SOUND + '</button>'
-      + '<button type="button" class="player__fs" aria-label="Full screen">' + FULL + '</button></div>');
+      + '<button type="button" class="player__fs" aria-label="Full screen">' + FULL + '</button></div>'
+      + '<button type="button" class="player__close" aria-label="Close video">' + CLOSE + '</button>');
     var seek = $('.player__seek', box), time = $('.player__time', box), dragging = false, player = null, timer = null;
     var playing = function () { return player && player.getPlayerState && player.getPlayerState() === 1; };
     var toggle = function () { if (!player || !player.playVideo) return; if (playing()) player.pauseVideo(); else player.playVideo(); };
@@ -183,6 +185,43 @@
     });
     seek.addEventListener('input', function () { dragging = true; paint(); });
     seek.addEventListener('change', function () { dragging = false; if (player && player.seekTo) player.seekTo(Number(seek.value), true); });
+
+    // Mini player: a playing video scrolled off screen floats at the bottom right (above the
+    // tab bar) and keeps playing; a spacer holds its place so nothing below it moves. Scrolling
+    // back to the spot puts it back. The X pauses it and puts it back, and it stays put until
+    // it's played again. The frame is never moved in the page (that would reload YouTube).
+    var spacer = null, dismissed = false;
+    var floatIO = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) {
+      if (!box.isConnected) { floatIO.disconnect(); return; }
+      es.forEach(function (en) {
+        var out = !en.isIntersecting || en.intersectionRatio < 0.3;
+        if (en.target === box && out && playing() && !dismissed && !box.classList.contains('is-full') && !box.classList.contains('is-float')) setFloat(true);
+        else if (en.target === spacer && !out) setFloat(false);
+      });
+    }, { threshold: [0, 0.3] }) : null;
+    function setFloat(on) {
+      if (!floatIO) return;
+      if (on) {
+        var cs = getComputedStyle(box);
+        spacer = document.createElement('div');
+        spacer.className = 'player__spacer';
+        spacer.style.height = box.offsetHeight + 'px';
+        spacer.style.margin = cs.margin;
+        box.parentNode.insertBefore(spacer, box);
+        box.classList.add('is-float');
+        floatIO.unobserve(box); floatIO.observe(spacer);
+      } else {
+        box.classList.remove('is-float');
+        if (spacer) { floatIO.unobserve(spacer); spacer.remove(); spacer = null; }
+        floatIO.observe(box);
+      }
+    }
+    $('.player__close', box).addEventListener('click', function () {
+      dismissed = true;
+      if (player && player.pauseVideo) player.pauseVideo();
+      setFloat(false);
+    });
+    if (floatIO) floatIO.observe(box);
     loadYt().then(function (YT) {
       player = new YT.Player($('.player__frame', box), {
         videoId: id, host: 'https://www.youtube-nocookie.com',
@@ -192,6 +231,7 @@
           onStateChange: function (e) {
             var on = e.data === 1 || e.data === 3; // playing / buffering
             if (on) box.classList.add('is-started');
+            if (e.data === 1) dismissed = false; // played again: it may float again
             box.classList.toggle('is-paused', !on && box.classList.contains('is-started')); paint();
           },
         },
@@ -214,6 +254,110 @@
     }, { rootMargin: '400px 0px' });
     boxes.forEach(function (b) { playerObserver.observe(b); });
   }
+
+  // ════ Poll takeover (views/app/poll.js) ════
+  // Home brings it in its HTML when a popup poll is waiting on this player. It's lifted out
+  // of the screen onto the page (so screen changes and view transitions leave it alone) and
+  // opens after a beat. Ways out: a vote (through the site's POST /polls/:id/vote), or "Ask
+  // me later" when the poll allows it, kept on this phone till the next Manila day under the
+  // site popup's key. A vote is also kept here, so Home's copy on the phone doesn't ask
+  // again before it's refreshed.
+  var tkTimer = null;
+  function initPollTakeover() {
+    var root = $('main.app [data-tk]'), open = $('body > .tk');
+    if (root && open && open.getAttribute('data-tk') === root.getAttribute('data-tk')) { root.remove(); return; } // a quiet refresh of Home: keep the one up
+    if (open) { clearInterval(tkTimer); open.remove(); document.documentElement.classList.remove('tk-lock'); }
+    if (!root) return;
+    root.remove();
+    var id = root.getAttribute('data-tk'), canLater = root.getAttribute('data-tk-later') === '1';
+    var LATER = 'wknd_poll_later_' + id, VOTED = 'wknd_poll_voted_' + id;
+    try {
+      if (localStorage.getItem(VOTED)) return;
+      if (canLater && Number(localStorage.getItem(LATER) || 0) > Date.now()) return;
+    } catch (e) {}
+    var opts = $$('[data-tk-opt]', root), msg = $('[data-tk-msg]', root), done = $('[data-tk-done]', root);
+    var box = $('.tk__box', root), voted = false, busy = false, closed = false;
+
+    function close() {
+      clearInterval(tkTimer);
+      root.classList.remove('is-in');
+      document.documentElement.classList.remove('tk-lock');
+      setTimeout(function () { root.remove(); }, 220);
+    }
+    // Until the start of the next day in Manila (UTC+8, no DST).
+    function later() {
+      var H8 = 8 * 3600000, DAY = 86400000;
+      try { localStorage.setItem(LATER, String(Math.floor((Date.now() + H8) / DAY + 1) * DAY - H8)); } catch (e) {}
+      close();
+    }
+    // After a vote every way out is the same: close, say so, and refresh Home (and its copy).
+    function finish() { close(); if (voted) { toast('Vote saved'); refreshScreen(); } }
+    $$('[data-tk-later]', root).forEach(function (b) { b.addEventListener('click', function () { if (voted || closed) finish(); else later(); }); });
+    done.addEventListener('click', finish);
+
+    var cd = $('[data-tk-cd]', root);
+    if (cd) {
+      var to = Number(cd.getAttribute('data-tk-cd'));
+      var two = function (n) { return n < 10 ? '0' + n : String(n); };
+      var tick = function () {
+        var s = Math.max(0, Math.floor((to - Date.now()) / 1000));
+        $('[data-tk-d]', cd).textContent = Math.floor(s / 86400);
+        $('[data-tk-h]', cd).textContent = two(Math.floor(s / 3600) % 24);
+        $('[data-tk-m]', cd).textContent = two(Math.floor(s / 60) % 60);
+        $('[data-tk-s]', cd).textContent = two(s % 60);
+        if (!s && !closed) {
+          closed = true; clearInterval(tkTimer);
+          opts.forEach(function (b) { b.disabled = true; });
+          msg.textContent = 'Voting has closed.';
+          $$('[data-tk-later-btn]', root).forEach(function (b) { b.hidden = true; });
+          done.hidden = false;
+        }
+      };
+      tick(); clearInterval(tkTimer); tkTimer = setInterval(tick, 1000);
+    }
+
+    opts.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (busy || closed || btn.classList.contains('is-mine')) return;
+        busy = true;
+        opts.forEach(function (b) { b.disabled = true; });
+        msg.classList.remove('is-error'); msg.textContent = 'Saving…';
+        var i = Number(btn.getAttribute('data-tk-opt'));
+        postJson('/polls/' + encodeURIComponent(id) + '/vote', { option_index: i }).then(function (j) {
+          voted = true;
+          try { localStorage.setItem(VOTED, '1'); } catch (e) {}
+          opts.forEach(function (b, k) {
+            var pct = j.total ? Math.round(j.counts[k] / j.total * 100) : 0;
+            b.classList.toggle('is-mine', k === i);
+            $('.tk__fill', b).style.width = pct + '%';
+            $('.tk__pct', b).textContent = pct + '%';
+          });
+          $$('[data-tk-n]', root).forEach(function (n) { n.textContent = j.total; });
+          msg.classList.add('is-done'); msg.textContent = 'Locked in: ' + $('.tk__label', btn).textContent + '. Tap another to change it.';
+          $$('[data-tk-later-btn]', root).forEach(function (b) { b.hidden = true; });
+          done.hidden = false;
+        }, function (e) {
+          msg.classList.add('is-error');
+          msg.textContent = !navigator.onLine ? 'No connection. Your vote wasn\'t sent.' : (e.message && e.message !== 'failed' ? e.message : 'Couldn\'t save your vote. Try again.');
+        }).then(function () { busy = false; if (!closed) opts.forEach(function (b) { b.disabled = false; }); });
+      });
+    });
+
+    document.body.appendChild(root);
+    setTimeout(function () {
+      if (!root.isConnected) return;
+      root.hidden = false;
+      document.documentElement.classList.add('tk-lock');
+      requestAnimationFrame(function () { root.classList.add('is-in'); });
+      box.focus({ preventScroll: true });
+    }, 600);
+  }
+  document.addEventListener('keydown', function (e) {
+    var root = $('body > .tk:not([hidden])');
+    if (!root || e.key !== 'Escape') return;
+    var out = $('[data-tk-later]', root) || ($('[data-tk-done]:not([hidden])', root));
+    if (out) out.click();
+  });
 
   function initPage() {
     // Appearance: Automatic (follow the phone) / Light / Dark, remembered on this phone
@@ -239,6 +383,7 @@
     initBlocks();
     initThreads();
     initShare();
+    initPollTakeover();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
