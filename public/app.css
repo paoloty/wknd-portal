@@ -600,13 +600,20 @@ html.iw-ios .iw-arrow { display: flex; }
 .player.is-full .player__bar { bottom: env(safe-area-inset-bottom, 0px); padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(6px, env(safe-area-inset-right, 0px)); }
 .player:fullscreen { width: 100%; height: 100%; }
 /* Mini player (public/app.js mountPlayer): scrolled off while playing, it floats bottom right
-   above the tab bar, picture only (tap = play/pause), with an X that puts it back paused. */
-.player.is-float { position: fixed; z-index: 30; left: auto; top: auto; right: 12px; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); width: min(56vw, 240px); height: auto; aspect-ratio: 16 / 9; margin: 0; border-radius: var(--r-in); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
-.player.is-float .player__bar, .player.is-float .media em { display: none; }
-.player__close { display: none; position: absolute; z-index: 2; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; align-items: center; justify-content: center; background: rgba(0,0,0,.6); color: #fff; }
-.player__close::after { content: ''; position: absolute; inset: -8px; } /* 44pt hit area */
-.player__close svg { width: 16px; height: 16px; }
-.player.is-float .player__close { display: flex; }
+   above the tab bar, a bit under half the screen wide (Paolo, 2026-10-24). Too small for the full
+   bar with 44pt taps, so the same controls, compact: tap = play/pause, full screen top left,
+   X top right (puts it back paused), and the seek bar becomes a progress line. */
+.player.is-float { position: fixed; z-index: 30; left: auto; top: auto; right: 12px; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); width: max(45vw, 160px); height: auto; aspect-ratio: 16 / 9; margin: 0; border-radius: var(--r-in); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.player.is-float .media em, .player.is-float .player__bar { display: none; }
+.player.is-float .player__tap .media__play { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
+.player.is-float .player__tap .media__play svg { width: 16px; height: 16px; margin-left: 2px; }
+.player.is-float::after { content: ''; position: absolute; z-index: 2; left: 0; bottom: 0; height: 3px; width: var(--prog, 0%); background: var(--amber); pointer-events: none; }
+.player__close, .player__expand { display: none; position: absolute; z-index: 2; top: 6px; width: 26px; height: 26px; border-radius: 50%; align-items: center; justify-content: center; background: rgba(0,0,0,.6); color: #fff; }
+.player__close { right: 6px; }
+.player__expand { left: 6px; }
+.player__close::after, .player__expand::after { content: ''; position: absolute; inset: -9px; } /* 44pt hit areas, apart at 160px+ */
+.player__close svg, .player__expand svg { width: 14px; height: 14px; }
+.player.is-float .player__close, .player.is-float .player__expand { display: flex; }
 @media (prefers-reduced-motion: no-preference) { .player.is-float { animation: player-float .25s cubic-bezier(.22,1,.36,1); } }
 @keyframes player-float { from { opacity: 0; transform: translateY(12px) scale(.96); } }
 body.player-full { overflow: hidden; }

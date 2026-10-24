@@ -161,6 +161,7 @@
       + '<span class="player__time">0:00</span>'
       + '<button type="button" class="player__mute" aria-label="Mute">' + SOUND + '</button>'
       + '<button type="button" class="player__fs" aria-label="Full screen">' + FULL + '</button></div>'
+      + '<button type="button" class="player__expand" aria-label="Full screen">' + FULL + '</button>'
       + '<button type="button" class="player__close" aria-label="Close video">' + CLOSE + '</button>');
     var seek = $('.player__seek', box), time = $('.player__time', box), dragging = false, player = null, timer = null;
     var playing = function () { return player && player.getPlayerState && player.getPlayerState() === 1; };
@@ -171,10 +172,14 @@
       seek.max = Math.floor(d);
       if (!dragging) seek.value = Math.floor(t);
       seek.style.setProperty('--p', d ? (seek.value / d * 100) + '%' : '0%');
+      box.style.setProperty('--prog', d ? (t / d * 100) + '%' : '0%'); // the mini player's progress line
       time.textContent = mmss(dragging ? seek.value : t) + (d ? ' / ' + mmss(d) : '');
     };
     $('.player__tap', box).addEventListener('click', toggle);
-    $('.player__fs', box).addEventListener('click', function () { fullScreen(box); });
+    // From the mini player, full screen starts from the video's own spot.
+    var goFull = function () { if (box.classList.contains('is-float')) setFloat(false); fullScreen(box); };
+    $('.player__fs', box).addEventListener('click', goFull);
+    $('.player__expand', box).addEventListener('click', goFull);
     var muteBtn = $('.player__mute', box);
     var showMute = function (m) { muteBtn.innerHTML = m ? MUTED : SOUND; muteBtn.setAttribute('aria-label', m ? 'Unmute' : 'Mute'); };
     muteBtn.addEventListener('click', function () {
