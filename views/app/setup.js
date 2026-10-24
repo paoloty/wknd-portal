@@ -50,7 +50,7 @@ export function appSetupDetailsPage({ reg, positions, error = '', number = '', t
     <p class="foot-note">Jersey numbers are set by your team head.</p>
     <div class="sec">About you</div>
     <div class="group form-group">
-      <div class="cell field-stack"><label for="motto">Motto or intro</label><textarea id="motto" name="motto" maxlength="300" placeholder="One line about your game">${esc(reg.motto || '')}</textarea></div>
+      <div class="cell field-stack"><label for="motto">Motto or intro</label><textarea id="motto" name="motto" maxlength="500" placeholder="One line about your game">${esc(reg.motto || '')}</textarea></div>
       <div class="cell"><label class="cell__lbl" for="social">Instagram</label><input id="social" name="social_handle" autocapitalize="none" spellcheck="false" placeholder="@handle" maxlength="40" value="${esc(reg.social_handle || '')}"></div>
     </div>
     <div class="sec">Emergency contact · private</div>

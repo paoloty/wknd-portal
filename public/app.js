@@ -702,7 +702,8 @@
     // The app icon's badge: unread notifications (from the tab bar's data-unread).
     var nav = $('nav.tabbar');
     if (nav && 'setAppBadge' in navigator) {
-      var n = Number(nav.getAttribute('data-unread') || 0);
+      // The Notifications screen marks everything read as its list loads, so it clears the badge.
+      var n = location.pathname === '/app/notifications' ? 0 : Number(nav.getAttribute('data-unread') || 0);
       (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(function () {});
     }
   }
@@ -717,7 +718,43 @@
   // A tapped notification while the app is open: the service worker asks us to go there.
   if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) {
     if (e.data && e.data.type === 'open' && e.data.url) { if (navOn) go(urlOf(e.data.url), true); else location.href = e.data.url; }
+    if (e.data && e.data.type === 'push') pushBanner(e.data);
   });
+  // Push banner: a notification that arrives while the app is open on screen (the service
+  // worker sends it here instead of the phone's own banner). The sender's face, else the app
+  // icon; neutral surface (info tone). Tap opens it, swipe up or 5 seconds puts it away.
+  function pushBanner(d) {
+    $$('.push-banner').forEach(function (b) { b.remove(); });
+    var b = document.createElement('a'); b.className = 'push-banner'; b.href = d.url || '/app'; b.setAttribute('role', 'status');
+    var f = d.face;
+    b.innerHTML = (f
+      ? '<span class="avatar-wrap"><span class="avatar"></span></span>'
+      : '<span class="push-banner__app"><img src="/app-icon-192.png" alt=""></span>')
+      + '<span class="cell__t"><span></span><small></small></span><span class="push-banner__when">now</span>';
+    if (f) {
+      var av = $('.avatar', b); av.style.setProperty('--ring', f.ring || 'var(--subtle)'); av.textContent = f.initials || '';
+      if (f.photo) { var img = document.createElement('img'); img.alt = ''; img.src = f.photo; img.onerror = function () { img.remove(); }; av.appendChild(img); }
+    }
+    $('.cell__t > span', b).textContent = d.title || 'WKND';
+    if (d.body) $('.cell__t small', b).textContent = d.body; else $('.cell__t small', b).remove();
+    var gone = false, hide = function () {
+      if (gone) return; gone = true; b.classList.add('is-out');
+      setTimeout(function () { b.remove(); }, 250);
+    };
+    var y0 = null;
+    b.addEventListener('touchstart', function (ev) { y0 = ev.touches[0].clientY; }, { passive: true });
+    b.addEventListener('touchmove', function (ev) {
+      if (y0 === null) return; var dy = Math.min(0, ev.touches[0].clientY - y0);
+      b.style.transform = 'translateY(' + dy + 'px)'; if (dy < -36) { y0 = null; hide(); }
+    }, { passive: true });
+    b.addEventListener('touchend', function () { y0 = null; if (!gone) b.style.transform = ''; });
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault(); hide();
+      if (navOn) go(urlOf(b.getAttribute('href')), true); else location.href = b.getAttribute('href');
+    });
+    document.body.appendChild(b);
+    setTimeout(hide, 5000);
+  }
 
   // ════ Face ID / fingerprint sign-in (passkeys; views/app/passkeys.js) ════
   // The passkey library (served from /app/vendor) loads only on the screens that use it.

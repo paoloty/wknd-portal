@@ -140,13 +140,27 @@ self.addEventListener('fetch', (e) => {
 });
 
 // ── Push notifications (lib/push.js) ──
-// payload: { title, body, url, tag, badge }. The app icon's badge follows the unread count.
+// payload: { title, body, url, tag, badge, icon, face }. The app icon's badge follows the
+// unread count. icon: the sender's photo (Android shows it; iPhone always shows the app icon).
+// With the app open on screen, the app drops its own banner instead (public/app.js "Push
+// banner"). Android lets a push show nothing while the app is in front. iPhone doesn't: every
+// push must show a notification or the phone stops sending them, so there it's shown and
+// closed straight away.
+const APPLE = /iPhone|iPad|iPod|Macintosh/.test(self.navigator.userAgent) && !/Chrome|CriOS|Android|Firefox|FxiOS/.test(self.navigator.userAgent);
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: 'WKND', body: e.data ? e.data.text() : '' }; }
-  const shown = self.registration.showNotification(d.title || 'WKND', {
-    body: d.body || '', tag: d.tag || undefined, renotify: !!d.tag,
-    icon: '/app-icon-192.png', badge: '/favicon-32.png', data: { url: d.url || '/app' },
+  const tag = d.tag || 'wknd-' + Date.now();
+  const show = () => self.registration.showNotification(d.title || 'WKND', {
+    body: d.body || '', tag, renotify: !!d.tag,
+    icon: d.icon || '/app-icon-192.png', badge: '/favicon-32.png', data: { url: d.url || '/app' },
+  });
+  const shown = self.clients.matchAll({ type: 'window' }).then((list) => {
+    const open = list.find((c) => c.visibilityState === 'visible' && c.focused !== false && new URL(c.url).pathname.startsWith('/app'));
+    if (!open) return show();
+    open.postMessage({ type: 'push', title: d.title || 'WKND', body: d.body || '', url: d.url || '/app', face: d.face || null });
+    if (!APPLE) return;
+    return show().then(() => self.registration.getNotifications({ tag })).then((ns) => ns.forEach((n) => n.close()));
   });
   const badge = typeof d.badge === 'number' && self.navigator.setAppBadge
     ? (d.badge ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {}) : Promise.resolve();

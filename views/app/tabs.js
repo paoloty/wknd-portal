@@ -1,7 +1,7 @@
 // My Team, Me and Settings, plus the notifications list. My Team and Me are read-only
 // views of data the site already has. Nothing here links out to the site except "Open full
 // site" in Settings (layout.js isAppHref): site-only things show as information.
-import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag, lazyList } from './layout.js';
+import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag, lazyList, ballSvg } from './layout.js';
 import { upNextCard, todoRows } from './home.js';
 
 // Large title; right: optional HTML on the right (Me's gear).
@@ -100,15 +100,56 @@ export function appSettingsPage({ me, rows, push = [] }) {
 export function appNotificationsPage() {
   return `
   <div class="navbar"><a class="navbar__back" href="/app">${backChev}Home</a><span class="navbar__title">Notifications</span><span></span></div>
-  <div style="margin-top:8px">${lazyList({ src: '/app/notifications/items', empty: 'Nothing yet.' })}</div>`;
+  <div class="nf-list">${lazyList({ src: '/app/notifications/items', empty: 'Nothing yet.', plain: true })}</div>`;
 }
 
-// items: [{ title, body, when, unread }] — one page of rows for the lazy list.
-export function appNotificationRows(items) {
+// The face on a notification row (app notice faces mockup, 2026-10-24): a person did it →
+// their photo (two stacked when several did), with a corner badge for what they did; it's
+// about you → your photo; a run → its cover; the app or the league → an icon tile.
+const NF_BADGE = [
+  [/^comment_mention/, icons.at], [/^comment_reaction/, icons.flame], [/comment/, icons.comment],
+  [/^stat_card/, icons.me],
+];
+const NF_TILE = [
+  [/^(pick_reminder|app_pick_closing)/, icons.clock], [/^(pick_|app_pick)/, icons.target],
+  [/^mvp_podium$/, icons.trophy, 'gold'], [/^mvp_/, icons.trophy],
+  [/^(app_announcement|admin_message|quiet_nudge|post)/, 'logo'],
+  [/^(ledger_|balance_|banned|ban_lifted|papawis_completed|raffle_won)/, icons.wallet],
+  [/^(papawis_|court_)/, icons.ball], [/^(game_rate|court_rate)/, icons.picks],
+  [/^poll_/, icons.form], [/^jersey_/, icons.shirt], [/^(fine_|report_)/, icons.scale],
+];
+const pick = (list, type) => (list.find(([re]) => re.test(type)) || [])[1] || '';
+function notificationFace(n) {
+  const people = n.people || [];
+  if (people.length) {
+    const b = pick(NF_BADGE, n.type);
+    const badge = b ? `<span class="nf__kind">${b}</span>` : '';
+    if (people.length > 1) return `<span class="nf nf--stack">${people.slice(0, 2).map(p => appAvatar(p)).join('')}${badge}</span>`;
+    return `<span class="nf">${appAvatar(people[0])}${badge}</span>`;
+  }
+  if (n.cover) return `<span class="nf"><span class="nf__tile nf__tile--cover"><img src="${esc(n.cover)}" alt="" loading="lazy" onerror="this.remove()">${icons.ball}</span></span>`;
+  const [, icon, tone] = NF_TILE.find(([re]) => re.test(n.type)) || [null, icons.bell];
+  if (icon === 'logo') return `<span class="nf"><span class="nf__tile nf__tile--logo">${ballSvg}</span></span>`;
+  return `<span class="nf"><span class="nf__tile${tone ? ` nf__tile--${tone}` : ''}">${icon}</span></span>`;
+}
+
+// items: [{ type, title, body, when, unread, href, people, cover, day }] — one page of the
+// lazy list. people: [{ playerId, initials, ring, photoUrl }] (appAvatar), cover: a run's
+// picture. day: Today / Yesterday / This week / Earlier; a heading starts each new one, and
+// prevDay (the last row of the page before) lets a page carry on the group it ended in.
+export function appNotificationRows(items, { prevDay = '' } = {}) {
   // href: the app screen it's about (server.js appLinkFor); tapping opens it.
-  return items.map(n => {
-    const inner = `<span class="dot" style="--c:${n.unread ? 'var(--amber)' : 'transparent'}"></span>
-      <span class="cell__t">${esc(n.title)}${n.body ? `<small>${esc(n.body)}</small>` : ''}<small>${esc(n.when)}</small></span>`;
-    return n.href && n.href !== '/app/notifications' ? `<a class="cell" href="${esc(n.href)}">${inner}${chev}</a>` : `<div class="cell">${inner}</div>`;
-  }).join('');
+  let out = '', day = prevDay, open = false;
+  for (const n of items) {
+    if (n.day !== day || !open) {
+      if (open) out += '</div>';
+      if (n.day !== day) out += `<div class="sec nf-day">${esc(n.day)}</div>`;
+      out += '<div class="group group--nf">'; open = true; day = n.day;
+    }
+    const inner = `${notificationFace(n)}
+      <span class="cell__t${n.unread ? ' is-new' : ''}">${esc(n.title)}${n.body ? `<small>${esc(n.body)}</small>` : ''}</span>
+      <span class="nf__r"><span class="nf__when">${esc(n.when)}</span>${n.unread ? '<span class="nf__dot" aria-label="New"></span>' : ''}</span>`;
+    out += n.href && n.href !== '/app/notifications' ? `<a class="cell cell--nf" href="${esc(n.href)}">${inner}</a>` : `<div class="cell cell--nf">${inner}</div>`;
+  }
+  return open ? `${out}</div>` : out;
 }

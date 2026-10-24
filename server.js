@@ -134,7 +134,7 @@ import {
   completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   logShareCardAction, getAllShareCardLog,
-  getPapawisGamesForPlayer, getPapawisHistoryForPlayer,
+  getPapawisGamesForPlayer, getPapawisHistoryForPlayer, getPapawisTotalsForPlayer,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
@@ -3312,6 +3312,8 @@ app.post('/admin/stop-impersonating', (req, res) => {
 app.use((req, res, next) => {
   if (!req.session?.impersonating || req.method === 'GET') return next();
   if (req.path === '/admin/stop-impersonating') return next();
+  // The app's Log out is a POST; like the site's GET /logout it ends the whole session.
+  if (req.path === '/app/logout') return next();
   res.status(403).json({ error: 'Read-only while viewing as another player.' });
 });
 
@@ -5906,7 +5908,7 @@ function authCardFromReg(reg) {
     name: displayPlayerName(reg?.full_name || '') || reg?.email || '',
     initials: `${first.charAt(0)}${last.charAt(0)}`.toUpperCase(),
     positions: positions.join(' · '),
-    intro: String(reg?.motto || player?.writeup || '').trim(),
+    intro: String(player?.writeup || reg?.motto || '').trim(),
   };
 }
 // Every sign-in (POST /login, /app/login, email codes, activate/reset) starts a brand-new
@@ -6315,7 +6317,7 @@ app.post('/app/login/code/verify', (req, res) => {
 });
 
 app.post('/app/logout', (req, res) => {
-  if (req.session?.playerRegId) logApp(req, 'signout');
+  if (req.session?.playerRegId && !req.session.impersonating) logApp(req, 'signout');
   req.session.destroy(() => res.redirect('/app/login'));
 });
 
@@ -6491,9 +6493,10 @@ function appFeedIndex() {
   const items = [];
   for (const a of getAppAnnouncements()) if (!(a.pinned_until > now)) items.push({ kind: 'ann', id: a.id, at: a.created_at, src: a });
   for (const g of getAllGames()) if (isPlayedGame(g)) items.push({ kind: 'game', id: g.id, at: gameAtMs(g), src: g });
-  for (const p of getPublicPosts()) items.push({ kind: 'post', id: p.id, at: p.publish_at || p.created_at, src: p });
+  // Posts and Papawis follow the same switches as the site's homepage and /papawis.
+  if (getSetting('posts_enabled', '0') === '1') for (const p of getPublicPosts()) items.push({ kind: 'post', id: p.id, at: p.publish_at || p.created_at, src: p });
   const today = manilaTodayStr();
-  for (const r of getPapawisGames()) {
+  for (const r of getSetting('papawis_enabled', '0') === '1' ? getPapawisGames() : []) {
     if (r.status !== 'open' || String(r.date) < today || !isPapawisSignupOpenNow(r)) continue;
     items.push({ kind: 'papawis', id: r.id, at: r.created_at, src: r });
   }
@@ -6816,7 +6819,7 @@ app.get('/app/setup/details', requireApp, (req, res) => {
   const me = appMe(req);
   const positions = parsePositions(me.reg.positions).length ? parsePositions(me.reg.positions) : parsePositions(me.player.positions);
   sendApp(res, { title: 'Your details · WKND', bare: true, body: appSetupDetailsPage({
-    reg: { ...me.reg, height: me.reg.height || me.player.height || '', dominant_hand: me.reg.dominant_hand || String(me.player.dominant_hand || '').toLowerCase(), motto: me.reg.motto || me.player.writeup || '' },
+    reg: { ...me.reg, height: me.reg.height || me.player.height || '', dominant_hand: me.reg.dominant_hand || String(me.player.dominant_hand || '').toLowerCase(), motto: me.player.writeup || me.reg.motto || '' }, // the profile's intro, which the site's /me edit also writes
     positions, number: me.number, teamName: me.teamName,
   }) });
 });
@@ -6829,7 +6832,7 @@ app.post('/app/setup/details', requireApp, (req, res) => {
   const positions = [].concat(b.positions || []).map(String).filter(p => validPos.has(p));
   const hand = APP_HANDS.some(h => h[0] === b.dominant_hand) ? b.dominant_hand : '';
   const fields = {
-    positions, height: clip(b.height, 12), dominant_hand: hand, motto: clip(b.motto, 300),
+    positions, height: clip(b.height, 12), dominant_hand: hand, motto: clip(b.motto, 500),
     social_handle: clip(b.social_handle, 40).replace(/^@?/, '@').replace(/^@$/, ''),
     emergency_name: clip(b.emergency_name, 60), emergency_phone: clip(b.emergency_phone, 30),
   };
@@ -6874,10 +6877,11 @@ app.get('/app/team', requireApp, (req, res) => {
   const { next, played, all } = appGames(me);
   const season = String(getPortalCurrentSeason());
   const seasonGames = played.filter(g => String(g.season) === season);
+  const regularGames = seasonGames.filter(g => g.game_type !== 'playoff');
   const roster = getAllPlayers()
-    .filter(p => p.team_id === me.team.id && p.status !== 'inactive')
+    .filter(p => p.team_id === me.team.id && p.status === 'active') // as the site's team page
     .map(p => ({
-      id: p.id, name: `${p.first_name} ${p.last_name}`.trim(), number: String(p.number ?? ''),
+      id: p.id, name: displayPlayerName(p.name || '') || `${p.first_name} ${p.last_name}`.trim(), number: String(p.number ?? ''),
       positions: parsePositions(p.positions).join(' · '), photoUrl: playerPhotoUrl(p.id, 96),
       initials: `${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}`.toUpperCase(),
       isMe: p.id === me.playerId, isHead: getHeadTeamIds(p.id).includes(me.team.id),
@@ -6921,7 +6925,8 @@ app.get('/app/team', requireApp, (req, res) => {
   } catch (e) { console.error('[app team standing]', e.message); }
   sendTab(res, me, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({
     me, season, upNext, schedule, roster,
-    team: { name: me.team.name, color: me.ring, record: seasonGames.length ? `${recordIn(seasonGames, me.team.id)} in Season ${season}` : '', standing },
+    // Regular-season record, as the site's standings and team page show it.
+    team: { name: me.team.name, color: me.ring, record: regularGames.length ? `${recordIn(regularGames, me.team.id)} in Season ${season}` : '', standing },
   }) });
 });
 const ordinal = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]}`;
@@ -6931,7 +6936,8 @@ app.get('/app/me', requireApp, (req, res) => {
   const me = appMe(req);
   const season = String(getPortalCurrentSeason());
   const log = getPlayerGameLog(me.playerId).filter(g => g.status === 'played');
-  const inSeason = log.filter(g => String(g.season) === season);
+  // Regular season only, as the site profile's season line (getPlayerStatsByType).
+  const inSeason = log.filter(g => String(g.season) === season && g.game_type !== 'playoff');
   const per = k => inSeason.length ? (inSeason.reduce((s, g) => s + (g[k] || 0), 0) / inSeason.length).toFixed(1) : '0.0';
   const games = log.slice(0, 5).map(g => {
     const tid = g.player_team_id;
@@ -7028,7 +7034,7 @@ app.get('/app/rail', requireAppData, (req, res) => {
 app.get('/app/picks', requireApp, (req, res) => {
   const me = appMe(req);
   if (!picksEnabled()) return sendTab(res, me, { title: 'Who wins? · WKND', tab: 'picks', body: appPicksPage({ off: true }) });
-  const all = getAllGames();
+  const all = byDate(getAllGames());
   const pctx = buildPicksContext(all);
   const open = openPicks(all, pctx, me.playerId);
   const teams = getAllTeams();
@@ -7063,6 +7069,7 @@ const pwDaysUntil = ymd => Math.round((Date.parse(`${ymd}T00:00:00Z`) - Date.par
 const pwDay = ymd => manilaFormat(Date.parse(`${ymd}T12:00:00+08:00`), { weekday: 'short', month: 'short', day: 'numeric' });
 const pwPeso = n => `₱${Number(n).toLocaleString('en-US')}`;
 function appPapawisRuns(me) {
+  if (getSetting('papawis_enabled', '0') !== '1') return [];
   const teams = getAllTeams();
   const banned = !!me.player.banned_at;
   const unpaid = hasUnpaidCompletedPapawis(me.playerId);
@@ -7215,7 +7222,7 @@ app.get('/app/papawis/:id/players', requireApp, (req, res) => {
       ring: !guest && s.team_id ? teamColorById(teams, s.team_id) : 'var(--subtle)',
       playerId: guest ? '' : s.player_id, photoUrl: guest ? '' : playerPhotoUrl(s.player_id, 96) };
   };
-  if (!run.scheduled) logPapawisActivity({ gameId: g.id, eventType: 'viewed_roster', playerId: me.playerId, playerName: me.player.name || '' });
+  if (!run.scheduled && !req.session.impersonating) logPapawisActivity({ gameId: g.id, eventType: 'viewed_roster', playerId: me.playerId, playerName: me.player.name || '' });
   sendTab(res, me, { title: `Who's in · ${run.title} · WKND`, tab: 'papawis', body: appPapawisPlayersPage({
     run,
     confirmed: signups.filter(s => s.status === 'confirmed').map(person),
@@ -7267,16 +7274,44 @@ app.get('/app/notifications/items', requireAppData, (req, res) => {
   const before = m ? { at: Number(m[1]), id: m[2] } : null;
   let opened = Number(req.query.opened) || 0;
   const rows = getNotificationsPage(pid, { before, limit: APP_PAGE_SIZE });
-  if (!before) { opened = Date.now(); markNotificationsRead(pid); }
-  const when = ts => manilaFormat(ts, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // Not while viewing as the player: that window is read-only (the guard only stops non-GETs).
+  if (!before) { opened = Date.now(); if (!req.session.impersonating) markNotificationsRead(pid); }
+  const today = manilaYmdOf(Date.now()), dayMs = 864e5;
+  const ymdBack = n => manilaYmdOf(Date.now() - n * dayMs);
+  const dayOf = ts => { const d = manilaYmdOf(ts); return d === today ? 'Today' : d === ymdBack(1) ? 'Yesterday' : d > ymdBack(7) ? 'This week' : 'Earlier'; };
+  const when = ts => manilaYmdOf(ts) === today ? manilaFormat(ts, { hour: 'numeric', minute: '2-digit' })
+    : dayOf(ts) === 'Earlier' ? manilaFormat(ts, { month: 'short', day: 'numeric' }) : manilaFormat(ts, { weekday: 'short' });
+  const me = appMe(req);
   const html = appNotificationRows(rows.map(n => ({
-    title: n.title, body: n.body, when: when(n.created_at), href: appLinkFor(n.link),
+    type: n.type, title: n.title, body: n.body, when: when(n.created_at), day: dayOf(n.created_at), href: appLinkFor(n.link),
     unread: before ? (!!n.read_at && n.read_at >= opened) : !n.read_at,
-  })));
+    ...notificationFaceData(n, me),
+  })), { prevDay: String(req.query.day || '') });
   const last = rows[rows.length - 1];
-  const next = rows.length === APP_PAGE_SIZE ? `/app/notifications/items?before=${last.created_at}:${encodeURIComponent(last.id)}&opened=${opened}` : null;
+  const next = rows.length === APP_PAGE_SIZE ? `/app/notifications/items?before=${last.created_at}:${encodeURIComponent(last.id)}&opened=${opened}&day=${encodeURIComponent(dayOf(last.created_at))}` : null;
   res.json({ html, next });
 });
+
+// Who a notification row shows (views/app/tabs.js notificationFace): the players who did it
+// (notifications.actors, newest first), you for your own stat card, a run's cover for Papawis.
+// Notifications from before the actors column have none and get the kind's icon tile.
+function appFaceOf(playerId) {
+  const p = getPlayerWithTeam(playerId);
+  if (!p) return null;
+  const team = p.team_id ? getAllTeams().find(t => t.id === p.team_id) : null;
+  return {
+    playerId, initials: `${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}`.toUpperCase() || initials(p.name || ''),
+    ring: team ? (team.color || teamColor(team.name)) : '', photoUrl: playerPhotoUrl(playerId, 96), hasPhoto: !!p.picture_url,
+  };
+}
+function notificationFaceData(n, me) {
+  const people = String(n.actors || '').split(',').filter(Boolean).map(appFaceOf).filter(Boolean);
+  if (people.length) return { people };
+  if (/^stat_card/.test(n.type)) return { people: [{ playerId: me.playerId, initials: me.initials, ring: me.ring, photoUrl: playerPhotoUrl(me.playerId, 96) }] };
+  const run = /^papawis_/.test(n.type) && /#pw-game-([^&#]+)/.exec(n.link || '');
+  if (run) { const g = getPapawisGame(decodeURIComponent(run[1])); const cover = g && papawisCoverUrl(g); if (cover) return { cover }; }
+  return {};
+}
 
 // ── Push notifications (lib/push.js) ──
 // Phones subscribe from Settings (or Home's "Turn on notifications" card); every new bell
@@ -7292,14 +7327,25 @@ function appLinkFor(link = '') {
   // "Your stat card is ready" (?share=1) opens the app's share screen.
   if (gm && /[?&]share=1/.test(link)) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}/share`; }
   if (gm) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}${/#talk$/.test(link) ? `?thread=${encodeURIComponent(r.id)}` : ''}`; }
+  const pm = /^\/posts\/([^/?#]+)/.exec(path);
+  if (pm) return `/app/posts/${pm[1]}`;
+  if (path === '/' || path === '') return '/app';
   if (/^\/me\b/.test(path)) return '/app/me';
   if (/^\/settle-balance/.test(path)) return '/app/settle';
   return '/app/notifications';
 }
 onNotificationCreated(n => {
   if (!n.playerId) return;
+  // face: who it's from, for the photo beside the push (Android; iPhone always shows the app
+  // icon) and the banner the open app drops in (public/app.js). Only a real photo goes as the
+  // push icon: the jersey stand-in is an SVG, which phones don't draw there.
+  const f = n.actorId ? appFaceOf(n.actorId) : null;
   pushToPlayer(n.playerId, {
-    title: n.title, body: n.body || '', url: appLinkFor(n.link), tag: n.type || 'wknd',
+    icon: f?.hasPhoto ? playerPhotoUrl(n.actorId, 192) : '',
+    face: f ? { photo: f.photoUrl, initials: f.initials, ring: f.ring } : null,
+    // Tagged by type + link: a newer one for the same thing replaces it on the phone, while
+    // different games or runs stack instead of replacing each other.
+    title: n.title, body: n.body || '', url: appLinkFor(n.link), tag: `${n.type || 'wknd'}:${String(n.link || '').split('#')[0]}`,
     badge: getUnreadNotificationCount(n.playerId),
   }, { kind: pushKindOf(n.type) }).catch(e => console.error('[push notify]', e.message));
 });
@@ -7462,7 +7508,7 @@ app.post('/probation-bar/dismiss', (req, res) => {
 // matches how most notification bells behave, and avoids extra click-tracking machinery.
 app.post('/notifications/mark-read', express.json(), (req, res) => {
   if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.status(401).end();
-  markNotificationsRead(req.session.playerPlayerId);
+  if (!req.session.impersonating) markNotificationsRead(req.session.playerPlayerId);
   res.json({ ok: true });
 });
 
@@ -10700,7 +10746,7 @@ function notifyComment(target, saved, parent) {
   for (const pid of extractMentionedPlayerIds(body, accounted)) {
     if (told.has(pid)) continue;
     told.add(pid);
-    createNotification({ playerId: pid, type: 'comment_mention', title: `${name} mentioned you`, body: commentExcerpt(body), link });
+    createNotification({ playerId: pid, type: 'comment_mention', title: `${name} mentioned you`, body: commentExcerpt(body), link, actorId: playerId });
   }
   if (parent) {
     const author = parent.player_id;
@@ -10709,8 +10755,8 @@ function notifyComment(target, saved, parent) {
       told.add(pid);
       const title = pid === author ? `${name} replied to your comment` : `${name} replied in a thread you're in`;
       const unread = findUnreadNotification(pid, 'comment_reply', link);
-      if (unread) refreshNotification(unread.id, { title: pid === author ? `New replies to your comment` : 'New replies in a thread you\'re in', body: `${name}: ${commentExcerpt(body, 100)}` });
-      else createNotification({ playerId: pid, type: 'comment_reply', title, body: commentExcerpt(body), link });
+      if (unread) refreshNotification(unread.id, { title: pid === author ? `New replies to your comment` : 'New replies in a thread you\'re in', body: `${name}: ${commentExcerpt(body, 100)}`, actorId: playerId });
+      else createNotification({ playerId: pid, type: 'comment_reply', title, body: commentExcerpt(body), link, actorId: playerId });
     }
   }
   let involved, about, first;
@@ -10737,10 +10783,10 @@ function notifyComment(target, saved, parent) {
     const unread = findUnreadNotification(pid, 'comment_new', link);
     if (unread) {
       const n = (Number(String(unread.title).match(/^(\d+) new comments/)?.[1]) || 1) + 1;
-      refreshNotification(unread.id, { title: `${n} new comments on ${about}`, body: preview });
+      refreshNotification(unread.id, { title: `${n} new comments on ${about}`, body: preview, actorId: playerId });
       continue;
     }
-    createNotification({ playerId: pid, type: 'comment_new', title: first, body: preview, link });
+    createNotification({ playerId: pid, type: 'comment_new', title: first, body: preview, link, actorId: playerId });
   }
 }
 
@@ -10751,10 +10797,10 @@ function notifyCommentReaction(target, comment, playerId) {
   const name = displayPlayerName(getPlayerById(playerId)?.name || '');
   const unread = findUnreadNotification(comment.player_id, 'comment_reaction', link);
   if (unread) {
-    if (!unread.title.startsWith(name)) refreshNotification(unread.id, { title: `${name} and others 🔥 your comment`, body: commentExcerpt(comment.body) });
+    if (!unread.title.startsWith(name)) refreshNotification(unread.id, { title: `${name} and others 🔥 your comment`, body: commentExcerpt(comment.body), actorId: playerId });
     return;
   }
-  createNotification({ playerId: comment.player_id, type: 'comment_reaction', title: `${name} 🔥 your comment`, body: commentExcerpt(comment.body), link });
+  createNotification({ playerId: comment.player_id, type: 'comment_reaction', title: `${name} 🔥 your comment`, body: commentExcerpt(comment.body), link, actorId: playerId });
 }
 
 app.post('/games/:id/comments', express.json(), (req, res) => {
@@ -17900,20 +17946,26 @@ function teamsChampions(teams) {
 }
 
 // Stored summary while its key matches; otherwise kick off a background rewrite.
-function teamsSummary(settingKey, block, f) {
+// The stored write-up when it still matches the facts; never starts a new one (the players
+// app reads it this way: no side effects on an app GET).
+function storedTeamsSummary(settingKey, f) {
   if (!f) return null;
   let stored = null;
   try { stored = JSON.parse(getSetting(settingKey, '') || 'null'); } catch {}
-  if (stored && stored.key === f.key) {
-    // The writer sometimes drops the **name** markers; then the team names get the amber
-    // highlight anyway, so every panel reads the same.
-    let headline = String(stored.headline || '');
-    if (!headline.includes('**')) {
-      const names = getAllTeams().map(t => t.name).sort((a, b) => b.length - a.length);
-      headline = headline.replace(new RegExp(`\\b(${names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi'), '**$1**');
-    }
-    return { kicker: stored.kicker, headline, body: stored.body };
+  if (!stored || stored.key !== f.key) return null;
+  // The writer sometimes drops the **name** markers; then the team names get the amber
+  // highlight anyway, so every panel reads the same.
+  let headline = String(stored.headline || '');
+  if (!headline.includes('**')) {
+    const names = getAllTeams().map(t => t.name).sort((a, b) => b.length - a.length);
+    headline = headline.replace(new RegExp(`\\b(${names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi'), '**$1**');
   }
+  return { kicker: stored.kicker, headline, body: stored.body };
+}
+function teamsSummary(settingKey, block, f) {
+  if (!f) return null;
+  const stored = storedTeamsSummary(settingKey, f);
+  if (stored) return stored;
   if (aiAvailable() && !teamsSummaryInFlight.has(settingKey) && Date.now() >= homeSummaryCooldownUntil) {
     teamsSummaryInFlight.add(settingKey);
     generateHomeSummary(block, f, { where: f.where, settingKey, strict: true })
@@ -24019,7 +24071,7 @@ app.post('/marketplace/:id/comments', express.json(), (req, res) => {
       type: 'marketplace_comment',
       title: `New comment on ${listing.title}`,
       body: `${commenterName}: ${body.length > 100 ? body.slice(0, 100) + '…' : body}`,
-      link: listingLink,
+      link: listingLink, actorId: playerId,
     });
   });
 

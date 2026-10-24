@@ -67,6 +67,24 @@ Each uncached request from the Philippines costs ~1.3–1.7 s (PH → Cloudflare
 36. **Visible focus and screen changes.** (target: a global `:focus-visible` ring, and after each screen change focus moves to the screen title.) Toggles carry `aria-pressed` / `aria-expanded`; never rely on colour alone (unread, selected).
 37. **Motion** only under `prefers-reduced-motion: no-preference`.
 
+## One backend for the site and the app
+
+These apply to every backend change, made from either side.
+
+- **Actions go through the site's routes.** The app posts to the site's own routes (picks, Papawis, settle, photo, stat cards) or to a shared function (`postComment`). Never write a second copy of a rule in an `/app` route.
+- **A change on one side means checking the other.** When you change what a site page shows, check the matching app screen, and the reverse. The app has its own read helpers (`appFeedIndex`, `appPapawisRuns`, `appOpenPicks`, `/app/team`, `/app/me`), so check:
+  - feature flags (`papawis_enabled`, `posts_enabled`, `comments_enabled`);
+  - `under_review`;
+  - regular season vs playoffs;
+  - `potgIdsFor()`;
+  - `byDate()` order.
+- **Opening a screen never writes while viewing as a player.** The read-only guard only stops non-GET requests. A GET that writes (marking notifications read, activity logs) checks `req.session.impersonating`.
+- **Notifications:**
+  - Every notification goes through `createNotification`, and the bell comes first. Create it before or apart from any email, so a missing or failed email never drops the bell.
+  - A new notification type needs:
+    - a push kind in `lib/push.js` `pushKindOf`;
+    - a link that `appLinkFor` maps to an app screen, so it doesn't dead-end on the Notifications list.
+
 ## Before calling a screen done
 
 38. **Check it:**

@@ -47,6 +47,9 @@ export const icons = {
   palette: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="8.5" cy="10" r="1.2" fill="currentColor"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="10" r="1.2" fill="currentColor"/>'),
   image: svg('<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-9 8"/>'),
   close: svg('<path d="M18 6 6 18M6 6l12 12"/>'),
+  clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+  trophy: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/>'),
+  at: svg('<circle cx="12" cy="12" r="3.5"/><path d="M15.5 8.5v4.75a2.25 2.25 0 0 0 4.5 0V12a8 8 0 1 0-3.2 6.4"/>'),
   download: svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),
   copy: svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
   pinned: svg('<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/>'),
@@ -63,13 +66,14 @@ export const soonTag = '<span class="tag-muted">Soon</span>';
 // page (null at the end). More pages load as the player scrolls near the bottom. Use it for
 // anything long (notifications now, the feed later) so the screen opens at once.
 // cards: the rows are cards (the feed) rather than cells in one grouped list.
-export function lazyList({ src, empty = 'Nothing yet.', rows = 6, cards = false }) {
+// plain: the rows bring their own .group boxes (the notifications list, grouped by day).
+export function lazyList({ src, empty = 'Nothing yet.', rows = 6, cards = false, plain = false }) {
   const skel = cards
     ? Array.from({ length: 2 }, () => '<div class="fc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></div>').join('')
     : Array.from({ length: rows }, () => '<div class="cell skel-row"><span class="skel skel--dot"></span><span class="cell__t"><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></span></div>').join('');
   const box = cards ? 'feed' : 'group';
   return `<div class="lazy" data-lazy-src="${esc(src)}" data-lazy-empty="${esc(empty)}">
-    <div class="${box} lazy__items" hidden></div>
+    <div class="${plain ? '' : `${box} `}lazy__items" hidden></div>
     <div class="${box} lazy__skel" aria-hidden="true">${skel}</div>
     <div class="lazy__end" aria-live="polite"></div>
   </div>`;
