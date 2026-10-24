@@ -108,6 +108,14 @@ export function manilaHourNow() {
   return d.getUTCHours();
 }
 
+// A run's Light / Dark teams are out once the admin has sent them: any confirmed player on
+// a side has had their "your team" email (team_notified_at). The site's /papawis and the
+// app's Papawis tab both switch to teams on this, full or not; anyone who joins later shows
+// without a side until they get one. signups: getPapawisSignups rows.
+export function papawisTeamsSent(signups) {
+  return signups.some(s => s.status === 'confirmed' && s.team_notified_at && (s.team === 'light' || s.team === 'dark'));
+}
+
 export function isPapawisSignupOpenNow(game) {
   const opensAt = papawisSignupOpensAtMs(game);
   return opensAt === null || Date.now() >= opensAt;

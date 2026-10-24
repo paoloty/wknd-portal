@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, initials, shareIcon, COMMUNITY_GC_URL } from './utils.js';
+import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, papawisTeamsSent, initials, shareIcon, COMMUNITY_GC_URL } from './utils.js';
 
 // /papawis — rebuilt 2026-10-11 from the "WKND Marketplace + Papawis Redesign" canvas (variant J).
 // Every UPCOMING run gets the full block (countdown bar, photo banner, who's in, details +
@@ -127,10 +127,14 @@ function rosterModalBody(signups, { showTeams = false } = {}) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist  = signups.filter(s => s.status === 'waitlist' || s.status === 'pending');
   const hasTeams  = showTeams && confirmed.some(s => s.team === 'light' || s.team === 'dark');
+  const wlName = s => s.guest_name ? escHtml(s.guest_name) : playerLink(s.player_id, s.player_name, { className: 'pw-roster-link' });
+  // Teams can be out before the run is full: anyone who joined after gets listed until they have a side.
+  const noSide = hasTeams ? confirmed.filter(s => s.team !== 'light' && s.team !== 'dark') : [];
   const confirmedHtml = !confirmed.length
     ? `<p class="pw-roster-empty">No one's listed yet. Be the first.</p>`
-    : hasTeams ? teamMatchTable(confirmed.filter(s => s.team === 'light'), confirmed.filter(s => s.team === 'dark')) : rosterTable(confirmed);
-  const wlName = s => s.guest_name ? escHtml(s.guest_name) : playerLink(s.player_id, s.player_name, { className: 'pw-roster-link' });
+    : hasTeams ? teamMatchTable(confirmed.filter(s => s.team === 'light'), confirmed.filter(s => s.team === 'dark'))
+      + (noSide.length ? `<p class="pw-waitlist-text">No side yet: ${noSide.map(wlName).join(', ')}</p>` : '')
+    : rosterTable(confirmed);
   const waitlistHtml = !waitlist.length ? ''
     : hasTeams ? `<p class="pw-waitlist-text">Waitlist: ${waitlist.map(wlName).join(', ')}</p>`
     : `<div class="pw-waitlist"><span class="pw-waitlist-label">Waitlist</span>${rosterTable(waitlist)}</div>`;
@@ -328,7 +332,7 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   }
   const action = `<div class="pwx-action">${btn}${note}<div class="pwx-err" data-err-for="${gid}" hidden></div></div>`;
 
-  const showTeams = full && dLeft <= CUTOFF_DAYS;
+  const showTeams = papawisTeamsSent(pub);
   return `<section id="pw-game-${gid}" class="pwx-run is-${kind === 'wait' ? 'wait' : 'live'}" style="--c:${st.c}" data-game-id="${gid}">
       ${countdown}
       ${banner}

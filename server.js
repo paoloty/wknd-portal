@@ -52,7 +52,7 @@ import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamDetailPage } from './views/team-detail.js';
-import { teamColor, displayPlayerName, manilaTodayStr, manilaFormat, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs, gameTipLabel } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaFormat, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs, papawisTeamsSent, gameTipLabel } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -7127,8 +7127,8 @@ function appPapawisRuns(me) {
     else if (full) state = { kind: 'join-waitlist', waiting: waitlist.length };
     else state = { kind: 'join', open, confirmFirst: !cancellable };
     const face = s => pwFace(s, teams, me.playerId);
-    // Teams show as on the site: the run is full, inside the cutoff, and sides are made.
-    const teamsOut = full && dLeft <= PAPAWIS_CUTOFF_DAYS && confirmed.some(s => s.team === 'light' || s.team === 'dark');
+    // Teams show once the admin has sent them, as on the site (views/utils.js papawisTeamsSent).
+    const teamsOut = papawisTeamsSent(confirmed);
     const opensDay = pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10));
     return {
       id: g.id, title: g.title || `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })} run`,
