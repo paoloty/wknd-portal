@@ -2,9 +2,11 @@
 // from the same openPicks() objects as the site's pick cards (views/pick-card.js) and saved
 // through the same POST /games/:id/pick, so the rules live in one place. Same reveal rule as
 // the site: the pickers' split shows once you've picked (or picks are closed).
-import { esc } from './layout.js';
+import { esc, icons } from './layout.js';
 
 const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
+// FAV / DOG / EVEN from the odds model's chance for one side.
+const oddsKind = p => (p > 50 ? 'FAV' : p < 50 ? 'DOG' : 'EVEN');
 
 function oddsRow(g) {
   if (!g.odds) return '';
@@ -15,18 +17,21 @@ function oddsRow(g) {
   </div>`;
 }
 
+// One row. The fill and the PICKS pill only exist once the split shows; app.js reads
+// data-pct off them to animate the reveal / switch (initPicks).
 export function pickOption(g, side) {
   const t = g[side], total = g.counts.a + g.counts.b;
   const share = pct(g.counts[side], total);
   const mine = g.myPick === side;
   const reveal = (g.myPick || g.closed) && total > 0;
-  const sub = !g.odds ? '' : (g.odds[side === 'a' ? 'pctA' : 'pctB'] < 50 ? 'Underdog' : g.odds[side === 'a' ? 'pctA' : 'pctB'] > 50 ? 'Favourite' : '');
-  return `<button type="button" class="pick__opt${mine ? ' is-mine' : ''}" data-side="${side}" style="--c:${esc(t.color)}"${g.closed ? ' disabled' : ''} aria-pressed="${mine}">
-    ${reveal && share > 0 ? `<span class="pick__fill" style="width:${share}%"></span>` : ''}
-    <span class="pick__radio" aria-hidden="true"></span>
-    <span class="dot" style="--c:${esc(t.color)}"></span>
-    <span class="pick__name">${esc(t.name)}${mine ? ' <span class="pick__yours">· your pick</span>' : ''}</span>
-    ${reveal ? `<span class="pick__pct">${share}%</span>` : sub ? `<span class="pick__sub">${sub}</span>` : ''}
+  const odds = g.odds ? g.odds[side === 'a' ? 'pctA' : 'pctB'] : null;
+  const label = [t.name, mine && 'your pick', odds != null && `${odds > 50 ? 'favourite' : odds < 50 ? 'underdog' : 'even'} ${odds}%`, reveal && `${share}% of picks`].filter(Boolean).join(', ');
+  return `<button type="button" class="pick__opt${mine ? ' is-mine' : ''}" data-side="${side}" data-team="${esc(String(t.name).toLowerCase())}" style="--c:${esc(t.color)}"${g.closed ? ' disabled' : ''} aria-pressed="${mine}" aria-label="${esc(label)}">
+    ${reveal && share > 0 ? `<span class="pick__fill" data-pct="${share}" style="width:${share}%"></span>` : ''}
+    <span class="pick__radio" aria-hidden="true">${icons.check}</span>
+    <span class="pick__name"><span class="dot" aria-hidden="true"></span>${esc(t.name)}</span>
+    ${odds != null ? `<span class="pick__pill pick__pill--odds${odds > 50 ? ' is-fav' : ''}" aria-hidden="true"><em>${oddsKind(odds)}</em>${odds}%</span>` : ''}
+    <span class="pick__right">${reveal ? `<span class="pick__pill pick__pill--pk${mine ? ' is-mine' : ''}" aria-hidden="true"><em>PICKS</em><span data-pick-pct="${share}">${share}%</span></span>` : ''}</span>
   </button>`;
 }
 
@@ -71,18 +76,18 @@ export function appPicksPage({ record, games = [], off = false, board = [], past
   const medal = r => r.rank <= 3 && board.filter(x => !x.gap && x.rank <= r.rank).length <= 3;
   const rec = record
     ? `<div class="card glow pick-rec"><div><div class="kick">Your record</div><b class="num">${esc(record.wl)}</b><small>${esc(record.net)} net</small></div>
-        <div style="text-align:right"><div class="kick muted-kick">Pickmaster</div><b class="num pick-rec__rank">${record.rank ? `${record.tied ? 'T' : '#'}${record.rank}` : '—'}</b></div></div>`
+        <div class="pick-rec__r"><div class="kick muted-kick">Pickmaster</div><b class="num pick-rec__rank">${record.rank ? `${record.tied ? 'T' : '#'}${record.rank}` : '—'}</b></div></div>`
     : `<div class="card glow pick-rec"><div><div class="kick">Your record</div><small>Make your first pick to get on the board.</small></div></div>`;
   const boardHtml = board.length ? `<div class="sec">Pickmaster</div><div class="group">${board.map(r => `
-    ${r.gap ? '<div class="cell board__gap">···</div>' : ''}<div class="cell board${r.me ? ' is-me' : ''}"><span class="board__rk num${medal(r) ? ` board__rk--${r.rank}` : ''}">${r.tied ? 'T' : ''}${r.rank}</span><span class="cell__t">${esc(r.name)}${r.me ? ' <span class="muted" style="font-weight:400">· You</span>' : ''}<small>${esc(r.wl)}</small></span><span class="num board__net">${esc(r.net)}</span></div>`).join('')}</div>` : '';
+    ${r.gap ? '<div class="cell board__gap">···</div>' : ''}<div class="cell board${r.me ? ' is-me' : ''}"><span class="board__rk num${medal(r) ? ` board__rk--${r.rank}` : ''}">${r.tied ? 'T' : ''}${r.rank}</span><span class="cell__t">${esc(r.name)}${r.me ? ' <span class="muted board__you">· You</span>' : ''}<small>${esc(r.wl)}</small></span><span class="num board__net">${esc(r.net)}</span></div>`).join('')}</div>` : '';
   const pastHtml = past.length ? `<div class="sec">Your past picks</div><div class="group">${past.map(x => `
-    <div class="cell"><span class="date">${esc(x.date)}</span><span class="cell__t">${esc(x.matchup)}<small><span class="dot" style="--c:${esc(x.color)};width:7px;height:7px;display:inline-block;margin-right:5px"></span>Picked ${esc(x.pick)}</small></span><span class="res ${x.correct ? 'res--w' : 'res--l'}">${x.correct ? 'Right' : 'Wrong'}</span></div>`).join('')}</div>` : '';
+    <div class="cell"><span class="date">${esc(x.date)}</span><span class="cell__t">${esc(x.matchup)}<small><span class="dot past__dot" style="--c:${esc(x.color)}"></span>Picked ${esc(x.pick)}</small></span><span class="res ${x.correct ? 'res--w' : 'res--l'}">${x.correct ? 'Right' : 'Wrong'}</span></div>`).join('')}</div>` : '';
   return `
   <header class="lt"><h1>Who wins?</h1></header>
-  ${off ? '<div class="empty" style="margin-top:8px">Picks are off right now.</div>' : `
+  ${off ? '<div class="empty pick-empty">Picks are off right now.</div>' : `
   ${rec}
   ${games.length ? `<div class="sec">Open games</div><div class="stack" style="--gap:12px">${games.map(pickCard).join('')}</div>`
-    : '<div class="empty" style="margin-top:12px">No games to pick right now. They show up here once the next game day is on the schedule.</div>'}
+    : '<div class="empty pick-empty">No games to pick right now. They show up here once the next game day is on the schedule.</div>'}
   ${boardHtml}
   ${pastHtml}`}`;
 }

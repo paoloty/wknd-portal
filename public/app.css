@@ -33,6 +33,7 @@
   --tabbar: rgba(16,20,29,0.82); --field: #0d1119; --field-border: rgba(255,255,255,0.10);
   --win: #34d399; --loss: #f87171; --danger: #f87171;
   --team-white: #d7dce5; --team-blue: #4a90e2; --team-maroon: #b0455a; --team-black: #6b7486;
+  --pick-white: #d7dce5; --pick-black: #8a94a6; /* pick bar edges: Black runs lighter so it shows on the row */
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -41,7 +42,7 @@
   --shadow: 0 1px 2px rgba(10,14,22,.04), 0 6px 16px rgba(10,14,22,.05); --card-bg: var(--surface); --card-hi: 0 0 #0000;
   --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14); --toast-bg: rgba(255,255,255,0.94);
   --win: #047857; --loss: #dc2626; --danger: #dc2626;
-  --team-white: #8d97a8; --team-black: #4a5263;
+  --team-white: #8d97a8; --team-black: #4a5263; --pick-white: #79839a; --pick-black: #4a5263;
   color-scheme: light;
 }
 @media (prefers-color-scheme: light) {
@@ -51,7 +52,7 @@
     --shadow: 0 1px 2px rgba(10,14,22,.04), 0 6px 16px rgba(10,14,22,.05); --card-bg: var(--surface); --card-hi: 0 0 #0000;
     --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14); --toast-bg: rgba(255,255,255,0.94);
     --win: #047857; --loss: #dc2626; --danger: #dc2626;
-    --team-white: #8d97a8; --team-black: #4a5263;
+    --team-white: #8d97a8; --team-black: #4a5263; --pick-white: #79839a; --pick-black: #4a5263;
     color-scheme: light;
   }
 }
@@ -313,6 +314,10 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 .pick-rec small { color: var(--muted); font-size: 12px; }
 .pick-rec__rank { color: var(--amber-text); }
 .muted-kick { color: var(--muted); }
+.pick-rec__r { text-align: right; }
+.pick-empty { margin-top: 12px; }
+.board__you { font-weight: 400; }
+.past__dot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; }
 .pick { padding: 14px; }
 .pick__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .pick__close { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--amber-text); background: rgba(245,147,50,.12); padding: 4px 9px; border-radius: 999px; }
@@ -325,36 +330,60 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 .pick__ring { width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 7px; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 3px var(--c); background: var(--surface-2); font-family: var(--font-num); font-weight: 700; font-size: 18px; }
 .pick__tm b { display: block; font-family: var(--font-num); font-weight: 700; font-size: 18px; line-height: 1; }
 .pick__tm small { font-size: 12px; color: var(--muted); }
-.pick__vs { font-family: var(--font-num); font-weight: 800; font-size: 16px; color: var(--subtle); }
+.pick__vs { font-family: var(--font-num); font-weight: 800; font-size: 16px; color: var(--muted); }
 .pick__odds { margin: 12px 0 2px; }
 .pick__oddsbar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; }
 .pick__oddsbar span { background: var(--c); }
-.pick__oddsl { display: flex; justify-content: space-between; margin-top: 5px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
-.pick__q { margin: 12px 2px 8px; font-size: 13.5px; font-weight: 600; }
-.pick__opts { display: flex; flex-direction: column; gap: 8px; }
-.pick__opt { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 0 14px; border-radius: var(--r-in); background: var(--surface-2); overflow: hidden; font-size: 15px; font-weight: 600; text-align: left; }
+.pick__oddsl { display: flex; justify-content: space-between; margin-top: 5px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.pick__q { margin: 12px 2px 8px; font-size: 14px; font-weight: 600; }
+/* The rows use the site's bar language (views/pick-card.js .pkc-r) without its gloss/glow:
+   a tinted team fill with a solid team edge, amber outline + check on your pick, FAV/DOG
+   and PICKS pills. White fills lighter, Black stronger with a lighter edge (--pick-*). */
+.pick__opts { display: flex; flex-direction: column; gap: 8px; container-type: inline-size; }
+.pick__opt { --tint: 32%; position: relative; display: flex; align-items: center; gap: 9px; width: 100%; min-height: 46px; padding: 0 12px; border-radius: var(--r-in); border: 1.5px solid var(--field-border); background: var(--surface-2); overflow: hidden; font-size: 15px; font-weight: 600; text-align: left; }
+.pick__opt[data-team="white"] { --tint: 18%; --pick-c: var(--pick-white); }
+.pick__opt[data-team="black"] { --tint: 42%; --pick-c: var(--pick-black); }
 .pick__opt > :not(.pick__fill) { position: relative; }
-.pick__fill { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--c) 24%, transparent); border-right: 3px solid var(--c); }
-/* Just picked (app.js initPicks): the split grows in with a sheen, like the site's cards. */
-@media (prefers-reduced-motion: no-preference) {
-  .pick.is-revealed .pick__fill { transform-origin: left center; animation: pick-grow .9s cubic-bezier(.22,1,.36,1) both; overflow: hidden; }
-  .pick.is-revealed .pick__fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.28) 50%, transparent 65%); transform: translateX(-120%); animation: pick-sheen 1s cubic-bezier(.4,0,.2,1) .55s; }
-  .pick.is-revealed .pick__opt:nth-child(2) .pick__fill { animation-delay: .08s; }
-  .pick.is-revealed .pick__pct { animation: pick-pct .4s ease .25s both; }
-}
-@keyframes pick-grow { from { transform: scaleX(0); } }
-@keyframes pick-pct { from { opacity: 0; transform: translateY(4px); } }
-@keyframes pick-sheen { to { transform: translateX(120%); } }
-.pick__radio { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--subtle); }
-.pick__opt.is-mine { box-shadow: inset 0 0 0 2px var(--amber); }
-.pick__opt.is-mine .pick__radio { border: 0; background: var(--amber); box-shadow: inset 0 0 0 5px var(--surface-2); }
+.pick__fill { position: absolute; left: 0; top: 0; bottom: 0; overflow: hidden; background: color-mix(in srgb, var(--pick-c, var(--c)) var(--tint), transparent); border-right: 3px solid var(--pick-c, var(--c)); }
+.pick__fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.28) 50%, transparent 65%); transform: translateX(-120%); }
+.pick__radio { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--subtle); color: var(--on-warn); }
+.pick__radio svg { width: 13px; height: 13px; transform: scale(0); }
+.pick__opt.is-mine { border-color: var(--amber); }
+.pick__opt.is-mine .pick__radio { border-color: var(--amber); background: var(--amber); }
+.pick__opt.is-mine .pick__radio svg { transform: scale(1); }
+.pick__opts:has(.is-mine) .pick__opt:not(.is-mine) { opacity: .85; }
 .pick__opt.is-saving { opacity: .7; }
 .pick__opt:disabled { cursor: default; }
 .pick__opt:not(:disabled):active { filter: brightness(.94); }
-.pick__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pick__yours { font-size: 11.5px; font-weight: 500; color: var(--amber-text); }
-.pick__pct { font-family: var(--font-num); font-weight: 700; font-size: 18px; }
-.pick__sub { font-size: 11.5px; font-weight: 500; color: var(--muted); }
+.pick__opt .dot { background: var(--pick-c, var(--c)); }
+.pick__name { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick__right { margin-left: auto; display: inline-flex; align-items: center; }
+.pick__pill { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 3px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair); font: 700 14px/1 var(--font-num); color: var(--muted); white-space: nowrap; }
+.pick__pill em { font: 600 11px/1 var(--font-num); font-style: normal; letter-spacing: .08em; padding: 3px 6px; border-radius: 999px; background: var(--hair); }
+.pick__pill.is-fav { color: var(--amber-text); box-shadow: inset 0 0 0 1px rgba(245,147,50,.4); }
+.pick__pill.is-fav em { background: var(--amber); color: var(--on-warn); }
+.pick__pill--pk { color: var(--text); }
+.pick__pill--pk.is-mine { box-shadow: inset 0 0 0 1px rgba(245,147,50,.5); }
+.pick__pill--pk.is-mine em { background: rgba(245,147,50,.2); color: var(--amber-text); }
+/* Narrow rows (rail cards, 320px phones): once the split shows, the FAV/DOG pill goes so the
+   name and PICKS stay on one line; the odds stay in the card's odds bar / preview. */
+@container (max-width: 300px) { .pick__opt:has(.pick__pill--pk) .pick__pill--odds { display: none; } }
+/* Motion (app.js initPicks): a first reveal (just picked, or a picked card scrolling into
+   view) grows the bars in from the left with a sheen and counts the % up; a switch slides
+   the bars to their new widths (.is-sliding) with the sheen (.is-swept). */
+@media (prefers-reduced-motion: no-preference) {
+  .pick__opt { transition: border-color .2s, opacity .25s; }
+  .pick__radio { transition: background .2s, border-color .2s; }
+  .pick__radio svg { transition: transform .35s cubic-bezier(.34,1.56,.64,1); }
+  .pick.is-sliding .pick__fill { transition: width .9s cubic-bezier(.22,1,.36,1); }
+  .pick.is-revealed .pick__fill { transform-origin: left center; animation: pick-grow .9s cubic-bezier(.22,1,.36,1) both; }
+  .pick.is-revealed .pick__opt:nth-child(2) .pick__fill { animation-delay: .08s; }
+  .pick.is-revealed .pick__fill::after, .pick.is-swept .pick__fill::after { animation: pick-sheen 1s cubic-bezier(.4,0,.2,1) .55s; }
+  .pick.is-revealed .pick__pill--pk { animation: pick-pct .3s ease both; }
+}
+@keyframes pick-grow { from { transform: scaleX(0); } }
+@keyframes pick-pct { from { opacity: 0; transform: translateY(3px); } }
+@keyframes pick-sheen { to { transform: translateX(120%); } }
 .pick__who { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--muted); }
 .pick__stack { display: flex; }
 .pick__stack span { width: 24px; height: 24px; border-radius: 50%; margin-left: -7px; display: flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 800; color: var(--text); background: var(--surface-2); box-shadow: 0 0 0 2px var(--surface), inset 0 0 0 2px var(--c, var(--subtle)); }
@@ -364,7 +393,7 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 .pick__stakes b { color: var(--text); }
 .pick__stakes .up { color: var(--win); } .pick__stakes .dn { color: var(--loss); }
 .pick__note { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 10px 2px 0; font-size: 12px; color: var(--muted); }
-.pick__msg { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--r-in); background: color-mix(in srgb, var(--danger) 12%, transparent); font-size: 13px; font-weight: 600; color: var(--danger); }
+.pick__msg { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--r-in); background: color-mix(in srgb, var(--danger) 12%, transparent); font-size: 14px; font-weight: 600; color: var(--danger); }
 /* Done (the default): a calm pill — the app's raised surface with a green ✓ — not a solid
    green fill, which was harsh on the eyes (Paolo, 2026-10-23). Problems stay solid red. */
 .app-toast { position: fixed; z-index: 35; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 14px); transform: translateX(-50%); display: flex; align-items: center; gap: 9px; max-width: calc(100% - 32px); padding: 10px 16px 10px 11px; border-radius: 999px; background: var(--toast-bg); color: var(--text); border: 1px solid var(--hair); -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); font-size: 14px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.28); white-space: nowrap; }
@@ -797,7 +826,6 @@ a.sx:active { transform: scale(.99); }
 .st__pick { display: flex; align-items: center; justify-content: center; min-height: 54px; border-radius: var(--r-in); border: 1.5px dashed var(--field-border); color: var(--amber-text); font-weight: 600; font-size: 14px; cursor: pointer; }
 .st__file img { max-height: 220px; width: auto; margin: 0 auto; border-radius: 10px; }
 
-@media (max-width: 359px) { .rc .pick__sub { display: none; } }
 .pill, .sx__chip, .tag-muted { white-space: nowrap; }
 .st__num > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st__num b { margin-right: auto; white-space: nowrap; font-size: 17px; }

@@ -375,16 +375,62 @@
     var s = Math.floor(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
     return 'Closes in ' + (d >= 1 ? d + ' day' + (d === 1 ? '' : 's') : h >= 1 ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + ':' + String(x).padStart(2, '0'));
   };
-  // The card just picked: once the refreshed screen is in, its pickers' bars grow in from
-  // the left (the split shows for the first time), like the site's pick cards.
-  var justPicked = null;
+  // Bars, like the site's pick cards (views/pick-card.js): once the refreshed screen is in,
+  // the card just picked grows its bars in from the left with a sheen and counts the % up;
+  // a switch slides the bars from the old split to the new one instead. A picked card also
+  // grows in the first time it scrolls into view (once per game per app session).
+  // justPicked = { id, from }: from = the split before the tap ({ a, b } %), null if hidden.
+  var justPicked = null, pickGrown = {}, pickIO = null;
+  var pickCalm = function () { return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); };
+  var pickSplit = function (card) {
+    if (!$('.pick__fill', card)) return null;
+    var o = { a: 0, b: 0 };
+    $$('.pick__fill', card).forEach(function (f) { o[f.closest('.pick__opt').getAttribute('data-side')] = Number(f.getAttribute('data-pct')) || 0; });
+    return o;
+  };
+  function pickCount(card, from) {
+    $$('[data-pick-pct]', card).forEach(function (el) {
+      var to = Number(el.getAttribute('data-pick-pct')), a = from ? from[el.closest('.pick__opt').getAttribute('data-side')] || 0 : 0, t0 = performance.now();
+      (function step(now) {
+        var k = Math.min(1, (now - t0) / 800), e = 1 - Math.pow(1 - k, 3);
+        el.textContent = Math.round(a + (to - a) * e) + '%';
+        if (k < 1 && el.isConnected) requestAnimationFrame(step);
+      })(t0);
+      setTimeout(function () { el.textContent = to + '%'; }, 850); // frames can stall (app in the background)
+    });
+  }
+  function pickReveal(card, from, count) {
+    pickGrown[card.getAttribute('data-pick-game')] = true;
+    if (pickCalm()) return;
+    if (from) {
+      var fills = $$('.pick__fill', card), to = fills.map(function (f) { return f.style.width; });
+      fills.forEach(function (f) { f.style.width = (from[f.closest('.pick__opt').getAttribute('data-side')] || 0) + '%'; });
+      void card.offsetWidth; // start the slide from the old widths
+      card.classList.add('is-sliding', 'is-swept');
+      fills.forEach(function (f, i) { f.style.width = to[i]; });
+    } else card.classList.add('is-revealed');
+    if (count) pickCount(card, from);
+  }
+  function pickGrowOnView() {
+    if (pickIO) pickIO.disconnect();
+    if (pickCalm() || !('IntersectionObserver' in window)) return;
+    pickIO = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        pickIO.unobserve(e.target);
+        if (!pickGrown[e.target.getAttribute('data-pick-game')]) pickReveal(e.target, null, false);
+      });
+    }, { threshold: 0.4 });
+    $$('[data-pick-game]').forEach(function (card) { if (!pickGrown[card.getAttribute('data-pick-game')] && $('.pick__fill', card)) pickIO.observe(card); });
+  }
   function initPicks() {
     clearInterval(pickTimer);
     if (justPicked) {
-      var done = $('[data-pick-game="' + justPicked + '"]');
+      var jp = justPicked, done = $('[data-pick-game="' + jp.id + '"]');
       justPicked = null;
-      if (done) done.classList.add('is-revealed');
+      if (done && $('.pick__fill', done)) pickReveal(done, jp.from, true);
     }
+    pickGrowOnView();
     var clocks = $$('[data-close-at]');
     if (clocks.length) {
       var tick = function () { clocks.forEach(function (c) { c.textContent = closeText(Number(c.getAttribute('data-close-at')) - Date.now()); }); };
@@ -398,11 +444,18 @@
         if (!btn || btn.disabled || btn.classList.contains('is-mine') || card.getAttribute('data-saving')) return;
         var side = btn.getAttribute('data-side'), opts = $$('.pick__opt', card), prev = $('.pick__opt.is-mine', card);
         var msg = $('[data-pick-msg]', card); msg.hidden = true;
+        // Never queued for later: offline, nothing is sent and the card says so.
+        if (!navigator.onLine) { msg.textContent = 'You\'re offline. Picks need a connection, so nothing was sent.'; msg.hidden = false; return; }
+        var from = pickSplit(card);
         card.setAttribute('data-saving', '1');
-        opts.forEach(function (b) { b.classList.toggle('is-mine', b === btn); b.classList.add('is-saving'); });
-        var undo = function (text) {
+        opts.forEach(function (b) { b.classList.toggle('is-mine', b === btn); b.classList.add('is-saving'); b.disabled = true; });
+        var settle = function () {
           card.removeAttribute('data-saving');
-          opts.forEach(function (b) { b.classList.toggle('is-mine', b === prev); b.classList.remove('is-saving'); });
+          opts.forEach(function (b) { b.classList.remove('is-saving'); b.disabled = false; });
+        };
+        var undo = function (text) {
+          settle();
+          opts.forEach(function (b) { b.classList.toggle('is-mine', b === prev); });
           msg.textContent = text; msg.hidden = false;
         };
         fetch('/games/' + encodeURIComponent(card.getAttribute('data-pick-game')) + '/pick', {
@@ -413,7 +466,8 @@
             if (!res.ok) return undo((res.j && res.j.error) || 'Couldn\'t save your pick. Try again.');
             var label = card.getAttribute('data-close-label');
             toast('Picked ' + card.getAttribute('data-pick-' + side) + (label ? ' · change until ' + label : ''));
-            justPicked = card.getAttribute('data-pick-game');
+            settle();
+            justPicked = { id: card.getAttribute('data-pick-game'), from: from };
             var block = card.closest('[data-block-src]');
             if (block) { loadBlock(block, true); refreshNav(); } else refreshScreen();
           }, function () { undo('No connection. Your pick wasn\'t saved.'); });
