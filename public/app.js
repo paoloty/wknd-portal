@@ -486,13 +486,38 @@
     var d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60;
     return d ? d + 'd ' + h + 'h' : h ? h + 'h ' + m + 'm' : m + 'm';
   };
+  // The tab's cover countdown ("Tip-off in 6d 23h 14m 05s"), every second.
+  var pwClock = function (ms) {
+    if (ms <= 0) return 'now';
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    var d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60, s = Math.floor(ms / 1e3) % 60;
+    return (d ? d + 'd ' : '') + p(h) + 'h ' + p(m) + 'm ' + p(s) + 's';
+  };
+  // The run just joined: once the refreshed screen is in, your face pops into its seat.
+  // pwSeen: runs whose roster this session already reported (the site's "viewed" beacon,
+  // which Papawis announcements use to find interested players).
+  var pwJustJoined = null, pwSeen = {};
   function initPapawis() {
     clearInterval(pwTimer);
-    var cds = $$('[data-countdown-to]');
-    if (cds.length) {
-      var tick = function () { cds.forEach(function (c) { c.textContent = c.getAttribute('data-countdown-label') + ' ' + pwLeft(Number(c.getAttribute('data-countdown-to')) - Date.now()); }); };
-      tick(); pwTimer = setInterval(tick, 30000);
+    var cds = $$('[data-countdown-to]'), caps = $$('[data-pw-cd]');
+    if (cds.length || caps.length) {
+      var tick = function () {
+        cds.forEach(function (c) { c.textContent = c.getAttribute('data-countdown-label') + ' ' + pwLeft(Number(c.getAttribute('data-countdown-to')) - Date.now()); });
+        caps.forEach(function (c) { $('b', c).textContent = pwClock(Number(c.getAttribute('data-pw-cd')) - Date.now()); });
+      };
+      tick(); pwTimer = setInterval(tick, caps.length ? 1000 : 30000);
     }
+    if (pwJustJoined) {
+      var joined = $('[data-pw-card="' + pwJustJoined + '"]');
+      pwJustJoined = null;
+      if (joined) joined.classList.add('is-joined');
+    }
+    $$('[data-pw-roster]').forEach(function (card) {
+      var id = card.getAttribute('data-pw-card');
+      if (pwSeen[id] || !navigator.onLine) return;
+      pwSeen[id] = true;
+      fetch('/papawis/' + encodeURIComponent(id) + '/viewed', { method: 'POST', credentials: 'same-origin', keepalive: true }).catch(function () {});
+    });
     $$('[data-pw-card]').forEach(function (card) {
       if (card._bound) return;
       card._bound = true;
@@ -500,10 +525,12 @@
         var b = e.target.closest && e.target.closest('[data-pw-act]');
         if (!b || b.disabled || card.getAttribute('data-saving')) return;
         var act = b.getAttribute('data-pw-act'), run = b.getAttribute('data-pw-run');
+        var msg = $('[data-pw-msg]', card); msg.hidden = true;
+        // Never queued for later: offline, nothing is sent and the card says so.
+        if (!navigator.onLine) { msg.textContent = 'You\'re offline. This needs a connection, so nothing was sent.'; msg.hidden = false; return; }
         var ask = b.getAttribute('data-pw-confirm');
         if (ask && !window.confirm(ask)) return;
         if (act === 'cancel' && !window.confirm(b.textContent.trim() + '?')) return;
-        var msg = $('[data-pw-msg]', card); msg.hidden = true;
         card.setAttribute('data-saving', '1'); b.classList.add('is-busy');
         var use = b.getAttribute('data-pw-use') === '1';
         fetch('/papawis/' + encodeURIComponent(run) + '/' + act, {
@@ -518,6 +545,7 @@
             toast(act === 'voucher' ? (res.j.message || 'Done')
               : act === 'cancel' ? 'You\'re off the list'
               : st === 'waitlist' ? 'You\'re on the waitlist' : st === 'pending' ? 'You\'re listed · send your deposit to confirm' : 'You\'re in!');
+            if (act === 'join') pwJustJoined = run;
             refreshScreen();
           }, function () {
             card.removeAttribute('data-saving'); b.classList.remove('is-busy');

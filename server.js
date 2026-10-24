@@ -6023,7 +6023,7 @@ import { appSharePage } from './views/app/share.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
-import { appPapawisPage, appPapawisPlayersPage } from './views/app/papawis.js';
+import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appSettlePage } from './views/app/settle.js';
 import { appRatePage } from './views/app/rate.js';
 import { getUnpaidPapawisForPlayer } from './lib/portal-db.js';
@@ -7077,6 +7077,18 @@ app.get('/app/picks', requireApp, (req, res) => {
 const pwDaysUntil = ymd => Math.round((Date.parse(`${ymd}T00:00:00Z`) - Date.parse(`${manilaTodayStr()}T00:00:00Z`)) / 86400000);
 const pwDay = ymd => manilaFormat(Date.parse(`${ymd}T12:00:00+08:00`), { weekday: 'short', month: 'short', day: 'numeric' });
 const pwPeso = n => `₱${Number(n).toLocaleString('en-US')}`;
+// The calendar block on app rows: "07" / "Nov".
+const pwCal = ymd => ({ dayNum: ymd.slice(8, 10), mon: manilaFormat(Date.parse(`${ymd}T12:00:00+08:00`), { month: 'short' }) });
+// One sign-up as a seat in the app (views/app/papawis.js): first name under the face, the
+// league ring, the Light / Dark side once teams are made.
+function pwFace(s, teams, meId) {
+  const name = displayPlayerName(s.player_name || ''), guest = !!s.guest_name;
+  return { ini: guest ? 'G' : name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
+    first: guest ? String(s.guest_name).split(' ')[0] : name.split(' ')[0],
+    color: s.team_id && !guest ? teamColorById(teams, s.team_id) : 'var(--subtle)', me: s.player_id === meId && !guest,
+    team: s.team === 'light' || s.team === 'dark' ? s.team : '', pending: s.status === 'pending',
+    photoUrl: guest ? '' : playerPhotoUrl(s.player_id, 96), playerId: guest ? '' : s.player_id };
+}
 function appPapawisRuns(me) {
   if (getSetting('papawis_enabled', '0') !== '1') return [];
   const teams = getAllTeams();
@@ -7114,33 +7126,43 @@ function appPapawisRuns(me) {
     else if (unpaid) state = { kind: 'unpaid' };
     else if (full) state = { kind: 'join-waitlist', waiting: waitlist.length };
     else state = { kind: 'join', open, confirmFirst: !cancellable };
-    const face = s => {
-      const name = displayPlayerName(s.player_name || '');
-      return { ini: s.guest_name ? 'G' : name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
-        color: s.team_id ? teamColorById(teams, s.team_id) : 'var(--subtle)', me: s.player_id === me.playerId && !s.guest_name,
-        photoUrl: s.guest_name ? '' : playerPhotoUrl(s.player_id, 96), playerId: s.guest_name ? '' : s.player_id };
-    };
+    const face = s => pwFace(s, teams, me.playerId);
+    // Teams show as on the site: the run is full, inside the cutoff, and sides are made.
+    const teamsOut = full && dLeft <= PAPAWIS_CUTOFF_DAYS && confirmed.some(s => s.team === 'light' || s.team === 'dark');
+    const opensDay = pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10));
     return {
       id: g.id, title: g.title || `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })} run`,
       day: pwDay(g.date), today: dLeft === 0, time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
       place: g.location || 'Court to be announced', photo: papawisCoverUrl(g, court) || '',
       tipAt: Date.parse(`${g.date}T${g.start_time || '00:00'}:00+08:00`), opensAt, scheduled,
-      filled, max, open, full, waiting: waitlist.length, faces: confirmed.map(face),
+      opensLabel: `${opensDay.split(',')[0]}, 8:00 AM`, opensShort: opensDay.split(',')[0], ...pwCal(g.date),
+      filled, max, open, full, waiting: waitlist.length, faces: confirmed.map(face), waitFaces: waitlist.map(face),
+      teamsOut, myTeam: teamsOut && mine?.status === 'confirmed' ? (mine.team === 'light' || mine.team === 'dark' ? mine.team : '') : '',
       price: price ? pwPeso(price) : '', priceNote: `Estimate with ${Math.max(filled, max)} players · split after the game`,
       cancelBy: cancellable ? pwDay(addDaysYmd(g.date, -PAPAWIS_CUTOFF_DAYS)) : '', startClock, state,
     };
   });
 }
-// The player's own runs that are over: played (with what it cost), cancelled, price pending.
-function appPapawisHistory(me) {
-  return getPapawisHistoryForPlayer(me.playerId, 12)
-    .filter(h => !h.guest_name && (h.game_status !== 'open' || pwDaysUntil(h.date) < 0) && h.status !== 'cancelled')
-    .slice(0, 8)
-    .map(h => ({ day: pwDay(h.date), title: h.title || 'Papawis run', place: h.location || '',
-      result: h.game_status === 'cancelled' ? 'Run cancelled' : h.game_status === 'completed'
-        ? (h.status === 'confirmed' ? (h.price_per_player ? `${pwPeso(h.price_per_player)}${h.paid_at ? ' · paid' : ' · unpaid'}` : 'Played') : 'Waitlisted')
-        : 'Price being set',
-      unpaid: h.game_status === 'completed' && h.status === 'confirmed' && !!h.price_per_player && !h.paid_at }));
+// Every past run, newest first (everything that isn't upcoming, as the site's "Past runs"),
+// with the player's own result on each: played / paid / unpaid, or listed on a called-off run.
+const pwKind = g => (g.status === 'cancelled' ? 'cancelled' : g.status === 'completed' ? 'played' : 'pending');
+function pwMine(kind, signup, price) {
+  if (!signup || signup.status !== 'confirmed') return null;
+  if (kind === 'cancelled') return 'listed';
+  return kind === 'played' && price ? (signup.paid_at ? 'paid' : 'unpaid') : 'played';
+}
+function appPapawisPast(me) {
+  const key = g => `${g.date}T${g.start_time || '00:00'}`;
+  const mine = new Map();
+  for (const h of getPapawisHistoryForPlayer(me.playerId, 500)) if (!h.guest_name && h.status === 'confirmed') mine.set(h.game_id, h);
+  return getPapawisGames()
+    .filter(g => !(g.status === 'open' && pwDaysUntil(g.date) >= 0))
+    .sort((a, b) => (key(a) < key(b) ? 1 : -1))
+    .map(g => {
+      const kind = pwKind(g), price = Number(g.price_per_player) || 0;
+      return { id: g.id, title: g.title || 'Papawis run', place: g.location || '', ...pwCal(g.date), kind,
+        count: g.confirmed_count || 0, max: g.max_slots || 0, price, mine: pwMine(kind, mine.get(g.id), price) };
+    });
 }
 
 // ── Settle a balance (views/app/settle.js) ──
@@ -7225,37 +7247,48 @@ app.get('/app/rate/:kind/:ref', requireApp, (req, res) => {
   send({ game, closed: !game.open, ...rateScreenData(game, me.playerId) });
 });
 
-// Everyone on one run: the confirmed list by slot, then the waitlist (pending deposits
-// included, as on the site). Hidden until sign-ups open, as on the site.
-app.get('/app/papawis/:id/players', requireApp, (req, res) => {
+// Past runs for the tab's lazy list, a page at a time.
+app.get('/app/papawis/past', requireAppData, (req, res) => {
+  if (getSetting('papawis_enabled', '0') !== '1') return res.json({ html: '', next: null });
+  const from = Math.max(0, Math.floor(Number(req.query.from) || 0));
+  const all = appPapawisPast(appMe(req));
+  const next = from + APP_PAGE_SIZE < all.length ? `/app/papawis/past?from=${from + APP_PAGE_SIZE}` : null;
+  res.json({ html: appPapawisPastRows(all.slice(from, from + APP_PAGE_SIZE)), next });
+});
+
+// The roster now sits on the run's card; old links land on the run.
+app.get('/app/papawis/:id/players', requireApp, (req, res) => res.redirect(`/app/papawis/${encodeURIComponent(req.params.id)}`));
+
+// One run: a past one gets its own screen (who played, the teams, the price, the player's
+// result); an upcoming one is its card on the tab.
+app.get('/app/papawis/:id', requireApp, (req, res) => {
   const me = appMe(req);
   const g = getSetting('papawis_enabled', '0') === '1' ? getPapawisGame(req.params.id) : null;
-  const run = g ? appPapawisRuns(me).find(r => r.id === g.id) : null;
-  if (!g || !run) return sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPlayersPage({ missing: true }) });
+  if (g && g.status === 'open' && pwDaysUntil(g.date) >= 0) return res.redirect(`/app/papawis#run-${encodeURIComponent(g.id)}`);
+  const back = req.query.from === 'notifications' ? { href: '/app/notifications', label: 'Notifications' } : { href: '/app/papawis', label: 'Papawis' };
+  if (!g) return sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisRunPage({ missing: true, back }) });
   const teams = getAllTeams();
-  const signups = run.scheduled ? [] : getPapawisSignups(g.id);
-  const person = (s, i) => {
-    const name = displayPlayerName(s.player_name || '');
-    const guest = !!s.guest_name;
-    return { slot: i + 1, me: !guest && s.player_id === me.playerId, pending: s.status === 'pending',
-      name: guest ? s.guest_name : name, sub: guest ? `Guest of ${name.split(' ')[0]}` : (s.team_name || ''),
-      initials: (guest ? s.guest_name : name).split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
-      ring: !guest && s.team_id ? teamColorById(teams, s.team_id) : 'var(--subtle)',
-      playerId: guest ? '' : s.player_id, photoUrl: guest ? '' : playerPhotoUrl(s.player_id, 96) };
-  };
-  if (!run.scheduled && !req.session.impersonating) logPapawisActivity({ gameId: g.id, eventType: 'viewed_roster', playerId: me.playerId, playerName: me.player.name || '' });
-  sendTab(res, me, { title: `Who's in · ${run.title} · WKND`, tab: 'papawis', body: appPapawisPlayersPage({
-    run,
-    confirmed: signups.filter(s => s.status === 'confirmed').map(person),
-    waitlist: signups.filter(s => s.status === 'waitlist' || s.status === 'pending').map(person),
-  }) });
+  const confirmed = getPapawisSignups(g.id).filter(s => s.status === 'confirmed');
+  const kind = pwKind(g), price = Number(g.price_per_player) || 0;
+  const mineS = confirmed.find(s => s.player_id === me.playerId && !s.guest_name) || null;
+  const status = pwMine(kind, mineS, price);
+  sendTab(res, me, { title: `${g.title || 'Papawis'} · WKND`, tab: 'papawis', body: appPapawisRunPage({ back, run: {
+    id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
+    place: g.location || 'Papawis', photo: papawisCoverUrl(g, getPapawisCourtByName(g.location)) || '',
+    kind, count: confirmed.length, max: g.max_slots || confirmed.length, price: kind === 'played' ? price : 0,
+    faces: confirmed.map(s => pwFace(s, teams, me.playerId)),
+    teamsOut: confirmed.some(s => s.team === 'light' || s.team === 'dark'),
+    mine: status ? { status, amount: price, team: mineS.team === 'light' || mineS.team === 'dark' ? mineS.team : '' } : null,
+  } }) });
 });
 
 app.get('/app/papawis', requireApp, (req, res) => {
   const me = appMe(req);
   const on = getSetting('papawis_enabled', '0') === '1';
   sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage({
-    off: !on, runs: on ? appPapawisRuns(me) : [], history: on ? appPapawisHistory(me) : [],
+    off: !on, runs: on ? appPapawisRuns(me) : [],
+    totals: on ? getPapawisTotalsForPlayer(me.playerId) : null,
+    summary: on ? storedTeamsSummary('papawis_summary', papawisSummaryFacts(getPapawisGames())) : null,
     cutoffDays: PAPAWIS_CUTOFF_DAYS,
   }) });
 });
@@ -7342,6 +7375,9 @@ function appLinkFor(link = '') {
   const path = String(link || '').split('#')[0];
   if (/^\/app(\/|$|\?)/.test(path)) return path;
   if (/^\/rate\/(papawis|league)\/[^/?]+$/.test(path)) return `/app${path}`;
+  // A run's own link (#pw-game-<id>) opens that run: its screen once it's over, its card before.
+  const pwRun = /^\/papawis\/?$/.test(path) && /#pw-game-([A-Za-z0-9_-]+)$/.exec(link);
+  if (pwRun) return `/app/papawis/${pwRun[1]}`;
   if (/^\/papawis/.test(path) || /^\/courts\//.test(path)) return '/app/papawis';
   if (/^\/picks/.test(path) || /^\/mvp/.test(path)) return '/app/picks';
   const gm = /^\/games\/([^/?#]+)/.exec(path);

@@ -48,8 +48,8 @@ const isShellAsset = (url) => url.origin === location.origin
 // Screens worth keeping: the tabs, settings, notifications, games and news posts. Not
 // sign-in, setup, Face ID, Settle (money) or anything that posts.
 const isScreen = (url) => url.origin === location.origin
-  && /^\/app(\/(picks|papawis|papawis\/[^/]+\/players|team|me|settings|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+))?\/?$/.test(url.pathname);
-const isData = (url) => url.origin === location.origin && (/^\/app\/(feed|notifications)\/items$/.test(url.pathname) || url.pathname === '/app/rail');
+  && /^\/app(\/(picks|papawis|papawis\/(?!past$)[^/]+|team|me|settings|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+))?\/?$/.test(url.pathname);
+const isData = (url) => url.origin === location.origin && (/^\/app\/(feed|notifications)\/items$/.test(url.pathname) || url.pathname === '/app/papawis/past' || url.pathname === '/app/rail');
 const isImage = (url) => url.origin === location.origin
   && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/photo$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname));
 const keyOf = (url) => url.pathname + url.search;
