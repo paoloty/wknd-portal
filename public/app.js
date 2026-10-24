@@ -866,7 +866,13 @@
       return '/api/games/' + encodeURIComponent(game) + '/my-stat-card.png?layout=gauges&align=' + tpl + '&focus=' + st.focus + '&accent=' + st.accent +
         '&gauges=1&hidezeros=1&badge=0&lk=' + lk + (thumb ? '&thumb=1' : '');
     };
-    var thumbs = function () { $$('[data-thumb]', root).forEach(function (t) { t.src = url(t.getAttribute('data-thumb'), true); }); };
+    var thumbs = function () {
+      $$('[data-thumb]', root).forEach(function (t) {
+        var tpl = t.getAttribute('data-thumb');
+        if (!onPhone(tpl)) { t.src = url(tpl, true); return; }
+        load(tpl).then(function (c) { if (t.src !== c.url) t.src = c.url; }, function () {});
+      });
+    };
     var say = function (text) { msg.textContent = text || ''; msg.hidden = !text; };
     var remember = function () { try { localStorage.setItem('wknd-share', JSON.stringify({ tpl: st.tpl, accent: st.accent })); } catch (e) {} };
     // The template strip and its variant chips follow st.tpl.
@@ -883,32 +889,66 @@
       if (lockMsg) lockMsg.hidden = !tile.hasAttribute('data-premium');
       return true;
     }
+    // Premium templates the phone draws itself (public/share-cards.js) when the server sent their
+    // facts (not locked): no request per template or colour, and they work offline once loaded.
+    // The preview and thumbnails are the SVG; the PNG is made as soon as the card is on show, so
+    // it's ready when Share is tapped (the share sheet must open inside the tap). Drawing fails:
+    // the server's PNG, as for every other template.
+    var phoneKeys = (root.getAttribute('data-phone') || '').split(' ').filter(Boolean);
+    var cardEl = $('[data-sh-card]', root), drawer = null;
+    var onPhone = function (tpl) { return !!cardEl && phoneKeys.indexOf(tpl) >= 0; };
+    var getDrawer = function () {
+      if (!drawer) drawer = new Promise(function (ok, no) {
+        var made = function () { try { ok(window.wkndShareCards.phoneDrawer(JSON.parse(cardEl.textContent), { photoUrl: root.getAttribute('data-photo') })); } catch (e) { no(e); } };
+        if (window.wkndShareCards) return made();
+        var s = document.createElement('script'); s.type = 'module'; s.src = '/share-cards.js?v=' + ver;
+        s.onload = made; s.onerror = function () { drawer = null; no(''); };
+        document.head.appendChild(s);
+      });
+      return drawer;
+    };
+    var fromServer = function (k) {
+      return fetch(k, { credentials: 'same-origin' }).then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } if (!r.ok) throw 'Couldn\'t make the card. Try again.'; return r.blob(); });
+    };
     // The card on screen loads first; the thumbnails and the other templates follow it.
+    // A card: { url (shown), blob + file (the PNG, to save or share) } and, drawn on the phone, svg.
     var pending = {};
-    var load = function (k) {
-      if (!pending[k]) pending[k] = fetch(k, { credentials: 'same-origin' }).then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } if (!r.ok) throw 'Couldn\'t make the card. Try again.'; return r.blob(); })
-        .then(function (b) { return (cache[k] = { blob: b, url: URL.createObjectURL(b) }); })
-        .then(function (c) { delete pending[k]; return c; }, function (e) { delete pending[k]; throw e; });
+    var load = function (tpl) {
+      var k = url(tpl, false), accent = st.accent;
+      if (cache[k]) return Promise.resolve(cache[k]);
+      var server = function () { return fromServer(k).then(function (b) { var u = URL.createObjectURL(b); return { blob: b, url: u, file: u }; }); };
+      if (!pending[k]) pending[k] = (onPhone(tpl)
+        ? getDrawer().then(function (d) { return d.draw(tpl, accent).then(function (u) { return { url: u, svg: u, drawer: d }; }); }).catch(server)
+        : server())
+        .then(function (c) { delete pending[k]; return (cache[k] = c); }, function (e) { delete pending[k]; throw e; });
       return pending[k];
+    };
+    var raster = function (c, k) {
+      return c.raster || (c.raster = c.drawer.png(c.svg).catch(function () { return fromServer(k); })
+        .then(function (b) { c.blob = b; c.file = URL.createObjectURL(b); }, function () { c.raster = null; }));
     };
     function render() {
       var k = url(st.tpl, false);
       say('');
-      var show = function (c) { if (k !== url(st.tpl, false)) return; current = c; img.src = c.url; img.hidden = false; spin.hidden = true; thumbs(); preload(); };
+      var show = function (c) {
+        if (k !== url(st.tpl, false)) return;
+        current = c; img.src = c.url; img.hidden = false; spin.hidden = true; thumbs(); preload();
+        if (!c.blob) raster(c, k);
+      };
       if (cache[k]) return show(cache[k]);
       spin.hidden = false;
-      load(k).then(show, function (e) { if (k !== url(st.tpl, false)) return; spin.hidden = true; thumbs(); say(typeof e === 'string' ? e : 'No connection. The card needs the internet.'); });
+      load(st.tpl).then(show, function (e) { if (k !== url(st.tpl, false)) return; spin.hidden = true; thumbs(); say(typeof e === 'string' && e ? e : 'No connection. The card needs the internet.'); });
     }
     // Every other template's full card for the current colour, two at a time, so a tap shows at
-    // once. Skipped when the phone asks to save data.
+    // once. Skipped when the phone asks to save data (the ones drawn on the phone cost nothing).
     function preload() {
-      if (navigator.connection && navigator.connection.saveData) return;
+      var save = navigator.connection && navigator.connection.saveData;
       var list = [];
       $$('[data-tpl], [data-variant]', root).forEach(function (b) {
-        var k = url(b.getAttribute('data-variant') || b.getAttribute('data-tpl'), false);
-        if (!cache[k] && !pending[k] && list.indexOf(k) < 0) list.push(k);
+        var tpl = b.getAttribute('data-variant') || b.getAttribute('data-tpl'), k = url(tpl, false);
+        if (!cache[k] && !pending[k] && list.indexOf(tpl) < 0 && (!save || onPhone(tpl))) list.push(tpl);
       });
-      var next = function () { var k = list.shift(); if (k && root.isConnected) return load(k).then(next, next); };
+      var next = function () { var tpl = list.shift(); if (tpl && root.isConnected) return load(tpl).then(next, next); };
       next(); next();
     }
     // Panels: the open tool's choices take the template strip's place.
@@ -927,7 +967,7 @@
       navigator.share({ files: [fileOf()] }).then(function () { log(action); panel(''); }, function (e) { if (e && e.name !== 'AbortError') say('Sharing didn\'t work. Try Save image.'); });
     };
     var download = function () {
-      var a = document.createElement('a'); a.href = current.url; a.download = 'wknd-stats-' + game + '.png';
+      var a = document.createElement('a'); a.href = current.file; a.download = 'wknd-stats-' + game + '.png';
       document.body.appendChild(a); a.click(); a.remove(); log('save'); panel(''); toast('Saved');
     };
     var copy = function () {
@@ -948,7 +988,7 @@
       else if (b.hasAttribute('data-focus')) { on('[data-focus]'); st.focus = b.getAttribute('data-focus'); render(); }
       else if (b.hasAttribute('data-bg')) { on('[data-bg]'); $('[data-sh-stage]', root).setAttribute('style', b.getAttribute('data-css') || ''); }
       else if (b.hasAttribute('data-sh-do')) {
-        if (!current) return say('The card is still loading.');
+        if (!current || !current.blob) return say('The card is still loading.');
         var act = b.getAttribute('data-sh-do');
         if (act === 'copy') copy();
         else if (act === 'send') { if (canShareFile()) sheet('share'); else download(); }
@@ -1501,9 +1541,32 @@
       }).catch(function () {});
       return;
     }
+    // Not in memory: the copy on the phone (the service worker's, from an earlier visit) goes up
+    // at once, and the fresh screen swaps in behind it when it lands, as on a launch. With no
+    // copy, or the network first, the fresh screen as before.
     progress(true);
-    fetchPage(url, false, true).then(function (page) { if (id === navId) { progress(false); render(page, push, false, dir); } })
-      .catch(function (e) { progress(false); if (id === navId) location.href = (e && e.reload) || url; });
+    var settled = false;
+    var net = fetchPage(url, false, true);
+    phoneCopy(url).then(function (page) {
+      if (!page || settled || id !== navId) return;
+      settled = true; progress(false);
+      render(page, push, false, dir);
+      net.then(function (fresh) { if (id === navId && !dirty()) swapIfChanged(fresh); }, function () {});
+    });
+    net.then(function (page) { if (settled) return; settled = true; if (id === navId) { progress(false); render(page, push, false, dir); } })
+      .catch(function (e) { if (settled) return; settled = true; progress(false); if (id === navId) location.href = (e && e.reload) || url; });
+  }
+  // A screen's copy in the service worker's store (public/app-sw.js PAGES), if it was built in
+  // the last day: an older one would change too much when the fresh one swaps in.
+  var COPY_MAX = 24 * 60 * 60 * 1000;
+  function phoneCopy(url) {
+    if (!window.caches) return Promise.resolve(null);
+    return caches.open('wknd-pages').then(function (c) { return c.match(url); }).then(function (r) {
+      return r ? r.text().then(function (html) {
+        var t = /<meta name="app-time" content="(\d+)"/.exec(html);
+        return t && Date.now() - Number(t[1]) < COPY_MAX ? { html: html, url: url } : null;
+      }) : null;
+    }).catch(function () { return null; });
   }
 
   if (window.fetch && window.DOMParser && history.pushState && !walled) {

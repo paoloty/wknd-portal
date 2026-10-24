@@ -272,7 +272,8 @@ import {
   verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
-import { SHARE_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
+import { SHARE_PREMIUM_KEYS, SHARE_ACCENTS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
+import { PHONE_KEYS as SHARE_PHONE_KEYS } from './public/share-cards.js';
 import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, rerenderMediaJob, requestFinal, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
 import { potgVideoContext, savePotgPhoto, queuePotgVideos, potgPrefill, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
 import { adminPotgVideoBody, adminMediaBody, mediaJobRow } from './views/admin/potg-video.js';
@@ -3411,16 +3412,9 @@ const SHARE_STAT_CORE_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk'];
 // (the site-wide accent stays amber-only per the design system). Each preset
 // pairs its own legible text color for the ribbon/badge, the same {bg, text}
 // convention already used by AWARD_OG_BADGE above, since a few of these read
-// better with white text than the default's dark navy.
-const SHARE_ACCENT_PRESETS = {
-  amber:  { bg: '#f59332', text: '#0a0e16' },
-  red:    { bg: '#ef4444', text: '#ffffff' },
-  blue:   { bg: '#3b82f6', text: '#ffffff' },
-  green:  { bg: '#22c55e', text: '#0a0e16' },
-  purple: { bg: '#a78bfa', text: '#0a0e16' },
-  pink:   { bg: '#f472b6', text: '#0a0e16' },
-  cyan:   { bg: '#22d3ee', text: '#0a0e16' },
-};
+// better with white text than the default's dark navy. Kept in public/share-cards.js, which
+// the players app also draws cards with.
+const SHARE_ACCENT_PRESETS = SHARE_ACCENTS;
 function resolveAccent(key) {
   return SHARE_ACCENT_PRESETS[key] || SHARE_ACCENT_PRESETS.amber;
 }
@@ -6049,7 +6043,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6757,7 +6751,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
 });
 // Share my stats (views/app/share.js): the player's own stat card for a game they played in.
 // The card is the site's /api/games/:id/my-stat-card.png; this screen is the app's editor.
-app.get('/app/games/:id/share', requireApp, (req, res) => {
+app.get('/app/games/:id/share', requireApp, async (req, res) => {
   const me = appMe(req);
   const g = getGameById(req.params.id);
   const back = { href: g ? `/app/games/${encodeURIComponent(g.id)}` : '/app/me', label: g ? 'Game' : 'Me', tab: APP_BACK[req.query.from] ? req.query.from : 'home' };
@@ -6777,9 +6771,14 @@ app.get('/app/games/:id/share', requireApp, (req, res) => {
     { key: 'none', label: 'None', css: '' },
   ].filter(Boolean);
   logApp(req, 'share_open', g.id);
+  // Not locked: the premium cards are drawn on the phone from these facts (a locked card is
+  // always made here, with its lock stamped in).
+  const locked = shareCardsLocked(req);
+  const cardData = locked ? null : await phoneShareData(g, stat, me.playerId).catch(err => { console.error('phoneShareData', err); return null; });
+  const phone = cardData ? { keys: SHARE_PHONE_KEYS, data: cardData, photo: playerPhotoUrl(me.playerId, 192) } : null;
   // Full screen, like a story editor: no tab bar (bare).
   sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, bare: true, bodyClass: 'is-editor', body: appSharePage({
-    back, focus, locked: shareCardsLocked(req), bgs,
+    back, focus, locked, bgs, phone,
     game: { id: g.id, opp: titleCase(isA ? g.team_b_name : g.team_a_name), day: manilaDayLabel(gameYmd(g.date)), line: statLine(stat) },
   }) });
 });
@@ -10566,6 +10565,14 @@ function shareCardCached(key, make) {
   }, err => { if (SHARE_CARD_CACHE.get(key) === entry) SHARE_CARD_CACHE.delete(key); throw err; });
   SHARE_CARD_CACHE.set(key, entry);
   return entry.p;
+}
+// The same facts for the players app, which draws the premium cards on the phone
+// (public/share-cards.js phoneDrawer): no accent (picked there), no photo (the phone loads the
+// player's own, same origin), only the box-score fields the templates read.
+const PHONE_CARD_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'minutes', 'fg2m', 'fg3m', 'fg4m', 'fg2m_miss', 'fg3m_miss', 'fg4m_miss', 'ftm', 'ft_miss'];
+async function phoneShareData(game, stat, playerId) {
+  const { accent, photo, ...d } = await premiumShareData(game, stat, playerId, 'amber', null);
+  return { ...d, hideZeros: true, hasPhoto: !!stat.picture_url, stat: Object.fromEntries(PHONE_CARD_STATS.map(k => [k, stat[k] ?? null])) };
 }
 
 app.get('/api/games/:id/my-stat-card.png', async (req, res) => {

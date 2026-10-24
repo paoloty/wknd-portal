@@ -15,13 +15,14 @@ Each uncached request from the Philippines costs ~1.3–1.7 s (PH → Cloudflare
 5. **No layout shift.** Every picture has `aspect-ratio` (or width/height), is sized (`sizedSrc`: `srcset` 640w/960w WebP, avatars `?w=`), and is versioned with `?v=` when its URL can stay the same for a new picture.
 6. **Pictures come from paths the service worker knows** (`isImage` in `public/app-sw.js`). Add a new image route there.
 7. **Every screen picks how it's stored on the phone** (`isScreen` in `public/app-sw.js`):
-   - **copy is fine:** Home, My Team, games, news, notifications. Shown at once, refreshed quietly.
+   - **copy is fine:** Home, My Team, games, news, notifications. Shown at once, refreshed quietly: on a launch, and on an in-app tap when the copy is under a day old (`phoneCopy` in `public/app.js`). A push fetches its screen ahead on Android (`warm` in `public/app-sw.js`).
    - **copy, labelled (target):** Picks, Papawis, Me's to-do lines. Show "as of 3:12 PM" when the screen came from the copy, and turn off actions offline.
    - **always from the server:** money (Settle, balances). Never in `isScreen`.
 8. **Cache keys never carry per-visit params** (timestamps, `opened=`, cursors beyond page 1). Every cache on the phone has a cap.
 9. **Never queue a write for later** (pick, join, payment). Deadlines and slots are checked on the server; offline, the button says it needs a connection.
-10. **No new web fonts or weights; no third-party scripts on load.** YouTube loads near or on tap only.
-11. **Register new files:** a new `views/app/*.js` goes into `APP_VER`'s list (server.js), a new cached screen into `isScreen`.
+10. **No new web fonts or weights; no third-party scripts on load.** YouTube loads near or on tap only. One exception: Share my stats loads Saira Condensed Black (`/fonts/sairacondensed-black-latin.woff2`, 18 KB) on that screen only, to draw the premium cards on the phone.
+10a. **Work the phone can do, it does, when it saves a request:** the premium share cards are drawn on the phone (`public/share-cards.js`, shared with the server, which still makes locked cards and Receipt). Anything with a lock, a deadline or money stays on the server.
+11. **Register new files:** a new `views/app/*.js` or app script in `public/` goes into `APP_VER`'s list (server.js), a new cached screen into `isScreen`.
 
 ## Screens and navigation
 

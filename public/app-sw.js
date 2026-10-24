@@ -1,13 +1,14 @@
 // Service worker for the players app, served at /app/sw.js (scope /app) with __VER__
 // replaced by the deployed version (server.js). Keeps as much on the phone as is useful, so
 // the app opens at once and still works offline:
-//   shell   CSS, script, icons — per version, cache first.
+//   shell   CSS, scripts (app.js, share-cards.js), icons — per version, cache first.
 //   fonts   the woff2 files — kept across versions (a changed font gets a new file name).
 //   pages   the app's screens (tabs, games, posts; never Settle: money is always fresh, and
 //           offline it's the offline page) — newest 40. The copy on the phone answers a launch
 //           at once while a fresh one is fetched behind it (the page then swaps it in:
-//           app.js "Launch from the phone's copy"); in-app navigation goes to the network
-//           first and falls back to the copy when offline or slow.
+//           app.js "Launch from the phone's copy"); in-app navigation shows the copy from
+//           a day at most (app.js phoneCopy) while the fresh screen loads, and here falls back
+//           to the copy when offline or slow. A push fetches its screen ahead (Android, warm).
 //   data    the first page of the feed and notifications lists, and Home's rail (JSON) —
 //           network first, the copy offline; newest 30.
 //   img     feed and game pictures, player photos, announcement photos — versioned ones
@@ -43,7 +44,7 @@ self.addEventListener('message', (e) => {
 const wipe = () => Promise.all([PAGES, DATA].map((k) => caches.delete(k)));
 
 const isShellAsset = (url) => url.origin === location.origin
-  && (/^\/(app\.css|app\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
+  && (/^\/(app\.css|app\.js|share-cards\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
 // Screens worth keeping: the tabs, settings, notifications, games and news posts. Not
 // sign-in, setup, Face ID, Settle (money) or anything that posts.
 const isScreen = (url) => url.origin === location.origin
@@ -164,8 +165,18 @@ self.addEventListener('push', (e) => {
   });
   const badge = typeof d.badge === 'number' && self.navigator.setAppBadge
     ? (d.badge ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {}) : Promise.resolve();
-  e.waitUntil(Promise.all([shown, badge]));
+  e.waitUntil(Promise.all([shown, badge, warm(d.url)]));
 });
+// The screen a push points to is fetched as it arrives and kept on the phone, so tapping the
+// notification opens it at once (launch) and in-app it goes up from the copy. Android only:
+// iPhone gives a push little time and must show it first. Never fails the push.
+function warm(path) {
+  if (APPLE || !path) return Promise.resolve();
+  const url = new URL(path, self.location.origin);
+  if (!isScreen(url)) return Promise.resolve();
+  return fetch(url.href, { credentials: 'same-origin', headers: { 'X-App-Nav': '1' } })
+    .then((res) => keepPage(keyOf(url), res)).catch(() => {});
+}
 
 // Tapped: the open app goes to that screen (app.js listens), else the app opens on it.
 self.addEventListener('notificationclick', (e) => {

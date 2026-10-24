@@ -5,8 +5,10 @@
 // (tap it again, or tap the card) leaves the card on its own. Share → Save image, Copy image,
 // Share to… (the phone's share sheet).
 // The card is the site's /api/games/:id/my-stat-card.png in the site's templates
-// (views/game.js SSC_FAMILIES / SSC_ACCENTS), 1080×1920 and see-through. Premium templates
-// save with a lock while the player owes (shareCardsLocked). Client: public/app.js initShare.
+// (views/game.js SSC_FAMILIES / SSC_ACCENTS), 1080×1920 and see-through, except the premium
+// ones the phone draws itself (public/share-cards.js) while the player isn't locked. Premium
+// templates save with a lock while the player owes (shareCardsLocked), made on the server.
+// Client: public/app.js initShare.
 import { esc, icons } from './layout.js';
 import { SSC_FAMILIES, SSC_ACCENTS } from '../game.js';
 
@@ -14,12 +16,15 @@ const LOCK = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke
 const TOOLS = [['tpl', 'Templates', 'layers'], ['colour', 'Colour', 'palette'], ['stats', 'Stats to show', 'me'], ['bg', 'Backdrop', 'image'], ['share', 'Share', 'share']];
 
 // game: { id, opp, day, line } · focus: the opening "stats to show" · bgs: [{ key, label, css }]
-export function appSharePage({ back, missing = false, game, focus = 'all', locked = false, bgs = [] }) {
+// phone: { keys, data, photo } when the phone draws those templates itself (not locked):
+// public/share-cards.js, loaded as a module script by initShare.
+export function appSharePage({ back, missing = false, game, focus = 'all', locked = false, bgs = [], phone = null }) {
   if (missing) return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">‹ ${esc(back.label)}</a><span class="navbar__title">Share my stats</span><span></span></div>
     <div class="empty" style="margin-top:12px">Only players in this game can make its stat card.</div>`;
   const chip = (attr, k, label, on) => `<button type="button" class="se__chip${on ? ' is-on' : ''}" data-${attr}="${esc(k)}">${esc(label)}</button>`;
   const row = (act, icon, title, sub) => `<button type="button" class="se__row" data-sh-do="${act}"><i>${icons[icon]}</i><span><b>${title}</b><small>${sub}</small></span></button>`;
-  return `<div class="se" data-sh data-game="${esc(game.id)}" data-locked="${locked ? 1 : 0}" data-focus="${esc(focus)}">
+  return `<div class="se" data-sh data-game="${esc(game.id)}" data-locked="${locked ? 1 : 0}" data-focus="${esc(focus)}"${phone ? ` data-phone="${esc(phone.keys.join(' '))}" data-photo="${esc(phone.photo)}"` : ''}>
+    ${phone ? `<script type="application/json" data-sh-card>${JSON.stringify(phone.data).replace(/</g, '\\u003c')}</script>` : ''}
     <div class="se__bg" data-sh-stage style="${esc(bgs[0]?.css || '')}"></div>
     <img class="se__card" data-sh-img alt="Your stat card: ${esc(game.line)} vs ${esc(game.opp)}" hidden>
     <span class="ptr__spin se__spin" data-sh-spin aria-hidden="true"></span>
