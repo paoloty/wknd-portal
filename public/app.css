@@ -603,7 +603,9 @@ html.iw-ios .iw-arrow { display: flex; }
    above the tab bar, a bit under half the screen wide (Paolo, 2026-10-24). Too small for the full
    bar with 44pt taps, so the same controls, compact: tap = play/pause, full screen top left,
    X top right (puts it back paused), and the seek bar becomes a progress line. */
-.player.is-float { position: fixed; z-index: 30; left: auto; top: auto; right: 12px; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); width: max(45vw, 160px); height: auto; aspect-ratio: 16 / 9; margin: 0; border-radius: var(--r-in); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+/* .media.player.is-float: outweighs ".gx__video .media" / ".ax__media .media" (width: 100%), which
+   come later and would otherwise stretch the fixed player across the screen. */
+.media.player.is-float { position: fixed; z-index: 30; left: auto; top: auto; right: 12px; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); width: max(45vw, 160px); height: auto; aspect-ratio: 16 / 9; margin: 0; border-radius: var(--r-in); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
 .player.is-float .media em, .player.is-float .player__bar { display: none; }
 .player.is-float .player__tap .media__play { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
 .player.is-float .player__tap .media__play svg { width: 16px; height: 16px; margin-left: 2px; }
