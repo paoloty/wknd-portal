@@ -235,6 +235,7 @@
     initPapawis();
     initPush();
     initSettle();
+    initRate();
     initBlocks();
     initThreads();
     initShare();
@@ -608,6 +609,56 @@
           toast('Sent · an admin will confirm it');
           refreshScreen();
         }, function () { btn.classList.remove('is-busy'); form._sending = false; say('No connection. Nothing was sent.'); });
+    });
+  }
+
+  // ════ Rate your game (views/app/rate.js) ════
+  // Tags toggle, a "No" opens the admin-only part, and Done posts everything answered to the
+  // site's own POST /rate/:kind/:ref (same rules as the site). A "No" needs a reason.
+  function initRate() {
+    var form = $('[data-rt-form]');
+    if (!form || form._bound) return;
+    form._bound = true;
+    var msg = $('[data-rt-msg]', form);
+    var say = function (t) { msg.textContent = t; msg.hidden = false; };
+    form.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-rt-tag]');
+      if (t) t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+    form.addEventListener('change', function (e) {
+      if (/^a_/.test(e.target.name || '') && e.target.value === 'no') { var d = $('.rt__bad', e.target.closest('[data-rt-player]')); if (d) d.open = true; }
+    });
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (form._sending) return;
+      var body = { via: 'app', players: [] }, bad = null;
+      var cs = $('input[name="court_stars"]:checked', form);
+      if (cs) {
+        var tb = $('textarea[name="court_body"]', form), an = $('input[name="court_anon"]', form);
+        body.court = { stars: Number(cs.value), body: tb ? tb.value : undefined, anon: an ? an.checked : undefined };
+      }
+      $$('[data-rt-player]', form).forEach(function (row) {
+        var a = $('input[type="radio"]:checked', row);
+        if (!a) return;
+        if (a.value === 'no' && !$('.rt__tag--bad[aria-pressed="true"]', row)) bad = bad || row;
+        body.players.push({ id: row.getAttribute('data-rt-player'), answer: a.value,
+          tags: $$('[data-rt-tag][aria-pressed="true"]', row).map(function (b) { return b.getAttribute('data-rt-tag'); }),
+          note: ($('[data-rt-note]', row) || {}).value || '' });
+      });
+      if (bad) { say('For a "No", pick what went wrong.'); $('.rt__bad', bad).open = true; bad.scrollIntoView({ block: 'center' }); return; }
+      if (!body.court && !body.players.length) return say('Rate the court or at least one player first.');
+      if (!navigator.onLine) return say('No connection. Nothing was sent.');
+      var btn = $('[data-rt-send]', form); btn.disabled = true; btn.classList.add('is-busy'); msg.hidden = true; form._sending = true;
+      var done = function () { btn.disabled = false; btn.classList.remove('is-busy'); form._sending = false; };
+      fetch(form.getAttribute('data-rt-form'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok && j.ok, status: r.status, j: j }; }); })
+        .then(function (res) {
+          done();
+          if (res.status === 401) { location.href = '/app/login'; return; }
+          if (!res.ok) return say(res.j.error || 'Couldn\'t save. Try again.');
+          toast(res.j.message || 'Saved. Thanks!');
+          refreshScreen(true);
+        }, function () { done(); say('No connection. Nothing was sent.'); });
     });
   }
 

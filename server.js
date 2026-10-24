@@ -6025,6 +6025,7 @@ import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { appPapawisPage, appPapawisPlayersPage } from './views/app/papawis.js';
 import { appSettlePage } from './views/app/settle.js';
+import { appRatePage } from './views/app/rate.js';
 import { getUnpaidPapawisForPlayer } from './lib/portal-db.js';
 import { depositPresets } from './views/utils.js';
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
@@ -6043,7 +6044,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -7212,6 +7213,18 @@ app.get('/app/settle', requireApp, (req, res) => {
   }) });
 });
 
+// Rate your game in the app: where a "Rate …" notification opens. Same data as the site's
+// /rate/:kind/:ref (rateScreenData); saving posts to that route (public/app.js initRate).
+app.get('/app/rate/:kind/:ref', requireApp, (req, res) => {
+  const me = appMe(req);
+  const back = appBack(req);
+  const send = x => sendTab(res, me, { title: 'Rate your game · WKND', tab: back.tab, body: appRatePage({ back, ...x }) });
+  const game = gameRatingsOn() && RATE_KINDS.includes(req.params.kind) ? resolveRateGame(req.params.kind, req.params.ref) : null;
+  if (!game) return send({ missing: 'This game isn’t open for ratings.' });
+  if (!game.playerIds.includes(me.playerId)) return send({ missing: 'Only players who played this game can rate it.' });
+  send({ game, closed: !game.open, ...rateScreenData(game, me.playerId) });
+});
+
 // Everyone on one run: the confirmed list by slot, then the waitlist (pending deposits
 // included, as on the site). Hidden until sign-ups open, as on the site.
 app.get('/app/papawis/:id/players', requireApp, (req, res) => {
@@ -7328,6 +7341,7 @@ function notificationFaceData(n, me) {
 function appLinkFor(link = '') {
   const path = String(link || '').split('#')[0];
   if (/^\/app(\/|$|\?)/.test(path)) return path;
+  if (/^\/rate\/(papawis|league)\/[^/?]+$/.test(path)) return `/app${path}`;
   if (/^\/papawis/.test(path) || /^\/courts\//.test(path)) return '/app/papawis';
   if (/^\/picks/.test(path) || /^\/mvp/.test(path)) return '/app/picks';
   const gm = /^\/games\/([^/?#]+)/.exec(path);
@@ -10541,6 +10555,14 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
     photo: key === 'bug' && stat.picture_url ? await fetchCoverImageBuffer(stat.picture_url) : null,
   };
 }
+// The same facts for the players app, which draws the premium cards on the phone
+// (public/share-cards.js phoneDrawer): no accent (picked there), no photo (the phone loads the
+// player's own, same origin), only the box-score fields the templates read.
+const PHONE_CARD_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'minutes', 'fg2m', 'fg3m', 'fg4m', 'fg2m_miss', 'fg3m_miss', 'fg4m_miss', 'ftm', 'ft_miss'];
+async function phoneShareData(game, stat, playerId) {
+  const { accent, photo, ...d } = await premiumShareData(game, stat, playerId, 'amber', null);
+  return { ...d, hideZeros: true, hasPhoto: !!stat.picture_url, stat: Object.fromEntries(PHONE_CARD_STATS.map(k => [k, stat[k] ?? null])) };
+}
 
 // Rendered cards, kept 10 min (by bytes, oldest out first) so switching templates in the editor
 // is a cache hit: the editor's thumbnails render the full card, which this keeps for the tap that
@@ -10565,14 +10587,6 @@ function shareCardCached(key, make) {
   }, err => { if (SHARE_CARD_CACHE.get(key) === entry) SHARE_CARD_CACHE.delete(key); throw err; });
   SHARE_CARD_CACHE.set(key, entry);
   return entry.p;
-}
-// The same facts for the players app, which draws the premium cards on the phone
-// (public/share-cards.js phoneDrawer): no accent (picked there), no photo (the phone loads the
-// player's own, same origin), only the box-score fields the templates read.
-const PHONE_CARD_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'minutes', 'fg2m', 'fg3m', 'fg4m', 'fg2m_miss', 'fg3m_miss', 'fg4m_miss', 'ftm', 'ft_miss'];
-async function phoneShareData(game, stat, playerId) {
-  const { accent, photo, ...d } = await premiumShareData(game, stat, playerId, 'amber', null);
-  return { ...d, hideZeros: true, hasPhoto: !!stat.picture_url, stat: Object.fromEntries(PHONE_CARD_STATS.map(k => [k, stat[k] ?? null])) };
 }
 
 app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
@@ -21251,6 +21265,21 @@ function rateGameOr404(req, res) {
   if (!game) { res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">That game isn’t open for ratings.</p></div>' })); return null; }
   return game;
 }
+// What one player sees on a game's Rate screen (the site's and the app's): everyone else who
+// played, the court with their rating of it, and their answers so far.
+function rateScreenData(game, viewerId) {
+  const teams = getAllTeams();
+  const teamName = Object.fromEntries(teams.map(t => [t.id, t.name]));
+  const teamColorById = Object.fromEntries(teams.map(t => [t.id, t.color || teamColor(t.name)]));
+  const players = game.playerIds.filter(id => id !== viewerId).map(id => getPlayerById(id)).filter(Boolean)
+    .map(p => ({ id: p.id, name: p.name, team_name: teamName[p.team_id] || '', ring: teamColorById[p.team_id] || '' }));
+  let court = null;
+  if (game.court) {
+    const check = getGameCourtCheck(game.kind, game.ref, viewerId);
+    court = { name: game.courtName, slug: game.court.slug, myRating: getMyCourtRating(game.court.id, viewerId), check, done: !!check };
+  }
+  return { players, court, mine: getMyGameRatings(game.kind, game.ref, viewerId) };
+}
 app.get('/rate/not-me', (req, res) => {
   if (req.session) delete req.session.rateGrants;
   const next = String(req.query.next || '/');
@@ -21273,18 +21302,11 @@ app.get('/rate/:kind/:ref', (req, res) => {
   if (!game.playerIds.includes(viewerId)) {
     return res.status(403).send(renderPage(req, { title: 'Rate your game', currentPath: '/', body: '<div class="container"><div class="page-content"><div class="card card--lg" style="padding:24px">Only players who played this game can rate it.</div></div></div>' }));
   }
-  const teamName = Object.fromEntries(getAllTeams().map(t => [t.id, t.name]));
-  const players = game.playerIds.filter(id => id !== viewerId).map(id => getPlayerById(id)).filter(Boolean)
-    .map(p => ({ id: p.id, name: p.name, team_name: teamName[p.team_id] || '' }));
-  let court = null;
-  if (game.court) {
-    const check = getGameCourtCheck(game.kind, game.ref, viewerId);
-    court = { name: game.courtName, slug: game.court.slug, myRating: getMyCourtRating(game.court.id, viewerId), check, done: !!check };
-  }
+  const { players, court, mine } = rateScreenData(game, viewerId);
   const stars = Math.round(Number(req.query.stars) || 0);
   const preId = String(req.query.p || ''), preAnswer = String(req.query.a || '');
   page(rateGamePage({
-    game, players, court, mine: getMyGameRatings(game.kind, game.ref, viewerId),
+    game, players, court, mine,
     preStars: stars >= 1 && stars <= 5 ? stars : 0,
     prePlayer: preId && game.playerIds.includes(preId) ? { id: preId, answer: RATE_ANSWER_KEYS.includes(preAnswer) ? preAnswer : '' } : null,
     viaLink, viewerName: getPlayerById(viewerId)?.name || '', closed: !game.open,
@@ -21322,7 +21344,7 @@ app.post('/rate/:kind/:ref', express.json(), (req, res) => {
     recordGameCourtCheck({ kind: game.kind, ref: game.ref, playerId: viewerId, courtId: game.court.id, stars });
     courtSaved = true; pending = bodyStatus === 'pending';
   }
-  for (const a of answers) upsertGameRating({ kind: game.kind, ref: game.ref, raterId: viewerId, rateeId: a.id, answer: a.answer, tags: a.tags, note: a.note, via: viaLink ? 'email' : 'site' });
+  for (const a of answers) upsertGameRating({ kind: game.kind, ref: game.ref, raterId: viewerId, rateeId: a.id, answer: a.answer, tags: a.tags, note: a.note, via: viaLink ? 'email' : b.via === 'app' ? 'app' : 'site' });
   const left = game.playerIds.length - 1 - Object.keys(getMyGameRatings(game.kind, game.ref, viewerId)).length;
   const parts = [courtSaved ? 'Court rated' : '', answers.length ? `${answers.length} player${answers.length === 1 ? '' : 's'} rated` : ''].filter(Boolean).join(', ');
   // Rate & Win: finishing the page (every player answered, Skip counts, and the court if

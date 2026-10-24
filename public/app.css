@@ -1022,3 +1022,42 @@ button.pill::after { inset: -9px -4px; }
 .cx__b::after { inset: -6px 0; }
 .th__to button::after { inset: -8px; }
 .ct__more::after { inset: -10px 0; }
+
+/* ── Rate your game (views/app/rate.js, public/app.js initRate) ── */
+.rt__top { margin-top: 6px; }
+.rt__head .rt__title { display: block; margin-top: 4px; font-size: 15px; font-weight: 600; }
+.rt__sub { margin-top: 3px; font-size: 12px; color: var(--muted); }
+.rt__court { display: flex; flex-direction: column; gap: 4px; }
+.rt__h { font-size: 15px; font-weight: 600; }
+.rt__stars { display: flex; gap: 4px; margin: 6px 0 4px -6px; }
+.rt__stars label { position: relative; }
+.rt__stars input { position: absolute; opacity: 0; pointer-events: none; }
+.rt__stars span { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; color: var(--muted); }
+.rt__stars svg { width: 30px; height: 30px; }
+.rt__stars input:checked + span, .rt__stars label:has(~ label input:checked) span { color: var(--amber); }
+.rt__stars input:checked + span svg, .rt__stars label:has(~ label input:checked) svg { fill: currentColor; }
+.rt__stars input:focus-visible + span { outline: 2px solid var(--amber); outline-offset: -4px; border-radius: 50%; }
+.rt__field { margin-top: 8px; }
+.rt__field textarea { padding: 10px 12px; border-radius: var(--r-in); border: 1px solid var(--field-border); background: var(--field); color: var(--text); font: 16px/1.35 var(--font-ui); resize: none; -webkit-appearance: none; appearance: none; }
+.rt__check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 12px; color: var(--muted); }
+.rt__check input { flex: none; width: 20px; height: 20px; accent-color: var(--amber); }
+.rt__done { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--win); }
+.rt__p { position: relative; padding: 14px; }
+.rt__p + .rt__p::before { content: ''; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--hair); }
+.rt__who { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 14px; }
+.rt__who b { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt__saved { flex: none; font-size: 12px; color: var(--win); }
+.rt__seg { margin-top: 10px; }
+.rt__seg span { display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 0; line-height: 1; }
+.rt__seg input:focus-visible + span { outline: 2px solid var(--amber); outline-offset: -2px; }
+.rt__tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rt__tag { position: relative; display: inline-flex; align-items: center; height: 36px; padding: 0 13px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 14px; font-weight: 600; line-height: 1; }
+.rt__tag::after { content: ""; position: absolute; inset: -4px 0; }
+.rt__tag[aria-pressed="true"] { background: rgba(245,147,50,.16); color: var(--amber-text); }
+.rt__tag--bad[aria-pressed="true"] { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.rt__bad { margin-top: 4px; }
+.rt__bad summary { display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 14px; color: var(--muted); list-style: none; cursor: pointer; }
+.rt__bad summary::-webkit-details-marker { display: none; }
+.rt__bad summary i { font-style: normal; font-size: 12px; }
+.rt__send { margin: 16px 16px 0; }
+.rt__fine { margin-bottom: 20px; }

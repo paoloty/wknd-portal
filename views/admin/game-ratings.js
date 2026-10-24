@@ -52,7 +52,7 @@ function allTab({ ratings, isSuper, playerFilter, gameLabels }) {
   return table(head, ratings.slice(0, 500).map(r => `<tr${r.ignored ? ' style="opacity:.5"' : ''}>
     ${isSuper ? `<td>${escHtml(name(r.rater_name))}</td>` : ''}
     <td>${escHtml(name(r.ratee_name))}</td>
-    <td>${badge(r.answer, ANSWER_TONE[r.answer])}${r.via === 'email' ? ` <span class="aui-muted">via email link</span>` : ''}</td>
+    <td>${badge(r.answer, ANSWER_TONE[r.answer])}${r.via === 'email' ? ` <span class="aui-muted">via email link</span>` : r.via === 'app' ? ` <span class="aui-muted">in the app</span>` : ''}</td>
     <td>${tagPills(tagsOf(r.tags_json))}${r.note ? `<div class="aui-muted" style="margin-top:4px">“${escHtml(r.note)}”</div>` : ''}</td>
     <td>${gameLink(r.kind, r.ref, gameLabels[`${r.kind}:${r.ref}`] || r.kind)}</td>
     <td class="aui-muted">${escHtml(ago(r.updated_at))}</td>
@@ -62,9 +62,9 @@ function allTab({ ratings, isSuper, playerFilter, gameLabels }) {
 
 function gamesTab({ rounds, gameLabels }) {
   if (!rounds.length) return emptyState({ title: 'No games asked about yet' });
-  return table(['Game', 'Asked', 'Emailed', 'Rated', 'Response', 'When'], rounds.map(r => `<tr>
+  return table(['Game', 'Asked', 'Emailed', 'App only', 'Rated', 'Response', 'When'], rounds.map(r => `<tr>
     <td>${badge(r.kind === 'league' ? 'League' : 'Papawis', r.kind === 'league' ? 'blue' : 'amber')} ${gameLink(r.kind, r.ref, gameLabels[`${r.kind}:${r.ref}`] || r.ref)}</td>
-    <td>${r.asked}</td><td>${r.emailed || 0}</td><td>${r.responded}</td>
+    <td>${r.asked}</td><td>${r.emailed || 0}</td><td>${r.app_only || 0}</td><td>${r.responded}</td>
     <td>${r.asked ? Math.round(r.responded / r.asked * 100) : 0}%</td>
     <td class="aui-muted">${escHtml(ago(r.asked_at))}</td>
   </tr>`));
