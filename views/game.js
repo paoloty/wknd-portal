@@ -167,20 +167,34 @@ function shareStatsModal(game, stat, locked = false) {
   msg.addEventListener('click', function () { if (msg.classList.contains('is-retry')) { say(''); render(); } });
 
   function load(k) {
-    if (cache[k] || pending[k]) return;
+    if (cache[k] || pending[k]) return Promise.resolve();
     pending[k] = true;
     var ctl = new AbortController(), late = false;
     var t = setTimeout(function () { late = true; ctl.abort(); }, 20000);
-    fetch(k, { signal: ctl.signal })
+    return fetch(k, { signal: ctl.signal })
       .then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
       .then(function (b) { cache[k] = { blob: b, url: URL.createObjectURL(b) }; if (k === key()) render(); })
-      .catch(function () { if (k === key()) { spin.hidden = true; say(late ? 'Taking too long. Tap to retry.' : 'Could not load your card. Tap to retry.', true); } })
+      .catch(function () { if (k === key()) { spin.hidden = true; thumbs(); say(late ? 'Taking too long. Tap to retry.' : 'Could not load your card. Tap to retry.', true); } })
       .then(function () { clearTimeout(t); pending[k] = false; });
   }
+  // The card on screen loads first; the thumbnails and the other templates follow it.
   function render() {
     var e = cache[key()];
     if (!e) { spin.hidden = false; img.hidden = true; load(key()); return; }
     img.src = e.url; img.hidden = false; spin.hidden = true;
+    thumbs(); preload();
+  }
+  // Every other template's full card for the current style, two at a time, so a tap shows at
+  // once. Skipped when the phone asks to save data.
+  function preload() {
+    if (navigator.connection && navigator.connection.saveData) return;
+    var list = [];
+    root.querySelectorAll('[data-fam], [data-variant]').forEach(function (b) {
+      var k = url(b.dataset.variant || b.dataset.tpl, false);
+      if (!cache[k] && !pending[k] && list.indexOf(k) < 0) list.push(k);
+    });
+    var next = function () { var k = list.shift(); if (k && !root.hidden) return load(k).then(next); };
+    next(); next();
   }
   // A family tile previews the variant it would open on: the current one, else the last picked.
   function tileVar(b) { return b.dataset.fam === fam(st.tpl) ? st.tpl : lastVar[b.dataset.fam] || b.dataset.tpl; }
@@ -212,7 +226,7 @@ function shareStatsModal(game, stat, locked = false) {
     lastFocus = document.activeElement;
     root.hidden = false;
     document.documentElement.classList.add('ssc2-lock');
-    say(''); paint(); thumbs(); render();
+    say(''); paint(); render();
     var x = root.querySelector('.ssc2__x'); if (x) x.focus();
   }
   function close() {
@@ -230,11 +244,11 @@ function shareStatsModal(game, stat, locked = false) {
     var t = e.target.closest('button');
     if (!t || !root.contains(t)) return;
     if (t.dataset.fam) { st.tpl = tileVar(t); say(''); paint(); render(); return; }
-    if (t.dataset.variant) { st.tpl = lastVar[fam(st.tpl)] = t.dataset.variant; say(''); paint(); thumbs(); render(); return; }
+    if (t.dataset.variant) { st.tpl = lastVar[fam(st.tpl)] = t.dataset.variant; say(''); paint(); render(); return; }
     if (t.classList.contains('ssc2-bg')) { st.bg = t.dataset.bg; paint(); return; }
-    if (t.classList.contains('ssc2-chip')) { st.focus = t.dataset.focus; say(''); paint(); thumbs(); render(); return; }
-    if (t.dataset.accent) { st.accent = t.dataset.accent; say(''); paint(); thumbs(); render(); return; }
-    if (t.dataset.toggle) { st[t.dataset.toggle] = !st[t.dataset.toggle]; say(''); paint(); thumbs(); render(); return; }
+    if (t.classList.contains('ssc2-chip')) { st.focus = t.dataset.focus; say(''); paint(); render(); return; }
+    if (t.dataset.accent) { st.accent = t.dataset.accent; say(''); paint(); render(); return; }
+    if (t.dataset.toggle) { st[t.dataset.toggle] = !st[t.dataset.toggle]; say(''); paint(); render(); return; }
     if (t.dataset.ssc2Tab) {
       root.querySelectorAll('[data-ssc2-tab]').forEach(function (x) { var on = x === t; x.classList.toggle('is-on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
       root.querySelectorAll('[data-ssc2-panel]').forEach(function (p) { p.classList.toggle('is-on', p.dataset.ssc2Panel === t.dataset.ssc2Tab); });

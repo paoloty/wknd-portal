@@ -4498,9 +4498,18 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
 // smaller ones (letter-spacing's fixed per-character contribution is a much
 // bigger fraction of a short string's total width), so a gap constant tuned
 // against one name length left a visibly oversized gap for others. Actually
-// measuring removes the guesswork entirely. Cheap: the rendered probe image
-// is tiny and thrown away immediately.
-async function measureTextWidth(text, { fontFamily, fontSize, fontWeight = 800, letterSpacing = 7 }) {
+// measuring removes the guesswork entirely. A probe costs ~0.2 s at the big sizes, so widths
+// are remembered: the same names and words come back on every card.
+const TEXT_WIDTHS = new Map();
+function measureTextWidth(text, { fontFamily, fontSize, fontWeight = 800, letterSpacing = 7 }) {
+  const k = [text, fontFamily, fontSize, fontWeight, letterSpacing].join('|');
+  if (!TEXT_WIDTHS.has(k)) {
+    if (TEXT_WIDTHS.size > 5000) TEXT_WIDTHS.clear();
+    TEXT_WIDTHS.set(k, probeTextWidth(text, { fontFamily, fontSize, fontWeight, letterSpacing }));
+  }
+  return TEXT_WIDTHS.get(k);
+}
+async function probeTextWidth(text, { fontFamily, fontSize, fontWeight, letterSpacing }) {
   const canvasW = Math.ceil(text.length * fontSize * 1.3) + 200;
   const canvasH = Math.ceil(fontSize * 2);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}">
@@ -10534,6 +10543,31 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
   };
 }
 
+// Rendered cards, kept 10 min (by bytes, oldest out first) so switching templates in the editor
+// is a cache hit: the editor's thumbnails render the full card, which this keeps for the tap that
+// follows, and the editors preload every template once the first card shows. The key carries the
+// stat line and score, so an edited box score renders fresh. In-flight renders are shared.
+const SHARE_CARD_CACHE = new Map();
+const SHARE_CARD_CACHE_MAX = 64 * 1024 * 1024, SHARE_CARD_TTL = 10 * 60 * 1000;
+let shareCardCacheBytes = 0;
+function shareCardCached(key, make) {
+  const hit = SHARE_CARD_CACHE.get(key);
+  if (hit && Date.now() - hit.at < SHARE_CARD_TTL) return hit.p;
+  if (hit) { SHARE_CARD_CACHE.delete(key); shareCardCacheBytes -= hit.bytes; }
+  const entry = { at: Date.now(), bytes: 0, p: null };
+  entry.p = make().then(png => {
+    if (SHARE_CARD_CACHE.get(key) !== entry) return png;
+    entry.bytes = png.length; shareCardCacheBytes += png.length;
+    for (const [k, e] of SHARE_CARD_CACHE) {
+      if (shareCardCacheBytes <= SHARE_CARD_CACHE_MAX) break;
+      if (e.bytes) { SHARE_CARD_CACHE.delete(k); shareCardCacheBytes -= e.bytes; }
+    }
+    return png;
+  }, err => { if (SHARE_CARD_CACHE.get(key) === entry) SHARE_CARD_CACHE.delete(key); throw err; });
+  SHARE_CARD_CACHE.set(key, entry);
+  return entry.p;
+}
+
 app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   const playerId = req.session?.playerPlayerId;
   if (!playerId) return res.status(401).end();
@@ -10541,6 +10575,27 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   if (!game || game.under_review) return res.status(404).end();
   const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
   if (!stat) return res.status(404).end();
+  try {
+    const locked = shareCardsLocked(req);
+    const q = ['layout', 'align', 'corner', 'stat', 'focus', 'gauges', 'hidezeros', 'badge', 'accent'].map(k => String(req.query[k] ?? '')).join('|');
+    const facts = JSON.stringify([stat, game.date, game.team_a_name, game.team_b_name, game.team_a_score, game.team_b_score]);
+    const full = `${playerId}|${game.id}|${q}|${locked ? 1 : 0}|${facts}`;
+    // ?thumb=1: a small copy for the editor's template picker (9 of these per open), so it
+    // doesn't pull nine full 1080×1920 PNGs. Made from the cached full card.
+    const thumb = req.query.thumb === '1';
+    const png = thumb
+      ? await shareCardCached(`${full}|thumb`, async () => sharp(await shareCardCached(full, () => renderMyStatCard(req, game, stat, playerId, locked))).resize(216).png({ compressionLevel: 9 }).toBuffer())
+      : await shareCardCached(full, () => renderMyStatCard(req, game, stat, playerId, locked));
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', `private, max-age=${thumb ? 600 : 60}`);
+    res.end(png);
+  } catch (err) {
+    console.error('my-stat-card.png error', err);
+    res.status(500).end();
+  }
+});
+
+async function renderMyStatCard(req, game, stat, playerId, locked) {
   const layout  = ['default', 'grid', 'sticker', 'comparison', 'gauges'].includes(req.query.layout) ? req.query.layout : 'gauges';
   // Template dropdown values — left/center/right share generateGameStatGaugesPng
   // (its `align` param), while bottom/stacked are their own bespoke designs
@@ -10558,78 +10613,67 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   const hideZeros = req.query.hidezeros === '1';
   const badge   = req.query.badge === '1';
   const accent  = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.query.accent) ? req.query.accent : 'amber';
-  try {
-    let png;
-    if (SHARE_PREMIUM_KEYS.includes(req.query.align)) {
-      const data = { ...await premiumShareData(game, stat, playerId, accent, req.query.align), hideZeros };
-      png = await renderPremiumShareCard(req.query.align, data, (text, o) => measureTextWidth(escXml(text), o));
-      if (shareCardsLocked(req)) png = await lockOverlay(png);
-    } else if (req.query.align === 'premium') {
-      // Own branch ahead of the `layout` dispatch below — Premium isn't part
-      // of the "Default" family's layout/align matrix at all (it's never in
-      // the `align` whitelist above), so it needs its own check rather than
-      // falling out of that fallback logic.
-      png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros });
-    } else if (req.query.align === 'premium-r') {
-      png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros, side: 'right' });
-    } else if (req.query.align === 'hero') {
-      // Same reasoning as Premium's own branch above — Hero isn't part of
-      // the align whitelist (it has no left/center/right variants), so it
-      // needs its own check ahead of that fallback logic too.
-      png = await generateGameStatHeroPng(game, stat, { accent });
-    } else if (req.query.align === 'card') {
-      // hideRibbon: Badge's own medal (composited below, after this big
-      // if/else) lands in the same corner as Card's built-in ribbon and
-      // would otherwise bury it — see generateGameStatTradingCardPng's own
-      // comment for why dropping the now-redundant one is correct, not a
-      // collision hack.
-      png = await generateGameStatTradingCardPng(game, stat, { accent, hideRibbon: badge });
-    } else if (req.query.align === 'scoreboard') {
-      png = await generateGameStatScoreboardPng(game, stat, { accent });
-    } else if (layout === 'gauges' && align === 'bottom') {
-      png = await generateGameStatNewsPng(game, stat, focus, { accent, gauges, hideZeros });
-    } else if (layout === 'gauges' && align === 'stacked') {
-      png = await generateGameStatStackedPng(game, stat, focus, { accent, gauges, hideZeros });
-    } else if (layout === 'gauges') {
-      png = await generateGameStatGaugesPng(game, stat, align, focus, { accent, gauges, hideZeros });
-    } else if (layout === 'grid') {
-      png = await generateGameStatGridPng(game, stat, align, { accent });
-    } else if (layout === 'sticker') {
-      png = await generateGameStatStickerPng(game, stat, corner, heroKey, { accent });
-    } else {
-      const opts = { badge, accent };
-      if (layout === 'comparison') {
-        // Season average (this season, including the game being shared) for
-        // whichever stat is the hero — same field shape as getGameDetailStats
-        // rows, so shareStatValue works unmodified against season-log rows too.
-        const seasonGames = getPlayerGameLog(playerId).filter(g => g.season === game.season && g.status === 'played');
-        const vals = seasonGames.map(g => shareStatValue(g, heroKey));
-        opts.comparisonAvg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-      }
-      png = await generateGameStatCardPng(game, stat, align, heroKey, opts);
+  let png;
+  if (SHARE_PREMIUM_KEYS.includes(req.query.align)) {
+    const data = { ...await premiumShareData(game, stat, playerId, accent, req.query.align), hideZeros };
+    png = await renderPremiumShareCard(req.query.align, data, (text, o) => measureTextWidth(escXml(text), o));
+    if (locked) png = await lockOverlay(png);
+  } else if (req.query.align === 'premium') {
+    // Own branch ahead of the `layout` dispatch below — Premium isn't part
+    // of the "Default" family's layout/align matrix at all (it's never in
+    // the `align` whitelist above), so it needs its own check rather than
+    // falling out of that fallback logic.
+    png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros });
+  } else if (req.query.align === 'premium-r') {
+    png = await generateGameStatPremiumPng(game, stat, focus, { accent, hideZeros, side: 'right' });
+  } else if (req.query.align === 'hero') {
+    // Same reasoning as Premium's own branch above — Hero isn't part of
+    // the align whitelist (it has no left/center/right variants), so it
+    // needs its own check ahead of that fallback logic too.
+    png = await generateGameStatHeroPng(game, stat, { accent });
+  } else if (req.query.align === 'card') {
+    // hideRibbon: Badge's own medal (composited below, after this big
+    // if/else) lands in the same corner as Card's built-in ribbon and
+    // would otherwise bury it — see generateGameStatTradingCardPng's own
+    // comment for why dropping the now-redundant one is correct, not a
+    // collision hack.
+    png = await generateGameStatTradingCardPng(game, stat, { accent, hideRibbon: badge });
+  } else if (req.query.align === 'scoreboard') {
+    png = await generateGameStatScoreboardPng(game, stat, { accent });
+  } else if (layout === 'gauges' && align === 'bottom') {
+    png = await generateGameStatNewsPng(game, stat, focus, { accent, gauges, hideZeros });
+  } else if (layout === 'gauges' && align === 'stacked') {
+    png = await generateGameStatStackedPng(game, stat, focus, { accent, gauges, hideZeros });
+  } else if (layout === 'gauges') {
+    png = await generateGameStatGaugesPng(game, stat, align, focus, { accent, gauges, hideZeros });
+  } else if (layout === 'grid') {
+    png = await generateGameStatGridPng(game, stat, align, { accent });
+  } else if (layout === 'sticker') {
+    png = await generateGameStatStickerPng(game, stat, corner, heroKey, { accent });
+  } else {
+    const opts = { badge, accent };
+    if (layout === 'comparison') {
+      // Season average (this season, including the game being shared) for
+      // whichever stat is the hero — same field shape as getGameDetailStats
+      // rows, so shareStatValue works unmodified against season-log rows too.
+      const seasonGames = getPlayerGameLog(playerId).filter(g => g.season === game.season && g.status === 'played');
+      const vals = seasonGames.map(g => shareStatValue(g, heroKey));
+      opts.comparisonAvg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     }
-    // Badge is an add-on toggle applied to whichever template was just
-    // generated above, not a template of its own — composited as a
-    // post-processing step so every branch above gets it for free instead of
-    // each one needing its own copy of this logic. Skipped for the legacy
-    // default/comparison layout, which already renders its OWN achievement
-    // ribbon inline (via opts.badge, a few lines up) — running both here
-    // would draw it twice.
-    if (badge && layout !== 'default' && layout !== 'comparison') {
-      png = await composeStravagantBadgeOverlay(png, stat, resolveAccent(accent));
-    }
-    // ?thumb=1: a small copy for the editor's template picker (9 of these per open), so it
-    // doesn't pull nine full 1080×1920 PNGs.
-    const thumb = req.query.thumb === '1';
-    if (thumb) png = await sharp(png).resize(216).png({ compressionLevel: 9 }).toBuffer();
-    res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', `private, max-age=${thumb ? 600 : 60}`);
-    res.end(png);
-  } catch (err) {
-    console.error('my-stat-card.png error', err);
-    res.status(500).end();
+    png = await generateGameStatCardPng(game, stat, align, heroKey, opts);
   }
-});
+  // Badge is an add-on toggle applied to whichever template was just
+  // generated above, not a template of its own — composited as a
+  // post-processing step so every branch above gets it for free instead of
+  // each one needing its own copy of this logic. Skipped for the legacy
+  // default/comparison layout, which already renders its OWN achievement
+  // ribbon inline (via opts.badge, a few lines up) — running both here
+  // would draw it twice.
+  if (badge && layout !== 'default' && layout !== 'comparison') {
+    png = await composeStravagantBadgeOverlay(png, stat, resolveAccent(accent));
+  }
+  return png;
+}
 
 // Save/Copy/Share on the "Stravagant" stat card all happen entirely
 // client-side against an already-fetched PNG blob, so without this the

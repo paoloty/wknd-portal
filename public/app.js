@@ -702,8 +702,13 @@
     // The app icon's badge: unread notifications (from the tab bar's data-unread).
     var nav = $('nav.tabbar');
     if (nav && 'setAppBadge' in navigator) {
-      // The Notifications screen marks everything read as its list loads, so it clears the badge.
-      var n = location.pathname === '/app/notifications' ? 0 : Number(nav.getAttribute('data-unread') || 0);
+      // The Notifications screen marks everything read as its list loads, so it clears the badge,
+      // here and in the screens already fetched (their tab bars still carry the old count).
+      if (location.pathname === '/app/notifications') {
+        nav.setAttribute('data-unread', '0');
+        Object.keys(pages || {}).forEach(function (u) { if (pages[u].html) pages[u].html = pages[u].html.replace(/data-unread="\d+"/, 'data-unread="0"'); });
+      }
+      var n = Number(nav.getAttribute('data-unread') || 0);
       (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(function () {});
     }
   }
@@ -878,15 +883,33 @@
       if (lockMsg) lockMsg.hidden = !tile.hasAttribute('data-premium');
       return true;
     }
+    // The card on screen loads first; the thumbnails and the other templates follow it.
+    var pending = {};
+    var load = function (k) {
+      if (!pending[k]) pending[k] = fetch(k, { credentials: 'same-origin' }).then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } if (!r.ok) throw 'Couldn\'t make the card. Try again.'; return r.blob(); })
+        .then(function (b) { return (cache[k] = { blob: b, url: URL.createObjectURL(b) }); })
+        .then(function (c) { delete pending[k]; return c; }, function (e) { delete pending[k]; throw e; });
+      return pending[k];
+    };
     function render() {
       var k = url(st.tpl, false);
       say('');
-      var show = function (c) { if (k !== url(st.tpl, false)) return; current = c; img.src = c.url; img.hidden = false; spin.hidden = true; };
+      var show = function (c) { if (k !== url(st.tpl, false)) return; current = c; img.src = c.url; img.hidden = false; spin.hidden = true; thumbs(); preload(); };
       if (cache[k]) return show(cache[k]);
       spin.hidden = false;
-      fetch(k, { credentials: 'same-origin' }).then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } if (!r.ok) throw 'Couldn\'t make the card. Try again.'; return r.blob(); })
-        .then(function (b) { cache[k] = { blob: b, url: URL.createObjectURL(b) }; show(cache[k]); },
-          function (e) { if (k !== url(st.tpl, false)) return; spin.hidden = true; say(typeof e === 'string' ? e : 'No connection. The card needs the internet.'); });
+      load(k).then(show, function (e) { if (k !== url(st.tpl, false)) return; spin.hidden = true; thumbs(); say(typeof e === 'string' ? e : 'No connection. The card needs the internet.'); });
+    }
+    // Every other template's full card for the current colour, two at a time, so a tap shows at
+    // once. Skipped when the phone asks to save data.
+    function preload() {
+      if (navigator.connection && navigator.connection.saveData) return;
+      var list = [];
+      $$('[data-tpl], [data-variant]', root).forEach(function (b) {
+        var k = url(b.getAttribute('data-variant') || b.getAttribute('data-tpl'), false);
+        if (!cache[k] && !pending[k] && list.indexOf(k) < 0) list.push(k);
+      });
+      var next = function () { var k = list.shift(); if (k && root.isConnected) return load(k).then(next, next); };
+      next(); next();
     }
     // Panels: the open tool's choices take the template strip's place.
     function panel(name) {
@@ -921,8 +944,8 @@
         var vars = $('[data-vars="' + b.getAttribute('data-fam') + '"] .is-on', root);
         pickTpl(vars ? vars.getAttribute('data-variant') : b.getAttribute('data-tpl')); remember(); render();
       } else if (b.hasAttribute('data-variant')) { pickTpl(b.getAttribute('data-variant')); remember(); render(); }
-      else if (b.hasAttribute('data-accent')) { on('[data-accent]'); st.accent = b.getAttribute('data-accent'); remember(); thumbs(); render(); }
-      else if (b.hasAttribute('data-focus')) { on('[data-focus]'); st.focus = b.getAttribute('data-focus'); thumbs(); render(); }
+      else if (b.hasAttribute('data-accent')) { on('[data-accent]'); st.accent = b.getAttribute('data-accent'); remember(); render(); }
+      else if (b.hasAttribute('data-focus')) { on('[data-focus]'); st.focus = b.getAttribute('data-focus'); render(); }
       else if (b.hasAttribute('data-bg')) { on('[data-bg]'); $('[data-sh-stage]', root).setAttribute('style', b.getAttribute('data-css') || ''); }
       else if (b.hasAttribute('data-sh-do')) {
         if (!current) return say('The card is still loading.');
@@ -936,7 +959,7 @@
     if (saved.accent && $('[data-accent="' + saved.accent + '"]', root)) { st.accent = saved.accent; $$('[data-accent]', root).forEach(function (x) { x.classList.toggle('is-on', x.getAttribute('data-accent') === st.accent); }); }
     if (!(saved.tpl && pickTpl(saved.tpl))) pickTpl(st.tpl);
     var onTile = $('.se__tpl.is-on', root); if (onTile) onTile.scrollIntoView({ inline: 'center', block: 'nearest' });
-    panel('tpl'); thumbs(); render();
+    panel('tpl'); render();
   }
 
   // ════ Comments (views/app/comments.js) ════
