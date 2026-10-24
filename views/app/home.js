@@ -20,15 +20,20 @@ export function upNextCard(u) {
   </div>`;
 }
 
-export function todoRows(todos) {
+// The To do card, one look on Home (only what has a deadline) and Me (everything): an icon
+// tile, the title, one pill. Money leads with the amount and the one solid button (Pay); the
+// card turns red once the balance is overdue (late: lib/balance-reminders.js balanceStanding).
+// Things done on the site stay listed (so they're not forgotten) but aren't tappable.
+// todos: [{ icon, title, sub, pill, href, amount?, late? }]
+export function todoCard(todos) {
   if (!todos.length) return '';
-  // Things done on the site stay listed (so they're not forgotten) but aren't tappable.
-  return `<div class="group group--icons">${todos.map(t => {
+  const late = todos.some(t => t.late);
+  return `<div class="todo${late ? ' todo--late' : ''}" role="list">${todos.map(t => {
     const inApp = isAppHref(t.href);
-    const inner = `<span class="ico ico--amber">${icons[t.icon] || icons.target}</span>
-      <span class="cell__t">${esc(t.title)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</span>
-      ${inApp ? `<span class="pill${t.solid ? ' pill--solid' : ''}">${esc(t.pill)}</span>` : soonTag}`;
-    return inApp ? `<a class="cell" href="${esc(t.href)}">${inner}</a>` : `<div class="cell">${inner}</div>`;
+    const inner = `<span class="todo__ico${t.amount ? ' todo__ico--money' : ''}" aria-hidden="true">${t.amount ? '₱' : icons[t.icon] || icons.target}</span>
+      <span class="todo__t">${t.amount ? `<b class="todo__amt">${esc(t.amount)}</b> due` : esc(t.title)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</span>
+      ${inApp ? `<span class="${t.amount ? 'todo__pay' : 'pill'}">${esc(t.pill)}</span>` : soonTag}`;
+    return inApp ? `<a class="todo__row" role="listitem" href="${esc(t.href)}">${inner}</a>` : `<div class="todo__row" role="listitem">${inner}</div>`;
   }).join('')}</div>`;
 }
 

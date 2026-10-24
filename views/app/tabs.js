@@ -2,7 +2,7 @@
 // views of data the site already has. Nothing here links out to the site except "Open full
 // site" in Settings (layout.js isAppHref): site-only things show as information.
 import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag, lazyList, ballSvg } from './layout.js';
-import { upNextCard, todoRows } from './home.js';
+import { upNextCard, todoCard } from './home.js';
 
 // Large title; right: optional HTML on the right (Me's gear).
 const lt = (title, right = '') => `<header class="lt"><h1>${esc(title)}</h1>${right}</header>`;
@@ -35,7 +35,7 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
     </div>`).join('')}</div>`;
 }
 
-// todos: views/app/home.js todoRows items · season: { label, gp, ppg, rpg, apg }
+// todos: views/app/home.js todoCard items · season: { label, gp, ppg, rpg, apg }
 // games: [{ date, opp, won, my, oppScore, line, href }]
 export function appMePage({ me, season, games, positions, todos = [] }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
@@ -45,7 +45,7 @@ export function appMePage({ me, season, games, positions, todos = [] }) {
       <div class="prof__sub"><span class="dot" style="--c:${esc(me.ring)}"></span>${esc([me.teamName || 'No team', me.number !== '' ? `#${me.number}` : '', positions].filter(Boolean).join(' · '))}</div></div>
     <a class="prof__edit" href="/app/setup/details">Edit</a>
   </div>
-  ${todos.length ? `<div class="sec">To do</div>${todoRows(todos)}` : ''}
+  ${todos.length ? `<div class="sec">To do</div>${todoCard(todos)}` : ''}
   <div class="sec">${esc(season.label)}</div>
   <div class="tiles" style="margin-top:0">
     <div><b>${season.ppg}</b><small>PTS</small></div><div><b>${season.rpg}</b><small>REB</small></div>

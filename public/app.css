@@ -516,15 +516,22 @@ html.iw-ios .iw-arrow { display: flex; }
 .bell .badge-dot { top: 2px; right: 1px; background: var(--err-bg); color: var(--on-err); }
 .prof__edit { flex: none; align-self: flex-start; padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--amber-text); font-size: 13px; font-weight: 600; }
 
-/* Home's action strip: only things with a deadline (picks closing, money due). Amber =
-   needs attention (CLAUDE.md "Notices"). */
-.actions { margin: 0 16px 4px; border-radius: var(--r-in); overflow: hidden; background: rgba(245,147,50,0.12); }
-.actions__row { display: flex; align-items: center; gap: 11px; padding: 11px 14px; color: var(--text); }
-.actions__row + .actions__row { border-top: 1px solid rgba(245,147,50,0.18); }
-.actions__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
-.actions__t { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }
-.actions__t small { display: block; font-weight: 400; font-size: 12px; color: var(--amber-text); margin-top: 1px; }
-.actions__go { color: var(--amber-text); font-size: 20px; line-height: 1; }
+/* The To do card (views/app/home.js todoCard), Home and Me alike: the card look with an amber
+   edge, an icon tile per row, the amount in Saira and Pay as the one solid button. Amber =
+   needs attention; red once the balance is overdue (CLAUDE.md "Notices"). */
+.todo { margin: 0 16px 4px; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow), var(--card-hi), inset 0 0 0 1px rgba(245,147,50,.18); }
+.todo--late { box-shadow: var(--shadow), var(--card-hi), inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
+.todo__row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px 10px 12px; color: var(--text); }
+.todo__row + .todo__row { border-top: 1px solid var(--hair); }
+.todo__ico { flex: none; width: 40px; height: 40px; border-radius: var(--r-in); display: flex; align-items: center; justify-content: center; background: rgba(245,147,50,.15); color: var(--amber-text); }
+.todo__ico svg { width: 20px; height: 20px; }
+.todo__ico--money { font: 700 20px/1 var(--font-num); }
+.todo__t { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.25; }
+.todo__t small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--amber-text); }
+.todo__amt { font: 700 19px/1 var(--font-num); }
+.todo__pay { flex: none; display: inline-flex; align-items: center; height: 36px; padding: 0 18px; border-radius: 999px; background: var(--amber); color: #111; font-size: 14px; font-weight: 600; line-height: 1; }
+.todo--late .todo__ico--money { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.todo--late .todo__ico--money + .todo__t small { color: var(--danger); font-weight: 600; }
 
 /* ── Feed (views/app/feed.js) ── */
 .feed { display: block; }

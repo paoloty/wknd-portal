@@ -69,7 +69,7 @@ import {
   addMarketplaceComment, deleteMarketplaceComment, toggleMarketplaceCommentReaction,
   getReactedMarketplaceCommentIdsForPlayer, getMarketplaceCommentCounts,
   toggleMarketplaceListingReaction, getMarketplaceListingReactionState, getMarketplaceListingReactionCounts,
-  getSeasonBalances, getSeasonSummary, getAllBalances, getLastBalanceReminders, getBannedPlayerIds, setPlayerBanned, getAllSummary, getLedgerSeasons, getLastTransactionDates,
+  getSeasonBalances, getSeasonSummary, getAllBalances, getPlayerBalanceRow, getLastBalanceReminders, getLastBalanceReminderFor, getBannedPlayerIds, setPlayerBanned, getAllSummary, getLedgerSeasons, getLastTransactionDates,
   getConfirmedSeasonPlayerIds,
   getSeasonQuota, setSeasonQuota, getSeasonFeePaid, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
@@ -6145,9 +6145,14 @@ function appSeasonState(me) {
       ? { icon: 'shirt', title: 'Jersey details sent', done: true }
       : { icon: 'shirt', title: 'Send your jersey details', sub: 'Size and name for your jersey', pill: 'Send details', href: '/jersey-request', done: false });
   }
-  rows.push(balance > 0
-    ? { icon: 'wallet', title: `Settle ${peso(balance)}`, sub: 'Balance due', pill: 'Pay', href: '/app/settle', done: false }
-    : { icon: 'wallet', title: 'No balance due', done: true });
+  // Money: the amount leads (views/app/home.js todoCard). Red (late) once it's overdue or a
+  // suspension warning went out, with the same rules as the ledger (lib/balance-reminders.js).
+  if (balance > 0) {
+    const s = balanceStanding(getPlayerBalanceRow(me.playerId), getLastBalanceReminderFor(me.playerId));
+    const sub = s.deadline && !s.deadlinePassed ? `Pay by ${shortDate(s.deadline)} to avoid a suspension`
+      : s.overdue ? `Unpaid for ${s.quietDays} days` : 'Settle it with GCash';
+    rows.push({ icon: 'wallet', title: `${peso(balance)} due`, amount: peso(balance), sub, pill: 'Pay', href: '/app/settle', late: s.overdue || !!s.deadline, done: false });
+  } else rows.push({ icon: 'wallet', title: 'No balance due', done: true });
   return { rows, balance, season, signupOpen, signup, peso };
 }
 
@@ -6456,7 +6461,7 @@ function appOpenPicks(me, all = getAllGames()) {
 }
 // Money and season to-dos (balance, sign-up, jersey): Me's To do and its red badge.
 const appAccountTodos = me => appSeasonState(me).rows.filter(r => !r.done && r.href)
-  .map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, solid: r.icon === 'wallet' }));
+  .map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, amount: r.amount, late: r.late }));
 // Tab badges (layout.js appPage): one signal per fact — picks on Picks, money on Me,
 // notifications on Home's bell.
 const appBadges = me => ({ picks: appOpenPicks(me).length, me: appAccountTodos(me).length });
@@ -6470,18 +6475,16 @@ app.get('/app', requireApp, (req, res) => {
   const me = appMe(req);
   const setup = appSetupState(me);
   if (setup.done === setup.total && !hasAppEvent(me.reg.id, 'setup_done')) logApp(req, 'setup_done');
-  // The action strip: only things with a deadline, gone once done (Fable review, 2026-10-23).
-  // Open picks are on the rail (the next game day's cards), so they're not in the strip too.
-  const actions = [];
+  // The To do card, Me's look: only things with a deadline (money, an open sign-up), gone
+  // once done. Open picks are on the rail (the next game day's cards), so they're not here too.
   const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0;
-  const st = appSeasonState(me);
-  if (st.balance > 0) actions.push({ text: `${st.peso(st.balance)} due`, sub: 'Settle it with GCash', href: '/app/settle?from=home' });
-  if (st.signupOpen && !st.signup) actions.push({ text: `Season ${st.season} sign-up is open`, sub: 'Sign up to play', soon: true });
+  const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form')
+    .map(t => t.icon === 'wallet' ? { ...t, href: `${t.href}?from=home` } : t);
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
   sendTab(res, me, { title: 'WKND', tab: 'home', body: appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread }),
     setupHtml: setupCard(setup), installHtml: installCard,
-    actions: actions.slice(0, 3), pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
+    todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
   }) });
 });
 

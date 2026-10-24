@@ -6,6 +6,7 @@ import { esc, appAvatar, icons, backChev, soonTag, lazyList } from './layout.js'
 import { pickOption, pickCard } from './picks.js';
 import { appSocialBar, appThreadPanel } from './comments.js';
 import { papawisAction } from './papawis.js';
+import { todoCard } from './home.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -122,15 +123,12 @@ export function appFeedRows(items, prevDay = '') {
   }).join('');
 }
 
-// Home: setup card, then (only when something has a deadline) the action strip, the pinned
-// announcement, and the feed. Up next lives on My Team and To do on Me now.
-// actions: [{ text, sub, href, soon }] · pinned: an announcement item or null
+// Home: setup card, then (only when something has a deadline) the To do card, the pinned
+// announcement, and the feed. Up next lives on My Team and the full To do on Me.
+// todos: views/app/home.js todoCard items · pinned: an announcement item or null
 // rail: the next game day's games (loaded after the screen from /app/rail, public/app.js initBlocks).
-export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', actions = [], pinned = null, rail = false }) {
-  const strip = actions.length ? `<div class="actions" role="list">${actions.map(a => {
-    const inner = `<span class="actions__dot" aria-hidden="true"></span><span class="actions__t">${esc(a.text)}${a.sub ? `<small>${esc(a.sub)}</small>` : ''}</span>${a.href ? '<span class="actions__go">›</span>' : soonTag}`;
-    return a.href ? `<a class="actions__row" role="listitem" href="${esc(a.href)}">${inner}</a>` : `<div class="actions__row" role="listitem">${inner}</div>`;
-  }).join('')}</div>` : '';
+export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = false }) {
+  const strip = todoCard(todos);
   return `${header}
   ${setupHtml}
   ${installHtml}
