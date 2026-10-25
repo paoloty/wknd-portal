@@ -165,7 +165,7 @@ function flowCard(flow, plays, teams) {
 }
 
 // The full box score: one team at a time, swipes sideways, names stay put, tap a column to sort.
-function boxCard(teams, meId, myTeamId, dnp) {
+export function boxCard(teams, meId, myTeamId, dnp) {
   const made = (m, a) => (a ? `${m}-${a}` : '–');
   const cols = [
     ['PTS', r => r.pts], ['REB', r => r.reb], ['AST', r => r.ast], ['STL', r => r.stl], ['BLK', r => r.blk],

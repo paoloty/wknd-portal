@@ -8646,6 +8646,16 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-pbp > summary::-webkit-details-marker { display: none; }
 .gd-pbp[open] > summary { margin-bottom: 12px; }
 .gd-pbp .pbp-tab { border-radius: 14px; border: 1px solid var(--border); background: var(--surface); max-height: 640px; overflow-y: auto; }
+/* Live score (views/game.js liveHero / liveBody, public/live-score.js) */
+.gd-chip--dot { display: inline-flex; align-items: center; gap: 6px; }
+.gd-chip--dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: gd-blink 1.6s ease-in-out infinite; }
+@keyframes gd-blink { 50% { opacity: .3; } }
+.gd-pen { color: var(--amber); font-weight: 800; }
+[data-live] .gd-pl__s:not(.is-score) { color: var(--text-subtle); }
+.gd-pl--end .gd-pl__x b { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.gd-pl.is-new { animation: gd-new 1.6s ease-out; }
+@keyframes gd-new { from { background: rgba(245,147,50,.14); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .gd-chip--dot::before, .gd-pl.is-new { animation: none; } }
 
 /* Comments */
 .gd-talk { min-width: 0; }

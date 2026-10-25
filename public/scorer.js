@@ -89,8 +89,23 @@ export async function mount(el) {
     pill.textContent = ui.locked && published ? 'Published' : ui.sync === 'offline' ? `Offline · ${n} saved` : ui.sync === 'error' ? `Not sent · ${n}` : n ? `Sending ${n}…` : 'All saved';
     pill.title = ui.syncMsg || '';
   }
-  window.addEventListener('online', sync);
+  // ── Fetching: the screen opens from the phone's copy, so plays made elsewhere (an admin's
+  // removals, another phone's) come from the server when it opens and when the signal is back.
+  async function pull() {
+    if (!navigator.onLine) return;
+    try {
+      const r = await fetch(api, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!r.ok) return;
+      const d = await r.json();
+      let n = 0;
+      for (const e of d.events || []) { sent.add(e.id); if (!events.has(e.id)) { events.set(e.id, e); n++; } }
+      if (d.status === 'published') ui.locked = true;
+      if (n || ui.locked) { G = fold(); await save(); paint(); }
+    } catch (e) { /* no signal: the phone's copy stands */ }
+  }
+  window.addEventListener('online', () => { pull(); sync(); });
   const syncTimer = setInterval(() => { if (!document.contains(el)) { clearInterval(syncTimer); clearInterval(tick); return; } if (unsent().length) sync(); }, 10000);
+  pull();
 
   // ── Making plays ──
   function add(fields, { flash } = {}) {

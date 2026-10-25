@@ -1725,6 +1725,73 @@ function upcomingHero(d) {
   </section>`;
 }
 
+// ── Live: while the scorer is scoring it (lib/live-score.js liveScoreData), before publish ──
+// The hero with the running score, then the live box score and play-by-play. Marked unofficial;
+// public/live-score.js swaps both parts in as plays arrive (server.js liveChanged).
+const liveWhen = l => (l.ended || /^(Halftime|End)/.test(l.label) ? l.label : [l.label, l.clock].filter(Boolean).join(' · '));
+function liveTeamLine(t) {
+  const fouls = `${t.fouls} team foul${t.fouls === 1 ? '' : 's'}`;
+  const pen = t.penalty ? '<b class="gd-pen">Penalty</b>' : t.penaltyNext ? '<b class="gd-pen">Penalty next</b>' : '';
+  return `${fouls}${pen ? ` · ${pen}` : ''} · ${t.toLeft} timeout${t.toLeft === 1 ? '' : 's'} left`;
+}
+function liveHero(d) {
+  const { game, live: l, ctx } = d;
+  const lead = l.score.a > l.score.b ? 'a' : l.score.b > l.score.a ? 'b' : null;
+  const lg = { ...game, team_a_score: l.score.a, team_b_score: l.score.b };
+  return `<section class="gd-hero gd-hero--live" aria-label="Live score">
+    <h1 class="sr-only" data-lv-swap="h1">${escHtml(tc(game.team_a_name))} ${l.score.a}–${l.score.b} ${escHtml(tc(game.team_b_name))}, live: WKND Basketball Season ${escHtml(String(game.season))} ${typeLabel(game)}</h1>
+    <div class="gd-hero__shade"></div>
+    <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>
+    <div class="gd-hero__in">
+      <div class="gd-hero__top" data-lv-swap="top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx?.number ? ` · Game ${ctx.number}` : ''}${d.court?.name ? ` · ${courtLinkHtml(d.court)}` : ''}</span><span class="gd-chip gd-chip--live gd-chip--dot">${l.ended ? 'Final · unofficial' : 'Live · unofficial'}</span></div>
+      <div class="gd-board" data-lv-swap="board">
+        <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${liveTeamLine(l.a)}</span></div>
+        <div class="gd-score">
+          <span class="gd-score__n${lead === 'a' ? ' is-win' : ''}">${l.score.a}</span>
+          <span class="gd-score__mid"><span class="gd-final">${escHtml(liveWhen(l).toUpperCase())}</span>${miniLineScore(lg, l.quarters)}</span>
+          <span class="gd-score__n${lead === 'b' ? ' is-win' : ''}">${l.score.b}</span>
+        </div>
+        <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${liveTeamLine(l.b)}</span></div>
+      </div>
+      <div class="gd-hero__bot"><span class="gd-meta" data-lv-swap="meta">${l.ended ? 'Scored live. Official once it’s reviewed and published.' : 'Updates as the scorer logs each play. The clock is as of the last play.'}</span>
+        ${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: false })}</div>
+    </div>
+  </section>`;
+}
+const LIVE_SHOWN = 12;
+function livePlayRow(game, p) {
+  const color = p.side ? teamColor(p.side === 'a' ? game.team_a_name : game.team_b_name) : '#5b6475';
+  return `<div class="gd-pl${p.end ? ' gd-pl--end' : ''}" data-lv-play="${escHtml(p.id)}">
+      <span class="gd-pl__t">${escHtml(p.period)}${p.clock ? `<b class="font-condensed">${escHtml(p.clock)}</b>` : ''}</span>
+      <span class="gd-pl__dot" style="background:${p.end ? 'transparent' : color}"></span>
+      <span class="gd-pl__x"><b>${escHtml(p.who)}</b>${p.what ? ` ${escHtml(p.what)}` : ''}</span>
+      <span class="gd-pl__s font-condensed${p.scoring ? ' is-score' : ''}">${p.score.a}<i>–</i>${p.score.b}</span>
+    </div>`;
+}
+function liveBody(d) {
+  const { game, live: l } = d;
+  const na = String(game.team_a_name).toUpperCase(), nb = String(game.team_b_name).toUpperCase();
+  const asStat = r => ({ ...r.line, player_id: r.playerId, name: r.name });
+  const panel = (side, name) => `<div class="gd-box__panel" data-lv-box="${side}"${side === 'a' ? '' : ' hidden'}>${teamBoxScore(l[side].rows.map(asStat), name, false, [], l[side].teamTO)}</div>`;
+  const btn = (side, name) => `<button type="button" class="${side === 'a' ? 'is-on' : ''}" aria-pressed="${side === 'a'}" data-lv-box-btn="${side}">${dot(name, 8)}<span class="pill-label">${escHtml(name)} · ${l.score[side]}</span></button>`;
+  const hasBox = l.a.rows.length + l.b.rows.length > 0;
+  const shown = l.plays.slice(0, LIVE_SHOWN), more = l.plays.slice(LIVE_SHOWN);
+  return `${hasBox ? `<section id="live-box" aria-labelledby="live-box-h">
+      <div class="section-header gd-sh gd-sh--row"><h2 id="live-box-h">Box score</h2>
+        <span class="gd-seg" role="group" aria-label="Team">${btn('a', na)}${btn('b', nb)}</span>
+      </div>
+      <p class="gd-sd">Live and unofficial: it can still change in review. Season stats, leaders, picks and the recap update once the game is published.</p>
+      <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
+    </section>` : ''}
+    <section id="live-plays" class="gd-plays-sec" aria-labelledby="live-plays-h">
+      ${sh('live-plays', 'Play-by-play', { sub: `${l.count} play${l.count === 1 ? '' : 's'} so far, newest first.` })}
+      <div class="card gd-plays">${shown.map(p => livePlayRow(game, p)).join('') || '<p class="gd-empty">Plays show here as they’re scored.</p>'}</div>
+      ${more.length ? `<details class="gd-pbp" data-lv-more><summary>All ${l.count} plays</summary><div class="card gd-plays">${more.map(p => livePlayRow(game, p)).join('')}</div></details>` : ''}
+    </section>`;
+}
+// The two parts public/live-score.js swaps in (and gamePage puts on the page).
+export function liveParts(d) { return { hero: liveHero(d), body: liveBody(d) }; }
+
 // ── Sticky section nav (replaces the tab bar) ────────────────────────────────────────────
 function sectionNav(items, mini) {
   return `<nav class="gd-snav" aria-label="On this page" data-gd-snav>
@@ -2448,19 +2515,25 @@ export function gamePage(d) {
     const p = d.picks;
     const m = p?.m;
     const items = [
-      p?.pickable ? { id: 'picks', label: 'Who wins?' } : null,
+      d.live && d.live.a.rows.length + d.live.b.rows.length ? { id: 'live-box', label: 'Box score' } : null,
+      d.live ? { id: 'live-plays', label: 'Play-by-play' } : null,
+      p?.pickable && !d.live ? { id: 'picks', label: 'Who wins?' } : null,
       m && (p.story || d.isAdmin) ? { id: 'story', label: 'Storyline' } : null,
       m?.rows?.length ? { id: 'h2h', label: 'Head to head' } : null,
       m?.scorers?.some(Boolean) ? { id: 'watchlist', label: 'Players to watch' } : null,
       p?.meetingCards?.games?.length ? { id: 'meetings', label: 'Last meetings' } : null,
       comments ? { ...comments, label: 'Pre-game chatter' } : null,
     ].filter(Boolean);
-    return `<div class="page-content gd-page">
+    // Being scored: the live score leads, the preview stays under it.
+    const lp = d.live ? liveParts(v) : null;
+    const listen = lp || d.liveArmed;
+    return `<div class="page-content gd-page"${listen ? ` data-live-src="/games/${encodeURIComponent(gameSlug(game))}" data-live-ws="/ws/games/${encodeURIComponent(game.id)}/live"` : ''}>
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
-  ${upcomingHero(v)}
+  ${lp ? `<div data-live="hero">${lp.hero}</div>` : upcomingHero(v)}
   ${sectionNav(items)}
   <div class="gd-cols">
     <div class="gd-cols__main">
+      ${lp ? `<div data-live="body">${lp.body}</div>` : ''}
       ${m ? storyBlock(game, p.story, { isAdmin: d.isAdmin, regen: p.state === 'open' || p.state === 'closed' }) : ''}
       ${m ? edgesBlock(m) : ''}
       ${m ? scorersBlock(m, p.duel) : ''}
@@ -2473,6 +2546,7 @@ export function gamePage(d) {
 ${floater}
 ${m ? matchupScript({ isAdmin: d.isAdmin }) : ''}
 ${p?.o || p?.siblings?.length ? pickCardScript() : ''}
+${listen ? `<script src="/live-score.js?v=${escHtml(String(d.liveVer || ''))}" defer></script>` : ''}
 ${scripts}`;
   }
 

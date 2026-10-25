@@ -315,6 +315,8 @@ function scoringTab({ game, sc, colors }) {
       ${playerPicker({ name: 'scorers[]', label: 'Scorers (up to 2)', options: sc.options, selected: sc.scorers, placeholder: 'Search players' })}
       <div class="aui-field"><span class="aui-field__label">Waves</span>${segmented({ name: 'waves', value: sc.waves || (game.game_type === 'playoff' ? 'off' : 'first half'), label: 'Waves', options: [['off', 'Off'], ['first half', 'First half'], ['whole game', 'Whole game']] })}
         <span class="aui-field__help">Regular season: first half. Playoffs: off.</span></div>
+      <div class="aui-field"><span class="aui-field__label">Live score for everyone</span>${segmented({ name: 'live', value: sc.livePublic === false ? 'off' : 'on', label: 'Live score for everyone', options: [['on', 'On'], ['off', 'Off']] })}
+        <span class="aui-field__help">On: the game page on the site and in the app shows the score, box score and plays as they’re scored, marked unofficial. Stats, picks and the recap still wait for publish.</span></div>
       <div>${button(sc.on ? 'Save scorers' : 'Turn on scoring', { kind: 'primary', type: 'submit' })}</div>
     </form>`;
   if (!sc.on) {

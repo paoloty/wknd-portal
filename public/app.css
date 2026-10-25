@@ -1354,6 +1354,26 @@ html.tk-lock { overflow: hidden; }
 .gr-note { margin: -4px 0 10px; font-size: 12px; line-height: 1.4; color: var(--muted); }
 .fc .gr-note { font-size: 12px; }
 .gr-note--foot { margin: 10px 0 0; }
+/* Live score (views/app/feed.js appLiveParts, public/live-score.js) */
+.lv .sx__body .foot-note { margin: 10px 0 0; }
+.lv-tf { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.lv-tf__t { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; row-gap: 2px; align-items: center; font-size: 12px; color: var(--text); }
+.lv-tf__t .mut { grid-column: 2; color: var(--muted); }
+.lv-tf__t b { color: var(--amber-text); font-weight: 600; }
+.lv-pl { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--hair); font-size: 14px; line-height: 1.35; }
+.gr .gr-head + .lv-pl, .lv-more > summary + .lv-pl { border-top: 0; }
+.lv-pl__t { font-family: var(--font-num); font-size: 13px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.lv-pl__t small { font-size: 13px; color: var(--muted); font-weight: 500; }
+.lv-pl__x .dot { margin-right: 6px; vertical-align: 1px; }
+.lv-pl__x b { font-weight: 600; }
+.lv-pl__s { font-size: 15px; color: var(--muted); white-space: nowrap; }
+.lv-pl__s.is-score { color: var(--text); font-weight: 700; }
+.lv-pl--end .lv-pl__x b { font-family: var(--font-num); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.lv-pl.is-new { animation: lv-new 1.6s ease-out; }
+@keyframes lv-new { from { background: color-mix(in srgb, var(--amber) 16%, transparent); } to { background: transparent; } }
+.lv-more > summary { display: flex; align-items: center; min-height: 44px; font-size: 14px; font-weight: 600; color: var(--amber-text); list-style: none; cursor: pointer; }
+.lv-more > summary::-webkit-details-marker { display: none; }
+@media (prefers-reduced-motion: reduce) { .lv-pl.is-new { animation: none; } }
 .gr-u { font: 600 12px/1 var(--font-num); color: var(--muted); }
 .gr-u.up { color: var(--win); }
 .gr-u.dn { color: var(--loss); }

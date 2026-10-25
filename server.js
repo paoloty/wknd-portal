@@ -33,7 +33,7 @@ import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { pickFacesRow } from './views/pick-card.js';
 import { highlightsPage } from './views/highlights.js';
-import { gamePage, reactorsWho } from './views/game.js';
+import { gamePage, reactorsWho, liveParts } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks, shortName } from './lib/game-detail.js';
 import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext, cardSnapshot } from './views/leaders.js';
 import { renderLeaderCardPng, renderLeaderWidePng, renderMvpCardPng, renderMvpWidePng } from './lib/leader-card-image.js';
@@ -302,7 +302,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/table-scroll.js', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/table-scroll.js', 'public/live-score.js', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -6021,10 +6021,11 @@ import { randomInt } from 'crypto';
 import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
-import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId } from './views/app/feed.js';
+import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
+import { liveScoreData } from './lib/live-score.js';
 import { foldGame as foldScoredGame, DEFAULT_RULES as SCORE_RULES } from './public/score-engine.js';
 import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
 import { appSharePage } from './views/app/share.js';
@@ -6054,7 +6055,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'lib/live-score.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6788,6 +6789,11 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   const back = appBack(req);
   const g = getGameById(req.params.id);
   if (!g || g.under_review) return sendTab(res, me, { title: 'Game · WKND', tab: back.tab, body: `${appGameMissing(back)}` });
+  if (req.get('X-Live')) {
+    const live = !isPlayedGame(g) && liveScoreFor(g);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json(live ? { on: true, ...appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g) }) } : { on: false, waiting: !isPlayedGame(g) && liveArmed(g) });
+  }
   if (!isPlayedGame(g)) return appGamePreview(req, res, me, back, g);
   const stats = isPlayedGame(g) ? getGameDetailStats(g.id) : [];
   const [a, b] = appTeamsOf(g);
@@ -6851,6 +6857,46 @@ function scoreBundle(game) {
 }
 const scoreGameTitle = g => `${g.team_a_name} vs ${g.team_b_name}`;
 
+// ── Live score (lib/live-score.js): everyone sees the game as it's scored, before publish ──
+// On the site's game page and the app's game screen, marked unofficial; the per-game switch
+// (settings.live_public, on unless an admin turns it off) hides it. Only the live pass shows.
+// Each change tells the game's open pages over /ws/games/:id/live; they fetch the new parts
+// (X-Live) and swap them in. Told at most once a second per game, so a burst of taps is one.
+// Scoring is on and the live score is public: the page listens, even before the first play,
+// so it goes live by itself when scoring starts.
+function liveArmed(game) {
+  const sg = getScoreGame(game.id);
+  return !!sg && sg.status !== 'published' && sg.settings.live_public !== false;
+}
+function liveScoreFor(game) {
+  if (!liveArmed(game)) return null;
+  const bundle = scoreBundle(game);
+  if (!bundle.events.length) return null;
+  return liveScoreData(bundle, { photo: id => playerPhotoUrl(id, 96) });
+}
+const liveRooms = new Map(); // gameId -> Set<WebSocket>
+const liveTimers = new Map();
+function liveChanged(gameId) {
+  if (liveTimers.has(gameId)) return;
+  liveTimers.set(gameId, setTimeout(() => {
+    liveTimers.delete(gameId);
+    const room = liveRooms.get(gameId);
+    if (!room?.size) return;
+    const msg = JSON.stringify({ type: 'live' });
+    for (const ws of room) if (ws.readyState === ws.OPEN) ws.send(msg);
+  }, 1000));
+}
+// The scorer screen opens from the phone's copy; this brings it the plays it doesn't have
+// (an admin's removals, another phone's plays).
+app.get('/api/score/:id/events', (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+  if (!scoreAccess(req, game.id)) return res.status(403).json({ error: 'You aren’t a scorer for this game.' });
+  const sg = getScoreGame(game.id);
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ status: sg?.status || 'setup', events: sg ? getScoreEvents(game.id) : [] });
+});
+
 // The games this player can score (admins: every game with scoring turned on, not yet published).
 app.get('/app/score', requireApp, (req, res) => {
   const me = appMe(req);
@@ -6892,6 +6938,7 @@ app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => 
     && (e.team == null || e.team === 'a' || e.team === 'b') && okPlayer(e.player) && okPlayer(e.from) && okPlayer(e.in) && okPlayer(e.out));
   const added = addScoreEvents(game.id, events, { authorId: req.session.playerPlayerId || 'admin', deviceId: String(req.body?.device || '').slice(0, 64) || null });
   if (added && sg.status === 'setup') saveScoreGame(game.id, { status: 'live' });
+  if (added) liveChanged(game.id);
   if (events.length < raw.length) console.warn(`[scorer] game=${game.id} rejected ${raw.length - events.length} play(s) that didn't fit`);
   res.json({ ok: true, added, received: raw.length, rejected: raw.length - events.length });
 });
@@ -6905,8 +6952,10 @@ app.post('/admin/games/:id/scoring', requireAuth, express.json(), (req, res) => 
   const scorers = [].concat(req.body?.scorers || []).map(String).filter(Boolean).slice(0, 2);
   const waves = ['first half', 'whole game', 'off'].includes(req.body?.waves) ? req.body.waves : null;
   const settings = { ...(sg?.settings || {}), rules: { ...(sg?.settings?.rules || {}), ...(waves ? { waves } : {}) } };
+  if (req.body?.live === 'on' || req.body?.live === 'off') settings.live_public = req.body.live === 'on';
   saveScoreGame(game.id, { settings });
   setScorers(game.id, scorers);
+  liveChanged(game.id);
   res.json({ ok: true, message: scorers.length ? 'Scoring is on. The scorers see the game under Me → Score a game.' : 'Scoring is on. Only admins can score until you pick scorers.' });
 });
 // Admin quick review: take a play out (a void play, like a scorer's Undo), or mark who didn't play.
@@ -6918,6 +6967,7 @@ app.post('/admin/games/:id/scoring/void', requireAuth, express.json(), (req, res
   const target = String(req.body?.eventId || '');
   if (!getScoreEvents(game.id).some(e => e.id === target)) return res.status(404).json({ error: 'That play isn’t there any more.' });
   addScoreEvents(game.id, [{ id: `adm_${crypto.randomUUID()}`, type: 'void', target, pos: Date.now(), at: Date.now() }], { authorId: 'admin' });
+  liveChanged(game.id);
   res.json({ ok: true, message: 'Play removed.' });
 });
 app.post('/admin/games/:id/scoring/dnp', requireAuth, express.json(), (req, res) => {
@@ -6953,6 +7003,7 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
     console.log(`[scorer] published game=${game.id} plays=${events.length} score=${state.score.a}-${state.score.b}`);
     res.json({ ok: true, message: `Published: ${game.team_a_name} ${state.score.a}, ${game.team_b_name} ${state.score.b}. Picks settle and rating asks go out now.` });
     afterGameImport(game, Object.keys(payload.playerStats));
+    liveChanged(game.id); // open live pages reload into the published game
   } catch (err) {
     console.error('[scorer] publish failed:', err);
     res.status(500).json({ error: 'Publishing failed: ' + err.message });
@@ -6975,7 +7026,7 @@ function adminScoringPanel(game, players) {
   const played = new Set(Object.keys(st.players));
   const roster = players.filter(p => p.team_id === game.team_a_id || p.team_id === game.team_b_id)
     .map(p => ({ id: p.id, name: nm(p.id), team: p.team_id === game.team_a_id ? 'a' : 'b', played: played.has(p.id) }));
-  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, score: st.score, period: st.period, plays, roster, dnp: sg.settings.dnp || [], official: sg.settings.official || null };
+  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, roster, dnp: sg.settings.dnp || [], official: sg.settings.official || null };
 }
 // One play in words, for the review list.
 function describeScorePlay(e, nm, tname) {
@@ -7042,7 +7093,8 @@ function appGamePreview(req, res, me, back, g) {
   const o = picksEnabled() ? openPicks(sorted, pctx, me.playerId).find(x => x.id === g.id) : null;
   const preview = appPreview(g, sorted, pctx, playerMap, colorOf);
   const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
-  sendTab(res, me, { title: `${g.team_a_name} vs ${g.team_b_name} · WKND`, tab: back.tab, body: appGamePreviewPage({
+  const live = liveScoreFor(g);
+  sendTab(res, me, { title: live ? `${g.team_a_name} ${live.score.a} · ${g.team_b_name} ${live.score.b} · Live · WKND` : `${g.team_a_name} vs ${g.team_b_name} · WKND`, tab: back.tab, body: appGamePreviewPage({
     back, title: `${g.team_a_name} vs ${g.team_b_name}`,
     kicker: g.playoff_round || gameTypeLabel(g) || 'Regular season',
     meta: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g), court].filter(Boolean).join(' · '), court,
@@ -7053,8 +7105,11 @@ function appGamePreview(req, res, me, back, g) {
     lastHref: preview.last ? `/app/games/${encodeURIComponent(preview.last.id)}?from=${back.tab}` : '',
     // The game's scorers (and admins) start scoring from here once scoring is on.
     scoreHref: getScoreGame(g.id) && scoreAccess(req, g.id) ? `/app/score/${encodeURIComponent(g.id)}` : '',
+    live: live || liveArmed(g) ? { src: `/app/games/${encodeURIComponent(g.id)}`, ws: `/ws/games/${encodeURIComponent(g.id)}/live`, parts: live ? appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g) }) : null } : null,
   }) });
 }
+// The viewer's own team in this game (their box score opens on it).
+const appMyTeamId = (me, g) => { const t = getAllPlayers().find(p => p.id === me.playerId)?.team_id; return t === g.team_a_id || t === g.team_b_id ? t : ''; };
 const appGameMissing = back => `<div class="navbar"><a class="navbar__back" href="${back.href}">‹ ${back.label}</a><span class="navbar__title">Game</span><span></span></div><div class="empty" style="margin-top:12px">This game isn't available.</div>`;
 
 // A news post, read in the app. The body is the admin-written article (as /posts/:slug shows it).
@@ -10785,6 +10840,13 @@ app.get('/games/:ref', (req, res) => {
   const isFinal = (game.status === 'final' || game.status === 'complete') && Number(game.team_a_score) + Number(game.team_b_score) > 0;
   const ymd = gameYmd(game.date);
   const ctx = seasonContext([...sorted].reverse(), game);
+  // Being scored: the live parts only, for public/live-score.js.
+  const live = isFinal ? null : liveScoreFor(game);
+  if (req.get('X-Live')) {
+    res.set('Cache-Control', 'private, no-store');
+    // The hero's buttons stay put on the page (only its marked parts swap), so none here.
+    return res.json(live ? { on: true, ...liveParts({ game, live, ctx, court, gameReaction: { count: 0 } }) } : { on: false, waiting: !isFinal && liveArmed(game) });
+  }
   const pctx = buildPicksContext(sorted);
   const T = titleCase;
 
@@ -10821,10 +10883,10 @@ app.get('/games/:ref', (req, res) => {
     const meetingGames = (p.m?.lastMeetings || []).map(x => sorted.find(g => g.id === x.id)).filter(Boolean);
     picks.meetingCards = { games: meetingGames, ...gameCardExtras(meetingGames, sorted, { viewerId: currentPlayerId, playerMap }) };
     return res.send(renderPage(req, {
-      title: `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} | WKND Basketball`,
+      title: live ? `${T(game.team_a_name)} ${live.score.a}–${live.score.b} ${T(game.team_b_name)} · Live | WKND Basketball` : `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} | WKND Basketball`,
       currentPath: req.path,
       metaTags: buildGameOgTags(req, game, court),
-      body: gamePage({ ...common, state: 'upcoming', picks }),
+      body: gamePage({ ...common, state: 'upcoming', picks, live, liveArmed: liveArmed(game), liveVer: CSS_VER }),
     }));
   }
 
@@ -25095,6 +25157,21 @@ server.on('upgrade', (req, socket, head) => {
       ws.on('close', () => {
         const room = gameCommentRooms.get(gameId);
         if (room) { room.delete(ws); if (!room.size) gameCommentRooms.delete(gameId); }
+      });
+    });
+    return;
+  }
+
+  // The live score (liveChanged): open to anyone, like the page itself; receive-only.
+  const liveMatch = pathname.match(/^\/ws\/games\/([^/]+)\/live$/);
+  if (liveMatch) {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const gameId = decodeURIComponent(liveMatch[1]);
+      if (!liveRooms.has(gameId)) liveRooms.set(gameId, new Set());
+      liveRooms.get(gameId).add(ws);
+      ws.on('close', () => {
+        const room = liveRooms.get(gameId);
+        if (room) { room.delete(ws); if (!room.size) liveRooms.delete(gameId); }
       });
     });
     return;

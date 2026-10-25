@@ -285,6 +285,16 @@
     };
     document.head.appendChild(s);
   }
+  // A game being scored (views/app/feed.js appLiveParts): public/live-score.js keeps it fresh,
+  // and on every other screen closes its socket.
+  function initLive() {
+    if (window.wkndLive) return window.wkndLive.scan();
+    if (!$('[data-live-src]') || initLive.loading) return;
+    initLive.loading = true;
+    var s = document.createElement('script'); s.src = '/live-score.js?v=' + ver;
+    s.onerror = function () { initLive.loading = false; };
+    document.head.appendChild(s);
+  }
 
   function initPollTakeover() {
     var root = $('main.app [data-tk]'), open = $('body > .tk');
@@ -474,6 +484,7 @@
     initShare();
     initPollTakeover();
     initScorer();
+    initLive();
     initGameRecap();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
@@ -1930,6 +1941,9 @@
   // Re-fetch the current screen and swap it in quietly (after a save that changes it).
   // force: re-render even when nothing changed (pull to refresh reloads the lists that way).
   // Signed out meanwhile: go to sign-in rather than leave the old screen up.
+  // public/live-score.js: a game that stopped being live (published, switched off) is swapped
+  // for the fresh screen, never reloaded (a reload would get the phone's copy back).
+  window.wkndRefreshScreen = function () { return refreshScreen(true); };
   function refreshScreen(force) {
     if (!navOn) { location.reload(); return new Promise(function () {}); }
     var id = navId;

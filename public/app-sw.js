@@ -44,7 +44,7 @@ self.addEventListener('message', (e) => {
 const wipe = () => Promise.all([PAGES, DATA].map((k) => caches.delete(k)));
 
 const isShellAsset = (url) => url.origin === location.origin
-  && (/^\/(app\.css|app\.js|table-scroll\.js|share-cards\.js|scorer\.js|score-engine\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
+  && (/^\/(app\.css|app\.js|table-scroll\.js|share-cards\.js|scorer\.js|score-engine\.js|live-score\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
 // Screens worth keeping: the tabs, settings, notifications, games and news posts. Not
 // sign-in, setup, Face ID, Settle (money) or anything that posts.
 const isScreen = (url) => url.origin === location.origin

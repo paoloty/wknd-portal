@@ -7,7 +7,7 @@ import { pickOption, pickCard } from './picks.js';
 import { appSocialBar, appThreadPanel } from './comments.js';
 import { papawisAction } from './papawis.js';
 import { todoCard } from './home.js';
-import { lineScore, gameRecapSections } from './game.js';
+import { lineScore, gameRecapSections, boxCard } from './game.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -236,14 +236,49 @@ export function appRail({ dayLabel, cards }) {
   ${one ? '' : `<div class="dots" data-rail-dots>${cards.map((c, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>`}`;
 }
 
+// ── Live: while the game is being scored (lib/live-score.js liveScoreData), before publish ──
+// The site's live view, app-styled: the score on the hero, team fouls and timeouts, the line
+// score, the box score (the finished game's own table) and the play-by-play. Unofficial till
+// published. public/live-score.js swaps both parts in as plays arrive.
+const liveWhen = l => (l.ended || /^(Halftime|End)/.test(l.label) ? l.label : [l.label, l.clock].filter(Boolean).join(' · '));
+const LIVE_SHOWN = 12;
+export function appLiveParts(l, { meId = '', myTeamId = '' } = {}) {
+  const side = t => ({ ...t, won: t.score >= (t === l.a ? l.b : l.a).score });
+  const a = side(l.a), b = side(l.b);
+  const tf = t => `<div class="lv-tf__t"><span class="dot" style="--c:${esc(t.color)}"></span><span>${t.fouls} foul${t.fouls === 1 ? '' : 's'}${t.penalty ? ' · <b>Penalty</b>' : t.penaltyNext ? ' · <b>Penalty next</b>' : ''}</span><span class="mut">${t.toLeft} TO left</span></div>`;
+  const hero = `<section class="sx gx gx--screen lv">
+    ${gameHero({ kicker: l.ended ? 'Final · unofficial' : 'Live · unofficial', when: liveWhen(l), a: { ...a, won: true }, b: { ...b, won: true } })}
+    <div class="sx__body">
+      <div class="lv-tf">${tf(a)}${tf(b)}</div>
+      ${lineScore(a, b, l.quarters)}
+      <p class="foot-note">${l.ended ? 'Scored live. Official once it’s reviewed and published.' : 'Updates as the scorer logs each play. Clock as of the last play.'}</p>
+    </div>
+  </section>`;
+  const row = p => `<div class="lv-pl${p.end ? ' lv-pl--end' : ''}" data-lv-play="${esc(p.id)}">
+      <span class="lv-pl__t">${esc(p.period)}${p.clock ? ` <small>${esc(p.clock)}</small>` : ''}</span>
+      <span class="lv-pl__x">${p.end ? '' : `<span class="dot" style="--c:${esc(p.side === 'b' ? b.color : p.side === 'a' ? a.color : '#5b6475')}"></span>`}<b>${esc(p.who)}</b>${p.what ? ` ${esc(p.what)}` : ''}</span>
+      <span class="lv-pl__s num${p.scoring ? ' is-score' : ''}">${p.score.a}–${p.score.b}</span></div>`;
+  const shown = l.plays.slice(0, LIVE_SHOWN), more = l.plays.slice(LIVE_SHOWN);
+  const box = a.rows.length + b.rows.length ? boxCard([a, b], meId, myTeamId, []) : '';
+  const body = `${box}
+  <section class="fc gr" id="lv-plays">
+    <div class="gr-head"><span class="kick">Play-by-play</span><span class="gr-hint">${l.count} so far</span></div>
+    ${shown.map(row).join('') || '<p class="gr-note">Plays show here as they’re scored.</p>'}
+    ${more.length ? `<details class="lv-more" data-lv-more><summary>All ${l.count} plays</summary>${more.map(row).join('')}</details>` : ''}
+    <p class="gr-note gr-note--foot">Live and unofficial: it can still change in review. Season stats, picks and the recap come once it’s published.</p>
+  </section>`;
+  return { hero, body };
+}
+
 // Before tip-off: the game's preview. pick: the pick card while picks are open (or the pick
 // made); preview: server.js appPreview.
-export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '' }) {
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null }) {
   const w = (p.watch || []).filter(Boolean);
   // While there's a pick card it is the top of the screen (it has the matchup, day and time).
   return `${navbar(back, title)}
   ${scoreHref ? `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>` : ''}
-  ${pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
+  ${live ? `<div data-live-src="${esc(live.src)}" data-live-ws="${esc(live.ws)}">${live.parts ? `<div data-live="hero">${live.parts.hero}</div><div data-live="body">${live.parts.body}</div>` : ''}</div>` : ''}
+  ${live?.parts ? '' : pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
     <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>
     ${matchup({ a, b })}
     <p class="mut game-hero__meta">${esc(meta)}</p>
