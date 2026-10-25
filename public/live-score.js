@@ -89,10 +89,14 @@
     var teamSel = team && (team.hasAttribute('data-lv-box-btn') ? '[data-lv-box-btn="' + team.getAttribute('data-lv-box-btn') + '"]' : '[data-gr-team="' + team.getAttribute('data-gr-team') + '"]');
     var more = box.querySelector('[data-lv-more]');
     var open = more && more.open;
+    // Reading older plays in the scrolling list: stay there (new ones go in at the top).
+    var list = box.querySelector('[data-lv-scroll]');
+    var top = list ? list.scrollTop : 0;
     box.innerHTML = '';
     while (tpl.firstChild) box.appendChild(tpl.firstChild);
     if (teamSel) { var b = box.querySelector(teamSel); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); }
     if (open) { var m = box.querySelector('[data-lv-more]'); if (m) m.open = true; }
+    if (top) { var l2 = box.querySelector('[data-lv-scroll]'); if (l2) l2.scrollTop = top; }
     if (Object.keys(seen).length) {
       [].forEach.call(box.querySelectorAll('[data-lv-play]'), function (p) { if (!seen[p.getAttribute('data-lv-play')]) p.classList.add('is-new'); });
     }

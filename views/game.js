@@ -1758,11 +1758,10 @@ function liveHero(d) {
     </div>
   </section>`;
 }
-const LIVE_SHOWN = 12;
 function livePlayRow(game, p) {
   const color = p.side ? teamColor(p.side === 'a' ? game.team_a_name : game.team_b_name) : '#5b6475';
-  return `<div class="gd-pl${p.end ? ' gd-pl--end' : ''}" data-lv-play="${escHtml(p.id)}">
-      <span class="gd-pl__t">${escHtml(p.period)}${p.clock ? `<b class="font-condensed">${escHtml(p.clock)}</b>` : ''}</span>
+  return `<div class="gd-pl gd-pl--live${p.end ? ' gd-pl--end' : ''}" data-lv-play="${escHtml(p.id)}">
+      <span class="gd-pl__t font-condensed">${escHtml(p.period)}${p.clock ? ` <b>${escHtml(p.clock)}</b>` : ''}</span>
       <span class="gd-pl__dot" style="background:${p.end ? 'transparent' : color}"></span>
       <span class="gd-pl__x"><b>${escHtml(p.who)}</b>${p.what ? ` ${escHtml(p.what)}` : ''}</span>
       <span class="gd-pl__s font-condensed${p.scoring ? ' is-score' : ''}">${p.score.a}<i>–</i>${p.score.b}</span>
@@ -1775,7 +1774,6 @@ function liveBody(d) {
   const panel = (side, name) => `<div class="gd-box__panel" data-lv-box="${side}"${side === 'a' ? '' : ' hidden'}>${teamBoxScore(l[side].rows.map(asStat), name, false, [], l[side].teamTO)}</div>`;
   const btn = (side, name) => `<button type="button" class="${side === 'a' ? 'is-on' : ''}" aria-pressed="${side === 'a'}" data-lv-box-btn="${side}">${dot(name, 8)}<span class="pill-label">${escHtml(name)} · ${l.score[side]}</span></button>`;
   const hasBox = l.a.rows.length + l.b.rows.length > 0;
-  const shown = l.plays.slice(0, LIVE_SHOWN), more = l.plays.slice(LIVE_SHOWN);
   return `${hasBox ? `<section id="live-box" aria-labelledby="live-box-h">
       <div class="section-header gd-sh gd-sh--row"><h2 id="live-box-h">Box score</h2>
         <span class="gd-seg" role="group" aria-label="Team">${btn('a', na)}${btn('b', nb)}</span>
@@ -1785,8 +1783,7 @@ function liveBody(d) {
     </section>` : ''}
     <section id="live-plays" class="gd-plays-sec" aria-labelledby="live-plays-h">
       ${sh('live-plays', 'Play-by-play', { sub: `${l.count} play${l.count === 1 ? '' : 's'} so far, newest first.` })}
-      <div class="card gd-plays">${shown.map(p => livePlayRow(game, p)).join('') || '<p class="gd-empty">Plays show here as they’re scored.</p>'}</div>
-      ${more.length ? `<details class="gd-pbp" data-lv-more><summary>All ${l.count} plays</summary><div class="card gd-plays">${more.map(p => livePlayRow(game, p)).join('')}</div></details>` : ''}
+      <div class="card gd-plays gd-plays--live" data-lv-scroll>${l.plays.map(p => livePlayRow(game, p)).join('') || '<p class="gd-empty">Plays show here as they’re scored.</p>'}</div>
     </section>`;
 }
 // The two parts public/live-score.js swaps in (and gamePage puts on the page).

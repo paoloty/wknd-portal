@@ -8670,6 +8670,16 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 [data-live] .gd-pl__s:not(.is-score) { color: var(--text-subtle); }
 .gd-pl--end .gd-pl__x b { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
 .gd-pl.is-new { animation: gd-new 1.6s ease-out; }
+/* The wrappers the live script swaps add no box, so the sections keep the page's spacing. */
+.gd-page [data-live] { display: contents; }
+#live-plays { margin-top: 32px; }
+/* Live play-by-play: compact rows, every play in one list that scrolls. */
+.gd-plays--live { max-height: 520px; overflow-y: auto; overscroll-behavior: contain; padding-top: 4px; padding-bottom: 4px; }
+.gd-pl--live { grid-template-columns: 76px 12px 1fr auto; align-items: center; gap: 12px; padding: 9px 0; }
+.gd-pl--live .gd-pl__t { padding: 0; font-size: 13px; letter-spacing: .04em; white-space: nowrap; }
+.gd-pl--live .gd-pl__t b { display: inline; font-size: 15px; }
+.gd-pl--live .gd-pl__dot { margin-top: 0; }
+.gd-pl--live .gd-pl__s { font-size: 16px; }
 @keyframes gd-new { from { background: rgba(245,147,50,.14); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .gd-chip--dot::before, .gd-pl.is-new { animation: none; } }
 

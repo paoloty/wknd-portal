@@ -241,7 +241,6 @@ export function appRail({ dayLabel, cards }) {
 // The site's live view, app-styled: the score on the hero, team fouls and timeouts, the line
 // score, the box score (the finished game's own table) and the play-by-play. Unofficial till
 // published. public/live-score.js swaps both parts in as plays arrive.
-const LIVE_SHOWN = 12;
 export function appLiveParts(l, { meId = '', myTeamId = '' } = {}) {
   const side = t => ({ ...t, won: t.score >= (t === l.a ? l.b : l.a).score });
   const a = side(l.a), b = side(l.b);
@@ -258,13 +257,11 @@ export function appLiveParts(l, { meId = '', myTeamId = '' } = {}) {
       <span class="lv-pl__t">${esc(p.period)}${p.clock ? ` <small>${esc(p.clock)}</small>` : ''}</span>
       <span class="lv-pl__x">${p.end ? '' : `<span class="dot" style="--c:${esc(p.side === 'b' ? b.color : p.side === 'a' ? a.color : '#5b6475')}"></span>`}<b>${esc(p.who)}</b>${p.what ? ` ${esc(p.what)}` : ''}</span>
       <span class="lv-pl__s num${p.scoring ? ' is-score' : ''}">${p.score.a}–${p.score.b}</span></div>`;
-  const shown = l.plays.slice(0, LIVE_SHOWN), more = l.plays.slice(LIVE_SHOWN);
   const box = a.rows.length + b.rows.length ? boxCard([a, b], meId, myTeamId, []) : '';
   const body = `${box}
   <section class="fc gr" id="lv-plays">
     <div class="gr-head"><span class="kick">Play-by-play</span><span class="gr-hint">${l.count} so far</span></div>
-    ${shown.map(row).join('') || '<p class="gr-note">Plays show here as they’re scored.</p>'}
-    ${more.length ? `<details class="lv-more" data-lv-more><summary>All ${l.count} plays</summary>${more.map(row).join('')}</details>` : ''}
+    <div class="lv-scroll" data-lv-scroll>${l.plays.map(row).join('') || '<p class="gr-note">Plays show here as they’re scored.</p>'}</div>
     <p class="gr-note gr-note--foot">Live and unofficial: it can still change in review. Season stats, picks and the recap come once it’s published.</p>
   </section>`;
   return { hero, body };

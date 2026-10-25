@@ -198,7 +198,7 @@ export async function mount(el) {
     events.set(e.id, e);
     if (anchor && fields.type !== 'void') ui.after = e.id;
     G = fold();
-    if (flash && fields.player) { ui.flashN++; ui.flash = { pid: fields.player, ...flash }; }
+    if (flash && fields.player) { ui.flashN++; ui.flash = { pid: fields.player, ...flash, at: Date.now() }; }
     save().then(sync);
     return e;
   }
@@ -240,6 +240,7 @@ export async function mount(el) {
     const t = byId[pid].team, o = other(t);
     const inPenalty = G.teamFouls[t] + 1 >= rules.penaltyAt;
     add({ type: 'foul', team: t, player: pid, kind }, { flash: { text: kind === 'technical' ? 'T' : 'PF', tone: 'bad' } });
+    if (keepsClock()) ui.running = false; // a foul stops the clock
     ui.sel = null; ui.tip = '';
     const flag = G.flags[pid];
     if (flag) ui.tip = `${byId[pid].name} is ${flag}.`;
@@ -252,6 +253,7 @@ export async function mount(el) {
   }
   function teamPlay(t, type, extra = {}) {
     add({ type, team: t, ...extra });
+    if ((type === 'team_tech' || type === 'team_to') && keepsClock()) ui.running = false; // whistles stop the clock
     ui.ask = null; ui.sel = null; paint();
   }
 
@@ -325,18 +327,18 @@ export async function mount(el) {
     const r = G.rows.find(x => x.id === id); if (!r) return;
     ui.sheet = false;
     const what = playText(r).replace(/<[^>]+>/g, '');
-    const opts = [r.player && STAT_PLAYS.has(r.type) ? ['who', 'Who did it'] : null, r.player && STAT_PLAYS.has(r.type) ? ['what', 'What stat'] : null,
+    const opts = [r.player && STAT_PLAYS.has(r.type) ? ['who', 'Change player'] : null, r.player && STAT_PLAYS.has(r.type) ? ['what', 'Change stat'] : null,
       ['after', 'Add a missed play after this'], ['remove', 'Remove']].filter(Boolean);
     menu(`Fix: ${what}`, opts, k => {
       if (k === 'remove') { add({ type: 'void', target: id }); ui.tip = 'Removed. It stays on record for the review.'; return paint(); }
       if (k === 'after') { ui.after = id; ui.sel = null; ui.tip = ''; return paint(); }
       if (k === 'who') {
         const keep = { ...r };
-        return menu(`Who did it? (${what})`, [...team.a.players, ...team.b.players].filter(p => p.id !== r.player).map(p => [p.id, `${short(p.id)} · ${team[byId[p.id].team].name.slice(0, 3)}`]),
+        return menu(`Change player: ${what}`, [...team.a.players, ...team.b.players].filter(p => p.id !== r.player).map(p => [p.id, `${short(p.id)} · ${team[byId[p.id].team].name.slice(0, 3)}`]),
           pid => fix(id, { ...pick(keep), player: pid, team: byId[pid].team }, `Fixed: now ${short(pid)}.`));
       }
       if (k === 'what') {
-        return menu(`What stat? (${what})`, STATS.map(([sid, label]) => [sid, label]),
+        return menu(`Change stat: ${what}`, STATS.map(([sid, label]) => [sid, label]),
           sid => { const s = STATS.find(x => x[0] === sid); fix(id, { ...s[2], player: r.player, team: r.team }, `Fixed: now ${s[1]}.`); });
       }
     });
@@ -344,17 +346,35 @@ export async function mount(el) {
   // The type fields worth keeping when only the player changes.
   const pick = r => ({ type: r.type, pts: r.pts, made: r.made, kind: r.kind, from: r.from, ref: r.ref });
   // DNP: a late or absent player. Their first stat clears it (score-engine dnp).
+  // Several at once: a sheet of the team's players with no plays yet; tick, then Save.
+  const playedIds = () => new Set(G.rows.filter(r => r.type !== 'dnp').flatMap(r => [r.player, r.from]).filter(Boolean));
   function dnpMenu(t) {
-    const played = new Set(G.rows.filter(r => r.type !== 'dnp').flatMap(r => [r.player, r.from]).filter(Boolean));
-    const opts = team[t].players.filter(p => !played.has(p.id)).map(p => [p.id, `${short(p.id)}${G.dnp.includes(p.id) ? ' · DNP ✓' : ''}`]);
-    if (!opts.length) { ui.tip = `Everyone on ${team[t].name} has a play.`; return paint(); }
-    menu(`${team[t].name}: who didn’t play? (late or absent)`, opts, pid => {
-      const on = !G.dnp.includes(pid);
-      add({ type: 'dnp', team: t, player: pid, on });
-      ui.tip = on ? `${short(pid)}: DNP. If they come in, their first stat clears it.` : `${short(pid)} is back on the roster.`;
-      paint();
-    });
+    const played = playedIds();
+    if (!team[t].players.some(p => !played.has(p.id))) { ui.tip = `Everyone on ${team[t].name} has a play.`; return paint(); }
+    ui.dnp = { t, sel: new Set(G.dnp.filter(id => byId[id] && byId[id].team === t)) };
+    ui.ask = null; paint();
   }
+  function dnpSave() {
+    const d = ui.dnp; if (!d) return;
+    let on = 0, off = 0;
+    for (const p of team[d.t].players) {
+      const was = G.dnp.includes(p.id), want = d.sel.has(p.id);
+      if (want !== was) { add({ type: 'dnp', team: d.t, player: p.id, on: want }); want ? on++ : off++; }
+    }
+    ui.dnp = null;
+    ui.tip = on || off ? [on ? `${on} marked DNP` : '', off ? `${off} back on the roster` : ''].filter(Boolean).join(', ') + '. A DNP player’s first stat clears it.' : '';
+    paint();
+  }
+  const dnpSheet = () => {
+    const d = ui.dnp; if (!d) return '';
+    const played = playedIds();
+    const list = team[d.t].players.filter(p => !played.has(p.id));
+    return `<div class="sc-sheet" role="dialog" aria-modal="true" aria-label="${esc(team[d.t].name)}: who didn’t play"><div class="sc-sheet__in">
+      <div class="sc-sheet__h"><b>${esc(team[d.t].name)}: who didn’t play?</b><button type="button" class="sc-undo" data-act="dnp-close">Cancel</button></div>
+      <p class="sc-sheet__note">Late or absent. Players with a play already aren’t listed. If a DNP player comes in, their first stat clears it.</p>
+      <div class="sc-dnp">${list.map(p => `<button type="button" data-dnp-toggle="${esc(p.id)}" aria-pressed="${d.sel.has(p.id)}">${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}</button>`).join('')}</div>
+      <button type="button" class="sc-dnp__save" data-act="dnp-save">Save${d.sel.size ? ` · ${d.sel.size} DNP` : ''}</button></div></div>`;
+  };
   const clockMenu = () => menu('Fix the clock', [['+5', '+5 s'], ['+1', '+1 s'], ['-1', '−1 s'], ['-5', '−5 s'], ['reset', 'Period start']], k => {
     const full = (isOvertime(G.period) ? rules.otMin : rules.periodMin) * 60;
     ui.secs = k === 'reset' ? full : Math.max(0, Math.min(full, ui.secs + Number(k)));
@@ -382,7 +402,9 @@ export async function mount(el) {
       <span class="sc-ind"><span class="sc-dots" role="img" aria-label="${G.timeouts.left[t]} timeouts left">${dots(t)}</span><span>${G.timeouts.left[t]} timeout${G.timeouts.left[t] === 1 ? '' : 's'}</span></span>
     </div>`;
   const tile = id => {
-    const p = byId[id], L = G.players[id] || {}, hit = ui.flash && ui.flash.pid === id;
+    // The ring and float play once, right after the tap: a later repaint (a sync, the other
+    // scorer's play) mustn't start them again.
+    const p = byId[id], L = G.players[id] || {}, hit = ui.flash && ui.flash.pid === id && Date.now() - ui.flash.at < 900;
     const cls = ['sc-p', ui.sel === id ? 'on' : '', hit ? `ring ${ui.flash.tone} b${ui.flashN % 2} r${ui.flashN % 2}` : ''].filter(Boolean).join(' ');
     return `<button type="button" class="${cls}" style="--c:${esc(team[p.team].color)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(p.name)}${L.pf ? `, ${L.pf} fouls` : ''}">
       <b class="num">${esc(p.number || '–')}</b><span>${esc(p.short)}</span>${L.pf ? `<i class="sc-p__pf">${L.pf}F</i>` : ''}${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
@@ -394,14 +416,15 @@ export async function mount(el) {
         <p class="sc-off">${h ? `${esc(h.name)} scores ${esc(team[t].name)}. Their plays show in the log.` : `Nobody is scoring ${esc(team[t].name)} yet.`}</p></section>`;
     }
     const on = five(t);
-    const rest = team[t].players.filter(p => !on.includes(p.id));
+    const dnps = team[t].players.filter(p => G.dnp.includes(p.id));
+    const rest = team[t].players.filter(p => !on.includes(p.id) && !G.dnp.includes(p.id));
     return `<section class="sc-team" style="grid-area:${t}">
       <div class="sc-th"><span class="sc-th__n"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}</span>
         <button type="button" class="sc-tb" data-act="timeout" data-team="${t}">Timeout</button>
         <button type="button" class="sc-tb hold" data-hold="team" data-team="${t}" aria-label="${esc(team[t].name)} team turnover. Hold for more team plays">Team</button>
         <button type="button" class="sc-tb" data-act="dnp" data-team="${t}" aria-label="${esc(team[t].name)}: mark who didn’t play">DNP</button></div>
       <div class="sc-five">${on.map(tile).join('')}</div>
-      ${rest.length ? `<div class="sc-bench">${rest.map(p => { const dnp = G.dnp.includes(p.id); return `<button type="button" class="${G.flags[p.id] ? 'is-out' : ui.sel === p.id ? 'on' : dnp ? 'is-dnp' : ''}" data-pick="${esc(p.id)}"${G.flags[p.id] ? ' disabled' : ''}>${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}${G.flags[p.id] ? ` · ${G.flags[p.id]}` : dnp ? ' · DNP' : ''}</button>`; }).join('')}</div>` : ''}
+      ${rest.length || dnps.length ? `<div class="sc-bench">${rest.map(p => `<button type="button" class="${G.flags[p.id] ? 'is-out' : ui.sel === p.id ? 'on' : ''}" data-pick="${esc(p.id)}"${G.flags[p.id] ? ' disabled' : ''}>${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}${G.flags[p.id] ? ` · ${G.flags[p.id]}` : ''}</button>`).join('')}${dnps.length ? `<button type="button" class="is-dnp" data-act="dnp" data-team="${t}" aria-label="${dnps.length} didn’t play: ${esc(dnps.map(p => p.short).join(', '))}. Tap to change">DNP · ${dnps.length}</button>` : ''}</div>` : ''}
     </section>`;
   };
   const playText = r => {
@@ -425,7 +448,7 @@ export async function mount(el) {
           <div class="sc-opts">${['a', 'b', 'both'].map(l => { const h = holderOf(l); return `<button type="button" data-side="${l}" data-holder="${esc(h ? h.name : '')}">${h ? `Ask for ${esc(sideName(l))}` : `Score ${esc(sideName(l))}`}</button>`; }).join('')}${ui.lanes && ui.lanes.admin ? '<button type="button" data-act="sides">Take over…</button>' : ''}</div></div>`
       : ui.after ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>Adding after: ${playText(G.rows.find(r => r.id === ui.after) || { type: '' }).replace(/<[^>]+>/g, '')}</b><small>later scores update</small></div>
           <div class="sc-opts"><button type="button" class="def" data-act="insert-done">Done, back to the end</button></div>${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}</div>`
-      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : 'Tap a player, then the stat. Corner mark: tap for the usual, hold for more.'))}</p></div>`;
+      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : 'Tap a player, then the stat. No subs needed: every player is always tappable. Corner mark: tap for the usual, hold for more.'))}</p></div>`;
     const rows = G.rows.slice(-6).reverse();
     // Undo: this phone's own last play (with two scorers, the other phone's plays get Fix only).
     const mineRows = G.rows.filter(r => !r.dev || r.dev === deviceId);
@@ -462,12 +485,13 @@ export async function mount(el) {
             <button type="button" class="sc-st sc-st--warn hold" data-hold="to" aria-label="Turnover. Hold for the kind">TO<small>hold: kind</small></button>
             <button type="button" class="sc-st sc-st--warn hold" data-hold="pf" aria-label="Personal foul. Hold for other fouls">PF<small>hold: kind</small></button>
           </div>
-          <div class="sc-log" aria-label="Latest plays">
+        </section>
+        <section class="sc-logsec" style="grid-area:l" aria-label="Latest plays"><div class="sc-log">
             ${rows.length ? rows.map(logRow).join('') : '<p class="sc-empty">Plays show here as you tap.</p>'}
             ${G.rows.length > rows.length ? `<button type="button" class="sc-all" data-act="all">All ${G.rows.length} plays</button>` : ''}
-          </div>
-        </section>
+        </div></section>
       </div>
+      ${dnpSheet()}
       ${ui.sheet ? `<div class="sc-sheet" role="dialog" aria-modal="true" aria-label="All plays"><div class="sc-sheet__in">
         <div class="sc-sheet__h"><b>All plays · ${G.rows.length}</b><button type="button" class="sc-undo" data-act="sheet-close">Close</button></div>
         <div class="sc-log">${G.rows.slice().reverse().map(r => logRow(r, true)).join('')}</div></div></div>` : ''}`;
@@ -481,6 +505,8 @@ export async function mount(el) {
     if (name === 'end') return endPeriod();
     if (name === 'dnp') return dnpMenu(t);
     if (name === 'sides') return sideMenu();
+    if (name === 'dnp-save') return dnpSave();
+    if (name === 'dnp-close') { ui.dnp = null; return paint(); }
     if (name === 'clockset') { if (!keepsClock()) { ui.tip = `${keeper().name} keeps the clock.`; return paint(); } return clockMenu(); }
     if (name === 'all') { ui.sheet = true; return paint(); }
     if (name === 'sheet-close') { ui.sheet = false; return paint(); }
@@ -499,6 +525,7 @@ export async function mount(el) {
     if (b.hasAttribute('data-pick')) { const id = b.getAttribute('data-pick'); ui.sel = ui.sel === id ? null : id; ui.ask = ui.ask && ui.ask.kind === 'ft' ? ui.ask : null; ui.tip = ''; return paint(); }
     if (b.hasAttribute('data-ask')) return answer(b.getAttribute('data-ask'));
     if (b.hasAttribute('data-fix')) return fixMenu(b.getAttribute('data-fix'));
+    if (b.hasAttribute('data-dnp-toggle') && ui.dnp) { const id = b.getAttribute('data-dnp-toggle'); ui.dnp.sel.has(id) ? ui.dnp.sel.delete(id) : ui.dnp.sel.add(id); return paint(); }
     if (b.hasAttribute('data-side')) return pickSide(b.getAttribute('data-side'), b.getAttribute('data-holder'));
     if (b.hasAttribute('data-handover')) { const yes = b.hasAttribute('data-yes'); return lanes({ action: 'answer', from: b.getAttribute('data-handover'), yes }); }
     if (b.hasAttribute('data-undo')) { add({ type: 'void', target: b.getAttribute('data-undo') }); ui.ask = null; ui.tip = 'Undone. Removed plays stay on record for the review.'; return paint(); }
