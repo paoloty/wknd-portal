@@ -1527,7 +1527,10 @@ html.tk-lock { overflow: hidden; }
 .sc-sync.is-off { background: var(--err-bg); color: var(--on-err); }
 .sc-msg { margin: 0 12px 8px; }
 .hold { position: relative; }
-.hold::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 0; height: 0; border-style: solid; border-width: 0 0 8px 8px; border-color: transparent transparent var(--muted) transparent; }
+/* Hold for more: a small ⋯ in the corner (tap = the usual one, hold = the menu). */
+.hold::after { content: ''; position: absolute; right: 6px; top: 6px; width: 12px; height: 4px; background: currentColor; opacity: .65;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 4'%3E%3Ccircle cx='2' cy='2' r='1.6'/%3E%3Ccircle cx='6' cy='2' r='1.6'/%3E%3Ccircle cx='10' cy='2' r='1.6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 4'%3E%3Ccircle cx='2' cy='2' r='1.6'/%3E%3Ccircle cx='6' cy='2' r='1.6'/%3E%3Ccircle cx='10' cy='2' r='1.6'/%3E%3C/svg%3E") center / contain no-repeat; }
 .sc-board { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: start; margin: 0 12px; padding: 10px 12px; border-radius: var(--r-card); background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--shadow), var(--card-hi); }
 .sc-tm { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .sc-tm--b { align-items: flex-end; text-align: right; }
@@ -1613,12 +1616,11 @@ html.tk-lock { overflow: hidden; }
 .sc-pad--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .sc-pad--6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .sc-st { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); font: 700 18px/1 var(--font-num); touch-action: none; }
-.sc-st small { font: 600 11px/1 var(--font-ui); color: var(--muted); }
-.sc-st--made { background: color-mix(in srgb, var(--win) 16%, var(--surface-2)); }
-.sc-st--made small { color: var(--win); }
-.sc-st--miss { min-height: 44px; }
-.sc-st--miss small { color: var(--loss); }
-.sc-st--warn small { color: var(--amber-text); }
+/* Stat colours instead of sub-labels: made = green fill, missed = red outline (colour and shape
+   both differ), the everyday stats plain, turnovers and fouls amber. */
+.sc-st--made { background: color-mix(in srgb, var(--win) 16%, var(--surface-2)); color: var(--win); }
+.sc-st--miss { min-height: 48px; background: transparent; border: 1.5px solid color-mix(in srgb, var(--loss) 55%, transparent); color: var(--loss); }
+.sc-st--warn { color: var(--amber-text); }
 .sc-log { padding: 4px 12px; border-radius: var(--r-card); background: var(--card-bg); border: 1px solid var(--border); }
 .sc-lg { display: flex; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--hair); }
 .sc-lg:first-child { border-top: 0; }

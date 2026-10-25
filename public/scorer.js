@@ -484,7 +484,7 @@ export async function mount(el) {
           <div class="sc-opts">${['a', 'b', 'both'].map(l => { const h = holderOf(l); return `<button type="button" data-side="${l}" data-holder="${esc(h ? h.name : '')}">${h ? `Ask for ${esc(sideName(l))}` : `Score ${esc(sideName(l))}`}</button>`; }).join('')}${ui.lanes && ui.lanes.admin ? '<button type="button" data-act="sides">Take over…</button>' : ''}</div></div>`
       : ui.after ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>Adding after: ${playText(G.rows.find(r => r.id === ui.after) || { type: '' }).replace(/<[^>]+>/g, '')}</b><small>later scores update</small></div>
           <div class="sc-opts"><button type="button" class="def" data-act="insert-done">Done, back to the end</button></div>${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}</div>`
-      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : (wide.matches ? 'Tap a player, then the stat. Subs: ⇄ Sub, or drag a bench player onto a tile. A bench player’s stat brings them on too.' : 'Tap a player, then the stat. Subs: ⇄ Sub. A bench player’s stat brings them on too. Corner mark: tap for the usual, hold for more.')))}</p></div>`;
+      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : (wide.matches ? 'Tap a player, then the stat. Subs: ⇄ Sub, or drag a bench player onto a tile. A bench player’s stat brings them on too.' : 'Tap a player, then the stat. Subs: ⇄ Sub. A bench player’s stat brings them on too. Buttons with ⋯: tap for the usual, hold for more.')))}</p></div>`;
     const rows = G.rows.slice(-6).reverse();
     // Undo: this phone's own last play (with two scorers, the other phone's plays get Fix only).
     const mineRows = G.rows.filter(r => !r.dev || r.dev === deviceId);
@@ -510,16 +510,16 @@ export async function mount(el) {
         <section class="sc-center" style="grid-area:c">
           ${strip}
           <div class="sc-pad${shots.length === 3 ? ' sc-pad--3' : ''}">
-            ${shots.map(p => `<button type="button" class="sc-st sc-st--made" data-shot="${p}" data-made="1">${p === 1 ? 'FT' : p + 'PT'}<small>made</small></button>`).join('')}
-            ${shots.map(p => `<button type="button" class="sc-st sc-st--miss" data-shot="${p}">${p === 1 ? 'FT' : p + 'PT'}<small>miss</small></button>`).join('')}
+            ${shots.map(p => `<button type="button" class="sc-st sc-st--made" data-shot="${p}" data-made="1" aria-label="${p === 1 ? 'Free throw' : p + 'PT'} made">${p === 1 ? 'FT' : p + 'PT'}</button>`).join('')}
+            ${shots.map(p => `<button type="button" class="sc-st sc-st--miss" data-shot="${p}" aria-label="${p === 1 ? 'Free throw' : p + 'PT'} missed">${p === 1 ? 'FT' : p + 'PT'}</button>`).join('')}
           </div>
           <div class="sc-pad sc-pad--6">
-            <button type="button" class="sc-st" data-act="reb">REB<small>off/def auto</small></button>
-            <button type="button" class="sc-st" data-act="ast">AST<small>assist</small></button>
-            <button type="button" class="sc-st" data-act="stl">STL<small>steal</small></button>
-            <button type="button" class="sc-st" data-act="blk">BLK<small>block</small></button>
-            <button type="button" class="sc-st sc-st--warn hold" data-hold="to" aria-label="Turnover. Hold for the kind">TO<small>hold: kind</small></button>
-            <button type="button" class="sc-st sc-st--warn hold" data-hold="pf" aria-label="Personal foul. Hold for other fouls">PF<small>hold: kind</small></button>
+            <button type="button" class="sc-st" data-act="reb" aria-label="Rebound (offensive or defensive is worked out)">REB</button>
+            <button type="button" class="sc-st" data-act="ast" aria-label="Assist">AST</button>
+            <button type="button" class="sc-st" data-act="stl" aria-label="Steal">STL</button>
+            <button type="button" class="sc-st" data-act="blk" aria-label="Block">BLK</button>
+            <button type="button" class="sc-st sc-st--warn hold" data-hold="to" aria-label="Turnover. Hold for the kind">TO</button>
+            <button type="button" class="sc-st sc-st--warn hold" data-hold="pf" aria-label="Personal foul. Hold for other fouls">PF</button>
           </div>
         </section>
         <section class="sc-logsec" style="grid-area:l" aria-label="Latest plays"><div class="sc-log">
