@@ -8672,7 +8672,6 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-pl.is-new { animation: gd-new 1.6s ease-out; }
 /* The wrappers the live script swaps add no box, so the sections keep the page's spacing. */
 .gd-page [data-live] { display: contents; }
-#live-plays { margin-top: 32px; }
 /* Live play-by-play: compact rows, every play in one list that scrolls. */
 .gd-plays--live { max-height: 520px; overflow-y: auto; overscroll-behavior: contain; padding-top: 4px; padding-bottom: 4px; }
 .gd-pl--live { grid-template-columns: 76px 12px 1fr auto; align-items: center; gap: 12px; padding: 9px 0; }
