@@ -21,7 +21,10 @@
 //   foul    { kind: personal|shooting|offensive|technical|unsportsmanlike|disqualifying, fts? }
 //   team_tech { kind: coach|bench }     timeout (team)      stoppage { kind? }
 //   period_end (the period it ends)     sub { in, out }     lineup { ids }
+//   dnp     { on }  (player didn't play: a late or absent player; any stat of theirs later
+//                   clears it, so a late arrival who plays counts as played)
 //   void    { target }
+// A correction (Edit on a play) is a void plus the fixed play right where it was: correction().
 
 // WKND's rules (Paolo, 2026-10-25). A game's setup can override any of them.
 export const DEFAULT_RULES = {
@@ -50,7 +53,7 @@ const foulWindow = p => (isOvertime(p) || p === 'Q4' ? 'Q4+' : p);
 const isMiss = e => (e.type === 'shot' || e.type === 'ft') && !e.made;
 // Plays that don't change possession context: skipped when looking at "the play right before"
 // for a rebound (a block sits between the miss and the board).
-const META = new Set(['timeout', 'stoppage', 'period_end', 'sub', 'lineup', 'blk']);
+const META = new Set(['timeout', 'stoppage', 'period_end', 'sub', 'lineup', 'blk', 'dnp']);
 
 // The plays that count, in order: voided ones (and the voids) taken out.
 export function livePlays(events) {
@@ -76,7 +79,8 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
   const rows = [];           // each counted play with the running score after it
   const other = t => (t === 'a' ? 'b' : 'a');
   const bucket = (o, k) => (o[k] = o[k] || { a: 0, b: 0 });
-  const touch = (t, id) => { if (!t || !id) return; lastActive[t] = [id, ...lastActive[t].filter(x => x !== id)]; };
+  const dnp = new Set();
+  const touch = (t, id) => { if (!t || !id) return; dnp.delete(id); lastActive[t] = [id, ...lastActive[t].filter(x => x !== id)]; };
 
   plays.forEach((e, i) => {
     const t = e.team, p = e.player;
@@ -122,6 +126,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
       case 'team_tech': bucket(teamFouls, foulWindow(per))[t]++; break;
       case 'timeout': bucket(timeoutsUsed, timeoutWindow(per))[t]++; break;
       case 'period_end': periodIdx = Math.max(periodIdx, periodIndex(e.period) + 1); break;
+      case 'dnp': if (e.on === false) dnp.delete(p); else if (p) dnp.add(p); break;
       default: break;
     }
     rows.push({ ...e, ...extra, score: { a: score.a, b: score.b } });
@@ -138,7 +143,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
     if (ejected || fouledOut) flags[id] = ejected ? 'ejected' : 'fouled out';
   }
   return {
-    period, score, rows, players, flags, teamTO,
+    period, score, rows, players, flags, teamTO, dnp: [...dnp],
     byPeriod: Object.entries(byPeriod).map(([p, s]) => ({ period: p, ...s })).sort((x, y) => periodIndex(x.period) - periodIndex(y.period)),
     teamFouls: { a: fw.a, b: fw.b },
     // A team at penaltyAt - 1 fouls: its next foul gives free throws.
@@ -162,6 +167,16 @@ export function defaultFreeThrows(kind, { inPenalty = false, shotPts = 2, andOne
   return inPenalty ? 2 : 0;
 }
 
+// Fix a play: a void for the old one and the corrected play in its place (same period, clock
+// and spot in the order; later running scores update). fields: what changes (type, pts, made,
+// kind, player, team…). ids: [void id, new play id].
+export function correction(events, target, fields, ids) {
+  const { id, pos, author, ...rest } = target;
+  const play = { ...rest, ...fields, id: ids[1], pos: nextPos(events, target.id), fixes: target.id, at: Date.now() };
+  for (const k of Object.keys(play)) if (play[k] === undefined || play[k] === null) delete play[k];
+  return [{ id: ids[0], type: 'void', target: target.id, pos: play.pos, at: Date.now() }, play];
+}
+
 // Where a new play goes. Append: after the last. "Go back here": between that play and the next.
 export function nextPos(events, afterId = null) {
   const sorted = events.filter(e => e.type !== 'void').slice().sort((x, y) => x.pos - y.pos);
@@ -173,4 +188,4 @@ export function nextPos(events, afterId = null) {
 }
 
 // The players app loads this as a module script and finds it here.
-if (typeof window !== 'undefined') window.wkndScoreEngine = { DEFAULT_RULES, STAT_KEYS, foldGame, livePlays, defaultFreeThrows, nextPos, periodIndex, periodName, isOvertime };
+if (typeof window !== 'undefined') window.wkndScoreEngine = { DEFAULT_RULES, STAT_KEYS, foldGame, livePlays, defaultFreeThrows, nextPos, correction, periodIndex, periodName, isOvertime };

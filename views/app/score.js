@@ -19,8 +19,9 @@ export function appScorerPage({ bundle, back }) {
   // </script> can't appear inside the JSON (player names are escaped by JSON already, but
   // a "<" is turned into its unicode form to be safe).
   const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
-  return `<div class="sc" data-scorer data-game="${esc(bundle.game.id)}" data-api="/api/score/${esc(encodeURIComponent(bundle.game.id))}/events">
-    <div class="navbar sc-nav"><a class="navbar__back" href="${esc(back.href)}" data-sc-leave>${backChev}${esc(back.label)}</a><span class="navbar__title">${esc(bundle.a.name)} vs ${esc(bundle.b.name)}</span><span class="sc-sync" data-sc-sync role="status">Loading…</span></div>
+  const video = bundle.pass === 'video';
+  return `<div class="sc${video ? ' sc--video' : ''}" data-scorer data-game="${esc(bundle.game.id)}" data-api="/api/score/${esc(encodeURIComponent(bundle.game.id))}/events${video ? '?pass=video' : ''}">
+    <div class="navbar sc-nav"><a class="navbar__back" href="${esc(back.href)}" data-sc-leave>${backChev}${esc(back.label)}</a><span class="navbar__title">${video ? 'Video re-track · ' : ''}${esc(bundle.a.name)} vs ${esc(bundle.b.name)}</span><span class="sc-sync" data-sc-sync role="status">Loading…</span></div>
     <div class="sc-body" data-sc-root><div class="empty">Loading the scorer…</div></div>
     <script type="application/json" data-sc-bundle>${json}</script>
   </div>`;

@@ -10,7 +10,14 @@
 // Buttons with a corner mark: tap = the usual, hold = the other kinds (PF, TO, Team, Refs).
 // After some plays a question shows above the stat pad (assist?, who lost it?, free throws,
 // who shoots); answering is optional except free throws, and tapping the next player skips it.
-import { foldGame, defaultFreeThrows, nextPos, isOvertime } from './score-engine.js';
+//
+// Corrections (phase 2): every play in the log has Fix: change who did it or what stat it was
+// (a void plus the fixed play in the same spot), add a missed play after it ("Go back here":
+// new plays go in there until Done, later running scores update), or remove it. All plays
+// opens the whole log. DNP (per team): mark a late or absent player as didn't play; their
+// first stat clears it. The video pass (?pass=video, admins) is this same screen re-tracking
+// the game from the video: its own plays, an optional embedded video, never on the live score.
+import { foldGame, defaultFreeThrows, nextPos, isOvertime, correction } from './score-engine.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
@@ -46,22 +53,24 @@ export async function mount(el) {
   const byId = {};
   for (const t of ['a', 'b']) for (const p of team[t].players) byId[p.id] = { ...p, team: t };
   const published = B.status === 'published';
+  const video = B.pass === 'video';
+  const key = video ? `${gid}:video` : gid;
   // 4PT only at a court with a 4-point line (admin: the court's features); a game with no
   // court set keeps it, so nothing is ever missing.
   const shots = B.fourPoint === false ? [1, 2, 3] : [1, 2, 3, 4];
 
   // Plays: the server's, plus any this phone made that the server doesn't have yet.
-  const rec = (await store.get(gid)) || { id: gid, events: [], sent: [], secs: rules.periodMin * 60 };
+  const rec = (await store.get(key)) || { id: key, events: [], sent: [], secs: rules.periodMin * 60 };
   const events = new Map();
   for (const e of B.events) events.set(e.id, e);
   const serverIds = new Set(B.events.map(e => e.id));
   for (const e of rec.events) if (!events.has(e.id)) events.set(e.id, e);
   const sent = new Set([...rec.sent, ...serverIds]);
-  const ui = { sel: null, benchFirst: null, ask: null, tip: '', flash: null, flashN: 0, running: false, secs: rec.secs ?? rules.periodMin * 60, sync: 'idle', syncMsg: '', locked: published };
+  const ui = { sel: null, benchFirst: null, ask: null, tip: '', flash: null, flashN: 0, running: false, secs: rec.secs ?? rules.periodMin * 60, sync: 'idle', syncMsg: '', locked: published, after: null, sheet: false };
 
   const list = () => [...events.values()];
   const unsent = () => list().filter(e => !sent.has(e.id));
-  const save = () => store.put({ id: gid, events: list(), sent: [...sent], secs: ui.secs });
+  const save = () => store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs });
   const fold = () => foldGame(list(), rules, { a: team.a.players.map(p => p.id), b: team.b.players.map(p => p.id) });
   let G = fold();
   const clockStr = () => `${Math.floor(ui.secs / 60)}:${String(ui.secs % 60).padStart(2, '0')}`;
@@ -113,8 +122,14 @@ export async function mount(el) {
   // ── Making plays ──
   function add(fields, { flash } = {}) {
     if (ui.locked) { ui.tip = 'This game is published. Nothing more can be added here.'; return paint(); }
-    const e = { id: uid(), pos: nextPos(list()), at: Date.now(), period: G.period, clock: clockStr(), ...fields };
+    // Going back (ui.after): the play goes in right after that one, in its period, and the
+    // next one goes after this.
+    const anchor = ui.after && events.get(ui.after);
+    const e = anchor
+      ? { id: uid(), pos: nextPos(list(), anchor.id), at: Date.now(), period: anchor.period || G.period, clock: anchor.clock || '', ...fields }
+      : { id: uid(), pos: nextPos(list()), at: Date.now(), period: G.period, clock: clockStr(), ...fields };
     events.set(e.id, e);
+    if (anchor && fields.type !== 'void') ui.after = e.id;
     G = fold();
     if (flash && fields.player) { ui.flashN++; ui.flash = { pid: fields.player, ...flash }; }
     save().then(sync);
@@ -123,8 +138,9 @@ export async function mount(el) {
   const other = t => (t === 'a' ? 'b' : 'a');
   // The five who played last for a team, topped up from the roster.
   const five = t => {
-    const ids = G.lastActive[t].filter(id => byId[id] && !G.flags[id]);
-    for (const p of team[t].players) { if (ids.length >= 5) break; if (!ids.includes(p.id) && !G.flags[p.id]) ids.push(p.id); }
+    const out = id => G.flags[id] || G.dnp.includes(id);
+    const ids = G.lastActive[t].filter(id => byId[id] && !out(id));
+    for (const p of team[t].players) { if (ids.length >= 5) break; if (!ids.includes(p.id) && !out(p.id)) ids.push(p.id); }
     return ids.slice(0, 5);
   };
   const short = id => (byId[id] ? `${byId[id].number ? '#' + byId[id].number + ' ' : ''}${byId[id].short}` : 'Player');
@@ -223,6 +239,61 @@ export async function mount(el) {
     }, 'end');
   }
 
+  // ── Fixing plays ──
+  const STATS = [['shot2m', '2PT made', { type: 'shot', pts: 2, made: true }], ['shot2x', '2PT miss', { type: 'shot', pts: 2, made: false }],
+    ['shot3m', '3PT made', { type: 'shot', pts: 3, made: true }], ['shot3x', '3PT miss', { type: 'shot', pts: 3, made: false }],
+    ...(shots.includes(4) ? [['shot4m', '4PT made', { type: 'shot', pts: 4, made: true }], ['shot4x', '4PT miss', { type: 'shot', pts: 4, made: false }]] : []),
+    ['ftm', 'FT made', { type: 'ft', made: true }], ['ftx', 'FT miss', { type: 'ft', made: false }],
+    ['reb', 'Rebound', { type: 'reb' }], ['ast', 'Assist', { type: 'ast' }], ['stl', 'Steal', { type: 'stl' }], ['blk', 'Block', { type: 'blk' }],
+    ['to', 'Turnover', { type: 'to' }], ['foul', 'Foul', { type: 'foul', kind: 'personal' }]];
+  const STAT_PLAYS = new Set(['shot', 'ft', 'reb', 'ast', 'stl', 'blk', 'to', 'foul']);
+  function fix(id, fields, tip) {
+    const old = events.get(id); if (!old) return;
+    const [v, n] = correction(list(), old, { pts: undefined, made: undefined, kind: undefined, from: undefined, ref: undefined, ...fields }, [uid(), uid()]);
+    events.set(v.id, v); events.set(n.id, n);
+    G = fold(); save().then(sync);
+    ui.ask = null; ui.tip = tip; paint();
+  }
+  function fixMenu(id) {
+    const r = G.rows.find(x => x.id === id); if (!r) return;
+    ui.sheet = false;
+    const what = playText(r).replace(/<[^>]+>/g, '');
+    const opts = [r.player && STAT_PLAYS.has(r.type) ? ['who', 'Who did it'] : null, r.player && STAT_PLAYS.has(r.type) ? ['what', 'What stat'] : null,
+      ['after', 'Add a missed play after this'], ['remove', 'Remove']].filter(Boolean);
+    menu(`Fix: ${what}`, opts, k => {
+      if (k === 'remove') { add({ type: 'void', target: id }); ui.tip = 'Removed. It stays on record for the review.'; return paint(); }
+      if (k === 'after') { ui.after = id; ui.sel = null; ui.tip = ''; return paint(); }
+      if (k === 'who') {
+        const keep = { ...r };
+        return menu(`Who did it? (${what})`, [...team.a.players, ...team.b.players].filter(p => p.id !== r.player).map(p => [p.id, `${short(p.id)} · ${team[byId[p.id].team].name.slice(0, 3)}`]),
+          pid => fix(id, { ...pick(keep), player: pid, team: byId[pid].team }, `Fixed: now ${short(pid)}.`));
+      }
+      if (k === 'what') {
+        return menu(`What stat? (${what})`, STATS.map(([sid, label]) => [sid, label]),
+          sid => { const s = STATS.find(x => x[0] === sid); fix(id, { ...s[2], player: r.player, team: r.team }, `Fixed: now ${s[1]}.`); });
+      }
+    });
+  }
+  // The type fields worth keeping when only the player changes.
+  const pick = r => ({ type: r.type, pts: r.pts, made: r.made, kind: r.kind, from: r.from, ref: r.ref });
+  // DNP: a late or absent player. Their first stat clears it (score-engine dnp).
+  function dnpMenu(t) {
+    const played = new Set(G.rows.filter(r => r.type !== 'dnp').flatMap(r => [r.player, r.from]).filter(Boolean));
+    const opts = team[t].players.filter(p => !played.has(p.id)).map(p => [p.id, `${short(p.id)}${G.dnp.includes(p.id) ? ' · DNP ✓' : ''}`]);
+    if (!opts.length) { ui.tip = `Everyone on ${team[t].name} has a play.`; return paint(); }
+    menu(`${team[t].name}: who didn’t play? (late or absent)`, opts, pid => {
+      const on = !G.dnp.includes(pid);
+      add({ type: 'dnp', team: t, player: pid, on });
+      ui.tip = on ? `${short(pid)}: DNP. If they come in, their first stat clears it.` : `${short(pid)} is back on the roster.`;
+      paint();
+    });
+  }
+  const clockMenu = () => menu('Fix the clock', [['+5', '+5 s'], ['+1', '+1 s'], ['-1', '−1 s'], ['-5', '−5 s'], ['reset', 'Period start']], k => {
+    const full = (isOvertime(G.period) ? rules.otMin : rules.periodMin) * 60;
+    ui.secs = k === 'reset' ? full : Math.max(0, Math.min(full, ui.secs + Number(k)));
+    save(); paint();
+  });
+
   // ── Clock ──
   const tick = setInterval(() => {
     if (!ui.running) return;
@@ -255,13 +326,15 @@ export async function mount(el) {
     return `<section class="sc-team" style="grid-area:${t}">
       <div class="sc-th"><span class="sc-th__n"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}</span>
         <button type="button" class="sc-tb" data-act="timeout" data-team="${t}">Timeout</button>
-        <button type="button" class="sc-tb hold" data-hold="team" data-team="${t}" aria-label="${esc(team[t].name)} team turnover. Hold for more team plays">Team</button></div>
+        <button type="button" class="sc-tb hold" data-hold="team" data-team="${t}" aria-label="${esc(team[t].name)} team turnover. Hold for more team plays">Team</button>
+        <button type="button" class="sc-tb" data-act="dnp" data-team="${t}" aria-label="${esc(team[t].name)}: mark who didn’t play">DNP</button></div>
       <div class="sc-five">${on.map(tile).join('')}</div>
-      ${rest.length ? `<div class="sc-bench">${rest.map(p => `<button type="button" class="${G.flags[p.id] ? 'is-out' : ui.sel === p.id ? 'on' : ''}" data-pick="${esc(p.id)}"${G.flags[p.id] ? ' disabled' : ''}>${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}${G.flags[p.id] ? ` · ${G.flags[p.id]}` : ''}</button>`).join('')}</div>` : ''}
+      ${rest.length ? `<div class="sc-bench">${rest.map(p => { const dnp = G.dnp.includes(p.id); return `<button type="button" class="${G.flags[p.id] ? 'is-out' : ui.sel === p.id ? 'on' : dnp ? 'is-dnp' : ''}" data-pick="${esc(p.id)}"${G.flags[p.id] ? ' disabled' : ''}>${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}${G.flags[p.id] ? ` · ${G.flags[p.id]}` : dnp ? ' · DNP' : ''}</button>`; }).join('')}</div>` : ''}
     </section>`;
   };
   const playText = r => {
     if (r.type === 'period_end') return `<b>End of ${esc(r.period)}</b>`;
+    if (r.type === 'dnp') return `<b>${esc(short(r.player))}</b> ${r.on === false ? 'back on the roster' : 'didn’t play'}`;
     const who = r.player ? short(r.player) : r.team ? team[r.team].name : 'Refs';
     const w = { shot: `${r.pts}PT ${r.made ? 'made' : 'miss'}`, ft: `FT ${r.made ? 'made' : 'miss'}`, reb: r.off ? 'off. rebound' : 'rebound', ast: 'assist', blk: 'block', stl: `steal${r.from ? ` from ${short(r.from)}` : ''}`,
       to: `turnover${r.kind ? ` · ${r.kind}` : ''}`, foul: `${r.kind || 'personal'} foul`, team_to: `team turnover${r.kind ? ` · ${r.kind}` : ''}`, team_tech: `technical · ${r.kind || 'coach'}`,
@@ -273,18 +346,23 @@ export async function mount(el) {
     const strip = ask
       ? `<div class="sc-strip ${ask.kind === 'menu' ? 'is-menu' : 'is-ask'}" role="status"><div class="sc-strip__q"><b>${esc(ask.q)}</b>${ask.hint ? `<small>${esc(ask.hint)}</small>` : ''}</div>
           <div class="sc-opts">${ask.opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}">${esc(o.label)}</button>`).join('')}</div></div>`
+      : ui.after ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>Adding after: ${playText(G.rows.find(r => r.id === ui.after) || { type: '' }).replace(/<[^>]+>/g, '')}</b><small>later scores update</small></div>
+          <div class="sc-opts"><button type="button" class="def" data-act="insert-done">Done, back to the end</button></div>${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}</div>`
       : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : 'Tap a player, then the stat. Corner mark: tap for the usual, hold for more.'))}</p></div>`;
     const rows = G.rows.slice(-6).reverse();
+    const lastId = G.rows.length ? G.rows[G.rows.length - 1].id : '';
+    const logRow = (r, sheet = false) => `<div class="sc-lg${r.id === ui.after ? ' is-at' : ''}"><span class="sc-lg__t">${esc([r.period, r.clock].filter(Boolean).join(' '))}</span><span class="sc-lg__w">${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : ''}${playText(r)}</span><span class="sc-lg__s num">${r.score.a}–${r.score.b}</span>${ui.locked ? '' : `${r.id === lastId && !ui.after && !sheet ? `<button type="button" class="sc-undo" data-undo="${esc(r.id)}" aria-label="Undo the last play">Undo</button>` : ''}<button type="button" class="sc-undo sc-fix" data-fix="${esc(r.id)}" aria-label="Fix this play">Fix</button>`}</div>`;
     root.innerHTML = `
       ${ui.locked ? '<div class="msg msg--info sc-msg">This game is published. The scorer is read-only now.</div>' : ''}
       ${ui.sync === 'error' && ui.syncMsg ? `<div class="msg msg--err sc-msg" role="alert">${esc(ui.syncMsg)}</div>` : ''}
       <div class="sc-board">
         ${sideBoard('a')}
-        <div class="sc-clk"><span class="sc-clk__p">${esc(G.period)}</span><span class="sc-clk__t num" data-sc-clock>${clockStr()}</span>
+        <div class="sc-clk"><span class="sc-clk__p">${video ? 'Video · ' : ''}${esc(G.period)}</span><button type="button" class="sc-clk__t num" data-act="clockset" data-sc-clock aria-label="Game clock ${clockStr()}. Tap to fix it">${clockStr()}</button>
           <div class="sc-clk__row">
             <button type="button" class="sc-cb sc-cb--go" data-act="clock" aria-label="${ui.running ? 'Pause clock' : 'Start clock'}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>
             <button type="button" class="sc-cb hold" data-hold="refs" aria-label="Referees stopped play. Hold for the reason">Refs</button>
             <button type="button" class="sc-cb" data-act="end">End</button>
+            ${video && B.video ? `<button type="button" class="sc-cb${ui.showVideo ? ' is-on' : ''}" data-act="video" aria-pressed="${!!ui.showVideo}">Video</button>` : ''}
           </div></div>
         ${sideBoard('b')}
       </div>
@@ -305,10 +383,14 @@ export async function mount(el) {
             <button type="button" class="sc-st sc-st--warn hold" data-hold="pf" aria-label="Personal foul. Hold for other fouls">PF<small>hold: kind</small></button>
           </div>
           <div class="sc-log" aria-label="Latest plays">
-            ${rows.length ? rows.map(r => `<div class="sc-lg"><span class="sc-lg__t">${esc([r.period, r.clock].filter(Boolean).join(' '))}</span><span class="sc-lg__w">${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : ''}${playText(r)}</span><span class="sc-lg__s num">${r.score.a}–${r.score.b}</span>${ui.locked ? '' : `<button type="button" class="sc-undo" data-undo="${esc(r.id)}" aria-label="Undo: ${esc(r.player ? short(r.player) : '')} ${esc(r.type)}">Undo</button>`}</div>`).join('') : '<p class="sc-empty">Plays show here as you tap.</p>'}
+            ${rows.length ? rows.map(logRow).join('') : '<p class="sc-empty">Plays show here as you tap.</p>'}
+            ${G.rows.length > rows.length ? `<button type="button" class="sc-all" data-act="all">All ${G.rows.length} plays</button>` : ''}
           </div>
         </section>
-      </div>`;
+      </div>
+      ${ui.sheet ? `<div class="sc-sheet" role="dialog" aria-modal="true" aria-label="All plays"><div class="sc-sheet__in">
+        <div class="sc-sheet__h"><b>All plays · ${G.rows.length}</b><button type="button" class="sc-undo" data-act="sheet-close">Close</button></div>
+        <div class="sc-log">${G.rows.slice().reverse().map(r => logRow(r, true)).join('')}</div></div></div>` : ''}`;
     paintPill();
   }
 
@@ -317,6 +399,12 @@ export async function mount(el) {
     const t = b.getAttribute('data-team');
     if (name === 'clock') { ui.running = !ui.running; if (ui.running) ui.tip = ''; save(); return paint(); }
     if (name === 'end') return endPeriod();
+    if (name === 'dnp') return dnpMenu(t);
+    if (name === 'clockset') return clockMenu();
+    if (name === 'all') { ui.sheet = true; return paint(); }
+    if (name === 'sheet-close') { ui.sheet = false; return paint(); }
+    if (name === 'insert-done') { ui.after = null; ui.tip = 'Back at the end of the game.'; return paint(); }
+    if (name === 'video') { ui.showVideo = !ui.showVideo; showVideo(); return paint(); }
     if (name === 'timeout') return timeout(t);
     if (name === 'reb') return simple('reb', 'REB');
     if (name === 'ast') return simple('ast', 'AST');
@@ -326,9 +414,10 @@ export async function mount(el) {
   root.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     if (b.hasAttribute('data-hold')) { if (e.detail === 0) holdTap(b); return; } // keyboard: Enter = tap
-    if (ui.locked && !b.hasAttribute('data-ask')) return;
+    if (ui.locked && !b.hasAttribute('data-ask') && !/^(all|sheet-close|video)$/.test(b.getAttribute('data-act') || '')) return;
     if (b.hasAttribute('data-pick')) { const id = b.getAttribute('data-pick'); ui.sel = ui.sel === id ? null : id; ui.ask = ui.ask && ui.ask.kind === 'ft' ? ui.ask : null; ui.tip = ''; return paint(); }
     if (b.hasAttribute('data-ask')) return answer(b.getAttribute('data-ask'));
+    if (b.hasAttribute('data-fix')) return fixMenu(b.getAttribute('data-fix'));
     if (b.hasAttribute('data-undo')) { add({ type: 'void', target: b.getAttribute('data-undo') }); ui.ask = null; ui.tip = 'Undone. Removed plays stay on record for the review.'; return paint(); }
     if (b.hasAttribute('data-shot')) return shot(Number(b.getAttribute('data-shot')), b.hasAttribute('data-made'));
     if (b.hasAttribute('data-act')) return act(b.getAttribute('data-act'), b);
@@ -366,6 +455,18 @@ export async function mount(el) {
     const n = unsent().length;
     if (n && !window.confirm(`${n} play${n > 1 ? 's haven’t' : ' hasn’t'} been sent yet. ${n > 1 ? 'They stay' : 'It stays'} on this phone and ${n > 1 ? 'send' : 'sends'} next time you open this game with signal. Leave anyway?`)) e.preventDefault();
   });
+
+  // The game's video above the scorer (video pass, toggle): made once and kept outside the
+  // screen that repaints, so it doesn't reload on every tap.
+  let frame = null;
+  function showVideo() {
+    if (!frame && ui.showVideo) {
+      frame = document.createElement('div'); frame.className = 'sc-video';
+      frame.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(B.video)}?playsinline=1&rel=0" title="Game video" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+      root.parentNode.insertBefore(frame, root);
+    }
+    if (frame) frame.hidden = !ui.showVideo;
+  }
 
   paint();
   sync();

@@ -337,14 +337,31 @@ function scoringTab({ game, sc, colors }) {
   const official = sc.official || {};
   const publishForm = `<form id="scoring-publish" class="aui-stack" data-json-action="${base}/scoring/publish" data-then="${base}?tab=scoring"
         data-confirm data-confirm-title="Publish this game?" data-confirm-body="Its box score, quarter scores and play-by-play go on the site and in the app, picks settle and rating asks go out. Like an import, it shows straight away." data-confirm-send="Publish">
-      <p class="aui-muted">Scored: <b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>. Type the official score from the table to check it.</p>
+      ${sc.video ? `<div class="aui-field"><span class="aui-field__label">Publish</span>${segmented({ name: 'pass', value: sc.pass, label: 'Which track to publish', options: [['video', `Video re-track · ${sc.video.score.a}–${sc.video.score.b}`], ['live', `Live track · ${sc.liveScore.a}–${sc.liveScore.b}`]] })}</div>` : ''}
+      <p class="aui-muted">${sc.video ? 'Showing below: the' : 'Scored:'} ${sc.video ? `${sc.pass === 'video' ? 'video re-track' : 'live track'}, ` : ''}<b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>. Type the official score from the table to check it.</p>
       ${fieldGrid(`${field({ label: `Official ${game.team_a_name}`, name: 'officialA', type: 'number', value: official.a ?? '' })}${field({ label: `Official ${game.team_b_name}`, name: 'officialB', type: 'number', value: official.b ?? '' })}`)}
       <label class="aui-check"><input type="checkbox" name="anyway" value="1"> Publish even if they don’t match</label>
       <div>${button('Publish', { kind: 'primary', type: 'submit' })}</div>
     </form>`;
+  // The video re-track: an admin scores the game again from the video, from tip-off. It never
+  // shows on the live score; the compare below shows where it differs from the live track.
+  const videoHref = `${base}/score?pass=video`;
+  const videoPanel = sc.video
+    ? `<p class="aui-muted">${sc.video.count} play${sc.video.count === 1 ? '' : 's'} so far: <b>${escHtml(game.team_a_name)} ${sc.video.score.a} – ${sc.video.score.b} ${escHtml(game.team_b_name)}</b>. Live track: ${sc.liveScore.a}–${sc.liveScore.b}.</p>
+      <div>${button('Continue the re-track', { kind: 'secondary', href: videoHref })}</div>`
+    : `<p class="aui-muted">Score the game again from the video, from tip-off. It never shows on the live score. When it’s done, compare it with the live track and publish the one you trust.${sc.hasVideo ? '' : ' This game has no video link: watch it on another screen and the scorer runs its own clock.'}</p>
+      <div>${button('Start the video re-track', { kind: 'secondary', href: videoHref })}</div>`;
+  const KEYS = ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PF', '3PM', 'FTM'];
+  const compare = sc.video ? (sc.compare.length
+    ? `<div class="aui-table-wrap"><table class="aui-table"><thead><tr><th>Player</th>${KEYS.map(k => `<th>${k}</th>`).join('')}</tr></thead><tbody>
+      ${sc.compare.map(r => `<tr><td><span class="aui-dot" style="background:${attr(colors[r.team] || '')}"></span>${escHtml(r.name)}</td>${KEYS.map(k => { const d = r.diffs.find(x => x.label === k); return `<td>${d ? `${d.live} → <b>${d.video}</b>` : ''}</td>`; }).join('')}</tr>`).join('')}
+      </tbody></table></div><p class="aui-muted">Live → video. Only the numbers that differ.</p>`
+    : `<div class="aui-panel"><p class="aui-muted">Every player’s line is the same in both tracks.</p></div>`) : '';
   return `${section({ title: 'Scoring', note: `· ${statusLine}`, asideHtml: open, bodyHtml: `<div class="aui-panel">${scorerForm}</div>` })}
+    ${sc.plays.length || sc.video ? section({ title: 'Video re-track', bodyHtml: `<div class="aui-panel aui-stack">${videoPanel}</div>` }) : ''}
+    ${sc.video ? section({ title: 'Live vs video', note: `· ${sc.compare.length} player${sc.compare.length === 1 ? '' : 's'} differ`, bodyHtml: compare }) : ''}
     ${sc.plays.length ? section({ title: 'Quick review', note: '· check the plays, then publish', bodyHtml: `<div class="aui-panel">${publishForm}</div>` }) : ''}
-    ${sc.plays.length ? section({ title: 'Plays', note: `· ${sc.plays.length}, newest first`, bodyHtml: playsGrid(sc, base, true) }) : ''}
+    ${sc.plays.length ? section({ title: 'Plays', note: `· ${sc.video ? (sc.pass === 'video' ? 'video re-track, ' : 'live track, ') : ''}${sc.plays.length}, newest first`, asideHtml: button('Fix plays in the scorer', { kind: 'ghost', size: 'sm', href: sc.pass === 'video' ? videoHref : `${base}/score` }), bodyHtml: playsGrid(sc, base, true) }) : ''}
     ${sc.plays.length ? section({ title: 'Who didn’t play', bodyHtml: `<div class="aui-panel">${dnpForm}</div>` }) : ''}`;
 }
 function playsGrid(sc, base, editable) {
@@ -356,7 +373,7 @@ function playsGrid(sc, base, editable) {
       { key: 'text', label: 'Play', primary: true, cell: r => escHtml(r.text) },
       { key: 'score', label: 'Score', num: true, cell: r => escHtml(r.score) },
     ],
-    rowMenu: editable ? r => [{ label: 'Remove play…', danger: true, post: `${base}/scoring/void`, body: { eventId: r.id }, then: `${base}?tab=scoring`, done: 'Play removed.',
+    rowMenu: editable ? r => [{ label: 'Remove play…', danger: true, post: `${base}/scoring/void`, body: { eventId: r.id, pass: sc.pass }, then: `${base}?tab=scoring`, done: 'Play removed.',
       confirm: { title: 'Remove this play?', body: `${r.text}. The scores after it update. A removed play stays on record.`, send: 'Remove' } }] : null,
     empty: { title: 'No plays yet', sub: 'They show here as the scorer taps.' },
   });

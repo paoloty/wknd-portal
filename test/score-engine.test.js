@@ -114,3 +114,27 @@ test('"Go back here": a play slotted in earlier re-scores the plays after it', (
   assert.deepEqual(livePlays([a, b, ins]).map(e => e.id), [a.id, 'ins', b.id]);
   assert.deepEqual(g.rows[2].score, { a: 4, b: 3 });
 });
+
+test('DNP: marked players are listed until their first stat clears it', () => {
+  const g = foldGame([P('dnp', { player: 'late' }), P('dnp', { player: 'gone' }), P('shot', { player: 'late', pts: 2, made: true })]);
+  assert.deepEqual(g.dnp, ['gone']);
+  const back = foldGame([P('dnp', { player: 'x' }), P('dnp', { player: 'x', on: false })]);
+  assert.deepEqual(back.dnp, []);
+});
+
+test('correction: the fixed play takes the old one\'s place and later scores follow', async () => {
+  const { correction } = await import('../public/score-engine.js');
+  const a = P('shot', { player: 'x', pts: 2, made: true });
+  const b = P('shot', { team: 'b', player: 'y', pts: 3, made: true });
+  const evs = [a, b];
+  const fixed = correction(evs, a, { player: 'z', pts: 3 }, ['v1', 'n1']);
+  const g = foldGame([...evs, ...fixed]);
+  assert.equal(g.players.x, undefined); // the old play is gone, so x has no line at all
+  assert.equal(g.players.z.pts, 3);
+  assert.deepEqual(g.rows.map(r => r.id), ['n1', b.id]);
+  assert.deepEqual(g.rows[0].score, { a: 3, b: 0 });
+  // A stat change drops the old type's fields.
+  const toReb = correction(evs, a, { type: 'reb', pts: undefined, made: undefined }, ['v2', 'n2']);
+  assert.equal(toReb[1].pts, undefined);
+  assert.equal(foldGame([...evs, ...toReb]).players.x.reb, 1);
+});

@@ -1624,6 +1624,21 @@ html.tk-lock { overflow: hidden; }
 .sc-lg__s { font: 600 13px/1 var(--font-num); color: var(--muted); }
 .sc-undo { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--hair); color: var(--amber-text); font-size: 12px; font-weight: 600; line-height: 1; position: relative; }
 .sc-undo::before { content: ''; position: absolute; inset: -4px 0; }
+/* Phase 2: Fix on every play, All plays sheet, add-after marker, DNP chips, clock fix, video */
+.sc-lg .sc-undo + .sc-fix { margin-left: -2px; }
+.sc-fix { color: var(--text); }
+.sc-lg.is-at { box-shadow: inset 3px 0 0 var(--amber); padding-left: 8px; }
+.sc-all { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; border-top: 1px solid var(--hair); color: var(--amber-text); font-size: 14px; font-weight: 600; line-height: 1; }
+.sc-sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.55); }
+.sc-sheet__in { width: 100%; max-width: 640px; max-height: 85vh; overflow-y: auto; padding: 12px 12px calc(12px + var(--safe-b)); border-radius: var(--r-card) var(--r-card) 0 0; background: var(--bg); }
+.sc-sheet__h { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin-bottom: 8px; font-size: 15px; }
+.sc-sheet__h b { font-weight: 600; }
+.sc-bench button.is-dnp { color: var(--muted); border-style: dashed; }
+button.sc-clk__t { background: none; border: 0; padding: 0 4px; color: inherit; min-height: 44px; }
+.sc-cb.is-on { border-color: var(--amber); color: var(--amber-text); }
+.sc-video { margin: 0 0 10px; aspect-ratio: 16 / 9; border-radius: var(--r-in); overflow: hidden; background: #000; }
+.sc-video iframe { width: 100%; height: 100%; border: 0; display: block; }
+.sc--video .sc-clk__p { color: var(--amber-text); }
 .sc-empty { margin: 12px 0; font-size: 13px; color: var(--muted); }
 /* Test server mode (views/app/layout.js test): an amber pill so a test install is never mistaken for the real app. */
 .test-pill { position: fixed; bottom: calc(var(--tabbar-h) + var(--safe-b) + 8px); left: 50%; transform: translateX(-50%); z-index: 200; max-width: calc(100% - 120px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border-radius: 999px; background: var(--warn-bg); color: var(--on-warn); font: 700 11px/1.2 var(--font-num); letter-spacing: .06em; text-transform: uppercase; pointer-events: none; }
