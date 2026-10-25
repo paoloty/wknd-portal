@@ -3115,6 +3115,19 @@ app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css',
   res.type('text/css').send(minified);
 });
 
+// The scorer screen imports the scoring engine. The import carries the app version, so a
+// phone that keeps its scripts for offline use never pairs a new scorer with an old engine
+// (that crashed the screen on "Loading the scorer"). Read once per start, like APP_VER.
+let scorerSrc = null;
+app.get('/scorer.js', (req, res) => {
+  if (scorerSrc == null) {
+    try { scorerSrc = readFileSync(path.join(__dirname, 'public/scorer.js'), 'utf8').replace(/from '\.\/score-engine\.js'/, `from './score-engine.js?v=${APP_VER}'`); }
+    catch { return res.status(404).end(); }
+  }
+  res.set('Cache-Control', 'public, max-age=604800');
+  res.type('application/javascript').send(scorerSrc);
+});
+
 // Everything else in public/: a week in the browser cache. Font files never change under
 // the same name (they're Google's content-hashed filenames), so those get a year.
 app.use(express.static(path.join(__dirname, 'public'), {
