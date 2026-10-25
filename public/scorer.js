@@ -39,10 +39,14 @@ const store = (() => {
     r.onupgradeneeded = () => r.result.createObjectStore('games', { keyPath: 'id' });
     r.onsuccess = () => ok(r.result);
     r.onerror = () => no(r.error);
+    r.onblocked = () => no(new Error('storage blocked'));
   }));
+  // The phone's storage can, rarely, never answer (seen on iPhones): give it 3 s, then go on
+  // without the phone's copy (the server's plays still load, and saving retries next time).
+  const within = (pr, fallback) => Promise.race([pr, new Promise(ok => setTimeout(() => { dbp = null; ok(fallback); }, 3000))]);
   return {
-    get: id => open().then(db => new Promise((ok, no) => { const q = db.transaction('games').objectStore('games').get(id); q.onsuccess = () => ok(q.result || null); q.onerror = () => no(q.error); })).catch(() => null),
-    put: rec => open().then(db => new Promise((ok, no) => { const tx = db.transaction('games', 'readwrite'); tx.objectStore('games').put(rec); tx.oncomplete = () => ok(true); tx.onerror = () => no(tx.error); })).catch(() => false),
+    get: id => within(open().then(db => new Promise((ok, no) => { const q = db.transaction('games').objectStore('games').get(id); q.onsuccess = () => ok(q.result || null); q.onerror = () => no(q.error); })).catch(() => null), null),
+    put: rec => within(open().then(db => new Promise((ok, no) => { const tx = db.transaction('games', 'readwrite'); tx.objectStore('games').put(rec); tx.oncomplete = () => ok(true); tx.onerror = () => no(tx.error); })).catch(() => false), false),
   };
 })();
 const deviceId = (() => { try { let d = localStorage.getItem('wknd-device'); if (!d) { d = uid(); localStorage.setItem('wknd-device', d); } return d; } catch (e) { return 'unknown'; } })();

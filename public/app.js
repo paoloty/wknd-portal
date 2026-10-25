@@ -274,15 +274,24 @@
     var el = $('[data-scorer]');
     if (!el || el._scLoading) return;
     el._scLoading = true;
-    var go = function () { window.wkndScorer.mount(el); };
+    // Never hang on "Loading the scorer": an error shows itself (with Reload), and so does a
+    // load that's still going after 10 s.
+    var fail = function (why) {
+      var r = $('[data-sc-root]', el);
+      if (!r || $('.sc-board', r)) return;
+      r.innerHTML = '<div class="msg msg--err" role="alert">The scorer didn\'t open' + (why ? ': <b>' + String(why).replace(/[<>&]/g, '') + '</b>' : '.') + '</div>'
+        + '<p class="foot-note" style="margin:10px 16px">Your plays are safe on this phone. Reload to try again; if it keeps happening, send Paolo a screenshot of this.</p>'
+        + '<div style="margin:0 16px"><button type="button" class="btn" onclick="location.reload()">Reload</button></div>';
+    };
+    setTimeout(function () { if (document.contains(el) && !$('.sc-board', el)) fail('still loading after 10 seconds'); }, 10000);
+    var go = function () {
+      try { var p = window.wkndScorer.mount(el); if (p && p.catch) p.catch(function (e) { fail(e && e.message); }); }
+      catch (e) { fail(e && e.message); }
+    };
     if (window.wkndScorer) return go();
     var s = document.createElement('script'); s.type = 'module'; s.src = '/scorer.js?v=' + ver;
     s.onload = go;
-    s.onerror = function () {
-      el._scLoading = false;
-      var r = $('[data-sc-root]', el);
-      if (r) r.innerHTML = '<div class="msg msg--err" role="alert">The scorer didn\'t load. Check your connection and open the game again.</div>';
-    };
+    s.onerror = function () { el._scLoading = false; fail('the scorer file didn’t download (connection?)'); };
     document.head.appendChild(s);
   }
   // A game being scored (views/app/feed.js appLiveParts): public/live-score.js keeps it fresh,
