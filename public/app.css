@@ -1702,16 +1702,38 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-pop b { color: var(--text); font-size: 22px; }
 .sc-pop .dim { opacity: .5; }
 /* A player's line: every number on its own tile, the shooting splits the same way under it */
-.sc-pop--p { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 16px; text-align: left; }
-.sc-pop__who { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; font: 400 13px/1.2 var(--font-ui); }
-.sc-pop__who b { font: 600 17px/1.2 var(--font-ui); color: var(--text); }
+/* One rhythm on the hold card: 14px around the card, between its blocks and inside the header strip */
+.sc-pop--p { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; text-align: left; }
+.sc-pc { position: relative; display: flex; align-items: center; gap: 12px; margin: 0; padding: 14px; border-radius: var(--r-in); background: linear-gradient(90deg, rgba(245,147,50,.12), rgba(245,147,50,0) 80%); border: 1px solid rgba(245,147,50,.2); }
+.sc-pc__avw { position: relative; flex: none; }
+.sc-pc__star { position: absolute; right: -2px; bottom: -2px; width: 22px; height: 22px; border-radius: 50%; background: var(--amber); color: #111; font-style: normal; font-size: 13px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface-2); }
+.sc-pc__av.avatar { width: 56px; height: 56px; flex: none; font-size: 18px; }
+.sc-pc__who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sc-pc__who small { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-pc__who b { font: 600 17px/1.2 var(--font-ui); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-pc__fouls { display: flex; gap: 4px; }
+.sc-pc__fouls i { width: 14px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--text) 14%, transparent); }
+.sc-pc__fouls i.on { background: var(--muted); }
+.sc-pc__fouls.w i.on { background: var(--text); }
+.sc-pc__fouls.d i.on { background: var(--loss); }
+.sc-pc__last { display: flex; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px solid var(--hair); font: 400 13px/1.3 var(--font-ui); color: var(--muted); }
+.sc-pc__last .num { font-family: var(--font-num); font-weight: 600; }
+.sc-pc__last .sc-lb { min-height: 36px; margin: -8px -8px -8px 0; }
+.sc-pc__last > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-pc__pts { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.sc-pc__pts b { font: 800 40px/0.9 var(--font-num); color: var(--text); }
+.sc-pc__pts small { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--muted); }
 .sc-pop__line { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; text-align: center; }
 .sc-pop__line--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.sc-pop__line span { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 64px; border-radius: var(--r-in); background: var(--bg); }
+/* Simple numbers: green = a good stat, red = turnovers and fouls, grey = none yet */
+.sc-pop__line span { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.sc-pop__line--3 { padding-top: 14px; border-top: 1px solid var(--hair); }
 .sc-pop__line b { display: block; font: 700 26px/1 var(--font-num); color: var(--text); }
 .sc-pop__line--3 b { font-size: 22px; }
 .sc-pop__line small { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--muted); }
-.sc-pop__line span.w b { color: var(--text); } .sc-pop__line span.d b { color: var(--loss); }
+.sc-pop__line span.pos b, .sc-pc__pts.pos b { color: var(--win); }
+.sc-pop__line span.neg b { color: var(--loss); }
+.sc-pop__line span.zero b { color: var(--muted); }
 
 /* The Scoresheet: a sheet on a phone, docked on a tablet. */
 .sc-sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.55); }

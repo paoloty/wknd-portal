@@ -3159,3 +3159,19 @@ select.aui-input { padding-left: 9px; }
 .pv-rot__val { font: 600 13px 'Saira Condensed', sans-serif; min-width: 44px; text-align: right; color: var(--amber); }
 [data-pv-straighten].is-set, [data-pv-straighten][aria-pressed="true"] { color: var(--amber) !important; }
 .pv-tools__row .aui-btn { padding-left: 6px; padding-right: 6px; }
+
+/* Scoring tab · Review card (views/admin/game.js reviewSection): who's reviewing, a progress
+   bar over the steps, the reviewer's / others' actions, Visible to everyone. */
+.agd-rv p { margin: 0; }
+.agd-rv__steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.agd-rv__step { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.1); font-size: 12px; font-weight: 600; line-height: 1; color: var(--text-muted); }
+.agd-rv__step.is-done { color: var(--text); border-color: transparent; background: rgba(52,211,153,.14); }
+.agd-rv__step.is-part { color: var(--text); border-color: rgba(245,147,50,.45); }
+.agd-rv__acts { display: flex; flex-direction: column; gap: 10px; }
+.agd-rv__acts > div, .agd-rv__acts { align-items: flex-start; }
+.agd-rv__hand { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.agd-rv__hand .aui-field { min-width: 200px; margin: 0; }
+/* Games list: a review under way (who, how far) under the Status badge */
+.agl-rv { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.agl-rv__bar { width: 48px; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.agl-rv__bar i { display: block; height: 100%; background: var(--amber); }

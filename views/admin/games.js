@@ -57,7 +57,7 @@ function checksCell(g) {
   return missing.length ? `<span class="agl-missing">No ${escHtml(missing.join(', ').replace('Player of the game', 'POTG'))}</span>` : '<span class="agl-done">✓ All set</span>';
 }
 
-export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, pickCounts = {}, query = {}, courts = [] }) {
+export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, pickCounts = {}, reviews = {}, query = {}, courts = [] }) {
   const colorOf = Object.fromEntries(teams.map(t => [t.id, t.color || '']));
   const nameColor = Object.fromEntries(teams.map(t => [String(t.name).toUpperCase(), t.color || '']));
   const colors = g => ({ a: colorOf[g.team_a_id] || nameColor[String(g.team_a_name).toUpperCase()] || '', b: colorOf[g.team_b_id] || nameColor[String(g.team_b_name).toUpperCase()] || '' });
@@ -95,7 +95,8 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
       { key: 'status', label: 'Status', bare: true, sort: g => gameState(g), cell: g => {
         const st = gameState(g);
         const fin = st === 'upcoming' ? button('Final score', { kind: 'secondary', size: 'sm', attrs: `data-final-open="${attr(g.id)}" data-a="${attr(g.team_a_name)}" data-b="${attr(g.team_b_name)}"` }) : '';
-        return `<span class="aui-cell__badges">${st === 'live' ? '' : badge(...STATE_BADGE[st])}${fin}</span>`;
+        const rv = reviews[g.id];
+        return `<span class="aui-cell__badges">${st === 'live' ? '' : badge(...STATE_BADGE[st])}${fin}</span>${rv ? `<div class="agl-rv" title="${attr(`${rv.name} is reviewing · ${rv.pct}%`)}"><span class="agl-rv__bar"><i style="width:${Math.max(4, rv.pct)}%"></i></span>${escHtml(rv.name.split(' ')[0])} · ${rv.pct}%</div>` : ''}`;
       } },
       { key: 'content', label: 'Content', bare: true, sort: g => -missingCount(g), cell: checksCell },
       { key: 'picks', label: 'Picks', num: true, phone: false, sort: g => pickCounts[g.id] || 0, cell: g => (pickCounts[g.id] ? String(pickCounts[g.id]) : '<span class="aui-muted">—</span>') },

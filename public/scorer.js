@@ -697,6 +697,20 @@ export async function mount(el) {
   const sheetBody = tab => (tab === 'plays' ? playsTab() : tab === 'fouls' ? foulsTab() : boxTab());
   const sheetTabs = (tab, attr) => `<div class="sc-stabs" role="tablist" aria-label="Scoresheet">${TABS.map(([k, l]) => `<button type="button" role="tab" class="sc-stab${tab === k ? ' on' : ''}" aria-selected="${tab === k}" ${attr}="${k}">${l}</button>`).join('')}</div>`;
 
+  // The player of the game so far: the site's rating (server.js derivePotgPlayerId), winning
+  // team only; nobody while it's tied.
+  function potgLeader() {
+    if (G.score.a === G.score.b) return null;
+    const win = G.score.a > G.score.b ? 'a' : 'b';
+    let best = null, bestV = -Infinity;
+    for (const [id, L] of Object.entries(G.players)) {
+      if (!byId[id] || byId[id].team !== win) continue;
+      const z = k => L[k] || 0, fgm = z('fg2m') + z('fg3m') + z('fg4m'), fga = fgm + z('fg2m_miss') + z('fg3m_miss') + z('fg4m_miss');
+      const v = z('pts') + 0.4 * fgm - 0.7 * fga - 0.4 * z('ft_miss') + 0.7 * z('reb') + z('stl') + 0.7 * z('ast') + 0.7 * z('blk') - 0.4 * z('pf') - z('turnover');
+      if (v > bestV) { bestV = v; best = id; }
+    }
+    return best;
+  }
   // Hold popovers: the score by quarter, a player's line.
   function peek() {
     if (!ui.peek) return '';
@@ -709,13 +723,27 @@ export async function mount(el) {
         ${['a', 'b'].map(t => `<span class="sc-pop__t"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}</span>${per.map(p => `<span class="num${p[t] == null ? ' dim' : ''}">${p[t] == null ? '–' : p[t]}</span>`).join('')}<b class="num">${G.score[t]}</b>`).join('')}
       </div></div>`;
     }
+    // A player's line, in the player of the game card's look: their photo on a team ring,
+    // points big, then every number on its own tile.
     const p = byId[ui.peek]; if (!p) return '';
     const L = G.players[p.id] || {}, z = k => L[k] || 0;
     const m = z('fg2m') + z('fg3m') + z('fg4m'), a = m + z('fg2m_miss') + z('fg3m_miss') + z('fg4m_miss');
+    const ini = String(p.name || p.short).split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    // Fouls on a strip of pips (red in foul trouble for the quarter), and their last play
+    // with Fix: a scorer often holds a player because they're unsure what they just gave them.
+    const tr = trouble(z('pf'));
+    let lastP = null;
+    for (let i = G.rows.length - 1; i >= 0 && !lastP; i--) { const r = G.rows[i]; if (r.player === p.id || r.in === p.id) lastP = r; }
     return `<div class="sc-peek" data-act="peek-close"><div class="sc-pop sc-pop--p" role="dialog" aria-label="${esc(short(p.id))}, this game">
-      <div class="sc-pop__who"><b>${esc(short(p.id))}</b><span>${esc(team[p.team].name)} · ${onCourt(p.team, p.id) ? 'on court' : 'bench'}</span></div>
-      <div class="sc-pop__line">${[['PTS', z('pts')], ['REB', z('reb')], ['AST', z('ast')], ['STL', z('stl')], ['TO', z('turnover')], ['PF', z('pf')]].map(([k, v]) => `<span${k === 'PF' && trouble(v) ? ` class="${trouble(v)}"` : ''}><b class="num">${v}</b><small class="num">${k}</small></span>`).join('')}</div>
-      <div class="sc-pop__line sc-pop__line--3">${[['FG', `${m}-${a}`], ['3PT', `${z('fg3m')}-${z('fg3m') + z('fg3m_miss')}`], ['FT', `${z('ftm')}-${z('ftm') + z('ft_miss')}`]].map(([k, v]) => `<span><b class="num">${v}</b><small class="num">${k}</small></span>`).join('')}</div>
+      <div class="sc-pc">
+        <span class="sc-pc__avw"><span class="avatar sc-pc__av" style="--ring:${esc(team[p.team].color)}">${esc(ini)}${p.photo ? `<img src="${esc(p.photo)}" alt="" onerror="this.remove()">` : ''}</span>${potgLeader() === p.id ? '<i class="sc-pc__star" aria-label="Player of the game so far">★</i>' : ''}</span>
+        <span class="sc-pc__who"><small class="num">${p.number ? `#${esc(p.number)} · ` : ''}${esc(team[p.team].name)} · ${onCourt(p.team, p.id) ? 'on court' : 'bench'}</small><b>${esc(p.name)}</b>
+          <span class="sc-pc__fouls ${tr}" role="img" aria-label="${z('pf')} of ${rules.foulOut} fouls${tr === 'd' ? ', in foul trouble' : ''}">${Array.from({ length: rules.foulOut }, (_, i) => `<i class="${i < z('pf') ? 'on' : ''}"></i>`).join('')}</span></span>
+        <span class="sc-pc__pts${z('pts') ? ' pos' : ''}"><b class="num">${z('pts')}</b><small class="num">PTS</small></span>
+      </div>
+      <div class="sc-pop__line">${[['REB', z('reb'), 'pos'], ['AST', z('ast'), 'pos'], ['STL', z('stl'), 'pos'], ['BLK', z('blk'), 'pos'], ['TO', z('turnover'), 'neg'], ['PF', z('pf'), 'neg']].map(([k, v, t]) => `<span class="${v ? t : 'zero'}"><b class="num">${v}</b><small class="num">${k}</small></span>`).join('')}</div>
+      <div class="sc-pop__line sc-pop__line--3">${[['FG', m, a], ['3PT', z('fg3m'), z('fg3m') + z('fg3m_miss')], ['FT', z('ftm'), z('ftm') + z('ft_miss')]].map(([k, made, att]) => `<span><b class="num">${made}-${att}</b><small class="num">${k}${att ? ` · ${Math.round((made / att) * 100)}%` : ''}</small></span>`).join('')}</div>
+      ${lastP ? `<div class="sc-pc__last"><span>Last: ${playText(lastP).replace(/<b>[^<]*<\/b>\s*/, '')}${lastP.period ? ` <span class="num">· ${esc(lastP.period)}${lastP.clock ? ' ' + esc(lastP.clock) : ''}</span>` : ''}</span>${ui.locked ? '' : `<button type="button" class="sc-lb" data-fix="${esc(lastP.id)}">Fix</button>`}</div>` : ''}
     </div></div>`;
   }
 
@@ -927,6 +955,9 @@ export async function mount(el) {
 
   paint();
   sync();
+  // The players' photos (the hold card) come from the app's image cache at the court: fetch
+  // them once now, while there's signal.
+  if (navigator.onLine) setTimeout(() => { for (const p of [...team.a.players, ...team.b.players]) if (p.photo) fetch(p.photo, { credentials: 'same-origin' }).catch(() => {}); }, 1500);
   if (multi) { listen(); if (ui.lane) lanes(); else lanes({ action: 'claim', want: 'both' }); }
 }
 

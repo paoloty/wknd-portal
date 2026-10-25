@@ -6880,7 +6880,7 @@ function scoreBundle(game, pass = 'live') {
     id: tid, name, color: teamColorById(teams, tid),
     players: all.filter(p => p.team_id === tid && p.status !== 'inactive')
       // short: the whole surname ("DEL ROSARIO", not "ROSARIO") for the scorer's tiles
-      .map(p => { const n = displayPlayerName(p.name || ''); const raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), number: String(p.number ?? ''), pos: Array.isArray(p.positions) ? p.positions : [] }; })
+      .map(p => { const n = displayPlayerName(p.name || ''); const raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), number: String(p.number ?? ''), pos: Array.isArray(p.positions) ? p.positions : [] }; })
       .sort((x, y) => (Number(x.number) || 999) - (Number(y.number) || 999) || x.name.localeCompare(y.name)),
   });
   return {
@@ -6970,6 +6970,10 @@ const sendScorer = (req, res, back) => {
   const access = scoreAccess(req, game.id), pass = scorePass(req);
   if (!access) return res.status(403).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Only the scorers an admin picked for this game can score it.</div>' }));
   if (pass === 'video' && access !== 'admin') return res.status(403).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Only admins re-track a game from the video.</div>' }));
+  if (pass === 'video' && getScoreGame(game.id)) {
+    const gate = reviewGate(req, game, 'video');
+    if (gate) return res.status(423).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(gate)}</div>` }));
+  }
   if (!getScoreGame(game.id)) return res.status(404).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Scoring isn’t turned on for this game yet. An admin turns it on from the game’s Scoring tab.</div>' }));
   res.set('Cache-Control', 'private, no-store');
   sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle: scoreBundle(game, pass), back }) });
@@ -7019,6 +7023,7 @@ app.post('/api/score/:id/lanes', express.json(), (req, res) => {
   const myLane = ['a', 'b', 'both'].includes(b.lane) ? b.lane : null;
   const clock = b.clock && Number.isFinite(Number(b.clock.secs)) ? { secs: Number(b.clock.secs), running: !!b.clock.running, period: String(b.clock.period || '').slice(0, 4) } : null;
   const view = scoreLanes.ping(game.id, who, { lane: b.action ? undefined : myLane, clock });
+  if (clock && clock.running) bellGameStarted(game);
   res.set('Cache-Control', 'private, no-store');
   res.json({ ...result, ...view, admin: access === 'admin', now: Date.now() });
 });
@@ -7040,7 +7045,9 @@ app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => 
   const okPlayer = id => id == null || roster.has(String(id));
   const events = raw.filter(e => e && typeof e.id === 'string' && e.id.length <= 64 && SCORE_TYPES.has(e.type) && Number.isFinite(Number(e.pos))
     && (e.team == null || e.team === 'a' || e.team === 'b') && okPlayer(e.player) && okPlayer(e.from) && okPlayer(e.in) && okPlayer(e.out));
+  if (pass === 'video') { const gate = reviewGate(req, game, 'video'); if (gate) return res.status(423).json({ error: gate }); }
   const added = addScoreEvents(game.id, events, { pass, authorId: req.session.playerPlayerId || 'admin', deviceId: String(req.body?.device || '').slice(0, 64) || null });
+  if (added && pass === 'live') bellGameStarted(game);
   if (added && pass === 'live' && sg.status === 'setup') saveScoreGame(game.id, { status: 'live' });
   if (added && pass === 'live') liveChanged(game.id);
   if (events.length < raw.length) console.warn(`[scorer] game=${game.id} rejected ${raw.length - events.length} play(s) that didn't fit`);
@@ -7073,8 +7080,10 @@ app.post('/admin/games/:id/scoring', requireAuth, express.json(), (req, res) => 
 // Admin quick review: take a play out (a void play, like a scorer's Undo), or mark who didn't play.
 app.post('/admin/games/:id/scoring/void', requireAuth, express.json(), (req, res) => {
   const game = getGameById(req.params.id);
-  const sg = game && getScoreGame(game.id);
-  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  if (!game || !getScoreGame(game.id)) return res.status(404).json({ error: 'Not found.' });
+  const gate = reviewGate(req, game, scorePass(req) === 'video' ? 'video' : 'plays');
+  if (gate) return res.status(423).json({ error: gate });
+  const sg = getScoreGame(game.id);
   if (sg.status === 'published') return res.status(409).json({ error: 'Already published.' });
   const target = String(req.body?.eventId || ''), pass = scorePass(req);
   if (!getScoreEvents(game.id, pass).some(e => e.id === target)) return res.status(404).json({ error: 'That play isn’t there any more.' });
@@ -7084,10 +7093,12 @@ app.post('/admin/games/:id/scoring/void', requireAuth, express.json(), (req, res
 });
 app.post('/admin/games/:id/scoring/dnp', requireAuth, express.json(), (req, res) => {
   const game = getGameById(req.params.id);
-  const sg = game && getScoreGame(game.id);
-  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  if (!game || !getScoreGame(game.id)) return res.status(404).json({ error: 'Not found.' });
+  const gate = reviewGate(req, game);
+  if (gate) return res.status(423).json({ error: gate });
+  const sg = getScoreGame(game.id);
   const dnp = [].concat(req.body?.dnp || []).map(String).filter(Boolean);
-  saveScoreGame(game.id, { settings: { ...sg.settings, dnp } });
+  saveScoreGame(game.id, { settings: { ...sg.settings, dnp, dnpSaved: true } });
   res.json({ ok: true, message: 'Saved.' });
 });
 // Publish: the scored plays become the game's box score, exactly as a wknd-stats import would
@@ -7095,8 +7106,10 @@ app.post('/admin/games/:id/scoring/dnp', requireAuth, express.json(), (req, res)
 // the official score typed in, unless the admin says to publish anyway.
 app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, res) => {
   const game = getGameById(req.params.id);
-  const sg = game && getScoreGame(game.id);
-  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  if (!game || !getScoreGame(game.id)) return res.status(404).json({ error: 'Not found.' });
+  const gate = reviewGate(req, game);
+  if (gate) return res.status(423).json({ error: gate });
+  const sg = getScoreGame(game.id);
   if (sg.status === 'published') return res.status(409).json({ error: 'Already published.' });
   // Which pass becomes the box score: the video re-track or the live one (body.pass).
   const pass = scorePass(req);
@@ -7104,18 +7117,20 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
   if (!events.length) return res.status(400).json({ error: pass === 'video' ? 'The video re-track has no plays yet.' : 'No plays to publish yet.' });
   const players = Object.fromEntries(getAllPlayers().map(p => [p.id, { name: p.name }]));
   const { payload, orebs, state } = buildPublishPayload(game, events, players, sg.settings);
-  // Official score from the table (officialA / officialB; blank = not checked).
-  const num = v => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
-  const offA = num(req.body?.officialA), offB = num(req.body?.officialB);
-  if (offA != null && offB != null && (offA !== state.score.a || offB !== state.score.b) && !req.body?.anyway) {
-    return res.status(409).json({ error: `The scored total is ${state.score.a}–${state.score.b}, the official score is ${offA}–${offB}. Fix the plays, or publish anyway.` });
-  }
+  // The final score (typed on the Scoring tab, which settles Who wins? at once) stays the
+  // game's result; plays that don't add up to it never block publishing (Paolo, 2026-10-26),
+  // the message just says so.
+  const official = gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null;
+  if (official) { payload.teamAScore = official.a; payload.teamBScore = official.b; }
+  const visible = sg.settings.live_public !== false;
   try {
     importGameResults(game.id, payload);
     setGameOrebs(game.id, orebs);
-    saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: pass, official: offA != null ? { a: offA, b: offB } : sg.settings.official } });
+    updateGameReview(game.id, visible ? 0 : 1);
+    saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: pass, official: official || sg.settings.official, review: null, reviewedBy: reviewer(req).name } });
     console.log(`[scorer] published game=${game.id} pass=${pass} plays=${events.length} score=${state.score.a}-${state.score.b}`);
-    res.json({ ok: true, message: `Published: ${game.team_a_name} ${state.score.a}, ${game.team_b_name} ${state.score.b}. Picks settle and rating asks go out now.` });
+    const off = official && (official.a !== state.score.a || official.b !== state.score.b) ? ` The plays add up to ${state.score.a}–${state.score.b}; the final score ${official.a}–${official.b} stays the result.` : '';
+    res.json({ ok: true, message: `Published${visible ? '' : ', hidden until you switch Visible to everyone on'}: ${game.team_a_name} ${official ? official.a : state.score.a}, ${game.team_b_name} ${official ? official.b : state.score.b}.${off}` });
     afterGameImport(game, Object.keys(payload.playerStats));
     liveChanged(game.id); // open live pages reload into the published game
   } catch (err) {
@@ -7124,8 +7139,158 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
   }
 });
 
+// ── Review: an admin checking the live plays, or re-tracking the game from the video ──
+// One admin at a time (Paolo, 2026-10-26). Starting a review (the Scoring tab's Start, or the
+// first review action: a final score, a removed play, DNP, publish, the video re-track) locks it
+// to that admin until they finish or hand it over. Another admin can ask to take over (the
+// holder gets a bell, Hand it over / Keep it); a super admin can take it (the holder is told).
+// The other game admins hear that the review started. The lock is score_games.settings.review:
+// { by, name, playerId, kind: 'plays' | 'video', startedAt, at, ask }.
+const reviewer = req => { const a = currentAdminActor(req); return { by: a.id, name: a.name, playerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' }; };
+const isSuperAdminReq = req => !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+// Admins with the games section, for their bells and the hand-over list.
+function gameAdminPlayers() {
+  const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  return getAllRegistrations().filter(r => r.is_admin && r.status === 'approved' && r.player_id && byId[r.player_id])
+    .filter(r => { const s = expandAdminSections(getRegistrationAdminSections(r)); return !s || s.includes('games-stats'); })
+    .map(r => ({ playerId: r.player_id, name: displayPlayerName(byId[r.player_id].name || '') }));
+}
+const gameFinalSet = g => g.status === 'final' || g.status === 'complete' || (Number(g.team_a_score) || 0) + (Number(g.team_b_score) || 0) > 0;
+// Someone else holds the review: the message to answer with, else null.
+function reviewHeldBy(req, game) {
+  const r = getScoreGame(game.id)?.settings?.review;
+  return r && r.by !== reviewer(req).by ? `${r.name} is reviewing this game. Ask them to hand it over from the Scoring tab.` : null;
+}
+function startReview(game, me, kind) {
+  const sg = getScoreGame(game.id);
+  saveScoreGame(game.id, { settings: { ...sg.settings, review: { ...me, kind, startedAt: Date.now(), at: Date.now() } } });
+  const title = `${me.name} is reviewing ${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`;
+  for (const a of gameAdminPlayers()) {
+    if (a.playerId === me.playerId) continue;
+    createNotification({ playerId: a.playerId, type: 'review_started', title, body: kind === 'video' ? 'Re-tracking it from the video.' : 'Checking the scored plays before publishing.', link: `/admin/games/${encodeURIComponent(game.id)}?tab=scoring` });
+  }
+}
+// Before a review action: null = go ahead (claims the review when it's free, keeps it fresh),
+// else the error. Read the game's score settings again after this.
+function reviewGate(req, game, kind = 'plays') {
+  const held = reviewHeldBy(req, game);
+  if (held) return held;
+  const sg = getScoreGame(game.id);
+  if (!sg) return null;
+  if (!sg.settings.review) startReview(game, reviewer(req), kind);
+  else saveScoreGame(game.id, { settings: { ...sg.settings, review: { ...sg.settings.review, at: Date.now() } } });
+  return null;
+}
+// How far the review is: final score · re-track (video only, by game time tracked) · who
+// didn't play · publish.
+function reviewProgress(game, sg) {
+  const r = sg.settings.review;
+  const steps = [{ key: 'final', label: 'Final score', done: gameFinalSet(game) ? 1 : 0 }];
+  if ((r && r.kind === 'video') || sg.settings.publishedPass === 'video') {
+    const rules = { ...SCORE_RULES, ...(sg.settings.rules || {}) };
+    const ev = getScoreEvents(game.id, 'video');
+    const rows = ev.length ? foldScoredGame(ev, rules).rows.filter(x => x.clock) : [];
+    const last = rows[rows.length - 1];
+    let frac = 0;
+    if (last) {
+      const pm = rules.periodMin * 60, pi = /^OT/.test(last.period) ? 5 : Number(String(last.period).replace(/\D/g, '')) || 1;
+      const [m, sec] = String(last.clock).split(':').map(Number);
+      frac = pi > 4 ? 1 : Math.min(1, ((pi - 1) * pm + (pm - ((m || 0) * 60 + (sec || 0)))) / (4 * pm));
+    }
+    steps.push({ key: 'video', label: 'Re-track', done: sg.status === 'published' ? 1 : frac });
+  }
+  steps.push({ key: 'dnp', label: 'Who didn’t play', done: sg.settings.dnpSaved || sg.status === 'published' ? 1 : 0 });
+  steps.push({ key: 'publish', label: 'Publish', done: sg.status === 'published' ? 1 : 0 });
+  return { pct: Math.round((steps.reduce((n, x) => n + x.done, 0) / steps.length) * 100), steps, next: (steps.find(x => x.done < 1) || {}).label || '' };
+}
+app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  const sg = game && getScoreGame(game.id);
+  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  const me = reviewer(req), r = sg.settings.review, mine = !!r && r.by === me.by, act = String(req.body?.action || '');
+  const set = review => saveScoreGame(game.id, { settings: { ...sg.settings, review } });
+  const link = `/admin/games/${encodeURIComponent(game.id)}?tab=scoring`, title = `${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`;
+  const tell = (playerId, type, t, body = '') => { if (playerId) createNotification({ playerId, type, title: t, body, link }); };
+  const kind = req.body?.kind === 'video' ? 'video' : 'plays';
+  if (act === 'start') {
+    if (r && !mine) return res.status(409).json({ error: `${r.name} is reviewing this game.` });
+    if (!r) startReview(game, me, kind); else set({ ...r, kind, at: Date.now() });
+    return res.json({ ok: true, message: 'Review started. The other admins know you’re on it.' });
+  }
+  if (act === 'finish') {
+    if (!mine && !isSuperAdminReq(req)) return res.status(403).json({ error: 'Only the admin reviewing it can close the review.' });
+    set(null);
+    return res.json({ ok: true, message: 'Review closed. Anyone can pick it up.' });
+  }
+  if (act === 'handover') {
+    if (!mine) return res.status(403).json({ error: 'Only the admin reviewing it can hand it over.' });
+    const to = gameAdminPlayers().find(a => a.playerId === String(req.body?.to || ''));
+    if (!to || to.playerId === me.playerId) return res.status(400).json({ error: 'Pick another admin.' });
+    set({ by: to.playerId, name: to.name, playerId: to.playerId, kind: r.kind, startedAt: r.startedAt, at: Date.now() });
+    tell(to.playerId, 'review_handover', `${me.name} handed you the review of ${title}`, 'Carry on from where they stopped.');
+    return res.json({ ok: true, message: `Handed over to ${to.name}.` });
+  }
+  if (act === 'ask') {
+    if (!r || mine) return res.status(400).json({ error: 'Nobody else is reviewing it.' });
+    set({ ...r, ask: { ...me, at: Date.now() } });
+    tell(r.playerId, 'review_ask', `${me.name} asks to take over the review of ${title}`, 'Hand it over or keep it, from the Scoring tab.');
+    return res.json({ ok: true, message: `Asked ${r.name}.` });
+  }
+  if (act === 'answer') {
+    if (!mine || !r.ask) return res.status(400).json({ error: 'No one is asking.' });
+    if (req.body?.yes) {
+      set({ by: r.ask.by, name: r.ask.name, playerId: r.ask.playerId, kind: r.kind, startedAt: r.startedAt, at: Date.now() });
+      tell(r.ask.playerId, 'review_handover', `${me.name} handed you the review of ${title}`, 'Carry on from where they stopped.');
+      return res.json({ ok: true, message: `Handed over to ${r.ask.name}.` });
+    }
+    set({ ...r, ask: null });
+    tell(r.ask.playerId, 'review_ask', `${me.name} is keeping the review of ${title}`);
+    return res.json({ ok: true, message: 'You kept the review.' });
+  }
+  if (act === 'take') {
+    if (!isSuperAdminReq(req)) return res.status(403).json({ error: 'Only a super admin can take over a review.' });
+    set({ ...me, kind: r?.kind || kind, startedAt: Date.now(), at: Date.now() });
+    if (r) tell(r.playerId, 'review_taken', `${me.name} took over the review of ${title}`);
+    return res.json({ ok: true, message: 'You have the review now.' });
+  }
+  res.status(400).json({ error: 'Unknown action.' });
+});
+// Visible to everyone: one switch for the live score and the published game. Off hides both
+// (no live score, the published game stays a draft) so an admin can check it, or test the
+// player side by switching it on and off.
+app.post('/admin/games/:id/scoring/visible', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  const sg = game && getScoreGame(game.id);
+  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  const held = reviewHeldBy(req, game);
+  if (held) return res.status(423).json({ error: held });
+  const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1 || req.body?.on === '1';
+  saveScoreGame(game.id, { settings: { ...sg.settings, live_public: on } });
+  // A published game, or one with its final score in, hides or shows with it (a game with no
+  // score yet stays on the schedule).
+  if (sg.status === 'published' || gameFinalSet(game)) { updateGameReview(game.id, on ? 0 : 1); settleGamePicks(game.id); }
+  liveChanged(game.id);
+  res.json({ ok: true, message: on ? 'Visible to everyone.' : 'Hidden: only admins see it.' });
+});
+// A fresh game going live: the first Start on the clock (or the first play, for a scorer who
+// doesn't run the clock) bells both teams and everyone who picked it. Once, only while it's
+// visible to everyone and has no final score yet. Never for a review (the video re-track has
+// no clock check-ins and its plays are never live).
+function bellGameStarted(game) {
+  const sg = getScoreGame(game.id);
+  if (!sg || sg.settings.startedBell || sg.status === 'published' || sg.settings.live_public === false || game.under_review || gameFinalSet(game)) return;
+  saveScoreGame(game.id, { settings: { ...sg.settings, startedBell: Date.now() } });
+  const ids = new Set([
+    ...getAllPlayers().filter(p => (p.team_id === game.team_a_id || p.team_id === game.team_b_id) && p.status !== 'inactive').map(p => p.id),
+    ...getGamePicksWithPlayers(game.id).map(p => p.player_id),
+  ].filter(Boolean));
+  const title = `${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)} has started`;
+  for (const pid of ids) createNotification({ playerId: pid, type: 'game_live', title, body: 'Follow it live: the score, box score and plays as they’re scored.', link: `/games/${encodeURIComponent(gameSlug(game))}` });
+  console.log(`[scorer] game=${game.id} started: belled ${ids.size}`);
+}
+
 // The admin game page's Scoring tab (views/admin/game.js scoringTab): setup, then the quick review.
-function adminScoringPanel(game, players) {
+function adminScoringPanel(game, players, req) {
   const teams = getAllTeams();
   const teamName = Object.fromEntries(teams.map(t => [t.id, t.name]));
   const options = players.filter(p => p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name || ''), meta: teamName[p.team_id] || '' }));
@@ -7153,7 +7318,12 @@ function adminScoringPanel(game, players) {
   const played = new Set(Object.keys(st.players));
   const roster = players.filter(p => p.team_id === game.team_a_id || p.team_id === game.team_b_id)
     .map(p => ({ id: p.id, name: nm(p.id), team: p.team_id === game.team_a_id ? 'a' : 'b', played: played.has(p.id) }));
-  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, roster,
+  const r = sg.settings.review, me = reviewer(req);
+  const review = { lock: r ? { name: r.name, kind: r.kind, startedAt: r.startedAt, at: r.at, mine: r.by === me.by, ask: r.ask ? { name: r.ask.name, mineAsk: r.ask.by === me.by } : null } : null,
+    progress: reviewProgress(game, sg), reviewedBy: sg.settings.reviewedBy || '', superAdmin: isSuperAdminReq(req),
+    admins: gameAdminPlayers().filter(a => a.playerId !== me.playerId) };
+  const finalScore = gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null;
+  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, roster, review, finalScore,
     dnp: [...new Set([...(sg.settings.dnp || []), ...st.dnp])], official: sg.settings.official || null,
     pass, liveScore: live.score, liveCount: live.rows.length, video: video ? { score: video.score, count: video.rows.length } : null, compare, hasVideo: !!ytId(game.youtube_url || '') };
 }
@@ -11866,10 +12036,16 @@ app.get('/admin/games', requireAuth, (req, res) => {
   const currentSeason = getCurrentSeason()?.season ?? 1;
   const pickCounts = {};
   for (const p of buildPicksContext(games).picks) pickCounts[p.game_id] = (pickCounts[p.game_id] || 0) + 1;
+  // Reviews under way (score_games.settings.review): who and how far, for the Status column.
+  const reviews = {};
+  for (const { game_id } of portalDb.prepare("SELECT game_id FROM score_games WHERE status != 'published'").all()) {
+    const sg = getScoreGame(game_id), g = sg && sg.settings.review && games.find(x => x.id === game_id);
+    if (g) reviews[game_id] = { name: sg.settings.review.name, pct: reviewProgress(g, sg).pct };
+  }
   res.send(renderAdminPage(req, {
     title: 'Games',
     currentPath: '/admin/games',
-    body: adminGamesListBody({ games, teams, currentSeason, pickCounts, query: req.query, courts: getAllPapawisCourts() }),
+    body: adminGamesListBody({ games, teams, currentSeason, pickCounts, reviews, query: req.query, courts: getAllPapawisCourts() }),
   }));
 });
 
@@ -11929,7 +12105,7 @@ app.get('/admin/games/:id', requireAuth, (req, res) => {
     body: adminGameDetailBody({
       game: { ...game, court_name: getPapawisCourtById(game.court_id)?.name || '' },
       tab: String(req.query.tab || 'box'), players, stats, dnpPlayers, quarterScores, statCorrections, picksPanel,
-      scoring: req.query.tab === 'scoring' ? adminScoringPanel(game, players) : null,
+      scoring: req.query.tab === 'scoring' ? adminScoringPanel(game, players, req) : null,
       teams: getAllTeams(), colorById: adminTeamColorByPlayer(), box: buildBoxScoreData(game, stats, dnpPlayers), courts: getAllPapawisCourts(),
     }),
   }));
@@ -12349,7 +12525,11 @@ app.post('/admin/games/:id/final', requireAuth, jsonSmall, (req, res) => {
   const scoreA = parseInt(req.body.team_a_score, 10);
   const scoreB = parseInt(req.body.team_b_score, 10);
   if (isNaN(scoreA) || isNaN(scoreB)) return res.status(400).json({ error: 'Invalid scores' });
+  const sgF = getScoreGame(game.id);
+  if (sgF) { const gate = reviewGate(req, game); if (gate) return res.status(423).json({ error: gate }); }
   markGameFinal(game.id, { teamAScore: scoreA, teamBScore: scoreB, overtime: Number(req.body.overtime) || 0 });
+  // markGameFinal shows the game; a scored game switched to hidden (Scoring tab) stays hidden.
+  if (sgF && sgF.settings.live_public === false) updateGameReview(game.id, 1);
   settleGamePicks(game.id);
   res.json({ ok: true });
   setImmediate(() => askLeagueCourtRatings(game.id));

@@ -315,8 +315,6 @@ function scoringTab({ game, sc, colors }) {
       ${playerPicker({ name: 'scorers[]', label: 'Scorers (up to 2)', options: sc.options, selected: sc.scorers, placeholder: 'Search players' })}
       <div class="aui-field"><span class="aui-field__label">Waves</span>${segmented({ name: 'waves', value: sc.waves || (game.game_type === 'playoff' ? 'off' : 'first half'), label: 'Waves', options: [['off', 'Off'], ['first half', 'First half'], ['whole game', 'Whole game']] })}
         <span class="aui-field__help">Regular season: first half. Playoffs: off.</span></div>
-      <div class="aui-field"><span class="aui-field__label">Live score for everyone</span>${segmented({ name: 'live', value: sc.livePublic === false ? 'off' : 'on', label: 'Live score for everyone', options: [['on', 'On'], ['off', 'Off']] })}
-        <span class="aui-field__help">On: the game page on the site and in the app shows the score, box score and plays as they’re scored, marked unofficial. Stats, picks and the recap still wait for publish.</span></div>
       <div>${button(sc.on ? 'Save scorers' : 'Turn on scoring', { kind: 'primary', type: 'submit' })}</div>
     </form>`;
   if (!sc.on) {
@@ -326,21 +324,31 @@ function scoringTab({ game, sc, colors }) {
   }
   const statusLine = { setup: 'Ready. No plays yet.', live: `Scoring has started · ${sc.period}`, review: 'In review', published: 'Published' }[sc.status] || sc.status;
   const open = button('Open the scorer', { kind: 'secondary', href: `${base}/score` });
+  const rv = sc.review || {}, lock = rv.lock;
+  // Someone else has the review: everything that changes it is read-only here.
+  const lockedOut = !!lock && !lock.mine;
+  const reviewCard = reviewSection({ game, sc, base });
   if (sc.status === 'published') {
-    return `${banner('ok', `Published from the scorer: ${game.team_a_name} ${sc.score.a}, ${game.team_b_name} ${sc.score.b}.`)}
+    return `${banner('ok', `Published from the scorer: ${game.team_a_name} ${sc.finalScore ? sc.finalScore.a : sc.score.a}, ${game.team_b_name} ${sc.finalScore ? sc.finalScore.b : sc.score.b}.`)}
+      ${reviewCard}
       ${section({ title: 'Plays', note: `· ${sc.plays.length}`, bodyHtml: playsGrid(sc, base, false) })}`;
   }
   const notPlayed = sc.roster.filter(p => !p.played);
-  const dnpForm = `<form id="scoring-dnp" class="aui-stack" data-json-action="${base}/scoring/dnp" data-then="${base}?tab=scoring" data-done="Saved.">
+  const dnpForm = lockedOut ? `<p class="aui-muted">${sc.dnp.length ? `Didn’t play: ${sc.dnp.length}.` : 'Nobody marked yet.'} ${escHtml(lock.name)} is reviewing.</p>` : `<form id="scoring-dnp" class="aui-stack" data-json-action="${base}/scoring/dnp" data-then="${base}?tab=scoring" data-done="Saved.">
       ${playerPicker({ name: 'dnp[]', label: 'Didn’t play', options: notPlayed.map(p => ({ id: p.id, name: p.name, color: colors[p.team] || '', meta: p.team === 'a' ? game.team_a_name : game.team_b_name })), selected: sc.dnp, placeholder: 'Players with no plays' })}
       <div>${button('Save', { kind: 'secondary', type: 'submit' })}</div></form>`;
-  const official = sc.official || {};
+  // The final score: typed as always (it settles Who wins? straight away), then publish. Plays
+  // that don't add up to it never block publishing; the final score stays the result.
+  const fin = sc.finalScore;
+  const off = fin && (fin.a !== sc.score.a || fin.b !== sc.score.b);
+  const finalForm = `<form id="scoring-final" class="aui-stack" data-json-action="${base}/final" data-then="${base}?tab=scoring" data-done="Final score saved. Who wins? is settled.">
+      ${fieldGrid(`${field({ label: `Final ${game.team_a_name}`, name: 'team_a_score', type: 'number', value: fin ? fin.a : '', placeholder: String(sc.score.a), required: true })}${field({ label: `Final ${game.team_b_name}`, name: 'team_b_score', type: 'number', value: fin ? fin.b : '', placeholder: String(sc.score.b), required: true })}`)}
+      <input type="hidden" name="overtime" value="${attr(game.overtime || 0)}">
+      <div>${button(fin ? 'Update the final score' : 'Save the final score', { kind: 'secondary', type: 'submit' })}</div></form>`;
   const publishForm = `<form id="scoring-publish" class="aui-stack" data-json-action="${base}/scoring/publish" data-then="${base}?tab=scoring"
-        data-confirm data-confirm-title="Publish this game?" data-confirm-body="Its box score, quarter scores and play-by-play go on the site and in the app, picks settle and rating asks go out. Like an import, it shows straight away." data-confirm-send="Publish">
+        data-confirm data-confirm-title="Publish this game?" data-confirm-body="${attr(sc.livePublic === false ? 'Its box score, quarter scores and play-by-play are saved, hidden from players until you switch Visible to everyone on.' : 'Its box score, quarter scores and play-by-play go on the site and in the app, and rating asks go out. Like an import, it shows straight away.')}" data-confirm-send="Publish">
       ${sc.video ? `<div class="aui-field"><span class="aui-field__label">Publish</span>${segmented({ name: 'pass', value: sc.pass, label: 'Which track to publish', options: [['video', `Video re-track · ${sc.video.score.a}–${sc.video.score.b}`], ['live', `Live track · ${sc.liveScore.a}–${sc.liveScore.b}`]] })}</div>` : ''}
-      <p class="aui-muted">${sc.video ? 'Showing below: the' : 'Scored:'} ${sc.video ? `${sc.pass === 'video' ? 'video re-track' : 'live track'}, ` : ''}<b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>. Type the official score from the table to check it.</p>
-      ${fieldGrid(`${field({ label: `Official ${game.team_a_name}`, name: 'officialA', type: 'number', value: official.a ?? '' })}${field({ label: `Official ${game.team_b_name}`, name: 'officialB', type: 'number', value: official.b ?? '' })}`)}
-      <label class="aui-check"><input type="checkbox" name="anyway" value="1"> Publish even if they don’t match</label>
+      <p class="aui-muted">${sc.video ? (sc.pass === 'video' ? 'Video re-track' : 'Live track') : 'The plays'} add up to <b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>.${fin ? (off ? ` The final score is ${fin.a}–${fin.b}: it stays the result, and you can still publish.` : ' It matches the final score.') : ' Save the final score first if you have it.'}</p>
       <div>${button('Publish', { kind: 'primary', type: 'submit' })}</div>
     </form>`;
   // The video re-track: an admin scores the game again from the video, from tip-off. It never
@@ -357,12 +365,45 @@ function scoringTab({ game, sc, colors }) {
       ${sc.compare.map(r => `<tr><td><span class="aui-dot" style="background:${attr(colors[r.team] || '')}"></span>${escHtml(r.name)}</td>${KEYS.map(k => { const d = r.diffs.find(x => x.label === k); return `<td>${d ? `${d.live} → <b>${d.video}</b>` : ''}</td>`; }).join('')}</tr>`).join('')}
       </tbody></table></div><p class="aui-muted">Live → video. Only the numbers that differ.</p>`
     : `<div class="aui-panel"><p class="aui-muted">Every player’s line is the same in both tracks.</p></div>`) : '';
-  return `${section({ title: 'Scoring', note: `· ${statusLine}`, asideHtml: open, bodyHtml: `<div class="aui-panel">${scorerForm}</div>` })}
-    ${sc.plays.length || sc.video ? section({ title: 'Video re-track', bodyHtml: `<div class="aui-panel aui-stack">${videoPanel}</div>` }) : ''}
+  return `${reviewCard}
+    ${section({ title: 'Scoring', note: `· ${statusLine}`, asideHtml: open, bodyHtml: `<div class="aui-panel">${scorerForm}</div>` })}
+    ${(sc.plays.length || sc.video) && !lockedOut ? section({ title: 'Video re-track', bodyHtml: `<div class="aui-panel aui-stack">${videoPanel}</div>` }) : ''}
     ${sc.video ? section({ title: 'Live vs video', note: `· ${sc.compare.length} player${sc.compare.length === 1 ? '' : 's'} differ`, bodyHtml: compare }) : ''}
-    ${sc.plays.length ? section({ title: 'Quick review', note: '· check the plays, then publish', bodyHtml: `<div class="aui-panel">${publishForm}</div>` }) : ''}
-    ${sc.plays.length ? section({ title: 'Plays', note: `· ${sc.video ? (sc.pass === 'video' ? 'video re-track, ' : 'live track, ') : ''}${sc.plays.length}, newest first`, asideHtml: button('Fix plays in the scorer', { kind: 'ghost', size: 'sm', href: sc.pass === 'video' ? videoHref : `${base}/score` }), bodyHtml: playsGrid(sc, base, true) }) : ''}
+    ${section({ title: 'Final score', note: '· settles Who wins? straight away', bodyHtml: `<div class="aui-panel">${lockedOut ? `<p class="aui-muted">${fin ? `${escHtml(game.team_a_name)} ${fin.a} – ${fin.b} ${escHtml(game.team_b_name)}.` : 'Not saved yet.'} ${escHtml(lock.name)} is reviewing.</p>` : finalForm}</div>` })}
+    ${sc.plays.length && !lockedOut ? section({ title: 'Publish', note: '· the plays become the box score', bodyHtml: `<div class="aui-panel">${publishForm}</div>` }) : ''}
+    ${sc.plays.length ? section({ title: 'Plays', note: `· ${sc.video ? (sc.pass === 'video' ? 'video re-track, ' : 'live track, ') : ''}${sc.plays.length}, newest first`, asideHtml: lockedOut ? '' : button('Fix plays in the scorer', { kind: 'ghost', size: 'sm', href: sc.pass === 'video' ? videoHref : `${base}/score` }), bodyHtml: playsGrid(sc, base, !lockedOut) }) : ''}
     ${sc.plays.length ? section({ title: 'Who didn’t play', bodyHtml: `<div class="aui-panel">${dnpForm}</div>` }) : ''}`;
+}
+// The review card: who's reviewing and how far (a progress bar over its steps), Start / Hand
+// over / Close for the reviewer, Ask to take over for the others (Take over for a super admin),
+// and the Visible to everyone switch (live score + the published game).
+function reviewSection({ game, sc, base }) {
+  const rv = sc.review || {}, lock = rv.lock, prog = rv.progress || { pct: 0, steps: [] };
+  const post = (label, body, { kind = 'secondary', confirm = null, done = '' } = {}) => button(label, { kind, size: 'sm', attrs: `data-post-json="${base}/scoring/review" data-body="${attr(JSON.stringify(body))}" data-then="${base}?tab=scoring"${done ? ` data-done="${attr(done)}"` : ''}${confirm ? ` data-confirm data-confirm-title="${attr(confirm.title)}" data-confirm-body="${attr(confirm.body)}" data-confirm-send="${attr(confirm.send)}"` : ''}` });
+  const steps = `<div class="agd-rv__steps">${prog.steps.map(x => `<span class="agd-rv__step${x.done >= 1 ? ' is-done' : x.done > 0 ? ' is-part' : ''}">${x.done >= 1 ? '✓ ' : ''}${escHtml(x.label)}${x.done > 0 && x.done < 1 ? ` ${Math.round(x.done * 100)}%` : ''}</span>`).join('')}</div>`;
+  const bar = progress(prog.pct, { label: sc.status === 'published' ? `Done${rv.reviewedBy ? ` · reviewed by ${rv.reviewedBy}` : ''}` : `${prog.pct}%${prog.next ? ` · next: ${prog.next}` : ''}` });
+  const kindLabel = k => (k === 'video' ? 're-tracking from the video' : 'checking the plays');
+  let head = '', actions = '';
+  if (sc.status === 'published') head = `<p class="aui-muted">Published${rv.reviewedBy ? ` by ${escHtml(rv.reviewedBy)}` : ''}.</p>`;
+  else if (!lock) {
+    head = '<p class="aui-muted">Nobody is reviewing it. Starting locks the review to you until you close it or hand it over, and the other admins get a bell.</p>';
+    actions = `${post('Start review', { action: 'start', kind: 'plays' }, { kind: 'primary' })} ${button('Re-track from video', { kind: 'secondary', size: 'sm', href: `${base}/score?pass=video` })}`;
+  } else if (lock.mine) {
+    head = `<p><b>You’re reviewing</b> <span class="aui-muted">· ${kindLabel(lock.kind)}</span></p>`;
+    const hand = rv.admins && rv.admins.length ? `<form class="agd-rv__hand" data-json-action="${base}/scoring/review" data-then="${base}?tab=scoring">
+        <input type="hidden" name="action" value="handover">${field({ label: 'Hand over to', name: 'to', type: 'select', options: rv.admins.map(a => [a.playerId, a.name]) })}
+        ${button('Hand over', { kind: 'secondary', size: 'sm', type: 'submit' })}</form>` : '';
+    actions = `${lock.ask ? banner('warn', `${lock.ask.name} asks to take over the review.`, `${post('Hand it over', { action: 'answer', yes: true }, { kind: 'primary' })} ${post('Keep it', { action: 'answer', yes: false })}`) : ''}
+      ${hand}<div>${post('Close the review', { action: 'finish' }, { kind: 'ghost', confirm: { title: 'Close the review?', body: 'It unlocks, so any admin can pick it up. Nothing you did is lost.', send: 'Close it' } })}</div>`;
+  } else {
+    head = `<p><b>${escHtml(lock.name)} is reviewing</b> <span class="aui-muted">· ${kindLabel(lock.kind)}</span></p>`;
+    actions = `${lock.ask ? `<p class="aui-muted">${lock.ask.mineAsk ? `You asked ${escHtml(lock.name)} to hand it over.` : `${escHtml(lock.ask.name)} asked to take over.`}</p>` : post(`Ask ${lock.name} to hand it over`, { action: 'ask' })}
+      ${rv.superAdmin ? post('Take over', { action: 'take' }, { kind: 'ghost', confirm: { title: `Take over from ${lock.name}?`, body: `${lock.name} gets a bell that you took the review.`, send: 'Take over' } }) : ''}`;
+  }
+  const lockedOut = !!lock && !lock.mine && sc.status !== 'published';
+  const visible = lockedOut ? `<p class="aui-muted">Visible to everyone: <b>${sc.livePublic !== false ? 'on' : 'off'}</b>.</p>` : toggleRow({ label: 'Visible to everyone', name: 'visible', on: sc.livePublic !== false, post: `${base}/scoring/visible`, reload: true,
+    help: 'On: the live score shows while it’s scored, and the game shows when published. Off: only admins see either, so you can check it first, or switch it on to see the player side. A fresh game that’s on, with no final score yet, bells both teams and everyone who picked it when the scorer starts the clock.' });
+  return section({ title: 'Review', note: lock ? `· ${lock.mine ? 'you' : lock.name}, ${prog.pct}%` : sc.status === 'published' ? '· done' : '· not started', bodyHtml: `<div class="aui-panel aui-stack agd-rv">${head}${bar}${steps}${actions ? `<div class="agd-rv__acts">${actions}</div>` : ''}${visible}</div>` });
 }
 function playsGrid(sc, base, editable) {
   return dataGrid({
