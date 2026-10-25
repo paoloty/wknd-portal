@@ -399,7 +399,7 @@
   //   • [data-gr-team]: White / Black box score · [data-gr-sort]: sort by a column (TO, PF
   //     lowest first; ties by points). Swiping, the pinned names and their shadow come from
   //     the swipeable-tables standard (public/table-scroll.js).
-  var grBound = false, grSpy = null;
+  var grBound = false, grSpy = null, grEnd = null;
   function initGameRecap() {
     var bar = $('.gr-jump');
     $$('[data-gr-more]').forEach(function (b) {
@@ -417,11 +417,25 @@
       };
       grSpy = new IntersectionObserver(function (es) {
         es.forEach(function (e) { if (e.isIntersecting) light(e.target.id); });
+        if (grEnd) grEnd();
       }, { rootMargin: '-110px 0px -60% 0px' });
       $$('button', bar).forEach(function (b) { var s = document.getElementById(b.getAttribute('data-gr-jump')); if (s) grSpy.observe(s); });
+      // At the very bottom the last sections can't reach the top: light the last one.
+      if (!grEnd) {
+        grEnd = function () {
+          var b = $('.gr-jump'); if (!b) return;
+          if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+            var bs = $$('button', b); var last = bs[bs.length - 1];
+            if (last && !last.classList.contains('is-on')) { bs.forEach(function (x) { x.classList.toggle('is-on', x === last); }); b.scrollTo({ left: last.offsetLeft - 16, behavior: 'smooth' }); }
+          }
+        };
+        window.addEventListener('scroll', grEnd, { passive: true });
+      }
     }
     if (grBound) return;
     grBound = true;
+    // The live score swapped in a new box score and plays (public/live-score.js): watch those.
+    document.addEventListener('wknd:live-swapped', initGameRecap);
     document.addEventListener('click', function (e) {
       var t = e.target, b;
       if (!t.closest) return;

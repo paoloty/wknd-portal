@@ -1,6 +1,7 @@
 import { escHtml } from './layout.js';
 import { teamColor } from './utils.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
+import { sectionNavBar, sectionNavScript } from './section-nav.js';
 
 // ── /standings ────────────────────────────────────────────────────────────────
 // Race summary → league table (grouped columns) + playoff picture → head to head
@@ -160,7 +161,7 @@ function leagueTable(table, season, week, isCurrent, notes) {
   </div>`;
   }).join('');
 
-  return `<section class="stp-table card" aria-label="League table">
+  return `<section class="stp-table card" id="table" aria-label="League table">
   <div class="stp-scroll">
     <div class="stp-grid">
       <div class="stp-row stp-row--groups" aria-hidden="true">
@@ -203,7 +204,7 @@ function playoffPicture(table, isCurrent, panel = '') {
     ${team(hi, hiN, true)}
     ${team(lo, loN, false)}
   </div>`;
-  return `<section class="stp-playoffs" aria-labelledby="stp-po-h">
+  return `<section class="stp-playoffs" id="playoff-picture" aria-labelledby="stp-po-h">
   <div class="section-header"><h2 id="stp-po-h">Playoff picture</h2>${isCurrent ? '<a href="/playoffs" class="section-header__link">Bracket <span>&rarr;</span></a>' : ''}</div>
   ${panel}
   <div class="stp-bar">
@@ -256,7 +257,7 @@ function headToHead(table, games, sched, totalWeeks, colorOf, panel = '') {
   }).join('');
 
   const heads = Array.from({ length: totalWeeks }, (_, n) => `<span class="stp-th stp-c">Wk ${n + 1}</span>`).join('');
-  return `<section class="stp-h2h" aria-labelledby="stp-h2h-h">
+  return `<section class="stp-h2h" id="head-to-head" aria-labelledby="stp-h2h-h">
   <div class="section-header"><h2 id="stp-h2h-h">Head to head</h2><a href="/games" class="section-header__link">All games <span>&rarr;</span></a></div>
   ${panel}
   <div class="stp-bar">
@@ -293,7 +294,7 @@ function roadSoFar(weeks, panel = '') {
       <span class="font-condensed stp-wk__mv${t.mv > 0 ? ' is-up' : t.mv < 0 ? ' is-down' : ''}">${w.n === 1 ? '' : t.mv > 0 ? `▲${t.mv}` : t.mv < 0 ? `▼${-t.mv}` : '='}</span>
     </div>`).join('')}</div>
   </div>`).join('');
-  return `<section class="stp-road" aria-labelledby="stp-road-h">
+  return `<section class="stp-road" id="road" aria-labelledby="stp-road-h">
   <div class="section-header"><h2 id="stp-road-h">The road so far</h2></div>
   ${panel}
   <p class="stp-desc">What each week did to the table, newest first.</p>
@@ -351,7 +352,7 @@ function teamStats(table, teamStatsRows, panel = '') {
     </div>`).join('')}
   </div>`;
 
-  return `<section class="stp-stats" data-mode="pg" aria-labelledby="stp-ts-h">
+  return `<section class="stp-stats" id="team-stats" data-mode="pg" aria-labelledby="stp-ts-h">
   <div class="section-header"><h2 id="stp-ts-h">Team stats</h2><a href="/leaders" class="section-header__link">League leaders <span>&rarr;</span></a></div>
   ${panel}
   <div class="stp-bar">
@@ -397,18 +398,30 @@ export function standingsPage({ season, seasons = [], isCurrent = true, rows = [
   const { played, colorOf, week, table, notes, weeks, sched, expected, totalWeeks } = standingsModel({ rows, games, scheduled });
   const panel = key => sectionPanel(sections[key] || null, `standings_${key}:${season}`, isAdmin);
 
+  const parts = {
+    table: table.length ? leagueTable(table, season, week, isCurrent, notes) : '',
+    playoffs: table.length ? playoffPicture(table, isCurrent, panel('playoffs')) : '',
+    h2h: headToHead(table, played, sched, totalWeeks, colorOf, panel('h2h')),
+    road: roadSoFar(weeks, panel('road')),
+    stats: teamStats(table, teamStatsRows, panel('stats')),
+  };
+  // Sticky "on this page" bar (views/section-nav.js), one link per section on the page.
+  const nav = sectionNavBar([['table', 'Table', parts.table], ['playoff-picture', 'Playoff picture', parts.playoffs], ['head-to-head', 'Head to head', parts.h2h],
+    ['road', 'The road so far', parts.road], ['team-stats', 'Team stats', parts.stats]].filter(x => x[2]).map(([id, label]) => [id, label]));
   return `<div class="page-content stp">
   ${pageHead({ season, seasons, isCurrent, week, played: played.length, expected })}
   ${raceSummary(summary)}
+  ${nav}
   ${table.length ? `<div class="stp-top">
-    ${leagueTable(table, season, week, isCurrent, notes)}
-    ${playoffPicture(table, isCurrent, panel('playoffs'))}
+    ${parts.table}
+    ${parts.playoffs}
   </div>` : '<p class="stp-desc">No standings for this season yet.</p>'}
-  ${headToHead(table, played, sched, totalWeeks, colorOf, panel('h2h'))}
-  ${roadSoFar(weeks, panel('road'))}
-  ${teamStats(table, teamStatsRows, panel('stats'))}
+  ${parts.h2h}
+  ${parts.road}
+  ${parts.stats}
 </div>
 ${SCRIPT}
+${nav ? sectionNavScript() : ''}
 ${isAdmin ? sectionRegenScript() : ''}`;
 }
 

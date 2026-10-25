@@ -28,8 +28,10 @@ export function lineScore(a, b, quarters = []) {
     <div class="gr-ls__r gr-ls__h"><span></span>${quarters.map(q => `<span>${ql(q.quarter)}</span>`).join('')}<b>T</b></div>${row(a, 'a')}${row(b, 'b')}</div>`;
 }
 
-// The section bar: sticks under the navbar, one chip per section on the screen.
-function jumpBar(items) {
+// The section bar: sticks under the navbar, one chip per section on the screen. Also on the
+// upcoming / live game screen (views/app/feed.js appGamePreviewPage). public/app.js
+// initGameRecap scrolls to a section on tap and lights the chip of the one in view.
+export function jumpBar(items) {
   return `<nav class="gr-jump" aria-label="Sections">${items.map(([id, label, n]) =>
     `<button type="button" data-gr-jump="${id}">${label}${n ? ` <small>${n}</small>` : ''}</button>`).join('')}</nav>`;
 }

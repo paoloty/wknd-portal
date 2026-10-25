@@ -61,6 +61,8 @@
         if (!d.on || !c.el.querySelector('[data-live="hero"]')) { stop(); if (window.wkndRefreshScreen) window.wkndRefreshScreen(); else location.reload(); return; }
         swap(c.el, 'hero', d.hero);
         swap(c.el, 'body', d.body);
+        // The app's section bar watches the sections; new ones just went in.
+        document.dispatchEvent(new CustomEvent('wknd:live-swapped'));
       })
       .catch(function () {})
       .then(function () { c.busy = false; if (c.again) { c.again = false; refresh(c); } });

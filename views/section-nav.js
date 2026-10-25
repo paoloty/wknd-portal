@@ -8,6 +8,14 @@
 //   - on phones the link row scrolls sideways to keep the lit link in view.
 // Offsets come from the bar's real sticky top + height, never from html scroll-padding-top
 // (which would stack with the bar and park sections too low).
+// The bar itself, for pages that list their sections: items = [[sectionId, label]] in page
+// order (only sections actually on the page). Under two sections it isn't worth a bar: ''.
+// Pair with sectionNavScript() once on the page.
+export function sectionNavBar(items, { cls = '', label = 'On this page' } = {}) {
+  if (items.length < 2) return '';
+  return `<nav class="gd-snav${cls ? ` ${cls}` : ''}" data-gd-snav aria-label="${label}">${items.map(([id, text], i) => `<a href="#${id}" data-spy="${id}"${i === 0 ? ' class="is-on"' : ''}>${text}</a>`).join('')}</nav>`;
+}
+
 export function sectionNavScript() {
   return `<script>
 (function () {

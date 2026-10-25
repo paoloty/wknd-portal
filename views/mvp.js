@@ -1,4 +1,5 @@
 import { escHtml } from './layout.js';
+import { sectionNavBar, sectionNavScript } from './section-nav.js';
 import { displayPlayerName, teamColor, initials, playerPhotoUrl, shareIcon, avatarStack } from './utils.js';
 import { swipeScript } from './games.js';
 import { summaryPanel, sectionPanel, sectionRegenScript } from './home.js';
@@ -490,7 +491,7 @@ export function mvpPage({ candidates = [], season, week = null, totalGames, seas
   const snap = (c, i) => mvpSnapshot(c, i + 1, candidates, { season, week, playoffsStarted, race: race.key });
   const arrow = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 
-  const chase = rest.length ? `<section class="mv-chase-sec" aria-labelledby="mv-chase-h">
+  const chase = rest.length ? `<section class="mv-chase-sec" id="chase" aria-labelledby="mv-chase-h">
     <div class="section-header mv-chase-head">
       <h2 id="mv-chase-h">The chase <span class="section-header__sub">#4–${rest.length + 3} · per game</span></h2>
       <span class="gm-potg-head__nav mv-chase-nav">
@@ -601,18 +602,23 @@ ${sectionRegenScript()}
 </script>
 ${photoDialog(season, race)}` : ''}`;
 
+  const called_ = calledSection(called);
+  // Sticky "on this page" bar (views/section-nav.js) once there's more than the top three.
+  const nav = sectionNavBar([['top', 'Top 3'], called_ ? ['called', 'Who called it'] : null, chase ? ['chase', 'The chase'] : null].filter(Boolean));
   return `<div class="page-content mvpx">
   ${head(side)}
   ${summaryPanel(sections.race || null, `${race.key}_race:${season}`, isAdmin, 'section-block')}
-  <div class="mv-top${chasers.length ? '' : ' mv-top--solo'}">
+  ${nav}
+  <div class="mv-top${chasers.length ? '' : ' mv-top--solo'}" id="top">
     ${leadCard(lead, candidates[1], ctx, snap(lead, 0))}
     ${chasers.map((c, i) => chaserCard(c, i + 2, lead, ctx, snap(c, i + 1))).join('')}
   </div>
-  ${calledSection(called)}
+  ${called_}
   ${chase}
 </div>
 <dialog class="mv-dlg" id="mv-case-dlg" aria-label="${escHtml(race.short)} case"></dialog>
-${scripts}`;
+${scripts}
+${nav ? sectionNavScript() : ''}`;
 }
 
 // /mvp/share/:id: the shared card's full case (the same snapshot the share images are drawn
@@ -993,7 +999,7 @@ function calledSection(called) {
       <span class="mvr-bar__lbl"><span>${nameOf(f)}${placeTag(f.place) ? ` <i>${placeTag(f.place)}</i>` : ''}</span><b class="font-condensed">${f.pct}%</b></span>
       <span class="mvr-bar__track"><span style="width:${f.pct}%;--team:${teamColor(f.team)}"${f.place === 1 ? ' class="is-mvp"' : ''}></span></span>
     </span>`).join('') + (called.othersPct ? `<span class="mvr-bar"><span class="mvr-bar__lbl"><span>Others</span><b class="font-condensed">${called.othersPct}%</b></span><span class="mvr-bar__track"><span style="width:${called.othersPct}%"></span></span></span>` : '');
-  return `<section class="mvr" aria-labelledby="mvr-h">
+  return `<section class="mvr" id="called" aria-labelledby="mvr-h">
     <div class="section-header"><h2 id="mvr-h">Who called it <span class="section-header__sub">${called.total} ballot${called.total === 1 ? '' : 's'}</span></h2></div>
     <div class="mvr-grid">
       <div class="card mvr-card"><span class="mvr-kicker">Your ballot</span>${mine}</div>

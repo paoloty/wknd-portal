@@ -1347,7 +1347,9 @@ html.tk-lock { overflow: hidden; }
 .gr-jump button.is-on { background: var(--amber); border-color: transparent; color: #111; }
 .gr-jump small { font: 700 13px/1 var(--font-num); color: var(--muted); }
 .gr-jump button.is-on small { color: #111; }
-.gr, #comments, .gr-empty { scroll-margin-top: 100px; }
+.gr, #comments, .gr-empty, #pv-story, #pv-matchup, #pv-watch { scroll-margin-top: 100px; }
+/* The live wrapper adds no box, so the section bar inside it stays pinned the whole screen. */
+.app [data-live-src] { display: contents; }
 
 .gr-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 16px; margin-bottom: 12px; }
 .gr-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1; color: var(--muted); white-space: nowrap; }

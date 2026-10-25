@@ -7,7 +7,7 @@ import { pickOption, pickCard } from './picks.js';
 import { appSocialBar, appThreadPanel } from './comments.js';
 import { papawisAction } from './papawis.js';
 import { todoCard } from './home.js';
-import { lineScore, gameRecapSections, boxCard } from './game.js';
+import { lineScore, gameRecapSections, boxCard, jumpBar } from './game.js';
 import { liveWhen } from '../../lib/live-score.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
@@ -274,23 +274,34 @@ export function appLiveParts(l, { meId = '', myTeamId = '' } = {}) {
 // made); preview: server.js appPreview.
 export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null }) {
   const w = (p.watch || []).filter(Boolean);
+  // The section bar (the finished game's, sticky, lights the section in view), once there are
+  // three or more sections below the top: live box score + plays, then the preview's.
+  const chips = [
+    live?.parts && /id="gr-box"/.test(live.parts.body) ? ['gr-box', 'Box score'] : null,
+    live?.parts ? ['lv-plays', 'Plays'] : null,
+    p.story ? ['pv-story', 'Storyline'] : null,
+    ['pv-matchup', 'Matchup'],
+    w.length ? ['pv-watch', 'Players to watch'] : null,
+  ].filter(Boolean);
+  const bar = chips.length > 2 ? jumpBar(chips) : '';
   // While there's a pick card it is the top of the screen (it has the matchup, day and time).
   return `${navbar(back, title)}
   ${scoreHref ? `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>` : ''}
-  ${live ? `<div data-live-src="${esc(live.src)}" data-live-ws="${esc(live.ws)}">${live.parts ? `<div data-live="hero">${live.parts.hero}</div><div data-live="body">${live.parts.body}</div>` : ''}</div>` : ''}
+  ${live ? `<div data-live-src="${esc(live.src)}" data-live-ws="${esc(live.ws)}">${live.parts ? `<div data-live="hero">${live.parts.hero}</div>${bar}<div data-live="body">${live.parts.body}</div>` : ''}</div>` : ''}
   ${live?.parts ? '' : pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
     <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>
     ${matchup({ a, b })}
     <p class="mut game-hero__meta">${esc(meta)}</p>
   </section>`}
-  ${p.story ? `<section class="fc art"><div class="kick">Storyline</div><h2>${esc(p.story.headline)}</h2>${p.story.body ? `<p>${esc(p.story.body)}</p>` : ''}</section>` : ''}
-  <section class="fc art">
+  ${live?.parts ? '' : bar}
+  ${p.story ? `<section class="fc art" id="pv-story"><div class="kick">Storyline</div><h2>${esc(p.story.headline)}</h2>${p.story.body ? `<p>${esc(p.story.body)}</p>` : ''}</section>` : ''}
+  <section class="fc art" id="pv-matchup">
     <div class="kick">The matchup</div>
     <div class="pv__line"><span>Records</span><b>${esc(a.name)} ${esc(a.rec || '–')} · ${esc(b.name)} ${esc(b.rec || '–')}</b></div>
     ${p.formA || p.formB ? `<div class="pv__line"><span>Last 5</span><span class="pv__forms"><span>${esc(a.name)} ${formChips(p.formA)}</span><span>${esc(b.name)} ${formChips(p.formB)}</span></span></div>` : ''}
     ${p.last ? `<a class="pv__line" href="${esc(lastHref)}"><span>Last met</span><b>${esc(p.last.text)} · ${esc(p.last.date)} ›</b></a>` : '<div class="pv__line"><span>Last met</span><b>First meeting</b></div>'}
     ${p.series ? `<div class="pv__line"><span>All-time series</span><b>${esc(p.series)}</b></div>` : ''}
   </section>
-  ${w.length ? `<section class="fc art"><div class="kick">Players to watch</div>${w.map(x => potgStrip(x, '')).join('')}</section>` : ''}
+  ${w.length ? `<section class="fc art" id="pv-watch"><div class="kick">Players to watch</div>${w.map(x => potgStrip(x, '')).join('')}</section>` : ''}
   <div style="height:12px"></div>`;
 }
