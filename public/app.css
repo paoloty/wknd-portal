@@ -1686,3 +1686,5 @@ body:not(:has(.tabbar)) .test-pill { bottom: calc(var(--safe-b) + 6px); }
 .sc-ghost { position: fixed; left: 0; top: 0; z-index: 300; padding: 8px 12px; border-radius: 999px; background: var(--amber); color: #111; font-size: 13px; font-weight: 600; line-height: 1; pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.4); }
 /* Test server: on the scorer the pill gets its own strip under the pinned stat buttons. */
 @media (max-width: 899px) { body:has(.test-pill) .sc-center { padding-bottom: calc(34px + var(--safe-b)); } }
+/* No timeouts left this half (or overtime): the button greys out until the next one opens. */
+.sc-tb:disabled { opacity: .35; }

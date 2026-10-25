@@ -457,7 +457,7 @@ export async function mount(el) {
     const rest = team[t].players.filter(p => !on.includes(p.id) && !G.dnp.includes(p.id));
     return `<section class="sc-team" style="grid-area:${t}">
       <div class="sc-th"><span class="sc-th__n"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}</span>
-        <button type="button" class="sc-tb" data-act="timeout" data-team="${t}">Timeout</button>
+        <button type="button" class="sc-tb" data-act="timeout" data-team="${t}"${G.timeouts.left[t] > 0 ? '' : ` disabled aria-label="${esc(team[t].name)}: no timeouts left"`}>Timeout</button>
         <button type="button" class="sc-tb hold" data-hold="team" data-team="${t}" aria-label="${esc(team[t].name)} team turnover. Hold for more team plays">Team</button>
         <button type="button" class="sc-tb" data-act="dnp" data-team="${t}" aria-label="${esc(team[t].name)}: mark who didn’t play">DNP</button></div>
       <div class="sc-five">${on.map(tile).join('')}</div>
