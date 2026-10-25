@@ -282,11 +282,12 @@ export async function mount(el) {
       const made = id === 'made';
       add({ type: 'ft', team: byId[a.pid].team, player: a.pid, made }, { flash: { text: made ? '+1' : 'MISS', tone: made ? 'good' : 'bad' } });
       ui.ask = a.i < a.n ? ftAsk(a.pid, a.n, a.i + 1) : null;
-    } else if (a.kind === 'menu') { ui.ask = null; a.act(id); return; }
+    } else if (a.kind === 'menu') { ui.ask = null; if (id === '__cancel') return paint(); a.act(id); return; }
     paint();
   }
   const ftAsk = (pid, n, i) => ({ kind: 'ft', pid, n, i, q: `Free throw ${i} of ${n} · ${short(pid)}`, hint: '', opts: [{ id: 'made', label: 'Made' }, { id: 'miss', label: 'Missed' }] });
-  const menu = (q, opts, act, def) => { ui.ask = { kind: 'menu', q, hint: 'tap = the outlined one', opts: opts.map(([id, label]) => ({ id, label, def: id === def })), act }; paint(); };
+  // Every menu ends with Cancel: closes it, nothing saved.
+  const menu = (q, opts, act, def) => { ui.ask = { kind: 'menu', q, hint: def ? 'tap = the outlined one' : '', opts: [...opts.map(([id, label]) => ({ id, label, def: id === def })), { id: '__cancel', label: 'Cancel', cancel: true }], act }; paint(); };
 
   // What each button does on a tap, and on a hold.
   const TAP = {
@@ -450,7 +451,7 @@ export async function mount(el) {
     const ask = ui.ask;
     const strip = ask
       ? `<div class="sc-strip ${ask.kind === 'menu' ? 'is-menu' : 'is-ask'}" role="status"><div class="sc-strip__q"><b>${esc(ask.q)}</b>${ask.hint ? `<small>${esc(ask.hint)}</small>` : ''}</div>
-          <div class="sc-opts">${ask.opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}">${esc(o.label)}</button>`).join('')}</div></div>`
+          <div class="sc-opts">${ask.opts.map(o => `<button type="button" class="${o.def ? 'def' : o.cancel ? 'cancel' : ''}" data-ask="${esc(o.id)}">${esc(o.label)}</button>`).join('')}</div></div>`
       : multi && ui.lanes && ui.lanes.asks.length ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>${esc(ui.lanes.asks[0].name)} asks to score ${esc(sideName(ui.lanes.asks[0].lane))}</b><small>you keep the other side</small></div>
           <div class="sc-opts"><button type="button" class="def" data-handover="${esc(ui.lanes.asks[0].device)}" data-yes="1">Hand it over</button><button type="button" data-handover="${esc(ui.lanes.asks[0].device)}">Keep it</button></div></div>`
       : multi && !ui.lane && !ui.locked ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>${ui.asked ? `Asked ${esc(ui.asked)}. Waiting for them to hand it over…` : ui.lanes && ui.lanes.others.length ? `${esc(ui.lanes.others.filter(o => o.lane).map(o => `${o.name} scores ${sideName(o.lane)}`).join(', ') || 'Someone is here')}. Which side do you score?` : 'Which side do you score?'}</b></div>

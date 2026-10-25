@@ -1658,3 +1658,5 @@ button.sc-clk__t { background: none; border: 0; padding: 0 4px; color: inherit; 
 .test-pill { position: fixed; bottom: calc(var(--tabbar-h) + var(--safe-b) + 8px); left: 50%; transform: translateX(-50%); z-index: 40; max-width: calc(100% - 120px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border-radius: 999px; background: var(--warn-bg); color: var(--on-warn); font: 700 11px/1.2 var(--font-num); letter-spacing: .06em; text-transform: uppercase; pointer-events: none; }
 /* Screens without the tab bar (the scorer): the pill sits at the bottom edge, under any sheet. */
 body:not(:has(.tabbar)) .test-pill { bottom: calc(var(--safe-b) + 6px); }
+/* A menu's Cancel: quieter than the choices. */
+.sc-opts button.cancel { color: var(--muted); border-style: dashed; }
