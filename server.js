@@ -6879,7 +6879,8 @@ function scoreBundle(game, pass = 'live') {
   const side = (tid, name) => ({
     id: tid, name, color: teamColorById(teams, tid),
     players: all.filter(p => p.team_id === tid && p.status !== 'inactive')
-      .map(p => { const n = displayPlayerName(p.name || ''); return { id: p.id, name: n, short: n.split(' ').slice(-1)[0] || n, number: String(p.number ?? ''), pos: Array.isArray(p.positions) ? p.positions : [] }; })
+      // short: the whole surname ("DEL ROSARIO", not "ROSARIO") for the scorer's tiles
+      .map(p => { const n = displayPlayerName(p.name || ''); const raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), number: String(p.number ?? ''), pos: Array.isArray(p.positions) ? p.positions : [] }; })
       .sort((x, y) => (Number(x.number) || 999) - (Number(y.number) || 999) || x.name.localeCompare(y.name)),
   });
   return {
