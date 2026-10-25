@@ -6029,6 +6029,7 @@ import { appScorerListPage, appScorerPage } from './views/app/score.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
+import { createLanes } from './lib/score-lanes.js';
 import { foldGame as foldScoredGame, DEFAULT_RULES as SCORE_RULES } from './public/score-engine.js';
 import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
 import { appSharePage } from './views/app/share.js';
@@ -6962,6 +6963,36 @@ const sendScorer = (req, res, back) => {
 app.get('/app/score/:id', requireApp, (req, res) => sendScorer(req, res, { href: '/app/score', label: 'Games' }));
 // The same screen on the site, for an admin on a laptop or a tablet browser.
 app.get('/admin/games/:id/score', requireAuth, (req, res) => sendScorer(req, res, { href: `/admin/games/${encodeURIComponent(req.params.id)}?tab=scoring`, label: 'Game' }));
+
+// Two scorers (lib/score-lanes.js): each phone checks in every few seconds with its side and,
+// if it keeps the clock, the clock. body: { device, lane, clock, action: 'claim' | 'ask' |
+// 'answer', want, force, from, yes }. Answers with both phones' view: my side, the other
+// scorer, asks waiting for me, and the keeper's clock. Live pass only (the video re-track is
+// one admin at home).
+const scoreLanes = createLanes();
+app.post('/api/score/:id/lanes', express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+  const access = scoreAccess(req, game.id);
+  if (!access) return res.status(403).json({ error: 'You aren’t a scorer for this game.' });
+  if (req.session?.impersonating) return res.status(403).json({ error: 'Viewing as a player.' });
+  const b = req.body || {};
+  const device = String(b.device || '').slice(0, 64);
+  if (!device) return res.status(400).json({ error: 'No device.' });
+  const pid = req.session?.playerPlayerId || '';
+  const p = pid ? getAllPlayers().find(x => x.id === pid) : null;
+  const who = { device, playerId: pid, name: p ? displayPlayerName(p.name || '').split(' ')[0] : 'Admin' };
+  const lane = ['a', 'b', 'both'].includes(b.want) ? b.want : null;
+  let result = {};
+  if (b.action === 'claim') result = scoreLanes.claim(game.id, who, lane, { force: !!b.force && access === 'admin' });
+  else if (b.action === 'ask') result = scoreLanes.ask(game.id, who, lane);
+  else if (b.action === 'answer') result = scoreLanes.answer(game.id, who, String(b.from || ''), !!b.yes);
+  const myLane = ['a', 'b', 'both'].includes(b.lane) ? b.lane : null;
+  const clock = b.clock && Number.isFinite(Number(b.clock.secs)) ? { secs: Number(b.clock.secs), running: !!b.clock.running, period: String(b.clock.period || '').slice(0, 4) } : null;
+  const view = scoreLanes.ping(game.id, who, { lane: b.action ? undefined : myLane, clock });
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ ...result, ...view, admin: access === 'admin', now: Date.now() });
+});
 
 // A batch of plays from a scorer's phone. Idempotent by play id. Answers with how many were new.
 app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => {

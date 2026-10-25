@@ -1515,7 +1515,7 @@ html.tk-lock { overflow: hidden; }
 .sc { padding-bottom: calc(16px + var(--safe-b)); }
 /* The scorer uses a tablet's whole width (the app is a phone-width column elsewhere). */
 .app:has(.sc) { max-width: none; }
-@media (min-width: 900px) { .sc .sc-board { max-width: 760px; margin: 0 auto; } }
+@media (min-width: 900px) { .sc .sc-board { max-width: 760px; margin: 0 auto; } .sc .sc-lanes { max-width: 760px; margin: 10px auto 0; } }
 .sc-start { margin: 0 16px 12px; }
 .sc-start .foot-note { margin: 6px 0 0; }
 .sc-nav .navbar__title { font-size: 15px; }
@@ -1639,6 +1639,11 @@ button.sc-clk__t { background: none; border: 0; padding: 0 4px; color: inherit; 
 .sc-video { margin: 0 0 10px; aspect-ratio: 16 / 9; border-radius: var(--r-in); overflow: hidden; background: #000; }
 .sc-video iframe { width: 100%; height: 100%; border: 0; display: block; }
 .sc--video .sc-clk__p { color: var(--amber-text); }
+/* Two scorers: who has which side, the other side folded away */
+.sc-lanes { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 12px 0; padding: 6px 6px 6px 12px; border-radius: var(--r-in); background: var(--surface-2); font-size: 12px; color: var(--muted); }
+.sc-lanes b { color: var(--text); font-weight: 600; }
+.sc-team--off .sc-off { margin: 0; padding: 10px 12px; border-radius: var(--r-in); border: 1px dashed var(--hair); font-size: 13px; color: var(--muted); }
+.sc-cb:disabled { opacity: .45; }
 .sc-empty { margin: 12px 0; font-size: 13px; color: var(--muted); }
 /* Test server mode (views/app/layout.js test): an amber pill so a test install is never mistaken for the real app. */
 .test-pill { position: fixed; bottom: calc(var(--tabbar-h) + var(--safe-b) + 8px); left: 50%; transform: translateX(-50%); z-index: 200; max-width: calc(100% - 120px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border-radius: 999px; background: var(--warn-bg); color: var(--on-warn); font: 700 11px/1.2 var(--font-num); letter-spacing: .06em; text-transform: uppercase; pointer-events: none; }

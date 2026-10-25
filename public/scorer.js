@@ -17,6 +17,13 @@
 // opens the whole log. DNP (per team): mark a late or absent player as didn't play; their
 // first stat clears it. The video pass (?pass=video, admins) is this same screen re-tracking
 // the game from the video: its own plays, an optional embedded video, never on the live score.
+//
+// Two scorers (phase 3, live pass): each phone holds a side, White, Blue or Both
+// (lib/score-lanes.js on the server). It checks in every few seconds; the other side folds away,
+// the other phone's plays come in (one shared log, so a rebound after their miss is still
+// offensive), a late scorer asks for a side and the holder gets Hand over / Keep it, a phone gone
+// quiet can be taken over. One phone keeps the clock (Both, else the first team); the other shows
+// it. Plays never wait on any of this: with no signal both phones keep scoring.
 import { foldGame, defaultFreeThrows, nextPos, isOvertime, correction } from './score-engine.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -55,6 +62,10 @@ export async function mount(el) {
   const published = B.status === 'published';
   const video = B.pass === 'video';
   const key = video ? `${gid}:video` : gid;
+  const multi = !video && !published;
+  const laneKey = `wknd-lane:${gid}`;
+  const readLane = () => { try { const v = localStorage.getItem(laneKey); return ['a', 'b', 'both'].includes(v) ? v : null; } catch (e) { return null; } };
+  const storeLane = l => { try { if (l) localStorage.setItem(laneKey, l); else localStorage.removeItem(laneKey); } catch (e) {} };
   // 4PT only at a court with a 4-point line (admin: the court's features); a game with no
   // court set keeps it, so nothing is ever missing.
   const shots = B.fourPoint === false ? [1, 2, 3] : [1, 2, 3, 4];
@@ -66,7 +77,7 @@ export async function mount(el) {
   const serverIds = new Set(B.events.map(e => e.id));
   for (const e of rec.events) if (!events.has(e.id)) events.set(e.id, e);
   const sent = new Set([...rec.sent, ...serverIds]);
-  const ui = { sel: null, benchFirst: null, ask: null, tip: '', flash: null, flashN: 0, running: false, secs: rec.secs ?? rules.periodMin * 60, sync: 'idle', syncMsg: '', locked: published, after: null, sheet: false };
+  const ui = { sel: null, benchFirst: null, ask: null, tip: '', flash: null, flashN: 0, running: false, secs: rec.secs ?? rules.periodMin * 60, sync: 'idle', syncMsg: '', locked: published, after: null, sheet: false, lane: multi ? readLane() : 'both', lanes: null, asked: '' };
 
   const list = () => [...events.values()];
   const unsent = () => list().filter(e => !sent.has(e.id));
@@ -115,7 +126,63 @@ export async function mount(el) {
       if (n || ui.locked) { G = fold(); await save(); paint(); }
     } catch (e) { /* no signal: the phone's copy stands */ }
   }
-  window.addEventListener('online', () => { pull(); sync(); });
+  window.addEventListener('online', () => { pull(); sync(); lanes(); });
+
+  // ── Two scorers ──
+  const laneApi = api.replace(/\/events(\?.*)?$/, '/lanes');
+  const sideName = l => (l === 'both' ? 'both teams' : team[l].name);
+  const mine = t => !multi || ui.lane === 'both' || ui.lane === t;
+  const keeper = () => (multi && ui.lanes && ui.lanes.keeper ? ui.lanes.keeper : null);
+  const keepsClock = () => { const k = keeper(); return !k || k.me; };
+  async function lanes(body = {}) {
+    if (!multi || !navigator.onLine) return;
+    const clock = keepsClock() && ui.lane ? { secs: ui.secs, running: ui.running, period: G.period } : null;
+    let d;
+    try {
+      const r = await fetch(laneApi, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: deviceId, lane: ui.lane, clock, ...body }) });
+      if (!r.ok) return;
+      d = await r.json();
+    } catch (e) { return; }
+    ui.lanes = d;
+    if (d.me.lane !== ui.lane) { ui.lane = d.me.lane; storeLane(ui.lane); ui.sel = null; }
+    if (d.me.note) ui.tip = d.me.note;
+    if (d.asked) ui.asked = d.asked;
+    if (d.me.lane) ui.asked = '';
+    if (d.tookOver) ui.tip = `You took over from ${d.tookOver}.`;
+    const k = d.keeper;
+    if (k && !k.me && k.clock) {
+      const gone = k.clock.running ? Math.round((d.now - k.clock.at) / 1000) : 0;
+      ui.secs = Math.max(0, k.clock.secs - gone); ui.running = k.clock.running;
+    }
+    if (d.others.length) pull();
+    paint();
+  }
+  const pickSide = (want, holder) => {
+    if (!holder) return lanes({ action: 'claim', want });
+    ui.asked = holder; ui.tip = '';
+    return lanes({ action: 'ask', want });
+  };
+  const holderOf = l => (ui.lanes ? ui.lanes.others.find(o => o.lane && (o.lane === 'both' || l === 'both' || o.lane === l)) : null);
+  function sideMenu() {
+    const opts = ['a', 'b', 'both'].filter(l => l !== ui.lane).map(l => { const h = holderOf(l); return [l, h ? `Ask ${h.name} for ${sideName(l)}` : `Score ${sideName(l)}`]; });
+    if (ui.lane) opts.push(['watch', 'Stop scoring (watch)']);
+    if (ui.lanes && ui.lanes.admin) opts.push(...['a', 'b', 'both'].filter(l => holderOf(l)).map(l => [`force:${l}`, `Take over ${sideName(l)} (admin)`]));
+    menu('Which side do you score?', opts, k => {
+      if (k === 'watch') return lanes({ action: 'claim', want: null });
+      if (k.startsWith('force:')) return lanes({ action: 'claim', want: k.slice(6), force: true });
+      const h = holderOf(k);
+      return pickSide(k, h ? h.name : '');
+    });
+  }
+  // The other phone's plays as they land (the live score's socket says when).
+  let sock = null;
+  const listen = () => {
+    if (!multi || !window.WebSocket || sock) return;
+    try { sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + `/ws/games/${encodeURIComponent(gid)}/live`); } catch (e) { return; }
+    sock.onmessage = () => { if (ui.lanes && ui.lanes.others.length) pull(); };
+    sock.onclose = () => { sock = null; if (document.contains(el)) setTimeout(listen, 5000); };
+  };
+  const laneTimer = multi ? setInterval(() => { if (!document.contains(el)) { clearInterval(laneTimer); if (sock) sock.close(); return; } lanes(); }, 4000) : null;
   const syncTimer = setInterval(() => { if (!document.contains(el)) { clearInterval(syncTimer); clearInterval(tick); return; } if (unsent().length) sync(); }, 10000);
   pull();
 
@@ -126,8 +193,8 @@ export async function mount(el) {
     // next one goes after this.
     const anchor = ui.after && events.get(ui.after);
     const e = anchor
-      ? { id: uid(), pos: nextPos(list(), anchor.id), at: Date.now(), period: anchor.period || G.period, clock: anchor.clock || '', ...fields }
-      : { id: uid(), pos: nextPos(list()), at: Date.now(), period: G.period, clock: clockStr(), ...fields };
+      ? { id: uid(), pos: nextPos(list(), anchor.id), at: Date.now(), period: anchor.period || G.period, clock: anchor.clock || '', dev: deviceId, ...fields }
+      : { id: uid(), pos: nextPos(list()), at: Date.now(), period: G.period, clock: clockStr(), dev: deviceId, ...fields };
     events.set(e.id, e);
     if (anchor && fields.type !== 'void') ui.after = e.id;
     G = fold();
@@ -321,6 +388,11 @@ export async function mount(el) {
       <b class="num">${esc(p.number || '–')}</b><span>${esc(p.short)}</span>${L.pf ? `<i class="sc-p__pf">${L.pf}F</i>` : ''}${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
   };
   const teamBlock = t => {
+    if (!mine(t)) {
+      const h = holderOf(t);
+      return `<section class="sc-team sc-team--off" style="grid-area:${t}"><div class="sc-th"><span class="sc-th__n"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}</span></div>
+        <p class="sc-off">${h ? `${esc(h.name)} scores ${esc(team[t].name)}. Their plays show in the log.` : `Nobody is scoring ${esc(team[t].name)} yet.`}</p></section>`;
+    }
     const on = five(t);
     const rest = team[t].players.filter(p => !on.includes(p.id));
     return `<section class="sc-team" style="grid-area:${t}">
@@ -346,11 +418,18 @@ export async function mount(el) {
     const strip = ask
       ? `<div class="sc-strip ${ask.kind === 'menu' ? 'is-menu' : 'is-ask'}" role="status"><div class="sc-strip__q"><b>${esc(ask.q)}</b>${ask.hint ? `<small>${esc(ask.hint)}</small>` : ''}</div>
           <div class="sc-opts">${ask.opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}">${esc(o.label)}</button>`).join('')}</div></div>`
+      : multi && ui.lanes && ui.lanes.asks.length ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>${esc(ui.lanes.asks[0].name)} asks to score ${esc(sideName(ui.lanes.asks[0].lane))}</b><small>you keep the other side</small></div>
+          <div class="sc-opts"><button type="button" class="def" data-handover="${esc(ui.lanes.asks[0].device)}" data-yes="1">Hand it over</button><button type="button" data-handover="${esc(ui.lanes.asks[0].device)}">Keep it</button></div></div>`
+      : multi && !ui.lane && !ui.locked ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>${ui.asked ? `Asked ${esc(ui.asked)}. Waiting for them to hand it over…` : ui.lanes && ui.lanes.others.length ? `${esc(ui.lanes.others.filter(o => o.lane).map(o => `${o.name} scores ${sideName(o.lane)}`).join(', ') || 'Someone is here')}. Which side do you score?` : 'Which side do you score?'}</b></div>
+          ${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}
+          <div class="sc-opts">${['a', 'b', 'both'].map(l => { const h = holderOf(l); return `<button type="button" data-side="${l}" data-holder="${esc(h ? h.name : '')}">${h ? `Ask for ${esc(sideName(l))}` : `Score ${esc(sideName(l))}`}</button>`; }).join('')}${ui.lanes && ui.lanes.admin ? '<button type="button" data-act="sides">Take over…</button>' : ''}</div></div>`
       : ui.after ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>Adding after: ${playText(G.rows.find(r => r.id === ui.after) || { type: '' }).replace(/<[^>]+>/g, '')}</b><small>later scores update</small></div>
           <div class="sc-opts"><button type="button" class="def" data-act="insert-done">Done, back to the end</button></div>${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}</div>`
       : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : 'Tap a player, then the stat. Corner mark: tap for the usual, hold for more.'))}</p></div>`;
     const rows = G.rows.slice(-6).reverse();
-    const lastId = G.rows.length ? G.rows[G.rows.length - 1].id : '';
+    // Undo: this phone's own last play (with two scorers, the other phone's plays get Fix only).
+    const mineRows = G.rows.filter(r => !r.dev || r.dev === deviceId);
+    const lastId = mineRows.length ? mineRows[mineRows.length - 1].id : '';
     const logRow = (r, sheet = false) => `<div class="sc-lg${r.id === ui.after ? ' is-at' : ''}"><span class="sc-lg__t">${esc([r.period, r.clock].filter(Boolean).join(' '))}</span><span class="sc-lg__w">${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : ''}${playText(r)}</span><span class="sc-lg__s num">${r.score.a}–${r.score.b}</span>${ui.locked ? '' : `${r.id === lastId && !ui.after && !sheet ? `<button type="button" class="sc-undo" data-undo="${esc(r.id)}" aria-label="Undo the last play">Undo</button>` : ''}<button type="button" class="sc-undo sc-fix" data-fix="${esc(r.id)}" aria-label="Fix this play">Fix</button>`}</div>`;
     root.innerHTML = `
       ${ui.locked ? '<div class="msg msg--info sc-msg">This game is published. The scorer is read-only now.</div>' : ''}
@@ -359,13 +438,14 @@ export async function mount(el) {
         ${sideBoard('a')}
         <div class="sc-clk"><span class="sc-clk__p">${video ? 'Video · ' : ''}${esc(G.period)}</span><button type="button" class="sc-clk__t num" data-act="clockset" data-sc-clock aria-label="Game clock ${clockStr()}. Tap to fix it">${clockStr()}</button>
           <div class="sc-clk__row">
-            <button type="button" class="sc-cb sc-cb--go" data-act="clock" aria-label="${ui.running ? 'Pause clock' : 'Start clock'}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>
+            <button type="button" class="sc-cb sc-cb--go" data-act="clock"${keepsClock() ? '' : ` disabled title="${esc(keeper().name)} keeps the clock"`} aria-label="${keepsClock() ? (ui.running ? 'Pause clock' : 'Start clock') : `${esc(keeper().name)} keeps the clock`}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>
             <button type="button" class="sc-cb hold" data-hold="refs" aria-label="Referees stopped play. Hold for the reason">Refs</button>
             <button type="button" class="sc-cb" data-act="end">End</button>
             ${video && B.video ? `<button type="button" class="sc-cb${ui.showVideo ? ' is-on' : ''}" data-act="video" aria-pressed="${!!ui.showVideo}">Video</button>` : ''}
           </div></div>
         ${sideBoard('b')}
       </div>
+      ${multi && ui.lane && (ui.lane !== 'both' || (ui.lanes && ui.lanes.others.length)) ? `<div class="sc-lanes"><span>You: <b>${esc(sideName(ui.lane))}</b>${ui.lanes && ui.lanes.others.filter(o => o.lane).map(o => ` · ${esc(o.name)}: <b>${esc(sideName(o.lane))}</b>`).join('')}${keeper() && !keeper().me ? ` · clock: ${esc(keeper().name)}` : ''}</span><button type="button" class="sc-tb" data-act="sides">Change</button></div>` : ''}
       <div class="sc-main">
         ${teamBlock('a')}${teamBlock('b')}
         <section class="sc-center" style="grid-area:c">
@@ -400,7 +480,8 @@ export async function mount(el) {
     if (name === 'clock') { ui.running = !ui.running; if (ui.running) ui.tip = ''; save(); return paint(); }
     if (name === 'end') return endPeriod();
     if (name === 'dnp') return dnpMenu(t);
-    if (name === 'clockset') return clockMenu();
+    if (name === 'sides') return sideMenu();
+    if (name === 'clockset') { if (!keepsClock()) { ui.tip = `${keeper().name} keeps the clock.`; return paint(); } return clockMenu(); }
     if (name === 'all') { ui.sheet = true; return paint(); }
     if (name === 'sheet-close') { ui.sheet = false; return paint(); }
     if (name === 'insert-done') { ui.after = null; ui.tip = 'Back at the end of the game.'; return paint(); }
@@ -418,6 +499,8 @@ export async function mount(el) {
     if (b.hasAttribute('data-pick')) { const id = b.getAttribute('data-pick'); ui.sel = ui.sel === id ? null : id; ui.ask = ui.ask && ui.ask.kind === 'ft' ? ui.ask : null; ui.tip = ''; return paint(); }
     if (b.hasAttribute('data-ask')) return answer(b.getAttribute('data-ask'));
     if (b.hasAttribute('data-fix')) return fixMenu(b.getAttribute('data-fix'));
+    if (b.hasAttribute('data-side')) return pickSide(b.getAttribute('data-side'), b.getAttribute('data-holder'));
+    if (b.hasAttribute('data-handover')) { const yes = b.hasAttribute('data-yes'); return lanes({ action: 'answer', from: b.getAttribute('data-handover'), yes }); }
     if (b.hasAttribute('data-undo')) { add({ type: 'void', target: b.getAttribute('data-undo') }); ui.ask = null; ui.tip = 'Undone. Removed plays stay on record for the review.'; return paint(); }
     if (b.hasAttribute('data-shot')) return shot(Number(b.getAttribute('data-shot')), b.hasAttribute('data-made'));
     if (b.hasAttribute('data-act')) return act(b.getAttribute('data-act'), b);
@@ -470,6 +553,7 @@ export async function mount(el) {
 
   paint();
   sync();
+  if (multi) { listen(); if (ui.lane) lanes(); else lanes({ action: 'claim', want: 'both' }); }
 }
 
 if (typeof window !== 'undefined') window.wkndScorer = { mount };
