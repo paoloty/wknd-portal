@@ -238,10 +238,11 @@ export function appRail({ dayLabel, cards }) {
 
 // Before tip-off: the game's preview. pick: the pick card while picks are open (or the pick
 // made); preview: server.js appPreview.
-export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref }) {
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '' }) {
   const w = (p.watch || []).filter(Boolean);
   // While there's a pick card it is the top of the screen (it has the matchup, day and time).
   return `${navbar(back, title)}
+  ${scoreHref ? `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>` : ''}
   ${pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
     <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>
     ${matchup({ a, b })}

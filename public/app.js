@@ -268,6 +268,24 @@
   // site popup's key. A vote is also kept here, so Home's copy on the phone doesn't ask
   // again before it's refreshed.
   var tkTimer = null;
+  // ════ The scorer (views/app/score.js) ════ Its script (public/scorer.js, with the shared
+  // engine public/score-engine.js) loads only on that screen, as a module, then draws it.
+  function initScorer() {
+    var el = $('[data-scorer]');
+    if (!el || el._scLoading) return;
+    el._scLoading = true;
+    var go = function () { window.wkndScorer.mount(el); };
+    if (window.wkndScorer) return go();
+    var s = document.createElement('script'); s.type = 'module'; s.src = '/scorer.js?v=' + ver;
+    s.onload = go;
+    s.onerror = function () {
+      el._scLoading = false;
+      var r = $('[data-sc-root]', el);
+      if (r) r.innerHTML = '<div class="msg msg--err" role="alert">The scorer didn\'t load. Check your connection and open the game again.</div>';
+    };
+    document.head.appendChild(s);
+  }
+
   function initPollTakeover() {
     var root = $('main.app [data-tk]'), open = $('body > .tk');
     if (root && open && open.getAttribute('data-tk') === root.getAttribute('data-tk')) { root.remove(); return; } // a quiet refresh of Home: keep the one up
@@ -455,6 +473,7 @@
     initThreads();
     initShare();
     initPollTakeover();
+    initScorer();
     initGameRecap();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s

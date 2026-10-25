@@ -10,7 +10,7 @@
 // pick window): public/admin-game.js. Every POST goes to the same routes as before.
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
-import { pageTabs, breadcrumb, badge, button, menu, banner, section, statStrip, field, fieldGrid, segmented, toggleRow, saveBar, timeline, emptyState, drawer, avatar, progress } from './ui.js';
+import { pageTabs, breadcrumb, badge, button, menu, banner, section, statStrip, field, fieldGrid, segmented, toggleRow, saveBar, timeline, emptyState, drawer, avatar, progress, playerPicker, dataGrid } from './ui.js';
 import { gameState, STATE_BADGE, TYPE_LABEL, otLabel, contentChecks } from './games.js';
 
 const attr = s => escHtml(String(s ?? ''));
@@ -305,7 +305,62 @@ function settingsTab({ game, st, statCorrections, nameById, courts }) {
     ${saveBar({ label: 'Save game', form: 'game-settings' })}`;
 }
 
-export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null, players = [], teams = [], colorById = {}, box, courts = [] }) {
+// The scorer (server.js adminScoringPanel; replaces importing a wknd-stats file). Turn scoring on
+// and pick up to 2 scorers; once plays come in, the quick review: the scored total against the
+// official score, every play with Remove, who didn't play, then Publish. The full screen for an
+// admin on a laptop or tablet: /admin/games/:id/score.
+function scoringTab({ game, sc, colors }) {
+  const base = `/admin/games/${game.id}`;
+  const scorerForm = `<form id="scoring-setup" class="aui-stack" data-json-action="${base}/scoring" data-then="${base}?tab=scoring" data-done="Saved.">
+      ${playerPicker({ name: 'scorers[]', label: 'Scorers (up to 2)', options: sc.options, selected: sc.scorers, placeholder: 'Search players' })}
+      <div class="aui-field"><span class="aui-field__label">Waves</span>${segmented({ name: 'waves', value: sc.waves || (game.game_type === 'playoff' ? 'off' : 'first half'), label: 'Waves', options: [['off', 'Off'], ['first half', 'First half'], ['whole game', 'Whole game']] })}
+        <span class="aui-field__help">Regular season: first half. Playoffs: off.</span></div>
+      <div>${button(sc.on ? 'Save scorers' : 'Turn on scoring', { kind: 'primary', type: 'submit' })}</div>
+    </form>`;
+  if (!sc.on) {
+    return section({ title: 'Scoring', note: '· score this game live in the app instead of importing a wknd-stats file', bodyHtml: `<div class="aui-panel">
+      <p class="aui-muted">Turn scoring on, pick who scores it, and they get it in the app under Me → Score a game. Admins can always score it, from the app or from this page.</p>
+      ${scorerForm}</div>` });
+  }
+  const statusLine = { setup: 'Ready. No plays yet.', live: `Scoring has started · ${sc.period}`, review: 'In review', published: 'Published' }[sc.status] || sc.status;
+  const open = button('Open the scorer', { kind: 'secondary', href: `${base}/score` });
+  if (sc.status === 'published') {
+    return `${banner('ok', `Published from the scorer: ${game.team_a_name} ${sc.score.a}, ${game.team_b_name} ${sc.score.b}.`)}
+      ${section({ title: 'Plays', note: `· ${sc.plays.length}`, bodyHtml: playsGrid(sc, base, false) })}`;
+  }
+  const notPlayed = sc.roster.filter(p => !p.played);
+  const dnpForm = `<form id="scoring-dnp" class="aui-stack" data-json-action="${base}/scoring/dnp" data-then="${base}?tab=scoring" data-done="Saved.">
+      ${playerPicker({ name: 'dnp[]', label: 'Didn’t play', options: notPlayed.map(p => ({ id: p.id, name: p.name, color: colors[p.team] || '', meta: p.team === 'a' ? game.team_a_name : game.team_b_name })), selected: sc.dnp, placeholder: 'Players with no plays' })}
+      <div>${button('Save', { kind: 'secondary', type: 'submit' })}</div></form>`;
+  const official = sc.official || {};
+  const publishForm = `<form id="scoring-publish" class="aui-stack" data-json-action="${base}/scoring/publish" data-then="${base}?tab=scoring"
+        data-confirm data-confirm-title="Publish this game?" data-confirm-body="Its box score, quarter scores and play-by-play go on the site and in the app, picks settle and rating asks go out. Like an import, it shows straight away." data-confirm-send="Publish">
+      <p class="aui-muted">Scored: <b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>. Type the official score from the table to check it.</p>
+      ${fieldGrid(`${field({ label: `Official ${game.team_a_name}`, name: 'officialA', type: 'number', value: official.a ?? '' })}${field({ label: `Official ${game.team_b_name}`, name: 'officialB', type: 'number', value: official.b ?? '' })}`)}
+      <label class="aui-check"><input type="checkbox" name="anyway" value="1"> Publish even if they don’t match</label>
+      <div>${button('Publish', { kind: 'primary', type: 'submit' })}</div>
+    </form>`;
+  return `${section({ title: 'Scoring', note: `· ${statusLine}`, asideHtml: open, bodyHtml: `<div class="aui-panel">${scorerForm}</div>` })}
+    ${sc.plays.length ? section({ title: 'Quick review', note: '· check the plays, then publish', bodyHtml: `<div class="aui-panel">${publishForm}</div>` }) : ''}
+    ${sc.plays.length ? section({ title: 'Plays', note: `· ${sc.plays.length}, newest first`, bodyHtml: playsGrid(sc, base, true) }) : ''}
+    ${sc.plays.length ? section({ title: 'Who didn’t play', bodyHtml: `<div class="aui-panel">${dnpForm}</div>` }) : ''}`;
+}
+function playsGrid(sc, base, editable) {
+  return dataGrid({
+    baseUrl: base, keep: { tab: 'scoring' }, perPage: 500, noun: ['play', 'plays'], minimal: true,
+    rows: sc.plays, rowKey: r => r.id,
+    columns: [
+      { key: 'when', label: 'When', cell: r => escHtml(r.when) },
+      { key: 'text', label: 'Play', primary: true, cell: r => escHtml(r.text) },
+      { key: 'score', label: 'Score', num: true, cell: r => escHtml(r.score) },
+    ],
+    rowMenu: editable ? r => [{ label: 'Remove play…', danger: true, post: `${base}/scoring/void`, body: { eventId: r.id }, then: `${base}?tab=scoring`, done: 'Play removed.',
+      confirm: { title: 'Remove this play?', body: `${r.text}. The scores after it update. A removed play stays on record.`, send: 'Remove' } }] : null,
+    empty: { title: 'No plays yet', sub: 'They show here as the scorer taps.' },
+  });
+}
+
+export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null, players = [], teams = [], colorById = {}, box, courts = [], scoring = null }) {
   const st = gameState(game);
   const colorByName = Object.fromEntries(teams.map(t => [String(t.name).toUpperCase(), t.color || '']));
   const colorOfTeam = name => colorByName[String(name || '').toUpperCase()] || '';
@@ -324,6 +379,7 @@ export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers 
     ['box', st === 'upcoming' || st === 'score' ? 'Results' : 'Box score', ''],
     ['content', 'Content', missing && st !== 'upcoming' ? `${missing} missing` : ''],
     ['picks', 'Picks', picksPanel?.picks.length ? String(picksPanel.picks.length) : ''],
+    ['scoring', 'Scoring', ''],
     ['settings', 'Settings', ''],
   ];
   const current = tabs.some(t => t[0] === tab) ? tab : 'box';
@@ -338,6 +394,7 @@ export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers 
     box: () => boxTab({ game, st, stats, dnpPlayers, quarterScores, colors, potgId, teamA: game.team_a_name, teamB: game.team_b_name, ...box }),
     content: () => contentTab({ game, st, stats, colors, colorOfTeam }),
     picks: () => picksTab({ game, st, pp: picksPanel, colors, colorById }),
+    scoring: () => (scoring ? scoringTab({ game, sc: scoring, colors }) : ''),
     settings: () => settingsTab({ game, st, statCorrections, nameById, courts }),
   }[current]();
 

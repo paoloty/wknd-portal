@@ -27,6 +27,7 @@ Start at whichever one matches what you're touching — a page doc will point to
 - [awards](features/awards.md) — season awards, graphics, articles
 - [media-jobs](features/media-jobs.md) — POTG video editor, background renders, `/admin/media` Processing list
 - [players-app](features/players-app.md) — the installable players-only app at `/app`: sign-in, setup, Home, hidden beta gate
+- [scorer](features/scorer.md) — the offline scorer that replaces wknd-stats live tracking: engine, plays API, publish as an import
 
 ## Handoff
 - [handoff-players-app](handoff-players-app.md) — where the players app stands, Paolo's working rules, what's next, local test setup. Read first in a new session.

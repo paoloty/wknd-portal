@@ -1,0 +1,17 @@
+# Scorer (replaces wknd-stats live tracking)
+
+Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off), offline-first; an admin publishes it from the game's Scoring tab. Later phases (video re-track, two scorers + live view, lineups mode, Papawis) are planned, not built. Product decisions live in the scorer memory notes; mockups: claude.ai/artifact/6HBcExzSGjoQSzvjpkMPJQ.
+
+## Files
+- `public/score-engine.js` — the rules and maths, shared by the phone and the server (plain JS, no imports, like `public/share-cards.js`). `foldGame(events, rules)` → score by period, team fouls (per quarter, OT carries Q4), penalty, timeouts (2/3/1 per OT), player lines incl. `oreb`, foul-out/ejection flags, last-active players. `defaultFreeThrows`, `nextPos` (inserts between plays). Tests: `node --test test/score-engine.test.js`.
+- `public/scorer.js` — the screen (module, loaded by `public/app.js` `initScorer` only when `[data-scorer]` is on the page). Saves every play to IndexedDB (`wknd-scorer`), sends batches to the API, retries; tap/hold buttons (`data-hold`), follow-up questions (assist, who lost it, free throws → shooter → made/missed), Undo = a `void` play.
+- `views/app/score.js` — the shell (bundle JSON embedded: game, both rosters, rules, plays) and the "Score a game" list.
+- `lib/scorer-publish.js` — `buildPublishPayload` turns plays into exactly what a wknd-stats import hands `importGameResults`, including the old `game_log_json` format (newest first, "[WHI 3 - BLA 0]" score tags, quarterEnd markers). Tests: `node --test test/scorer-publish.test.js` (checks `lib/game-detail.js` reads it).
+- `lib/portal-db.js` — tables `score_games` (status setup → live → published, settings JSON: rules overrides, dnp, official), `score_scorers`, `score_events` (id from the phone, `INSERT OR IGNORE`, `pos` order, `payload_json`); `game_player_stats.oreb` (hidden on the site until next season).
+- `server.js` — `// ── The scorer` block: `scoreAccess` (admins with games-stats, or listed scorers), `scoreBundle`, `GET /app/score`, `GET /app/score/:id`, `GET /admin/games/:id/score` (same screen on the site), `POST /api/score/:id/events` (validates type, team, roster), admin `POST /admin/games/:id/scoring` (on + scorers + waves), `/scoring/void`, `/scoring/dnp`, `/scoring/publish` (refuses a mismatch with the typed official score unless `anyway`). `afterGameImport` = the import's follow-up steps, shared with `POST /admin/games/:id/import`. `adminScoringPanel` + `describeScorePlay` feed `views/admin/game.js` `scoringTab`.
+- Entry points: Me's To do ("1 game to score"), the upcoming game screen's Start scoring (`appGamePreviewPage` `scoreHref`), the admin game page's Scoring tab.
+
+## Gotchas
+- Nothing shows anywhere until an admin turns scoring on for a game; publishing goes through `importGameResults`, which makes the game public at once (same as an import).
+- Minutes are not tracked (`min: ''` in the payload). DNP is only what the admin marks in the review.
+- `/app/score/:id` and the two scripts are in the service worker (`isScreen`, `isShellAsset`) so the screen opens offline; the page's embedded plays are merged with the phone's copy on open.
