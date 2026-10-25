@@ -488,7 +488,7 @@ export async function mount(el) {
           <div class="sc-opts">${['a', 'b', 'both'].map(l => { const h = holderOf(l); return `<button type="button" data-side="${l}" data-holder="${esc(h ? h.name : '')}">${h ? `Ask for ${esc(sideName(l))}` : `Score ${esc(sideName(l))}`}</button>`; }).join('')}${ui.lanes && ui.lanes.admin ? '<button type="button" data-act="sides">Take over…</button>' : ''}</div></div>`
       : ui.after ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>Adding after: ${playText(G.rows.find(r => r.id === ui.after) || { type: '' }).replace(/<[^>]+>/g, '')}</b><small>later scores update</small></div>
           <div class="sc-opts"><button type="button" class="def" data-act="insert-done">Done, back to the end</button></div>${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}</div>`
-      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : (wide.matches ? 'Tap a player, then the stat. Subs: ⇄ Sub, or drag a bench player onto a tile. A bench player’s stat brings them on too.' : 'Tap a player, then the stat. Subs: ⇄ Sub. A bench player’s stat brings them on too. Buttons with ⋯: tap for the usual, hold for more.')))}</p></div>`;
+      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : (wide.matches ? 'Tap a player, then the stat. Subs: ⇄ Sub, or drag a bench player onto a tile. A bench player’s stat brings them on too.' : 'Tap a player, then a stat. ⇄ Sub to swap players. ⋯ = hold for more.')))}</p></div>`;
     const rows = G.rows.slice(-6).reverse();
     // Undo: this phone's own last play (with two scorers, the other phone's plays get Fix only).
     const mineRows = G.rows.filter(r => !r.dev || r.dev === deviceId);
@@ -528,7 +528,7 @@ export async function mount(el) {
         </section>
         <section class="sc-logsec" style="grid-area:l" aria-label="Latest plays"><div class="sc-log">
             ${rows.length ? rows.map(logRow).join('') : '<p class="sc-empty">Plays show here as you tap.</p>'}
-            ${G.rows.length > rows.length ? `<button type="button" class="sc-all" data-act="all">All ${G.rows.length} plays</button>` : ''}
+            ${G.rows.length > 1 ? `<button type="button" class="sc-all" data-act="all"${G.rows.length > rows.length ? '' : ' data-few'}>All ${G.rows.length} plays</button>` : ''}
         </div></section>
       </div>
       ${dnpSheet()}
