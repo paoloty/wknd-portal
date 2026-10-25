@@ -46,6 +46,9 @@ export async function mount(el) {
   const byId = {};
   for (const t of ['a', 'b']) for (const p of team[t].players) byId[p.id] = { ...p, team: t };
   const published = B.status === 'published';
+  // 4PT only at a court with a 4-point line (admin: the court's features); a game with no
+  // court set keeps it, so nothing is ever missing.
+  const shots = B.fourPoint === false ? [1, 2, 3] : [1, 2, 3, 4];
 
   // Plays: the server's, plus any this phone made that the server doesn't have yet.
   const rec = (await store.get(gid)) || { id: gid, events: [], sent: [], secs: rules.periodMin * 60 };
@@ -289,9 +292,9 @@ export async function mount(el) {
         ${teamBlock('a')}${teamBlock('b')}
         <section class="sc-center" style="grid-area:c">
           ${strip}
-          <div class="sc-pad">
-            ${[1, 2, 3, 4].map(p => `<button type="button" class="sc-st sc-st--made" data-shot="${p}" data-made="1">${p === 1 ? 'FT' : p + 'PT'}<small>made</small></button>`).join('')}
-            ${[1, 2, 3, 4].map(p => `<button type="button" class="sc-st sc-st--miss" data-shot="${p}">${p === 1 ? 'FT' : p + 'PT'}<small>miss</small></button>`).join('')}
+          <div class="sc-pad${shots.length === 3 ? ' sc-pad--3' : ''}">
+            ${shots.map(p => `<button type="button" class="sc-st sc-st--made" data-shot="${p}" data-made="1">${p === 1 ? 'FT' : p + 'PT'}<small>made</small></button>`).join('')}
+            ${shots.map(p => `<button type="button" class="sc-st sc-st--miss" data-shot="${p}">${p === 1 ? 'FT' : p + 'PT'}<small>miss</small></button>`).join('')}
           </div>
           <div class="sc-pad sc-pad--6">
             <button type="button" class="sc-st" data-act="reb">REB<small>off/def auto</small></button>

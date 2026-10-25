@@ -11,6 +11,7 @@ function courtLinkHtml(court) {
 }
 import { parseWriteup } from '../lib/writeup.js';
 import { gameSlug } from '../lib/slugs.js';
+import { liveWhen } from '../lib/live-score.js';
 import { sectionNavScript } from './section-nav.js';
 import { oddsEdge } from './pick-box.js';
 import { pickCard, pickCardScript, pickResultCard, pickTeaser } from './pick-card.js';
@@ -1728,7 +1729,6 @@ function upcomingHero(d) {
 // ── Live: while the scorer is scoring it (lib/live-score.js liveScoreData), before publish ──
 // The hero with the running score, then the live box score and play-by-play. Marked unofficial;
 // public/live-score.js swaps both parts in as plays arrive (server.js liveChanged).
-const liveWhen = l => (l.ended || /^(Halftime|End)/.test(l.label) ? l.label : [l.label, l.clock].filter(Boolean).join(' · '));
 function liveTeamLine(t) {
   const fouls = `${t.fouls} team foul${t.fouls === 1 ? '' : 's'}`;
   const pen = t.penalty ? '<b class="gd-pen">Penalty</b>' : t.penaltyNext ? '<b class="gd-pen">Penalty next</b>' : '';

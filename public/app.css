@@ -1604,6 +1604,7 @@ html.tk-lock { overflow: hidden; }
 .sc-opts button::before { content: ''; position: absolute; inset: -2px 0; }
 .sc-opts button.def { border-color: var(--amber); }
 .sc-pad { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.sc-pad--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .sc-pad--6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .sc-st { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); font: 700 18px/1 var(--font-num); touch-action: none; }
 .sc-st small { font: 600 11px/1 var(--font-ui); color: var(--muted); }

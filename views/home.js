@@ -791,7 +791,12 @@ function nuCard(kind, kicker, title, meta, body, foot) {
 const NU_RENDER = {
   league(d) {
     if (d.mode === 'upcoming') {
-      const rows = d.games.map(g => `<div class="nu-match">
+      // g.live (server.js withLiveNextUp): being scored, so the row shows the live score.
+      const rows = d.games.map(g => g.live ? `<a href="${escHtml(g.live.href)}" class="nu-match nu-match--result nu-match--live">
+        <span class="nu-match__team${g.live.a > g.live.b ? ' is-win' : ''}"><span class="team-dot" style="background:${teamColor(g.a)}"></span>${escHtml(g.a)}</span>
+        <span class="nu-match__score font-condensed"><span><b${g.live.a > g.live.b ? ' class="is-win"' : ''}>${g.live.a}</b>–<b${g.live.b > g.live.a ? ' class="is-win"' : ''}>${g.live.b}</b></span><small>${escHtml(g.live.when.startsWith('Final') ? 'Final · unofficial' : `Live · ${g.live.when}`)}</small></span>
+        <span class="nu-match__team nu-match__team--r${g.live.b > g.live.a ? ' is-win' : ''}">${escHtml(g.b)}<span class="team-dot" style="background:${teamColor(g.b)}"></span></span>
+      </a>` : `<div class="nu-match">
         <span class="nu-match__team"><span class="team-dot" style="background:${teamColor(g.a)}"></span>${escHtml(g.a)}${g.recA ? ` <em>${escHtml(g.recA)}</em>` : ''}</span>
         <span class="nu-match__vs">vs</span>
         <span class="nu-match__team nu-match__team--r">${g.recB ? `<em>${escHtml(g.recB)}</em> ` : ''}${escHtml(g.b)}<span class="team-dot" style="background:${teamColor(g.b)}"></span></span>

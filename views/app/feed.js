@@ -8,6 +8,7 @@ import { appSocialBar, appThreadPanel } from './comments.js';
 import { papawisAction } from './papawis.js';
 import { todoCard } from './home.js';
 import { lineScore, gameRecapSections, boxCard } from './game.js';
+import { liveWhen } from '../../lib/live-score.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -240,7 +241,6 @@ export function appRail({ dayLabel, cards }) {
 // The site's live view, app-styled: the score on the hero, team fouls and timeouts, the line
 // score, the box score (the finished game's own table) and the play-by-play. Unofficial till
 // published. public/live-score.js swaps both parts in as plays arrive.
-const liveWhen = l => (l.ended || /^(Halftime|End)/.test(l.label) ? l.label : [l.label, l.clock].filter(Boolean).join(' · '));
 const LIVE_SHOWN = 12;
 export function appLiveParts(l, { meId = '', myTeamId = '' } = {}) {
   const side = t => ({ ...t, won: t.score >= (t === l.a ? l.b : l.a).score });

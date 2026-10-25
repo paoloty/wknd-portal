@@ -1793,6 +1793,8 @@ function buildTicker() {
 function buildTickerUncached() {
   const games = getTickerGames();
   if (!games.length) return '';
+  // A game being scored shows its live score (liveChanged clears this cache on every play).
+  for (const g of games) g.live = liveMini(g);
 
   // Semifinal series are "twice to beat" — need each game's higher seed to detect a clinch
   // (see getSeriesRecordForGame's highTeamId param). Seeds only depend on regular-season
@@ -6025,7 +6027,7 @@ import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostP
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
-import { liveScoreData } from './lib/live-score.js';
+import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { foldGame as foldScoredGame, DEFAULT_RULES as SCORE_RULES } from './public/score-engine.js';
 import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
 import { appSharePage } from './views/app/share.js';
@@ -6838,6 +6840,13 @@ function scoreAccess(req, gameId) {
   return pid && getScorers(gameId).some(s => s.player_id === pid) ? 'scorer' : null;
 }
 // Everything the scorer screen needs, in one go (it rides in the page's HTML).
+// The court's features (admin Papawis → Courts → a court) say whether it has a 4-point line.
+// No court on the game: unknown, so the scorer keeps 4PT.
+function hasFourPointLine(game) {
+  const c = game.court_id ? getPapawisCourtById(game.court_id) : null;
+  if (!c) return true;
+  try { return (JSON.parse(c.info_json || '{}').features || []).includes('four_point'); } catch { return true; }
+}
 function scoreBundle(game) {
   const sg = getScoreGame(game.id) || { status: 'setup', settings: {} };
   const teams = getAllTeams();
@@ -6850,6 +6859,7 @@ function scoreBundle(game) {
   });
   return {
     game: { id: game.id, date: gameYmd(game.date), tip: game.tip_time || '', type: game.game_type || 'regular' },
+    fourPoint: hasFourPointLine(game),
     status: sg.status, rules: { ...SCORE_RULES, waves: game.game_type === 'playoff' ? 'off' : 'first half', ...(sg.settings.rules || {}) },
     a: side(game.team_a_id, game.team_a_name), b: side(game.team_b_id, game.team_b_name),
     events: getScoreEvents(game.id),
@@ -6874,9 +6884,27 @@ function liveScoreFor(game) {
   if (!bundle.events.length) return null;
   return liveScoreData(bundle, { photo: id => playerPhotoUrl(id, 96) });
 }
+// A game being scored, small: the ticker, the homepage's playoff scoreboard and Coming up.
+function liveMini(g) {
+  if (!g || !getScoreGame(g.id)) return null;
+  const full = g.team_a_id && g.team_b_id ? g : getGameById(g.id);
+  const l = full && liveScoreFor(full);
+  if (!l) return null;
+  return { an: titleCase(full.team_a_name), bn: titleCase(full.team_b_name), a: l.score.a, b: l.score.b, when: l.ended ? 'Final · unofficial' : liveWhen(l), href: `/games/${encodeURIComponent(gameSlug(full))}` };
+}
+// Coming up's league card with the live score on any game being scored (a copy: the AI
+// summary reads the plain card).
+function withLiveNextUp(nextUp, games) {
+  if (!nextUp) return nextUp;
+  return { ...nextUp, cards: nextUp.cards.map(c => (c.kind !== 'league' || c.data.mode !== 'upcoming' ? c : { ...c, data: { ...c.data, games: c.data.games.map(x => {
+    const g = games.find(y => y.scheduled === 1 && String(y.date).slice(0, 10) === c.data.date && y.team_a_name === x.a && y.team_b_name === x.b);
+    return { ...x, live: g ? liveMini(g) : null };
+  }) } })) };
+}
 const liveRooms = new Map(); // gameId -> Set<WebSocket>
 const liveTimers = new Map();
 function liveChanged(gameId) {
+  _tickerCache.at = 0; // the ticker shows the live score
   if (liveTimers.has(gameId)) return;
   liveTimers.set(gameId, setTimeout(() => {
     liveTimers.delete(gameId);
@@ -6954,7 +6982,15 @@ app.post('/admin/games/:id/scoring', requireAuth, express.json(), (req, res) => 
   const settings = { ...(sg?.settings || {}), rules: { ...(sg?.settings?.rules || {}), ...(waves ? { waves } : {}) } };
   if (req.body?.live === 'on' || req.body?.live === 'off') settings.live_public = req.body.live === 'on';
   saveScoreGame(game.id, { settings });
+  const before = new Set(getScorers(game.id).map(s => s.player_id));
   setScorers(game.id, scorers);
+  // Newly picked scorers hear about it (bell on the site and in the app, push to their phone).
+  // Opening it once with signal is what makes it work offline at the court.
+  const when = [manilaDayLabel(gameYmd(game.date)), gameTipLabel(game)].filter(Boolean).join(' · ');
+  for (const pid of scorers.filter(id => !before.has(id))) {
+    createNotification({ playerId: pid, type: 'scorer_assigned', title: `You're scoring ${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`,
+      body: `${when ? `${when}. ` : ''}Open it once with signal before the game so it works offline.`, link: `/app/score/${encodeURIComponent(game.id)}` });
+  }
   liveChanged(game.id);
   res.json({ ok: true, message: scorers.length ? 'Scoring is on. The scorers see the game under Me → Score a game.' : 'Scoring is on. Only admins can score until you pick scorers.' });
 });
@@ -10734,7 +10770,7 @@ app.get('/', (req, res) => {
   res.send(renderPage(req, {
     title: 'WKND Basketball | Pickup Runs & League in Makati, Mandaluyong, Pasig',
     currentPath: req.path,
-    body: homePage({ teams, players, games, highlights, mvpRace, nextUp, standings, papawisHero: homeHeroPapawis(), regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
+    body: homePage({ teams, players, games, highlights, mvpRace, nextUp: withLiveNextUp(nextUp, games), standings, papawisHero: homeHeroPapawis(), regCloser, memberPerks, leaderSeason: getPortalCurrentSeason(), leaderPlayers, rosterMovers, regBanner, signupBanner, posts: homePosts, awardsGallery, summaries, isAdmin: !!req.session?.isAdmin,
       headlineCards: gameCardExtras(headlineGamesOf(games), games, { viewerId: req.session?.playerPlayerId || null, playerMap }),
       picksWidgetHtml: picksWidget(picksW, { summary: summaries.picks || null, isAdmin: !!req.session?.isAdmin }),
       playoffBlock: homePlayoffBlock(getPortalCurrentSeason()) })
@@ -15244,7 +15280,7 @@ function buildPlayoffHero(season, phase) {
   return {
     season, label: main.label, gameNo: n + 1, format: main.format, line, photos, tipLabel,
     high: side(main, 'high'), low: side(main, 'low'),
-    next: main.next ? { id: main.next.id, date: ymd(main.next.date) || null, href: `/games/${encodeURIComponent(gameSlug(main.next))}` } : null,
+    next: main.next ? { id: main.next.id, date: ymd(main.next.date) || null, href: `/games/${encodeURIComponent(gameSlug(main.next))}`, live: liveMini(main.next) } : null,
     also: other ? {
       label: other.label, high: side(other, 'high'), low: side(other, 'low'), date: ymd(other.next?.date) || null,
       href: other.next ? `/games/${encodeURIComponent(gameSlug(other.next))}` : '/playoffs',

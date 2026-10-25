@@ -1366,6 +1366,16 @@ a.tk-chip:hover { border-color: rgba(255,255,255,0.12); }
 .tk-chip__lo { color: #7b8496; }
 .tk-chip--next { border-style: dashed; border-color: rgba(245,147,50,0.35); }
 .tk-chip--next .tk-chip__label span:last-child { color: var(--amber); }
+/* A game being scored (views/ticker.js liveCell, server.js liveMini) */
+.tk-meta--live { color: var(--amber); }
+.tk-meta--live > span:first-child, .tk-chip--live .tk-chip__label > span:first-child { display: inline-flex; align-items: center; gap: 5px; }
+.tk-meta--live > span:first-child::before, .tk-chip--live .tk-chip__label > span:first-child::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); animation: gd-blink 1.6s ease-in-out infinite; }
+.tk-chip--live { border-color: rgba(245,147,50,0.5); }
+.tk-chip--live .tk-chip__label { color: var(--amber); }
+/* Coming up's league card, a game being scored (views/home.js) */
+.nu-match__score small { display: block; margin-top: 2px; font-family: var(--font-body, inherit); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); text-align: center; white-space: nowrap; }
+.nu-match--live .nu-match__score { display: flex; flex-direction: column; align-items: center; }
+@media (prefers-reduced-motion: reduce) { .tk-meta--live > span:first-child::before, .tk-chip--live .tk-chip__label > span:first-child::before { animation: none; } }
 .tk-chip__date { font-size: 20px; line-height: 0.85; font-weight: 800; color: var(--text); }
 
 /* the strip's last cell: link out to the full games list */

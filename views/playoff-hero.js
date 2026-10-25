@@ -44,6 +44,9 @@ function sideCells(side, key) {
 export function playoffScoreboard(d, today) {
   if (!d) return '';
   const cd = countdown(d.next, today, d.tipLabel);
+  // The game is being scored (server.js liveMini): its live score takes the countdown's place.
+  const L = d.next?.live;
+  const lead = L ? (L.a === L.b ? 'Tied' : `${L.a > L.b ? L.an : L.bn} lead${/s$/i.test(L.a > L.b ? L.an : L.bn) ? '' : 's'}`) : '';
   const photos = d.photos || [];
   const n = photos.length;
   // Each slide and its caption share --i, so they fade in and out together (styles.css .pso--n2–4).
@@ -72,10 +75,12 @@ export function playoffScoreboard(d, today) {
     </div>
     ${d.line ? `<p class="pso__line">${d.line}</p>` : ''}
     <div class="pso__foot">
-      <div class="pso__when"><span class="pso__th">${d.gameNo ? `Game ${d.gameNo} tips off` : 'Next game'}</span><span class="pso__cd font-condensed">${escHtml(cd.big)}</span><span class="pso__cdsub">${escHtml(cd.small)}</span></div>
+      ${L ? `<div class="pso__when pso__when--live"><span class="pso__th">${d.gameNo ? `Game ${d.gameNo} · ` : ''}${L.when.startsWith('Final') ? 'Final · unofficial' : 'Live · unofficial'}</span><span class="pso__cd font-condensed">${escHtml(`${L.an} ${L.a}–${L.b} ${L.bn}`)}</span><span class="pso__cdsub">${escHtml(L.when.startsWith('Final') ? lead.replace(/leads?$/, 'won') : `${lead} · ${L.when}`)}</span></div>`
+        : `<div class="pso__when"><span class="pso__th">${d.gameNo ? `Game ${d.gameNo} tips off` : 'Next game'}</span><span class="pso__cd font-condensed">${escHtml(cd.big)}</span><span class="pso__cdsub">${escHtml(cd.small)}</span></div>`}
       <div class="pso__actions">
-        ${d.picksHref ? `<a href="${escHtml(d.picksHref)}" class="pso__btn is-primary">Who wins? Make your pick</a>` : ''}
-        <a href="/playoffs" class="pso__btn${d.picksHref ? '' : ' is-primary'}">The bracket</a>
+        ${L ? `<a href="${escHtml(L.href)}" class="pso__btn is-primary">Follow it live</a>` : ''}
+        ${d.picksHref && !L ? `<a href="${escHtml(d.picksHref)}" class="pso__btn is-primary">Who wins? Make your pick</a>` : ''}
+        <a href="/playoffs" class="pso__btn${d.picksHref || L ? '' : ' is-primary'}">The bracket</a>
       </div>
     </div>
   </div>

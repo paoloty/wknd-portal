@@ -24,7 +24,9 @@ const seriesKey = (g) => `${g.season}|${g.game_type}|${g.series_id || [g.team_a_
 
 // Regular-season cell. Rows keep the order games were entered in (team A on top) — winner
 // styling follows whichever row actually won, it doesn't reorder them.
+// g.live (server.js liveMini): a game being scored, its unofficial score and where it is.
 function gameCell(g) {
+  if (g.live) return liveCell(g);
   const scheduled = isScheduled(g);
   const sa = Number(g.team_a_score), sb = Number(g.team_b_score);
   const row = (name, score, win) => `<span class="tk-row${win ? ' is-win' : ''}">
@@ -42,6 +44,21 @@ function gameCell(g) {
     ${row(g.team_a_name, sa, !scheduled && sa > sb)}
     ${row(g.team_b_name, sb, !scheduled && sb > sa)}
   </${tag}>`;
+}
+
+// The chip has room for a word: the period, or the break.
+const chipWhen = w => (/^Final/.test(w) ? 'FINAL' : /^Halftime/.test(w) ? 'HALF' : /^End of regulation/.test(w) ? 'END' : /^End of (\S+)/.test(w) ? `END ${w.split(' ')[2]}` : w.split(' ')[0].toUpperCase());
+function liveCell(g) {
+  const L = g.live;
+  const row = (name, score, lead) => `<span class="tk-row${lead ? ' is-win' : ''}">
+      <span class="tk-team">${dot(name)}${escHtml(name)}</span>
+      <b class="tk-score font-condensed">${score}</b>
+    </span>`;
+  return `<a href="${escHtml(L.href)}" class="tk-cell tk-cell--live">
+    <span class="tk-meta tk-meta--live"><span>LIVE</span><span>${escHtml(L.when.toUpperCase())}</span></span>
+    ${row(g.team_a_name, L.a, L.a > L.b)}
+    ${row(g.team_b_name, L.b, L.b > L.a)}
+  </a>`;
 }
 
 // One playoff/finals series. `games` arrive newest first; chips show oldest first.
@@ -72,6 +89,13 @@ function seriesCard(games) {
 
   const chips = chronological.map(g => {
     const r = g.seriesRecord;
+    if (g.live) {
+      const L = g.live, no = r ? r.teamAWins + r.teamBWins + 1 : '';
+      return `<a class="tk-chip tk-chip--live" href="${escHtml(L.href)}" aria-label="${escHtml(`${no ? `Game ${no}, ` : ''}live: ${g.team_a_name} ${L.a}, ${g.team_b_name} ${L.b}, ${L.when}`)}">
+      <span class="tk-chip__label"><span>LIVE</span><span>${escHtml(chipWhen(L.when))}</span></span>
+      <span class="tk-chip__score font-condensed"><span class="tk-chip__hi">${L.a}</span><span class="tk-chip__dash">–</span><span class="tk-chip__lo">${L.b}</span></span>
+    </a>`;
+    }
     if (isScheduled(g)) {
       const no = r ? r.teamAWins + r.teamBWins + 1 : '';
       return `<div class="tk-chip tk-chip--next">
