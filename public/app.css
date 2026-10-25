@@ -1625,3 +1625,5 @@ html.tk-lock { overflow: hidden; }
 .sc-undo { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--hair); color: var(--amber-text); font-size: 12px; font-weight: 600; line-height: 1; position: relative; }
 .sc-undo::before { content: ''; position: absolute; inset: -4px 0; }
 .sc-empty { margin: 12px 0; font-size: 13px; color: var(--muted); }
+/* Test server mode (views/app/layout.js test): an amber pill so a test install is never mistaken for the real app. */
+.test-pill { position: fixed; bottom: calc(var(--tabbar-h) + var(--safe-b) + 8px); left: 50%; transform: translateX(-50%); z-index: 200; max-width: calc(100% - 120px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border-radius: 999px; background: var(--warn-bg); color: var(--on-warn); font: 700 11px/1.2 var(--font-num); letter-spacing: .06em; text-transform: uppercase; pointer-events: none; }

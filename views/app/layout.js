@@ -170,7 +170,9 @@ function installWallHtml() {
 // who: an opaque tag for the signed-in player (server.js sendTab). With app-time (when the
 // server built the page) it tells public/app.js a screen came from the phone's copy, and
 // whether that copy belongs to someone else.
-export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '' }) {
+// test: '' on the live site; elsewhere "Test server · <branch>" (server.js appTestLabel), shown as a
+// pill at the top and in the home-screen name.
+export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '', test = '' }) {
   const badge = key => {
     const n = Number(badges[key]) || 0;
     return n ? `<span class="tab__badge tab__badge--${key === 'me' ? 'err' : 'warn'}" aria-label="${n} waiting">${n > 9 ? '9+' : n}</span>` : '';
@@ -191,7 +193,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <meta name="theme-color" content="#0a0e16" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="WKND">
+  <meta name="apple-mobile-web-app-title" content="${test ? 'WKND Test' : 'WKND'}">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="format-detection" content="telephone=no">
   <link rel="manifest" href="/app/manifest.webmanifest">
@@ -206,6 +208,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
 </head>
 <body class="${esc(bodyClass)}">
   ${installWall ? installWallHtml() : ''}
+  ${test ? `<div class="test-pill" role="status">${esc(test)}</div>` : ''}
   <main class="app${bare ? ' app--bare' : ''}">${body}</main>
   ${tabbar}
   <script src="/table-scroll.js?v=${esc(ver)}" defer></script>

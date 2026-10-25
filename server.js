@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import http from 'http';
 import { WebSocketServer } from 'ws';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
 import { statSync, existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -6069,7 +6070,13 @@ const APP_SESSION_MS = 180 * 24 * 60 * 60 * 1000;
 const appPhase = () => { try { return playoffModeState(getPortalCurrentSeason()).phase; } catch { return null; } };
 // On a phone the app only runs installed (views/app/layout.js install wall) unless this is off.
 const appInstallRequired = () => getSetting('app_require_install', '1') === '1';
-const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, installWall: appInstallRequired(), ...opts }));
+// Test server mode: the app served anywhere but the live site (staging.wkndbasketball.com is a
+// tunnel to the developer's computer, port 4000; or localhost) calls itself "WKND Test" on the
+// home screen and shows which branch is running, so a test install never passes for the real
+// app. (Pushes there only reach the developer: lib/push.js.)
+const GIT_BRANCH = (() => { try { return execSync('git rev-parse --abbrev-ref HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } })();
+const appTestLabel = req => (req && !isProdHost(req) ? `Test server${GIT_BRANCH && GIT_BRANCH !== 'HEAD' ? ` · ${GIT_BRANCH}` : ''}` : '');
+const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(res.req), ...opts }));
 
 // 'anon' | 'admin' (super-admin login, no player) | 'no-player' | 'not-yet' | 'ok'
 const appBetaList = () => String(getSetting('app_beta', '')).toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -6202,8 +6209,9 @@ function appGames(me) {
 const recordIn = (games, teamId) => { const w = games.filter(g => teamResult(g, teamId).won).length; return `${w}–${games.length - w}`; };
 
 app.get('/app/manifest.webmanifest', (req, res) => {
+  const test = !isProdHost(req);
   res.type('application/manifest+json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify({
-    id: '/app', name: 'WKND Basketball', short_name: 'WKND', description: 'Your games, picks and Papawis.',
+    id: '/app', name: test ? 'WKND Test' : 'WKND Basketball', short_name: test ? 'WKND Test' : 'WKND', description: test ? 'The app on a test server.' : 'Your games, picks and Papawis.',
     start_url: '/app', scope: '/app', display: 'standalone', orientation: 'portrait',
     background_color: '#0a0e16', theme_color: '#0a0e16',
     icons: [
