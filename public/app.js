@@ -364,6 +364,71 @@
     if (out) out.click();
   });
 
+  // ════ Game recap (views/app/game.js) ════
+  //   • [data-gr-jump]: the section bar scrolls to its section; the chip of the section in
+  //     view lights up as the screen scrolls
+  //   • [data-gr-more]: the recap opens in place (the button only shows when it's cut)
+  //   • [data-gr-team]: White / Black box score · [data-gr-sort]: sort by a column (TO, PF
+  //     lowest first; ties by points). Swiping, the pinned names and their shadow come from
+  //     the swipeable-tables standard (public/table-scroll.js).
+  var grBound = false, grSpy = null;
+  function initGameRecap() {
+    var bar = $('.gr-jump');
+    $$('[data-gr-more]').forEach(function (b) {
+      var body = document.getElementById(b.getAttribute('data-gr-more'));
+      if (body && body.scrollHeight > body.clientHeight + 8) { body.classList.add('is-cut'); b.hidden = false; }
+    });
+    if (grSpy) { grSpy.disconnect(); grSpy = null; }
+    if (bar && window.IntersectionObserver) {
+      var light = function (id) {
+        $$('button', bar).forEach(function (b) {
+          var on = b.getAttribute('data-gr-jump') === id;
+          b.classList.toggle('is-on', on);
+          if (on && b.scrollIntoView) bar.scrollTo({ left: b.offsetLeft - 16, behavior: 'smooth' });
+        });
+      };
+      grSpy = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) light(e.target.id); });
+      }, { rootMargin: '-110px 0px -60% 0px' });
+      $$('button', bar).forEach(function (b) { var s = document.getElementById(b.getAttribute('data-gr-jump')); if (s) grSpy.observe(s); });
+    }
+    if (grBound) return;
+    grBound = true;
+    document.addEventListener('click', function (e) {
+      var t = e.target, b;
+      if (!t.closest) return;
+      if ((b = t.closest('[data-gr-jump]'))) {
+        var s = document.getElementById(b.getAttribute('data-gr-jump'));
+        if (s) s.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        return;
+      }
+      if ((b = t.closest('[data-gr-more]'))) {
+        var body = document.getElementById(b.getAttribute('data-gr-more'));
+        var open = body.classList.toggle('is-open');
+        b.setAttribute('aria-expanded', open); b.textContent = open ? 'Show less' : 'Read the full recap';
+        if (!open) body.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+      if ((b = t.closest('[data-gr-team]'))) {
+        var box = b.closest('.gr'), i = b.getAttribute('data-gr-team');
+        $$('[data-gr-team]', box).forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+        $$('[data-gr-panel]', box).forEach(function (p) { p.hidden = p.getAttribute('data-gr-panel') !== i; });
+        return;
+      }
+      if ((b = t.closest('[data-gr-sort]'))) {
+        var table = b.closest('[data-gr-table]'), j = Number(b.getAttribute('data-gr-sort')), low = b.hasAttribute('data-low');
+        var tbody = table.tBodies[0], rows = [].slice.call(tbody.rows);
+        var v = function (r, k) { return Number(r.cells[k + 1].getAttribute('data-v')) || 0; };
+        rows.sort(function (x, y) { return (low ? v(x, j) - v(y, j) : v(y, j) - v(x, j)) || v(y, 0) - v(x, 0); });
+        rows.forEach(function (r) {
+          tbody.appendChild(r);
+          [].forEach.call(r.cells, function (c, k) { if (k) c.classList.toggle('is-on', k - 1 === j); });
+        });
+        $$('[data-gr-sort]', table).forEach(function (x) { x.classList.toggle('is-on', x === b); });
+      }
+    });
+  }
+
   function initPage() {
     // Appearance: Automatic (follow the phone) / Light / Dark, remembered on this phone
     var sw = $('[data-theme-switch]');
@@ -390,6 +455,7 @@
     initThreads();
     initShare();
     initPollTakeover();
+    initGameRecap();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);

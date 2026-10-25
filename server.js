@@ -6050,7 +6050,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6575,6 +6575,51 @@ const appTeamsOf = g => {
     { name: g.team_b_name, color: teamColorById(teams, g.team_b_id), score: b, won: b > a },
   ];
 };
+// A finished game's full recap for the app (views/app/game.js), from the same helpers as the
+// site's game page (GET /games/:ref, final branch), so the two never disagree: the line score,
+// game flow + key plays, how it was won, team totals against their usual in earlier meetings,
+// the pre-game watch list and storyline, Who called it? and the series.
+function appGameRecap(g, stats, me) {
+  const sorted = byDate(getAllGames());
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const A = teamTotals(stats, g.team_a_name, g.team_a_to_team), B = teamTotals(stats, g.team_b_name, g.team_b_to_team);
+  const quarters = extractQuarterScores(g).filter(q => q.a != null && q.b != null);
+  const flow = gameFlow(g);
+  const asOf = matchupAsOf(g, sorted, playerMap);
+  const watch = (asOf.scorers || []).filter(Boolean).map(w => {
+    const line = stats.find(x => x.player_id === w.id);
+    const p = playerMap[w.id] || {};
+    return { ...appPersonOf(line || { player_id: w.id, name: p.name, team_id: p.team_id }), ppg: w.ppg, opp: w.opp, pts: line ? Number(line.pts) || 0 : null };
+  });
+  // The series: every result up to this one (oldest first), and the last three before it.
+  const ymd = gameYmd(g.date);
+  const pair = x => [x.team_a_name, x.team_b_name].sort().join('|') === [g.team_a_name, g.team_b_name].sort().join('|');
+  const results = sorted.filter(x => pair(x) && !x.under_review && isPlayedGame(x) && gameYmd(x.date) <= ymd)
+    .sort((x, y) => String(x.date).localeCompare(String(y.date)))
+    .map(x => ({ id: x.id, season: x.season, winner: Number(x.team_a_score) > Number(x.team_b_score) ? x.team_a_name : x.team_b_name }));
+  const meetings = (asOf.lastMeetings || []).map(m => {
+    const x = sorted.find(y => y.id === m.id);
+    return x ? { id: x.id, ymd: gameYmd(x.date), season: x.season, a: x.team_a_name, b: x.team_b_name, sa: Number(x.team_a_score) || 0, sb: Number(x.team_b_score) || 0, potg: m.potg || null } : null;
+  }).filter(Boolean);
+  // Who called it?: the pre-game odds and the pickers (lib/picks.js), once the game is settled.
+  let called = null;
+  if (picksEnabled()) {
+    const gp = getGamePicksWithPlayers(g.id);
+    if (gp.length) {
+      const pctx = buildPicksContext(sorted);
+      const pg = pctx.byId[g.id];
+      const sg = pg && seasonPicks(pctx, pg.season).settled.find(x => x.id === g.id);
+      if (sg) called = pickResultOf(sg, gp, me.playerId, pctx);
+    }
+  }
+  return {
+    quarters, flow, plays: keyPlays(flow, g, quarters), totals: [A, B], won: stats.length ? howItWasWon(g, A, B) : [],
+    usual: !asOf.firstMeeting && asOf.boxMeetings ? { rows: asOf.rows, n: asOf.boxMeetings } : null,
+    watch, story: getGamePreview(g.id)?.story || null, called,
+    series: results.length > 1 || meetings.length ? { results, meetings, thisId: g.id, season: g.season } : null,
+    dnp: getGameDnpPlayers(g.id).map(p => ({ name: displayPlayerName(p.name || ''), team: p.team_name || '' })).filter(p => p.name),
+  };
+}
 // Pictures come in two widths (the server resizes and caches them, WebP): the phone picks
 // by its screen, 640 on most, 960 on 3× iPhones.
 const sizedSrc = base => { const j = base.includes('?') ? '&' : '?'; return { img: `${base}${j}w=640`, srcset: `${base}${j}w=640 640w, ${base}${j}w=960 960w` }; };
@@ -6745,13 +6790,14 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   const { title, body } = parseWriteup(g.game_writeup || '');
   const paras = writeupParas(g.game_writeup, title);
   const teams = [g.team_a_id, g.team_b_id].map((tid, i) => ({
-    ...(i ? b : a),
-    rows: stats.filter(s => s.team_id === tid).map(s => ({ playerId: s.player_id, number: String(s.number ?? ''), name: displayPlayerName(s.name || ''),
-      pts: Number(s.pts) || 0, reb: Number(s.reb) || 0, ast: Number(s.ast) || 0, stl: Number(s.stl) || 0, blk: Number(s.blk) || 0, to: Number(s.turnover) || 0,
-      // Shooting as made / attempted, like the site's box score (views/game.js).
-      fgm: (+s.fg2m || 0) + (+s.fg3m || 0) + (+s.fg4m || 0), fga: (+s.fg2m || 0) + (+s.fg3m || 0) + (+s.fg4m || 0) + (+s.fg2m_miss || 0) + (+s.fg3m_miss || 0) + (+s.fg4m_miss || 0),
-      tpm: +s.fg3m || 0, tpa: (+s.fg3m || 0) + (+s.fg3m_miss || 0), qpm: +s.fg4m || 0, qpa: (+s.fg4m || 0) + (+s.fg4m_miss || 0),
-      ftm: +s.ftm || 0, fta: (+s.ftm || 0) + (+s.ft_miss || 0) })),
+    ...(i ? b : a), id: tid,
+    rows: stats.filter(s => s.team_id === tid).map(s => {
+      const n = k => Number(s[k]) || 0;
+      return { playerId: s.player_id, number: String(s.number ?? ''), name: displayPlayerName(s.name || ''), photo: playerPhotoUrl(s.player_id, 96),
+        pts: n('pts'), reb: n('reb'), ast: n('ast'), stl: n('stl'), blk: n('blk'), to: n('turnover'), pf: n('pf'),
+        fgm: n('fg2m') + n('fg3m') + n('fg4m'), fga: n('fg2m') + n('fg2m_miss') + n('fg3m') + n('fg3m_miss') + n('fg4m') + n('fg4m_miss'),
+        tpm: n('fg3m'), tpa: n('fg3m') + n('fg3m_miss'), qpm: n('fg4m'), qpa: n('fg4m') + n('fg4m_miss'), ftm: n('ftm'), fta: n('ftm') + n('ft_miss') };
+    }),
   })).filter(t => t.rows.length);
   const thread = appCommentsOn() ? appThreadData({ kind: 'game', key: g.id, game: g }, req) : null;
   const mine = stats.find(s => s.player_id === me.playerId);
@@ -6762,6 +6808,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     // The hero's chips carry the kind of game and the day; the court goes under it.
     kicker: gameKicker(g), when: manilaDayLabel(gameYmd(g.date)), meta: court ? `📍 ${court}` : '',
     recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId,
+    myTeamId: mine?.team_id || '', full: appGameRecap(g, stats, me),
     shareHref: mine ? `/app/games/${encodeURIComponent(g.id)}/share?from=${back.tab}` : '',
   }) });
 });

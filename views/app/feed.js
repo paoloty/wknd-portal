@@ -7,6 +7,7 @@ import { pickOption, pickCard } from './picks.js';
 import { appSocialBar, appThreadPanel } from './comments.js';
 import { papawisAction } from './papawis.js';
 import { todoCard } from './home.js';
+import { lineScore, gameRecapSections } from './game.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -145,34 +146,11 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todo
 
 const navbar = (back, title) => `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">${esc(title)}</span><span></span></div>`;
 
-// Shooting as made-attempted ("5-9"); a dash when none were taken.
-const madeOf = (m, a) => (a ? `${m}-${a}` : '–');
-// Box score for one team; the viewer's own row stands out. It swipes sideways for the
-// shooting columns; the name column stays put (public/table-scroll.js, the standard).
-// 4PT only shows in a game where someone took one.
-function boxTable(team, meId) {
-  const cols = [
-    ['PTS', r => r.pts], ['REB', r => r.reb], ['AST', r => r.ast], ['STL', r => r.stl], ['BLK', r => r.blk], ['TO', r => r.to],
-    ['FG', r => madeOf(r.fgm, r.fga)], ['3PT', r => madeOf(r.tpm, r.tpa)],
-    team.rows.some(r => r.qpa) ? ['4PT', r => madeOf(r.qpm, r.qpa)] : null,
-    ['FT', r => madeOf(r.ftm, r.fta)],
-  ].filter(Boolean);
-  return `<div class="box">
-    <div class="box__head"><span class="dot" style="--c:${esc(team.color)}"></span><b>${esc(team.name)}</b>${team.won ? '<span class="box__w">W</span>' : ''}</div>
-    <div class="bx-scroll"><table class="bx"><thead><tr><th></th>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead><tbody>
-    ${team.rows.map(r => `<tr${r.playerId === meId ? ' class="is-me"' : ''}><td>${r.number !== '' ? `<span class="bx__no">${esc(r.number)}</span>` : ''}${esc(r.name)}${r.playerId === meId ? ' <small>· you</small>' : ''}</td>${cols.map(c => `<td>${c[1](r)}</td>`).join('')}</tr>`).join('')}
-    </tbody></table></div></div>`;
-}
-
 // g: { title, a, b, media, meta, final, recap: { title, paras[] }, potg: [...+writeup], mine,
 //      teams: [boxTeam, boxTeam], thread: appThreadData() | null (comments off),
 //      fire, back: { href, label }, meId }
+//      full: server.js appGameRecap() (views/app/game.js), myTeamId
 export function appGamePage(g) {
-  const recap = g.recap && (g.recap.title || g.recap.paras.length) ? `<section class="fc art">
-      <div class="kick">Recap</div>
-      ${g.recap.title ? `<h2>${esc(g.recap.title)}</h2>` : ''}
-      ${g.recap.paras.map(t => `<p>${esc(t)}</p>`).join('')}
-    </section>` : (g.final ? '<div class="empty" style="margin-top:12px">The recap isn\'t written yet. It shows up here once it is.</div>' : '');
   const potg = g.potg.length ? `<section class="fc art">${g.potg.map(p => `
       <div class="kick">${potgLabel(p)}</div>
       ${potgBox(p, '')}
@@ -188,13 +166,12 @@ export function appGamePage(g) {
     ${video ? `<div class="gx__video">${media(g.media)}</div>` : ''}
     ${gameHero(g, { band: video })}
     <div class="sx__body">${g.meta ? `<p class="gx__meta">${esc(g.meta)}</p>` : ''}
+      ${g.teams.length === 2 ? lineScore(g.teams[0], g.teams[1], g.full.quarters) : ''}
       ${g.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(g.mine)}</b></div>` : ''}
       ${g.shareHref ? `<a class="btn gx__share" href="${esc(g.shareHref)}">${icons.share}<span>Share my stats</span></a>` : ''}</div>
   </section>
-  ${recap}
-  ${potg}
-  ${g.teams.length ? `<section class="fc art"><div class="kick">Box score</div>${g.teams.map(t => boxTable(t, g.meId)).join('')}</section>` : ''}
-  ${comments}
+  ${gameRecapSections(g, { potgHtml: potg, commentsHtml: comments, commentCount: g.thread?.count || 0,
+    emptyRecap: '<div class="empty gr-empty" id="gr-recap">The recap isn\'t written yet. It shows up here once it is.</div>' })}
   <div style="height:12px"></div>`;
 }
 
