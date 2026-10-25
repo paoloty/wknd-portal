@@ -138,3 +138,11 @@ test('correction: the fixed play takes the old one\'s place and later scores fol
   assert.equal(toReb[1].pts, undefined);
   assert.equal(foldGame([...evs, ...toReb]).players.x.reb, 1);
 });
+
+test('sub: who comes on is active, who goes off sits until they play again', () => {
+  const g = foldGame([P('reb', { player: 'x' }), P('reb', { player: 'y' }), P('sub', { in: 'z', out: 'x' })]);
+  assert.deepEqual(g.lastActive.a, ['z', 'y', 'x']);
+  assert.deepEqual(g.benched, ['x']);
+  const back = foldGame([P('sub', { in: 'z', out: 'x' }), P('ast', { player: 'x' })]);
+  assert.deepEqual(back.benched, []);
+});

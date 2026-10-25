@@ -80,7 +80,8 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
   const other = t => (t === 'a' ? 'b' : 'a');
   const bucket = (o, k) => (o[k] = o[k] || { a: 0, b: 0 });
   const dnp = new Set();
-  const touch = (t, id) => { if (!t || !id) return; dnp.delete(id); lastActive[t] = [id, ...lastActive[t].filter(x => x !== id)]; };
+  const benched = new Set(); // subbed off and not back since (a sub in, or any stat, brings them back)
+  const touch = (t, id) => { if (!t || !id) return; dnp.delete(id); benched.delete(id); lastActive[t] = [id, ...lastActive[t].filter(x => x !== id)]; };
 
   plays.forEach((e, i) => {
     const t = e.team, p = e.player;
@@ -127,6 +128,11 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
       case 'timeout': bucket(timeoutsUsed, timeoutWindow(per))[t]++; break;
       case 'period_end': periodIdx = Math.max(periodIdx, periodIndex(e.period) + 1); break;
       case 'dnp': if (e.on === false) dnp.delete(p); else if (p) dnp.add(p); break;
+      // A sub: who comes on counts as active now; who goes off drops to the back and sits.
+      case 'sub':
+        if (e.in) touch(t, e.in);
+        if (e.out && e.out !== e.in) { benched.add(e.out); lastActive[t] = [...lastActive[t].filter(x => x !== e.out), e.out]; }
+        break;
       default: break;
     }
     rows.push({ ...e, ...extra, score: { a: score.a, b: score.b } });
@@ -143,7 +149,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
     if (ejected || fouledOut) flags[id] = ejected ? 'ejected' : 'fouled out';
   }
   return {
-    period, score, rows, players, flags, teamTO, dnp: [...dnp],
+    period, score, rows, players, flags, teamTO, dnp: [...dnp], benched: [...benched],
     byPeriod: Object.entries(byPeriod).map(([p, s]) => ({ period: p, ...s })).sort((x, y) => periodIndex(x.period) - periodIndex(y.period)),
     teamFouls: { a: fw.a, b: fw.b },
     // A team at penaltyAt - 1 fouls: its next foul gives free throws.

@@ -62,6 +62,8 @@ export async function mount(el) {
   const published = B.status === 'published';
   const video = B.pass === 'video';
   const key = video ? `${gid}:video` : gid;
+  // Tablet and laptop widths: drag-and-drop subs (and the tip says so).
+  const wide = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false };
   const multi = !video && !published;
   const laneKey = `wknd-lane:${gid}`;
   const readLane = () => { try { const v = localStorage.getItem(laneKey); return ['a', 'b', 'both'].includes(v) ? v : null; } catch (e) { return null; } };
@@ -209,7 +211,7 @@ export async function mount(el) {
   // from the bench takes the slot of the one who dropped out, in place.
   const slots = { a: [], b: [] };
   const five = t => {
-    const out = id => G.flags[id] || G.dnp.includes(id);
+    const out = id => G.flags[id] || G.dnp.includes(id) || G.benched.includes(id);
     const ids = G.lastActive[t].filter(id => byId[id] && !out(id));
     for (const p of team[t].players) { if (ids.length >= 5) break; if (!ids.includes(p.id) && !out(p.id)) ids.push(p.id); }
     const want = ids.slice(0, 5);
@@ -319,6 +321,26 @@ export async function mount(el) {
     }, 'end');
   }
 
+  // ── Subs ──
+  // Tap: Sub (in the bench row) → who comes off (a court tile) → who goes on (a bench player),
+  // either order, as many as needed, then Done. Tablet: drag a bench player onto a court tile
+  // or the other way. Each is a 'sub' play (score-engine): the player going on takes that
+  // tile's place, the one coming off sits until they play again. A stat by a bench player
+  // still brings them on by itself.
+  const onCourt = (t, id) => five(t).includes(id);
+  function doSub(t, inId, outId) {
+    if (!inId || !outId || inId === outId) return;
+    add({ type: 'sub', team: t, in: inId, out: outId });
+    ui.tip = `${short(inId)} on for ${short(outId)}.`;
+  }
+  function subPick(id) {
+    const s = ui.sub, t = byId[id].team;
+    if (t !== s.t) { ui.sub = { t, off: null, on: null }; return subPick(id); }
+    if (onCourt(t, id)) s.off = s.off === id ? null : id; else s.on = s.on === id ? null : id;
+    if (s.off && s.on) { doSub(t, s.on, s.off); s.off = null; s.on = null; }
+    paint();
+  }
+
   // ── Fixing plays ──
   const STATS = [['shot2m', '2PT made', { type: 'shot', pts: 2, made: true }], ['shot2x', '2PT miss', { type: 'shot', pts: 2, made: false }],
     ['shot3m', '3PT made', { type: 'shot', pts: 3, made: true }], ['shot3x', '3PT miss', { type: 'shot', pts: 3, made: false }],
@@ -416,7 +438,7 @@ export async function mount(el) {
     // The ring and float play once, right after the tap: a later repaint (a sync, the other
     // scorer's play) mustn't start them again.
     const p = byId[id], L = G.players[id] || {}, hit = ui.flash && ui.flash.pid === id && Date.now() - ui.flash.at < 900;
-    const cls = ['sc-p', ui.sel === id ? 'on' : '', hit ? `ring ${ui.flash.tone} b${ui.flashN % 2} r${ui.flashN % 2}` : ''].filter(Boolean).join(' ');
+    const cls = ['sc-p', ui.sel === id || (ui.sub && ui.sub.off === id) ? 'on' : '', hit ? `ring ${ui.flash.tone} b${ui.flashN % 2} r${ui.flashN % 2}` : ''].filter(Boolean).join(' ');
     return `<button type="button" class="${cls}" style="--c:${esc(team[p.team].color)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(p.name)}${L.pf ? `, ${L.pf} fouls` : ''}">
       <b class="num">${esc(p.number || '–')}</b><span>${esc(p.short)}</span>${L.pf ? `<i class="sc-p__pf">${L.pf}F</i>` : ''}${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
   };
@@ -435,11 +457,12 @@ export async function mount(el) {
         <button type="button" class="sc-tb hold" data-hold="team" data-team="${t}" aria-label="${esc(team[t].name)} team turnover. Hold for more team plays">Team</button>
         <button type="button" class="sc-tb" data-act="dnp" data-team="${t}" aria-label="${esc(team[t].name)}: mark who didn’t play">DNP</button></div>
       <div class="sc-five">${on.map(tile).join('')}</div>
-      ${rest.length || dnps.length ? `<div class="sc-bench">${rest.map(p => `<button type="button" class="${G.flags[p.id] ? 'is-out' : ui.sel === p.id ? 'on' : ''}" data-pick="${esc(p.id)}"${G.flags[p.id] ? ' disabled' : ''}>${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}${G.flags[p.id] ? ` · ${G.flags[p.id]}` : ''}</button>`).join('')}${dnps.length ? `<button type="button" class="is-dnp" data-act="dnp" data-team="${t}" aria-label="${dnps.length} didn’t play: ${esc(dnps.map(p => p.short).join(', '))}. Tap to change">DNP · ${dnps.length}</button>` : ''}</div>` : ''}
+      ${rest.length || dnps.length ? `<div class="sc-bench"><button type="button" class="sc-subbtn${ui.sub && ui.sub.t === t ? ' on' : ''}" data-act="sub" data-team="${t}" aria-pressed="${!!(ui.sub && ui.sub.t === t)}">⇄ Sub</button>${rest.map(p => `<button type="button" class="${G.flags[p.id] ? 'is-out' : ui.sel === p.id || (ui.sub && ui.sub.on === p.id) ? 'on' : ''}" data-pick="${esc(p.id)}"${G.flags[p.id] ? ' disabled' : ''}>${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}${G.flags[p.id] ? ` · ${G.flags[p.id]}` : ''}</button>`).join('')}${dnps.length ? `<button type="button" class="is-dnp" data-act="dnp" data-team="${t}" aria-label="${dnps.length} didn’t play: ${esc(dnps.map(p => p.short).join(', '))}. Tap to change">DNP · ${dnps.length}</button>` : ''}</div>` : ''}
     </section>`;
   };
   const playText = r => {
     if (r.type === 'period_end') return `<b>End of ${esc(r.period)}</b>`;
+    if (r.type === 'sub') return `<b>${esc(short(r.in))}</b> on for ${esc(short(r.out))}`;
     if (r.type === 'dnp') return `<b>${esc(short(r.player))}</b> ${r.on === false ? 'back on the roster' : 'didn’t play'}`;
     const who = r.player ? short(r.player) : r.team ? team[r.team].name : 'Refs';
     const w = { shot: `${r.pts}PT ${r.made ? 'made' : 'miss'}`, ft: `FT ${r.made ? 'made' : 'miss'}`, reb: r.off ? 'off. rebound' : 'rebound', ast: 'assist', blk: 'block', stl: `steal${r.from ? ` from ${short(r.from)}` : ''}`,
@@ -452,6 +475,8 @@ export async function mount(el) {
     const strip = ask
       ? `<div class="sc-strip ${ask.kind === 'menu' ? 'is-menu' : 'is-ask'}" role="status"><div class="sc-strip__q"><b>${esc(ask.q)}</b>${ask.hint ? `<small>${esc(ask.hint)}</small>` : ''}</div>
           <div class="sc-opts">${ask.opts.map(o => `<button type="button" class="${o.def ? 'def' : o.cancel ? 'cancel' : ''}" data-ask="${esc(o.id)}">${esc(o.label)}</button>`).join('')}</div></div>`
+      : ui.sub ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>Sub ${esc(team[ui.sub.t].name)}: ${ui.sub.off ? `${esc(short(ui.sub.off))} off. Who goes on?` : ui.sub.on ? `${esc(short(ui.sub.on))} on. Who comes off?` : 'tap who comes off, then who goes on'}</b><small>as many as you need</small></div>
+          ${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}<div class="sc-opts"><button type="button" class="def" data-act="sub-done">Done</button></div></div>`
       : multi && ui.lanes && ui.lanes.asks.length ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>${esc(ui.lanes.asks[0].name)} asks to score ${esc(sideName(ui.lanes.asks[0].lane))}</b><small>you keep the other side</small></div>
           <div class="sc-opts"><button type="button" class="def" data-handover="${esc(ui.lanes.asks[0].device)}" data-yes="1">Hand it over</button><button type="button" data-handover="${esc(ui.lanes.asks[0].device)}">Keep it</button></div></div>`
       : multi && !ui.lane && !ui.locked ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>${ui.asked ? `Asked ${esc(ui.asked)}. Waiting for them to hand it over…` : ui.lanes && ui.lanes.others.length ? `${esc(ui.lanes.others.filter(o => o.lane).map(o => `${o.name} scores ${sideName(o.lane)}`).join(', ') || 'Someone is here')}. Which side do you score?` : 'Which side do you score?'}</b></div>
@@ -459,7 +484,7 @@ export async function mount(el) {
           <div class="sc-opts">${['a', 'b', 'both'].map(l => { const h = holderOf(l); return `<button type="button" data-side="${l}" data-holder="${esc(h ? h.name : '')}">${h ? `Ask for ${esc(sideName(l))}` : `Score ${esc(sideName(l))}`}</button>`; }).join('')}${ui.lanes && ui.lanes.admin ? '<button type="button" data-act="sides">Take over…</button>' : ''}</div></div>`
       : ui.after ? `<div class="sc-strip is-ask" role="status"><div class="sc-strip__q"><b>Adding after: ${playText(G.rows.find(r => r.id === ui.after) || { type: '' }).replace(/<[^>]+>/g, '')}</b><small>later scores update</small></div>
           <div class="sc-opts"><button type="button" class="def" data-act="insert-done">Done, back to the end</button></div>${ui.tip ? `<p>${esc(ui.tip)}</p>` : ''}</div>`
-      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : 'Tap a player, then the stat. No subs needed: every player is always tappable. Corner mark: tap for the usual, hold for more.'))}</p></div>`;
+      : `<div class="sc-strip" role="status"><p>${esc(ui.tip || (ui.sel ? `${byId[ui.sel].name} picked. Now the stat.` : (wide.matches ? 'Tap a player, then the stat. Subs: ⇄ Sub, or drag a bench player onto a tile. A bench player’s stat brings them on too.' : 'Tap a player, then the stat. Subs: ⇄ Sub. A bench player’s stat brings them on too. Corner mark: tap for the usual, hold for more.')))}</p></div>`;
     const rows = G.rows.slice(-6).reverse();
     // Undo: this phone's own last play (with two scorers, the other phone's plays get Fix only).
     const mineRows = G.rows.filter(r => !r.dev || r.dev === deviceId);
@@ -516,6 +541,8 @@ export async function mount(el) {
     if (name === 'end') return endPeriod();
     if (name === 'dnp') return dnpMenu(t);
     if (name === 'sides') return sideMenu();
+    if (name === 'sub') { ui.sub = ui.sub && ui.sub.t === t ? null : { t, off: null, on: null }; ui.sel = null; ui.ask = null; ui.tip = ''; return paint(); }
+    if (name === 'sub-done') { ui.sub = null; ui.tip = ''; return paint(); }
     if (name === 'dnp-save') return dnpSave();
     if (name === 'dnp-close') { ui.dnp = null; return paint(); }
     if (name === 'clockset') { if (!keepsClock()) { ui.tip = `${keeper().name} keeps the clock.`; return paint(); } return clockMenu(); }
@@ -533,6 +560,7 @@ export async function mount(el) {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     if (b.hasAttribute('data-hold')) { if (e.detail === 0) holdTap(b); return; } // keyboard: Enter = tap
     if (ui.locked && !b.hasAttribute('data-ask') && !/^(all|sheet-close|video)$/.test(b.getAttribute('data-act') || '')) return;
+    if (b.hasAttribute('data-pick') && ui.sub) return subPick(b.getAttribute('data-pick'));
     if (b.hasAttribute('data-pick')) { const id = b.getAttribute('data-pick'); ui.sel = ui.sel === id ? null : id; ui.ask = ui.ask && ui.ask.kind === 'ft' ? ui.ask : null; ui.tip = ''; return paint(); }
     if (b.hasAttribute('data-ask')) return answer(b.getAttribute('data-ask'));
     if (b.hasAttribute('data-fix')) return fixMenu(b.getAttribute('data-fix'));
@@ -553,6 +581,49 @@ export async function mount(el) {
     if (ui.locked) return;
     if (k === 'team') teamHold(b.getAttribute('data-team')); else HOLD[k]();
   }
+  // Drag and drop subs, tablet and laptop widths only (on a phone the bench row scrolls
+  // sideways, so a drag there would fight the scroll: Sub is the way).
+  let drag = null;
+  root.addEventListener('pointerdown', e => {
+    const b = e.target.closest('[data-pick]');
+    if (!b || !wide.matches || ui.locked || e.button > 0) return;
+    drag = { b, id: b.getAttribute('data-pick'), x: e.clientX, y: e.clientY, on: false };
+  });
+  root.addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (!drag.on) {
+      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 10) return;
+      drag.on = true;
+      drag.ghost = document.createElement('div'); drag.ghost.className = 'sc-ghost'; drag.ghost.textContent = short(drag.id);
+      document.body.appendChild(drag.ghost); drag.b.classList.add('is-drag');
+    }
+    drag.ghost.style.transform = `translate(${e.clientX + 8}px, ${e.clientY + 8}px)`;
+    const over = document.elementFromPoint(e.clientX, e.clientY);
+    const target = over && over.closest('[data-pick]');
+    root.querySelectorAll('.is-drop').forEach(x => x.classList.remove('is-drop'));
+    if (target && target !== drag.b && subTarget(drag.id, target.getAttribute('data-pick'))) target.classList.add('is-drop');
+  });
+  // Dragging works between the court and the bench of the same team.
+  const subTarget = (a, b) => byId[a] && byId[b] && byId[a].team === byId[b].team && onCourt(byId[a].team, a) !== onCourt(byId[a].team, b);
+  const endDrag = e => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    if (!d.on) return;
+    d.ghost.remove(); d.b.classList.remove('is-drag');
+    root.querySelectorAll('.is-drop').forEach(x => x.classList.remove('is-drop'));
+    const over = e && document.elementFromPoint(e.clientX, e.clientY);
+    const target = over && over.closest('[data-pick]');
+    swallowClick = true; setTimeout(() => { swallowClick = false; }, 50);
+    if (!target || !subTarget(d.id, target.getAttribute('data-pick'))) return;
+    const t = byId[d.id].team, other = target.getAttribute('data-pick');
+    const [inId, outId] = onCourt(t, d.id) ? [other, d.id] : [d.id, other];
+    doSub(t, inId, outId); paint();
+  };
+  let swallowClick = false;
+  root.addEventListener('click', e => { if (swallowClick && e.target.closest('[data-pick]')) { e.stopPropagation(); e.preventDefault(); swallowClick = false; } }, true);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', () => endDrag(null));
+
   root.addEventListener('pointerdown', e => {
     const b = e.target.closest('[data-hold]'); if (!b) return;
     b._hx = e.clientX; b._hy = e.clientY; b._held = false;

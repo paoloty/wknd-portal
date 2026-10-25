@@ -1660,3 +1660,10 @@ button.sc-clk__t { background: none; border: 0; padding: 0 4px; color: inherit; 
 body:not(:has(.tabbar)) .test-pill { bottom: calc(var(--safe-b) + 6px); }
 /* A menu's Cancel: quieter than the choices. */
 .sc-opts button.cancel { color: var(--muted); border-style: dashed; }
+/* Subs: the Sub chip leads the bench row; drag and drop on tablets */
+.sc-bench .sc-subbtn { color: var(--amber-text); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.sc-bench .sc-subbtn.on { background: var(--amber); color: #111; border-color: transparent; }
+@media (min-width: 900px) { .sc-five .sc-p, .sc-bench button[data-pick] { touch-action: none; cursor: grab; } }
+.sc-p.is-drag, .sc-bench button.is-drag { opacity: .4; }
+.sc-p.is-drop, .sc-bench button.is-drop { outline: 2px dashed var(--amber); outline-offset: 2px; }
+.sc-ghost { position: fixed; left: 0; top: 0; z-index: 300; padding: 8px 12px; border-radius: 999px; background: var(--amber); color: #111; font-size: 13px; font-weight: 600; line-height: 1; pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.4); }
