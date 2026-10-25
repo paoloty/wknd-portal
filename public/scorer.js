@@ -204,11 +204,21 @@ export async function mount(el) {
   }
   const other = t => (t === 'a' ? 'b' : 'a');
   // The five who played last for a team, topped up from the roster.
+  // Which five: the five who played last (topped up from the roster). Where they sit: tiles
+  // never move (Paolo, 2026-10-25: the scorer learns where a player is). A player coming in
+  // from the bench takes the slot of the one who dropped out, in place.
+  const slots = { a: [], b: [] };
   const five = t => {
     const out = id => G.flags[id] || G.dnp.includes(id);
     const ids = G.lastActive[t].filter(id => byId[id] && !out(id));
     for (const p of team[t].players) { if (ids.length >= 5) break; if (!ids.includes(p.id) && !out(p.id)) ids.push(p.id); }
-    return ids.slice(0, 5);
+    const want = ids.slice(0, 5);
+    const next = slots[t].map(id => (want.includes(id) ? id : null));
+    const fresh = want.filter(id => !next.includes(id));
+    for (let i = 0; i < next.length && fresh.length; i++) if (!next[i]) next[i] = fresh.shift();
+    next.push(...fresh);
+    slots[t] = next.filter(Boolean).slice(0, 5);
+    return slots[t];
   };
   const short = id => (byId[id] ? `${byId[id].number ? '#' + byId[id].number + ' ' : ''}${byId[id].short}` : 'Player');
   const needPlayer = () => { ui.tip = 'Tap a player first.'; ui.ask = null; paint(); };
