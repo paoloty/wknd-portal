@@ -2530,6 +2530,7 @@ export function gamePage(d) {
     return `<div class="page-content gd-page"${listen ? ` data-live-src="/games/${encodeURIComponent(gameSlug(game))}" data-live-ws="/ws/games/${encodeURIComponent(game.id)}/live"` : ''}>
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${lp ? `<div data-live="hero">${lp.hero}</div>` : upcomingHero(v)}
+  ${d.scoreHref ? `<div class="card gd-scorer"><span><b>You’re scoring this game.</b> ${/^\/app\//.test(d.scoreHref) ? 'On your phone it works with no signal once it’s opened.' : 'Open it here on a laptop or tablet.'}</span><a class="gd-scorer__go" href="${escHtml(d.scoreHref)}">${lp ? 'Open the scorer' : 'Start scoring'}</a></div>` : ''}
   ${sectionNav(items)}
   <div class="gd-cols">
     <div class="gd-cols__main">

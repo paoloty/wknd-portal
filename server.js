@@ -6961,6 +6961,21 @@ const sendScorer = (req, res, back) => {
   sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle: scoreBundle(game, pass), back }) });
 };
 app.get('/app/score/:id', requireApp, (req, res) => sendScorer(req, res, { href: '/app/score', label: 'Games' }));
+// The same screen at a site address, for a scorer signed in on the site (a laptop, or a player
+// not in the app yet). Only the app address (/app/score) works with no signal, so the site's
+// buttons send players who have the app there (scoreHrefFor).
+app.get('/score/:id', (req, res) => {
+  if (!req.session?.playerPlayerId && !req.session?.isAdmin) return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
+  const g = getGameById(req.params.id);
+  sendScorer(req, res, { href: g ? `/games/${encodeURIComponent(gameSlug(g))}` : '/', label: 'Game' });
+});
+// Where a site button sends this scorer: the app's scorer (offline-ready) when they can use the
+// app, else the site address. '' when they aren't a scorer for it or scoring is done.
+function scoreHrefFor(req, gameId) {
+  const sg = getScoreGame(gameId);
+  if (!sg || sg.status === 'published' || !scoreAccess(req, gameId)) return '';
+  return appAccess(req) === 'ok' ? `/app/score/${encodeURIComponent(gameId)}` : `/score/${encodeURIComponent(gameId)}`;
+}
 // The same screen on the site, for an admin on a laptop or a tablet browser.
 app.get('/admin/games/:id/score', requireAuth, (req, res) => sendScorer(req, res, { href: `/admin/games/${encodeURIComponent(req.params.id)}?tab=scoring`, label: 'Game' }));
 
@@ -7036,7 +7051,7 @@ app.post('/admin/games/:id/scoring', requireAuth, express.json(), (req, res) => 
   const when = [manilaDayLabel(gameYmd(game.date)), gameTipLabel(game)].filter(Boolean).join(' · ');
   for (const pid of scorers.filter(id => !before.has(id))) {
     createNotification({ playerId: pid, type: 'scorer_assigned', title: `You're scoring ${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`,
-      body: `${when ? `${when}. ` : ''}Open it once with signal before the game so it works offline.`, link: `/app/score/${encodeURIComponent(game.id)}` });
+      body: `${when ? `${when}. ` : ''}Open it in the app once with signal before the game so it works offline.`, link: `/score/${encodeURIComponent(game.id)}` });
   }
   liveChanged(game.id);
   res.json({ ok: true, message: scorers.length ? 'Scoring is on. The scorers see the game under Me → Score a game.' : 'Scoring is on. Only admins can score until you pick scorers.' });
@@ -7897,6 +7912,7 @@ function appLinkFor(link = '') {
   const path = String(link || '').split('#')[0];
   if (/^\/app(\/|$|\?)/.test(path)) return path;
   if (/^\/rate\/(papawis|league)\/[^/?]+$/.test(path)) return `/app${path}`;
+  if (/^\/score\/[^/?]+$/.test(path)) return `/app${path}`;
   // A run's own link (#pw-game-<id>) opens that run: its screen once it's over, its card before.
   const pwRun = /^\/papawis\/?$/.test(path) && /#pw-game-([A-Za-z0-9_-]+)$/.exec(link);
   if (pwRun) return `/app/papawis/${pwRun[1]}`;
@@ -10986,7 +11002,7 @@ app.get('/games/:ref', (req, res) => {
       title: live ? `${T(game.team_a_name)} ${live.score.a}–${live.score.b} ${T(game.team_b_name)} · Live | WKND Basketball` : `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} | WKND Basketball`,
       currentPath: req.path,
       metaTags: buildGameOgTags(req, game, court),
-      body: gamePage({ ...common, state: 'upcoming', picks, live, liveArmed: liveArmed(game), liveVer: CSS_VER }),
+      body: gamePage({ ...common, state: 'upcoming', picks, live, liveArmed: liveArmed(game), liveVer: CSS_VER, scoreHref: scoreHrefFor(req, game.id) }),
     }));
   }
 
@@ -19654,6 +19670,9 @@ app.get('/players/:ref', async (req, res) => {
       isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
       // Guests only (mostly people who searched the player's name): join / Papawis / Facebook card.
       showGcInvite: isOwnProfile && !playerCtaDone(resolved.id, 'gc'),
+      // Games this player was picked to score (Today tile), as the app's Me To do has them.
+      scoreGames: isOwnProfile ? getScorerGameIds(resolved.id).map(id => getGameById(id)).filter(g => g && getScoreGame(g.id)?.status !== 'published')
+        .map(g => ({ title: `${titleCase(g.team_a_name)} vs ${titleCase(g.team_b_name)}`, date: gameYmd(g.date), tip: gameTipLabel(g), href: scoreHrefFor(req, g.id) })).filter(g => g.href) : [],
       joinCta: !req.session?.playerRegId && !req.session?.isAdmin ? { regOpen: getSetting('reg_open', '0') === '1', papawis: !!getFeatureFlags().papawis } : null,
       champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
       balanceAmount, balanceTransactions: isOwnProfile && balanceAmount > 0 ? balanceTransactions : [], papawisGames, coachNote, latestPoll, papawisEmailsOn,

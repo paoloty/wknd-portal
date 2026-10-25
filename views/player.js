@@ -1667,6 +1667,12 @@ function prfToday(o) {
     if (!all) due++;
     tiles.push(prfTile({ label: `${prfWeekday(live[0].ymd).toUpperCase()} PICKS`, chip: all ? { kind: 'ok', text: 'ALL IN' } : { kind: 'due', text: 'OPEN' }, value: String(done), small: `/${live.length}`, segs: { done, total: live.length }, sub: `Closes ${prfWeekday(live[0].ymd)} ${fmtCloseTime(o.pickRecord.own.closeTime)}`, cta: { href: '#this-week', text: all ? 'Change picks' : 'Pick now', quiet: all } }));
   }
+  // Games an admin picked this player to score (server.js scoreHrefFor: the app's scorer when
+  // they have the app, which works with no signal).
+  for (const g of o.scoreGames || []) {
+    due++;
+    tiles.push(prfTile({ label: 'GAME TO SCORE', chip: { kind: 'due', text: 'YOU' }, value: prfDay(g.date), sub: [g.title, g.tip].filter(Boolean).join(' · '), cta: { href: g.href, text: 'Open the scorer' } }));
+  }
   const poll = o.latestPoll;
   if (poll && poll.status === 'open' && poll.canVote && !poll.myVote) {
     due++;
