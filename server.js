@@ -6037,13 +6037,14 @@ import { randomInt } from 'crypto';
 import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
-import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts } from './views/app/feed.js';
+import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts, appLiveNow } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, setPlayerScorer, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
 import { foldGame as foldScoredGame, DEFAULT_RULES as SCORE_RULES } from './public/score-engine.js';
+import { liveExtras } from './lib/live-extras.js';
 import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
 import { appSharePage } from './views/app/share.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
@@ -6813,12 +6814,13 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   const back = appBack(req);
   const g = getGameById(req.params.id);
   if (!g || g.under_review) return sendTab(res, me, { title: 'Game · WKND', tab: back.tab, body: `${appGameMissing(back)}` });
+  const reviewView = req.query.review === 'live' && canWatchReview(req, me.playerId) && reviewLiveOn(g);
   if (req.get('X-Live')) {
-    const live = !isPlayedGame(g) && liveScoreFor(g);
+    const live = reviewView ? reviewLiveFor(g) : !isPlayedGame(g) && liveScoreFor(g);
     res.set('Cache-Control', 'private, no-store');
-    return res.json(live ? { on: true, ...appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g) }) } : { on: false, waiting: !isPlayedGame(g) && liveArmed(g) });
+    return res.json(live ? { on: true, ...appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g), extras: liveExtrasFor(g, me.playerId, reviewView ? reviewPass(g) : 'live') }) } : { on: false, waiting: reviewView || (!isPlayedGame(g) && liveArmed(g)) });
   }
-  if (!isPlayedGame(g)) return appGamePreview(req, res, me, back, g);
+  if (!isPlayedGame(g) || reviewView) return appGamePreview(req, res, me, back, g, reviewView);
   const stats = isPlayedGame(g) ? getGameDetailStats(g.id) : [];
   const [a, b] = appTeamsOf(g);
   const { title, body } = parseWriteup(g.game_writeup || '');
@@ -6918,7 +6920,7 @@ function scoreEventsWithBy(gameId, pass = 'live') {
 }
 
 // ── Live score (lib/live-score.js): everyone sees the game as it's scored, before publish ──
-// On the site's game page and the app's game screen, marked unofficial; the per-game switch
+// On the site's game page and the app's game screen ("Live", then "Final · in review" until published); the per-game switch
 // (settings.live_public, on unless an admin turns it off) hides it. Only the live pass shows.
 // Each change tells the game's open pages over /ws/games/:id/live; they fetch the new parts
 // (X-Live) and swap them in. Told at most once a second per game, so a burst of taps is one.
@@ -6934,13 +6936,79 @@ function liveScoreFor(game) {
   if (!bundle.events.length) return null;
   return liveScoreData(bundle, { photo: id => playerPhotoUrl(id, 96) });
 }
+// Live extras (lib/live-extras.js; views/live-extras.js draws them): win odds, momentum,
+// who's hot, team pace, picks. What they compare with (the pre-game odds, season averages and
+// highs, each team's usual, the picks) is worked out once per change of plays and kept, since a
+// busy live page asks on every play; the viewer's own pick is added after.
+const extrasCache = new Map(); // gameId -> { key, G, ctx, picks }
+function liveExtrasFor(game, viewerId = '', pass = 'live') {
+  if (getSetting('live_extras_enabled', '1') === '0') return null;
+  const bundle = scoreBundle(game, pass);
+  if (!bundle.events.length) return null;
+  const key = `${pass}:${bundle.events.length}:${bundle.events.reduce((m, e) => Math.max(m, Number(e.at) || 0), 0)}`;
+  let c = extrasCache.get(`${game.id}:${pass}`);
+  if (!c || c.key !== key) {
+    try { c = { key, ...liveExtrasBase(game, bundle) }; } catch (e) { console.error('[live extras]', e.message); return null; }
+    extrasCache.set(`${game.id}:${pass}`, c);
+  }
+  const myPick = viewerId && c.picks ? (c.picks.list.find(p => p.playerId === viewerId) || {}).side || null : null;
+  try { return liveExtras(c.G, { ...c.ctx, picks: c.picks, myPick }); } catch (e) { console.error('[live extras]', e.message); return null; }
+}
+function liveExtrasBase(game, bundle) {
+  const G = foldScoredGame(bundle.events, bundle.rules);
+  const games = byDate(getAllGames());
+  const pctx = buildPicksContext(games);
+  // The pre-game odds: the copy frozen when picks closed, else worked out now (none when the
+  // odds are switched off or hidden for this game).
+  const st = upcomingPickState(game, pctx);
+  const stored = getGamePreview(game.id);
+  const odds = st.odds ? ((stored && stored.frozen && stored.odds) || st.odds) : null;
+  const p0 = odds && Number.isFinite(Number(odds.pctA)) ? Number(odds.pctA) / 100 : null;
+  const sideOf = {}, nameOf = {};
+  for (const t of ['a', 'b']) for (const p of bundle[t].players) { sideOf[p.id] = t; nameOf[p.id] = p.name; }
+  const hist = playerHistory(Object.keys(sideOf), game);
+  // Each team's season so far (games before this one with box scores): their usual.
+  const gctx = buildGamesContext(games, Object.fromEntries(getAllPlayers().map(p => [p.id, p])));
+  const ymd = gameYmd(game.date);
+  const before = gctx.played.filter(g => String(g.season) === String(game.season) && gameYmd(g.date) < ymd);
+  const usual = name => {
+    const mine = before.filter(g => g.team_a_name === name || g.team_b_name === name);
+    if (mine.length < 2) return null;
+    for (const g of mine) gctx.loadGame(g.id);
+    const v = teamAveragesOver(mine, name, gctx.statsById, gctx.toById);
+    return v && v.box >= 2 ? { pts: v.pts, tpm: v.t3m, to: v.to, reb: v.reb } : null;
+  };
+  const list = picksEnabled() ? getGamePicksWithPlayers(game.id).map(p => ({ side: p.side, playerId: p.player_id, name: displayPlayerName(p.player_name || '') })) : [];
+  return {
+    G, picks: list.length ? { closed: st.closed, list } : null,
+    ctx: {
+      rules: bundle.rules, p0, playerName: id => nameOf[id] || 'Someone', teamOf: id => sideOf[id] || null,
+      seasonAvg: id => (hist[id] && hist[id].sGp ? { pts: hist[id].sAvg, gp: hist[id].sGp } : null),
+      seasonHigh: id => (hist[id] && hist[id].sGp ? hist[id].sMax : null),
+      teamUsual: { a: usual(game.team_a_name), b: usual(game.team_b_name) },
+    },
+  };
+}
+// A review watched live (the Scoring tab's switch, off by default and off again when the
+// review closes or the game publishes): the game page at ?review=live shows the plays being
+// reviewed (the video re-track or the live track) as a live game, to admins only. Never in
+// the feed, the ticker, the homepage or Home's live card, and no bells.
+const reviewLiveOn = game => { const sg = getScoreGame(game.id); return !!sg && !!sg.settings.reviewLive && sg.status !== 'published'; };
+const reviewPass = game => (getScoreGame(game.id)?.settings?.review?.kind === 'video' ? 'video' : 'live');
+function reviewLiveFor(game) {
+  if (!reviewLiveOn(game)) return null;
+  const bundle = scoreBundle(game, reviewPass(game));
+  if (!bundle.events.length) return null;
+  return liveScoreData(bundle, { photo: id => playerPhotoUrl(id, 96) });
+}
+const canWatchReview = (req, playerId = req.session?.playerPlayerId) => isAdminWithSection(req, 'games-stats') || (!!playerId && gameAdminPlayers().some(a => a.playerId === playerId));
 // A game being scored, small: the ticker, the homepage's playoff scoreboard and Coming up.
 function liveMini(g) {
   if (!g || !getScoreGame(g.id)) return null;
   const full = g.team_a_id && g.team_b_id ? g : getGameById(g.id);
   const l = full && liveScoreFor(full);
   if (!l) return null;
-  return { an: titleCase(full.team_a_name), bn: titleCase(full.team_b_name), a: l.score.a, b: l.score.b, when: l.ended ? 'Final · unofficial' : liveWhen(l), href: `/games/${encodeURIComponent(gameSlug(full))}` };
+  return { an: titleCase(full.team_a_name), bn: titleCase(full.team_b_name), a: l.score.a, b: l.score.b, when: l.ended ? 'Final · in review' : liveWhen(l), href: `/games/${encodeURIComponent(gameSlug(full))}` };
 }
 // Coming up's league card with the live score on any game being scored (a copy: the AI
 // summary reads the plain card).
@@ -7141,7 +7209,7 @@ app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => 
   }
   if (added && pass === 'live') bellGameStarted(game);
   if (added && pass === 'live' && sg.status === 'setup') saveScoreGame(game.id, { status: 'live' });
-  if (added && pass === 'live') liveChanged(game.id);
+  if (added && (pass === 'live' || sg.settings.reviewLive)) liveChanged(game.id);
   if (events.length < raw.length) console.warn(`[scorer] game=${game.id} rejected ${raw.length - events.length} play(s) that didn't fit`);
   res.json({ ok: true, added, received: raw.length, rejected: raw.length - events.length, late: late.map(e => e.id), lateWhy: late.length ? lateWhy(late[0]) : '' });
 });
@@ -7231,7 +7299,7 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
     importGameResults(game.id, payload);
     setGameOrebs(game.id, orebs);
     updateGameReview(game.id, visible ? 0 : 1);
-    saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: pass, official: official || sg.settings.official, review: null, reviewedBy: reviewer(req).name } });
+    saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: pass, official: official || sg.settings.official, review: null, reviewLive: false, reviewedBy: reviewer(req).name } });
     console.log(`[scorer] published game=${game.id} pass=${pass} plays=${events.length} score=${state.score.a}-${state.score.b}`);
     const off = official && (official.a !== state.score.a || official.b !== state.score.b) ? ` The plays add up to ${state.score.a}–${state.score.b}; the final score ${official.a}–${official.b} stays the result.` : '';
     res.json({ ok: true, message: `Published${visible ? '' : ', hidden until you switch Visible to everyone on'}: ${game.team_a_name} ${official ? official.a : state.score.a}, ${game.team_b_name} ${official ? official.b : state.score.b}.${off}` });
@@ -7334,7 +7402,7 @@ app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, r
   }
   if (act === 'finish') {
     if (!mine && !isSuperAdminReq(req)) return res.status(403).json({ error: 'Only the admin reviewing it can close the review.' });
-    set(null);
+    saveScoreGame(game.id, { settings: { ...sg.settings, review: null, reviewLive: false } });
     return res.json({ ok: true, message: 'Review closed. Anyone can pick it up.' });
   }
   if (act === 'handover') {
@@ -7369,6 +7437,16 @@ app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, r
     return res.json({ ok: true, message: 'You have the review now.' });
   }
   res.status(400).json({ error: 'Unknown action.' });
+});
+// Watch the review live (temporary, admins only): see reviewLiveFor.
+app.post('/admin/games/:id/scoring/review-live', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  const sg = game && getScoreGame(game.id);
+  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 'on' || req.body?.on === '1';
+  saveScoreGame(game.id, { settings: { ...sg.settings, reviewLive: on } });
+  liveChanged(game.id);
+  res.json({ ok: true, message: on ? 'Watching it live: only admins see it, at the game page’s live link.' : 'Stopped watching it live.' });
 });
 // Undo publish: the game goes back to exactly what it had before (the snapshot taken at
 // publish), scoring reopens, and the plays are all still there to fix and publish again.
@@ -7515,7 +7593,7 @@ function adminScoringPanel(game, players, req) {
     admins: gameAdminPlayers().filter(a => a.playerId !== me.playerId) };
   const finalScore = gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null;
   const lateRows = getScoreEvents(game.id, 'late').map(e => ({ id: e.id, when: [e.period, e.clock].filter(Boolean).join(' '), text: describeScorePlay(e, nm, tname), by: (() => { const p = players.find(x => x.id === e.author); return p ? displayPlayerName(p.name || '').split(' ')[0] : 'Admin'; })() }));
-  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, removed, checks, canUnpublish: sg.status === 'published' && !!latestPublishSnapshot(game.id), roster, review, finalScore, late: lateRows,
+  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, removed, checks, canUnpublish: sg.status === 'published' && !!latestPublishSnapshot(game.id), roster, review, finalScore, late: lateRows, reviewOnly: !!sg.settings.reviewOnly, reviewLive: !!sg.settings.reviewLive, slug: gameSlug(game),
     dnp: [...new Set([...(sg.settings.dnp || []), ...st.dnp])], official: sg.settings.official || null,
     pass, liveScore: live.score, liveCount: live.rows.length, video: video ? { score: video.score, count: video.rows.length } : null, compare, hasVideo: !!ytId(game.youtube_url || '') };
 }
@@ -7575,7 +7653,7 @@ app.get('/app/games/:id/share', requireApp, async (req, res) => {
   }) });
 });
 // Before the result: the preview, with the pick card while picks are open (or the pick made).
-function appGamePreview(req, res, me, back, g) {
+function appGamePreview(req, res, me, back, g, reviewView = false) {
   const all = getAllGames();
   const sorted = byDate(all);
   const pctx = buildPicksContext(sorted);
@@ -7584,7 +7662,8 @@ function appGamePreview(req, res, me, back, g) {
   const o = picksEnabled() ? openPicks(sorted, pctx, me.playerId).find(x => x.id === g.id) : null;
   const preview = appPreview(g, sorted, pctx, playerMap, colorOf);
   const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
-  const live = liveScoreFor(g);
+  const live = reviewView ? reviewLiveFor(g) : liveScoreFor(g);
+  const xPass = reviewView ? reviewPass(g) : 'live';
   sendTab(res, me, { title: live ? `${g.team_a_name} ${live.score.a} · ${g.team_b_name} ${live.score.b} · Live · WKND` : `${g.team_a_name} vs ${g.team_b_name} · WKND`, tab: back.tab, body: appGamePreviewPage({
     back, title: `${g.team_a_name} vs ${g.team_b_name}`,
     kicker: g.playoff_round || gameTypeLabel(g) || 'Regular season',
@@ -7596,7 +7675,8 @@ function appGamePreview(req, res, me, back, g) {
     lastHref: preview.last ? `/app/games/${encodeURIComponent(preview.last.id)}?from=${back.tab}` : '',
     // The game's scorers (and admins) start scoring from here once scoring is on.
     scoreHref: getScoreGame(g.id) && scoreAccess(req, g.id) ? `/app/score/${encodeURIComponent(g.id)}` : '',
-    live: live || liveArmed(g) ? { src: `/app/games/${encodeURIComponent(g.id)}`, ws: `/ws/games/${encodeURIComponent(g.id)}/live`, parts: live ? appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g) }) : null } : null,
+    live: live || reviewView || liveArmed(g) ? { src: `/app/games/${encodeURIComponent(g.id)}${reviewView ? '?review=live' : ''}`, ws: `/ws/games/${encodeURIComponent(g.id)}/live`, parts: live ? appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g), extras: liveExtrasFor(g, me.playerId, xPass) }) : null } : null,
+    reviewLive: reviewView,
   }) });
 }
 // The viewer's own team in this game (their box score opens on it).
@@ -7815,6 +7895,28 @@ function appPreview(game, sorted, pctx, playerMap, colorOf) {
   };
 }
 
+// Home's live card (views/app/feed.js appLiveNow): every game being scored right now that's
+// visible to everyone (never a review), newest play first. Loaded after the screen and again
+// every 15 s while Home is open (public/app.js data-block-every), as JSON { html }.
+function appLiveNowGames() {
+  return portalDb.prepare("SELECT game_id FROM score_games WHERE status = 'live'").all()
+    .map(r => getGameById(r.game_id)).filter(g => g && !g.under_review && !isPlayedGame(g))
+    .map(g => ({ g, l: liveScoreFor(g) })).filter(x => x.l && !x.l.ended)
+    .sort((x, y) => y.l.updatedAt - x.l.updatedAt);
+}
+app.get('/app/live-now', requireAppData, (req, res) => {
+  const me = appMe(req);
+  const colorOf = appColorOf(getAllTeams());
+  const cards = appLiveNowGames().map(({ g, l }) => {
+    const x = liveExtrasFor(g, me.playerId);
+    const run = x?.momentum?.run, odds = x?.odds;
+    const nm = t => titleCase(t === 'a' ? g.team_a_name : g.team_b_name);
+    const line = run ? `${nm(run.team)} on a ${run.pts}–0 run` : odds ? `${nm(odds.a >= odds.b ? 'a' : 'b')} ${Math.max(odds.a, odds.b)}% to win` : '';
+    return { id: g.id, when: liveWhen(l), line, kicker: `Live · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`, media: gameMedia(g), a: { name: g.team_a_name, color: colorOf(g.team_a_name), score: l.score.a }, b: { name: g.team_b_name, color: colorOf(g.team_b_name), score: l.score.b } };
+  });
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ html: appLiveNow(cards) });
+});
 // Home's rail (views/app/feed.js appRail): the next game day's games. While picks are open
 // they're pick cards; once closed, preview cards with the player's pick; gone after the games.
 // Loaded after the screen (it needs the full picks context, ~100 ms) as JSON { html }.
@@ -7831,6 +7933,9 @@ app.get('/app/rail', requireAppData, (req, res) => {
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const cards = opens.filter(o => o.ymd === day).map(o => {
     const g = appPickGame(o, gameOf[o.id], colorOf);
+    // Being scored: the card shows the live score instead of the preview.
+    const l = o.closed && gameOf[o.id] ? liveScoreFor(gameOf[o.id]) : null;
+    if (l && !l.ended) return { ...g, live: { a: l.score.a, b: l.score.b, when: liveWhen(l) } };
     return o.closed ? { ...g, preview: appPreview(gameOf[o.id], sorted, pctx, playerMap, colorOf) } : g;
   });
   res.json({ html: appRail({ dayLabel: manilaFormat(Date.parse(`${day}T12:00:00+08:00`), { weekday: 'long' }), cards }) });
@@ -11340,12 +11445,15 @@ app.get('/games/:ref', (req, res) => {
   const isFinal = (game.status === 'final' || game.status === 'complete') && Number(game.team_a_score) + Number(game.team_b_score) > 0;
   const ymd = gameYmd(game.date);
   const ctx = seasonContext([...sorted].reverse(), game);
-  // Being scored: the live parts only, for public/live-score.js.
-  const live = isFinal ? null : liveScoreFor(game);
+  // Being scored: the live parts only, for public/live-score.js. A review watched live
+  // (?review=live, admins, the switch on) shows the same way, the finished game or not.
+  const reviewView = req.query.review === 'live' && canWatchReview(req) && reviewLiveOn(game);
+  const live = reviewView ? reviewLiveFor(game) : isFinal ? null : liveScoreFor(game);
+  const xPass = reviewView ? reviewPass(game) : 'live';
   if (req.get('X-Live')) {
     res.set('Cache-Control', 'private, no-store');
     // The hero's buttons stay put on the page (only its marked parts swap), so none here.
-    return res.json(live ? { on: true, ...liveParts({ game, live, ctx, court, gameReaction: { count: 0 } }) } : { on: false, waiting: !isFinal && liveArmed(game) });
+    return res.json(live ? { on: true, ...liveParts({ game, live, ctx, court, gameReaction: { count: 0 }, extras: liveExtrasFor(game, req.session?.playerPlayerId || '', xPass) }) } : { on: false, waiting: reviewView || (!isFinal && liveArmed(game)) });
   }
   const pctx = buildPicksContext(sorted);
   const T = titleCase;
@@ -11369,7 +11477,7 @@ app.get('/games/:ref', (req, res) => {
   const opens = picksEnabled() ? openPicks(sorted, pctx, currentPlayerId) : [];
 
   // ── Before the final: this page is the matchup preview (formerly /picks/<game>). ──
-  if (!isFinal) {
+  if (!isFinal || reviewView) {
     const p = gamePreview(game, sorted, playerMap, pctx);
     const o = opens.find(x => x.id === game.id) || null;
     // The same day's other games, as compact pick cards in the rail (views/pick-card.js).
@@ -11386,7 +11494,8 @@ app.get('/games/:ref', (req, res) => {
       title: live ? `${T(game.team_a_name)} ${live.score.a}–${live.score.b} ${T(game.team_b_name)} · Live | WKND Basketball` : `${T(game.team_a_name)} vs ${T(game.team_b_name)} · ${p.state === 'open' ? 'Who wins?' : 'Preview'} | WKND Basketball`,
       currentPath: req.path,
       metaTags: buildGameOgTags(req, game, court),
-      body: gamePage({ ...common, state: 'upcoming', picks, live, liveArmed: liveArmed(game), liveVer: CSS_VER, scoreHref: scoreHrefFor(req, game.id) }),
+      body: gamePage({ ...common, state: 'upcoming', picks, live, extras: live ? liveExtrasFor(game, currentPlayerId || '', xPass) : null, liveArmed: reviewView || liveArmed(game), liveVer: CSS_VER, scoreHref: scoreHrefFor(req, game.id),
+        ...(reviewView ? { reviewLive: true, liveSrc: `/games/${encodeURIComponent(gameSlug(game))}?review=live` } : {}) }),
     }));
   }
 

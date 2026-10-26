@@ -79,7 +79,14 @@
       if (nb && cur && nb.innerHTML !== cur.innerHTML) cur.innerHTML = nb.innerHTML;
     }).catch(function () {});
   }
-  function initBlocks() { $$('[data-block-src]').forEach(function (b) { loadBlock(b); }); }
+  function initBlocks() {
+    $$('[data-block-src]').forEach(function (b) {
+      loadBlock(b);
+      // A block that keeps itself fresh (Home's live card): again every N ms while it's on screen.
+      var every = Number(b.getAttribute('data-block-every'));
+      if (every && !b._every) b._every = setInterval(function () { if (!b.isConnected) { clearInterval(b._every); return; } if (document.visibilityState === 'visible') loadBlock(b, true); }, every);
+    });
+  }
   // The rail's dots follow the card in view.
   function initRails(root) {
     $$('[data-rail]', root).forEach(function (rail) {

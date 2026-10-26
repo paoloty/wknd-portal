@@ -85,3 +85,20 @@ Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off),
   - **Chimes (`chime()`):** Web Audio, no file. Two notes up for an ask (again after 10 s), two notes down when the other scorer leaves, one soft note on the asker's phone when the answer comes. Android also vibrates; iPhones can't, and their silent switch mutes it.
   - **⋯ → Sounds on/off:** `wknd-sc-sound` on this phone.
 - Reviewing a game played without the scorer (2026-10-26): a game with a final score and scoring never turned on shows a Review card on its Scoring tab instead of "Turn on scoring": Re-track from the video (primary when it has a YouTube link) or Enter the plays. Starting it (`/scoring/review` start) switches scoring on quietly: `reviewOnly` (no live score, not in Scorers' games or to-do), `startedBell` (no game-started bell), `finalAt` (a scorer's phone can't add plays), no "ready for scoring" bells; only the usual "X is reviewing" bell to the other games admins. The final score stays the result at publish.
+- Live game extras (phase 7, pulled forward 2026-10-26; mockup claude.ai/artifact/UfcErs6BJnQcZjXTTitbGH, Paolo "I like all"):
+  - **Where:** five blocks above the live box score on the site's game page and the app's game screen, one markup (`views/live-extras.js`, `.lx-*` styled in both `styles.css` and `app.css`), swapped in with the live body as plays arrive.
+  - **Win odds:** the Who wins? pre-game odds (frozen copy, none when odds are off/hidden) moved by lead and time left (`winChance`, normal model, SIGMA 13 points), with a line over the game.
+  - **Momentum:** the run (6+), lead changes, ties, biggest leads, % of time led, points per 2 minutes.
+  - **Who's hot:** ahead of their season average for the time played, plus one cold shooter after halftime. **Watch for:** near a season high, a double-double, one foul from out.
+  - **Team pace:** projected against each team's season usual, from Q2.
+  - **Picks:** once picks close: % sweating, the split, faces, "You picked…".
+  - **Plumbing:** maths in `lib/live-extras.js` (pure, `test/live-extras.test.js`); `server.js liveExtrasFor` caches the history per change of plays. Time-based numbers use the scorer's clock (marked "about"). Setting `live_extras_enabled` ('0' turns them off; no admin switch yet).
+- Live on Home (2026-10-26):
+  - **Home's live card** (`appLiveNow`, `/app/live-now`, refreshed every 15 s via `data-block-every`): every game being scored and visible to everyone, with the score, quarter and clock, and one line from the extras (a run, else the odds).
+  - **The rail:** a game's card switches to the live score (`railLiveCard`) while it's scored.
+  - **Never listed:** reviews, finished games and hidden games.
+- Watch a review live (2026-10-26):
+  - **The switch:** on the Scoring tab ("Watch it live while reviewing"), `settings.reviewLive`, `/scoring/review-live`. Off by default; shown for reviews (a final-score-only game, or one with a review lock). It switches off when the review closes or the game publishes.
+  - **What it shows:** `?review=live` on the site game page and the app game screen, for games admins only (`canWatchReview`), renders the reviewed pass (`reviewPass`: the video re-track or the live track) as a live game, extras and all, with a "Review, watched live" note.
+  - **Never listed:** not in the feed, the ticker, the homepage or Home's live card, and no bells. `liveArmed` still says no for `reviewOnly` games.
+- Labels (Paolo, 2026-10-26): no "unofficial" anywhere. While scored: "Live"; after the final until published: "Final · in review", with "In review: these stats can still change until the game is published." under the box score.

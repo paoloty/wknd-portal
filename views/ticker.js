@@ -24,7 +24,7 @@ const seriesKey = (g) => `${g.season}|${g.game_type}|${g.series_id || [g.team_a_
 
 // Regular-season cell. Rows keep the order games were entered in (team A on top) — winner
 // styling follows whichever row actually won, it doesn't reorder them.
-// g.live (server.js liveMini): a game being scored, its unofficial score and where it is.
+// g.live (server.js liveMini): a game being scored, its live score and where it is.
 function gameCell(g) {
   if (g.live) return liveCell(g);
   const scheduled = isScheduled(g);

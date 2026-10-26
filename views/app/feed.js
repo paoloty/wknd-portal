@@ -9,6 +9,7 @@ import { papawisAction } from './papawis.js';
 import { todoCard } from './home.js';
 import { lineScore, gameRecapSections, boxCard, jumpBar } from './game.js';
 import { liveWhen } from '../../lib/live-score.js';
+import { liveExtrasHtml } from '../live-extras.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -53,9 +54,9 @@ function gameHero(g, { band = false } = {}) {
   const sized = m.img && m.srcset && !band ? ` srcset="${esc(m.srcset)}" sizes="(min-width: 560px) 528px, calc(100vw - 32px)"` : '';
   const row = t => `<div class="gx__row${t.won ? ' is-w' : ''}"><span class="dot" style="--c:${esc(t.color)}"></span><span class="gx__t">${esc(t.name)}</span><b>${esc(t.score)}</b></div>`;
   const chip = !band && m.yt ? '▶ Video' : g.when;
-  return `<div class="gx__hero${band ? ' gx__hero--band' : ''}">
+  return `<div class="gx__hero${band ? ' gx__hero--band' : ''}${g.live || g.inReview ? ' gx__hero--live' : ''}">
       ${src ? `<img class="gx__img" src="${esc(src)}"${sized} alt="" decoding="async">` : ''}
-      <div class="gx__top"><span class="sx__chip sx__chip--glass">${esc(g.kicker)}</span>${chip ? `<span class="sx__chip sx__chip--glass">${esc(chip)}</span>` : ''}</div>
+      <div class="gx__top"><span class="sx__chip sx__chip--glass${g.live ? ' sx__chip--live' : ''}">${esc(g.kicker)}</span>${chip ? `<span class="sx__chip sx__chip--glass">${esc(chip)}</span>` : ''}</div>
       <div class="gx__score">${row(g.a)}${row(g.b)}</div>
     </div>`;
 }
@@ -141,6 +142,7 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todo
   </div>
   ${strip}
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
+  <div class="live-now" data-block-src="/app/live-now" data-block-every="15000" hidden></div>
   ${rail ? '<div class="rail-block" data-block-src="/app/rail"><div class="rail-h"><b class="skel skel--line skel--short" style="width:120px"></b></div><div class="rail"><div class="rc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span></div><div class="rc skel-card"></div></div></div>' : ''}
   ${lazyList({ src: '/app/feed/items', cards: true, empty: 'Nothing here yet. Results, news and announcements show up here.' })}`;
 }
@@ -212,6 +214,24 @@ function railPickCard(g) {
   </section>`;
 }
 
+// Being scored: the live score (the card opens the live game).
+function railLiveCard(g) {
+  const mine = g.myPick ? (g.myPick === 'a' ? g.a : g.b) : null;
+  const side = (t, n) => `<div class="rc-live__t"><span class="dot" style="--c:${esc(t.color)}"></span><span>${esc(t.name)}</span><b class="num">${n}</b></div>`;
+  return `<a class="rc rc--live" href="/app/games/${encodeURIComponent(g.id)}?from=home">
+    <div class="rc__top"><span class="kick live-kick">Live</span><span class="rc__tag num">${esc(g.live.when)}</span></div>
+    ${side(g.a, g.live.a)}${side(g.b, g.live.b)}
+    <div class="rc__foot"><span>${mine ? `Your pick: <b style="color:${esc(mine.color)}">●</b> ${esc(mine.name)}` : 'You didn\'t pick this one'}</span><span class="rc__go">Watch live ›</span></div>
+  </a>`;
+}
+// Home's live card: games being scored right now (server.js /app/live-now), in the finished
+// game's card design (gameHero: the photo, both teams, the score), LIVE blinking red.
+export function appLiveNow(cards) {
+  return cards.map(c => `<article class="sx gx gx--live"><a class="gx__link" href="/app/games/${encodeURIComponent(c.id)}?from=home">
+    ${gameHero({ kicker: c.kicker, when: c.when, media: c.media, live: true, a: { ...c.a, won: c.a.score > c.b.score }, b: { ...c.b, won: c.b.score > c.a.score } })}
+    ${c.line ? `<div class="sx__body"><p class="gx__ex live-now__line">${esc(c.line)}</p></div>` : ''}
+  </a><div class="sx__act"><a class="btn btn--ghost" href="/app/games/${encodeURIComponent(c.id)}?from=home">Watch live</a></div></article>`).join('');
+}
 // Picks closed: the preview, with the player's pick.
 function railPreviewCard(g) {
   const p = g.preview || {};
@@ -233,24 +253,24 @@ export function appRail({ dayLabel, cards }) {
   const open = cards.some(c => !c.closed);
   const one = cards.length === 1;
   return `<div class="rail-h"><b>${open ? `Who wins? · ${esc(dayLabel)}` : `${esc(dayLabel)}'s games`}</b><a href="/app/picks">${open ? 'All picks' : 'Picks'} ›</a></div>
-  <div class="rail${one ? ' rail--one' : ''}" data-rail>${cards.map(c => (c.closed ? railPreviewCard(c) : railPickCard(c))).join('')}${one ? '' : '<a class="rc rc--end" href="/app/picks"><i>›</i>Pickmaster<br>&amp; all games</a>'}</div>
+  <div class="rail${one ? ' rail--one' : ''}" data-rail>${cards.map(c => (c.live ? railLiveCard(c) : c.closed ? railPreviewCard(c) : railPickCard(c))).join('')}${one ? '' : '<a class="rc rc--end" href="/app/picks"><i>›</i>Pickmaster<br>&amp; all games</a>'}</div>
   ${one ? '' : `<div class="dots" data-rail-dots>${cards.map((c, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>`}`;
 }
 
 // ── Live: while the game is being scored (lib/live-score.js liveScoreData), before publish ──
 // The site's live view, app-styled: the score on the hero, team fouls and timeouts, the line
-// score, the box score (the finished game's own table) and the play-by-play. Unofficial till
+// score, the box score (the finished game's own table) and the play-by-play. "In review" from the final till
 // published. public/live-score.js swaps both parts in as plays arrive.
-export function appLiveParts(l, { meId = '', myTeamId = '' } = {}) {
+export function appLiveParts(l, { meId = '', myTeamId = '', extras = null } = {}) {
   const side = t => ({ ...t, won: t.score >= (t === l.a ? l.b : l.a).score });
   const a = side(l.a), b = side(l.b);
   const tf = t => `<div class="lv-tf__t"><span class="dot" style="--c:${esc(t.color)}"></span><span>${t.fouls} foul${t.fouls === 1 ? '' : 's'}${t.penalty ? ' · <b>Penalty</b>' : t.penaltyNext ? ' · <b>Penalty next</b>' : ''}</span><span class="mut">${t.toLeft} TO left</span></div>`;
   const hero = `<section class="sx gx gx--screen lv">
-    ${gameHero({ kicker: l.ended ? 'Final · unofficial' : 'Live · unofficial', when: liveWhen(l), a: { ...a, won: true }, b: { ...b, won: true } })}
+    ${gameHero({ kicker: l.ended ? 'Final · in review' : 'Live', when: liveWhen(l), live: !l.ended, inReview: l.ended, a: { ...a, won: a.score >= b.score }, b: { ...b, won: b.score >= a.score } })}
     <div class="sx__body">
       <div class="lv-tf">${tf(a)}${tf(b)}</div>
       ${lineScore(a, b, l.quarters)}
-      <p class="foot-note">${l.ended ? 'Scored live. Official once it’s reviewed and published.' : 'Updates as the scorer logs each play. Clock as of the last play.'}</p>
+      <p class="foot-note">${l.ended ? 'Scored live and now in review. Official once it’s published.' : 'Updates as the scorer logs each play. Clock as of the last play.'}</p>
     </div>
   </section>`;
   const row = p => `<div class="lv-pl${p.end ? ' lv-pl--end' : ''}" data-lv-play="${esc(p.id)}">
@@ -258,18 +278,18 @@ export function appLiveParts(l, { meId = '', myTeamId = '' } = {}) {
       <span class="lv-pl__x">${p.end ? '' : `<span class="dot" style="--c:${esc(p.side === 'b' ? b.color : p.side === 'a' ? a.color : '#5b6475')}"></span>`}<b>${esc(p.who)}</b>${p.what ? ` ${esc(p.what)}` : ''}</span>
       <span class="lv-pl__s num${p.scoring ? ' is-score' : ''}">${p.score.a}–${p.score.b}</span></div>`;
   const box = a.rows.length + b.rows.length ? boxCard([a, b], meId, myTeamId, []) : '';
-  const body = `${box}
+  const body = `${liveExtrasHtml(extras, l)}${box}
   <section class="fc gr" id="lv-plays">
     <div class="gr-head"><span class="kick">Play-by-play</span><span class="gr-hint">${l.count} so far</span></div>
     <div class="lv-scroll" data-lv-scroll>${l.plays.map(row).join('') || '<p class="gr-note">Plays show here as they’re scored.</p>'}</div>
-    <p class="gr-note gr-note--foot">Live and unofficial: it can still change in review. Season stats, picks and the recap come once it’s published.</p>
+    <p class="gr-note gr-note--foot">${l.ended ? 'In review: these stats can still change until the game is published.' : 'Updates with every play.'} Season stats, picks and the recap come once it’s published.</p>
   </section>`;
   return { hero, body };
 }
 
 // Before tip-off: the game's preview. pick: the pick card while picks are open (or the pick
 // made); preview: server.js appPreview.
-export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null }) {
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false }) {
   const w = (p.watch || []).filter(Boolean);
   // The section bar (the finished game's, sticky, lights the section in view), once there are
   // three or more sections below the top: live box score + plays, then the preview's.
@@ -283,7 +303,8 @@ export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b
   const bar = chips.length > 2 ? jumpBar(chips) : '';
   // While there's a pick card it is the top of the screen (it has the matchup, day and time).
   return `${navbar(back, title)}
-  ${scoreHref ? `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>` : ''}
+  ${reviewLive ? '<div class="msg msg--warn review-live">Review, watched live. Only admins see this, and it isn’t in the feed. Switch it off on the game’s Scoring tab.</div>' : ''}
+  ${scoreHref && !reviewLive ? `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>` : ''}
   ${live ? `<div data-live-src="${esc(live.src)}" data-live-ws="${esc(live.ws)}">${live.parts ? `<div data-live="hero">${live.parts.hero}</div>${bar}<div data-live="body">${live.parts.body}</div>` : ''}</div>` : ''}
   ${live?.parts ? '' : pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
     <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>

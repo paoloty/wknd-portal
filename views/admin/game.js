@@ -426,9 +426,13 @@ function reviewSection({ game, sc, base }) {
       ${rv.superAdmin ? post('Take over', { action: 'take' }, { kind: 'ghost', confirm: { title: `Take over from ${lock.name}?`, body: `${lock.name} gets a bell that you took the review.`, send: 'Take over' } }) : ''}`;
   }
   const lockedOut = !!lock && !lock.mine && sc.status !== 'published';
+  // A review watched live (temporary, admins only, never in the feed): reviews only.
+  const watch = sc.status !== 'published' && (sc.reviewOnly || lock) ? `${toggleRow({ label: 'Watch it live while reviewing', name: 'reviewLive', on: !!sc.reviewLive, post: `${base}/scoring/review-live`, reload: true,
+      help: 'Off by default. On: the game page shows the plays as a live game while you review, to admins only. Never in the feed, the ticker or the homepage, and nobody gets a bell. It switches off when the review closes or the game is published.' })}
+    ${sc.reviewLive ? `<p class="aui-muted">Open it: <a href="/games/${encodeURIComponent(sc.slug || game.id)}?review=live" target="_blank" rel="noopener">on the site</a> · <a href="/app/games/${encodeURIComponent(game.id)}?review=live" target="_blank" rel="noopener">in the app</a></p>` : ''}` : '';
   const visible = lockedOut ? `<p class="aui-muted">Visible to everyone: <b>${sc.livePublic !== false ? 'on' : 'off'}</b>.</p>` : toggleRow({ label: 'Visible to everyone', name: 'visible', on: sc.livePublic !== false, post: `${base}/scoring/visible`, reload: true,
     help: 'On: the live score shows while it’s scored, and the game shows when published. Off: only admins see either, so you can check it first, or switch it on to see the player side. A fresh game that’s on, with no final score yet, bells both teams and everyone who picked it when the scorer starts the clock.' });
-  return section({ title: 'Review', note: lock ? `· ${lock.mine ? 'you' : lock.name}, ${prog.pct}%` : sc.status === 'published' ? '· done' : '· not started', bodyHtml: `<div class="aui-panel aui-stack agd-rv">${head}${bar}${steps}${actions ? `<div class="agd-rv__acts">${actions}</div>` : ''}${visible}</div>` });
+  return section({ title: 'Review', note: lock ? `· ${lock.mine ? 'you' : lock.name}, ${prog.pct}%` : sc.status === 'published' ? '· done' : '· not started', bodyHtml: `<div class="aui-panel aui-stack agd-rv">${head}${bar}${steps}${actions ? `<div class="agd-rv__acts">${actions}</div>` : ''}${visible}${watch}</div>` });
 }
 function playsGrid(sc, base, editable) {
   return dataGrid({

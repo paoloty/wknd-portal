@@ -1,6 +1,7 @@
 import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl, shareIcon, gameTipLabel } from './utils.js';
 import { courtDisplayName } from '../lib/court-page.js';
+import { liveExtrasHtml } from './live-extras.js';
 
 // The game's court, linked to its court page when that page is public (so every game played
 // there points at it).
@@ -1727,7 +1728,7 @@ function upcomingHero(d) {
 }
 
 // ── Live: while the scorer is scoring it (lib/live-score.js liveScoreData), before publish ──
-// The hero with the running score, then the live box score and play-by-play. Marked unofficial;
+// The hero with the running score, then the live box score and play-by-play. "Final · in review" after the final;
 // public/live-score.js swaps both parts in as plays arrive (server.js liveChanged).
 function liveTeamLine(t) {
   const fouls = `${t.fouls} team foul${t.fouls === 1 ? '' : 's'}`;
@@ -1743,7 +1744,7 @@ function liveHero(d) {
     <div class="gd-hero__shade"></div>
     <div class="gd-hero__glare" style="background:${heroGlare(game, null)}"></div>
     <div class="gd-hero__in">
-      <div class="gd-hero__top" data-lv-swap="top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx?.number ? ` · Game ${ctx.number}` : ''}${d.court?.name ? ` · ${courtLinkHtml(d.court)}` : ''}</span><span class="gd-chip gd-chip--live gd-chip--dot">${l.ended ? 'Final · unofficial' : 'Live · unofficial'}</span></div>
+      <div class="gd-hero__top" data-lv-swap="top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx?.number ? ` · Game ${ctx.number}` : ''}${d.court?.name ? ` · ${courtLinkHtml(d.court)}` : ''}</span><span class="gd-chip${l.ended ? '' : ' gd-chip--live gd-chip--dot'}">${l.ended ? 'Final · in review' : 'Live'}</span></div>
       <div class="gd-board" data-lv-swap="board">
         <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${liveTeamLine(l.a)}</span></div>
         <div class="gd-score">
@@ -1753,7 +1754,7 @@ function liveHero(d) {
         </div>
         <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${liveTeamLine(l.b)}</span></div>
       </div>
-      <div class="gd-hero__bot"><span class="gd-meta" data-lv-swap="meta">${l.ended ? 'Scored live. Official once it’s reviewed and published.' : 'Updates as the scorer logs each play. The clock is as of the last play.'}</span>
+      <div class="gd-hero__bot"><span class="gd-meta" data-lv-swap="meta">${l.ended ? 'Scored live and now in review. Official once it’s published.' : 'Updates as the scorer logs each play. The clock is as of the last play.'}</span>
         ${heroActions({ game, commentsEnabled: d.commentsEnabled, gameReaction: d.gameReaction, watch: false })}</div>
     </div>
   </section>`;
@@ -1774,11 +1775,11 @@ function liveBody(d) {
   const panel = (side, name) => `<div class="gd-box__panel" data-lv-box="${side}"${side === 'a' ? '' : ' hidden'}>${teamBoxScore(l[side].rows.map(asStat), name, false, [], l[side].teamTO)}</div>`;
   const btn = (side, name) => `<button type="button" class="${side === 'a' ? 'is-on' : ''}" aria-pressed="${side === 'a'}" data-lv-box-btn="${side}">${dot(name, 8)}<span class="pill-label">${escHtml(name)} · ${l.score[side]}</span></button>`;
   const hasBox = l.a.rows.length + l.b.rows.length > 0;
-  return `${hasBox ? `<section id="live-box" aria-labelledby="live-box-h">
+  return `${liveExtrasHtml(d.extras, l)}${hasBox ? `<section id="live-box" aria-labelledby="live-box-h">
       <div class="section-header gd-sh gd-sh--row"><h2 id="live-box-h">Box score</h2>
         <span class="gd-seg" role="group" aria-label="Team">${btn('a', na)}${btn('b', nb)}</span>
       </div>
-      <p class="gd-sd">Live and unofficial: it can still change in review. Season stats, leaders, picks and the recap update once the game is published.</p>
+      <p class="gd-sd">${l.ended ? 'In review: these stats can still change until the game is published.' : 'Updates with every play.'} Season stats, leaders, picks and the recap update once the game is published.</p>
       <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
     </section>` : ''}
     <section id="live-plays" class="gd-plays-sec" aria-labelledby="live-plays-h">
@@ -2524,7 +2525,8 @@ export function gamePage(d) {
     // Being scored: the live score leads, the preview stays under it.
     const lp = d.live ? liveParts(v) : null;
     const listen = lp || d.liveArmed;
-    return `<div class="page-content gd-page"${listen ? ` data-live-src="/games/${encodeURIComponent(gameSlug(game))}" data-live-ws="/ws/games/${encodeURIComponent(game.id)}/live"` : ''}>
+    return `<div class="page-content gd-page"${listen ? ` data-live-src="${d.liveSrc || `/games/${encodeURIComponent(gameSlug(game))}`}" data-live-ws="/ws/games/${encodeURIComponent(game.id)}/live"` : ''}>
+  ${d.reviewLive ? '<div class="card gd-scorer gd-review-live"><span><b>Review, watched live.</b> Only admins see this page, and it isn’t in the feed, the ticker or the homepage. Switch it off on the game’s Scoring tab.</span></div>' : ''}
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${lp ? `<div data-live="hero">${lp.hero}</div>` : upcomingHero(v)}
   ${d.scoreHref ? `<div class="card gd-scorer"><span><b>You’re scoring this game.</b> ${/^\/app\//.test(d.scoreHref) ? 'On your phone it works with no signal once it’s opened.' : 'Open it here on a laptop or tablet.'}</span><a class="gd-scorer__go" href="${escHtml(d.scoreHref)}">${lp ? 'Open the scorer' : 'Start scoring'}</a></div>` : ''}
