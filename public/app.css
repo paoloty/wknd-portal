@@ -2129,3 +2129,8 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .lc__watch[hidden] { display: none; }
 .lc__watch--float { grid-area: watch; justify-self: start; padding: 4px 10px; border-radius: 999px; background: var(--lc-bubble); color: var(--lc-text); }
 .lc.is-hidden .lc__watch--float { display: none; }
+/* A finished game's Review card (admins) */
+.rv-card { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; border-color: color-mix(in srgb, var(--amber) 40%, var(--border)); }
+.rv-card p { margin: 0; font-size: 14px; line-height: 1.45; }
+.rv-card__b { display: flex; flex-direction: column; gap: 8px; }
+.rv-card__b form { display: contents; }

@@ -111,3 +111,13 @@ Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off),
   - **Afterwards:** comments sent while the game was live (`liveWindowOf`: first scored play to the final score or publish) show "During the game" in the site's comments and the app thread. The site's tab says "Comments" instead of "Pre-game chatter" while live.
 - Chat "watching" count (2026-10-26): people with the game page open (its comments socket), each counted once (sign-in cookie, else address), sent as `{type:'presence', count}` at most once a second (`presenceChanged`, `watchingCount`). Shown from 2 up ("● 12 watching"): above the floating messages on phones, in the sidebar's header on desktop.
 - Fouled out (2026-10-26): on the scorer's bench, fouled-out or ejected players go to the very end (greyed, struck through); the Subs sheet and "Who comes on?" leave them out.
+- From the app (2026-10-26):
+  - **Upcoming games:** an admin sees Start scoring on any upcoming game; opening the scorer switches scoring on quietly (`quietScoringOn`).
+  - **Finished games:** they have a Review card for games admins (`appReviewCard`, POST `/app/games/:id/review`): Re-track from the video / Enter the plays (a final-score-only game, or one whose box score came from wknd-stats, which a published review replaces), Continue the review when it's yours, or who has it plus Watch it live.
+  - **Quiet start:** a game with only its final score is switched on as `reviewOnly`, the same as the admin page's Review card.
+- Review bells in the app (2026-10-26): `appLinkFor` maps `/admin/games/<id>…` to `/app/games/<id>`, where games admins have the Review card (they used to land nowhere).
+- Discard a review (2026-10-26, Scoring tab, `action: 'discard'`, `discardReview`): plays move to pass 'discarded' (kept, never counted).
+  - **Final-score-only game:** every play, and scoring switched off again, so it's back to its final score only.
+  - **Live-scored game:** only the review's own changes: the video re-track, plus admins' removals (voids) and fixes (`fixes`) since the review started. New plays are never touched, because the same admins may have scored it live.
+  - **Who:** the admin holding the review, or a super admin; also offered on an unheld final-score-only review.
+- Home's review card shows from the moment a review starts (no plays yet: 0–0, "No plays yet"), then live as plays come in.

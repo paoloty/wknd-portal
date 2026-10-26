@@ -166,6 +166,7 @@ export function appGamePage(g) {
     </section>` : '';
   const video = !!g.media?.yt;
   return `${navbar(g.back, g.title)}
+  ${reviewCard(g.review)}
   <section class="sx gx gx--screen">
     ${video ? `<div class="gx__video">${media(g.media)}</div>` : ''}
     ${gameHero(g, { band: video })}
@@ -177,6 +178,18 @@ export function appGamePage(g) {
   ${gameRecapSections(g, { potgHtml: potg, commentsHtml: comments, commentCount: g.thread?.count || 0,
     emptyRecap: '<div class="empty gr-empty" id="gr-recap">The recap isn\'t written yet. It shows up here once it is.</div>' })}
   <div style="height:12px"></div>`;
+}
+
+// A finished game's Review card (server.js appReviewCard, games admins only).
+function reviewCard(r) {
+  if (!r) return '';
+  const go = (kind, label, primary) => `<form method="post" action="${esc(r.action)}"><input type="hidden" name="kind" value="${kind}"><button type="submit" class="btn${primary ? '' : ' btn--ghost'}">${esc(label)}</button></form>`;
+  if (r.state === 'held') return `<section class="fc rv-card"><div class="kick">Review</div><p><b>${esc(r.holder)}</b> is reviewing this game.</p>${r.watch ? `<a class="btn btn--ghost" href="${esc(r.watch)}">Watch the review live</a>` : ''}</section>`;
+  if (r.state === 'mine') return `<section class="fc rv-card"><div class="kick">Review · yours</div><p>You’re ${r.kind === 'video' ? 're-tracking it from the video' : 'checking the plays'}.</p><div class="rv-card__b">${go(r.kind || 'plays', 'Continue the review', true)}${r.watch ? `<a class="btn btn--ghost" href="${esc(r.watch)}">Watch it live</a>` : ''}</div></section>`;
+  return `<section class="fc rv-card"><div class="kick">Review · admins</div>
+    <p>${r.state === 'scored' ? 'This game was scored live. Check the plays, or re-track it from the video.' : r.hasBox ? 'This game’s box score came from wknd-stats. Re-track it from the video to check it; publishing the review replaces that box score (the final score stays).' : 'This game has a final score but no plays. Fill in the box score: re-track it from the video, or enter the plays.'}</p>
+    <div class="rv-card__b">${go('video', 'Re-track from the video', r.video)}${go('plays', r.state === 'scored' ? 'Check the plays' : 'Enter the plays', !r.video)}</div>
+    ${r.video ? '' : '<p class="foot-note">No video on this game yet: add its YouTube link on the site’s admin to re-track from it.</p>'}</section>`;
 }
 
 // A news post. bodyHtml is the admin-written article, rendered as the site renders it.

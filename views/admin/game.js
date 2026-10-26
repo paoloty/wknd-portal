@@ -409,21 +409,27 @@ function reviewSection({ game, sc, base }) {
   const bar = progress(prog.pct, { label: sc.status === 'published' ? `Done${rv.reviewedBy ? ` · reviewed by ${rv.reviewedBy}` : ''}` : `${prog.pct}%${prog.next ? ` · next: ${prog.next}` : ''}` });
   const kindLabel = k => (k === 'video' ? 're-tracking from the video' : 'checking the plays');
   let head = '', actions = '';
+  // Discard: the review's plays set aside (kept on record). A game played without the scorer
+  // goes back to its final score only.
+  const discardBtn = post('Discard the review', { action: 'discard' }, { kind: 'danger', confirm: sc.reviewOnly
+    ? { title: 'Discard this review?', body: 'Every play entered in this review is set aside (kept on record, never counted) and the game goes back to its final score only.', send: 'Discard it' }
+    : { title: 'Discard this review?', body: 'The re-tracked plays, and the removals and fixes made in this review, are set aside (kept on record). Plays added during the review stay: remove them by hand if they shouldn’t count. The live scoring stays as it was.', send: 'Discard it' } });
   if (sc.status === 'published') head = `<p class="aui-muted">Published${rv.reviewedBy ? ` by ${escHtml(rv.reviewedBy)}` : ''}.</p>`;
   else if (!lock) {
     head = '<p class="aui-muted">Nobody is reviewing it. Starting locks the review to you until you close it or hand it over, and the other admins get a bell.</p>';
-    actions = `${post('Start review', { action: 'start', kind: 'plays' }, { kind: 'primary' })} ${button('Re-track from video', { kind: 'secondary', size: 'sm', href: `${base}/score?pass=video` })}`;
+    actions = `${post('Start review', { action: 'start', kind: 'plays' }, { kind: 'primary' })} ${button('Re-track from video', { kind: 'secondary', size: 'sm', href: `${base}/score?pass=video` })}${sc.reviewOnly ? ` ${discardBtn}` : ''}`;
   } else if (lock.mine) {
     head = `<p><b>You’re reviewing</b> <span class="aui-muted">· ${kindLabel(lock.kind)}</span></p>`;
     const hand = rv.admins && rv.admins.length ? `<form class="agd-rv__hand" data-json-action="${base}/scoring/review" data-then="${base}?tab=scoring">
         <input type="hidden" name="action" value="handover">${field({ label: 'Hand over to', name: 'to', type: 'select', options: rv.admins.map(a => [a.playerId, a.name]) })}
         ${button('Hand over', { kind: 'secondary', size: 'sm', type: 'submit' })}</form>` : '';
     actions = `${lock.ask ? banner('warn', `${lock.ask.name} asks to take over the review.`, `${post('Hand it over', { action: 'answer', yes: true }, { kind: 'primary' })} ${post('Keep it', { action: 'answer', yes: false })}`) : ''}
-      ${hand}<div>${post('Close the review', { action: 'finish' }, { kind: 'ghost', confirm: { title: 'Close the review?', body: 'It unlocks, so any admin can pick it up. Nothing you did is lost.', send: 'Close it' } })}</div>`;
+      ${hand}<div>${post('Close the review', { action: 'finish' }, { kind: 'ghost', confirm: { title: 'Close the review?', body: 'It unlocks, so any admin can pick it up. Nothing you did is lost.', send: 'Close it' } })} ${discardBtn}</div>`;
   } else {
     head = `<p><b>${escHtml(lock.name)} is reviewing</b> <span class="aui-muted">· ${kindLabel(lock.kind)}</span></p>`;
     actions = `${lock.ask ? `<p class="aui-muted">${lock.ask.mineAsk ? `You asked ${escHtml(lock.name)} to hand it over.` : `${escHtml(lock.ask.name)} asked to take over.`}</p>` : post(`Ask ${lock.name} to hand it over`, { action: 'ask' })}
-      ${rv.superAdmin ? post('Take over', { action: 'take' }, { kind: 'ghost', confirm: { title: `Take over from ${lock.name}?`, body: `${lock.name} gets a bell that you took the review.`, send: 'Take over' } }) : ''}`;
+      ${rv.superAdmin ? post('Take over', { action: 'take' }, { kind: 'ghost', confirm: { title: `Take over from ${lock.name}?`, body: `${lock.name} gets a bell that you took the review.`, send: 'Take over' } }) : ''}
+      ${rv.superAdmin ? discardBtn : ''}`;
   }
   const lockedOut = !!lock && !lock.mine && sc.status !== 'published';
   // A review watched live (temporary, admins only, never in the feed): reviews only.

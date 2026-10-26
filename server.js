@@ -6039,7 +6039,7 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts, appLiveNow } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, setPlayerScorer, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
@@ -6847,8 +6847,24 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId,
     myTeamId: mine?.team_id || '', full: appGameRecap(g, stats, me),
     shareHref: mine ? `/app/games/${encodeURIComponent(g.id)}/share?from=${back.tab}` : '',
+    review: appReviewCard(req, g, stats.length > 0),
   }) });
 });
+// A finished game's Review card in the app (games admins): start a review (re-track from the
+// video, or enter the plays) or carry on with one; who has it when someone else does.
+function appReviewCard(req, g, hasBox = false) {
+  const pid = req.session?.playerPlayerId;
+  if (!gameAdminPlayers().some(a => a.playerId === pid) && !isAdminWithSection(req, 'games-stats')) return null;
+  const sg = getScoreGame(g.id);
+  if (sg && sg.status === 'published') return null;
+  const r = sg && sg.settings.review, me = reviewer(req);
+  return {
+    action: `/app/games/${encodeURIComponent(g.id)}/review`, video: !!ytId(g.youtube_url || ''), hasBox,
+    state: !r ? (sg && !sg.settings.reviewOnly ? 'scored' : 'start') : r.by === me.by ? 'mine' : 'held',
+    kind: r ? r.kind : '', holder: r && r.by !== me.by ? r.name : '', held: req.query.review === 'held',
+    watch: r ? `/app/games/${encodeURIComponent(g.id)}?review=live` : '',
+  };
+}
 // ── The scorer (views/app/score.js, public/scorer.js, public/score-engine.js) ──
 // Replaces wknd-stats live tracking. An admin turns scoring on for a league game and picks who
 // may score it (score_scorers); admins can always score. Every tap is a play the phone makes
@@ -7100,6 +7116,8 @@ const sendScorer = (req, res, back) => {
     const gate = reviewGate(req, game, 'video');
     if (gate) return res.status(423).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(gate)}</div>` }));
   }
+  // An admin starting a game that isn't finished: scoring switches on there and then.
+  if (!getScoreGame(game.id) && access === 'admin' && !gameFinalSet(game)) quietScoringOn(game);
   if (!getScoreGame(game.id)) return res.status(404).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Scoring isn’t turned on for this game yet. An admin turns it on from the game’s Scoring tab.</div>' }));
   res.set('Cache-Control', 'private, no-store');
   sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle: scoreBundle(game, pass), back }) });
@@ -7408,15 +7426,34 @@ function reviewProgress(game, sg) {
   steps.push({ key: 'publish', label: 'Publish', done: sg.status === 'published' ? 1 : 0 });
   return { pct: Math.round((steps.reduce((n, x) => n + x.done, 0) / steps.length) * 100), steps, next: (steps.find(x => x.done < 1) || {}).label || '' };
 }
+// Scoring switched on without telling anyone: a game played without the scorer (only its final
+// score) for a review (no live score, the final score stays the result, a scorer's phone can't
+// add plays: finalAt), or an admin starting a game from the app. No Scorers' "ready" bells and no
+// game-started bell for a review.
+function quietScoringOn(game) {
+  if (getScoreGame(game.id)) return;
+  const rules = { waves: game.game_type === 'playoff' ? 'off' : 'first half' };
+  if (gameFinalSet(game)) saveScoreGame(game.id, { settings: { rules, reviewOnly: true, startedBell: true, finalAt: Date.now() } });
+  else saveScoreGame(game.id, { settings: { rules } });
+}
+// The app's Review card (a finished game, games admins): start the review (re-track from the
+// video, or enter the plays), or carry on with it, then open the scorer.
+app.post('/app/games/:id/review', requireApp, express.urlencoded({ extended: false }), (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game || !gameAdminPlayers().some(a => a.playerId === req.session?.playerPlayerId) && !isAdminWithSection(req, 'games-stats')) return res.redirect('/app');
+  const kind = req.body?.kind === 'video' ? 'video' : 'plays';
+  quietScoringOn(game);
+  const sg = getScoreGame(game.id);
+  if (!sg || sg.status === 'published') return res.redirect(`/app/games/${encodeURIComponent(game.id)}`);
+  const me = reviewer(req), r = sg.settings.review;
+  if (r && r.by !== me.by) return res.redirect(`/app/games/${encodeURIComponent(game.id)}?review=held`);
+  if (!r) startReview(game, me, kind); else saveScoreGame(game.id, { settings: { ...sg.settings, review: { ...r, kind, at: Date.now() } } });
+  res.redirect(303, `/app/score/${encodeURIComponent(game.id)}${kind === 'video' ? '?pass=video' : ''}`);
+});
 app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
-  // A game played without the scorer (only its final score): reviewing it switches scoring on
-  // quietly. No bells (Scorers' "ready", the game-started one), no live score on the site; the
-  // final score stays the result, so a scorer's phone can't add plays to it (finalAt).
-  if (!getScoreGame(game.id) && req.body?.action === 'start' && gameFinalSet(game)) {
-    saveScoreGame(game.id, { settings: { rules: { waves: game.game_type === 'playoff' ? 'off' : 'first half' }, reviewOnly: true, startedBell: true, finalAt: Date.now() } });
-  }
+  if (req.body?.action === 'start') quietScoringOn(game);
   const sg = getScoreGame(game.id);
   if (!sg) return res.status(404).json({ error: 'Not found.' });
   const me = reviewer(req), r = sg.settings.review, mine = !!r && r.by === me.by, act = String(req.body?.action || '');
@@ -7428,6 +7465,19 @@ app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, r
     if (r && !mine) return res.status(409).json({ error: `${r.name} is reviewing this game.` });
     if (!r) startReview(game, me, kind); else set({ ...r, kind, at: Date.now() });
     return res.json({ ok: true, message: 'Review started. The other admins know you’re on it.' });
+  }
+  // Discard: the review's plays set aside (kept on record), the lock gone. A review of a game
+  // played without the scorer goes back to the final score only.
+  if (act === 'discard') {
+    if (sg.status === 'published') return res.status(409).json({ error: 'It’s published. Undo the publish first.' });
+    if (r && !mine && !isSuperAdminReq(req)) return res.status(403).json({ error: `${r.name} is reviewing it. Ask them to hand it over first.` });
+    const all = !!sg.settings.reviewOnly;
+    const authors = ['admin', ...gameAdminPlayers().map(a => a.playerId)];
+    const n = discardReview(game.id, { all, since: Number(r?.startedAt) || 0, authors });
+    if (!all) saveScoreGame(game.id, { settings: { ...getScoreGame(game.id).settings, review: null, reviewLive: false } });
+    liveChanged(game.id);
+    console.log(`[scorer] review discarded game=${game.id} by ${me.name} (${n} plays set aside${all ? ', back to the final score only' : ''})`);
+    return res.json({ ok: true, message: all ? 'Review discarded. The game is back to its final score only.' : `Review discarded. ${n} play${n === 1 ? '' : 's'} from it set aside; the live scoring is as it was.` });
   }
   if (act === 'finish') {
     if (!mine && !isSuperAdminReq(req)) return res.status(403).json({ error: 'Only the admin reviewing it can close the review.' });
@@ -7703,7 +7753,7 @@ function appGamePreview(req, res, me, back, g, reviewView = false) {
     pick: o ? appPickGame(o, g, colorOf) : null, preview,
     lastHref: preview.last ? `/app/games/${encodeURIComponent(preview.last.id)}?from=${back.tab}` : '',
     // The game's scorers (and admins) start scoring from here once scoring is on.
-    scoreHref: getScoreGame(g.id) && scoreAccess(req, g.id) ? `/app/score/${encodeURIComponent(g.id)}` : '',
+    scoreHref: (getScoreGame(g.id) ? getScoreGame(g.id).status !== 'published' && scoreAccess(req, g.id) : scoreAccess(req, g.id) === 'admin') ? `/app/score/${encodeURIComponent(g.id)}` : '',
     live: live || reviewView || liveArmed(g) ? { src: `/app/games/${encodeURIComponent(g.id)}${reviewView ? '?review=live' : ''}`, ws: `/ws/games/${encodeURIComponent(g.id)}/live`, parts: live ? appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g), extras: liveExtrasFor(g, me.playerId, xPass) }) : null } : null,
     reviewLive: reviewView,
     chat: live && !live.ended && !reviewView && liveChatOn() ? liveChatData(g, req) : null,
@@ -7938,13 +7988,14 @@ function appLiveNowGames() {
 function appReviewNowGames() {
   return portalDb.prepare("SELECT game_id FROM score_games WHERE status != 'published'").all()
     .map(r => getGameById(r.game_id)).filter(g => g && getScoreGame(g.id)?.settings?.review)
-    .map(g => ({ g, l: reviewLiveFor(g), review: getScoreGame(g.id).settings.review })).filter(x => x.l);
+    // From the moment it starts (no plays yet: 0–0, "No plays yet").
+    .map(g => ({ g, l: reviewLiveFor(g) || { score: { a: 0, b: 0 }, empty: true }, review: getScoreGame(g.id).settings.review }));
 }
 app.get('/app/live-now', requireAppData, (req, res) => {
   const me = appMe(req);
   const colorOf = appColorOf(getAllTeams());
   const reviews = canWatchReview(req, me.playerId) ? appReviewNowGames().map(({ g, l, review }) => ({
-    id: g.id, href: `/app/games/${encodeURIComponent(g.id)}?review=live`, when: liveWhen(l), line: `${review.name || 'An admin'} is ${review.kind === 'video' ? 're-tracking it from the video' : 'checking the plays'}. Only admins see this.`,
+    id: g.id, href: `/app/games/${encodeURIComponent(g.id)}?review=live`, when: l.empty ? 'No plays yet' : liveWhen(l), line: `${review.name || 'An admin'} is ${review.kind === 'video' ? 're-tracking it from the video' : 'checking the plays'}. Only admins see this.`,
     kicker: 'Review · in progress', media: gameMedia(g), review: true,
     a: { name: g.team_a_name, color: colorOf(g.team_a_name), score: l.score.a }, b: { name: g.team_b_name, color: colorOf(g.team_b_name), score: l.score.b },
   })) : [];
@@ -8445,6 +8496,9 @@ function appLinkFor(link = '') {
   // "Your stat card is ready" (?share=1) opens the app's share screen.
   if (gm && /[?&]share=1/.test(link)) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}/share`; }
   if (gm) { const r = findGameRef(decodeURIComponent(gm[1])); if (r?.id) return `/app/games/${encodeURIComponent(r.id)}${/#talk$/.test(link) ? `?thread=${encodeURIComponent(r.id)}` : ''}`; }
+  // An admin game link (the review bells): the game, where admins have its Review card.
+  const ag = /^\/admin\/games\/([^/?#]+)/.exec(path);
+  if (ag) return `/app/games/${ag[1]}`;
   const pm = /^\/posts\/([^/?#]+)/.exec(path);
   if (pm) return `/app/posts/${pm[1]}`;
   if (path === '/' || path === '') return '/app';
