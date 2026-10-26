@@ -516,6 +516,7 @@
     initVideos();
     initPapawis();
     initAdminPapawis();
+    initFinish();
     initPush();
     initSettle();
     initRate();
@@ -925,8 +926,15 @@
       var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url);
-      admSend('/admin/papawis/' + encodeURIComponent(box.getAttribute('data-adm-cover')) + '/cover', { dataUrl: c.toDataURL('image/jpeg', 0.86) })
-        .then(function () { done(); toast('Cover saved'); refreshScreen(true); }, function (e) { done(); toast(e.message, 'err'); });
+      admSend(box.getAttribute('data-adm-cover-url') || '/admin/papawis/' + encodeURIComponent(box.getAttribute('data-adm-cover')) + '/cover', { dataUrl: c.toDataURL('image/jpeg', 0.86) })
+        .then(function () {
+          done(); toast('Cover saved');
+          // A game's cover (Finish the game): shown in place, so what's typed and not saved yet stays.
+          if (!box.getAttribute('data-adm-cover-url')) return refreshScreen(true);
+          var src = box.getAttribute('data-adm-cover-url') + '-img?v=' + Date.now(), img = $('img', box), none = $('.fin-cover__none', box);
+          if (img) img.src = src; else if (none) { img = document.createElement('img'); img.alt = 'The game’s cover'; img.src = src; none.replaceWith(img); }
+          box.setAttribute('data-has-cover', ''); if (label) label.textContent = was = 'Change photo';
+        }, function (e) { done(); toast(e.message, 'err'); });
     };
     img.onerror = function () { URL.revokeObjectURL(url); done(); toast('Couldn\'t read that photo. Try another.', 'err'); };
     img.src = url;
@@ -1076,8 +1084,9 @@
       if ((b = t.closest('[data-adm-cover-btn]'))) {
         var box = b.closest('[data-adm-cover]'), input = $('[data-adm-cover-input]', box);
         if (!box.hasAttribute('data-has-cover')) { input.click(); return; }
-        var el = admSheet('Cover', '<div class="group adm-acts"><button type="button" class="cell adm-act" data-adm-pick-photo><span class="cell__t">Choose a photo<small>Cropped to 16:9 for the run card and the homepage</small></span></button>' +
-          '<button type="button" class="cell adm-act adm-act--danger" data-adm-post="/admin/papawis/' + admEsc(encodeURIComponent(box.getAttribute('data-adm-cover'))) + '/cover" data-adm-method="DELETE" data-adm-ask="Remove this cover? The court photo shows again." data-adm-done="Cover removed"><span class="cell__t">Remove cover</span></button></div>');
+        var game = !!box.getAttribute('data-adm-cover-url');
+        var el = admSheet('Cover', '<div class="group adm-acts"><button type="button" class="cell adm-act" data-adm-pick-photo><span class="cell__t">Choose a photo<small>' + (game ? 'Shown on the game page and share cards' : 'Cropped to 16:9 for the run card and the homepage') + '</small></span></button>' +
+          '<button type="button" class="cell adm-act adm-act--danger" data-adm-post="' + admEsc(box.getAttribute('data-adm-cover-url') || '/admin/papawis/' + encodeURIComponent(box.getAttribute('data-adm-cover')) + '/cover') + '" data-adm-method="DELETE" data-adm-ask="' + (game ? 'Remove this cover? The game shows without a photo.' : 'Remove this cover? The court photo shows again.') + '" data-adm-done="Cover removed"><span class="cell__t">Remove cover</span></button></div>');
         $('[data-adm-pick-photo]', el).addEventListener('click', function () { input.click(); closeSheet(); });
         return;
       }
@@ -1103,6 +1112,88 @@
       var box = coverOf(e); if (!box || !hasFile(e)) return;
       e.preventDefault(); box.classList.remove('is-drop');
       admCover(e.dataTransfer.files[0], box);
+    });
+  }
+
+  // ════ Finish the game (views/app/finish.js) ════
+  // Tick the POTG (two share it: the second is the co-POTG, with its own write-up), write with
+  // AI, then one Save to the site's /admin/games/:id/save. The recap goes as paragraphs, and only
+  // when it changed (a recap with the site editor's formatting is never flattened unasked).
+  function initFinish() {
+    var form = $('[data-fin]');
+    if (!form || form._fin) return;
+    form._fin = true;
+    var gid = form.getAttribute('data-fin'), base = '/admin/games/' + encodeURIComponent(gid);
+    var potgIn = $('[data-fin-potg]', form), coIn = $('[data-fin-co]', form), recap = $('[data-fin-recap]', form);
+    var save = $('[data-fin-save]', form), note = $('[data-fin-note]', form);
+    var recapAt = recap ? recap.value : '', dirty = false, busy = false;
+    var nameOf = function (id) { var b = id && $('[data-fin-cand="' + id + '"]', form); return b ? b.getAttribute('data-name') : ''; };
+    var mark = function () { dirty = true; save.disabled = busy; note.textContent = 'Unsaved changes. Tap Save to keep them.'; };
+    var paintCands = function () {
+      var order = [potgIn.value, coIn.value];
+      $$('[data-fin-cand]', form).forEach(function (b) {
+        var i = order.indexOf(b.getAttribute('data-fin-cand'));
+        if (!b.getAttribute('data-fin-cand')) i = -1;
+        b.classList.toggle('is-on', i !== -1); b.setAttribute('aria-pressed', String(i !== -1));
+        $('[data-fin-tag]', b).textContent = i === 0 ? 'POTG' : i === 1 ? 'CO-POTG' : '';
+      });
+      $('[data-fin-label="potg"]', form).textContent = 'Write-up' + (potgIn.value ? ' · ' + nameOf(potgIn.value) : '');
+      $('[data-fin-label="copotg"]', form).textContent = 'Write-up' + (coIn.value ? ' · ' + nameOf(coIn.value) : '');
+      $('[data-fin-box="copotg"]', form).hidden = !coIn.value;
+    };
+    var words = function () { var n = $('[data-fin-words]', form); if (n) n.textContent = String((recap.value.trim().match(/\S+/g) || []).length); };
+    form.addEventListener('input', function (e) { if (e.target === recap) words(); if (!e.target.hasAttribute('data-fin-ctx')) mark(); });
+    form.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-fin-cand]');
+      if (b) {
+        var id = b.getAttribute('data-fin-cand');
+        // Unticking the POTG: the co-POTG moves up, and their write-up with them.
+        if (potgIn.value === id) {
+          var pw = $('[name="potg_writeup"]', form), cw = $('[name="co_potg_writeup"]', form);
+          if (coIn.value) { pw.value = cw.value; cw.value = ''; }
+          potgIn.value = coIn.value; coIn.value = '';
+        }
+        else if (coIn.value === id) coIn.value = '';
+        else if (!potgIn.value) potgIn.value = id;
+        else if (!coIn.value) coIn.value = id;
+        else { toast('Two already share it. Untick one first.', 'err'); return; }
+        paintCands(); mark(); return;
+      }
+      var ai = e.target.closest('[data-fin-ai]');
+      if (ai) {
+        var key = ai.getAttribute('data-fin-ai'), status = $('[data-fin-status="' + key + '"]', form);
+        if (key === 'copotg' && !coIn.value) { toast('Tick a second player first.', 'err'); return; }
+        if (!navigator.onLine) { toast('You\'re offline. Try again with signal.', 'err'); return; }
+        var body = key === 'recap' ? { player_id: potgIn.value || null, context: ($('[data-fin-ctx]', form) || {}).value || '' }
+          : key === 'copotg' ? { player_id: coIn.value, shared_with: potgIn.value } : { player_id: potgIn.value || null, shared_with: coIn.value, co_player_id: coIn.value };
+        var label = ai.textContent; ai.disabled = true; ai.textContent = 'Writing…'; status.hidden = true;
+        admSend(base + (key === 'recap' ? '/generate-recap' : '/generate-potg'), body).then(function (d) {
+          var ta = key === 'recap' ? recap : $('[name="' + (key === 'potg' ? 'potg_writeup' : 'co_potg_writeup') + '"]', form);
+          ta.value = String(d.writeup || ''); if (key === 'recap') words(); mark();
+          // The writer rewrites until its checks pass (lib/writer.js); after 3 tries it says what's still off.
+          var missed = d.missed || [];
+          status.textContent = missed.length ? 'Written, but check it: ' + missed.join(' · ') + '. Fix it by hand or write again.' : 'Written. Read it over, then Save.';
+          status.hidden = false;
+        }, function (err) { toast(err.message, 'err'); }).then(function () { ai.disabled = false; ai.textContent = label; });
+      }
+    });
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (busy || !dirty) return;
+      if (!navigator.onLine) { toast('You\'re offline. Nothing was saved.', 'err'); return; }
+      var body = { potg_player_id: potgIn.value, co_potg_player_id: coIn.value };
+      $$('[data-fin-field]', form).forEach(function (f) { body[f.name] = f.value; });
+      if (!coIn.value) delete body.co_potg_writeup;
+      if (recap.value !== recapAt) {
+        var esc = function (s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+        var paras = recap.value.trim().split(/\n\s*\n/).filter(Boolean);
+        body.game_writeup = paras.length ? paras.map(function (p) { return '<p>' + esc(p.trim()).replace(/\n/g, '<br>') + '</p>'; }).join('') : '';
+      }
+      busy = true; save.disabled = true; save.textContent = 'Saving…';
+      admSend(base + '/save', body).then(function () {
+        busy = false; dirty = false; recapAt = recap.value; save.textContent = 'Save'; note.textContent = 'Saved.';
+        toast('Saved'); refreshScreen(true);
+      }, function (err) { busy = false; save.disabled = false; save.textContent = 'Save'; toast(err.message, 'err'); });
     });
   }
 

@@ -213,7 +213,7 @@ import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
 import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
 import { adminGamesListBody } from './views/admin/games.js';
-import { adminGameDetailBody } from './views/admin/game.js';
+import { adminGameDetailBody, perOf } from './views/admin/game.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt, setGamesTipTime } from './lib/portal-db.js';
 import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
@@ -6052,6 +6052,7 @@ import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appAdminPapawisPage, papawisMessengerText } from './views/app/admin-papawis.js';
+import { appFinishGamePage } from './views/app/finish.js';
 import { appSettlePage } from './views/app/settle.js';
 import { appRatePage } from './views/app/rate.js';
 import { appPollTakeover } from './views/app/poll.js';
@@ -6871,7 +6872,7 @@ function appReviewCard(req, g, hasBox = false) {
   const sg = getScoreGame(g.id);
   // Box score saved from the plays: the next step (the POTG and the recap, on the site's Content
   // tab) until both are in.
-  if (sg && sg.status === 'published') return !g.game_writeup || !(g.potg_writeup || g.manual_potg_player_id) ? { state: 'next', next: `/admin/games/${encodeURIComponent(g.id)}?tab=content`, recap: !!g.game_writeup, potg: !!(g.potg_writeup || g.manual_potg_player_id) } : null;
+  if (sg && sg.status === 'published') return !g.game_writeup || !(g.potg_writeup || g.manual_potg_player_id) ? { state: 'next', next: req.session?.isAdmin ? `/app/admin/games/${encodeURIComponent(g.id)}/finish` : `/admin/games/${encodeURIComponent(g.id)}?tab=content`, recap: !!g.game_writeup, potg: !!(g.potg_writeup || g.manual_potg_player_id) } : null;
   const r = sg && sg.settings.review, me = reviewer(req);
   // Yours and its track has reached Game over: Publish, with the site's publish route. The track
   // is the one the review shows (the admin page's rule): the video re-track once it has plays.
@@ -6885,6 +6886,44 @@ function appReviewCard(req, g, hasBox = false) {
     watch: r ? `/app/games/${encodeURIComponent(g.id)}?review=live` : '',
   };
 }
+// Finish the game (views/app/finish.js): the POTG, the recap, the cover and the YouTube link
+// for games admins, on the site's own routes (public/app.js initFinish). The site's Content tab
+// in the app.
+app.get('/app/admin/games/:id/finish', requireApp, (req, res) => {
+  const me = appMe(req);
+  const g = getGameById(req.params.id);
+  const back = { href: g ? `/app/games/${encodeURIComponent(g.id)}` : '/app', label: 'Game' };
+  const pid = req.session?.playerPlayerId;
+  if (!g || !req.session?.isAdmin || (!gameAdminPlayers().some(a => a.playerId === pid) && !isAdminWithSection(req, 'games-stats'))) return res.redirect(back.href);
+  const stats = getGameDetailStats(g.id);
+  if (!stats.length || !gameFinalSet(g)) return sendTab(res, me, { title: 'Finish the game · WKND', tab: 'home', body: appFinishGamePage({ back, missing: true, d: { why: 'This game has no box score yet. Save the box score first, then the POTG and the recap.' } }) });
+  const teams = getAllTeams();
+  const a = Number(g.team_a_score) || 0, b = Number(g.team_b_score) || 0;
+  const winId = a >= b ? g.team_a_id : g.team_b_id;
+  // The winners' top five by PER (the site's Content tab), plus the picks from outside it.
+  const top = stats.filter(s => s.team_id === winId).sort((x, y) => perOf(y) - perOf(x)).slice(0, 5);
+  for (const id of [g.manual_potg_player_id, g.co_potg_player_id]) { const m = id && !top.some(p => p.player_id === id) && stats.find(s => s.player_id === id); if (m) top.push(m); }
+  const potg = g.manual_potg_player_id || top[0]?.player_id || '';
+  const co = potg && g.co_potg_player_id && g.co_potg_player_id !== potg && top.some(p => p.player_id === g.co_potg_player_id) ? String(g.co_potg_player_id) : '';
+  const lineOf = s => ['pts', 'reb', 'ast', 'stl', 'blk'].map((k, i) => [Number(s[k]) || 0, ['pts', 'reb', 'ast', 'stl', 'blk'][i]]).filter(([v], i) => i < 3 || v >= 2).map(([v, k]) => `${v} ${k}`).join(' · ');
+  // The recap as plain text (paragraphs as blank lines); formatting beyond paragraphs is kept
+  // unless it's edited here.
+  const raw = String(g.game_writeup || '');
+  const html = raw.trim().startsWith('<');
+  const recapText = html ? raw.replace(/<\/p>\s*<p[^>]*>/gi, '\n\n').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\n{3,}/g, '\n\n').trim() : raw;
+  const recapFormatted = html && /<(?!\/?(p|br)\b)[a-z]/i.test(raw);
+  const plain = s => String(s || '').replace(/<[^>]*>/g, '').trim();
+  const sg = getScoreGame(g.id);
+  sendTab(res, me, { title: 'Finish the game · WKND', tab: 'home', body: appFinishGamePage({ back, d: {
+    game: { id: g.id, day: manilaDayLabel(gameYmd(g.date)), a: { name: g.team_a_name, score: a, color: teamColorById(teams, g.team_a_id) }, b: { name: g.team_b_name, score: b, color: teamColorById(teams, g.team_b_id) } },
+    checks: [['Box score', !sg || sg.status === 'published'], ['POTG', !!plain(g.potg_writeup)], ['Recap', !!plain(g.game_writeup)], ['Cover', !!g.has_cover], ['YouTube', !!String(g.youtube_url || '').trim()]].map(([label, ok]) => ({ label, ok })),
+    winner: winId === g.team_a_id ? g.team_a_name : g.team_b_name,
+    cands: top.map(s => { const name = displayPlayerName(s.name || ''); return { id: s.player_id, name, initials: initials(name), photo: playerPhotoUrl(s.player_id, 96), ring: teamColorById(teams, s.team_id), line: lineOf(s) }; }),
+    potg, co, potgWriteup: g.potg_writeup || '', coWriteup: co ? (g.co_potg_writeup || '') : '',
+    recapText, recapFormatted, words: plain(raw).split(/\s+/).filter(Boolean).length,
+    hasCover: !!g.has_cover, coverUrl: `/admin/games/${encodeURIComponent(g.id)}/cover-img?v=${Date.now()}`, youtube: g.youtube_url || '',
+  } }) });
+});
 // ── The scorer (views/app/score.js, public/scorer.js, public/score-engine.js) ──
 // Replaces wknd-stats live tracking. An admin turns scoring on for a league game and picks who
 // may score it (score_scorers); admins can always score. Every tap is a play the phone makes

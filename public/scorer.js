@@ -1155,7 +1155,7 @@ export async function mount(el) {
     const O = B.over || {};
     const back = O.back ? `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(O.back)}">${O.review ? 'Back to the game' : 'Back to games'}</a>` : '';
     // Saved: the next step, the POTG and the recap (the site's Content tab).
-    const acts = ui.published && ui.next ? `<a class="sc-over__btn" href="${esc(ui.next)}">POTG and recap</a>${back}`
+    const acts = ui.published && ui.next ? `<a class="sc-over__btn" href="${esc(ui.next)}">Finish the game</a>${back}`
       : ui.locked || ui.published ? back
       : O.publish ? `<button type="button" class="sc-over__btn" data-act="publish"${n || ui.publishing ? ' disabled' : ''}>${ui.publishing ? 'Saving…' : 'Save the box score'}</button>${back}`
       : back;
@@ -1172,7 +1172,7 @@ export async function mount(el) {
       ui.publishing = true; paint();
       fetch(O.publish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ pass: B.pass }) })
         .then(r => r.text().then(t => { let j = null; try { j = JSON.parse(t); } catch (e) {} if (!r.ok || !j || j.error) throw new Error((j && j.error) || 'Your admin sign-in ended. Open the scorer again.'); return j; }))
-        .then(j => { ui.publishing = false; ui.published = j.message || 'Box score saved.'; ui.next = j.next || ''; ui.locked = true; if (soundOn()) chime('yes'); paint(); },
+        .then(j => { ui.publishing = false; ui.published = j.message || 'Box score saved.'; ui.next = /^\/app\//.test(location.pathname) ? `/app/admin/games/${encodeURIComponent(gid)}/finish` : j.next || ''; ui.locked = true; if (soundOn()) chime('yes'); paint(); },
           err => { ui.publishing = false; ui.tip = err.message || 'Not saved. Try again.'; paint(); });
     });
   }
