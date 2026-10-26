@@ -29,7 +29,7 @@ function oddsCard(x, l) {
     <path d="${d}" class="lx-line" style="--c:${esc(l.a.color)}"/>
     <circle cx="${px(lastP.at).toFixed(1)}" cy="${py(lastP.a).toFixed(1)}" r="4.5" class="lx-now"/>
   </svg>`;
-  return `<section class="lx-card lx-odds" aria-label="Win odds">
+  return `<section class="lx-card lx-odds" id="lx-odds" aria-label="Win odds">
     <div class="lx-kick"><span>Win odds</span><span>${x.ended ? 'final' : `was ${start}% at tip-off`}</span></div>
     <div class="lx-odds__row"><span class="lx-odds__l">${dot(l[lead].color)}<b class="lx-big num">${o[lead]}%</b><span class="lx-name">${esc(l[lead].name)}</span>${change ? `<span class="lx-trend ${change > 0 ? 'up' : 'dn'} num">${change > 0 ? '↑' : '↓'} ${Math.abs(change)}</span>` : ''}</span><span class="lx-mut">${esc(l[other].name)} ${o[other]}%</span></div>
     <div class="lx-bar2" aria-hidden="true"><i style="width:${o.a}%;--c:${esc(l.a.color)}"></i><i style="width:${o.b}%;--c:${esc(l.b.color)}"></i></div>
@@ -56,7 +56,7 @@ function momentumCard(x, l) {
   const strip = s ? `<div class="lx-strip" aria-hidden="true">${s.a.map(v => `<i style="height:${Math.max(4, (v / maxS) * 100)}%;--c:${esc(l.a.color)}${v ? '' : ';opacity:.25'}"></i>`).join('')}</div>
       <div class="lx-strip lx-strip--b" aria-hidden="true">${s.b.map(v => `<i style="height:${Math.max(4, (v / maxS) * 100)}%;--c:${esc(l.b.color)}${v ? '' : ';opacity:.25'}"></i>`).join('')}</div>
       <p class="lx-note">Points every 2 minutes: ${esc(l.a.name)} up, ${esc(l.b.name)} down.</p>` : '';
-  return `<section class="lx-card lx-mom" aria-label="Momentum">
+  return `<section class="lx-card lx-mom" id="lx-mom" aria-label="Momentum">
     <div class="lx-kick"><span>Momentum</span><span>${m.led ? 'time from the scorer’s clock' : 'so far'}</span></div>
     ${runHtml}
     <div class="lx-facts">${facts.map(([v, t]) => `<div class="lx-fact"><b class="num">${esc(v)}</b><span>${esc(t)}</span></div>`).join('')}</div>
@@ -69,7 +69,7 @@ function hotCard(x, l) {
   if (!x.hot.length && !x.watch.length) return '';
   const hot = x.hot.map(p => `<div class="lx-hot__r"><span class="lx-av" style="--c:${esc(l[p.team].color)}">${esc(initials(p.name))}</span><span class="lx-hot__n"><b>${esc(p.name)}</b><small>${esc(l[p.team].name)}${p.note ? ` · ${esc(p.note)}` : ''}</small></span><span class="lx-hot__v"><b class="num">${p.pts}</b>${p.vs ? `<span class="lx-d ${p.vs > 0 ? 'up' : 'dn'} num">${signed(p.vs)}</span>` : ''}</span></div>`).join('');
   const watch = x.watch.map(w => `<div class="lx-watch__r">${dot(l[w.team].color)}<span>${esc(w.text)}</span><span class="lx-meter" aria-hidden="true"><i style="width:${Math.min(100, w.pct)}%"></i></span></div>`).join('');
-  return `<section class="lx-card lx-hot" aria-label="Who's hot">
+  return `<section class="lx-card lx-hot" id="lx-hot" aria-label="Who's hot">
     ${hot ? `<div class="lx-kick"><span>Who’s hot</span><span>points vs their season average</span></div><div class="lx-hot__list">${hot}</div>` : ''}
     ${watch ? `<div class="lx-kick${hot ? ' lx-kick--gap' : ''}"><span>Watch for</span><span>close to it now</span></div><div class="lx-watch">${watch}</div>` : ''}
   </section>`;
@@ -79,7 +79,7 @@ function hotCard(x, l) {
 function paceCard(x, l) {
   if (!x.pace) return '';
   const chip = (v, u, lowGood) => (u == null ? '' : (() => { const d = Math.round(v - u); const good = lowGood ? d < 0 : d > 0; return d ? `<span class="lx-d ${good ? 'up' : 'dn'} num">${signed(d)}</span>` : ''; })());
-  return `<section class="lx-card lx-pace" aria-label="Team pace">
+  return `<section class="lx-card lx-pace" id="lx-pace" aria-label="Team pace">
     <div class="lx-kick"><span>On pace for</span><span>vs their usual this season</span></div>
     <div class="lx-pace__h"><span>${dot(l.a.color)}${esc(l.a.name)}</span><span></span><span>${esc(l.b.name)}${dot(l.b.color)}</span></div>
     ${x.pace.map(r => `<div class="lx-pace__r"><span><b class="num">${r.a}</b>${chip(r.a, r.ua, r.lowGood)}</span><span class="lx-pace__l">${esc(r.label)}</span><span>${chip(r.b, r.ub, r.lowGood)}<b class="num">${r.b}</b></span></div>`).join('')}
@@ -94,7 +94,7 @@ function picksCard(x, l) {
   const faces = (list, side) => list.length ? `<div class="lx-faces"><span class="lx-faces__stack">${list.slice(0, 5).map(q => `<i style="--c:${esc(l[side].color)}">${esc(initials(q.name))}</i>`).join('')}</span><span><b class="num">${list.length}</b> ${p.lead ? (p.lead === side ? 'would be right' : `need ${esc(l[side].name)} to come back`) : `picked ${esc(l[side].name)}`}</span></div>` : '';
   const diff = Math.abs(l.score.a - l.score.b);
   const mine = p.mine ? `<div class="lx-you">You picked <b>${esc(l[p.mine].name)}</b>: ${!p.lead ? 'all square' : p.lead === p.mine ? `up ${diff}` : `down ${diff}`}.</div>` : '';
-  return `<section class="lx-card lx-picks" aria-label="Who wins? picks">
+  return `<section class="lx-card lx-picks" id="lx-picks" aria-label="Who wins? picks">
     <div class="lx-kick"><span>Who wins?</span><span>${p.total} picked</span></div>
     <p class="lx-pk">${head}</p>
     <div class="lx-split"><span class="lx-split__a" style="flex:${Math.max(na, 0.0001)};--c:${esc(l.a.color)}">${dot(l.a.color)}${na}</span><span class="lx-split__b" style="flex:${Math.max(nb, 0.0001)};--c:${esc(l.b.color)}">${nb}${dot(l.b.color)}</span></div>

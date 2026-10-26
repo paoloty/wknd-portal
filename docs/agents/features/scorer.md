@@ -40,7 +40,7 @@ Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off),
 - Audit fixes (Fable + Claude audits, 2026-10-26):
   - **Taps:** after a hold or swipe, the click that follows the finger lifting is ignored (`swallowNext`), whatever the hold's length; the next touch clears it, so fast taps count.
   - **Follow-ups:**
-    - Phones (<600px): one compact row floating above the last play, over the bench. Tablet landscape: the top of the Scoresheet column. Nothing moves when one comes or goes.
+    - Phones (<600px): a panel floating above the last play, over the bench: the question on top, its players in rows of five below (2026-10-26; it was one side-scrolling row, too long). Tablet landscape: the top of the Scoresheet column. Nothing moves when one comes or goes.
     - A tap on one of a follow-up's players on the court answers it (`followOpts`).
     - They queue (`ui.queue`): a bench player's play asks "Who went off?" first, then Assisted?/Who lost it?. Behind the foul panel they wait for the free throws.
     - A foul-out asks "Who comes on?" (`foulout`, no timer).
@@ -122,11 +122,14 @@ Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off),
   - **Who:** the admin holding the review, or a super admin; also offered on an unheld final-score-only review.
 - Home's review card shows from the moment a review starts (no plays yet: 0–0, "No plays yet"), then live as plays come in.
 - Review feedback (2026-10-26):
-  - **Rebound follow-up:** after a missed field goal, or a missed last free throw of a personal/shooting-foul trip (a technical or unsportsmanlike trip isn't a live ball), a "Rebound?" follow-up offers both fives, each with its team's colour on top (`reboundAsk`). Tapping the rebounder's tile answers it, and the engine works out offensive or defensive.
+  - **Rebound follow-up:** after a missed field goal, or a missed last free throw of a personal/shooting-foul trip (a technical or unsportsmanlike trip isn't a live ball), a "Rebound?" follow-up offers both fives as two rows, the defending five first and the shooting team's below, each button with its team's colour on top (`reboundAsk(missTeam)`; Paolo 2026-10-26: one strip of ten was too long, a swap button one tap too many). Tapping the rebounder's tile answers it, and the engine works out offensive or defensive.
   - **Follow-ups:** they now last 12 s (`FOLLOW_MS`).
   - **Timeout:** moved from beside the tiles into the team dropdown ("Call timeout · N left", greyed when none), after a mis-tap cost one.
   - **Watching a review live:** it now updates as plays arrive (about 1.5 s; `liveChanged` fires for any review under way, not only with the switch on). It used to wait for the 20-second poll.
 - Leaving and coming back (2026-10-26):
   - **The leave question** ("Leave the scorer?" / plays not sent yet) is the amber bar at the top (`ui.leaving`), with Stay / Leave.
   - **Back during a review** (a video re-track, or a review under way) goes to the game in the app, not the Games list.
-  - **Fresh Review card:** an admin's game screen with its Review card is sent `no-store`, and the app's service worker (`keepPage`) then drops its saved copy, so the card is always current (it used to show the saved one until a notification opened it fresh).
+  - **Fresh Review card:** an admin's game screen with its Review card is sent `no-store`, and the app's service worker (`keepPage`) then drops its saved copy, so the card is always current (it used to show the saved one until a notification opened it fresh). The app's in-memory screen copies (`pages` in public/app.js `fetchPage`, used for 10 minutes and by prefetch) skip `no-store` screens too, so opening the game from the feed is fresh as well.
+  - **Review card on the live review view (2026-10-26):** `/app/games/:id?review=live` (where Home's in-review card goes) shows the Review card too, so the holder has Continue the review there; no "watch it live" link on it (`appGamePreview`, `no-store`).
+  - **Live section bar (2026-10-26):** on a live game (and a review watched live) the app's sticky section bar follows the live screen: Win odds, Momentum, Who's hot, Pace, Picks (each only when its card is there; ids `lx-*` in views/live-extras.js), Box score, Plays, then one Preview chip for the pre-game sections below (`appGamePreviewPage`). It used to list the preview's sections only.
+  - **Review to-do (2026-10-26):** a review you hold that isn't closed, discarded or published is a to-do on Home and Me ("Continue reviewing White vs Black", `appReviewTodos` inside `appAccountTodos`), opening the game and its Review card.

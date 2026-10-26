@@ -6496,8 +6496,18 @@ function appOpenPicks(me, all = getAllGames()) {
   } catch (e) { console.error('[app open picks]', e.message); return []; }
 }
 // Money and season to-dos (balance, sign-up, jersey): Me's To do and its red badge.
-const appAccountTodos = me => appSeasonState(me).rows.filter(r => !r.done && r.href)
-  .map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, amount: r.amount, late: r.late }));
+const appAccountTodos = me => [...appSeasonState(me).rows.filter(r => !r.done && r.href)
+  .map(r => ({ icon: r.icon, title: r.title, sub: r.sub, pill: r.pill, href: r.href, amount: r.amount, late: r.late })), ...appReviewTodos(me)];
+// A review of yours that isn't finished (not closed, discarded or published): a to-do on Home
+// and Me until it is, opening the game and its Review card (Paolo, 2026-10-26).
+function appReviewTodos(me) {
+  if (!me?.playerId) return [];
+  return portalDb.prepare("SELECT game_id, settings_json FROM score_games WHERE status != 'published' AND settings_json LIKE '%\"review\":{%'").all()
+    .map(r => { let s = {}; try { s = JSON.parse(r.settings_json || '{}'); } catch {} return { id: r.game_id, review: s.review }; })
+    .filter(x => x.review && x.review.playerId === me.playerId)
+    .map(x => { const g = getGameById(x.id); return g ? { icon: 'ball', review: true, title: `Continue reviewing ${titleCase(g.team_a_name)} vs ${titleCase(g.team_b_name)}`, sub: x.review.kind === 'video' ? 'Re-tracking it from the video' : 'Checking the plays', pill: 'Continue', href: `/app/games/${encodeURIComponent(g.id)}`, solid: true } : null; })
+    .filter(Boolean);
+}
 // Tab badges (layout.js appPage): one signal per fact — picks on Picks, money on Me,
 // notifications on Home's bell.
 const appBadges = me => ({ picks: appOpenPicks(me).length, me: appAccountTodos(me).length });
@@ -6514,7 +6524,7 @@ app.get('/app', requireApp, (req, res) => {
   // The To do card, Me's look: only things with a deadline (money, an open sign-up), gone
   // once done. Open picks are on the rail (the next game day's cards), so they're not here too.
   const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0;
-  const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form')
+  const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form' || t.review)
     .map(t => t.icon === 'wallet' ? { ...t, href: `${t.href}?from=home` } : t);
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
   // The site's poll popup, full screen over Home (views/app/poll.js).
@@ -7751,6 +7761,9 @@ function appGamePreview(req, res, me, back, g, reviewView = false) {
   const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
   const live = reviewView ? reviewLiveFor(g) : liveScoreFor(g);
   const xPass = reviewView ? reviewPass(g) : 'live';
+  const rc = reviewView ? appReviewCard(req, g, true) : null;
+  const reviewCardHere = rc ? { ...rc, watch: '' } : null;
+  if (reviewCardHere) res.set('Cache-Control', 'private, no-store');
   sendTab(res, me, { title: live ? `${g.team_a_name} ${live.score.a} · ${g.team_b_name} ${live.score.b} · Live · WKND` : `${g.team_a_name} vs ${g.team_b_name} · WKND`, tab: back.tab, body: appGamePreviewPage({
     back, title: `${g.team_a_name} vs ${g.team_b_name}`,
     kicker: g.playoff_round || gameTypeLabel(g) || 'Regular season',
@@ -7764,6 +7777,9 @@ function appGamePreview(req, res, me, back, g, reviewView = false) {
     scoreHref: (getScoreGame(g.id) ? getScoreGame(g.id).status !== 'published' && scoreAccess(req, g.id) : scoreAccess(req, g.id) === 'admin') ? `/app/score/${encodeURIComponent(g.id)}` : '',
     live: live || reviewView || liveArmed(g) ? { src: `/app/games/${encodeURIComponent(g.id)}${reviewView ? '?review=live' : ''}`, ws: `/ws/games/${encodeURIComponent(g.id)}/live`, parts: live ? appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g), extras: liveExtrasFor(g, me.playerId, xPass) }) : null } : null,
     reviewLive: reviewView,
+    // Watching a review live: its Review card too (Continue the review when it's yours), without
+    // the "watch it live" link (this is it). Never kept on the phone, like the game screen's.
+    review: reviewCardHere,
     chat: live && !live.ended && !reviewView && liveChatOn() ? liveChatData(g, req) : null,
   }) });
 }

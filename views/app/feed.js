@@ -303,21 +303,21 @@ export function appLiveParts(l, { meId = '', myTeamId = '', extras = null } = {}
 
 // Before tip-off: the game's preview. pick: the pick card while picks are open (or the pick
 // made); preview: server.js appPreview.
-export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false, chat = null }) {
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false, review = null, chat = null }) {
   const w = (p.watch || []).filter(Boolean);
   // The section bar (the finished game's, sticky, lights the section in view), once there are
-  // three or more sections below the top: live box score + plays, then the preview's.
-  const chips = [
-    live?.parts && /id="gr-box"/.test(live.parts.body) ? ['gr-box', 'Box score'] : null,
-    live?.parts ? ['lv-plays', 'Plays'] : null,
-    p.story ? ['pv-story', 'Storyline'] : null,
-    ['pv-matchup', 'Matchup'],
-    w.length ? ['pv-watch', 'Players to watch'] : null,
-  ].filter(Boolean);
+  // three or more sections below the top. Live: the live screen's own sections (the cards it
+  // has), then one Preview chip for the pre-game sections below (Paolo, 2026-10-26: it showed
+  // the preview's sections only). Before tip-off: the preview's.
+  const LIVE = [['lx-odds', 'Win odds'], ['lx-mom', 'Momentum'], ['lx-hot', 'Who’s hot'], ['lx-pace', 'Pace'], ['lx-picks', 'Picks'], ['gr-box', 'Box score'], ['lv-plays', 'Plays']];
+  const chips = live?.parts
+    ? [...LIVE.filter(([id]) => live.parts.body.includes(`id="${id}"`)), [p.story ? 'pv-story' : 'pv-matchup', 'Preview']]
+    : [p.story ? ['pv-story', 'Storyline'] : null, ['pv-matchup', 'Matchup'], w.length ? ['pv-watch', 'Players to watch'] : null].filter(Boolean);
   const bar = chips.length > 2 ? jumpBar(chips) : '';
   // While there's a pick card it is the top of the screen (it has the matchup, day and time).
   return `${navbar(back, title)}
   ${reviewLive ? '<div class="msg msg--warn review-live">Review, watched live. Only admins see this, and it isn’t in the feed. Switch it off on the game’s Scoring tab.</div>' : ''}
+  ${reviewCard(review)}
   ${scoreHref && !reviewLive ? `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>` : ''}
   ${live ? `<div data-live-src="${esc(live.src)}" data-live-ws="${esc(live.ws)}">${live.parts ? `<div data-live="hero">${live.parts.hero}</div>${bar}<div data-live="body">${live.parts.body}</div>` : ''}</div>` : ''}
   ${live?.parts ? '' : pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">

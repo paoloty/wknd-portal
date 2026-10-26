@@ -1936,20 +1936,12 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
   .sc-sheetbtn { display: none; }
   .sc-tm__s .num { font-size: 30px; }
 }
-/* Phones: a follow-up is one compact row (question · players · ×) floating just above the last
-   play, over the bench, so neither the teams nor the stat buttons move when it comes and goes. */
+/* Phones: a follow-up floats just above the last play, over the bench, so neither the teams nor
+   the stat buttons move when it comes and goes. The question on top, its players in rows below
+   (Paolo, 2026-10-26: the side-scrolling strip was too long). */
 @media (max-width: 599px) {
   .sc-bottom { position: relative; }
   .sc-bottom > .sc-q--opt { position: absolute; left: 12px; right: 12px; bottom: calc(100% + 6px); z-index: 5; box-shadow: 0 -6px 24px rgba(0,0,0,.35); }
-  .sc-q--opt:not(.sc-q--wide) { display: grid; grid-template-columns: minmax(0, 30%) minmax(0, 1fr) 40px; grid-template-rows: auto auto; column-gap: 8px; row-gap: 2px; align-items: center; padding: 6px 4px 8px 10px; }
-  .sc-q--opt:not(.sc-q--wide) .sc-q__h { display: contents; }
-  .sc-q--opt:not(.sc-q--wide) .sc-q__h b { grid-column: 1; grid-row: 1; align-self: end; font-size: 13px; line-height: 1.15; }
-  .sc-q--opt:not(.sc-q--wide) .sc-q__optl { grid-column: 1; grid-row: 2; align-self: start; font-size: 12px; }
-  .sc-q--opt:not(.sc-q--wide) .sc-q__sp { display: none; }
-  .sc-q--opt:not(.sc-q--wide) .sc-x { grid-column: 3; grid-row: 1 / 3; width: 40px; height: 44px; }
-  .sc-q--opt:not(.sc-q--wide) .sc-q__opts { grid-column: 2; grid-row: 1 / 3; display: flex; gap: 5px; padding-right: 0; overflow-x: auto; scrollbar-width: none; }
-  .sc-q--opt:not(.sc-q--wide) .sc-q__opts::-webkit-scrollbar { display: none; }
-  .sc-q--opt:not(.sc-q--wide) .sc-opt { flex: 0 0 auto; min-width: 46px; min-height: 46px; padding: 0 6px; }
 }
 /* Tablet landscape and laptops: the court fills the height on the left, the Scoresheet docks on
    the right (default tab Fouls: what the table gets asked most). */
@@ -2135,8 +2127,5 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .rv-card__b { display: flex; flex-direction: column; gap: 8px; }
 .rv-card__b form { display: contents; }
 
-/* The rebound follow-up: both fives, each with its team's colour on top */
+/* The rebound follow-up: one five with its team's colour on top, the other team's button last */
 .sc-opt--team { box-shadow: inset 0 3px 0 var(--c); }
-.sc-q__opts--reb { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-.sc-q__opts--reb::-webkit-scrollbar { display: none; }
-.sc-q__opts--reb .sc-opt { flex: 0 0 auto; min-width: 52px; padding: 0 6px; }

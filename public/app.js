@@ -1964,7 +1964,9 @@
       if (!r.ok || !inApp(new URL(r.url).pathname) || !/text\/html/.test(r.headers.get('content-type') || '')) throw { reload: r.url };
       return r.text().then(function (html) {
         var page = { html: html, url: finalUrl, at: Date.now() };
-        pages[url] = page; if (finalUrl !== url) pages[finalUrl] = page;
+        // A screen the server says not to keep (an admin's game with its Review card) isn't
+        // reused from memory either: it's always fetched fresh.
+        if (!/no-store/.test(r.headers.get('cache-control') || '')) { pages[url] = page; if (finalUrl !== url) pages[finalUrl] = page; }
         return page;
       });
     });

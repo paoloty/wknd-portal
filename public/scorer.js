@@ -430,13 +430,14 @@ export async function mount(el) {
     const e = add({ type: pts === 1 ? 'ft' : 'shot', ...(pts > 1 ? { pts } : {}), made, team: t, player: pid }, { flash: { text: made ? `+${pts}` : 'MISS', tone: made ? 'good' : 'bad' } });
     ui.sel = null; ui.tip = '';
     ui.ask = made && pts > 1 ? { kind: 'ast', ref: e.id, team: t, shooter: pid, q: 'Assisted?', skip: 'No assist' }
-      : !made && pts > 1 ? reboundAsk() : null;
+      : !made && pts > 1 ? reboundAsk(t) : null;
     benchIn(pid, t, wasOn);
     paint();
   }
   // A live-ball miss (a field goal, or the last free throw of a trip): who got the rebound?
-  // Both fives; offensive or defensive is worked out from who missed.
-  const reboundAsk = () => ({ kind: 'rebound', q: 'Rebound?', skip: 'No rebound', opts: [...five('a'), ...five('b')].map(id => ({ id, label: short(id) })) });
+  // Two rows: the defending five first (most rebounds are theirs), the shooting team's below
+  // (Paolo, 2026-10-26: ten in one strip was too long, a swap button one tap too many).
+  const reboundAsk = missTeam => ({ kind: 'rebound', q: 'Rebound?', skip: 'No rebound', miss: missTeam });
   // Steal right after the other team's turnover: one play (the steal says who lost it), no
   // question. Block right after the other team's missed shot: linked to it, no question.
   // Otherwise: Who lost it? / Whose shot? (that one also records their missed shot).
@@ -888,7 +889,7 @@ export async function mount(el) {
   const followUp = (a, inner, headExtra = '') => {
     if (!a.at) a.at = Date.now();
     const gone = Math.min(FOLLOW_MS, Date.now() - a.at);
-    return `<div class="sc-q sc-q--opt${headExtra ? ' sc-q--wide' : ''}" role="group" aria-label="${esc(a.q)} Optional"><div class="sc-q__h"><b>${esc(a.q)}</b>${headExtra}<small class="sc-q__optl">optional</small><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="" aria-label="${esc(a.skip)}">${CLOSE}</button></div>
+    return `<div class="sc-q sc-q--opt" role="group" aria-label="${esc(a.q)} Optional"><div class="sc-q__h"><b>${esc(a.q)}</b>${headExtra}<small class="sc-q__optl">optional</small><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="" aria-label="${esc(a.skip)}">${CLOSE}</button></div>
       ${inner}${a.noTimer ? '' : `<i class="sc-q__timer" style="animation-duration:${FOLLOW_MS}ms;animation-delay:-${gone}ms" aria-hidden="true"></i>`}</div>`;
   };
   function question() {
@@ -915,8 +916,9 @@ export async function mount(el) {
       return followUp(a, `<div class="sc-q__opts">${opts.map(id => optBtn(id)).join('')}${a.bench ? '' : `<button type="button" class="sc-opt sc-opt--more" data-astbench><b>Bench</b></button>`}</div>`);
     }
     if (a && a.kind === 'rebound') {
-      // Ten players: each with its team's colour on top, scrolling sideways on a phone.
-      return followUp(a, `<div class="sc-q__opts sc-q__opts--reb">${a.opts.map(o => optBtn(o.id, 'data-ask', false, true)).join('')}</div>`);
+      // Each five a row, its team's colour on top of every button.
+      const def = a.miss === 'a' ? 'b' : 'a';
+      return followUp(a, [def, a.miss].map(t => `<div class="sc-q__opts" role="group" aria-label="${esc(team[t].name)}${t === def ? ' (defensive)' : ' (offensive)'}">${five(t).map(id => optBtn(id, 'data-ask', false, true)).join('')}</div>`).join(''));
     }
     if (a && (a.kind === 'lost' || a.kind === 'wentoff' || a.kind === 'blocked' || a.kind === 'andone' || a.kind === 'foulout')) {
       const pts = a.kind === 'blocked' ? [2, 3].map(n => `<button type="button" class="sc-ftc num${a.pts === n ? ' on' : ''}" data-blkpts="${n}" aria-pressed="${a.pts === n}">${n}PT</button>`).join('') : '';
@@ -1165,7 +1167,7 @@ export async function mount(el) {
       ${alertBar()}
       ${ui.sheet && !docked ? `<div class="sc-sheet sc-sheet--swipe" role="dialog" aria-modal="true" aria-label="Scoresheet" data-act="sheet-close"><div class="sc-sheet__in sc-sheet__in--tall">
         <div class="sc-sheet__grab" aria-hidden="true"></div>
-        <div class="sc-sheet__h"><b>Scoresheet</b><button type="button" class="sc-hbtn sc-hbtn--amber" data-act="sheet-close">Done</button></div>
+        <div class="sc-sheet__h"><b>Scoresheet</b><button type="button" class="sc-x" data-act="sheet-close" aria-label="Close the Scoresheet">${CLOSE}</button></div>
         ${sheetTabs(ui.tab, 'data-tab')}<div class="sc-sheet__b">${sheetBody(ui.tab)}</div></div></div>` : ''}
       ${peek()}`;
     paintPill();
@@ -1273,7 +1275,7 @@ export async function mount(el) {
       const a = ui.ask, made = b.getAttribute('data-fpft') === '1';
       add({ type: 'ft', team: a.o, player: a.shooter, made }, { flash: { text: made ? '+1' : 'MISS', tone: made ? 'good' : 'bad' } });
       (a.res = a.res || []).push(made); a.done++;
-      if (a.done >= a.n) ui.ask = !made && (a.foulKind === 'personal' || a.foulKind === 'shooting') ? reboundAsk() : null;
+      if (a.done >= a.n) ui.ask = !made && (a.foulKind === 'personal' || a.foulKind === 'shooting') ? reboundAsk(a.o) : null;
       return paint();
     }
     if (b.hasAttribute('data-subp') && ui.subs) {
