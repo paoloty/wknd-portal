@@ -232,7 +232,7 @@ import {
 import {
   upsertGameRating, getMyGameRatings, getGameRatingsForRatee, getAllGameRatings, getGameRating, setGameRatingIgnored, deleteGameRating,
   getGameRateRounds, getLatestSharedGameAsk, recordGameCourtCheck, getGameCourtCheck, setRatingEmailOptout, setPlayerRateLinksOff,
-  countPendingCourtReviews, getRecentGameAsksForPlayer, getRecentlyAskedPlayerIds,
+  getPendingCourtReviewCourts, getRecentGameAsksForPlayer, getRecentlyAskedPlayerIds,
 } from './lib/portal-db.js';
 import {
   getLeagueAppearancesForGames, getPapawisCoPlayerIds, getCourtRatings, getCourtRatingHelpfulBy, getMyCourtRating, wasAskedToRateCourt, saveCourtRating, getCourtRating,
@@ -9214,13 +9214,20 @@ function buildAdminHome(req) {
     });
   }
   if (can('papawis')) {
-    const n = countPendingCourtReviews();
-    if (n) items.push({
-      key: `court-reviews:${n}`, cat: 'appr', tag: 'REV', rank: 57,
-      title: `${homePlural(n, 'court review')} waiting`, due: 'not on the court page yet',
-      text: 'Written reviews show on a court page once you approve them. Stars already count.',
-      action: { type: 'link', label: 'Open courts', href: '/admin/papawis/courts' },
-    });
+    const courts = getPendingCourtReviewCourts();
+    const n = courts.reduce((s, c) => s + c.n, 0);
+    if (n) {
+      const names = courts.map(c => c.name || 'A court');
+      const where = names.length <= 2 ? names.join(' and ') : `${names[0]}, ${names[1]} and ${homePlural(names.length - 2, 'more court')}`;
+      items.push({
+        key: `court-reviews:${n}`, cat: 'appr', tag: 'REV', rank: 57,
+        title: `${homePlural(n, 'court review')} waiting`, due: 'not on the court page yet',
+        text: `At ${where}. Written reviews show on the court page once you approve them. Stars already count.`,
+        action: courts.length === 1
+          ? { type: 'link', label: 'Open court', href: `/admin/papawis/courts/${encodeURIComponent(courts[0].id)}#court-ratings` }
+          : { type: 'link', label: 'Open courts', href: '/admin/papawis/courts' },
+      });
+    }
   }
   if (can('community')) {
     const cases = getFineCasesByStatus('open');

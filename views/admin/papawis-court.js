@@ -236,7 +236,7 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
     </form>
     ${section({ title: 'Court page features', note: '· switches for every court page', bodyHtml: features })}
     ${section({ title: 'Open times', note: '· players vote for a run in these', id: 'court-slots', asideHtml: flags.votes ? '' : badge('Off', 'gray'), bodyHtml: slotsBlock })}
-    ${section({ title: 'Ratings', note: `· ${ratings.length} rating${ratings.length === 1 ? '' : 's'}`, asideHtml: flags.ratings ? '' : badge('Off', 'gray'), bodyHtml: `${rateAskPanel(court, rateAsk, flags)}<div class="aui-panel">${ratingRows}</div>` })}
+    ${section({ title: 'Ratings', id: 'court-ratings', note: `· ${ratings.length} rating${ratings.length === 1 ? '' : 's'}`, asideHtml: flags.ratings ? '' : badge('Off', 'gray'), bodyHtml: `${rateAskPanel(court, rateAsk, flags)}<div class="aui-panel">${ratingRows}</div>` })}
     ${section({ title: 'Rent requests', note: `· ${requests.filter(x => x.status !== 'done').length} new`, asideHtml: flags.requests ? '' : badge('Off', 'gray'), bodyHtml: `<div class="aui-panel">${reqRows}</div>` })}
     ${saveBar({ label: 'Save court page', form: 'court-page-form' })}
     ${SUGGEST_SCRIPT}
