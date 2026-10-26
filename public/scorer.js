@@ -16,8 +16,8 @@
 // it?, the foul panel with its free throws, who went off?); tapping the next player or stat
 // skips it, except free throws.
 //
-// Subs: tap a bench player, then the court player coming off (tablet: drag one onto the
-// other). A stat by a bench player brings them on and asks who went off. Foul trouble follows
+// Subs: tap a bench player, then the court player coming off; several at once from the Sub
+// button (the Subs sheet). A stat by a bench player brings them on and asks who went off. Foul trouble follows
 // the quarter: fouls = the quarter is "watch", more (or one from out) is "danger".
 //
 // Corrections: Fix on any play (change who, change what, add a missed play after, remove), in
@@ -29,7 +29,7 @@
 // offensive), a late scorer asks for a side and the holder gets Hand over / Keep it, a phone gone
 // quiet can be taken over. One phone keeps the clock (Both, else the first team); the other shows
 // it. Plays never wait on any of this: with no signal both phones keep scoring.
-import { foldGame, defaultFreeThrows, nextPos, isOvertime, correction, periodIndex } from './score-engine.js';
+import { foldGame, defaultFreeThrows, nextPos, isOvertime, correction, periodIndex, periodName } from './score-engine.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
@@ -37,7 +37,45 @@ const HOLD_MS = 450;
 const SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l-4 4 4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>';
 const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const ARROW_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>';
+const ARROW_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>';
 const SHEET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>';
+const LIVE_BALL = new Set(['shot', 'reb', 'stl', 'blk']);
+// Plays that stop the clock (on either scorer's phone).
+const WHISTLES = new Set(['foul', 'timeout', 'team_tech', 'team_to', 'stoppage']);
+// Follow-ups (Paolo, 2026-10-26): the optional questions after a play (Assisted?, Who lost it?,
+// Whose shot?, Who went off?, And-one: who fouled?). They sit above the stat buttons (which stay
+// usable: the next tap skips), close with ×, a tap on empty space, or by themselves after
+// FOLLOW_MS. The foul panel (free throws owed) is not a follow-up: it stays until answered.
+const OPTIONAL = new Set(['ast', 'lost', 'blocked', 'wentoff', 'andone', 'foulout']);
+// Menus (team stats, foul kind, Fix…) close the same ways, minus the timer: the scorer opened them.
+const CLOSABLE = new Set([...OPTIONAL, 'menu']);
+const FOLLOW_MS = 8000;
+// Someone asks for this phone's side: the alert counts down this long, then it's a no.
+const ASK_MS = 20000;
+const EXIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>';
+// Chimes (Paolo, 2026-10-26): made on the phone (Web Audio, no file, works offline). ask: two
+// notes up; left: two notes down; yes/no: one soft note for the phone that asked. Android also
+// vibrates; iPhones can't from a web app, and their silent switch mutes the chime.
+const chime = (() => {
+  let ctx = null;
+  const unlock = () => { try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === 'suspended') ctx.resume(); } catch (e) { ctx = null; } };
+  if (typeof window !== 'undefined') window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+  const NOTES = { ask: [[659, 0], [880, 0.16]], left: [[880, 0], [587, 0.18]], yes: [[784, 0]], no: [[440, 0]] };
+  return kind => {
+    try { if (localStorage.getItem('wknd-sc-sound') === 'off') return; } catch (e) {}
+    if (navigator.vibrate && (kind === 'ask' || kind === 'left')) { try { navigator.vibrate([120, 80, 120]); } catch (e) {} }
+    if (!ctx) return;
+    const loud = kind === 'ask' || kind === 'left' ? 0.28 : 0.14;
+    for (const [f, at] of NOTES[kind] || []) {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + at;
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(loud, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.4);
+    }
+  };
+})();
+const CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ordinal = n => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 
 // ── Storage on the phone: one record per game { id, events, sent: [ids], secs } ──
@@ -89,7 +127,7 @@ export async function mount(el) {
   const published = B.status === 'published';
   const video = B.pass === 'video';
   const key = video ? `${gid}:video` : gid;
-  // Tablet landscape and laptops: the Scoresheet docks on the right, drag-and-drop subs.
+  // Tablet landscape and laptops: the Scoresheet docks on the right.
   const wide = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false };
   const multi = !video && !published;
   const laneKey = `wknd-lane:${gid}`;
@@ -106,17 +144,32 @@ export async function mount(el) {
   const serverIds = new Set(B.events.map(e => e.id));
   for (const e of rec.events) if (!events.has(e.id)) events.set(e.id, e);
   const sent = new Set([...rec.sent, ...serverIds]);
+  // The clock as it was left: a running clock kept running while the scorer was away.
+  const away = rec.running && rec.savedAt ? Math.round((Date.now() - rec.savedAt) / 1000) : 0;
   const ui = {
-    sel: null, arm: null, ask: null, tip: '', flash: null, flashN: 0, running: false, secs: rec.secs ?? rules.periodMin * 60,
+    sel: null, arm: null, ask: null, tip: '', flash: null, flashN: 0, running: !!rec.running && (rec.secs ?? 0) - away > 0, secs: Math.max(0, (rec.secs ?? rules.periodMin * 60) - away),
     sync: 'idle', syncMsg: '', locked: published, after: null, lane: multi ? readLane() : 'both', lanes: null, asked: '',
     sheet: false, tab: pref.get('wknd-sc-tab', 'box'), dockTab: pref.get('wknd-sc-dock', 'fouls'), hideDock: false, sheetTeam: 'a', filter: 'all',
     peek: null, redo: null, lastShown: '',
+    // Follow-ups waiting their turn (a bench player's basket: Who went off? first, then Assisted?).
+    queue: [],
   };
 
   const list = () => [...events.values()];
+  // Plays the server set aside as late (POST answer) stay on the phone but out of its game.
+  const counted = () => list().filter(e => !e.late);
   const unsent = () => list().filter(e => !sent.has(e.id));
-  const save = () => store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs });
-  const fold = () => foldGame(list(), rules, { a: team.a.players.map(p => p.id), b: team.b.players.map(p => p.id) });
+  // Everything is on the phone after every change: the plays, what's been sent, and the clock
+  // (running or not, as of when), so leaving the scorer with no signal and coming back finds it
+  // all as it was, the clock having run meanwhile if it was running.
+  // The clock runs on wall time: phones pause timers in the background, so while it runs the
+  // seconds left are worked out from when it started, never counted tick by tick.
+  let runFrom = null;
+  const syncRun = () => { runFrom = ui.running ? { secs: ui.secs, at: Date.now() } : null; };
+  const clockNow = () => { if (ui.running && runFrom) ui.secs = Math.max(0, runFrom.secs - Math.floor((Date.now() - runFrom.at) / 1000)); };
+  syncRun();
+  const save = () => { clockNow(); return store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs, running: ui.running, savedAt: Date.now() }); };
+  const fold = () => foldGame(counted(), rules, { a: team.a.players.map(p => p.id), b: team.b.players.map(p => p.id) });
   let G = fold();
   const clockStr = () => `${Math.floor(ui.secs / 60)}:${String(ui.secs % 60).padStart(2, '0')}`;
 
@@ -134,7 +187,18 @@ export async function mount(el) {
       if (r.status === 401) { ui.sync = 'error'; ui.syncMsg = 'Signed out. Your plays are safe on this phone; sign in again to send them.'; }
       else if (r.status === 409 || r.status === 403) { ui.sync = 'error'; ui.syncMsg = d.error || 'Not sent.'; if (/published/i.test(d.error || '')) ui.locked = true; }
       else if (!r.ok) { ui.sync = 'error'; ui.syncMsg = d.error || 'Not sent. Trying again.'; retry = setTimeout(sync, 8000); }
-      else { for (const e of batch) sent.add(e.id); ui.sync = 'ok'; ui.syncMsg = ''; await save(); }
+      else {
+        for (const e of batch) sent.add(e.id);
+        ui.sync = 'ok'; ui.syncMsg = '';
+        if (d.late && d.late.length) {
+          for (const id of d.late) { const e = events.get(id); if (e) e.late = true; }
+          G = fold();
+          const why = { published: 'the game was already published', ended: 'the final score was already in', taken: 'another scorer had taken over your side', side: 'that side is the other scorer’s', fast: 'too many in a second or two (a pocket tap?)' }[d.lateWhy] || 'they came in late';
+          ui.tip = `${d.late.length === 1 ? 'A play' : `${d.late.length} plays`} of yours ${d.late.length === 1 ? 'was' : 'were'} set aside for the admin: ${why}. Nothing was overwritten.`;
+          paint();
+        }
+        await save();
+      }
     } catch (e) { ui.sync = 'offline'; retry = setTimeout(sync, 8000); }
     sending = false;
     paintPill();
@@ -148,7 +212,14 @@ export async function mount(el) {
     const sides = multi && ui.lane && !ui.locked && (ui.lane !== 'both' || !!(ui.lanes && ui.lanes.others.length));
     pill.className = 'sc-sync' + (bad ? ' is-off' : n ? ' is-wait' : ' is-ok') + (sides ? ' is-side' : '');
     const state = ui.locked && published ? 'Published' : ui.sync === 'offline' ? `Offline · ${n} saved` : ui.sync === 'error' ? `Not sent · ${n}` : n ? `Sending ${n}…` : 'Saved';
-    pill.innerHTML = sides && !bad && !n ? `<i class="sc-sync__dot"></i>You: ${esc(sideName(ui.lane))}${CHEV}` : esc(state) + (sides ? CHEV : '');
+    // Asking for a side: the pill says so (with a pulse) until they answer.
+    if (multi && !ui.lane && ui.asked && !bad && !n) {
+      pill.className = 'sc-sync is-wait is-asking';
+      pill.innerHTML = `<i class="sc-sync__dot"></i>Asking ${esc(ui.asked)}…`;
+      pill.setAttribute('role', 'status'); pill.removeAttribute('tabindex'); pill.removeAttribute('aria-label');
+      return;
+    }
+    pill.innerHTML = sides && !bad && !n ? `<i class="sc-sync__dot${ui.sideOpen ? ' is-open' : ''}"></i>You: ${esc(sideName(ui.lane))}${CHEV}` : esc(state) + (sides ? CHEV : '');
     pill.title = ui.syncMsg || '';
     if (sides) { pill.setAttribute('role', 'button'); pill.tabIndex = 0; pill.setAttribute('aria-label', `${state}. You score ${sideName(ui.lane)}. Switch, hand over or take over`); }
     else { pill.setAttribute('role', 'status'); pill.removeAttribute('tabindex'); pill.removeAttribute('aria-label'); }
@@ -162,8 +233,16 @@ export async function mount(el) {
       const r = await fetch(api, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
       if (!r.ok) return;
       const d = await r.json();
-      let n = 0;
-      for (const e of d.events || []) { sent.add(e.id); if (!events.has(e.id)) { events.set(e.id, e); n++; } }
+      let n = 0, blow = false, go = false;
+      for (const e of d.events || []) {
+        sent.add(e.id);
+        if (events.has(e.id)) continue;
+        events.set(e.id, e); n++;
+        // The other scorer's whistle (a foul, a timeout) stops the clock this phone keeps.
+        if (e.dev && e.dev !== deviceId && Number(e.at) > openedAt) { if (WHISTLES.has(e.type)) blow = true; else if (LIVE_BALL.has(e.type)) go = true; }
+      }
+      if (blow && keepsClock()) whistle();
+      else if (go && ui.whistle && !ui.running && keepsClock()) { ui.running = true; ui.whistle = false; ui.restarted = true; syncRun(); }
       if (d.status === 'published') ui.locked = true;
       if (n || ui.locked) { G = fold(); await save(); paint(); }
     } catch (e) { /* no signal: the phone's copy stands */ }
@@ -173,11 +252,14 @@ export async function mount(el) {
   // ── Two scorers ──
   const laneApi = api.replace(/\/events(\?.*)?$/, '/lanes');
   const sideName = l => (l === 'both' ? 'both teams' : team[l].name);
+  const openedAt = Date.now();
   const mine = t => !multi || ui.lane === 'both' || ui.lane === t;
   const keeper = () => (multi && ui.lanes && ui.lanes.keeper ? ui.lanes.keeper : null);
   const keepsClock = () => { const k = keeper(); return !k || k.me; };
+  let laneSig = '';
   async function lanes(body = {}) {
     if (!multi || !navigator.onLine) return;
+    clockNow();
     const clock = keepsClock() && ui.lane ? { secs: ui.secs, running: ui.running, period: G.period } : null;
     let d;
     try {
@@ -188,32 +270,71 @@ export async function mount(el) {
     ui.lanes = d;
     if (d.me.lane !== ui.lane) { ui.lane = d.me.lane; storeLane(ui.lane); ui.sel = null; ui.arm = null; }
     if (d.me.note) ui.tip = d.me.note;
-    if (d.asked) ui.asked = d.asked;
-    if (d.me.lane) ui.asked = '';
+    // Asking for a side: waiting until they answer (or the ask is gone: they kept it).
+    const wasAsking = ui.asked;
+    ui.asked = d.me.lane ? '' : d.asked || (d.me.ask ? ui.asked || (holderOf(d.me.ask) || {}).name || 'them' : '');
+    if (wasAsking && !ui.asked && !body.action) chime(d.me.lane ? 'yes' : 'no');
+    // Someone asks for this phone's side: a chime (again after 10 s), and a no after ASK_MS.
+    const ask0 = ui.lane && d.asks && d.asks[0];
+    if (ask0 && (!ui.askFor || ui.askFor.device !== ask0.device || ui.askFor.lane !== ask0.lane)) {
+      const f = ui.askFor = { device: ask0.device, lane: ask0.lane, at: Date.now() };
+      chime('ask');
+      setTimeout(() => { if (ui.askFor === f) chime('ask'); }, 10000);
+      setTimeout(() => { if (ui.askFor === f && !ui.handing) { ui.handing = 'no'; paint(); lanes({ action: 'answer', from: f.device, yes: false, timeout: true }).finally(() => { ui.handing = null; paint(); }); } }, ASK_MS);
+    } else if (!ask0) ui.askFor = null;
+    // The other scorer left (or their phone has been quiet 2 minutes): offer this phone both
+    // teams, once.
+    const otherSide = ui.lane === 'a' ? 'b' : ui.lane === 'b' ? 'a' : null;
+    if (otherSide) {
+      const h = holderOf(otherSide), live = h && (h.quiet || 0) < (d.staleMs || 120000);
+      if (live) { ui.partner = h.name; ui.partnerIni = h.ini || ''; ui.alone = null; ui.sideOpen = false; }
+      else if (ui.partner) { ui.alone = { name: ui.partner, ini: ui.partnerIni || '', why: h ? 'quiet' : 'left' }; ui.sideOpen = true; ui.partner = null; chime('left'); }
+    } else { ui.partner = null; ui.alone = null; ui.sideOpen = false; }
     if (d.tookOver) ui.tip = `You took over from ${d.tookOver}.`;
+    if (d.conflict && !twoIn()) ui.tip = `${d.conflict.name} is still scoring that side. Ask them, or wait until their phone has been quiet for 2 minutes.`;
     const k = d.keeper;
     if (k && !k.me && k.clock) {
       const gone = k.clock.running ? Math.round((d.now - k.clock.at) / 1000) : 0;
-      ui.secs = Math.max(0, k.clock.secs - gone); ui.running = k.clock.running;
+      ui.secs = Math.max(0, k.clock.secs - gone); ui.running = k.clock.running; syncRun();
     }
     if (d.others.length) pull();
-    paint();
+    // Repaint only when something changed (not every check-in): sides, asks, the keeper, the
+    // notes; while choosing a side the countdowns tick, so then always.
+    const sig = JSON.stringify([d.me, d.others, d.asks, d.keeper && d.keeper.device, ui.asked, ui.alone, ui.tip, !ui.lane && d.holders]);
+    if (sig !== laneSig || body.action) { laneSig = sig; paint(); }
+    else { const c = root.querySelector('[data-sc-clock]'); if (c) c.textContent = clockStr(); }
   }
   const pickSide = (want, holder) => {
     if (!holder) return lanes({ action: 'claim', want });
     ui.asked = holder; ui.tip = '';
     return lanes({ action: 'ask', want });
   };
-  const holderOf = l => (ui.lanes ? ui.lanes.others.find(o => o.lane && (o.lane === 'both' || l === 'both' || o.lane === l)) : null);
+  // Who holds a side, quiet phones included (the server says how long each has been quiet).
+  const holderOf = l => (ui.lanes ? (ui.lanes.holders || ui.lanes.others).find(o => o.lane && (o.lane === 'both' || l === 'both' || o.lane === l)) : null);
+  // A side's button: Score it (free), Ask the holder (active), wait (gone quiet, not long
+  // enough), or Take over (quiet 2+ minutes: anyone can).
+  // Two scorers at most: with two others in (neither quiet 2+ minutes) and no side of my own,
+  // the sides show greyed out; one going quiet opens Take over.
+  const twoIn = () => !ui.lane && !!ui.lanes && (ui.lanes.holders || []).filter(h => (h.quiet || 0) < (ui.lanes.staleMs || 120000)).length >= 2;
+  function sideState(l) {
+    const h = holderOf(l), side = sideName(l);
+    if (!h) return { act: 'claim', label: `Score ${side}` };
+    const quiet = h.quiet || 0, active = ui.lanes.activeMs || 45000, stale = ui.lanes.staleMs || 120000;
+    if (twoIn() && quiet < stale) return { act: 'wait', label: `${h.name} scores ${side}` };
+    if (quiet < active) return { act: 'ask', holder: h.name, label: `Ask ${h.name} for ${side}` };
+    if (quiet < stale) return { act: 'wait', label: `${h.name} went quiet · take over ${side} in ${Math.ceil((stale - quiet) / 1000)}s` };
+    return { act: 'claim', label: `Take over ${side} (${h.name} quiet ${Math.floor(quiet / 60000)} min)` };
+  }
   function sideMenu() {
-    const opts = ['a', 'b', 'both'].filter(l => l !== ui.lane).map(l => { const h = holderOf(l); return [l, h ? `Ask ${h.name} for ${sideName(l)}` : `Score ${sideName(l)}`]; });
+    const opts = ['a', 'b', 'both'].filter(l => l !== ui.lane && (l !== 'both' || sideState('both').act !== 'ask')).map(l => { const st = sideState(l); return [st.act === 'wait' ? `wait:${l}` : l, st.label]; });
     if (ui.lane) opts.push(['watch', 'Stop scoring (watch)']);
-    if (ui.lanes && ui.lanes.admin) opts.push(...['a', 'b', 'both'].filter(l => holderOf(l)).map(l => [`force:${l}`, `Take over ${sideName(l)} (admin)`]));
+    if (ui.lanes && ui.lanes.admin) opts.push(...['a', 'b', 'both'].filter(l => holderOf(l) && sideState(l).act !== 'claim').map(l => [`force:${l}`, `Take over ${sideName(l)} now (admin)`]));
     menu('Which side do you score?', opts, k => {
       if (k === 'watch') return lanes({ action: 'claim', want: null });
+      if (k.startsWith('wait:')) return sideMenu();
       if (k.startsWith('force:')) return lanes({ action: 'claim', want: k.slice(6), force: true });
-      const h = holderOf(k);
-      return pickSide(k, h ? h.name : '');
+      const st = sideState(k);
+      return st.act === 'ask' ? pickSide(k, st.holder) : lanes({ action: 'claim', want: k });
     });
   }
   // The other phone's plays as they land (the live score's socket says when).
@@ -224,7 +345,7 @@ export async function mount(el) {
     sock.onmessage = () => { if (ui.lanes && ui.lanes.others.length) pull(); };
     sock.onclose = () => { sock = null; if (document.contains(el)) setTimeout(listen, 5000); };
   };
-  const laneTimer = multi ? setInterval(() => { if (!document.contains(el)) { clearInterval(laneTimer); if (sock) sock.close(); return; } lanes(); }, 4000) : null;
+  const laneTimer = multi ? setInterval(() => { if (!document.contains(el)) { clearInterval(laneTimer); if (sock) sock.close(); release(); return; } lanes(); }, 4000) : null;
   const syncTimer = setInterval(() => { if (!document.contains(el)) { clearInterval(syncTimer); clearInterval(tick); return; } if (unsent().length) sync(); }, 10000);
   pull();
 
@@ -240,6 +361,8 @@ export async function mount(el) {
     events.set(e.id, e);
     if (anchor && fields.type !== 'void') ui.after = e.id;
     G = fold();
+    if (ui.whistle && !ui.running && !anchor && LIVE_BALL.has(fields.type)) { ui.running = true; ui.whistle = false; ui.restarted = true; syncRun(); }
+    else if (!ui.running && !anchor && LIVE_BALL.has(fields.type) && keepsClock() && !G.final && ui.secs === periodSecs()) { ui.running = true; ui.started = true; syncRun(); }
     if (flash && fields.player) { ui.flashN++; ui.flash = { pid: fields.player, ...flash, at: Date.now() }; }
     // The phone's Scoresheet closes on this phone's next play (with two scorers the clock is
     // the other phone's, so the clock can't be the signal); the docked one stays.
@@ -250,6 +373,8 @@ export async function mount(el) {
     return e;
   }
   const other = t => (t === 'a' ? 'b' : 'a');
+  const soundOn = () => pref.get('wknd-sc-sound', 'on') !== 'off';
+  const periodSecs = () => (isOvertime(G.period) ? rules.otMin : rules.periodMin) * 60;
   // Which five: the five who played last (topped up from the roster). Where they sit: tiles
   // never move (Paolo, 2026-10-25: the scorer learns where a player is). A player coming in
   // from the bench takes the slot of the one who dropped out, in place.
@@ -276,15 +401,29 @@ export async function mount(el) {
   // Both orders: with a player picked the stat goes straight in; without one the stat lights
   // up (armed) and the next player tapped gets it.
   function want(key, run) {
+    ui.queue = [];
     if (ui.sel) return run();
     ui.arm = ui.arm && ui.arm.key === key ? null : { key, run };
     ui.ask = null; ui.tip = ''; paint();
   }
   // A bench player's stat brings them on; ask who went off (skippable: the engine already
   // sits the one who played least recently).
+  // It comes first (the lineup must be right), whatever the play asked (Assisted? waits its turn);
+  // behind the foul panel it waits until the free throws are done.
   function benchIn(pid, t, wasOn) {
-    if (wasOn.includes(pid) || ui.ask) return;
-    ui.ask = { kind: 'wentoff', team: t, pid, q: `${short(pid)} on. Who went off?`, opts: wasOn.map(id => ({ id, label: short(id) })), skip: 'Skip' };
+    if (wasOn.includes(pid)) return;
+    const q = { kind: 'wentoff', team: t, pid, q: `${short(pid)} on. Who went off?`, opts: wasOn.map(id => ({ id, label: short(id) })), skip: 'Skip' };
+    if (ui.ask && ui.ask.kind === 'fp') { ui.queue.push(q); return; }
+    if (ui.ask) ui.queue.unshift(ui.ask);
+    ui.ask = q;
+  }
+  // A player who fouls out (or is ejected) leaves the court: who comes on for them? The engine
+  // already filled the tile from the bench; the answer puts in who really came on.
+  function foulOut(pid, t) {
+    const auto = five(t).filter(id => !G.lastActive[t].includes(id));
+    const bench = [...new Set([...auto, ...subBench(t)])];
+    if (!bench.length) return;
+    ui.queue.push({ kind: 'foulout', team: t, pid, noTimer: true, q: `${short(pid)} is ${G.flags[pid]}. Who comes on?`, opts: bench.map(id => ({ id, label: short(id) })), skip: 'Later' });
   }
   function shot(pts, made) {
     const pid = ui.sel; const t = byId[pid].team; const wasOn = five(t).slice();
@@ -294,12 +433,26 @@ export async function mount(el) {
     benchIn(pid, t, wasOn);
     paint();
   }
+  // Steal right after the other team's turnover: one play (the steal says who lost it), no
+  // question. Block right after the other team's missed shot: linked to it, no question.
+  // Otherwise: Who lost it? / Whose shot? (that one also records their missed shot).
   function simple(type, flashText) {
     const pid = ui.sel; const t = byId[pid].team; const wasOn = five(t).slice();
+    const prev = G.rows[G.rows.length - 1];
+    if (type === 'stl' && prev && prev.type === 'to' && prev.team === other(t) && prev.player && !ui.after) {
+      add({ type: 'void', target: prev.id });
+      add({ type: 'stl', team: t, player: pid, from: prev.player, restores: prev.id }, { flash: { text: flashText, tone: 'plain' } });
+      ui.sel = null; ui.tip = ''; ui.ask = null; benchIn(pid, t, wasOn); return paint();
+    }
+    if (type === 'blk' && prev && prev.type === 'shot' && !prev.made && prev.team === other(t)) {
+      add({ type: 'blk', team: t, player: pid, ref: prev.id }, { flash: { text: flashText, tone: 'plain' } });
+      ui.sel = null; ui.tip = ''; ui.ask = null; benchIn(pid, t, wasOn); return paint();
+    }
     const e = add({ type, team: t, player: pid }, { flash: { text: flashText, tone: 'plain' } });
     if (type === 'reb') { const row = G.rows.find(r => r.id === e.id); ui.flash.text = row && row.off ? 'OREB' : 'REB'; }
     ui.sel = null; ui.tip = '';
-    ui.ask = type === 'stl' ? { kind: 'lost', ref: e.id, team: t, q: 'Who lost it?', opts: five(other(t)).map(id => ({ id, label: short(id) })), skip: 'Team turnover' } : null;
+    ui.ask = type === 'stl' ? { kind: 'lost', ref: e.id, team: t, o: other(t), q: 'Who lost it?', opts: five(other(t)).map(id => ({ id, label: short(id) })), skip: 'Team turnover' }
+      : type === 'blk' ? { kind: 'blocked', ref: e.id, team: t, o: other(t), pts: 2, q: 'Whose shot?', opts: five(other(t)).map(id => ({ id, label: short(id) })), skip: 'Skip' } : null;
     benchIn(pid, t, wasOn);
     paint();
   }
@@ -313,24 +466,52 @@ export async function mount(el) {
   // A foul opens one panel: how many free throws (the engine's default picked), and-one, the
   // shooter, then each free throw on one row. 2-shot foul = player, FOUL, FT, FT.
   function foul(kind) {
-    const pid = ui.sel; const t = byId[pid].team, o = other(t);
+    const pid = ui.sel; const t = byId[pid].team, o = other(t); const wasOn = five(t).slice();
     const inPenalty = G.teamFouls[t] + 1 >= rules.penaltyAt;
     const prev = G.rows[G.rows.length - 1];
+    ui.queue = [];
     const e = add({ type: 'foul', team: t, player: pid, kind }, { flash: { text: kind === 'technical' ? 'T' : 'FOUL', tone: 'bad' } });
-    if (keepsClock()) ui.running = false; // a foul stops the clock
+    whistle(); // a foul stops the clock
     ui.sel = null; ui.tip = '';
     const flag = G.flags[pid];
     if (flag) ui.tip = `${byId[pid].name} is ${flag}.`;
-    if (kind === 'offensive') { ui.ask = null; return paint(); }
-    // The shooter: the other team's player who just shot, when there is one
-    const shooter = prev && prev.team === o && prev.player && (prev.type === 'shot' || prev.type === 'ft') && kind !== 'technical' ? prev.player : null;
-    ui.ask = { kind: 'fp', ref: e.id, team: t, o, pid, foulKind: kind, n: defaultFreeThrows(kind, { inPenalty }), andOne: false, shooter, done: 0, bench: false };
+    const after = () => {
+      // A bench player's foul (not a technical: that can come from the bench) puts them on.
+      if (kind !== 'technical') benchIn(pid, t, wasOn);
+      if (G.flags[pid] && wasOn.includes(pid)) foulOut(pid, t);
+    };
+    if (kind === 'offensive') { ui.ask = null; after(); return paint(); }
+    // The shooter: only for a shooting foul, the other team's player who just shot (in the
+    // penalty the fouled player shoots, rarely the last shooter: the scorer picks).
+    const shotBy = prev && prev.team === o && prev.player && prev.type === 'shot' ? prev : null;
+    const shooter = kind === 'shooting' && shotBy ? shotBy.player : null;
+    const shotPts = kind === 'shooting' && shotBy && !shotBy.made ? shotBy.pts : 2;
+    ui.ask = { kind: 'fp', ref: e.id, team: t, o, pid, foulKind: kind, n: defaultFreeThrows(kind, { inPenalty, shotPts }), andOne: false, shooter, done: 0, bench: false };
+    after();
+    paint();
+  }
+  // A whistle (foul, timeout, technical, violation, refs) stops the clock. If it was running,
+  // the next play that only happens with the ball live (a shot, rebound, steal or block) starts
+  // it again, and the Start button pulses until then (Paolo, 2026-10-26). Free throws never do.
+  // Only the phone that keeps the clock.
+  function whistle() { if (!keepsClock()) return; clockNow(); if (ui.running) ui.whistle = true; ui.running = false; syncRun(); }
+  // And-one (swipe a made shot up): the basket, then who fouled; the foul panel opens set to
+  // one free throw for the shooter.
+  function andOne(pts) {
+    const pid = ui.sel; const t = byId[pid].team; const wasOn = five(t).slice();
+    add({ type: 'shot', pts, made: true, team: t, player: pid }, { flash: { text: `+${pts}`, tone: 'good' } });
+    ui.sel = null; ui.tip = '';
+    ui.ask = { kind: 'andone', shooter: pid, team: t, o: other(t), q: `And-one: who fouled ${short(pid)}?`, opts: five(other(t)).map(id => ({ id, label: short(id) })), skip: 'Skip' };
+    benchIn(pid, t, wasOn);
     paint();
   }
   function teamPlay(t, type, extra = {}) {
-    add({ type, team: t, ...extra });
-    if ((type === 'team_tech' || type === 'team_to') && keepsClock()) ui.running = false; // whistles stop the clock
-    ui.ask = null; ui.sel = null; ui.arm = null; paint();
+    const e = add({ type, team: t, ...extra });
+    if (type === 'team_tech' || type === 'team_to') whistle();
+    ui.ask = null; ui.sel = null; ui.arm = null; ui.queue = [];
+    // A coach or bench technical: one free throw, shot by any player of the other team.
+    if (type === 'team_tech' && e) ui.ask = { kind: 'fp', ref: e.id, team: t, o: other(t), pid: null, who: `${team[t].name} ${extra.kind || 'coach'}`, foulKind: 'technical', n: 1, andOne: false, shooter: null, done: 0, bench: true };
+    paint();
   }
 
   // Questions in the stat buttons' place.
@@ -338,16 +519,41 @@ export async function mount(el) {
     const a = ui.ask; if (!a) return;
     if (a.kind === 'ast') { if (id) add({ type: 'ast', team: a.team, player: id, ref: a.ref }, { flash: { text: 'AST', tone: 'plain' } }); ui.ask = null; }
     else if (a.kind === 'lost') {
-      if (id) { add({ type: 'void', target: a.ref }); const old = events.get(a.ref); add({ type: 'stl', team: old.team, player: old.player, from: id }); }
+      if (id) { add({ type: 'void', target: a.ref }); const old = events.get(a.ref); add({ type: 'stl', team: old.team, player: old.player, from: id, restores: a.ref }); }
       ui.ask = null;
+    } else if (a.kind === 'blocked') {
+      // Their missed shot goes in just before the block.
+      if (id) {
+        const blk = events.get(a.ref);
+        const order = list().sort((x, y) => x.pos - y.pos), i = order.findIndex(x => x.id === a.ref), before = order[i - 1];
+        const miss = { id: uid(), pos: before ? nextPos(list(), before.id) : blk.pos - 1, at: Date.now(), period: blk.period, clock: blk.clock, dev: deviceId, type: 'shot', pts: a.pts, made: false, team: a.o, player: id };
+        events.set(miss.id, miss);
+        G = fold(); save().then(sync);
+      }
+      ui.ask = null;
+    } else if (a.kind === 'andone') {
+      ui.ask = null;
+      if (id) {
+        ui.sel = id; foul('shooting');
+        if (ui.ask && ui.ask.kind === 'fp') { ui.ask.n = 1; ui.ask.andOne = true; ui.ask.shooter = a.shooter; }
+        return paint();
+      }
     } else if (a.kind === 'wentoff') {
       if (id) add({ type: 'sub', team: a.team, in: a.pid, out: id });
+      ui.ask = null;
+    } else if (a.kind === 'foulout') {
+      if (id) { const tiles = [...five(a.team)], auto = tiles.find(x => !G.lastActive[a.team].includes(x)); add({ type: 'sub', team: a.team, in: id, out: a.pid }); if (auto && auto !== id) slots[a.team] = tiles.map(x => (x === auto ? id : x)); }
       ui.ask = null;
     } else if (a.kind === 'menu') { ui.ask = null; if (id === '__cancel') return paint(); a.act(id); return; }
     paint();
   }
   // Every menu ends with Cancel: closes it, nothing saved.
-  const menu = (q, opts, act, def) => { ui.ask = { kind: 'menu', q, opts: [...opts.map(([id, label]) => ({ id, label, def: id === def })), { id: '__cancel', label: 'Cancel', cancel: true }], act }; ui.peek = null; paint(); };
+  // opts: [id, label] pairs, or groups ({ group, items: [[id, label], …] }) shown as labelled rows.
+  const menu = (q, opts, act, def) => {
+    const one = ([id, label]) => ({ id, label, def: id === def });
+    const groups = opts.some(o => o.group) ? opts.map(g => ({ group: g.group, opts: g.items.map(one) })) : null;
+    ui.ask = { kind: 'menu', q, groups, opts: groups ? groups.flatMap(g => g.opts) : opts.map(one), act }; ui.peek = null; paint();
+  };
 
   // What each button does on a tap, and on a hold.
   const TAP = {
@@ -362,38 +568,118 @@ export async function mount(el) {
     to: () => menu('Turnover: what kind?', TOS, k => (ui.sel ? turnover(k) : want(`to:${k}`, () => turnover(k)))),
     score: () => { ui.peek = 'score'; paint(); },
   };
-  // The team's name is its menu: team stats and DNP.
-  const teamMenu = t => menu(`${team[t].name}: team stats`, [['to', 'Team turnover'], ['shot clock', 'Shot clock violation'], ['3 seconds', '3 seconds'], ['5 seconds', '5 seconds'], ['8 seconds', '8 seconds'], ['coach T', 'Coach technical'], ['bench T', 'Bench technical'], ['dnp', 'DNP: who didn’t play…']],
-    k => (k === 'dnp' ? dnpMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
+  // The team's name is its menu: team plays in labelled rows (the row says what kind, so the
+  // chips stay short), and DNP. Sub sits beside Timeout in the team's header.
+  const teamMenu = t => menu(team[t].name, [
+    { group: 'Turnover', items: [['to', 'Team'], ['shot clock', 'Shot clock'], ['3 seconds', '3s'], ['5 seconds', '5s'], ['8 seconds', '8s']] },
+    { group: 'Technical', items: [['coach T', 'Coach'], ['bench T', 'Bench']] },
+    { group: 'Lineup', items: [['dnp', 'DNP…']] }],
+  k => (k === 'dnp' ? dnpMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
+  // Sub from the menu: who comes on, then who goes off (the same as tapping the tiles).
+  // The Subs sheet (the Sub button beside Timeout): tap who comes off (court, red ↓) and who
+  // goes on (bench, green ↑), as many as you like; they pair up in the order tapped. "All 5"
+  // for a line change. Save makes
+  // every sub at once. A fouled-out or ejected player still on court starts marked.
+  // The bench, late arrivals (DNP) last: subbing one in clears their DNP.
+  const subBench = t => { const b = team[t].players.filter(p => !onCourt(t, p.id) && !G.flags[p.id]); return [...b.filter(p => !G.dnp.includes(p.id)), ...b.filter(p => G.dnp.includes(p.id))].map(p => p.id); };
+  const subMenu = t => {
+    if (!subBench(t).length) { ui.tip = `${team[t].name}: nobody on the bench to bring on.`; return paint(); }
+    ui.subs = { t, out: five(t).filter(id => G.flags[id]), in: [] };
+    ui.ask = null; ui.peek = null; paint();
+  };
+  function subSave() {
+    const s = ui.subs; if (!s || !s.out.length || s.out.length !== s.in.length) return;
+    // Each one coming on takes the tile of the one they replace (several at once would
+    // otherwise fill the empty tiles in roster order).
+    const tiles = [...five(s.t)], batch = s.out.length > 1 ? uid() : undefined;
+    s.out.forEach((outId, i) => doSub(s.t, s.in[i], outId, batch));
+    slots[s.t] = tiles.map(id => { const i = s.out.indexOf(id); return i >= 0 ? s.in[i] : id; });
+    ui.tip = s.out.length > 1 ? `${s.out.length} subs for ${team[s.t].name}.` : '';
+    ui.subs = null; paint();
+  }
+  const subsSheet = () => {
+    const s = ui.subs; if (!s) return '';
+    const t = s.t, on = five(t), bench = subBench(t);
+    const tileP = (id, side) => {
+      const p = byId[id], i = (side === 'out' ? s.out : s.in).indexOf(id), mark = i >= 0;
+      const mate = mark ? (side === 'out' ? s.in : s.out)[i] : null;
+      const flag = side === 'out' && G.flags[id];
+      return `<button type="button" class="sc-sbp${mark ? (side === 'out' ? ' is-out' : ' is-in') : ''}" data-subp="${esc(id)}" data-sublist="${side}" aria-pressed="${mark}" aria-label="${esc(short(id))}${mark ? (side === 'out' ? ', coming off' : ', going on') : ''}${mate ? ', for ' + esc(short(mate)) : ''}">
+        ${mark ? `<i class="sc-sbp__m">${side === 'out' ? ARROW_DOWN : ARROW_UP}</i>` : ''}
+        ${p.number ? `<b class="num">${esc(p.number)}</b>` : ''}<span>${esc(p.short)}</span>
+        ${mate ? `<small class="sc-sbp__for">${side === 'out' ? '↑' : '↓'} ${esc(byId[mate].number ? '#' + byId[mate].number : byId[mate].short)}</small>` : flag ? `<small class="sc-sbp__for sc-sbp__for--flag">${esc(flag)}</small>` : side === 'in' && G.dnp.includes(id) ? '<small class="sc-sbp__for">DNP</small>' : ''}</button>`;
+    };
+    const nOut = s.out.length, nIn = s.in.length;
+    const label = !nOut && !nIn ? 'Pick who comes off and who goes on'
+      : nOut > nIn ? `Pick ${nOut - nIn} more going on` : nIn > nOut ? `Pick ${nIn - nOut} more coming off`
+      : `Make ${nOut} sub${nOut === 1 ? '' : 's'}`;
+    const allOut = on.every(id => s.out.includes(id));
+    return `<div class="sc-sheet sc-sheet--subs" role="dialog" aria-modal="true" aria-label="${esc(team[t].name)}: subs"><div class="sc-sheet__in">
+      <div class="sc-sheet__grab" aria-hidden="true"></div>
+      <div class="sc-sheet__h"><b>${esc(team[t].name)}: subs</b><button type="button" class="sc-x" data-act="subs-close" aria-label="Close without saving">${CLOSE}</button></div>
+      <div class="sc-sbh"><span class="sc-mg__l">On court · coming off</span><button type="button" class="sc-sbh__all" data-act="subs-all" aria-pressed="${allOut}">${allOut ? 'None' : 'All 5'}</button></div>
+      <div class="sc-sb">${on.map(id => tileP(id, 'out')).join('')}</div>
+      <div class="sc-sbh"><span class="sc-mg__l">Bench · going on</span></div>
+      <div class="sc-sb sc-sb--bench">${bench.map(id => tileP(id, 'in')).join('')}</div>
+      <button type="button" class="sc-dnp__save" data-act="subs-save"${nOut && nOut === nIn ? '' : ' disabled'}>${esc(label)}</button></div></div>`;
+  };
   function timeout(t) {
     if (G.timeouts.left[t] <= 0) return;
-    ui.running = false; teamPlay(t, 'timeout');
+    whistle(); teamPlay(t, 'timeout');
   }
+  // End of Q4 (or an overtime) with a winner: Game over; overtime only when it's tied (or on
+  // purpose).
   function endPeriod() {
-    const cur = G.period, i = Number(cur.replace(/\D/g, '')) + (isOvertime(cur) ? 4 : 0);
-    const next = i < 4 ? `Q${i + 1}` : `OT${i - 3}`;
+    if (G.final) { ui.tip = 'The game is over. Undo the last play to reopen it.'; return paint(); }
+    const cur = G.period, next = periodName(periodIndex(cur) + 1);
     const note = isOvertime(next) ? `${rules.otMin} min, 1 timeout each, team fouls carry on` : next === 'Q3' ? '3 timeouts each, team fouls reset' : 'team fouls reset';
-    menu(`End ${cur} and start ${next}? (${note})`, [['end', `End ${cur}`], ['no', 'Not yet']], k => {
-      if (k !== 'end') return;
-      add({ type: 'period_end', period: cur });
-      ui.running = false; ui.secs = (isOvertime(next) ? rules.otMin : rules.periodMin) * 60; ui.tip = `${next} started.`;
-      save(); paint();
-    }, 'end');
+    if (periodIndex(cur) >= rules.periods && G.score.a !== G.score.b) {
+      return menu(`End of ${cur}: ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. Game over?`, [['final', 'Game over'], ['ot', `Start ${next} anyway`], ['no', 'Not yet']], k => {
+        if (k === 'final') { add({ type: 'period_end', period: cur, final: true }); ui.running = false; ui.whistle = false; syncRun(); ui.tip = 'Game over. An admin checks the plays and publishes the game.'; save(); return paint(); }
+        if (k === 'ot') startNext(cur, next);
+      }, 'final');
+    }
+    menu(`End ${cur} and start ${next}? (${note})`, [['end', `End ${cur}`], ['no', 'Not yet']], k => { if (k === 'end') startNext(cur, next); }, 'end');
   }
-  const gameMenu = () => menu(`${G.period} · ${clockStr()}`, [['refs', 'Refs stopped play…'], ['end', `End ${G.period}`], ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : [])], k => {
-    if (k === 'refs') return menu('Refs stopped play: why?', [['injury', 'Injury'], ['equipment', 'Equipment'], ['clock', 'Clock / scoreboard'], ['coach', 'Talking to a coach'], ['other', 'Other']], r => { ui.running = false; teamPlay(null, 'stoppage', { kind: r }); });
+  function startNext(cur, next) {
+    add({ type: 'period_end', period: cur });
+    ui.running = false; ui.whistle = false; ui.secs = (isOvertime(next) ? rules.otMin : rules.periodMin) * 60; syncRun(); ui.tip = `${next} started.`;
+    save(); paint();
+  }
+  // Send my plays: every play on this phone as a file (share sheet or download), for when it
+  // can't sync (signed out, account trouble). An admin imports it on the Scoring tab.
+  function sendMyPlays() {
+    const data = JSON.stringify({ kind: 'wknd-scorer-plays', game: gid, pass: B.pass, device: deviceId, at: Date.now(), events: list() });
+    const name = `wknd-plays-${gid}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+    const file = typeof File === 'function' ? new File([data], name, { type: 'application/json' }) : null;
+    const download = () => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' })); a.download = name;
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    };
+    // The share sheet when the phone has one (then Messenger, email…), else a download; a share
+    // that fails (not one the scorer closed) falls back to the download.
+    const phone = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    if (phone && file && navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: 'My plays' }).catch(err => { if (!err || err.name !== 'AbortError') download(); });
+    download();
+  }
+  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : [])], k => {
+    if (k === 'send') return sendMyPlays();
+    if (k === 'sheet') { ui.sheet = true; return paint(); }
+    if (k === 'sound') { pref.set('wknd-sc-sound', soundOn() ? 'off' : 'on'); ui.tip = soundOn() ? 'Sounds on.' : 'Sounds off.'; if (soundOn()) chime('yes'); return paint(); }
+    if (k === 'refs') return menu('Refs stopped play: why?', [['injury', 'Injury'], ['equipment', 'Equipment'], ['clock', 'Clock / scoreboard'], ['coach', 'Talking to a coach'], ['other', 'Other']], r => { whistle(); teamPlay(null, 'stoppage', { kind: r }); });
     if (k === 'end') return endPeriod();
     if (k === 'clock') return clockMenu();
     if (k === 'video') { ui.showVideo = !ui.showVideo; showVideo(); return paint(); }
   });
 
   // ── Subs ──
-  // Tap a bench player, then the court tile of the one coming off (or drag, on a tablet). Each
+  // Tap a bench player, then the court tile of the one coming off (or the Subs sheet). Each
   // is a 'sub' play (score-engine): the player going on takes that tile's place, the one coming
   // off sits until they play again.
-  function doSub(t, inId, outId) {
+  function doSub(t, inId, outId, batch) {
     if (!inId || !outId || inId === outId) return;
-    add({ type: 'sub', team: t, in: inId, out: outId });
+    add({ type: 'sub', team: t, in: inId, out: outId, ...(batch ? { batch } : {}) });
     ui.tip = '';
   }
 
@@ -435,18 +721,25 @@ export async function mount(el) {
   // The type fields worth keeping when only the player changes.
   const pick = r => ({ type: r.type, pts: r.pts, made: r.made, kind: r.kind, from: r.from, ref: r.ref });
   // Undo, then Redo until the next play: the undone play comes back in its place.
+  // Undo: subs saved together go together; a play that replaced another (a steal that took in
+  // their turnover, or Who lost it?) brings the replaced one back.
+  const copyOf = (o, extra = {}) => { const { id: _i, pos: _p, at: _a, ...f } = o; return { ...f, id: uid(), pos: nextPos(list(), o.id), at: Date.now(), dev: deviceId, ...extra }; };
   function undo(id) {
     const old = events.get(id); if (!old) return;
+    const ids = old.batch ? G.rows.filter(r => r.batch === old.batch).map(r => r.id) : [id];
     const row = G.rows.find(r => r.id === id);
-    ui.redoText = row ? playText(row) : '';
-    add({ type: 'void', target: id });
-    ui.redo = id; ui.ask = null; ui.tip = ''; paint();
+    ui.redoText = ids.length > 1 ? `${ids.length} subs for ${esc(team[old.team].name)}` : row ? playText(row) : '';
+    for (const x of ids) add({ type: 'void', target: x });
+    let back = null;
+    const replaced = old.restores && events.get(old.restores);
+    if (replaced) { back = copyOf(replaced); events.set(back.id, back); G = fold(); save().then(sync); }
+    ui.redo = { ids, back: back && back.id }; ui.ask = null; ui.queue = []; ui.tip = ''; paint();
   }
   function redo() {
-    const old = events.get(ui.redo); if (!old) return;
-    const { id: _id, pos: _pos, at: _at, ...fields } = old;
-    const e = { ...fields, id: uid(), pos: nextPos(list(), old.id), at: Date.now(), dev: deviceId };
-    events.set(e.id, e);
+    const r = ui.redo; if (!r) return;
+    const batch = r.ids.length > 1 ? uid() : undefined;
+    for (const x of r.ids) { const old = events.get(x); if (old) { const e = copyOf(old, batch ? { batch } : {}); events.set(e.id, e); } }
+    if (r.back) { const v = { id: uid(), pos: nextPos(list()), at: Date.now(), period: G.period, clock: clockStr(), dev: deviceId, type: 'void', target: r.back }; events.set(v.id, v); }
     G = fold(); ui.redo = null; save().then(sync); paint();
   }
   // DNP: a late or absent player. Their first stat clears it (score-engine dnp).
@@ -473,8 +766,8 @@ export async function mount(el) {
     const d = ui.dnp; if (!d) return '';
     const played = playedIds();
     const list = team[d.t].players.filter(p => !played.has(p.id));
-    return `<div class="sc-sheet" role="dialog" aria-modal="true" aria-label="${esc(team[d.t].name)}: who didn’t play"><div class="sc-sheet__in">
-      <div class="sc-sheet__h"><b>${esc(team[d.t].name)}: who didn’t play?</b><button type="button" class="sc-hbtn" data-act="dnp-close">Cancel</button></div>
+    return `<div class="sc-sheet sc-sheet--dnp" role="dialog" aria-modal="true" aria-label="${esc(team[d.t].name)}: who didn’t play"><div class="sc-sheet__in">
+      <div class="sc-sheet__h"><b>${esc(team[d.t].name)}: who didn’t play?</b><button type="button" class="sc-x" data-act="dnp-close" aria-label="Close without saving">${CLOSE}</button></div>
       <p class="sc-sheet__note">Late or absent. Players with a play already aren’t listed. If a DNP player comes in, their first stat clears it.</p>
       <div class="sc-dnp">${list.map(p => `<button type="button" data-dnp-toggle="${esc(p.id)}" aria-pressed="${d.sel.has(p.id)}">${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.short)}</button>`).join('')}</div>
       <button type="button" class="sc-dnp__save" data-act="dnp-save">Save${d.sel.size ? ` · ${d.sel.size} DNP` : ''}</button></div></div>`;
@@ -483,19 +776,29 @@ export async function mount(el) {
     if (!keepsClock()) { ui.tip = `${keeper().name} keeps the clock.`; return paint(); }
     menu('Fix the clock', [['+5', '+5 s'], ['+1', '+1 s'], ['-1', '−1 s'], ['-5', '−5 s'], ['reset', 'Period start']], k => {
       const full = (isOvertime(G.period) ? rules.otMin : rules.periodMin) * 60;
+      clockNow();
       ui.secs = k === 'reset' ? full : Math.max(0, Math.min(full, ui.secs + Number(k)));
-      save(); paint();
+      syncRun(); save(); paint();
     });
   };
 
   // ── Clock ──
+  // The ask's seconds count down with its ring, without repainting the screen.
+  const askTick = setInterval(() => {
+    if (!document.contains(el)) return clearInterval(askTick);
+    const n = root.querySelector('[data-ask-left]');
+    if (n && ui.askFor) n.textContent = String(Math.max(0, Math.ceil((ASK_MS - (Date.now() - ui.askFor.at)) / 1000)));
+  }, 1000);
+  let lastSave = Date.now();
   const tick = setInterval(() => {
     if (!ui.running) return;
-    if (ui.secs <= 0) { ui.running = false; ui.tip = `End of ${G.period} on the clock. ⋯ → End when the period is over.`; paint(); return; }
-    ui.secs--;
+    clockNow();
+    if (ui.secs <= 0) { ui.running = false; syncRun(); ui.tip = `End of ${G.period} on the clock.`; save(); paint(); return; }
     const c = root.querySelector('[data-sc-clock]'); if (c) c.textContent = clockStr();
-    if (ui.secs % 15 === 0) save();
+    if (Date.now() - lastSave > 15000) { lastSave = Date.now(); save(); }
   }, 1000);
+  // Back on the screen (a call, the lock screen): the clock catches up at once.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && document.contains(el) && ui.running) { clockNow(); paint(); } });
 
   // ── Drawing ──
   // Team fouls: white pips; at one from the penalty the 5th is outlined red; in the penalty all
@@ -503,8 +806,8 @@ export async function mount(el) {
   const pips = t => {
     const n = G.teamFouls[t], at = rules.penaltyAt;
     const label = `${n} team foul${n === 1 ? '' : 's'}${G.penalty[t] ? ', in the penalty' : G.penaltyNext[t] ? ', penalty next' : ''}. Tap for the fouls`;
-    const body = n > at ? `<b class="sc-pips__n num">${n}</b>`
-      : `<span class="sc-pips">${Array.from({ length: at }, (_, i) => `<i class="${n >= at ? 'pen' : i < n ? 'on' : n === at - 1 && i === at - 1 ? 'next' : ''}"></i>`).join('')}</span>`;
+    // Past five: the red pips stay and the count shows beside them (refs ask for it).
+    const body = `<span class="sc-pips">${Array.from({ length: at }, (_, i) => `<i class="${n >= at ? 'pen' : i < n ? 'on' : n === at - 1 && i === at - 1 ? 'next' : ''}"></i>`).join('')}</span>${n > at ? `<b class="sc-pips__n num">${n}</b>` : ''}`;
     return `<button type="button" class="sc-pipbtn" data-act="fouls" data-team="${t}" aria-label="${esc(team[t].name)}: ${label}">${body}</button>`;
   };
   const dots = t => `<span class="sc-dots" role="img" aria-label="${G.timeouts.left[t]} timeout${G.timeouts.left[t] === 1 ? '' : 's'} left">${Array.from({ length: G.timeouts.allowance }, (_, i) => `<i class="${i < G.timeouts.left[t] ? 'on' : ''}"></i>`).join('')}</span>`;
@@ -518,7 +821,7 @@ export async function mount(el) {
     const L = (p.short || '').length || 1;
     if (!p.number) return Math.max(11, Math.min(17, Math.floor(60 / (L * 0.5))));
     if (shared.has(p.id)) return 13;
-    return Math.max(10, Math.min(11, Math.round((58 / (L * 0.62)) * 2) / 2));
+    return Math.max(L >= 8 ? 9.5 : 10, Math.min(11, Math.round((58 / (L * 0.62)) * 2) / 2));
   };
   const tile = id => {
     // The ring and float play once, right after the tap: a later repaint (a sync, the other
@@ -543,8 +846,10 @@ export async function mount(el) {
     const dnps = team[t].players.filter(p => G.dnp.includes(p.id));
     const rest = team[t].players.filter(p => !on.includes(p.id) && !G.dnp.includes(p.id));
     const noTO = G.timeouts.left[t] <= 0;
+    const noSub = !rest.some(p => !G.flags[p.id]);
     return `<section class="sc-team${multi && ui.lane === t ? ' sc-team--solo' : ''}">
       <div class="sc-th"><button type="button" class="sc-th__n" data-act="teammenu" data-team="${t}" aria-label="${esc(team[t].name)}: team stats, DNP"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}${CHEV}</button>
+        <button type="button" class="sc-tb" data-act="subq" data-team="${t}"${noSub ? ` disabled aria-label="${esc(team[t].name)}: nobody on the bench"` : ` aria-label="${esc(team[t].name)}: sub"`}>Sub</button>
         <button type="button" class="sc-tb" data-act="timeout" data-team="${t}"${noTO ? ` disabled aria-label="${esc(team[t].name)}: no timeouts left"` : ''}>Timeout</button></div>
       <div class="sc-five">${on.map(tile).join('')}</div>
       ${rest.length || dnps.length ? `<div class="sc-bench">${rest.map(p => {
@@ -554,7 +859,7 @@ export async function mount(el) {
     </section>`;
   };
   const playText = r => {
-    if (r.type === 'period_end') return `<b>End of ${esc(r.period)}</b>`;
+    if (r.type === 'period_end') return r.final ? `<b>Final</b> · game over` : `<b>End of ${esc(r.period)}</b>`;
     if (r.type === 'sub') return `<b>${esc(short(r.in))}</b> on for ${esc(short(r.out))}`;
     if (r.type === 'dnp') return `<b>${esc(short(r.player))}</b> ${r.on === false ? 'back on the roster' : 'didn’t play'}`;
     const who = r.player ? short(r.player) : r.team ? team[r.team].name : 'Refs';
@@ -570,45 +875,86 @@ export async function mount(el) {
     const p = byId[id];
     return `<button type="button" class="sc-opt${on ? ' on' : ''}" ${attrs}="${esc(id)}" aria-pressed="${on}">${p.number ? `<b class="num">${esc(p.number)}</b>` : ''}<span>${esc(p.short)}</span></button>`;
   };
+  const followUp = (a, inner, headExtra = '') => {
+    if (!a.at) a.at = Date.now();
+    const gone = Math.min(FOLLOW_MS, Date.now() - a.at);
+    return `<div class="sc-q sc-q--opt${headExtra ? ' sc-q--wide' : ''}" role="group" aria-label="${esc(a.q)} Optional"><div class="sc-q__h"><b>${esc(a.q)}</b>${headExtra}<small class="sc-q__optl">optional</small><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="" aria-label="${esc(a.skip)}">${CLOSE}</button></div>
+      ${inner}${a.noTimer ? '' : `<i class="sc-q__timer" style="animation-duration:${FOLLOW_MS}ms;animation-delay:-${gone}ms" aria-hidden="true"></i>`}</div>`;
+  };
   function question() {
     const a = ui.ask;
     if (a && a.kind === 'fp') {
-      const L = G.players[a.pid] || {}, pf = L.pf || 0, tr = trouble(pf);
+      const L = (a.pid && G.players[a.pid]) || {}, pf = L.pf || 0, tr = trouble(pf);
       const shooters = a.foulKind === 'technical' || a.bench ? team[a.o].players.filter(p => !G.flags[p.id]).map(p => p.id) : five(a.o);
-      const st = G.penalty[a.team] ? '<span class="sc-q__pen num">IN THE PENALTY</span>' : '';
+      const st = G.penalty[a.team] && a.foulKind !== 'technical' ? '<span class="sc-q__pen num">IN THE PENALTY</span>' : '';
       const fts = Array.from({ length: a.n }, (_, i) => {
         const done = i < a.done;
         return `<span class="sc-ft__l num">FT${i + 1}</span>${done ? `<span class="sc-ft__done${a.res[i] ? ' good' : ' bad'}">${a.res[i] ? 'Made' : 'Missed'}</span>`
-          : `<button type="button" class="sc-st sc-st--made" data-fpft="1"${!a.shooter || i !== a.done ? ' disabled' : ''} aria-label="Free throw ${i + 1} made">${CHECK}</button><button type="button" class="sc-st sc-st--miss" data-fpft="0"${!a.shooter || i !== a.done ? ' disabled' : ''} aria-label="Free throw ${i + 1} missed">✕</button>`}`;
+          : `<button type="button" class="sc-st sc-st--made" data-fpft="1"${!a.shooter || i !== a.done ? ' disabled' : ''} aria-label="Free throw ${i + 1} made">${CHECK}</button><button type="button" class="sc-st sc-st--miss" data-fpft="0"${!a.shooter || i !== a.done ? ' disabled' : ''} aria-label="Free throw ${i + 1} missed">${CLOSE}</button>`}`;
       }).join('');
       return `<div class="sc-q" role="group" aria-label="Foul and free throws">
-        <div class="sc-q__h"><b>Foul · ${esc(short(a.pid))}</b><span class="sc-q__o${tr ? ' ' + tr : ''}">${ordinal(pf)}</span>${st}</div>
+        <div class="sc-q__h"><b>${a.pid ? `Foul · ${esc(short(a.pid))}` : `Technical · ${esc(a.who || 'coach')}`}</b>${a.pid ? `<span class="sc-q__o${tr ? ' ' + tr : ''}">${ordinal(pf)}</span>` : ''}${st}<span class="sc-q__sp"></span><button type="button" class="sc-x" data-fpclose aria-label="${a.n && a.done < a.n ? 'Close without the free throws' : 'Close'}">${CLOSE}</button></div>
         <div class="sc-q__row">${[0, 1, 2, 3].map(n => `<button type="button" class="sc-ftc num${a.n === n ? ' on' : ''}" data-fpn="${n}" aria-pressed="${a.n === n}" aria-label="${n} free throw${n === 1 ? '' : 's'}"${a.done ? ' disabled' : ''}>${n}</button>`).join('')}<span class="sc-q__sp"></span><button type="button" class="sc-ftc sc-ftc--txt${a.andOne ? ' on' : ''}" data-fpand aria-pressed="${a.andOne}"${a.done ? ' disabled' : ''}>And-one</button></div>
+        ${a.n && !a.shooter ? `<p class="sc-q__hint">Who shoots? Tap them here or on the court.</p>` : ''}
         ${a.n ? `<div class="sc-q__opts sc-q__opts--6">${shooters.map(id => optBtn(id, 'data-fpsh', a.shooter === id)).join('')}${a.foulKind === 'technical' || a.bench ? '' : '<button type="button" class="sc-opt sc-opt--more" data-fpbench>Bench</button>'}</div>
         <div class="sc-ft" style="--n:${a.n}">${fts}</div>` : ''}
       </div>`;
     }
     if (a && a.kind === 'ast') {
       const opts = a.bench ? team[a.team].players.filter(p => p.id !== a.shooter && !onCourt(a.team, p.id) && !G.flags[p.id]).map(p => p.id) : five(a.team).filter(id => id !== a.shooter);
-      return `<div class="sc-q" role="group" aria-label="Assisted?"><div class="sc-q__h"><b>${esc(a.q)}</b><span class="sc-q__sp"></span><button type="button" class="sc-skip" data-ask="">${esc(a.skip)}</button></div>
-        <div class="sc-q__opts">${opts.map(id => optBtn(id)).join('')}${a.bench ? '' : `<button type="button" class="sc-opt sc-opt--more" data-astbench><b>Bench</b></button>`}</div></div>`;
+      return followUp(a, `<div class="sc-q__opts">${opts.map(id => optBtn(id)).join('')}${a.bench ? '' : `<button type="button" class="sc-opt sc-opt--more" data-astbench><b>Bench</b></button>`}</div>`);
     }
-    if (a && (a.kind === 'lost' || a.kind === 'wentoff')) {
-      return `<div class="sc-q" role="group" aria-label="${esc(a.q)}"><div class="sc-q__h"><b>${esc(a.q)}</b><span class="sc-q__sp"></span><button type="button" class="sc-skip" data-ask="">${esc(a.skip)}</button></div>
-        <div class="sc-q__opts">${a.opts.map(o => optBtn(o.id)).join('')}</div></div>`;
+    if (a && (a.kind === 'lost' || a.kind === 'wentoff' || a.kind === 'blocked' || a.kind === 'andone' || a.kind === 'foulout')) {
+      const pts = a.kind === 'blocked' ? [2, 3].map(n => `<button type="button" class="sc-ftc num${a.pts === n ? ' on' : ''}" data-blkpts="${n}" aria-pressed="${a.pts === n}">${n}PT</button>`).join('') : '';
+      return followUp(a, `<div class="sc-q__opts">${a.opts.map(o => optBtn(o.id)).join('')}</div>`, pts);
     }
     if (a && a.kind === 'menu') {
-      return `<div class="sc-q sc-q--menu" role="group" aria-label="${esc(a.q)}"><div class="sc-q__h"><b>${esc(a.q)}</b></div>
-        <div class="sc-menu">${a.opts.map(o => `<button type="button" class="${o.def ? 'def' : o.cancel ? 'cancel' : ''}" data-ask="${esc(o.id)}">${esc(o.label)}</button>`).join('')}</div></div>`;
-    }
-    if (multi && ui.lanes && ui.lanes.asks.length) {
-      const k = ui.lanes.asks[0];
-      return `<div class="sc-q" role="group"><div class="sc-q__h"><b>${esc(k.name)} asks to score ${esc(sideName(k.lane))}</b></div>
-        <div class="sc-menu"><button type="button" class="def" data-handover="${esc(k.device)}" data-yes="1">Hand it over</button><button type="button" data-handover="${esc(k.device)}">Keep it</button></div></div>`;
+      const chips = opts => `<div class="sc-menu">${opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}"${String(o.id).startsWith('wait:') ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>`;
+      return `<div class="sc-q sc-q--menu" role="group" aria-label="${esc(a.q)}"><div class="sc-q__h"><b>${esc(a.q)}</b><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
+        ${a.groups ? a.groups.map(g => `<div class="sc-mg"><span class="sc-mg__l">${esc(g.group)}</span>${chips(g.opts)}</div>`).join('') : chips(a.opts)}</div>`;
     }
     if (multi && !ui.lane && !ui.locked) {
-      return `<div class="sc-q" role="group"><div class="sc-q__h"><b>${ui.asked ? `Asked ${esc(ui.asked)}. Waiting for them to hand it over…` : ui.lanes && ui.lanes.others.length ? `${esc(ui.lanes.others.filter(o => o.lane).map(o => `${o.name} scores ${sideName(o.lane)}`).join(', ') || 'Someone is here')}. Which side do you score?` : 'Which side do you score?'}</b></div>
-        <div class="sc-menu">${['a', 'b', 'both'].map(l => { const h = holderOf(l); return `<button type="button" data-side="${l}" data-holder="${esc(h ? h.name : '')}">${h ? `Ask for ${esc(sideName(l))}` : `Score ${esc(sideName(l))}`}</button>`; }).join('')}${ui.lanes && ui.lanes.admin ? '<button type="button" data-act="sides">Take over…</button>' : ''}</div></div>`;
+      // Asked for a side: waiting for the answer, with a way to stop asking.
+      if (ui.asked) return `<div class="sc-q sc-q--wait" role="status"><div class="sc-q__h"><span class="sc-spin" aria-hidden="true"></span><b>Asked ${esc(ui.asked)}. Waiting for them to hand it over…</b></div>
+        <div class="sc-menu"><button type="button" data-act="ask-cancel">Stop asking</button></div></div>`;
+      const full = twoIn() && ['a', 'b', 'both'].every(l => sideState(l).act === 'wait');
+      return `<div class="sc-q" role="group"><div class="sc-q__h"><b>${full ? 'Two scorers are already in (the most a game takes). You’re watching; if one’s phone goes quiet for 2 minutes, you can take over.' : ui.lanes && ui.lanes.others.length ? `${esc(ui.lanes.others.filter(o => o.lane).map(o => `${o.name} scores ${sideName(o.lane)}`).join(', ') || 'Someone is here')}. Which side do you score?` : 'Which side do you score?'}</b></div>
+        <div class="sc-menu">${(full ? ['a', 'b'] : ['a', 'b', 'both']).filter(l => l !== 'both' || full || sideState('both').act !== 'ask').map(l => { const st = sideState(l); return `<button type="button" data-side="${l}" data-holder="${esc(st.act === 'ask' ? st.holder : '')}"${st.act === 'wait' ? ' disabled' : ''}>${esc(st.label)}</button>`; }).join('')}${ui.lanes && ui.lanes.admin ? '<button type="button" data-act="sides">Take over…</button>' : ''}</div></div>`;
+    }
+    return '';
+  }
+  // Banners over the stat buttons (which stay): another scorer asking for this phone's side
+  // (the answer shows on its button until the server has it), or the other scorer gone.
+  // Alerts from the other scorer, in an amber bar at the top (mockup B, Paolo 2026-10-26):
+  // someone asking for this phone's side (a ring counts down ASK_MS, then it's a no; the tapped
+  // answer shows on its button until the server has it), or the other scorer gone.
+  const avatar = ini => `<span class="sc-alert__av num">${esc(ini || '?')}</span>`;
+  function alertBar() {
+    if (!multi || ui.locked) return '';
+    if (ui.lanes && ui.lanes.asks.length && ui.lane) {
+      const k = ui.lanes.asks[0], h = ui.handing, side = sideName(k.lane);
+      const keep = ui.lane === 'both' && k.lane !== 'both' ? sideName(other(k.lane)) : '';
+      const at = ui.askFor && ui.askFor.device === k.device ? ui.askFor.at : Date.now();
+      const gone = Math.min(ASK_MS, Date.now() - at), left = Math.max(0, Math.ceil((ASK_MS - gone) / 1000));
+      return `<div class="sc-alert" role="alertdialog" aria-label="${esc(k.name)} asks to score ${esc(side)}">
+        <div class="sc-alert__r">
+          <span class="sc-alert__ring"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" class="sc-alert__track"/><circle cx="24" cy="24" r="22" class="sc-alert__left" style="animation-duration:${ASK_MS}ms;animation-delay:-${gone}ms"/></svg>${avatar(k.ini)}</span>
+          <span class="sc-alert__t"><b>${esc(k.name)} asks to score ${esc(side)}</b><small>${keep ? `You’d keep scoring ${esc(keep)}.` : 'You’d stop scoring.'} No answer in <span data-ask-left>${left}</span> s = no.</small></span>
+        </div>
+        <div class="sc-alert__b">
+          <button type="button" class="sc-alert__no${h === 'no' ? ' is-busy' : ''}" data-handover="${esc(k.device)}"${h ? ' disabled' : ''}>${h === 'no' ? '<span class="sc-spin" aria-hidden="true"></span>Saying no…' : `No, I’ll keep ${esc(side)}`}</button>
+          <button type="button" class="sc-alert__yes${h === 'yes' ? ' is-busy' : ''}" data-handover="${esc(k.device)}" data-yes="1"${h ? ' disabled' : ''}>${h === 'yes' ? '<span class="sc-spin" aria-hidden="true"></span>Handing over…' : `Let ${esc(k.name)} score ${esc(side)}`}</button>
+        </div></div>`;
+    }
+    if (ui.alone && ui.lane && ui.lane !== 'both') {
+      const o = sideName(other(ui.lane));
+      return `<div class="sc-alert" role="alertdialog" aria-label="${esc(ui.alone.name)} ${ui.alone.why === 'left' ? 'left the game' : 'has gone quiet'}">
+        <div class="sc-alert__r">
+          <span class="sc-alert__ring is-gone">${avatar(ui.alone.ini)}<i class="sc-alert__badge">${EXIT_ICON}</i></span>
+          <span class="sc-alert__t"><b>${ui.alone.why === 'left' ? `${esc(ui.alone.name)} left the game` : `${esc(ui.alone.name)}’s phone has gone quiet`}</b><small>Nobody is scoring ${esc(o)} now.</small></span>
+          <button type="button" class="sc-x" data-act="alone-no" aria-label="Not now">${CLOSE}</button>
+        </div>
+        <button type="button" class="sc-alert__yes" data-act="alone-both">Score ${esc(o)} too (both teams)</button></div>`;
     }
     return '';
   }
@@ -616,7 +962,7 @@ export async function mount(el) {
     const arm = k => (ui.arm && ui.arm.key === k ? ' arm' : '');
     const lab = p => (p === 1 ? 'FT' : p + 'PT');
     return `<div class="sc-pad sc-pad--${shots.length}">
-        ${shots.map(p => `<button type="button" class="sc-st sc-st--made${arm(`s${p}m`)}" data-shot="${p}" data-made="1" aria-pressed="${!!arm(`s${p}m`)}" aria-label="${lab(p)} made">${lab(p)}</button>`).join('')}
+        ${shots.map(p => `<button type="button" class="sc-st sc-st--made${p > 1 ? ' up' : ''}${arm(`s${p}m`) || arm(`s${p}a`)}" data-shot="${p}" data-made="1" aria-pressed="${!!(arm(`s${p}m`) || arm(`s${p}a`))}" aria-label="${lab(p)} made${p > 1 ? '. Swipe up for and-one' : ''}">${lab(p)}</button>`).join('')}
         ${shots.map(p => `<button type="button" class="sc-st sc-st--miss${arm(`s${p}x`)}" data-shot="${p}" aria-pressed="${!!arm(`s${p}x`)}" aria-label="${lab(p)} missed">${lab(p)}</button>`).join('')}
       </div>
       <div class="sc-pad sc-pad--6">
@@ -634,11 +980,12 @@ export async function mount(el) {
       const r = G.rows.find(x => x.id === ui.after);
       return `<div class="sc-last is-after" role="status"><span class="sc-last__w">Adding after: ${r ? playText(r) : ''}</span><button type="button" class="sc-lb" data-act="insert-done">Done</button></div>`;
     }
-    if (ui.redo) {
-      return `<div class="sc-last" role="status"><span class="sc-last__w">Undone: ${ui.redoText || ''}</span><button type="button" class="sc-lb sc-lb--amber" data-act="redo">Redo</button></div>`;
-    }
     const mineRows = G.rows.filter(r => !r.dev || r.dev === deviceId);
     const r = mineRows[mineRows.length - 1];
+    // Just undone: Redo, and Undo again for the play before it (two in a row).
+    if (ui.redo) {
+      return `<div class="sc-last" role="status"><span class="sc-last__w">Undone: ${ui.redoText || ''}</span><button type="button" class="sc-lb sc-lb--amber" data-act="redo">Redo</button>${r && !ui.locked ? `<button type="button" class="sc-lb" data-undo="${esc(r.id)}" aria-label="Undo the play before: ${esc(playText(r).replace(/<[^>]+>/g, ''))}">Undo</button>` : ''}</div>`;
+    }
     if (!r) return `<div class="sc-last is-empty" role="status"><span class="sc-last__w">No plays yet</span></div>`;
     const fresh = r.id !== ui.lastShown; ui.lastShown = r.id;
     return `<div class="sc-last${fresh ? ' is-fresh' : ''}" role="status"><i class="sc-last__ok" aria-hidden="true">${CHECK}</i><span class="sc-last__w">${playText(r)}${scores(r) ? ` <span class="num sc-last__s">· ${r.score.a}–${r.score.b}</span>` : ''}</span>${ui.locked ? '' : `<button type="button" class="sc-lb sc-lb--amber" data-undo="${esc(r.id)}" aria-label="Undo: ${esc(playText(r).replace(/<[^>]+>/g, ''))}">Undo</button><button type="button" class="sc-lb" data-fix="${esc(r.id)}" aria-label="Fix this play">Fix</button>`}</div>`;
@@ -678,7 +1025,7 @@ export async function mount(el) {
     let cur = null;
     const out = rows.map(r => {
       const head = r.period !== cur ? (cur = r.period, `<div class="sc-pbp__h num"><span>${esc(r.period)}</span><span>${(G.byPeriod.find(x => x.period === r.period) || { a: 0, b: 0 }).a}–${(G.byPeriod.find(x => x.period === r.period) || { a: 0, b: 0 }).b} in ${esc(r.period)}</span></div>`) : '';
-      return `${head}<button type="button" class="sc-pbp__r" data-fix="${esc(r.id)}" aria-label="${esc(playText(r).replace(/<[^>]+>/g, ''))}. Fix"><span class="sc-pbp__t num">${esc(r.clock || '')}</span>${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : '<span></span>'}<span class="sc-pbp__w">${playText(r)}</span><span class="sc-pbp__s num${scores(r) && r.made ? ' on' : ''}">${scores(r) && r.made ? `${r.score.a}–${r.score.b}` : ''}</span></button>`;
+      return `${head}<button type="button" class="sc-pbp__r" data-fix="${esc(r.id)}" aria-label="${esc(playText(r).replace(/<[^>]+>/g, ''))}. Fix"><span class="sc-pbp__t num">${esc(r.clock || '')}</span>${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : '<span></span>'}<span class="sc-pbp__w">${playText(r)}${r.fixes ? ` <small class="sc-pbp__by">fixed${r.by ? ` by ${esc(r.by)}` : ''}</small>` : r.by && r.dev !== deviceId && multi ? ` <small class="sc-pbp__by">${esc(r.by)}</small>` : ''}</span><span class="sc-pbp__s num${scores(r) && r.made ? ' on' : ''}">${scores(r) && r.made ? `${r.score.a}–${r.score.b}` : ''}</span></button>`;
     }).join('');
     return `<div class="sc-chips">${chips}</div><div class="sc-pbp">${out || '<p class="sc-empty">No plays yet.</p>'}</div>`;
   }
@@ -748,7 +1095,23 @@ export async function mount(el) {
   }
 
   function paint() {
+    if (swipe || (slide && slide.live)) { (swipe || slide).pending = true; return; }
+    const keep = ['.sc-sheet__b', '.sc-dock__b'].map(sel => { const n = root.querySelector(sel); return n ? [sel, n.scrollTop] : null; }).filter(Boolean);
+    paintNow();
+    for (const [sel, top] of keep) { const n = root.querySelector(sel); if (n) n.scrollTop = top; }
+  }
+  function paintNow() {
+    if (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) ui.ask = ui.queue.shift();
+    clockNow();
     const q = question();
+    const restarted = ui.restarted; ui.restarted = false;
+    const started = ui.started; ui.started = false;
+    const optional = !!(ui.ask && OPTIONAL.has(ui.ask.kind));
+    // A follow-up closes itself after FOLLOW_MS with no answer (not "who comes on" after a foul-out).
+    if (optional && !ui.ask._timer && !ui.ask.noTimer) {
+      const a = ui.ask; if (!a.at) a.at = Date.now();
+      a._timer = setTimeout(() => { if (ui.ask === a) { ui.ask = null; paint(); } }, Math.max(0, FOLLOW_MS - (Date.now() - a.at)));
+    }
     const docked = wide.matches && !ui.hideDock;
     root.classList.toggle('is-docked', docked);
     root.innerHTML = `
@@ -757,10 +1120,11 @@ export async function mount(el) {
         ${ui.sync === 'error' && ui.syncMsg ? `<div class="msg msg--err sc-msg" role="alert">${esc(ui.syncMsg)}</div>` : ''}
         <div class="sc-board">
           ${sideBoard('a')}
-          <div class="sc-clk"><span class="sc-clk__p num">${video ? 'Video · ' : ''}${esc(G.period)}</span>
+          <div class="sc-clk"><span class="sc-clk__p num">${video ? 'Video · ' : ''}${G.final ? 'FINAL' : esc(G.period)}</span>
             <div class="sc-clk__row">
               <button type="button" class="sc-clk__t num" data-act="clockset" data-sc-clock aria-label="Game clock ${clockStr()}. Tap to fix it">${clockStr()}</button>
-              ${keepsClock() ? `<button type="button" class="sc-cb sc-cb--go" data-act="clock" aria-label="${ui.running ? 'Pause clock' : 'Start clock'}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>`
+              ${keepsClock() && !ui.running && ui.secs === 0 && !G.final && !ui.locked ? `<button type="button" class="sc-cb sc-cb--go sc-cb--end" data-act="end" aria-label="End ${esc(G.period)}">End</button>`
+                : keepsClock() ? `<button type="button" class="sc-cb sc-cb--go${ui.whistle && !ui.running ? ' is-pulse' : ''}" data-act="clock" aria-label="${ui.running ? 'Pause clock' : 'Start clock'}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>`
                 : `<span class="sc-keeper num" aria-label="${esc(keeper().name)} keeps the clock">${esc(keeper().name.split(' ')[0])}</span>`}
               <button type="button" class="sc-cb" data-act="game" aria-label="Game: refs stopped play, end the period, fix the clock"><svg viewBox="0 0 12 4" fill="currentColor" aria-hidden="true"><circle cx="2" cy="2" r="1.6"/><circle cx="6" cy="2" r="1.6"/><circle cx="10" cy="2" r="1.6"/></svg></button>
             </div></div>
@@ -768,16 +1132,20 @@ export async function mount(el) {
         </div>
         <div class="sc-teams">${teamBlock('a')}${teamBlock('b')}</div>
         <div class="sc-bottom">
-          ${ui.tip ? `<p class="sc-tip" role="status">${esc(ui.tip)}</p>` : ''}
+          ${ui.tip || restarted || started ? `<p class="sc-tip" role="status">${esc(ui.tip || (started ? 'Clock started with the first play. Tap the time to fix it.' : 'Clock restarted. Tap the time to fix it.'))}</p>` : ''}
           ${lastRow()}
-          ${q || `<div class="sc-padw">${pad()}</div>`}
-          ${!docked && !q ? `<button type="button" class="sc-sheetbtn" data-act="sheet">${SHEET_ICON}Scoresheet</button>` : ''}
+          ${optional && !docked ? q : ''}
+          ${q && !optional ? q : `<div class="sc-padw">${pad()}</div>`}
+          ${!docked ? `<button type="button" class="sc-sheetbtn" data-act="sheet">${SHEET_ICON}Scoresheet</button>` : ''}
         </div>
       </div>
-      ${docked ? `<aside class="sc-dock" aria-label="Scoresheet"><div class="sc-dock__h"><b>Scoresheet</b><button type="button" class="sc-hbtn" data-act="dock-hide" aria-label="Hide the scoresheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></div>${sheetTabs(ui.dockTab, 'data-dtab')}<div class="sc-dock__b">${sheetBody(ui.dockTab)}</div></aside>`
+      ${docked ? `<aside class="sc-dock" aria-label="Scoresheet">${optional ? `<div class="sc-dock__q">${q}</div>` : ''}<div class="sc-dock__h"><b>Scoresheet</b><button type="button" class="sc-hbtn" data-act="dock-hide" aria-label="Hide the scoresheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></div>${sheetTabs(ui.dockTab, 'data-dtab')}<div class="sc-dock__b">${sheetBody(ui.dockTab)}</div></aside>`
         : wide.matches ? '<button type="button" class="sc-dock-show" data-act="dock-show" aria-label="Show the scoresheet">Scoresheet</button>' : ''}
       ${dnpSheet()}
-      ${ui.sheet && !docked ? `<div class="sc-sheet" role="dialog" aria-modal="true" aria-label="Scoresheet"><div class="sc-sheet__in sc-sheet__in--tall">
+      ${subsSheet()}
+      ${alertBar()}
+      ${ui.sheet && !docked ? `<div class="sc-sheet sc-sheet--swipe" role="dialog" aria-modal="true" aria-label="Scoresheet" data-act="sheet-close"><div class="sc-sheet__in sc-sheet__in--tall">
+        <div class="sc-sheet__grab" aria-hidden="true"></div>
         <div class="sc-sheet__h"><b>Scoresheet</b><button type="button" class="sc-hbtn sc-hbtn--amber" data-act="sheet-close">Done</button></div>
         ${sheetTabs(ui.tab, 'data-tab')}<div class="sc-sheet__b">${sheetBody(ui.tab)}</div></div></div>` : ''}
       ${peek()}`;
@@ -787,13 +1155,20 @@ export async function mount(el) {
   // ── Input: one listener for taps, holds handled with per-button timers ──
   function act(name, b) {
     const t = b.getAttribute('data-team');
-    if (name === 'clock') { ui.running = !ui.running; if (ui.running) ui.tip = ''; save(); return paint(); }
+    if (name === 'clock') { clockNow(); ui.running = !ui.running; syncRun(); ui.whistle = false; if (ui.running) ui.tip = ''; save(); return paint(); }
+    if (name === 'end') return endPeriod();
+    if (name === 'ask-cancel') { ui.asked = ''; return lanes({ action: 'ask', want: null }); }
+    if (name === 'alone-both') { ui.alone = null; return lanes({ action: 'claim', want: 'both' }); }
+    if (name === 'alone-no') { ui.alone = null; return paint(); }
     if (name === 'game') return gameMenu();
     if (name === 'teammenu') return teamMenu(t);
     if (name === 'dnp') return dnpMenu(t);
     if (name === 'sides') return sideMenu();
     if (name === 'dnp-save') return dnpSave();
     if (name === 'dnp-close') { ui.dnp = null; return paint(); }
+    if (name === 'subs-close') { ui.subs = null; return paint(); }
+    if (name === 'subs-save') return subSave();
+    if (name === 'subs-all' && ui.subs) { const on = five(ui.subs.t); ui.subs.out = on.every(id => ui.subs.out.includes(id)) ? [] : [...ui.subs.out, ...on.filter(id => !ui.subs.out.includes(id))]; return paint(); }
     if (name === 'clockset') return clockMenu();
     if (name === 'sheet') { ui.sheet = true; ui.sel = null; ui.arm = null; return paint(); }
     if (name === 'sheet-close') { ui.sheet = false; return paint(); }
@@ -804,6 +1179,7 @@ export async function mount(el) {
     if (name === 'insert-done') { ui.after = null; ui.tip = ''; return paint(); }
     if (name === 'redo') return redo();
     if (name === 'timeout') return timeout(t);
+    if (name === 'subq') return subMenu(t);
     if (name === 'reb') return want('reb', () => simple('reb', 'REB'));
     if (name === 'ast') return want('ast', () => simple('ast', 'AST'));
     if (name === 'stl') return want('stl', () => simple('stl', 'STL'));
@@ -814,17 +1190,44 @@ export async function mount(el) {
   function pickPlayer(id) {
     const p = byId[id];
     const a = ui.ask;
-    if (a && a.kind === 'fp' && !a.shooter && p.team === a.o) { a.shooter = id; return paint(); }
-    if (a && a.kind === 'fp' && a.done > 0 && a.done < a.n) return; // free throws first
+    if (a && a.kind === 'fp') {
+      // No free throws: the panel just says what the foul was; the next tap carries on.
+      if (!a.n) ui.ask = null;
+      // Free throws owed: a tap on the shooting team picks (or, before FT1, changes) the
+      // shooter; anything else waits until they're done (× closes without them).
+      else if (a.done < a.n) {
+        if (p.team === a.o && (!a.done || !a.shooter)) { a.shooter = id; return paint(); }
+        ui.tip = `Free throws first: FT${a.done + 1} of ${a.n}. × closes without them.`; return paint();
+      }
+    }
+    // A follow-up: tapping one of its players on the court answers it.
+    if (a && OPTIONAL.has(a.kind) && followOpts(a).includes(id)) return answer(id);
+    ui.queue = [];
     if (ui.arm) { ui.sel = id; ui.ask = null; const run = ui.arm.run; ui.arm = null; return run(); }
     const s = ui.sel && byId[ui.sel];
     if (s && s.team === p.team && !onCourt(p.team, ui.sel) && onCourt(p.team, id)) { doSub(p.team, ui.sel, id); ui.sel = null; ui.ask = null; return paint(); }
     ui.sel = ui.sel === id ? null : id; ui.ask = null; ui.tip = ''; ui.redo = null; paint();
   }
-  let swallowClick = false;
+  // The players a follow-up offers.
+  const followOpts = a => (a.kind === 'ast' ? (a.bench ? team[a.team].players.filter(p => p.id !== a.shooter && !onCourt(a.team, p.id) && !G.flags[p.id]).map(p => p.id) : five(a.team).filter(id => id !== a.shooter)) : (a.opts || []).map(o => o.id));
+  // Free throws still owed on the foul panel.
+  const owed = () => !!(ui.ask && ui.ask.kind === 'fp' && ui.ask.n && ui.ask.done < ui.ask.n);
+  // A hold (player card, a button's kinds) or a swipe ends with the finger lifting, and the
+  // click that follows must not land on what the hold just opened, however long the hold was.
+  // The next touch clears it, so a quick tap right after still counts.
+  let swallowClick = false, swallowNext = false;
+  window.addEventListener('pointerup', () => { if (swallowNext) { swallowNext = false; swallowClick = true; } }, true);
+  window.addEventListener('pointercancel', () => { swallowNext = false; }, true);
+  root.addEventListener('pointerdown', () => { swallowClick = false; swallowNext = false; }, true);
+  const STAT_BTN = b => b.hasAttribute('data-shot') || b.hasAttribute('data-hold') && b.getAttribute('data-hold') !== 'score' || /^(reb|ast|stl|blk)$/.test(b.getAttribute('data-act') || '');
   root.addEventListener('click', e => {
-    if (swallowClick) { e.preventDefault(); return; }
+    if (swallowClick && e.detail !== 0) { swallowClick = false; e.preventDefault(); return; }
+    if (e.target.matches && e.target.matches('.sc-sheet--swipe')) { ui.sheet = false; return paint(); }
+    const closable = ui.ask && (CLOSABLE.has(ui.ask.kind) || (ui.ask.kind === 'fp' && !ui.ask.n));
+    if (closable && !e.target.closest('button, a, input, label, .sc-q, [data-pick], .sc-sheet, .sc-peek')) { ui.ask = null; return paint(); }
     const b = e.target.closest('button, [data-act="peek-close"]'); if (!b || b.disabled) return;
+    // Free throws owed: the stat buttons wait (the panel's × closes it without them).
+    if (owed() && STAT_BTN(b)) { ui.tip = `Free throws first: FT${ui.ask.done + 1} of ${ui.ask.n}. × closes without them.`; return paint(); }
     if (b.hasAttribute('data-hold')) { if (e.detail === 0) holdTap(b); return; } // keyboard: Enter = tap
     const readOnly = /^(sheet|sheet-close|peek-close|fouls|dock-hide|dock-show)$/.test(b.getAttribute('data-act') || '') || b.hasAttribute('data-tab') || b.hasAttribute('data-dtab') || b.hasAttribute('data-steam') || b.hasAttribute('data-filter') || b.hasAttribute('data-ask');
     if (ui.locked && !readOnly) return;
@@ -835,8 +1238,11 @@ export async function mount(el) {
     if (b.hasAttribute('data-dtab')) { ui.dockTab = b.getAttribute('data-dtab'); pref.set('wknd-sc-dock', ui.dockTab); return paint(); }
     if (b.hasAttribute('data-steam')) { ui.sheetTeam = b.getAttribute('data-steam'); return paint(); }
     if (b.hasAttribute('data-filter')) { ui.filter = b.getAttribute('data-filter'); return paint(); }
-    if (b.hasAttribute('data-astbench')) { ui.ask.bench = true; return paint(); }
+    const fresh = () => { clearTimeout(ui.ask._timer); ui.ask._timer = null; ui.ask.at = Date.now(); };
+    if (b.hasAttribute('data-astbench')) { ui.ask.bench = true; fresh(); return paint(); }
+    if (b.hasAttribute('data-blkpts')) { ui.ask.pts = Number(b.getAttribute('data-blkpts')); fresh(); return paint(); }
     if (b.hasAttribute('data-fpbench')) { ui.ask.bench = true; return paint(); }
+    if (b.hasAttribute('data-fpclose')) { ui.ask = null; return paint(); }
     if (b.hasAttribute('data-fpn')) { const n = Number(b.getAttribute('data-fpn')); if (!n) { ui.ask = null; return paint(); } ui.ask.n = n; ui.ask.andOne = false; return paint(); }
     if (b.hasAttribute('data-fpand')) {
       const a = ui.ask; a.andOne = !a.andOne;
@@ -851,9 +1257,20 @@ export async function mount(el) {
       if (a.done >= a.n) ui.ask = null;
       return paint();
     }
+    if (b.hasAttribute('data-subp') && ui.subs) {
+      const id = b.getAttribute('data-subp'), list = b.getAttribute('data-sublist') === 'out' ? 'out' : 'in';
+      ui.subs[list] = ui.subs[list].includes(id) ? ui.subs[list].filter(x => x !== id) : [...ui.subs[list], id];
+      return paint();
+    }
     if (b.hasAttribute('data-dnp-toggle') && ui.dnp) { const id = b.getAttribute('data-dnp-toggle'); ui.dnp.sel.has(id) ? ui.dnp.sel.delete(id) : ui.dnp.sel.add(id); return paint(); }
     if (b.hasAttribute('data-side')) return pickSide(b.getAttribute('data-side'), b.getAttribute('data-holder'));
-    if (b.hasAttribute('data-handover')) { const yes = b.hasAttribute('data-yes'); return lanes({ action: 'answer', from: b.getAttribute('data-handover'), yes }); }
+    if (b.hasAttribute('data-handover')) {
+      // The answer shows on the button right away (and both wait) until the server has it.
+      if (ui.handing) return;
+      const yes = b.hasAttribute('data-yes');
+      ui.handing = yes ? 'yes' : 'no'; paint();
+      return lanes({ action: 'answer', from: b.getAttribute('data-handover'), yes }).finally(() => { ui.handing = null; paint(); });
+    }
     if (b.hasAttribute('data-undo')) return undo(b.getAttribute('data-undo'));
     if (b.hasAttribute('data-shot')) { const pts = Number(b.getAttribute('data-shot')), made = b.hasAttribute('data-made'); return want(`s${pts}${made ? 'm' : 'x'}`, () => shot(pts, made)); }
     if (b.hasAttribute('data-act')) return act(b.getAttribute('data-act'), b);
@@ -866,59 +1283,28 @@ export async function mount(el) {
     if (ui.locked && b.getAttribute('data-hold') !== 'score') return;
     HOLD[b.getAttribute('data-hold')]();
   }
-  // Hold a player: their line. Drag (tablet and laptop widths): a bench player onto a court
-  // tile, or the other way, is a sub.
-  let drag = null, pickHold = null;
+  // Hold a player: their line. Moving the finger (a scroll) cancels it. Subs are taps only
+  // (Paolo, 2026-10-26: drag removed; the Subs sheet does several at once).
+  let pickHold = null, holdAt = null;
   root.addEventListener('pointerdown', e => {
     const b = e.target.closest('[data-pick]');
     if (!b || e.button > 0) return;
     const id = b.getAttribute('data-pick');
-    clearTimeout(pickHold);
-    pickHold = setTimeout(() => { pickHold = null; ui.peek = id; swallowClick = true; setTimeout(() => { swallowClick = false; }, 400); paint(); }, HOLD_MS);
-    if (wide.matches && !ui.locked) drag = { b, id, x: e.clientX, y: e.clientY, on: false };
+    clearTimeout(pickHold); holdAt = { x: e.clientX, y: e.clientY };
+    pickHold = setTimeout(() => { pickHold = null; ui.peek = id; swallowNext = true; paint(); }, HOLD_MS);
   });
   const cancelPickHold = () => { clearTimeout(pickHold); pickHold = null; };
   root.addEventListener('pointerup', cancelPickHold);
   root.addEventListener('pointercancel', cancelPickHold);
   root.addEventListener('pointermove', e => {
-    if (pickHold && drag && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 10) cancelPickHold();
-    if (!drag) return;
-    if (!drag.on) {
-      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 10) return;
-      drag.on = true; cancelPickHold();
-      drag.ghost = document.createElement('div'); drag.ghost.className = 'sc-ghost'; drag.ghost.textContent = short(drag.id);
-      document.body.appendChild(drag.ghost); drag.b.classList.add('is-drag');
-    }
-    drag.ghost.style.transform = `translate(${e.clientX + 8}px, ${e.clientY + 8}px)`;
-    const over = document.elementFromPoint(e.clientX, e.clientY);
-    const target = over && over.closest('[data-pick]');
-    root.querySelectorAll('.is-drop').forEach(x => x.classList.remove('is-drop'));
-    if (target && target !== drag.b && subTarget(drag.id, target.getAttribute('data-pick'))) target.classList.add('is-drop');
+    if (pickHold && holdAt && Math.hypot(e.clientX - holdAt.x, e.clientY - holdAt.y) > 10) cancelPickHold();
   });
-  // Dragging works between the court and the bench of the same team.
-  const subTarget = (a, b) => byId[a] && byId[b] && byId[a].team === byId[b].team && onCourt(byId[a].team, a) !== onCourt(byId[a].team, b);
-  const endDrag = e => {
-    if (!drag) return;
-    const d = drag; drag = null;
-    if (!d.on) return;
-    d.ghost.remove(); d.b.classList.remove('is-drag');
-    root.querySelectorAll('.is-drop').forEach(x => x.classList.remove('is-drop'));
-    const over = e && document.elementFromPoint(e.clientX, e.clientY);
-    const target = over && over.closest('[data-pick]');
-    swallowClick = true; setTimeout(() => { swallowClick = false; }, 50);
-    if (!target || !subTarget(d.id, target.getAttribute('data-pick'))) return;
-    const t = byId[d.id].team, o = target.getAttribute('data-pick');
-    const [inId, outId] = onCourt(t, d.id) ? [o, d.id] : [d.id, o];
-    doSub(t, inId, outId); paint();
-  };
-  window.addEventListener('pointerup', endDrag);
-  window.addEventListener('pointercancel', () => endDrag(null));
 
   root.addEventListener('pointerdown', e => {
     const b = e.target.closest('[data-hold]'); if (!b) return;
     b._hx = e.clientX; b._hy = e.clientY; b._held = false;
     clearTimeout(b._ht);
-    b._ht = setTimeout(() => { b._held = true; b._ht = null; holdLong(b); }, HOLD_MS);
+    b._ht = setTimeout(() => { b._held = true; b._ht = null; swallowNext = true; holdLong(b); }, HOLD_MS);
   });
   root.addEventListener('pointermove', e => {
     const b = e.target.closest('[data-hold]'); if (!b || !b._ht) return;
@@ -932,14 +1318,144 @@ export async function mount(el) {
   root.addEventListener('contextmenu', e => { if (e.target.closest('[data-hold], [data-pick]')) e.preventDefault(); });
   if (wide.addEventListener) wide.addEventListener('change', () => paint());
 
+  // ── Gestures (Paolo, 2026-10-26) ──
+  // Swipe a stat button up: FOUL and TO open their kinds (as a hold); a made 2PT/3PT/4PT is the
+  // basket plus the foul on the shot (and-one).
+  let flick = null;
+  root.addEventListener('pointerdown', e => {
+    const b = e.target.closest('[data-hold="pf"], [data-hold="to"], [data-shot][data-made]');
+    flick = b && !ui.locked ? { b, x: e.clientX, y: e.clientY, done: false } : null;
+  });
+  root.addEventListener('pointermove', e => {
+    if (!flick || flick.done) return;
+    const dy = e.clientY - flick.y, dx = e.clientX - flick.x;
+    if (dy > -28 || Math.abs(dx) > Math.abs(dy)) return;
+    flick.done = true;
+    const b = flick.b; clearTimeout(b._ht); b._ht = null; b._held = true;
+    swallowNext = true;
+    const k = b.getAttribute('data-hold');
+    if (k) return HOLD[k]();
+    const pts = Number(b.getAttribute('data-shot'));
+    if (pts > 1) want(`s${pts}a`, () => andOne(pts));
+  });
+  root.addEventListener('pointerup', () => { flick = null; });
+  root.addEventListener('pointercancel', () => { flick = null; });
+
+  // Swipe the last play left to undo it (the Undo button stays).
+  let slide = null;
+  root.addEventListener('pointerdown', e => {
+    const row = e.target.closest('.sc-last'), u = row && row.querySelector('[data-undo]');
+    slide = u && !e.target.closest('button') && !ui.locked ? { row, id: u.getAttribute('data-undo'), x: e.clientX, y: e.clientY, dx: 0, live: false } : null;
+  });
+  root.addEventListener('pointermove', e => {
+    if (!slide) return;
+    const dx = e.clientX - slide.x, dy = e.clientY - slide.y;
+    if (!slide.live) {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { slide = null; return; }
+      if (dx > -10) return;
+      slide.live = true; slide.row.style.transition = 'none';
+    }
+    slide.dx = Math.min(0, dx);
+    const pct = Math.min(1, -slide.dx / 120);
+    slide.row.style.transform = `translateX(${slide.dx}px)`;
+    slide.row.style.background = `color-mix(in srgb, var(--loss) ${Math.round(pct * 45)}%, var(--surface-2))`;
+  });
+  const endSlide = () => {
+    if (!slide) return;
+    const s = slide; slide = null;
+    if (!s.live) return;
+    swallowClick = true;
+    if (s.dx < -90) return undo(s.id);
+    s.row.style.transition = 'transform .2s ease, background .2s ease'; s.row.style.transform = ''; s.row.style.background = '';
+    if (s.pending) setTimeout(paint, 220);
+  };
+  root.addEventListener('pointerup', endSlide);
+  root.addEventListener('pointercancel', endSlide);
+
+  // Swipe sideways in the Scoresheet (the sheet, or the tablet's dock) for the next tab. The box
+  // score's table keeps its own sideways scroll.
+  let hs = null;
+  root.addEventListener('touchstart', e => {
+    const body = e.target.closest('.sc-sheet__b, .sc-dock__b');
+    hs = body && e.touches.length === 1 && !e.target.closest('.sc-bx') ? { dock: body.classList.contains('sc-dock__b'), x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  }, { passive: true });
+  root.addEventListener('touchend', e => {
+    if (!hs) return;
+    const t = e.changedTouches[0], dx = t.clientX - hs.x, dy = t.clientY - hs.y, d = hs.dock;
+    hs = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const keys = TABS.map(x => x[0]), cur = keys.indexOf(d ? ui.dockTab : ui.tab), next = keys[Math.max(0, Math.min(keys.length - 1, cur + (dx < 0 ? 1 : -1)))];
+    if (d) { ui.dockTab = next; pref.set('wknd-sc-dock', next); } else { ui.tab = next; pref.set('wknd-sc-tab', next); }
+    paint();
+  });
+
+  // Swipe down to close: the Scoresheet (from its top, or from the list once it's scrolled to
+  // the top), the DNP sheet, a follow-up or a menu. Past 90 px (or a quick flick) it closes;
+  // else it springs back.
+  let swipe = null;
+  const swipeClose = card => {
+    if (card.classList.contains('sc-q')) ui.ask = null;
+    else if (card.closest('.sc-sheet--dnp')) ui.dnp = null;
+    else if (card.closest('.sc-sheet--subs')) ui.subs = null;
+    else ui.sheet = false;
+  };
+  root.addEventListener('touchstart', e => {
+    const card = e.target.closest('.sc-sheet--swipe .sc-sheet__in, .sc-sheet--dnp .sc-sheet__in, .sc-sheet--subs .sc-sheet__in, .sc-q--opt, .sc-q--menu');
+    if (!card || e.touches.length !== 1) return;
+    const body = card.querySelector('.sc-sheet__b');
+    const fromList = body && body.contains(e.target);
+    if (fromList && body.scrollTop > 0) return;
+    swipe = { card, y: e.touches[0].clientY, t: Date.now(), dy: 0, fromList, live: false };
+  }, { passive: true });
+  root.addEventListener('touchmove', e => {
+    if (!swipe) return;
+    const dy = e.touches[0].clientY - swipe.y;
+    if (!swipe.live) {
+      if (dy < 6) { if (dy < -6) swipe = null; return; } // scrolling up the list: not a swipe
+      swipe.live = true; swipe.card.style.transition = 'none';
+    }
+    e.preventDefault();
+    swipe.dy = Math.max(0, dy);
+    swipe.card.style.transform = `translateY(${swipe.dy}px)`;
+    if (swipe.card.classList.contains('sc-q')) swipe.card.style.opacity = String(Math.max(0.3, 1 - swipe.dy / 200));
+  }, { passive: false });
+  const endSwipe = () => {
+    if (!swipe) return;
+    const s = swipe; swipe = null;
+    if (!s.live) { if (s.pending) paint(); return; }
+    const fast = s.dy / Math.max(1, Date.now() - s.t) > 0.6;
+    s.card.style.transition = 'transform .2s ease';
+    if (s.dy > 90 || (fast && s.dy > 30)) {
+      s.card.style.transform = 'translateY(100%)';
+      if (s.card.classList.contains('sc-q')) s.card.style.opacity = '0';
+      setTimeout(() => { swipeClose(s.card); paint(); }, 180);
+    } else {
+      s.card.style.transform = ''; s.card.style.opacity = '';
+      if (s.pending) setTimeout(paint, 200);
+    }
+  };
+  root.addEventListener('touchend', endSwipe);
+  root.addEventListener('touchcancel', endSwipe);
+
+  // Saved again whenever the phone leaves the screen (app switched, locked, closed).
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && document.contains(el)) save(); });
+  window.addEventListener('pagehide', () => { if (document.contains(el)) save(); });
+
   // Leaving a live game asks first (a mis-tap on Back mid-game); plays not sent yet are safe on
   // this phone and say so.
+  // Leaving lets the side go at once, so the other scorer is told and can take both teams.
+  const release = () => { if (multi && ui.lane && navigator.onLine) { try { fetch(laneApi, { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: deviceId, action: 'claim', want: null }) }); } catch (e) {} } };
   const leave = el.querySelector('[data-sc-leave]');
+  let leaving = false;
   if (leave) leave.addEventListener('click', e => {
+    if (leaving) { release(); return; }
     const n = unsent().length;
-    if (n) { if (!window.confirm(`${n} play${n > 1 ? 's haven’t' : ' hasn’t'} been sent yet. ${n > 1 ? 'They stay' : 'It stays'} on this phone and ${n > 1 ? 'send' : 'sends'} next time you open this game with signal. Leave anyway?`)) e.preventDefault(); return; }
-    if (!ui.locked && G.rows.length && !window.confirm('Leave the scorer? Every play is saved.')) e.preventDefault();
+    if (!n && (ui.locked || !G.rows.length)) { release(); return; }
+    e.preventDefault(); e.stopImmediatePropagation();
+    const q = n ? `${n} play${n > 1 ? 's haven’t' : ' hasn’t'} been sent yet. ${n > 1 ? 'They stay' : 'It stays'} on this phone and ${n > 1 ? 'send' : 'sends'} next time you open this game with signal. Leave anyway?` : `Leave the scorer? Every play is saved.${multi && ui.lane && ui.lanes && ui.lanes.others.some(o => o.lane) ? ' The other scorer is told your side is free.' : ''}`;
+    menu(q, [['leave', 'Leave'], ['stay', 'Stay']], k => { if (k === 'leave') { leaving = true; leave.click(); } }, 'stay');
   });
+  window.addEventListener('pagehide', () => { if (document.contains(el)) release(); });
 
   // The game's video above the scorer (video pass, toggle): made once and kept outside the
   // screen that repaints, so it doesn't reload on every tap.
@@ -955,6 +1471,9 @@ export async function mount(el) {
 
   paint();
   sync();
+  // Ask the phone to keep this app's saved data (a full or idle phone may otherwise clear it,
+  // unsent plays and all).
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   // The players' photos (the hold card) come from the app's image cache at the court: fetch
   // them once now, while there's signal.
   if (navigator.onLine) setTimeout(() => { for (const p of [...team.a.players, ...team.b.players]) if (p.photo) fetch(p.photo, { credentials: 'same-origin' }).catch(() => {}); }, 1500);

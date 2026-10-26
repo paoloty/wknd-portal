@@ -279,9 +279,10 @@
     var fail = function (why) {
       var r = $('[data-sc-root]', el);
       if (!r || $('.sc-board', r)) return;
-      r.innerHTML = '<div class="msg msg--err" role="alert">The scorer didn\'t open' + (why ? ': <b>' + String(why).replace(/[<>&]/g, '') + '</b>' : '.') + '</div>'
-        + '<p class="foot-note" style="margin:10px 16px">Your plays are safe on this phone. Reload to try again; if it keeps happening, send Paolo a screenshot of this.</p>'
-        + '<div style="margin:0 16px"><button type="button" class="btn" onclick="location.reload()">Reload</button></div>';
+      r.innerHTML = '<div class="sc-fail"><div class="msg msg--err" role="alert">The scorer didn\'t open' + (why ? ': <b>' + String(why).replace(/[<>&]/g, '') + '</b>' : '.') + '</div>'
+        + '<p class="foot-note">Your plays are safe on this phone. Reload to try again; if it keeps happening, send Paolo a screenshot of this.</p>'
+        + '<div class="sc-fail__btn"><button type="button" class="btn" onclick="location.reload()">Reload</button></div></div>';
+      var pill = $('[data-sc-sync]', el); if (pill) pill.textContent = 'Not loaded';
     };
     setTimeout(function () { if (document.contains(el) && !$('.sc-board', el)) fail('still loading after 10 seconds'); }, 10000);
     var go = function () {

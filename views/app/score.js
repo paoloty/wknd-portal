@@ -8,7 +8,10 @@ import { esc, backChev, chev } from './layout.js';
 // The games this player (or admin) can score. games: [{ id, title, when, status, href }]
 export function appScorerListPage({ games, back }) {
   const rows = games.length
-    ? `<div class="group">${games.map(g => `<a class="cell" href="${esc(g.href)}"><span class="cell__t">${esc(g.title)}<small>${esc(g.when)}${g.status === 'live' ? ' · scoring now' : ''}</small></span>${chev}</a>`).join('')}</div>`
+    ? `<div class="group">${games.map(g => g.full
+      // Two scorers already in (the most a game takes): shown, not tappable.
+      ? `<div class="cell cell--off" aria-disabled="true"><span class="cell__t">${esc(g.title)}<small>${esc(g.when)} · 2 scorers already in: ${esc(g.full.join(' and '))}</small></span></div>`
+      : `<a class="cell" href="${esc(g.href)}"><span class="cell__t">${esc(g.title)}<small>${esc(g.when)}${g.status === 'live' ? ' · scoring now' : ''}</small></span>${chev}</a>`).join('')}</div>`
     : '<div class="empty">No games to score. When an admin picks you to score a game, it shows up here.</div>';
   return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">Score a game</span><span></span></div>
   <div class="lt"><h1>Score a game</h1></div>${rows}`;
@@ -22,7 +25,7 @@ export function appScorerPage({ bundle, back }) {
   const video = bundle.pass === 'video';
   return `<div class="sc${video ? ' sc--video' : ''}" data-scorer data-game="${esc(bundle.game.id)}" data-api="/api/score/${esc(encodeURIComponent(bundle.game.id))}/events${video ? '?pass=video' : ''}">
     <div class="navbar sc-nav"><a class="navbar__back" href="${esc(back.href)}" data-sc-leave>${backChev}${esc(back.label)}</a><span class="navbar__title">${video ? 'Video re-track · ' : ''}${esc(bundle.a.name)} vs ${esc(bundle.b.name)}</span><span class="sc-sync" data-sc-sync role="status">Loading…</span></div>
-    <div class="sc-body" data-sc-root><div class="empty">Loading the scorer…</div></div>
+    <div class="sc-body" data-sc-root><div class="sc-loading" role="status"><span class="ptr__spin" aria-hidden="true"></span>Loading the scorer…</div></div>
     <script type="application/json" data-sc-bundle>${json}</script>
   </div>`;
 }

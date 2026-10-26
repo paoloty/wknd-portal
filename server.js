@@ -6039,7 +6039,7 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs } from './lib/portal-db.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, setPlayerScorer, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
@@ -6859,10 +6859,27 @@ const SCORE_TYPES = new Set(['shot', 'ft', 'reb', 'ast', 'blk', 'stl', 'to', 'te
 const scorePass = req => (req.query.pass === 'video' || req.body?.pass === 'video' ? 'video' : 'live');
 // 'admin' | 'scorer' | null for this session and game.
 function scoreAccess(req, gameId) {
-  // Admins with the games section (a marketplace-only admin isn't a scorer).
+  // Admins: any admin can score (reviewing and publishing need the games section). Read from
+  // the account too, not only the sign-in: someone made admin after they signed in still gets in.
   if (isAdminWithSection(req, 'games-stats')) return 'admin';
   const pid = req.session?.playerPlayerId;
-  return pid && getScorers(gameId).some(s => s.player_id === pid) ? 'scorer' : null;
+  if (!pid) return null;
+  // An admin without the games section scores like a Scorer (no review powers).
+  if (isGameAdminPlayer(pid)) return gameAdminPlayers().some(a => a.playerId === pid) ? 'admin' : 'scorer';
+  // Scorers (the player's Scorer switch) score any game; others only the ones they're picked for.
+  if (getPlayerById(pid)?.is_scorer) return 'scorer';
+  return getScorers(gameId).some(s => s.player_id === pid) ? 'scorer' : null;
+}
+// The games this player can score now: the ones they're picked for, and for a Scorer every game
+// with scoring on that's today or later (or being scored), not published.
+// Admins count like Scorers here, so the game shows in their Me to-do too.
+function scorableGameIds(playerId) {
+  const picked = getScorerGameIds(playerId);
+  if (!playerId || !(getPlayerById(playerId)?.is_scorer || isGameAdminPlayer(playerId))) return picked;
+  const today = manilaTodayStr();
+  const all = portalDb.prepare("SELECT game_id, status FROM score_games WHERE status != 'published'").all()
+    .filter(r => { const g = getGameById(r.game_id); return g && (r.status === 'live' || gameYmd(g.date) >= today); }).map(r => r.game_id);
+  return [...new Set([...picked, ...all])];
 }
 // Everything the scorer screen needs, in one go (it rides in the page's HTML).
 // The court's features (admin Papawis → Courts → a court) say whether it has a 4-point line.
@@ -6881,18 +6898,24 @@ function scoreBundle(game, pass = 'live') {
     players: all.filter(p => p.team_id === tid && p.status !== 'inactive')
       // short: the whole surname ("DEL ROSARIO", not "ROSARIO") for the scorer's tiles
       .map(p => { const n = displayPlayerName(p.name || ''); const raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), number: String(p.number ?? ''), pos: Array.isArray(p.positions) ? p.positions : [] }; })
-      .sort((x, y) => (Number(x.number) || 999) - (Number(y.number) || 999) || x.name.localeCompare(y.name)),
+      .sort((x, y) => (String(x.number ?? '') === '' ? 999 : Number(x.number)) - (String(y.number ?? '') === '' ? 999 : Number(y.number)) || x.name.localeCompare(y.name)),
   });
   return {
     game: { id: game.id, date: gameYmd(game.date), tip: game.tip_time || '', type: game.game_type || 'regular' },
     fourPoint: hasFourPointLine(game),
     status: sg.status, rules: { ...SCORE_RULES, waves: game.game_type === 'playoff' ? 'off' : 'first half', ...(sg.settings.rules || {}) },
     a: side(game.team_a_id, game.team_a_name), b: side(game.team_b_id, game.team_b_name),
-    events: getScoreEvents(game.id, pass),
+    events: scoreEventsWithBy(game.id, pass),
     pass, video: pass === 'video' ? ytId(game.youtube_url || '') || '' : '',
   };
 }
 const scoreGameTitle = g => `${g.team_a_name} vs ${g.team_b_name}`;
+// The plays with who sent them (first name), for "fixed by Joel" on the play-by-play.
+function scoreEventsWithBy(gameId, pass = 'live') {
+  const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const first = id => (byId[id] ? displayPlayerName(byId[id].name || '').split(' ')[0] : id === 'import' ? 'Import' : 'Admin');
+  return getScoreEvents(gameId, pass).map(e => ({ ...e, by: first(e.author) }));
+}
 
 // ── Live score (lib/live-score.js): everyone sees the game as it's scored, before publish ──
 // On the site's game page and the app's game screen, marked unofficial; the per-game switch
@@ -6950,18 +6973,24 @@ app.get('/api/score/:id/events', (req, res) => {
   if (!access || (pass === 'video' && access !== 'admin')) return res.status(403).json({ error: 'You aren’t a scorer for this game.' });
   const sg = getScoreGame(game.id);
   res.set('Cache-Control', 'private, no-store');
-  res.json({ status: sg?.status || 'setup', events: sg ? getScoreEvents(game.id, pass) : [] });
+  res.json({ status: sg?.status || 'setup', events: sg ? scoreEventsWithBy(game.id, pass) : [] });
 });
 
 // The games this player can score (admins: every game with scoring turned on, not yet published).
 app.get('/app/score', requireApp, (req, res) => {
   const me = appMe(req);
-  const ids = isAdminWithSection(req, 'games-stats')
+  const ids = isAdminWithSection(req, 'games-stats') || isGameAdminPlayer(me.playerId)
     ? portalDb.prepare("SELECT game_id FROM score_games WHERE status != 'published'").all().map(r => r.game_id)
-    : getScorerGameIds(me.playerId);
+    : scorableGameIds(me.playerId);
   const games = ids.map(id => getGameById(id)).filter(Boolean)
     .sort((x, y) => String(x.date).localeCompare(String(y.date)))
-    .map(g => ({ id: g.id, title: scoreGameTitle(g), when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), status: getScoreGame(g.id)?.status, href: `/app/score/${encodeURIComponent(g.id)}` }));
+    .map(g => {
+      // Two scorers at most: with two others in, the game shows as full (one going quiet for
+      // two minutes frees it again).
+      const inNow = scoreLanes.scoring(g.id);
+      const full = inNow.length >= 2 && !inNow.some(x => x.playerId === me.playerId) ? inNow.map(x => x.name) : null;
+      return { id: g.id, title: scoreGameTitle(g), when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), status: getScoreGame(g.id)?.status, full, href: `/app/score/${encodeURIComponent(g.id)}` };
+    });
   sendTab(res, me, { title: 'Score a game · WKND', tab: 'me', body: appScorerListPage({ games, back: { href: '/app/me', label: 'Me' } }) });
 });
 const sendScorer = (req, res, back) => {
@@ -7003,6 +7032,8 @@ app.get('/admin/games/:id/score', requireAuth, (req, res) => sendScorer(req, res
 // scorer, asks waiting for me, and the keeper's clock. Live pass only (the video re-track is
 // one admin at home).
 const scoreLanes = createLanes();
+// The last few play times per phone, for the impossibly-fast check (POST events).
+const scoreTapLog = new Map();
 app.post('/api/score/:id/lanes', express.json(), (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Game not found.' });
@@ -7014,16 +7045,35 @@ app.post('/api/score/:id/lanes', express.json(), (req, res) => {
   if (!device) return res.status(400).json({ error: 'No device.' });
   const pid = req.session?.playerPlayerId || '';
   const p = pid ? getAllPlayers().find(x => x.id === pid) : null;
-  const who = { device, playerId: pid, name: p ? displayPlayerName(p.name || '').split(' ')[0] : 'Admin' };
+  const full = p ? displayPlayerName(p.name || '') : 'Admin';
+  // Initials for the avatar on the other scorer's alerts (first and last name).
+  const parts = full.split(' ').filter(Boolean);
+  const who = { device, playerId: pid, name: full.split(' ')[0], ini: (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() };
   const lane = ['a', 'b', 'both'].includes(b.want) ? b.want : null;
   let result = {};
   if (b.action === 'claim') result = scoreLanes.claim(game.id, who, lane, { force: !!b.force && access === 'admin' });
   else if (b.action === 'ask') result = scoreLanes.ask(game.id, who, lane);
-  else if (b.action === 'answer') result = scoreLanes.answer(game.id, who, String(b.from || ''), !!b.yes);
+  else if (b.action === 'answer') result = scoreLanes.answer(game.id, who, String(b.from || ''), !!b.yes, { timeout: !!b.timeout });
   const myLane = ['a', 'b', 'both'].includes(b.lane) ? b.lane : null;
   const clock = b.clock && Number.isFinite(Number(b.clock.secs)) ? { secs: Number(b.clock.secs), running: !!b.clock.running, period: String(b.clock.period || '').slice(0, 4) } : null;
   const view = scoreLanes.ping(game.id, who, { lane: b.action ? undefined : myLane, clock });
   if (clock && clock.running) bellGameStarted(game);
+  // Take-overs are kept with the game too (memory goes on a restart): the phone that lost its
+  // side has whatever it sends from now on set aside, until it scores a side again.
+  const sgL = getScoreGame(game.id);
+  if (sgL && result.tookOverDevice) {
+    const lostDevices = { ...(sgL.settings.lostDevices || {}), [result.tookOverDevice]: { lane: result.lostLane, at: Date.now(), by: who.name } };
+    saveScoreGame(game.id, { settings: { ...sgL.settings, lostDevices } });
+    const sideOf = l => (l === 'a' ? titleCase(game.team_a_name) : l === 'b' ? titleCase(game.team_b_name) : 'both teams');
+    for (const a of gameAdminPlayers()) {
+      if (a.playerId === pid) continue;
+      createNotification({ playerId: a.playerId, type: 'scorer_takeover', title: `${who.name} took over ${sideOf(result.lostLane)} from ${result.tookOver} on ${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`,
+        body: `${result.tookOver}’s phone had gone quiet. Anything it sends from now on waits under Late plays.`, link: `/admin/games/${encodeURIComponent(game.id)}?tab=scoring` });
+    }
+  } else if (sgL && view.me.lane && sgL.settings.lostDevices && sgL.settings.lostDevices[device]) {
+    const { [device]: _gone, ...rest } = sgL.settings.lostDevices;
+    saveScoreGame(game.id, { settings: { ...sgL.settings, lostDevices: rest } });
+  }
   res.set('Cache-Control', 'private, no-store');
   res.json({ ...result, ...view, admin: access === 'admin', now: Date.now() });
 });
@@ -7038,7 +7088,7 @@ app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => 
   if (!access || (pass === 'video' && access !== 'admin')) return res.status(403).json({ error: 'You aren’t a scorer for this game.' });
   const sg = getScoreGame(game.id);
   if (!sg) return res.status(409).json({ error: 'Scoring isn’t turned on for this game.' });
-  if (sg.status === 'published') return res.status(409).json({ error: 'This game is published. Ask an admin to change it.' });
+  if (sg.status === 'published' && pass === 'video') return res.status(409).json({ error: 'This game is published. Ask an admin to change it.' });
   const raw = Array.isArray(req.body?.events) ? req.body.events.slice(0, 2000) : [];
   // Players named in a play must be on one of the game's two teams.
   const roster = new Set(getAllPlayers().filter(p => p.team_id === game.team_a_id || p.team_id === game.team_b_id).map(p => p.id));
@@ -7046,12 +7096,54 @@ app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => 
   const events = raw.filter(e => e && typeof e.id === 'string' && e.id.length <= 64 && SCORE_TYPES.has(e.type) && Number.isFinite(Number(e.pos))
     && (e.team == null || e.team === 'a' || e.team === 'b') && okPlayer(e.player) && okPlayer(e.from) && okPlayer(e.in) && okPlayer(e.out));
   if (pass === 'video') { const gate = reviewGate(req, game, 'video'); if (gate) return res.status(423).json({ error: gate }); }
-  const added = addScoreEvents(game.id, events, { pass, authorId: req.session.playerPlayerId || 'admin', deviceId: String(req.body?.device || '').slice(0, 64) || null });
+  // Nothing a phone sends ever overwrites what's there (plays are only ever added, by id), and
+  // plays that could double up are set aside as 'late' for the reviewer to add or leave out:
+  // the game is published, or they were tapped after the final score was saved, or this phone's
+  // side was taken over and they were tapped after it was last heard from.
+  // Judged by when the server gets them, never the phone's own clock (it can be set back):
+  // after publish, after the final score was saved (a scorer's phone; the reviewing admin's
+  // fixes still count), or from a phone whose side was taken over. Then, play by play: a play
+  // for the other team from a phone that holds one side (except the ones that name the other
+  // team: free throws, the foul in an and-one, the missed shot a block answers), and plays
+  // tapped impossibly fast (6 within 2 seconds on one phone).
+  const device = String(req.body?.device || '').slice(0, 64) || null;
+  const lost = pass === 'live' && device ? (scoreLanes.lostFor(game.id, device) || (sg.settings.lostDevices || {})[device] || null) : null;
+  const ended = !!sg.settings.finalAt && access !== 'admin';
+  const side = pass === 'live' && device ? scoreLanes.laneOf(game.id, device) : null;
+  const crossOk = e => e.type === 'ft' || e.type === 'foul' || e.type === 'void' || (e.type === 'shot' && !e.made);
+  const fast = new Set();
+  if (pass === 'live') {
+    // Taps, not plays: only stat plays count (a Subs sheet or DNP sheet saves many at once), and
+    // plays made within 150 ms of each other are one tap (a block that also records the miss,
+    // an and-one's basket and foul).
+    const STAT = new Set(['shot', 'ft', 'reb', 'ast', 'stl', 'blk', 'to', 'foul']);
+    const recent = [...(scoreTapLog.get(device) || []), ...events.filter(e => STAT.has(e.type)).map(e => ({ id: e.id, at: Number(e.at) || 0 }))].sort((x, y) => x.at - y.at);
+    const taps = [];
+    for (const r of recent) { const last = taps[taps.length - 1]; if (last && r.at - last.at <= 150) last.ids.push(r.id); else taps.push({ at: r.at, ids: [r.id] }); }
+    for (let i = 0; i < taps.length; i++) {
+      let j = i; while (j + 1 < taps.length && taps[j + 1].at - taps[i].at <= 2000) j++;
+      if (j - i + 1 >= 6) for (let k = i; k <= j; k++) for (const id of taps[k].ids) fast.add(id);
+    }
+    if (device) scoreTapLog.set(device, recent.slice(-16));
+  }
+  const base = pass !== 'live' ? '' : sg.status === 'published' || sg.status === 'publishing' ? 'published' : ended ? 'ended' : lost ? 'taken' : '';
+  const lateWhy = e => base || (side === 'a' || side === 'b') && e.team && e.team !== side && !crossOk(e) && 'side' || (fast.has(e.id) ? 'fast' : '');
+  const late = events.filter(e => lateWhy(e)), onTime = events.filter(e => !lateWhy(e));
+  const author = req.session.playerPlayerId || 'admin';
+  const added = addScoreEvents(game.id, onTime, { pass, authorId: author, deviceId: device });
+  const lateAdded = late.length ? addScoreEvents(game.id, late, { pass: 'late', authorId: author, deviceId: device }) : 0;
+  if (lateAdded) {
+    const why = { published: 'after it was published', ended: 'after the final score was saved', taken: `after ${lost?.by || 'another scorer'} took over their side`, side: 'for the side the other scorer has', fast: 'tapped faster than a game can go' }[lateWhy(late[0])];
+    const p = getAllPlayers().find(x => x.id === author);
+    const who = p ? displayPlayerName(p.name || '').split(' ')[0] : 'A scorer';
+    for (const a of gameAdminPlayers()) createNotification({ playerId: a.playerId, type: 'review_late', title: `${lateAdded} late play${lateAdded === 1 ? '' : 's'} on ${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`, body: `From ${who}'s phone, ${why}. Add them or leave them out on the Scoring tab.`, link: `/admin/games/${encodeURIComponent(game.id)}?tab=scoring` });
+    console.warn(`[scorer] game=${game.id} set aside ${lateAdded} late play(s) (${lateWhy(late[0])}) from device=${device}`);
+  }
   if (added && pass === 'live') bellGameStarted(game);
   if (added && pass === 'live' && sg.status === 'setup') saveScoreGame(game.id, { status: 'live' });
   if (added && pass === 'live') liveChanged(game.id);
   if (events.length < raw.length) console.warn(`[scorer] game=${game.id} rejected ${raw.length - events.length} play(s) that didn't fit`);
-  res.json({ ok: true, added, received: raw.length, rejected: raw.length - events.length });
+  res.json({ ok: true, added, received: raw.length, rejected: raw.length - events.length, late: late.map(e => e.id), lateWhy: late.length ? lateWhy(late[0]) : '' });
 });
 
 // Admin: turn scoring on for a game and pick its scorers ({ scorers: [playerId], waves }).
@@ -7060,6 +7152,7 @@ app.post('/admin/games/:id/scoring', requireAuth, express.json(), (req, res) => 
   if (!game) return res.status(404).json({ error: 'Game not found.' });
   const sg = getScoreGame(game.id);
   if (sg?.status === 'published') return res.status(409).json({ error: 'Already published.' });
+  const firstTurnOn = !sg;
   const scorers = [].concat(req.body?.scorers || []).map(String).filter(Boolean).slice(0, 2);
   const waves = ['first half', 'whole game', 'off'].includes(req.body?.waves) ? req.body.waves : null;
   const settings = { ...(sg?.settings || {}), rules: { ...(sg?.settings?.rules || {}), ...(waves ? { waves } : {}) } };
@@ -7074,8 +7167,15 @@ app.post('/admin/games/:id/scoring', requireAuth, express.json(), (req, res) => 
     createNotification({ playerId: pid, type: 'scorer_assigned', title: `You're scoring ${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`,
       body: `${when ? `${when}. ` : ''}Open it in the app once with signal before the game so it works offline.`, link: `/score/${encodeURIComponent(game.id)}` });
   }
+  // Turned on for the first time: every Scorer hears it's ready (whoever opens it first takes a
+  // side). The players picked above already got their own bell.
+  const pool = firstTurnOn ? getScorerPlayerIds().filter(id => !scorers.includes(id)) : [];
+  for (const pid of pool) {
+    createNotification({ playerId: pid, type: 'scorer_game_ready', title: `${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)} is ready for scoring`,
+      body: `${when ? `${when}. ` : ''}Open it in the app once with signal before the game so it works offline.`, link: `/score/${encodeURIComponent(game.id)}` });
+  }
   liveChanged(game.id);
-  res.json({ ok: true, message: scorers.length ? 'Scoring is on. The scorers see the game under Me → Score a game.' : 'Scoring is on. Only admins can score until you pick scorers.' });
+  res.json({ ok: true, message: `Scoring is on.${pool.length ? ` ${pool.length} scorer${pool.length === 1 ? '' : 's'} got a bell.` : ''}${scorers.length ? ' The picked scorers see it under Me → Score a game.' : ''}` });
 });
 // Admin quick review: take a play out (a void play, like a scorer's Undo), or mark who didn't play.
 app.post('/admin/games/:id/scoring/void', requireAuth, express.json(), (req, res) => {
@@ -7123,7 +7223,11 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
   const official = gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null;
   if (official) { payload.teamAScore = official.a; payload.teamBScore = official.b; }
   const visible = sg.settings.live_public !== false;
+  // One publish at a time (two admins tapping at once), and a copy of the game as it was, for
+  // Undo publish.
+  if (!claimScorePublish(game.id)) return res.status(409).json({ error: 'Someone is publishing this game right now.' });
   try {
+    snapshotGameBeforePublish(game.id);
     importGameResults(game.id, payload);
     setGameOrebs(game.id, orebs);
     updateGameReview(game.id, visible ? 0 : 1);
@@ -7135,6 +7239,7 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
     liveChanged(game.id); // open live pages reload into the published game
   } catch (err) {
     console.error('[scorer] publish failed:', err);
+    releaseScorePublish(game.id, sg.status);
     res.status(500).json({ error: 'Publishing failed: ' + err.message });
   }
 });
@@ -7149,6 +7254,9 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
 const reviewer = req => { const a = currentAdminActor(req); return { by: a.id, name: a.name, playerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' }; };
 const isSuperAdminReq = req => !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
 // Admins with the games section, for their bells and the hand-over list.
+// Scoring is open to every admin (Paolo, 2026-10-26), whatever admin sections they have;
+// reviewing and publishing stay with the games section (gameAdminPlayers).
+const isGameAdminPlayer = pid => !!pid && getAllRegistrations().some(r => r.is_admin && r.status === 'approved' && r.player_id === pid);
 function gameAdminPlayers() {
   const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   return getAllRegistrations().filter(r => r.is_admin && r.status === 'approved' && r.player_id && byId[r.player_id])
@@ -7255,6 +7363,58 @@ app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, r
   }
   res.status(400).json({ error: 'Unknown action.' });
 });
+// Undo publish: the game goes back to exactly what it had before (the snapshot taken at
+// publish), scoring reopens, and the plays are all still there to fix and publish again.
+app.post('/admin/games/:id/scoring/unpublish', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  const sg = game && getScoreGame(game.id);
+  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  if (sg.status !== 'published') return res.status(409).json({ error: 'It isn’t published.' });
+  const snap = latestPublishSnapshot(game.id);
+  if (!snap) return res.status(409).json({ error: 'No copy from before publishing: this one can’t be undone here.' });
+  restoreGameFromSnapshot(game.id, snap, game.season);
+  const { publishedPass: _p, ...rest } = sg.settings;
+  saveScoreGame(game.id, { status: 'live', publishedAt: null, settings: { ...rest, unpublishedAt: Date.now(), unpublishedBy: reviewer(req).name } });
+  settleGamePicks(game.id);
+  liveChanged(game.id);
+  console.log(`[scorer] unpublished game=${game.id} by ${reviewer(req).name}`);
+  res.json({ ok: true, message: 'Publish undone: the game is back as it was. The plays are all here to fix and publish again.' });
+});
+// A phone's plays from a file (the scorer's Send my plays, when it couldn't sync): they land
+// under Late plays for the reviewer to add or leave out.
+app.post('/admin/games/:id/scoring/import', requireAuth, express.json({ limit: '2mb' }), (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game || !getScoreGame(game.id)) return res.status(404).json({ error: 'Not found.' });
+  const gate = reviewGate(req, game);
+  if (gate) return res.status(423).json({ error: gate });
+  const file = req.body?.file || {};
+  if (String(file.game || '') !== game.id) return res.status(400).json({ error: 'That file is from another game.' });
+  const roster = new Set(getAllPlayers().filter(p => p.team_id === game.team_a_id || p.team_id === game.team_b_id).map(p => p.id));
+  const okPlayer = id => id == null || roster.has(String(id));
+  const raw = Array.isArray(file.events) ? file.events.slice(0, 3000) : [];
+  const events = raw.filter(e => e && typeof e.id === 'string' && e.id.length <= 64 && SCORE_TYPES.has(e.type) && Number.isFinite(Number(e.pos))
+    && (e.team == null || e.team === 'a' || e.team === 'b') && okPlayer(e.player) && okPlayer(e.from) && okPlayer(e.in) && okPlayer(e.out));
+  const n = addScoreEvents(game.id, events, { pass: 'late', authorId: 'import', deviceId: String(file.device || 'import').slice(0, 64) });
+  res.json({ ok: true, message: n ? `${n} play${n === 1 ? '' : 's'} from the file are under Late plays: add them or leave them out.` : 'Nothing new in that file: the game already has every play in it.' });
+});
+// Late plays: add them to the live track, or leave them out (they stay on record).
+app.post('/admin/games/:id/scoring/late', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game || !getScoreGame(game.id)) return res.status(404).json({ error: 'Not found.' });
+  const gate = reviewGate(req, game);
+  if (gate) return res.status(423).json({ error: gate });
+  const sg = getScoreGame(game.id);
+  const all = getScoreEvents(game.id, 'late').map(e => e.id);
+  const ids = Array.isArray(req.body?.ids) && req.body.ids.length ? req.body.ids.map(String).filter(id => all.includes(id)) : all;
+  if (req.body?.action === 'add') {
+    if (sg.status === 'published') return res.status(409).json({ error: 'The game is published: these can’t join its box score now.' });
+    const n = moveScoreEvents(game.id, ids, 'late', 'live');
+    liveChanged(game.id);
+    return res.json({ ok: true, message: `${n} play${n === 1 ? '' : 's'} added to the game.` });
+  }
+  const n = moveScoreEvents(game.id, ids, 'late', 'dropped');
+  res.json({ ok: true, message: `${n} play${n === 1 ? '' : 's'} left out. They stay on record.` });
+});
 // Visible to everyone: one switch for the live score and the published game. Off hides both
 // (no live score, the published game stays a draft) so an admin can check it, or test the
 // player side by switching it on and off.
@@ -7307,7 +7467,31 @@ function adminScoringPanel(game, players, req) {
   const pass = sg.settings.publishedPass || (video ? 'video' : 'live');
   const st = pass === 'video' && video ? video : live;
   const tname = t => (t === 'a' ? game.team_a_name : game.team_b_name);
-  const plays = st.rows.filter(e => e.type !== 'dnp').slice().reverse().map(e => ({ id: e.id, when: [e.period, e.clock].filter(Boolean).join(' '), text: describeScorePlay(e, nm, tname), score: `${e.score.a}–${e.score.b}` }));
+  const rawEvents = getScoreEvents(game.id, pass === 'video' && video ? 'video' : 'live');
+  const firstOf = id => (id === 'admin' ? 'Admin' : id === 'import' ? 'Import' : (nm(id) || 'Admin').split(' ')[0]);
+  const plays = st.rows.filter(e => e.type !== 'dnp').slice().reverse().map(e => ({ id: e.id, when: [e.period, e.clock].filter(Boolean).join(' '), text: describeScorePlay(e, nm, tname), score: `${e.score.a}–${e.score.b}`, by: `${e.fixes ? 'fixed by ' : ''}${firstOf(e.author)}` }));
+  // Plays taken out (Undo, Remove, a fix's old version), and by whom.
+  const evById = Object.fromEntries(rawEvents.map(e => [e.id, e]));
+  const fixedIds = new Set(rawEvents.filter(e => e.fixes).map(e => e.fixes));
+  const removed = rawEvents.filter(e => e.type === 'void' && evById[e.target] && !fixedIds.has(e.target)).map(v => ({ id: v.id, text: describeScorePlay(evById[v.target], nm, tname), when: [evById[v.target].period, evById[v.target].clock].filter(Boolean).join(' '), by: firstOf(v.author) }));
+  // Lines that can't be right: warnings on the Publish card (never a block).
+  const checks = [];
+  const pfSoFar = {}, STATTYPES = new Set(['shot', 'ft', 'reb', 'ast', 'stl', 'blk', 'to']);
+  for (const e of st.rows) {
+    if (e.type === 'foul' && e.player) pfSoFar[e.player] = (pfSoFar[e.player] || 0) + 1;
+    else if (e.player && STATTYPES.has(e.type) && (pfSoFar[e.player] || 0) >= rules.foulOut) checks.push(`${nm(e.player)} has a play after fouling out (${[e.period, e.clock].filter(Boolean).join(' ')}: ${describeScorePlay(e, nm, tname)}).`);
+  }
+  for (const id of new Set(sg.settings.dnp || [])) {
+    const L = st.players[id];
+    if (L && ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'pf'].some(k => L[k])) checks.push(`${nm(id)} is marked as didn’t play but has stats.`);
+  }
+  for (const t of ['a', 'b']) {
+    const tid = t === 'a' ? game.team_a_id : game.team_b_id;
+    const ids = Object.keys(st.players).filter(id => players.find(p => p.id === id)?.team_id === tid);
+    const ast = ids.reduce((n, id) => n + (st.players[id].ast || 0), 0), fgm = ids.reduce((n, id) => n + (st.players[id].fg2m || 0) + (st.players[id].fg3m || 0) + (st.players[id].fg4m || 0), 0);
+    if (ast > fgm) checks.push(`${tname(t)} have more assists (${ast}) than made baskets (${fgm}).`);
+  }
+  if (gameFinalSet(game) && ((Number(game.team_a_score) || 0) !== st.score.a || (Number(game.team_b_score) || 0) !== st.score.b)) checks.push(`The quarters add up to ${st.score.a}–${st.score.b}; the final score is ${game.team_a_score}–${game.team_b_score}.`);
   // Live against video, player by player: only the numbers that differ.
   const KEYS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK'], ['turnover', 'TO'], ['pf', 'PF'], ['fg3m', '3PM'], ['ftm', 'FTM']];
   const compare = video ? [...new Set([...Object.keys(live.players), ...Object.keys(video.players)])].map(id => {
@@ -7323,7 +7507,8 @@ function adminScoringPanel(game, players, req) {
     progress: reviewProgress(game, sg), reviewedBy: sg.settings.reviewedBy || '', superAdmin: isSuperAdminReq(req),
     admins: gameAdminPlayers().filter(a => a.playerId !== me.playerId) };
   const finalScore = gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null;
-  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, roster, review, finalScore,
+  const lateRows = getScoreEvents(game.id, 'late').map(e => ({ id: e.id, when: [e.period, e.clock].filter(Boolean).join(' '), text: describeScorePlay(e, nm, tname), by: (() => { const p = players.find(x => x.id === e.author); return p ? displayPlayerName(p.name || '').split(' ')[0] : 'Admin'; })() }));
+  return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, removed, checks, canUnpublish: sg.status === 'published' && !!latestPublishSnapshot(game.id), roster, review, finalScore, late: lateRows,
     dnp: [...new Set([...(sg.settings.dnp || []), ...st.dnp])], official: sg.settings.official || null,
     pass, liveScore: live.score, liveCount: live.rows.length, video: video ? { score: video.score, count: video.rows.length } : null, compare, hasVideo: !!ytId(game.youtube_url || '') };
 }
@@ -7565,8 +7750,8 @@ app.get('/app/me', requireApp, (req, res) => {
   const open = appOpenPicks(me);
   if (open.length) todos.unshift({ icon: 'picks', title: open.length === 1 ? '1 game to pick' : `${open.length} games to pick`, sub: 'Who wins?', pill: 'Pick', href: '/app/picks', solid: true });
   // Picked by an admin to score a game (the scorer: /app/score).
-  const toScore = getScorerGameIds(me.playerId).length;
-  if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: 'You’re a scorer', pill: 'Score', href: '/app/score', solid: true });
+  const toScore = scorableGameIds(me.playerId).length;
+  if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: getPlayerById(me.playerId)?.is_scorer || !isGameAdminPlayer(me.playerId) ? 'You’re a scorer' : 'Admins can score any game', pill: 'Score', href: '/app/score', solid: true });
   sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
@@ -10795,6 +10980,14 @@ app.post('/admin/players/:id/team', requireAuth, express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
+// Scorer switch (admin player page → Settings): { on }.
+app.post('/admin/players/:id/scorer', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1 || req.body?.on === '1';
+  setPlayerScorer(player.id, on);
+  res.json({ ok: true, message: on ? `${displayPlayerName(player.name || '')} is a scorer.` : `${displayPlayerName(player.name || '')} is no longer a scorer.` });
+});
 app.post('/admin/players/:id/papawis-probation', requireAuth, express.json(), (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).json({ error: 'Not found' });
@@ -12530,6 +12723,8 @@ app.post('/admin/games/:id/final', requireAuth, jsonSmall, (req, res) => {
   markGameFinal(game.id, { teamAScore: scoreA, teamBScore: scoreB, overtime: Number(req.body.overtime) || 0 });
   // markGameFinal shows the game; a scored game switched to hidden (Scoring tab) stays hidden.
   if (sgF && sgF.settings.live_public === false) updateGameReview(game.id, 1);
+  // When the game ended, for setting aside plays tapped after it (POST /api/score/:id/events).
+  if (sgF && !sgF.settings.finalAt) { const s2 = getScoreGame(game.id); saveScoreGame(game.id, { settings: { ...s2.settings, finalAt: Date.now() } }); }
   settleGamePicks(game.id);
   res.json({ ok: true });
   setImmediate(() => askLeagueCourtRatings(game.id));
@@ -19865,7 +20060,7 @@ app.get('/players/:ref', async (req, res) => {
       // Guests only (mostly people who searched the player's name): join / Papawis / Facebook card.
       showGcInvite: isOwnProfile && !playerCtaDone(resolved.id, 'gc'),
       // Games this player was picked to score (Today tile), as the app's Me To do has them.
-      scoreGames: isOwnProfile ? getScorerGameIds(resolved.id).map(id => getGameById(id)).filter(g => g && getScoreGame(g.id)?.status !== 'published')
+      scoreGames: isOwnProfile ? scorableGameIds(resolved.id).map(id => getGameById(id)).filter(g => g && getScoreGame(g.id)?.status !== 'published')
         .map(g => ({ title: `${titleCase(g.team_a_name)} vs ${titleCase(g.team_b_name)}`, date: gameYmd(g.date), tip: gameTipLabel(g), href: scoreHrefFor(req, g.id) })).filter(g => g.href) : [],
       joinCta: !req.session?.playerRegId && !req.session?.isAdmin ? { regOpen: getSetting('reg_open', '0') === '1', papawis: !!getFeatureFlags().papawis } : null,
       champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
@@ -25346,6 +25541,17 @@ setInterval(runPapawisReminders, PAPAWIS_REMINDER_CHECK_MS);
 // runBirthdayAutomation in lib/birthday.js). Sending only happens on production, from 8 AM
 // Manila, and can be paused on /admin/birthdays. The first run waits a minute so it
 // doesn't compete with startup.
+// Daily database backup (production only): data/backups/portal-YYYY-MM-DD.db, the last 14
+// days kept. Checked hourly; writes once a day.
+function runDailyBackup() {
+  if (process.env.NODE_ENV !== 'production') return;
+  dailyBackup(path.join(__dirname, 'data', 'backups'), manilaTodayStr(), 14)
+    .then(file => { if (file) console.log(`[backup] ${file}`); })
+    .catch(e => console.error('[backup] failed:', e.message));
+}
+setTimeout(runDailyBackup, 2 * 60 * 1000);
+setInterval(runDailyBackup, 60 * 60 * 1000);
+
 const BIRTHDAY_AUTOMATION_CHECK_MS = 60 * 60 * 1000;
 function runBirthdayJobs() {
   runBirthdayAutomation(manilaTodayStr()).then(({ drafted, sent, failed }) => {

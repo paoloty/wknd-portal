@@ -38,7 +38,23 @@ test('offensive rebound only when the play right before was the same team missin
   assert.equal(g.players.z.reb, 1);
 });
 
-test('team fouls: every foul counts (technical, offensive), reset each quarter, OT carries Q4', () => {
+test('coach and bench technicals are not team fouls; a player technical is', () => {
+  const g = foldGame([P('team_tech', { kind: 'coach' }), P('team_tech', { kind: 'bench' }), P('foul', { player: 'x', kind: 'technical' })]);
+  assert.equal(g.teamFouls.a, 1);
+});
+
+test('a technical from the bench does not put the player on court', () => {
+  const g = foldGame([P('foul', { player: 'x', kind: 'technical' })], undefined, { a: ['p1', 'p2', 'p3', 'p4', 'p5', 'x'], b: [] });
+  assert.ok(!g.lastActive.a.includes('x'));
+});
+
+test('the final end of period ends the game without a next period', () => {
+  const g = foldGame([P('period_end', { period: 'Q1' }), P('period_end', { period: 'Q2' }), P('period_end', { period: 'Q3' }), P('period_end', { period: 'Q4', final: true })]);
+  assert.equal(g.period, 'Q4');
+  assert.equal(g.final, true);
+});
+
+test('team fouls: every player foul counts (technical, offensive), reset each quarter, OT carries Q4', () => {
   const ev = [
     P('foul', { player: 'x', kind: 'technical' }), P('foul', { player: 'x', kind: 'offensive' }), P('team_tech', { kind: 'coach' }),
     P('period_end', { period: 'Q1' }),

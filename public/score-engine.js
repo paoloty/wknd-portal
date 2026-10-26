@@ -20,7 +20,8 @@
 //   to      { kind? }                    team_to { kind? }  (no player)
 //   foul    { kind: personal|shooting|offensive|technical|unsportsmanlike|disqualifying, fts? }
 //   team_tech { kind: coach|bench }     timeout (team)      stoppage { kind? }
-//   period_end (the period it ends)     sub { in, out }     lineup { ids }
+//   period_end { period, final? }  (final: the game is over, no next period)
+//   sub     { in, out, batch? }  (batch: several made at once, undone together)   lineup { ids }
 //   dnp     { on }  (player didn't play: a late or absent player; any stat of theirs later
 //                   clears it, so a late arrival who plays counts as played)
 //   void    { target }
@@ -76,6 +77,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
   const teamTO = { a: 0, b: 0 };
   const lastActive = { a: [], b: [] }; // most recent first
   let periodIdx = 1;
+  let final = false;
   const rows = [];           // each counted play with the running score after it
   const other = t => (t === 'a' ? 'b' : 'a');
   const bucket = (o, k) => (o[k] = o[k] || { a: 0, b: 0 });
@@ -121,12 +123,15 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
         if (kind === 'unsportsmanlike') L.unsp++;
         if (kind === 'disqualifying') L.dq++;
         if (kind === 'offensive') L.turnover++; // an offensive foul is also a turnover
-        bucket(teamFouls, foulWindow(per))[t]++; // every foul is a team foul (tech + offensive too)
-        touch(t, p); break;
+        bucket(teamFouls, foulWindow(per))[t]++; // every player foul is a team foul (tech + offensive too)
+        // A technical can come from the bench: it doesn't put the player on court.
+        if (kind !== 'technical') touch(t, p);
+        break;
       }
-      case 'team_tech': bucket(teamFouls, foulWindow(per))[t]++; break;
+      // A coach or bench technical is the coach's, not a team foul (FIBA; Fable audit 2026-10-26).
+      case 'team_tech': break;
       case 'timeout': bucket(timeoutsUsed, timeoutWindow(per))[t]++; break;
-      case 'period_end': periodIdx = Math.max(periodIdx, periodIndex(e.period) + 1); break;
+      case 'period_end': if (e.final) final = true; else periodIdx = Math.max(periodIdx, periodIndex(e.period) + 1); break;
       case 'dnp': if (e.on === false) dnp.delete(p); else if (p) dnp.add(p); break;
       // A sub: who comes on counts as active now; who goes off drops to the back and sits.
       case 'sub':
@@ -149,7 +154,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
     if (ejected || fouledOut) flags[id] = ejected ? 'ejected' : 'fouled out';
   }
   return {
-    period, score, rows, players, flags, teamTO, dnp: [...dnp], benched: [...benched],
+    period, final, score, rows, players, flags, teamTO, dnp: [...dnp], benched: [...benched],
     byPeriod: Object.entries(byPeriod).map(([p, s]) => ({ period: p, ...s })).sort((x, y) => periodIndex(x.period) - periodIndex(y.period)),
     teamFouls: { a: fw.a, b: fw.b },
     // A team at penaltyAt - 1 fouls: its next foul gives free throws.

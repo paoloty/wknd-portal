@@ -328,9 +328,21 @@ function scoringTab({ game, sc, colors }) {
   // Someone else has the review: everything that changes it is read-only here.
   const lockedOut = !!lock && !lock.mine;
   const reviewCard = reviewSection({ game, sc, base });
+  // Late plays (after the end, after publishing, or from a phone that was taken over): set aside
+  // until an admin adds them or leaves them out.
+  const importBox = lockedOut || sc.status === 'published' ? '' : `<div class="agd-import"><label class="aui-btn aui-btn--ghost aui-btn--sm">Import a phone’s plays…<input type="file" accept=".json,application/json" hidden data-import-plays="${base}/scoring/import"></label>
+      <span class="aui-muted">The file from a scorer’s ⋯ → Send my plays, when their phone couldn’t send. They land here as late plays.</span></div>
+    <script>document.querySelectorAll('[data-import-plays]').forEach(function (inp) { inp.onchange = function () { var f = inp.files && inp.files[0]; if (!f) return; f.text().then(function (t) { var file; try { file = JSON.parse(t); } catch (e) { alert('That isn’t a plays file.'); return; } return fetch(inp.getAttribute('data-import-plays'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: file }) }).then(function (r) { return r.json(); }).then(function (d) { location.href = location.pathname + '?tab=scoring&toast=' + encodeURIComponent(d.message || d.error || 'Done.'); }); }); }; });</script>`;
+  const lateCard = !(sc.late && sc.late.length) ? (importBox ? section({ title: 'Late plays', note: '· none', bodyHtml: `<div class="aui-panel aui-stack">${importBox}</div>` }) : '') : section({ title: 'Late plays', note: `· ${sc.late.length} set aside`, bodyHtml: `<div class="aui-panel aui-stack">${importBox}
+        <p class="aui-muted">Sent after the final score was saved, after publishing, or from a phone whose side another scorer took over. They’re not in the game until you add them, so nothing doubles up.</p>
+        ${dataGrid({ baseUrl: base, keep: { tab: 'scoring' }, perPage: 200, noun: ['play', 'plays'], minimal: true, rows: sc.late, rowKey: r => r.id,
+          columns: [{ key: 'when', label: 'When', cell: r => escHtml(r.when) }, { key: 'text', label: 'Play', primary: true, cell: r => escHtml(r.text) }, { key: 'by', label: 'Phone', cell: r => escHtml(r.by) }] })}
+        ${lockedOut ? '' : `<div>${sc.status === 'published' ? '' : button('Add them to the game', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${base}/scoring/late" data-body="${attr(JSON.stringify({ action: 'add' }))}" data-then="${base}?tab=scoring"` })} ${button('Leave them out', { kind: 'ghost', size: 'sm', attrs: `data-post-json="${base}/scoring/late" data-body="${attr(JSON.stringify({ action: 'drop' }))}" data-then="${base}?tab=scoring"` })}</div>`}</div>` });
   if (sc.status === 'published') {
-    return `${banner('ok', `Published from the scorer: ${game.team_a_name} ${sc.finalScore ? sc.finalScore.a : sc.score.a}, ${game.team_b_name} ${sc.finalScore ? sc.finalScore.b : sc.score.b}.`)}
+    const undo = sc.canUnpublish ? button('Undo publish…', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${base}/scoring/unpublish" data-then="${base}?tab=scoring" data-confirm data-confirm-title="Undo this publish?" data-confirm-body="The game goes back to exactly what it had before publishing (score, box score, who didn’t play), and scoring reopens so the plays can be fixed and published again." data-confirm-send="Undo publish"` }) : '';
+    return `${banner('ok', `Published from the scorer: ${game.team_a_name} ${sc.finalScore ? sc.finalScore.a : sc.score.a}, ${game.team_b_name} ${sc.finalScore ? sc.finalScore.b : sc.score.b}.`, undo)}
       ${reviewCard}
+      ${lateCard}
       ${section({ title: 'Plays', note: `· ${sc.plays.length}`, bodyHtml: playsGrid(sc, base, false) })}`;
   }
   const notPlayed = sc.roster.filter(p => !p.played);
@@ -349,6 +361,7 @@ function scoringTab({ game, sc, colors }) {
         data-confirm data-confirm-title="Publish this game?" data-confirm-body="${attr(sc.livePublic === false ? 'Its box score, quarter scores and play-by-play are saved, hidden from players until you switch Visible to everyone on.' : 'Its box score, quarter scores and play-by-play go on the site and in the app, and rating asks go out. Like an import, it shows straight away.')}" data-confirm-send="Publish">
       ${sc.video ? `<div class="aui-field"><span class="aui-field__label">Publish</span>${segmented({ name: 'pass', value: sc.pass, label: 'Which track to publish', options: [['video', `Video re-track · ${sc.video.score.a}–${sc.video.score.b}`], ['live', `Live track · ${sc.liveScore.a}–${sc.liveScore.b}`]] })}</div>` : ''}
       <p class="aui-muted">${sc.video ? (sc.pass === 'video' ? 'Video re-track' : 'Live track') : 'The plays'} add up to <b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>.${fin ? (off ? ` The final score is ${fin.a}–${fin.b}: it stays the result, and you can still publish.` : ' It matches the final score.') : ' Save the final score first if you have it.'}</p>
+      ${sc.checks && sc.checks.length ? `<div class="agd-checks"><b>Worth a look before publishing</b><ul>${sc.checks.map(c => `<li>${escHtml(c)}</li>`).join('')}</ul></div>` : '<p class="aui-muted">✓ No odd lines: no plays after a foul-out, no DNP with stats, assists fit the baskets.</p>'}
       <div>${button('Publish', { kind: 'primary', type: 'submit' })}</div>
     </form>`;
   // The video re-track: an admin scores the game again from the video, from tip-off. It never
@@ -367,11 +380,13 @@ function scoringTab({ game, sc, colors }) {
     : `<div class="aui-panel"><p class="aui-muted">Every player’s line is the same in both tracks.</p></div>`) : '';
   return `${reviewCard}
     ${section({ title: 'Scoring', note: `· ${statusLine}`, asideHtml: open, bodyHtml: `<div class="aui-panel">${scorerForm}</div>` })}
+    ${lateCard}
     ${(sc.plays.length || sc.video) && !lockedOut ? section({ title: 'Video re-track', bodyHtml: `<div class="aui-panel aui-stack">${videoPanel}</div>` }) : ''}
     ${sc.video ? section({ title: 'Live vs video', note: `· ${sc.compare.length} player${sc.compare.length === 1 ? '' : 's'} differ`, bodyHtml: compare }) : ''}
     ${section({ title: 'Final score', note: '· settles Who wins? straight away', bodyHtml: `<div class="aui-panel">${lockedOut ? `<p class="aui-muted">${fin ? `${escHtml(game.team_a_name)} ${fin.a} – ${fin.b} ${escHtml(game.team_b_name)}.` : 'Not saved yet.'} ${escHtml(lock.name)} is reviewing.</p>` : finalForm}</div>` })}
     ${sc.plays.length && !lockedOut ? section({ title: 'Publish', note: '· the plays become the box score', bodyHtml: `<div class="aui-panel">${publishForm}</div>` }) : ''}
     ${sc.plays.length ? section({ title: 'Plays', note: `· ${sc.video ? (sc.pass === 'video' ? 'video re-track, ' : 'live track, ') : ''}${sc.plays.length}, newest first`, asideHtml: lockedOut ? '' : button('Fix plays in the scorer', { kind: 'ghost', size: 'sm', href: sc.pass === 'video' ? videoHref : `${base}/score` }), bodyHtml: playsGrid(sc, base, !lockedOut) }) : ''}
+    ${sc.removed && sc.removed.length ? section({ title: 'Removed plays', note: `· ${sc.removed.length}, kept on record`, bodyHtml: `<div class="aui-panel"><ul class="agd-removed">${sc.removed.map(r => `<li><span class="aui-muted">${escHtml(r.when)}</span> ${escHtml(r.text)} <span class="aui-muted">· removed by ${escHtml(r.by)}</span></li>`).join('')}</ul></div>` }) : ''}
     ${sc.plays.length ? section({ title: 'Who didn’t play', bodyHtml: `<div class="aui-panel">${dnpForm}</div>` }) : ''}`;
 }
 // The review card: who's reviewing and how far (a progress bar over its steps), Start / Hand
@@ -412,6 +427,7 @@ function playsGrid(sc, base, editable) {
     columns: [
       { key: 'when', label: 'When', cell: r => escHtml(r.when) },
       { key: 'text', label: 'Play', primary: true, cell: r => escHtml(r.text) },
+      { key: 'by', label: 'By', phone: false, cell: r => `<span class="aui-muted">${escHtml(r.by || '')}</span>` },
       { key: 'score', label: 'Score', num: true, cell: r => escHtml(r.score) },
     ],
     rowMenu: editable ? r => [{ label: 'Remove play…', danger: true, post: `${base}/scoring/void`, body: { eventId: r.id, pass: sc.pass }, then: `${base}?tab=scoring`, done: 'Play removed.',

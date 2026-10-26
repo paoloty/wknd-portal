@@ -198,7 +198,10 @@ function settingsTab(p, { teams, slug, isSuperAdmin, canDelete, deleteReason, na
   const del = formSection({ title: 'Delete player', sub: 'Only for players with no games, payments, Papawis or awards.', bodyHtml: canDelete
     ? `<div class="aui-row">${button('Delete player…', { kind: 'danger', attrs: `data-post-json="/admin/players/${id}" data-method="DELETE" data-then="/admin/players" data-done="${attr(name)} deleted." data-confirm data-confirm-title="Delete ${attr(name)}?" data-confirm-body="Removes the player for good. This can’t be undone." data-confirm-send="Delete"` })}</div>`
     : `<div class="aui-row">${button('Delete player…', { kind: 'danger', attrs: 'disabled' })}<span class="aui-muted">${escHtml(deleteReason)}</span></div>` });
-  return formCard(teamStatus + address + del);
+  // Scorer: scores any league game with scoring on, from the app, without being picked for it.
+  const scorer = formSection({ title: 'Scorer', sub: 'Not an admin: no review or admin pages.', bodyHtml: toggleRow({ label: 'Scorer', name: 'scorer', on: !!p.is_scorer, post: `/admin/players/${id}/scorer`,
+    help: 'Can score any league game that has scoring turned on, from the app’s Me → Score a game, and gets a bell when a game is ready. Without it, a player scores only the games they’re picked for.' }) });
+  return formCard(teamStatus + scorer + address + del);
 }
 
 export function adminPlayerDetailBody({
