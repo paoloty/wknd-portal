@@ -1614,8 +1614,7 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-p__no { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-bottom: 12%; font: 700 80cqh/1 var(--font-num); letter-spacing: -.02em; color: color-mix(in srgb, var(--text) 38%, transparent); pointer-events: none; }
 .sc-p__nm { position: relative; max-width: calc(100% - 6px); box-sizing: border-box; padding: 2px 4px; border-radius: 5px; background: color-mix(in srgb, var(--bg) 60%, transparent); font-size: calc(var(--fs) * 1px * var(--k)); font-weight: 600; line-height: 1.05; text-align: center; overflow: hidden; }
 .sc-p.is-dup .sc-p__nm { font-weight: 700; }
-.sc-p.is-nonum { justify-content: center; padding: 0; }
-.sc-p.is-nonum .sc-p__nm { background: none; font-family: var(--font-num); font-weight: 700; letter-spacing: .02em; }
+.sc-p__no.is-none { color: color-mix(in srgb, var(--text) 18%, transparent); }
 .sc-p__pf { position: absolute; top: 4px; left: 5px; font: 700 12px/1 var(--font-num); font-style: normal; color: var(--muted); }
 .sc-p__pf.w { color: var(--text); }
 .sc-p__pf.d { color: var(--loss); }

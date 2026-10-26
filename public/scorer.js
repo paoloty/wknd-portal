@@ -825,12 +825,12 @@ export async function mount(el) {
       <div class="sc-tm__r"><button type="button" class="sc-tm__s" data-hold="score" aria-label="${esc(team[t].name)} ${G.score[t]}. Hold for the score by quarter"><span class="dot" style="--c:${esc(team[t].color)}"></span><span class="num">${G.score[t]}</span></button>${dots(t)}</div>
       ${pips(t)}
     </div>`;
-  // Name size: long names shrink a little, then wrap; shared numbers get a bigger name; no
-  // number on file and the name takes the big slot.
+  // Name size: long names shrink a little, then wrap; shared numbers get a bigger name. No
+  // number on file: a dash holds the number's place and the name stays at the bottom, like
+  // everyone else's (Paolo, 2026-10-26).
   const nameSize = p => {
     const L = (p.short || '').length || 1;
-    if (!p.number) return Math.max(11, Math.min(17, Math.floor(60 / (L * 0.5))));
-    if (shared.has(p.id)) return 13;
+    if (p.number && shared.has(p.id)) return 13;
     return Math.max(L >= 8 ? 9.5 : 10, Math.min(11, Math.round((58 / (L * 0.62)) * 2) / 2));
   };
   const tile = id => {
@@ -838,10 +838,10 @@ export async function mount(el) {
     // scorer's play) mustn't start them again.
     const p = byId[id], L = G.players[id] || {}, pf = L.pf || 0, tr = trouble(pf), hit = ui.flash && ui.flash.pid === id && Date.now() - ui.flash.at < 900;
     const benchSel = ui.sel && byId[ui.sel] && byId[ui.sel].team === p.team && !onCourt(p.team, ui.sel);
-    const cls = ['sc-p', ui.sel === id ? 'on' : '', tr === 'd' ? 'is-d' : tr === 'w' ? 'is-w' : '', shared.has(id) ? 'is-dup' : '', p.number ? '' : 'is-nonum', benchSel ? 'swap' : '',
+    const cls = ['sc-p', ui.sel === id ? 'on' : '', tr === 'd' ? 'is-d' : tr === 'w' ? 'is-w' : '', shared.has(id) ? 'is-dup' : '', benchSel ? 'swap' : '',
       hit ? `ring ${ui.flash.tone} b${ui.flashN % 2} r${ui.flashN % 2}` : ''].filter(Boolean).join(' ');
     return `<button type="button" class="${cls}" style="--c:${esc(team[p.team].color)};--fs:${nameSize(p)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(short(id))}, ${pf} foul${pf === 1 ? '' : 's'}${benchSel ? `. Tap to sub ${esc(short(ui.sel))} on for them` : ''}. Hold for their line">
-      ${p.number ? `<b class="sc-p__no num" aria-hidden="true">${esc(p.number)}</b>` : ''}${pf ? `<em class="sc-p__pf num${tr ? ' ' + tr : ''}" aria-hidden="true">${pf}F</em>` : ''}<span class="sc-p__nm">${esc(p.short)}</span><i class="sc-p__sw" aria-hidden="true">${SWAP}</i>${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
+      <b class="sc-p__no num${p.number ? '' : ' is-none'}" aria-hidden="true">${p.number ? esc(p.number) : '–'}</b>${pf ? `<em class="sc-p__pf num${tr ? ' ' + tr : ''}" aria-hidden="true">${pf}F</em>` : ''}<span class="sc-p__nm">${esc(p.short)}</span><i class="sc-p__sw" aria-hidden="true">${SWAP}</i>${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
   };
   // The latest play by a team (for the folded side with two scorers)
   const lastOf = t => { for (let i = G.rows.length - 1; i >= 0; i--) if (G.rows[i].team === t) return G.rows[i]; return null; };
@@ -1119,8 +1119,19 @@ export async function mount(el) {
     if (swipe || (slide && slide.live)) { (swipe || slide).pending = true; return; }
     const keep = ['.sc-sheet__b', '.sc-dock__b'].map(sel => { const n = root.querySelector(sel); return n ? [sel, n.scrollTop] : null; }).filter(Boolean);
     paintNow();
+    fitNames();
     for (const [sel, top] of keep) { const n = root.querySelector(sel); if (n) n.scrollTop = top; }
   }
+  // A one-word name too wide for its tile (CONTIGNO with a shared number, at the bigger size)
+  // can't wrap: it shrinks until it fits, down to 8px (Paolo, 2026-10-26).
+  function fitNames() {
+    for (const el of root.querySelectorAll('.sc-p__nm')) {
+      let px = parseFloat(getComputedStyle(el).fontSize);
+      while (el.scrollWidth > el.clientWidth + 1 && px > 8) { px -= 0.5; el.style.fontSize = px + 'px'; }
+    }
+  }
+  // Turning the phone resizes the tiles: fit again from the usual size.
+  window.addEventListener('resize', () => { for (const el of root.querySelectorAll('.sc-p__nm')) el.style.fontSize = ''; fitNames(); });
   function paintNow() {
     if (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) ui.ask = ui.queue.shift();
     clockNow();
