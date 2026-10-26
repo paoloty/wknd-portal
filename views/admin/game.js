@@ -317,8 +317,18 @@ function scoringTab({ game, sc, colors }) {
         <span class="aui-field__help">Regular season: first half. Playoffs: off.</span></div>
       <div>${button(sc.on ? 'Save scorers' : 'Turn on scoring', { kind: 'primary', type: 'submit' })}</div>
     </form>`;
+  // A done game's final score corrected (the box score stays; picks re-settle), and the review
+  // lock: a locked game can't be reviewed until a super admin unlocks it.
+  const fa = Number(game.team_a_score) || 0, fb = Number(game.team_b_score) || 0;
+  const correctForm = section({ title: 'Final score', note: '· correct it without touching the box score; Who wins? re-settles', bodyHtml: `<form class="aui-panel aui-stack" data-json-action="${base}/final-correct" data-then="${base}?tab=scoring" data-done="Final score corrected."
+      data-confirm data-confirm-title="Correct the final score?" data-confirm-body="The box score stays as it is. Who wins? settles again with the new score." data-confirm-send="Correct it">
+      ${fieldGrid(`${field({ label: game.team_a_name, name: 'team_a_score', type: 'number', value: fa, required: true, attrs: 'min="0" step="1" inputmode="numeric"' })}${field({ label: game.team_b_name, name: 'team_b_score', type: 'number', value: fb, required: true, attrs: 'min="0" step="1" inputmode="numeric"' })}`)}
+      <div>${button('Correct the final score', { kind: 'secondary', type: 'submit' })}</div></form>` });
+  const superAdmin = sc.superAdmin || !!sc.review?.superAdmin;
+  const lockBanner = game.review_locked ? banner('info', 'Locked: this game is done, so nobody can review it.', superAdmin ? button('Unlock for a review', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${base}/scoring/lock" data-body="${attr(JSON.stringify({ on: false }))}" data-then="${base}?tab=scoring" data-confirm data-confirm-title="Unlock it for a review?" data-confirm-body="Any games admin can then review it and undo or save its box score. It locks again when the box score is saved." data-confirm-send="Unlock"` }) : '') : '';
   // Played without the scorer (only a final score): review it to fill in the plays.
   const finalOnly = (Number(game.team_a_score) || 0) + (Number(game.team_b_score) || 0) > 0 || game.status === 'final' || game.status === 'complete';
+  if (!sc.on && finalOnly && game.review_locked) return `${lockBanner}${correctForm}`;
   if (!sc.on && finalOnly) {
     const go = (label, kind, then, k) => button(label, { kind: k, attrs: `data-post-json="${base}/scoring/review" data-body="${attr(JSON.stringify({ action: 'start', kind }))}" data-then="${then}"` });
     return section({ title: 'Review', note: '· this game has a final score but no plays', bodyHtml: `<div class="aui-panel aui-stack">
@@ -350,10 +360,14 @@ function scoringTab({ game, sc, colors }) {
           columns: [{ key: 'when', label: 'When', cell: r => escHtml(r.when) }, { key: 'text', label: 'Play', primary: true, cell: r => escHtml(r.text) }, { key: 'by', label: 'Phone', cell: r => escHtml(r.by) }] })}
         ${lockedOut ? '' : `<div>${sc.status === 'published' ? '' : button('Add them to the game', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${base}/scoring/late" data-body="${attr(JSON.stringify({ action: 'add' }))}" data-then="${base}?tab=scoring"` })} ${button('Leave them out', { kind: 'ghost', size: 'sm', attrs: `data-post-json="${base}/scoring/late" data-body="${attr(JSON.stringify({ action: 'drop' }))}" data-then="${base}?tab=scoring"` })}</div>`}</div>` });
   if (sc.status === 'published') {
-    const undo = sc.canUnpublish ? button('Undo the box score…', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${base}/scoring/unpublish" data-then="${base}?tab=scoring" data-confirm data-confirm-title="Undo the box score?" data-confirm-body="The game goes back to exactly what it had before the box score was saved (score, box score, who didn’t play), and scoring reopens so the plays can be fixed and saved again." data-confirm-send="Undo it"` }) : '';
-    return `${banner('ok', `Box score saved from the scorer: ${game.team_a_name} ${sc.finalScore ? sc.finalScore.a : sc.score.a}, ${game.team_b_name} ${sc.finalScore ? sc.finalScore.b : sc.score.b}. Next: the POTG and the recap on the Content tab.`, undo)}
+    const undo = sc.canUnpublish && !game.review_locked ? button('Undo the box score…', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${base}/scoring/unpublish" data-then="${base}?tab=scoring" data-confirm data-confirm-title="Undo the box score?" data-confirm-body="The game goes back to exactly what it had before the box score was saved (score, box score, who didn’t play), and scoring reopens so the plays can be fixed and saved again." data-confirm-send="Undo it"` }) : '';
+    // Published from the court: "Stats pending review" until an admin checks it.
+    const pendingBanner = sc.statsPending ? banner('warn', `Stats pending review: ${sc.statsPending.by} published it from the court. Check the box score.`,
+      `${button('Looks right', { kind: 'primary', size: 'sm', attrs: `data-post-json="${base}/scoring/approve" data-then="${base}?tab=scoring" data-confirm data-confirm-title="Mark the stats as checked?" data-confirm-body="The “Stats pending review” tag comes off the game." data-confirm-send="Looks right"` })} ${button('Fix the plays', { kind: 'secondary', size: 'sm', attrs: `data-post-json="${base}/scoring/fix" data-then="${base}?tab=scoring" data-confirm data-confirm-title="Fix the plays?" data-confirm-body="The box score comes off while you review the plays; the final score and picks stay." data-confirm-send="Fix the plays"` })}`) : '';
+    return `${lockBanner}${pendingBanner}${banner('ok', `Box score saved from the scorer: ${game.team_a_name} ${sc.finalScore ? sc.finalScore.a : sc.score.a}, ${game.team_b_name} ${sc.finalScore ? sc.finalScore.b : sc.score.b}. Next: the POTG and the recap on the Content tab.`, undo)}
       ${reviewCard}
       ${lateCard}
+      ${correctForm}
       ${section({ title: 'Plays', note: `· ${sc.plays.length}`, bodyHtml: playsGrid(sc, base, false) })}`;
   }
   const notPlayed = sc.roster.filter(p => !p.played);
@@ -371,7 +385,8 @@ function scoringTab({ game, sc, colors }) {
   const publishForm = `<form id="scoring-publish" class="aui-stack" data-json-action="${base}/scoring/publish" data-then="${base}?tab=scoring"
         data-confirm data-confirm-title="Save the box score?" data-confirm-body="${attr(sc.livePublic === false ? 'The box score, quarter scores and play-by-play are saved, hidden from players until you switch Visible to everyone on. The POTG and recap come next, on the Content tab.' : 'The box score, quarter scores and play-by-play go on the site and in the app now, like an import. The POTG and recap come next, on the Content tab.')}" data-confirm-send="Save it">
       ${sc.video ? `<div class="aui-field"><span class="aui-field__label">Box score from</span>${segmented({ name: 'pass', value: sc.pass, label: 'Which track makes the box score', options: [['video', `Video re-track · ${sc.video.score.a}–${sc.video.score.b}`], ['live', `Live track · ${sc.liveScore.a}–${sc.liveScore.b}`]] })}</div>` : ''}
-      <p class="aui-muted">${sc.video ? (sc.pass === 'video' ? 'Video re-track' : 'Live track') : 'The plays'} add up to <b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>.${fin ? (off ? ` The final score is ${fin.a}–${fin.b}: it stays the result, and you can still save the box score.` : ' It matches the final score.') : ' Save the final score first if you have it.'}</p>
+      ${fin && off ? `<div class="aui-field"><span class="aui-field__label">Final score</span>${segmented({ name: 'final', value: 'plays', label: 'Which final score to keep', options: [['plays', `The plays’ ${sc.score.a}–${sc.score.b}`], ['typed', `Keep ${fin.a}–${fin.b}`]] })}</div>` : ''}
+      <p class="aui-muted">${sc.video ? (sc.pass === 'video' ? 'Video re-track' : 'Live track') : 'The plays'} add up to <b>${escHtml(game.team_a_name)} ${sc.score.a} – ${sc.score.b} ${escHtml(game.team_b_name)}</b>.${fin ? (off ? ` The final score says ${fin.a}–${fin.b}: pick which one is the result.` : ' It matches the final score.') : ' Save the final score first if you have it.'}</p>
       ${sc.checks && sc.checks.length ? `<div class="agd-checks"><b>Worth a look before saving</b><ul>${sc.checks.map(c => `<li>${escHtml(c)}</li>`).join('')}</ul></div>` : '<p class="aui-muted">✓ No odd lines: no plays after a foul-out, no DNP with stats, assists fit the baskets.</p>'}
       <div>${button('Save the box score', { kind: 'primary', type: 'submit' })}</div>
     </form>`;

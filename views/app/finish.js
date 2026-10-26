@@ -37,6 +37,15 @@ export function appFinishGamePage({ back, missing = false, d = {} }) {
     <div class="fin-chips">${d.checks.map(chip).join('')}</div>
     <p class="fin-sub">${left ? `${left} to go. The game page shows what’s in so far.` : 'All in. Edit anything and save again.'}</p>
   </section>
+  <details class="fc fin-final">
+    <summary>Correct the final score</summary>
+    <div class="fin-final__row">
+      <label class="fin-final__t"><span>${esc(g.a.name)}</span><input class="adm-input" type="number" inputmode="numeric" min="0" max="300" value="${g.a.score}" data-fin-fa aria-label="${esc(g.a.name)} final score"></label>
+      <label class="fin-final__t"><span>${esc(g.b.name)}</span><input class="adm-input" type="number" inputmode="numeric" min="0" max="300" value="${g.b.score}" data-fin-fb aria-label="${esc(g.b.name)} final score"></label>
+    </div>
+    <p class="fin-sub">The box score stays as it is. Who wins? settles again with the new score.</p>
+    <button type="button" class="btn btn--ghost" data-fin-final>Correct the final score</button>
+  </details>
 
   <div class="sec">Player of the game</div>
   <p class="foot-note fin-hint" data-fin-hint>${esc(d.winner)} won: their top five by PER. Tap one, or two to share the award.</p>

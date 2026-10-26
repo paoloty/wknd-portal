@@ -1142,7 +1142,7 @@
       $('[data-fin-box="copotg"]', form).hidden = !coIn.value;
     };
     var words = function () { var n = $('[data-fin-words]', form); if (n) n.textContent = String((recap.value.trim().match(/\S+/g) || []).length); };
-    form.addEventListener('input', function (e) { if (e.target === recap) words(); if (!e.target.hasAttribute('data-fin-ctx')) mark(); });
+    form.addEventListener('input', function (e) { if (e.target === recap) words(); if (!e.target.hasAttribute('data-fin-ctx') && !e.target.hasAttribute('data-fin-fa') && !e.target.hasAttribute('data-fin-fb')) mark(); });
     form.addEventListener('click', function (e) {
       var b = e.target.closest('[data-fin-cand]');
       if (b) {
@@ -1158,6 +1158,17 @@
         else if (!coIn.value) coIn.value = id;
         else { toast('Two already share it. Untick one first.', 'err'); return; }
         paintCands(); mark(); return;
+      }
+      // The final score corrected (the box score stays): the site's /final-correct.
+      var fx = e.target.closest('[data-fin-final]');
+      if (fx) {
+        var fa = parseInt($('[data-fin-fa]', form).value, 10), fb = parseInt($('[data-fin-fb]', form).value, 10);
+        if (!(fa >= 0) || !(fb >= 0) || fa === fb) { toast('Type a final score with a winner.', 'err'); return; }
+        amberAsk('Correct the final score?', fa + '–' + fb + '. The box score stays; Who wins? settles again', 'Correct it', 'flag').then(function (ok) {
+          if (!ok) return;
+          admSend(base + '/final-correct', { team_a_score: fa, team_b_score: fb }).then(function (j) { toast(j.message ? j.message.split('. ')[0] : 'Corrected'); refreshScreen(true); }, function (err) { toast(err.message, 'err'); });
+        });
+        return;
       }
       var ai = e.target.closest('[data-fin-ai]');
       if (ai) {

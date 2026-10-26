@@ -461,7 +461,8 @@ function gameCard(g, { commentsEnabled, social = { commentsCount: 0, reactCount:
   const ymd = gameYmdOf(g.date);
   const pending = g.status === 'final';
   const typeTag = g.game_type === 'finals' ? 'Finals' : g.game_type === 'playoff' ? 'Playoffs' : '';
-  const tag = typeTag || (g.overtime ? 'OT' : margin <= 2 ? 'Thriller' : margin >= 20 ? 'Blowout' : '');
+  // Published from the court and not checked by an admin yet: that comes first.
+  const tag = g.stats_pending ? 'Stats pending review' : typeTag || (g.overtime ? 'OT' : margin <= 2 ? 'Thriller' : margin >= 20 ? 'Blowout' : '');
   const side = (name, score, w) => `<span class="gh-score__team${w ? ' is-win' : ''}"><span class="gh-score__name">${dot(name)}${escHtml(name)}</span><b class="gh-score__num font-condensed">${score}</b></span>`;
   const id = encodeURIComponent(g.id);
   const actions = `${commentsEnabled ? `<a href="/games/${id}#comments" class="gr-act" aria-label="Comments"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>${social.commentsCount || 0}</span></a>
