@@ -2143,3 +2143,9 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .sc-over__btn { display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: var(--r-in); background: var(--amber); color: #14110d; font-size: 15px; font-weight: 600; line-height: 1; text-decoration: none; }
 .sc-over__btn:disabled { opacity: .45; }
 .sc-over__btn--ghost { background: var(--surface-2); color: var(--text); }
+/* A confirmation in the amber bar (scorer: Game over, end a quarter, Publish): an icon in a dark circle */
+.sc-alert__ic { flex: none; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #14110d; color: var(--amber); }
+.sc-alert__ic svg { width: 20px; height: 20px; }
+/* The same amber bar outside the scorer (public/app.js amberAsk): fixed at the top of the screen */
+.amber-ask.sc-alert { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: 120; }
+@media (min-width: 900px) { .amber-ask.sc-alert { left: 50%; right: auto; width: 420px; transform: translateX(-50%); } }

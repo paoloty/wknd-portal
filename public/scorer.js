@@ -638,20 +638,24 @@ export async function mount(el) {
     if (G.timeouts.left[t] <= 0) return;
     whistle(); teamPlay(t, 'timeout');
   }
-  // End of Q4 (or an overtime) with a winner: Game over; overtime only when it's tied (or on
-  // purpose).
+  // End of Q4 (or an overtime) with a winner: Game over or Not yet, never overtime; a tie:
+  // overtime only (Paolo, 2026-10-26). Both in the amber bar.
   function endPeriod() {
     if (G.final) { ui.tip = 'The game is over. Undo the last play to reopen it.'; return paint(); }
     const cur = G.period, next = periodName(periodIndex(cur) + 1);
-    const note = isOvertime(next) ? `${rules.otMin} min, 1 timeout each, team fouls carry on` : next === 'Q3' ? '3 timeouts each, team fouls reset' : 'team fouls reset';
-    if (periodIndex(cur) >= rules.periods && G.score.a !== G.score.b) {
-      return menu(`End of ${cur}: ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. Game over?`, [['final', 'Game over'], ['ot', `Start ${next} anyway`], ['no', 'Not yet']], k => {
-        if (k === 'final') { add({ type: 'period_end', period: cur, final: true }); ui.running = false; ui.whistle = false; syncRun(); ui.tip = ''; save(); return paint(); }
-        if (k === 'ot') startNext(cur, next);
-      }, 'final');
+    const note = isOvertime(next) ? `${rules.otMin} min, 1 timeout each, team fouls carry on` : next === 'Q3' ? '3 timeouts each, team fouls reset' : 'Team fouls reset';
+    const late = periodIndex(cur) >= rules.periods;
+    if (late && G.score.a !== G.score.b) {
+      return confirm('Game over?', `End of ${cur}: ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}`, 'flag', 'Game over', () => {
+        add({ type: 'period_end', period: cur, final: true }); ui.running = false; ui.whistle = false; syncRun(); ui.tip = ''; save(); paint();
+      });
     }
-    menu(`End ${cur} and start ${next}? (${note})`, [['end', `End ${cur}`], ['no', 'Not yet']], k => { if (k === 'end') startNext(cur, next); }, 'end');
+    confirm(`End ${cur} and start ${next}?`, late ? `Tied ${G.score.a}–${G.score.b}. ${note}` : note.charAt(0).toUpperCase() + note.slice(1), 'clock', `End ${cur}`, () => startNext(cur, next));
   }
+  // A confirmation in the amber bar at the top, like Leave and the other scorer's alerts
+  // (Paolo, 2026-10-26): Not yet, and the action.
+  const ICONS = { flag: 'M5 21V4M5 4h11l-2 4 2 4H5', clock: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', up: 'M12 16V4M7 9l5-5 5 5M5 20h14' };
+  function confirm(title, sub, icon, yes, act) { ui.confirm = { title, sub, icon, yes, act }; ui.ask = null; ui.peek = null; paint(); }
   function startNext(cur, next) {
     add({ type: 'period_end', period: cur });
     ui.running = false; ui.whistle = false; ui.secs = (isOvertime(next) ? rules.otMin : rules.periodMin) * 60; syncRun(); ui.tip = `${next} started.`;
@@ -947,6 +951,12 @@ export async function mount(el) {
   // answer shows on its button until the server has it), or the other scorer gone.
   const avatar = ini => `<span class="sc-alert__av num">${esc(ini || '?')}</span>`;
   function alertBar() {
+    if (ui.confirm) {
+      const c = ui.confirm;
+      return `<div class="sc-alert" role="alertdialog" aria-label="${esc(c.title)}">
+        <div class="sc-alert__r"><span class="sc-alert__ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[c.icon] || ICONS.flag}"/></svg></span><span class="sc-alert__t"><b>${esc(c.title)}</b>${c.sub ? `<small>${esc(c.sub)}</small>` : ''}</span></div>
+        <div class="sc-alert__b"><button type="button" class="sc-alert__no" data-act="confirm-no">Not yet</button><button type="button" class="sc-alert__yes" data-act="confirm-yes">${esc(c.yes)}</button></div></div>`;
+    }
     if (ui.leaving) {
       return `<div class="sc-alert" role="alertdialog" aria-label="${esc(ui.leaving.title)}">
         <div class="sc-alert__r"><span class="sc-alert__t"><b>${esc(ui.leaving.title)}</b><small>${esc(ui.leaving.sub)}</small></span></div>
@@ -1144,11 +1154,13 @@ export async function mount(el) {
       : `All ${all} play${all === 1 ? '' : 's'} saved.`;
     const O = B.over || {};
     const back = O.back ? `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(O.back)}">${O.review ? 'Back to the game' : 'Back to games'}</a>` : '';
-    const acts = ui.locked || ui.published ? back
-      : O.publish ? `<button type="button" class="sc-over__btn" data-act="publish"${n || ui.publishing ? ' disabled' : ''}>${ui.publishing ? 'Publishing…' : 'Publish the game'}</button>${back}`
+    // Saved: the next step, the POTG and the recap (the site's Content tab).
+    const acts = ui.published && ui.next ? `<a class="sc-over__btn" href="${esc(ui.next)}">POTG and recap</a>${back}`
+      : ui.locked || ui.published ? back
+      : O.publish ? `<button type="button" class="sc-over__btn" data-act="publish"${n || ui.publishing ? ' disabled' : ''}>${ui.publishing ? 'Saving…' : 'Save the box score'}</button>${back}`
       : back;
-    const note = ui.published || ui.locked ? '' : O.publish ? (n ? 'Publish works once every play is saved.' : `Its box score, quarter scores and play-by-play ${O.liveOff ? 'are saved, hidden until Visible to everyone is on' : 'go on the site and in the app'}.`)
-      : 'An admin checks the plays and publishes the game.';
+    const note = ui.published ? 'Next: the POTG and the recap.' : ui.locked ? '' : O.publish ? (n ? 'Every play has to be saved first.' : `The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ''}. The POTG and the recap come next.`)
+      : 'An admin checks the plays and saves the box score.';
     return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
       <p class="sc-over__s${n && !ui.published ? ' is-wait' : ''}">${sendLine}</p>${note ? `<p class="sc-over__n">${note}</p>` : ''}
       <div class="sc-over__b">${acts}</div></div>`;
@@ -1156,14 +1168,13 @@ export async function mount(el) {
   function publish() {
     const O = B.over || {};
     if (!O.publish || unsent().length || ui.publishing) return;
-    menu(`Publish ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}?`, [['go', 'Publish'], ['no', 'Not yet']], k => {
-      if (k !== 'go') return;
+    confirm('Save the box score?', `${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ' now'}; the POTG and recap come next`, 'up', 'Save it', () => {
       ui.publishing = true; paint();
       fetch(O.publish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ pass: B.pass }) })
         .then(r => r.text().then(t => { let j = null; try { j = JSON.parse(t); } catch (e) {} if (!r.ok || !j || j.error) throw new Error((j && j.error) || 'Your admin sign-in ended. Open the scorer again.'); return j; }))
-        .then(j => { ui.publishing = false; ui.published = j.message || 'Published.'; ui.locked = true; if (soundOn()) chime('yes'); paint(); },
-          err => { ui.publishing = false; ui.tip = err.message || 'Not published. Try again.'; paint(); });
-    }, 'go');
+        .then(j => { ui.publishing = false; ui.published = j.message || 'Box score saved.'; ui.next = j.next || ''; ui.locked = true; if (soundOn()) chime('yes'); paint(); },
+          err => { ui.publishing = false; ui.tip = err.message || 'Not saved. Try again.'; paint(); });
+    });
   }
   function paintNow() {
     if (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) ui.ask = ui.queue.shift();
@@ -1181,7 +1192,7 @@ export async function mount(el) {
     root.classList.toggle('is-docked', docked);
     root.innerHTML = `
       <div class="sc-left">
-        ${ui.locked ? '<div class="msg msg--info sc-msg">This game is published. The scorer is read-only now.</div>' : ''}
+        ${ui.locked ? '<div class="msg msg--info sc-msg">The box score is saved. The scorer is read-only now.</div>' : ''}
         ${ui.sync === 'error' && ui.syncMsg ? `<div class="msg msg--err sc-msg" role="alert">${esc(ui.syncMsg)}</div>` : ''}
         <div class="sc-board">
           ${sideBoard('a')}
@@ -1222,6 +1233,8 @@ export async function mount(el) {
     const t = b.getAttribute('data-team');
     if (name === 'clock') { clockNow(); ui.running = !ui.running; syncRun(); ui.whistle = false; if (ui.running) ui.tip = ''; save(); return paint(); }
     if (name === 'end') return endPeriod();
+    if (name === 'confirm-no') { ui.confirm = null; return paint(); }
+    if (name === 'confirm-yes') { const c = ui.confirm; ui.confirm = null; if (c) c.act(); return paint(); }
     if (name === 'publish') return publish();
     if (name === 'ask-cancel') { ui.asked = ''; return lanes({ action: 'ask', want: null }); }
     if (name === 'alone-both') { ui.alone = null; return lanes({ action: 'claim', want: 'both' }); }

@@ -888,6 +888,24 @@
     return el;
   }
   var admEsc = function (s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  // A yes/no question in the amber bar at the top (the scorer's confirmations, public/scorer.js
+  // alertBar): resolves true for the action, false for Not yet.
+  var AMBER_ICONS = { up: 'M12 16V4M7 9l5-5 5 5M5 20h14', flag: 'M5 21V4M5 4h11l-2 4 2 4H5' };
+  function amberAsk(title, sub, yes, icon) {
+    return new Promise(function (done) {
+      $$('.amber-ask').forEach(function (x) { x.remove(); });
+      var el = document.createElement('div');
+      el.className = 'amber-ask sc-alert'; el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-label', title);
+      el.innerHTML = '<div class="sc-alert__r"><span class="sc-alert__ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="' + (AMBER_ICONS[icon] || AMBER_ICONS.up) + '"/></svg></span><span class="sc-alert__t"><b></b><small></small></span></div>' +
+        '<div class="sc-alert__b"><button type="button" class="sc-alert__no">Not yet</button><button type="button" class="sc-alert__yes"></button></div>';
+      $('.sc-alert__t b', el).textContent = title; $('.sc-alert__t small', el).textContent = sub; $('.sc-alert__yes', el).textContent = yes;
+      var end = function (v) { el.remove(); done(v); };
+      $('.sc-alert__no', el).onclick = function () { end(false); };
+      $('.sc-alert__yes', el).onclick = function () { end(true); };
+      document.body.appendChild(el);
+      $('.sc-alert__yes', el).focus();
+    });
+  }
   // A short toast: the first sentence of a long server message (Autofill explains every skip).
   var admShort = function (m) { return String(m || '').split('. ')[0].replace(/\.$/, ''); };
 
@@ -1027,7 +1045,13 @@
         if (b.disabled || admBusy) return;
         if (!navigator.onLine) { toast('You\'re offline. Nothing was sent.', 'err'); return; }
         var ask = b.getAttribute('data-adm-ask');
-        if (ask && !window.confirm(ask)) return;
+        // A title too: the question in the amber bar (the scorer's look) instead of the phone's pop-up.
+        if (ask && b.getAttribute('data-adm-ask-title') && !b._asked) {
+          var post = b;
+          amberAsk(b.getAttribute('data-adm-ask-title'), ask, b.getAttribute('data-adm-ask-yes') || 'OK', b.getAttribute('data-adm-ask-icon')).then(function (ok) { if (ok) { post._asked = true; post.click(); post._asked = false; } });
+          return;
+        }
+        if (ask && !b._asked && !window.confirm(ask)) return;
         var body = null; try { body = JSON.parse(b.getAttribute('data-adm-body') || 'null'); } catch (x) {}
         admBusy = true; b.disabled = true; b.classList.add('is-busy');
         admSend(b.getAttribute('data-adm-post'), body, b.getAttribute('data-adm-method')).then(function (j) {

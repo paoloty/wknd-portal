@@ -6869,16 +6869,19 @@ function appReviewCard(req, g, hasBox = false) {
   const pid = req.session?.playerPlayerId;
   if (!gameAdminPlayers().some(a => a.playerId === pid) && !isAdminWithSection(req, 'games-stats')) return null;
   const sg = getScoreGame(g.id);
-  if (sg && sg.status === 'published') return null;
+  // Box score saved from the plays: the next step (the POTG and the recap, on the site's Content
+  // tab) until both are in.
+  if (sg && sg.status === 'published') return !g.game_writeup || !(g.potg_writeup || g.manual_potg_player_id) ? { state: 'next', next: `/admin/games/${encodeURIComponent(g.id)}?tab=content`, recap: !!g.game_writeup, potg: !!(g.potg_writeup || g.manual_potg_player_id) } : null;
   const r = sg && sg.settings.review, me = reviewer(req);
-  // Yours and its track has reached Game over: Publish, with the site's publish route.
-  const pass = r && r.kind === 'video' ? 'video' : 'live';
+  // Yours and its track has reached Game over: Publish, with the site's publish route. The track
+  // is the one the review shows (the admin page's rule): the video re-track once it has plays.
+  const pass = sg && getScoreEvents(g.id, 'video').length ? 'video' : 'live';
   const over = r && r.by === me.by && req.session?.isAdmin && foldScoredGame(getScoreEvents(g.id, pass), { ...SCORE_RULES, ...(sg.settings.rules || {}) }).final;
   return {
     publish: over ? { url: `/admin/games/${encodeURIComponent(g.id)}/scoring/publish`, pass, hidden: sg.settings.live_public === false } : null,
     action: `/app/games/${encodeURIComponent(g.id)}/review`, video: !!ytId(g.youtube_url || ''), hasBox,
     state: !r ? (sg && !sg.settings.reviewOnly ? 'scored' : 'start') : r.by === me.by ? 'mine' : 'held',
-    kind: r ? r.kind : '', holder: r && r.by !== me.by ? r.name : '', held: req.query.review === 'held',
+    kind: r ? (pass === 'video' ? 'video' : r.kind) : '', holder: r && r.by !== me.by ? r.name : '', held: req.query.review === 'held',
     watch: r ? `/app/games/${encodeURIComponent(g.id)}?review=live` : '',
   };
 }
@@ -7380,7 +7383,7 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
     saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: pass, official: official || sg.settings.official, review: null, reviewLive: false, reviewedBy: reviewer(req).name } });
     console.log(`[scorer] published game=${game.id} pass=${pass} plays=${events.length} score=${state.score.a}-${state.score.b}`);
     const off = official && (official.a !== state.score.a || official.b !== state.score.b) ? ` The plays add up to ${state.score.a}–${state.score.b}; the final score ${official.a}–${official.b} stays the result.` : '';
-    res.json({ ok: true, message: `Published${visible ? '' : ', hidden until you switch Visible to everyone on'}: ${game.team_a_name} ${official ? official.a : state.score.a}, ${game.team_b_name} ${official ? official.b : state.score.b}.${off}` });
+    res.json({ ok: true, message: `Box score saved${visible ? '' : ', hidden until you switch Visible to everyone on'}: ${game.team_a_name} ${official ? official.a : state.score.a}, ${game.team_b_name} ${official ? official.b : state.score.b}.${off}`, next: `/admin/games/${encodeURIComponent(game.id)}?tab=content` });
     afterGameImport(game, Object.keys(payload.playerStats));
     liveChanged(game.id); // open live pages reload into the published game
   } catch (err) {
