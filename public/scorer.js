@@ -844,7 +844,9 @@ export async function mount(el) {
     }
     const on = five(t);
     const dnps = team[t].players.filter(p => G.dnp.includes(p.id));
-    const rest = team[t].players.filter(p => !on.includes(p.id) && !G.dnp.includes(p.id));
+    // The bench; players who fouled out (or were ejected) go to the very end, greyed out.
+    const bench = team[t].players.filter(p => !on.includes(p.id) && !G.dnp.includes(p.id));
+    const rest = [...bench.filter(p => !G.flags[p.id]), ...bench.filter(p => G.flags[p.id])];
     const noTO = G.timeouts.left[t] <= 0;
     const noSub = !rest.some(p => !G.flags[p.id]);
     return `<section class="sc-team${multi && ui.lane === t ? ' sc-team--solo' : ''}">

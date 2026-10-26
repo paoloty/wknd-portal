@@ -10722,3 +10722,59 @@ html.ppop-lock { overflow: hidden; }
 .lx-you { padding: 10px 12px; border-radius: 10px; background: rgba(245,147,50,.1); border: 1px solid rgba(245,147,50,.35); font-size: 13px; }
 .lx-you b { color: var(--lx-amber); }
 .gd-review-live { border-color: rgba(245,147,50,.45); }
+
+/* ── Live chat (views/live-chat.js, public/live-chat.js); the app's is the same ── */
+.lc { --lc-bottom: 0px; --lc-bg: rgba(10,14,22,.94); --lc-2: var(--surface-2); --lc-bubble: rgba(22,28,41,.88); --lc-input: rgba(22,28,41,.96); --lc-hair: rgba(255,255,255,.1); --lc-text: var(--text); --lc-mut: var(--text-muted); --lc-amber: var(--amber); --lc-font: inherit; }
+
+/* Floating over the bottom of the live view (option B): newest last, older ones fading out */
+.lc-spacer { height: 250px; }
+.lc-off .lc-spacer { height: 64px; }
+.lc { position: fixed; left: 0; right: 0; bottom: var(--lc-bottom); z-index: 25; display: grid; grid-template-columns: minmax(0, 1fr) 44px; grid-template-areas: "watch watch" "list side" "bar bar" "tip tip"; gap: 8px; padding: 70px 12px 10px; pointer-events: none; background: linear-gradient(180deg, transparent, var(--lc-bg) 55%); color: var(--lc-text); font-family: var(--lc-font); }
+.lc > * { pointer-events: auto; }
+.lc__head { display: none; }
+.lc__list { grid-area: list; align-self: end; display: flex; flex-direction: column; gap: 6px; max-height: 172px; overflow: hidden; padding: 3px 0 3px 3px; /* room for the avatars' rings */ justify-content: flex-end; -webkit-mask-image: linear-gradient(180deg, transparent, #000 45%); mask-image: linear-gradient(180deg, transparent, #000 45%); }
+.lc__m { display: flex; align-items: flex-start; gap: 8px; flex: none; }
+.lc__av { flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--lc-2); box-shadow: 0 0 0 2px var(--c); font-size: 10px; font-weight: 700; line-height: 1; }
+.lc__b { min-width: 0; padding: 6px 10px; border-radius: 14px; background: var(--lc-bubble); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.lc__b b { font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) { @keyframes lcIn { from { opacity: 0; transform: translateY(8px); } } .lc__m.is-new { animation: lcIn .25s ease-out; } }
+.lc__side { grid-area: side; align-self: end; display: flex; flex-direction: column; gap: 8px; }
+.lc__btn { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 50%; border: 1px solid var(--lc-hair); background: var(--lc-bubble); color: var(--lc-text); }
+.lc__btn svg { width: 20px; height: 20px; }
+.lc__btn--fire { color: var(--lc-amber); }
+@media (prefers-reduced-motion: no-preference) { @keyframes lcPop { 40% { transform: scale(1.25); } } .lc__btn--fire.is-pop { animation: lcPop .3s ease-out; } }
+.lc__bar { grid-area: bar; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 4px 0 14px; border-radius: 22px; background: var(--lc-input); border: 1px solid var(--lc-hair); }
+.lc__bar input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: var(--lc-text); font: inherit; font-size: 16px; outline: none; }
+.lc__bar input::placeholder { color: var(--lc-mut); }
+.lc__send { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: var(--lc-amber); color: #14110d; }
+.lc__send svg { width: 16px; height: 16px; }
+.lc__bar--login { justify-content: center; color: var(--lc-amber); font-size: 14px; font-weight: 600; text-decoration: none; }
+.lc__tip { grid-area: tip; margin: 0; font-size: 12px; color: var(--lc-mut); text-align: center; }
+/* Hidden: a pill counting new messages */
+.lc.is-hidden { background: none; padding-top: 0; }
+.lc.is-hidden .lc__list, .lc.is-hidden .lc__side, .lc.is-hidden .lc__bar, .lc.is-hidden .lc__head { display: none; }
+.lc__show { position: absolute; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px 0 14px; border-radius: 999px; border: 1px solid var(--lc-hair); background: var(--lc-2); color: var(--lc-text); box-shadow: 0 8px 24px rgba(0,0,0,.45); font-size: 14px; font-weight: 600; line-height: 1; }
+.lc__show svg { width: 20px; height: 20px; }
+.lc__show b { display: flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; box-sizing: border-box; border-radius: 11px; background: var(--lc-amber); color: #14110d; font-size: 13px; }
+.lc__show[hidden], .lc__show b[hidden] { display: none; }
+
+.game-comment__live { margin-left: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(239,68,68,.12); color: #f87171; font-size: 11px; font-weight: 700; }
+/* Wide screens: a sidebar on the right, the page making room for it */
+@media (min-width: 1100px) {
+  .lc-spacer { display: none; }
+  .lc { top: 96px; right: 16px; bottom: 16px; left: auto; width: 340px; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: 0 12px 32px rgba(0,0,0,.35); }
+  .lc__head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .lc__sp { flex: 1; }
+  .lc__list { flex: 1; max-height: none; overflow-y: auto; justify-content: flex-start; -webkit-mask-image: none; mask-image: none; }
+  .lc__list > :first-child { margin-top: auto; }
+  .lc__side { display: none; }
+  .lc.is-hidden { top: auto; width: auto; padding: 0; border: 0; box-shadow: none; background: none; }
+  .gd-page.has-chat { padding-right: 372px; }
+  .lc-off .gd-page.has-chat { padding-right: 0; }
+}
+.lc__watch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--lc-mut); white-space: nowrap; }
+.lc__watch i { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; }
+.lc__watch[hidden] { display: none; }
+.lc__watch--float { grid-area: watch; justify-self: start; padding: 4px 10px; border-radius: 999px; background: var(--lc-bubble); color: var(--lc-text); }
+.lc.is-hidden .lc__watch--float { display: none; }
+@media (min-width: 1100px) { .lc__watch--float { display: none; } }

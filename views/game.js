@@ -2,6 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl, shareIcon, gameTipLabel } from './utils.js';
 import { courtDisplayName } from '../lib/court-page.js';
 import { liveExtrasHtml } from './live-extras.js';
+import { liveChatHtml } from './live-chat.js';
 
 // The game's court, linked to its court page when that page is public (so every game played
 // there points at it).
@@ -1422,7 +1423,7 @@ function commentRow(c, { reacted, isAdmin, collapsed = false, mentionablePlayers
     <div class="game-comment__body">
       <div class="game-comment__head">
         ${playerLink(c.player_id, c.player_name, { className: 'game-comment__name' })}
-        <span class="game-comment__time">${fmtCommentTime(c.created_at)}</span>
+        <span class="game-comment__time">${fmtCommentTime(c.created_at)}</span>${c.during ? '<span class="game-comment__live">During the game</span>' : ''}
         ${isAdmin ? `<button type="button" class="game-comment__delete" data-delete-id="${escHtml(c.id)}" title="Delete comment" aria-label="Delete comment">✕</button>` : ''}
       </div>
       ${c.parent_id && replyTo ? `<span class="game-comment__replyto">↪ Replying to ${escHtml(replyTo)}</span>` : ''}
@@ -2520,12 +2521,12 @@ export function gamePage(d) {
       m?.rows?.length ? { id: 'h2h', label: 'Head to head' } : null,
       m?.scorers?.some(Boolean) ? { id: 'watchlist', label: 'Players to watch' } : null,
       p?.meetingCards?.games?.length ? { id: 'meetings', label: 'Last meetings' } : null,
-      comments ? { ...comments, label: 'Pre-game chatter' } : null,
+      comments ? { ...comments, label: d.live ? 'Comments' : 'Pre-game chatter' } : null,
     ].filter(Boolean);
     // Being scored: the live score leads, the preview stays under it.
     const lp = d.live ? liveParts(v) : null;
     const listen = lp || d.liveArmed;
-    return `<div class="page-content gd-page"${listen ? ` data-live-src="${d.liveSrc || `/games/${encodeURIComponent(gameSlug(game))}`}" data-live-ws="/ws/games/${encodeURIComponent(game.id)}/live"` : ''}>
+    return `<div class="page-content gd-page${d.chat ? ' has-chat' : ''}"${listen ? ` data-live-src="${d.liveSrc || `/games/${encodeURIComponent(gameSlug(game))}`}" data-live-ws="/ws/games/${encodeURIComponent(game.id)}/live"` : ''}>
   ${d.reviewLive ? '<div class="card gd-scorer gd-review-live"><span><b>Review, watched live.</b> Only admins see this page, and it isn’t in the feed, the ticker or the homepage. Switch it off on the game’s Scoring tab.</span></div>' : ''}
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${lp ? `<div data-live="hero">${lp.hero}</div>` : upcomingHero(v)}
@@ -2538,15 +2539,16 @@ export function gamePage(d) {
       ${m ? edgesBlock(m) : ''}
       ${m ? scorersBlock(m, p.duel) : ''}
       ${m ? meetingsBlock(m, p.meetingCards) : ''}
-      ${talkSection(v, 'Pre-game chatter')}
+      ${talkSection(v, d.live ? 'Comments' : 'Pre-game chatter')}
     </div>
-    <aside class="gd-cols__rail gd-rail--sticky">${pickRail(v)}${railTalkCard(v, 'Pre-game chatter')}</aside>
+    <aside class="gd-cols__rail gd-rail--sticky">${pickRail(v)}${railTalkCard(v, d.live ? 'Comments' : 'Pre-game chatter')}</aside>
   </div>
 </div>
 ${floater}
 ${m ? matchupScript({ isAdmin: d.isAdmin }) : ''}
 ${p?.o || p?.siblings?.length ? pickCardScript() : ''}
 ${listen ? `<script src="/live-score.js?v=${escHtml(String(d.liveVer || ''))}" defer></script>` : ''}
+${d.chat ? `${liveChatHtml(d.chat)}<script src="/live-chat.js?v=${escHtml(String(d.liveVer || ''))}" defer></script>` : ''}
 ${scripts}`;
   }
 

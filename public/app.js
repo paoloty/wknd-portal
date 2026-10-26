@@ -304,6 +304,15 @@
   }
   // A game being scored (views/app/feed.js appLiveParts): public/live-score.js keeps it fresh,
   // and on every other screen closes its socket.
+  // Live chat on a live game (views/live-chat.js): public/live-chat.js, loaded on that screen.
+  function initChat() {
+    if (window.wkndChat) return window.wkndChat.scan();
+    if (!$('[data-live-chat]') || initChat.loading) return;
+    initChat.loading = true;
+    var s = document.createElement('script'); s.src = '/live-chat.js?v=' + ver;
+    s.onerror = function () { initChat.loading = false; };
+    document.head.appendChild(s);
+  }
   function initLive() {
     if (window.wkndLive) return window.wkndLive.scan();
     if (!$('[data-live-src]') || initLive.loading) return;
@@ -515,7 +524,7 @@
     initShare();
     initPollTakeover();
     initScorer();
-    initLive();
+    initLive(); initChat();
     initGameRecap();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s

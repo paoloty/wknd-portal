@@ -21,7 +21,7 @@ function row(c, topId, names, reply = false) {
     ${appAvatar({ playerId: c.playerId, initials: c.initials, ring: c.ring, photoUrl: c.photoUrl })}
     <div class="ct__b">
       <p class="ct__text"><b>${esc(c.name)}</b> ${mentions(esc(c.body), names)}</p>
-      <div class="ct__meta"><span>${esc(c.when)}</span><button type="button" data-ct-reply="${esc(topId)}" data-ct-name="${esc(c.name)}">Reply</button>${c.canDelete ? `<button type="button" data-ct-del="${esc(c.id)}">Delete</button>` : ''}</div>
+      <div class="ct__meta"><span>${esc(c.when)}</span>${c.during ? '<span class="ct__live">During the game</span>' : ''}<button type="button" data-ct-reply="${esc(topId)}" data-ct-name="${esc(c.name)}">Reply</button>${c.canDelete ? `<button type="button" data-ct-del="${esc(c.id)}">Delete</button>` : ''}</div>
     </div>
     <button type="button" class="ct__fire${c.fired ? ' is-on' : ''}" data-ct-fire="${esc(c.id)}" aria-pressed="${c.fired ? 'true' : 'false'}" aria-label="Fire">${icons.flame}<span>${c.fire || ''}</span></button>
   </div>`;

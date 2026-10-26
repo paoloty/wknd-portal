@@ -6737,7 +6737,8 @@ function appThreadData(target, req, open = []) {
   const isAdmin = isAdminWithSection(req, 'games-stats');
   const rows = getGameComments(target.key);
   const fired = getReactedCommentIdsForPlayer(rows.map(c => c.id), playerId);
-  const shape = c => ({ ...appPersonOf({ ...c, name: c.player_name }), id: c.id, body: c.body, when: agoShort(c.created_at),
+  const win = target.kind === 'game' ? liveWindowOf(target.key) : null;
+  const shape = c => ({ ...appPersonOf({ ...c, name: c.player_name }), id: c.id, body: c.body, when: agoShort(c.created_at), during: duringGame(win, c),
     fire: Number(c.reaction_count) || 0, fired: fired.has(c.id), canDelete: c.player_id === playerId || isAdmin });
   const tops = rows.filter(c => !c.parent_id || !rows.some(x => x.id === c.parent_id)).map(c => ({ ...shape(c), replies: [] }));
   const byId = new Map(tops.map(t => [t.id, t]));
@@ -6993,7 +6994,9 @@ function liveExtrasBase(game, bundle) {
 // review closes or the game publishes): the game page at ?review=live shows the plays being
 // reviewed (the video re-track or the live track) as a live game, to admins only. Never in
 // the feed, the ticker, the homepage or Home's live card, and no bells.
-const reviewLiveOn = game => { const sg = getScoreGame(game.id); return !!sg && !!sg.settings.reviewLive && sg.status !== 'published'; };
+// Watchable live by admins: the switch on, or a review under way (Paolo, 2026-10-26: once an
+// admin starts a review, the other admins see it on Home).
+const reviewLiveOn = game => { const sg = getScoreGame(game.id); return !!sg && sg.status !== 'published' && (!!sg.settings.reviewLive || !!sg.settings.review); };
 const reviewPass = game => (getScoreGame(game.id)?.settings?.review?.kind === 'video' ? 'video' : 'live');
 function reviewLiveFor(game) {
   if (!reviewLiveOn(game)) return null;
@@ -7002,6 +7005,32 @@ function reviewLiveFor(game) {
   return liveScoreData(bundle, { photo: id => playerPhotoUrl(id, 96) });
 }
 const canWatchReview = (req, playerId = req.session?.playerPlayerId) => isAdminWithSection(req, 'games-stats') || (!!playerId && gameAdminPlayers().some(a => a.playerId === playerId));
+// Live chat (Paolo, 2026-10-26, mockup option B): while a game's live score shows, its
+// comments float over the live view (a sidebar on a wide screen), and stay as the game's
+// comments afterwards. On with comments, unless its own switch (live_chat_enabled) is off.
+const liveChatOn = () => getSetting('comments_enabled', '0') === '1' && getSetting('live_chat_enabled', '1') !== '0';
+// When the game was live (its first scored play to the final score or publish): comments in it
+// are marked "During the game".
+function liveWindowOf(gameId) {
+  const sg = getScoreGame(gameId);
+  if (!sg) return null;
+  const ev = getScoreEvents(gameId, 'live');
+  if (!ev.length) return null;
+  const start = Math.min(...ev.map(e => Number(e.at) || Infinity));
+  const end = Number(sg.settings.finalAt) || Number(sg.published_at) || (sg.status === 'published' ? Math.max(...ev.map(e => Number(e.at) || 0)) : Infinity);
+  return { start, end };
+}
+const duringGame = (win, c) => !!win && c.created_at >= win.start && c.created_at <= win.end;
+// The chat's data: the last 30 messages, oldest first, in the broadcast's shape.
+function liveChatData(game, req) {
+  const pid = req.session?.playerPlayerId || '';
+  const rows = getGameComments(game.id).slice(-30);
+  return {
+    gameId: game.id, watching: watchingCount(game.id), canPost: !!(req.session?.playerRegId && pid) && !getBannedPlayerIds().has(pid) && !req.session?.impersonating,
+    login: `/login?next=${encodeURIComponent(`/games/${gameSlug(game)}`)}`,
+    items: rows.map(c => ({ id: c.id, body: c.body, displayName: displayPlayerName(c.player_name || ''), initials: initials(c.player_name || ''), color: teamColor(c.team_name || ''), created_at: c.created_at })),
+  };
+}
 // A game being scored, small: the ticker, the homepage's playoff scoreboard and Coming up.
 function liveMini(g) {
   if (!g || !getScoreGame(g.id)) return null;
@@ -7677,6 +7706,7 @@ function appGamePreview(req, res, me, back, g, reviewView = false) {
     scoreHref: getScoreGame(g.id) && scoreAccess(req, g.id) ? `/app/score/${encodeURIComponent(g.id)}` : '',
     live: live || reviewView || liveArmed(g) ? { src: `/app/games/${encodeURIComponent(g.id)}${reviewView ? '?review=live' : ''}`, ws: `/ws/games/${encodeURIComponent(g.id)}/live`, parts: live ? appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g), extras: liveExtrasFor(g, me.playerId, xPass) }) : null } : null,
     reviewLive: reviewView,
+    chat: live && !live.ended && !reviewView && liveChatOn() ? liveChatData(g, req) : null,
   }) });
 }
 // The viewer's own team in this game (their box score opens on it).
@@ -7904,9 +7934,20 @@ function appLiveNowGames() {
     .map(g => ({ g, l: liveScoreFor(g) })).filter(x => x.l && !x.l.ended)
     .sort((x, y) => y.l.updatedAt - x.l.updatedAt);
 }
+// For admins, games being reviewed (by any admin) as well: the reviewed plays, live, admins only.
+function appReviewNowGames() {
+  return portalDb.prepare("SELECT game_id FROM score_games WHERE status != 'published'").all()
+    .map(r => getGameById(r.game_id)).filter(g => g && getScoreGame(g.id)?.settings?.review)
+    .map(g => ({ g, l: reviewLiveFor(g), review: getScoreGame(g.id).settings.review })).filter(x => x.l);
+}
 app.get('/app/live-now', requireAppData, (req, res) => {
   const me = appMe(req);
   const colorOf = appColorOf(getAllTeams());
+  const reviews = canWatchReview(req, me.playerId) ? appReviewNowGames().map(({ g, l, review }) => ({
+    id: g.id, href: `/app/games/${encodeURIComponent(g.id)}?review=live`, when: liveWhen(l), line: `${review.name || 'An admin'} is ${review.kind === 'video' ? 're-tracking it from the video' : 'checking the plays'}. Only admins see this.`,
+    kicker: 'Review · in progress', media: gameMedia(g), review: true,
+    a: { name: g.team_a_name, color: colorOf(g.team_a_name), score: l.score.a }, b: { name: g.team_b_name, color: colorOf(g.team_b_name), score: l.score.b },
+  })) : [];
   const cards = appLiveNowGames().map(({ g, l }) => {
     const x = liveExtrasFor(g, me.playerId);
     const run = x?.momentum?.run, odds = x?.odds;
@@ -7915,7 +7956,7 @@ app.get('/app/live-now', requireAppData, (req, res) => {
     return { id: g.id, when: liveWhen(l), line, kicker: `Live · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`, media: gameMedia(g), a: { name: g.team_a_name, color: colorOf(g.team_a_name), score: l.score.a }, b: { name: g.team_b_name, color: colorOf(g.team_b_name), score: l.score.b } };
   });
   res.set('Cache-Control', 'private, no-store');
-  res.json({ html: appLiveNow(cards) });
+  res.json({ html: appLiveNow([...cards, ...reviews]) });
 });
 // Home's rail (views/app/feed.js appRail): the next game day's games. While picks are open
 // they're pick cards; once closed, preview cards with the player's pick; gone after the games.
@@ -11461,7 +11502,8 @@ app.get('/games/:ref', (req, res) => {
   const commentsEnabled = getSetting('comments_enabled', '0') === '1';
   let comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [];
   if (commentsEnabled) {
-    comments = getGameComments(game.id);
+    const win = liveWindowOf(game.id);
+    comments = getGameComments(game.id).map(c => ({ ...c, during: duringGame(win, c) }));
     reactedIds = getReactedCommentIdsForPlayer(comments.map(c => c.id), currentPlayerId);
     gameReaction = { ...getGameReactionState(game.id, currentPlayerId), reactors: getGameReactors(game.id) };
     // Anyone with a real, working login — not just players in this specific game — so a
@@ -11495,6 +11537,7 @@ app.get('/games/:ref', (req, res) => {
       currentPath: req.path,
       metaTags: buildGameOgTags(req, game, court),
       body: gamePage({ ...common, state: 'upcoming', picks, live, extras: live ? liveExtrasFor(game, currentPlayerId || '', xPass) : null, liveArmed: reviewView || liveArmed(game), liveVer: CSS_VER, scoreHref: scoreHrefFor(req, game.id),
+        chat: live && !live.ended && !reviewView && liveChatOn() ? liveChatData(game, req) : null,
         ...(reviewView ? { reviewLive: true, liveSrc: `/games/${encodeURIComponent(gameSlug(game))}?review=live` } : {}) }),
     }));
   }
@@ -11837,10 +11880,21 @@ function extractMentionedPlayerIds(body, players) {
 // Returns { id } or { error, status }. Banned players can't comment.
 const commentLinkOf = t => (t.kind === 'ann' ? `/app?thread=${encodeURIComponent(t.key)}` : `/games/${gameSlug(t.game)}#talk`);
 const commentExcerpt = (body, n = 140) => (body.length > n ? body.slice(0, n) + '…' : body);
+// One message every 1.5 s and 12 a minute per player (live chat makes fast posting easy).
+const commentTimes = new Map();
+function commentTooFast(playerId) {
+  const now = Date.now(), t = (commentTimes.get(playerId) || []).filter(x => now - x < 60000);
+  if (t.length && now - t[t.length - 1] < 1500) return 'Slow down a little.';
+  if (t.length >= 12) return 'That’s a lot of messages. Give it a minute.';
+  t.push(now); commentTimes.set(playerId, t);
+  return '';
+}
 function postComment(target, playerId, rawBody, parentId) {
   if (getBannedPlayerIds().has(playerId)) return { status: 403, error: 'Commenting is off while your account is banned. Settle your balance and message us.' };
   const body = String(rawBody || '').trim().slice(0, 500);
   if (!body) return { status: 400, error: 'Comment can\'t be empty.' };
+  const fast = commentTooFast(playerId);
+  if (fast) return { status: 429, error: fast };
   let parent = null;
   if (parentId) {
     parent = getCommentById(String(parentId));
@@ -25739,6 +25793,14 @@ setInterval(prunePageViewsJob, 24 * 60 * 60 * 1000);
 const gameCommentRooms = new Map(); // gameId -> Set<WebSocket>
 const wss = new WebSocketServer({ noServer: true });
 
+// How many people have the game's page open (its comments socket): the live chat's
+// "watching" count, sent to them all when it changes (at most once a second).
+const watchingCount = gameId => new Set([...(gameCommentRooms.get(gameId) || [])].filter(ws => ws.readyState === ws.OPEN).map(ws => ws._viewer)).size;
+const presenceTimers = new Map();
+function presenceChanged(gameId) {
+  if (presenceTimers.has(gameId)) return;
+  presenceTimers.set(gameId, setTimeout(() => { presenceTimers.delete(gameId); broadcastToGame(gameId, { type: 'presence', count: watchingCount(gameId) }); }, 1000));
+}
 function broadcastToGame(gameId, payload) {
   const room = gameCommentRooms.get(gameId);
   if (!room || !room.size) return;
@@ -25787,11 +25849,17 @@ server.on('upgrade', (req, socket, head) => {
     if (getSetting('comments_enabled', '0') !== '1') { socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, (ws) => {
       const gameId = decodeURIComponent(commentsMatch[1]);
+      // Who it is, for the live chat's "watching" count: their sign-in cookie, else their
+      // address, so one person with two tabs counts once.
+      const sid = /(?:^|;\s*)connect\.sid=([^;]+)/.exec(req.headers.cookie || '');
+      ws._viewer = sid ? sid[1] : (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
       if (!gameCommentRooms.has(gameId)) gameCommentRooms.set(gameId, new Set());
       gameCommentRooms.get(gameId).add(ws);
+      presenceChanged(gameId);
       ws.on('close', () => {
         const room = gameCommentRooms.get(gameId);
         if (room) { room.delete(ws); if (!room.size) gameCommentRooms.delete(gameId); }
+        presenceChanged(gameId);
       });
     });
     return;

@@ -10,6 +10,7 @@ import { todoCard } from './home.js';
 import { lineScore, gameRecapSections, boxCard, jumpBar } from './game.js';
 import { liveWhen } from '../../lib/live-score.js';
 import { liveExtrasHtml } from '../live-extras.js';
+import { liveChatHtml } from '../live-chat.js';
 
 // A YouTube watch/share/embed URL → its 11-character video id, or ''.
 export const ytId = url => (String(url || '').match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
@@ -227,10 +228,10 @@ function railLiveCard(g) {
 // Home's live card: games being scored right now (server.js /app/live-now), in the finished
 // game's card design (gameHero: the photo, both teams, the score), LIVE blinking red.
 export function appLiveNow(cards) {
-  return cards.map(c => `<article class="sx gx gx--live"><a class="gx__link" href="/app/games/${encodeURIComponent(c.id)}?from=home">
-    ${gameHero({ kicker: c.kicker, when: c.when, media: c.media, live: true, a: { ...c.a, won: c.a.score > c.b.score }, b: { ...c.b, won: c.b.score > c.a.score } })}
+  return cards.map(c => { const href = c.href || `/app/games/${encodeURIComponent(c.id)}?from=home`; return `<article class="sx gx gx--live${c.review ? ' gx--review' : ''}"><a class="gx__link" href="${esc(href)}">
+    ${gameHero({ kicker: c.kicker, when: c.when, media: c.media, live: !c.review, inReview: !!c.review, a: { ...c.a, won: c.a.score > c.b.score }, b: { ...c.b, won: c.b.score > c.a.score } })}
     ${c.line ? `<div class="sx__body"><p class="gx__ex live-now__line">${esc(c.line)}</p></div>` : ''}
-  </a><div class="sx__act"><a class="btn btn--ghost" href="/app/games/${encodeURIComponent(c.id)}?from=home">Watch live</a></div></article>`).join('');
+  </a><div class="sx__act"><a class="btn btn--ghost" href="${esc(href)}">${c.review ? 'Watch the review' : 'Watch live'}</a></div></article>`; }).join('');
 }
 // Picks closed: the preview, with the player's pick.
 function railPreviewCard(g) {
@@ -289,7 +290,7 @@ export function appLiveParts(l, { meId = '', myTeamId = '', extras = null } = {}
 
 // Before tip-off: the game's preview. pick: the pick card while picks are open (or the pick
 // made); preview: server.js appPreview.
-export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false }) {
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false, chat = null }) {
   const w = (p.watch || []).filter(Boolean);
   // The section bar (the finished game's, sticky, lights the section in view), once there are
   // three or more sections below the top: live box score + plays, then the preview's.
@@ -321,5 +322,5 @@ export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b
     ${p.series ? `<div class="pv__line"><span>All-time series</span><b>${esc(p.series)}</b></div>` : ''}
   </section>
   ${w.length ? `<section class="fc art" id="pv-watch"><div class="kick">Players to watch</div>${w.map(x => potgStrip(x, '')).join('')}</section>` : ''}
-  <div style="height:12px"></div>`;
+  <div style="height:12px"></div>${chat ? liveChatHtml(chat) : ''}`;
 }
