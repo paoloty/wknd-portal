@@ -126,3 +126,7 @@ Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off),
   - **Follow-ups:** they now last 12 s (`FOLLOW_MS`).
   - **Timeout:** moved from beside the tiles into the team dropdown ("Call timeout · N left", greyed when none), after a mis-tap cost one.
   - **Watching a review live:** it now updates as plays arrive (about 1.5 s; `liveChanged` fires for any review under way, not only with the switch on). It used to wait for the 20-second poll.
+- Leaving and coming back (2026-10-26):
+  - **The leave question** ("Leave the scorer?" / plays not sent yet) is the amber bar at the top (`ui.leaving`), with Stay / Leave.
+  - **Back during a review** (a video re-track, or a review under way) goes to the game in the app, not the Games list.
+  - **Fresh Review card:** an admin's game screen with its Review card is sent `no-store`, and the app's service worker (`keepPage`) then drops its saved copy, so the card is always current (it used to show the saved one until a notification opened it fresh).

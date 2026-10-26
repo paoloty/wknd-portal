@@ -6839,6 +6839,9 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   const thread = appCommentsOn() ? appThreadData({ kind: 'game', key: g.id, game: g }, req) : null;
   const mine = stats.find(s => s.player_id === me.playerId);
   const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
+  // An admin's Review card changes as reviews start and end: never kept on the phone.
+  const reviewCard = appReviewCard(req, g, stats.length > 0);
+  if (reviewCard) res.set('Cache-Control', 'private, no-store');
   sendTab(res, me, { title: `${a.name} ${a.score} · ${b.name} ${b.score} · WKND`, tab: back.tab, body: appGamePage({
     back, title: isPlayedGame(g) ? `${a.name} ${a.score} · ${b.name} ${b.score}` : `${a.name} vs ${b.name}`,
     a, b, media: gameMedia(g), final: isPlayedGame(g),
@@ -6847,7 +6850,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId,
     myTeamId: mine?.team_id || '', full: appGameRecap(g, stats, me),
     shareHref: mine ? `/app/games/${encodeURIComponent(g.id)}/share?from=${back.tab}` : '',
-    review: appReviewCard(req, g, stats.length > 0),
+    review: reviewCard,
   }) });
 });
 // A finished game's Review card in the app (games admins): start a review (re-track from the
@@ -7122,7 +7125,12 @@ const sendScorer = (req, res, back) => {
   res.set('Cache-Control', 'private, no-store');
   sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle: scoreBundle(game, pass), back }) });
 };
-app.get('/app/score/:id', requireApp, (req, res) => sendScorer(req, res, { href: '/app/score', label: 'Games' }));
+app.get('/app/score/:id', requireApp, (req, res) => {
+  // A review (a video re-track, or one under way): Back goes to the game and its Review card.
+  const sg = getScoreGame(req.params.id);
+  const review = scorePass(req) === 'video' || !!sg?.settings?.review || !!sg?.settings?.reviewOnly;
+  sendScorer(req, res, review ? { href: `/app/games/${encodeURIComponent(req.params.id)}`, label: 'Game' } : { href: '/app/score', label: 'Games' });
+});
 // The same screen at a site address, for a scorer signed in on the site (a laptop, or a player
 // not in the app yet). Only the app address (/app/score) works with no signal, so the site's
 // buttons send players who have the app there (scoreHrefFor).

@@ -57,6 +57,9 @@ const keyOf = (url) => url.pathname + url.search;
 // A screen response worth keeping: a real page from this app, not a redirect to sign-in.
 async function keepPage(key, res) {
   if (!res.ok || res.type !== 'basic') return;
+  // A screen the server says not to keep (an admin's game screen with its Review card): drop any
+  // old copy, so the next visit loads it fresh.
+  if (/no-store/.test(res.headers.get('Cache-Control') || '')) { const c = await caches.open(PAGES); await c.delete(key); return; }
   const to = new URL(res.url);
   if (/^\/app\/login/.test(to.pathname)) { await wipe(); return; }
   if (res.redirected) return; // e.g. /app → setup: not the screen this key stands for

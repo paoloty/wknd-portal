@@ -944,6 +944,11 @@ export async function mount(el) {
   // answer shows on its button until the server has it), or the other scorer gone.
   const avatar = ini => `<span class="sc-alert__av num">${esc(ini || '?')}</span>`;
   function alertBar() {
+    if (ui.leaving) {
+      return `<div class="sc-alert" role="alertdialog" aria-label="${esc(ui.leaving.title)}">
+        <div class="sc-alert__r"><span class="sc-alert__t"><b>${esc(ui.leaving.title)}</b><small>${esc(ui.leaving.sub)}</small></span></div>
+        <div class="sc-alert__b"><button type="button" class="sc-alert__no" data-act="leave-stay">Stay</button><button type="button" class="sc-alert__yes" data-act="leave-go">Leave</button></div></div>`;
+    }
     if (!multi || ui.locked) return '';
     if (ui.lanes && ui.lanes.asks.length && ui.lane) {
       const k = ui.lanes.asks[0], h = ui.handing, side = sideName(k.lane);
@@ -1466,9 +1471,17 @@ export async function mount(el) {
     const n = unsent().length;
     if (!n && (ui.locked || !G.rows.length)) { release(); return; }
     e.preventDefault(); e.stopImmediatePropagation();
-    const q = n ? `${n} play${n > 1 ? 's haven’t' : ' hasn’t'} been sent yet. ${n > 1 ? 'They stay' : 'It stays'} on this phone and ${n > 1 ? 'send' : 'sends'} next time you open this game with signal. Leave anyway?` : `Leave the scorer? Every play is saved.${multi && ui.lane && ui.lanes && ui.lanes.others.some(o => o.lane) ? ' The other scorer is told your side is free.' : ''}`;
-    menu(q, [['leave', 'Leave'], ['stay', 'Stay']], k => { if (k === 'leave') { leaving = true; leave.click(); } }, 'stay');
+    // Asked in the amber bar at the top, like the other scorer's alerts (Paolo, 2026-10-26).
+    ui.leaving = n ? { title: `${n} play${n > 1 ? 's haven’t' : ' hasn’t'} been sent yet`, sub: `${n > 1 ? 'They stay' : 'It stays'} on this phone and ${n > 1 ? 'send' : 'sends'} next time you open this game with signal.` }
+      : { title: 'Leave the scorer?', sub: `Every play is saved.${multi && ui.lane && ui.lanes && ui.lanes.others.some(o => o.lane) ? ' The other scorer is told your side is free.' : ''}` };
+    paint();
   });
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-act="leave-go"], [data-act="leave-stay"]'); if (!b) return;
+    e.stopImmediatePropagation();
+    if (b.getAttribute('data-act') === 'leave-stay') { ui.leaving = null; return paint(); }
+    leaving = true; ui.leaving = null; leave.click();
+  }, true);
   window.addEventListener('pagehide', () => { if (document.contains(el)) release(); });
 
   // The game's video above the scorer (video pass, toggle): made once and kept outside the
