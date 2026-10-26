@@ -333,7 +333,8 @@ function scoringTab({ game, sc, colors }) {
       ${scorerForm}</div>` });
   }
   const statusLine = { setup: 'Ready. No plays yet.', live: `Scoring has started · ${sc.period}`, review: 'In review', published: 'Published' }[sc.status] || sc.status;
-  const open = button('Open the scorer', { kind: 'secondary', href: `${base}/score` });
+  // The track the review shows: the video re-track once it has plays (it looked empty on the live one).
+  const open = button('Open the scorer', { kind: 'secondary', href: `${base}/score${sc.pass === 'video' ? '?pass=video' : ''}` });
   const rv = sc.review || {}, lock = rv.lock;
   // Someone else has the review: everything that changes it is read-only here.
   const lockedOut = !!lock && !lock.mine;

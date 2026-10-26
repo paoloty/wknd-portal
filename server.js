@@ -6871,7 +6871,11 @@ function appReviewCard(req, g, hasBox = false) {
   const sg = getScoreGame(g.id);
   if (sg && sg.status === 'published') return null;
   const r = sg && sg.settings.review, me = reviewer(req);
+  // Yours and its track has reached Game over: Publish, with the site's publish route.
+  const pass = r && r.kind === 'video' ? 'video' : 'live';
+  const over = r && r.by === me.by && req.session?.isAdmin && foldScoredGame(getScoreEvents(g.id, pass), { ...SCORE_RULES, ...(sg.settings.rules || {}) }).final;
   return {
+    publish: over ? { url: `/admin/games/${encodeURIComponent(g.id)}/scoring/publish`, pass, hidden: sg.settings.live_public === false } : null,
     action: `/app/games/${encodeURIComponent(g.id)}/review`, video: !!ytId(g.youtube_url || ''), hasBox,
     state: !r ? (sg && !sg.settings.reviewOnly ? 'scored' : 'start') : r.by === me.by ? 'mine' : 'held',
     kind: r ? r.kind : '', holder: r && r.by !== me.by ? r.name : '', held: req.query.review === 'held',
@@ -7125,6 +7129,10 @@ const sendScorer = (req, res, back) => {
   const access = scoreAccess(req, game.id), pass = scorePass(req);
   if (!access) return res.status(403).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Only the scorers an admin picked for this game can score it.</div>' }));
   if (pass === 'video' && access !== 'admin') return res.status(403).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Only admins re-track a game from the video.</div>' }));
+  // Your own video re-track, opened without ?pass=video (the admin page's Open the scorer, Me's
+  // games to score): its track, not the empty live one (Paolo, 2026-10-26).
+  const myReview = getScoreGame(game.id)?.settings?.review;
+  if (!req.query.pass && access === 'admin' && myReview?.kind === 'video' && myReview.by === reviewer(req).by) return res.redirect(`${req.path}?pass=video`);
   if (pass === 'video' && getScoreGame(game.id)) {
     const gate = reviewGate(req, game, 'video');
     if (gate) return res.status(423).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(gate)}</div>` }));
@@ -7133,7 +7141,12 @@ const sendScorer = (req, res, back) => {
   if (!getScoreGame(game.id) && access === 'admin' && !gameFinalSet(game)) quietScoringOn(game);
   if (!getScoreGame(game.id)) return res.status(404).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Scoring isn’t turned on for this game yet. An admin turns it on from the game’s Scoring tab.</div>' }));
   res.set('Cache-Control', 'private, no-store');
-  sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle: scoreBundle(game, pass), back }) });
+  // After Game over (public/scorer.js overPanel): a review offers Publish to an admin, with the
+  // site's own publish route; a scorer at the court is told an admin publishes it.
+  const sg = getScoreGame(game.id);
+  const isReview = pass === 'video' || !!sg.settings.review || !!sg.settings.reviewOnly;
+  const bundle = { ...scoreBundle(game, pass), over: { review: isReview, publish: isReview && access === 'admin' && req.session?.isAdmin ? `/admin/games/${encodeURIComponent(game.id)}/scoring/publish` : '', back: back.href, liveOff: sg.settings.live_public === false } };
+  sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle, back }) });
 };
 app.get('/app/score/:id', requireApp, (req, res) => {
   // A review (a video re-track, or one under way): Back goes to the game and its Review card.

@@ -2131,3 +2131,15 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 
 /* The rebound follow-up: one five with its team's colour on top, the other team's button last */
 .sc-opt--team { box-shadow: inset 0 3px 0 var(--c); }
+/* Game over (public/scorer.js overPanel): in the stat buttons' place, what happens next */
+.sc-over { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--r-card); border: 1.5px solid var(--amber); background: var(--card-bg); }
+.sc-over__h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sc-over__h b { font-size: 15px; font-weight: 600; }
+.sc-over__h span { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.sc-over__s { margin: 0; font-size: 14px; color: var(--text); }
+.sc-over__s.is-wait { color: var(--amber); }
+.sc-over__n { margin: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.sc-over__b { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.sc-over__btn { display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: var(--r-in); background: var(--amber); color: #14110d; font-size: 15px; font-weight: 600; line-height: 1; text-decoration: none; }
+.sc-over__btn:disabled { opacity: .45; }
+.sc-over__btn--ghost { background: var(--surface-2); color: var(--text); }

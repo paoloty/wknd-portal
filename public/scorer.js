@@ -202,6 +202,7 @@ export async function mount(el) {
     } catch (e) { ui.sync = 'offline'; retry = setTimeout(sync, 8000); }
     sending = false;
     paintPill();
+    if (G.final && !ui.publishing) paint(); // the game-over panel says what's still sending
     if (ui.sync === 'ok' && unsent().length) sync();
   }
   // The header pill: the sync state, and with two scorers which side this phone has (tap it to
@@ -211,7 +212,7 @@ export async function mount(el) {
     const bad = ui.sync === 'offline' || ui.sync === 'error';
     const sides = multi && ui.lane && !ui.locked && (ui.lane !== 'both' || !!(ui.lanes && ui.lanes.others.length));
     pill.className = 'sc-sync' + (bad ? ' is-off' : n ? ' is-wait' : ' is-ok') + (sides ? ' is-side' : '');
-    const state = ui.locked && published ? 'Published' : ui.sync === 'offline' ? `Offline · ${n} saved` : ui.sync === 'error' ? `Not sent · ${n}` : n ? `Sending ${n}…` : 'Saved';
+    const state = ui.locked && (published || ui.published) ? 'Published' : ui.sync === 'offline' ? `Offline · ${n} saved` : ui.sync === 'error' ? `Not sent · ${n}` : n ? `Sending ${n}…` : 'Saved';
     // Asking for a side: the pill says so (with a pulse) until they answer.
     if (multi && !ui.lane && ui.asked && !bad && !n) {
       pill.className = 'sc-sync is-wait is-asking';
@@ -645,7 +646,7 @@ export async function mount(el) {
     const note = isOvertime(next) ? `${rules.otMin} min, 1 timeout each, team fouls carry on` : next === 'Q3' ? '3 timeouts each, team fouls reset' : 'team fouls reset';
     if (periodIndex(cur) >= rules.periods && G.score.a !== G.score.b) {
       return menu(`End of ${cur}: ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. Game over?`, [['final', 'Game over'], ['ot', `Start ${next} anyway`], ['no', 'Not yet']], k => {
-        if (k === 'final') { add({ type: 'period_end', period: cur, final: true }); ui.running = false; ui.whistle = false; syncRun(); ui.tip = 'Game over. An admin checks the plays and publishes the game.'; save(); return paint(); }
+        if (k === 'final') { add({ type: 'period_end', period: cur, final: true }); ui.running = false; ui.whistle = false; syncRun(); ui.tip = ''; save(); return paint(); }
         if (k === 'ot') startNext(cur, next);
       }, 'final');
     }
@@ -1132,6 +1133,38 @@ export async function mount(el) {
   }
   // Turning the phone resizes the tiles: fit again from the usual size.
   window.addEventListener('resize', () => { for (const el of root.querySelectorAll('.sc-p__nm')) el.style.fontSize = ''; fitNames(); });
+  // Game over: in the stat buttons' place, what happens next (Paolo, 2026-10-26: nothing did).
+  // Every play has to reach the server first. A review: Publish (the site's publish route, the
+  // track on this screen) and Back to the game. A scorer at the court: an admin publishes it.
+  // Undo on the last play reopens the game; the Scoresheet still fixes plays.
+  function overPanel() {
+    const n = unsent().length, all = list().length;
+    const sendLine = ui.published ? esc(ui.published)
+      : n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : ui.sync === 'error' && ui.syncMsg ? `: ${esc(ui.syncMsg)}` : '…'}`
+      : `All ${all} play${all === 1 ? '' : 's'} saved.`;
+    const O = B.over || {};
+    const back = O.back ? `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(O.back)}">${O.review ? 'Back to the game' : 'Back to games'}</a>` : '';
+    const acts = ui.locked || ui.published ? back
+      : O.publish ? `<button type="button" class="sc-over__btn" data-act="publish"${n || ui.publishing ? ' disabled' : ''}>${ui.publishing ? 'Publishing…' : 'Publish the game'}</button>${back}`
+      : back;
+    const note = ui.published || ui.locked ? '' : O.publish ? (n ? 'Publish works once every play is saved.' : `Its box score, quarter scores and play-by-play ${O.liveOff ? 'are saved, hidden until Visible to everyone is on' : 'go on the site and in the app'}.`)
+      : 'An admin checks the plays and publishes the game.';
+    return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
+      <p class="sc-over__s${n && !ui.published ? ' is-wait' : ''}">${sendLine}</p>${note ? `<p class="sc-over__n">${note}</p>` : ''}
+      <div class="sc-over__b">${acts}</div></div>`;
+  }
+  function publish() {
+    const O = B.over || {};
+    if (!O.publish || unsent().length || ui.publishing) return;
+    menu(`Publish ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}?`, [['go', 'Publish'], ['no', 'Not yet']], k => {
+      if (k !== 'go') return;
+      ui.publishing = true; paint();
+      fetch(O.publish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ pass: B.pass }) })
+        .then(r => r.text().then(t => { let j = null; try { j = JSON.parse(t); } catch (e) {} if (!r.ok || !j || j.error) throw new Error((j && j.error) || 'Your admin sign-in ended. Open the scorer again.'); return j; }))
+        .then(j => { ui.publishing = false; ui.published = j.message || 'Published.'; ui.locked = true; if (soundOn()) chime('yes'); paint(); },
+          err => { ui.publishing = false; ui.tip = err.message || 'Not published. Try again.'; paint(); });
+    }, 'go');
+  }
   function paintNow() {
     if (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) ui.ask = ui.queue.shift();
     clockNow();
@@ -1167,7 +1200,7 @@ export async function mount(el) {
           ${ui.tip || restarted || started ? `<p class="sc-tip" role="status">${esc(ui.tip || (started ? 'Clock started with the first play. Tap the time to fix it.' : 'Clock restarted. Tap the time to fix it.'))}</p>` : ''}
           ${lastRow()}
           ${optional && !docked ? q : ''}
-          ${q && !optional ? q : `<div class="sc-padw">${pad()}</div>`}
+          ${q && !optional ? q : G.final && !ui.after ? overPanel() : `<div class="sc-padw">${pad()}</div>`}
           ${!docked ? `<button type="button" class="sc-sheetbtn" data-act="sheet">${SHEET_ICON}Scoresheet</button>` : ''}
         </div>
       </div>
@@ -1189,6 +1222,7 @@ export async function mount(el) {
     const t = b.getAttribute('data-team');
     if (name === 'clock') { clockNow(); ui.running = !ui.running; syncRun(); ui.whistle = false; if (ui.running) ui.tip = ''; save(); return paint(); }
     if (name === 'end') return endPeriod();
+    if (name === 'publish') return publish();
     if (name === 'ask-cancel') { ui.asked = ''; return lanes({ action: 'ask', want: null }); }
     if (name === 'alone-both') { ui.alone = null; return lanes({ action: 'claim', want: 'both' }); }
     if (name === 'alone-no') { ui.alone = null; return paint(); }
