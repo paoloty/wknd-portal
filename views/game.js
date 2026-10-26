@@ -1677,7 +1677,7 @@ function finalHero(d) {
     <div class="gd-hero__glare" style="background:${heroGlare(game, winner)}"></div>
     ${oddsEdge(game.team_a_name, game.team_b_name, heroOdds)}
     <div class="gd-hero__in">
-      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}</span>${oddsChip}</div>
+      <div class="gd-hero__top"><span class="gd-chip">Season ${escHtml(String(game.season))} · ${typeLabel(game)}${ctx.number ? ` · Game ${ctx.number}` : ''}</span>${game.stats_pending ? '<span class="gd-chip gd-chip--amber">Stats pending review</span>' : oddsChip}</div>
       <div class="gd-board">
         <div class="gd-tm"><span class="gd-tm__nm">${dot(game.team_a_name, 13)}<a href="/teams/${encodeURIComponent(game.team_a_id)}">${escHtml(game.team_a_name)}</a></span><span class="gd-tm__rec">${recLine(ctx.recA)}${oddsPct(heroOdds, 'a')}</span></div>
         <div class="gd-score">

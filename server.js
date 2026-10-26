@@ -88,7 +88,7 @@ import {
   getPlayerPhoto, getAllPlayerPhotoUrls, getPlayerPhotoWrites, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
-  importGameResults, markGameFinal, setGameOvertime, createGame,
+  importGameResults, markGameFinal, setGameOvertime, createGame, setGameReviewLocked, setGameFinalScore,
   getGamePlayerStat, updateGamePlayerStat, getStatCorrectionsForGame, EDITABLE_STAT_FIELDS,
   updatePlayerPhoto, updatePlayer,
   getPlayerPhotoOriginal, updatePlayerPhotoOriginal,
@@ -6043,7 +6043,7 @@ import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, 
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
-import { foldGame as foldScoredGame, DEFAULT_RULES as SCORE_RULES } from './public/score-engine.js';
+import { foldGame as foldScoredGame, DEFAULT_RULES as SCORE_RULES, periodIndex as scorePeriodIndex } from './public/score-engine.js';
 import { liveExtras } from './lib/live-extras.js';
 import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
 import { appSharePage } from './views/app/share.js';
@@ -6503,9 +6503,17 @@ const appAccountTodos = me => [...appSeasonState(me).rows.filter(r => !r.done &&
 // and Me until it is, opening the game and its Review card (Paolo, 2026-10-26).
 function appReviewTodos(me) {
   if (!me?.playerId) return [];
+  // Stats a scorer published from the court, waiting for a games admin.
+  const pending = gameAdminPlayers().some(a => a.playerId === me.playerId)
+    ? portalDb.prepare("SELECT game_id, settings_json FROM score_games WHERE status = 'published' AND settings_json LIKE '%\"statsPending\":{%'").all()
+      .map(r => { let s = {}; try { s = JSON.parse(r.settings_json || '{}'); } catch {} const g = getGameById(r.game_id); return g && s.statsPending ? { icon: 'ball', review: true, title: `Check ${titleCase(g.team_a_name)} vs ${titleCase(g.team_b_name)} stats`, sub: `Published by ${s.statsPending.by} · pending review`, pill: 'Check', href: `/app/games/${encodeURIComponent(g.id)}`, solid: true } : null; }).filter(Boolean)
+    : [];
+  return [...pending, ...appReviewTodosHeld(me)];
+}
+function appReviewTodosHeld(me) {
   return portalDb.prepare("SELECT game_id, settings_json FROM score_games WHERE status != 'published' AND settings_json LIKE '%\"review\":{%'").all()
     .map(r => { let s = {}; try { s = JSON.parse(r.settings_json || '{}'); } catch {} return { id: r.game_id, review: s.review }; })
-    .filter(x => x.review && x.review.playerId === me.playerId)
+    .filter(x => x.review && x.review.playerId === me.playerId && !getGameById(x.id)?.review_locked)
     .map(x => { const g = getGameById(x.id); return g ? { icon: 'ball', review: true, title: `Continue reviewing ${titleCase(g.team_a_name)} vs ${titleCase(g.team_b_name)}`, sub: x.review.kind === 'video' ? 'Re-tracking it from the video' : 'Checking the plays', pill: 'Continue', href: `/app/games/${encodeURIComponent(g.id)}`, solid: true } : null; })
     .filter(Boolean);
 }
@@ -6665,7 +6673,7 @@ function appGameRecap(g, stats, me) {
 // by its screen, 640 on most, 960 on 3× iPhones.
 const sizedSrc = base => { const j = base.includes('?') ? '&' : '?'; return { img: `${base}${j}w=640`, srcset: `${base}${j}w=640 640w, ${base}${j}w=960 960w` }; };
 const gameMedia = g => ({ ...(g.has_cover ? sizedSrc(`/api/photo/${encodeURIComponent(g.id)}`) : {}), yt: ytId(g.youtube_url) });
-const gameKicker = g => `Final · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`;
+const gameKicker = g => (g.stats_pending ? 'Final · Stats pending review' : `Final · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`);
 
 function appFeedItem(it, me, extra) {
   const day = feedDay(it.at);
@@ -6872,14 +6880,21 @@ function appReviewCard(req, g, hasBox = false) {
   const sg = getScoreGame(g.id);
   // Box score saved from the plays: the next step (the POTG and the recap, on the site's Content
   // tab) until both are in.
+  if (g.review_locked && !(sg && sg.status === 'published')) return null;
+  if (sg && sg.status === 'published' && sg.settings.statsPending) return { state: 'pending', by: sg.settings.statsPending.by, approve: `/admin/games/${encodeURIComponent(g.id)}/scoring/approve`, fix: `/admin/games/${encodeURIComponent(g.id)}/scoring/fix`, finish: req.session?.isAdmin ? `/app/admin/games/${encodeURIComponent(g.id)}/finish` : '' };
   if (sg && sg.status === 'published') return !g.game_writeup || !(g.potg_writeup || g.manual_potg_player_id) ? { state: 'next', next: req.session?.isAdmin ? `/app/admin/games/${encodeURIComponent(g.id)}/finish` : `/admin/games/${encodeURIComponent(g.id)}?tab=content`, recap: !!g.game_writeup, potg: !!(g.potg_writeup || g.manual_potg_player_id) } : null;
   const r = sg && sg.settings.review, me = reviewer(req);
   // Yours and its track has reached Game over: Publish, with the site's publish route. The track
   // is the one the review shows (the admin page's rule): the video re-track once it has plays.
   const pass = sg && getScoreEvents(g.id, 'video').length ? 'video' : 'live';
-  const over = r && r.by === me.by && req.session?.isAdmin && foldScoredGame(getScoreEvents(g.id, pass), { ...SCORE_RULES, ...(sg.settings.rules || {}) }).final;
+  const folded = r && r.by === me.by && req.session?.isAdmin ? foldScoredGame(getScoreEvents(g.id, pass), { ...SCORE_RULES, ...(sg.settings.rules || {}) }) : null;
+  const over = folded && folded.final ? folded : null;
+  const fin = over && gameFinalSet(g) ? { a: Number(g.team_a_score) || 0, b: Number(g.team_b_score) || 0 } : null;
+  const plays = over ? over.score : null;
   return {
-    publish: over ? { url: `/admin/games/${encodeURIComponent(g.id)}/scoring/publish`, pass, hidden: sg.settings.live_public === false } : null,
+    publish: over ? { url: `/admin/games/${encodeURIComponent(g.id)}/scoring/publish`, pass, hidden: sg.settings.live_public === false,
+      mismatch: fin && plays && (fin.a !== plays.a || fin.b !== plays.b) ? { typed: fin, plays: { a: plays.a, b: plays.b } } : null } : null,
+    take: r && r.by !== me.by ? { url: `/admin/games/${encodeURIComponent(g.id)}/scoring/review`, superAdmin: isSuperAdminReq(req), asked: !!(r.ask && r.ask.by === me.by) } : null,
     action: `/app/games/${encodeURIComponent(g.id)}/review`, video: !!ytId(g.youtube_url || ''), hasBox,
     state: !r ? (sg && !sg.settings.reviewOnly ? 'scored' : 'start') : r.by === me.by ? 'mine' : 'held',
     kind: r ? (pass === 'video' ? 'video' : r.kind) : '', holder: r && r.by !== me.by ? r.name : '', held: req.query.review === 'held',
@@ -7175,6 +7190,7 @@ const sendScorer = (req, res, back) => {
   // games to score): its track, not the empty live one (Paolo, 2026-10-26).
   const myReview = getScoreGame(game.id)?.settings?.review;
   if (!req.query.pass && access === 'admin' && myReview?.kind === 'video' && myReview.by === reviewer(req).by) return res.redirect(`${req.path}?pass=video`);
+  if (game.review_locked && (pass === 'video' || gameFinalSet(game))) return res.status(423).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(LOCKED_MSG)}</div>` }));
   if (pass === 'video' && getScoreGame(game.id)) {
     const gate = reviewGate(req, game, 'video');
     if (gate) return res.status(423).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(gate)}</div>` }));
@@ -7187,7 +7203,7 @@ const sendScorer = (req, res, back) => {
   // site's own publish route; a scorer at the court is told an admin publishes it.
   const sg = getScoreGame(game.id);
   const isReview = pass === 'video' || !!sg.settings.review || !!sg.settings.reviewOnly;
-  const bundle = { ...scoreBundle(game, pass), over: { review: isReview, publish: isReview && access === 'admin' && req.session?.isAdmin ? `/admin/games/${encodeURIComponent(game.id)}/scoring/publish` : '', back: back.href, liveOff: sg.settings.live_public === false } };
+  const bundle = { ...scoreBundle(game, pass), over: { review: isReview, publish: isReview && access === 'admin' && req.session?.isAdmin ? `/admin/games/${encodeURIComponent(game.id)}/scoring/publish` : '', finish: !isReview && pass === 'live' ? `/api/score/${encodeURIComponent(game.id)}/finish` : '', official: gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null, back: back.href, liveOff: sg.settings.live_public === false } };
   sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle, back }) });
 };
 app.get('/app/score/:id', requireApp, (req, res) => {
@@ -7397,39 +7413,151 @@ app.post('/admin/games/:id/scoring/publish', requireAuth, express.json(), (req, 
   if (!game || !getScoreGame(game.id)) return res.status(404).json({ error: 'Not found.' });
   const gate = reviewGate(req, game);
   if (gate) return res.status(423).json({ error: gate });
-  const sg = getScoreGame(game.id);
-  if (sg.status === 'published') return res.status(409).json({ error: 'Already published.' });
   // Which pass becomes the box score: the video re-track or the live one (body.pass).
-  const pass = scorePass(req);
+  const r = saveScoredBoxScore(game, scorePass(req), reviewer(req).name, {}, { usePlays: req.body?.final === 'plays' });
+  res.status(r.status).json(r.body);
+  if (r.after) r.after();
+});
+// The plays of one pass become the game's box score (an admin's Save the box score, or the
+// scorer's publish at the court with extra = { statsPending }). The typed final score stays the
+// result. An admin's save clears "Stats pending review". { status, body, after? }.
+// usePlays: the plays' score becomes the final score (the plays and the typed final differ, and
+// the admin picked the plays: Paolo, 2026-10-27); otherwise the typed final stays the result.
+function saveScoredBoxScore(game, pass, who, extra = {}, { usePlays = false } = {}) {
+  const sg = getScoreGame(game.id);
+  if (sg.status === 'published') return { status: 409, body: { error: 'Already published.', published: true } };
   const events = getScoreEvents(game.id, pass);
-  if (!events.length) return res.status(400).json({ error: pass === 'video' ? 'The video re-track has no plays yet.' : 'No plays to publish yet.' });
+  if (!events.length) return { status: 400, body: { error: pass === 'video' ? 'The video re-track has no plays yet.' : 'No plays to publish yet.' } };
   const players = Object.fromEntries(getAllPlayers().map(p => [p.id, { name: p.name }]));
   const { payload, orebs, state } = buildPublishPayload(game, events, players, sg.settings);
   // The final score (typed on the Scoring tab, which settles Who wins? at once) stays the
   // game's result; plays that don't add up to it never block publishing (Paolo, 2026-10-26),
   // the message just says so.
-  const official = gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null;
+  const official = usePlays ? { a: state.score.a, b: state.score.b } : gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null;
   if (official) { payload.teamAScore = official.a; payload.teamBScore = official.b; }
   const visible = sg.settings.live_public !== false;
   // One publish at a time (two admins tapping at once), and a copy of the game as it was, for
   // Undo publish.
-  if (!claimScorePublish(game.id)) return res.status(409).json({ error: 'Someone is publishing this game right now.' });
+  if (!claimScorePublish(game.id)) return { status: 409, body: { error: 'Someone is publishing this game right now.' } };
   try {
     snapshotGameBeforePublish(game.id);
     importGameResults(game.id, payload);
     setGameOrebs(game.id, orebs);
     updateGameReview(game.id, visible ? 0 : 1);
-    saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: pass, official: official || sg.settings.official, review: null, reviewLive: false, reviewedBy: reviewer(req).name } });
-    console.log(`[scorer] published game=${game.id} pass=${pass} plays=${events.length} score=${state.score.a}-${state.score.b}`);
+    saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: pass, official: official || sg.settings.official, review: null, reviewLive: false, reviewedBy: who, statsPending: null, ...extra } });
+    // An admin's save settles it: locked against reviews. A court publish waits for its check.
+    if (!extra.statsPending) setGameReviewLocked(game.id, true);
+    console.log(`[scorer] published game=${game.id} pass=${pass} plays=${events.length} score=${state.score.a}-${state.score.b}${extra.statsPending ? ' (stats pending review)' : ''}`);
     const off = official && (official.a !== state.score.a || official.b !== state.score.b) ? ` The plays add up to ${state.score.a}–${state.score.b}; the final score ${official.a}–${official.b} stays the result.` : '';
-    res.json({ ok: true, message: `Box score saved${visible ? '' : ', hidden until you switch Visible to everyone on'}: ${game.team_a_name} ${official ? official.a : state.score.a}, ${game.team_b_name} ${official ? official.b : state.score.b}.${off}`, next: `/admin/games/${encodeURIComponent(game.id)}?tab=content` });
-    afterGameImport(game, Object.keys(payload.playerStats));
-    liveChanged(game.id); // open live pages reload into the published game
+    return { status: 200, body: { ok: true, message: `Box score saved${visible ? '' : ', hidden until you switch Visible to everyone on'}: ${game.team_a_name} ${official ? official.a : state.score.a}, ${game.team_b_name} ${official ? official.b : state.score.b}.${off}`, next: `/admin/games/${encodeURIComponent(game.id)}?tab=content` },
+      after: () => { afterGameImport(game, Object.keys(payload.playerStats)); liveChanged(game.id); } }; // open live pages reload into the published game
   } catch (err) {
     console.error('[scorer] publish failed:', err);
     releaseScorePublish(game.id, sg.status);
-    res.status(500).json({ error: 'Publishing failed: ' + err.message });
+    return { status: 500, body: { error: 'Publishing failed: ' + err.message } };
   }
+}
+// The end of a live game at the court (Paolo, 2026-10-26): the scorer keeping the clock sets the
+// final score and the player of the game, and publishes. The box score shows straight away; the
+// game is tagged "Stats pending review" (score_games.settings.statsPending) until a games admin
+// checks it: Looks right (/scoring/approve) or Fix the plays (/scoring/fix). Content (the recap,
+// the write-ups) stays with the admins. The game admins get a bell.
+const scorerNameOf = req => { const p = req.session?.playerPlayerId && getAllPlayers().find(x => x.id === req.session.playerPlayerId); return p ? displayPlayerName(p.name || '') : 'An admin'; };
+app.post('/api/score/:id/finish', express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+  if (!req.session?.playerPlayerId && !req.session?.isAdmin) return res.status(401).json({ error: 'Sign in again.' });
+  if (req.session?.impersonating) return res.status(403).json({ error: 'Viewing as a player: nothing was saved.' });
+  const access = scoreAccess(req, game.id);
+  if (!access) return res.status(403).json({ error: 'You aren’t a scorer for this game.' });
+  const sg = getScoreGame(game.id);
+  if (!sg) return res.status(409).json({ error: 'Scoring isn’t turned on for this game.' });
+  if (sg.status === 'published') return res.status(409).json({ error: `Already published${sg.settings.statsPending?.by ? ` by ${sg.settings.statsPending.by}` : ''}.`, published: true });
+  if (sg.settings.review || sg.settings.reviewOnly) return res.status(409).json({ error: 'This game is being reviewed: the admin reviewing it saves the box score.' });
+  // One phone publishes: the one keeping the clock (Both, else the first team's side).
+  const device = String(req.body?.device || '').slice(0, 64);
+  const on = scoreLanes.scoring(game.id);
+  const keeper = on.find(x => x.lane === 'both') || on.find(x => x.lane === 'a') || on.find(x => x.lane === 'b');
+  if (keeper && keeper.device !== device && access !== 'admin') return res.status(409).json({ error: `${keeper.name} keeps the clock: they publish the game.` });
+  const a = parseInt(req.body?.a, 10), b = parseInt(req.body?.b, 10);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0 || a > 300 || b > 300) return res.status(400).json({ error: 'Type both teams’ final scores.' });
+  if (a === b) return res.status(400).json({ error: 'The final score is tied: a game ends with a winner.' });
+  const rules = { ...SCORE_RULES, waves: game.game_type === 'playoff' ? 'off' : 'first half', ...(sg.settings.rules || {}) };
+  const st = foldScoredGame(getScoreEvents(game.id, 'live'), rules);
+  if (!st.final) return res.status(409).json({ error: 'Tap Game over first.' });
+  // The player of the game: someone on the winning team who played.
+  const winId = a > b ? game.team_a_id : game.team_b_id;
+  const potg = String(req.body?.potg || '');
+  if (potg && (!st.players[potg] || getAllPlayers().find(p => p.id === potg)?.team_id !== winId)) return res.status(400).json({ error: 'The player of the game must be on the winning team.' });
+  // The final score first (Who wins? settles), then the plays become the box score.
+  markGameFinal(game.id, { teamAScore: a, teamBScore: b, overtime: Math.max(0, scorePeriodIndex(st.period) - rules.periods) });
+  if (sg.settings.live_public === false) updateGameReview(game.id, 1);
+  if (!sg.settings.finalAt) saveScoreGame(game.id, { settings: { ...getScoreGame(game.id).settings, finalAt: Date.now() } });
+  const who = scorerNameOf(req);
+  const r = saveScoredBoxScore(getGameById(game.id), 'live', who, { statsPending: { by: who, playerId: req.session?.playerPlayerId || '', at: Date.now() } });
+  if (r.status !== 200) return res.status(r.status).json(r.body);
+  if (potg) updateGamePotg(game.id, getGameById(game.id).potg_writeup || '', potg);
+  const title = `${who} published ${titleCase(game.team_a_name)} ${a}–${b} ${titleCase(game.team_b_name)}`;
+  for (const ad of gameAdminPlayers()) {
+    if (ad.playerId === req.session?.playerPlayerId) continue;
+    createNotification({ playerId: ad.playerId, type: 'stats_pending', title, body: 'Stats pending review. Check the box score, then mark it checked or fix the plays.', link: `/admin/games/${encodeURIComponent(game.id)}?tab=scoring` });
+  }
+  console.log(`[scorer] ${who} published game=${game.id} from the court: ${a}-${b}, potg=${potg || '-'}`);
+  res.json({ ok: true, message: `Published: ${game.team_a_name} ${a}–${b} ${game.team_b_name}. The stats show as pending review until an admin checks them.` });
+  r.after();
+});
+// "Stats pending review": an admin checked the box score (Looks right) …
+app.post('/admin/games/:id/scoring/approve', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  const sg = game && getScoreGame(game.id);
+  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  if (!sg.settings.statsPending) return res.json({ ok: true, message: 'Already checked.' });
+  saveScoreGame(game.id, { settings: { ...sg.settings, statsPending: null, reviewedBy: reviewer(req).name } });
+  setGameReviewLocked(game.id, true);
+  liveChanged(game.id);
+  console.log(`[scorer] stats checked game=${game.id} by ${reviewer(req).name}`);
+  res.json({ ok: true, message: 'Stats checked. The pending tag is off.' });
+});
+// A done game's final score corrected (Paolo, 2026-10-27: a review said 84–78, the saved final
+// 83–78): the score only, the box score stays; Who wins? re-settles. Works on a locked game.
+app.post('/admin/games/:id/final-correct', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  if (!gameFinalSet(game)) return res.status(409).json({ error: 'This game has no final score yet: save it first.' });
+  const a = parseInt(req.body?.team_a_score, 10), b = parseInt(req.body?.team_b_score, 10);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0 || a > 300 || b > 300) return res.status(400).json({ error: 'Type both teams’ final scores.' });
+  if (a === b) return res.status(400).json({ error: 'A final score has a winner.' });
+  const was = `${game.team_a_score}–${game.team_b_score}`;
+  setGameFinalScore(game.id, a, b);
+  const sg = getScoreGame(game.id);
+  if (sg) saveScoreGame(game.id, { settings: { ...sg.settings, official: { a, b } } });
+  settleGamePicks(game.id);
+  liveChanged(game.id);
+  console.log(`[scorer] final score corrected game=${game.id} ${was} → ${a}-${b} by ${reviewer(req).name}`);
+  res.json({ ok: true, message: `Final score corrected: ${game.team_a_name} ${a}–${b} ${game.team_b_name}. Who wins? is settled again.` });
+});
+// Lock a game against reviews, or (super admins) unlock it for one.
+app.post('/admin/games/:id/scoring/lock', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found' });
+  const on = !!req.body?.on;
+  if (!on && !isSuperAdminReq(req)) return res.status(403).json({ error: 'Only a super admin can unlock a game for a review.' });
+  setGameReviewLocked(game.id, on);
+  console.log(`[scorer] review ${on ? 'locked' : 'unlocked'} game=${game.id} by ${reviewer(req).name}`);
+  res.json({ ok: true, message: on ? 'Locked: no reviews on this game.' : 'Unlocked: an admin can review it now. It locks again when the box score is saved.' });
+});
+// … or takes the box score off to fix the plays (a review; the final score and picks stay).
+app.post('/admin/games/:id/scoring/fix', requireAuth, express.json(), (req, res) => {
+  const game = getGameById(req.params.id);
+  const sg = game && getScoreGame(game.id);
+  if (!sg) return res.status(404).json({ error: 'Not found.' });
+  if (sg.status !== 'published') return res.status(409).json({ error: 'It isn’t published.' });
+  const held = reviewHeldBy(req, game);
+  if (held) return res.status(423).json({ error: held });
+  const r = unpublishScored(game, reviewer(req).name);
+  if (r.error) return res.status(409).json({ error: r.error });
+  startReview(getGameById(game.id), reviewer(req), 'plays');
+  res.json({ ok: true, message: 'The box score is off while you fix the plays. The final score stays.' });
 });
 
 // ── Review: an admin checking the live plays, or re-tracking the game from the video ──
@@ -7468,7 +7596,9 @@ function startReview(game, me, kind) {
 }
 // Before a review action: null = go ahead (claims the review when it's free, keeps it fresh),
 // else the error. Read the game's score settings again after this.
+const LOCKED_MSG = 'This game is locked: its box score is final. A super admin can unlock it for a review on the Scoring tab.';
 function reviewGate(req, game, kind = 'plays') {
+  if (game.review_locked) return LOCKED_MSG;
   const held = reviewHeldBy(req, game);
   if (held) return held;
   const sg = getScoreGame(game.id);
@@ -7515,6 +7645,7 @@ app.post('/app/games/:id/review', requireApp, express.urlencoded({ extended: fal
   const game = getGameById(req.params.id);
   if (!game || !gameAdminPlayers().some(a => a.playerId === req.session?.playerPlayerId) && !isAdminWithSection(req, 'games-stats')) return res.redirect('/app');
   const kind = req.body?.kind === 'video' ? 'video' : 'plays';
+  if (game.review_locked) return res.redirect(`/app/games/${encodeURIComponent(game.id)}`);
   quietScoringOn(game);
   const sg = getScoreGame(game.id);
   if (!sg || sg.status === 'published') return res.redirect(`/app/games/${encodeURIComponent(game.id)}`);
@@ -7526,6 +7657,7 @@ app.post('/app/games/:id/review', requireApp, express.urlencoded({ extended: fal
 app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.review_locked && req.body?.action !== 'finish') return res.status(423).json({ error: LOCKED_MSG });
   if (req.body?.action === 'start') quietScoringOn(game);
   const sg = getScoreGame(game.id);
   if (!sg) return res.status(404).json({ error: 'Not found.' });
@@ -7607,16 +7739,25 @@ app.post('/admin/games/:id/scoring/unpublish', requireAuth, express.json(), (req
   const sg = game && getScoreGame(game.id);
   if (!sg) return res.status(404).json({ error: 'Not found.' });
   if (sg.status !== 'published') return res.status(409).json({ error: 'It isn’t published.' });
+  if (game.review_locked) return res.status(423).json({ error: LOCKED_MSG });
+  const r = unpublishScored(game, reviewer(req).name);
+  if (r.error) return res.status(409).json({ error: r.error });
+  res.json({ ok: true, message: 'The box score is undone: the game is back as it was. The plays are all here to fix and save again.' });
+});
+// Back to before the box score was saved (the snapshot); scoring reopens. "Stats pending review"
+// stays on until an admin saves the box score again.
+function unpublishScored(game, by) {
+  const sg = getScoreGame(game.id);
   const snap = latestPublishSnapshot(game.id);
-  if (!snap) return res.status(409).json({ error: 'No copy from before publishing: this one can’t be undone here.' });
+  if (!snap) return { error: 'No copy from before the box score was saved: this one can’t be undone here.' };
   restoreGameFromSnapshot(game.id, snap, game.season);
   const { publishedPass: _p, ...rest } = sg.settings;
-  saveScoreGame(game.id, { status: 'live', publishedAt: null, settings: { ...rest, unpublishedAt: Date.now(), unpublishedBy: reviewer(req).name } });
+  saveScoreGame(game.id, { status: 'live', publishedAt: null, settings: { ...rest, unpublishedAt: Date.now(), unpublishedBy: by } });
   settleGamePicks(game.id);
   liveChanged(game.id);
-  console.log(`[scorer] unpublished game=${game.id} by ${reviewer(req).name}`);
-  res.json({ ok: true, message: 'Publish undone: the game is back as it was. The plays are all here to fix and publish again.' });
-});
+  console.log(`[scorer] unpublished game=${game.id} by ${by}`);
+  return { ok: true };
+}
 // A phone's plays from a file (the scorer's Send my plays, when it couldn't sync): they land
 // under Late plays for the reviewer to add or leave out.
 app.post('/admin/games/:id/scoring/import', requireAuth, express.json({ limit: '2mb' }), (req, res) => {
@@ -7692,7 +7833,7 @@ function adminScoringPanel(game, players, req) {
   const teamName = Object.fromEntries(teams.map(t => [t.id, t.name]));
   const options = players.filter(p => p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name || ''), meta: teamName[p.team_id] || '' }));
   const sg = getScoreGame(game.id);
-  if (!sg) return { on: false, options, scorers: [] };
+  if (!sg) return { on: false, options, scorers: [], superAdmin: isSuperAdminReq(req) };
   const byId = Object.fromEntries(players.map(p => [p.id, p]));
   const nm = id => displayPlayerName(byId[id]?.name || '') || 'Player';
   const rules = { ...SCORE_RULES, waves: game.game_type === 'playoff' ? 'off' : 'first half', ...(sg.settings.rules || {}) };
@@ -7747,6 +7888,7 @@ function adminScoringPanel(game, players, req) {
   const lateRows = getScoreEvents(game.id, 'late').map(e => ({ id: e.id, when: [e.period, e.clock].filter(Boolean).join(' '), text: describeScorePlay(e, nm, tname), by: (() => { const p = players.find(x => x.id === e.author); return p ? displayPlayerName(p.name || '').split(' ')[0] : 'Admin'; })() }));
   return { on: true, status: sg.status, scorers: getScorers(game.id).map(s => s.player_id), options, waves: rules.waves, livePublic: sg.settings.live_public !== false, score: st.score, period: st.period, plays, removed, checks, canUnpublish: sg.status === 'published' && !!latestPublishSnapshot(game.id), roster, review, finalScore, late: lateRows, reviewOnly: !!sg.settings.reviewOnly, reviewLive: !!sg.settings.reviewLive, slug: gameSlug(game),
     dnp: [...new Set([...(sg.settings.dnp || []), ...st.dnp])], official: sg.settings.official || null,
+    statsPending: sg.settings.statsPending || null, locked: !!game.review_locked,
     pass, liveScore: live.score, liveCount: live.rows.length, video: video ? { score: video.score, count: video.rows.length } : null, compare, hasVideo: !!ytId(game.youtube_url || '') };
 }
 // One play in words, for the review list.

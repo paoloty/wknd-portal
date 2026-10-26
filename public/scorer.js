@@ -655,7 +655,7 @@ export async function mount(el) {
   // A confirmation in the amber bar at the top, like Leave and the other scorer's alerts
   // (Paolo, 2026-10-26): Not yet, and the action.
   const ICONS = { flag: 'M5 21V4M5 4h11l-2 4 2 4H5', clock: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', up: 'M12 16V4M7 9l5-5 5 5M5 20h14' };
-  function confirm(title, sub, icon, yes, act) { ui.confirm = { title, sub, icon, yes, act }; ui.ask = null; ui.peek = null; paint(); }
+  function confirm(title, sub, icon, yes, act, no = 'Not yet', noAct = null) { ui.confirm = { title, sub, icon, yes, act, no, noAct }; ui.ask = null; ui.peek = null; paint(); }
   function startNext(cur, next) {
     add({ type: 'period_end', period: cur });
     ui.running = false; ui.whistle = false; ui.secs = (isOvertime(next) ? rules.otMin : rules.periodMin) * 60; syncRun(); ui.tip = `${next} started.`;
@@ -955,7 +955,7 @@ export async function mount(el) {
       const c = ui.confirm;
       return `<div class="sc-alert" role="alertdialog" aria-label="${esc(c.title)}">
         <div class="sc-alert__r"><span class="sc-alert__ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[c.icon] || ICONS.flag}"/></svg></span><span class="sc-alert__t"><b>${esc(c.title)}</b>${c.sub ? `<small>${esc(c.sub)}</small>` : ''}</span></div>
-        <div class="sc-alert__b"><button type="button" class="sc-alert__no" data-act="confirm-no">Not yet</button><button type="button" class="sc-alert__yes" data-act="confirm-yes">${esc(c.yes)}</button></div></div>`;
+        <div class="sc-alert__b"><button type="button" class="sc-alert__no" data-act="confirm-no">${esc(c.no || 'Not yet')}</button><button type="button" class="sc-alert__yes" data-act="confirm-yes">${esc(c.yes)}</button></div></div>`;
     }
     if (ui.leaving) {
       return `<div class="sc-alert" role="alertdialog" aria-label="${esc(ui.leaving.title)}">
@@ -1141,6 +1141,12 @@ export async function mount(el) {
       while (el.scrollWidth > el.clientWidth + 1 && px > 8) { px -= 0.5; el.style.fontSize = px + 'px'; }
     }
   }
+  root.addEventListener('input', e => {
+    const f = e.target.closest && e.target.closest('[data-fin-score]'); if (!f || !ui.fin) return;
+    ui.fin[f.getAttribute('data-fin-score')] = Math.max(0, Math.min(300, parseInt(f.value, 10) || 0));
+    const btn = root.querySelector('[data-act="court-publish"]'); if (btn) btn.disabled = !!unsent().length || ui.fin.a === ui.fin.b || ui.publishing;
+  });
+  root.addEventListener('change', e => { if (e.target.closest && e.target.closest('[data-fin-score]')) paint(); });
   // Turning the phone resizes the tiles: fit again from the usual size.
   window.addEventListener('resize', () => { for (const el of root.querySelectorAll('.sc-p__nm')) el.style.fontSize = ''; fitNames(); });
   // Game over: in the stat buttons' place, what happens next (Paolo, 2026-10-26: nothing did).
@@ -1149,6 +1155,8 @@ export async function mount(el) {
   // Undo on the last play reopens the game; the Scoresheet still fixes plays.
   function overPanel() {
     const n = unsent().length, all = list().length;
+    const O0 = B.over || {};
+    if (O0.finish && !ui.locked && !ui.published) return courtPanel(n, all);
     const sendLine = ui.published ? esc(ui.published)
       : n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : ui.sync === 'error' && ui.syncMsg ? `: ${esc(ui.syncMsg)}` : '…'}`
       : `All ${all} play${all === 1 ? '' : 's'} saved.`;
@@ -1159,22 +1167,70 @@ export async function mount(el) {
       : ui.locked || ui.published ? back
       : O.publish ? `<button type="button" class="sc-over__btn" data-act="publish"${n || ui.publishing ? ' disabled' : ''}>${ui.publishing ? 'Saving…' : 'Save the box score'}</button>${back}`
       : back;
-    const note = ui.published ? 'Next: the POTG and the recap.' : ui.locked ? '' : O.publish ? (n ? 'Every play has to be saved first.' : `The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ''}. The POTG and the recap come next.`)
+    const note = ui.published ? (O.publish ? 'Next: the POTG and the recap.' : '') : ui.locked ? '' : O.publish ? (n ? 'Every play has to be saved first.' : `The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ''}. The POTG and the recap come next.`)
       : 'An admin checks the plays and saves the box score.';
     return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
       <p class="sc-over__s${n && !ui.published ? ' is-wait' : ''}">${sendLine}</p>${note ? `<p class="sc-over__n">${note}</p>` : ''}
       <div class="sc-over__b">${acts}</div></div>`;
   }
+  // A live game at the court (Paolo, 2026-10-26): the scorer keeping the clock sets the final
+  // score (from the plays, fixable) and taps the player of the game, then publishes. The box
+  // score shows at once, tagged "Stats pending review" until a games admin checks it; the recap
+  // and write-ups stay with the admins. The other scorer's phone just waits for it.
+  // The site's PER (views/admin/game.js perOf), on the plays' lines.
+  const perOf = L => { const fgm = (L.fg2m || 0) + (L.fg3m || 0) + (L.fg4m || 0), fga = fgm + (L.fg2m_miss || 0) + (L.fg3m_miss || 0) + (L.fg4m_miss || 0);
+    return (L.pts || 0) + 0.4 * fgm - 0.7 * fga - 0.4 * (L.ft_miss || 0) + 0.7 * (L.reb || 0) + (L.stl || 0) + 0.7 * (L.ast || 0) + 0.7 * (L.blk || 0) - (L.turnover || 0); };
+  const finWinner = () => (ui.fin.a > ui.fin.b ? 'a' : ui.fin.b > ui.fin.a ? 'b' : '');
+  const finCands = t => (t ? team[t].players.map(p => p.id).filter(id => G.players[id]).sort((x, y) => perOf(G.players[y]) - perOf(G.players[x])).slice(0, 5) : []);
+  function courtPanel(n, all) {
+    const O = B.over;
+    const k = keeper();
+    const head = `<div class="sc-over__h"><b>Game over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>`;
+    if (multi && k && !k.me) return `<div class="sc-over" role="status">${head}<p class="sc-over__s">${n ? `${n} play${n === 1 ? '' : 's'} still sending…` : `All ${all} play${all === 1 ? '' : 's'} saved.`}</p>
+      <p class="sc-over__n">${esc(k.name)} keeps the clock: they set the final score and publish the game.</p><div class="sc-over__b"><a class="sc-over__btn sc-over__btn--ghost" href="${esc(O.back)}">Back to games</a></div></div>`;
+    if (!ui.fin) { ui.fin = { a: G.score.a, b: G.score.b, potg: '' }; }
+    const w = finWinner(), cands = finCands(w);
+    if (ui.fin.potg && !cands.includes(ui.fin.potg)) ui.fin.potg = '';
+    if (!ui.fin.potg && ui.fin.auto !== false && cands[0]) ui.fin.potg = cands[0];
+    const ready = !n && w && !ui.publishing;
+    return `<div class="sc-over sc-over--court" role="group" aria-label="Game over: final score and player of the game">${head}
+      <p class="sc-over__s${n ? ' is-wait' : ''}">${n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : '…'}` : `All ${all} play${all === 1 ? '' : 's'} saved.`}</p>
+      <div class="sc-fin"><span class="sc-fin__l">Final score</span>
+        <label class="sc-fin__t"><span>${esc(team.a.name)}</span><input type="number" inputmode="numeric" min="0" max="300" value="${ui.fin.a}" data-fin-score="a" aria-label="${esc(team.a.name)} final score"></label>
+        <label class="sc-fin__t"><span>${esc(team.b.name)}</span><input type="number" inputmode="numeric" min="0" max="300" value="${ui.fin.b}" data-fin-score="b" aria-label="${esc(team.b.name)} final score"></label>
+        ${ui.fin.a !== G.score.a || ui.fin.b !== G.score.b ? `<small class="sc-fin__n">The plays add up to ${G.score.a}–${G.score.b}. The score you type is the result.</small>` : '<small class="sc-fin__n">From the plays. Fix it if the scoreboard says otherwise.</small>'}</div>
+      <div class="sc-fin"><span class="sc-fin__l">Player of the game${w ? ` · ${esc(team[w].name)}` : ''}</span>
+        ${w ? `<div class="sc-q__opts">${cands.map(id => optBtn(id, 'data-finpotg', ui.fin.potg === id)).join('')}</div>` : '<small class="sc-fin__n">A tied score has no winner: fix the final score.</small>'}</div>
+      <div class="sc-over__b"><button type="button" class="sc-over__btn" data-act="court-publish"${ready ? '' : ' disabled'}>${ui.publishing ? 'Publishing…' : 'Publish the game'}</button></div>
+      <p class="sc-over__n">The box score goes up now, marked “Stats pending review” until an admin checks it. The recap comes later.</p></div>`;
+  }
+  function courtPublish() {
+    const O = B.over || {}, w = finWinner();
+    if (!O.finish || unsent().length || ui.publishing || !w) return;
+    const name = ui.fin.potg ? short(ui.fin.potg) : 'none picked';
+    confirm('Publish the game?', `${team.a.name} ${ui.fin.a}–${ui.fin.b} ${team.b.name} · POTG: ${name}. The stats show as pending review until an admin checks them`, 'up', 'Publish', () => {
+      ui.publishing = true; paint();
+      fetch(O.finish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ a: ui.fin.a, b: ui.fin.b, potg: ui.fin.potg, device: deviceId }) })
+        .then(r => r.text().then(t => { let j = null; try { j = JSON.parse(t); } catch (e) {} if (!j) throw new Error('Not published. Try again.'); if (!r.ok || j.error) { const e = new Error(j.error || 'Not published. Try again.'); e.published = !!j.published; throw e; } return j; }))
+        .then(j => { ui.publishing = false; ui.published = j.message || 'Published.'; ui.locked = true; if (soundOn()) chime('yes'); paint(); },
+          err => { ui.publishing = false; if (err.published) { ui.published = err.message; ui.locked = true; } else ui.tip = err.message; paint(); });
+    });
+  }
   function publish() {
     const O = B.over || {};
     if (!O.publish || unsent().length || ui.publishing) return;
-    confirm('Save the box score?', `${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ' now'}; the POTG and recap come next`, 'up', 'Save it', () => {
+    const off = O.official && (O.official.a !== G.score.a || O.official.b !== G.score.b) ? O.official : null;
+    const send = final => {
       ui.publishing = true; paint();
-      fetch(O.publish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ pass: B.pass }) })
+      fetch(O.publish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ pass: B.pass, final }) })
         .then(r => r.text().then(t => { let j = null; try { j = JSON.parse(t); } catch (e) {} if (!r.ok || !j || j.error) throw new Error((j && j.error) || 'Your admin sign-in ended. Open the scorer again.'); return j; }))
         .then(j => { ui.publishing = false; ui.published = j.message || 'Box score saved.'; ui.next = /^\/app\//.test(location.pathname) ? `/app/admin/games/${encodeURIComponent(gid)}/finish` : j.next || ''; ui.locked = true; if (soundOn()) chime('yes'); paint(); },
           err => { ui.publishing = false; ui.tip = err.message || 'Not saved. Try again.'; paint(); });
-    });
+    };
+    // The plays and the typed final score differ (Paolo, 2026-10-27: a review said 84–78, the
+    // saved final 83–78): ask which one is the result.
+    if (off) return confirm('Which final score?', `The plays add up to ${G.score.a}–${G.score.b}; the final score says ${off.a}–${off.b}. Saving the box score uses the one you pick`, 'up', `Use ${G.score.a}–${G.score.b}`, () => send('plays'), `Keep ${off.a}–${off.b}`, () => send('typed'));
+    confirm('Save the box score?', `${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ' now'}; the POTG and recap come next`, 'up', 'Save it', () => send(''));
   }
   function paintNow() {
     if (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) ui.ask = ui.queue.shift();
@@ -1233,9 +1289,10 @@ export async function mount(el) {
     const t = b.getAttribute('data-team');
     if (name === 'clock') { clockNow(); ui.running = !ui.running; syncRun(); ui.whistle = false; if (ui.running) ui.tip = ''; save(); return paint(); }
     if (name === 'end') return endPeriod();
-    if (name === 'confirm-no') { ui.confirm = null; return paint(); }
+    if (name === 'confirm-no') { const c = ui.confirm; ui.confirm = null; if (c && c.noAct) c.noAct(); return paint(); }
     if (name === 'confirm-yes') { const c = ui.confirm; ui.confirm = null; if (c) c.act(); return paint(); }
     if (name === 'publish') return publish();
+    if (name === 'court-publish') return courtPublish();
     if (name === 'ask-cancel') { ui.asked = ''; return lanes({ action: 'ask', want: null }); }
     if (name === 'alone-both') { ui.alone = null; return lanes({ action: 'claim', want: 'both' }); }
     if (name === 'alone-no') { ui.alone = null; return paint(); }
@@ -1317,6 +1374,7 @@ export async function mount(el) {
     if (b.hasAttribute('data-dtab')) { ui.dockTab = b.getAttribute('data-dtab'); pref.set('wknd-sc-dock', ui.dockTab); return paint(); }
     if (b.hasAttribute('data-steam')) { ui.sheetTeam = b.getAttribute('data-steam'); return paint(); }
     if (b.hasAttribute('data-filter')) { ui.filter = b.getAttribute('data-filter'); return paint(); }
+    if (b.hasAttribute('data-finpotg')) { const id = b.getAttribute('data-finpotg'); ui.fin.potg = ui.fin.potg === id ? '' : id; ui.fin.auto = false; return paint(); }
     const fresh = () => { clearTimeout(ui.ask._timer); ui.ask._timer = null; ui.ask.at = Date.now(); };
     if (b.hasAttribute('data-astbench')) { ui.ask.bench = true; fresh(); return paint(); }
     if (b.hasAttribute('data-blkpts')) { ui.ask.pts = Number(b.getAttribute('data-blkpts')); fresh(); return paint(); }
