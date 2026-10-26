@@ -2058,7 +2058,10 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .lx-you { padding: 10px 12px; border-radius: 10px; background: rgba(245,147,50,.1); border: 1px solid rgba(245,147,50,.35); font-size: 13px; }
 .lx-you b { color: var(--lx-amber); }
 /* Home's live card (views/app/feed.js appLiveNow) and the rail's live card */
-.live-now { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+/* 12px from what's above (the to-do), the usual 24px to the day heading below (its own 20px +
+   4px): the cards' own bottom margin is dropped, the gap spaces them (Paolo, 2026-10-26). */
+.live-now { display: flex; flex-direction: column; gap: 12px; margin: 12px 0 4px; }
+.live-now > .sx { margin-bottom: 0; }
 .live-now__card { display: flex; flex-direction: column; gap: 8px; margin: 0 16px; color: var(--text); text-decoration: none; }
 .live-now__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .live-kick { display: inline-flex; align-items: center; gap: 6px; }
