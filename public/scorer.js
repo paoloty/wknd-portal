@@ -47,10 +47,10 @@ const WHISTLES = new Set(['foul', 'timeout', 'team_tech', 'team_to', 'stoppage']
 // Whose shot?, Who went off?, And-one: who fouled?). They sit above the stat buttons (which stay
 // usable: the next tap skips), close with ×, a tap on empty space, or by themselves after
 // FOLLOW_MS. The foul panel (free throws owed) is not a follow-up: it stays until answered.
-const OPTIONAL = new Set(['ast', 'lost', 'blocked', 'wentoff', 'andone', 'foulout']);
+const OPTIONAL = new Set(['ast', 'lost', 'blocked', 'wentoff', 'andone', 'foulout', 'rebound']);
 // Menus (team stats, foul kind, Fix…) close the same ways, minus the timer: the scorer opened them.
 const CLOSABLE = new Set([...OPTIONAL, 'menu']);
-const FOLLOW_MS = 8000;
+const FOLLOW_MS = 12000;
 // Someone asks for this phone's side: the alert counts down this long, then it's a no.
 const ASK_MS = 20000;
 const EXIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>';
@@ -429,10 +429,14 @@ export async function mount(el) {
     const pid = ui.sel; const t = byId[pid].team; const wasOn = five(t).slice();
     const e = add({ type: pts === 1 ? 'ft' : 'shot', ...(pts > 1 ? { pts } : {}), made, team: t, player: pid }, { flash: { text: made ? `+${pts}` : 'MISS', tone: made ? 'good' : 'bad' } });
     ui.sel = null; ui.tip = '';
-    ui.ask = made && pts > 1 ? { kind: 'ast', ref: e.id, team: t, shooter: pid, q: 'Assisted?', skip: 'No assist' } : null;
+    ui.ask = made && pts > 1 ? { kind: 'ast', ref: e.id, team: t, shooter: pid, q: 'Assisted?', skip: 'No assist' }
+      : !made && pts > 1 ? reboundAsk() : null;
     benchIn(pid, t, wasOn);
     paint();
   }
+  // A live-ball miss (a field goal, or the last free throw of a trip): who got the rebound?
+  // Both fives; offensive or defensive is worked out from who missed.
+  const reboundAsk = () => ({ kind: 'rebound', q: 'Rebound?', skip: 'No rebound', opts: [...five('a'), ...five('b')].map(id => ({ id, label: short(id) })) });
   // Steal right after the other team's turnover: one play (the steal says who lost it), no
   // question. Block right after the other team's missed shot: linked to it, no question.
   // Otherwise: Who lost it? / Whose shot? (that one also records their missed shot).
@@ -541,6 +545,9 @@ export async function mount(el) {
     } else if (a.kind === 'wentoff') {
       if (id) add({ type: 'sub', team: a.team, in: a.pid, out: id });
       ui.ask = null;
+    } else if (a.kind === 'rebound') {
+      if (id) add({ type: 'reb', team: byId[id].team, player: id }, { flash: { text: 'REB', tone: 'plain' } });
+      ui.ask = null;
     } else if (a.kind === 'foulout') {
       if (id) { const tiles = [...five(a.team)], auto = tiles.find(x => !G.lastActive[a.team].includes(x)); add({ type: 'sub', team: a.team, in: id, out: a.pid }); if (auto && auto !== id) slots[a.team] = tiles.map(x => (x === auto ? id : x)); }
       ui.ask = null;
@@ -570,11 +577,13 @@ export async function mount(el) {
   };
   // The team's name is its menu: team plays in labelled rows (the row says what kind, so the
   // chips stay short), and DNP. Sub sits beside Timeout in the team's header.
+  // Timeout first (it lived beside the tiles until a mis-tap cost one: Paolo, 2026-10-26).
   const teamMenu = t => menu(team[t].name, [
+    { group: 'Timeout', items: [[G.timeouts.left[t] > 0 ? 'timeout' : 'wait:timeout', G.timeouts.left[t] > 0 ? `Call timeout · ${G.timeouts.left[t]} left` : 'No timeouts left']] },
     { group: 'Turnover', items: [['to', 'Team'], ['shot clock', 'Shot clock'], ['3 seconds', '3s'], ['5 seconds', '5s'], ['8 seconds', '8s']] },
     { group: 'Technical', items: [['coach T', 'Coach'], ['bench T', 'Bench']] },
     { group: 'Lineup', items: [['dnp', 'DNP…']] }],
-  k => (k === 'dnp' ? dnpMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
+  k => (k === 'timeout' ? timeout(t) : k === 'dnp' ? dnpMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
   // Sub from the menu: who comes on, then who goes off (the same as tapping the tiles).
   // The Subs sheet (the Sub button beside Timeout): tap who comes off (court, red ↓) and who
   // goes on (bench, green ↑), as many as you like; they pair up in the order tapped. "All 5"
@@ -847,12 +856,11 @@ export async function mount(el) {
     // The bench; players who fouled out (or were ejected) go to the very end, greyed out.
     const bench = team[t].players.filter(p => !on.includes(p.id) && !G.dnp.includes(p.id));
     const rest = [...bench.filter(p => !G.flags[p.id]), ...bench.filter(p => G.flags[p.id])];
-    const noTO = G.timeouts.left[t] <= 0;
     const noSub = !rest.some(p => !G.flags[p.id]);
     return `<section class="sc-team${multi && ui.lane === t ? ' sc-team--solo' : ''}">
       <div class="sc-th"><button type="button" class="sc-th__n" data-act="teammenu" data-team="${t}" aria-label="${esc(team[t].name)}: team stats, DNP"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}${CHEV}</button>
         <button type="button" class="sc-tb" data-act="subq" data-team="${t}"${noSub ? ` disabled aria-label="${esc(team[t].name)}: nobody on the bench"` : ` aria-label="${esc(team[t].name)}: sub"`}>Sub</button>
-        <button type="button" class="sc-tb" data-act="timeout" data-team="${t}"${noTO ? ` disabled aria-label="${esc(team[t].name)}: no timeouts left"` : ''}>Timeout</button></div>
+</div>
       <div class="sc-five">${on.map(tile).join('')}</div>
       ${rest.length || dnps.length ? `<div class="sc-bench">${rest.map(p => {
         const out = G.flags[p.id];
@@ -873,9 +881,9 @@ export async function mount(el) {
   const scores = r => r.type === 'shot' || r.type === 'ft';
 
   // The question panel: in the stat buttons' place until answered or skipped.
-  const optBtn = (id, attrs = 'data-ask', on = false) => {
+  const optBtn = (id, attrs = 'data-ask', on = false, teamTop = false) => {
     const p = byId[id];
-    return `<button type="button" class="sc-opt${on ? ' on' : ''}" ${attrs}="${esc(id)}" aria-pressed="${on}">${p.number ? `<b class="num">${esc(p.number)}</b>` : ''}<span>${esc(p.short)}</span></button>`;
+    return `<button type="button" class="sc-opt${on ? ' on' : ''}${teamTop ? ' sc-opt--team' : ''}"${teamTop ? ` style="--c:${esc(team[p.team].color)}"` : ''} ${attrs}="${esc(id)}" aria-pressed="${on}">${p.number ? `<b class="num">${esc(p.number)}</b>` : ''}<span>${esc(p.short)}</span></button>`;
   };
   const followUp = (a, inner, headExtra = '') => {
     if (!a.at) a.at = Date.now();
@@ -905,6 +913,10 @@ export async function mount(el) {
     if (a && a.kind === 'ast') {
       const opts = a.bench ? team[a.team].players.filter(p => p.id !== a.shooter && !onCourt(a.team, p.id) && !G.flags[p.id]).map(p => p.id) : five(a.team).filter(id => id !== a.shooter);
       return followUp(a, `<div class="sc-q__opts">${opts.map(id => optBtn(id)).join('')}${a.bench ? '' : `<button type="button" class="sc-opt sc-opt--more" data-astbench><b>Bench</b></button>`}</div>`);
+    }
+    if (a && a.kind === 'rebound') {
+      // Ten players: each with its team's colour on top, scrolling sideways on a phone.
+      return followUp(a, `<div class="sc-q__opts sc-q__opts--reb">${a.opts.map(o => optBtn(o.id, 'data-ask', false, true)).join('')}</div>`);
     }
     if (a && (a.kind === 'lost' || a.kind === 'wentoff' || a.kind === 'blocked' || a.kind === 'andone' || a.kind === 'foulout')) {
       const pts = a.kind === 'blocked' ? [2, 3].map(n => `<button type="button" class="sc-ftc num${a.pts === n ? ' on' : ''}" data-blkpts="${n}" aria-pressed="${a.pts === n}">${n}PT</button>`).join('') : '';
@@ -1256,7 +1268,7 @@ export async function mount(el) {
       const a = ui.ask, made = b.getAttribute('data-fpft') === '1';
       add({ type: 'ft', team: a.o, player: a.shooter, made }, { flash: { text: made ? '+1' : 'MISS', tone: made ? 'good' : 'bad' } });
       (a.res = a.res || []).push(made); a.done++;
-      if (a.done >= a.n) ui.ask = null;
+      if (a.done >= a.n) ui.ask = !made && (a.foulKind === 'personal' || a.foulKind === 'shooting') ? reboundAsk() : null;
       return paint();
     }
     if (b.hasAttribute('data-subp') && ui.subs) {

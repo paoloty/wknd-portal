@@ -121,3 +121,8 @@ Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off),
   - **Live-scored game:** only the review's own changes: the video re-track, plus admins' removals (voids) and fixes (`fixes`) since the review started. New plays are never touched, because the same admins may have scored it live.
   - **Who:** the admin holding the review, or a super admin; also offered on an unheld final-score-only review.
 - Home's review card shows from the moment a review starts (no plays yet: 0–0, "No plays yet"), then live as plays come in.
+- Review feedback (2026-10-26):
+  - **Rebound follow-up:** after a missed field goal, or a missed last free throw of a personal/shooting-foul trip (a technical or unsportsmanlike trip isn't a live ball), a "Rebound?" follow-up offers both fives, each with its team's colour on top (`reboundAsk`). Tapping the rebounder's tile answers it, and the engine works out offensive or defensive.
+  - **Follow-ups:** they now last 12 s (`FOLLOW_MS`).
+  - **Timeout:** moved from beside the tiles into the team dropdown ("Call timeout · N left", greyed when none), after a mis-tap cost one.
+  - **Watching a review live:** it now updates as plays arrive (about 1.5 s; `liveChanged` fires for any review under way, not only with the switch on). It used to wait for the 20-second poll.

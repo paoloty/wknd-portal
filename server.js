@@ -7256,7 +7256,7 @@ app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => 
   }
   if (added && pass === 'live') bellGameStarted(game);
   if (added && pass === 'live' && sg.status === 'setup') saveScoreGame(game.id, { status: 'live' });
-  if (added && (pass === 'live' || sg.settings.reviewLive)) liveChanged(game.id);
+  if (added && (pass === 'live' || reviewLiveOn(game))) liveChanged(game.id);
   if (events.length < raw.length) console.warn(`[scorer] game=${game.id} rejected ${raw.length - events.length} play(s) that didn't fit`);
   res.json({ ok: true, added, received: raw.length, rejected: raw.length - events.length, late: late.map(e => e.id), lateWhy: late.length ? lateWhy(late[0]) : '' });
 });
