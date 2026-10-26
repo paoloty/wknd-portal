@@ -6877,7 +6877,7 @@ function scorableGameIds(playerId) {
   const picked = getScorerGameIds(playerId);
   if (!playerId || !(getPlayerById(playerId)?.is_scorer || isGameAdminPlayer(playerId))) return picked;
   const today = manilaTodayStr();
-  const all = portalDb.prepare("SELECT game_id, status FROM score_games WHERE status != 'published'").all()
+  const all = portalDb.prepare("SELECT game_id, status FROM score_games WHERE status != 'published' AND settings_json NOT LIKE '%\"reviewOnly\":true%'").all()
     .filter(r => { const g = getGameById(r.game_id); return g && (r.status === 'live' || gameYmd(g.date) >= today); }).map(r => r.game_id);
   return [...new Set([...picked, ...all])];
 }
@@ -6926,7 +6926,7 @@ function scoreEventsWithBy(gameId, pass = 'live') {
 // so it goes live by itself when scoring starts.
 function liveArmed(game) {
   const sg = getScoreGame(game.id);
-  return !!sg && sg.status !== 'published' && sg.settings.live_public !== false;
+  return !!sg && sg.status !== 'published' && sg.settings.live_public !== false && !sg.settings.reviewOnly;
 }
 function liveScoreFor(game) {
   if (!liveArmed(game)) return null;
@@ -7313,7 +7313,14 @@ function reviewProgress(game, sg) {
 }
 app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, res) => {
   const game = getGameById(req.params.id);
-  const sg = game && getScoreGame(game.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  // A game played without the scorer (only its final score): reviewing it switches scoring on
+  // quietly. No bells (Scorers' "ready", the game-started one), no live score on the site; the
+  // final score stays the result, so a scorer's phone can't add plays to it (finalAt).
+  if (!getScoreGame(game.id) && req.body?.action === 'start' && gameFinalSet(game)) {
+    saveScoreGame(game.id, { settings: { rules: { waves: game.game_type === 'playoff' ? 'off' : 'first half' }, reviewOnly: true, startedBell: true, finalAt: Date.now() } });
+  }
+  const sg = getScoreGame(game.id);
   if (!sg) return res.status(404).json({ error: 'Not found.' });
   const me = reviewer(req), r = sg.settings.review, mine = !!r && r.by === me.by, act = String(req.body?.action || '');
   const set = review => saveScoreGame(game.id, { settings: { ...sg.settings, review } });
