@@ -74,9 +74,14 @@ function recapCard(recap, story) {
   </section>`;
 }
 
-// How it was won (lib/game-detail.js howItWasWon), then the two teams side by side; with
-// earlier meetings (usual), each number gets a +/− against that team's usual.
-function teamStatsCard(teams, totals, won, usual) {
+// How it was won (lib/game-detail.js howItWasWon): its own card (Paolo, 2026-10-26).
+function howCard(teams, won) {
+  if (!won.length) return '';
+  return `<section class="fc gr" id="gr-how">${head('How it was won')}<div class="gr-how">${won.map(w => `<div class="gr-how__r"><b class="num">+${w.n}</b><div><span>${dot(sideOf(teams, w.team).color)}${esc(w.label)}</span><small>${esc(w.team)} · ${esc(w.detail)}</small></div></div>`).join('')}</div></section>`;
+}
+// The two teams side by side; with earlier meetings (usual), each number gets a +/− against
+// that team's usual.
+function teamStatsCard(teams, totals, usual) {
   const [A, B] = totals;
   const pc = (m, a) => (a ? +(m / a * 100).toFixed(1) : null);
   const by = Object.fromEntries((usual?.rows || []).map(r => [r.key, r]));
@@ -107,8 +112,7 @@ function teamStatsCard(teams, totals, won, usual) {
       <div class="gr-cmp__bar"><span class="${aw ? 'is-w' : ''}" style="width:${share}%"></span><span class="${bw ? 'is-w' : ''}"></span></div>
     </div>`;
   };
-  const how = won.length ? `${head('How it was won')}<div class="gr-how">${won.map(w => `<div class="gr-how__r"><b class="num">+${w.n}</b><div><span>${dot(sideOf(teams, w.team).color)}${esc(w.label)}</span><small>${esc(w.team)} · ${esc(w.detail)}</small></div></div>`).join('')}</div>` : '';
-  return `<section class="fc gr" id="gr-stats">${how}
+  return `<section class="fc gr" id="gr-stats">
     ${head('Team stats')}
     ${usual ? `<p class="gr-note">Green and red: this game against each team's usual in their ${usual.n === 1 ? 'one earlier meeting' : `${usual.n} earlier meetings`}.</p>` : ''}
     <div class="gr-cmp__h"><span>${dot(teams[0].color)}${esc(teams[0].name)}</span><span>${esc(teams[1].name)}${dot(teams[1].color)}</span></div>
@@ -116,7 +120,8 @@ function teamStatsCard(teams, totals, won, usual) {
   </section>`;
 }
 
-// Game flow: the lead through the game (winner's lead up), four numbers, then key plays.
+// Game flow: the lead through the game (winner's lead up) and four numbers. Key plays are their
+// own card (keyPlaysCard).
 // Runs of baskets the scorer logged with one stale clock (all at 0:00, say) are spread
 // evenly back to the basket before them, so they draw as plays, not one wall.
 function flowCard(flow, plays, teams) {
@@ -159,11 +164,15 @@ function flowCard(flow, plays, teams) {
     <div><b class="num">${big ? big.n : 0}</b><span>Biggest lead</span></div>
     <div><b class="num">${run ? `${run.n}–0` : '–'}</b><span>Best run</span></div>
   </div>`;
+  return `<section class="fc gr" id="gr-flow">${head('Game flow', 'Lead by play')}${chart}${tiles}</section>`;
+}
+// Key plays: the runs, biggest leads and go-ahead basket, swiped sideways.
+function keyPlaysCard(plays, teams) {
+  if (!plays.length) return '';
   const when = p => (p.qLabel === 'FINAL' ? 'Final' : [p.qLabel, p.clock && p.clock !== '0:00' ? p.clock : ''].filter(Boolean).join(' · '));
-  const kp = plays.length ? `${head('Key plays', swipe)}<div class="gr-hs">${plays.map(p => `<div class="gr-kp">
+  return `<section class="fc gr" id="gr-plays">${head('Key plays', swipe)}<div class="gr-hs">${plays.map(p => `<div class="gr-kp">
       <div class="gr-kp__top"><span>${esc(when(p))}</span><b class="num">${p.score.a}–${p.score.b}</b></div>
-      <p>${dot(teams[p.side === 'b' ? 1 : 0].color)}<b>${esc(p.strong)}</b> ${esc(p.rest)}</p></div>`).join('')}</div>` : '';
-  return `<section class="fc gr" id="gr-flow">${head('Game flow', 'Lead by play')}${chart}${tiles}${kp}</section>`;
+      <p>${dot(teams[p.side === 'b' ? 1 : 0].color)}<b>${esc(p.strong)}</b> ${esc(p.rest)}</p></div>`).join('')}</div></section>`;
 }
 
 // The full box score: one team at a time, swipes sideways, names stay put, tap a column to sort.
@@ -265,8 +274,10 @@ export function gameRecapSections(g, { potgHtml = '', commentsHtml = '', comment
     ['gr-leaders', 'Leaders', two ? leadersCard(g.teams, f.watch) : ''],
     ['', '', potgHtml],
     ['gr-recap', 'Recap', recapCard(g.recap, f.story) || emptyRecap],
-    ['gr-stats', 'Team stats', two ? teamStatsCard(g.teams, f.totals, f.won, f.usual) : ''],
+    ['', '', two ? howCard(g.teams, f.won) : ''],
+    ['gr-stats', 'Team stats', two ? teamStatsCard(g.teams, f.totals, f.usual) : ''],
     ['gr-flow', 'Game flow', two ? flowCard(f.flow, f.plays, g.teams) : ''],
+    ['', '', two ? keyPlaysCard(f.plays, g.teams) : ''],
     ['gr-box', 'Box score', g.teams.length ? boxCard(g.teams, g.meId, g.myTeamId, f.dnp) : ''],
     ['gr-picks', 'Picks', two ? calledCard(f.called, g.teams) : ''],
     ['gr-series', 'Series', two ? seriesCard(f.series, g.teams) : ''],
