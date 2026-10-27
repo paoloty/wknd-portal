@@ -201,7 +201,10 @@ function settingsTab(p, { teams, slug, isSuperAdmin, canDelete, deleteReason, na
   // Scorer: scores any league game with scoring on, from the app, without being picked for it.
   const scorer = formSection({ title: 'Scorer', sub: 'Not an admin: no review or admin pages.', bodyHtml: toggleRow({ label: 'Scorer', name: 'scorer', on: !!p.is_scorer, post: `/admin/players/${id}/scorer`,
     help: 'Can score any league game that has scoring turned on, from the app’s Me → Score a game, and gets a bell when a game is ready. Without it, a player scores only the games they’re picked for.' }) });
-  return formCard(teamStatus + scorer + address + del);
+  // Premium share cards without the lock while they owe (super admin only).
+  const premium = isSuperAdmin ? formSection({ title: 'Premium share cards', sub: 'Super admin only.', bodyHtml: toggleRow({ label: 'Unlocked even with a balance', name: 'premium_cards', on: !!p.premium_cards_pass, post: `/admin/players/${id}/premium-cards`,
+    help: 'Premium share templates normally save with a lock while a player owes. On: this player gets them without the lock. Their balance and reminders don’t change.' }) }) : '';
+  return formCard(teamStatus + scorer + premium + address + del);
 }
 
 export function adminPlayerDetailBody({

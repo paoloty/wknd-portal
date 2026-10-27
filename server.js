@@ -6039,7 +6039,7 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts, appLiveNow } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
@@ -11423,6 +11423,15 @@ app.post('/admin/players/:id/scorer', requireAuth, express.json(), (req, res) =>
   setPlayerScorer(player.id, on);
   res.json({ ok: true, message: on ? `${displayPlayerName(player.name || '')} is a scorer.` : `${displayPlayerName(player.name || '')} is no longer a scorer.` });
 });
+// Premium share cards while owing (super admin only, player page → Settings): { on }.
+app.post('/admin/players/:id/premium-cards', requireSuperAdmin, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1 || req.body?.on === '1';
+  setPlayerPremiumCardsPass(player.id, on);
+  const n = displayPlayerName(player.name || '');
+  res.json({ ok: true, message: on ? `${n} can use the premium cards, balance or not.` : `${n}’s premium cards lock again while they owe.` });
+});
 app.post('/admin/players/:id/papawis-probation', requireAuth, express.json(), (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).json({ error: 'Not found' });
@@ -11913,11 +11922,13 @@ app.get('/games/:ref', (req, res) => {
 // off the session, no ownership param to spoof).
 // Premium share templates (lib/share-card-templates.js) are locked while the player owes —
 // same signal as the balance reminder bar (player_financials.current_balance > 0) — except
-// for admins (Paolo, 2026-10-19). A locked card still renders; the lock is stamped into it.
+// for admins (Paolo, 2026-10-19) and players a super admin gave the pass to
+// (players.premium_cards_pass, 2026-10-27). A locked card still renders; the lock is stamped into it.
 function shareCardsLocked(req) {
   if (req.session?.isAdmin) return false;
   const pid = req.session?.playerPlayerId;
-  return !!pid && (getPlayerFinancials(pid)?.current_balance ?? 0) > 0;
+  if (!pid || getPlayerById(pid)?.premium_cards_pass) return false;
+  return (getPlayerFinancials(pid)?.current_balance ?? 0) > 0;
 }
 
 // Everything the premium templates draw, from this game and this player's EARLIER games this
