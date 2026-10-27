@@ -83,18 +83,22 @@
       el.classList.add('is-pinned');
       // Once a frame at most, and only for real moves: iOS reports the keyboard's slide in
       // small steps, and following every one made the box jump (Paolo, 2026-10-27).
-      var raf = 0, lastTop = -1, lastH = -1;
+      // fullH: the tallest the visible area has been (no keyboard). Not window.innerHeight: on
+      // iPhone that shrinks with the keyboard too, so the home-bar gap never went (Paolo's
+      // screenshot, 2026-10-27).
+      var raf = 0, lastTop = -1, lastH = -1, fullH = 0;
       var apply = function () {
         raf = 0;
         if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; }
         var top = Math.max(0, Math.round(vv.offsetTop)), h = Math.round(vv.height);
+        fullH = Math.max(fullH, h);
         if (Math.abs(top - lastTop) < 2 && Math.abs(h - lastH) < 2) return;
         var near = nearBottom();
         lastTop = top; lastH = h;
         el.style.transform = top ? 'translate3d(0,' + top + 'px,0)' : '';
         el.style.height = h + 'px';
         // The keyboard covers the home bar: no bottom inset while it's up.
-        el.classList.toggle('is-kb', h < window.innerHeight - 120);
+        el.classList.toggle('is-kb', h < fullH - 120);
         if (near) toBottom();
       };
       var fit = function () { if (!raf) raf = requestAnimationFrame(apply); };
