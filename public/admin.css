@@ -2364,6 +2364,7 @@ a.agd-name:hover { color: var(--amber); }
 .apl-slug { display: flex; flex-wrap: nowrap; width: 100%; max-width: 520px; }
 .apl-slug__box { flex: 1; min-width: 0; }
 .apl-slug__box input { font-family: inherit; font-size: 13.5px; }
+.apl-ga { font-size: 13px; user-select: all; color: var(--text); }
 @media (max-width: 640px) {
   .apl-fields-3 { grid-template-columns: minmax(0, 1fr); }
   .apl-head__name { font-size: 18px; }

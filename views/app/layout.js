@@ -172,7 +172,9 @@ function installWallHtml() {
 // whether that copy belongs to someone else.
 // test: '' on the live site; elsewhere "Test server · <branch>" (server.js appTestLabel), shown as a
 // pill at the top and in the home-screen name.
-export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '', test = '' }) {
+// ga: server.js buildAppGaSnippet (signed-in players on the live domain, unless they turned
+// Analytics off), or ''.
+export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '', test = '', ga = '' }) {
   const badge = key => {
     const n = Number(badges[key]) || 0;
     return n ? `<span class="tab__badge tab__badge--${key === 'me' ? 'err' : 'warn'}" aria-label="${n} waiting">${n > 9 ? '9+' : n}</span>` : '';
@@ -205,6 +207,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <link rel="preload" href="/fonts/fonts.css" as="style">
   <link rel="stylesheet" href="/fonts/fonts.css">
   <link rel="stylesheet" href="/app.css?v=${esc(ver)}">
+  ${ga}
 </head>
 <body class="${esc(bodyClass)}">
   ${installWall ? installWallHtml() : ''}

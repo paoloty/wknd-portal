@@ -39,7 +39,8 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
       { key: 'all', label: 'All', test: () => true },
       { key: 'nophoto', label: 'No photo', test: r => !r.inactive && !r.picture_url },
     ],
-    search: { placeholder: 'Search name, team or number', text: r => `${r.display} ${r.team_name || ''} #${r.number || ''}` },
+    // Also matches a player's GA User-ID (server.js gaUserId), to put a name to one from GA.
+    search: { placeholder: 'Search name, team, number or GA ID', text: r => `${r.display} ${r.team_name || ''} #${r.number || ''} ${r.ga || ''}` },
     filters: [
       { key: 'team', label: 'Team', options: [...teams.map(t => [t.name, t.name]), ['__none', 'No team']], test: (r, v) => (v === '__none' ? !r.team_name : r.team_name === v) },
       // Season only picks which ratings and games the grid shows (the server reads it).

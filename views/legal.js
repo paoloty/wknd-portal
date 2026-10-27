@@ -36,7 +36,7 @@ export function privacyPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
       heading: 'Information We Collect',
       content: `<p>We collect the following types of information:</p>
       <ul>
-        <li><strong>Usage data</strong> — pages visited, referrer, browser type, and device information, collected automatically via Google Analytics.</li>
+        <li><strong>Usage data</strong> — pages visited, referrer, browser type, and device information, collected automatically via Google Analytics. When you’re signed in, these visits carry a coded player ID (never your name or email) so we can see how the site and the WKND app are used across your devices.</li>
         <li><strong>Account information</strong> — if you sign in with Facebook, we receive your public profile (name and profile photo) and email address as permitted by Facebook.</li>
         <li><strong>Cookies</strong> — small files stored on your device used to maintain your session and analytics preferences.</li>
       </ul>
@@ -55,7 +55,7 @@ export function privacyPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
       heading: 'Third-Party Services',
       content: `<p>We use the following third-party services that may collect data independently under their own privacy policies:</p>
       <ul>
-        <li><strong>Google Analytics</strong> — collects anonymised usage data. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>.</li>
+        <li><strong>Google Analytics</strong> — collects usage data, linked to a coded player ID when you’re signed in. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>.</li>
         <li><strong>Meta (Facebook Login)</strong> — used for optional sign-in. <a href="https://www.facebook.com/privacy/policy/" target="_blank" rel="noopener">Meta Privacy Policy</a>.</li>
         <li><strong>Google Fonts</strong> — fonts are loaded from Google's servers. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>.</li>
       </ul>`,
@@ -72,6 +72,7 @@ export function privacyPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
         <li>Request correction of inaccurate data.</li>
         <li>Request deletion of your data.</li>
         <li>Accept or decline analytics cookies at any time via the <strong>Cookie Settings</strong> link in the site footer. Analytics cookies are not set until you accept.</li>
+        <li>In the WKND app, analytics is on while you’re signed in. Turn it off any time in the app’s <strong>Settings → Privacy → Analytics</strong>; that also stops your player ID being sent from the site.</li>
         <li>Opt out of Google Analytics by using the <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener">Google Analytics Opt-out Browser Add-on</a>.</li>
       </ul>`,
     },

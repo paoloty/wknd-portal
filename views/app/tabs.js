@@ -67,7 +67,7 @@ export function appMePage({ me, season, games, positions, todos = [] }) {
 // /app href is information only.
 // push: [{ key, label, sub, on }] — the kinds of notification (lib/push.js PUSH_KINDS).
 // The on/off for this phone is the browser's, so public/app.js (initPush) fills that part in.
-export function appSettingsPage({ me, rows, push = [] }) {
+export function appSettingsPage({ me, rows, push = [], analytics = true }) {
   const row = r => {
     const inner = `<span class="ico">${icons[r.icon]}</span><span class="cell__t">${esc(r.title)}</span>${r.count ? `<span class="count">${r.count}</span>` : ''}${r.value ? `<span class="cell__v">${esc(r.value)}</span>` : ''}`;
     return isAppHref(r.href) ? `<a class="cell" href="${esc(r.href)}">${inner}${chev}</a>` : `<div class="cell">${inner}${r.soon ? soonTag : ''}</div>`;
@@ -87,6 +87,10 @@ export function appSettingsPage({ me, rows, push = [] }) {
   <div class="group"><div class="cell"><div class="seg" style="flex:1" data-theme-switch>
     ${[['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<label><input type="radio" name="theme" value="${v}"><span>${l}</span></label>`).join('')}
   </div></div></div>
+  <div class="sec">Privacy</div>
+  <div class="group"><label class="cell"><span class="cell__t">Analytics<small>Google Analytics sees which screens you open, so we know what to improve. No ads.</small></span>
+    <input type="checkbox" class="switch" data-analytics${analytics ? ' checked' : ''}></label></div>
+  <p class="foot-note">More in the <a class="link" href="/privacy">Privacy Policy</a>.</p>
   <div class="group group--icons" style="margin-top:16px">
     <a class="cell" href="/?from=app"><span class="ico">${icons.globe}</span><span class="cell__t">Open full site</span>${icons.ext}</a>
   </div>

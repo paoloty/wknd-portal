@@ -1415,6 +1415,12 @@
       });
     }
     // Home's card: on a phone that can, until it's on or put off (asks again after 2 weeks).
+    // Settings → Analytics: saved for the player, then a reload loads (or drops) GA.
+    var gaSw = $('[data-analytics]');
+    if (gaSw && !gaSw._bound) gaSw._bound = true, gaSw.addEventListener('change', function () {
+      postJson('/app/analytics', { on: gaSw.checked })
+        .then(function () { location.reload(); }, function () { gaSw.checked = !gaSw.checked; toast('Couldn\'t save that. Try again.', 'err'); });
+    });
     var ask = $('[data-push-ask]');
     if (ask && pushSupported && Notification.permission === 'default') {
       var later = 0; try { later = Number(localStorage.getItem('wknd-push-ask') || 0); } catch (e) {}
@@ -2237,6 +2243,8 @@
       else if (!keepScroll) window.scrollTo(0, push ? 0 : ((history.state && history.state.y) || 0));
       else window.scrollTo(0, y);
       loadedAt = Date.now();
+      // A new screen is a page view for GA (server.js buildAppGaSnippet); a refresh isn't.
+      if (fromUrl !== page.url && window.wkndGaView) try { window.wkndGaView(); } catch (e) {}
       initPage();
     };
     if (!dir || reducedMotion.matches) return swap();

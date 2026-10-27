@@ -6,7 +6,7 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { randomBytes, timingSafeEqual, createHash, scrypt, scryptSync } from 'crypto';
+import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt, scryptSync } from 'crypto';
 import { statSync, existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import express from 'express';
 import { resendWebhookEnabled, verifyResendSignature, handleResendEvent } from './lib/resend-webhook.js';
@@ -402,10 +402,25 @@ function checkPlayerPassword(password, storedHash) {
 // already chosen; any [data-cookie-settings] element (the footer link) re-opens it. The
 // admin layout doesn't load styles.css, so it passes banner:false and just inherits
 // whatever was chosen on the public site (same origin, same localStorage).
+// GA User-ID (2026-10-27): a signed-in player's visits carry a coded ID, the same on the site
+// and the app, so GA joins them up per player (Explore → User explorer). Never a name or
+// email (Google's rules): an HMAC of the player id, meaningless outside WKND. Admin → player
+// → Settings shows a player's code. Not while viewing as a player, nor for a player who
+// turned Analytics off in the app's Settings (players.analytics_off).
+function gaUserId(playerId) {
+  return createHmac('sha256', `ga-user:${process.env.GA_USER_SALT || SESSION_SECRET}`).update(String(playerId)).digest('hex').slice(0, 20);
+}
+function gaPlayerId(req) {
+  const pid = req.session?.playerPlayerId;
+  if (!pid || req.session?.impersonating) return '';
+  return getPlayerById(pid)?.analytics_off ? '' : gaUserId(pid);
+}
+const gaOn = req => !!GA_MEASUREMENT_ID && String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0].toLowerCase() === 'wkndbasketball.com';
+
 function buildGaSnippet(req, { banner = true } = {}) {
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0].toLowerCase();
-  if (!GA_MEASUREMENT_ID || host !== 'wkndbasketball.com') return '';
+  if (!gaOn(req)) return '';
   const safeId = GA_MEASUREMENT_ID.replace(/'/g, "\\'");
+  const uid = gaPlayerId(req);
   const lines = [
     '<script>',
     '  window.dataLayer = window.dataLayer || [];',
@@ -414,7 +429,7 @@ function buildGaSnippet(req, { banner = true } = {}) {
     "  gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied', wait_for_update: 500 });",
     "  if (wkndConsent === 'granted') gtag('consent', 'update', { analytics_storage: 'granted' });",
     "  gtag('js', new Date());",
-    `  gtag('config', '${safeId}');`,
+    `  gtag('config', '${safeId}'${uid ? `, { user_id: '${uid}' }` : ''});`,
     '</script>',
     `<script async src="https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}"></script>`,
   ];
@@ -443,6 +458,26 @@ function buildGaSnippet(req, { banner = true } = {}) {
     '</script>',
   );
   return lines.join('\n  ');
+}
+
+// The players app (/app): GA is on by default for signed-in players, off through the app's
+// Settings → Analytics (Paolo, 2026-10-27: opt-out, stated in the Privacy Policy). Off = no GA
+// at all, not even cookieless pings. The app swaps screens without page loads, so public/app.js
+// calls wkndGaView() after each one; content_group 'app' tells app views from the site's.
+function buildAppGaSnippet(req) {
+  if (!gaOn(req) || !req.session?.playerPlayerId || req.session?.impersonating) return '';
+  const uid = gaPlayerId(req);
+  if (!uid) return '';
+  const safeId = GA_MEASUREMENT_ID.replace(/'/g, "\\'");
+  return `<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'granted' });
+  gtag('js', new Date());
+  gtag('config', '${safeId}', { user_id: '${uid}', content_group: 'app' });
+  window.wkndGaView = function () { gtag('event', 'page_view', { page_location: location.href, page_title: document.title, content_group: 'app' }); };
+  </script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}"></script>`;
 }
 
 function getRequestOrigin(req) {
@@ -6039,7 +6074,7 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts, appLiveNow } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
@@ -6092,7 +6127,7 @@ const appInstallRequired = () => getSetting('app_require_install', '1') === '1';
 // app. (Pushes there only reach the developer: lib/push.js.)
 const GIT_BRANCH = (() => { try { return execSync('git rev-parse --abbrev-ref HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } })();
 const appTestLabel = req => (req && !isProdHost(req) ? `Test server${GIT_BRANCH && GIT_BRANCH !== 'HEAD' ? ` · ${GIT_BRANCH}` : ''}` : '');
-const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(res.req), ...opts }));
+const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(res.req), ga: buildAppGaSnippet(res.req), ...opts }));
 
 // 'anon' | 'admin' (super-admin login, no player) | 'no-player' | 'not-yet' | 'ok'
 const appBetaList = () => String(getSetting('app_beta', '')).toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -8634,7 +8669,14 @@ app.get('/app/settings', requireApp, (req, res) => {
   ];
   const prefs = getPushPrefs(me.reg.id);
   const push = PUSH_KINDS.map(k => ({ ...k, on: prefs[k.key] !== false }));
-  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push }) });
+  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push, analytics: !getPlayerById(me.playerId)?.analytics_off }) });
+});
+// Settings → Analytics: { on }. Takes effect on the next page load (public/app.js reloads).
+app.post('/app/analytics', requireAppData, express.json(), (req, res) => {
+  const pid = req.session.playerPlayerId;
+  if (!pid) return res.status(400).json({ error: 'No player on this account.' });
+  setPlayerAnalyticsOff(pid, !req.body?.on);
+  res.json({ ok: true });
 });
 
 app.get('/app/notifications', requireApp, (req, res) => {
@@ -11290,7 +11332,7 @@ app.get('/admin/finance/gcash', requireAuth, (req, res) => {
 app.get('/admin/players', requireAuth, (req, res) => {
   const seasons = getGameSeasons();
   const season  = seasons.map(String).includes(String(req.query.season || '')) ? String(req.query.season) : '';
-  const players = getPlayersWithRatings(season || null);
+  const players = getPlayersWithRatings(season || null).map(p => ({ ...p, ga: gaUserId(p.id) }));
   const teams   = getAllTeams();
   const gpById  = Object.fromEntries(getStatsBySeason(season || null).map(s => [s.player_id, s.games_played]));
   const colorByTeam = Object.fromEntries(teams.map(t => [t.name, t.color || teamColor(t.name)]));
@@ -11330,7 +11372,7 @@ app.get('/admin/players/:id', requireAuth, (req, res) => {
     currentPath: '/admin/players',
     body: adminPlayerDetailBody({
       player, rating, overallRating, stats, seasons, season, teams, currentSlug, isSuperAdmin, canDelete, canImpersonate, linkedReg, deleteReason, tab,
-      history: getPapawisHistoryForPlayer(player.id, 30), today: manilaTodayStr(), ver: CSS_VER,
+      history: getPapawisHistoryForPlayer(player.id, 30), today: manilaTodayStr(), ver: CSS_VER, ga: { id: gaUserId(player.id), off: !!player.analytics_off },
     }),
   }));
 });

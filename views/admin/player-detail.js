@@ -184,7 +184,7 @@ function papawisTab(p, { history, today }) {
 }
 
 // ── Settings ───────────────────────────────────────────────────────────────────────────
-function settingsTab(p, { teams, slug, isSuperAdmin, canDelete, deleteReason, name }) {
+function settingsTab(p, { teams, slug, isSuperAdmin, canDelete, deleteReason, name, ga }) {
   const id = attr(p.id);
   const teamStatus = formSection({ title: 'Team and status', sub: 'Saves as you change it.', bodyHtml: fieldGrid([
     field({ label: 'Team', name: 'team_id', type: 'select', value: p.team_id || '', options: [...teams.map(t => [t.id, t.name]), ['', 'No team']], attrs: `data-apl-autosave="/admin/players/${id}/team"` }),
@@ -204,12 +204,14 @@ function settingsTab(p, { teams, slug, isSuperAdmin, canDelete, deleteReason, na
   // Premium share cards without the lock while they owe (super admin only).
   const premium = isSuperAdmin ? formSection({ title: 'Premium share cards', sub: 'Super admin only.', bodyHtml: toggleRow({ label: 'Unlocked even with a balance', name: 'premium_cards', on: !!p.premium_cards_pass, post: `/admin/players/${id}/premium-cards`,
     help: 'Premium share templates normally save with a lock while a player owes. On: this player gets them without the lock. Their balance and reminders don’t change.' }) }) : '';
-  return formCard(teamStatus + scorer + premium + address + del);
+  // Their GA User-ID: what GA shows in Explore → User explorer (server.js gaUserId).
+  const gaRow = ga ? formSection({ title: 'Google Analytics', sub: ga.off ? 'They turned Analytics off in the app.' : 'Their visits in GA carry this ID.', bodyHtml: `<code class="apl-ga">${escHtml(ga.id)}</code>` }) : '';
+  return formCard(teamStatus + scorer + premium + gaRow + address + del);
 }
 
 export function adminPlayerDetailBody({
   player, rating = null, overallRating = null, stats = null, seasons = [], season = '', teams = [], currentSlug = null, isSuperAdmin = false,
-  canDelete = false, canImpersonate = false, linkedReg = null, history = [], tab = 'profile', deleteReason = '', today = '', ver = '',
+  canDelete = false, canImpersonate = false, linkedReg = null, history = [], tab = 'profile', deleteReason = '', today = '', ver = '', ga = null,
 } = {}) {
   const p = player;
   const name = displayPlayerName(p.name);
@@ -223,7 +225,7 @@ export function adminPlayerDetailBody({
     profile: () => profileTab(p),
     ratings: () => ratingsTab(p, { rating, stats, seasons, season }),
     papawis: () => papawisTab(p, { history, today }),
-    settings: () => settingsTab(p, { teams, slug: currentSlug, isSuperAdmin, canDelete, deleteReason, name }),
+    settings: () => settingsTab(p, { teams, slug: currentSlug, isSuperAdmin, canDelete, deleteReason, name, ga }),
   }[current]();
 
   return `<div class="aui-page apl-detail" data-apl-player="${attr(p.id)}">
