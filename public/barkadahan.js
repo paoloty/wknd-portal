@@ -81,18 +81,26 @@
     var vv = window.visualViewport;
     if (vv) {
       el.classList.add('is-pinned');
-      var fit = function () {
+      // Once a frame at most, and only for real moves: iOS reports the keyboard's slide in
+      // small steps, and following every one made the box jump (Paolo, 2026-10-27).
+      var raf = 0, lastTop = -1, lastH = -1;
+      var apply = function () {
+        raf = 0;
         if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; }
+        var top = Math.max(0, Math.round(vv.offsetTop)), h = Math.round(vv.height);
+        if (Math.abs(top - lastTop) < 2 && Math.abs(h - lastH) < 2) return;
         var near = nearBottom();
-        el.style.top = Math.max(0, Math.round(vv.offsetTop)) + 'px';
-        el.style.height = Math.round(vv.height) + 'px';
+        lastTop = top; lastH = h;
+        el.style.transform = top ? 'translate3d(0,' + top + 'px,0)' : '';
+        el.style.height = h + 'px';
         // The keyboard covers the home bar: no bottom inset while it's up.
-        el.classList.toggle('is-kb', vv.height < window.innerHeight - 120);
+        el.classList.toggle('is-kb', h < window.innerHeight - 120);
         if (near) toBottom();
       };
+      var fit = function () { if (!raf) raf = requestAnimationFrame(apply); };
       vv.addEventListener('resize', fit);
       vv.addEventListener('scroll', fit);
-      fit();
+      apply();
     }
 
     // A fresh copy (the page may have come from the phone's copy).
@@ -191,6 +199,9 @@
     function closeSheet() { if (sheet) { sheet.remove(); sheet = null; } }
     function openMenu(m) {
       closeSheet();
+      // The keyboard goes first, so the sheet opens on a screen that isn't moving.
+      if (input && document.activeElement === input) input.blur();
+      if (emoSheet) { emoSheet.remove(); emoSheet = null; }
       var mine = m.pid === me.pid, acts = [];
       if (!me.cant) acts.push(['reply', 'Reply']);
       acts.push(['copy', 'Copy']);
