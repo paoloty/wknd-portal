@@ -2374,3 +2374,6 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .bk-card__faces { flex: none; display: flex; }
 .bk-card__faces .avatar-wrap + .avatar-wrap { margin-left: -8px; }
 .bk-card__faces .avatar { width: 28px; height: 28px; font-size: 10px; box-shadow: 0 0 0 2px var(--card-bg); }
+/* Pinned to the visible area (public/barkadahan.js fit): top and height follow the keyboard. */
+.bk.is-pinned { position: fixed; left: 0; right: 0; top: 0; z-index: 30; max-width: 560px; margin: 0 auto; padding-top: var(--safe-t); background: var(--bg); }
+.bk.is-pinned.is-kb { padding-bottom: 0; }

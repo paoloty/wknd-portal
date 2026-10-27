@@ -73,19 +73,26 @@
     }
     function setAll(arr) { msgs = arr; byId = {}; msgs.forEach(function (m) { byId[m.id] = m; }); }
     setAll(B.messages); draw();
-    // The keyboard: the room fits what's left of the screen, so the box and the newest
-    // messages stay in sight (iPhone doesn't shrink the page for the keyboard by itself).
+    // The keyboard: the room is pinned to the part of the screen you can see (the visual
+    // viewport), so the box sits right on the keyboard and the newest messages stay in sight.
+    // iPhone doesn't shrink the page for the keyboard; it slides what you see up instead, so
+    // shrinking the room left the box in the middle of the screen (Paolo, 2026-10-27). Pinned
+    // to the visible area's top and height, it follows that slide.
     var vv = window.visualViewport;
     if (vv) {
-      var top0 = el.getBoundingClientRect().top + window.scrollY;
+      el.classList.add('is-pinned');
       var fit = function () {
-        if (!el.isConnected) { vv.removeEventListener('resize', fit); return; }
+        if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; }
         var near = nearBottom();
-        el.style.height = Math.max(240, Math.round(vv.height - top0)) + 'px';
-        window.scrollTo(0, 0);
+        el.style.top = Math.max(0, Math.round(vv.offsetTop)) + 'px';
+        el.style.height = Math.round(vv.height) + 'px';
+        // The keyboard covers the home bar: no bottom inset while it's up.
+        el.classList.toggle('is-kb', vv.height < window.innerHeight - 120);
         if (near) toBottom();
       };
       vv.addEventListener('resize', fit);
+      vv.addEventListener('scroll', fit);
+      fit();
     }
 
     // A fresh copy (the page may have come from the phone's copy).
