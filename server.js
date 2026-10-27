@@ -11271,6 +11271,7 @@ function siteSettingSection(key) {
 }
 
 app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
+  if ('barkadahan_enabled' in (req.body || {}) && !isSuperAdminReq(req)) return res.status(403).json({ error: 'Only super admins can switch the Barkadahan on or off.' });
   const allowedSections = getAdminAllowedSections(req);
   if (allowedSections) {
     const denied = Object.keys(req.body || {}).filter(k => !allowedSections.includes(siteSettingSection(k)));
@@ -11287,6 +11288,8 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
     'reg_open',
     'gcash_name', 'gcash_number', 'gcash_qr_payload',
     'app_open', 'app_beta', 'app_require_install',
+    // Barkadahan's switch (super admins only, below; its page is too).
+    'barkadahan_enabled',
   ]);
   const articleKeyRe = new RegExp(`^award_article_(${AWARD_SECTION_KEYS.join('|')})(_[\\w-]+)?_\\d+$`);
   const homeGalleryKeyRe = new RegExp(`^award_home_(${AWARD_SECTION_KEYS.join('|')})_\\d+$`);
