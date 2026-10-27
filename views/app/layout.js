@@ -56,6 +56,7 @@ export const icons = {
   pinned: svg('<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/>'),
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>',
   faceid: svg('<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1M15 9v1M12 9v4h-1M9 15.5c1.8 1.4 4.2 1.4 6 0"/>'),
+  book: svg('<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5z"/><path d="M5 20.5A2.5 2.5 0 0 0 7.5 23H19M9 7.5h6"/>'),
 };
 // The app keeps players inside it: only links to /app screens are tappable. Rows about
 // something not built into the app yet (balance, sign-ups, picks) show as information with

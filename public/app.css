@@ -115,7 +115,9 @@ img { display: block; max-width: 100%; }
 /* ── Sections, grouped lists, cards ── */
 /* Section labels, one style everywhere (.sec, Home's day headers, the rail's heading). */
 .sec, .feed-day, .rail-h b { font: 600 11px/1.2 var(--font-num); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-.sec { padding: 20px 32px 8px; }
+.sec { padding: 20px 31px 8px; }
+/* The first card under a back bar sits 8px below it, on every screen (audit 2026-10-27). */
+.navbar + .group, .navbar + .empty, .navbar + .fc { margin-top: 8px; } /* 31 = card margin 16 + border 1 + cell padding 14: on the cards' text edge */
 .group { margin: 0 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow), var(--card-hi); overflow: hidden; }
 .cell { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px; position: relative; font-size: 14px; }
 .cell + .cell::before { content: ''; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--hair); }
@@ -141,7 +143,7 @@ button.cell { width: 100%; text-align: left; }
 .kick { font-family: var(--font-num); font-weight: 600; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber-text); }
 .muted { color: var(--muted); }
 .card { margin: 0 16px; padding: 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow), var(--card-hi); }
-.foot-note { margin: 8px 32px 0; font-size: 12px; color: var(--muted); }
+.foot-note { margin: 8px 31px 0; font-size: 12px; color: var(--muted); }
 .empty { margin: 0 16px; padding: 22px 18px; text-align: center; color: var(--muted); font-size: 14px; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow), var(--card-hi); }
 
 /* ── Buttons ── */
@@ -240,11 +242,11 @@ button.cell { width: 100%; text-align: left; }
 .tiles b { display: block; font-family: var(--font-num); font-weight: 800; font-size: 24px; line-height: 1; }
 .tiles small { font-family: var(--font-num); font-weight: 600; font-size: 10.5px; letter-spacing: .14em; color: var(--muted); }
 /* Results as chips: W green, L red, tinted (lists on My Team, Me, the Picks tab). */
-.res { flex: none; min-width: 66px; padding: 4px 8px; border-radius: 6px; text-align: center; font-family: var(--font-num); font-weight: 700; font-size: 14px; }
+.res { flex: none; box-sizing: border-box; width: 78px; padding: 4px 6px; font-variant-numeric: tabular-nums; border-radius: 6px; text-align: center; font-family: var(--font-num); font-weight: 700; font-size: 14px; }
 .res--w { color: var(--win); background: color-mix(in srgb, var(--win) 12%, transparent); }
 .res--l { color: var(--loss); background: color-mix(in srgb, var(--loss) 12%, transparent); }
 .cell .res { margin-left: auto; }
-.line { flex: none; font-family: var(--font-num); font-weight: 700; font-size: 15px; }
+.line { flex: none; min-width: 44px; text-align: right; font-family: var(--font-num); font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
 .date { flex: none; width: 50px; color: var(--muted); font-size: 12px; }
 
 /* ── Setup steps ── */
@@ -524,7 +526,7 @@ html.iw-ios .iw-arrow { display: flex; }
 /* The To do card (views/app/home.js todoCard), Home and Me alike: the card look with an amber
    edge, an icon tile per row, the amount in Saira and Pay as the one solid button. Amber =
    needs attention; red once the balance is overdue (CLAUDE.md "Notices"). */
-.todo { margin: 0 16px 4px; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow), var(--card-hi), inset 0 0 0 1px rgba(245,147,50,.18); }
+.todo { margin: 0 16px; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow), var(--card-hi), inset 0 0 0 1px rgba(245,147,50,.18); }
 .todo--late { box-shadow: var(--shadow), var(--card-hi), inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
 .todo__row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px 10px 12px; color: var(--text); }
 .todo__row + .todo__row { border-top: 1px solid var(--hair); }
@@ -2232,3 +2234,63 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .sc-p.is-dim, .sc-bn.is-dim { opacity: .55; }
 .sc-bn.is-ans { color: var(--amber-text); border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .sc-th__ans { font-size: 12px; font-weight: 600; line-height: 1; color: var(--muted); }
+
+/* Scorer practice game (2026-10-27): a slim amber strip across the top that never goes away;
+   Reset keeps a 44px tap area beyond the strip's 22px. */
+.sc-prac { flex: none; position: relative; z-index: 2; display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 16px; background: var(--amber); color: #1a1205; font-size: 11px; font-weight: 600; line-height: 1; }
+.sc-prac b { font: 700 11px/1 var(--font-num); letter-spacing: .08em; }
+.sc-prac span { opacity: .75; }
+.sc-prac button { position: relative; margin-left: auto; height: 22px; padding: 0 2px; color: #1a1205; font-size: 11px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.sc-prac button::after { content: ''; position: absolute; inset: -11px -12px; }
+/* Try tips (practice only): one move at a time above the last play. */
+.sc-try { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px 0 12px; border: 1.5px dashed var(--amber); border-radius: var(--r-in); font-size: 13px; line-height: 1.35; }
+.sc-try b { flex: none; font: 700 11px/1 var(--font-num); letter-spacing: .06em; padding: 4px 6px; border-radius: 6px; background: var(--amber); color: #1a1205; }
+.sc-try span { flex: 1; min-width: 0; padding: 6px 0; }
+.sc-try button { flex: none; min-width: 44px; min-height: 44px; padding: 0 10px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.sc-try.is-done { border-style: solid; }
+@media (prefers-reduced-motion: no-preference) { .sc-try.is-new { animation: sc-try-in .5s ease-out; } @keyframes sc-try-in { from { background: color-mix(in srgb, var(--amber) 22%, transparent); } to { background: transparent; } } }
+
+/* How to score (views/app/help.js, 2026-10-27): a help guide read like a document. 16px gutters,
+   text on the cards' 31px edge where it sits beside cards, 15px reading text, 26px titles. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.hg { display: flex; flex-direction: column; gap: 12px; padding: 8px 16px 0; }
+.hg__k { margin: 0; font: 700 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--amber-text); }
+.hg__t { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 700; text-wrap: balance; }
+.hg__p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--muted); }
+.hg__search input { box-sizing: border-box; width: 100%; height: 44px; padding: 0 14px; border-radius: var(--r-in); border: 1px solid var(--border); background: var(--card-bg); color: var(--text); font: inherit; font-size: 16px; }
+.hg__toc { padding: 0; list-style: none; }
+.hg__toc li[hidden] { display: none; }
+.hg__toc li + li .cell::before { content: ''; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--hair); }
+.hg__n { flex: none; width: 18px; font: 700 15px/1 var(--font-num); color: var(--amber-text); }
+.hg__none { margin-top: 0; }
+.hg__try { box-sizing: border-box; width: auto; margin: 16px 16px 0; }
+.hg--ch { gap: 14px; padding-bottom: 8px; }
+.hg--ch .hg__try { margin: 6px 0 0; }
+.hg--ch p, .hg--ch li, .hg--ch dd { font-size: 15px; line-height: 1.55; }
+.hg--ch > p { margin: 0; }
+.hg--ch h2 { margin: 6px 0 -4px; font-size: 15px; font-weight: 600; }
+.hg--ch b { font-weight: 600; }
+.hg--ch ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.hg--ch figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.hg--ch figure img { display: block; width: 100%; height: auto; border-radius: var(--r-card); border: 1px solid var(--border); }
+.hg--ch figcaption { font-size: 12px; line-height: 1.45; color: var(--muted); }
+.hg--ch dl { margin: 0; display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 10px 14px; }
+.hg--ch dt { font-size: 14px; font-weight: 600; line-height: 1.55; }
+.hg--ch dd { margin: 0; color: var(--muted); font-size: 14px; }
+.hg__tip { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--r-in); background: rgba(245,147,50,0.12); }
+.hg__tip b { color: var(--amber-text); font-size: 13px; font-weight: 600; }
+.hg__tip p { margin: 0; font-size: 14px; line-height: 1.5; }
+.hg__pn { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--hair); }
+.hg__pn a { display: flex; align-items: center; min-height: 44px; color: var(--amber-text); font-size: 14px; font-weight: 600; }
+.hg__pn a:last-child { text-align: right; justify-content: flex-end; }
+
+/* Practice setup (views/app/practice.js) */
+.pr { display: flex; flex-direction: column; }
+.pr-note { margin-top: 8px; }
+.pr-carry { box-sizing: border-box; width: auto; margin: 12px 16px 0; }
+.pr-pick { margin: 0; padding: 0; border: 0; min-width: 0; }
+.pr-pick legend.sec { display: block; float: left; width: 100%; box-sizing: border-box; }
+.pr-pick .group { clear: both; }
+.pr-team { cursor: pointer; }
+.pr-team input { order: 9; width: 20px; height: 20px; margin: 0; accent-color: var(--amber); }
+.pr-go { padding: 20px 16px 0; }

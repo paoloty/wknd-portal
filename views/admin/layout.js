@@ -55,6 +55,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/admin/games',   label: 'Games',           icon: 'games' },
       { href: '/admin/picks',   label: 'Who wins? picks', icon: 'picks' },
+      { href: '/admin/scorers', label: 'Scorers',         icon: 'players' },
       { href: '/admin/players', label: 'Players',         icon: 'players' },
       { href: '/admin/media',   label: 'Processing',      icon: 'activity' },
       { href: '/admin/player', hidden: true },

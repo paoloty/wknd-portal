@@ -37,7 +37,8 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 
 // todos: views/app/home.js todoCard items · season: { label, gp, ppg, rpg, apg }
 // games: [{ date, opp, won, my, oppScore, line, href }]
-export function appMePage({ me, season, games, positions, todos = [] }) {
+// scoring: { games } for scorers, anyone picked to score, and admins (server.js scoringMenuFor), else null.
+export function appMePage({ me, season, games, positions, todos = [], scoring = null }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
@@ -46,6 +47,12 @@ export function appMePage({ me, season, games, positions, todos = [] }) {
     <a class="prof__edit" href="/app/setup/details">Edit</a>
   </div>
   ${todos.length ? `<div class="sec">To do</div>${todoCard(todos)}` : ''}
+  ${scoring ? `<div class="sec">Scoring</div>
+  <div class="group group--icons">
+    <a class="cell" href="/app/score"><span class="ico ico--amber">${icons.ball}</span><span class="cell__t">Games to score<small>${scoring.games ? `${scoring.games} you can score` : 'None right now'}</small></span>${scoring.games ? `<span class="count">${scoring.games}</span>` : ''}${chev}</a>
+    <a class="cell" href="/app/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice game<small>Real teams, only on this phone</small></span>${chev}</a>
+    <a class="cell" href="/app/help/scoring"><span class="ico">${icons.book}</span><span class="cell__t">How to score<small>The guide, with pictures</small></span>${chev}</a>
+  </div>` : ''}
   <div class="sec">${esc(season.label)}</div>
   <div class="tiles" style="margin-top:0">
     <div><b>${season.ppg}</b><small>PTS</small></div><div><b>${season.rpg}</b><small>REB</small></div>
@@ -74,7 +81,7 @@ export function appSettingsPage({ me, rows, push = [], analytics = true }) {
   };
   return `
   <div class="navbar"><a class="navbar__back" href="/app/me">${backChev}Me</a><span class="navbar__title">Settings</span><span></span></div>
-  <div class="group group--icons" style="margin-top:8px">${rows.map(row).join('')}</div>
+  <div class="group group--icons">${rows.map(row).join('')}</div>
   <div class="sec">Notifications</div>
   <div class="group" data-push>
     <div class="cell"><span class="ico ico--amber">${icons.bell}</span><span class="cell__t">On this phone<small data-push-status>Checking…</small></span>

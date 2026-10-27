@@ -497,6 +497,45 @@
     });
   }
 
+  // ════ Practice game setup (views/app/practice.js) ════
+  // Carry on: the phone's own note of its last practice (public/scorer.js save), never the
+  // server's. Try tips: on starts them from the first tip again. Two different teams.
+  function initPractice() {
+    var form = $('[data-practice]');
+    if (!form || form._bound) return;
+    form._bound = true;
+    var last = null;
+    try { last = JSON.parse(localStorage.getItem('wknd-practice') || 'null'); } catch (e) {}
+    var carry = $('[data-practice-carry]', form);
+    if (last && last.id && !last.final && carry) {
+      carry.href = '/app/practice/play?a=' + encodeURIComponent(last.a) + '&b=' + encodeURIComponent(last.b) + '&q=' + encodeURIComponent(last.q) + '&id=' + encodeURIComponent(last.id);
+      carry.textContent = 'Carry on: ' + last.an + ' ' + last.sa + '–' + last.sb + ' ' + last.bn + ', ' + last.period;
+      carry.hidden = false;
+    }
+    var tips = $('[data-practice-tips]', form);
+    if (tips) { try { tips.checked = localStorage.getItem('wknd-prac-tips') !== 'off'; } catch (e) {} }
+    form.addEventListener('submit', function (e) {
+      var a = (form.querySelector('input[name="a"]:checked') || {}).value, b = (form.querySelector('input[name="b"]:checked') || {}).value;
+      var err = $('[data-practice-err]', form);
+      if (!a || !b || a === b) { e.preventDefault(); if (err) err.hidden = false; return; }
+      try {
+        if (tips && tips.checked) { localStorage.setItem('wknd-prac-tips', 'on'); localStorage.setItem('wknd-prac-tip', '0'); }
+        else localStorage.setItem('wknd-prac-tips', 'off');
+      } catch (x) {}
+    });
+  }
+  // ════ How to score (views/app/help.js): the contents' search ════
+  function initGuide() {
+    var q = $('[data-hg-search]');
+    if (!q || q._bound) return;
+    q._bound = true;
+    q.addEventListener('input', function () {
+      var t = q.value.trim().toLowerCase(), any = false;
+      $$('[data-hg-toc] li').forEach(function (li) { var a = li.querySelector('[data-text]'); var on = !t || a.getAttribute('data-text').indexOf(t) !== -1; li.hidden = !on; if (on) any = true; });
+      var none = $('[data-hg-none]'); if (none) none.hidden = any;
+    });
+  }
+
   function initPage() {
     // Appearance: Automatic (follow the phone) / Light / Dark, remembered on this phone
     var sw = $('[data-theme-switch]');
@@ -527,6 +566,7 @@
     initScorer();
     initLive(); initChat();
     initGameRecap();
+    initPractice(); initGuide();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);

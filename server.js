@@ -6074,7 +6074,10 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { homeHeader, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts, appLiveNow } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
+import { appPracticePage } from './views/app/practice.js';
+import { appScorerGuidePage, appScorerChapterPage } from './views/app/help.js';
+import { adminScorersBody } from './views/admin/scorers.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
@@ -7003,10 +7006,10 @@ function scoreAccess(req, gameId) {
 }
 // The games this player can score now: the ones they're picked for, and for a Scorer every game
 // with scoring on that's today or later (or being scored), not published.
-// Admins count like Scorers here, so the game shows in their Me to-do too.
+// Admins too only when assigned (Paolo, 2026-10-27: being an admin doesn't make you a scorer).
 function scorableGameIds(playerId) {
   const picked = getScorerGameIds(playerId);
-  if (!playerId || !(getPlayerById(playerId)?.is_scorer || isGameAdminPlayer(playerId))) return picked;
+  if (!playerId || !getPlayerById(playerId)?.is_scorer) return picked;
   const today = manilaTodayStr();
   const all = portalDb.prepare("SELECT game_id, status FROM score_games WHERE status != 'published' AND settings_json NOT LIKE '%\"reviewOnly\":true%'").all()
     .filter(r => { const g = getGameById(r.game_id); return g && (r.status === 'live' || gameYmd(g.date) >= today); }).map(r => r.game_id);
@@ -7204,9 +7207,9 @@ app.get('/api/score/:id/events', (req, res) => {
 // The games this player can score (admins: every game with scoring turned on, not yet published).
 app.get('/app/score', requireApp, (req, res) => {
   const me = appMe(req);
-  const ids = isAdminWithSection(req, 'games-stats') || isGameAdminPlayer(me.playerId)
-    ? portalDb.prepare("SELECT game_id FROM score_games WHERE status != 'published'").all().map(r => r.game_id)
-    : scorableGameIds(me.playerId);
+  // The games you're picked for, or every game with scoring on if you're a scorer. Admins the
+  // same: an admin's reviews open from the game's Review card, not from here.
+  const ids = scorableGameIds(me.playerId);
   const games = ids.map(id => getGameById(id)).filter(Boolean)
     .sort((x, y) => String(x.date).localeCompare(String(y.date)))
     .map(g => {
@@ -7216,8 +7219,59 @@ app.get('/app/score', requireApp, (req, res) => {
       const full = inNow.length >= 2 && !inNow.some(x => x.playerId === me.playerId) ? inNow.map(x => x.name) : null;
       return { id: g.id, title: scoreGameTitle(g), when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), status: getScoreGame(g.id)?.status, full, href: `/app/score/${encodeURIComponent(g.id)}` };
     });
-  sendTab(res, me, { title: 'Score a game · WKND', tab: 'me', body: appScorerListPage({ games, back: { href: '/app/me', label: 'Me' } }) });
+  sendTab(res, me, { title: 'Games to score · WKND', tab: 'me', body: appScorerListPage({ games, back: { href: '/app/me', label: 'Me' } }) });
 });
+// ── Scoring menu (Me → Scoring, 2026-10-27): games to score, a practice game, How to score ──
+// For scorers, anyone picked for a game, and admins (who still need the Scorer switch to score
+// live: sendScorer). mockup claude.ai/artifact/QMXxzqVm3HHpJKzWmTPWYQ
+const scoringMenuFor = playerId => !!playerId && (!!getPlayerById(playerId)?.is_scorer || isGameAdminPlayer(playerId) || getScorerGameIds(playerId).length > 0);
+function requireScoringMenu(req, res, next) {
+  if (!scoringMenuFor(req.session?.playerPlayerId)) return res.redirect('/app/me');
+  next();
+}
+const practiceTeams = () => {
+  const withPlayers = new Set(getAllPlayers().filter(p => p.status !== 'inactive' && p.team_id).map(p => p.team_id));
+  const teams = getAllTeams();
+  return teams.filter(t => withPlayers.has(t.id)).map(t => ({ id: t.id, name: t.name, color: teamColorById(teams, t.id) }));
+};
+app.get('/app/practice', requireApp, requireScoringMenu, (req, res) => {
+  const me = appMe(req);
+  sendTab(res, me, { title: 'Practice game · WKND', tab: 'me', body: appPracticePage({ teams: practiceTeams(), back: { href: '/app/me', label: 'Me' } }) });
+});
+// The practice itself: the real scorer on two real rosters, a bundle with `practice` set so
+// public/scorer.js sends nothing. The phone keeps the plays; practice_log only hears how far it got.
+app.get('/app/practice/play', requireApp, requireScoringMenu, (req, res) => {
+  const teams = getAllTeams();
+  const ta = teams.find(t => t.id === String(req.query.a || '')), tb = teams.find(t => t.id === String(req.query.b || ''));
+  if (!ta || !tb || ta.id === tb.id) return res.redirect('/app/practice');
+  const q = String(req.query.q) === '5' ? 5 : 12;
+  const id = /^[a-z0-9]{8,32}$/.test(String(req.query.id || '')) ? String(req.query.id) : randomBytes(8).toString('hex');
+  const fake = { id: 'practice', date: manilaTodayStr(), team_a_id: ta.id, team_b_id: tb.id, team_a_name: ta.name, team_b_name: tb.name, game_type: 'regular', court_id: null, tip_time: '' };
+  const base = scoreBundle(fake, 'live');
+  const bundle = { ...base, status: 'live', events: [], rules: { ...base.rules, periodMin: q },
+    practice: { id, log: `/api/practice/${id}`, teams: [ta.name, tb.name] }, over: { finish: 'practice', back: '/app/practice', review: false } };
+  res.set('Cache-Control', 'private, no-store');
+  sendApp(res, { title: `Practice · ${ta.name} vs ${tb.name} · WKND`, bare: true, body: appScorerPage({ bundle, back: { href: '/app/practice', label: 'Practice' } }) });
+});
+// How far a practice got (public/scorer.js report): never the plays themselves.
+app.post('/api/practice/:id', requireAppData, express.json(), (req, res) => {
+  if (req.session.impersonating) return res.json({ ok: true });
+  const b = req.body || {}, n = v => Math.max(0, Math.min(9999, parseInt(v, 10) || 0));
+  if (!/^[a-z0-9]{8,32}$/.test(req.params.id)) return res.status(400).json({ error: 'Bad id.' });
+  const name = v => String(v || '').slice(0, 40);
+  savePractice({ id: req.params.id, playerId: req.session.playerPlayerId, teamA: name(b.teamA), teamB: name(b.teamB), periodMin: n(b.q) === 5 ? 5 : 12,
+    plays: n(b.plays), period: String(b.period || '').slice(0, 8), a: n(b.a), b: n(b.b), tips: n(b.tips), finished: !!b.finished, reset: !!b.reset });
+  res.json({ ok: true });
+});
+app.get('/app/help/scoring', requireApp, requireScoringMenu, (req, res) => {
+  sendTab(res, appMe(req), { title: 'How to score · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/me', label: 'Me' } }) });
+});
+app.get('/app/help/scoring/:slug', requireApp, requireScoringMenu, (req, res) => {
+  const body = appScorerChapterPage({ slug: req.params.slug });
+  if (!body) return res.redirect('/app/help/scoring');
+  sendTab(res, appMe(req), { title: 'How to score · WKND', tab: 'me', body });
+});
+
 const sendScorer = (req, res, back) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).send('Game not found');
@@ -7228,6 +7282,12 @@ const sendScorer = (req, res, back) => {
   // games to score): its track, not the empty live one (Paolo, 2026-10-26).
   const myReview = getScoreGame(game.id)?.settings?.review;
   if (!req.query.pass && access === 'admin' && myReview?.kind === 'video' && myReview.by === reviewer(req).by) return res.redirect(`${req.path}?pass=video`);
+  // Being an admin doesn't make you a scorer (Paolo, 2026-10-27): scoring a game live needs the
+  // Scorer switch or a pick, like anyone. Reviews, video re-tracks and finishing stay admin jobs.
+  const sg0 = getScoreGame(game.id), reviewing = pass === 'video' || !!sg0?.settings?.review || !!sg0?.settings?.reviewOnly;
+  const pid0 = req.session?.playerPlayerId;
+  if (access === 'admin' && pid0 && !reviewing && !getPlayerById(pid0)?.is_scorer && !getScorers(game.id).some(s => s.player_id === pid0))
+    return res.status(403).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: '<div class="empty" style="margin-top:40px">Being an admin doesn’t make you a scorer. To score games, turn on your Scorer switch in Admin → Scorers, or get picked for this game.</div>' }));
   if (game.review_locked && (pass === 'video' || gameFinalSet(game))) return res.status(423).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(LOCKED_MSG)}</div>` }));
   if (pass === 'video' && getScoreGame(game.id)) {
     const gate = reviewGate(req, game, 'video');
@@ -8177,8 +8237,9 @@ app.get('/app/me', requireApp, (req, res) => {
   if (open.length) todos.unshift({ icon: 'picks', title: open.length === 1 ? '1 game to pick' : `${open.length} games to pick`, sub: 'Who wins?', pill: 'Pick', href: '/app/picks', solid: true });
   // Picked by an admin to score a game (the scorer: /app/score).
   const toScore = scorableGameIds(me.playerId).length;
-  if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: getPlayerById(me.playerId)?.is_scorer || !isGameAdminPlayer(me.playerId) ? 'You’re a scorer' : 'Admins can score any game', pill: 'Score', href: '/app/score', solid: true });
-  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({
+  if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: getPlayerById(me.playerId)?.is_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
+  const scoring = scoringMenuFor(me.playerId) ? { games: toScore } : null;
+  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring,
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games,
@@ -11476,6 +11537,33 @@ app.post('/admin/players/:id/premium-cards', requireSuperAdmin, express.json(), 
   setPlayerPremiumCardsPass(player.id, on);
   const n = displayPlayerName(player.name || '');
   res.json({ ok: true, message: on ? `${n} can use the premium cards, balance or not.` : `${n}’s premium cards lock again while they owe.` });
+});
+// Admin → Game Day → Scorers (views/admin/scorers.js, 2026-10-27): the scorers on one page, what
+// they've scored (live plays they sent), and every practice game (practice_log).
+app.get('/admin/scorers', requireAuth, (req, res) => {
+  const teams = getAllTeams(), players = getAllPlayers();
+  const byId = Object.fromEntries(players.map(p => [p.id, p]));
+  const teamOf = p => teams.find(t => t.id === p?.team_id);
+  const scored = Object.fromEntries(portalDb.prepare("SELECT author_id, COUNT(DISTINCT game_id) AS n, MAX(created_at) AS last FROM score_events WHERE pass = 'live' AND author_id IS NOT NULL GROUP BY author_id").all().map(r => [r.author_id, r]));
+  const lastGame = id => { const r = portalDb.prepare("SELECT game_id FROM score_events WHERE pass = 'live' AND author_id = ? ORDER BY created_at DESC LIMIT 1").get(id); const g = r && getGameById(r.game_id); return g ? scoreGameTitle(g) : ''; };
+  const practice = getPracticeLog(300).map(r => ({ ...r, name: displayPlayerName(byId[r.player_id]?.name || ''), color: teamColorById(teams, byId[r.player_id]?.team_id) }));
+  const prBy = {}; for (const r of practice) { const x = prBy[r.player_id] || (prBy[r.player_id] = { n: 0, last: 0 }); x.n++; x.last = Math.max(x.last, r.started_at); }
+  // getAllPlayers doesn't carry is_scorer: the scorer list comes from its own query.
+  const scorerIds = new Set(getScorerPlayerIds());
+  const scorers = players.filter(p => scorerIds.has(p.id)).map(p => ({
+    id: p.id, name: displayPlayerName(p.name || ''), team: teamOf(p)?.name || '', color: teamColorById(teams, p.team_id), admin: isGameAdminPlayer(p.id),
+    games: scored[p.id]?.n || 0, lastAt: scored[p.id]?.last || 0, lastGame: scored[p.id] ? lastGame(p.id) : '', practices: prBy[p.id]?.n || 0, lastPractice: prBy[p.id]?.last || 0,
+  }));
+  const candidates = players.filter(p => !scorerIds.has(p.id) && p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name || ''), color: teamColorById(teams, p.team_id), meta: [teamOf(p)?.name, isGameAdminPlayer(p.id) ? 'Admin' : ''].filter(Boolean).join(' · ') }))
+    .sort((x, y) => x.name.localeCompare(y.name));
+  res.send(renderAdminPage(req, { title: 'Scorers', currentPath: '/admin/scorers', body: adminScorersBody({ scorers, candidates, practice, query: req.query }) }));
+});
+app.post('/admin/scorers/add', requireAuth, express.json(), (req, res) => {
+  const raw = req.body?.player_id;
+  const player = getPlayerWithTeam(Array.isArray(raw) ? raw[0] : String(raw || ''));
+  if (!player) return res.status(400).json({ error: 'Pick a player.' });
+  setPlayerScorer(player.id, true);
+  res.json({ ok: true, message: `${displayPlayerName(player.name || '')} is a scorer.` });
 });
 app.post('/admin/players/:id/papawis-probation', requireAuth, express.json(), (req, res) => {
   const player = getPlayerWithTeam(req.params.id);

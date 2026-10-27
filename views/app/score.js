@@ -13,8 +13,9 @@ export function appScorerListPage({ games, back }) {
       ? `<div class="cell cell--off" aria-disabled="true"><span class="cell__t">${esc(g.title)}<small>${esc(g.when)} · 2 scorers already in: ${esc(g.full.join(' and '))}</small></span></div>`
       : `<a class="cell" href="${esc(g.href)}"><span class="cell__t">${esc(g.title)}<small>${esc(g.when)}${g.status === 'live' ? ' · scoring now' : ''}</small></span>${chev}</a>`).join('')}</div>`
     : '<div class="empty">No games to score. When an admin picks you to score a game, it shows up here.</div>';
-  return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">Score a game</span><span></span></div>
-  <div class="lt"><h1>Score a game</h1></div>${rows}`;
+  // One title: the bar's (a large title under it said the same thing twice; audit 2026-10-27).
+  return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">Games to score</span><span></span></div>
+  ${rows}`;
 }
 
 // bundle: server.js scoreBundle(). back: { href, label }. readOnly: published (nothing to add).
@@ -23,8 +24,10 @@ export function appScorerPage({ bundle, back }) {
   // a "<" is turned into its unicode form to be safe).
   const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
   const video = bundle.pass === 'video';
-  return `<div class="sc${video ? ' sc--video' : ''}" data-scorer data-game="${esc(bundle.game.id)}" data-api="/api/score/${esc(encodeURIComponent(bundle.game.id))}/events${video ? '?pass=video' : ''}">
-    <div class="navbar sc-nav"><a class="navbar__back" href="${esc(back.href)}" data-sc-leave>${backChev}${esc(back.label)}</a><span class="navbar__title">${video ? 'Video re-track · ' : ''}${esc(bundle.a.name)} vs ${esc(bundle.b.name)}</span><span class="sc-sync" data-sc-sync role="status">Loading…</span></div>
+  // A practice game: a slim amber strip across the top that never goes away (Paolo, 2026-10-27).
+  const prac = bundle.practice ? `<div class="sc-prac" role="note"><b class="num">PRACTICE</b><span>· only on this phone</span><button type="button" data-prac-reset>Reset</button></div>` : '';
+  return `<div class="sc${video ? ' sc--video' : ''}${prac ? ' sc--practice' : ''}" data-scorer data-game="${esc(bundle.game.id)}" data-api="/api/score/${esc(encodeURIComponent(bundle.game.id))}/events${video ? '?pass=video' : ''}">
+    ${prac}<div class="navbar sc-nav"><a class="navbar__back" href="${esc(back.href)}" data-sc-leave>${backChev}${esc(back.label)}</a><span class="navbar__title">${video ? 'Video re-track · ' : ''}${esc(bundle.a.name)} vs ${esc(bundle.b.name)}</span><span class="sc-sync" data-sc-sync role="status">Loading…</span></div>
     <div class="sc-body" data-sc-root><div class="sc-loading" role="status"><span class="ptr__spin" aria-hidden="true"></span>Loading the scorer…</div></div>
     <script type="application/json" data-sc-bundle>${json}</script>
   </div>`;

@@ -134,10 +134,14 @@ export async function mount(el) {
   for (const t of ['a', 'b']) { const seen = {}; for (const p of team[t].players) if (p.number) { if (seen[p.number]) { shared.add(seen[p.number]); shared.add(p.id); } else seen[p.number] = p.id; } }
   const published = B.status === 'published';
   const video = B.pass === 'video';
-  const key = video ? `${gid}:video` : gid;
+  // A practice game (the app's Scoring → Practice game, 2026-10-27): the same screen and rules on
+  // real rosters, but nothing leaves the phone. No sending, no fetching, no sides; the server only
+  // hears how far it got (practice_log, for the admin Scorers page). One practice is kept.
+  const practice = B.practice || null;
+  const key = practice ? 'practice' : video ? `${gid}:video` : gid;
   // Tablet landscape and laptops: the Scoresheet docks on the right.
   const wide = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false };
-  const multi = !video && !published;
+  const multi = !video && !published && !practice;
   const laneKey = `wknd-lane:${gid}`;
   const readLane = () => { try { const v = localStorage.getItem(laneKey); return ['a', 'b', 'both'].includes(v) ? v : null; } catch (e) { return null; } };
   const storeLane = l => { try { if (l) localStorage.setItem(laneKey, l); else localStorage.removeItem(laneKey); } catch (e) {} };
@@ -146,7 +150,9 @@ export async function mount(el) {
   const shots = B.fourPoint === false ? [1, 2, 3] : [1, 2, 3, 4];
 
   // Plays: the server's, plus any this phone made that the server doesn't have yet.
-  const rec = (await store.get(key)) || { id: key, events: [], sent: [], secs: rules.periodMin * 60 };
+  let rec = (await store.get(key)) || { id: key, events: [], sent: [], secs: rules.periodMin * 60 };
+  // A new practice (not the one being carried on) starts empty.
+  if (practice && rec.practiceId !== practice.id) rec = { id: key, events: [], sent: [], secs: rules.periodMin * 60 };
   const events = new Map();
   for (const e of B.events) events.set(e.id, e);
   const serverIds = new Set(B.events.map(e => e.id));
@@ -176,15 +182,64 @@ export async function mount(el) {
   const syncRun = () => { runFrom = ui.running ? { secs: ui.secs, at: Date.now() } : null; };
   const clockNow = () => { if (ui.running && runFrom) ui.secs = Math.max(0, runFrom.secs - Math.floor((Date.now() - runFrom.at) / 1000)); };
   syncRun();
-  const save = () => { clockNow(); return store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs, running: ui.running, savedAt: Date.now() }); };
+  const save = () => {
+    clockNow();
+    // The practice setup screen offers "Carry on" from this (public/app.js initPractice).
+    if (practice && !practice.gone) pref.set('wknd-practice', JSON.stringify({ id: practice.id, a: team.a.id, b: team.b.id, an: team.a.name, bn: team.b.name, q: rules.periodMin, sa: G.score.a, sb: G.score.b, period: G.period, final: !!G.final || !!ui.published, at: Date.now() }));
+    return store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs, running: ui.running, savedAt: Date.now(), practiceId: practice ? practice.id : undefined });
+  };
   const fold = () => foldGame(counted(), rules, { a: team.a.players.map(p => p.id), b: team.b.players.map(p => p.id) });
   let G = fold();
   const clockStr = () => `${Math.floor(ui.secs / 60)}:${String(ui.secs % 60).padStart(2, '0')}`;
+
+  // ── Practice: how far it got, for the admin log (never the plays). At most every 20 s, and
+  // right away at the end of a quarter, at game over and on Reset. ──
+  let lastReport = 0, reportT = null;
+  function report(extra = {}, now = false) {
+    if (!practice || !navigator.onLine) return;
+    clearTimeout(reportT);
+    const go = () => {
+      lastReport = Date.now();
+      const body = JSON.stringify({ teamA: team.a.name, teamB: team.b.name, q: rules.periodMin, plays: counted().filter(e => e.type !== 'void').length, period: G.period, a: G.score.a, b: G.score.b, tips: tipAt(), ...extra });
+      try { fetch(practice.log, { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => {}); } catch (e) {}
+    };
+    if (now || Date.now() - lastReport > 20000) go(); else reportT = setTimeout(go, 20000 - (Date.now() - lastReport));
+  }
+  // Try tips (practice only, Paolo 2026-10-27): one move at a time, ticked off when the scorer
+  // does it, so a new scorer learns the screen by using it. Hide tips turns them off for good
+  // on this phone; the manual (How to score) has the same moves in full.
+  const TIPS = [
+    { t: 'Tap a player, then the green 2PT: a made basket.', done: e => e.type === 'shot' && e.made },
+    { t: 'The other way round works too: tap the red 3PT (a miss) first, then the player.', done: e => e.type === 'shot' && !e.made },
+    { t: 'After a miss, Rebound? asks who got it. Tap the lit player.', done: e => e.type === 'reb' },
+    { t: 'Make a basket, then answer Assisted? by tapping who passed.', done: e => e.type === 'ast' },
+    { t: 'Hold FOUL to pick the kind (or tap it for a personal). Then follow the free throws.', done: e => e.type === 'foul' },
+    { t: 'Made a mistake? Tap Undo on the last play.', done: e => e.type === 'void' },
+    { t: 'Sub: tap a bench player, then the player coming off.', done: e => e.type === 'sub' },
+    { t: 'Hold REB to say whether a rebound was offensive or defensive.', done: e => e.type === 'reb' && !!e.kind },
+    { t: 'Swipe a green 2PT up for an and-one: the basket plus the foul.', done: e => e.type === 'foul' && e.kind === 'shooting' },
+    { t: 'When the time runs out, tap End beside the clock to end the quarter.', done: e => e.type === 'period_end' },
+  ];
+  const tipsOn = () => !!practice && pref.get('wknd-prac-tips', 'on') !== 'off';
+  const tipAt = () => Math.min(TIPS.length, Number(pref.get('wknd-prac-tip', '0')) || 0);
+  function tipCheck(e) {
+    if (!tipsOn()) return;
+    const i = tipAt();
+    if (i < TIPS.length && TIPS[i].done(e)) { pref.set('wknd-prac-tip', String(i + 1)); ui.tipDone = Date.now(); report({}, true); }
+  }
+  function tipBox() {
+    if (!tipsOn() || ui.ask || ui.locked) return '';
+    const i = tipAt();
+    if (i >= TIPS.length) return `<div class="sc-try is-done"><b class="num">DONE</b><span>That's every move. Keep practising, or read How to score for the rest.</span><button type="button" data-act="tips-off">Hide</button></div>`;
+    const just = ui.tipDone && Date.now() - ui.tipDone < 2500;
+    return `<div class="sc-try${just ? ' is-new' : ''}"><b class="num">TRY ${i + 1}/${TIPS.length}</b><span>${esc(TIPS[i].t)}</span><button type="button" data-act="tips-next" aria-label="Skip this tip">Skip</button></div>`;
+  }
 
   // ── Sending ──
   let sending = false, retry = null;
   async function sync() {
     clearTimeout(retry);
+    if (practice) { for (const e of unsent()) sent.add(e.id); report(); paintPill(); return; }
     const batch = unsent();
     if (!batch.length || sending) { paintPill(); return; }
     if (!navigator.onLine) { ui.sync = 'offline'; paintPill(); return; }
@@ -216,6 +271,7 @@ export async function mount(el) {
   // The header pill: the sync state, and with two scorers which side this phone has (tap it to
   // switch, hand over or take over).
   function paintPill() {
+    if (practice) { pill.className = 'sc-sync is-ok'; pill.textContent = ui.published ? 'Finished' : 'Practice'; pill.title = ''; return; }
     const n = unsent().length;
     const bad = ui.sync === 'offline' || ui.sync === 'error';
     const sides = multi && ui.lane && !ui.locked && (ui.lane !== 'both' || !!(ui.lanes && ui.lanes.others.length));
@@ -237,7 +293,7 @@ export async function mount(el) {
   // ── Fetching: the screen opens from the phone's copy, so plays made elsewhere (an admin's
   // removals, another phone's) come from the server when it opens and when the signal is back.
   async function pull() {
-    if (!navigator.onLine) return;
+    if (practice || !navigator.onLine) return;
     try {
       const r = await fetch(api, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
       if (!r.ok) return;
@@ -357,6 +413,16 @@ export async function mount(el) {
   const laneTimer = multi ? setInterval(() => { if (!document.contains(el)) { clearInterval(laneTimer); if (sock) sock.close(); release(); return; } lanes(); }, 4000) : null;
   const syncTimer = setInterval(() => { if (!document.contains(el)) { clearInterval(syncTimer); clearInterval(tick); return; } if (unsent().length) sync(); }, 10000);
   pull();
+  // Practice: Reset (the strip at the top) clears this practice and goes back to the setup.
+  if (practice) el.addEventListener('click', e => {
+    if (!e.target.closest('[data-prac-reset]')) return;
+    confirm('Reset the practice?', 'Every play in this practice goes. Nothing was sent anywhere', 'flag', 'Reset', async () => {
+      report({ reset: true }, true);
+      practice.gone = true; pref.set('wknd-practice', '');
+      await store.put({ id: key, events: [], sent: [], secs: rules.periodMin * 60, practiceId: 'reset' });
+      location.href = B.over.back;
+    });
+  });
 
   // ── Making plays ──
   function add(fields, { flash } = {}) {
@@ -368,8 +434,11 @@ export async function mount(el) {
       ? { id: uid(), pos: nextPos(list(), anchor.id), at: Date.now(), period: anchor.period || G.period, clock: anchor.clock || '', dev: deviceId, ...fields }
       : { id: uid(), pos: nextPos(list()), at: Date.now(), period: G.period, clock: clockStr(), dev: deviceId, ...fields };
     events.set(e.id, e);
+    if (practice) sent.add(e.id); // nothing to send: a practice play is saved the moment it's made
+    tipCheck(e);
     if (anchor && fields.type !== 'void') ui.after = e.id;
     G = fold();
+    if (fields.type === 'period_end') report({}, true);
     if (ui.whistle && !ui.running && !anchor && LIVE_BALL.has(fields.type)) { ui.running = true; ui.whistle = false; ui.restarted = true; syncRun(); }
     else if (!ui.running && !anchor && LIVE_BALL.has(fields.type) && keepsClock() && !G.final && ui.secs === periodSecs()) { ui.running = true; ui.started = true; syncRun(); }
     if (flash && fields.player) { ui.flashN++; ui.flash = { pid: fields.player, ...flash, at: Date.now() }; }
@@ -1205,7 +1274,7 @@ export async function mount(el) {
       : n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : ui.sync === 'error' && ui.syncMsg ? `: ${esc(ui.syncMsg)}` : '…'}`
       : `All ${all} play${all === 1 ? '' : 's'} saved.`;
     const O = B.over || {};
-    const back = O.back ? `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(O.back)}">${O.review ? 'Back to the game' : 'Back to games'}</a>` : '';
+    const back = O.back ? `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(O.back)}">${practice ? 'Back to practice' : O.review ? 'Back to the game' : 'Back to games'}</a>` : '';
     // Saved: the next step, the POTG and the recap (the site's Content tab).
     const acts = ui.published && ui.next ? `<a class="sc-over__btn" href="${esc(ui.next)}">Finish the game</a>${back}`
       : ui.locked || ui.published ? back
@@ -1238,7 +1307,7 @@ export async function mount(el) {
     if (!ui.fin.potg && ui.fin.auto !== false && cands[0]) ui.fin.potg = cands[0];
     const ready = !n && w && !ui.publishing;
     return `<div class="sc-over sc-over--court" role="group" aria-label="Game over: final score and player of the game">${head}
-      <p class="sc-over__s${n ? ' is-wait' : ''}">${n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : '…'}` : `All ${all} play${all === 1 ? '' : 's'} saved.`}</p>
+      <p class="sc-over__s${n ? ' is-wait' : ''}">${practice ? `Practice · ${all} play${all === 1 ? '' : 's'}, all on this phone. This is how a real game ends.` : n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : '…'}` : `All ${all} play${all === 1 ? '' : 's'} saved.`}</p>
       <div class="sc-fin"><span class="sc-fin__l">Final score</span>
         <label class="sc-fin__t"><span>${esc(team.a.name)}</span><input type="number" inputmode="numeric" min="0" max="300" value="${ui.fin.a}" data-fin-score="a" aria-label="${esc(team.a.name)} final score"></label>
         <label class="sc-fin__t"><span>${esc(team.b.name)}</span><input type="number" inputmode="numeric" min="0" max="300" value="${ui.fin.b}" data-fin-score="b" aria-label="${esc(team.b.name)} final score"></label>
@@ -1246,12 +1315,17 @@ export async function mount(el) {
       <div class="sc-fin"><span class="sc-fin__l">Player of the game${w ? ` · ${esc(team[w].name)}` : ''}</span>
         ${w ? `<div class="sc-q__opts">${cands.map(id => optBtn(id, 'data-finpotg', ui.fin.potg === id)).join('')}</div>` : '<small class="sc-fin__n">A tied score has no winner: fix the final score.</small>'}</div>
       <div class="sc-over__b"><button type="button" class="sc-over__btn" data-act="court-publish"${ready ? '' : ' disabled'}>${ui.publishing ? 'Publishing…' : 'Publish the game'}</button></div>
-      <p class="sc-over__n">The box score goes up now, marked “Stats pending review” until an admin checks it. The recap comes later.</p></div>`;
+      <p class="sc-over__n">${practice ? 'In a real game the box score goes up now, marked “Stats pending review” until an admin checks it. Here nothing is sent.' : 'The box score goes up now, marked “Stats pending review” until an admin checks it. The recap comes later.'}</p></div>`;
   }
   function courtPublish() {
     const O = B.over || {}, w = finWinner();
     if (!O.finish || unsent().length || ui.publishing || !w) return;
     const name = ui.fin.potg ? short(ui.fin.potg) : 'none picked';
+    // Practice: the real last step, without sending anything.
+    if (practice) return confirm('Publish the practice game?', `${team.a.name} ${ui.fin.a}–${ui.fin.b} ${team.b.name} · POTG: ${name}. In a real game this puts the box score on the site, marked pending review. Here nothing is sent`, 'up', 'Publish', () => {
+      ui.published = 'Practice finished. In a real game the box score would now be on the site, marked Stats pending review.'; ui.locked = true;
+      report({ finished: true }, true); save(); if (soundOn()) chime('yes'); paint();
+    });
     confirm('Publish the game?', `${team.a.name} ${ui.fin.a}–${ui.fin.b} ${team.b.name} · POTG: ${name}. The stats show as pending review until an admin checks them`, 'up', 'Publish', () => {
       ui.publishing = true; paint();
       fetch(O.finish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ a: ui.fin.a, b: ui.fin.b, potg: ui.fin.potg, device: deviceId }) })
@@ -1296,7 +1370,7 @@ export async function mount(el) {
     root.classList.toggle('is-docked', docked);
     root.innerHTML = `
       <div class="sc-left">
-        ${ui.locked ? '<div class="msg msg--info sc-msg">The box score is saved. The scorer is read-only now.</div>' : ''}
+        ${ui.locked ? `<div class="msg msg--info sc-msg">${practice ? 'Practice finished. Reset at the top to play another one.' : 'The box score is saved. The scorer is read-only now.'}</div>` : ''}
         ${ui.sync === 'error' && ui.syncMsg ? `<div class="msg msg--err sc-msg" role="alert">${esc(ui.syncMsg)}</div>` : ''}
         <div class="sc-board">
           ${sideBoard('a')}
@@ -1313,6 +1387,7 @@ export async function mount(el) {
         <div class="sc-teams">${teamBlock('a')}${teamBlock('b')}</div>
         <div class="sc-bottom">
           ${ui.tip || restarted || started ? `<p class="sc-tip" role="status">${esc(ui.tip || (started ? 'Clock started with the first play. Tap the time to fix it.' : 'Clock restarted. Tap the time to fix it.'))}</p>` : ''}
+          ${tipBox()}
           ${lastRow()}
           ${optional && !docked ? q : ''}
           ${q && !optional ? q : G.final && !ui.after ? overPanel() : `<div class="sc-padw">${pad()}</div>`}
@@ -1357,6 +1432,8 @@ export async function mount(el) {
     if (name === 'sheet') { ui.sheet = true; ui.sel = null; ui.arm = null; return paint(); }
     if (name === 'sheet-close') { ui.sheet = false; return paint(); }
     if (name === 'fouls') { ui.sheetTeam = t; if (wide.matches) { ui.hideDock = false; ui.dockTab = 'fouls'; } else { ui.sheet = true; ui.tab = 'fouls'; } return paint(); }
+    if (name === 'tips-next') { pref.set('wknd-prac-tip', String(tipAt() + 1)); return paint(); }
+    if (name === 'tips-off') { pref.set('wknd-prac-tips', 'off'); ui.tip = 'Tips off. How to score (Me → Scoring) has every move.'; return paint(); }
     if (name === 'dock-hide') { ui.hideDock = true; return paint(); }
     if (name === 'dock-show') { ui.hideDock = false; return paint(); }
     if (name === 'peek-close') { ui.peek = null; return paint(); }
