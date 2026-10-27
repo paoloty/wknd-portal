@@ -81,10 +81,19 @@
   }
   function initBlocks() {
     $$('[data-block-src]').forEach(function (b) {
-      loadBlock(b);
-      // A block that keeps itself fresh (Home's live card): again every N ms while it's on screen.
-      var every = Number(b.getAttribute('data-block-every'));
-      if (every && !b._every) b._every = setInterval(function () { if (!b.isConnected) { clearInterval(b._every); return; } if (document.visibilityState === 'visible') loadBlock(b, true); }, every);
+      // data-block-later: the server knows there's nothing to show yet (no game live), so no
+      // request now, only the slow check below.
+      if (!b.hasAttribute('data-block-later')) loadBlock(b);
+      // A block that keeps itself fresh (Home's live card): again every N ms while it's on
+      // screen, or every data-block-idle ms while it's empty (nothing live, nothing to poll for).
+      var every = Number(b.getAttribute('data-block-every')), idle = Number(b.getAttribute('data-block-idle')) || every;
+      if (!every || b._every) return;
+      var tick = function () {
+        if (!b.isConnected) return;
+        if (document.visibilityState === 'visible') loadBlock(b, true);
+        b._every = setTimeout(tick, b.hidden ? idle : every);
+      };
+      b._every = setTimeout(tick, b.hidden ? idle : every);
     });
   }
   // The rail's dots follow the card in view.
@@ -267,6 +276,24 @@
     boxes.forEach(function (b) { playerObserver.observe(b); });
   }
 
+  // Feed pictures below the top cards come as data-src (views/app/feed.js deferImgs) and get
+  // their real src once they're within a screen or so of view.
+  var imgObserver = null;
+  var wakeImg = function (img) {
+    var set = img.getAttribute('data-srcset');
+    if (set) { img.setAttribute('srcset', set); img.removeAttribute('data-srcset'); }
+    img.setAttribute('src', img.getAttribute('data-src')); img.removeAttribute('data-src');
+  };
+  function wakeImgs(root) {
+    var imgs = $$('img[data-src]', root || document);
+    if (!imgs.length) return;
+    if (!('IntersectionObserver' in window)) return imgs.forEach(wakeImg);
+    if (!imgObserver) imgObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { imgObserver.unobserve(en.target); if (en.target.hasAttribute('data-src')) wakeImg(en.target); } });
+    }, { rootMargin: '1000px 0px' });
+    imgs.forEach(function (img) { imgObserver.observe(img); });
+  }
+
   // ════ Poll takeover (views/app/poll.js) ════
   // Home brings it in its HTML when a popup poll is waiting on this player. It's lifted out
   // of the screen onto the page (so screen changes and view transitions leave it alone) and
@@ -313,25 +340,34 @@
   (function () {
     var meta = document.querySelector('meta[name="app-bk"]');
     if (!meta || !window.WebSocket) return;
-    var mePid = meta.getAttribute('content'), ws = null, retry = 0, ping = null;
-    var badge = function (n) { $$('[data-bk-badge]').forEach(function (b) { b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; }); };
-    var shown = function () { var b = $('[data-bk-badge]'); return b && !b.hidden ? (parseInt(b.textContent, 10) || 0) : 0; };
+    // unread: kept here and painted on every screen drawn (a kept Home still showed "9+" after
+    // the room was read), null until the server's first word.
+    var mePid = meta.getAttribute('content'), ws = null, retry = 0, ping = null, unread = null, refused = 0, stopped = false;
+    var badge = function (n) { unread = n; $$('[data-bk-badge]').forEach(function (b) { b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; }); };
+    window.wkndBkSync = function () { if ($('[data-bk]')) badge(0); else if (unread != null) badge(unread); };
     function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
     function open() {
-      if (ws || document.visibilityState !== 'visible' || !navigator.onLine) return;
+      if (ws || stopped || document.visibilityState !== 'visible' || !navigator.onLine) return;
+      var opened = false;
       try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/app'); } catch (e) { ws = null; return; }
-      ws.onopen = function () { retry = 0; clearInterval(ping); ping = setInterval(function () { send({ type: 'ping' }); }, 60000); };
+      ws.onopen = function () { opened = true; retry = 0; refused = 0; clearInterval(ping); ping = setInterval(function () { send({ type: 'ping' }); }, 60000); };
       ws.onmessage = function (e) {
         var d; try { d = JSON.parse(e.data); } catch (x) { return; }
         var inRoom = !!$('[data-bk]');
-        if (d.type === 'online') { $$('[data-bk-online]').forEach(function (x) { x.textContent = d.n; }); if (d.unread != null && !inRoom) badge(d.unread); }
-        if (d.type === 'msg' && d.m && d.m.pid !== mePid && !inRoom) badge(shown() + 1);
+        if (d.type === 'online') { $$('[data-bk-online]').forEach(function (x) { x.textContent = d.n; }); if (d.unread != null) badge(inRoom ? 0 : d.unread); }
+        if (d.type === 'msg' && d.m && d.m.pid !== mePid && !inRoom) badge((unread || 0) + 1);
         window.dispatchEvent(new CustomEvent('wknd:bk', { detail: d }));
       };
-      ws.onclose = function () { ws = null; clearInterval(ping); if (document.visibilityState === 'visible') setTimeout(open, Math.min(30000, 1000 * Math.pow(2, retry++))); };
+      // Switched off (4001), or refused five times in a row (signed out, the room closed): stop
+      // asking until the app is next brought back.
+      ws.onclose = function (e) {
+        ws = null; clearInterval(ping);
+        if (e && e.code === 4001 || (!opened && ++refused >= 5)) { stopped = true; return; }
+        if (document.visibilityState === 'visible') setTimeout(open, Math.min(30000, 1000 * Math.pow(2, retry++)));
+      };
     }
     window.wkndAppSocket = { send: send };
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') open(); else if (ws) ws.close(); });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { stopped = false; refused = 0; open(); } else if (ws) ws.close(); });
     window.addEventListener('online', open);
     open();
   })();
@@ -614,6 +650,7 @@
     initLive(); initChat();
     initGameRecap();
     initPractice(); initGuide(); initBarkadahan(); initOnlineSwitch();
+    if (window.wkndBkSync) window.wkndBkSync();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
@@ -2080,7 +2117,7 @@
         caches.match(next, { cacheName: 'wknd-data' }).then(function (r) { return r && r.json(); }).then(function (j) {
           if (!j || !j.html || !first || !box.isConnected) return;
           shownCopy = j.html;
-          items.innerHTML = j.html; items.hidden = false; skel.hidden = true; initVideos(); initPapawis();
+          items.hidden = false; items.innerHTML = j.html; skel.hidden = true; initVideos(); initPapawis(); wakeImgs(items);
         }).catch(function () {});
       }
       var nearBottom = function () { return end.getBoundingClientRect().top < window.innerHeight + 600; };
@@ -2092,16 +2129,18 @@
           .then(function (j) {
             busy = false; next = j.next || null; box.setAttribute('data-lazy-next', next || '');
             var wasFirst = first; first = false;
+            if (wasFirst) document.dispatchEvent(new Event('wknd:list-first')); // the tab warm-up waits for this
             // Feed pages can carry Papawis cards with their join button (initPapawis binds new ones).
-            if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); initPapawis(); } }
-            else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); initPapawis(); }
+            if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); initPapawis(); wakeImgs(items); } }
+            else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); initPapawis(); wakeImgs(items); }
             skel.hidden = true;
             // The feed's first two games are fetched ahead (most launches end in a tap on the
             // latest result), so that tap opens at once. Not on data saver.
             if (wasFirst && /^\/app\/feed\/items/.test(box.getAttribute('data-lazy-src')) && typeof prefetch === 'function'
               && !(navigator.connection && navigator.connection.saveData)) {
               var ahead = [];
-              $$('a[href^="/app/games/"]', items).forEach(function (a) { var u = urlOf(a.href); if (ahead.length < 2 && ahead.indexOf(u) === -1) ahead.push(u); });
+              // The card's own link, not its "Share my stats" (/share), which used to take a slot.
+              $$('a.gx__link[href^="/app/games/"]', items).forEach(function (a) { var u = urlOf(a.href); if (ahead.length < 2 && ahead.indexOf(u) === -1) ahead.push(u); });
               setTimeout(function () { ahead.forEach(prefetch); }, 1500);
             }
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
@@ -2438,8 +2477,17 @@
     // Fetch the other tabs once the first screen is up.
     // The screen it opened on too, from the server: a copy of the live page (countdown ticked,
     // lists loaded) would never match a refresh and force a re-render on every return.
-    var warmTabs = function () { prefetch(urlOf(location.href)); $$('.tabbar a.tab').forEach(function (a) { prefetch(urlOf(a.href)); }); };
-    if ('requestIdleCallback' in window) requestIdleCallback(warmTabs, { timeout: 2000 }); else setTimeout(warmTabs, 800);
+    // Not ahead of the screen's own list (Home's feed): after its first page, or 4 s at most.
+    // On data saver or a 2G-slow signal, only once the player touches the screen.
+    var warmed = false;
+    var warmTabs = function () { if (warmed) return; warmed = true; prefetch(urlOf(location.href)); $$('.tabbar a.tab').forEach(function (a) { prefetch(urlOf(a.href)); }); };
+    var conn = navigator.connection;
+    if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) document.addEventListener('touchstart', warmTabs, { once: true, passive: true });
+    else {
+      var idleWarm = function () { if ('requestIdleCallback' in window) requestIdleCallback(warmTabs, { timeout: 2000 }); else setTimeout(warmTabs, 800); };
+      if ($('[data-lazy-src]')) { document.addEventListener('wknd:list-first', idleWarm, { once: true }); setTimeout(warmTabs, 4000); }
+      else idleWarm();
+    }
   }
 
   // ════ Pull to refresh ════

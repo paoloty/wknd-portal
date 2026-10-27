@@ -44,7 +44,7 @@ self.addEventListener('message', (e) => {
 const wipe = () => Promise.all([PAGES, DATA].map((k) => caches.delete(k)));
 
 const isShellAsset = (url) => url.origin === location.origin
-  && (/^\/(app\.css|app\.js|table-scroll\.js|share-cards\.js|scorer\.js|score-engine\.js|live-score\.js|barkadahan\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
+  && (/^\/(app\.css|app\.js|table-scroll\.js|share-cards\.js|scorer\.js|score-engine\.js|live-score\.js|live-chat\.js|barkadahan\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
 // Screens worth keeping: the tabs, settings, notifications, games and news posts. Not
 // sign-in, setup, Face ID, Settle (money) or anything that posts.
 const isScreen = (url) => url.origin === location.origin
@@ -111,12 +111,13 @@ async function image(e, url) {
   const c = await caches.open(IMG);
   const copy = await c.match(e.request);
   const versioned = url.searchParams.has('v');
-  const fresh = fetch(e.request).then(async (res) => {
+  // Only asked for when needed: a versioned picture already here never goes to the network.
+  const fresh = () => fetch(e.request).then(async (res) => {
     if (res.ok) { await c.put(e.request, res.clone()); trim(IMG, IMG_MAX); }
     return res;
   });
-  if (copy) { if (!versioned) e.waitUntil(fresh.catch(() => {})); return copy; }
-  return fresh;
+  if (copy) { if (!versioned) e.waitUntil(fresh().catch(() => {})); return copy; }
+  return fresh();
 }
 
 self.addEventListener('fetch', (e) => {

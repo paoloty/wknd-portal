@@ -23,9 +23,15 @@
     return '<span class="avatar-wrap bk-av"><span class="avatar" style="--ring:' + esc(m.ring || 'var(--subtle)') + '">' + esc(m.initials || '?') + (m.photo ? '<img src="' + esc(m.photo) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '</span></span>';
   };
 
+  // The room on screen now; its listeners on window/document/visualViewport come off when it's
+  // gone (each visit used to leave a set behind: Fable audit, 2026-10-28).
+  var current = null;
   function mount(el) {
     if (el._bk) return;
     el._bk = true;
+    var offs = [];
+    var on = function (target, ev, fn) { target.addEventListener(ev, fn); offs.push(function () { target.removeEventListener(ev, fn); }); };
+    current = { el: el, off: function () { offs.forEach(function (f) { f(); }); offs = []; } };
     var B = JSON.parse(el.querySelector('[data-bk-bundle]').textContent);
     var me = B.me, list = el.querySelector('[data-bk-list]'), form = el.querySelector('[data-bk-form]'), input = el.querySelector('[data-bk-input]');
     var typingEl = el.querySelector('[data-bk-typing]'), replyEl = el.querySelector('[data-bk-reply]'), mentionEl = el.querySelector('[data-bk-mention]');
@@ -72,6 +78,39 @@
       else toBottom();
     }
     function setAll(arr) { msgs = arr; byId = {}; msgs.forEach(function (m) { byId[m.id] = m; }); }
+    // Adds what's new and takes the latest copy of what's known, never drops: a fresh page
+    // replacing the list lost older pages already loaded and live messages that came in between.
+    function merge(arr) {
+      var seen = {};
+      var all = msgs.map(function (m) { return m; });
+      arr.forEach(function (m) { seen[m.id] = 1; });
+      all = all.filter(function (m) { return !seen[m.id]; }).concat(arr);
+      all.sort(function (a, b) { return a.at - b.at || (a.id < b.id ? -1 : 1); });
+      pending = pending.filter(function (p) { return !arr.some(function (m) { return m.cid && m.cid === p.id; }); });
+      setAll(all);
+    }
+    // Live changes touch only their own messages (and the one after, whose grouping can change)
+    // instead of redrawing the room (40–50 ms per reaction with 100 messages, re-read by
+    // screen readers).
+    var nodeOf = function (id) { return list.querySelector('.bk-m[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]'); };
+    function patch(id) {
+      var i = -1; for (var k = 0; k < msgs.length; k++) if (msgs[k].id === id) { i = k; break; }
+      var n = nodeOf(id); if (i < 0 || !n) return draw('stay');
+      [i, i + 1].forEach(function (j) {
+        var m = msgs[j], node = m && nodeOf(m.id); if (!node) return;
+        var prev = msgs[j - 1] && dayOf(msgs[j - 1].at) === dayOf(m.at) ? msgs[j - 1] : null;
+        node.insertAdjacentHTML('afterend', msgHtml(m, prev)); node.remove();
+      });
+    }
+    function append(m) {
+      var prev = msgs[msgs.length - 2], last = list.lastElementChild;
+      // Only the simple case: nothing waiting to send, same day as the one before it.
+      if (pending.length || !prev || !last || dayOf(prev.at) !== dayOf(m.at) || !nodeOf(prev.id)) return false;
+      var atEnd = nearBottom();
+      list.insertAdjacentHTML('beforeend', msgHtml(m, prev));
+      if (atEnd || m.pid === me.pid) toBottom();
+      return true;
+    }
     setAll(B.messages); draw();
     // The keyboard: the room is pinned to the part of the screen you can see (the visual
     // viewport), so the box sits right on the keyboard and the newest messages stay in sight.
@@ -86,11 +125,13 @@
       // fullH: the tallest the visible area has been (no keyboard). Not window.innerHeight: on
       // iPhone that shrinks with the keyboard too, so the home-bar gap never went (Paolo's
       // screenshot, 2026-10-27).
-      var raf = 0, lastTop = -1, lastH = -1, fullH = 0;
+      // A new width (the phone turned) starts fullH again, or landscape counted as "keyboard up".
+      var raf = 0, lastTop = -1, lastH = -1, fullH = 0, lastW = 0;
       var apply = function () {
         raf = 0;
-        if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; }
-        var top = Math.max(0, Math.round(vv.offsetTop)), h = Math.round(vv.height);
+        if (!el.isConnected) return current && current.el === el ? current.off() : null;
+        var top = Math.max(0, Math.round(vv.offsetTop)), h = Math.round(vv.height), w = Math.round(vv.width);
+        if (Math.abs(w - lastW) > 40) { fullH = 0; lastW = w; }
         fullH = Math.max(fullH, h);
         if (Math.abs(top - lastTop) < 2 && Math.abs(h - lastH) < 2) return;
         var near = nearBottom();
@@ -102,20 +143,20 @@
         if (near) toBottom();
       };
       var fit = function () { if (!raf) raf = requestAnimationFrame(apply); };
-      vv.addEventListener('resize', fit);
-      vv.addEventListener('scroll', fit);
+      on(vv, 'resize', fit);
+      on(vv, 'scroll', fit);
       apply();
     }
 
-    // A fresh copy (the page may have come from the phone's copy).
+    // A fresh copy (the page may have come from the phone's copy), merged in.
     fetch('/app/barkadahan/messages', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) { if (j && el.isConnected) { setAll(j.messages); draw('stay'); setOnline(j.online); } }).catch(function () {});
+      .then(function (j) { if (j && el.isConnected) { merge(j.messages); draw('stay'); setOnline(j.online); } }).catch(function () {});
 
     // Older messages when scrolled to the top.
     list.addEventListener('scroll', function () {
       if (list.scrollTop > 60 || loadingOld || noMore || !msgs.length) return;
       loadingOld = true;
-      fetch('/app/barkadahan/messages?before=' + msgs[0].at, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
+      fetch('/app/barkadahan/messages?before=' + msgs[0].at + '&id=' + encodeURIComponent(msgs[0].id), { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
         loadingOld = false;
         if (!j.messages.length) { noMore = true; draw('top'); return; }
         setAll(j.messages.concat(msgs)); draw('top');
@@ -123,25 +164,35 @@
     });
 
     var setOnline = function (n) { if (n == null) return; el.querySelectorAll('[data-bk-online]').forEach(function (x) { x.textContent = n; }); };
-    var markRead = function () { clearTimeout(readT); readT = setTimeout(function () { if (document.visibilityState === 'visible' && el.isConnected) post('/app/barkadahan/read').catch(function () {}); }, 1500); };
+    // The read mark is the room's own (opening it, a message coming in while it's open, coming
+    // back to it); the page's GET doesn't write, since it's also a prefetch.
+    var markRead = function (now) {
+      clearTimeout(readT);
+      readT = setTimeout(function () { if (document.visibilityState === 'visible' && el.isConnected) post('/app/barkadahan/read').then(function () { if (window.wkndBkSync) window.wkndBkSync(); }, function () {}); }, now ? 0 : 1500);
+    };
+    markRead(true);
 
     // ── Live: from the app's connection ──
     function onLive(e) {
-      if (!el.isConnected) { window.removeEventListener('wknd:bk', onLive); return; }
+      if (!el.isConnected) return current && current.el === el ? current.off() : null;
       var d = e.detail || {};
       if (d.type === 'online') setOnline(d.n);
-      if (d.type === 'msg' && d.m && !byId[d.m.id]) {
-        pending = pending.filter(function (p) { return p.serverId !== d.m.id; });
-        msgs.push(d.m); byId[d.m.id] = d.m;
-        var atEnd = nearBottom(); draw(d.m.pid === me.pid || atEnd ? '' : 'stay');
+      if (d.type === 'msg' && d.m) {
+        // Your own, coming back: it replaces its "Sending…" copy (matched by the phone's id).
+        var had = pending.length;
+        if (d.m.cid) pending = pending.filter(function (p) { return p.id !== d.m.cid; });
+        if (!byId[d.m.id]) {
+          msgs.push(d.m); byId[d.m.id] = d.m;
+          if (had !== pending.length || !append(d.m)) { var atEnd = nearBottom(); draw(d.m.pid === me.pid || atEnd ? '' : 'stay'); }
+        } else if (had !== pending.length) draw();
         delete typers[d.m.pid]; paintTyping();
         if (d.m.pid !== me.pid) markRead();
       }
-      if (d.type === 'rx' && byId[d.id]) { byId[d.id].rx = d.rx; draw('stay'); }
-      if (d.type === 'del' && byId[d.id]) { byId[d.id].deleted = true; byId[d.id].body = ''; byId[d.id].rx = {}; draw('stay'); }
+      if (d.type === 'rx' && byId[d.id]) { byId[d.id].rx = d.rx; patch(d.id); }
+      if (d.type === 'del' && byId[d.id]) { byId[d.id].deleted = true; byId[d.id].body = ''; byId[d.id].rx = {}; patch(d.id); }
       if (d.type === 'typing' && d.pid !== me.pid) { typers[d.pid] = { name: d.name, until: Date.now() + 4000 }; paintTyping(); setTimeout(paintTyping, 4100); }
     }
-    window.addEventListener('wknd:bk', onLive);
+    on(window, 'wknd:bk', onLive);
     function paintTyping() {
       var now = Date.now(), names = Object.keys(typers).filter(function (k) { return typers[k].until > now; }).map(function (k) { return typers[k].name; });
       typingEl.textContent = !names.length ? '' : names.length === 1 ? names[0] + ' is typing…' : names.length === 2 ? names[0] + ' and ' + names[1] + ' are typing…' : 'A few people are typing…';
@@ -149,7 +200,9 @@
 
     // ── Sending ──
     function send(text) {
-      var p = { id: 'tmp' + Date.now(), pid: me.pid, at: Date.now(), body: text, mentions: Object.keys(mentions).filter(function (k) { return text.indexOf('@' + mentions[k]) !== -1; }), reply: replyTo ? { id: replyTo.id, name: replyTo.name, body: replyTo.body } : null, rx: {}, pending: true };
+      // id: also the phone's id for the send (cid), so a retry is stored once and the live
+      // copy of it replaces this one.
+      var p = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), pid: me.pid, at: Date.now(), body: text, mentions: Object.keys(mentions).filter(function (k) { return text.indexOf('@' + mentions[k]) !== -1; }), reply: replyTo ? { id: replyTo.id, name: replyTo.name, body: replyTo.body } : null, rx: {}, pending: true };
       p.replyTo = replyTo && replyTo.id;
       pending.push(p); draw();
       deliver(p);
@@ -157,11 +210,11 @@
     }
     function deliver(p) {
       p.failed = false; draw('stay');
-      post('/app/barkadahan/messages', { body: p.body, replyTo: p.replyTo || null, mentions: p.mentions }).then(function (j) {
+      post('/app/barkadahan/messages', { body: p.body, replyTo: p.replyTo || null, mentions: p.mentions, cid: p.id }).then(function (j) {
         pending = pending.filter(function (x) { return x !== p; });
         if (!byId[j.m.id]) { msgs.push(j.m); byId[j.m.id] = j.m; }
         draw();
-      }, function (err) { p.failed = true; draw('stay'); toast(err.message, 'err'); });
+      }, function (err) { if (pending.indexOf(p) === -1) return; p.failed = true; draw('stay'); toast(err.message, 'err'); });
     }
     if (form) {
       var grow = function () { input.style.height = 'auto'; input.style.height = Math.min(120, input.scrollHeight) + 'px'; };
@@ -220,22 +273,39 @@
       sheet._m = m;
       el.appendChild(sheet);
     }
-    var holdT = null, holdAt = null;
+    // The menu opens when the finger lifts after a hold, not while it's still down: opened
+    // under the finger, the lift landed on the sheet and pressed whatever was there (Report, or
+    // Delete for an admin) or on its backdrop, which closed it again: the "unstable" menu (Fable
+    // audit, 2026-10-28). The bubble dims once the hold counts, so you know to let go.
+    var holdT = null, holdAt = null, held = null, quietUntil = 0;
+    var cancelHold = function () { clearTimeout(holdT); holdT = null; if (held) { held.b.classList.remove('is-held'); held = null; } };
     list.addEventListener('pointerdown', function (e) {
       var b = e.target.closest('[data-bk-hold]'); if (!b) return;
+      cancelHold();
       holdAt = { x: e.clientX, y: e.clientY };
-      clearTimeout(holdT);
-      holdT = setTimeout(function () { holdT = null; var id = b.closest('[data-id]').getAttribute('data-id'); if (byId[id]) { if (navigator.vibrate) navigator.vibrate(10); openMenu(byId[id]); } }, HOLD_MS);
+      holdT = setTimeout(function () {
+        holdT = null;
+        var id = b.closest('[data-id]').getAttribute('data-id');
+        if (byId[id]) { held = { b: b, m: byId[id] }; b.classList.add('is-held'); if (navigator.vibrate) navigator.vibrate(10); }
+      }, HOLD_MS);
     });
-    var cancelHold = function () { clearTimeout(holdT); holdT = null; };
-    list.addEventListener('pointerup', cancelHold);
-    list.addEventListener('pointercancel', cancelHold);
-    list.addEventListener('pointermove', function (e) { if (holdT && holdAt && Math.hypot(e.clientX - holdAt.x, e.clientY - holdAt.y) > 10) cancelHold(); });
+    var release = function () {
+      if (!held) return cancelHold();
+      var m = held.m; cancelHold();
+      quietUntil = Date.now() + 400; // the click that follows this lift
+      openMenu(m);
+    };
+    list.addEventListener('pointerup', release);
+    // iPhone can cancel a still finger at the end of a long press: that's still a hold.
+    list.addEventListener('pointercancel', function () { if (held) release(); else cancelHold(); });
+    list.addEventListener('pointermove', function (e) { if ((holdT || held) && holdAt && Math.hypot(e.clientX - holdAt.x, e.clientY - holdAt.y) > 10) cancelHold(); });
     list.addEventListener('contextmenu', function (e) { if (e.target.closest('[data-bk-hold]')) e.preventDefault(); });
 
+    // One at a time per message: a double tap toggled it on and straight off again.
     var react = function (m, emoji) {
-      if (!m || m.deleted || me.cant) return;
-      post('/app/barkadahan/messages/' + encodeURIComponent(m.id) + '/react', { emoji: emoji }).then(function (j) { m.rx = j.rx; draw('stay'); }, function (err) { toast(err.message, 'err'); });
+      if (!m || m.deleted || me.cant || m._rxBusy) return;
+      m._rxBusy = true;
+      post('/app/barkadahan/messages/' + encodeURIComponent(m.id) + '/react', { emoji: emoji }).then(function (j) { m._rxBusy = false; m.rx = j.rx; patch(m.id); }, function (err) { m._rxBusy = false; toast(err.message, 'err'); });
     };
 
     // ── Emoji sheet ──
@@ -258,6 +328,7 @@
 
     el.addEventListener('click', function (e) {
       var t = e.target;
+      if (Date.now() < quietUntil && t.closest('.bk-hold')) { e.preventDefault(); return; }
       var rxb = t.closest('[data-bk-rx]'); if (rxb) return react(byId[rxb.closest('[data-id]').getAttribute('data-id')], rxb.getAttribute('data-bk-rx'));
       if (t.closest('[data-bk-retry]')) { var id = t.closest('[data-id]').getAttribute('data-id'); var p = pending.filter(function (x) { return x.id === id; })[0]; if (p) deliver(p); return; }
       if (t.closest('[data-bk-noreply]')) return setReply(null);
@@ -286,12 +357,23 @@
         if (act === 'reply') return setReply(m);
         if (act === 'copy') { try { navigator.clipboard.writeText(m.body).then(function () { toast('Copied'); }); } catch (x2) {} return; }
         if (act === 'report') return post('/app/barkadahan/messages/' + encodeURIComponent(m.id) + '/report', {}).then(function (j) { toast(j.message || 'Reported'); }, function (err) { toast(err.message, 'err'); });
-        if (act === 'delete') return post('/app/barkadahan/messages/' + encodeURIComponent(m.id) + '/delete').then(function () { m.deleted = true; m.body = ''; draw('stay'); toast('Deleted'); }, function (err) { toast(err.message, 'err'); });
+        // Delete asks first (it goes for everyone), like Mute below.
+        if (act === 'delete') {
+          sheet = document.createElement('div'); sheet.className = 'bk-hold'; sheet._m = m;
+          sheet.innerHTML = '<div class="bk-hold__in"><div class="bk-hold__msg">Delete this message? It goes for everyone.</div><div class="bk-hold__acts"><button type="button" class="red" data-bk-del="yes">Delete</button><button type="button" data-bk-del="no">Cancel</button></div></div>';
+          el.appendChild(sheet); return;
+        }
         if (act === 'mute') {
           sheet = document.createElement('div'); sheet.className = 'bk-hold'; sheet._m = m;
           sheet.innerHTML = '<div class="bk-hold__in"><div class="bk-hold__msg">Mute ' + esc(m.name) + ' in the Barkadahan? They can still read.</div><div class="bk-hold__acts"><button type="button" data-bk-mute="1">For a day</button><button type="button" data-bk-mute="7">For a week</button><button type="button" data-bk-mute="cancel">Cancel</button></div></div>';
           el.appendChild(sheet); return;
         }
+      }
+      var dl = t.closest('[data-bk-del]');
+      if (dl && sheet) {
+        var md = sheet._m; closeSheet();
+        if (dl.getAttribute('data-bk-del') !== 'yes') return;
+        return post('/app/barkadahan/messages/' + encodeURIComponent(md.id) + '/delete').then(function () { md.deleted = true; md.body = ''; md.rx = {}; patch(md.id); toast('Deleted'); }, function (err) { toast(err.message, 'err'); });
       }
       var mu = t.closest('[data-bk-mute]');
       if (mu && sheet) {
@@ -301,9 +383,12 @@
       }
       if (emoSheet && !t.closest('.bk-emo') && !t.closest('[data-bk-input]')) { emoSheet.remove(); emoSheet = null; }
     });
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && el.isConnected) markRead(); });
+    on(document, 'visibilitychange', function () { if (!el.isConnected) return current && current.el === el ? current.off() : null; if (document.visibilityState === 'visible') markRead(); });
   }
 
-  window.wkndBarkadahan = { scan: function () { var el = document.querySelector('[data-bk]'); if (el) mount(el); } };
+  window.wkndBarkadahan = { scan: function () {
+    if (current && !current.el.isConnected) { current.off(); current = null; }
+    var el = document.querySelector('[data-bk]'); if (el) mount(el);
+  } };
   window.wkndBarkadahan.scan();
 })();

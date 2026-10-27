@@ -177,6 +177,12 @@ function installWallHtml() {
 // ga: server.js buildAppGaSnippet (signed-in players on the live domain, unless they turned
 // Analytics off), or ''.
 // bk: the player's id when the Barkadahan is on (public/app.js opens the live connection), else ''.
+// The fonts every screen draws with, asked for alongside the CSS instead of after it's read
+// (a round trip of fallback numbers on a cold open): Saira Condensed 600/700 (latin) for
+// numerals and labels, Archivo 900 italic for the logo. Keep in step with public/fonts/fonts.css.
+const FONT_PRELOADS = ['sairacondensed-EJRLQgErUN8XuHNEtX81i9TmEkrnfc9Q962f', 'sairacondensed-EJRLQgErUN8XuHNEtX81i9TmEkrnGc5Q962f', 'archivo-k3k8o8UDI-1M0wlSfdzyIEkpwTM29hr-8mTYIRyOSVz60_PG_HAotCdrD08']
+  .map(f => `<link rel="preload" href="/fonts/${f}.woff2" as="font" type="font/woff2" crossorigin>`).join('\n  ');
+
 export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '', test = '', ga = '', bk = '' }) {
   const badge = key => {
     const n = Number(badges[key]) || 0;
@@ -209,6 +215,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <script>try{var t=localStorage.getItem('wknd-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
   ${installWall ? INSTALL_DETECT : ''}
   <link rel="preload" href="/fonts/fonts.css" as="style">
+  ${FONT_PRELOADS}
   <link rel="stylesheet" href="/fonts/fonts.css">
   <link rel="stylesheet" href="/app.css?v=${esc(ver)}">
   ${ga}
