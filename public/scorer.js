@@ -44,13 +44,21 @@ const LIVE_BALL = new Set(['shot', 'reb', 'stl', 'blk']);
 // Plays that stop the clock (on either scorer's phone).
 const WHISTLES = new Set(['foul', 'timeout', 'team_tech', 'team_to', 'stoppage']);
 // Follow-ups (Paolo, 2026-10-26): the optional questions after a play (Assisted?, Who lost it?,
-// Whose shot?, Who went off?, And-one: who fouled?). They sit above the stat buttons (which stay
-// usable: the next tap skips), close with ×, a tap on empty space, or by themselves after
-// FOLLOW_MS. The foul panel (free throws owed) is not a follow-up: it stays until answered.
+// Whose shot?, Who went off?, And-one: who fouled?, Rebound?). One amber line above the stat
+// buttons (which stay usable: the next tap skips); the players who can answer light up on the
+// court and a tap there answers (a dimmed tile skips and picks that player). They close with
+// the skip button, a tap on empty space, or by themselves after FOLLOW_MS. The foul panel (free throws owed) is not a follow-up: it stays until answered.
 const OPTIONAL = new Set(['ast', 'lost', 'blocked', 'wentoff', 'andone', 'foulout', 'rebound']);
 // Menus (team stats, foul kind, Fix…) close the same ways, minus the timer: the scorer opened them.
 const CLOSABLE = new Set([...OPTIONAL, 'menu']);
 const FOLLOW_MS = 12000;
+// Rebound? is the most frequent question and the moment passes fastest (Fable review, 2026-10-27).
+const followMs = a => (a.kind === 'rebound' ? 8000 : FOLLOW_MS);
+// The follow-ups the Follow-up questions switch (game menu, per phone) turns off. Not Who comes on?
+// (a foul-out needs a sub), the and-one's Who fouled? (the scorer asked for it), nor free throws.
+const SKIPPABLE = new Set(['rebound', 'ast', 'lost', 'blocked', 'wentoff']);
+// Reduced motion: no countdown at all; a follow-up stays until answered, skipped or the next play.
+const calm = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Someone asks for this phone's side: the alert counts down this long, then it's a no.
 const ASK_MS = 20000;
 const EXIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>';
@@ -375,6 +383,9 @@ export async function mount(el) {
   }
   const other = t => (t === 'a' ? 'b' : 'a');
   const soundOn = () => pref.get('wknd-sc-sound', 'on') !== 'off';
+  // Follow-up questions (Paolo, 2026-10-27): on by default; a scorer who knows the game can turn
+  // off the optional ones (SKIPPABLE) on their phone.
+  const followOn = () => pref.get('wknd-sc-follow', 'on') !== 'off';
   const periodSecs = () => (isOvertime(G.period) ? rules.otMin : rules.periodMin) * 60;
   // Which five: the five who played last (topped up from the roster). Where they sit: tiles
   // never move (Paolo, 2026-10-25: the scorer learns where a player is). A player coming in
@@ -554,7 +565,7 @@ export async function mount(el) {
     } else if (a.kind === 'rebound') {
       // Its kind from the question (whose miss it was), not guessed: after a block whose shooter
       // was skipped there's no miss in the plays to guess from.
-      if (id) { const off = byId[id].team === a.miss; add({ type: 'reb', team: byId[id].team, player: id, kind: off ? 'off' : 'def' }, { flash: { text: off ? 'OREB' : 'REB', tone: 'plain' } }); }
+      if (id) { const off = byId[id].team === a.miss; add({ type: 'reb', team: byId[id].team, player: id, kind: off ? 'off' : 'def' }, { flash: { text: off ? 'OREB' : 'DREB', tone: 'plain' } }); }
       ui.ask = null;
     } else if (a.kind === 'foulout') {
       if (id) { const tiles = [...five(a.team)], auto = tiles.find(x => !G.lastActive[a.team].includes(x)); add({ type: 'sub', team: a.team, in: id, out: a.pid }); if (auto && auto !== id) slots[a.team] = tiles.map(x => (x === auto ? id : x)); }
@@ -689,9 +700,10 @@ export async function mount(el) {
     if (phone && file && navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: 'My plays' }).catch(err => { if (!err || err.name !== 'AbortError') download(); });
     download();
   }
-  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : [])], k => {
+  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ['follow', followOn() ? 'Follow-up questions: on (tap to turn off)' : 'Follow-up questions: off (tap to turn on)'], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : [])], k => {
     if (k === 'send') return sendMyPlays();
     if (k === 'sheet') { ui.sheet = true; return paint(); }
+    if (k === 'follow') { pref.set('wknd-sc-follow', followOn() ? 'off' : 'on'); ui.tip = followOn() ? 'Follow-up questions on: Rebound?, Assisted? and the rest.' : 'Follow-up questions off. Foul-outs and free throws still ask.'; return paint(); }
     if (k === 'sound') { pref.set('wknd-sc-sound', soundOn() ? 'off' : 'on'); ui.tip = soundOn() ? 'Sounds on.' : 'Sounds off.'; if (soundOn()) chime('yes'); return paint(); }
     if (k === 'refs') return menu('Refs stopped play: why?', [['injury', 'Injury'], ['equipment', 'Equipment'], ['clock', 'Clock / scoreboard'], ['coach', 'Talking to a coach'], ['other', 'Other']], r => { whistle(); teamPlay(null, 'stoppage', { kind: r }); });
     if (k === 'end') return endPeriod();
@@ -849,14 +861,17 @@ export async function mount(el) {
     if (p.number && shared.has(p.id)) return 13;
     return Math.max(L >= 8 ? 9.5 : 10, Math.min(11, Math.round((58 / (L * 0.62)) * 2) / 2));
   };
+  // The players an open follow-up is waiting on (set at the top of every paint).
+  let ansIds = null;
   const tile = id => {
     // The ring and float play once, right after the tap: a later repaint (a sync, the other
     // scorer's play) mustn't start them again.
     const p = byId[id], L = G.players[id] || {}, pf = L.pf || 0, tr = trouble(pf), hit = ui.flash && ui.flash.pid === id && Date.now() - ui.flash.at < 900;
     const benchSel = ui.sel && byId[ui.sel] && byId[ui.sel].team === p.team && !onCourt(p.team, ui.sel);
-    const cls = ['sc-p', ui.sel === id ? 'on' : '', tr === 'd' ? 'is-d' : tr === 'w' ? 'is-w' : '', shared.has(id) ? 'is-dup' : '', benchSel ? 'swap' : '',
+    const ans = ansIds ? (ansIds.has(id) ? 'is-ans' : 'is-dim') : '';
+    const cls = ['sc-p', ui.sel === id ? 'on' : '', ans, tr === 'd' ? 'is-d' : tr === 'w' ? 'is-w' : '', shared.has(id) ? 'is-dup' : '', benchSel ? 'swap' : '',
       hit ? `ring ${ui.flash.tone} b${ui.flashN % 2} r${ui.flashN % 2}` : ''].filter(Boolean).join(' ');
-    return `<button type="button" class="${cls}" style="--c:${esc(team[p.team].color)};--fs:${nameSize(p)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(short(id))}, ${pf} foul${pf === 1 ? '' : 's'}${benchSel ? `. Tap to sub ${esc(short(ui.sel))} on for them` : ''}. Hold for their line">
+    return `<button type="button" class="${cls}" style="--c:${esc(team[p.team].color)};--fs:${nameSize(p)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(short(id))}, ${pf} foul${pf === 1 ? '' : 's'}${ans === 'is-ans' ? `. Tap to answer ${esc(ui.ask.q)}` : benchSel ? `. Tap to sub ${esc(short(ui.sel))} on for them` : ''}. Hold for their line">
       <b class="sc-p__no num${p.number ? '' : ' is-none'}" aria-hidden="true">${p.number ? esc(p.number) : '–'}</b>${pf ? `<em class="sc-p__pf num${tr ? ' ' + tr : ''}" aria-hidden="true">${pf}F</em>` : ''}<span class="sc-p__nm">${esc(p.short)}</span><i class="sc-p__sw" aria-hidden="true">${SWAP}</i>${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
   };
   // The latest play by a team (for the folded side with two scorers)
@@ -875,13 +890,14 @@ export async function mount(el) {
     const rest = [...bench.filter(p => !G.flags[p.id]), ...bench.filter(p => G.flags[p.id])];
     const noSub = !rest.some(p => !G.flags[p.id]);
     return `<section class="sc-team${multi && ui.lane === t ? ' sc-team--solo' : ''}">
-      <div class="sc-th"><button type="button" class="sc-th__n" data-act="teammenu" data-team="${t}" aria-label="${esc(team[t].name)}: team stats, DNP"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}${CHEV}</button>
+      <div class="sc-th"><button type="button" class="sc-th__n" data-act="teammenu" data-team="${t}" aria-label="${esc(team[t].name)}: team stats, DNP"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}${CHEV}</button>${ui.ask && ui.ask.kind === 'rebound' ? `<span class="sc-th__ans">${ui.ask.miss === t ? 'Offensive' : 'Defensive'}</span>` : ''}
         <button type="button" class="sc-tb" data-act="subq" data-team="${t}"${noSub ? ` disabled aria-label="${esc(team[t].name)}: nobody on the bench"` : ` aria-label="${esc(team[t].name)}: sub"`}>Sub</button>
 </div>
       <div class="sc-five">${on.map(tile).join('')}</div>
       ${rest.length || dnps.length ? `<div class="sc-bench">${rest.map(p => {
         const out = G.flags[p.id];
-        return `<button type="button" class="sc-bn${out ? ' is-out' : ui.sel === p.id ? ' on' : ''}" data-pick="${esc(p.id)}"${out ? ' disabled' : ''} aria-pressed="${ui.sel === p.id}" aria-label="${esc(short(p.id))}, bench${out ? `, ${out}` : ''}">${p.number ? `<i class="num">${esc(p.number)}</i>` : ''}<s>${esc(p.short)}</s></button>`;
+        const ans = ansIds && !out ? (ansIds.has(p.id) ? ' is-ans' : ' is-dim') : '';
+        return `<button type="button" class="sc-bn${out ? ' is-out' : ui.sel === p.id ? ' on' : ''}${ans}" data-pick="${esc(p.id)}"${out ? ' disabled' : ''} aria-pressed="${ui.sel === p.id}" aria-label="${esc(short(p.id))}, bench${out ? `, ${out}` : ''}">${p.number ? `<i class="num">${esc(p.number)}</i>` : ''}<s>${esc(p.short)}</s></button>`;
       }).join('')}${dnps.length ? `<button type="button" class="sc-bn is-dnp" data-act="dnp" data-team="${t}" aria-label="${dnps.length} didn’t play: ${esc(dnps.map(p => p.short).join(', '))}. Tap to change">DNP · ${dnps.length}</button>` : ''}</div>` : ''}
     </section>`;
   };
@@ -902,11 +918,19 @@ export async function mount(el) {
     const p = byId[id];
     return `<button type="button" class="sc-opt${on ? ' on' : ''}${teamTop ? ' sc-opt--team' : ''}"${teamTop ? ` style="--c:${esc(team[p.team].color)}"` : ''} ${attrs}="${esc(id)}" aria-pressed="${on}">${p.number ? `<b class="num">${esc(p.number)}</b>` : ''}<span>${esc(p.short)}</span></button>`;
   };
-  const followUp = (a, inner, headExtra = '') => {
+  // A follow-up is one amber line (Paolo, 2026-10-27, mockup claude.ai/artifact/JKT8xX8edkcizKXiio3Vip):
+  // the players who can answer light up on the court (tile() / the bench, `ansIds`) and a tap
+  // there answers. Only players with no tile on this phone (the other side folded away with two
+  // scorers, a DNP) get a button in the line. extra: 2PT/3PT, Bench.
+  const HINTS = { rebound: 'Tap who got it', ast: 'Tap who passed', lost: 'Tap who lost it', blocked: 'Tap the shooter', andone: 'Tap who fouled', wentoff: 'Tap who went off', foulout: 'Tap who comes on' };
+  const hasTile = id => { const p = byId[id]; return !!p && mine(p.team) && !G.dnp.includes(id); };
+  const followUp = (a, extra = '') => {
     if (!a.at) a.at = Date.now();
-    const gone = Math.min(FOLLOW_MS, Date.now() - a.at);
-    return `<div class="sc-q sc-q--opt" role="group" aria-label="${esc(a.q)} Optional"><div class="sc-q__h"><b>${esc(a.q)}</b>${headExtra}<small class="sc-q__optl">optional</small><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="" aria-label="${esc(a.skip)}">${CLOSE}</button></div>
-      ${inner}${a.noTimer ? '' : `<i class="sc-q__timer" style="animation-duration:${FOLLOW_MS}ms;animation-delay:-${gone}ms" aria-hidden="true"></i>`}</div>`;
+    const ms = followMs(a), timed = !a.noTimer && !calm(), gone = Math.min(ms, Date.now() - a.at);
+    // Off this phone's court (folded side, DNP) or scrolled out of sight (a small phone: tidyAnswers).
+    const loose = followOpts(a).filter(id => !hasTile(id) || (a.loose || []).includes(id));
+    return `<div class="sc-q sc-q--line${timed ? ' sc-q--timed' : ''}" role="group" aria-label="${esc(a.q)} ${esc(HINTS[a.kind] || 'Tap a player')}. Optional"><div class="sc-q__h"><b>${esc(a.q)}</b><small class="sc-q__hint">${esc(HINTS[a.kind] || 'Tap a player')}</small><span class="sc-q__sp"></span>${extra}<button type="button" class="sc-q__skip" data-ask="">${esc(a.skip)}</button></div>
+      ${loose.length ? `<div class="sc-q__opts">${loose.map(id => optBtn(id)).join('')}</div>` : ''}${timed ? `<i class="sc-q__timer" style="animation-duration:${ms}ms;animation-delay:-${gone}ms" aria-hidden="true"></i>` : ''}</div>`;
   };
   function question() {
     const a = ui.ask;
@@ -927,18 +951,13 @@ export async function mount(el) {
         <div class="sc-ft" style="--n:${a.n}">${fts}</div>` : ''}
       </div>`;
     }
-    if (a && a.kind === 'ast') {
-      const opts = a.bench ? team[a.team].players.filter(p => p.id !== a.shooter && !onCourt(a.team, p.id) && !G.flags[p.id]).map(p => p.id) : five(a.team).filter(id => id !== a.shooter);
-      return followUp(a, `<div class="sc-q__opts">${opts.map(id => optBtn(id)).join('')}${a.bench ? '' : `<button type="button" class="sc-opt sc-opt--more" data-astbench><b>Bench</b></button>`}</div>`);
-    }
-    if (a && a.kind === 'rebound') {
-      // Each five a row, its team's colour on top of every button.
-      const def = a.miss === 'a' ? 'b' : 'a';
-      return followUp(a, [def, a.miss].map(t => `<div class="sc-q__opts" role="group" aria-label="${esc(team[t].name)}${t === def ? ' (defensive)' : ' (offensive)'}">${five(t).map(id => optBtn(id, 'data-ask', false, true)).join('')}</div>`).join(''));
-    }
+    // Assisted?: Bench lights the bench instead of the four teammates.
+    if (a && a.kind === 'ast') return followUp(a, a.bench ? '' : '<button type="button" class="sc-q__chip" data-astbench>Bench</button>');
+    // Rebound?: all ten light up; the team headers say which side is offensive (tile()).
+    if (a && a.kind === 'rebound') return followUp(a);
     if (a && (a.kind === 'lost' || a.kind === 'wentoff' || a.kind === 'blocked' || a.kind === 'andone' || a.kind === 'foulout')) {
-      const pts = a.kind === 'blocked' ? [2, 3].map(n => `<button type="button" class="sc-ftc num${a.pts === n ? ' on' : ''}" data-blkpts="${n}" aria-pressed="${a.pts === n}">${n}PT</button>`).join('') : '';
-      return followUp(a, `<div class="sc-q__opts">${a.opts.map(o => optBtn(o.id)).join('')}</div>`, pts);
+      const pts = a.kind === 'blocked' ? [2, 3].map(n => `<button type="button" class="sc-q__chip num${a.pts === n ? ' on' : ''}" data-blkpts="${n}" aria-pressed="${a.pts === n}">${n}PT</button>`).join('') : '';
+      return followUp(a, pts);
     }
     if (a && a.kind === 'menu') {
       const chips = opts => `<div class="sc-menu">${opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}"${String(o.id).startsWith('wait:') ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>`;
@@ -1143,6 +1162,20 @@ export async function mount(el) {
     paintNow();
     fitNames();
     for (const [sel, top] of keep) { const n = root.querySelector(sel); if (n) n.scrollTop = top; }
+    tidyAnswers();
+  }
+  // A small phone (667pt) can't show both teams: a lit player scrolled out of sight gets a button
+  // in the follow-up line instead, so every answer is on screen (Fable review, 2026-10-27). The
+  // line growing can hide more tiles, so it measures again, a few times at most.
+  function tidyAnswers(pass = 0) {
+    const a = ui.ask, area = root.querySelector('.sc-teams');
+    if (!ansIds || !a || !area || pass > 2) return;
+    const box = area.getBoundingClientRect();
+    const hidden = [...root.querySelectorAll('.sc-p.is-ans, .sc-bn.is-ans')].filter(el => { const r = el.getBoundingClientRect(); return r.top < box.top - 1 || r.bottom > box.bottom + 1; }).map(el => el.getAttribute('data-pick'));
+    const add = hidden.filter(id => !(a.loose || []).includes(id));
+    if (!add.length) return;
+    a.loose = [...(a.loose || []), ...add];
+    paintNow(); fitNames(); tidyAnswers(pass + 1);
   }
   // A one-word name too wide for its tile (CONTIGNO with a shared number, at the bigger size)
   // can't wrap: it shrinks until it fits, down to 8px (Paolo, 2026-10-26).
@@ -1244,16 +1277,20 @@ export async function mount(el) {
     confirm('Save the box score?', `${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ' now'}; the POTG and recap come next`, 'up', 'Save it', () => send(''));
   }
   function paintNow() {
-    if (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) ui.ask = ui.queue.shift();
+    const quiet = a => !!a && SKIPPABLE.has(a.kind) && !followOn();
+    if (quiet(ui.ask)) ui.ask = null;
+    while (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) { ui.ask = ui.queue.shift(); if (quiet(ui.ask)) ui.ask = null; }
     clockNow();
+    // The players a follow-up is waiting on light up; the rest dim (tile(), the bench).
+    ansIds = ui.ask && OPTIONAL.has(ui.ask.kind) ? new Set(followOpts(ui.ask)) : null;
     const q = question();
     const restarted = ui.restarted; ui.restarted = false;
     const started = ui.started; ui.started = false;
     const optional = !!(ui.ask && OPTIONAL.has(ui.ask.kind));
     // A follow-up closes itself after FOLLOW_MS with no answer (not "who comes on" after a foul-out).
-    if (optional && !ui.ask._timer && !ui.ask.noTimer) {
+    if (optional && !ui.ask._timer && !ui.ask.noTimer && !calm()) {
       const a = ui.ask; if (!a.at) a.at = Date.now();
-      a._timer = setTimeout(() => { if (ui.ask === a) { ui.ask = null; paint(); } }, Math.max(0, FOLLOW_MS - (Date.now() - a.at)));
+      a._timer = setTimeout(() => { if (ui.ask === a) { ui.ask = null; paint(); } }, Math.max(0, followMs(a) - (Date.now() - a.at)));
     }
     const docked = wide.matches && !ui.hideDock;
     root.classList.toggle('is-docked', docked);
@@ -1356,7 +1393,10 @@ export async function mount(el) {
     ui.sel = ui.sel === id ? null : id; ui.ask = null; ui.tip = ''; ui.redo = null; paint();
   }
   // The players a follow-up offers.
-  const followOpts = a => (a.kind === 'ast' ? (a.bench ? team[a.team].players.filter(p => p.id !== a.shooter && !onCourt(a.team, p.id) && !G.flags[p.id]).map(p => p.id) : five(a.team).filter(id => id !== a.shooter)) : (a.opts || []).map(o => o.id));
+  function followOpts(a) {
+    return (a.kind === 'ast' ? (a.bench ? team[a.team].players.filter(p => p.id !== a.shooter && !onCourt(a.team, p.id) && !G.flags[p.id]).map(p => p.id) : five(a.team).filter(id => id !== a.shooter))
+    : a.kind === 'rebound' ? [...five(other(a.miss)), ...five(a.miss)] : (a.opts || []).map(o => o.id));
+  }
   // Free throws still owed on the foul panel.
   const owed = () => !!(ui.ask && ui.ask.kind === 'fp' && ui.ask.n && ui.ask.done < ui.ask.n);
   // A hold (player card, a button's kinds) or a swipe ends with the finger lifting, and the
