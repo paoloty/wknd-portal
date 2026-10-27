@@ -11,7 +11,7 @@
 //
 // Both orders work (scorers come from wknd-stats, which is stat first): tap a player then the
 // stat, or a stat (it lights up) then the player. Buttons with a corner mark: tap = the usual,
-// hold = the other kinds (TO, FOUL). Hold the score for the score by quarter, hold a player for
+// hold = the other kinds (TO, FOUL, REB: offensive or defensive). Hold the score for the score by quarter, hold a player for
 // their line. After some plays a question takes the stat buttons' place (assisted?, who lost
 // it?, the foul panel with its free throws, who went off?); tapping the next player or stat
 // skips it, except free throws.
@@ -440,9 +440,10 @@ export async function mount(el) {
   // (Paolo, 2026-10-26: ten in one strip was too long, a swap button one tap too many).
   const reboundAsk = missTeam => ({ kind: 'rebound', q: 'Rebound?', skip: 'No rebound', miss: missTeam });
   // Steal right after the other team's turnover: one play (the steal says who lost it), no
-  // question. Block right after the other team's missed shot: linked to it, no question.
-  // Otherwise: Who lost it? / Whose shot? (that one also records their missed shot).
-  function simple(type, flashText) {
+  // question. Block right after the other team's missed shot: linked to it, then Rebound?.
+  // Otherwise: Who lost it? / Whose shot? (that one also records their missed shot, then Rebound?).
+  // extra: fields for the play, e.g. a rebound's kind ('off' | 'def') picked by holding REB.
+  function simple(type, flashText, extra = {}) {
     const pid = ui.sel; const t = byId[pid].team; const wasOn = five(t).slice();
     const prev = G.rows[G.rows.length - 1];
     if (type === 'stl' && prev && prev.type === 'to' && prev.team === other(t) && prev.player && !ui.after) {
@@ -452,10 +453,11 @@ export async function mount(el) {
     }
     if (type === 'blk' && prev && prev.type === 'shot' && !prev.made && prev.team === other(t)) {
       add({ type: 'blk', team: t, player: pid, ref: prev.id }, { flash: { text: flashText, tone: 'plain' } });
-      ui.sel = null; ui.tip = ''; ui.ask = null; benchIn(pid, t, wasOn); return paint();
+      // A block is usually followed by a rebound (Paolo, 2026-10-27): ask, as after a miss.
+      ui.sel = null; ui.tip = ''; ui.ask = reboundAsk(prev.team); benchIn(pid, t, wasOn); return paint();
     }
-    const e = add({ type, team: t, player: pid }, { flash: { text: flashText, tone: 'plain' } });
-    if (type === 'reb') { const row = G.rows.find(r => r.id === e.id); ui.flash.text = row && row.off ? 'OREB' : 'REB'; }
+    const e = add({ type, team: t, player: pid, ...extra }, { flash: { text: flashText, tone: 'plain' } });
+    if (type === 'reb') { const row = G.rows.find(r => r.id === e.id); ui.flash.text = row && row.off ? 'OREB' : extra.kind === 'def' ? 'DREB' : 'REB'; }
     ui.sel = null; ui.tip = '';
     ui.ask = type === 'stl' ? { kind: 'lost', ref: e.id, team: t, o: other(t), q: 'Who lost it?', opts: five(other(t)).map(id => ({ id, label: short(id) })), skip: 'Team turnover' }
       : type === 'blk' ? { kind: 'blocked', ref: e.id, team: t, o: other(t), pts: 2, q: 'Whose shot?', opts: five(other(t)).map(id => ({ id, label: short(id) })), skip: 'Skip' } : null;
@@ -536,7 +538,9 @@ export async function mount(el) {
         events.set(miss.id, miss);
         G = fold(); save().then(sync);
       }
-      ui.ask = null;
+      // Then the rebound off the block, only if they answered: a skipped first question means
+      // they're moving on, so no second one (Paolo, 2026-10-27).
+      ui.ask = id ? reboundAsk(a.o) : null;
     } else if (a.kind === 'andone') {
       ui.ask = null;
       if (id) {
@@ -548,7 +552,9 @@ export async function mount(el) {
       if (id) add({ type: 'sub', team: a.team, in: a.pid, out: id });
       ui.ask = null;
     } else if (a.kind === 'rebound') {
-      if (id) add({ type: 'reb', team: byId[id].team, player: id }, { flash: { text: 'REB', tone: 'plain' } });
+      // Its kind from the question (whose miss it was), not guessed: after a block whose shooter
+      // was skipped there's no miss in the plays to guess from.
+      if (id) { const off = byId[id].team === a.miss; add({ type: 'reb', team: byId[id].team, player: id, kind: off ? 'off' : 'def' }, { flash: { text: off ? 'OREB' : 'REB', tone: 'plain' } }); }
       ui.ask = null;
     } else if (a.kind === 'foulout') {
       if (id) { const tiles = [...five(a.team)], auto = tiles.find(x => !G.lastActive[a.team].includes(x)); add({ type: 'sub', team: a.team, in: id, out: a.pid }); if (auto && auto !== id) slots[a.team] = tiles.map(x => (x === auto ? id : x)); }
@@ -568,13 +574,18 @@ export async function mount(el) {
   const TAP = {
     pf: () => want('pf', () => foul('personal')),
     to: () => want('to', () => turnover(null)),
+    reb: () => want('reb', () => simple('reb', 'REB')),
     score: () => {},
   };
   const FOULS = [['personal', 'Personal'], ['shooting', 'Shooting'], ['offensive', 'Offensive'], ['technical', 'Technical'], ['unsportsmanlike', 'Unsportsmanlike'], ['disqualifying', 'Disqualifying']];
   const TOS = [['bad pass', 'Bad pass'], ['lost ball', 'Lost ball'], ['travel', 'Travel'], ['double dribble', 'Double dribble'], ['out of bounds', 'Out of bounds']];
+  const REBS = [['off', 'Offensive'], ['def', 'Defensive']];
   const HOLD = {
     pf: () => menu('Foul: what kind?', FOULS, k => (ui.sel ? foul(k) : want(`pf:${k}`, () => foul(k))), 'personal'),
     to: () => menu('Turnover: what kind?', TOS, k => (ui.sel ? turnover(k) : want(`to:${k}`, () => turnover(k)))),
+    // A tap works out offensive or defensive from the play before; a hold says which (Paolo,
+    // 2026-10-27: the guess is wrong when the miss wasn't logged or a play sits in between).
+    reb: () => menu('Rebound: which kind?', REBS, k => (ui.sel ? simple('reb', 'REB', { kind: k }) : want(`reb:${k}`, () => simple('reb', 'REB', { kind: k })))),
     score: () => { ui.peek = 'score'; paint(); },
   };
   // The team's name is its menu: team plays in labelled rows (the row says what kind, so the
@@ -998,7 +1009,7 @@ export async function mount(el) {
         ${shots.map(p => `<button type="button" class="sc-st sc-st--miss${arm(`s${p}x`)}" data-shot="${p}" aria-pressed="${!!arm(`s${p}x`)}" aria-label="${lab(p)} missed">${lab(p)}</button>`).join('')}
       </div>
       <div class="sc-pad sc-pad--6">
-        <button type="button" class="sc-st${arm('reb')}" data-act="reb" aria-label="Rebound (offensive or defensive is worked out)">REB</button>
+        <button type="button" class="sc-st hold${ui.arm && /^reb/.test(ui.arm.key) ? ' arm' : ''}" data-hold="reb" aria-label="Rebound: offensive or defensive is worked out. Hold to pick">REB</button>
         <button type="button" class="sc-st${arm('ast')}" data-act="ast" aria-label="Assist">AST</button>
         <button type="button" class="sc-st${arm('stl')}" data-act="stl" aria-label="Steal">STL</button>
         <button type="button" class="sc-st${arm('blk')}" data-act="blk" aria-label="Block">BLK</button>
@@ -1456,11 +1467,11 @@ export async function mount(el) {
   if (wide.addEventListener) wide.addEventListener('change', () => paint());
 
   // ── Gestures (Paolo, 2026-10-26) ──
-  // Swipe a stat button up: FOUL and TO open their kinds (as a hold); a made 2PT/3PT/4PT is the
+  // Swipe a stat button up: FOUL, TO and REB open their kinds (as a hold); a made 2PT/3PT/4PT is the
   // basket plus the foul on the shot (and-one).
   let flick = null;
   root.addEventListener('pointerdown', e => {
-    const b = e.target.closest('[data-hold="pf"], [data-hold="to"], [data-shot][data-made]');
+    const b = e.target.closest('[data-hold="pf"], [data-hold="to"], [data-hold="reb"], [data-shot][data-made]');
     flick = b && !ui.locked ? { b, x: e.clientX, y: e.clientY, done: false } : null;
   });
   root.addEventListener('pointermove', e => {
