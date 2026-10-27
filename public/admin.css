@@ -3183,3 +3183,14 @@ select.aui-input { padding-left: 9px; }
 .agl-rv { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 .agl-rv__bar { width: 48px; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
 .agl-rv__bar i { display: block; height: 100%; background: var(--amber); }
+
+/* Admin → Barkadahan (views/admin/barkadahan.js): the archive, read-only */
+.bkadm-row { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr) auto; grid-template-areas: "who body act" "who meta act"; align-items: center; gap: 4px 14px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.06); }
+.bkadm-row:first-child { border-top: 0; }
+.bkadm-row > .aui-who { grid-area: who; }
+.bkadm-row .bkadm-body { grid-area: body; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.bkadm-row > .aui-muted { grid-area: meta; font-size: 12px; }
+.bkadm-row > .aui-row { grid-area: act; justify-content: flex-end; }
+.bkadm-row.is-del .bkadm-body { text-decoration: line-through; opacity: .55; }
+.bkadm-online { flex-wrap: wrap; gap: 10px 16px; }
+@media (max-width: 640px) { .bkadm-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who act" "body body" "meta meta"; } }

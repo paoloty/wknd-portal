@@ -57,6 +57,7 @@ export const icons = {
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>',
   faceid: svg('<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1M15 9v1M12 9v4h-1M9 15.5c1.8 1.4 4.2 1.4 6 0"/>'),
   book: svg('<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5z"/><path d="M5 20.5A2.5 2.5 0 0 0 7.5 23H19M9 7.5h6"/>'),
+  chat: svg('<path d="M4 5.5h16v10.5H9.5L4 20z"/>'),
 };
 // The app keeps players inside it: only links to /app screens are tappable. Rows about
 // something not built into the app yet (balance, sign-ups, picks) show as information with
@@ -175,7 +176,8 @@ function installWallHtml() {
 // pill at the top and in the home-screen name.
 // ga: server.js buildAppGaSnippet (signed-in players on the live domain, unless they turned
 // Analytics off), or ''.
-export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '', test = '', ga = '' }) {
+// bk: the player's id when the Barkadahan is on (public/app.js opens the live connection), else ''.
+export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '', test = '', ga = '', bk = '' }) {
   const badge = key => {
     const n = Number(badges[key]) || 0;
     return n ? `<span class="tab__badge tab__badge--${key === 'me' ? 'err' : 'warn'}" aria-label="${n} waiting">${n > 9 ? '9+' : n}</span>` : '';
@@ -191,7 +193,8 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <meta name="robots" content="noindex, nofollow">
   <meta name="app-ver" content="${esc(ver)}">
   <meta name="app-time" content="${Date.now()}">
-  <meta name="app-who" content="${esc(who)}">
+  <meta name="app-who" content="${esc(who)}">${bk ? `
+  <meta name="app-bk" content="${esc(bk)}">` : ''}
   <meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0e16" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">

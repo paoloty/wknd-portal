@@ -1,7 +1,7 @@
 // Pieces of the player's game day, shared by the tabs: the Up next countdown (My Team), the
 // To do list (Me), and Home's header, Finish setup and Add to Home Screen cards. Home itself
 // is the feed (views/app/feed.js appHomeFeedPage).
-import { esc, appLogo, icons, ballSvg, isAppHref, soonTag } from './layout.js';
+import { esc, appLogo, icons, ballSvg, isAppHref, soonTag, appAvatar } from './layout.js';
 
 // tipAt: epoch ms of tip-off (Manila), or 0 when the time isn't set — the countdown then
 // counts to the start of game day. app.js ticks it every minute.
@@ -57,7 +57,17 @@ export const installCard = `<div class="card install" data-install-card hidden s
   </div>
 </div>`;
 
-// Home's large title: the logo, and the bell for notifications (red count while unread).
-export function homeHeader({ phase, unread = 0 }) {
-  return `<header class="lt lt--logo">${appLogo(phase)}<a class="bell" href="/app/notifications" aria-label="Notifications${unread ? `, ${unread} unread` : ''}">${icons.bell}${unread ? `<span class="badge-dot">${unread > 9 ? '9+' : unread}</span>` : ''}</a></header>`;
+// Home's large title: the logo, the Barkadahan (when it's on: an amber count of new messages)
+// and the bell for notifications (red count while unread).
+// bk: { unread, online, faces: [{ pid, initials, ring, photo }], latest: { name, body } | null } or null.
+export function homeHeader({ phase, unread = 0, bk = null }) {
+  const chat = bk ? `<a class="bell bk-icon" href="/app/barkadahan" aria-label="Barkadahan${bk.unread ? `, ${bk.unread} new` : ''}">${icons.chat}<span class="badge-dot bk-badge" data-bk-badge${bk.unread ? '' : ' hidden'}>${bk.unread > 9 ? '9+' : bk.unread}</span></a>` : '';
+  return `<header class="lt lt--logo">${appLogo(phase)}<span class="lt__icons">${chat}<a class="bell" href="/app/notifications" aria-label="Notifications${unread ? `, ${unread} unread` : ''}">${icons.bell}${unread ? `<span class="badge-dot">${unread > 9 ? '9+' : unread}</span>` : ''}</a></span></header>`;
+}
+// The Barkadahan on Home (mockup screen 1): who's online and the latest line.
+export function barkadahanCard(bk) {
+  if (!bk) return '';
+  const faces = bk.faces.slice(0, 4).map(f => appAvatar({ playerId: f.pid, initials: f.initials, ring: f.ring, photoUrl: f.photo })).join('');
+  return `<div class="sec">Barkadahan</div>
+  <a class="fc bk-card" href="/app/barkadahan"><span class="bk-card__t"><b><span data-bk-online>${bk.online}</span> online now</b><small>${bk.latest ? `${esc(bk.latest.name)}: ${esc(bk.latest.body)}` : 'Say hi to the barkada'}</small></span>${faces ? `<span class="av-stack bk-card__faces">${faces}</span>` : ''}</a>`;
 }

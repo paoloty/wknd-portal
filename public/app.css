@@ -2294,3 +2294,83 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .pr-team { cursor: pointer; }
 .pr-team input { order: 9; width: 20px; height: 20px; margin: 0; accent-color: var(--amber); }
 .pr-go { padding: 20px 16px 0; }
+
+/* Barkadahan (views/app/barkadahan.js + public/barkadahan.js, 2026-10-27): the app's chat room,
+   full screen like a chat app. Yours on the right, tinted amber; others with face, first name,
+   team dot. Amber is the only accent; the online dot is the app's win green. */
+.app:has(.bk) { padding-bottom: 0; }
+.bk { display: flex; flex-direction: column; height: calc(100dvh - var(--safe-t)); padding-bottom: var(--safe-b); box-sizing: border-box; }
+.bk__nav { flex: none; }
+.bk__online { justify-self: end; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.bk__online i { width: 7px; height: 7px; border-radius: 50%; background: var(--win); }
+.bk__list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 10px; }
+.bk-start { margin: 8px 0; text-align: center; font-size: 12px; color: var(--muted); }
+.bk-day { align-self: center; margin: 8px 0 2px; font: 700 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.bk-m { display: flex; align-items: flex-end; gap: 8px; max-width: 86%; }
+.bk-m.is-cont { margin-top: -3px; padding-left: 38px; }
+.bk-m .avatar { width: 30px; height: 30px; font-size: 11px; }
+.bk-m__b { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bk-who { display: flex; align-items: center; gap: 6px; padding-left: 2px; font-size: 12px; color: var(--muted); }
+.bk-who b { color: var(--text); font-weight: 600; }
+.bk-who .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.bk-bub { align-self: flex-start; max-width: 100%; padding: 8px 12px; border-radius: 18px 18px 18px 6px; background: var(--surface-2); font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.bk-bub.is-emo { padding: 0; background: none; font-size: 32px; line-height: 1.1; }
+.bk-bub.is-del { font-size: 13px; font-style: italic; color: var(--muted); background: none; border: 1px dashed var(--hair); }
+.bk-m.is-me { align-self: flex-end; }
+.bk-m.is-me .bk-m__b { align-items: flex-end; }
+.bk-m.is-me .bk-bub { align-self: flex-end; border-radius: 18px 18px 6px 18px; background: color-mix(in srgb, var(--amber) 18%, var(--surface-2)); }
+.bk-m.is-me .bk-bub.is-emo { background: none; }
+.bk-q { display: block; margin: 0 0 6px; padding: 4px 8px; border-left: 2px solid var(--amber); border-radius: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); font-size: 12px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-q b { display: block; color: var(--text); font-weight: 600; }
+.bk-at { color: var(--amber-text); font-weight: 600; }
+.bk-rx { display: flex; flex-wrap: wrap; gap: 4px; }
+.bk-rx__b { display: inline-flex; align-items: center; gap: 3px; min-height: 28px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--hair); background: var(--card-bg); font-size: 13px; line-height: 1; }
+.bk-rx__b b { font: 700 12px/1 var(--font-num); }
+.bk-rx__b.is-mine { border-color: var(--amber); }
+.bk-st { font-size: 11px; color: var(--muted); }
+.bk-st button { color: var(--amber-text); font-weight: 600; font-size: 11px; min-height: 28px; padding: 0 4px; }
+.bk__typing { flex: none; margin: 0; min-height: 16px; padding: 0 16px 2px; font-size: 12px; color: var(--muted); }
+.bk__reply { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 12px 6px; padding: 6px 4px 6px 10px; border-left: 2px solid var(--amber); border-radius: 8px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
+.bk__reply span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk__reply b { color: var(--text); font-weight: 600; margin-right: 6px; }
+.bk__reply button { flex: none; width: 44px; height: 36px; font-size: 18px; color: var(--muted); }
+.bk__mention { flex: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 12px 6px; }
+.bk__mention button { min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface-2); color: var(--amber-text); font-size: 13px; font-weight: 600; }
+.bk__bar { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--hair); }
+.bk__emo { flex: none; width: 44px; height: 44px; border-radius: 50%; font-size: 22px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.bk__in { flex: 1; min-width: 0; min-height: 44px; max-height: 120px; box-sizing: border-box; resize: none; padding: 11px 14px; border: 0; border-radius: 22px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 16px; line-height: 1.35; }
+.bk__send { flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--amber); color: #1a1205; display: flex; align-items: center; justify-content: center; }
+.bk__send svg { width: 20px; height: 20px; }
+.bk__cant { flex: none; margin: 0; padding: 14px 16px; border-top: 1px solid var(--hair); font-size: 13px; color: var(--muted); text-align: center; }
+/* Hold a message: reactions on top, the message, then what you can do with it. */
+.bk-hold { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(5, 7, 12, .72); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.bk-hold__in { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 10px; }
+.bk-hold__rx { align-self: flex-start; display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--card-bg); border: 1px solid var(--border); }
+.bk-hold__rx button { width: 44px; height: 44px; border-radius: 50%; font-size: 24px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.bk-hold__rx button.is-on { background: color-mix(in srgb, var(--amber) 22%, transparent); }
+.bk-hold__msg { align-self: flex-start; max-width: 100%; padding: 10px 14px; border-radius: 18px; background: var(--surface-2); color: var(--text); font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.bk-hold__acts { align-self: flex-start; min-width: 220px; display: flex; flex-direction: column; border-radius: var(--r-in); overflow: hidden; background: var(--card-bg); border: 1px solid var(--border); }
+.bk-hold__acts button { min-height: 46px; padding: 0 16px; text-align: left; font-size: 15px; color: var(--text); border-top: 1px solid var(--hair); }
+.bk-hold__acts button:first-child { border-top: 0; }
+.bk-hold__acts button.red { color: var(--danger); }
+/* The emoji sheet, above the message box. */
+.bk-emo { flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; padding: 10px 12px 6px; border-top: 1px solid var(--hair); background: var(--card-bg); }
+.bk-emo__l { font: 700 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 2px 4px; }
+.bk-emo__grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
+.bk-emo__grid button { height: 44px; border-radius: 10px; font-size: 24px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.bk-emo__grid button:active { background: var(--surface-2); }
+/* Who's online */
+.bk-av { position: relative; flex: none; }
+.bk-av.is-on::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--win); box-shadow: 0 0 0 2px var(--card-bg); }
+.cell__v.bk-now { color: var(--win); font-weight: 600; }
+/* Home: the chat icon beside the bell (amber count) and the Barkadahan card */
+.lt__icons { display: flex; align-items: center; gap: 2px; }
+.bk-icon .badge-dot.bk-badge { background: var(--amber); color: #1a1205; }
+.bk-icon .badge-dot[hidden] { display: none; }
+.bk-card { display: flex; align-items: center; gap: 12px; color: var(--text); }
+.bk-card__t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.bk-card__t b { font-size: 15px; font-weight: 600; }
+.bk-card__t small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-card__faces { flex: none; display: flex; }
+.bk-card__faces .avatar-wrap + .avatar-wrap { margin-left: -8px; }
+.bk-card__faces .avatar { width: 28px; height: 28px; font-size: 10px; box-shadow: 0 0 0 2px var(--card-bg); }

@@ -305,6 +305,53 @@
   // A game being scored (views/app/feed.js appLiveParts): public/live-score.js keeps it fresh,
   // and on every other screen closes its socket.
   // Live chat on a live game (views/live-chat.js): public/live-chat.js, loaded on that screen.
+  // ════ The app's live connection (server.js /ws/app, Barkadahan) ════
+  // Open while the app is on screen (that's what "online" means), closed when it's put away.
+  // It brings the Barkadahan's news: the online count, new messages (the Home icon's count
+  // goes up when you're not in the room), reactions, deletions, typing. The room's own script
+  // (public/barkadahan.js) listens for 'wknd:bk'. meta app-bk = this player's id, only when on.
+  (function () {
+    var meta = document.querySelector('meta[name="app-bk"]');
+    if (!meta || !window.WebSocket) return;
+    var mePid = meta.getAttribute('content'), ws = null, retry = 0, ping = null;
+    var badge = function (n) { $$('[data-bk-badge]').forEach(function (b) { b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; }); };
+    var shown = function () { var b = $('[data-bk-badge]'); return b && !b.hidden ? (parseInt(b.textContent, 10) || 0) : 0; };
+    function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+    function open() {
+      if (ws || document.visibilityState !== 'visible' || !navigator.onLine) return;
+      try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/app'); } catch (e) { ws = null; return; }
+      ws.onopen = function () { retry = 0; clearInterval(ping); ping = setInterval(function () { send({ type: 'ping' }); }, 60000); };
+      ws.onmessage = function (e) {
+        var d; try { d = JSON.parse(e.data); } catch (x) { return; }
+        var inRoom = !!$('[data-bk]');
+        if (d.type === 'online') { $$('[data-bk-online]').forEach(function (x) { x.textContent = d.n; }); if (d.unread != null && !inRoom) badge(d.unread); }
+        if (d.type === 'msg' && d.m && d.m.pid !== mePid && !inRoom) badge(shown() + 1);
+        window.dispatchEvent(new CustomEvent('wknd:bk', { detail: d }));
+      };
+      ws.onclose = function () { ws = null; clearInterval(ping); if (document.visibilityState === 'visible') setTimeout(open, Math.min(30000, 1000 * Math.pow(2, retry++))); };
+    }
+    window.wkndAppSocket = { send: send };
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') open(); else if (ws) ws.close(); });
+    window.addEventListener('online', open);
+    open();
+  })();
+  function initBarkadahan() {
+    if (window.wkndBarkadahan) return window.wkndBarkadahan.scan();
+    if (!$('[data-bk]') || initBarkadahan.loading) return;
+    initBarkadahan.loading = true;
+    var s = document.createElement('script'); s.src = '/barkadahan.js?v=' + ver;
+    s.onerror = function () { initBarkadahan.loading = false; };
+    document.head.appendChild(s);
+  }
+  // Settings → Privacy → Show me as online (Barkadahan).
+  function initOnlineSwitch() {
+    var sw = $('[data-online-visible]');
+    if (!sw || sw._bound) return;
+    sw._bound = true;
+    sw.addEventListener('change', function () {
+      postJson('/app/online-visibility', { on: sw.checked }).then(function () { toast(sw.checked ? 'You show as online' : 'You’re hidden from the online list'); }, function () { sw.checked = !sw.checked; toast('Couldn’t save that. Try again.', 'err'); });
+    });
+  }
   function initChat() {
     if (window.wkndChat) return window.wkndChat.scan();
     if (!$('[data-live-chat]') || initChat.loading) return;
@@ -566,7 +613,7 @@
     initScorer();
     initLive(); initChat();
     initGameRecap();
-    initPractice(); initGuide();
+    initPractice(); initGuide(); initBarkadahan(); initOnlineSwitch();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s
     clearInterval(cdTimer);
@@ -685,6 +732,7 @@
   }
   // A short notice above the tab bar, coloured by tone (CLAUDE.md "Notices"): ok = green
   // (done), err = red (problem), warn = amber (needs attention), info = neutral.
+  window.wkndToast = function (t, tone) { toast(t, tone); };
   function toast(text, tone) {
     tone = tone || 'ok';
     $$('.app-toast').forEach(function (t) { t.remove(); });

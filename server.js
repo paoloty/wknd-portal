@@ -3104,13 +3104,15 @@ app.post('/webhooks/resend', express.raw({ type: '*/*', limit: '256kb' }), (req,
 });
 
 const SessionStore = SqliteStore(session);
-app.use(session({
+// Kept as a value: the app's live connection (/ws/app, Barkadahan) reads the session too.
+const sessionMw = session({
   store: new SessionStore({ client: portalDb, expired: { clear: true, intervalMs: 15 * 60 * 1000 } }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: { httpOnly: true, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000 }
-}));
+});
+app.use(sessionMw);
 app.use(express.urlencoded({ extended: false }));
 
 // Staging and local dev serve the same pages as prod: keep every response on them out of
@@ -6071,12 +6073,15 @@ app.get('/logout', (req, res) => {
 import { randomInt } from 'crypto';
 import { appPage } from './views/app/layout.js';
 import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, appNotYetPage, appOfflinePage } from './views/app/auth.js';
-import { homeHeader, setupCard, installCard } from './views/app/home.js';
+import { homeHeader, barkadahanCard, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts, appLiveNow } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
 import { appPracticePage } from './views/app/practice.js';
 import { appScorerGuidePage, appScorerChapterPage } from './views/app/help.js';
 import { adminScorersBody } from './views/admin/scorers.js';
+import { appBarkadahanPage, appBarkadahanOnlinePage } from './views/app/barkadahan.js';
+import { adminBarkadahanBody } from './views/admin/barkadahan.js';
+import { addBarkadahanMessage, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -6130,7 +6135,7 @@ const appInstallRequired = () => getSetting('app_require_install', '1') === '1';
 // app. (Pushes there only reach the developer: lib/push.js.)
 const GIT_BRANCH = (() => { try { return execSync('git rev-parse --abbrev-ref HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } })();
 const appTestLabel = req => (req && !isProdHost(req) ? `Test server${GIT_BRANCH && GIT_BRANCH !== 'HEAD' ? ` · ${GIT_BRANCH}` : ''}` : '');
-const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(res.req), ga: buildAppGaSnippet(res.req), ...opts }));
+const sendApp = (res, opts) => res.send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(res.req), ga: buildAppGaSnippet(res.req), bk: barkadahanOn() && res.req.session?.playerPlayerId && !res.req.session?.impersonating ? res.req.session.playerPlayerId : '', ...opts }));
 
 // 'anon' | 'admin' (super-admin login, no player) | 'no-player' | 'not-yet' | 'ok'
 const appBetaList = () => String(getSetting('app_beta', '')).toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -6579,8 +6584,15 @@ app.get('/app', requireApp, (req, res) => {
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
   // The site's poll popup, full screen over Home (views/app/poll.js).
   const poll = popupPollFor(req);
+  // The Barkadahan (when it's on): the chat icon's count and the Home card.
+  let bk = null;
+  if (barkadahanOn()) {
+    const last = getBarkadahanMessages({ limit: 10 }).reverse().find(m => !m.deleted_at), on = bkOnlineIds();
+    bk = { unread: countBarkadahanUnread(me.playerId), online: on.length, faces: on.filter(id => id !== me.playerId).slice(0, 4).map(bkPerson),
+      latest: last ? { name: bkPerson(last.player_id).name.split(' ')[0], body: last.body.length > 80 ? `${last.body.slice(0, 80)}…` : last.body } : null };
+  }
   sendTab(res, me, { title: 'WKND', tab: 'home', body: (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
-    header: homeHeader({ phase: appPhase(), unread: me.unread }),
+    header: homeHeader({ phase: appPhase(), unread: me.unread, bk }) + barkadahanCard(bk),
     setupHtml: setupCard(setup), installHtml: installCard,
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
   }) });
@@ -7271,6 +7283,172 @@ app.get('/app/help/scoring/:slug', requireApp, requireScoringMenu, (req, res) =>
   if (!body) return res.redirect('/app/help/scoring');
   sendTab(res, appMe(req), { title: 'How to score · WKND', tab: 'me', body });
 });
+
+// ── Barkadahan (2026-10-27): the app's one chat room, app only (Paolo: "make this app
+// exclusive"). mockup claude.ai/artifact/Jgcp866jfgbxtXMz3JWAyU. Behind barkadahan_enabled
+// (off until switched on in Admin → Super Admin → Barkadahan). Online = the app is open on
+// screen: every app page keeps one live connection (/ws/app, public/app.js) while visible. New
+// messages, reactions, deletions, typing and the online count go out over it; writes are plain
+// POSTs. Players see the last 30 days; super admins read the whole archive in admin (no posting
+// there). @mentions and replies notify through createNotification (bell + push).
+const barkadahanOn = () => getSetting('barkadahan_enabled', '0') === '1';
+const BK_REACTIONS = ['👍', '❤️', '😂', '🔥', '🏀', '😮'];
+const BK_MAX = 500;
+const appSockets = new Map(); // playerId -> Set<WebSocket>
+const bkPerson = pid => {
+  const p = getPlayerById(pid);
+  const full = displayPlayerName(p?.name || '');
+  const [first = '', ...rest] = full.split(' ');
+  const last = rest.join(' ');
+  const teams = getAllTeams();
+  return { pid, name: last ? `${first} ${last.charAt(0)}.` : first || 'Someone', full, initials: initials(full), ring: teamColorById(teams, p?.team_id), team: teams.find(t => t.id === p?.team_id)?.name || '', photo: playerPhotoUrl(pid, 96) };
+};
+const bkOnlineIds = () => [...appSockets.keys()].filter(id => [...appSockets.get(id)].some(ws => ws.readyState === ws.OPEN) && !getPlayerById(id)?.online_hidden);
+function bkSend(payload, onlyTo = null) {
+  const msg = JSON.stringify(payload);
+  for (const [pid, set] of appSockets) {
+    if (onlyTo && !onlyTo.includes(pid)) continue;
+    for (const ws of set) if (ws.readyState === ws.OPEN) ws.send(msg);
+  }
+}
+let bkOnlineT = null;
+const bkOnlineChanged = () => { if (bkOnlineT) return; bkOnlineT = setTimeout(() => { bkOnlineT = null; bkSend({ type: 'online', n: bkOnlineIds().length }); }, 1000); };
+// A message as the app draws it (public/barkadahan.js).
+function bkShape(m, rx = {}) {
+  const who = bkPerson(m.player_id);
+  const reply = m.reply_to ? getBarkadahanMessage(m.reply_to) : null;
+  return {
+    id: m.id, at: m.created_at, ...who, deleted: !!m.deleted_at,
+    body: m.deleted_at ? '' : m.body, mentions: m.deleted_at ? [] : JSON.parse(m.mentions || '[]'),
+    reply: reply ? { id: reply.id, name: bkPerson(reply.player_id).name, body: reply.deleted_at ? 'Deleted message' : reply.body.slice(0, 120) } : null,
+    rx: m.deleted_at ? {} : rx,
+  };
+}
+const bkMessages = opts => { const rows = getBarkadahanMessages(opts); const rx = getBarkadahanReactions(rows.map(r => r.id)); return rows.map(m => bkShape(m, rx[m.id] || {})); };
+const bkIsMod = pid => isGameAdminPlayer(pid);
+// Why this player can't post right now, or ''.
+function bkCantPost(pid) {
+  const p = getPlayerById(pid);
+  if (p?.banned_at) return 'You can read the Barkadahan, but posting is off while your account is on hold.';
+  if (p?.barkadahan_muted_until > Date.now()) return `An admin muted you until ${manilaFormat(p.barkadahan_muted_until, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
+  return '';
+}
+function requireBarkadahan(req, res, next) {
+  if (!barkadahanOn()) return req.method === 'GET' && !req.path.endsWith('/messages') ? res.redirect('/app') : res.status(404).json({ error: 'The Barkadahan is closed.' });
+  next();
+}
+const bkLastPost = new Map(); // playerId -> [times], a gentle flood guard
+app.get('/app/barkadahan', requireApp, requireBarkadahan, (req, res) => {
+  const me = appMe(req);
+  markBarkadahanRead(me.playerId);
+  const bundle = { me: { pid: me.playerId, mod: bkIsMod(me.playerId), cant: bkCantPost(me.playerId) }, messages: bkMessages({ limit: 60 }), online: bkOnlineIds().length, reactions: BK_REACTIONS,
+    people: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ pid: p.id, name: displayPlayerName(p.name || '') })) };
+  sendApp(res, { title: 'Barkadahan · WKND', bare: true, body: appBarkadahanPage({ bundle }) });
+});
+app.get('/app/barkadahan/messages', requireAppData, requireBarkadahan, (req, res) => {
+  const before = Number(req.query.before) || null;
+  res.json({ messages: bkMessages({ before, limit: 50 }), online: bkOnlineIds().length });
+});
+app.get('/app/barkadahan/online', requireApp, requireBarkadahan, (req, res) => {
+  const me = appMe(req);
+  const on = bkOnlineIds();
+  const midnight = Date.parse(`${manilaTodayStr()}T00:00:00+08:00`);
+  const earlier = getPlayersSeenSince(midnight).filter(r => !on.includes(r.id)).slice(0, 60);
+  const hiddenMe = !!getPlayerById(me.playerId)?.online_hidden;
+  sendTab(res, me, { title: 'Online · Barkadahan · WKND', tab: 'home', body: appBarkadahanOnlinePage({
+    now: on.map(bkPerson).sort((x, y) => x.full.localeCompare(y.full)), earlier: earlier.map(r => ({ ...bkPerson(r.id), seen: r.last_seen_at })), hiddenMe,
+  }) });
+});
+app.post('/app/barkadahan/messages', requireAppData, requireBarkadahan, express.json(), (req, res) => {
+  const pid = req.session.playerPlayerId;
+  if (req.session.impersonating) return res.status(403).json({ error: 'Viewing as a player is read-only.' });
+  const cant = bkCantPost(pid); if (cant) return res.status(403).json({ error: cant });
+  const body = String(req.body?.body || '').replace(/\s+$/g, '').replace(/^\s+/, '').slice(0, BK_MAX);
+  if (!body) return res.status(400).json({ error: 'Type a message first.' });
+  const now = Date.now(), recent = (bkLastPost.get(pid) || []).filter(t => now - t < 60000);
+  if (recent.length >= 20 || (recent.length && now - recent[recent.length - 1] < 600)) return res.status(429).json({ error: 'Slow down a little.' });
+  bkLastPost.set(pid, [...recent, now]);
+  const reply = req.body?.replyTo ? getBarkadahanMessage(String(req.body.replyTo)) : null;
+  // Mentions picked from the @ list, kept only if their @name is still in the message.
+  const mentions = [...new Set((Array.isArray(req.body?.mentions) ? req.body.mentions : []).map(String))]
+    .filter(id => id !== pid && getPlayerById(id) && body.includes(`@${displayPlayerName(getPlayerById(id).name || '')}`)).slice(0, 10);
+  const id = `bk_${now.toString(36)}_${randomBytes(4).toString('hex')}`;
+  const m = addBarkadahanMessage({ id, playerId: pid, body, replyTo: reply && !reply.deleted_at ? reply.id : null, mentions });
+  markBarkadahanRead(pid, m.created_at);
+  const shaped = bkShape(m);
+  bkSend({ type: 'msg', m: shaped });
+  const who = bkPerson(pid), snippet = body.length > 90 ? `${body.slice(0, 90)}…` : body;
+  for (const to of mentions) createNotification({ playerId: to, type: 'barkadahan_mention', title: `${who.name} mentioned you in the Barkadahan`, body: snippet, link: '/app/barkadahan', actorId: pid });
+  if (reply && reply.player_id !== pid && !mentions.includes(reply.player_id)) createNotification({ playerId: reply.player_id, type: 'barkadahan_reply', title: `${who.name} replied to you in the Barkadahan`, body: snippet, link: '/app/barkadahan', actorId: pid });
+  res.json({ ok: true, m: shaped });
+});
+app.post('/app/barkadahan/messages/:id/react', requireAppData, requireBarkadahan, express.json(), (req, res) => {
+  const pid = req.session.playerPlayerId, emoji = String(req.body?.emoji || '');
+  if (req.session.impersonating) return res.status(403).json({ error: 'Viewing as a player is read-only.' });
+  const m = getBarkadahanMessage(req.params.id);
+  if (!m || m.deleted_at || !BK_REACTIONS.includes(emoji)) return res.status(400).json({ error: 'Can’t react to that.' });
+  if (getPlayerById(pid)?.banned_at) return res.status(403).json({ error: bkCantPost(pid) });
+  toggleBarkadahanReaction(m.id, pid, emoji);
+  const rx = getBarkadahanReactions([m.id])[m.id] || {};
+  bkSend({ type: 'rx', id: m.id, rx });
+  res.json({ ok: true, rx });
+});
+// Delete: your own message, or any message for an admin.
+app.post('/app/barkadahan/messages/:id/delete', requireAppData, requireBarkadahan, (req, res) => {
+  const pid = req.session.playerPlayerId, m = getBarkadahanMessage(req.params.id);
+  if (!m || m.deleted_at) return res.json({ ok: true });
+  if (req.session.impersonating || (m.player_id !== pid && !bkIsMod(pid))) return res.status(403).json({ error: 'Only the sender or an admin can delete it.' });
+  deleteBarkadahanMessage(m.id, pid); resolveBarkadahanReports(m.id);
+  bkSend({ type: 'del', id: m.id });
+  res.json({ ok: true });
+});
+app.post('/app/barkadahan/messages/:id/report', requireAppData, requireBarkadahan, express.json(), (req, res) => {
+  const pid = req.session.playerPlayerId, m = getBarkadahanMessage(req.params.id);
+  if (!m || m.deleted_at) return res.status(404).json({ error: 'That message is gone.' });
+  if (m.player_id === pid) return res.status(400).json({ error: 'That’s your own message.' });
+  reportBarkadahanMessage({ id: `bkr_${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`, messageId: m.id, playerId: pid, reason: String(req.body?.reason || '').slice(0, 200) });
+  res.json({ ok: true, message: 'Reported. An admin will look at it.' });
+});
+// Mute (admins, from a message's menu): a day or a week; 0 lifts it.
+app.post('/app/barkadahan/mute/:playerId', requireAppData, requireBarkadahan, express.json(), (req, res) => {
+  const pid = req.session.playerPlayerId;
+  if (!bkIsMod(pid) || req.session.impersonating) return res.status(403).json({ error: 'Only admins can mute.' });
+  const target = getPlayerById(req.params.playerId); if (!target) return res.status(404).json({ error: 'Not found.' });
+  const days = [0, 1, 7].includes(Number(req.body?.days)) ? Number(req.body.days) : 1;
+  setBarkadahanMute(target.id, days ? Date.now() + days * 864e5 : null);
+  res.json({ ok: true, message: days ? `${displayPlayerName(target.name || '')} is muted for ${days === 1 ? 'a day' : 'a week'}.` : 'Mute lifted.' });
+});
+app.post('/app/barkadahan/read', requireAppData, requireBarkadahan, (req, res) => { markBarkadahanRead(req.session.playerPlayerId); res.json({ ok: true }); });
+// Settings → Privacy → Show me as online.
+app.post('/app/online-visibility', requireAppData, express.json(), (req, res) => {
+  setPlayerOnlineHidden(req.session.playerPlayerId, !req.body?.on);
+  bkOnlineChanged();
+  res.json({ ok: true });
+});
+// The live connection's who-is-it: the session, read the same way the pages read it.
+function appSocketPlayer(req) {
+  return new Promise(resolve => sessionMw(req, {}, () => {
+    const s = req.session;
+    resolve(s?.playerPlayerId && !s.impersonating && appSessionValid(req) && appAccess(req) === 'ok' ? s.playerPlayerId : null);
+  }));
+}
+// Admin (super admins only, read-only: no posting from here, Paolo): the whole archive, the
+// reports, the switch.
+app.get('/admin/barkadahan', requireSuperAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 80), who = String(req.query.who || '');
+  const rows = getBarkadahanArchive({ q, playerId: who, limit: 300 });
+  const reports = getBarkadahanReports({ open: true });
+  const people = Object.fromEntries([...new Set([...rows.map(r => r.player_id), ...reports.map(r => r.author_id), ...reports.map(r => r.player_id), ...rows.map(r => r.deleted_by).filter(Boolean)])].map(id => [id, bkPerson(id)]));
+  const panel = settingsPanel([{ type: 'toggle', key: 'barkadahan_enabled', value: barkadahanOn(), reload: true, label: 'Barkadahan in the app', sub: 'One chat room for every signed-in player, with who’s online. App only. Players see the last 30 days; this page keeps everything.' }], { title: 'Barkadahan' });
+  res.send(renderAdminPage(req, { title: 'Barkadahan', currentPath: '/admin/barkadahan', body: adminBarkadahanBody({ panel, rows, reports, people, q, who, total: countBarkadahanArchive(), online: bkOnlineIds().map(bkPerson) }) }));
+});
+app.post('/admin/barkadahan/:id/delete', requireSuperAdmin, (req, res) => {
+  const m = getBarkadahanMessage(req.params.id);
+  if (m && !m.deleted_at) { deleteBarkadahanMessage(m.id, 'admin'); bkSend({ type: 'del', id: m.id }); }
+  if (m) resolveBarkadahanReports(m.id);
+  res.json({ ok: true, message: 'Message deleted.' });
+});
+app.post('/admin/barkadahan/:id/keep', requireSuperAdmin, (req, res) => { resolveBarkadahanReports(req.params.id); res.json({ ok: true, message: 'Report closed. The message stays.' }); });
 
 const sendScorer = (req, res, back) => {
   const game = getGameById(req.params.id);
@@ -8733,7 +8911,7 @@ app.get('/app/settings', requireApp, (req, res) => {
   ];
   const prefs = getPushPrefs(me.reg.id);
   const push = PUSH_KINDS.map(k => ({ ...k, on: prefs[k.key] !== false }));
-  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push, analytics: !getPlayerById(me.playerId)?.analytics_off }) });
+  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push, analytics: !getPlayerById(me.playerId)?.analytics_off, online: barkadahanOn() ? !getPlayerById(me.playerId)?.online_hidden : null }) });
 });
 // Settings → Analytics: { on }. Takes effect on the next page load (public/app.js reloads).
 app.post('/app/analytics', requireAppData, express.json(), (req, res) => {
@@ -11065,6 +11243,7 @@ app.get('/admin/site', requireAuth, (req, res) => {
         { label: 'MVP podium ballot', on: mvpPodiumEnabled(), where: 'MVP podium', href: '/admin/awards/podium' },
         { label: 'Player reports', on: flag('player_reports_enabled'), where: 'Fines & conduct', href: '/admin/fines' },
         { label: 'Comments & reactions', on: flag('comments_enabled'), where: 'this page', href: '/admin/site' },
+        { label: 'Barkadahan (app chat)', on: flag('barkadahan_enabled'), where: 'Barkadahan', href: '/admin/barkadahan' },
         { label: 'Player ratings (old)', on: flag('peer_ratings_enabled'), where: 'this page', href: '/admin/site' },
         { label: 'Rate your game', on: flag('game_ratings_enabled'), where: 'this page', href: '/admin/site' },
         { label: 'Join banner', on: flag('reg_open'), where: 'this page', href: '/admin/site' },
@@ -26318,6 +26497,36 @@ server.on('upgrade', (req, socket, head) => {
         if (room) { room.delete(ws); if (!room.size) marketplaceCommentRooms.delete(listingId); }
       });
     });
+    return;
+  }
+
+  // The app's live connection (Barkadahan): one per open app, signed-in players only. Says who's
+  // online, carries the room's news out, and the "is typing" signal in.
+  if (pathname === '/ws/app') {
+    if (!barkadahanOn()) { socket.destroy(); return; }
+    appSocketPlayer(req).then(pid => {
+      if (!pid) { socket.destroy(); return; }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        if (!appSockets.has(pid)) appSockets.set(pid, new Set());
+        appSockets.get(pid).add(ws);
+        setPlayerLastSeen(pid); bkOnlineChanged();
+        ws.send(JSON.stringify({ type: 'online', n: bkOnlineIds().length, unread: countBarkadahanUnread(pid) }));
+        let lastTyping = 0;
+        ws.on('message', raw => {
+          let d; try { d = JSON.parse(String(raw).slice(0, 200)); } catch { return; }
+          if (d?.type === 'typing' && Date.now() - lastTyping > 2500 && !bkCantPost(pid)) {
+            lastTyping = Date.now();
+            bkSend({ type: 'typing', pid, name: bkPerson(pid).name }, [...appSockets.keys()].filter(x => x !== pid));
+          }
+          if (d?.type === 'ping') setPlayerLastSeen(pid);
+        });
+        ws.on('close', () => {
+          const set = appSockets.get(pid);
+          if (set) { set.delete(ws); if (!set.size) appSockets.delete(pid); }
+          setPlayerLastSeen(pid); bkOnlineChanged();
+        });
+      });
+    }, () => socket.destroy());
     return;
   }
 
