@@ -2380,3 +2380,6 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 /* While the room is open the page behind it can't scroll or bounce (it moved the room). */
 html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .bk.is-pinned.is-kb { padding-bottom: 0; }
+
+/* A stat button swipe recognised (public/scorer.js flick): it lights until the finger lifts. */
+.sc-st.is-flick { box-shadow: inset 0 0 0 2px var(--amber); transform: translateY(-3px); transition: transform .12s ease-out; }

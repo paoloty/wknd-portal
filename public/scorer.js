@@ -1480,12 +1480,19 @@ export async function mount(el) {
   // click that follows must not land on what the hold just opened, however long the hold was.
   // The next touch clears it, so a quick tap right after still counts.
   let swallowClick = false, swallowNext = false;
-  window.addEventListener('pointerup', () => { if (swallowNext) { swallowNext = false; swallowClick = true; } }, true);
-  window.addEventListener('pointercancel', () => { swallowNext = false; }, true);
+  // iPhone (2026-10-27, a scorer: "swipe up goes straight to Fix"): when the screen redraws under
+  // a finger that's still down, iOS cancels the touch instead of ending it, then still taps
+  // whatever is under the finger when it lifts (the last play's Fix sits right above the shot
+  // buttons). So a hold or swipe also quiets every tap for a moment after the finger lifts,
+  // however the touch ended.
+  let gesture = false, quietUntil = 0;
+  const gestureEnd = () => { if (gesture) { gesture = false; quietUntil = Date.now() + 450; } };
+  window.addEventListener('pointerup', () => { if (swallowNext) { swallowNext = false; swallowClick = true; } gestureEnd(); }, true);
+  window.addEventListener('pointercancel', () => { swallowNext = false; gestureEnd(); }, true);
   root.addEventListener('pointerdown', () => { swallowClick = false; swallowNext = false; }, true);
   const STAT_BTN = b => b.hasAttribute('data-shot') || b.hasAttribute('data-hold') && b.getAttribute('data-hold') !== 'score' || /^(reb|ast|stl|blk)$/.test(b.getAttribute('data-act') || '');
   root.addEventListener('click', e => {
-    if (swallowClick && e.detail !== 0) { swallowClick = false; e.preventDefault(); return; }
+    if (e.detail !== 0 && (swallowClick || gesture || Date.now() < quietUntil)) { swallowClick = false; e.preventDefault(); return; }
     if (e.target.matches && e.target.matches('.sc-sheet--swipe')) { ui.sheet = false; return paint(); }
     const closable = ui.ask && (CLOSABLE.has(ui.ask.kind) || (ui.ask.kind === 'fp' && !ui.ask.n));
     if (closable && !e.target.closest('button, a, input, label, .sc-q, [data-pick], .sc-sheet, .sc-peek')) { ui.ask = null; return paint(); }
@@ -1556,7 +1563,7 @@ export async function mount(el) {
     if (!b || e.button > 0) return;
     const id = b.getAttribute('data-pick');
     clearTimeout(pickHold); holdAt = { x: e.clientX, y: e.clientY };
-    pickHold = setTimeout(() => { pickHold = null; ui.peek = id; swallowNext = true; paint(); }, HOLD_MS);
+    pickHold = setTimeout(() => { pickHold = null; ui.peek = id; swallowNext = true; gesture = true; paint(); }, HOLD_MS);
   });
   const cancelPickHold = () => { clearTimeout(pickHold); pickHold = null; };
   root.addEventListener('pointerup', cancelPickHold);
@@ -1569,7 +1576,7 @@ export async function mount(el) {
     const b = e.target.closest('[data-hold]'); if (!b) return;
     b._hx = e.clientX; b._hy = e.clientY; b._held = false;
     clearTimeout(b._ht);
-    b._ht = setTimeout(() => { b._held = true; b._ht = null; swallowNext = true; holdLong(b); }, HOLD_MS);
+    b._ht = setTimeout(() => { b._held = true; b._ht = null; swallowNext = true; gesture = true; holdLong(b); }, HOLD_MS);
   });
   root.addEventListener('pointermove', e => {
     const b = e.target.closest('[data-hold]'); if (!b || !b._ht) return;
@@ -1595,16 +1602,20 @@ export async function mount(el) {
     if (!flick || flick.done) return;
     const dy = e.clientY - flick.y, dx = e.clientX - flick.x;
     if (dy > -28 || Math.abs(dx) > Math.abs(dy)) return;
-    flick.done = true;
+    // Recognised: the button says so now, the play happens when the finger lifts (redrawing
+    // under a finger that's still down is what made iPhone tap Fix).
+    flick.done = true; gesture = true;
     const b = flick.b; clearTimeout(b._ht); b._ht = null; b._held = true;
+    b.classList.add('is-flick');
     swallowNext = true;
     const k = b.getAttribute('data-hold');
-    if (k) return HOLD[k]();
     const pts = Number(b.getAttribute('data-shot'));
-    if (pts > 1) want(`s${pts}a`, () => andOne(pts));
+    flick.run = k ? () => HOLD[k]() : pts > 1 ? () => want(`s${pts}a`, () => andOne(pts)) : null;
   });
-  root.addEventListener('pointerup', () => { flick = null; });
-  root.addEventListener('pointercancel', () => { flick = null; });
+  // Up or cancelled (iOS ends a swipe either way): a recognised swipe still does its thing.
+  const flickEnd = () => { const f = flick; flick = null; if (f && f.done && f.run) f.run(); };
+  window.addEventListener('pointerup', flickEnd);
+  window.addEventListener('pointercancel', flickEnd);
 
   // Swipe the last play left to undo it (the Undo button stays).
   let slide = null;
