@@ -2008,6 +2008,14 @@
             if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); initPapawis(); } }
             else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); initPapawis(); }
             skel.hidden = true;
+            // The feed's first two games are fetched ahead (most launches end in a tap on the
+            // latest result), so that tap opens at once. Not on data saver.
+            if (wasFirst && /^\/app\/feed\/items/.test(box.getAttribute('data-lazy-src')) && typeof prefetch === 'function'
+              && !(navigator.connection && navigator.connection.saveData)) {
+              var ahead = [];
+              $$('a[href^="/app/games/"]', items).forEach(function (a) { var u = urlOf(a.href); if (ahead.length < 2 && ahead.indexOf(u) === -1) ahead.push(u); });
+              setTimeout(function () { ahead.forEach(prefetch); }, 1500);
+            }
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
             end.textContent = '';
             if (next && (!io || nearBottom())) { if (io) load(); else showMore(); }
@@ -2096,9 +2104,11 @@
       if (!r.ok || !inApp(new URL(r.url).pathname) || !/text\/html/.test(r.headers.get('content-type') || '')) throw { reload: r.url };
       return r.text().then(function (html) {
         var page = { html: html, url: finalUrl, at: Date.now() };
-        // A screen the server says not to keep (an admin's game with its Review card) isn't
-        // reused from memory either: it's always fetched fresh.
-        if (!/no-store/.test(r.headers.get('cache-control') || '')) { pages[url] = page; if (finalUrl !== url) pages[finalUrl] = page; }
+        // A screen the server says not to keep (X-App-No-Copy: an admin's game with its Review
+        // card) isn't reused from memory either: it's always fetched fresh. Not Cache-Control:
+        // every app screen is no-store for the browser's cache (2026-10-27: reading that kept
+        // no screen at all for a day).
+        if (!r.headers.get('X-App-No-Copy')) { pages[url] = page; if (finalUrl !== url) pages[finalUrl] = page; }
         return page;
       });
     });

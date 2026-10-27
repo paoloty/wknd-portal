@@ -6173,6 +6173,9 @@ function requireApp(req, res, next) {
   if (a === 'admin' || a === 'no-player') return sendApp(res, { title: 'WKND', bare: true, body: appNotPlayerPage({ reason: a, phase: appPhase() }) });
   if (a === 'not-yet') return sendApp(res, { title: 'WKND', bare: true, body: appNotYetPage({ phase: appPhase() }) });
   markAppSession(req);
+  // Not for the browser's own cache (signed-in pages). The app's copies (public/app.js pages,
+  // public/app-sw.js PAGES) are its own and ignore this; a screen they must not keep says so
+  // with X-App-No-Copy (an admin's game screen with its Review card).
   res.set('Cache-Control', 'private, no-store');
   next();
 }
@@ -6895,7 +6898,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
   const court = g.court_id ? (getPapawisCourtById(g.court_id)?.name || '') : '';
   // An admin's Review card changes as reviews start and end: never kept on the phone.
   const reviewCard = appReviewCard(req, g, stats.length > 0);
-  if (reviewCard) res.set('Cache-Control', 'private, no-store');
+  if (reviewCard) res.set('X-App-No-Copy', '1');
   sendTab(res, me, { title: `${a.name} ${a.score} · ${b.name} ${b.score} · WKND`, tab: back.tab, body: appGamePage({
     back, title: isPlayedGame(g) ? `${a.name} ${a.score} · ${b.name} ${b.score}` : `${a.name} vs ${b.name}`,
     a, b, media: gameMedia(g), final: isPlayedGame(g),
@@ -7995,7 +7998,7 @@ function appGamePreview(req, res, me, back, g, reviewView = false) {
   const xPass = reviewView ? reviewPass(g) : 'live';
   const rc = reviewView ? appReviewCard(req, g, true) : null;
   const reviewCardHere = rc ? { ...rc, watch: '' } : null;
-  if (reviewCardHere) res.set('Cache-Control', 'private, no-store');
+  if (reviewCardHere) res.set('X-App-No-Copy', '1');
   sendTab(res, me, { title: live ? `${g.team_a_name} ${live.score.a} · ${g.team_b_name} ${live.score.b} · Live · WKND` : `${g.team_a_name} vs ${g.team_b_name} · WKND`, tab: back.tab, body: appGamePreviewPage({
     back, title: `${g.team_a_name} vs ${g.team_b_name}`,
     kicker: g.playoff_round || gameTypeLabel(g) || 'Regular season',

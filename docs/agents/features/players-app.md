@@ -22,7 +22,7 @@ New and changed screens follow [app-standards](../app-standards.md).
 ## Access (`appAccess`)
 - Hidden until `site_settings.app_open = '1'`. Before that: player-admins (`registrations.is_admin`), "view as" sessions, and anyone listed in `site_settings.app_beta` (emails or registration ids, comma or space separated). Everyone else signed in gets the "almost here" screen.
 - Players only: no `player_id` → "This app is for WKND players"; the super-admin login gets the same; pending sign-ups get "waiting for approval".
-- Pages send `noindex` and `Cache-Control: private, no-store`.
+- Pages send `noindex` and `Cache-Control: private, no-store` (for the browser's own cache only). The app's copies (public/app.js memory, public/app-sw.js PAGES) ignore that; a screen they must not keep sends `X-App-No-Copy: 1` (an admin's game screen with its Review card). Reading Cache-Control there instead kept no screen at all (2026-10-26 to 27). The feed's first two games are fetched ahead once it loads (not on data saver).
 
 ## Home: the feed
 - `views/app/feed.js`. Home = Finish setup card (until done), the **To do card** (only things with a deadline: balance due, sign-up open; gone when done), the pinned announcement, then **Latest**: a lazy list (`/app/feed/items`, 20 a page, keyset `before=<at>:<id>`, `day=` carries the last day header so it isn't repeated).
